@@ -742,7 +742,6 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
         ):
             completed = next_task(task, TaskStatus.COMPLETED)
             store.update_task(completed, expected_version=task.version)
-            unblocked = commit._unblock(mission_id, unblocked_by=task.id)
             refresh_summaries(store, mission_id)
             commit._emit(
                 "TaskCompleted",
@@ -754,7 +753,6 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
                     "artifacts": list(task.accepted_artifacts),
                     "outcome_binding_id": binding_id,
                     "superseded": [],
-                    "unblocked": [item.id for item in unblocked],
                 },
             )
         commit._emit(

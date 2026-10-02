@@ -97,7 +97,6 @@ from agent_orchestrator.contracts.semantic_base import (
 from agent_orchestrator.knowledge.validity import NO_SUBJECT
 from agent_orchestrator.orchestrator._read_set import SemanticReadSetChecker
 from agent_orchestrator.orchestrator.commit_service import CommitService
-from agent_orchestrator.orchestrator.plan_commits import LEGACY_SEMANTICS
 from agent_orchestrator.orchestrator.resolution_commits import (
     ACCEPTANCE_COMMITTED,
     ACCEPTANCE_KIND,
@@ -806,18 +805,6 @@ def _amend_requirements(world: World) -> RequirementsRevision:
 # ======================================================================================
 # 1. The door, identity and idempotency
 # ======================================================================================
-
-
-def test_a_legacy_mission_is_refused_at_the_door(world: World, tmp_path: Any) -> None:
-    """The legal command, re-addressed to a legacy Mission, stops at the door."""
-
-    (tmp_path / "legacy").mkdir()
-    legacy = hub.build_world(tmp_path / "legacy", mode=LEGACY_SEMANTICS, key="legacy")
-    command = world.accept_command(mission_id=legacy.mission.id)
-    assert refusal(legacy.service.accept_review, command, world.principal()) == (
-        "SEMANTICS_NOT_HIERARCHICAL"
-    )
-    assert legacy.store.connection.execute("SELECT count(*) FROM acceptances").fetchone()[0] == 0
 
 
 def test_an_unsigned_command_is_not_attributed_to_the_presenter(world: World) -> None:

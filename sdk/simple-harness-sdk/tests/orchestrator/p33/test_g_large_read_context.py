@@ -256,7 +256,9 @@ def test_host_explicit_tokenizer_must_match_persisted_identity(tmp_path):
 
 
 def test_actual_orchestrator_freezes_context_before_dispatch_and_refuses_substitution(tmp_path):
-    from graph_helpers7 import spec
+    # 删旧平面模式第三刀：规划请求改在真实主循环的分层世界里建（平面规划请求已删）。
+    from test_h1i_production_entry import _seed_new_protocol
+    from test_h4_retry_runtime_entry import grant
 
     from agent_orchestrator.contracts import ContractError
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -266,9 +268,9 @@ def test_actual_orchestrator_freezes_context_before_dispatch_and_refuses_substit
         profile = _profile(provider)
         config = OrchestratorConfig(evidence_root=tmp_path)
         async with Orchestrator(config, profiles={"default": profile}) as orch:
-            mission = await orch.submit_mission(spec("context-freeze"))
-            orch.commit.begin_planning(mission.id)
+            mission, _, _, _ = _seed_new_protocol(orch, tmp_path, key="context-freeze")
             intent = await orch._create_planner_intent(mission.id, ordinal=1)
+            grant(orch, mission, intent)
             frozen = orch.store.get_intent(intent.intent_id)
             assert frozen.config["runtime_context"] == profile.context_snapshot()
             original_hash = frozen.input_hash

@@ -1,16 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P2.3c: the allocator's ``form=compound`` gate, and the legacy entry left alone.
+"""P2.3c: the allocator's ``form=compound`` gate.
 
-Plan §18.5 hard constraints 2 and 4 are two statements that pull in opposite
-directions, and this suite is where both are pinned:
+2026-10-02 删旧平面模式第三刀：旧平面入口 ``frontier()``/``allocate()`` 已删，钉它们源码
+哈希、拿 v2 与它们比对的几条随之删除；下面只剩分层入口的性质。
 
-2. ``scheduling/allocator.py`` **keeps** its old READY entry.  ``EligiblePrimitiveTask``
-   is an *additional* gate for the hierarchical mode, not the only input type
-   ``allocate()`` accepts, and a legacy Mission with no semantic bindings is
-   dispatched exactly as it was.  So ``frontier()`` and ``allocate()`` are hashed
-   here: a byte of either changing fails a test.
 4. The new mode does **not** redefine ``TaskStatus.READY``.  A compound Task's READY
    is a rebuildable display index, and the gate that intercepts it is ``form=compound``
    from the semantic binding — not the semantics version, not the status string.  The
@@ -27,8 +22,6 @@ green run cannot be green because the gate does nothing.
 
 from __future__ import annotations
 
-import hashlib
-import inspect
 import sys
 from pathlib import Path
 from typing import Any
@@ -94,10 +87,8 @@ from agent_orchestrator.scheduling.allocator import (  # noqa: E402
     AllocationPlanV2,
     FrontierRefusal,
     FrontierV2,
-    allocate,
     allocate_v2,
     evaluate_frontier_v2,
-    frontier,
     frontier_v2,
     score_tasks,
 )
@@ -105,13 +96,6 @@ from agent_orchestrator.scheduling.backpressure import (  # noqa: E402
     RAISED,
     BackpressureState,
 )
-
-# The hashes of the two legacy functions as they stand.  They are the *source* of
-# ``frontier`` and ``allocate``, so a refactor that preserves behaviour still fails
-# here — which is the point: §18.5 constraint 2 is about the old entry being left
-# alone, not about it being equivalent to something new.
-LEGACY_FRONTIER_SHA256 = "0ae7cd4c24ee902e1fac2f8e8193920a64e9ff10c408baf0f33d1d6cc366e1b8"
-LEGACY_ALLOCATE_SHA256 = "0971d5b768b6f05b26aa964892c025f427e9180efdaa04a4448dbd772e861e34"  # 2026-10-02: 删选择轮参数与并行候选
 
 ALL_STATUSES = tuple(TaskStatus)
 
@@ -414,26 +398,12 @@ def two_admitted_world(
     return tasks, bindings, readiness
 
 
-def test_the_v2_frontier_orders_by_priority_like_the_legacy_one() -> None:
+def test_the_v2_frontier_orders_by_priority() -> None:
     tasks, bindings, readiness = two_admitted_world(priorities={str(T_A): 1.0, str(T_B): 9.0})
     assert [str(item.task_id) for item in frontier_v2(tasks, bindings, readiness)] == [
         str(T_B),
         str(T_A),
     ]
-    assert [task.id for task in frontier(tasks)] == [str(T_B), str(T_A)]
-
-
-def test_the_v2_frontier_breaks_a_priority_tie_on_the_task_ordinal() -> None:
-    tasks, bindings, readiness = two_admitted_world(priorities={str(T_A): 1.0, str(T_B): 1.0})
-    admitted = [str(item.task_id) for item in frontier_v2(tasks, bindings, readiness)]
-    assert admitted == [task.id for task in frontier(tasks)]
-
-
-def test_allocate_v2_orders_two_admissions_the_way_the_legacy_allocator_would() -> None:
-    tasks, bindings, readiness = two_admitted_world(priorities={str(T_A): 1.0, str(T_B): 9.0})
-    plan = allocate_v2(tasks, (), bindings, readiness, concurrency_limit=None, now=0.0)
-    legacy = allocate(tasks, (), concurrency_limit=None, now=0.0)
-    assert plan.granted_task_ids == tuple(task.id for task, _ordinal in legacy.grants)
 
 
 # ======================================================================================
@@ -471,36 +441,8 @@ def test_the_allocator_and_the_eligibility_module_give_the_same_compound_answer(
 
 
 # ======================================================================================
-# 4. §18.5 constraint 2: the legacy entry is untouched
+# 4. Version strings
 # ======================================================================================
-
-
-def test_the_legacy_frontier_source_is_byte_for_byte_unchanged() -> None:
-    source = inspect.getsource(frontier)
-    assert hashlib.sha256(source.encode()).hexdigest() == LEGACY_FRONTIER_SHA256
-
-
-def test_the_legacy_allocate_source_is_byte_for_byte_unchanged() -> None:
-    source = inspect.getsource(allocate)
-    assert hashlib.sha256(source.encode()).hexdigest() == LEGACY_ALLOCATE_SHA256
-
-
-def test_the_legacy_frontier_still_admits_a_ready_compound_row() -> None:
-    """It does not know about forms, and §18.5 constraint 2 says it must not learn.
-
-    A legacy Mission has no semantic bindings at all; the compound interception is
-    the *new* entry's job, and teaching the old one would change how a legacy
-    Mission is dispatched.
-    """
-
-    tasks = [task_row(str(T_ROOT)), task_row(str(T_B))]
-    assert {task.id for task in frontier(tasks)} == {str(T_ROOT), str(T_B)}
-
-
-def test_the_legacy_allocate_grants_a_legacy_mission_with_no_bindings() -> None:
-    tasks = [task_row("t-1"), task_row("t-2")]
-    plan = allocate(tasks, (), concurrency_limit=None)
-    assert {task.id for task, _ordinal in plan.grants} == {"t-1", "t-2"}
 
 
 def test_the_two_entry_points_carry_two_version_strings() -> None:
@@ -574,31 +516,6 @@ def test_under_pressure_a_formula_tier_task_with_no_exploration_slot_waits() -> 
     )
     assert plan.grants == ()
     assert plan.eligible == 0
-
-
-def test_the_pressure_filter_agrees_with_the_legacy_inline_one() -> None:
-    """The legacy body may not be edited, so the helper is checked against it."""
-
-    rows = [
-        task_row("t-1"),
-        task_row("t-2", ready_at=0.0),
-        task_row("t-3"),
-        task_row("t-4"),
-    ]
-    attempts = (attempt_row("t-4", 1, AttemptStatus.COMPLETED),)
-    scores = score_tasks(rows, attempts, now=1_000.0, aging_window_seconds=1.0)
-    kept = allocator_module._pressure_keep(rows, scores, attempts, 1)
-    pressure = BackpressureState(level=RAISED, raised={"verification_queue": {"value": 9}})
-    legacy = allocate(
-        rows,
-        attempts,
-        concurrency_limit=None,
-        now=1_000.0,
-        aging_window_seconds=1.0,
-        pressure=pressure,
-        exploration_slots=1,
-    )
-    assert {task.id for task in kept} == {task.id for task, _ordinal in legacy.grants}
 
 
 def test_the_plan_json_names_the_v2_version_and_carries_the_refusals() -> None:

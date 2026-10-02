@@ -10,11 +10,18 @@ are staged explicitly through CommitService; no provider or child pytest is need
 from __future__ import annotations
 
 import asyncio
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from graph_helpers7 import graph_service, node
+
+_OPERATION = Path(__file__).resolve().parents[1] / "full_target" / "operation_completion"
+if str(_OPERATION) not in sys.path:
+    sys.path.insert(0, str(_OPERATION))
+
+from operation_runtime_fixture import materialized_file_publish  # noqa: E402
 
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.governance.domains import CODE_PROFILE_V4, DOC_DOMAIN
@@ -29,78 +36,54 @@ PERSON = Principal("source-guard-reviewer")
 DEPLOYMENT = DeploymentPolicy(enabled_connectors=("file_publish",))
 
 
-class ObservedPublisher(FilePublishConnector):
-    def __init__(self, root, ledger):
-        super().__init__(root, ledger)
-        self.executions = 0
-        self.lookups = 0
+def ObservedPublisher(root, ledger):  # noqa: N802 - keeps the old call sites readable
+    """A real ``FilePublishConnector`` that counts its calls.
 
-    def execute(self, *args, **kwargs):
-        self.executions += 1
-        return super().execute(*args, **kwargs)
+    Operation-born actions only trust the exact connector type (the operation profile
+    pins its source), so the counters are attached to the instance, not a subclass."""
 
-    def lookup(self, *args, **kwargs):
-        self.lookups += 1
-        return super().lookup(*args, **kwargs)
+    publisher = FilePublishConnector(root, ledger)
+    publisher.executions = 0
+    publisher.lookups = 0
+    execute, lookup = publisher.execute, publisher.lookup
+
+    def counted_execute(*args, **kwargs):
+        publisher.executions += 1
+        return execute(*args, **kwargs)
+
+    def counted_lookup(*args, **kwargs):
+        publisher.lookups += 1
+        return lookup(*args, **kwargs)
+
+    publisher.execute = counted_execute
+    publisher.lookup = counted_lookup
+    return publisher
 
 
 @pytest.fixture
 def env(tmp_path):
-    now = [1000.0]
-    evidence = tmp_path / "library"
-    evidence.mkdir()
-    service, mission, tasks = graph_service(
-        evidence,
-        nodes=[node("A")],
-        clock=lambda: now[0],
-        success_criteria=("file:a.md", "action:file_publish.publish:report.md"),
-    )
-    cas = ArtifactStore(evidence / "artifacts")
-    version = cas.put_bytes(b"report\n")
-    workspaces = evidence / "workspaces"
+    # 删旧平面模式第三刀：被保护的发布动作改由分层世界里真实物化的发布操作提供
+    # （``operation_runtime_fixture``），不再从平面任务图手工提议。
+    library = tmp_path / "library"
+    library.mkdir()
+    fixture = materialized_file_publish(library)
+    service = fixture.world.service
+    cas = service._source_artifact_store
+    assert isinstance(cas, ArtifactStore)
+    workspaces = library / "workspaces"
     workspaces.mkdir()
-    published = tmp_path / "published"
-    published.mkdir()
-    publisher = ObservedPublisher(published, tmp_path / "ledger")
-    connectors = {"file_publish": publisher}
-    # This is the system's already-bound action proposal, not a model bypass of
-    # bind_artifact_params. Its CAS identity is covered by the real approval binding.
-    action = service.propose_action(
-        {
-            "connector": "file_publish",
-            "operation": "publish",
-            "target": "report.md",
-            "params": {
-                "artifact_path": "a.md",
-                "content_hash": version,
-                "storage_uri": str(cas.path_for(version)),
-            },
-            "reason": "发布已核对报告",
-        },
-        mission_id=mission.id,
-        task_id=tasks["A"].id,
-        result_id="result-publish",
-        attempt_id="attempt-publish",
-        artifact_id="artifact-publish",
-        artifact_hash=version,
-        connectors=connectors,
-        deployment=DEPLOYMENT,
-    )
-    service.decide_approval(
-        action["approval_request_id"],
-        principal=PERSON,
-        decision="grant",
-        nonce="publish-grant",
-        deployment=DEPLOYMENT,
-    )
+    # 交接租约按真实时钟写；重开后的库用这个可拨的时钟（起点留足余量）。
+    now = [time.time() + 10]
+    publisher = ObservedPublisher(fixture.publish.root, fixture.publish.ledger_path.parent)
     e = SimpleNamespace(
         service=service,
         store=service.store,
-        mission=mission,
-        action=action,
+        mission=fixture.world.mission,
+        action=fixture.action,
         cas=cas,
         roots=(cas.root, workspaces),
         publisher=publisher,
+        runtime=fixture.runtime,
         now=now,
         tmp=tmp_path,
     )
@@ -118,7 +101,6 @@ def source_mission(e, *, revoked=False, ended=False):
             tenant_id="another-tenant",
             idempotency_key="document",
             domain=DOC_DOMAIN,
-            orchestration_semantics_version="legacy",
         )
     )
     receipt = e.service.register_source(
@@ -158,6 +140,8 @@ def reopen(e):
     e.store.close()
     e.store = Store.open(path, clock=lambda: e.now[0])
     e.service = CommitService(e.store, artifact_store=e.cas)
+    # 重开后的进程按同一部署重新挂上操作物化运行时（发布档案按部署的连接器冻结）。
+    e.service.bind_operation_materialization_runtime(e.runtime)
 
 
 def executor(e, publisher=None, **options):
@@ -226,7 +210,6 @@ def test_document_domain_without_registered_sources_already_reserves_storage(env
             tenant_id="doc",
             idempotency_key="empty-document",
             domain=DOC_DOMAIN,
-            orchestration_semantics_version="legacy",
         )
     )
     publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
@@ -245,7 +228,8 @@ def test_disjoint_publish_executes_with_or_without_document_missions(env, docume
     publisher = ObservedPublisher(root, e.tmp / "sibling-ledger")
     result = asyncio.run(executor(e, publisher).hand_off(e.action["action_key"]))
     assert result["state"] == "SUCCEEDED" and publisher.executions == 1
-    assert Path(result["receipt"]["after"]["path"]).read_bytes() == b"report\n"
+    published = Path(result["receipt"]["after"]["path"]).read_bytes()
+    assert published == e.cas.path_for(e.action["params"]["content_hash"]).read_bytes()
 
 
 def test_pure_code_library_keeps_legacy_publishing_without_roots_hook(env, monkeypatch):
@@ -286,30 +270,6 @@ def test_guard_observes_document_missions_created_after_executor_construction(en
     source_mission(e)
     assert asyncio.run(run.hand_off(e.action["action_key"])) is None
     assert publisher.executions == 0
-
-
-def test_confirmed_not_started_rehandoff_is_refused_and_settled_without_another_effect(env):
-    e = env
-    source_mission(e)
-    key = e.action["action_key"]
-    handed, _ = e.service.begin_handoff(
-        key,
-        owner="before-crash",
-        lease_seconds=1,
-        connectors={"file_publish": e.publisher},
-        deployment=DEPLOYMENT,
-    )
-    assert handed["state"] == "HANDED_OFF"
-    # Crash after outbox commit, before calling execute: no connector ledger exists.
-    e.now[0] += 2
-    reopen(e)
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
-    run = executor(e, publisher)
-    [settled] = asyncio.run(run.reconcile())
-    assert settled["state"] == "FAILED"
-    assert settled["error"] == "not_started:source_publish_root_overlap"
-    assert settled["handoffs"] == 1 and publisher.executions == 0 and publisher.lookups == 1
-    assert e.service.ledger.reservation("action:" + key)["state"] == "SETTLED"
 
 
 def test_completed_receipt_is_still_reconciled_even_when_new_publication_is_forbidden(env):
@@ -368,6 +328,7 @@ def test_explicit_custom_cas_and_workspace_roots_are_protected(env):
     e = env
     e.cas = ArtifactStore(e.tmp / "custom-cas")
     e.service = CommitService(e.store, artifact_store=e.cas)
+    e.service.bind_operation_materialization_runtime(e.runtime)
     e.roots = (e.cas.root, e.tmp / "custom-workspaces")
     source_mission(e)
     publisher = ObservedPublisher(e.cas.root, e.tmp / "changed-ledger")

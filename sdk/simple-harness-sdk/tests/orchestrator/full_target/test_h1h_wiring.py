@@ -607,7 +607,7 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
         PLANNING_DECISION_V1
     )
 
-    # An omitted key is the same default; only a flat-mode charter writes no binding.
+    # An omitted key is the same default.
     default = spec_from_request(
         "tenant",
         {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"},
@@ -616,13 +616,6 @@ def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> No
     assert planning_protocol_for_mission(store, default_mission.id)["protocol_version"] == (
         PLANNING_DECISION_V1
     )
-    flat = spec_from_request(
-        "tenant",
-        {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-flat",
-         "orchestration_semantics_version": "legacy"},
-    )
-    flat_mission, _ = service.create_mission(flat)
-    assert planning_protocol_for_mission(store, flat_mission.id) is None
 
     # A present-but-unknown value is refused at the door, as a real error.
     with pytest.raises(MissionRequestError):

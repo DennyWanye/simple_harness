@@ -16,10 +16,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+#: I07 ("legacy cold reopen") was retired with the flat orchestration mode on 2026-10-02:
+#: its test file was deleted and there is no legacy Mission left to reopen.
+RETIRED_CASE_IDS = frozenset({"I07"})
 CASE_IDS = tuple(
-    f"{prefix}{index:02d}"
+    case_id
     for prefix, count in (("A", 8), ("O", 10), ("P", 10), ("I", 8))
     for index in range(1, count + 1)
+    if (case_id := f"{prefix}{index:02d}") not in RETIRED_CASE_IDS
 )
 
 IMPLEMENTED_NODEIDS = {
@@ -69,7 +73,6 @@ IMPLEMENTED_NODEIDS = {
         "tests/orchestrator/full_target/test_h1h_commit_guard.py::"
         "test_i06_grant_change_between_preview_and_commit_is_stale"
     ),
-    "I07": "tests/orchestrator/full_target/test_planning_protocol_switch.py::test_legacy_creation_has_no_binding",
     "I08": None,
 }
 
@@ -99,7 +102,7 @@ MATCHED = frozenset(
         "I05",
     }
 )
-PARTIAL = frozenset({"O02", "O04", "O08", "P04", "P06", "P07", "I06", "I07"})
+PARTIAL = frozenset({"O02", "O04", "O08", "P04", "P06", "P07", "I06"})
 SUPPORTING_NODEIDS = {
     "I01": ("tests/orchestrator/full_target/test_h1i_raw_artifact_collector.py",),
     "O06": (
@@ -147,15 +150,9 @@ IMPLEMENTED_NODEIDS.update({
     "P06": "tests/orchestrator/full_target/test_h1i_deferred_repair_resume.py",
     "P07": "tests/orchestrator/full_target/test_h1i_deferred_repair_resume.py",
     "I06": "tests/orchestrator/full_target/test_h1h_commit_interleaving.py",
-    "I07": "tests/orchestrator/full_target/test_i07_legacy_cold_reopen.py",
     "I08": "tests/orchestrator/full_target/test_h1h_no_nanojev_process.py",
 })
 SUPPORTING_NODEIDS.update({
-    "I07": (
-        "tests/orchestrator/full_target/test_planning_decision_package_v4.py::test_the_legacy_stub_package_is_byte_identical_to_the_previous_build",
-        "tests/orchestrator/full_target/test_planning_decision_package_v4.py::test_the_legacy_fixture_world_package_is_byte_identical_to_the_previous_build",
-        "tests/orchestrator/full_target/test_planning_decision_store.py::test_a_legacy_run_writes_nothing_into_the_new_tables",
-    ),
     "A06": ("tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_never_authorized_request_is_authorization_required_and_writes_nothing", "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_a06_zero_action_approvals_and_observed_method_gate_cannot_replace_grant"),
     "O02": ("tests/orchestrator/full_target/test_h1h_operation_alias.py", "tests/orchestrator/full_target/test_h1h_operation_two_real_producers.py"),
     "O03": ("tests/orchestrator/full_target/test_h1h_retired_method_unknown_action.py",),
@@ -163,7 +160,7 @@ SUPPORTING_NODEIDS.update({
     "O08": ("tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_o08_real_handoff_after_preview_invalidates_original_snapshot",),
     "P03": ("tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p02_p03_real_compiler_refusal_keeps_typed_reason",),
 })
-MATCHED = MATCHED | {"A06", "O03", "O07", "O08", "O09", "O10", "P02", "P03", "P04", "P06", "P07", "I06", "O02", "O04", "I07", "I08"}
+MATCHED = MATCHED | {"A06", "O03", "O07", "O08", "O09", "O10", "P02", "P03", "P04", "P06", "P07", "I06", "O02", "O04", "I08"}
 PARTIAL = frozenset()
 COVERAGE_NOTES.update({
     "A06": "observed method gate=True and exact required_approvals=0 cannot replace a grant; same-Mission planning/action authority separation covered",
@@ -175,7 +172,6 @@ COVERAGE_NOTES.update({
     "O09": "real T0 materialization fault rolls back Action/link/events; independent SQLite reader sees no uncommitted Action; exact replay is single identity",
     "P06": "invalid identity and schema-invalid bindings preserve actual RUNNING work/foreign lease; legal replacement cold-resumes the original decision",
     "P07": "real deferred replacement cold reopen reuses original decision/grant and commits once without LLM",
-    "I07": "cold reopen preserves exact intent/event-prefix/budgets; two legacy package goldens and no-new-protocol-table sentinel pass",
     "I08": "isolated clean process blocks NanoJev imports, uses no Shadow provider/config/checkpoint/events, and runs all three producers and original Commit",
 })
 

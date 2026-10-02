@@ -31,7 +31,7 @@ from simple_harness.contracts import canonical_json
 
 from .. import __version__ as PACKAGE_VERSION
 from ..contracts import Attempt, Mission, Task
-from ..contracts.models import STEP2_IMPLEMENTED_LAYERS, sha256_hex
+from ..contracts.models import sha256_hex
 from ..governance.domains import (
     CODE_DOMAIN,
     CODE_PROFILE,
@@ -338,98 +338,6 @@ def build_worker_package(
     return _seal(package)
 
 
-def build_planner_package(
-    mission: Mission,
-    *,
-    workspace_files: Sequence[str],
-    attempt_ordinal: int,
-    rejected: Sequence[Mapping[str, Any]] = (),
-    deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
-    budget_floor: Mapping[str, int] | None = None,
-    domain: DomainProfileV1 = CODE_PROFILE,
-    source_versions: Mapping[str, str] | None = None,
-    workload: Mapping[str, Any] | None = None,
-    action_candidate_contract: Mapping[str, Any] | None = None,
-) -> TaskPackage:
-    package: dict[str, Any] = {
-        "role": "planner",
-        "mission": {
-            "mission_id": mission.id,
-            "goal": mission.goal,
-            "success_criteria": list(mission.success_criteria),
-            "allowed_tools": list(mission.allowed_tools),
-            "budget": mission.budget.to_json(),
-            "risk_level": mission.risk_level,
-        },
-        "planning_attempt": attempt_ordinal,
-        "workspace_files": list(workspace_files),
-        "constraint": (
-            "a static DAG of one or more Tasks (no cycles, dependencies by key); "
-            "success_criteria must be machine-checkable; task budgets sum within "
-            "budget_for_tasks (the Mission budget)"
-        ),
-        "budget_for_tasks": {  # D4-20: the pool the Planner's graph may use
-            "max_tokens": mission.budget.max_tokens,
-            # P3.1 fix F-ORCH-1: the least one Task may hold (with / without critic_review)
-            **dict(budget_floor or {}),
-        },
-        "planning_rejected": [dict(item) for item in rejected],  # D3-2': why the last one failed
-        # host support 0.9.8: the only layers a Task's verification_policy may name here
-        "deployed_verification_layers": sorted(deployed_layers.intersection(domain.runs_layers)),
-        "output_contract": "<task_graph_proposal>{json}</task_graph_proposal>",
-        "package_version": PACKAGE_VERSION,
-    }
-    if action_candidate_contract is not None:
-        package["action_candidate_contract"] = dict(action_candidate_contract)
-    _domain_section(package, domain, mission)
-    _source_section(package, domain, source_versions)
-    if workload is not None:
-        package["source_workload"] = dict(workload)
-        package["criterion_allocation_semantics"] = {
-            "preserve_original_mission_criteria": True,
-            "quality_requirements": (
-                "Keep all original Mission success_criteria. Report-writing, formatting, "
-                "comparison and citation-quality requirements belong in the full Task goal "
-                "and independent Critic review. Do not duplicate them as newly invented "
-                "free-text success_criteria: those require literal source-backed claims, "
-                "not the Critic's assessment of how the report is written. Add a source "
-                "fact criterion only when it is a real independently verifiable subgoal. "
-                "This changes neither the Mission requirements nor the Critic quality bar."
-            ),
-        }
-    # Lifetime budget semantics apply to every domain, even without source workload.
-    package["budget_allocation_semantics"] = {
-        "kind": "permitted_ceiling_not_expected_spend",
-        "task_tokens": (
-            "Task max_tokens is a hard cumulative ceiling across all Worker turns, "
-            "retries and independent verification. It is not an expected-cost estimate. "
-            "Allocate the available budget_for_tasks across the proposed Tasks; "
-            "unallocated tokens cannot be borrowed by a running Task. A single complete "
-            "Task should receive the available Task pool, keeping the stated system "
-            "reserve outside it. This allocation does not spend or reserve tokens itself."
-        ),
-        "reservation_floor": (
-            "min_task_tokens and min_task_tokens_with_critic_review are first-request "
-            "admission floors, not a recommended lifetime budget or a context window cap. "
-            "Multi-step API discovery, history rereads, retries and verification consume "
-            "the cumulative Task allowance across repeated physical requests."
-        ),
-        "task_attempts": (
-            "Task max_attempts is a ceiling within the original Mission attempt limit, "
-            "not a target. Keep enough allowance for a corrected result; creating a "
-            "replacement Task never resets attempts already consumed by the Mission."
-        ),
-        "request_admission": (
-            "Each physical model request must fit current input, retained prior output "
-            "and its maximum output allowance. Source token counts exclude these "
-            "other costs. Budget for complete-source reading and independent Critic "
-            "review, not only the final report length."
-        ),
-    }
-    assert_no_secrets(package)  # step 6 (review P2-10): the Planner sees no credential either
-    return _seal(package)
-
-
 def build_critic_package(
     mission: Mission,
     task: Task | None,
@@ -541,6 +449,5 @@ __all__ = (
     "TaskPackage",
     "assert_no_secrets",
     "build_critic_package",
-    "build_planner_package",
     "build_worker_package",
 )

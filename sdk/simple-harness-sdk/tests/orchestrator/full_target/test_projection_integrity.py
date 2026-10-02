@@ -64,7 +64,6 @@ from agent_orchestrator.contracts.htn import (
 )
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.semantic_base import VersionedRef
-from agent_orchestrator.graph.dependency_checker import DependencyError, check_dependencies
 from agent_orchestrator.graph.projection_validation import (
     MAX_CONFLICTS_PER_RESOURCE,
     GraphIntegrityError,
@@ -432,9 +431,9 @@ def test_composition_review_waits_on_siblings_not_on_the_parent() -> None:
 
 def test_parent_child_pseudo_cycle_is_a_cycle_only_in_the_naive_union() -> None:
     net = snapshot()
-    with pytest.raises(DependencyError) as excinfo:
-        check_dependencies(naive_union_edges(net))
-    assert excinfo.value.reason == "cycle"
+    # 平面依赖检查器已删（2026-10-02）；"天真并集成环"用标准库的拓扑排序判。
+    with pytest.raises(graphlib.CycleError):
+        tuple(graphlib.TopologicalSorter(naive_union_edges(net)).static_order())
 
     report = validate_execution_projection(net.execution_projection(), DEFAULT_PROJECTION_BUDGET)
     assert ProblemKind.CYCLE not in kinds(report)
@@ -999,14 +998,6 @@ def test_flip_round_trip_preserves_the_edge_set() -> None:
     pairs = {(edge.source, edge.target) for edge in projection.edges}
     flipped = flip_to_dependency_map(pairs)
     assert set(flip_from_dependency_map(flipped)) == pairs
-
-
-def test_legacy_dependency_checker_accepts_the_flipped_projection() -> None:
-    projection = snapshot().execution_projection()
-    legacy_order = check_dependencies(projection.to_dependency_map())
-    position = {key: seat for seat, key in enumerate(legacy_order)}
-    for edge in projection.edges:
-        assert position[edge.source] < position[edge.target]
 
 
 # --------------------------------------------------------------------------------------

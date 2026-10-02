@@ -27,7 +27,6 @@ def test_actual_sibling_execution_db_is_inventoried_without_hiding_mission_damag
     store = Store.open(tmp_path / "orchestrator.db")
     CommitService(store).create_mission(MissionSpec(
         goal="test", success_criteria=("file:x",), tenant_id="t", idempotency_key="x",
-        orchestration_semantics_version="legacy"
     ))
     store.close()
     audit.discover([tmp_path], "closed")
@@ -63,7 +62,6 @@ def mission(store, key):
     return CommitService(store).create_mission(
         MissionSpec(
             goal="审计", success_criteria=("file:x.md",), tenant_id="t", idempotency_key=key,
-            orchestration_semantics_version="legacy"
         )
     )[0]
 

@@ -26,41 +26,17 @@ from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.testing.fixtures import (
-    RoleScriptedProvider,
-    critic_step,
-    envelope_step,
-    graph_proposal_step,
-)
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 TOOLS3 = ("workspace_read_file", "workspace_write_file", "workspace_list")
 OFF = DeploymentPolicy(allowed_tools=TOOLS3, local_code_execution=False)
 ME = Principal("local-user:me", "我")
-TASK = {
-    "key": "A",
-    "goal": "写 NOTES.md",
-    "rationale": "唯一的工作",
-    "dependencies": [],
-    "success_criteria": ["file:NOTES.md"],
-    "verification_policy": ["format_check", "rule_check", "critic_review"],
-    "outputs": ["NOTES.md"],
-    "allowed_tools": list(TOOLS3),
-    "budget": {"max_tokens": 30_000, "max_attempts": 2},
-    "priority": 1.0,
-}
 
 
 def _provider() -> RoleScriptedProvider:
-    return RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([TASK])],
-            "worker": [
-                ("workspace_write_file", {"path": "NOTES.md", "content": "- 一\n- 二\n- 三\n"}),
-                envelope_step(summary="写好了", artifacts=["NOTES.md"], claims=["三个要点"]),
-            ],
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 3,
-        }
-    )
+    # 门面测试只建任务、读快照、取消，不驱动规划（删旧平面模式 第三刀：原来是平面规划器
+    # 加执行者/审阅员的整套脚本）。
+    return RoleScriptedProvider({})
 
 
 def _command(key: str, **overrides):
@@ -69,8 +45,6 @@ def _command(key: str, **overrides):
         "success_criteria": ["file:NOTES.md"],
         "idempotency_key": key,
         "budget": {"max_tokens": 200_000, "max_attempts": 4},
-        # this file drives the flat mode's scripted graph proposal end to end
-        "orchestration_semantics_version": "legacy",
     }
     command.update(overrides)
     return command

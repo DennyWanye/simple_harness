@@ -14,7 +14,7 @@ from knowledge_helpers import (
     envelope,
     passed_layers,
     submit,
-    two_branch_service,
+    two_leaf_service,
 )
 
 from agent_orchestrator.context.compression import GLOBAL_BRANCH, branch_of
@@ -353,7 +353,7 @@ def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_
 
 # ------------------------------------------------------------------ D4-13'
 def test_summaries_are_deterministic_scoped_by_branch_and_never_change_claim_status(tmp_path):
-    service, mission, (task_a, task_b) = two_branch_service(tmp_path)
+    service, mission, (task_a, task_b) = two_leaf_service(tmp_path)
     tasks_by_id = {t.id: t for t in service.store.list_tasks(mission.id)}
     assert branch_of(task_a, tasks_by_id) == task_a.id
     join = Task.from_json(
@@ -376,7 +376,9 @@ def test_summaries_are_deterministic_scoped_by_branch_and_never_change_claim_sta
         stored.envelope.id, verifier_results=passed_layers("tests/probe/test_impl_a.py")
     )
     persisted = {s["subject_id"]: s for s in service.store.list_summaries(mission.id)}
-    assert set(persisted) == {task_a.id, task_b.id, mission.id}
+    # 分层任务里根目标（复合任务）也是一行任务，同样有自己的摘要
+    assert set(persisted) == {t.id for t in service.store.list_tasks(mission.id)} | {mission.id}
+    assert {task_a.id, task_b.id, mission.id} <= set(persisted)
     branch = persisted[task_a.id]
     assert branch["knowledge"] and branch["uncertainty"]["unverified_claims"] == 1
     assert branch["sources"]["results"] == [stored.envelope.id]

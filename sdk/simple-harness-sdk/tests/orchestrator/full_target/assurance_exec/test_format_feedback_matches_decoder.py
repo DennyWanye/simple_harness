@@ -74,17 +74,15 @@ def test_a_stop_after_an_unreadable_final_review_says_so():
     assert Orchestrator._final_review_unreadable_detail(_orch([content]), "m1") == {}
 
 
-def test_an_operation_outcome_review_that_ran_out_is_not_a_legal_wait(monkeypatch):
+def test_an_operation_outcome_review_that_ran_out_is_not_a_legal_wait():
     """2026-09-29 真机第七局：一份发布的结果审阅两次都没做成（第二次被重启打断），任务一直
     挂在"等发布结果"上。重试用完后不再算合法等待，交给卡死检测停下，并在停止说明里写明。"""
     from types import SimpleNamespace
 
-    import agent_orchestrator.orchestrator.scoped_content_review as scoped
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
     outcome = {"review_key": "assurance-operation-outcome:a9", "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
     fake = _orch([outcome])
-    monkeypatch.setattr(scoped, "uses_completion_protocol", lambda store, mission_id: True)
     assert Orchestrator._has_pending_operation_completion(fake, SimpleNamespace(id="m1")) is False
     assert Orchestrator._final_review_unreadable_detail(fake, "m1") == {
         "operation_outcome_review": {**outcome, "interrupted": False}}

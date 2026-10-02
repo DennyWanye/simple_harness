@@ -18,6 +18,8 @@ answered all six with one boolean would be telling the caller nothing.
 
 from __future__ import annotations
 
+import graphlib
+
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -55,10 +57,6 @@ from agent_orchestrator.contracts.semantic_base import (  # noqa: E402
     TypedRef,
     TypedRefKind,
     content_hash_of,
-)
-from agent_orchestrator.graph.dependency_checker import (  # noqa: E402
-    DependencyError,
-    check_dependencies,
 )
 from agent_orchestrator.graph.projection_validation import (  # noqa: E402
     ProblemKind,
@@ -309,8 +307,9 @@ def test_the_naive_union_of_the_same_network_is_a_cycle() -> None:
         child = str(item.occurrence_id)
         dependencies.setdefault(child, []).append(parent)  # child waits for parent
         dependencies.setdefault(parent, []).append(child)  # parent waits for child
-    with pytest.raises(DependencyError):
-        check_dependencies(dependencies)
+    # 平面依赖检查器已删（2026-10-02）；"天真并集成环"用标准库的拓扑排序判。
+    with pytest.raises(graphlib.CycleError):
+        tuple(graphlib.TopologicalSorter(dependencies).static_order())
     assert (
         validate_execution_projection(
             bundle.network.execution_projection(), BUDGET

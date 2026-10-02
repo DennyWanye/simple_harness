@@ -29,7 +29,6 @@ from agent_orchestrator.contracts import (
     MissionStopReason,
     ResultEnvelope,
     TaskStatus,
-    ids,
 )
 from agent_orchestrator.governance.budgets import UsageFact
 from agent_orchestrator.orchestrator.commit_service import (
@@ -38,7 +37,6 @@ from agent_orchestrator.orchestrator.commit_service import (
     MissionConflict,
     MissionSpec,
     Reservation,
-    TaskProposal,
     task_account,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -53,15 +51,6 @@ SPEC = MissionSpec(
     idempotency_key="mission-1",
     allowed_tools=("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests"),
     budget=Budget(max_tokens=10_000, max_attempts=2, max_cost_micros=None),
-    orchestration_semantics_version="legacy",
-)
-PROPOSAL = TaskProposal(
-    goal="实现 parse_kv(text) -> dict",
-    rationale="唯一任务，直接满足 Mission 目标",
-    success_criteria=("tests/test_parse_kv.py 通过",),
-    verification_policy=("format_check", "rule_check", "code_test"),
-    allowed_tools=("workspace_read_file", "workspace_write_file", "run_tests"),
-    budget=Budget(max_tokens=8_000, max_attempts=2),
 )
 
 
@@ -165,45 +154,6 @@ def test_mission_creation_is_idempotent_and_conflict_checked(tmp_path):
     assert service.store.count_events(mission.id, "MissionCreated") == 1
     with pytest.raises(MissionConflict):
         service.create_mission(replace(SPEC, goal="别的目标"))
-
-
-def test_task_proposal_is_checked_and_replays_the_same_receipt(tmp_path):
-    service = _service(tmp_path)
-    mission, _ = service.create_mission(SPEC)
-    planning = service.begin_planning(mission.id)
-    with pytest.raises(CommitRejected):  # tools outside the Mission
-        service.commit_task_proposal(
-            mission.id,
-            replace(PROPOSAL, allowed_tools=("shell",)),
-            base_version=planning.version,
-            source={},
-        )
-    with pytest.raises(CommitRejected):  # budget above the Mission's
-        service.commit_task_proposal(
-            mission.id,
-            replace(PROPOSAL, budget=Budget(max_tokens=20_000)),
-            base_version=planning.version,
-            source={},
-        )
-    with pytest.raises(CommitRejected):  # stale base version
-        service.commit_task_proposal(mission.id, PROPOSAL, base_version=1, source={})
-    task, receipt = service.commit_task_proposal(
-        mission.id, PROPOSAL, base_version=planning.version, source={"planner": "p1"}
-    )
-    assert task.status is TaskStatus.READY and task.id == ids.task_id(mission.id, 1)
-    assert service.store.get_mission(mission.id).status is MissionStatus.ACTIVE
-    task2, receipt2 = service.commit_task_proposal(
-        mission.id, PROPOSAL, base_version=planning.version, source={"planner": "p1"}
-    )
-    assert task2 == task and receipt2 == receipt
-    assert service.store.count_events(mission.id, "TaskCommitted") == 1
-    with pytest.raises(CommitRejected):  # a second, different task is refused in step 2
-        service.commit_task_proposal(
-            mission.id,
-            replace(PROPOSAL, goal="第二个任务"),
-            base_version=service.store.get_mission(mission.id).version,
-            source={},
-        )
 
 
 def test_attempt_reserve_dispatch_identity_and_result_acceptance(tmp_path):
@@ -379,3 +329,73 @@ def test_reject_result_and_cancel_from_verifying(tmp_path):
         assert service.store.get_attempt(second.id).status is AttemptStatus.CANCELLED
 
     _in_a_loop(tmp_path, case)
+
+
+# --------------------------------------------------------------------------------------
+# 迁自 step03/test_static_dag_closure.py（删旧平面模式 第三刀）：两条只需要任务行的
+# Commit Service 机制测试，换成分层步骤。
+# --------------------------------------------------------------------------------------
+
+
+def _attempt_kwargs():
+    return dict(
+        role="worker",
+        model="agent-model",
+        prompt_version="w",
+        context_version="c",
+        reservation=Reservation(tokens=1000, cost_micros=0),
+        intent_config={"agent_config": {}, "message": {}},
+        input_hash="h",
+    )
+
+
+def test_r1_mission_wide_concurrency_is_enforced_in_the_commit(tmp_path):
+    """P1-11: the Mission-wide open-Attempt bound is checked inside `create_attempt`."""
+
+    # two independent steps: one open Attempt per step, so the Mission-wide bound is
+    # exercised across steps
+    world = leaf_world(tmp_path, key="r1-conc", leaves=("a", "b"))
+    service, a, b = world.service, world.tasks["a"], world.tasks["b"]
+    kwargs = _attempt_kwargs()
+    service.create_attempt(a.id, max_open_attempts=1, **kwargs)
+    with pytest.raises(CommitRejected) as exc:
+        service.create_attempt(b.id, max_open_attempts=1, **kwargs)
+    assert "max_concurrency" in str(exc.value)
+    with pytest.raises(CommitRejected, match="already has an open Attempt"):
+        service.create_attempt(a.id, max_open_attempts=3, **kwargs)  # one per step
+    attempt2, intent2 = service.create_attempt(b.id, max_open_attempts=2, **kwargs)
+    assert intent2.config["attempt_id"] == attempt2.id  # P1-7: authoritative id in the intent
+
+
+def test_r1_stale_owner_cannot_commit_a_verdict(tmp_path):
+    """P1-3: accept/fail are refused for an owner whose lease lapsed and was taken over."""
+
+    clock = {"now": 1000.0}
+    world = leaf_world(tmp_path, key="r1-stale", clock=lambda: clock["now"])
+    service, mission, a = world.service, world.mission, world.tasks["a"]
+    attempt, intent = service.create_attempt(a.id, **_attempt_kwargs())
+    service.claim_intent(intent.intent_id, owner="orch-1", lease_seconds=10)
+    service.record_agent_created(intent.intent_id, agent_id="agent-x", expected_turn_id="turn-x")
+    service.record_submitted(intent.intent_id, receipt={"turn_id": "turn-x"})
+    stored = service.record_result(
+        attempt.id,
+        envelope=replace(_envelope(attempt.id, a.id, mission.id), id="result-1"),
+        turn_id="turn-x",
+        artifacts=[_artifact(attempt.id, a.id, mission.id)],
+        usage_refs=(),
+        port_claims=(PortClaim(port_key="result", path="parse_kv.py"),),
+    )
+    _start_verification(service, attempt, stored)
+    service.record_verification_layer(
+        stored.envelope.id, layer="critic_review", status="PASS", detail={}
+    )
+    clock["now"] += 20  # orch-1's lease lapsed
+    service.renew_lease(attempt.id, owner="orch-2", lease_seconds=10, liveness={})  # takeover
+    with pytest.raises(CommitRejected):
+        service.accept_result(stored.envelope.id, verifier_results=[], owner="orch-1")
+    with pytest.raises(CommitRejected):
+        service.fail_result(stored.envelope.id, failures=[], owner="orch-1")
+    assert (
+        service.accept_result(stored.envelope.id, verifier_results=[], owner="orch-2").status
+        is TaskStatus.COMPLETED
+    )

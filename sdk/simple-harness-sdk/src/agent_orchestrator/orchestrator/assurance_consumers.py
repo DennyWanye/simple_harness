@@ -422,7 +422,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
     def _evaluate_locked(self, mission: Any, *, now_ms: int) -> dict:
         integer(now_ms)
         from .completion_status import read_current_effect, read_occurrence_completion
-        from .scoped_content_review import uses_completion_protocol
 
         body: dict[str, Any] = {
             "mission_id": mission.id,
@@ -465,17 +464,16 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             reasons.append(EVIDENCE_STALE)
         unknown_effects: list[str] = []
         unmet: list[str] = []
-        if uses_completion_protocol(self.store, mission.id):
-            for root in roots:
-                status = read_occurrence_completion(self.store, mission.id, root)
-                if not status.complete:
-                    unmet.append(root)
-                for effect_key in status.scope.required_effect_keys:
-                    current = read_current_effect(
-                        self.store, mission.id, status.scope.spec_hash, str(effect_key)
-                    )
-                    if current["state"] == "RECONCILIATION_REQUIRED":
-                        unknown_effects.append(str(effect_key))
+        for root in roots:
+            status = read_occurrence_completion(self.store, mission.id, root)
+            if not status.complete:
+                unmet.append(root)
+            for effect_key in status.scope.required_effect_keys:
+                current = read_current_effect(
+                    self.store, mission.id, status.scope.spec_hash, str(effect_key)
+                )
+                if current["state"] == "RECONCILIATION_REQUIRED":
+                    unknown_effects.append(str(effect_key))
         body["unmet_root_occurrences"] = unmet
         body["unknown_effects"] = unknown_effects
         if unmet:

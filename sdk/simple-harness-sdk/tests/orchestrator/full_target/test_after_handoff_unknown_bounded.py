@@ -41,10 +41,6 @@ from test_provider_grant_rehandoff import (  # noqa: E402
 
 from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    SERVICE_INTENT_REHANDED_OFF,
-    MissionSpec,
-)
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
     MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS,
     MAX_SERVICE_REHANDOFFS,
@@ -235,52 +231,6 @@ def test_n_minus_one_after_handoff_unknown_then_recovery_completes(tmp_path) -> 
     assert outcome["planner_calls"] == 2, outcome["planner_calls"]
     assert "MissionFailed" not in outcome["types"]
     assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-
-
-def test_a_legacy_mission_is_not_stopped_by_the_consecutive_bound(tmp_path) -> None:
-    """The legacy Planner wait is the executor's.  Same unclassified after-handoff."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    provider = RoleScriptedProvider({"planner": [_unclassified, _unclassified]})
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(
-            blocker._config(evidence, max_planning_attempts=3),
-            provider,
-            poll_interval=0.02,
-        ) as loop:
-            mission = await loop.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal="legacy goal",
-                    success_criteria=("file:a.md",),
-                    tenant_id="tenant-p23p",
-                    idempotency_key="p23p-legacy",
-                )
-            )
-            returned = await blocker._run_until_done_or(loop, seconds=LIMIT * 8)
-            final = loop.store.get_mission(mission.id)
-            intent = loop.store.get_intent_for_subject(f"{mission.id}:planner:1")
-            return {
-                "returned": returned,
-                "rehandoffs": blocker._rehandoffs(loop, mission.id),
-                "intent_state": None if intent is None else intent.state,
-                "planner_calls": provider.by_role.get("planner", 0),
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "types": [item.type for item in blocker._events(loop, mission.id)],
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["rehandoffs"] == [], outcome
-    assert outcome["intent_state"] == "SUBMITTED", outcome
-    assert outcome["planner_calls"] == 1, outcome
-    assert outcome["returned"] is False, "the legacy loop keeps waiting, as it did"
-    assert outcome["status"] is not MissionStatus.FAILED
-    assert outcome["stop_reason"] is None
-    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
-    assert "MissionFailed" not in outcome["types"]
 
 
 def test_a_worker_leaf_consecutive_after_handoff_unknowns_stop_as_runtime_unavailable(

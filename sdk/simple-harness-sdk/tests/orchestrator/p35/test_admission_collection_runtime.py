@@ -10,9 +10,9 @@ The original Task budget is immutable; Mission spare budget is not a top-up.
 import asyncio
 from dataclasses import replace
 
-from agent_orchestrator.contracts import Budget, TaskStatus
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
+from leaf_world import loop_leaf
+
+from agent_orchestrator.contracts import AttemptStatus, TaskStatus
 from agent_orchestrator.orchestrator.event_handler import Orchestrator, OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.testing.fixtures import MODEL, RoleScriptedProvider
@@ -59,34 +59,33 @@ def test_one_empty_reply_does_not_pause_the_task(tmp_path):
         profile = RuntimeProfile("default", provider, MODEL, default_max_output_tokens=1000, max_output_tokens_ceiling=1000)
         config = OrchestratorConfig(evidence_root=tmp_path, max_concurrency=1, attempt_reserve_tokens=4000)
         async with Orchestrator(config, profiles={"default": profile}, provider_token_estimator=Counter("ok")) as orch:
-            mission = await orch.submit_mission(
-                MissionSpec(
-                    "Write the full original deliverable", ("file:answer.txt",), "test", "admission",
-                    allowed_tools=("workspace_list", "workspace_write_file"), budget=Budget(max_tokens=400000, max_attempts=10),
-                    orchestration_semantics_version="legacy",
-                )
-            )
-            planning = orch.commit.begin_planning(mission.id)
-            tasks, _ = orch.commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json({"tasks": [{
-                    "key": "A", "goal": "Write the full original deliverable", "rationale": "empty reply", "dependencies": [],
-                    "success_criteria": ["file:answer.txt"], "verification_policy": ["format_check", "rule_check"],
-                    "allowed_tools": ["workspace_list", "workspace_write_file"], "budget": {"max_tokens": 90000, "max_attempts": 3},
-                }]}),
-                base_version=planning.version, source={"planner": "fixture"},
-            )
-            task = tasks[0]
-            for _ in range(800):
-                await orch._cycle()
-                current = orch.store.get_task(task.id)
-                if provider.calls >= 2 or current.paused or current.status is TaskStatus.FAILED:
-                    break
-                await asyncio.sleep(0.002)
-            current = orch.store.get_task(task.id)
+            # 分层任务里的一个步骤（删旧平面模式 第三刀：原来是平面任务 A）。失败后的"再试一次"
+            # 按生产顺序先要规划器的"原样重试"决定——这一轮由测试代为提交。
+            leaf = await loop_leaf(orch, tmp_path, key="admission")
+            task_id = leaf.task_id
+
+            async def cycle_until(done):
+                for _ in range(800):
+                    await orch._cycle()
+                    current = orch.store.get_task(task_id)
+                    if done() or current.paused or current.status is TaskStatus.FAILED:
+                        return
+                    await asyncio.sleep(0.002)
+
+            def first_failed():
+                attempts = orch.store.list_attempts(task_id)
+                return bool(attempts) and attempts[0].status is AttemptStatus.RETRY_WAIT
+
+            await cycle_until(first_failed)
+            current = orch.store.get_task(task_id)
+            assert not (current.paused and current.pause_reason == "provider_admission:usage_unresolved"), current.pause_reason
+            assert first_failed() and provider.calls == 1, orch.progress_log
+            await leaf.authorize_retry(orch.store.list_attempts(task_id)[0])
+            await cycle_until(lambda: provider.calls >= 2)
+            current = orch.store.get_task(task_id)
             assert not (current.paused and current.pause_reason == "provider_admission:usage_unresolved"), current.pause_reason
             assert provider.calls >= 2, "the Task must go on after one empty reply"
-            first = orch.store.list_attempts(task.id)[0]
+            first = orch.store.list_attempts(task_id)[0]
             with orch.store.transaction():
                 assert orch.commit.ledger.has_unknown_usage(first.id)
                 assert orch.commit.ledger.reservation(first.id)["reserved_tokens"] > 0

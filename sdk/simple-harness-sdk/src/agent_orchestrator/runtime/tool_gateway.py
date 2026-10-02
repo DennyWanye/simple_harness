@@ -463,10 +463,6 @@ class WorkspaceToolGateway:
         local_code_execution: bool = True,
         executor: SandboxExecutorPort | None = None,
         appworld_execute: Callable[[str], Mapping[str, Any]] | None = None,
-        agentdojo_invoke: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
-        agentdojo_tool_schemas: Mapping[str, dict[str, Any]] | None = None,
-        are_invoke: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
-        are_tool_schemas: Mapping[str, dict[str, Any]] | None = None,
         domain_tools: Mapping[str, DomainTool] | None = None,
     ) -> None:
         self._workspaces = workspaces
@@ -477,27 +473,11 @@ class WorkspaceToolGateway:
         self._appworld_execute = appworld_execute
         self._appworld_lock = asyncio.Lock()
         self._appworld_mission_id: str | None = None
-        self._agentdojo_invoke = agentdojo_invoke
-        self._agentdojo_schemas = deepcopy(dict(agentdojo_tool_schemas or {}))
-        if set(self._agentdojo_schemas) & set(TOOL_NAMES):
-            raise ValueError("AgentDojo tools cannot replace SDK tools")
-        self._agentdojo_mission_id: str | None = None
-        self._agentdojo_lock = asyncio.Lock()
-        self._agentdojo_stopped = False
-        self._are_invoke = are_invoke
-        self._are_schemas = deepcopy(dict(are_tool_schemas or {}))
-        if set(self._are_schemas) & set(TOOL_NAMES):
-            raise ValueError("ARE tools cannot replace SDK tools")
         self._domain_tools = dict(domain_tools or {})
         self._domain_schemas = {name: deepcopy(tool.schema) for name, tool in self._domain_tools.items()}
-        if set(self._domain_tools) & (set(TOOL_NAMES) | set(self._are_schemas) | set(self._agentdojo_schemas)):
+        if set(self._domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tool names")
         self._domain_locks: dict[str, asyncio.Lock] = {}
-        self._are_mission_id: str | None = None
-        self._are_lock = asyncio.Lock()
-        self._are_stopped = False
-        if set(self._are_schemas) & set(self._agentdojo_schemas):
-            raise ValueError("ARE and AgentDojo tool names must be disjoint")
         self.knowledge_reader: (
             Callable[[str, str, Mapping[str, Any]], Mapping[str, Any]] | None
         ) = None
@@ -577,42 +557,6 @@ class WorkspaceToolGateway:
         self._bindings.pop(run_id, None)
         self._read_only_existing_streak.pop(run_id, None)
 
-    def bind_agentdojo(self, mission_id: str) -> None:
-        if self._agentdojo_invoke is None:
-            raise WorkspaceError("AgentDojo environment is not deployed")
-        if self._agentdojo_mission_id not in {None, mission_id}:
-            raise WorkspaceError("An AgentDojo episode cannot be shared across Missions")
-        self._agentdojo_mission_id = mission_id
-
-    async def stop_agentdojo(self) -> None:
-        """Quiesce the original environment before ordinary SDK turn cancellation.
-
-        Cancellation cannot undo an external runtime call. Its awaiting handler
-        returns the native UNKNOWN result before a turn cancel could mislabel
-        the physical handoff as a pre-execution rejection.
-        """
-        self._agentdojo_stopped = True
-        async with self._agentdojo_lock:
-            pass
-
-    def bind_are(self, mission_id: str) -> None:
-        if self._are_invoke is None:
-            raise WorkspaceError("ARE environment is not deployed")
-        if self._are_mission_id not in {None, mission_id}:
-            raise WorkspaceError("An ARE episode cannot be shared across Missions")
-        self._are_mission_id = mission_id
-
-    async def stop_are(self) -> None:
-        """Quiesce the original environment before ordinary SDK turn cancellation.
-
-        Cancellation cannot undo an external runtime call. Its awaiting handler
-        returns the native UNKNOWN result before a turn cancel could mislabel
-        the physical handoff as a pre-execution rejection.
-        """
-        self._are_stopped = True
-        async with self._are_lock:
-            pass
-
     def binding_for(self, run_id: str) -> WorkspaceBinding | None:
         return self._bindings.get(run_id)
 
@@ -685,12 +629,10 @@ class WorkspaceToolGateway:
             )
         arguments = dict(call.arguments)
         # 2. argument schema
-        if call.name in (self._agentdojo_schemas | self._are_schemas | self._domain_schemas):
+        if call.name in self._domain_schemas:
             problem = None
             try:
-                validate_arguments(
-                    arguments, (self._agentdojo_schemas | self._are_schemas | self._domain_schemas)[call.name]
-                )
+                validate_arguments(arguments, self._domain_schemas[call.name])
             except ArgumentsValidationError as error:
                 problem = str(error)
         else:
@@ -716,7 +658,7 @@ class WorkspaceToolGateway:
             # External tool parameters called path refer to the original environment,
             # never the SDK report workspace.
             path = (
-                None if call.name in (self._agentdojo_schemas | self._are_schemas | self._domain_schemas)
+                None if call.name in self._domain_schemas
                 else arguments.get("path")
             )
             if isinstance(path, str):
@@ -851,8 +793,6 @@ class WorkspaceToolGateway:
             return self._reject(call, record, code=refusal, outcome="execution_stopped",
                 stage="authority", message="This Attempt no longer has authority to start a tool call.")
         appworld_started = False
-        agentdojo_started = False
-        are_started = False
         try:
             if call.name == "workspace_read_file":
                 untrusted = is_untrusted(
@@ -910,46 +850,6 @@ class WorkspaceToolGateway:
                     pending = asyncio.create_task(asyncio.to_thread(
                         tool.invoke, arguments, binding.mission_id, f"{run_id}:{call.call_id}"))
                     value = dict(await _await_physical_call(pending))
-            elif call.name in self._agentdojo_schemas:
-                if (not binding.writable or binding.view != "work"
-                        or self._agentdojo_invoke is None or binding.mission_id is None
-                        or binding.mission_id != self._agentdojo_mission_id):
-                    raise WorkspaceError("AgentDojo execution is unavailable for this binding")
-                async with self._agentdojo_lock:
-                    if self._agentdojo_stopped:
-                        raise WorkspaceError("AgentDojo episode has stopped")
-                    agentdojo_started = True
-                    pending = asyncio.create_task(asyncio.to_thread(
-                        self._agentdojo_invoke, call.name, arguments,
-                        f"{run_id}:{record['call_id']}",
-                    ))
-                    value = await _await_physical_call(pending)
-                    if self._agentdojo_stopped:
-                        record["outcome"] = "unknown"
-                        record["stage"] = "execute"
-                        return ToolResult.unknown(
-                            call.call_id, "Episode interrupted after external tool handoff."
-                        )
-            elif call.name in self._are_schemas:
-                if (not binding.writable or binding.view != "work"
-                        or self._are_invoke is None or binding.mission_id is None
-                        or binding.mission_id != self._are_mission_id):
-                    raise WorkspaceError("ARE execution is unavailable for this binding")
-                async with self._are_lock:
-                    if self._are_stopped:
-                        raise WorkspaceError("ARE episode has stopped")
-                    are_started = True
-                    pending = asyncio.create_task(asyncio.to_thread(
-                        self._are_invoke, call.name, arguments,
-                        f"{run_id}:{record['call_id']}",
-                    ))
-                    value = await _await_physical_call(pending)
-                    if self._are_stopped:
-                        record["outcome"] = "unknown"
-                        record["stage"] = "execute"
-                        return ToolResult.unknown(
-                            call.call_id, "Episode interrupted after external tool handoff."
-                        )
             elif call.name == "appworld_execute":
                 if (not binding.writable or binding.view != "work"
                         or self._appworld_execute is None or binding.mission_id is None
@@ -1018,16 +918,6 @@ class WorkspaceToolGateway:
                 message=str(error),
             )
         except (WorkspaceError, KeyError, TypeError) as error:
-            if agentdojo_started:
-                self._agentdojo_stopped = True
-                record.update(outcome="unknown", stage="execute",
-                              error_code="agentdojo_callback_error")
-                return ToolResult.unknown(call.call_id, "External tool outcome is unknown.")
-            if are_started:
-                self._are_stopped = True
-                record.update(outcome="unknown", stage="execute",
-                              error_code="are_callback_error")
-                return ToolResult.unknown(call.call_id, "External tool outcome is unknown.")
             if appworld_started:
                 # A callback exception belongs to the SDK effect path, even if
                 # it happens to share a type with a workspace refusal.
@@ -1044,16 +934,6 @@ class WorkspaceToolGateway:
                 message=str(error),
             )
         except Exception:  # noqa: BLE001 - audit unexpected failures without changing SDK propagation
-            if agentdojo_started:
-                self._agentdojo_stopped = True
-                record.update(outcome="unknown", stage="execute",
-                              error_code="agentdojo_callback_error")
-                return ToolResult.unknown(call.call_id, "External tool outcome is unknown.")
-            if are_started:
-                self._are_stopped = True
-                record.update(outcome="unknown", stage="execute",
-                              error_code="are_callback_error")
-                return ToolResult.unknown(call.call_id, "External tool outcome is unknown.")
             record["outcome"] = "failed"
             record["stage"] = "execute"
             record["error_code"] = (

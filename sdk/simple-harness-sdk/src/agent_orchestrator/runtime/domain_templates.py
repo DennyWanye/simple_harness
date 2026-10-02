@@ -21,12 +21,12 @@ EVIDENCE = (
 def register_document_templates() -> None:
     # Delay access until the legacy registry has been initialized; importing this
     # module directly must not form a partially initialized module cycle.
-    from .role_templates import TEMPLATE_VERSIONS, _revise, register_template
+    from .role_templates import PLANNER, TEMPLATE_VERSIONS, _revise, register_template
 
     # These versions are immutable registry entries. Future code defaults must
     # retain them; changing a document prompt requires a new document version.
     worker_base = TEMPLATE_VERSIONS["worker"]["worker-v2"]
-    planner_base = TEMPLATE_VERSIONS["planner"]["planner-v4"]
+    planner_base = PLANNER  # the flat planner is no ROLES entry; these go with it (cut 3 step 4)
     critic_base = TEMPLATE_VERSIONS["critic"]["critic-v2"]
 
     worker = _revise(

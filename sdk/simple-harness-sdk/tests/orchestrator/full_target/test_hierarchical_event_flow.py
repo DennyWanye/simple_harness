@@ -22,8 +22,8 @@ Six properties, each of which would be silently wrong if the wiring were merely
    answers is unchanged (§18.5 rule 4, TG §7).
 5. **A missing semantic binding is corruption.**  ``GraphIntegrityError``, never a
    legacy fallback (§18.5).
-6. **Legacy is untouched.**  The same legacy Mission run with the assembly absent
-   and with it installed produces byte-identical event payloads.
+6. (2026-10-02) The flat mode was removed; its "legacy is untouched" golden went
+   with it.
 
 The last section is the mutation self-check: each mutant is a plausible wrong
 implementation, and an assertion the real tests make must catch it.
@@ -33,8 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
-import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -75,53 +73,31 @@ from agent_orchestrator.graph.eligibility import (  # noqa: E402
 from agent_orchestrator.graph.projection_validation import GraphIntegrityError  # noqa: E402
 from agent_orchestrator.orchestrator import hierarchical_dispatch as module  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    ARTIFACT_MERGE_NOT_APPLICABLE,
-    SERVICE_INTENT_REHANDED_OFF,
     CommitService,
     MissionSpec,
-)
-from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
-    ADDRESSED as PLANNING_REPAIR_ADDRESSED,
-    REQUESTED as PLANNING_REPAIR_REQUESTED,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     COMPOUND_DISPLAY_STATUS,
     COMPOUND_PHASE_CHANGED,
     DISPATCH_INTERCEPTED,
-    PLAN_COMMIT_REFUSED,
     PLAN_INTEGRITY_FAILED,
     CompoundPhase,
     HierarchicalDispatch,
     PlanIntegrityError,
-    is_hierarchical,
     next_compound_phase,
 )
 from agent_orchestrator.orchestrator.plan_commits import (  # noqa: E402
     HIERARCHICAL_SEMANTICS,
-    LEGACY_SEMANTICS,
     PLAN_REVISION_COMMITTED,
     PlanCommitRejected,
     PlanPrincipal,
-)
-from agent_orchestrator.orchestrator.root_review import (  # noqa: E402
-    ROOT_REVIEW_CUT,
-    ROOT_REVIEW_CUT_BUDGET_SPENT,
-    ROOT_REVIEW_REJECTED,
-    ROOT_REVIEW_SUPERSEDED,
-    ROOT_REVIEW_UNREADABLE,
 )
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.storage.store import Store  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    DEMO_PROPOSAL,
-    DEMO_SEED,
-    RoleScriptedProvider,
-    demo_single_task_provider,
-    proposal_step,
-)
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
 from scripted_plans import (  # noqa: E402
     apply_scripted_plan,
     approve_content_only_completion,
@@ -366,13 +342,6 @@ def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary(tmp_path
     with pytest.raises(ContractError) as caught:
         world.plan(world.reply(extras={"manager_epoch": 3}))
     assert "manager_epoch" in str(caught.value)
-
-
-def test_a_legacy_mission_is_not_an_entry_point_for_the_assembly(tmp_path):
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS, key="legacy-door")
-    with pytest.raises(ContractError) as caught:
-        world.plan()
-    assert "legacy" in str(caught.value)
 
 
 def test_a_deployment_without_a_planning_world_refuses_visibly(tmp_path):
@@ -805,462 +774,9 @@ def test_a_resolved_compound_is_resolution_committed(tmp_path):
     )
 
 
-# ======================================================== legacy zero regression
-#: Fields whose value is a fresh identifier or a hash over one, generated once per
-#: process run: a subprocess execution id, the hash of a pytest run, and everything
-#: derived from them.  They differ between *any* two runs of the same Mission and say
-#: nothing about behaviour, so the comparison normalises them by name instead of
-#: pretending the bytes are reproducible.
-#: A liveness *sample*: how far a running turn had got when the poll fired.  Two runs
-#: of the same Mission sample at different moments, so the row exists in both and its
-#: numbers differ.  Excluded by type rather than field by field, because the whole
-#: event is a measurement and none of it is a decision.
-_SAMPLED_EVENTS = frozenset({"HeartbeatReceived"})
-
-#: The fields that carry a *per-run* identifier, named one by one.  This list was not
-#: guessed: it is every field that actually differs between two runs of the same
-#: Mission, and nothing else is forgiven.  An earlier version of this comparison
-#: normalised "any number ≥ 1e9", which silently also covered deterministic
-#: configuration values such as a receipt's ``max_rss_bytes`` — a byte ceiling is a
-#: decision, and a comparison that forgives it is not checking anything there.
-_VOLATILE_KEYS = frozenset(
-    {
-        # a fresh uuid per subprocess run, and the hashes computed over one
-        "execution_id",
-        "run_hash",
-        "knowledge_id",
-        "claim_id",
-        "context_version",
-        # A measured duration, not a decision: the allocator's waiting-age input is
-        # wall clock and moves by microseconds between two runs — and ``score`` is a
-        # rounded function of it (weight 0.10), so it inherits the jitter whenever the
-        # difference crosses the fourth decimal.  ``tier`` is *not* forgiven: it is a
-        # threshold at one full second, nowhere near these sub-millisecond readings,
-        # so if it ever flips the comparison should fail and be looked at.
-        "waiting_age",
-        "score",
-    }
-)
-
-#: The same per-run identifiers where they appear *inside* a string or a list of
-#: strings (a knowledge id in ``final_report.knowledge``, in ``lineage.knowledge[].id``
-#: and in ``lineage.edges[].produced``) rather than as their own field.
-_VOLATILE_PATTERNS = ((re.compile(r"observation:[0-9a-f]{64}"), "observation:<id>"),)
-
-#: How long a *test run* took, normalised **only where a pytest report line is
-#: quoted**, named by ``(event_type, field)``.
-#:
-#: Third-round review P2-5 added this because pytest's one-line report ends in the
-#: wall-clock time the run took, and under CPU contention two runs of this golden
-#: legitimately differ by hundredths of a second — the suite's one hard gate on "the
-#: DAG mode's bytes did not change" was failing about a third of the time under
-#: parallel load.
-#:
-#: Fourth round, P1-3: that fix was applied to *every string of every payload of every
-#: event*, and the reviewer demonstrated the cost — a real, assembly-dependent
-#: behavioural difference (a timeout ceiling of ``in 60s`` against ``in 10s``) injected
-#: into an event went unnoticed, because the pattern ate it on the way past.  A
-#: normalisation that forgives a decision is not checking anything, which is the same
-#: warning ``_VOLATILE_KEYS`` already carries about ``max_rss_bytes``.  The nine places
-#: a duration legitimately appears in this golden were measured, not guessed; they are
-#: exactly the fields that quote a captured test report, and nowhere else is forgiven.
-_REPORT_DURATION = re.compile(r"\bin \d+(?:\.\d+)?s\b")
-_REPORT_DURATION_FIELDS = frozenset(
-    {
-        ("AttemptCreated", "feedback"),
-        ("MissionCompleted", "reason"),
-        ("MissionSuccessJudged", "reason"),
-        ("VerificationFailed", "output"),
-        ("VerificationFailed", "stdout"),
-        ("VerificationFailed", "summary"),
-        ("VerificationLayerRecorded", "summary"),
-        ("VerificationPassed", "output"),
-        ("VerificationPassed", "stdout"),
-    }
-)
-
-
-def _redact(value: Any, root: Path, *, event_type: str = "", field: str | None = None) -> Any:
-    """Normalise what legitimately differs between two runs of the same Mission.
-
-    The evidence root and the per-run identifiers above are *environment*, not
-    behaviour.  Everything else — every task and attempt id, artifact content hash,
-    criterion verdict, ordinal, budget figure, byte ceiling, timeout and stop reason —
-    is compared byte for byte, which is what §18.5 rule 3 asks for.
-
-    ``field`` is the key the string was found under, so the one duration exception is
-    pinned to ``(event_type, field)`` pairs rather than applied to the whole payload.
-    """
-
-    if isinstance(value, str):
-        text = value.replace(str(root), "<root>")
-        for pattern, replacement in _VOLATILE_PATTERNS:
-            text = pattern.sub(replacement, text)
-        if (event_type, field) in _REPORT_DURATION_FIELDS:
-            text = _REPORT_DURATION.sub("in <duration>", text)
-        return text
-    if isinstance(value, dict):
-        return {
-            key: (
-                "<env>"
-                if key in _VOLATILE_KEYS
-                else _redact(item, root, event_type=event_type, field=str(key))
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact(item, root, event_type=event_type, field=field) for item in value]
-    return value
-
-
-def _legacy_events(tmp_path, *, install: bool) -> list[tuple[str, str]]:
-    """Run the step-2 single-task Mission end to end; return (type, payload) per event.
-
-    The single-task fixture is the deterministic one: the step-3 parallel DAG
-    interleaves two Workers, so its *event order* is a scheduling fact and not a
-    behavioural one.  What this comparison is for is the wiring — five branches were
-    added to the event handler, and a legacy Mission must walk past every one of them
-    without a single byte moving.
-    """
-
-    from agent_orchestrator.contracts import MissionStatus  # noqa: PLC0415
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: PLC0415
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: PLC0415
-    from agent_orchestrator.testing.fixtures import (  # noqa: PLC0415
-        DEMO_PROPOSAL,
-        DEMO_SEED,
-        demo_single_task_provider,
-    )
-
-    provider = demo_single_task_provider()
-    config = OrchestratorConfig(
-        evidence_root=Path(tmp_path) / "evidence", max_concurrency=1, test_timeout_seconds=60
-    )
-    rows: list[tuple[str, str]] = []
-
-    async def case() -> None:
-        async with Orchestrator(config, provider) as orchestrator:
-            if install:
-                orchestrator.install_hierarchical()
-            mission = await orchestrator.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal=str(DEMO_PROPOSAL["root_goal"]),
-                    success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
-                    tenant_id="tenant-p23b-legacy",
-                    idempotency_key="legacy-bytes",
-                    allowed_tools=tuple(DEMO_PROPOSAL["allowed_tools"]),
-                    budget=Budget(max_tokens=200_000, max_attempts=12),
-                    workspace_seed=DEMO_SEED,
-                )
-            )
-            await orchestrator.run()
-            final = orchestrator.store.get_mission(mission.id)
-            assert final is not None and final.status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-            for event in orchestrator.store.list_events(mission.id):
-                if event.type in _SAMPLED_EVENTS:
-                    continue
-                payload = _redact(dict(event.payload), Path(tmp_path), event_type=event.type)
-                # The subject travels in the key, not only in the payload: two events
-                # of one type that name different Tasks are two different facts.
-                rows.append(
-                    (
-                        f"{event.type}|{event.task_id or ''}|{event.attempt_id or ''}",
-                        json.dumps(payload, sort_keys=True),
-                    )
-                )
-
-    asyncio.run(case())
-    return rows
-
-
-def test_a_legacy_mission_produces_identical_event_bytes_with_the_assembly_installed(tmp_path):
-    without = _legacy_events(tmp_path / "off", install=False)
-    with_it = _legacy_events(tmp_path / "on", install=True)
-    assert [kind for kind, _ in without] == [kind for kind, _ in with_it]
-    assert without == with_it
-
-
-class _ExplodingDispatch(HierarchicalDispatch):
-    """Every hierarchical entry point, wired to fail loudly."""
-
-    def _boom(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("a legacy Mission reached the hierarchical assembly")
-
-    network = seed_network = read = plan_view = _boom  # type: ignore[assignment]
-    commit_preview_plan_proposal = intercept_worker_dispatch = _boom  # type: ignore[assignment]
-    advance_compound_phases = root_review_ready = terminal = _boom  # type: ignore[assignment]
-    attempt_inputs = occurrences = ready_occurrences = _boom  # type: ignore[assignment]
-    running_occurrences = record_integrity_failure = _boom  # type: ignore[assignment]
-    admit_method_proposal = build_command = _boom  # type: ignore[assignment]
-    # Review round 4, P2-8: part 3a added seven entry points and the sentinel still
-    # covered the seventeen it was written with, so the one thing it exists to catch —
-    # a legacy Mission reaching the hierarchical assembly through a *new* door — had no
-    # sentinel on any of the new doors.
-    live_root_review_package = root_contributions = _boom  # type: ignore[assignment]
-    superseded_review_packages = root_resolution_inputs = _boom  # type: ignore[assignment]
-    admissions = method_applicability = record_method_applicability = _boom  # type: ignore[assignment]
-
-
-def _single_task_case() -> tuple[Any, MissionSpec, int]:
-    """Step 2: one Task, a wrong first submission, a repair, a Critic."""
-
-    from agent_orchestrator.testing.fixtures import (
-        DEMO_PROPOSAL,
-        DEMO_SEED,
-        demo_single_task_provider,
-    )
-
-    return (
-        demo_single_task_provider(),
-        MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal=str(DEMO_PROPOSAL["root_goal"]),
-            success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
-            tenant_id="tenant-p23b-explode",
-            idempotency_key="explode-single",
-            allowed_tools=tuple(DEMO_PROPOSAL["allowed_tools"]),
-            budget=Budget(max_tokens=200_000, max_attempts=12),
-            workspace_seed=DEMO_SEED,
-        ),
-        1,
-    )
-
-
-def _static_dag_case() -> tuple[Any, MissionSpec, int]:
-    """Step 3: a five-Task DAG run in parallel, artifacts flowing downstream."""
-
-    from agent_orchestrator.testing.fixtures import (
-        DEMO_DAG_SPEC,
-        TEXTKIT_SEED,
-        demo_static_dag_provider,
-    )
-
-    return (
-        demo_static_dag_provider(),
-        MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal=str(DEMO_DAG_SPEC["goal"]),
-            success_criteria=tuple(DEMO_DAG_SPEC["success_criteria"]),
-            tenant_id="tenant-p23b-explode",
-            idempotency_key="explode-dag",
-            allowed_tools=tuple(DEMO_DAG_SPEC["allowed_tools"]),
-            budget=Budget(max_tokens=200_000, max_attempts=12),
-            workspace_seed=TEXTKIT_SEED,
-        ),
-        2,
-    )
-
-
-EXPLODE_CASES = [
-    ("one task, repair and critic", _single_task_case),
-    ("a parallel DAG with artifact flow", _static_dag_case),
-]
-
-
-@pytest.mark.parametrize(("name", "build"), EXPLODE_CASES, ids=[item[0] for item in EXPLODE_CASES])
-def test_the_legacy_path_never_enters_the_assembly_at_all(tmp_path, name, build):
-    """The strongest form of the zero-regression claim: the new code is not executed.
-
-    A byte comparison can only say "the same events came out".  This says the legacy
-    Mission never reached any hierarchical entry point, so there is no path by which
-    its bytes *could* have moved — and it says it for the Planner, the allocator, the
-    Worker result, the Critic, the Manager and the artifact-input path, because each
-    of the three cases drives a different set of those.
-    """
-
-    del name
-    from agent_orchestrator.contracts import MissionStatus
-
-    provider, spec, concurrency = build()
-
-    async def case() -> None:
-        config = OrchestratorConfig(
-            evidence_root=Path(tmp_path) / "evidence",
-            max_concurrency=concurrency,
-            test_timeout_seconds=60,
-        )
-        async with Orchestrator(config, provider) as orchestrator:
-            orchestrator._hierarchical = _ExplodingDispatch(orchestrator.store, orchestrator.commit)
-            mission = await orchestrator.submit_mission(spec)
-            await orchestrator.run()
-            final = orchestrator.store.get_mission(mission.id)
-            assert final is not None and final.status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-
-    asyncio.run(case())
-
-
-#: Every event type this programme added that a legacy Mission must never produce.
-#: Review round 4, P2-8: part 3a wrote six more and none of them were listed here.
-NEW_EVENT_TYPES = frozenset(
-    {
-        PLAN_REVISION_COMMITTED,
-        PLAN_COMMIT_REFUSED,
-        DISPATCH_INTERCEPTED,
-        COMPOUND_PHASE_CHANGED,
-        PLAN_INTEGRITY_FAILED,
-        ROOT_REVIEW_CUT,
-        ROOT_REVIEW_SUPERSEDED,
-        ROOT_REVIEW_REJECTED,
-        ROOT_REVIEW_UNREADABLE,
-        ROOT_REVIEW_CUT_BUDGET_SPENT,
-            # HTN 精简片 B：原专用细化入口的 ``HierarchicalRefinementRequested`` 已删除，
-        # "计划里有目标还没有做法"改走通用规划请求，它留下的是下面三种事件。
-        PLANNING_REPAIR_REQUESTED,
-        "PlanningServiceResumed",
-        PLANNING_REPAIR_ADDRESSED,
-        SERVICE_INTENT_REHANDED_OFF,
-        # P2.3k / N3: the legacy artifact merge the Mission Judge does not run on a
-        # hierarchical Mission, written down once with what the tree kept instead.
-        ARTIFACT_MERGE_NOT_APPLICABLE,
-    }
-)
-
-
-def test_the_legacy_run_appends_none_of_the_new_event_types(tmp_path):
-    rows = _legacy_events(tmp_path, install=True)
-    # The row key is ``type|task|attempt``; comparing the whole key against a bare
-    # type name is a comparison that can never fail, which is what this assertion was
-    # doing before review round 4.
-    kinds = {kind.split("|", 1)[0] for kind, _ in rows}
-    assert kinds, "the legacy Mission really did produce events"
-    assert kinds.isdisjoint(NEW_EVENT_TYPES)
-
-
-def test_the_new_event_type_list_is_the_one_the_modules_declare(tmp_path):
-    """And the list itself cannot quietly shrink: it is read off the modules."""
-
-    from agent_orchestrator.orchestrator import root_review as root_module
-
-    declared = {
-        getattr(root_module, name)
-        for name in dir(root_module)
-        if name.startswith("ROOT_REVIEW_")
-        and isinstance(getattr(root_module, name), str)
-        and getattr(root_module, name).startswith("HierarchicalRootReview")
-    }
-    assert declared <= NEW_EVENT_TYPES, sorted(declared - NEW_EVENT_TYPES)
-    assert len(NEW_EVENT_TYPES) >= 10
-
-
-def test_the_mode_switch_defaults_to_legacy_for_a_mission_without_the_opt_in(tmp_path):
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(
-        MissionSpec(orchestration_semantics_version="legacy", goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="d")
-    )
-    assert is_hierarchical(mission) is False
-
-
-def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path):
-    """Every wiring site goes through one predicate, not several spellings of it.
-
-    P2.3b had four sites; P2.3c part 2 added the fifth, ``_create_planner_intent``,
-    which is where the *prompt* and the *package* are chosen together (blocker c: a
-    Planner asked for a plan-revision proposal while holding the DAG package).  Part
-    2b added ``_accept_hierarchical_leaf`` (a verified leaf becomes an ``Acceptance`` only in
-    the new mode; in the legacy one ``accept_result`` is the whole lifecycle).  Part
-    2c added three more — ``_gather_evidence`` (the read-only evidence round),
-    ``_request_method_synthesis`` (deciding a goal has no method that could apply) and
-    ``_collect_synthesizer`` (admitting the reply) — each a hierarchical-only step
-    where asking the mode is what keeps it off a legacy Mission entirely.  The count
-    is asserted rather than the set, so adding an eleventh site is a deliberate act
-    that comes back here — which is the only way the "one predicate" property stays
-    true as the wiring grows.
-
-    ``_assembly_missing`` is deliberately **not** one of these sites (review F1): it
-    exists precisely because ``_new_mode`` answers None for two different worlds, and
-    it asks ``is_hierarchical`` directly to tell them apart.
-
-    Part 2c added an eleventh, ``_record_hierarchical_stall``: when the loop goes idle
-    with occurrences every gate withheld, it writes those refusals down — and asking
-    the mode there is what keeps the record off a legacy Mission, whose idleness is
-    the legacy scheduler's business and not this one's.
-
-    Part 2d adds a twelfth, ``_port_claims_from``: the hierarchical Worker's envelope
-    carries an ``outputs`` map naming which file went to which declared port, and
-    ``ResultEnvelope`` refuses unknown keys by design — so on a *legacy* Mission that
-    key has to stay an unknown field rather than being quietly accepted.  Asking the
-    mode there is exactly what keeps the two contracts apart (§18.5 rule 1).
-
-    Part 2d's stall decision adds two more: ``_stall_fingerprint`` (the identity
-    of a stall, which is a hierarchical notion — it is built out of admissions, scope
-    epochs and admitted demands) and ``_confirm_and_stop_stalled`` (the one place a
-    Mission is ended for having nothing to dispatch).  A legacy Mission idles for the
-    legacy scheduler's reasons and neither of them may touch it.
-
-    Part 3a adds the fifteenth, ``_collect_root_review``: a ``MISSION_FINAL`` verdict
-    is recorded through the hierarchical assembly's coordinator, and a legacy Mission
-    has no root ``GoalResolution`` for one to feed.  ``_advance_root_review`` and
-    ``_ask_root_reviewer`` are deliberately **not** extra sites — they are reached
-    only from ``_decide``, which has already asked, and are handed the answer.
-
-    P2.3d adds the seventeenth, ``_refine_open_compounds``: a compound goal the plan has
-    not refined is a hierarchical notion with no legacy counterpart, and asking the mode
-    there is what keeps the extra Planner round off a Mission that has no plan revisions
-    at all (defect D5-B).
-
-    P2.3f adds the eighteenth, ``_resolve_provider_blocked_service``: a service turn
-    waiting on a Provider hand-off whose outcome is unknown is re-handed off once and
-    then ended through its role's failure door — on a hierarchical Mission.  A legacy
-    Mission's Planner and Critic waits are pinned by the recovery matrix and the event
-    goldens, and asking the mode there is what keeps them exactly as they were.
-
-    P2.3k adds the nineteenth, ``_evaluate_criteria``: the Mission Judge's integrated
-    tree.  The legacy ``merge_accepted`` reads "independent branches" off
-    ``Task.dependency_ids``, which the materialised occurrences leave empty by design,
-    so on a hierarchical Mission two leaves writing one path failed a Mission whose
-    root ``GoalResolution`` already stood (Grok C3, defect N3).  Asking the mode there
-    is what sends the hierarchical Mission to its resolution's contributions and keeps
-    the legacy Mission on the legacy merge, byte for byte.
-
-    2026-09-30 清点（计数 21→25，按上面的约定补记没写进来的站点；都只在分层任务上生效，
-    旧任务在这些入口一律拿到 None 并按原路走）：TaskGraph 对外的两个入口
-    ``taskgraph_recheck_mission`` / ``taskgraph_request_composition``；
-    ``_has_pending_operation_completion``（待确认的操作完成只存在于分层任务）；
-    ``_retry_deferred_repair`` 与 ``_dispatch_h4_repair_trigger``（延后修补/H4 修补触发）；
-    ``_idle_facts``（2026-09-28，空转时汇总"在等什么"的事实）；以及
-    ``_resolve_provider_blocked_service`` 里保障层审阅分支的第二处询问（2026-09-24）。
-
-    2026-10-01 HTN 精简片 A（计数 25→23）：方法合成器运行路径整条删除，
-    ``_request_method_synthesis`` / ``_create_synthesizer_intent`` /
-    ``_collect_synthesizer`` 三处询问随之消失；新增 ``_planning_still_owed``
-    （任务是否还欠着规划）一处。
-
-    2026-10-01 HTN 精简片 B（计数 23→22）：第十七处 ``_refine_open_compounds`` 整条删除，
-    "计划里有目标还没有做法"改由 ``planning_repair_requests.open_goal_triggers`` 记一条通用
-    规划请求（它经 ``collect_triggers`` 拿到的已经是分层调度，不再询问模式）。
-
-    2026-10-02 HTN 精简片 D 第 2 项（计数 22→23）：``_refresh_document_judgments`` 重看一份留存
-    的文档判定时，保证通道上的文字要求要读已认证的最终审查结论（``_assured_root_grades``），
-    它需要分层调度；旧平面任务这里拿到 None，照旧只按覆盖结果重算。
-
-    2026-10-02 删旧平面模式第一刀（计数 23→22）：第十六处 ``_request_management``（管理员入口）
-    整条删除。
-    """
-
-    del tmp_path
-    import inspect
-
-    from agent_orchestrator.orchestrator import event_handler
-
-    source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 22
-    assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
-
-
-def test_the_legacy_merge_call_is_still_the_only_all_ancestors_sweep(tmp_path):
-    del tmp_path
-    import inspect
-
-    from agent_orchestrator.orchestrator import event_handler
-
-    source = inspect.getsource(event_handler)
-    assert source.count("merge_accepted(") == 2  # _next_attempt and _evaluate_criteria
-    assert "new_mode.attempt_inputs(mission.id, task.id)" in source
+# 2026-10-02 删旧平面模式第三刀：原"旧任务零回归"一节（平面任务事件字节黄金、旧路径不进分层
+# 装配、平面任务不产新事件、模式开关默认 legacy、源码里 ``_new_mode`` 询问次数与
+# ``merge_accepted`` 调用次数两枚结构钉）随平面模式删除。
 
 
 # ===================================================================== inputs come from
@@ -1712,68 +1228,6 @@ def test_the_dispatch_branch_stops_one_mission_on_a_missing_binding(tmp_path):
     asyncio.run(case())
 
 
-def _planner_by_goal(*, hierarchical: str, legacy: str):
-    """One planner script for two Missions: pick the reply that fits the package.
-
-    Two Missions in one run share the provider, and which of them the loop drives
-    first is a scheduling fact.  A positional script would hand one Mission the
-    other's proposal, so the step reads the package it was actually given.
-    """
-
-    def step(request: Any) -> str:
-        text = " ".join(
-            message.content if isinstance(message.content, str) else str(message.content)
-            for message in request.messages
-        )
-        return hierarchical if HIERARCHICAL_GOAL in text else legacy
-
-    return step
-
-
-def test_one_damaged_mission_does_not_take_another_down_with_it(tmp_path):
-    """The whole point of the guards: ``run()`` survives one Mission's corruption.
-
-    ``GraphIntegrityError`` is a ``RuntimeError`` and ``_cycle`` does not forgive
-    those, so before the guards this configuration ended the run and the healthy
-    Mission never finished.
-    """
-
-    async def case() -> None:
-        provider = demo_single_task_provider()
-        provider.scripts["planner"] = [
-            _planner_by_goal(
-                hierarchical=_proposal_text(_outer()), legacy=proposal_step(DEMO_PROPOSAL)
-            )
-            for _ in range(8)
-        ]
-        config = OrchestratorConfig(
-            evidence_root=Path(tmp_path) / "evidence", max_concurrency=2, test_timeout_seconds=60
-        )
-        async with Orchestrator(config, provider) as orchestrator:
-            damaged, _env, _contract = _seed_hierarchical(orchestrator, key="pair-damaged", roots=2)
-            healthy = await orchestrator.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal=str(DEMO_PROPOSAL["root_goal"]),
-                    success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
-                    tenant_id="tenant-p23b-pair",
-                    idempotency_key="pair-healthy",
-                    allowed_tools=tuple(DEMO_PROPOSAL["allowed_tools"]),
-                    budget=Budget(max_tokens=200_000, max_attempts=12),
-                    workspace_seed=DEMO_SEED,
-                )
-            )
-            await orchestrator.run(max_cycles=400)
-            assert orchestrator.store.get_mission(healthy.id).status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-            assert orchestrator.store.get_mission(damaged.id).status is MissionStatus.FAILED
-            assert _events(orchestrator, damaged.id, PLAN_INTEGRITY_FAILED)
-            assert _events(orchestrator, healthy.id, PLAN_INTEGRITY_FAILED) == []
-
-    asyncio.run(case())
-
-
 # ================================================== the carried-integrity reading path
 def test_the_default_read_of_a_damaged_plan_raises(tmp_path):
     world = _committed(tmp_path)
@@ -1825,107 +1279,3 @@ def test_the_plan_integrity_error_reports_no_topological_order(tmp_path):
         world.dispatch.network(world.mission.id)
     assert caught.value.cycle == ()
     assert not hasattr(caught.value, "order")
-
-
-# ======================================================================================
-# Review round 4, P1-3: what the golden's normalisation may and may not forgive
-# ======================================================================================
-
-
-def test_redact_normalises_a_quoted_test_report_and_nothing_else() -> None:
-    """The boundary the fourth round asked for, stated as a unit.
-
-    The first group *must* be normalised: it is pytest's own report line, whose
-    wall-clock tail differs between two runs of the same Mission under CPU
-    contention.  The second group must survive byte for byte — a timeout ceiling, a
-    budget, a stated deadline are **decisions**, and the review demonstrated a real
-    assembly-dependent difference (``in 60s`` against ``in 10s``) travelling straight
-    through the old whole-payload rule.
-    """
-
-    root = Path("/tmp/evidence")
-    assert _redact(
-        {"summary": "1 passed in 0.31s"},
-        root,
-        event_type="VerificationLayerRecorded",
-    ) == {"summary": "1 passed in <duration>"}
-    # Same words, different event: not a quoted report, so not forgiven.
-    assert _redact(
-        {"summary": "the turn is abandoned in 60s"}, root, event_type="AttemptCreated"
-    ) == {"summary": "the turn is abandoned in 60s"}
-    # Same event, different field: a ceiling is a decision wherever it is written.
-    slow = _redact({"detail": "deadline in 60s"}, root, event_type="VerificationFailed")
-    quick = _redact({"detail": "deadline in 10s"}, root, event_type="VerificationFailed")
-    assert slow != quick, "a behavioural difference must not be normalised away"
-
-
-def test_redact_still_hides_the_environment_everywhere() -> None:
-    root = Path("/tmp/evidence")
-    payload = {
-        "path": "/tmp/evidence/run/a.md",
-        "execution_id": "e-1",
-        "claims": ["observation:" + "a" * 64],
-        "max_rss_bytes": 1024,
-    }
-    assert _redact(payload, root, event_type="VerificationPassed") == {
-        "path": "<root>/run/a.md",
-        "execution_id": "<env>",
-        "claims": ["observation:<id>"],
-        "max_rss_bytes": 1024,
-    }
-
-
-def test_the_report_duration_pairs_are_the_ones_the_golden_actually_produces(tmp_path) -> None:
-    """The allowlist was measured against a real run, not guessed at.
-
-    Every ``(event_type, field)`` it names must still be one the legacy golden really
-    writes a duration into; a pair that stopped occurring is a licence nobody needs
-    any more, and a pair that started occurring would make the golden flaky again.
-    """
-
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: PLC0415
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: PLC0415
-    from agent_orchestrator.testing.fixtures import (  # noqa: PLC0415
-        DEMO_PROPOSAL,
-        DEMO_SEED,
-        demo_single_task_provider,
-    )
-
-    found: set[tuple[str, str]] = set()
-
-    def walk(value: Any, event_type: str, field: str | None) -> None:
-        if isinstance(value, str):
-            if _REPORT_DURATION.search(value) and field is not None:
-                found.add((event_type, field))
-        elif isinstance(value, dict):
-            for key, item in value.items():
-                walk(item, event_type, str(key))
-        elif isinstance(value, list):
-            for item in value:
-                walk(item, event_type, field)
-
-    config = OrchestratorConfig(
-        evidence_root=Path(tmp_path) / "evidence", max_concurrency=1, test_timeout_seconds=60
-    )
-
-    async def case() -> None:
-        async with Orchestrator(config, demo_single_task_provider()) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal=str(DEMO_PROPOSAL["root_goal"]),
-                    success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
-                    tenant_id="tenant-p23c-duration",
-                    idempotency_key="duration-pairs",
-                    allowed_tools=tuple(DEMO_PROPOSAL["allowed_tools"]),
-                    budget=Budget(max_tokens=200_000, max_attempts=12),
-                    workspace_seed=DEMO_SEED,
-                )
-            )
-            await orchestrator.run()
-            for event in orchestrator.store.list_events(mission.id):
-                walk(dict(event.payload), event.type, None)
-
-    asyncio.run(case())
-    assert found, "the golden really does quote a test report"
-    assert found == _REPORT_DURATION_FIELDS, sorted(found ^ _REPORT_DURATION_FIELDS)

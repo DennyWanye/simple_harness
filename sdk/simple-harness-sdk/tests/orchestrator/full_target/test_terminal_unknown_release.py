@@ -47,7 +47,6 @@ from agent_orchestrator.contracts.state_machines import MissionStopReason  # noq
 from agent_orchestrator.evaluation.metered_provider import (  # noqa: E402
     UnknownProviderUsage,
 )
-from agent_orchestrator.orchestrator.commit_service import MissionSpec  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
@@ -336,50 +335,6 @@ def test_runtime_unavailable_exports_usage_fully_known_distinct_from_conservatio
     assert outcome["stop_reason"] == str(MissionStopReason.RUNTIME_UNAVAILABLE), outcome
     assert outcome["report"]["usage_fully_known"] is False
     assert outcome["report"]["budget_conserved"] is True
-
-
-def test_a_legacy_mission_does_not_gain_usage_fully_known_on_the_report(tmp_path) -> None:
-    """Legacy goldens: the new fields are hierarchical-only."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    provider = RoleScriptedProvider({"planner": [_wrapped_http, _wrapped_http]})
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(
-            blocker._config(evidence, max_planning_attempts=3),
-            provider,
-            poll_interval=0.02,
-        ) as loop:
-            mission = await loop.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal="legacy goal",
-                    success_criteria=("file:a.md",),
-                    tenant_id="tenant-p23r",
-                    idempotency_key="p23r-legacy",
-                )
-            )
-            returned = await blocker._run_until_done_or(loop, seconds=LIMIT * 8)
-            final = loop.store.get_mission(mission.id)
-            report = loop.commit.ledger.costs_report(mission.id)
-            return {
-                "returned": returned,
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "payload": dict(final.final_report or {}),
-                "report_keys": set(report),
-                "types": [item.type for item in blocker._events(loop, mission.id)],
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["returned"] is False
-    assert outcome["status"] is not MissionStatus.FAILED
-    assert "usage_fully_known" not in outcome["payload"]
-    assert "budget_conserved" not in outcome["payload"]
-    assert "usage_fully_known" not in outcome["report_keys"]
-    assert "budget_conserved" not in outcome["report_keys"]
-    assert "MissionFailed" not in outcome["types"]
 
 
 def test_cancel_mission_writes_usage_flags_on_a_hierarchical_report(tmp_path) -> None:

@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""Evaluation meter terminal admission uses the SDK's existing stop contract."""
+"""Evaluation meter terminal admission uses the SDK's existing stop contract.
+
+删旧平面模式 第三刀：拿平面任务跑主循环、看计量器拒绝后任务停下的那条删了（full_target 已有等价）。"""
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 
 import pytest
 
-from agent_orchestrator.contracts import Budget, MissionStatus, TaskStatus
 from agent_orchestrator.evaluation.experiment import (
     ARMS,
     ArmSpec,
@@ -23,10 +23,6 @@ from agent_orchestrator.evaluation.metered_provider import (
     MeteredProvider,
     RunWindowDenied,
 )
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator, OrchestratorConfig
-from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.testing.fixtures import MODEL
 from simple_harness import Message, MessageRole
 from simple_harness.contracts import RequestId
@@ -93,102 +89,6 @@ def request(name: str, *, output_cap: int = 1) -> ProviderRequest:
         (Message(MessageRole.USER, name),),
         max_output_tokens=output_cap,
     )
-
-
-def test_pre_handoff_budget_refusal_stops_actual_orchestrator_without_retry(tmp_path):
-    async def exercise() -> None:
-        physical = ScriptedPhysicalProvider(ProviderUsage(1, 1, 2))
-        meter = make_meter(physical)
-        await meter.invoke(request("prime"), cancel=CancelToken())
-        assert physical.calls == meter.counters.calls == 1
-
-        profile = RuntimeProfile(
-            "default",
-            meter,
-            MODEL,
-            default_max_output_tokens=1000,
-            max_output_tokens_ceiling=1000,
-        )
-        config = OrchestratorConfig(
-            evidence_root=tmp_path,
-            max_concurrency=1,
-            attempt_reserve_tokens=4000,
-        )
-        async with Orchestrator(config, profiles={"default": profile}) as orch:
-            mission = await orch.submit_mission(
-                MissionSpec(
-                    "Write the deliverable",
-                    ("file:answer.txt",),
-                    "test",
-                    "meter-terminal-admission",
-                    allowed_tools=("workspace_list", "workspace_write_file"),
-                    budget=Budget(max_tokens=400000, max_attempts=10),
-                    orchestration_semantics_version="legacy",
-                )
-            )
-            planning = orch.commit.begin_planning(mission.id)
-            tasks, _ = orch.commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json(
-                    {
-                        "tasks": [
-                            {
-                                "key": "A",
-                                "goal": "Write the deliverable",
-                                "rationale": "exercise evaluation meter admission",
-                                "dependencies": [],
-                                "success_criteria": ["file:answer.txt"],
-                                "verification_policy": ["format_check", "rule_check"],
-                                "allowed_tools": ["workspace_list", "workspace_write_file"],
-                                "budget": {"max_tokens": 90000, "max_attempts": 3},
-                            }
-                        ]
-                    }
-                ),
-                base_version=planning.version,
-                source={"planner": "fixture"},
-            )
-            task = tasks[0]
-            for _ in range(500):
-                await orch._cycle()
-                current = orch.store.get_task(task.id)
-                if current.status is TaskStatus.FAILED:
-                    break
-                await asyncio.sleep(0.002)
-            else:
-                raise AssertionError("meter refusal did not stop the task")
-
-            attempts = orch.store.list_attempts(task.id)
-            assert len(attempts) == 1
-            error = attempts[0].failure["error"]
-            assert error["error_code"] == "provider_admission_denied"
-            assert error["source_kind"] == "provider_admission"
-            assert error["retryable"] is False
-            assert error["detail"]["schema_version"] == 1
-            assert error["detail"]["reason_code"] == "budget_exhausted"
-            with orch.store.transaction():
-                assert not orch.commit.ledger.has_unknown_usage(attempts[0].id)
-            stopped = orch.store.get_mission(mission.id)
-            assert stopped.status is MissionStatus.FAILED
-            assert stopped.stop_reason == "budget_exhausted"
-
-            denial = meter.admission_denials[-1]
-            assert denial["reason"] == "ExperimentBudgetExhausted"
-            assert denial["physical_calls"] == 0
-            assert denial["input_tokens"] == denial["output_tokens"] == 0
-            assert denial["total_tokens"] == 0
-            assert physical.calls == meter.counters.calls == 1
-            assert meter.counters.total_tokens == 2
-            assert meter.unknown_usage_calls == 0
-
-            event_count = len(orch.store.list_events(mission.id))
-            for _ in range(5):
-                await orch._cycle()
-            assert len(orch.store.list_attempts(task.id)) == 1
-            assert len(orch.store.list_events(mission.id)) == event_count
-            assert physical.calls == meter.counters.calls == 1
-
-    asyncio.run(exercise())
 
 
 @pytest.mark.anyio

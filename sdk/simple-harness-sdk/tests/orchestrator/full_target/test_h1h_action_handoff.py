@@ -128,16 +128,6 @@ def test_new_protocol_missing_marker_and_link_refuses_without_handoff_side_effec
     _assert_not_handed_off(service, mission.id, action["action_key"])
 
 
-def test_legacy_unlinked_action_keeps_existing_handoff_behavior(tmp_path) -> None:
-    service, mission, tasks, _config, connectors, _ = ledger_service(tmp_path)
-    action = _propose_read(service, mission, tasks["A"], connectors)
-
-    handed, reason = _handoff(service, action, connectors)
-
-    assert reason is None
-    assert handed is not None and handed["state"] == "HANDED_OFF"
-
-
 @pytest.mark.parametrize("marker", (None, {"operation_id": "forged"}))
 def test_new_protocol_marker_deletion_or_tampering_cannot_bypass_link(tmp_path, marker) -> None:
     service, mission, tasks, _config, connectors, _ = ledger_service(tmp_path)

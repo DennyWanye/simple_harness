@@ -60,8 +60,6 @@ NO_FORMAL_EFFECT = frozenset(
         "IntentSettled",
         "ModelRouted",
         "RuntimeProfileUnavailable",
-        "TaskGraphCommitted",
-        "TaskGraphRejected",
         "TaskPaused",
         "TaskResumed",
         "PlanningRejected",
@@ -189,8 +187,6 @@ class Projection:
         elif kind == "MissionPlanning":
             self._need("mission", mission, "mission_created_missing", event)
             self._set("mission", mission, status="PLANNING")
-        elif kind == "MissionActivated":
-            self._set("mission", mission, status="ACTIVE")
         elif kind == "MissionSuccessJudged":  # commits together with the terminal event
             self._judged = True
         elif kind == "MissionCompleted":
@@ -208,9 +204,6 @@ class Projection:
             )
             status = "READY" if ready else "BLOCKED"
             self._set("task", task_id, status=status, accepted_result_id=None)
-        elif kind == "TaskUnblocked":
-            self._need("task", task_id, "task_committed_missing", event)
-            self._set("task", task_id, status="READY")
         elif kind == "TaskCompleted":
             self._need("task", task_id, "task_committed_missing", event)
             if p.get("result_id") and p.get("result_id") not in self.objects["result"]:

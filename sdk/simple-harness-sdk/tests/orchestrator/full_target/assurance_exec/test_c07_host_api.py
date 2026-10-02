@@ -89,9 +89,10 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         store, commit = orch.store, orch.commit
         control = MissionControlV1(orch, tenant_id=TENANT, principal=PRINCIPAL)
         assured, created = commit.create_mission(_spec("assured-1"))
+        # 删旧平面模式：没选保证通道的分层任务（完成要求 v1 通道）当"未绑定档案"的探针。
         legacy, _ = commit.create_mission(MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal="legacy", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-1"))
+            goal="v1 unselected", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-1",
+            orchestration_semantics_version="hierarchical", planning_protocol_version="planning-decision-v1"))
         assert created
 
         # --- ownership, lane and contract gates -------------------------------

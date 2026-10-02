@@ -5,10 +5,11 @@ import json
 import time
 
 import pytest
-from _p35_context_cold_child import (
-    CHILD_SECONDS,
-    STAGE_SECONDS,
-)
+
+# 看门狗的两个上限（原先从冷恢复子进程脚本导入；那个子进程靠平面任务图造现场，删旧平面
+# 模式 第三刀随平面删，这里只留看门狗本身）。
+STAGE_SECONDS = 10
+CHILD_SECONDS = 20
 
 
 def _tail(log):

@@ -45,7 +45,6 @@ from decision_loop import auto_grant, refine_step  # noqa: E402
 from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     SERVICE_INTENT_REHANDED_OFF,
-    MissionSpec,
     mission_account,
 )
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
@@ -406,43 +405,3 @@ def test_the_bound_is_the_smaller_of_stall_seconds_and_the_ceiling(tmp_path) -> 
     assert small._service_blocker_limit == 12.0
     large = Orchestrator(_config(evidence, stall_seconds=180.0), RoleScriptedProvider({}))
     assert large._service_blocker_limit == 30.0  # 产品默认的 180 秒不再是这里的界
-
-
-def test_a_legacy_mission_is_not_rehanded_off(tmp_path) -> None:
-    """The legacy Planner wait is the executor's, byte for byte as before.
-
-    Same transport loss, same bound elapsed several times over: no
-    ``ServiceIntentRehandedOff``, the intent still SUBMITTED, one Provider call.
-    """
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    provider = RoleScriptedProvider({"planner": [_transport_loss]})
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
-            mission = await loop.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal="legacy goal",
-                    success_criteria=("file:a.md",),
-                    tenant_id="tenant-p23f",
-                    idempotency_key="p23f-legacy",
-                )
-            )
-            returned = await _run_until_done_or(loop, seconds=LIMIT * 6)
-            intent = loop.store.get_intent_for_subject(f"{mission.id}:planner:1")
-            return {
-                "returned": returned,
-                "rehandoffs": _rehandoffs(loop, mission.id),
-                "intent_state": None if intent is None else intent.state,
-                "planner_calls": provider.by_role.get("planner", 0),
-                "types": [item.type for item in _events(loop, mission.id)],
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["rehandoffs"] == [], outcome
-    assert outcome["intent_state"] == "SUBMITTED", outcome
-    assert outcome["planner_calls"] == 1, outcome
-    assert outcome["returned"] is False, "the legacy loop keeps waiting, as it did"
-    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]

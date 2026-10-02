@@ -34,8 +34,6 @@ class DeploymentPolicy:
     """What this deployment allows at all (the fourth side of the intersection)."""
 
     allowed_tools: tuple[str, ...] = TOOL_NAMES
-    agentdojo_tools: tuple[str, ...] = field(default=(), kw_only=True)
-    are_tools: tuple[str, ...] = field(default=(), kw_only=True)
     domain_tools: tuple[str, ...] = field(default=(), kw_only=True)
     domain_read_only_tools: tuple[str, ...] = field(default=(), kw_only=True)
     # NEXT-TG-1.0 §11: Skill tools served by this deployment's native-plane pools; a pool
@@ -82,11 +80,7 @@ class DeploymentPolicy:
                        or not all(name.split(".")) or name.split(".")[0] not in self.enabled_connectors
                        for name in self.enabled_event_operations)):
             raise ValueError("event operations must explicitly name enabled connector.operation pairs")
-        if set(self.agentdojo_tools) & set(TOOL_NAMES):
-            raise ValueError("AgentDojo tools cannot replace SDK tools")
-        if set(self.are_tools) & (set(TOOL_NAMES) | set(self.agentdojo_tools)):
-            raise ValueError("ARE tools cannot replace SDK or AgentDojo tools")
-        if set(self.domain_tools) & (set(TOOL_NAMES) | set(self.agentdojo_tools) | set(self.are_tools)):
+        if set(self.domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tools")
         if not set(self.domain_read_only_tools) <= set(self.domain_tools):
             raise ValueError("read-only domain tools must be deployed")
@@ -94,7 +88,7 @@ class DeploymentPolicy:
             raise ValueError(f"skill tools must be distinct names from {list(SKILL_TOOL_NAMES)}")
         unknown = (
             set(self.allowed_tools) - set(TOOL_NAMES)
-            - set(self.agentdojo_tools) - set(self.are_tools) - set(self.domain_tools)
+            - set(self.domain_tools)
             - set(self.skill_tools)
         )
         if unknown:
@@ -121,8 +115,6 @@ class DeploymentPolicy:
             **({"operator_tool_allowlists": {name: list(names) for name, names in self.operator_tool_allowlists}}
                if self.operator_tool_allowlists else {}),
             **({"require_operator_tool_policy": True} if self.require_operator_tool_policy else {}),
-            **({"agentdojo_tools": list(self.agentdojo_tools)} if self.agentdojo_tools else {}),
-            **({"are_tools": list(self.are_tools)} if self.are_tools else {}),
             **({"domain_tools": list(self.domain_tools), "domain_read_only_tools": list(self.domain_read_only_tools)} if self.domain_tools else {}),
             **({"skill_tools": list(self.skill_tools)} if self.skill_tools else {}),
             "denied_path_prefixes": list(self.denied_path_prefixes),
@@ -275,10 +267,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
     "appworld_execute": (
         "capability: callback presence only; environment frozen in experiment manifest"
     ),
-    "are_invoke": "capability: callback presence; no environment serialization",
-    "are_tool_schemas": "capability: public schemas frozen only when deployed",
-    "agentdojo_invoke": "capability: callback presence; no environment serialization",
-    "agentdojo_tool_schemas": "capability: public schemas frozen only when deployed",
     "domain_tools": "capability: public schemas and read-only flags; no callback serialization",
     "planning_backend": "capability: backend identity; no runtime object serialization",
     **{
@@ -301,7 +289,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "planner_reserve_tokens",
             "critic_reserve_tokens",
             "attempt_reserve_tokens",
-            "min_task_tokens",  # P3.1 fix F-ORCH-1: shapes which graphs are accepted
             "turn_deadline_seconds",
             "max_model_calls_per_turn",
             "max_tool_calls_per_turn",
@@ -439,26 +426,13 @@ def policy_snapshot(
         }
     if getattr(config, "planning_backend", None) is not None:
         configuration["planning_backend"] = {"backend_id": config.planning_backend.backend_id}
-    if (getattr(config, "agentdojo_invoke", None) is not None
-            or getattr(config, "agentdojo_tool_schemas", None)):
-        configuration["agentdojo_invoke"] = getattr(config, "agentdojo_invoke", None) is not None
-        configuration["agentdojo_tool_schemas"] = getattr(config, "agentdojo_tool_schemas")
-    if (getattr(config, "are_invoke", None) is not None
-            or getattr(config, "are_tool_schemas", None)):
-        configuration["are_invoke"] = getattr(config, "are_invoke", None) is not None
-        configuration["are_tool_schemas"] = getattr(config, "are_tool_schemas")
     for name in configuration:
         sources[f"config.{name}"] = f"OrchestratorConfig.{name}"
     body: dict[str, Any] = {
         "version": SNAPSHOT_VERSION,
         "config": configuration,
         "excluded": {
-            n: r for n, r in sorted(SNAPSHOT_FIELDS.items())
-            if r != "include" and (
-                n not in {
-                    "agentdojo_invoke", "agentdojo_tool_schemas", "are_invoke", "are_tool_schemas"
-                } or n in configuration
-            )
+            n: r for n, r in sorted(SNAPSHOT_FIELDS.items()) if r != "include"
         },
         "versions": versions,
         "role_templates": roles,

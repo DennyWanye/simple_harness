@@ -74,7 +74,7 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     MethodProposal,
     RejectionCode,
 )
-from agent_orchestrator.planning.planner import SYSTEM_BOUND_FIELDS  # noqa: E402
+from agent_orchestrator.planning.htn.method_proposals import SYSTEM_BOUND_FIELDS  # noqa: E402
 
 MISSION = "mission-1"
 

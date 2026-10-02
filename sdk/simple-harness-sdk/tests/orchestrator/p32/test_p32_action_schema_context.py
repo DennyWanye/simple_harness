@@ -1,36 +1,26 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""F-P32-2 / P32-A03: actual Worker wire input, not a hand-written Mission schema.
+"""F-P32-2 / P32-A03: the declared action schema follows the deployed connector descriptor,
+not a hand-written Mission schema.
 
-Deterministic local Provider only; none of these cases executes a publish connector.
+Deterministic local checks only; none of these cases executes a publish connector.
+删旧平面模式 第三刀：两条拿平面任务图驱动"执行者实际收到的输入"和平面规划包的测试随平面删。
 """
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import re
-
 import pytest
-from fixtures_provider import RoleScriptedProvider, envelope_step, graph_proposal_step, package_of
-from graph_helpers7 import node, spec
 
-from agent_orchestrator import __version__ as ORCHESTRATOR_VERSION
-from agent_orchestrator.contracts import Artifact, ContractError
-from agent_orchestrator.contracts.models import sha256_hex
+from agent_orchestrator.contracts import Artifact
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator.action_commits import (
     CandidateRejected,
     bind_artifact_params,
     check_candidate,
 )
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.action_schema import worker_action_contract
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.connectors import TestConfigService
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
-from simple_harness.contracts import MessageRole, canonical_json
 
 ACTION = "action:file_publish.publish:weekly/report.md"
 ENABLED = DeploymentPolicy(enabled_connectors=("file_publish",))
@@ -39,192 +29,6 @@ ENABLED = DeploymentPolicy(enabled_connectors=("file_publish",))
 def _connector(tmp_path):
     # Descriptor only: no execute/lookup or files in the publish destination.
     return FilePublishConnector(tmp_path / "published", tmp_path / "ledger")
-
-
-@pytest.mark.parametrize("action_task,enabled,task_action_criterion,role", [
-    (True, True, True, "worker"), (True, True, False, "worker"),
-    (False, True, False, "worker"), (False, False, False, "worker"),
-], ids=["publish", "mission-charter-publish", "ordinary", "disabled-ordinary"])
-def test_actual_worker_provider_input_has_only_relevant_declared_schema(
-    tmp_path, action_task, enabled, task_action_criterion, role,
-):
-    seen = []
-
-    def capture(request):
-        seen.append((package_of(request), request))
-        return envelope_step(summary="只检查输入", artifacts=[], claims=[])(request)
-
-    async def case():
-        publisher = _connector(tmp_path)
-        connectors = {"file_publish": publisher}
-        provider = RoleScriptedProvider({role: [capture]})
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "evidence",
-            deployment_policy=ENABLED if enabled else DeploymentPolicy(),
-        )
-        async with Orchestrator(config, provider, connectors=connectors) as orch:
-            mission = await orch.submit_mission(spec(
-                key="action-wire", goal="编写报告",  # no manual schema in the goal
-                success_criteria=("file:report.md", ACTION) if enabled else ("file:report.md",),
-            ))
-            planning = orch.commit.begin_planning(mission.id)
-            task_criteria = (["file:report.md", ACTION] if task_action_criterion
-                             else ["file:report.md"])
-            outputs = ["report.md", "actions/publish.json"] if action_task else ["report.md"]
-            tasks, _ = orch.commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json({"tasks": [node(
-                    "A", goal="生成报告和候选" if action_task else "生成报告",
-                    success_criteria=task_criteria, outputs=outputs,
-                )]}),
-                base_version=planning.version,
-                source={"planner": "fixture"},
-            )
-            task = orch.store.get_task(tasks[0].id)
-            assert await orch._next_attempt(orch.store.get_mission(mission.id), task, [])
-            [attempt] = orch.store.list_attempts(tasks[0].id)
-            intent = orch.store.get_intent_for_subject(attempt.id)
-            assert await orch._dispatch(intent)
-            intent = orch.store.get_intent(intent.intent_id)
-            async def completed():
-                while True:
-                    result = await orch.bridge_for(intent).result(
-                        agent_id=intent.agent_id, turn_id=intent.expected_turn_id,
-                    )
-                    if result is not None:
-                        return result
-                    await asyncio.sleep(0.01)
-            await asyncio.wait_for(completed(), timeout=15)
-            assert len(seen) == 1 and provider.calls == 1
-            body, request = seen[0]
-            assert all("action_candidate_contract" not in str(m.content)
-                       for m in request.messages if m.role is MessageRole.SYSTEM)
-            assert intent.config["context_version"] == attempt.context_version
-            assert intent.config["prompt_version"] == attempt.prompt_version
-            if not action_task:
-                assert "action_candidate_contract" not in body
-                assert "action_candidate_contract" not in intent.config["message"]
-                return
-            contract = body["action_candidate_contract"]
-            assert contract["version"] == "action-candidate-context-v2"
-            assert contract["output_files"] == ["actions/publish.json"]
-            assert contract["required_fields"] == [
-                "connector", "operation", "target", "params", "reason",
-            ]
-            assert contract["additional_fields"] is False
-            assert contract["operations"] == [{
-                "connector": "file_publish", "operation": "publish",
-                "target": "weekly/report.md", "level": "L2", "required_approvals": 1,
-                "required_model_params": ["artifact_path"],
-                "system_bound_artifact_fields": [
-                    "artifact_id", "content_hash", "size", "storage_uri",
-                ],
-            }]
-            assert str(publisher.root) not in str(contract)
-            assert str(publisher.ledger_path) not in str(contract)
-            assert "ledger" not in str(contract)
-
-    asyncio.run(case())
-
-
-@pytest.mark.parametrize("has_action,enabled", [(True, True), (False, True), (True, False)])
-def test_planner_wire_receives_source_destination_and_approval_semantics(
-    tmp_path, has_action, enabled,
-):
-    async def case():
-        provider = RoleScriptedProvider({"planner": [graph_proposal_step([node("A")])]})
-        publisher = _connector(tmp_path)
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "evidence",
-            deployment_policy=ENABLED if enabled else DeploymentPolicy(),
-        )
-        async with Orchestrator(config, provider, connectors={"file_publish": publisher}) as orch:
-            mission_spec = spec(
-                key="planner-action-wire", goal="Publish report.md to weekly/report.md",
-                success_criteria=("file:report.md", ACTION) if has_action else ("file:report.md",),
-            )
-            if has_action and not enabled:
-                with pytest.raises(ContractError, match="connector_not_enabled"):
-                    await orch.submit_mission(mission_spec)
-                assert provider.calls == 0
-                return
-            mission = await orch.submit_mission(mission_spec)
-            orch.commit.begin_planning(mission.id)
-            intent = await orch._create_planner_intent(mission.id, ordinal=1)
-            assert await orch._dispatch(intent)
-            intent = orch.store.get_intent(intent.intent_id)
-
-            async def completed():
-                while await orch.bridge_for(intent).result(
-                    agent_id=intent.agent_id, turn_id=intent.expected_turn_id,
-                ) is None:
-                    await asyncio.sleep(0.01)
-
-            await asyncio.wait_for(completed(), timeout=5)
-            assert provider.calls == 1
-            request = provider.requests[0]
-            package = package_of(request)
-            if not (has_action and enabled):
-                assert "action_candidate_contract" not in package
-                # Generic lifetime-budget semantics now reach code Planners too.
-                # Preserve the original SDK9f70e00 baseline after removing only
-                # that deliberate new section; action projection remains absent.
-                assert package["budget_allocation_semantics"]["kind"] == (
-                    "permitted_ceiling_not_expected_spend"
-                )
-                # 另两处有意的变化也只按原样去掉/还原，其余字节仍须与基线一致：
-                # 1) 2026-09-26 通用任务 v5 可附资料，新增 source_versions/source_roots/
-                #    source_notice 三节；2) package_version 是 agent_orchestrator 版本号，
-                #    每次发布都变，基线记录时是 0.11.1。
-                current_message = dict(intent.config["message"])
-                current_message["content"] = current_message["content"].replace(
-                    f"## package_version\n{ORCHESTRATOR_VERSION}\n", "## package_version\n0.11.1\n"
-                )
-                for section in ("source_versions", "source_roots", "source_notice"):
-                    current_message["content"] = re.sub(
-                        rf"\n\n## {section}\n.*?(?=\n\n## |\Z)",
-                        "", current_message["content"], flags=re.DOTALL,
-                    )
-                historical_message = dict(current_message)
-                historical_message["content"] = re.sub(
-                    r"\n\n## budget_allocation_semantics\n.*?(?=\n\n## |\Z)",
-                    "", historical_message["content"], flags=re.DOTALL,
-                )
-                assert hashlib.sha256(canonical_json(historical_message).encode()).hexdigest() == (
-                    "3c9ec1513b5cf20e4f73bb09484cfd08a9c00e2018fd053f73bf72e820955c54"
-                )
-                message_hash = hashlib.sha256(
-                    canonical_json(current_message).encode()
-                ).hexdigest()
-                assert message_hash == (
-                    "c5017c6420bf3677a1fbd52d45a49378e32a22b21e618b7df3f61eceacc202f5"
-                )
-                # context_version 是整个包的摘要，同样只还原上面两处有意变化后再比基线。
-                historical_package = {
-                    key: value for key, value in package.items()
-                    if key not in {"source_versions", "source_roots", "source_notice"}
-                }
-                historical_package["package_version"] = "0.11.1"
-                assert "ctx-" + sha256_hex(historical_package)[:16] == "ctx-c4042b6c85b13dbd"
-                assert intent.config["context_version"] == "ctx-" + sha256_hex(package)[:16]
-                return
-            contract = package["action_candidate_contract"]
-            assert contract["version"] == "action-candidate-context-v2"
-            assert contract["candidate_output_pattern"] == "actions/*.json"
-            assert "output_files" not in contract  # Planner must choose actual Task outputs.
-            assert contract["operations"][0]["target"] == "weekly/report.md"
-            assert contract["operations"][0]["required_model_params"] == ["artifact_path"]
-            assert contract["operations"][0]["required_approvals"] == 1
-            assert "target is an external destination" in contract["planning_notice"]
-            assert "after Result acceptance" in contract["planning_notice"]
-            assert "not the candidate JSON" in contract["notice"]
-            assert str(publisher.root) not in str(contract)
-            assert str(publisher.ledger_path) not in str(contract)
-            assert all("action_candidate_contract" not in str(m.content)
-                       for m in request.messages if m.role is MessageRole.SYSTEM)
-            assert intent.config["message"]  # Actual frozen request, not a synthetic helper call.
-
-    asyncio.run(case())
 
 
 def test_schema_follower_passes_original_checker_without_publishing(tmp_path):

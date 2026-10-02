@@ -33,7 +33,6 @@ from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
 from .action_commits import parse_action_criterion
-from .scoped_content_review import uses_completion_protocol
 
 SYSTEM_REASON = "用户在确认页批准的操作：发布 {source} 到 {target}"
 
@@ -239,8 +238,7 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
 
     store = orch.store
     mission = store.get_mission(mission_id)
-    if (mission is None or str(mission.status) != "ACTIVE"
-            or not uses_completion_protocol(store, mission_id)):
+    if mission is None or str(mission.status) != "ACTIVE":
         return []
     htn = HtnStore(store)
     requirements = htn.latest_requirements_revision(mission_id)

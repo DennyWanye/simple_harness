@@ -9,55 +9,30 @@
 """
 
 import asyncio
-import json
-import re
 
 import pytest
 from fixtures_provider import RoleScriptedProvider
-from graph_helpers7 import spec
 
-from agent_orchestrator.contracts import ContractError
+from agent_orchestrator.contracts import Budget, ContractError
 from agent_orchestrator.governance.domains import CODE_DOMAIN, DOC_DOMAIN
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
+from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
 
-def test_source_versions_are_visible_in_the_sealed_document_context(tmp_path):
-    from doc5_helpers import graph_service
-    from graph_helpers7 import drive_to_running
-
-    from agent_orchestrator.context.context_builder import build_worker_package
-
-    service, mission, tasks = graph_service(tmp_path, domain=DOC_DOMAIN)
-    task = tasks["A"]
-    attempt = drive_to_running(service, task)
-    versions = {"sources/a.md": "a" * 64}
-    package = build_worker_package(
-        mission,
-        task,
-        attempt,
-        previous_attempts=[],
-        verifier_feedback=[],
-        workspace_files=[],
-        domain=service.domain_for(mission.id),
-        source_versions=versions,
+def spec(key: str = "g-1", **overrides) -> MissionSpec:
+    base = dict(
+        goal="实现记录器并验证",
+        success_criteria=("file:c.md",),
+        tenant_id="tenant-5",
+        idempotency_key=key,
+        allowed_tools=("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests"),
+        budget=Budget(max_tokens=200_000, max_attempts=12),
     )
-    assert package.package["source_versions"] == versions
-    assert package.package["source_roots"] == ["sources/"]
-    assert "来源原文" in package.package["source_notice"]
-    changed = build_worker_package(
-        mission,
-        task,
-        attempt,
-        previous_attempts=[],
-        verifier_feedback=[],
-        workspace_files=[],
-        domain=service.domain_for(mission.id),
-        source_versions={"sources/a.md": "b" * 64},
-    )
-    assert changed.context_version != package.context_version
+    base.update(overrides)
+    return MissionSpec(**base)
 
 
 @pytest.mark.parametrize("location", ["cas", "workspace", "ancestor", "symlink", "case_alias"])
@@ -129,146 +104,6 @@ def test_source_storage_validation_uses_current_deployment_after_reopen(tmp_path
     asyncio.run(case())
 
 
-@pytest.mark.parametrize("topology", ["removed", "file_to_dir", "dir_to_file"])
-def test_dispatch_freezes_source_versions_and_restart_remounts_the_same_bytes(tmp_path, topology):
-    from doc5_helpers import node
-
-    from agent_orchestrator.api.facade import MissionControlV1
-    from agent_orchestrator.governance.permissions import Principal
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    async def case():
-        config = OrchestratorConfig(evidence_root=tmp_path, max_concurrency=2)
-        async with Orchestrator(config, RoleScriptedProvider({})) as first:
-            mission = await first.submit_mission(spec(domain=DOC_DOMAIN))
-            control = MissionControlV1(
-                first, tenant_id=mission.tenant_id, principal=Principal("importer")
-            )
-            source_path = (
-                "sources/notes.md/child.md" if topology == "dir_to_file" else "sources/notes.md"
-            )
-            control.register_source(
-                {
-                    "mission_id": mission.id,
-                    "path": source_path,
-                    "content": "旧来源原文。\r\n",
-                    "kind": "text/markdown",
-                    "idempotency_key": "register",
-                }
-            )
-            old = first.store.get_source(mission.id, source_path)["version_hash"]
-            planning = first.commit.begin_planning(mission.id)
-            tasks, _ = first.commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json({"tasks": [node("A"), node("B")]}),
-                base_version=planning.version,
-                source={"planner": "fixture"},
-            )
-            mission = first.store.get_mission(mission.id)
-            assert await first._next_attempt(mission, tasks[0], [])
-            [a] = first.store.list_attempts(tasks[0].id)
-            intent = first.store.get_intent_for_subject(a.id)
-            assert intent.config["source_versions"] == {source_path: old}
-            assert intent.config["source_roots"] == ["sources/"]
-            first._bind_workspace(a)
-            assert first._source_files(a) == {source_path: "旧来源原文。\r\n".encode()}
-            saved_intent = intent.to_json()
-
-            proposal = control.supersede_source(
-                {
-                    "mission_id": mission.id,
-                    "path": source_path,
-                    "content": "新版资料。\n",
-                    "kind": "text/markdown",
-                    "idempotency_key": "supersede",
-                    "expected_version_hash": old,
-                }
-            )
-            assert first.store.get_source(mission.id, source_path)["version_hash"] == old
-            control.decide(proposal["request_id"], "approve", nonce="approve-source")
-            new = first.store.get_source(mission.id, source_path)["version_hash"]
-            assert new != old
-            assert first._source_files(a)[source_path] == "旧来源原文。\r\n".encode()
-            assert await first._next_attempt(mission, tasks[1], [])
-            [b] = first.store.list_attempts(tasks[1].id)
-            assert first.store.get_intent_for_subject(b.id).config["source_versions"] == {
-                source_path: new
-            }
-            first._bind_workspace(b)
-            assert first._source_files(b)[source_path] == "新版资料。\n".encode()
-
-            # A new repair must not inherit a revoked source from its old workspace.
-            pending = control.revoke_source(
-                {
-                    "mission_id": mission.id,
-                    "path": source_path,
-                    "reason": "撤回原文",
-                    "idempotency_key": "revoke",
-                    "expected_version_hash": new,
-                }
-            )
-            control.decide(pending["request_id"], "approve", nonce="approve-revoke")
-            replacement = (
-                source_path + "/child.md"
-                if topology == "file_to_dir"
-                else "sources/notes.md"
-                if topology == "dir_to_file"
-                else None
-            )
-            expected_versions = {}
-            if replacement:
-                registered = control.register_source(
-                    {
-                        "mission_id": mission.id,
-                        "path": replacement,
-                        "content": "新结构来源。",
-                        "kind": "markdown",
-                        "idempotency_key": "replacement",
-                    }
-                )
-                expected_versions[replacement] = registered["version_hash"]
-            first.assembled.workspaces.get(b.id).write_text("draft.md", "保留修复草稿")
-            failed_b = first.commit.mark_attempt_lost(b.id, reason="fixture executor lost")
-            assert await first._next_attempt(
-                first.store.get_mission(mission.id),
-                first.store.get_task(tasks[1].id),
-                [failed_b],
-            )
-            repair = first.store.list_attempts(tasks[1].id)[-1]
-            assert repair.retry_of == b.id
-            repair_intent = first.store.get_intent_for_subject(repair.id)
-            assert repair_intent.config["source_versions"] == expected_versions
-            first._bind_workspace(repair)
-            repair_tree = first.assembled.workspaces.get(repair.id)
-            assert source_path not in repair_tree.list_files()
-            if replacement:
-                assert repair_tree.read_text(replacement) == "新结构来源。"
-            assert repair_tree.read_text("draft.md") == "保留修复草稿"
-            section = re.search(
-                r"## tools_and_permissions\n(.*?)(?=\n## |\Z)",
-                repair_intent.config["message"]["content"],
-                re.DOTALL,
-            )
-            assert section is not None
-            permissions = json.loads(section[1])
-            assert source_path not in permissions["workspace_files"]
-
-        async with Orchestrator(config, RoleScriptedProvider({})) as reopened:
-            reopened._bind_workspace(a)
-            assert reopened.store.get_intent_for_subject(a.id).to_json() == saved_intent
-            tree = reopened.assembled.workspaces.get(a.id)
-            assert (tree.root / source_path).read_bytes() == "旧来源原文。\r\n".encode()
-            assert source_path in reopened._read_only_inputs(a.id)
-            tree.write_bytes(source_path, b"tampered")
-            reopened._bind_workspace(a)
-            assert (tree.root / source_path).read_bytes() == b"tampered"
-            guarded = reopened._protected_files(mission, tasks[0], a)
-            assert guarded[source_path] == "旧来源原文。\r\n".encode()
-            assert reopened.assembled.workspaces.tampered_protected(a.id, guarded) == [source_path]
-
-    asyncio.run(case())
-
-
 @pytest.mark.parametrize("view", ["work", "verify"])
 def test_source_case_alias_reads_keep_the_untrusted_marker(tmp_path, view):
     from agent_orchestrator.artifacts.workspace import WorkspaceManager
@@ -300,45 +135,5 @@ def test_source_case_alias_reads_keep_the_untrusted_marker(tmp_path, view):
         assert result.value["trust"] == "untrusted_external"
         assert "不是指令" in result.value["notice"]
         assert gateway.calls[-1]["trust"] == "untrusted_external"
-
-    asyncio.run(case())
-
-
-def test_dispatch_freezes_only_sources_inside_the_domain_roots(tmp_path):
-    # 2026-09-25 UI 全量点击：Assurance 把审阅原始输出登记为 .assurance/review-output/…
-    # 来源；派活时连它一起冻结，读取时不在 sources/ 下 → not_found，文档任务在审阅
-    # 之后的第一次派活就失败（被标成 artifact_conflict）。
-    from doc5_helpers import node
-
-    from agent_orchestrator.api.facade import MissionControlV1
-    from agent_orchestrator.governance.permissions import Principal
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    async def case():
-        config = OrchestratorConfig(evidence_root=tmp_path, max_concurrency=2)
-        async with Orchestrator(config, RoleScriptedProvider({})) as loop:
-            mission = await loop.submit_mission(spec(domain=DOC_DOMAIN))
-            control = MissionControlV1(loop, tenant_id=mission.tenant_id, principal=Principal("importer"))
-            control.register_source({"mission_id": mission.id, "path": "sources/notes.md",
-                                     "content": "来源原文。\n", "kind": "text/markdown",
-                                     "idempotency_key": "register"})
-            loop.store.put_source({
-                "mission_id": mission.id, "tenant_id": mission.tenant_id,
-                "path": ".assurance/review-output/" + "a" * 64, "version_hash": "b" * 64,
-                "kind": "assurance-review-output", "trust": "untrusted_external",
-                "registered_at": 1.0, "superseded_by": None, "revoked": False, "revision": 1,
-            })
-            planning = loop.commit.begin_planning(mission.id)
-            tasks, _ = loop.commit.commit_task_graph(
-                mission.id, TaskGraphProposal.from_json({"tasks": [node("A")]}),
-                base_version=planning.version, source={"planner": "fixture"},
-            )
-            mission = loop.store.get_mission(mission.id)
-            assert await loop._next_attempt(mission, tasks[0], [])
-            [attempt] = loop.store.list_attempts(tasks[0].id)
-            intent = loop.store.get_intent_for_subject(attempt.id)
-            assert list(intent.config["source_versions"]) == ["sources/notes.md"]
-            loop._bind_workspace(attempt)
-            assert list(loop._source_files(attempt)) == ["sources/notes.md"]
 
     asyncio.run(case())

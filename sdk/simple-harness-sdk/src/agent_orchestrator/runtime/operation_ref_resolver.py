@@ -56,14 +56,10 @@ class OperationReferenceResolver:
     def resolve_for_handoff(
         self, action: dict[str, Any], link: dict[str, Any]
     ) -> ResolvedOperationReferences | None:
-        """Return ``None`` only for a pre-T0 link; reject every broken T0 chain."""
+        """Resolve a T0 link; reject every broken chain."""
         receipt = self._store.get_receipt(str(link.get("provenance_receipt_id", "")))
         if receipt is None or receipt.get("kind") != "operation_intent_submitted":
-            from ..orchestrator.scoped_content_review import uses_completion_protocol
-
-            if uses_completion_protocol(self._store, str(action["mission_id"])):
-                raise OperationReferenceUnavailable("operation_intent_source_missing")
-            return None
+            raise OperationReferenceUnavailable("operation_intent_source_missing")
         try:
             return self._resolve_t0(action, link, dict(receipt))
         except (

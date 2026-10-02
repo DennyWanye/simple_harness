@@ -31,7 +31,7 @@ from ..storage.obligation_store import ObligationStore
 from .completion_support import read_completion_support
 
 #: The Planner's own rejected replies, as the store records them.
-_PLANNING_REJECTIONS = frozenset({"TaskGraphRejected", "PlanningRejected"})
+_PLANNING_REJECTIONS = frozenset({"PlanningRejected"})
 
 
 def read_planner_package(

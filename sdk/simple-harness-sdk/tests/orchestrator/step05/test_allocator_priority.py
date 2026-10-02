@@ -9,7 +9,6 @@ promoted after a whole aging window (S5-09)."""
 from __future__ import annotations
 
 import pytest
-from graph_helpers import complete, graph_service, node
 
 from agent_orchestrator.contracts import (
     Attempt,
@@ -21,7 +20,6 @@ from agent_orchestrator.contracts import (
 from agent_orchestrator.scheduling.allocator import (
     ALLOCATOR_VERSION,
     WEIGHTS,
-    allocate,
     score_tasks,
 )
 
@@ -127,48 +125,3 @@ def test_weights_are_the_original_formula_and_scores_are_deterministic():
         )["m:task-1"]
         == one
     )
-
-
-def test_eligibility_precedes_scoring():
-    tasks = [
-        _task(
-            "m:task-1", priority=9.0, status=TaskStatus.BLOCKED, deps=("m:task-9",)
-        ),  # not eligible: dependency missing
-        _task("m:task-2", priority=0.5, ready_at=0.0),
-        _task("m:task-3", priority=5.0, ready_at=0.0),
-        _task("m:task-9", priority=1.0, status=TaskStatus.COMPLETED),
-    ]
-    tasks[1] = Task.from_json({**tasks[1].to_json(), "paused": True})
-    plan = allocate(tasks, [], concurrency_limit=1, now=10.0)
-    assert [t.id for t, _ in plan.grants] == ["m:task-3"]
-    plan = allocate(tasks, [], concurrency_limit=3, now=10.0)
-    assert [t.id for t, _ in plan.grants] == [
-        "m:task-3"
-    ]  # paused task-2 and BLOCKED task-1 are not eligible
-    assert plan.to_json()["grants"][0]["allocator_version"] == ALLOCATOR_VERSION
-
-
-# ------------------------------------------------------------------ S5-09
-def test_s5_09_a_low_priority_task_is_promoted_after_waiting_a_whole_window():
-    low = _task("m:task-1", priority=0.2, ready_at=0.0)
-    fresh_high = [_task(f"m:task-{n}", priority=5.0, ready_at=290.0) for n in (2, 3, 4)]
-    before = allocate(
-        [low, *fresh_high], [], concurrency_limit=1, now=250.0, aging_window_seconds=300.0
-    )
-    assert [t.id for t, _ in before.grants] == [
-        "m:task-2"
-    ]  # high priority wins while the wait is short
-    after = allocate(
-        [low, *fresh_high], [], concurrency_limit=1, now=301.0, aging_window_seconds=300.0
-    )
-    assert [t.id for t, _ in after.grants] == ["m:task-1"]  # a whole window waited → promoted
-    assert (
-        after.scores["m:task-1"].tier == 1 and after.scores["m:task-1"].parts["waiting_age"] == 1.0
-    )
-
-
-def test_graph_helpers_keep_ready_at(tmp_path):
-    service, mission, t = graph_service(tmp_path, nodes=[node("A"), node("B", ["A"])])
-    assert t["A"].ready_at is not None and t["B"].ready_at is None
-    complete(service, t["A"])
-    assert service.store.get_task(t["B"].id).ready_at is not None

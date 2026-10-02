@@ -16,12 +16,13 @@ import json
 import httpx
 import pytest
 
+import sys
+from pathlib import Path
+
 from agent_orchestrator.contracts import Budget, sha256_hex
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec, Reservation
+from agent_orchestrator.orchestrator.commit_service import Reservation
 from agent_orchestrator.runtime.agent_worker import AgentBridge, user_message_json
 from agent_orchestrator.runtime.provider_budget_guard import ProviderBudgetGuard
-from agent_orchestrator.storage.store import Store
 from simple_harness.agents import AgentConfig, AgentRuntimePorts, build_agent_runtime
 from simple_harness.agents.ports import AllowAllAuthorization
 from simple_harness.contracts import RunId
@@ -31,6 +32,29 @@ from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 from simple_harness.tools import ToolResult
 
 PROFILE = "default"
+
+
+def _leaf_task(tmp_path, *, key: str, goal: str, mission_cost_micros: int):
+    """一个已提交计划的分层任务里的一个步骤（删旧平面模式 第三刀：原来是平面任务 A）：
+    步骤额度 2 万 token，成本上限继承任务的。返回 ``(store, commit, mission, task)``。"""
+
+    full_target = Path(__file__).resolve().parents[1] / "orchestrator" / "full_target"
+    if str(full_target) not in sys.path:
+        sys.path.append(str(full_target))
+    from leaf_world import leaf_world
+
+    world = leaf_world(
+        tmp_path,
+        key=key,
+        goal=goal,
+        success_criteria=("file:report.md",),
+        tenant_id=key,
+        tools=("probe",),
+        budget=Budget(max_tokens=200_000, max_cost_micros=mission_cost_micros, max_attempts=6),
+        task_max_tokens=20_000,
+        global_budget=Budget(max_tokens=400_000, max_cost_micros=40_000, max_attempts=12),
+    )
+    return world.store, world.service, world.mission, world.tasks["a"]
 
 
 class InputBound:
@@ -108,54 +132,13 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(
                 payload["usage"] = usage
             return httpx.Response(200, json=payload)
 
-        store = Store.open(tmp_path / "orchestrator.db")
+        store, commit, mission, task = _leaf_task(
+            tmp_path,
+            key="protocol-test",
+            goal="Read a tool response without concealing protocol errors",
+            mission_cost_micros=20_000,
+        )
         try:
-            commit = CommitService(
-                store,
-                global_budget=Budget(
-                    max_tokens=400_000,
-                    max_cost_micros=40_000,
-                    max_attempts=12,
-                ),
-            )
-            mission, _ = commit.create_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal="Read a tool response without concealing protocol errors",
-                    success_criteria=("file:report.md",),
-                    tenant_id="protocol-test",
-                    idempotency_key="protocol-test",
-                    allowed_tools=("probe",),
-                    budget=Budget(max_tokens=200_000, max_cost_micros=20_000, max_attempts=6),
-                )
-            )
-            planning = commit.begin_planning(mission.id)
-            [task], _ = commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json(
-                    {
-                        "tasks": [
-                            {
-                                "key": "A",
-                                "goal": mission.goal,
-                                "rationale": "Run the real SDK protocol and accounting path",
-                                "dependencies": [],
-                                "success_criteria": ["file:report.md"],
-                                "verification_policy": ["format_check", "rule_check"],
-                                "allowed_tools": ["probe"],
-                                "outputs": ["report.md"],
-                                "budget": {
-                                    "max_tokens": 20_000,
-                                    "max_cost_micros": 6000,
-                                    "max_attempts": 1,
-                                },
-                            }
-                        ]
-                    }
-                ),
-                base_version=planning.version,
-                source={"planner": "protocol integration fixture"},
-            )
             price = FrozenPriceEstimator(
                 "original-protocol-price", "consumer", 1_000_000, 2_000_000
             )
@@ -339,50 +322,15 @@ async def _exercise_priced_length_recovery(tmp_path, *, task_cost_micros: int) -
             },
         )
 
-    store = Store.open(tmp_path / "orchestrator.db")
+    # 分层步骤的成本上限继承自任务（删旧平面模式 第三刀：平面任务能单独给一个比任务
+    # 小的成本上限，分层步骤没有这个口子），所以任务的成本上限就设成要测的那个数。
+    store, commit, mission, task = _leaf_task(
+        tmp_path,
+        key="length-protocol-test",
+        goal="Recover a truncated tool response within the original task budget",
+        mission_cost_micros=task_cost_micros,
+    )
     try:
-        commit = CommitService(
-            store,
-            global_budget=Budget(max_tokens=400_000, max_cost_micros=40_000, max_attempts=12),
-        )
-        mission, _ = commit.create_mission(
-            MissionSpec(
-                orchestration_semantics_version="legacy",
-                goal="Recover a truncated tool response within the original task budget",
-                success_criteria=("file:report.md",),
-                tenant_id="length-protocol-test",
-                idempotency_key="length-protocol-test",
-                allowed_tools=("probe",),
-                budget=Budget(max_tokens=200_000, max_cost_micros=20_000, max_attempts=6),
-            )
-        )
-        planning = commit.begin_planning(mission.id)
-        [task], _ = commit.commit_task_graph(
-            mission.id,
-            TaskGraphProposal.from_json(
-                {
-                    "tasks": [
-                        {
-                            "key": "A",
-                            "goal": mission.goal,
-                            "rationale": "Priced admission after truncated tool JSON",
-                            "dependencies": [],
-                            "success_criteria": ["file:report.md"],
-                            "verification_policy": ["format_check", "rule_check"],
-                            "allowed_tools": ["probe"],
-                            "outputs": ["report.md"],
-                            "budget": {
-                                "max_tokens": 20_000,
-                                "max_cost_micros": task_cost_micros,
-                                "max_attempts": 1,
-                            },
-                        }
-                    ]
-                }
-            ),
-            base_version=planning.version,
-            source={"planner": "priced length integration fixture"},
-        )
         price = FrozenPriceEstimator("original-protocol-price", "consumer", 1_000_000, 2_000_000)
         guard = ProviderBudgetGuard(
             commit,

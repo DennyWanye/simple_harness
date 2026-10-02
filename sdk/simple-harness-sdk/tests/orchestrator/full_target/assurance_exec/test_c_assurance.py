@@ -302,7 +302,7 @@ def test_event_cursor_atomicity(tmp_path):
     assert install["cursor_rebuild"]["missions"] == 1
     assert len(install["sent"]) == 1 and report["notify"]["receipt"] is True
     assert set(install["cursor_seq"]) == {"REVIEW", "VALIDITY", "CLOSEOUT", "NOTIFY"}
-    assert install["lanes"] == {"assured": "ASSURANCE_1_1", "legacy": "LEGACY", "v1_unselected": "COMPLETION_V1"}
+    assert install["lanes"] == {"assured": "ASSURANCE_1_1", "v1_unselected": "COMPLETION_V1"}
 
 
 # --------------------------------------------------------------------------- C05
@@ -320,7 +320,6 @@ def test_closeout_and_notification():
     install = report["production_install"]
     assert install["finalizer"] == "assurance_final_writer.finalize_assured_mission"
     assert len(install["sent"]) == 1 and install["cancel_notice"][0]["final_event_type"] == "MissionCancelled"
-    assert install["legacy_notice"] == []
 
 
 # --------------------------------------------------------------------------- C06

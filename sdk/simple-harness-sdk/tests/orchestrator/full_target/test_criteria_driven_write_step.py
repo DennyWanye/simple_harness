@@ -48,7 +48,6 @@ from test_root_review_repair_library import (  # noqa: E402
 
 from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    ROOT_REVIEW_REPAIRS_EXHAUSTED,
     Orchestrator,
 )
 from agent_orchestrator.planning.htn.seed_methods.loader import seed_content_hash  # noqa: E402
@@ -461,45 +460,6 @@ def _rejecting_reviewer(request: Any) -> str:
             ensure_ascii=False,
         )
         + "</critic_verdict>"
-    )
-
-
-def test_a_legacy_mission_keeps_no_dispatchable_work_and_no_tests_port(tmp_path) -> None:
-    """(d) DAG-mode Missions do not grow the named stop."""
-
-    from agent_orchestrator.orchestrator.commit_service import MissionSpec
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    provider = RoleScriptedProvider({"planner": ["not a plan", "still not a plan"]})
-
-    async def case() -> dict[str, Any]:
-        config = OrchestratorConfig(
-            evidence_root=evidence, max_concurrency=1, test_timeout_seconds=15,
-            max_planning_attempts=2,
-        )
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            mission = await loop.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal="legacy goal",
-                    success_criteria=("file:a.md",),
-                    tenant_id="t",
-                    idempotency_key="p23t-legacy",
-                )
-            )
-            await asyncio.wait_for(loop.run(max_cycles=80), timeout=20)
-            final = loop.store.get_mission(mission.id)
-            return {
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "report": dict(final.final_report or {}),
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["stop_reason"] != ROOT_REVIEW_REPAIRS_EXHAUSTED
-    assert "root_review_repairs_exhausted" not in json.dumps(
-        outcome["report"], ensure_ascii=False
     )
 
 

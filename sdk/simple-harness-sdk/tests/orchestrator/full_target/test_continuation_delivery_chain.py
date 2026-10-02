@@ -159,62 +159,6 @@ def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch)
     assert OPERATION_CANDIDATE_FILE.startswith("actions/") and OPERATION_CANDIDATE_FILE.endswith(".json")
 
 
-# 旧式任务（不在完成协议下）：申请单仍由步骤自己写，规则检查照旧（2026-09-29 起完成协议下
-# 申请单由系统按已批准效果生成，步骤写的一律忽略）。
-_LEGACY_STORE = SimpleNamespace(connection=SimpleNamespace(
-    execute=lambda *args: SimpleNamespace(fetchone=lambda: None)))
-
-
-def test_the_rule_check_accepts_the_candidate_the_contract_asked_for(tmp_path):
-    """opt.35 真机：候选按说明写到 actions/action_candidate.json，规则检查却因任务输出列表
-    为空判"未声明"，同一步重试。规则检查与候选说明必须用同一份声明。
-
-    **Mutation**: check ``task.outputs`` again → red."""
-    from agent_orchestrator.orchestrator import event_handler as eh
-
-    (tmp_path / "actions").mkdir()
-    (tmp_path / OPERATION_CANDIDATE_FILE).write_text("{}", encoding="utf-8")
-    fake = SimpleNamespace(
-        commit=SimpleNamespace(domain_for=lambda mission_id: SimpleNamespace(id="code-v1")),
-        store=_LEGACY_STORE,
-        _action_candidate_outputs=lambda mission, task: (OPERATION_CANDIDATE_FILE,),
-        _connectors={}, _config=SimpleNamespace(deployment_policy=None),
-    )
-    problems = eh.Orchestrator._action_problems(
-        fake, SimpleNamespace(id=M, success_criteria=()), SimpleNamespace(outputs=(), success_criteria=()),
-        [SimpleNamespace(path=OPERATION_CANDIDATE_FILE)], SimpleNamespace(resolve=lambda p: tmp_path / p))
-    assert problems is not None
-    assert not [p for p in problems if "not a declared output" in p]
-
-
-def test_the_accept_transaction_uses_the_same_declaration(monkeypatch):
-    """opt.36 真机：规则检查放行后，验收事务里第三处读 ``task.outputs`` 的检查又以
-    ``undeclared_action_output`` 拒绝同一个候选。
-
-    **Mutation**: check ``task.outputs`` in ``_action_candidates`` again → red."""
-    from agent_orchestrator.orchestrator import action_commits as ac
-    import agent_orchestrator.runtime.action_schema as schema
-
-    import agent_orchestrator.artifacts.store as artifact_store
-
-    monkeypatch.setattr(schema, "declared_action_outputs",
-                        lambda store, mission_id, task: (OPERATION_CANDIDATE_FILE,))
-    reached = []
-
-    def read(artifact):
-        reached.append(artifact.path)
-        raise artifact_store.ArtifactStoreError("stub", artifact.path)
-
-    monkeypatch.setattr(artifact_store, "read_verified", read)
-    artifact = SimpleNamespace(id="a1", path=OPERATION_CANDIDATE_FILE, content_hash="0" * 64)
-    fake = SimpleNamespace(_store=SimpleNamespace(get_artifact=lambda artifact_id: artifact))
-    found, rejected = ac.ActionCommitsMixin._action_candidates(
-        fake, SimpleNamespace(artifacts=("a1",)), SimpleNamespace(outputs=()), SimpleNamespace(id=M),
-        connectors={}, deployment=None)
-    assert reached == [OPERATION_CANDIDATE_FILE]  # got past the declaration check
-    assert "undeclared_action_output" not in str(rejected)
-
-
 def test_the_published_artifact_is_verified_against_the_accepted_inputs(monkeypatch):
     """2A.1j：审阅员两次以"参数所指产物≠候选文件"误拒发布。确定性检查现在自己核对：参数要
     发布的产物必须是冻结已验收输入里的同一产物（id 与哈希一致），并把核对结果交给审阅员。
@@ -270,41 +214,6 @@ def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live()
     assert refusal(fake, "mission-live-judge-owner-1") is None
     assert refusal(fake, "mission-done-judge-owner-1") == "attempt_unavailable"
     assert refusal(fake, "task-x:attempt-9") == "attempt_unavailable"
-
-
-def test_an_undeclared_file_under_actions_is_policed_only_when_it_claims_an_action(tmp_path):
-    """2026-09-27 真机（ABS.md 那局）：发布步骤把交付说明写成 actions/delivery.json，
-    被当成"未声明的候选"连拒三次、任务失败。只有自称是操作（带 connector/operation）的
-    文件才按候选把关；读不懂的照旧拒绝。
-
-    **Mutation**: drop the ``claims_an_action`` skip → the delivery note is refused again."""
-    import json
-
-    from agent_orchestrator.orchestrator import event_handler as eh
-    from agent_orchestrator.orchestrator.action_commits import claims_an_action
-
-    (tmp_path / "actions").mkdir()
-    (tmp_path / "actions" / "delivery.json").write_text(
-        json.dumps({"delivered": "ABS.md"}), encoding="utf-8")
-    (tmp_path / "actions" / "sneaky.json").write_text(
-        json.dumps({"connector": "file_publish", "operation": "publish"}), encoding="utf-8")
-    fake = SimpleNamespace(
-        commit=SimpleNamespace(domain_for=lambda mission_id: SimpleNamespace(id="code-v1")),
-        store=_LEGACY_STORE,
-        _action_candidate_outputs=lambda mission, task: (OPERATION_CANDIDATE_FILE,),
-        _connectors={}, _config=SimpleNamespace(deployment_policy=None),
-    )
-
-    def problems_for(path):
-        return eh.Orchestrator._action_problems(
-            fake, SimpleNamespace(id=M, success_criteria=()),
-            SimpleNamespace(outputs=(), success_criteria=()),
-            [SimpleNamespace(path=path)], SimpleNamespace(resolve=lambda p: tmp_path / p))
-
-    assert problems_for("actions/delivery.json") == []
-    assert [p for p in problems_for("actions/sneaky.json") if "not a declared output" in p]
-    assert claims_an_action(b"{not json") and claims_an_action(b"[1]")
-    assert not claims_an_action(b'{"note": "x"}')
 
 
 def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuation):

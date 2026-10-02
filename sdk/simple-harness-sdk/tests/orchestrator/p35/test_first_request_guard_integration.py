@@ -5,13 +5,6 @@
 import asyncio
 
 import pytest
-from fixtures_provider import (
-    RoleScriptedProvider,
-    critic_step,
-    envelope_step,
-    graph_proposal_step,
-)
-from graph_helpers7 import node
 from test_provider_budget_guard import grants, setup_runtime
 
 from agent_orchestrator.orchestrator.commit_service import Reservation, task_account
@@ -20,9 +13,7 @@ from agent_orchestrator.runtime.first_request_budget import (
     ProviderInputCap,
     frozen_provider_input_cap,
 )
-from agent_orchestrator.runtime.model_router import RuntimeProfile
 from simple_harness.agents import AgentConfig
-from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.contracts import RunId
 
 
@@ -127,47 +118,4 @@ def test_first_cap_rejects_actual_final_wire_before_admission_or_handoff(tmp_pat
 
     asyncio.run(exercise())
 
-
-def _production_first_provider(*, worker_done=lambda: None, attempts=3, task_tokens=120_000):
-    report = "# Finding\nThe fixture report is complete.\n"
-    finish = envelope_step(summary="wrote a.md", artifacts=["a.md"], claims=["finding"])
-
-    def finished(request):
-        worker_done()
-        return finish(request)
-
-    return RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step(
-                    [
-                        node(
-                            "A",
-                            tokens=task_tokens,
-                            budget={"max_tokens": task_tokens, "max_attempts": attempts},
-                            verification_policy=["format_check", "rule_check", "critic_review"],
-                        )
-                    ]
-                )
-            ],
-            "worker": [("workspace_write_file", {"path": "a.md", "content": report}), finished],
-            "critic": [
-                ("workspace_read_file", {"path": "a.md"}),
-                critic_step(verdict="PASS", criteria_met=True),
-            ]
-            * 2,
-        }
-    )
-
-
-def _context_profile(
-    provider, *, profile_id="default", model="agent-model", input_cap=65_536, price_table=None
-):
-    return RuntimeProfile(
-        profile_id,
-        provider,
-        model,
-        context_policy=ContextPolicy(max_input_tokens=input_cap, render_slack_tokens=0),
-        price_table=price_table,
-    )
 

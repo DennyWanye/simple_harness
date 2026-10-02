@@ -25,7 +25,6 @@ def _world(tmp_path):
     store = Store.open(tmp_path / "orchestrator.db")
     commit = CommitService(store, global_budget=Budget(max_tokens=1_000_000, max_attempts=20))
     mission, _ = commit.create_mission(MissionSpec(
-        orchestration_semantics_version="legacy",
         goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="k",
         budget=Budget(max_tokens=200_000, max_attempts=6)))
     return store, commit, mission

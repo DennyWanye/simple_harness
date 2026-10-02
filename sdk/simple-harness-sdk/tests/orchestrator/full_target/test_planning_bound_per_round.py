@@ -31,7 +31,9 @@ def _count(*events: tuple[str, dict]) -> int:
 
 
 def test_refusals_before_the_first_commit_count_as_before() -> None:
-    assert _count(("PlanningRejected", {}), ("TaskGraphRejected", {})) == 2
+    # 2026-10-02 删旧平面模式：平面任务图被拒（``TaskGraphRejected``）不再出现，也不再计数。
+    assert _count(("PlanningRejected", {}), ("PlanningRejected", {})) == 2
+    assert _count(("PlanningRejected", {}), ("TaskGraphRejected", {})) == 1
 
 
 def test_a_committed_decision_starts_the_next_question_at_zero() -> None:
@@ -89,20 +91,20 @@ def test_only_a_turn_failure_is_marked() -> None:
 
 
 def _reject(detail: dict, *, prior: list[tuple[str, dict]], format_retry_left: int = 0,
-            ladder_spent: bool = False, status: object = None, owed: bool = True,
-            hierarchical: bool = True) -> list[tuple[str, object]]:
+            ladder_spent: bool = False, status: object = None,
+            owed: bool = True) -> list[tuple[str, object]]:
     import asyncio
 
     from agent_orchestrator.orchestrator.plan_commits import (
         HIERARCHICAL_SEMANTICS,
-        LEGACY_SEMANTICS,
         SEMANTICS_KEY,
     )
 
     events = list(prior)
     calls: list[tuple[str, object]] = []
-    semantics = HIERARCHICAL_SEMANTICS if hierarchical else LEGACY_SEMANTICS
-    mission = SimpleNamespace(id="m1", status=status, final_report={SEMANTICS_KEY: semantics})
+    mission = SimpleNamespace(
+        id="m1", status=status, final_report={SEMANTICS_KEY: HIERARCHICAL_SEMANTICS}
+    )
     fake = SimpleNamespace()
     fake.store = SimpleNamespace(
         get_mission=lambda mission_id: mission,
@@ -148,11 +150,9 @@ def test_no_reply_on_the_format_retry_asks_again_instead_of_ending_the_round() -
     # 同一请求的格式重试还有余量：下一问就是这个请求的格式重试
     assert _reject(no_reply, prior=[], format_retry_left=1) == [("reopen", "planning_format_retry")]
     assert _reject({"error": "bad block"}, prior=[]) == [("reopen", "planning_ladder")]
-    # 分层任务首次规划也走同一个入口；平铺任务的首次规划阶梯不变
+    # 分层任务首次规划也走同一个入口
     assert _reject({"error": "bad block"}, prior=[], status=MissionStatus.PLANNING) == [
         ("reopen", "planning_ladder")]
-    assert _reject({"error": "bad block"}, prior=[], status=MissionStatus.PLANNING,
-                   hierarchical=False) == [("reopen", "first_plan")]
     # 答错次数用完：已有计划且还欠着规划 → planning_attempts_exhausted；
     # 还在首次规划 → 以最后一次被拒的原因停；什么都不欠 → 带着现有计划继续
     assert _reject({"error": "bad block"}, prior=[], ladder_spent=True) == [

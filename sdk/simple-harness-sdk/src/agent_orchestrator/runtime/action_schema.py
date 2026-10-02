@@ -216,34 +216,8 @@ def with_candidate_targets(listed: Sequence[Any], workspace: Any) -> list[Any]:
     return out
 
 
-def planner_action_contract(
-    *,
-    mission_criteria: Sequence[str],
-    connectors: Mapping[str, Any],
-    deployment: DeploymentPolicy,
-) -> dict[str, Any] | None:
-    contract = _action_contract(
-        mission_criteria=mission_criteria, task_criteria=(),
-        connectors=connectors, deployment=deployment,
-    )
-    if contract is None:
-        return None
-    return {
-        **contract,
-        "candidate_output_pattern": "actions/*.json",
-        "planning_notice": (
-            "Declare the content artifact and an actions/*.json candidate in the producing "
-            "Task outputs. Preserve the Mission's requested content and source file; an "
-            "action criterion's target is an external destination, not a file to generate. "
-            "L2/L3 action approval is requested separately after Result acceptance. "
-            "Do not add human_review merely to implement that action approval; retain "
-            "human_review when the user separately requires review of the content."
-        ),
-    }
-
-
 __all__ = (
     "ACTION_CANDIDATE_CONTEXT_VERSION", "OPERATION_CANDIDATE_FILE", "OPERATION_CANDIDATE_PORT",
     "declared_action_outputs",
-    "worker_action_contract", "planner_action_contract",
+    "worker_action_contract",
 )

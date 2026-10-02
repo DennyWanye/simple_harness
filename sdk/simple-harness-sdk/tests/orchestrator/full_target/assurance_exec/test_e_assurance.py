@@ -40,7 +40,6 @@ from agent_orchestrator.orchestrator.completion_status import (
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
 from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
 from agent_orchestrator.orchestrator.operation_outcomes import OperationOutcomeError
-from agent_orchestrator.orchestrator.scoped_content_review import uses_completion_protocol
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
 
@@ -342,12 +341,8 @@ def test_delivery_writer_bypass(tmp_path):
 
 # --------------------------------------------------------------------------- E08
 def test_content_legacy_compatibility(tmp_path):
+    # 删旧平面模式第三刀：原来后半段"旧平面任务读作无事可做"随平面模式删除，只留内容一支。
     from _assured_fixture import AssuredRuntime
-    from _deploy import TENANT, deployment
-
-    from agent_orchestrator.orchestrator.commit_service import MissionSpec
-    from agent_orchestrator.orchestrator.operation_runtime import advance_operation_outcomes
-    from agent_orchestrator.storage.assurance_store import AssuranceStore
 
     reply = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
         {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture",
@@ -397,25 +392,4 @@ def test_content_legacy_compatibility(tmp_path):
             assert store.connection.execute("SELECT COUNT(*) FROM operation_intent_bindings WHERE mission_id=?",
                                             (mission_id,)).fetchone()[0] == 0
 
-    async def legacy():
-        async with deployment(tmp_path / "legacy") as world:
-            created = world.commit.create_mission(MissionSpec(
-                orchestration_semantics_version="legacy",
-                goal="legacy report", success_criteria=("a report exists",), tenant_id=TENANT,
-                idempotency_key="legacy-e08"))
-            mission = created[0] if isinstance(created, tuple) else created
-            assert not uses_completion_protocol(world.store, mission.id)
-            assert AssuranceStore(world.store).lane(mission.id) != "ASSURANCE_1_1"  # original protocol
-            events = [e.to_json() for e in world.store.list_events(mission.id)]
-            rows = {t: world.store.connection.execute(f"SELECT COUNT(*) FROM {t} WHERE mission_id=?",
-                                                      (mission.id,)).fetchone()[0]
-                    for t in ("operation_completion_specs", "operation_completion_scopes", "operation_intent_bindings",
-                              "actions", "assurance_mission_bindings")}
-            assert set(rows.values()) == {0}
-            # The new machinery reads a legacy Mission as "nothing to do" and writes nothing.
-            assert advance_operation_outcomes(world.orch, mission.id) is False
-            assert [e.to_json() for e in world.store.list_events(mission.id)] == events
-            assert world.store.get_mission(mission.id).to_json() == mission.to_json()
-
     asyncio.run(content_only())
-    asyncio.run(legacy())

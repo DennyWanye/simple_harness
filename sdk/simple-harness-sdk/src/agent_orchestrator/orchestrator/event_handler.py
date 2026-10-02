@@ -11,12 +11,13 @@ instruction and restarted (``recover()`` first) without a second execution, a
 second delivery or a second charge.  Fault points (``self._fault(...)``) mark the
 cross-database crash instants of the recovery matrix (plan D14', D3-6').
 
-Step 3 adds: the Planner proposes a whole graph, the Frontier / Allocator decide
-which READY Tasks get an Attempt under the concurrency bound, a downstream
-Attempt starts from its ancestors' accepted artifacts (frozen as inputs and
-protected), accepting a result also supersedes the sibling candidates and
-unblocks the dependents in the same transaction, a stop cascades to every open
-Task, and the Mission is judged on the integrated tree of every Task.
+The Planner speaks the typed planning-decision contract and the hierarchical
+assembly commits its plan; the Allocator grants Attempts only to occurrences the
+readiness gate admitted, under the concurrency bound; an Attempt starts from its
+resolved input manifest; accepting a result also supersedes the sibling
+candidates; a stop cascades to every open Task; and the Mission is judged on the
+tree its root resolution names.  The flat orchestration mode was removed on
+2026-10-02: a flat Mission left in a library is stopped by name.
 """
 
 from __future__ import annotations
@@ -51,7 +52,6 @@ from ..artifacts.versioning import (
     ArtifactConflict,
     UpstreamInput,
     ancestors,
-    merge_accepted,
     next_versions,
 )
 from ..artifacts.workspace import WorkspaceError
@@ -59,7 +59,6 @@ from ..context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
     build_critic_package,
-    build_planner_package,
     build_worker_package,
 )
 from ..context.retrieval import (
@@ -109,11 +108,9 @@ from ..governance.policies import action_decision, deployed_layers, effective_to
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
-from ..graph.task_graph import TaskBudgetFloor
 from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..graph.terminal import terminal_task
-from ..planning.planner import parse_task_graph_proposal
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
 from ..runtime.agent_worker import AgentBridge, Liveness, user_message_json
 from ..runtime.assembly import (
@@ -148,7 +145,6 @@ from ..runtime.output_blocks import (
 )
 from ..runtime.role_templates import (
     CRITIC,
-    PLANNER,
     PLANNER_HIERARCHICAL,
     RESULT_ENVELOPE_TAG,
     role_for_task,
@@ -158,9 +154,6 @@ from ..runtime.sandbox import resolve_executor
 from ..runtime.tool_gateway import CRITIC_TOOLS, WORKER_TOOLS, WorkspaceBinding, run_pytest
 from ..scheduling.allocator import (
     OPEN_ATTEMPT_STATES,
-    AllocationPlan,
-    AllocationPlanV2,
-    allocate,
     allocate_v2,
 )
 from ..scheduling.backpressure import BackpressureState, Observation
@@ -188,10 +181,6 @@ from .action_commits import (
     IN_FLIGHT_ACTION_STATES,
     OPEN_ACTION_STATES,
     ActionCommitError,
-    CandidateRejected,
-    check_candidate,
-    claims_an_action,
-    is_action_path,
     judgment_key,
     parse_action_criterion,
 )
@@ -207,7 +196,6 @@ from .commit_service import (
 )
 from .hierarchical_dispatch import (
     MISSION_STALLED,
-    DispatchAdmissions,
     HierarchicalDispatch,
     append_hierarchical_event,
     is_hierarchical,
@@ -456,9 +444,8 @@ class Orchestrator:
         self._owner = owner or f"orchestrator-{os.getpid()}"
         self._config = replace(config, owner_id=self._owner)
         # P2.3b: the hierarchical assembly (§14 / §18.2 "only assemble and call").
-        # ``None`` until a deployment installs one, and consulted *only* for a Mission
-        # whose ``orchestration_semantics_version`` is hierarchical — so every legacy
-        # branch below is reached by exactly the code it was reached by before.
+        # ``None`` until a deployment installs one; without it nothing is planned,
+        # dispatched or judged (``_assembly_missing``).
         self._hierarchical: HierarchicalDispatch | None = None
         self._planning_world_factory: Any = None
         self._planning_start_gate: Any = None
@@ -616,15 +603,12 @@ class Orchestrator:
     async def __aenter__(self) -> Orchestrator:
         self._store = Store.open(self._config.orchestrator_db)
         try:
-            self._task_floor = self._budget_floor_rule()  # P3.1 fix F-ORCH-1
             self._commit = CommitService(
                 self._store,
                 global_budget=self._config.global_budget,
                 task_max_tokens=self._config.task_max_tokens,
                 deployed_layers=self._deployed,
-                task_floor=self._task_floor,
                 mission_profile_validator=self._validate_mission_profile,
-                task_floor_for=self._task_floor_for_mission,
             )
             from ..assurance.root_gate import AssuranceRootGate
             from ..assurance.codec import AssuranceError
@@ -808,13 +792,7 @@ class Orchestrator:
             from ..context.knowledge_tools import read_knowledge_tool
 
             self._assembled.gateway.knowledge_reader = lambda mission_id, tool, args: (
-                read_knowledge_tool(
-                    self.store,
-                    mission_id,
-                    tool,
-                    args,
-                    sync_currentness=self.commit.sync_host_knowledge,
-                )
+                read_knowledge_tool(self.store, mission_id, tool, args)
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
@@ -948,55 +926,12 @@ class Orchestrator:
         binding = self.store.get_mission_policy(mission_id)
         return None if binding is None else str(binding["version_id"])
 
-    def _budget_floor_rule(self) -> TaskBudgetFloor:
-        """P3.1 fix F-ORCH-1 (plan review P2-1): the floor's base is what one turn of any
-        routable profile may emit — the largest ``default_max_output_tokens`` of the config
-        and every profile — unless the deployment names one (0 = no floor)."""
-
-        base = self._config.min_task_tokens
-        if base is None:
-            outputs = [int(self._config.default_max_output_tokens)]
-            outputs += [
-                int(profile.default_max_output_tokens)
-                for profile in self._profiles.values()
-                if profile.default_max_output_tokens
-            ]
-            base = max(outputs)
-        return TaskBudgetFloor(base=int(base), critic=int(self._config.critic_reserve_tokens))
-
     def _selected_profile(self, mission_id: str) -> str | None:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return None
         selected = (mission.final_report or {}).get("runtime_profile_id")
         return selected if isinstance(selected, str) and selected else None
-
-    def _task_floor_for_mission(self, mission_id: str) -> TaskBudgetFloor:
-        selected = self._selected_profile(mission_id)
-        if selected is None:
-            return self._task_floor
-        profile = self._profiles.get(selected)
-        if profile is None:
-            raise ContractError(f"Mission runtime profile {selected!r} is not configured")
-        policy = profile.context_policy
-        if policy is None:
-            return self._task_floor
-        first_tokens = policy.input_budget() + actual_output_ceiling(
-            profile_default_max_output_tokens=profile.default_max_output_tokens,
-            profile_max_output_tokens_ceiling=profile.max_output_tokens_ceiling,
-            config_default_max_output_tokens=self._config.default_max_output_tokens,
-            config_max_output_tokens_ceiling=self._config.max_output_tokens_ceiling,
-        )
-        return TaskBudgetFloor(base=first_tokens, critic=first_tokens)
-
-    def _budget_floor(self, mission_id: str) -> dict[str, int]:
-        """What the Planner is told a Task must at least hold."""
-
-        floor = self._task_floor_for_mission(mission_id)
-        return {
-            "min_task_tokens": floor.floor_for(()),
-            "min_task_tokens_with_critic_review": floor.floor_for(("critic_review",)),
-        }
 
     def policy_for(self, mission_id: str) -> dict[str, Any]:
         """The resolved parameters of the version ``mission_id`` is bound to (plan
@@ -1318,12 +1253,8 @@ class Orchestrator:
         return self._hierarchical
 
     def install_hierarchical(self, planning: Any = None, **kwargs: Any) -> HierarchicalDispatch:
-        """Install the new mode's assembly (P2.3b).
-
-        Installing it changes nothing for a legacy Mission: every branch that consults
-        it asks ``is_hierarchical(mission)`` first, which reads the Mission's own
-        ``orchestration_semantics_version`` and defaults to ``legacy`` (§18.5 rule 1).
-        """
+        """Install the hierarchical assembly (P2.3b).  Without it nothing is planned,
+        dispatched or judged: a Mission is recorded as waiting for the assembly."""
 
         self._hierarchical = HierarchicalDispatch(
             self.store, self.commit, planning=planning, **kwargs
@@ -1377,7 +1308,7 @@ class Orchestrator:
         if self._planning_world_factory is None:
             return self._hierarchical
         mission = self.store.get_mission(mission_id)
-        if mission is None or not is_hierarchical(mission):
+        if mission is None:
             return None
         if mission_id not in self._mission_dispatches:
             world = self._planning_world_factory(mission)
@@ -1392,9 +1323,9 @@ class Orchestrator:
         return dispatch
 
     def _new_mode(self, mission: Mission) -> HierarchicalDispatch | None:
-        """The assembly for this Mission, or None — the one place the mode is decided."""
+        """The assembly for this Mission, or None when this deployment installed none."""
 
-        if self._hierarchical is None or not is_hierarchical(mission):
+        if self._hierarchical is None:
             return None
         return self._dispatch_for(mission.id)
 
@@ -1536,27 +1467,17 @@ class Orchestrator:
                 "resolution_id": None if receipt is None else receipt.resolution_id}
 
     def _assembly_missing(self, mission: Mission, *, at: str) -> bool:
-        """Fail-closed: a hierarchical Mission with no assembly is not scheduled at all.
+        """Fail-closed: with no assembly installed a Mission is not scheduled at all.
 
-        Review finding F1.  ``_new_mode`` answers None for two different situations —
-        "this Mission is legacy" and "this deployment never installed the assembly" —
-        and every caller used to treat both as "use the legacy path".  For a legacy
-        Mission that is right.  For a hierarchical one it is the silent half-mode
-        §18.5 rule 1 forbids: the plan was committed under the new rules (occurrence
-        rows, semantic bindings, DATA edges) and would then be dispatched under the
-        old ones, on the ``TaskStatus.READY`` string, with the readiness gate, the
-        TG §8.3 re-check and the root ``GoalResolution`` trigger all skipped.
-
-        So the two situations are separated here: this returns True only for the
-        second, records :data:`~.hierarchical_dispatch.ASSEMBLY_MISSING` once for the
-        Mission, and its callers do nothing rather than falling back.  There is no
-        auto-assembly to prefer over it: ``build_planning_world`` needs the
+        Review finding F1: :data:`~.hierarchical_dispatch.ASSEMBLY_MISSING` is recorded
+        once for the Mission and its callers do nothing rather than fall back.  There
+        is no auto-assembly to prefer over it: ``build_planning_world`` needs the
         deployment's own facts (which domains, which worktree, which layers are
         deployed, which observers) and an Orchestrator that guessed them would be
         inventing the declarations the plan is admitted against.
         """
 
-        if self._hierarchical is not None or not is_hierarchical(mission):
+        if self._hierarchical is not None:
             return False
         record_assembly_missing(self.store, mission, at=at)
         self._note(
@@ -1567,17 +1488,29 @@ class Orchestrator:
         return True
 
     def _refuse_unsupported_contract(self, mission: Mission) -> bool:
-        """Stop a hierarchical Mission built under a planning contract this build dropped.
+        """Stop a Mission built under a contract this build dropped.
 
-        2026-10-01: one planning protocol, one package version, no old-data
-        compatibility.  A hierarchical Mission with no protocol binding (it was created
-        under the removed proposal-text protocol) or with a binding to another package
-        is ended here, by name, before anything is planned, dispatched or judged for
-        it — never served on a fallback path and never allowed to take the loop down.
+        2026-10-01 / 10-02: one orchestration mode, one planning protocol, one package
+        version, no old-data compatibility.  A flat-mode Mission left in the library, a
+        hierarchical one with no protocol binding (created under the removed
+        proposal-text protocol) or with a binding to another package is ended here, by
+        name, before anything is planned, dispatched or judged for it — never served on
+        a fallback path and never allowed to take the loop down.
         """
 
-        if not is_hierarchical(mission) or mission.id in self._contract_checked:
+        if mission.id in self._contract_checked:
             return False
+        if not is_hierarchical(mission):
+            if mission.status is MissionStatus.CREATED:
+                self.commit.begin_planning(mission.id)
+            self._stop_planning_round(
+                mission.id,
+                reason="unsupported_orchestration_semantics",
+                detail={"error": "the flat orchestration mode was removed on 2026-10-02"},
+                stop_reason=MissionStopReason.PLANNING_FAILED,
+            )
+            self._note(f"mission {mission.id}: flat orchestration mode removed → stopped")
+            return True
         from .planning_backend_runtime import frozen_deployment_conflict
         from .planning_protocol_binding import current_planning_protocol
 
@@ -1685,9 +1618,7 @@ class Orchestrator:
     def _release_unknown_grants(self, intent: DispatchIntent) -> None:
         """Drop HELD grants for this intent so a re-hand-off is not refused by them.
 
-        P2.3l / N5.  Hierarchical only in effect: a legacy Mission never reaches the
-        re-hand-off / give-up path that calls this.  No-op when the deployment has
-        no ``ProviderBudgetGuard``.
+        P2.3l / N5.  No-op when the deployment has no ``ProviderBudgetGuard``.
         """
 
         from .taskgraph_dispatch import taskgraph_enabled
@@ -1726,15 +1657,14 @@ class Orchestrator:
                 self._release_unknown_grants(intent)
 
     def _prepare_terminal_ledger(self, mission_id: str) -> None:
-        """Hierarchical only: drop HELD/UNKNOWN grants and settle known facts.
+        """Drop HELD/UNKNOWN grants and settle known facts.
 
         P2.3r / N9.  Unknown usage stays on the books (P2.3l P1-1); the
         reservation is released so ``reserved`` is 0 at the Mission terminal.
-        Legacy is a no-op (ORCH §12.2 still holds the reservation).
         """
 
         mission = self.store.get_mission(mission_id)
-        if mission is None or not is_hierarchical(mission):
+        if mission is None:
             return
         from .taskgraph_dispatch import taskgraph_enabled
         if taskgraph_enabled(self.store, mission_id):
@@ -2108,50 +2038,6 @@ class Orchestrator:
             raise ContractError("domain tool implementations must match deployment policy")
         if {name for name, tool in self._config.domain_tools.items() if tool.read_only} != set(self._config.deployment_policy.domain_read_only_tools):
             raise ContractError("read-only domain tool metadata must match deployment policy")
-        dojo_tools = set(self._config.agentdojo_tool_schemas)
-        if spec.domain == "agentdojo-v1":
-            if self._config.agentdojo_invoke is None:
-                raise ContractError("AgentDojo Mission requires a bound episode environment")
-            if dojo_tools != set(self._config.deployment_policy.agentdojo_tools):
-                raise ContractError("AgentDojo schemas must match deployed tool names")
-            if self._config.deployment_policy.local_code_execution:
-                raise ContractError("AgentDojo must disable local code execution")
-            if (
-                set(spec.allowed_tools)
-                - dojo_tools
-                - {
-                    "workspace_read_file",
-                    "workspace_write_file",
-                    "workspace_list",
-                    "knowledge_list",
-                    "knowledge_read",
-                }
-            ):
-                raise ContractError("AgentDojo Mission names an unavailable tool")
-        elif set(spec.allowed_tools) & dojo_tools:
-            raise ContractError("AgentDojo tools require the AgentDojo domain")
-        are_tools = set(self._config.are_tool_schemas)
-        if spec.domain == "are-v1":
-            if self._config.are_invoke is None:
-                raise ContractError("ARE Mission requires a bound episode environment")
-            if are_tools != set(self._config.deployment_policy.are_tools):
-                raise ContractError("ARE schemas must match deployed tool names")
-            if self._config.deployment_policy.local_code_execution:
-                raise ContractError("ARE must disable local code execution")
-            if (
-                set(spec.allowed_tools)
-                - are_tools
-                - {
-                    "workspace_read_file",
-                    "workspace_write_file",
-                    "workspace_list",
-                    "knowledge_list",
-                    "knowledge_read",
-                }
-            ):
-                raise ContractError("ARE Mission names an unavailable tool")
-        elif set(spec.allowed_tools) & are_tools:
-            raise ContractError("ARE tools require the ARE domain")
         if spec.domain == "appworld-v1" and self._config.appworld_execute is None:
             raise ContractError("AppWorld Mission requires a bound episode environment")
         if spec.runtime_profile_id is not None:
@@ -2312,7 +2198,7 @@ class Orchestrator:
             except StoreBusy as error:  # another instance is healing; the loop retries
                 self._note(f"recover {mission.id}: store busy ({error})")
                 continue
-            if report["unblocked"] or report["closed_attempts"]:
+            if report["closed_attempts"]:
                 self._note(f"recover {mission.id}: {report}")
             for attempt_id in report["closed_attempts"]:
                 await self._release_attempt(attempt_id, cancel=True)
@@ -2510,9 +2396,6 @@ class Orchestrator:
 
     def _has_pending_operation_completion(self, mission: Mission) -> bool:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
-        from .scoped_content_review import uses_completion_protocol
-        if not uses_completion_protocol(self.store, mission.id):
-            return False
         from .operation_outcomes import outcome_exhaustion_is_final
 
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
@@ -2569,7 +2452,7 @@ class Orchestrator:
     def _idle_facts(
         self, mission: Mission, *, admissions: Any = None, read_plan: bool = True
     ) -> tuple[IdleFacts, Any, Sequence[Any]] | None:
-        """The facts :func:`idle_verdict` routes on; None for a legacy Mission.
+        """The facts :func:`idle_verdict` routes on; None without the assembly.
 
         Cheap named waits are read first and short-circuit: the plan is read only
         when no wait holds, because only a stall candidate needs its admissions.
@@ -2669,8 +2552,7 @@ class Orchestrator:
         §9.1's "repeated no progress", where the repetition is what licenses the stop
         and a single idle cycle is not.
 
-        A legacy Mission is none of its business (``_new_mode`` answers None), and a
-        Mission with an admissible occurrence is not stalled — it is between cycles.
+        A Mission with an admissible occurrence is not stalled — it is between cycles.
         """
 
         for mission in self._active_missions():
@@ -3526,8 +3408,15 @@ class Orchestrator:
 
     async def _cycle_inner(self) -> bool:
         self._require_assurance_execution_root()
+        progressed = False
+        # Before any tick reads a Mission: one this build cannot serve (a flat-mode row,
+        # a dropped planning contract) is stopped by name, never left to make every
+        # later step of the round refuse — ``_cycle`` skips a whole round on a refusal.
+        for mission in self._active_missions():
+            if self._refuse_unsupported_contract(mission):
+                progressed = True
         await self._close_finished_agents()
-        progressed = import_late_accounting(self)
+        progressed = import_late_accounting(self) or progressed
         if self._assurance_tick is not None and await self._assurance_tick.tick():
             progressed = True
         from .planning_runtime_block import wake_blocks
@@ -3544,9 +3433,6 @@ class Orchestrator:
         # snapshot: gathering after the intent was created would show the model the
         # world as it was one round ago.
         for mission in self._active_missions():
-            if self._refuse_unsupported_contract(mission):
-                progressed = True
-                continue
             if mission.id not in due:
                 continue
             from .method_plan_reviews import advance as advance_method_reviews
@@ -4023,8 +3909,7 @@ class Orchestrator:
         Host's event loop."""
         if self._assembly_missing(mission, at="start_planning"):
             return False
-        if (is_hierarchical(mission) and self._planning_start_gate is not None
-                and not self._planning_start_gate(mission)):
+        if self._planning_start_gate is not None and not self._planning_start_gate(mission):
             return False
         self.commit.begin_planning(mission.id)
         try:
@@ -4051,15 +3936,6 @@ class Orchestrator:
                 f"mission {mission.id} stopped in planning: budget_exhausted ({error.dimension})"
             )
         return True
-
-    def _planning_rejections(self, mission_id: str) -> list[dict[str, Any]]:
-        """Durable feedback for the next proposal (D3-2'): the recorded rejections."""
-
-        return [
-            {"reason": event.payload.get("reason"), "detail": event.payload.get("detail")}
-            for event in self.store.list_events(mission_id)
-            if event.type in {"TaskGraphRejected", "PlanningRejected"}
-        ]
 
     def _planning_retry_budgets(self, mission: Mission, *, format_retries: int) -> Any:
         """The §39 budget view a feedback value reports (same count admission uses)."""
@@ -4296,10 +4172,8 @@ class Orchestrator:
         return value
 
     def _planning_format_retry_remaining(self, *, intent: DispatchIntent, mission: Mission) -> int:
-        """The same-request format retries left; only a hierarchical Mission has one."""
+        """The same-request format retries left (one per request)."""
 
-        if not is_hierarchical(mission):
-            return 0
         return max(0, 1 - self._planning_decision_attempt_ordinal(intent))
 
     def _format_retry_exhausted(
@@ -4307,7 +4181,6 @@ class Orchestrator:
     ) -> bool:
         return (
             reason == "proposal_unreadable"
-            and is_hierarchical(mission)
             and self._planning_format_retry_remaining(intent=intent, mission=mission) == 0
         )
 
@@ -4708,119 +4581,68 @@ class Orchestrator:
         WAIT wakeup joins these writes to its own transaction, including the request
         binding and budget reservation. No provider call is made here.
         """
-        from ..runtime.action_schema import planner_action_contract
-
         mission = self.store.get_mission(mission_id)
         assert mission is not None
-        if self._hierarchical is None and is_hierarchical(mission):
-            raise ContractError("hierarchical_assembly_missing: planner cannot use the legacy path")
-        seed = dict((mission.final_report or {}).get("workspace_seed", {}))
-        source_binding = self._active_source_binding(mission_id)
-        domain = self.commit.domain_for(mission_id)
-        workload = None
-        if domain.id == "doc-research-v1" and domain.version in {"6", "7", "8", "9"}:
-            from ..context.source_workload import source_workload
-
-            try:
-                workload = source_workload(
-                    store=self.store,
-                    artifacts=self.assembled.workspaces.artifact_store,
-                    mission=mission,
-                    domain=domain,
-                    versions=source_binding.get("source_versions", {}),
-                    profiles=self._profiles,
-                    config=self._config,
-                )
-            except (ValueError, OSError) as error:
-                raise ContextRejected("registered source workload could not be verified") from error
-        # P2.3c part 2 (P2.3b blocker c): the prompt and the package are chosen by the
-        # Mission's *mode*, not independently.  A Planner asked for a
-        # <plan_revision_proposal> while being handed the DAG package has nothing to
-        # propose with — it cannot see the open goals, the registered methods or the
-        # plan revision it is answering against — which is why every round came back
-        # ``proposal_unreadable`` under a real model.  The legacy package is built by
-        # the same call it always was, with the same arguments, so its bytes and its
-        # context hash do not move (§18.5 rule 1).
         new_mode = self._new_mode(mission)
-        retry_request_id = (
-            None
-            if new_mode is None
-            else self._planning_request_retry_id_for_ordinal(
-                mission=mission, new_mode=new_mode, ordinal=ordinal
-            )
+        if new_mode is None:
+            raise ContractError("hierarchical_assembly_missing: no planner without the assembly")
+        source_binding = self._active_source_binding(mission_id)
+        retry_request_id = self._planning_request_retry_id_for_ordinal(
+            mission=mission, new_mode=new_mode, ordinal=ordinal
         )
         retry_package_frozen = False
-        if new_mode is not None:
-            from .planning_backend_runtime import bind_deployment
-            bind_deployment(self, mission_id)
-            # A format retry keeps the request identity and all request facts frozen;
-            # use the opener's package ordinal so its package hash remains identical.
-            original_intent = None if retry_request_id is None else self.store.get_intent(retry_request_id)
-            if retry_request_id is not None and original_intent is None:
-                raise ContractError("format retry opener is unavailable")
-            package_ordinal = ordinal if original_intent is None else int(original_intent.config["ordinal"])
-            package = self._hierarchical_planner_package(
-                new_mode,
-                mission,
-                ordinal=package_ordinal,
-                # A format retry answers the opener's frozen package (rehydrated below);
-                # only a fresh request is told about the last refusal in its package.
-                previous_feedback=(
-                    None if retry_request_id is not None
-                    else self._latest_planning_feedback(mission)
-                ),
-            )
-            if retry_request_id is not None:
-                # A format retry answers the opener's exact durable request.  The
-                # rejection event and H3's durable selection ledger may change what a
-                # fresh collector would render, so rehydrate the opener package and
-                # provider message before rebinding the retry intent.
-                from ..context.context_builder import TaskPackage
-                from ..storage.planning_decision_store import PlanningDecisionStore
+        from .planning_backend_runtime import bind_deployment
+        bind_deployment(self, mission_id)
+        # A format retry keeps the request identity and all request facts frozen;
+        # use the opener's package ordinal so its package hash remains identical.
+        original_intent = None if retry_request_id is None else self.store.get_intent(retry_request_id)
+        if retry_request_id is not None and original_intent is None:
+            raise ContractError("format retry opener is unavailable")
+        package_ordinal = ordinal if original_intent is None else int(original_intent.config["ordinal"])
+        package = self._hierarchical_planner_package(
+            new_mode,
+            mission,
+            ordinal=package_ordinal,
+            # A format retry answers the opener's frozen package (rehydrated below);
+            # only a fresh request is told about the last refusal in its package.
+            previous_feedback=(
+                None if retry_request_id is not None
+                else self._latest_planning_feedback(mission)
+            ),
+        )
+        if retry_request_id is not None:
+            # A format retry answers the opener's exact durable request.  The
+            # rejection event and H3's durable selection ledger may change what a
+            # fresh collector would render, so rehydrate the opener package and
+            # provider message before rebinding the retry intent.
+            from ..context.context_builder import TaskPackage
+            from ..storage.planning_decision_store import PlanningDecisionStore
 
-                opener_binding = PlanningDecisionStore(self.store).get_planning_request(
-                    retry_request_id
-                )
-                opener = (
-                    None
-                    if opener_binding is None
-                    else self.store.get_intent(opener_binding.intent_id)
-                )
-                opener_package = None if opener is None else opener.config.get("planning_package")
-                opener_message = None if opener is None else opener.config.get("message")
-                if (
-                    opener is not None
-                    and isinstance(opener_package, Mapping)
-                    and isinstance(opener_message, Mapping)
-                    and isinstance(opener_message.get("content"), str)
-                ):
-                    package = TaskPackage(
-                        text=str(opener_message["content"]),
-                        context_version=str(
-                            opener.config.get("context_version", package.context_version)
-                        ),
-                        package=dict(opener_package),
-                    )
-                    retry_package_frozen = True
-            template = self._hierarchical_planner_template(mission_id)
-        else:
-            package = build_planner_package(
-                mission,
-                workspace_files=sorted(set(seed) | set(source_binding.get("source_versions", {}))),
-                source_versions=source_binding.get("source_versions"),
-                attempt_ordinal=ordinal,
-                rejected=self._planning_rejections(mission_id) if ordinal > 1 else (),
-                deployed_layers=self._deployed,
-                budget_floor=self._budget_floor(mission_id),
-                domain=domain,
-                workload=workload,
-                action_candidate_contract=planner_action_contract(
-                    mission_criteria=mission.success_criteria,
-                    connectors=self._connectors,
-                    deployment=self._config.deployment_policy,
-                ),
+            opener_binding = PlanningDecisionStore(self.store).get_planning_request(
+                retry_request_id
             )
-            template = self._template(PLANNER, mission_id)
+            opener = (
+                None
+                if opener_binding is None
+                else self.store.get_intent(opener_binding.intent_id)
+            )
+            opener_package = None if opener is None else opener.config.get("planning_package")
+            opener_message = None if opener is None else opener.config.get("message")
+            if (
+                opener is not None
+                and isinstance(opener_package, Mapping)
+                and isinstance(opener_message, Mapping)
+                and isinstance(opener_message.get("content"), str)
+            ):
+                package = TaskPackage(
+                    text=str(opener_message["content"]),
+                    context_version=str(
+                        opener.config.get("context_version", package.context_version)
+                    ),
+                    package=dict(opener_package),
+                )
+                retry_package_frozen = True
+        template = self._hierarchical_planner_template(mission_id)
         decision = self._route_service("planner", mission_id)
         config = AgentConfig(
             name=f"planner-{ordinal}",
@@ -4853,7 +4675,7 @@ class Orchestrator:
                     + "\n按 problems 里的 field_path 改正，重新输出完整的 <planning_decision> 块。"
                 )
         from .planning_selection import infrastructure_retry
-        native_decision = infrastructure_retry(package.package) if new_mode is not None else None
+        native_decision = infrastructure_retry(package.package)
         message = user_message_json(package_text)
         subject = f"{mission_id}:planner:{ordinal}"
         from .planning_runtime_block import planner_binding
@@ -4872,90 +4694,24 @@ class Orchestrator:
                 "prompt_version": template.prompt_version,
                 "base_version": mission.version,
                 "ordinal": ordinal,
-                **({"planning_decision_attempt_ordinal": 1 if retry_request_id is not None else 0}
-                   if new_mode is not None else {}),
+                "planning_decision_attempt_ordinal": 1 if retry_request_id is not None else 0,
                 **planner_binding(self.store, mission_id),
                 **({"native_planning_decision": native_decision} if native_decision is not None else {}),
-                **({"planning_package": dict(package.package)} if new_mode is not None else {}),
+                "planning_package": dict(package.package),
                 **source_binding,
                 **self._service_config(decision),
             },
             reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens, decision.profile_id),
         )
-        if new_mode is not None:
-            self._bind_hierarchical_planning_request(
-                intent=intent,
-                mission=mission,
-                new_mode=new_mode,
-                package=package,
-                template=template,
-                request_id=retry_request_id,
-            )
-        return intent
-
-    def _accept_hierarchical_leaf(
-        self,
-        mission: Mission,
-        task: Any,
-        attempt: Any,
-        *,
-        result_id: str,
-        layers: Sequence[Any],
-        port_claims: Sequence[PortClaim] = (),
-    ) -> None:
-        """A verified primitive leaf → an ``Acceptance`` → the accepted-output index.
-
-        P2.3c part 2b (§13 item 2).  ``accept_result`` moves the *Task* to COMPLETED,
-        which is the legacy lifecycle and says nothing about AER: in the hierarchical
-        mode a contribution is accepted by ``accept_review`` out of the review anchors,
-        and only a recorded ``Acceptance`` lets a DATA consumer bind the producer's
-        artifact at a declared port.  Without this call ``acceptance_outputs`` stayed
-        empty and every consumer sat in ``WAITING_DATA`` forever.
-
-        Legacy Missions never reach here — ``_new_mode`` answers None — and a
-        compound is refused by the assembly rather than reviewed.  A refusal is
-        *recorded and does not undo the verification*: the verdict is a fact that
-        happened, and turning a refused acceptance into a failed result would throw
-        away a passing run because the accept-side gate said "not yet".
-        """
-
-        new_mode = self._new_mode(mission)
-        if new_mode is None:
-            return
-        from ..orchestrator.leaf_acceptance import LeafAcceptanceAssembly
-        from .resolution_commits import ResolutionCommitRejected
-
-        assembly = LeafAcceptanceAssembly(self.store, self.commit, dispatch=new_mode)
-        producers = tuple(
-            item for item in (getattr(attempt, "agent_id", None),) if isinstance(item, str) and item
+        self._bind_hierarchical_planning_request(
+            intent=intent,
+            mission=mission,
+            new_mode=new_mode,
+            package=package,
+            template=template,
+            request_id=retry_request_id,
         )
-        try:
-            receipt = assembly.accept(
-                mission.id,
-                str(task.id),
-                result_id=str(result_id),
-                layers=layers,
-                artifacts=self.store.list_artifacts(attempt.id),
-                producer_agent_ids=producers,
-                reviewer_agent_id=f"critic:{attempt.id}",
-                now_ms=int(self.store.now * 1000),
-                command_id=f"accept:{result_id}",
-                port_claims=port_claims,
-            )
-        except (ContractError, ResolutionCommitRejected, StoreError) as error:
-            self._note(f"task {task.id}: acceptance refused ({error})")
-            return
-        self._note(f"task {task.id}: acceptance {receipt.acceptance_id} recorded")
-        # P2.3l / N7: a last gating child of a nested compound just accepted.  Advance
-        # the typed phase (so it reads composition_review) and form the inner
-        # GoalResolution in this cycle — otherwise ORDER successors stay WAITING_ORDER
-        # and the stall confirmation fires first (H-L4-M3-r0).
-        try:
-            new_mode.advance_compound_phases(mission.id)
-
-            self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
-        except (GraphIntegrityError, ContractError, StoreError) as error:
-            self._note(f"task {task.id}: inner composition review deferred ({error})")
+        return intent
 
     # -------------------------------------------------------------- dispatch
     def _reservation(self, tokens: int, profile_id: str | None = None) -> Reservation:
@@ -5522,10 +5278,6 @@ class Orchestrator:
             raise ContractError("Cannot bind an unknown Attempt")
         if self.commit.domain_for(attempt.mission_id).id == "appworld-v1":
             self.assembled.gateway.bind_appworld(attempt.mission_id)
-        if self.commit.domain_for(attempt.mission_id).id == "agentdojo-v1":
-            self.assembled.gateway.bind_agentdojo(attempt.mission_id)
-        if self.commit.domain_for(attempt.mission_id).id == "are-v1":
-            self.assembled.gateway.bind_are(attempt.mission_id)
         read_only_existing: tuple[str, ...] = ()
         read_only_writes_blocked = False
         if config.get("read_only_leaf"):
@@ -5632,7 +5384,6 @@ class Orchestrator:
         except InjectedCrash as error:
             raise RetrievalUnavailable(str(error)) from error
         try:
-            self.commit.sync_host_knowledge(mission.id)
             records = self.store.list_knowledge(mission.id)
             claims = self.store.list_mission_claims(mission.id)
             document = self.commit.domain_for(mission.id).id == "doc-research-v1"
@@ -5998,12 +5749,10 @@ class Orchestrator:
         agents = self._service_agent_ids(intent)
         if not agents:
             return
-        mission = self.store.get_mission(intent.mission_id)
-        include_unknown = mission is not None and is_hierarchical(mission)
         bridge = self.bridge_for(intent)
         facts = []
         for agent_id in agents:
-            facts.extend(bridge.usage_facts(agent_id=agent_id, include_unknown=include_unknown))
+            facts.extend(bridge.usage_facts(agent_id=agent_id, include_unknown=True))
         if facts:
             self.commit.import_usage(intent.subject_id, intent.mission_id, facts)
 
@@ -6039,7 +5788,6 @@ class Orchestrator:
             unknown_imported = self.commit.ledger.imported_unknown_count(subject_id) > 0
             unknown = self.commit.ledger.has_unknown_usage(subject_id)
         mission = self.store.get_mission(mission_id)
-        hierarchical = mission is not None and is_hierarchical(mission)
         from .taskgraph_dispatch import taskgraph_enabled
         graph_enabled = taskgraph_enabled(self.store, mission_id)
         from ..storage.assurance_store import AssuranceStore
@@ -6047,9 +5795,9 @@ class Orchestrator:
         if assured and (unknown_imported or unknown):
             self._note(f"{subject_id}: Assurance unknown provider charge, original reservation held")
             return
-        if unknown_imported and hierarchical and not graph_enabled:
+        if unknown_imported and mission is not None and not graph_enabled:
             # P2.3l P1-1: credit known facts, release the reservation, keep the
-            # unknown rows.  Legacy still holds the reservation (ORCH §12.2).
+            # unknown rows.
             self.commit.settle_subject_known(subject_id, mission_id, task_id=task_id)
             self._note(f"{subject_id}: known usage settled; unknown calls remain on the ledger")
             return
@@ -6213,10 +5961,6 @@ class Orchestrator:
                 "owed to the plan, so the Planner is not asked again"
             )
             return
-        if planning and not is_hierarchical(mission):
-            # The flat mode's first-plan ladder: unchanged, exception and all.
-            await self._try_planner_intent(mission.id, ordinal=ordinal + 1)
-            return
         format_retry = (
             reason == "proposal_unreadable"
             and "planning_decision_attempt_ordinal" in intent.config
@@ -6291,11 +6035,7 @@ class Orchestrator:
         if result.state is AgentTurnState.COMMITTED:
             self._reset_after_handoff_unknown_streak(mission.id)
         new_mode = self._new_mode(mission)
-        if (
-            result.state is not AgentTurnState.COMMITTED
-            and new_mode is not None
-            and self._definite_auth_failure(result.error)
-        ):
+        if result.state is not AgentTurnState.COMMITTED and self._definite_auth_failure(result.error):
             self._settle_intent(intent, "FAILED")
             self._settle_service_if_known(intent.subject_id, mission.id)
             detail = {"error": jsonable(result.error or {}), "auth": True}
@@ -6345,46 +6085,14 @@ class Orchestrator:
 
             await collect_operation_outcome_review(self, intent, result, mission, text)
             return
-        # P2.3b: a hierarchical Mission's Planner speaks the typed contract (§18.3), so
-        # the reply goes to the assembly and the flat-DAG path below is not entered.
-        # (``new_mode`` was asked once, above, before the auth check.)
-        if new_mode is not None:
-            await self._collect_plan_hierarchical(intent, result, mission, text, new_mode)
-            return
-        try:
-            if result.state is not AgentTurnState.COMMITTED:
-                raise PlannerTurnFailed(f"planner turn failed: {dict(result.error or {})}")
-            proposal = parse_task_graph_proposal(text)
-        except ContractError as error:
+        # P2.3b: the Planner speaks the typed contract (§18.3); the reply goes to the
+        # assembly.  With no assembly installed there is nothing that could read it.
+        if new_mode is None:
             self._settle_intent(intent, "FAILED")
             self._settle_service_if_known(intent.subject_id, mission.id)
-            await self._planning_rejected(
-                intent, reason="proposal_unreadable", detail=planning_failure_detail(error, {"error": str(error)})
-            )
+            self._note(f"{intent.subject_id}: planner reply with no assembly installed")
             return
-        try:
-            tasks, receipt = self.commit.commit_task_graph(
-                mission.id,
-                proposal,
-                base_version=int(intent.config["base_version"]),
-                source={
-                    "intent_id": intent.intent_id,
-                    "agent_id": intent.agent_id,
-                    "turn_id": result.turn_id,
-                },
-            )
-        except CommitRejected as error:
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            await self._planning_rejected(
-                intent, reason="task_graph_rejected", detail={"error": str(error)}
-            )
-            return
-        self._note(
-            f"task graph committed: {[task.id for task in tasks]} (warnings={receipt.get('warnings')})"
-        )
-        self._settle_intent(intent, "SETTLED")
-        self._settle_service_if_known(intent.subject_id, mission.id)
+        await self._collect_plan_hierarchical(intent, result, mission, text, new_mode)
 
     def submit_operation_intent(self, command: Any, *, tenant_id: str, principal: Any) -> dict[str, Any]:
         from .operation_runtime import ensure_operation_runtime
@@ -6504,7 +6212,7 @@ class Orchestrator:
         count = 0
         forgiven = 0
         for event in self.store.list_events(mission_id):
-            if event.type in {"TaskGraphRejected", "PlanningRejected"}:
+            if event.type == "PlanningRejected":
                 # 2026-09-28 真机：12 轮规划里 5 轮是模型服务端报错与重启打断，规划器根本
                 # 没被听到却照样扣次数，任务因此失败。没有回复的回合不算"答错"，但设宽限，
                 # 服务一直坏着时超出部分照样计数，不会无限重试。
@@ -6523,7 +6231,7 @@ class Orchestrator:
         forgiven = 0
         latest_forgiven = False
         for event in self.store.list_events(mission_id):
-            if event.type in {"TaskGraphRejected", "PlanningRejected"}:
+            if event.type == "PlanningRejected":
                 latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE
                 forgiven += 1 if latest_forgiven else 0
             elif event.type == "PlanningDecisionEvaluated" and event.payload.get("status") == "COMMITTED":
@@ -7875,11 +7583,7 @@ class Orchestrator:
             ):
                 admission = None
             mission_now = self.store.get_mission(attempt.mission_id)
-            if (
-                mission_now is not None
-                and is_hierarchical(mission_now)
-                and self._definite_auth_failure(error)
-            ):
+            if mission_now is not None and self._definite_auth_failure(error):
                 self.commit.reject_result(
                     attempt.id,
                     turn_id=result.turn_id,
@@ -8087,72 +7791,59 @@ class Orchestrator:
         # read-only may not have changed a file it started from.  Grok C3's ``facts``
         # / ``reproduce`` leaves rewrote ``stats/window.py``; with ``code_test`` no
         # longer on such leaves, the declaration has to be enforced where the files
-        # come in, not merely trusted.  Legacy Missions carry no binding and are
-        # untouched (``new_mode`` answers None).
+        # come in, not merely trusted.
         new_mode = self._new_mode(mission)
-        current_task_ids = None
-        if new_mode is not None:
-            try:
-                current_task_ids = {
-                    str(spec.task_id) for spec in new_mode.network(mission.id).occurrences
-                }
-            except (GraphIntegrityError, ContractError, StoreError, KeyError):
-                current_task_ids = set()
-        accepted_hashes = (
-            {}
-            if new_mode is None
-            else self._accepted_path_hashes(mission.id, current_task_ids=current_task_ids)
-        )
-        binding = (
-            None
-            if new_mode is None
-            else new_mode.semantics().task_semantics_of(mission.id, task.id)
-        )
-        if new_mode is not None:
-            rewrote = (
-                []
-                if binding is None
-                else read_only_rewrites(
-                    binding,
-                    artifacts,
-                    initial,
-                    guarded=guarded,
-                    accepted=accepted_hashes,
-                )
+        if new_mode is None:
+            raise ContractError("hierarchical_assembly_missing: no result collection without the assembly")
+        try:
+            current_task_ids = {
+                str(spec.task_id) for spec in new_mode.network(mission.id).occurrences
+            }
+        except (GraphIntegrityError, ContractError, StoreError, KeyError):
+            current_task_ids = set()
+        accepted_hashes = self._accepted_path_hashes(mission.id, current_task_ids=current_task_ids)
+        binding = new_mode.semantics().task_semantics_of(mission.id, task.id)
+        rewrote = (
+            []
+            if binding is None
+            else read_only_rewrites(
+                binding,
+                artifacts,
+                initial,
+                guarded=guarded,
+                accepted=accepted_hashes,
             )
-            if rewrote:
-                assert binding is not None
-                self.commit.reject_result(
-                    attempt.id,
-                    turn_id=result.turn_id,
-                    reason="read_only_leaf_rewrote_workspace",
-                    detail={
-                        "paths": rewrote,
-                        "side_effect_kind": str(binding.side_effect_kind),
-                        "capabilities": list(binding.capability_requirements),
-                        "hint": (
-                            "this leaf's task type is read-only: observe and report at "
-                            "its declared output ports; do not change existing files"
-                        ),
-                    },
-                )
-                # The refusal is the permission rule and stays.  What happens next is
-                # the Planner's call: the ``ResultRejected`` event becomes an ordinary
-                # repair request carrying the paths and how many times it has happened.
-                self._settle_intent(intent, "FAILED")
-                self._settle_if_known(attempt)
-                await self._release_attempt(attempt.id, cancel=False)
-                self._note(f"attempt {attempt.id}: read-only leaf rewrote {rewrote} → RETRY_WAIT")
-                return
-        # P2.3m: drop files whose bytes already belong to a completed leaf.  Legacy
-        # Missions cite upstream artifacts by listing them; applying this filter
-        # there dropped those citations and left the static-DAG golden run waiting
-        # on a result that never settled.
+        )
+        if rewrote:
+            assert binding is not None
+            self.commit.reject_result(
+                attempt.id,
+                turn_id=result.turn_id,
+                reason="read_only_leaf_rewrote_workspace",
+                detail={
+                    "paths": rewrote,
+                    "side_effect_kind": str(binding.side_effect_kind),
+                    "capabilities": list(binding.capability_requirements),
+                    "hint": (
+                        "this leaf's task type is read-only: observe and report at "
+                        "its declared output ports; do not change existing files"
+                    ),
+                },
+            )
+            # The refusal is the permission rule and stays.  What happens next is
+            # the Planner's call: the ``ResultRejected`` event becomes an ordinary
+            # repair request carrying the paths and how many times it has happened.
+            self._settle_intent(intent, "FAILED")
+            self._settle_if_known(attempt)
+            await self._release_attempt(attempt.id, cancel=False)
+            self._note(f"attempt {attempt.id}: read-only leaf rewrote {rewrote} → RETRY_WAIT")
+            return
+        # P2.3m: drop files whose bytes already belong to a completed leaf.
         # P2.3v: a *write* leaf that reproduces a retired method's accepted bytes
         # (Grok M2-r1's new apply leaf vs the retired patch) must still record
         # those paths — otherwise ``rule_check`` refuses the envelope.  Same-hash
         # drop stays on read-only leaves, where P2.3o re-adds bound inputs.
-        drop_same_hash = new_mode is not None and binding is not None and read_only_leaf(binding)
+        drop_same_hash = binding is not None and read_only_leaf(binding)
         consistent = (
             set()
             if not drop_same_hash
@@ -8178,7 +7869,7 @@ class Orchestrator:
                 or (artifact.path in guarded and artifact.path in listed)
             )
         ]
-        if new_mode is not None and (binding is None or not read_only_leaf(binding)):
+        if binding is None or not read_only_leaf(binding):
             try:
                 referenced = self._record_applied_diff_files(
                     referenced,
@@ -8307,11 +7998,7 @@ class Orchestrator:
         return envelope, client_result_id
 
     def _port_claims_from(self, raw: dict[str, Any], attempt: Attempt) -> tuple[PortClaim, ...]:
-        """Pop ``outputs`` off the block and check it, or refuse the block.
-
-        Legacy Missions never declare a port, so ``outputs`` is absent, nothing is
-        popped and the envelope parses exactly as it did before (§18.5 rule 1).
-        """
+        """Pop ``outputs`` off the block and check it, or refuse the block."""
 
         if "outputs" not in raw:
             return ()
@@ -8486,7 +8173,6 @@ class Orchestrator:
                 # a required layer that could not run is an ERROR, never a PASS (ORCH §12.4)
                 raise ContractError(f"critic could not be funded: {error}") from error
 
-        action_problems = self._action_problems(mission, task, artifacts, copy)
         human, reuse, escalation_left = self._human_inputs(result_id, task)
         domain = self.commit.domain_for(mission.id)
         assessment_binding = None
@@ -8539,7 +8225,6 @@ class Orchestrator:
                 recorder=recorder,
                 tampered=tampered,
                 knowledge=KnowledgeIndex.load(self.store, mission.id),
-                action_problems=action_problems,
                 human=human,
                 reuse=reuse,
                 needs_human_allowed=escalation_left,
@@ -8663,24 +8348,12 @@ class Orchestrator:
                            result_id, mission.id, type(error).__name__, error)
             return self._verdict_refused(result_id, error)
         self._verdict_refusals.pop(result_id, None)
-        from .scoped_content_review import uses_completion_protocol
-        completion_protocol = uses_completion_protocol(self.store, mission.id)
         accepted = verdict.passed and (
-            completed.status is TaskStatus.COMPLETED
-            or (completion_protocol and completed.accepted_result_id == result_id)
+            completed.status is TaskStatus.COMPLETED or completed.accepted_result_id == result_id
         )
         if accepted:
             self._fault("after_task_completed", "attempt")
             self._note(f"result {result_id} PASS → task {completed.id} {completed.status}")
-            if not completion_protocol:
-                self._accept_hierarchical_leaf(
-                    mission,
-                    task,
-                    attempt,
-                    result_id=result_id,
-                    layers=verdict.layers,
-                    port_claims=self._port_claims.get(result_id, ()),
-                )
             for sibling in self.store.list_attempts(task.id):
                 if sibling.status is AttemptStatus.SUPERSEDED:
                     await self._release_attempt(sibling.id, cancel=True)
@@ -8853,66 +8526,6 @@ class Orchestrator:
             for j in judgments
         ], False
 
-    def _action_problems(
-        self, mission: Mission, task: Task, artifacts: Sequence[Artifact], copy: Any
-    ) -> list[str] | None:
-        """D7-2'': a result carrying ``actions/*.json`` is always checked for them — schema,
-        deployment policy, the Mission's action scope and the Task's declared outputs —
-        whatever the Task's verification policy says.  ``None`` = no candidate at all."""
-
-        from .action_commits import allowed_actions
-        from .scoped_content_review import uses_completion_protocol
-
-        if uses_completion_protocol(self.store, mission.id):
-            # 2026-09-29：申请单由系统按已批准效果生成；步骤写的 actions/*.json 一律忽略，
-            # 不再因"写了不该写的申请单"整份退回（真机第五局 12 次尝试因此耗光）。
-            return None
-        paths = [artifact.path for artifact in artifacts if is_action_path(artifact.path)]
-        criteria = (
-            [c for c in task.success_criteria if c.startswith("action:")]
-            if self.commit.domain_for(mission.id).id == "doc-research-v1"
-            else []
-        )
-        if not paths and not criteria:
-            return None
-        problems: list[str] = []
-        checked: set[tuple[str, str, str]] = set()
-        # The same declared outputs the Worker's candidate contract was built from:
-        # a hierarchical primitive with the operation candidate port declares its
-        # candidate file through that port (2A upstream run: the candidate the
-        # contract asked for was refused here as "not declared").
-        declared = self._action_candidate_outputs(mission, task)
-        for path in paths:
-            if path not in declared:
-                try:
-                    raw = copy.resolve(path).read_bytes()
-                except Exception:  # noqa: BLE001 - unreadable: policed below as a claim
-                    raw = b""
-                if not claims_an_action(raw):
-                    continue  # ordinary content under actions/, never executed
-                problems.append(
-                    f"action candidate {path} is not a declared output of this Task; only "
-                    f"{sorted(declared)} may hold an action — move other files out of actions/"
-                )
-                continue
-            try:
-                candidate = json.loads(copy.resolve(path).read_text(encoding="utf-8"))
-                candidate, _ = check_candidate(
-                    candidate,
-                    criteria=mission.success_criteria,
-                    connectors=self._connectors,
-                    deployment=self._config.deployment_policy,
-                )
-                checked.add((candidate["connector"], candidate["operation"], candidate["target"]))
-            except CandidateRejected as error:
-                problems.append(f"action candidate {path} rejected ({error.reason}): {error}")
-            except Exception as error:  # noqa: BLE001 - unreadable or not JSON
-                problems.append(f"action candidate {path} unreadable: {error}")
-        for criterion in criteria:
-            if not allowed_actions([criterion], self._connectors).intersection(checked):
-                problems.append(f"action criterion {criterion!r} has no checked matching candidate")
-        return problems
-
     def _hold_lease(self, attempt_id: str) -> Attempt:
         """Renew this owner's lease during a long verification; ``CommitRejected`` when
         another owner took the Attempt over after a lapse (P1-3)."""
@@ -9065,8 +8678,8 @@ class Orchestrator:
             else:
                 template = self._template(CRITIC, mission.id)
                 content_scope = None
-                from .scoped_content_review import uses_completion_protocol, task_content_prompt_scope
-                if task is not None and uses_completion_protocol(self.store, mission.id):
+                from .scoped_content_review import task_content_prompt_scope
+                if task is not None:
                     from ..runtime.role_templates import CRITIC_TASK_CONTENT
                     content_scope = task_content_prompt_scope(self.store, mission.id, task.id,
                                                               attempt_id=attempt_id)
@@ -9399,11 +9012,6 @@ class Orchestrator:
         "did not answer" path.  The abandoned turn's charge stays unknown in the
         runtime ledger and keeps the reservation held, which is the honest count.
 
-        Hierarchical Missions only.  A legacy Mission's Planner and Critic paths are
-        pinned byte for byte by the recovery matrix and the event goldens, and the
-        acceptance programme that needs this is the hierarchical one; widening it is a
-        decision about the legacy path that this slice does not make.
-
         Returns ``None`` (keep waiting), ``"rehandoff"`` (a new executor is about to
         be dispatched) or ``"give_up"`` (the round was ended, or — for a Critic — is
         the runner's to end).
@@ -9477,7 +9085,7 @@ class Orchestrator:
             return "give_up"
         new_mode = self._new_mode(mission)
         if new_mode is None:
-            return None  # legacy: the executor's wait is the executor's, unchanged
+            return None  # no assembly: the executor's wait is the executor's
         if auth_blocked:
             await self._give_up_blocked_plan_intent(
                 intent,
@@ -9887,9 +9495,12 @@ class Orchestrator:
         return False
 
     async def _decide(self, mission: Mission) -> bool:
-        # Review F1, before anything else: a hierarchical Mission on a deployment with
-        # no assembly is not scheduled, not judged and not handed to ``allocate()``.
+        # Review F1, before anything else: on a deployment with no assembly a Mission is
+        # not scheduled and not judged.
         if self._assembly_missing(mission, at="decide"):
+            return False
+        new_mode = self._new_mode(mission)
+        if new_mode is None:
             return False
         from ..storage.planning_human_store import PlanningHumanStore
         if PlanningHumanStore(self.store).pending(mission.id):
@@ -9936,26 +9547,20 @@ class Orchestrator:
             if t.status is not TaskStatus.CANCELLED
             and not (t.paused and t.status in {TaskStatus.READY, TaskStatus.BLOCKED})
         ]
-        # P2.3b / TG §7: in the new mode "everything is done" is read from the
-        # projection and the Resolutions, never from a sweep of ``TaskStatus`` — and
-        # the root review does not run until every gating child has been accepted.
-        new_mode = self._new_mode(mission)
-        if new_mode is not None:
-            # P2.3l / N7: form inner GoalResolutions before asking who is ready to
-            # dispatch.  ORDER successors of a nested compound stay WAITING_ORDER
-            # until the compound is ACCEPTED, which only a GoalResolution can say.
-            try:
-                new_mode.advance_compound_phases(mission.id)
-
-                self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
-            except (GraphIntegrityError, ContractError, StoreError) as error:
-                self._note(f"mission {mission.id}: inner composition review deferred ({error})")
+        # P2.3b / TG §7: "everything is done" is read from the projection and the
+        # Resolutions, never from a sweep of ``TaskStatus`` — and the root review does
+        # not run until every gating child has been accepted.
+        # P2.3l / N7: form inner GoalResolutions before asking who is ready to
+        # dispatch.  ORDER successors of a nested compound stay WAITING_ORDER
+        # until the compound is ACCEPTED, which only a GoalResolution can say.
         try:
-            settled = (
-                new_mode.root_review_ready(mission.id)
-                if new_mode is not None
-                else bool(live) and all(task.status is TaskStatus.COMPLETED for task in live)
-            )
+            new_mode.advance_compound_phases(mission.id)
+
+            self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
+        except (GraphIntegrityError, ContractError, StoreError) as error:
+            self._note(f"mission {mission.id}: inner composition review deferred ({error})")
+        try:
+            settled = new_mode.root_review_ready(mission.id)
         except GraphIntegrityError as error:
             await self._plan_integrity_stop(mission, error)
             return True
@@ -9970,10 +9575,10 @@ class Orchestrator:
             # deliberately a separate step and not folded into the trigger: the
             # trigger reads anchors and never writes them, and a review that writes
             # its own conclusion is the shape §21.5 exists to forbid.
-            if new_mode is not None and await self._advance_root_review(current, new_mode):
+            if await self._advance_root_review(current, new_mode):
                 return True
-            if new_mode is not None and not await self._root_resolution_formed(current, new_mode):
-                # §21.5 hard invariant, "wrongly declared complete = 0": a hierarchical
+            if not await self._root_resolution_formed(current, new_mode):
+                # §21.5 hard invariant, "wrongly declared complete = 0": a
                 # Mission reaches COMPLETED only *after* its root GoalResolution is
                 # formed, and that resolution is formed only by
                 # ``commit_goal_resolution`` — out of the success formula, the final
@@ -9986,7 +9591,7 @@ class Orchestrator:
                 # idle instead of re-offering a resolution that is refused for the same
                 # reason forever.
                 return False
-            if new_mode is not None and self.commit.assured_closeout_pending(current.id):
+            if self.commit.assured_closeout_pending(current.id):
                 # Handoff item 7: the assured Mission's success is judged and its
                 # closeout is the CLOSEOUT consumer's to converge (DRAINING /
                 # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
@@ -10012,84 +9617,56 @@ class Orchestrator:
             return False  # the stop cascade already ended the Mission
         attempts = [a for task in tasks for a in self.store.list_attempts(task.id)]
         bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's own version
-        # P2.3c part 2 / §18.5 constraint 4 / §24.1 decision 6: a hierarchical Mission
-        # allocates over *admissions*, never over the READY string.  P2.3b only had the
-        # form gate here, so a DATA consumer whose producer had not been accepted was
-        # dispatched with no inputs and ran anyway; ``allocate_v2`` takes only records
+        # P2.3c part 2 / §18.5 constraint 4 / §24.1 decision 6: allocation is over
+        # *admissions*, never over the READY string.  ``allocate_v2`` takes only records
         # ``admit_for_dispatch`` built out of a READY_CANDIDATE readiness report, so an
         # occurrence waiting on data, evidence, an approval or a refinement is withheld
-        # with a named reason instead of quietly running.  The legacy entry is untouched
-        # and stays the entry for a Mission that has no semantic bindings.
-        admissions: DispatchAdmissions | None = None
-        # One name, two plan shapes: the legacy ``AllocationPlan`` grants ``Task``
-        # objects and ``AllocationPlanV2`` grants ``EligiblePrimitiveTask`` admissions.
-        # ``granted_ids`` is where the two meet, and it is a list of *ids* on purpose —
-        # the row is re-read inside the loop anyway, so carrying either object past
-        # this point would only invite one branch to read the other's fields.
-        plan: AllocationPlan | AllocationPlanV2
-        granted_ids: list[tuple[str, int]]
-        if new_mode is not None:
-            try:
-                # P2.3c part 2b: re-read every acceptance a declared DATA edge rests on
-                # and record the licence to bind it (I19: recompute rather than reuse
-                # the old TRUE).  It runs *before* the readiness read because the
-                # resolver looks the witness up by acceptance id; issuing it afterwards
-                # would leave the consumer in WAITING_DATA for one whole cycle after its
-                # producer was accepted.
-                new_mode.issue_input_witnesses(
-                    mission.id,
-                    new_mode.network(mission.id),
-                    now_ms=int(self.store.now * 1000),
-                )
-                # P2.3c part 2c: the same act on the START-precondition lane, and for
-                # the same reason.  A leaf under a gated method inherits its parent
-                # method's ``applicable_when`` as a SELECT precondition, and TG §9
-                # refuses to dispatch it without a purpose=START witness — which
-                # nothing issued, so the real-model smoke committed a plan and then
-                # withheld every leaf with ``witness_missing`` for ever.
-                new_mode.issue_start_witnesses(
-                    mission.id,
-                    new_mode.network(mission.id),
-                    now_ms=int(self.store.now * 1000),
-                )
-                admissions = new_mode.admissions(mission.id)
-            except GraphIntegrityError as error:
-                await self._plan_integrity_stop(mission, error)
-                return True
-            new_mode.record_withheld(mission.id, admissions)
-            plan = allocate_v2(
-                tasks,
-                attempts,
-                admissions.bindings,
-                admissions.readiness,
-                concurrency_limit=min(
-                    int(bound["mission_concurrency"]), self._config.max_concurrency
-                ),
-                now=self.store.now,
-                aging_window_seconds=float(bound["aging_window_seconds"]),
-                mission_max_tokens=mission.budget.max_tokens,
-                pressure=self._pressure,
-                reduced_concurrency_ratio=self._config.reduced_concurrency_ratio,
-                exploration_slots=int(bound["exploration_slots"]),
-                weights=bound["allocator_weights"],
+        # with a named reason instead of quietly running.
+        try:
+            # P2.3c part 2b: re-read every acceptance a declared DATA edge rests on
+            # and record the licence to bind it (I19: recompute rather than reuse
+            # the old TRUE).  It runs *before* the readiness read because the
+            # resolver looks the witness up by acceptance id; issuing it afterwards
+            # would leave the consumer in WAITING_DATA for one whole cycle after its
+            # producer was accepted.
+            new_mode.issue_input_witnesses(
+                mission.id,
+                new_mode.network(mission.id),
+                now_ms=int(self.store.now * 1000),
             )
-            granted_ids = [(str(item.task_id), n) for item, n in plan.grants]
-        else:
-            plan = allocate(
-                tasks,
-                attempts,
-                concurrency_limit=min(
-                    int(bound["mission_concurrency"]), self._config.max_concurrency
-                ),
-                now=self.store.now,
-                aging_window_seconds=float(bound["aging_window_seconds"]),
-                mission_max_tokens=mission.budget.max_tokens,
-                pressure=self._pressure,  # D6-3: the gate outside the §29.3 formula
-                reduced_concurrency_ratio=self._config.reduced_concurrency_ratio,
-                exploration_slots=int(bound["exploration_slots"]),
-                weights=bound["allocator_weights"],
+            # P2.3c part 2c: the same act on the START-precondition lane, and for
+            # the same reason.  A leaf under a gated method inherits its parent
+            # method's ``applicable_when`` as a SELECT precondition, and TG §9
+            # refuses to dispatch it without a purpose=START witness — which
+            # nothing issued, so the real-model smoke committed a plan and then
+            # withheld every leaf with ``witness_missing`` for ever.
+            new_mode.issue_start_witnesses(
+                mission.id,
+                new_mode.network(mission.id),
+                now_ms=int(self.store.now * 1000),
             )
-            granted_ids = [(granted.id, candidate) for granted, candidate in plan.grants]
+            admissions = new_mode.admissions(mission.id)
+        except GraphIntegrityError as error:
+            await self._plan_integrity_stop(mission, error)
+            return True
+        new_mode.record_withheld(mission.id, admissions)
+        plan = allocate_v2(
+            tasks,
+            attempts,
+            admissions.bindings,
+            admissions.readiness,
+            concurrency_limit=min(
+                int(bound["mission_concurrency"]), self._config.max_concurrency
+            ),
+            now=self.store.now,
+            aging_window_seconds=float(bound["aging_window_seconds"]),
+            mission_max_tokens=mission.budget.max_tokens,
+            pressure=self._pressure,  # D6-3: the gate outside the §29.3 formula
+            reduced_concurrency_ratio=self._config.reduced_concurrency_ratio,
+            exploration_slots=int(bound["exploration_slots"]),
+            weights=bound["allocator_weights"],
+        )
+        granted_ids = [(str(item.task_id), n) for item, n in plan.grants]
         progressed = False
         for task_id, _candidate in granted_ids:
             current_task = self.store.get_task(task_id)
@@ -10102,7 +9679,7 @@ class Orchestrator:
                 mission,
                 task,
                 self.store.list_attempts(task.id),
-                admission=None if admissions is None else admissions.admission_for(task.id),
+                admission=admissions.admission_for(task.id),
                 allocation=None
                 if score is None
                 else {
@@ -10981,17 +10558,6 @@ class Orchestrator:
             )
         return [tree[path] for path in sorted(tree)]
 
-    def _artifacts_by_task(self, tasks: Sequence[Task]) -> dict[str, list[Artifact]]:
-        by_task: dict[str, list[Artifact]] = {}
-        for task in tasks:
-            found = []
-            for artifact_id in task.accepted_artifacts:
-                artifact = self.store.get_artifact(artifact_id)
-                if artifact is not None:
-                    found.append(artifact)
-            by_task[task.id] = found
-        return by_task
-
     async def _next_attempt(
         self,
         mission: Mission,
@@ -11005,47 +10571,48 @@ class Orchestrator:
         # fail-closed too, or the refusal in ``_decide`` would only cover the common path.
         if self._assembly_missing(mission, at="next_attempt"):
             return False
+        new_mode = self._new_mode(mission)
+        if new_mode is None:
+            return False
         # P2.3b / §18.5 rule 4: before anything else, a compound is refused here with
         # NEEDS_REFINEMENT.  The gate is ``form`` from the semantic binding, not the
-        # status string and not the semantics version — ``TaskStatus.READY`` on a
-        # compound is a rebuildable display index and never a permission to dispatch.
-        new_mode = self._new_mode(mission)
-        if new_mode is not None:
+        # status string — ``TaskStatus.READY`` on a compound is a rebuildable display
+        # index and never a permission to dispatch.
+        try:
+            intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
+        except GraphIntegrityError as error:
+            await self._plan_integrity_stop(mission, error)
+            return True
+        if intercepted is not None:
+            self._note(
+                f"task {task.id} not dispatched: {intercepted.reason} "
+                f"(occurrence {intercepted.occurrence_id})"
+            )
+            return False
+        # P2.3c part 2 / TG §8.3: the dispatch transaction re-checks.  An
+        # ``EligiblePrimitiveTask`` is *not* a capability — it records that a
+        # controlled check passed at ``admitted_at_ms`` and grants nothing — so
+        # this entry refuses a Task that arrived without one, however it got here.
+        # ``_decide`` hands its admission down so the common path does not re-read
+        # the whole plan; every other caller (repair, a manual drive)
+        # pays for the fresh read rather than skipping the gate.
+        if admission is None:
             try:
-                intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
+                admission = new_mode.admissions(mission.id).admission_for(task.id)
             except GraphIntegrityError as error:
                 await self._plan_integrity_stop(mission, error)
                 return True
-            if intercepted is not None:
-                self._note(
-                    f"task {task.id} not dispatched: {intercepted.reason} "
-                    f"(occurrence {intercepted.occurrence_id})"
-                )
-                return False
-            # P2.3c part 2 / TG §8.3: the dispatch transaction re-checks.  An
-            # ``EligiblePrimitiveTask`` is *not* a capability — it records that a
-            # controlled check passed at ``admitted_at_ms`` and grants nothing — so
-            # this entry refuses a Task that arrived without one, however it got here.
-            # ``_decide`` hands its admission down so the common path does not re-read
-            # the whole plan; every other caller (repair, a manual drive)
-            # pays for the fresh read rather than skipping the gate.
-            if admission is None:
-                try:
-                    admission = new_mode.admissions(mission.id).admission_for(task.id)
-                except GraphIntegrityError as error:
-                    await self._plan_integrity_stop(mission, error)
-                    return True
-            # Review F11: ``isinstance`` and not a duck-typed ``gate_passed`` probe.
-            # ``EligiblePrimitiveTask.gate_passed`` is guarded by the admission token,
-            # but a structural test would let *any* object carrying a true attribute of
-            # that name through this door — which is exactly the "admission with a flag"
-            # shape ``admissions()`` is written to avoid.
-            if not isinstance(admission, EligiblePrimitiveTask) or not admission.gate_passed:
-                self._note(
-                    f"task {task.id} not dispatched: no admission from the readiness gate "
-                    "(§18.5 constraint 4)"
-                )
-                return False
+        # Review F11: ``isinstance`` and not a duck-typed ``gate_passed`` probe.
+        # ``EligiblePrimitiveTask.gate_passed`` is guarded by the admission token,
+        # but a structural test would let *any* object carrying a true attribute of
+        # that name through this door — which is exactly the "admission with a flag"
+        # shape ``admissions()`` is written to avoid.
+        if not isinstance(admission, EligiblePrimitiveTask) or not admission.gate_passed:
+            self._note(
+                f"task {task.id} not dispatched: no admission from the readiness gate "
+                "(§18.5 constraint 4)"
+            )
+            return False
         from .planning_runtime_block import pending_block
         if pending_block(self.store, mission.id) is not None:
             return False
@@ -11083,25 +10650,18 @@ class Orchestrator:
                     f"human note from {event.payload.get('principal_id')} "
                     f"(information, not a permission change): {event.payload.get('text')}"
                 )
-        # D3-7': the Attempt starts from every ancestor's accepted artifacts
-        # P2.3b / §24.1 decision 4: in the new mode it starts from the resolved
-        # InputManifest instead, so an ORDER-only predecessor contributes nothing.
+        # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
+        # so an ORDER-only predecessor contributes nothing.
         all_tasks = {t.id: t for t in self.store.list_tasks(mission.id)}
         upstream_tasks = ancestors(task.id, all_tasks)
         try:
-            inputs = (
-                new_mode.attempt_inputs(mission.id, task.id)
-                if new_mode is not None
-                else merge_accepted(
-                    upstream_tasks, self._artifacts_by_task(upstream_tasks), tasks_by_id=all_tasks
-                )
-            )
+            inputs = new_mode.attempt_inputs(mission.id, task.id)
             # P2.3o: a patch (or any DATA) binding names the port document; the
             # files the producer changed overlay the consumer seed so verify /
             # inspect / summarize start from the accepted workspace, not the
             # unpatched snapshot.  ORDER-only predecessors still contribute
             # nothing — overlay only reads producers the manifest already named.
-            if new_mode is not None and inputs:
+            if inputs:
                 inputs = new_mode.overlay_attempt_inputs(mission.id, inputs)
         except GraphIntegrityError as error:
             await self._plan_integrity_stop(mission, error)
@@ -11117,8 +10677,7 @@ class Orchestrator:
             return True
         bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's own version
         role = self._template(role_for_task(task), mission.id)  # D5-9: approach
-        if new_mode is not None:
-            role = self._hierarchical_worker_template(role, mission.id)
+        role = self._hierarchical_worker_template(role, mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         try:
             knowledge = self._gather_knowledge(mission, task, all_tasks)
@@ -11233,101 +10792,91 @@ class Orchestrator:
             await self._release_mission(mission.id)
             self._note(f"task {task.id} stopped: worker package refused ({error})")
             return True
-        if new_mode is not None:
-            # P2.3c part 2d, decision 4: tell the leaf which output ports its own
-            # occurrence declares.  The names are the plan's, not the model's — the
-            # model supplies the *local key* (which file) and nothing else (TG design
-            # §3.2).  An empty list means nothing downstream consumes this leaf, and
-            # the envelope's ``outputs`` may then be omitted.
-            declared_ports = new_mode.declared_output_ports_for(mission.id, task.id)
-            if declared_ports:
-                from ..context.context_builder import _seal
-
-                package = _seal(
-                    {
-                        **dict(package.package),
-                        "declared_output_ports": {
-                            "data_not_instruction": True,
-                            "version": "declared-output-ports-v1",
-                            "ports": [dict(item) for item in declared_ports],
-                        },
-                    }
-                )
-            # P2.3h: tell the leaf which **root** criteria the plan hangs on it, with
-            # the method's own ``evidence_requirement`` for each — the sentence its
-            # output at the listed ports has to satisfy, because that output is what
-            # the root review reads for that criterion.  Absent when it carries none.
-            carried = new_mode.carried_root_criteria_for(mission.id, task.id)
-            if carried:
-                from ..context.context_builder import _seal
-
-                package = _seal(
-                    {
-                        **dict(package.package),
-                        "carried_root_criteria": {
-                            "data_not_instruction": True,
-                            "version": "carried-root-criteria-v1",
-                            "note": (
-                                "the root (MISSION_FINAL) review judges each root_criterion_id "
-                                "below on this task's accepted output at the listed ports; that "
-                                "output must show what evidence_requirement states"
-                            ),
-                            "criteria": [dict(item) for item in carried],
-                        },
-                    }
-                )
-            # A step that runs after the final review sent the task back sees what the
-            # reviewer said — the findings, verbatim, as data.  What to do about them
-            # was the Planner's decision and is in the step's own instructions.
-            final_review_findings = self._final_review_findings_for_workers(mission.id)
-            if final_review_findings:
-                from ..context.context_builder import _seal
-
-                package = _seal(
-                    {
-                        **dict(package.package),
-                        "review_feedback": {
-                            "data_not_instruction": True,
-                            "version": "final-review-feedback-v2",
-                            "note": (
-                                "the final review of the whole task returned these findings "
-                                "before this step was dispatched"
-                            ),
-                            "findings": final_review_findings,
-                        },
-                    }
-                )
-        from .scoped_content_review import task_content_prompt_scope
-        if new_mode is not None:
+        # P2.3c part 2d, decision 4: tell the leaf which output ports its own
+        # occurrence declares.  The names are the plan's, not the model's — the
+        # model supplies the *local key* (which file) and nothing else (TG design
+        # §3.2).  An empty list means nothing downstream consumes this leaf, and
+        # the envelope's ``outputs`` may then be omitted.
+        declared_ports = new_mode.declared_output_ports_for(mission.id, task.id)
+        if declared_ports:
             from ..context.context_builder import _seal
-            content_scope = task_content_prompt_scope(self.store, mission.id, task.id)
-            # The Task contract is a durable document-assessment identity. Keep it
-            # byte-equivalent to the committed Task; the separate content scope
-            # narrows this turn's responsibility without rewriting that contract.
-            package = _seal({**dict(package.package), "task_content_scope": content_scope})
+
+            package = _seal(
+                {
+                    **dict(package.package),
+                    "declared_output_ports": {
+                        "data_not_instruction": True,
+                        "version": "declared-output-ports-v1",
+                        "ports": [dict(item) for item in declared_ports],
+                    },
+                }
+            )
+        # P2.3h: tell the leaf which **root** criteria the plan hangs on it, with
+        # the method's own ``evidence_requirement`` for each — the sentence its
+        # output at the listed ports has to satisfy, because that output is what
+        # the root review reads for that criterion.  Absent when it carries none.
+        carried = new_mode.carried_root_criteria_for(mission.id, task.id)
+        if carried:
+            from ..context.context_builder import _seal
+
+            package = _seal(
+                {
+                    **dict(package.package),
+                    "carried_root_criteria": {
+                        "data_not_instruction": True,
+                        "version": "carried-root-criteria-v1",
+                        "note": (
+                            "the root (MISSION_FINAL) review judges each root_criterion_id "
+                            "below on this task's accepted output at the listed ports; that "
+                            "output must show what evidence_requirement states"
+                        ),
+                        "criteria": [dict(item) for item in carried],
+                    },
+                }
+            )
+        # A step that runs after the final review sent the task back sees what the
+        # reviewer said — the findings, verbatim, as data.  What to do about them
+        # was the Planner's decision and is in the step's own instructions.
+        final_review_findings = self._final_review_findings_for_workers(mission.id)
+        if final_review_findings:
+            from ..context.context_builder import _seal
+
+            package = _seal(
+                {
+                    **dict(package.package),
+                    "review_feedback": {
+                        "data_not_instruction": True,
+                        "version": "final-review-feedback-v2",
+                        "note": (
+                            "the final review of the whole task returned these findings "
+                            "before this step was dispatched"
+                        ),
+                        "findings": final_review_findings,
+                    },
+                }
+            )
+        from .scoped_content_review import task_content_prompt_scope
+        from ..context.context_builder import _seal
+        content_scope = task_content_prompt_scope(self.store, mission.id, task.id)
+        # The Task contract is a durable document-assessment identity. Keep it
+        # byte-equivalent to the committed Task; the separate content scope
+        # narrows this turn's responsibility without rewriting that contract.
+        package = _seal({**dict(package.package), "task_content_scope": content_scope})
         # D6-7: Mission ∩ Task ∩ Role ∩ Deployment, frozen into the intent below
         # P2.3u: a hierarchical read-only leaf also drops patch/apply-class tools.
-        # ``new_mode`` was already asked at the top of this function (no extra site).
         read_only = False
         operator_tool_limit = None
-        if new_mode is not None:
-            semantic = new_mode.semantics().task_semantics_of(mission.id, task.id)
-            read_only = semantic is not None and read_only_leaf(semantic)
-            if semantic is not None and semantic.operator_ref is not None:
-                operator = semantic.operator_ref
-                operator_tool_limit = dict(self._config.deployment_policy.operator_tool_allowlists).get(
-                    f"{operator.id}@{operator.version}:{operator.content_hash}",
-                    () if self._config.deployment_policy.require_operator_tool_policy else None)
+        semantic = new_mode.semantics().task_semantics_of(mission.id, task.id)
+        read_only = semantic is not None and read_only_leaf(semantic)
+        if semantic is not None and semantic.operator_ref is not None:
+            operator = semantic.operator_ref
+            operator_tool_limit = dict(self._config.deployment_policy.operator_tool_allowlists).get(
+                f"{operator.id}@{operator.version}:{operator.content_hash}",
+                () if self._config.deployment_policy.require_operator_tool_policy else None)
         allowed = effective_tools(
             mission_tools=mission.allowed_tools,
             task_tools=task.allowed_tools,
-            role_tools=(
-                (*role.tool_names, *self._config.agentdojo_tool_schemas)
-                if self.commit.domain_for(mission.id).id == "agentdojo-v1"
-                else (*role.tool_names, *self._config.are_tool_schemas)
-                if self.commit.domain_for(mission.id).id == "are-v1"
-                else (*role.tool_names, *self._config.domain_tools)
-            ),
+            role_tools=(*role.tool_names, *self._config.domain_tools),
             deployment=self._config.deployment_policy,
             read_only_leaf=read_only,
         )
@@ -11627,24 +11176,14 @@ class Orchestrator:
                 self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store,
                 assured=self._is_assured(mission.id),
             )
-        all_tasks = {t.id: t for t in tasks}
-        # P2.3k / defect N3.  The legacy merge reads "independent branches" off
-        # ``Task.dependency_ids``, which a materialised occurrence leaves empty by
-        # design (§18.5 constraint 4) — so on a hierarchical Mission any two leaves that
-        # wrote one path were an ``ArtifactConflict``, and the Grok C3 episodes failed a
-        # Mission whose root ``GoalResolution`` already stood, one event after
-        # ``GoalResolutionCommitted``.  The tree is read from the resolution's own
-        # contributions there (same shape as P2.3d's D4: a mode branch and a record);
-        # the legacy Mission keeps the legacy rule, byte for byte.
+        # P2.3k / defect N3: the tree is read from the root resolution's own
+        # contributions, never from ``Task.dependency_ids`` (a materialised occurrence
+        # leaves them empty by design, §18.5 constraint 4).
         new_mode = self._new_mode(mission)
+        if new_mode is None:
+            raise ContractError("hierarchical_assembly_missing: no judgment without the assembly")
         try:
-            merged = (
-                self._hierarchical_judgment_inputs(mission, new_mode, tasks)
-                if new_mode is not None
-                else merge_accepted(
-                    list(tasks), self._artifacts_by_task(tasks), tasks_by_id=all_tasks
-                )
-            )
+            merged = self._hierarchical_judgment_inputs(mission, new_mode, tasks)
         except ArtifactConflict as error:
             self._commit_fail_mission(
                 mission.id,

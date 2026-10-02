@@ -113,17 +113,12 @@ async def terminal_notice_on_production_install(report):
                 orchestration_semantics_version='hierarchical', planning_protocol_version='planning-decision-v1'))
             assert created and AssuranceStore(store).lane(assured.id) == 'ASSURANCE_1_1'
             assert not commit.assured_closeout_pending(assured.id)
-            legacy, _ = commit.create_mission(MissionSpec(goal='legacy', success_criteria=('c',), tenant_id='tenant',
-                                                          idempotency_key='legacy-1', orchestration_semantics_version="legacy"))
             # Original terminal writer on the assured lane: the NOTIFY request is part of the write.
             cancelled = commit.cancel_mission(assured.id)
             final = events_of(store, assured.id, 'MissionCancelled')[0]
             requests = [e.payload for e in events_of(store, assured.id, NOTIFICATION_EVENT)]
             assert requests == [{'final_event_id': final.id, 'state_version': cancelled.version,
                                  'final_event_type': 'MissionCancelled'}], requests
-            # A legacy Mission's terminal write requests nothing.
-            commit.cancel_mission(legacy.id)
-            assert not events_of(store, legacy.id, NOTIFICATION_EVENT)
             rounds = await drain(orch._assurance_tick)
             assert sent == [{'mission_id': assured.id, 'event_id': final.id, 'state_version': cancelled.version}], sent
             await drain(orch._assurance_tick)
@@ -131,8 +126,7 @@ async def terminal_notice_on_production_install(report):
             # A cancelled assured Mission never reaches the final writer: no row, no closeout request.
             assert closeout_row(store, assured.id) is None and not events_of(store, assured.id, CLOSEOUT_REQUESTED_EVENT)
             report['production_install'] = {'finalizer': 'assurance_final_writer.finalize_assured_mission',
-                                            'cancel_notice': requests, 'sent': sent, 'notify_rounds': rounds,
-                                            'legacy_notice': []}
+                                            'cancel_notice': requests, 'sent': sent, 'notify_rounds': rounds}
 
 
 # ------------------------------------------------------------------ part B

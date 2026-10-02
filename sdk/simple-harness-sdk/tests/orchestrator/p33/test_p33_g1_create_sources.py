@@ -46,7 +46,7 @@ def command():
             "goal": "比较原始资料",
             "success_criteria": ["file:REPORT.md"],
             "domain": DOC_DOMAIN,
-            "idempotency_key": "g1-batch", "orchestration_semantics_version": "legacy",
+            "idempotency_key": "g1-batch",
             "budget": {"max_tokens": 30000, "max_attempts": 4},
         },
         "sources": [

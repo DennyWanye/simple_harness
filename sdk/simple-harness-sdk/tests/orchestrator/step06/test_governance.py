@@ -11,29 +11,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from helpers_step06 import config, spec
-
-from agent_orchestrator.contracts import Budget
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.testing.fixtures import (
-    _recorder_task,
-    demo_dynamic_dag_provider,
-    recorder_scripts,
-)
-
-
-def _implementation_task(**overrides):
-    task = _recorder_task(
-        "A",
-        "实现 recorder.py 并通过 tests/test_recorder.py（独立任务）",
-        [],
-        ["pytest:tests/test_recorder.py"],
-        3.0,
-        ["recorder.py"],
-        policy=["format_check", "rule_check", "code_test"],
-    )
-    task.update(overrides)
-    return task
 
 
 # ------------------------------------------------------------------ tool calls
@@ -78,43 +55,6 @@ def test_s6_07_the_gateway_enforces_the_reserved_tool_call_cap_per_attempt(tmp_p
         "succeeded",
         "rejected:rate_limited",
     ]
-
-
-def test_s6_07_the_attempt_cap_is_the_narrower_of_deployment_and_task_dimensions(tmp_path):
-    provider = demo_dynamic_dag_provider(
-        tasks=[
-            _implementation_task(
-                budget={"max_tokens": 30_000, "max_attempts": 3, "max_tool_calls": 2}
-            )
-        ],
-        per_attempt={"A": [recorder_scripts()["B2"]]},
-    )
-
-    async def case():
-        async with Orchestrator(
-            config(tmp_path, max_tool_calls_per_turn=48), provider
-        ) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                spec(
-                    "tool-cap",
-                    success_criteria=("pytest:tests/test_recorder.py",),
-                    budget=Budget(max_tool_calls=20, max_attempts=8),
-                )
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            first = store.list_attempts(store.list_tasks(mission.id)[0].id)[0]
-            intent = store.get_intent_for_subject(first.id)
-            assert (
-                intent.config["max_tool_calls"] == 2
-            )  # Task dimension narrows the deployment's 48
-            assert intent.config["agent_config"]["limits"]["max_tool_calls_per_turn"] == 2
-            reserved = orchestrator.commit.ledger.costs_report(mission.id)["reservations"]
-            assert [r["reserved_tool_calls"] for r in reserved if r["subject_id"] == first.id] == [
-                2
-            ]
-
-    asyncio.run(case())
 
 
 # ------------------------------------------------------------------ S6-05 (D6-7)

@@ -185,7 +185,6 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     # name: (prompt_version, sha256 of instructions)
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
     "WORKER_V2": ("worker-v2", "c0c35d2d2639ea6655c66bf7b30b6f46cf04ffbb458a79caba63b6477ae46f37"),
-    "PLANNER": ("planner-v4", "13537f0abf6322c7075af9b5ddb3c0b7316c0271830311f49c3d6c195f5c9aad"),
     "CRITIC": ("critic-v3", "427fb096fc0c4cf6acc67358cd631d3f3c4c39ce2fea60b768a529f6290b7120"),
     "CRITIC_V2": ("critic-v2", "8eb51a32c06bfa16da88e4e89a28f48b50ce2e06969aec467abd803078a1c5ce"),
     # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
@@ -248,7 +247,7 @@ def test_the_frozen_digests_cover_the_prompts_this_slice_depends_on() -> None:
     not have touched."""
 
     assert {"WORKER", "WORKER_V2", "WORKER_HIERARCHICAL"} <= set(FROZEN_PROMPT_DIGESTS)
-    assert {"PLANNER", "CRITIC", "CRITIC_V2"} <= set(FROZEN_PROMPT_DIGESTS)
+    assert {"CRITIC", "CRITIC_V2"} <= set(FROZEN_PROMPT_DIGESTS)
     assert FROZEN_PROMPT_DIGESTS["WORKER_HIERARCHICAL"][0] == WORKER_HIERARCHICAL_VERSION
     assert WORKER.prompt_version == "worker-v3"
     assert WORKER_V2.prompt_version == "worker-v2"
@@ -448,15 +447,6 @@ def test_the_leaf_is_told_which_output_ports_its_occurrence_declares(tmp_path) -
     assert set(ports), "the fixture's leaf really does declare a consumed port"
 
 
-def test_a_legacy_leaf_is_never_handed_a_declared_output_ports_section(tmp_path) -> None:
-    """§18.5 rule 1: ``ResultEnvelope`` refuses unknown keys, so the DAG mode must not
-    be shown a key its contract has no field for."""
-
-    intents, _ = _leaf_intent(tmp_path, mode="legacy")
-    for intent in intents:
-        assert "declared_output_ports" not in _content(intent)
-
-
 def test_a_dag_mode_pin_does_not_reach_a_hierarchical_leaf(tmp_path) -> None:
     """Mutation M19: stop swapping in the hierarchical Worker template.
 
@@ -468,14 +458,6 @@ def test_a_dag_mode_pin_does_not_reach_a_hierarchical_leaf(tmp_path) -> None:
     intents, _ = _leaf_intent(tmp_path, pin="worker-v3")
     assert intents
     assert intents[0].config["prompt_version"] == WORKER_HIERARCHICAL_VERSION
-
-
-def test_a_dag_mode_pin_is_honoured_on_a_legacy_mission(tmp_path) -> None:
-    """The other half: the pin is not ignored, it belongs to the mode that has it."""
-
-    intents, _ = _leaf_intent(tmp_path, mode="legacy", pin="worker-v3")
-    for intent in intents:
-        assert intent.config["prompt_version"] == "worker-v3"
 
 
 # ======================================================================================

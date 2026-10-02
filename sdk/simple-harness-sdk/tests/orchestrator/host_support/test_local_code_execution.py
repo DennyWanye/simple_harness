@@ -12,93 +12,23 @@ already carries it from before the switch records the layer as ERROR (never PASS
 Mission ``pytest:`` criterion is judged unmet without running, and ``run_tests`` is
 refused.  The decisive oracle is behavioural: a spy around the real ``run_pytest`` is
 never called and a test file whose import writes a marker leaves no marker.
+
+删旧平面模式 第三刀：三条靠平面规划器/平面任务图驱动的测试（平面规划器模板、规划器要
+``code_test`` 被拒后重规划、开关之前建的平面任务里 ``pytest:`` 判据判未满足）随平面删；
+这里只剩部署开关本身的两条。
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-from pathlib import Path
-
 import pytest
 
-from agent_orchestrator.contracts import STEP2_IMPLEMENTED_LAYERS, Budget
+from agent_orchestrator.contracts import STEP2_IMPLEMENTED_LAYERS
 from agent_orchestrator.governance.policies import DeploymentPolicy, deployed_layers
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.runtime.role_templates import PLANNER, TEMPLATE_VERSIONS
-from agent_orchestrator.testing.fixtures import (
-    RoleScriptedProvider,
-    critic_step,
-    envelope_step,
-    graph_proposal_step,
-    package_of,
-)
 
 TOOLS3 = ("workspace_read_file", "workspace_write_file", "workspace_list")
 TOOLS4 = (*TOOLS3, "run_tests")
 OFF = DeploymentPolicy(allowed_tools=TOOLS3, local_code_execution=False)
 ON = DeploymentPolicy()
-NO_CODE = ["format_check", "rule_check", "critic_review"]
-WITH_CODE = [*NO_CODE, "code_test"]
-
-
-def _config(tmp_path, deployment=OFF):
-    return OrchestratorConfig(
-        evidence_root=Path(tmp_path) / "evidence",
-        max_concurrency=1,
-        test_timeout_seconds=60,
-        deployment_policy=deployment,
-    )
-
-
-def _spec(key, *, criteria=("file:NOTES.md",), tools=TOOLS3):
-    return MissionSpec(
-        goal="写一份 NOTES.md，列出三个要点",
-        success_criteria=tuple(criteria),
-        tenant_id="tenant-host",
-        idempotency_key=key,
-        allowed_tools=tuple(tools),
-        budget=Budget(max_tokens=300_000, max_attempts=6),
-        orchestration_semantics_version="legacy",
-    )
-
-
-def _task(key, policy, *, tools=TOOLS3, outputs=("NOTES.md",), attempts=2):
-    return {
-        "key": key,
-        "goal": "写 NOTES.md",
-        "rationale": "Mission 只有这一件工作",
-        "dependencies": [],
-        "success_criteria": ["file:NOTES.md"],
-        "verification_policy": list(policy),
-        "outputs": list(outputs),
-        "allowed_tools": list(tools),
-        "budget": {"max_tokens": 30_000, "max_attempts": attempts},
-        "priority": 1.0,
-    }
-
-
-def _notes_worker(extra=(), artifacts=("NOTES.md",)):
-    return [
-        *extra,
-        ("workspace_write_file", {"path": "NOTES.md", "content": "- 一\n- 二\n- 三\n"}),
-        envelope_step(summary="写好了", artifacts=list(artifacts), claims=["NOTES.md 有三个要点"]),
-    ]
-
-
-def _critics(n=4):
-    return [critic_step(verdict="PASS", criteria_met=True) for _ in range(n)]
-
-
-def _capturing(step, seen):
-    def wrapped(request):
-        seen.append(package_of(request))
-        return step(request) if callable(step) else step
-
-    return wrapped
 
 
 # ------------------------------------------------------------------ SA-6
@@ -113,109 +43,3 @@ def test_off_drops_code_test_and_refuses_run_tests_as_a_contradiction():
     assert OFF.to_json()["local_code_execution"] is False
     with pytest.raises(ValueError, match="run_tests"):
         DeploymentPolicy(allowed_tools=TOOLS4, local_code_execution=False)
-
-
-# ------------------------------------------------------------------ SA-3
-def test_templates_offer_only_the_deployed_layers_and_keep_the_old_versions():
-    assert PLANNER.prompt_version == "planner-v4"
-    assert "deployed_verification_layers" in PLANNER.instructions
-    assert "format_check / rule_check / critic_review / code_test" not in PLANNER.instructions
-    # a library whose ACTIVE policy was seeded with the older prompts keeps working
-    assert {"planner-v3", "planner-v4"} <= set(TEMPLATE_VERSIONS["planner"])
-
-
-# ------------------------------------------------------------------ SA-1
-def test_a_planner_asking_for_code_test_is_refused_and_the_replan_completes(tmp_path, pytest_spy):
-    seen: list[dict] = []
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                _capturing(graph_proposal_step([_task("A", WITH_CODE)]), seen),
-                _capturing(graph_proposal_step([_task("A", NO_CODE)]), seen),
-            ],
-            "worker": _notes_worker(),
-            "critic": _critics(),
-        }
-    )
-
-    async def run():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("sa1"))
-            await orchestrator.run()
-            store = orchestrator.store
-            return (
-                store.get_mission(mission.id),
-                store.list_events(mission.id),
-                store.list_tasks(mission.id),
-            )
-
-    mission, events, tasks = asyncio.run(run())
-    assert str(mission.status) == "COMPLETED"
-    rejected = [e for e in events if e.type == "TaskGraphRejected"]
-    assert rejected
-    assert "verification_policy_undeployed" in json.dumps(rejected[0].payload, ensure_ascii=False)
-    assert tasks and all("code_test" not in t.verification_policy for t in tasks)
-    # the Planner was told which layers exist here, and why the first graph failed
-    assert len(seen) == 2
-    assert all(p["deployed_verification_layers"] == sorted(deployed_layers(OFF)) for p in seen)
-    assert "verification_policy_undeployed" in json.dumps(
-        seen[1]["planning_rejected"], ensure_ascii=False
-    )
-    assert pytest_spy == []
-
-
-# ------------------------------------------------------------------ before the switch
-def _legacy_mission(tmp_path, *, criteria, policy, task=None):
-    """Created and planned while local code execution was on (no model turn yet);
-    ``task`` replaces the default Task contract."""
-
-    async def phase1():
-        async with Orchestrator(_config(tmp_path, ON), RoleScriptedProvider({})) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                _spec("legacy", criteria=criteria, tools=TOOLS4)
-            )
-            planning = orchestrator.commit.begin_planning(mission.id)
-            orchestrator.commit.commit_task_graph(
-                mission.id,
-                TaskGraphProposal.from_json({"tasks": [task or _task("A", policy, tools=TOOLS4)]}),
-                base_version=planning.version,
-                source={"planner": "fixture"},
-            )
-            return mission.id
-
-    return asyncio.run(phase1())
-
-
-def _resume_off(tmp_path, mission_id, provider):
-    async def phase2():
-        async with Orchestrator(_config(tmp_path, OFF), provider) as orchestrator:
-            await orchestrator.run()
-            store = orchestrator.store
-            layers = [
-                layer
-                for task in store.list_tasks(mission_id)
-                for attempt in store.list_attempts(task.id)
-                for stored in [store.find_result_for_attempt(attempt.id)]
-                if stored is not None
-                for layer in store.list_verifications(stored.envelope.id)
-            ]
-            return store.get_mission(mission_id), layers, store.list_events(mission_id)
-
-    return asyncio.run(phase2())
-
-
-def test_a_pytest_mission_criterion_from_before_the_switch_is_judged_unmet(tmp_path, pytest_spy):
-    mission_id = _legacy_mission(
-        tmp_path, criteria=("file:NOTES.md", "pytest:tests/test_x.py"), policy=NO_CODE
-    )
-    provider = RoleScriptedProvider({"worker": _notes_worker(), "critic": _critics()})
-    mission, _layers, events = _resume_off(tmp_path, mission_id, provider)
-    judged = [e for e in events if e.type == "MissionSuccessJudged"]
-    assert judged
-    verdicts = {j["criterion"]: j for j in judged[-1].payload["judgments"]}
-    pytest_verdict = verdicts["pytest:tests/test_x.py"]
-    assert pytest_verdict["met"] is False
-    assert "local_code_execution" in pytest_verdict["reason"]
-    assert verdicts["file:NOTES.md"]["met"] is True
-    assert str(mission.status) == "FAILED" and mission.stop_reason == "mission_criteria_unmet"
-    assert pytest_spy == []

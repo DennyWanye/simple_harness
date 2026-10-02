@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
-from graph_helpers7 import graph_service, node
+from leaf_world import leaf_world
 from test_provider_budget_guard import (
     ActualProvider, Counter, create_bound, grants, setup_runtime, sibling,
 )
@@ -30,6 +30,13 @@ from simple_harness.runtime.consumer_adapter import (
     _DefaultRuntimeReconciliation,
     _DefaultToolReconciliation,
 )
+
+
+def _one_leaf(tmp_path):
+    """一个分层任务里的一个步骤，额度 2 万（删旧平面模式 第三刀：原来是平面图里的任务 A）。"""
+
+    world = leaf_world(tmp_path, key="g-1", task_max_tokens=20_000, tenant_id="tenant-5")
+    return world.service, world.mission, {"A": world.tasks["a"]}
 
 
 async def until(predicate):
@@ -145,7 +152,7 @@ def test_actual_unknown_stays_held_then_sdk_reconciliation_settles_once(tmp_path
 
     async def exercise():
         nonlocal provider
-        commit, mission, tasks = graph_service(tmp_path, nodes=[node("A")])
+        commit, mission, tasks = _one_leaf(tmp_path)
         provider = ResponseLost()
         evidence = Evidence()
         guard = ProviderBudgetGuard(commit, owner="test-owner", estimator=Counter(100), max_slots=1)
@@ -362,7 +369,7 @@ def test_new_runtime_owner_recovers_submitted_service_and_old_owner_cannot_hando
         from simple_harness.providers.errors import ProviderTransportError
         from simple_harness.runtime.consumer_adapter import _ConsumerProviderAdapter
 
-        commit, mission, _ = graph_service(tmp_path, nodes=[node("A")])
+        commit, mission, _ = _one_leaf(tmp_path)
         provider = ActualProvider(blocked=True)
         counter = Counter(100)
         evidence = NotStartedYet()

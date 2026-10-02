@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-from agent_orchestrator.__main__ import main
 from agent_orchestrator.governance.policies import SNAPSHOT_FIELDS, policy_snapshot, snapshot_diff
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RoutingRules
@@ -110,34 +109,3 @@ def test_an_unclassified_field_is_refused(tmp_path):
     with pytest.raises(ValueError, match="brand_new_knob"):
         policy_snapshot(Wider(evidence_root=Path(tmp_path) / "w"))
 
-
-def test_the_demo_evidence_carries_the_snapshot_and_no_drift(tmp_path, capsys):
-    from agent_orchestrator.runtime.role_templates import WORKER
-
-    evidence = Path(tmp_path) / "s2"
-    assert (
-        main(
-            [
-                "demo",
-                "--scenario",
-                "single-task",
-                "--provider",
-                "fixtures",
-                "--evidence-dir",
-                str(evidence),
-                "--idempotency-key",
-                "snap",
-            ]
-        )
-        == 0
-    )
-    capsys.readouterr()
-    written = json.loads((evidence / "policy_snapshot.json").read_text(encoding="utf-8"))
-    baseline = json.loads((evidence / "baseline.json").read_text(encoding="utf-8"))
-    assert (
-        written["drift"] is False
-        and written["drift_detail"] == []
-        and written["start_hash"] == baseline["policy_snapshot"]["hash"] == written["end_hash"]
-    )
-    assert written["snapshot"]["provider"]["class"] == "RoleScriptedProvider"
-    assert written["snapshot"]["role_templates"]["worker"] == WORKER.prompt_version

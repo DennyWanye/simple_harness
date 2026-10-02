@@ -45,11 +45,6 @@ from ...contracts.htn import (
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef
 
-# ``SYSTEM_BOUND_FIELDS`` comes from the one module that owns the list, so this
-# context and ``planning.planner``'s ingress cannot disagree about what "the system
-# binds this" means (§18.5).  The import is safe in this direction: the planner
-# reaches the commit service, and nothing the commit service imports reaches here.
-from ..planner import SYSTEM_BOUND_FIELDS
 from .applicability import ApplicabilityReport, CapabilitySnapshot
 from .registry import (
     AdmissionPolicy,
@@ -68,11 +63,33 @@ TERMINAL_STATUSES: frozenset[MethodRegistryStatus] = frozenset(
     {MethodRegistryStatus.TRIAL_ADMITTED, MethodRegistryStatus.REJECTED}
 )
 
+#: §18.5 / §7.3: what a model may *never* write into a proposal, because each of
+#: these is the system's own answer to "may this happen at all".  They are refused
+#: at the boundary rather than overwritten, because silently replacing a claimed
+#: ``manager_epoch`` with the real one would let a model probe the gate for free and
+#: would leave no record that it tried.
+SYSTEM_BOUND_FIELDS = frozenset(
+    {
+        "mission_id",
+        "principal",
+        "principal_id",
+        "scope",
+        "scope_id",
+        "manager_epoch",
+        "budget_account",
+        "budget_grant_revision",
+        "registry_status",
+        "opened_by",
+        "authorization_ref",
+        "grant_ref",
+        "provenance",
+        "authored_by",
+    }
+)
+
 #: Sub-trees of :meth:`MethodProposalContext.to_json` that hold *domain values* rather
-#: than structural claims.  ``planning.planner._refuse_authority_claims`` draws the
-#: same line in the other direction: a method parameter that happens to be called
-#: ``scope`` is a value, and refusing it would make the contract depend on a
-#: domain's vocabulary.
+#: than structural claims: a method parameter that happens to be called ``scope`` is a
+#: value, and refusing it would make the contract depend on a domain's vocabulary.
 VALUE_CONTAINERS: frozenset[str] = frozenset({"goal_parameters"})
 
 #: Who a proposal arriving on this path is attributed to.  Not a parameter: the

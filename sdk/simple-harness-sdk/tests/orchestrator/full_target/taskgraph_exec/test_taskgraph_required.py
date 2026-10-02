@@ -196,24 +196,3 @@ def test_a_revoked_grant_releases_the_wait_to_the_original_refusal(tmp_path):
             assert not loop._has_pending_planning_waits(mission.id) or current.state != "PENDING"
 
     asyncio.run(case())
-
-
-def test_an_ineligible_mission_is_never_marked(tmp_path):
-    """Review 2026-09-27: a Mission that could never be bound is refused the mark."""
-
-    async def case():
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            from agent_orchestrator.contracts import Budget
-            from agent_orchestrator.orchestrator.commit_service import MissionSpec
-            legacy, _ = loop.commit.create_mission(MissionSpec(
-                orchestration_semantics_version="legacy",
-                goal="旧式平铺任务", success_criteria=("有说明",), tenant_id="tenant-legacy",
-                idempotency_key="tg-legacy", allowed_tools=("workspace_read_file",),
-                budget=Budget(max_tokens=10_000, max_attempts=2)))
-            with pytest.raises(StoreError, match="NOT_ELIGIBLE"):
-                with loop.store.transaction():
-                    require_taskgraph(loop.store, legacy.id)
-            assert not taskgraph_required(loop.store, legacy.id)
-
-    asyncio.run(case())

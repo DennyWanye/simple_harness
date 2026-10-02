@@ -58,10 +58,7 @@ from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
     decode_unified_diff_text,
     files_patched_by_unified_diff,
 )
-from agent_orchestrator.contracts import Budget  # noqa: E402
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    MissionSpec,
     mission_account,
 )
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
@@ -71,8 +68,6 @@ from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    DEMO_PROPOSAL,
-    DEMO_SEED,
     RoleScriptedProvider,
     envelope_step,
     package_of,
@@ -443,66 +438,3 @@ def _run(
             }
 
     return asyncio.run(case())
-
-
-# ======================================================================================
-# 3. True Orchestrator.run()
-# ======================================================================================
-
-
-def test_legacy_identical_failures_do_not_open_a_planning_repair(tmp_path) -> None:
-    """(c) A legacy Mission still retries a failed verification and never emits
-    ``PlanningRejected{repeated_verification_failure}``.  The demo script fails
-    once then passes — the escalate door is hierarchical-only."""
-
-    from agent_orchestrator.testing.fixtures import demo_single_task_provider
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    provider = demo_single_task_provider()
-
-    async def case() -> dict[str, Any]:
-        config = OrchestratorConfig(
-            evidence_root=evidence,
-            max_concurrency=1,
-            test_timeout_seconds=30,
-        )
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            mission = await loop.submit_mission(
-                MissionSpec(
-                    orchestration_semantics_version="legacy",
-                    goal=str(DEMO_PROPOSAL["root_goal"]),
-                    success_criteria=tuple(DEMO_PROPOSAL["success_criteria"]),
-                    tenant_id="tenant-p23v-legacy",
-                    idempotency_key="p23v-legacy",
-                    allowed_tools=tuple(DEMO_PROPOSAL["allowed_tools"]),
-                    workspace_seed=dict(DEMO_SEED),
-                    budget=Budget(max_tokens=200_000, max_attempts=12),
-                )
-            )
-            await asyncio.wait_for(loop.run(max_cycles=200), timeout=30)
-            final = loop.store.get_mission(mission.id)
-            assert final is not None
-            events = list(loop.store.list_events(mission.id))
-            return {
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "types": [item.type for item in events],
-                "reasons": [
-                    item.payload.get("reason")
-                    for item in events
-                    if item.type == "PlanningRejected"
-                ],
-                "failed": sum(1 for item in events if item.type == "VerificationFailed"),
-                "attempts": sum(
-                    1
-                    for task in loop.store.list_tasks(mission.id)
-                    for _attempt in loop.store.list_attempts(task.id)
-                ),
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["status"] is MissionStatus.COMPLETED, outcome
-    assert outcome["failed"] >= 1, outcome
-    assert outcome["attempts"] >= 2, outcome
-    assert "repeated_verification_failure" not in outcome["reasons"], outcome

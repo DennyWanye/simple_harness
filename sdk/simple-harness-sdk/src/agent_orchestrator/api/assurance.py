@@ -383,7 +383,6 @@ class AssuranceApi:
         self, mission: Any, *, now_ms: int, epochs: EpochSnapshot, root: str
     ) -> list[dict[str, Any]]:
         from ..orchestrator.completion_status import read_current_effect
-        from ..orchestrator.scoped_content_review import uses_completion_protocol
 
         store, mission_id = self._store, mission.id
         htn = HtnStore(store)
@@ -425,24 +424,23 @@ class AssuranceApi:
             else:
                 state, use, reasons, count = "PENDING", "NOT_APPLICABLE", ["NO_OFFICIAL_RECORD"], 0
             items.append(self._item("REVIEW", row["review_key"], state, use, reasons, count))
-        # EFFECT: required effects of each completion scope under the protocol.
-        if uses_completion_protocol(store, mission_id):
-            scopes = store.connection.execute(
-                "SELECT scope_id,spec_hash,document_json FROM operation_completion_scopes "
-                "WHERE mission_id=? ORDER BY scope_id",
-                (mission_id,),
-            ).fetchall()
-            for scope in scopes:
-                document = decode(scope["document_json"])
-                for effect_key in document.get("required_effect_keys", ()):
-                    try:
-                        current = read_current_effect(store, mission_id, scope["spec_hash"], str(effect_key))
-                        state, reasons = str(current.get("state")), []
-                    except Exception as error:  # noqa: BLE001 - reported per item, never raised
-                        state, reasons = "UNAVAILABLE", ["EFFECT_READ_FAILED:" + type(error).__name__]
-                    items.append(self._item(
-                        "EFFECT", f"{scope['scope_id']}:{effect_key}", state, "NOT_APPLICABLE", reasons,
-                    ))
+        # EFFECT: required effects of each completion scope.
+        scopes = store.connection.execute(
+            "SELECT scope_id,spec_hash,document_json FROM operation_completion_scopes "
+            "WHERE mission_id=? ORDER BY scope_id",
+            (mission_id,),
+        ).fetchall()
+        for scope in scopes:
+            document = decode(scope["document_json"])
+            for effect_key in document.get("required_effect_keys", ()):
+                try:
+                    current = read_current_effect(store, mission_id, scope["spec_hash"], str(effect_key))
+                    state, reasons = str(current.get("state")), []
+                except Exception as error:  # noqa: BLE001 - reported per item, never raised
+                    state, reasons = "UNAVAILABLE", ["EFFECT_READ_FAILED:" + type(error).__name__]
+                items.append(self._item(
+                    "EFFECT", f"{scope['scope_id']}:{effect_key}", state, "NOT_APPLICABLE", reasons,
+                ))
         # CLOSEOUT: the consumer's projected row.
         closeout = store.connection.execute(
             "SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,)

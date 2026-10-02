@@ -66,7 +66,6 @@ class TaskGraphExecutionImports:
             deployment = config.deployment_policy
             if not isinstance(deployment, DeploymentPolicy):
                 raise SourceUnavailable("taskgraph_deployment_policy_missing")
-            domain = orchestrator.commit.domain_for(mission_id)
             semantics = HtnStore(store)
             tasks = []
             for task in sorted(store.list_tasks(mission_id), key=lambda item: item.id):
@@ -76,10 +75,8 @@ class TaskGraphExecutionImports:
                 role = orchestrator._template(role_for_task(task), mission_id)
                 if binding is not None:
                     role = orchestrator._hierarchical_worker_template(role, mission_id)
-                extra_tools = (tuple(config.agentdojo_tool_schemas) if domain.id == "agentdojo-v1"
-                    else tuple(config.are_tool_schemas) if domain.id == "are-v1" else ())
                 read_only = binding is not None and read_only_leaf(binding)
-                role_tools = (*role.tool_names, *extra_tools)
+                role_tools = tuple(role.tool_names)
                 tasks.append({"task_id": task.id,
                     "task_tools": list(task.allowed_tools),
                     "permission_input": {"role": role.name,

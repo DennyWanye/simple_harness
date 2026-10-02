@@ -102,10 +102,6 @@ class OrchestratorConfig:
     planner_reserve_tokens: int = 4_000
     critic_reserve_tokens: int = 6_000
     attempt_reserve_tokens: int = 20_000
-    # P3.1 fix F-ORCH-1: the base of the Task budget floor — None = the largest
-    # ``default_max_output_tokens`` of the config and every profile (what one turn may
-    # emit), 0 = no floor, a positive number = that base
-    min_task_tokens: int | None = None
     # P3.2 (plan D4): how long a finished Mission's workspace directories are kept before
     # cleanup removes them (the registry rows and the content-addressed bytes stay)
     workspace_retention_seconds: float = 7 * 24 * 3600.0
@@ -121,14 +117,6 @@ class OrchestratorConfig:
     appworld_execute: Callable[[str], Mapping[str, Any]] | None = field(
         default=None, repr=False, compare=False
     )
-    agentdojo_invoke: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = field(
-        default=None, repr=False, compare=False, kw_only=True
-    )
-    agentdojo_tool_schemas: Mapping[str, dict[str, Any]] = field(default_factory=dict, kw_only=True)
-    are_invoke: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = field(
-        default=None, repr=False, compare=False, kw_only=True
-    )
-    are_tool_schemas: Mapping[str, dict[str, Any]] = field(default_factory=dict, kw_only=True)
     domain_tools: Mapping[str, DomainTool] = field(default_factory=dict, kw_only=True, repr=False, compare=False)
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
     planning_backend: PlanningBackend | None = field(default=None, repr=False, compare=False, kw_only=True)
@@ -170,10 +158,6 @@ class OrchestratorConfig:
             raise ValueError("max_root_review_cuts must be >= 1")
         if self.max_root_review_repairs < 0:
             raise ValueError("max_root_review_repairs must be >= 0")
-        if self.min_task_tokens is not None and (
-            isinstance(self.min_task_tokens, bool) or self.min_task_tokens < 0
-        ):
-            raise ValueError("min_task_tokens must be None, 0 or a positive number of tokens")
         if self.workspace_retention_seconds < 0:
             raise ValueError("workspace_retention_seconds must be >= 0")
         if self.on_retrieval_failure not in {"block", "degrade"}:
@@ -520,10 +504,6 @@ def assemble_orchestrator_runtime(
         local_code_execution=config.deployment_policy.local_code_execution,
         executor=executor,
         appworld_execute=config.appworld_execute,
-        agentdojo_invoke=config.agentdojo_invoke,
-        agentdojo_tool_schemas=config.agentdojo_tool_schemas,
-        are_invoke=config.are_invoke,
-        are_tool_schemas=config.are_tool_schemas,
         domain_tools=config.domain_tools,
     )
     pools: dict[str, RuntimePool] = {}
@@ -550,9 +530,8 @@ def assemble_orchestrator_runtime(
             authorization=AllowAllAuthorization() if native is None else native.authorization,
             database_path=str(database),
             tool_executor=gateway,
-            tool_names=(*TOOL_NAMES, *config.agentdojo_tool_schemas, *config.are_tool_schemas, *config.domain_tools),
+            tool_names=(*TOOL_NAMES, *config.domain_tools),
             tool_schemas={**read_tool_schemas(large=profile.context_policy is not None),
-                          **config.agentdojo_tool_schemas, **config.are_tool_schemas,
                           **{name: tool.schema for name, tool in config.domain_tools.items()}},
             context_policy=profile.context_policy or ContextPolicy(),
             tokenizer=profile.tokenizer,

@@ -121,12 +121,11 @@ async def production_install(report):
             assert not pending(store, assured.id)
             again, created_again = commit.create_mission(spec)
             assert again.id == assured.id and not created_again
-            legacy, _ = commit.create_mission(MissionSpec(goal='legacy', success_criteria=('c',), tenant_id='tenant', idempotency_key='legacy-1', orchestration_semantics_version="legacy"))
             unselected, _ = commit.create_mission(MissionSpec(goal='v1 unselected', success_criteria=('c',), tenant_id='tenant',
                 idempotency_key='completion-1', orchestration_semantics_version='hierarchical', planning_protocol_version='planning-decision-v1'))
-            lanes = {'assured': AssuranceStore(store).lane(assured.id), 'legacy': AssuranceStore(store).lane(legacy.id),
+            lanes = {'assured': AssuranceStore(store).lane(assured.id),
                      'v1_unselected': AssuranceStore(store).lane(unselected.id)}
-            assert lanes == {'assured': 'ASSURANCE_1_1', 'legacy': 'LEGACY', 'v1_unselected': 'COMPLETION_V1'}, lanes
+            assert lanes == {'assured': 'ASSURANCE_1_1', 'v1_unselected': 'COMPLETION_V1'}, lanes
             # Fixed principal / current ACL through the original facade hook.
             ref = AssuranceRef('requirements', Pin(str(req.revision_id), 1, req.content_hash()))
             permission = commit._assurance_read_authority(principal, 'tenant', assured.id, ref, 'DISCLOSE')
@@ -347,7 +346,7 @@ async def four_consumers(root, report):
 
 async def main():
     report = {'scope': 'Item 6: install_assurance on the real Orchestrator startup (native root, fixed-principal current '
-                       'authority, factory selector -> ASSURANCE_1_1 / COMPLETION_V1 / LEGACY lanes, honest activation '
+                       'authority, factory selector -> ASSURANCE_1_1 / COMPLETION_V1 lanes, honest activation '
                        'inventory, startup cursor rebuild, NOTIFY at-least-once); real AssuranceTick with REVIEW + VALIDITY + '
                        'CLOSEOUT + NOTIFY on the assured fixture: leaf accept -> closeout NOT_READY -> MISSION_FINAL official ACCEPT -> '
                        'root resolution formed by the production trigger under the current MISSION_FINAL use (item 7) '

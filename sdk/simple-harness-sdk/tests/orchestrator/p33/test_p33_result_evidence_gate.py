@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P33-08/09 · 先写 oracle，再接实际 record_result 的集中领域闸门。
+"""P33-08/09 · record_result 的集中领域闸门（code-v1 一支）。
 
 合法 Mission/Task/Attempt 经公共 commit 入口推进至 RUNNING，产物来自真实 CAS。
-文档信封顶层或任意 claim 的 pytest:/tool-run: 都须在写入前拒绝，包括被 claim
-自己的 evidence 遮蔽的顶层证据。拒绝后完整快照不变；同一 Attempt 改为合法证据
-可提交，重复投递幂等。code-v1 的旧证据字符串不作全域收紧，source/knowledge 的
-种类放行不冒称来源解析或 KnowledgeIndex 检查已经通过。
+code-v1 的旧证据字符串不作全域收紧。
+
+2026-10-02 删旧平面模式第三刀（严格引用选 A）：文档领域两支删；任务行改由分层
+``leaf_world`` 提供。
 """
 
 from __future__ import annotations
@@ -15,62 +15,29 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from leaf_world import leaf_world
 
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.contracts import (
     Artifact,
     AttemptStatus,
-    Budget,
     ClaimProposal,
     ResultEnvelope,
 )
-from agent_orchestrator.governance.domains import CODE_DOMAIN, DOC_DOMAIN, DOC_PROFILE
-from agent_orchestrator.orchestrator.commit_service import (
-    CommitRejected,
-    CommitService,
-    MissionSpec,
-    Reservation,
-    TaskProposal,
-)
-from agent_orchestrator.storage.store import Store
+from agent_orchestrator.orchestrator.commit_service import CommitService, Reservation
+from agent_orchestrator.runtime.output_blocks import PortClaim
 
 
 @pytest.fixture
 def running(tmp_path):
-    store = Store.open(tmp_path / "orchestrator.db", clock=lambda: 1_000.0)
+    world = leaf_world(tmp_path, key="evidence-gate", goal="核对报告", clock=lambda: 1_000.0)
+    store = world.store
     cas = ArtifactStore(tmp_path / "artifacts")
-    service = CommitService(
-        store,
-        artifact_store=cas,
-        deployed_layers=frozenset(DOC_PROFILE.runs_layers) | {"code_test"},
-    )
+    service = CommitService(store, artifact_store=cas, deployed_layers=frozenset({"code_test"}))
 
-    def make(domain):
-        mission, _ = service.create_mission(
-            MissionSpec(
-                goal="核对报告",
-                success_criteria=("file:REPORT.md",),
-                tenant_id="tenant",
-                idempotency_key=domain,
-                domain=domain,
-                budget=Budget(max_tokens=20_000, max_attempts=3),
-                orchestration_semantics_version="legacy",
-            )
-        )
-        planning = service.begin_planning(mission.id)
-        task, _ = service.commit_task_proposal(
-            mission.id,
-            TaskProposal(
-                goal="核对报告",
-                rationale="完成报告",
-                success_criteria=("file:REPORT.md",),
-                verification_policy=("format_check", "rule_check", "critic_review"),
-                allowed_tools=(),
-                budget=Budget(max_tokens=10_000, max_attempts=2),
-            ),
-            base_version=planning.version,
-            source={"planner": "fixture"},
-        )
+    def make():
+        mission = world.mission
+        task = world.task("a")
         attempt, intent = service.create_attempt(
             task.id,
             role="worker",
@@ -128,45 +95,13 @@ def running(tmp_path):
 
 def _record(service, attempt, turn_id, artifact, envelope):
     return service.record_result(
-        attempt.id, envelope=envelope, turn_id=turn_id, artifacts=(artifact,), usage_refs=()
+        attempt.id,
+        envelope=envelope,
+        turn_id=turn_id,
+        artifacts=(artifact,),
+        usage_refs=(),
+        port_claims=(PortClaim(port_key="result", path=artifact.path),),
     )
-
-
-@pytest.mark.parametrize("reference", ["pytest:tests/test_unrelated.py", "tool-run:made-up-call"])
-@pytest.mark.parametrize("location", ["envelope", "claim", "overridden_envelope"])
-def test_doc_record_result_refuses_forbidden_evidence_before_any_state_write(
-    running, reference, location
-):
-    service, make = running
-    mission, attempt, turn_id, artifact, valid = make(DOC_DOMAIN)
-    if location == "claim":
-        # The second claim must be inspected too; first/top-level evidence is legal.
-        poisoned = replace(
-            valid,
-            claims=(
-                *valid.claims,
-                ClaimProposal(content="第二条陈述", confidence=0.8, evidence=(reference,)),
-            ),
-        )
-    else:
-        poisoned = replace(valid, evidence=(reference,))
-        if location == "overridden_envelope":
-            poisoned = replace(
-                poisoned, claims=(replace(valid.claims[0], evidence=valid.evidence),)
-            )
-    before = service.store.snapshot(mission.id)
-    with pytest.raises(CommitRejected) as error:
-        _record(service, attempt, turn_id, artifact, poisoned)
-    assert "evidence" in str(error.value) and DOC_DOMAIN in str(error.value)
-    assert reference.split(":", 1)[0] in str(error.value)
-    assert service.store.snapshot(mission.id) == before
-    assert service.store.get_result(valid.id) is None
-    assert service.store.get_artifact(artifact.id) is None
-    accepted = _record(service, attempt, turn_id, artifact, valid)
-    assert accepted.envelope == valid
-    after = service.store.snapshot(mission.id)
-    assert _record(service, attempt, turn_id, artifact, valid) == accepted
-    assert service.store.snapshot(mission.id) == after
 
 
 @pytest.mark.parametrize(
@@ -174,7 +109,7 @@ def test_doc_record_result_refuses_forbidden_evidence_before_any_state_write(
 )
 def test_code_record_result_keeps_legacy_evidence_admission(running, reference):
     service, make = running
-    mission, attempt, turn_id, artifact, envelope = make(CODE_DOMAIN)
+    mission, attempt, turn_id, artifact, envelope = make()
     envelope = replace(
         envelope,
         evidence=(reference,),
@@ -184,24 +119,3 @@ def test_code_record_result_keeps_legacy_evidence_admission(running, reference):
     assert stored.envelope.evidence == (reference,)
     assert service.store.list_claims(envelope.id)[0].evidence == (reference,)
     assert service.store.get_attempt(attempt.id).status is AttemptStatus.SUBMITTED
-
-
-@pytest.mark.parametrize(
-    "reference",
-    [
-        "REPORT.md",
-        "file:REPORT.md",
-        "artifact:REPORT.md",
-        "source:sources/input.md",
-        "knowledge:existing-id",
-    ],
-)
-def test_doc_allowed_kind_is_admitted_without_claiming_its_evidence_was_verified(
-    running, reference
-):
-    service, make = running
-    _, attempt, turn_id, artifact, envelope = make(DOC_DOMAIN)
-    envelope = replace(envelope, evidence=(reference,))
-    stored = _record(service, attempt, turn_id, artifact, envelope)
-    assert stored.verification_state == "PENDING" and stored.verdict is None
-    assert service.store.list_claims(envelope.id)[0].evidence == (reference,)

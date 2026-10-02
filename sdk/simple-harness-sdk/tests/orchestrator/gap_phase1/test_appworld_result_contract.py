@@ -16,12 +16,13 @@ from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 
 RESULT_ROLES = ("worker",)
 #: Roles removed on 2026-10-02 (the Manager, the five Worker variants only it could set,
-#: the Arbiter of conflict Tasks and the Synthesizer of the final synthesis Task).
+#: the Arbiter of conflict Tasks, the Synthesizer of the final synthesis Task and the
+#: flat-mode Planner — the hierarchical Planner is not chosen per profile).
 #: Published profiles still name them until the benchmark arms are settled;
 #: ``template_for_domain`` never asks for them.
 REMOVED_ROLES = frozenset(
     {"manager", "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-     "arbiter", "synthesizer"}
+     "arbiter", "synthesizer", "planner"}
 )
 
 
@@ -54,7 +55,7 @@ def test_new_default_and_frozen_legacy_keep_distinct_contract_versions():
         )
         with pytest.raises(ContractError, match="unknown fields.*schema_version"):
             ResultEnvelope.from_json({**example, "id": "result-provisional"})
-    for role in ("planner", "critic"):
+    for role in ("critic",):
         assert template_for_domain(ROLES[role], restored, {}) == template_for_domain(
             ROLES[role], APPWORLD_PROFILE, {}
         )

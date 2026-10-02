@@ -30,20 +30,3 @@ def test_s6_09_a_model_package_carrying_a_credential_value_is_refused():
 
 
 # ------------------------------------------------------------------ D6-9' verifier routing
-def test_an_undeployed_verification_layer_is_refused_at_commit_with_one_reason(tmp_path):
-    from graph_helpers6 import graph_service, node
-
-    with pytest.raises(Exception):
-        graph_service(
-            tmp_path, nodes=[node("A", verification_policy=["format_check", "formal_check"])]
-        )
-    from agent_orchestrator.storage.store import Store
-
-    store = Store.open(tmp_path / "orchestrator.db")
-    rejected = [
-        e
-        for m in store.list_missions()
-        for e in store.list_events(m.id)
-        if e.type == "TaskGraphRejected"
-    ]
-    assert rejected and rejected[-1].payload["reason"] == "verification_policy_undeployed"

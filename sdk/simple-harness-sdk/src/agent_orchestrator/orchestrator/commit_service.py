@@ -50,7 +50,7 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
-from ..contracts.htn import TaskForm, TaskSemanticBindingV1
+from ..contracts.htn import TaskForm
 from ..contracts.models import (
     STEP2_IMPLEMENTED_LAYERS,
     jsonable,
@@ -69,7 +69,6 @@ from ..governance.domains import (
     supports_document_assessments,
 )
 from ..governance.policies import DeploymentPolicy
-from ..graph.task_graph import GraphRejected, TaskBudgetFloor, TaskGraphProposal, validate_graph
 from ..memory.claims import grade_claim, system_attribution
 from ..memory.source_dependencies import (
     source_current_issues,
@@ -115,12 +114,9 @@ from .human_commits import HumanCommitsMixin
 from .obligation_commits import ObligationCommitsMixin
 from .plan_commits import (
     HIERARCHICAL_SEMANTICS,
-    LEGACY_SEMANTICS,
     SEMANTICS_KEY,
-    PlanCommitRejected,
     PlanCommitsMixin,
     normalise_semantics,
-    semantics_of,
 )
 from .planning_admission_commits import PlanningAdmissionCommitsMixin
 from .planning_protocol_binding import (
@@ -221,20 +217,19 @@ class MissionSpec:
     domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
     runtime_profile_id: str | None = None
     # 2026-10-01: the default is the hierarchical mode on the one planning protocol.
-    # The flat mode is still served, but only for a spec that names it in so many words.
+    # The flat mode was removed on 2026-10-02: naming it is refused here, before any
+    # entry (facade, CLI, benchmark runner) can write a row.
     orchestration_semantics_version: str = HIERARCHICAL_SEMANTICS
     planning_protocol_version: str = PLANNING_DECISION_V1
 
     def __post_init__(self) -> None:
+        normalise_semantics(self.orchestration_semantics_version)
         checked_planning_protocol(self.planning_protocol_version)
 
     @property
-    def bound_planning_protocol(self) -> str | None:
-        """The planning protocol this Mission is created under; None for a flat Mission,
-        which has no Planner rounds and so no protocol."""
+    def bound_planning_protocol(self) -> str:
+        """The planning protocol this Mission is created under."""
 
-        if self.orchestration_semantics_version == LEGACY_SEMANTICS:
-            return None
         return self.planning_protocol_version
 
     def to_json(self) -> dict[str, Any]:
@@ -258,69 +253,9 @@ class MissionSpec:
             data["domain"] = self.domain
         if self.runtime_profile_id is not None:
             data["runtime_profile_id"] = self.runtime_profile_id
-        if self.orchestration_semantics_version != LEGACY_SEMANTICS:
-            # The planning protocol belongs to the hierarchical mode: a flat-mode
-            # charter names neither, a hierarchical one names both.
-            data[SEMANTICS_KEY] = self.orchestration_semantics_version
-            data["planning_protocol_version"] = self.planning_protocol_version
+        data[SEMANTICS_KEY] = self.orchestration_semantics_version
+        data["planning_protocol_version"] = self.planning_protocol_version
         return data
-
-
-@dataclass(frozen=True, slots=True)
-class TaskProposal:
-    """What the Planner proposes (§6.3 / §15); never applied without a Commit."""
-
-    goal: str
-    rationale: str
-    success_criteria: tuple[str, ...]
-    verification_policy: tuple[str, ...]
-    allowed_tools: tuple[str, ...]
-    budget: Budget
-    priority: float = 1.0
-    root_goal: str = ""
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "goal": self.goal,
-            "rationale": self.rationale,
-            "success_criteria": list(self.success_criteria),
-            "verification_policy": list(self.verification_policy),
-            "allowed_tools": list(self.allowed_tools),
-            "budget": self.budget.to_json(),
-            "priority": self.priority,
-            "root_goal": self.root_goal,
-        }
-
-    @classmethod
-    def from_json(cls, value: object) -> TaskProposal:
-        if not isinstance(value, Mapping):
-            raise ContractError("task proposal must be an object")
-        allowed = {
-            "goal",
-            "rationale",
-            "success_criteria",
-            "verification_policy",
-            "allowed_tools",
-            "budget",
-            "priority",
-            "root_goal",
-        }
-        unknown = set(value) - allowed
-        if unknown:
-            raise ContractError(f"task proposal has unknown fields: {sorted(unknown)}")
-        missing = {"goal", "rationale", "success_criteria", "verification_policy"} - set(value)
-        if missing:
-            raise ContractError(f"task proposal is missing fields: {sorted(missing)}")
-        return cls(
-            goal=str(value["goal"]),
-            rationale=str(value["rationale"]),
-            success_criteria=tuple(value["success_criteria"]),
-            verification_policy=tuple(value["verification_policy"]),
-            allowed_tools=tuple(value.get("allowed_tools", ())),
-            budget=Budget.from_json(value.get("budget", {})),
-            priority=float(value.get("priority", 1.0)),
-            root_goal=str(value.get("root_goal", "")),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,10 +288,8 @@ class CommitService(ProtectedTailCommitsMixin,
         global_budget: Budget | None = None,
         task_max_tokens: int | None = None,
         deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
-        task_floor: TaskBudgetFloor | None = None,
         artifact_store: ArtifactStore | None = None,
         mission_profile_validator: Callable[[str, Mapping[str, Any]], None] | None = None,
-        task_floor_for: Callable[[str], TaskBudgetFloor] | None = None,
     ) -> None:
         self._store = store
         self._assurance_factory: Any = None
@@ -369,13 +302,9 @@ class CommitService(ProtectedTailCommitsMixin,
         self._taskgraph_dispatch: TaskGraphDispatchBinding | None = None
         self._taskgraph_participant_factory: Any = None
         self._mission_profile_validator = mission_profile_validator
-        self._task_floor_for = task_floor_for
         self._source_artifact_store = artifact_store
         if self._source_artifact_store is None and str(store.path) != ":memory:":
             self._source_artifact_store = ArtifactStore(store.path.parent / "artifacts")
-        # P3.1 fix F-ORCH-1: the Task budget floor the graph gate applies — only the
-        # Orchestrator injects one (None = no floor, every earlier construction unchanged)
-        self._task_floor = task_floor
         self._ledger = BudgetLedger(store)
         self._global_budget = global_budget  # D6-1: None = no deployment-wide cap
         if task_max_tokens is not None and int(task_max_tokens) < 1:
@@ -389,38 +318,6 @@ class CommitService(ProtectedTailCommitsMixin,
         # D6-8: the orchestrator installs the gateway's executed-call counter (subject → count)
         # so every settlement path books the tool-call fact without threading it through
         self.tool_calls_for: Callable[[str], int] | None = None
-        self._accepted_task_observers: list[Callable[[Task], None]] = []
-        self._host_knowledge_sync: dict[str, Callable[[], None]] = {}
-
-    def bind_host_knowledge_sync(self, mission_id: str, sync: Callable[[], None]) -> None:
-        """Bind a Host-owned currentness check; unbound Missions do no external IO.
-
-        The callback must revoke unverifiable projections before returning and
-        must not wait for an episode lock while acceptance holds a transaction.
-        This grants no claim-validation or knowledge-promotion authority.
-        """
-        if mission_id in self._host_knowledge_sync:
-            raise ValueError("Host knowledge currentness already bound")
-        self._host_knowledge_sync[mission_id] = sync
-
-    def unbind_host_knowledge_sync(self, mission_id: str, sync: Callable[[], None]) -> None:
-        if self._host_knowledge_sync.get(mission_id) == sync:
-            del self._host_knowledge_sync[mission_id]
-
-    def sync_host_knowledge(self, mission_id: str) -> None:
-        sync = self._host_knowledge_sync.get(mission_id)
-        if sync is not None:
-            sync()
-
-    def on_task_accepted(self, observer: Callable[[Task], None]) -> None:
-        """Host callback after an accepted Task's transaction is committed."""
-        self._accepted_task_observers.append(observer)
-
-    def off_task_accepted(self, observer: Callable[[Task], None]) -> None:
-        self._accepted_task_observers.remove(observer)
-
-    def _floor_for_mission(self, mission_id: str) -> TaskBudgetFloor | None:
-        return self._task_floor if self._task_floor_for is None else self._task_floor_for(mission_id)
 
     # ----------------------------------------------------------- backpressure
     def backpressure_state(self) -> BackpressureState:
@@ -827,12 +724,11 @@ class CommitService(ProtectedTailCommitsMixin,
                     raise MissionConflict(
                         f"mission {mission.id} already exists with a different specification"
                     )
-                if semantics_version == HIERARCHICAL_SEMANTICS:
-                    conflict = planning_protocol_replay_conflict(
-                        self._store, mission.id, spec.planning_protocol_version
-                    )
-                    if conflict is not None:
-                        raise MissionConflict(conflict)
+                conflict = planning_protocol_replay_conflict(
+                    self._store, mission.id, spec.planning_protocol_version
+                )
+                if conflict is not None:
+                    raise MissionConflict(conflict)
                 from .assurance_factory import validate_creation_replay
                 validate_creation_replay(self, mission)
                 return mission, False
@@ -864,11 +760,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     **({} if spec.runtime_profile_id is None else {
                         "runtime_profile_id": spec.runtime_profile_id,
                     }),
-                    # written only for the new mode, so a legacy Mission's stored JSON
-                    # keeps the exact bytes it had before P2.3a (§18.5 rule 1)
-                    **({} if semantics_version == LEGACY_SEMANTICS else {
-                        SEMANTICS_KEY: semantics_version,
-                    }),
+                    SEMANTICS_KEY: semantics_version,
                 },
             )
             self._store.insert_mission(mission, spec_hash=spec_hash)
@@ -916,8 +808,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 domain_version=domain.version,
                 snapshot=domain.to_json(),
             )
-            if semantics_version == HIERARCHICAL_SEMANTICS:
-                bind_planning_protocol(self._store, mission_id, spec.planning_protocol_version)
+            bind_planning_protocol(self._store, mission_id, spec.planning_protocol_version)
             creation_event = self._emit(
                 "MissionCreated",
                 mission_id,
@@ -1034,91 +925,6 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             return intent
 
-    def commit_task_proposal(
-        self,
-        mission_id: str,
-        proposal: TaskProposal,
-        *,
-        base_version: int,
-        source: Mapping[str, Any],
-    ) -> tuple[Task, Mapping[str, Any]]:
-        """Apply the Planner's single-Task proposal (step 2) after the §24 step-3 checks."""
-
-        proposal_json = proposal.to_json()
-        commit = ids.commit_id(
-            {"kind": "task_proposal", "mission_id": mission_id, **proposal_json}, base_version
-        )
-        with self._store.transaction():
-            receipt = self._store.get_receipt(commit)
-            if receipt is not None:
-                task = self._store.get_task(str(receipt["task_id"]))
-                assert task is not None
-                return task, receipt
-            mission = self._require_mission(mission_id)
-            if mission.version != base_version:
-                raise CommitRejected(
-                    f"proposal is based on mission version {base_version}, current is {mission.version}"
-                )
-            if mission.status is not MissionStatus.PLANNING:
-                raise CommitRejected(f"mission {mission_id} is {mission.status}, not PLANNING")
-            if self._store.list_tasks(mission_id):
-                raise CommitRejected("step 2 accepts exactly one Task per Mission")
-            self._check_task_proposal(mission, proposal)
-            task_id = ids.task_id(mission_id, 1)
-            task = Task(
-                id=task_id,
-                mission_id=mission_id,
-                parent_task_ids=(),
-                dependency_ids=(),
-                goal=proposal.goal,
-                rationale=proposal.rationale,
-                success_criteria=proposal.success_criteria,
-                verification_policy=proposal.verification_policy,
-                allowed_tools=proposal.allowed_tools,
-                budget=proposal.budget,
-                priority=proposal.priority,
-                status=TaskStatus.READY,  # no dependencies: satisfied from the start (§25.1)
-                version=1,
-                root_goal=proposal.root_goal or mission.goal,
-                created_at=self._store.now,
-                ready_at=self._store.now,  # step 5: waiting_age starts here (review P2-4)
-                context={"graph_version": 1},
-            )
-            self._store.insert_task(task, ordinal=1)
-            self._ledger.open_account(
-                account_id=task_account(task_id),
-                scope="task",
-                parent_id=mission_account(mission_id),
-                mission_id=mission_id,
-                limits=proposal.budget,
-            )
-            activated = next_mission(mission, MissionStatus.ACTIVE)
-            self._store.update_mission(activated, expected_version=mission.version)
-            receipt = {
-                "commit_id": commit,
-                "task_id": task_id,
-                "mission_version": activated.version,
-                "proposal_hash": sha256_hex(proposal_json),
-                "source": dict(source),
-            }
-            self._store.insert_receipt(
-                commit_id=commit,
-                kind="task_proposal",
-                subject_id=task_id,
-                base_version=base_version,
-                proposal_hash=receipt["proposal_hash"],
-                receipt=receipt,
-            )
-            self._emit(
-                "TaskCommitted",
-                mission_id,
-                key=task_id,
-                task_id=task_id,
-                payload={"commit_id": commit, "proposal": proposal_json, "source": dict(source)},
-            )
-            self._emit("MissionActivated", mission_id, key=mission_id, payload={"task_id": task_id})
-            return task, receipt
-
     def domain_for(self, mission_id: str) -> DomainProfileV1:
         """The frozen domain profile of this Mission; ``code-v1`` for anything created
         before domain binding existed (plan D1, A07)."""
@@ -1134,269 +940,17 @@ class CommitService(ProtectedTailCommitsMixin,
         except (KeyError, TypeError, ValueError) as error:
             raise CommitRejected(f"invalid frozen domain: {error}") from error
 
-    def _check_task_proposal(self, mission: Mission, proposal: TaskProposal) -> None:
-        """§24 step 3: relation to the root goal, tools, success criteria, budget legality."""
-
-        if not proposal.success_criteria:
-            raise CommitRejected("task proposal has no success criteria")
-        # P3.3 (D1) gate 3 of 5: a single Task proposal / the Manager's ``add_task``
-        problems = check_against_domain(
-            self.domain_for(mission.id),
-            key="task proposal",
-            success_criteria=proposal.success_criteria,
-            verification_policy=proposal.verification_policy,
-        )
-        if problems:
-            raise CommitRejected("domain: " + "; ".join(problems))
-        if not proposal.rationale.strip():
-            raise CommitRejected("task proposal cannot explain its relation to the Mission (§19.5)")
-        extra_tools = set(proposal.allowed_tools) - set(mission.allowed_tools)
-        if extra_tools:
-            raise CommitRejected(
-                f"task proposal asks for tools outside the Mission: {sorted(extra_tools)}"
-            )
-        if not proposal.budget.fits_within(mission.budget):
-            raise CommitRejected("task budget exceeds the Mission budget (§18.2)")
-        tests = [c for c in proposal.success_criteria if c.startswith("pytest:")]
-        if "code_test" not in self._deployed_layers and tests:  # review round 1 P1-1
-            raise CommitRejected(
-                "verification_policy_undeployed: pytest criteria need local code execution, "
-                f"which this deployment has turned off: {tests}"
-            )
-        unsupported = set(proposal.verification_policy) - self._deployed_layers
-        if unsupported:
-            raise CommitRejected(
-                f"verification_policy_undeployed: layers not deployed in this build {sorted(unsupported)}"
-            )
-
-    def commit_task_graph(
-        self,
-        mission_id: str,
-        proposal: TaskGraphProposal,
-        *,
-        base_version: int,
-        source: Mapping[str, Any],
-        semantic_bindings: Mapping[str, TaskSemanticBindingV1] | None = None,
-    ) -> tuple[list[Task], Mapping[str, Any]]:
-        """Apply the Planner's whole Task DAG proposal atomically (step 3, D3-2/D3-3).
-
-        The Graph Manager checks (``validate_graph``) run first; a rejection writes
-        only a ``TaskGraphRejected`` event and leaves the formal graph untouched.
-        Roots start READY, everything else BLOCKED (§25.1); ids follow the
-        deterministic topological order so a replay yields the same receipt.
-        """
-
-        proposal_json = proposal.to_json()
-        commit = ids.commit_id(
-            {"kind": "task_graph", "mission_id": mission_id, **proposal_json}, base_version
-        )
-        try:
-            return self._commit_task_graph(
-                mission_id,
-                proposal,
-                commit,
-                proposal_json,
-                base_version=base_version,
-                source=source,
-                semantic_bindings=semantic_bindings,
-            )
-        except (GraphRejected, PlanCommitRejected) as error:
-            # the write transaction rolled back; the rejection itself is a durable fact
-            self._emit(
-                "TaskGraphRejected",
-                mission_id,
-                key=f"{mission_id}:{base_version}:{sha256_hex(proposal_json)[:12]}:{source.get('intent_id', '')}",
-                payload={"reason": error.reason, "detail": error.detail, "source": dict(source)},
-            )
-            if isinstance(error, PlanCommitRejected):
-                # P2.3a: a hierarchical refusal records the same durable fact as any
-                # other graph rejection, but keeps its own type and reason name —
-                # ``MISSING_SEMANTIC_BINDING`` is a machine name the proposer acts on
-                # (§18.5), and laundering it into a ``CommitRejected`` message string
-                # would leave the caller nothing to branch on.
-                raise
-            raise CommitRejected(f"task graph rejected ({error.reason}): {error.detail}") from error
-
-    def _commit_task_graph(
-        self,
-        mission_id: str,
-        proposal: TaskGraphProposal,
-        commit: str,
-        proposal_json: Mapping[str, Any],
-        *,
-        base_version: int,
-        source: Mapping[str, Any],
-        semantic_bindings: Mapping[str, TaskSemanticBindingV1] | None = None,
-    ) -> tuple[list[Task], Mapping[str, Any]]:
-        with self._store.transaction():
-            receipt = self._store.get_receipt(commit)
-            if receipt is not None:
-                replayed = [self._require_task(task_id) for task_id in receipt["task_ids"]]
-                return replayed, receipt
-            mission = self._require_mission(mission_id)
-            if mission.version != base_version:
-                raise CommitRejected(
-                    f"proposal is based on mission version {base_version}, current is {mission.version}"
-                )
-            if mission.status is not MissionStatus.PLANNING:
-                raise CommitRejected(f"mission {mission_id} is {mission.status}, not PLANNING")
-            if self._store.list_tasks(mission_id):
-                raise CommitRejected(
-                    "the Mission already has a committed graph (static DAG, step 3)"
-                )
-            graph = validate_graph(  # GraphRejected handled by the caller
-                mission,
-                proposal,
-                deployed_layers=self._deployed_layers,
-                task_floor=self._floor_for_mission(mission_id),
-                domain=self.domain_for(mission.id),
-            )
-            key_to_id = {
-                key: ids.task_id(mission_id, ordinal)
-                for ordinal, key in enumerate(graph.order, start=1)
-            }
-            tasks: list[Task] = []
-            for ordinal, key in enumerate(graph.order, start=1):
-                node = graph.node(key)
-                dependencies = tuple(key_to_id[dependency] for dependency in node.dependencies)
-                task = Task(
-                    id=key_to_id[key],
-                    mission_id=mission_id,
-                    parent_task_ids=(),
-                    dependency_ids=dependencies,
-                    goal=node.goal,
-                    rationale=node.rationale,
-                    success_criteria=node.success_criteria,
-                    verification_policy=node.verification_policy,
-                    allowed_tools=node.allowed_tools,
-                    budget=node.budget,
-                    priority=node.priority,
-                    status=TaskStatus.READY if not dependencies else TaskStatus.BLOCKED,
-                    version=1,
-                    root_goal=mission.goal,
-                    created_at=self._store.now,
-                    outputs=node.outputs,
-                    ready_at=self._store.now if not dependencies else None,
-                    context={"graph_version": 1},
-                )
-                self._store.insert_task(task, ordinal=ordinal)
-                self._ledger.open_account(
-                    account_id=task_account(task.id),
-                    scope="task",
-                    parent_id=mission_account(mission_id),
-                    mission_id=mission_id,
-                    limits=node.budget,
-                )
-                tasks.append(task)
-                self._emit(
-                    "TaskCommitted",
-                    mission_id,
-                    key=task.id,
-                    task_id=task.id,
-                    payload={
-                        "commit_id": commit,
-                        "key": key,
-                        "dependencies": list(dependencies),
-                        "proposal": node.to_json(),
-                        "source": dict(source),
-                    },
-                )
-            terminal_id = key_to_id[graph.terminal_key]
-            if semantics_of(mission) == HIERARCHICAL_SEMANTICS:
-                # §18.5: in the new mode a Task without a meaning is corruption, so the
-                # whole graph is refused here rather than dispatched half-understood.
-                # A legacy Mission never reaches this branch and keeps its exact path.
-                self._require_semantic_bindings(
-                    mission, [task.id for task in tasks], semantic_bindings, key_to_id
-                )
-            activated = next_mission(
-                mission,
-                MissionStatus.ACTIVE,
-                final_report={**dict(mission.final_report or {}), "graph_version": 1},
-            )
-            self._store.update_mission(activated, expected_version=mission.version)
-            receipt = {
-                "commit_id": commit,
-                "graph_version": 1,
-                "task_ids": [task.id for task in tasks],
-                "terminal_task_id": terminal_id,
-                "mission_version": activated.version,
-                "proposal_hash": sha256_hex(proposal_json),
-                "source": dict(source),
-                "warnings": list(graph.warnings),
-            }
-            self._store.insert_receipt(
-                commit_id=commit,
-                kind="task_graph",
-                subject_id=mission_id,
-                base_version=base_version,
-                proposal_hash=receipt["proposal_hash"],
-                receipt=receipt,
-            )
-            self._emit(
-                "TaskGraphCommitted",
-                mission_id,
-                key=f"{mission_id}:graph-1",
-                payload={
-                    "commit_id": commit,
-                    "task_ids": receipt["task_ids"],
-                    "terminal_task_id": receipt["terminal_task_id"],
-                    "edges": {task.id: list(task.dependency_ids) for task in tasks},
-                    "warnings": list(graph.warnings),
-                },
-            )
-            self._emit(
-                "MissionActivated",
-                mission_id,
-                key=mission_id,
-                payload={"task_ids": receipt["task_ids"]},
-            )
-            return tasks, receipt
-
-    def unblock_dependents(self, task_id: str) -> list[Task]:
-        """After a Task COMPLETED: every BLOCKED dependent whose dependencies are all
-        COMPLETED becomes READY (§25.1 "dependencies satisfied")."""
-
-        with self._store.transaction():
-            completed = self._require_task(task_id)
-            return self._unblock(completed.mission_id, unblocked_by=task_id)
-
-    def _unblock(self, mission_id: str, *, unblocked_by: str | None) -> list[Task]:
-        unblocked: list[Task] = []
-        tasks = {task.id: task for task in self._store.list_tasks(mission_id)}
-        for task in tasks.values():
-            if task.status is not TaskStatus.BLOCKED:
-                continue
-            if unblocked_by is not None and unblocked_by not in task.dependency_ids:
-                continue
-            if all(tasks[dep].status is TaskStatus.COMPLETED for dep in task.dependency_ids):
-                ready = next_task(task, TaskStatus.READY, ready_at=self._store.now)
-                self._store.update_task(ready, expected_version=task.version)
-                unblocked.append(ready)
-                self._emit(
-                    "TaskUnblocked",
-                    task.mission_id,
-                    key=task.id,
-                    task_id=task.id,
-                    payload={
-                        "dependencies": list(task.dependency_ids),
-                        "unblocked_by": unblocked_by or "recover",
-                    },
-                )
-        return unblocked
-
     def heal_mission(self, mission_id: str) -> dict[str, Any]:
-        """§16.4 idempotent self-healing on restart (D3-6'): recompute the frontier,
-        close every non-terminal Attempt left under a terminal Task (SUPERSEDED for a
+        """§16.4 idempotent self-healing on restart (D3-6'): close every non-terminal
+        Attempt left under a terminal Task (SUPERSEDED for a
         COMPLETED Task, CANCELLED otherwise) and reject their pending results.  A
         healthy library is left untouched; the report says what changed."""
 
         with self._store.transaction():
             mission = self._require_mission(mission_id)
-            report: dict[str, Any] = {"unblocked": [], "closed_attempts": []}
+            report: dict[str, Any] = {"closed_attempts": []}
             if mission.status is not MissionStatus.ACTIVE:
                 return report
-            report["unblocked"] = [task.id for task in self._unblock(mission_id, unblocked_by=None)]
             for task in self._store.list_tasks(mission_id):
                 if task.status not in TERMINAL_TASK:
                     continue
@@ -1762,174 +1316,6 @@ class CommitService(ProtectedTailCommitsMixin,
             stored is not None and stored.verification_state == "DONE" and stored.verdict == "PASS"
         )
 
-    def promote_appworld_api_observation(
-        self, mission_id: str, *, task_id: str, result_id: str,
-        episode: Any, receipt: Any, response: Mapping[str, Any],
-    ) -> KnowledgeRecord:
-        """Host-only projection of a current independent public GET after Task acceptance."""
-        from ..evaluation.appworld import AppWorldEpisode
-        from ..evaluation.appworld_api_observations import AppWorldAPIReceipt
-        from ..evaluation.appworld_knowledge import make_appworld_knowledge
-        from ..governance.domains import APPWORLD_DOMAIN
-
-        if (type(episode) is not AppWorldEpisode or type(receipt) is not AppWorldAPIReceipt
-                or not isinstance(receipt.service_identity, str)
-                or not receipt.service_identity):
-            raise CommitRejected("independent AppWorld service receipt required")
-        with episode.current_api_observation(
-            receipt, app=receipt.app, api=receipt.api, response=response,
-        ):
-            with self._store.transaction():
-                mission = self._require_mission(mission_id)
-                if (self.domain_for(mission_id).id != APPWORLD_DOMAIN
-                        or mission.idempotency_key != episode.run_id
-                        or receipt.run_id != episode.run_id):
-                    raise CommitRejected("AppWorld observation requires its bound domain and run")
-                task = self._require_task(task_id)
-                stored = self._require_result(result_id)
-                if (task.mission_id != mission_id
-                        or task.status is not TaskStatus.COMPLETED
-                        or task.accepted_result_id != result_id
-                        or stored.envelope.mission_id != mission_id
-                        or stored.envelope.task_id != task_id
-                        or not self._accepted_result(result_id)):
-                    raise CommitRejected("AppWorld observation requires an accepted bound Task")
-                claim, record = make_appworld_knowledge(
-                    mission_id=mission_id, task_id=task_id,
-                    attempt_id=stored.envelope.attempt_id, result_id=result_id,
-                    receipt=receipt, response=response, now=self._store.now,
-                )
-                existing = self._store.get_knowledge(record.id)
-                if existing is not None:
-                    if existing.status != "VERIFIED" or existing.verifier != record.verifier:
-                        raise CommitRejected("AppWorld observation was revoked or changed")
-                    return existing
-                self._store.upsert_claim(claim)
-                self._store.upsert_knowledge(record)
-                self._emit(
-                    "KnowledgeCommitted", mission_id, key=record.id,
-                    task_id=task_id, attempt_id=record.source_attempt,
-                    payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
-                             "system_observation": True},
-                )
-                refresh_summaries(self._store, mission_id)
-                return record
-
-    def expire_appworld_api_knowledge(
-        self, mission_id: str, *, episode_id: str, reason: str,
-        knowledge_ids: Sequence[str] | None = None,
-    ) -> tuple[str, ...]:
-        """Remove old world facts from the ordinary Verified Knowledge projection."""
-        from ..evaluation.appworld_knowledge import SYSTEM_PROPOSER
-
-        with self._store.transaction():
-            selected = None if knowledge_ids is None else set(knowledge_ids)
-            expired: list[str] = []
-            for record in self._store.list_knowledge(mission_id, status="VERIFIED"):
-                if (record.proposed_by != SYSTEM_PROPOSER
-                        or (selected is not None and record.id not in selected)
-                        or (reason != "host_bridge_reopened"
-                            and record.verifier.get("episode_id") != episode_id)):
-                    continue
-                self._supersede_knowledge(
-                    record.id, by=f"appworld-world:{reason}"
-                )
-                expired.append(record.id)
-            if expired:
-                refresh_summaries(self._store, mission_id)
-            return tuple(expired)
-
-    def promote_agentdojo_tool_observation(
-        self, mission_id: str, *, task_id: str, result_id: str, receipt: Any,
-    ) -> KnowledgeRecord:
-        """Host-only projection of a succeeded AgentDojo tool return after Task acceptance."""
-        from ..evaluation.agentdojo_knowledge import (
-            AgentDojoToolReceipt,
-            make_agentdojo_tool_knowledge,
-        )
-        from ..governance.domains import AGENTDOJO_DOMAIN
-
-        if type(receipt) is not AgentDojoToolReceipt:
-            raise CommitRejected("AgentDojo tool receipt required")
-        if receipt.error not in (None, ""):
-            raise CommitRejected("AgentDojo tool errors are not promotable")
-        with self._store.transaction():
-            if self.domain_for(mission_id).id != AGENTDOJO_DOMAIN:
-                raise CommitRejected("AgentDojo observation requires its bound domain")
-            task = self._require_task(task_id)
-            stored = self._require_result(result_id)
-            if (
-                task.mission_id != mission_id
-                or task.status is not TaskStatus.COMPLETED
-                or task.accepted_result_id != result_id
-                or stored.envelope.mission_id != mission_id
-                or stored.envelope.task_id != task_id
-                or not self._accepted_result(result_id)
-            ):
-                raise CommitRejected("AgentDojo observation requires an accepted bound Task")
-            run = self._store.get_tool_call(receipt.call_key)
-            if (
-                run is None
-                or run["mission_id"] != mission_id
-                or run["subject_id"] != stored.envelope.attempt_id
-                or run["tool"] != receipt.function
-                or run["outcome"] != "succeeded"
-            ):
-                raise CommitRejected("AgentDojo observation requires a succeeded bound tool call")
-            claim, record = make_agentdojo_tool_knowledge(
-                mission_id=mission_id,
-                task_id=task_id,
-                attempt_id=stored.envelope.attempt_id,
-                result_id=result_id,
-                receipt=receipt,
-                now=self._store.now,
-            )
-            existing = self._store.get_knowledge(record.id)
-            if existing is not None:
-                if existing.status != "VERIFIED" or existing.verifier != record.verifier:
-                    raise CommitRejected("AgentDojo observation was revoked or changed")
-                return existing
-            self._store.upsert_claim(claim)
-            self._store.upsert_knowledge(record)
-            self._emit(
-                "KnowledgeCommitted",
-                mission_id,
-                key=record.id,
-                task_id=task_id,
-                attempt_id=record.source_attempt,
-                payload={
-                    "knowledge_id": record.id,
-                    "verifier": dict(record.verifier),
-                    "system_observation": True,
-                },
-            )
-            refresh_summaries(self._store, mission_id)
-            return record
-
-    def expire_agentdojo_tool_knowledge(
-        self,
-        mission_id: str,
-        *,
-        reason: str,
-        knowledge_ids: Sequence[str] | None = None,
-    ) -> tuple[str, ...]:
-        """Drop host-held AgentDojo tool observations that this process cannot revalidate."""
-        from ..evaluation.agentdojo_knowledge import SYSTEM_PROPOSER
-
-        with self._store.transaction():
-            selected = None if knowledge_ids is None else set(knowledge_ids)
-            expired: list[str] = []
-            for record in self._store.list_knowledge(mission_id, status="VERIFIED"):
-                if record.proposed_by != SYSTEM_PROPOSER or (
-                    selected is not None and record.id not in selected
-                ):
-                    continue
-                self._supersede_knowledge(record.id, by=f"agentdojo-tool:{reason}")
-                expired.append(record.id)
-            if expired:
-                refresh_summaries(self._store, mission_id)
-            return tuple(expired)
-
     def _dispute(self, mission: Mission, claim: Claim, contradiction: Contradiction) -> None:
         """§14.4 保留双方、都标"有争议"、互记对方；后来的这条不进知识库 (D4-6')."""
 
@@ -2070,10 +1456,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     else {"stop_reason": str(stop_reason), "detail": dict(detail)}
                 ),
             }
-            from .hierarchical_dispatch import is_hierarchical
-
-            if is_hierarchical(mission):
-                report.update(self._ledger.usage_flags(mission_id))
+            report.update(self._ledger.usage_flags(mission_id))
             updated = next_mission(
                 mission,
                 MissionStatus.FAILED,
@@ -2099,11 +1482,8 @@ class CommitService(ProtectedTailCommitsMixin,
             mission = self._require_mission(mission_id)
             if mission.status is MissionStatus.CANCELLED:
                 return mission
-            from .hierarchical_dispatch import is_hierarchical
-
             report = dict(mission.final_report or {})
-            if is_hierarchical(mission):
-                report.update(self._ledger.usage_flags(mission_id))
+            report.update(self._ledger.usage_flags(mission_id))
             updated = next_mission(
                 mission,
                 MissionStatus.CANCELLED,
@@ -2132,10 +1512,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 "detail": dict(detail),
                 "tasks": self._task_reports(mission_id),
             }
-            from .hierarchical_dispatch import is_hierarchical
-
-            if is_hierarchical(mission):
-                report.update(self._ledger.usage_flags(mission_id))
+            report.update(self._ledger.usage_flags(mission_id))
             failed = next_mission(
                 mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
             )
@@ -2328,8 +1705,7 @@ class CommitService(ProtectedTailCommitsMixin,
 
         with self._store.transaction():
             task = self._require_task(task_id)
-            from .scoped_content_review import uses_completion_protocol
-            if uses_completion_protocol(self._store, task.mission_id) and task.accepted_result_id:
+            if task.accepted_result_id:
                 raise CommitRejected("accepted preparation waits for completion, not another Worker")
             from .planning_repair_continuations import planning_repair_stop_gate
 
@@ -3138,15 +2514,12 @@ class CommitService(ProtectedTailCommitsMixin,
 
         with self._store.transaction():
             attempt = self._require_attempt(attempt_id)
-            from .scoped_content_review import uses_completion_protocol
-            completion_protocol = uses_completion_protocol(self._store, attempt.mission_id)
             existing = self._store.find_result_for_attempt(attempt_id)
             if existing is not None and existing.turn_id == turn_id:
-                if completion_protocol:
-                    from .completion_inputs import load_completion_result_inputs
-                    frozen = load_completion_result_inputs(self._store, existing)
-                    if tuple(port_claims) != tuple(frozen.port_claims):
-                        raise CommitRejected("result replay changed its frozen output claims")
+                from .completion_inputs import load_completion_result_inputs
+                frozen = load_completion_result_inputs(self._store, existing)
+                if tuple(port_claims) != tuple(frozen.port_claims):
+                    raise CommitRejected("result replay changed its frozen output claims")
                 return existing
             if attempt.status is not AttemptStatus.RUNNING:
                 raise CommitRejected(
@@ -3178,14 +2551,12 @@ class CommitService(ProtectedTailCommitsMixin,
                 self._store.upsert_artifact(artifact)
                 registered.append(artifact)
             stored = replace(stored, artifacts=tuple(artifact.id for artifact in registered))
-            completion_claims = None
-            if completion_protocol:
-                from .completion_inputs import validate_result_port_claims
-                completion_claims = validate_result_port_claims(
-                    self._store, commit=self, mission=self._require_mission(attempt.mission_id),
-                    task=self._require_task(attempt.task_id), result=stored,
-                    artifacts=registered, port_claims=port_claims,
-                )
+            from .completion_inputs import validate_result_port_claims
+            completion_claims = validate_result_port_claims(
+                self._store, commit=self, mission=self._require_mission(attempt.mission_id),
+                task=self._require_task(attempt.task_id), result=stored,
+                artifacts=registered, port_claims=port_claims,
+            )
             self._store.insert_result(stored)
             self._store.fault("mid_commit", "attempt")
             for index, proposal in enumerate(envelope.claims, start=1):
@@ -3962,7 +3333,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     return self.fail_result(
                         result_id, failures=(failure.to_json(),), owner=owner
                     )
-        self.sync_host_knowledge(mission.id)
         stale = KnowledgeIndex.load(self._store, mission.id).check(
             stored.envelope.used_knowledge
         )
@@ -3979,18 +3349,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 ],
                 owner=owner,
             )
-        from .scoped_content_review import uses_completion_protocol
-
-        # 2026-09-29（plans/2026-09-28-system-operations）：完成协议下操作申请单由系统按
-        # 已批准效果生成，步骤结果里的 actions/*.json 只是普通文件，不检查也不退回。
-        candidates, rejection = (
-            ([], None) if uses_completion_protocol(self._store, mission.id)
-            else self._action_candidates(
-                stored, task, mission, connectors=connectors, deployment=deployment
-            )
-        )
-        if rejection is not None:  # D7-2'': re-checked on the accepted bytes, in the Commit
-            return self.fail_result(result_id, failures=[rejection], owner=owner)
+        # 2026-09-29（plans/2026-09-28-system-operations）：操作申请单由系统按已批准效果
+        # 生成，步骤结果里的 actions/*.json 只是普通文件，不检查也不退回。
         source_dependencies = None
         if domain.id == DOC_DOMAIN:
             # Resolve every dependency before ANY new knowledge is projected. A
@@ -4027,7 +3387,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 )
                 return self.fail_result(result_id, failures=(failure.to_json(),), owner=owner)
         return {"assessments": assessments, "verifier_results": verifier_results,
-                "candidates": candidates, "source_dependencies": source_dependencies}
+                "source_dependencies": source_dependencies}
 
     def accept_result(
         self, result_id: str, *, verifier_results: Sequence[Mapping[str, Any]],
@@ -4040,9 +3400,6 @@ class CommitService(ProtectedTailCommitsMixin,
         for retry in (False, True):
             try:
                 with self._store.transaction():
-                    stored = self._require_result(result_id)
-                    already_accepted = (stored.verification_state == "DONE"
-                                        and stored.verdict == "PASS")
                     completed = self._accept_result(result_id, verifier_results=verifier_results,
                                                     owner=owner, connectors=connectors,
                                                     deployment=deployment)
@@ -4057,16 +3414,6 @@ class CommitService(ProtectedTailCommitsMixin,
         if prepared is not None:
             self._assurance_validity.forget(prepared.identity.mission_id,
                                             str(prepared.record.record_id))
-        if not already_accepted and completed.status is TaskStatus.COMPLETED:
-            for observer in tuple(self._accepted_task_observers):
-                try:
-                    observer(completed)
-                except Exception as error:
-                    # An optional Host observation cannot undo accepted task work.
-                    self._emit("HostObservationUnavailable", completed.mission_id,
-                               key=f"{completed.id}:{type(error).__name__}",
-                               task_id=completed.id,
-                               payload={"reason": type(error).__name__})
         return completed
 
     def _prepare_assured_acceptance(self, result_id: str) -> Any:
@@ -4078,7 +3425,6 @@ class CommitService(ProtectedTailCommitsMixin,
         from ..assurance.codec import AssuranceError
         from ..storage.assurance_store import AssuranceStore
         from .resolution_commits import ResolutionCommitRejected
-        from .scoped_content_review import uses_completion_protocol
 
         with self._store.read_view():
             stored = self._store.get_result(result_id)
@@ -4086,8 +3432,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 return None
             mission_id = stored.envelope.mission_id
             if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
-                return None
-            if not uses_completion_protocol(self._store, mission_id):
                 return None
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
                 return None  # replay; the committed certificate licenses it
@@ -4147,31 +3491,25 @@ class CommitService(ProtectedTailCommitsMixin,
 
         with self._store.transaction():
             stored = self._require_result(result_id)
-            from .scoped_content_review import uses_completion_protocol
-            completion_protocol = uses_completion_protocol(self._store, stored.envelope.mission_id)
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
-                if completion_protocol:
-                    from ..storage.operation_completion_store import OperationCompletionStore
-                    from .leaf_acceptance import content_hash_of
-                    acceptance_id = "acc-" + content_hash_of({
-                        "task": stored.envelope.task_id, "result": result_id,
-                    })[:32]
-                    if OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                        stored.envelope.mission_id, acceptance_id
-                    ) is None:
-                        raise CommitRejected("verified result has no atomic scoped Acceptance")
+                from ..storage.operation_completion_store import OperationCompletionStore
+                from .leaf_acceptance import content_hash_of
+                acceptance_id = "acc-" + content_hash_of({
+                    "task": stored.envelope.task_id, "result": result_id,
+                })[:32]
+                if OperationCompletionStore(self._store).get_acceptance_scope_exact(
+                    stored.envelope.mission_id, acceptance_id
+                ) is None:
+                    raise CommitRejected("verified result has no atomic scoped Acceptance")
                 return self._require_task(stored.envelope.task_id)
-            if completion_protocol:
-                self._lock_assured_acceptance(stored.envelope.mission_id,
-                                              stored.envelope.task_id, result_id)
+            self._lock_assured_acceptance(stored.envelope.mission_id,
+                                          stored.envelope.task_id, result_id)
             attempt = self._require_attempt(stored.envelope.attempt_id)
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
             mission = self._require_mission(stored.envelope.mission_id)
-            frozen_completion = None
-            if completion_protocol:
-                from .completion_inputs import load_completion_result_inputs
-                frozen_completion = load_completion_result_inputs(self._store, stored)
+            from .completion_inputs import load_completion_result_inputs
+            frozen_completion = load_completion_result_inputs(self._store, stored)
             materials = self._acceptance_materials(
                 stored, task, attempt, mission, verifier_results=verifier_results, owner=owner,
                 connectors=connectors, deployment=deployment,
@@ -4180,7 +3518,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 return materials
             assessments = materials["assessments"]
             verifier_results = materials["verifier_results"]
-            candidates = materials["candidates"]
             source_dependencies = materials["source_dependencies"]
             if task.status is TaskStatus.ACTIVE:
                 verifying = next_task(task, TaskStatus.VERIFYING)
@@ -4236,18 +3573,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     input_manifest_hash=frozen_completion.frozen.manifest_hash,
                     port_claims=frozen_completion.port_claims,
                 )
-            for artifact, candidate in (() if completion_protocol else candidates):
-                self.propose_action(
-                    candidate,
-                    mission_id=mission.id,
-                    task_id=task.id,
-                    result_id=result_id,
-                    attempt_id=attempt.id,
-                    artifact_id=artifact.id,
-                    artifact_hash=artifact.content_hash,
-                    connectors=connectors or {},
-                    deployment=deployment or DeploymentPolicy(),
-                )
             if not self._ledger.has_unknown_usage(attempt.id):  # ORCH §12.2 (P2-12)
                 self._settle_subject(attempt.id, mission.id, task_id=task.id)
             self._emit(
@@ -4268,8 +3593,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 if other.id != attempt.id and other.status in OPEN_ATTEMPT_STATES:
                     self._close_attempt(other, AttemptStatus.SUPERSEDED, reason="sibling_accepted")
                     superseded.append(other.id)
-            unblocked = (self._unblock(mission.id, unblocked_by=task.id)
-                         if completed.status is TaskStatus.COMPLETED else [])
             refresh_summaries(self._store, mission.id)  # D4-13: Summaries layer, same transaction
             self._emit(
                 "TaskCompleted" if completed.status is TaskStatus.COMPLETED else "PreparationAccepted",
@@ -4280,7 +3603,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     "result_id": result_id,
                     "artifacts": list(stored.artifacts),
                     "superseded": superseded,
-                    "unblocked": [t.id for t in unblocked],
                 },
             )
             return completed
@@ -4513,10 +3835,8 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             if met:
                 from .assurance_final_writer import is_assured, request_assured_closeout
-                from .hierarchical_dispatch import is_hierarchical
 
-                if is_hierarchical(mission):
-                    report.update(self._ledger.usage_flags(mission_id))
+                report.update(self._ledger.usage_flags(mission_id))
                 if is_assured(self._store, mission_id):
                     # Handoff item 7: an assured Mission is completed only by the
                     # unique final writer out of a READY closeout (spec §7.1); the
@@ -4565,10 +3885,8 @@ class CommitService(ProtectedTailCommitsMixin,
         """
 
         from ..graph.projection_validation import GraphIntegrityError
-        from .hierarchical_dispatch import HierarchicalDispatch, is_hierarchical
+        from .hierarchical_dispatch import HierarchicalDispatch
 
-        if not is_hierarchical(mission):
-            return None
         try:
             return HierarchicalDispatch.for_commit(self, mission.id).network(mission.id)
         except GraphIntegrityError as error:
@@ -4689,7 +4007,6 @@ class CommitService(ProtectedTailCommitsMixin,
         before the resolution stands, but that entry is public and had no gate of its
         own, so the invariant rested on one caller remembering.
 
-        A legacy Mission is untouched: the whole gate is behind ``is_hierarchical``.
         """
 
         from ..storage.htn_store import HtnStore
@@ -4940,10 +4257,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 "completed_parts": self._completed_parts(task_id),
                 "tasks": self._task_reports(mission.id),
             }
-            from .hierarchical_dispatch import is_hierarchical
-
-            if is_hierarchical(mission):
-                report.update(self._ledger.usage_flags(mission.id))
+            report.update(self._ledger.usage_flags(mission.id))
             if stop_reason is MissionStopReason.INSUFFICIENT_EVIDENCE:
                 domain = self.domain_for(mission.id)
                 if supports_document_assessments(domain):
@@ -5050,7 +4364,6 @@ __all__ = (
     "MissionConflict",
     "MissionSpec",
     "Reservation",
-    "TaskProposal",
     "mission_account",
     "task_account",
 )

@@ -15,7 +15,6 @@ SUPERSEDED."""
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -182,30 +181,6 @@ def bind_artifact_params(params: Mapping[str, Any], artifacts: Mapping[str, Any]
         storage_uri=artifact.storage_uri,
     )
     return bound
-
-
-def is_action_path(path: str) -> bool:
-    """``actions/<name>.json`` in a Task's outputs is an action candidate (D7-2' / P2-1)."""
-
-    return path.startswith("actions/") and path.endswith(".json")
-
-
-def claims_an_action(raw: bytes) -> bool:
-    """Whether an ``actions/*.json`` file claims to be an action.
-
-    A JSON object naming neither a ``connector`` nor an ``operation`` is ordinary
-    content that happens to sit under ``actions/`` — nothing ever executes it
-    (real run 2026-09-27: a Worker wrote its delivery note as
-    ``actions/delivery.json`` and the publish step failed three times as an
-    undeclared candidate).  Anything unreadable or not an object still counts as
-    a claim, so it keeps being policed (fail closed).
-    """
-
-    try:
-        value = json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return True
-    return not isinstance(value, dict) or "connector" in value or "operation" in value
 
 
 def judgment_key(tasks: Sequence[Any]) -> str:
@@ -1061,19 +1036,8 @@ class ActionCommitsMixin:
                         )
                     except SourceUnavailable:
                         reason = "operation_link_mismatch"
-                    submission = self._store.get_receipt(
-                        str(bridge.get("provenance_receipt_id", ""))
-                    )
-                    from .scoped_content_review import uses_completion_protocol
-
-                    if reason is None and (
-                        uses_completion_protocol(self._store, str(action["mission_id"]))
-                        or (submission is not None
-                            and submission.get("kind") == "operation_intent_submitted")
-                    ):
-                        # T0 links are distinguished by their persisted submission receipt,
-                        # never by the descriptive action marker.  A legacy link remains on
-                        # its historical path; a broken T0 chain cannot reserve or send.
+                    if reason is None:
+                        # Every link is a T0 link: a broken chain cannot reserve or send.
                         from .operation_materialization_inputs import (
                             OperationMaterializationInputError,
                         )
@@ -1433,74 +1397,6 @@ class ActionCommitsMixin:
             )
 
     # ------------------------------------------------------------ closure (D7-2'' / D7-7')
-    def _accepted_by_path(self, stored: Any) -> dict[str, Any]:
-        """The Result's own accepted Artifacts, by workspace path (P3.2 D6)."""
-
-        by_path: dict[str, Any] = {}
-        for artifact_id in stored.artifacts:
-            artifact = self._store.get_artifact(artifact_id)
-            if artifact is not None:
-                by_path[artifact.path] = artifact
-        return by_path
-
-    def _action_candidates(
-        self,
-        stored: Any,
-        task: Any,
-        mission: Any,
-        *,
-        connectors: Mapping[str, Any] | None,
-        deployment: DeploymentPolicy | None,
-    ) -> tuple[list[tuple[Any, dict[str, Any]]], dict[str, Any] | None]:
-        """Re-read every accepted ``actions/*.json`` from its stored bytes, inside the accept
-        transaction (review P1-1: TOCTOU); a rejection is a rule_check failure, never a crash."""
-
-        found: list[tuple[Any, dict[str, Any]]] = []
-        for artifact_id in stored.artifacts:
-            artifact = self._store.get_artifact(artifact_id)
-            if artifact is None or not is_action_path(artifact.path):
-                continue
-            try:
-                from ..artifacts.store import ArtifactStoreError, read_verified
-                from ..runtime.action_schema import declared_action_outputs
-
-                try:  # P3.2 D3: stored bytes only, hash re-checked, never through a symlink
-                    raw = read_verified(artifact)
-                except ArtifactStoreError as error:
-                    raise CandidateRejected("artifact_bytes_mismatch", artifact.path) from error
-                if artifact.path not in declared_action_outputs(self._store, mission.id, task):
-                    if not claims_an_action(raw):
-                        continue  # ordinary content under actions/, never executed
-                    raise CandidateRejected("undeclared_action_output", artifact.path)
-                if hashlib.sha256(raw).hexdigest() != artifact.content_hash:
-                    raise CandidateRejected("artifact_bytes_mismatch", artifact.path)
-                candidate = json.loads(raw.decode("utf-8"))
-                if isinstance(candidate, Mapping) and isinstance(candidate.get("params"), Mapping):
-                    # P3.2 D6: the Result's own Artifacts, bound by the system before the
-                    # params are hashed and an approval is bound to them
-                    candidate = {
-                        **candidate,
-                        "params": bind_artifact_params(
-                            candidate["params"], self._accepted_by_path(stored)
-                        ),
-                    }
-                check_candidate(
-                    candidate,
-                    criteria=mission.success_criteria,
-                    connectors=connectors or {},
-                    deployment=deployment or DeploymentPolicy(),
-                )
-            except (CandidateRejected, ValueError, OSError) as error:
-                reason = getattr(error, "reason", "invalid_candidate")
-                return [], {
-                    "layer": "rule_check",
-                    "status": "FAIL",
-                    "summary": f"action_candidate_rejected ({reason}): {error}",
-                    "detail": {"reason": reason, "path": artifact.path},
-                }
-            found.append((artifact, candidate))
-        return found, None
-
     def record_criteria_judgment(
         self,
         mission_id: str,
@@ -1607,7 +1503,6 @@ __all__ = (
     "allowed_actions",
     "business_action_id",
     "check_candidate",
-    "is_action_path",
     "judgment_key",
     "parse_action_criterion",
     "receipt_mismatch",

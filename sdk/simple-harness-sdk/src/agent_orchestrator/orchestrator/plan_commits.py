@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import json
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -111,41 +111,38 @@ PLAN_REVISION_COMMITTED = "PlanRevisionCommitted"
 #: rather than something a reader has to re-derive from three tables.
 OCCURRENCES_MATERIALISED = "PlanOccurrencesMaterialised"
 
-#: The server-side default, hard-coded (§18.5 rule 1).  A Mission is legacy unless
-#: its creator asked for the other one in so many words.
-LEGACY_SEMANTICS = "legacy"
+#: The only orchestration mode.  ``LEGACY_SEMANTICS`` names the flat mode that was
+#: removed on 2026-10-02: a request naming it is refused, and a library row created
+#: under it is recognised (never served) so that Mission can be stopped by name.
 HIERARCHICAL_SEMANTICS = "hierarchical"
-#: §18.5 spells the opt-in ``full-target-v1``; the code's own name for the same mode
-#: is ``hierarchical``.  Both are accepted at the boundary and normalise to one value,
-#: so the two documents cannot drift into two modes.
-SEMANTICS_ALIASES: Mapping[str, str] = {
-    LEGACY_SEMANTICS: LEGACY_SEMANTICS,
-    HIERARCHICAL_SEMANTICS: HIERARCHICAL_SEMANTICS,
-    "full-target-v1": HIERARCHICAL_SEMANTICS,
-}
-#: Where the mode is recorded on the Mission.  It is written into the Mission's
-#: context bag *only* for a hierarchical Mission, so a legacy Mission's stored JSON
-#: keeps the bytes it had before this slice existed.
+LEGACY_SEMANTICS = "legacy"
+#: Where the mode is recorded on the Mission.
 SEMANTICS_KEY = "orchestration_semantics_version"
 
 
 def normalise_semantics(value: object) -> str:
-    """The canonical mode name, or raise for one this deployment does not have."""
+    """``hierarchical``, or raise: the flat mode is gone and nothing else exists."""
 
-    text = LEGACY_SEMANTICS if value is None else str(value)
-    resolved = SEMANTICS_ALIASES.get(text)
-    if resolved is None:
+    text = HIERARCHICAL_SEMANTICS if value is None else str(value)
+    if text == HIERARCHICAL_SEMANTICS:
+        return text
+    if text == LEGACY_SEMANTICS:
         raise ContractError(
-            f"{SEMANTICS_KEY} {text!r} is not a known orchestration semantics version; "
-            f"it is one of {sorted(set(SEMANTICS_ALIASES))}"
+            f"{SEMANTICS_KEY} {text!r}: the flat orchestration mode was removed on "
+            f"2026-10-02; only {HIERARCHICAL_SEMANTICS!r} is served"
         )
-    return resolved
+    raise ContractError(
+        f"{SEMANTICS_KEY} {text!r} is not an orchestration semantics version; "
+        f"only {HIERARCHICAL_SEMANTICS!r} exists"
+    )
 
 
 def semantics_of(mission: Mission) -> str:
-    """The mode one Mission runs under.  Absent means ``legacy`` (§18.5 rule 1)."""
+    """Which mode a stored Mission was created under (recognition only, never raises):
+    a row without the key is a flat Mission left over from before 2026-10-02."""
 
-    return normalise_semantics((mission.final_report or {}).get(SEMANTICS_KEY))
+    value = (mission.final_report or {}).get(SEMANTICS_KEY)
+    return HIERARCHICAL_SEMANTICS if value == HIERARCHICAL_SEMANTICS else LEGACY_SEMANTICS
 
 
 class PlanCommitRejected(StoreError):
@@ -1689,42 +1686,6 @@ class PlanCommitsMixin:
         return activated
 
     # ------------------------------------------------- the hierarchical graph gate
-    def _require_semantic_bindings(
-        self,
-        mission: Mission,
-        task_ids: Sequence[str],
-        bindings: Mapping[str, TaskSemanticBindingV1] | None,
-        key_to_id: Mapping[str, str],
-    ) -> None:
-        """§18.5: in the hierarchical mode every Task has a meaning, or nothing is written.
-
-        A legacy Mission never reaches this method — the caller checks the mode
-        first — so the old commit path keeps its exact behaviour and its bytes.
-        """
-
-        semantics = HtnStore(self._store)
-        supplied = dict(bindings or {})
-        for key, task_id in key_to_id.items():
-            binding = supplied.get(key) or supplied.get(task_id)
-            if binding is None:
-                continue
-            if str(binding.task_id) != task_id:
-                binding = _rebound(binding, task_id)
-            if semantics.task_semantics_of(mission.id, task_id) is None:
-                semantics.put_task_semantics(mission.id, binding)
-        missing = [
-            task_id
-            for task_id in task_ids
-            if semantics.task_semantics_of(mission.id, task_id) is None
-        ]
-        if missing:
-            raise PlanCommitRejected(
-                "MISSING_SEMANTIC_BINDING",
-                f"mission {mission.id} runs under the hierarchical semantics, where every Task "
-                f"carries a TaskSemanticBindingV1; {sorted(missing)} carry none (§18.5)",
-            )
-
-
 def _shared(store: Store, semantics: HtnStore, mission_id: str) -> SemanticReadSetChecker:
     """The shared resolver set, with no overrides — the implementation itself."""
 
@@ -1833,7 +1794,6 @@ __all__ = (
     "OCCURRENCES_MATERIALISED",
     "LEGACY_SEMANTICS",
     "PLAN_REVISION_COMMITTED",
-    "SEMANTICS_ALIASES",
     "SEMANTICS_KEY",
     "CommitPlanCommand",
     "PlanCommitRejected",

@@ -33,7 +33,6 @@ from agent_orchestrator.orchestrator.commit_service import (
 )
 from agent_orchestrator.orchestrator.plan_commits import (
     HIERARCHICAL_SEMANTICS,
-    LEGACY_SEMANTICS,
     semantics_of,
 )
 from agent_orchestrator.orchestrator.planning_protocol_binding import (
@@ -117,47 +116,6 @@ def test_the_request_parser_default_is_hierarchical_on_the_current_protocol() ->
         "tenant", {"idempotency_key": "x", "planning_protocol_version": PLANNING_DECISION_V1}
     )
     assert named.to_json() == replace(plain, idempotency_key="x").to_json()
-    flat = spec_from_request(
-        "tenant", {"idempotency_key": "z", "orchestration_semantics_version": LEGACY_SEMANTICS}
-    )
-    assert flat.orchestration_semantics_version == LEGACY_SEMANTICS
-
-
-def test_a_flat_mode_charter_names_neither_and_is_not_bound(tmp_path) -> None:
-    """The flat mode is still served, but only for a spec that asks for it in so many
-    words; it has no planning protocol, so no binding row is written for it."""
-
-    spec = _spec("flat", orchestration_semantics_version=LEGACY_SEMANTICS)
-    assert spec.to_json() == {
-        "goal": "g",
-        "success_criteria": ["ok"],
-        "tenant_id": "tenant",
-        "idempotency_key": "flat",
-        "stop_conditions": ["verification_passed", "budget_exhausted"],
-        "allowed_tools": [],
-        "risk_level": "sandbox",
-        "budget": {
-            "max_tokens": 1000,
-            "max_cost_micros": None,
-            "max_attempts": 1,
-            "max_runtime_seconds": None,
-            "max_concurrency": None,
-            "max_tool_calls": None,
-        },
-        "task_kind": "code",
-        "workspace_seed": {},
-    }
-    store = Store.open(tmp_path / "orchestrator.db")
-    service = CommitService(store)
-    mission, _ = service.create_mission(spec)
-    assert semantics_of(mission) == LEGACY_SEMANTICS
-    assert planning_protocol_for_mission(store, mission.id) is None
-    # a hierarchical Mission in the same library, so the count is not trivially zero
-    other, _ = service.create_mission(_spec("hier"))
-    assert binding_rows(store, other.id) == 1
-    assert not binding_rows(store, mission.id)
-    again, created = service.create_mission(spec)
-    assert again == mission and created is False
 
 
 # ---------------------------------------------------------------------------------------
@@ -273,9 +231,6 @@ def test_replay_is_idempotent_and_keeps_exactly_one_binding_row(tmp_path) -> Non
     assert planning_protocol_for_mission(store, mission.id) == first
     assert planning_protocol_replay_conflict(store, mission.id, PLANNING_DECISION_V1) is None
     assert store.find_mission("tenant", "idem")[1] == sha256_hex(spec.to_json())
-    # the same key under the other mode is a different charter
-    with pytest.raises(MissionConflict, match="different specification"):
-        service.create_mission(replace(spec, orchestration_semantics_version=LEGACY_SEMANTICS))
 
 
 def test_a_replay_against_a_tampered_binding_is_a_conflict(tmp_path) -> None:
@@ -309,11 +264,7 @@ def test_the_durable_binding_ignores_the_ambient_environment(tmp_path, monkeypat
     monkeypatch.setenv("PLANNING_PROTOCOL_VERSION", REMOVED_NAME)
     store = Store.open(tmp_path / "orchestrator.db")
     service = CommitService(store)
-    flat, _ = service.create_mission(
-        _spec("env-flat", orchestration_semantics_version=LEGACY_SEMANTICS)
-    )
     enabled, _ = service.create_mission(_spec("env-enabled"))
-    assert planning_protocol_for_mission(store, flat.id) is None
     assert planning_protocol_for_mission(store, enabled.id)["protocol_version"] == (
         PLANNING_DECISION_V1
     )

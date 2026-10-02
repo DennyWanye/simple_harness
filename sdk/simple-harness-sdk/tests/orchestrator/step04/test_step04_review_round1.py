@@ -17,7 +17,7 @@ from knowledge_helpers import (
     envelope,
     passed_layers,
     submit,
-    two_branch_service,
+    two_leaf_service,
 )
 
 from agent_orchestrator.artifacts.paths import normalise_workspace_path, under_prefix
@@ -156,7 +156,7 @@ def test_v1_library_with_duplicate_lineage_rows_upgrades_and_renumbers(tmp_path)
 
 # ------------------------------------------------------------------ P2-13 / real-run finding
 def test_supersession_keeps_the_record_version_and_sdk_errors_are_jsonable(tmp_path):
-    service, mission, (t1, t2) = two_branch_service(tmp_path)
+    service, mission, (t1, t2) = two_leaf_service(tmp_path)
     a1 = drive_to_running(service, t1)
     s1 = submit(
         service,

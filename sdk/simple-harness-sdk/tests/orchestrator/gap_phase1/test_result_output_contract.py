@@ -7,7 +7,7 @@ import re
 from dataclasses import replace
 
 import pytest
-from knowledge_helpers import drive_to_running, node, two_branch_service
+from knowledge_helpers import drive_to_running, two_leaf_service
 
 from agent_orchestrator.context.context_builder import build_worker_package
 from agent_orchestrator.contracts import ResultEnvelope
@@ -29,10 +29,11 @@ def example(text):
     ],
 )
 def test_concrete_example_has_actual_ids_and_frozen_legacy_unchanged(tmp_path, role):
-    service, mission, (task,) = two_branch_service(
-        tmp_path, nodes=[node("A", outputs=['答"案.json'])]
-    )
-    attempt = drive_to_running(service, task)
+    # 分层步骤（删旧平面模式 第三刀：原来是只有一个任务的平面图）；这一步的声明产出换成
+    # 带引号的中文文件名，看示例里的 artifacts 是不是原样带出来。
+    service, mission, (leaf, _other) = two_leaf_service(tmp_path)
+    attempt = drive_to_running(service, leaf)
+    task = replace(service.store.get_task(leaf.id), outputs=('答"案.json',))
     args = dict(previous_attempts=(), verifier_feedback=(), workspace_files=(), role=role)
     from agent_orchestrator.contracts.models import sha256_hex
 

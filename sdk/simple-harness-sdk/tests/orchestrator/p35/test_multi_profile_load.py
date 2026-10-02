@@ -3,87 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
-from graph_helpers7 import node
+from leaf_world import leaf_world
 from test_provider_budget_guard import Counter, grants
 
 from agent_orchestrator.runtime.model_router import RuntimeProfile
-from agent_orchestrator.testing.fixtures import (
-    RoleScriptedProvider,
-    critic_step,
-    envelope_step,
-    package_of,
-    role_of,
-)
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 from simple_harness.contracts import RunId
-
-
-class Load:
-    def __init__(self):
-        self.active = {"workers": 0, "critics": 0}
-        self.peak = 0
-        self.profile_peak = {"workers": 0, "critics": 0}
-        self.calls = []
-        self.gates = {key: asyncio.Event() for key in ("A", "B", "D")}
-        self.scripts = {}
-        for label in ("A", "B", "C", "D", "E"):
-            content = f"# Actual report {label}\n"
-
-            def assessed(request, expected=content):
-                reads = [json.loads(m.content) for m in request.messages if str(m.role) == "tool"]
-                met = reads[-1]["value"]["content"] == expected
-                return critic_step(verdict="PASS" if met else "FAIL", criteria_met=met)(request)
-
-            self.scripts[label] = RoleScriptedProvider(
-                {
-                    "worker": [
-                        ("workspace_write_file", {"path": "a.md", "content": content}),
-                        envelope_step(summary=content, artifacts=["a.md"], claims=[content]),
-                    ],
-                    "critic": [("workspace_read_file", {"path": "a.md"}), assessed],
-                }
-            )
-
-    def provider(self, profile):
-        load = self
-        scripts = {
-            label: RoleScriptedProvider(
-                {role: list(steps) for role, steps in scripted.scripts.items()},
-                model="worker-model" if profile == "workers" else "critic-model",
-            )
-            for label, scripted in self.scripts.items()
-        }
-
-        class Provider:
-            async def invoke(self, request, *, cancel):
-                label = package_of(request)["mission_root_goal"]
-                role = role_of(request)
-                load.active[profile] += 1
-                load.peak = max(load.peak, sum(load.active.values()))
-                load.profile_peak[profile] = max(load.profile_peak[profile], load.active[profile])
-                load.calls.append((profile, label, role, str(request.request_id)))
-                try:
-                    if (role == "critic" and label in ("A", "B")) or (
-                        role == "worker" and label == "D"
-                    ):
-                        await load.gates[label].wait()
-                    return await scripts[label].invoke(request, cancel=cancel)
-                finally:
-                    load.active[profile] -= 1
-
-        return Provider()
 
 
 @pytest.mark.parametrize("limit", [True, 0, -1, 1.5])
 def test_invalid_profile_slot_limit_is_rejected(limit):
     with pytest.raises(ValueError, match="positive integer"):
-        RuntimeProfile("p", Load().provider("workers"), "model", max_concurrent_model_calls=limit)
+        RuntimeProfile("p", RoleScriptedProvider({}), "model", max_concurrent_model_calls=limit)
 
 
 def test_legacy_unknown_without_profile_identity_blocks_new_profile_admission(tmp_path):
-    from graph_helpers7 import graph_service
     from test_provider_budget_guard import ActualProvider, create_bound
     from test_provider_budget_recovery import until
 
@@ -114,7 +50,12 @@ def test_legacy_unknown_without_profile_identity_blocks_new_profile_admission(tm
             )
 
     async def exercise():
-        commit, _, tasks = graph_service(tmp_path, nodes=[node("A"), node("B")])
+        # 两个并列的分层步骤（删旧平面模式 第三刀：原来是平面图里的两个独立任务）
+        world = leaf_world(
+            tmp_path, key="g-1", leaves=("a", "b"), task_max_tokens=20_000, tenant_id="tenant-5"
+        )
+        commit = world.service
+        tasks = {name.upper(): task for name, task in world.tasks.items()}
         # 2026-09-24: an UNKNOWN call has ended on the wire and no longer holds a slot
         # (its allowance stays spent), so the unattributable *slot* this rule guards is a
         # legacy call still on the wire.

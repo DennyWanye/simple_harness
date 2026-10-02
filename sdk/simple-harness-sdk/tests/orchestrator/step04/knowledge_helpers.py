@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Shared drivers for the step-4 unit tests: a two-branch graph (A ‖ B) on a bare
-Commit Service, Attempts driven to RUNNING, results with typed claims."""
+"""Shared drivers for the step-4 unit tests: two parallel hierarchical leaf steps (a ‖ b) on
+a bare Commit Service, Attempts driven to RUNNING, results with typed claims."""
 
 from __future__ import annotations
 
@@ -11,56 +11,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agent_orchestrator.contracts import Artifact, Budget, ClaimProposal, ResultEnvelope
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec, Reservation
-from agent_orchestrator.storage.store import Store
+from agent_orchestrator.orchestrator.commit_service import CommitService, Reservation
 
 TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
 HASH_A = "a" * 64
 HASH_B = "b" * 64
-
-
-def spec(key: str = "k-1", **overrides: Any) -> MissionSpec:
-    base: dict[str, Any] = dict(
-        goal="比较两个实现对同一输入合同的支持程度",
-        success_criteria=("pytest:tests/test_comparison.py",),
-        tenant_id="tenant-4",
-        idempotency_key=key,
-        allowed_tools=TOOLS,
-        budget=Budget(max_tokens=100_000, max_attempts=6),
-        untrusted_sources=("docs/",),
-    )
-    base.update(overrides)
-    base.setdefault("orchestration_semantics_version", "legacy")
-    return MissionSpec(**base)
-
-
-def node(key: str, deps: Sequence[str] = (), **overrides: Any) -> dict[str, Any]:
-    base: dict[str, Any] = dict(
-        key=key,
-        goal=f"检查 impl_{key.lower()} 的边界行为",
-        rationale=f"{key} 服务 Mission 的比较目标",
-        dependencies=list(deps),
-        success_criteria=[f"pytest:tests/probe/test_impl_{key.lower()}.py"],
-        verification_policy=["format_check", "rule_check", "code_test"],
-        allowed_tools=list(TOOLS),
-        budget={"max_tokens": 20_000, "max_attempts": 3},
-    )
-    base.update(overrides)
-    return base
-
-
-def two_branch_service(tmp_path, *, key: str = "k-1", nodes=None, **spec_overrides):
-    """Mission with the parallel graph A ‖ B committed; returns (service, mission, [tasks])."""
-
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(spec(key, **spec_overrides))
-    planning = service.begin_planning(mission.id)
-    proposal = TaskGraphProposal.from_json({"tasks": nodes or [node("A"), node("B")]})
-    tasks, _ = service.commit_task_graph(
-        mission.id, proposal, base_version=planning.version, source={"planner": "fixture"}
-    )
-    return service, service.store.get_mission(mission.id), tasks
 
 
 def two_leaf_service(
@@ -93,12 +48,6 @@ def two_leaf_service(
         spec_overrides={"untrusted_sources": ("docs/",), **spec_overrides},
     )
     return world.service, world.mission, [world.tasks["a"], world.tasks["b"]]
-
-
-def _is_layered(service, mission_id: str) -> bool:
-    from agent_orchestrator.orchestrator.scoped_content_review import uses_completion_protocol
-
-    return uses_completion_protocol(service.store, mission_id)
 
 
 def drive_to_running(
@@ -193,9 +142,8 @@ def submit(
     hashes=None,
 ):
     hashes = hashes or {}
-    layered = _is_layered(service, attempt.mission_id)
     extra: dict[str, Any] = {}
-    if layered and artifact_paths:
+    if artifact_paths:
         # 分层步骤声明了一个必需的输出端口：结果要认领它（生产里由执行者在结果里写）。
         from agent_orchestrator.runtime.output_blocks import PortClaim
 
@@ -208,13 +156,11 @@ def submit(
         usage_refs=(),
         **extra,
     )
-    if layered:
-        # 主循环收到结果后先结清这次派发，再开始核验。
-        service.settle_intent(service.store.get_intent_for_subject(attempt.id).intent_id, "SETTLED")
+    # 主循环收到结果后先结清这次派发，再开始核验。
+    service.settle_intent(service.store.get_intent_for_subject(attempt.id).intent_id, "SETTLED")
     service.start_verification(stored.envelope.id)
-    if layered:
-        # 分层步骤一律带内容审查这一层；接受结果之前必须已有它的通过记录。
-        service.record_verification_layer(
-            stored.envelope.id, layer="critic_review", status="PASS", detail={"producer": "fixture"}
-        )
+    # 分层步骤一律带内容审查这一层；接受结果之前必须已有它的通过记录。
+    service.record_verification_layer(
+        stored.envelope.id, layer="critic_review", status="PASS", detail={"producer": "fixture"}
+    )
     return stored

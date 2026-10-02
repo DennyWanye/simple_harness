@@ -1,23 +1,15 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""Host-support 0.9.8 tests reuse the step-4 knowledge helpers (Commit-Service-level
-dispute construction) and share one spy on every way the orchestrator reaches pytest."""
+"""Host-support 0.9.8 tests share one spy on every way the orchestrator reaches pytest."""
 
 from __future__ import annotations
-
-import sys
-from pathlib import Path
 
 import pytest
 
 from agent_orchestrator.orchestrator import event_handler as event_handler_module
 from agent_orchestrator.runtime import tool_gateway
 from agent_orchestrator.verification import deterministic_checks
-
-STEP04 = Path(__file__).resolve().parents[1] / "step04"
-if str(STEP04) not in sys.path:
-    sys.path.insert(0, str(STEP04))
 
 
 @pytest.fixture(name="pytest_spy")  # a conftest function named pytest_* would be a hook

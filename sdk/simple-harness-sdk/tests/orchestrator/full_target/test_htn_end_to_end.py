@@ -98,7 +98,6 @@ from agent_orchestrator.orchestrator.accepted_outputs import (  # noqa: E402
     declared_output_ports,
 )
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    HIERARCHICAL_JUDGMENT_REFUSED,
     CommitRejected,
     CommitService,
     MissionSpec,
@@ -126,7 +125,6 @@ from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
 )
 from agent_orchestrator.orchestrator.plan_commits import (  # noqa: E402
     HIERARCHICAL_SEMANTICS,
-    LEGACY_SEMANTICS,
     OCCURRENCES_MATERIALISED,
     PLAN_REVISION_COMMITTED,
     PlanCommitRejected,
@@ -1175,38 +1173,6 @@ class _Pinned:
         return Orchestrator._template(self, template, mission_id)  # type: ignore[arg-type]
 
 
-def test_a_legacy_prompt_pin_does_not_reach_the_hierarchical_branch() -> None:
-    """P2.3c part 2b: the mode picks the prompt, a policy pin only picks the version.
-
-    Every code-domain deployment freezes ``prompt_versions["planner"]`` to a DAG
-    Planner version, and ``template_for`` honours a pin for any template of the same
-    *role* — so the hierarchical branch was handed the flat-mode prompt while holding
-    the hierarchical package.  A pin only selects among the prompts written against
-    the package this build assembles; anything else falls back to the bound prompt.
-
-    Part 2d (review P2-21) drives the real chooser instead of reading its source.
-    """
-
-    from agent_orchestrator.contracts.planning_decisions import UnsupportedPlanningPackage
-    from agent_orchestrator.runtime.role_templates import (
-        PLANNER,
-        PLANNER_HIERARCHICAL,
-        PLANNING_DECISION_PACKAGE_VERSION,
-        PLANNING_DECISION_PROMPT_VERSION,
-    )
-
-    current = PLANNING_DECISION_PACKAGE_VERSION
-    assert PLANNER_HIERARCHICAL.prompt_version == PLANNING_DECISION_PROMPT_VERSION
-    assert _Pinned(PLANNER.prompt_version, package_version=current,
-                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL
-    assert _Pinned(None, package_version=current,
-                   bound_prompt=PLANNING_DECISION_PROMPT_VERSION).choose() is PLANNER_HIERARCHICAL
-    # 2026-10-01: a hierarchical Mission with no binding was created under the removed
-    # proposal-text protocol; it gets no prompt at all.
-    with pytest.raises(UnsupportedPlanningPackage, match="removed"):
-        _Pinned(None).choose()
-
-
 def test_a_pin_never_changes_the_hierarchical_prompt_and_a_historical_package_is_refused() -> None:
     """There is one hierarchical Planner prompt.  Whatever a deployment pins ``planner``
     to and whatever prompt name the stored binding carries, the current package is
@@ -1315,54 +1281,20 @@ def test_a_predicate_read_at_the_wrong_content_hash_is_unavailable() -> None:
 
 
 # ======================================================================================
-# 12. legacy zero-regression, and two Missions in one library
+# 12. the allocator entry
 # ======================================================================================
 
 
-def test_a_legacy_mission_materialises_nothing_and_stays_legacy(tmp_path) -> None:
-    legacy = build_world(tmp_path, mode=LEGACY_SEMANTICS, key="p23c-legacy")
-    assert legacy.store.list_tasks(legacy.mission.id) == []
-    assert legacy.events(OCCURRENCES_MATERIALISED) == []
-    assert legacy.store.get_mission(legacy.mission.id).status is MissionStatus.PLANNING
+def test_the_decide_step_allocates_only_through_the_admission_entry() -> None:
+    """2026-10-02 删旧平面模式：旧平面分配入口 ``allocate()`` 已删，``_decide`` 只走 v2。"""
 
-
-def test_a_legacy_mission_is_refused_at_the_accept_door(tmp_path) -> None:
-    from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
-
-    legacy = build_world(tmp_path, mode=LEGACY_SEMANTICS, key="p23c-legacy2")
-    with pytest.raises(ResolutionCommitRejected) as caught:
-        legacy.service.record_delivery_receipt(
-            legacy.mission.id,
-            DeliveryReceipt(
-                receipt_id="dlv-x",
-                mission_id=legacy.mission.id,
-                acceptance_id=AcceptanceId("acc-x"),
-                stage=DeliveryStage.CONFIRMED,
-                observed_at_ms=1,
-                operation_id="op-x",
-            ),
-            command_id="cmd-x",
-        )
-    assert caught.value.reason == "SEMANTICS_NOT_HIERARCHICAL"
-
-
-def test_two_missions_in_one_library_do_not_disturb_each_other(tmp_path) -> None:
-    first = committed(tmp_path, key="p23c-a", name="shared.db")
-    second_service = first.service
-    mission, _ = second_service.create_mission(_spec("p23c-b", mode=LEGACY_SEMANTICS))
-    assert second_service.store.list_tasks(mission.id) == []
-    assert len(first.tasks()) == 3
-    assert sum(1 for _ in first.events(OCCURRENCES_MATERIALISED)) == 1
-
-
-def test_the_legacy_allocator_entry_is_still_the_one_without_bindings() -> None:
     import inspect
 
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler.Orchestrator._decide)
     assert "allocate_v2(" in source
-    assert "plan = allocate(" in source
+    assert "plan = allocate(" not in source
 
 
 # ======================================================================================
@@ -2542,7 +2474,7 @@ def test_the_missing_assembly_is_recorded_once_for_the_mission(tmp_path) -> None
     asyncio.run(case())
 
 
-def test_the_decide_gate_refuses_before_the_legacy_allocator_is_consulted(
+def test_the_decide_gate_refuses_before_the_allocator_is_consulted(
     tmp_path, monkeypatch
 ) -> None:
     """Review P2-9 (mutation M02): the ``at="decide"`` half of the fail-closed rule.
@@ -2560,11 +2492,11 @@ def test_the_decide_gate_refuses_before_the_legacy_allocator_is_consulted(
     consulted: list[str] = []
     monkeypatch.setattr(
         module,
-        "allocate",
+        "allocate_v2",
         lambda *args, **kwargs: (
-            consulted.append("allocate")
+            consulted.append("allocate_v2")
             or (_ for _ in ()).throw(
-                AssertionError("the legacy allocator was consulted for a hierarchical Mission")
+                AssertionError("the allocator was consulted for an unassembled Mission")
             )
         ),
     )
@@ -2595,30 +2527,6 @@ def test_the_missing_assembly_also_closes_the_direct_dispatch_entry(tmp_path) ->
             task = next(item for item in loop.store.list_tasks(mission.id) if item.id != ROOT_TASK)
             assert await loop._next_attempt(mission, task, ()) is False
             assert loop.store.list_attempts(task.id) == []
-
-    asyncio.run(case())
-
-
-def test_a_legacy_mission_on_the_same_bare_orchestrator_is_untouched(tmp_path) -> None:
-    """The refusal separates two worlds ``_new_mode`` used to answer None for."""
-
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-    from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    legacy = build_world(evidence, mode=LEGACY_SEMANTICS, key="p23c-bare-legacy")
-    mission_id = legacy.mission.id
-    legacy.store.close()
-    config = OrchestratorConfig(evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5)
-
-    async def case() -> None:
-        async with Orchestrator(config, RoleScriptedProvider({"planner": []})) as loop:
-            mission = loop.store.get_mission(mission_id)
-            await loop._decide(mission)
-            events = loop.store.list_events(mission_id)
-            assert [item for item in events if item.type == ASSEMBLY_MISSING] == []
 
     asyncio.run(case())
 
@@ -3716,25 +3624,6 @@ def test_a_current_acceptance_on_a_failed_row_does_not_pass_the_judgment(
         )
     assert "disagree" in str(caught.value)
     assert leaf in str(caught.value)
-
-
-def test_a_legacy_mission_is_judged_without_asking_for_a_resolution(tmp_path) -> None:
-    """The mode gate is a gate on the *mode*: legacy judgment is byte-for-byte unchanged."""
-
-    import inspect
-
-    from agent_orchestrator.orchestrator.commit_service import CommitService as _Service
-
-    source = inspect.getsource(_Service._judgment_network)
-    assert "if not is_hierarchical(mission):" in source
-    legacy = build_world(tmp_path, mode=LEGACY_SEMANTICS, key="p23c-judge-legacy")
-    assert legacy.service._judgment_network(legacy.mission) is None
-    legacy.service._require_root_resolution(legacy.mission.id)  # no refusal, no event
-    assert [
-        event
-        for event in legacy.store.list_events(legacy.mission.id)
-        if event.type == HIERARCHICAL_JUDGMENT_REFUSED
-    ] == []
 
 
 # --------------------------------------------------------------------------------------
@@ -5083,46 +4972,6 @@ def _force_active(loop: Any, mission_id: str) -> None:
     )
 
 
-def test_a_legacy_mission_that_idles_is_never_stopped_by_this_path(tmp_path) -> None:
-    """Memo test 4: the stop is hierarchical-only, like the record above it.
-
-    Third-round review P1-C.  This used to drive a legacy fixture that never left
-    ``PLANNING``, so the very first guard of both stall methods
-    (``status is not ACTIVE``) short-circuited and the body never ran once — the
-    invariant had no evidence at all, and a mutant that stopped legacy Missions
-    through this path survived the whole suite.  The Mission is now put where the
-    guard actually matters (ACTIVE, with its id in ``_stalled_at`` as though the
-    recorder had put it there) and the confirmation is driven directly.
-    """
-
-    world, orchestrator, _ = _stalled(tmp_path, mode="legacy")
-
-    async def case():
-        async with orchestrator as loop:
-            loop.install_hierarchical(planning=None)
-            _force_active(loop, world.mission.id)
-            active = loop.store.get_mission(world.mission.id)
-            assert active is not None and active.status is MissionStatus.ACTIVE
-            # The state the stop path acts on.  A legacy Mission can only get here by
-            # somebody putting it here, which is the point: even then it is not
-            # stopped, because ``_new_mode`` answers None for it.
-            loop._stalled_at[world.mission.id] = "a fingerprint from another world"
-            carried = await loop._confirm_and_stop_stalled()
-            await loop.run()
-            return (
-                loop.store.get_mission(world.mission.id),
-                [item.type for item in loop.store.list_events(world.mission.id)],
-                carried,
-            )
-
-    mission, kinds, carried = asyncio.run(case())
-    assert MISSION_STALLED not in kinds
-    assert carried is False, "a legacy Mission never asks this loop for another cycle"
-    assert mission is not None
-    if mission.status is MissionStatus.FAILED:
-        assert mission.final_report["stop_reason"] != "no_dispatchable_work"
-
-
 def test_a_confirmation_that_moves_the_world_lets_the_run_carry_on(tmp_path) -> None:
     """Third-round review P1-A: the memo's "let the loop carry on", through ``run()``.
 
@@ -5296,24 +5145,6 @@ def test_the_carry_on_is_bounded_so_a_moving_world_ends_the_run(tmp_path) -> Non
     assert mission is not None and mission.status is MissionStatus.ACTIVE, (
         "running out of carry-ons ends the run, it does not stop the Mission"
     )
-
-
-def test_a_legacy_mission_that_idles_is_not_reported_as_stalled(tmp_path) -> None:
-    """The rule reads ``_new_mode``; a legacy Mission is none of its business."""
-
-    world, orchestrator, _ = _stalled(tmp_path, mode="legacy")
-
-    async def case():
-        async with orchestrator as loop:
-            _install(loop, world)
-            await loop._record_hierarchical_stall()
-            return [
-                item
-                for item in loop.store.list_events(world.mission.id)
-                if item.type == MISSION_STALLED
-            ]
-
-    assert asyncio.run(case()) == []
 
 
 def test_an_occurrence_that_was_admitted_and_never_ran_is_named_in_the_record(tmp_path) -> None:

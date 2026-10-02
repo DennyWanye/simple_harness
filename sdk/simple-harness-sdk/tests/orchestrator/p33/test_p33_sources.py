@@ -44,14 +44,12 @@ from agent_orchestrator.governance.domains import (
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.observability.replay import (
-    OPTIONAL_FIELDS,
     Projection,
     compare,
     events_from_store,
     formal_from_snapshot,
 )
 from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
-from agent_orchestrator.storage import schema
 from agent_orchestrator.storage.store import Store
 
 PATH = "sources/report.md"
@@ -82,7 +80,6 @@ def env(tmp_path):
             tenant_id="one",
             idempotency_key="source-mission",
             domain=DOC_DOMAIN,
-            orchestration_semantics_version="legacy",
         )
     )
     api = MissionControlV1(host, tenant_id="one", principal=Principal("person-one"))
@@ -543,7 +540,6 @@ def test_code_missions_and_commit_without_cas_keep_old_behavior(env):
             tenant_id="one",
             idempotency_key="code",
             domain=CODE_DOMAIN,
-            orchestration_semantics_version="legacy",
         )
     )
     before = e.store.snapshot(mission.id)
@@ -555,41 +551,6 @@ def test_code_missions_and_commit_without_cas_keep_old_behavior(env):
     assert e.store.snapshot(mission.id) == before
     # 无显式 CAS 的拒绝见 test_memory_store_requires_explicit_cas_instead_of_writing_cwd
     # （磁盘库现在默认用库旁 artifacts/）。
-
-
-def test_schema8_readonly_snapshot_has_no_sources_and_needs_no_optional_fields(
-    tmp_path, monkeypatch
-):
-    path = tmp_path / "legacy.db"
-    with monkeypatch.context() as patch:
-        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:8])
-        legacy = Store.open(path)
-        mission, _ = CommitService(legacy).create_mission(
-            MissionSpec(
-                goal="legacy",
-                success_criteria=("file:x",),
-                tenant_id="one",
-                idempotency_key="legacy",
-                orchestration_semantics_version="legacy",
-            )
-        )
-        legacy.close()
-    store = Store.open_readonly(path)
-    try:
-        assert store.get_source("missing", PATH) is None
-        assert store.list_sources("missing") == []
-        assert not any(kind == "source" for kind, _ in OPTIONAL_FIELDS)
-        snapshot = store.snapshot(mission.id)
-        assert snapshot["sources"] == []
-        assert formal_from_snapshot(snapshot)["source"] == {}
-    finally:
-        store.close()
-    upgraded = Store.open(path)
-    try:
-        assert upgraded.has_table("sources")
-        assert upgraded.snapshot(mission.id) == snapshot
-    finally:
-        upgraded.close()
 
 
 def test_reopened_store_returns_original_receipts_and_exact_history(env):
@@ -653,8 +614,7 @@ def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, mon
                 tenant_id="one",
                 idempotency_key="memory",
                 domain=DOC_DOMAIN,
-                orchestration_semantics_version="legacy",
-            )
+                )
         )
         with pytest.raises(SourceCommitError, match="explicit CAS"):
             commit.register_source(
@@ -672,11 +632,10 @@ def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, mon
         store.close()
 
 
-@pytest.mark.parametrize("entry", ["task_proposal", "tool", "connector_callback"])
+@pytest.mark.parametrize("entry", ["tool", "connector_callback"])
 def test_model_entries_cannot_execute_a_source_command_or_consume_its_approval(env, entry):
     from agent_orchestrator.artifacts.workspace import WorkspaceManager
     from agent_orchestrator.orchestrator.action_commits import ActionCommitError
-    from agent_orchestrator.orchestrator.commit_service import TaskProposal
     from agent_orchestrator.runtime.connectors import Receipt
     from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
     from simple_harness.contracts import CallId
@@ -694,18 +653,7 @@ def test_model_entries_cannot_execute_a_source_command_or_consume_its_approval(e
         "idempotency_key": "model",
     }
     for operation in ("register_source", "supersede_source", "revoke_source"):
-        if entry == "task_proposal":
-            with pytest.raises(ContractError, match="unknown fields"):
-                TaskProposal.from_json(
-                    {
-                        "goal": "g",
-                        "rationale": "r",
-                        "success_criteria": [],
-                        "verification_policy": [],
-                        operation: command,
-                    }
-                )
-        elif entry == "tool":
+        if entry == "tool":
             gateway = WorkspaceToolGateway(WorkspaceManager(e.tmp_path / "tools"))
             # Even a forged allowed-tools binding cannot manufacture a registered tool.
             gateway.bind("agent", WorkspaceBinding("attempt", "work", True, (operation,)))

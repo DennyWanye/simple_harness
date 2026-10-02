@@ -19,9 +19,8 @@ codec before anything downstream sees them.  Four properties are pinned here:
 3. **A malformed block is a BlockError, not a second request.**  Missing, doubled,
    unparseable and non-object bodies all raise through the existing bounded-repair
    path (§18.5 C8), never a new Attempt identity.
-4. **The old protocol did not move.**  ``<task_graph_proposal>`` parses exactly as
-   before, and every previously registered Planner / Manager prompt keeps its bytes:
-   the hierarchical template is an *additional* version of the same role.
+4. (2026-10-02) The flat ``<task_graph_proposal>`` parser and the frozen flat Planner
+   prompt digests were removed with the flat mode.
 
 The blocks are built with the shipped fixture provider's two new scripted steps, so
 none of this depends on a live model.
@@ -29,7 +28,6 @@ none of this depends on a live model.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -51,18 +49,11 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     RetireMethodOperation,
     RunningWorkPolicy,
 )
-from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
-from agent_orchestrator.graph.task_graph import TaskGraphProposal  # noqa: E402
-from agent_orchestrator.planning.planner import (  # noqa: E402
-    SYSTEM_BOUND_FIELDS,
-    parse_task_graph_proposal,
-)
+from agent_orchestrator.planning.htn.method_proposals import SYSTEM_BOUND_FIELDS  # noqa: E402
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
     PLAN_REVISION_PROPOSAL_TAG,
-    PLANNER,
     PLANNER_HIERARCHICAL,
     PLANNER_HIERARCHICAL_VERSION,
-    PLANNER_V3,
     TASK_GRAPH_PROPOSAL_TAG,
     TASK_PROPOSAL_TAG,
     TEMPLATE_VERSIONS,
@@ -302,111 +293,11 @@ def test_the_two_new_tags_are_distinct_from_each_other_and_from_the_old_ones():
     assert len(tags) == 3
 
 
-# ============================================================ the old protocol stands
-LEGACY_TASKS = [
-    {
-        "key": "A",
-        "goal": "写 README",
-        "rationale": "根目标要有交付物",
-        "dependencies": [],
-        "success_criteria": ["file:README.md"],
-        "verification_policy": ["format_check"],
-        "allowed_tools": ["workspace_write_file"],
-        "budget": {"max_tokens": 20_000, "max_attempts": 3},
-        "outputs": ["README.md"],
-    }
-]
-
-
-def test_the_old_task_graph_block_parses_exactly_as_before():
-    body = json.dumps({"tasks": LEGACY_TASKS})
-    text = f"<{TASK_GRAPH_PROPOSAL_TAG}>{body}</{TASK_GRAPH_PROPOSAL_TAG}>"
-    proposal = parse_task_graph_proposal(text)
-    assert isinstance(proposal, TaskGraphProposal)
-    assert [node.key for node in proposal.tasks] == ["A"]
-
-
-def test_the_old_task_graph_block_is_not_subject_to_the_new_authority_check():
-    """§18.5 rule 4: the legacy path keeps its exact behaviour.  A key the typed
-    parser would refuse is simply an unknown field to the old codec, and whatever it
-    did with one before, it still does."""
-
-    payload = {"tasks": LEGACY_TASKS, "manager_epoch": 9}
-    text = f"<{TASK_GRAPH_PROPOSAL_TAG}>{json.dumps(payload)}</{TASK_GRAPH_PROPOSAL_TAG}>"
-    try:
-        parsed: object = parse_task_graph_proposal(text)
-    except ContractError as error:
-        assert "the system binds" not in str(error)
-    else:
-        assert isinstance(parsed, TaskGraphProposal)
-
-
-def test_a_typed_block_is_not_accepted_by_the_old_parser():
-    with pytest.raises(ContractError) as caught:
-        parse_task_graph_proposal(_block())
-    assert "block_missing" in str(caught.value)
-
-
 # ============================================================ the template registry
-#: The Planner prompt versions that existed before P2.3a, each with the sha256 of its
-#: exact instruction text, written out as a literal.  A new *version* is welcome; a
-#: reworded old one is not, because a Mission pinned to it would replay under
-#: different words (host support 0.9.8).
-#:
-#: The digests are literals on purpose.  Comparing two values both computed from the
-#: live module — ``content_hash_of(TEMPLATE_VERSIONS[v]) == content_hash_of(PLANNER_V3)``
-#: — is true no matter what the text says, so it would pass through any rewording.
-#: Only a pinned constant fails when the words move.  (Same pattern as p33's
-#: ``BASELINE_CHECK_AST``.)
-FROZEN_PLANNER_PROMPTS = {
-    "planner-v3": "353b0dd0a0727b4a8ce74fe82354d17a02b6afe0a6c883f011b77ee22c4287e9",
-    "planner-v4": "13537f0abf6322c7075af9b5ddb3c0b7316c0271830311f49c3d6c195f5c9aad",
-}
-
-
-def _prompt_digest(version: str) -> str:
-    return hashlib.sha256(
-        TEMPLATE_VERSIONS["planner"][version].instructions.encode("utf-8")
-    ).hexdigest()
-
-
 def test_the_hierarchical_planner_is_registered_as_its_own_version():
     assert PLANNER_HIERARCHICAL_VERSION in registered_versions()["planner"]
     assert TEMPLATE_VERSIONS["planner"][PLANNER_HIERARCHICAL_VERSION] is PLANNER_HIERARCHICAL
     assert PLANNER_HIERARCHICAL.name == "planner"
-
-
-def test_the_hierarchical_planner_is_an_addition_not_a_replacement():
-    for version in FROZEN_PLANNER_PROMPTS:
-        assert version in registered_versions()["planner"], version
-    assert PLANNER.prompt_version != PLANNER_HIERARCHICAL_VERSION
-
-
-@pytest.mark.parametrize(("version", "digest"), sorted(FROZEN_PLANNER_PROMPTS.items()))
-def test_a_previously_registered_planner_prompt_keeps_its_exact_bytes(version, digest):
-    assert _prompt_digest(version) == digest
-
-
-def test_the_frozen_digests_are_literals_this_module_does_not_derive():
-    """Guards the guard: a digest recomputed from the live template is always equal to
-    itself, which is how a byte-freeze test quietly stops freezing anything."""
-
-    for digest in FROZEN_PLANNER_PROMPTS.values():
-        assert len(digest) == 64 and set(digest) <= set("0123456789abcdef")
-
-
-def test_the_two_frozen_prompts_are_different_texts():
-    assert len(set(FROZEN_PLANNER_PROMPTS.values())) == 2
-    assert _prompt_digest("planner-v4") == _prompt_digest(PLANNER.prompt_version)
-    assert _prompt_digest("planner-v3") == _prompt_digest(PLANNER_V3.prompt_version)
-
-
-def test_the_hierarchical_prompt_is_not_one_of_the_frozen_texts():
-    hierarchical = hashlib.sha256(PLANNER_HIERARCHICAL.instructions.encode("utf-8")).hexdigest()
-    assert hierarchical not in set(FROZEN_PLANNER_PROMPTS.values())
-    assert content_hash_of(PLANNER_HIERARCHICAL.instructions) != content_hash_of(
-        PLANNER_V3.instructions
-    )
 
 
 def test_the_hierarchical_planner_asks_for_no_tools():

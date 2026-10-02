@@ -539,17 +539,9 @@ class BudgetLedger:
                 if row["state"] != "SETTLED" and self.has_unknown_usage(row["subject_id"])
             ],
         }
-        if self._mission_is_hierarchical(mission_id):
-            report["usage_fully_known"] = self._usage_fully_known(mission_id, usage)
-            report["budget_conserved"] = self._budget_conserved(rows)
+        report["usage_fully_known"] = self._usage_fully_known(mission_id, usage)
+        report["budget_conserved"] = self._budget_conserved(rows)
         return report
-
-    def _mission_is_hierarchical(self, mission_id: str) -> bool:
-        mission = self._store.get_mission(mission_id)
-        if mission is None:
-            return False
-        mode = str((mission.final_report or {}).get("orchestration_semantics_version") or "")
-        return mode in {"hierarchical", "full-target-v1"}
 
     def _usage_fully_known(self, mission_id: str, usage: Sequence[Any]) -> bool:
         if any(int(row["unknown"] or 0) == 1 for row in usage):

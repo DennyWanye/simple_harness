@@ -52,7 +52,7 @@ async def run():
             root_id = orch._assurance_root_gate.require_execution().root_incarnation_id
             profiles = orch._profiles
             mission, _ = orch.commit.create_mission(MissionSpec(goal='private title',
-                success_criteria=('c',), tenant_id='tenant', idempotency_key='root-fixture', orchestration_semantics_version="legacy"))
+                success_criteria=('c',), tenant_id='tenant', idempotency_key='root-fixture'))
             task = Task('fixture-task',mission.id,(),(),'fixture','fixture',('file:answer.txt',),
                 ('format_check',),(),Budget(),1,'READY',1)
             orch.store.insert_task(task, ordinal=0)

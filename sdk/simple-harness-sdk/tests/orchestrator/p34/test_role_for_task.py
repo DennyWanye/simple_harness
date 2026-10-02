@@ -17,4 +17,4 @@ def test_template_follows_the_task_kind(kind, role):
 
 
 def test_removed_worker_variants_are_not_roles():
-    assert set(ROLES) == {"critic", "planner", "worker"}
+    assert set(ROLES) == {"critic", "worker"}

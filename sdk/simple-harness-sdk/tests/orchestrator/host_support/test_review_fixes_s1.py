@@ -2,74 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Host support 0.9.8 · code review round 1 fixes (SB-6):
+"""Host support 0.9.8 · code review round 1 fixes (SB-6): with local code execution off the
+gateway refuses ``run_tests`` even when a binding lists it (defence in depth).
 
-* P1-1 — with local code execution off a Task-level ``pytest:`` criterion is refused at
-  every gate, and a Task committed before the switch cannot pass on it (the rule layer
-  FAILs it): no criterion is ever "met" without anybody judging it;
-* P1-3 — one scenario run with the switch ON and OFF tells the behaviours apart (the old
-  oracle passed on the old code too), and the gateway's defence-in-depth branch;
-* P2-5 — a synthesis template asking for tests is refused at the door;
-* P2-7 — an ``add_task`` without a policy gets the deployment's default.
+删旧平面模式 第三刀：P1-1"平面规划器提出带 ``pytest:`` 判据的任务被拒、重规划后完成"那条
+平面整圈测试随平面删。
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-
-from test_local_code_execution import (
-    NO_CODE,
-    TOOLS3,
-    _config,
-    _critics,
-    _notes_worker,
-    _spec,
-    _task,
-)
-
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, graph_proposal_step
-
-
-def _pytest_task(key="A", tools=TOOLS3):
-    task = _task(key, NO_CODE, tools=tools)
-    task["success_criteria"] = ["file:NOTES.md", "pytest:tests/test_notes.py"]
-    return task
-
-
-# ------------------------------------------------------------------ P1-1
-def test_a_task_level_pytest_criterion_is_refused_when_off(tmp_path, pytest_spy):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step([_pytest_task()]),
-                graph_proposal_step([_task("A", NO_CODE)]),
-            ],
-            "worker": _notes_worker(),
-            "critic": _critics(),
-        }
-    )
-
-    async def run():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("p1-1"))
-            await orchestrator.run()
-            store = orchestrator.store
-            return store.get_mission(mission.id), store.list_events(mission.id)
-
-    mission, events = asyncio.run(run())
-    rejected = [e for e in events if e.type == "TaskGraphRejected"]
-    assert rejected
-    assert rejected[0].payload["reason"] == "verification_policy_undeployed"
-    assert "pytest:tests/test_notes.py" in json.dumps(rejected[0].payload, ensure_ascii=False)
-    assert str(mission.status) == "COMPLETED"  # the replan without the criterion completes
-    assert pytest_spy == []
 
 
 # ------------------------------------------------------------------ P1-3
-
-
 def test_the_gateway_refuses_run_tests_even_when_a_binding_lists_it(tmp_path, pytest_spy):
     """Defence in depth: the permission intersection normally removes run_tests first."""
 

@@ -5,10 +5,8 @@
 
 Four properties, in order of how much they would cost to get wrong:
 
-1. **A legacy Mission is untouched.**  ``commit_plan_revision`` refuses it at the
-   door, leaves all thirty-one migration-16 tables empty and appends no event; the
-   Mission's stored event bytes are identical before and after the refused call
-   (§18.5 rule 1 and rule 3).
+1. **There is one mode.**  A Mission is hierarchical by default (the flat mode was
+   removed on 2026-10-02; its refusal is pinned in ``test_flat_mode_removed.py``).
 2. **The two gates are two gates.**  The integer ``base_graph_version`` decides
    first and is never automatically rebased in this mode; the semantic read-set
    decides second, channel by channel, and one stale item is enough (ADR-13, C19,
@@ -92,7 +90,6 @@ from agent_orchestrator.contracts.semantic_base import (  # noqa: E402
     content_hash_of,
 )
 from agent_orchestrator.graph.task_network import (  # noqa: E402
-    DEFAULT_PROJECTION_BUDGET,
     TaskNetworkSnapshot,
 )
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
@@ -105,7 +102,6 @@ from agent_orchestrator.orchestrator.obligation_commits import (  # noqa: E402
 )
 from agent_orchestrator.orchestrator.plan_commits import (  # noqa: E402
     HIERARCHICAL_SEMANTICS,
-    LEGACY_SEMANTICS,
     PLAN_REVISION_COMMITTED,
     SEMANTICS_KEY,
     CommitPlanCommand,
@@ -349,65 +345,30 @@ def _refusal(world: World, command: CommitPlanCommand | None = None, principal=N
     return caught.value.reason
 
 
-# ====================================================================== the legacy door
-def test_a_legacy_mission_is_refused_at_the_door(tmp_path):
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS)
-    assert _refusal(world) == "SEMANTICS_NOT_HIERARCHICAL"
-
-
-def test_the_refused_legacy_command_leaves_every_new_table_empty(tmp_path):
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS)
-    _refusal(world)
-    assert _new_table_counts(world.service) == dict.fromkeys(TABLES, 0)
-
-
-def test_the_refused_legacy_command_appends_no_event(tmp_path):
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS)
-    before = _payload_bytes(world.service, world.mission.id)
-    _refusal(world)
-    assert _payload_bytes(world.service, world.mission.id) == before
-    assert all(kind != PLAN_REVISION_COMMITTED for kind, _ in before)
-
-
-def test_the_legacy_branch_never_reaches_the_semantic_store(tmp_path, monkeypatch):
-    """The door is closed before the first migration-16 read, not after it."""
-
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS)
-
-    def _explode(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("the legacy branch reached the semantic layer")
-
-    monkeypatch.setattr("agent_orchestrator.orchestrator.plan_commits.HtnStore", _explode)
-    monkeypatch.setattr("agent_orchestrator.orchestrator.plan_commits.ObligationStore", _explode)
-    assert _refusal(world) == "SEMANTICS_NOT_HIERARCHICAL"
-
-
-def test_the_server_side_default_is_legacy(tmp_path):
+# ====================================================================== the one mode
+# 2026-10-02 删旧平面模式第三刀：平面模式已删，"旧任务在门口被拒"那几条（需要建平面任务）
+# 随之删除；入口拒绝 legacy 的测试在 ``test_flat_mode_removed.py``。
+def test_the_server_side_default_is_hierarchical(tmp_path):
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     spec = MissionSpec(
-        orchestration_semantics_version="legacy",
         goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="default"
     )
-    assert spec.orchestration_semantics_version == LEGACY_SEMANTICS
+    assert spec.orchestration_semantics_version == HIERARCHICAL_SEMANTICS
     mission, _ = service.create_mission(spec)
-    assert SEMANTICS_KEY not in (mission.final_report or {})
+    assert (mission.final_report or {})[SEMANTICS_KEY] == HIERARCHICAL_SEMANTICS
 
 
-def test_the_default_does_not_change_the_mission_spec_hash(tmp_path):
-    """A Host that re-sends the same request after upgrading must not get a conflict."""
+def test_the_default_spec_hashes_like_the_explicit_hierarchical_one(tmp_path):
+    """A Host that names the mode and one that omits it send the same request."""
 
     del tmp_path
-    spec = MissionSpec(
-        orchestration_semantics_version="legacy",
-        goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="hash"
-    )
-    assert SEMANTICS_KEY not in spec.to_json()
-    hierarchical = dataclasses.replace(spec, orchestration_semantics_version=HIERARCHICAL_SEMANTICS)
-    assert hierarchical.to_json()[SEMANTICS_KEY] == HIERARCHICAL_SEMANTICS
-    assert spec.to_json() != hierarchical.to_json()
+    spec = MissionSpec(goal="g", success_criteria=("file:a.md",), tenant_id="t", idempotency_key="hash")
+    explicit = dataclasses.replace(spec, orchestration_semantics_version=HIERARCHICAL_SEMANTICS)
+    assert spec.to_json()[SEMANTICS_KEY] == HIERARCHICAL_SEMANTICS
+    assert spec.to_json() == explicit.to_json()
 
 
-def test_the_plan_pack_spelling_is_the_same_mode(tmp_path):
+def test_the_hierarchical_spelling_names_the_mode(tmp_path):
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
     mission, _ = service.create_mission(
         MissionSpec(
@@ -415,17 +376,18 @@ def test_the_plan_pack_spelling_is_the_same_mode(tmp_path):
             success_criteria=("file:a.md",),
             tenant_id="t",
             idempotency_key="alias",
-            orchestration_semantics_version="full-target-v1",
+            orchestration_semantics_version=HIERARCHICAL_SEMANTICS,
         )
     )
     assert (mission.final_report or {})[SEMANTICS_KEY] == HIERARCHICAL_SEMANTICS
 
 
 def test_an_unknown_semantics_version_is_refused_before_anything_is_written(tmp_path):
+    from agent_orchestrator.contracts import ContractError
     from agent_orchestrator.orchestrator.commit_service import CommitRejected
 
     service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    with pytest.raises(CommitRejected):
+    with pytest.raises((CommitRejected, ContractError)):
         service.create_mission(
             MissionSpec(
                 goal="g",
@@ -436,86 +398,6 @@ def test_an_unknown_semantics_version_is_refused_before_anything_is_written(tmp_
             )
         )
     assert service.store.list_missions() == []
-
-
-def test_a_hierarchical_task_graph_without_bindings_is_refused(tmp_path):
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec("graph-gate", mode=HIERARCHICAL_SEMANTICS))
-    planning = service.begin_planning(mission.id)
-    proposal = TaskGraphProposal.from_json(
-        {
-            "tasks": [
-                {
-                    "key": "A",
-                    "goal": "任务 A",
-                    "rationale": "A 服务根目标",
-                    "dependencies": [],
-                    "success_criteria": ["file:a.md"],
-                    "verification_policy": ["format_check"],
-                    "allowed_tools": list(TOOLS),
-                    "budget": {"max_tokens": 20_000, "max_attempts": 3},
-                    "outputs": ["a.md"],
-                }
-            ]
-        }
-    )
-    with pytest.raises(PlanCommitRejected) as caught:
-        service.commit_task_graph(
-            mission.id, proposal, base_version=planning.version, source={"planner": "fixture"}
-        )
-    assert caught.value.reason == "MISSING_SEMANTIC_BINDING"
-    assert service.store.list_tasks(mission.id) == []
-
-
-def test_a_legacy_task_graph_commit_is_byte_for_byte_what_it_was(tmp_path):
-    """§18.5 rule 3: the hierarchical gate may not touch an old event's payload."""
-
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    def run(root: Path) -> list[tuple[str, str]]:
-        service = CommitService(Store.open(root / "orchestrator.db"))
-        mission, _ = service.create_mission(_spec("legacy-graph", mode=LEGACY_SEMANTICS))
-        planning = service.begin_planning(mission.id)
-        service.commit_task_graph(
-            mission.id,
-            TaskGraphProposal.from_json(
-                {
-                    "tasks": [
-                        {
-                            "key": "A",
-                            "goal": "任务 A",
-                            "rationale": "A 服务根目标",
-                            "dependencies": [],
-                            "success_criteria": ["file:a.md"],
-                            "verification_policy": ["format_check"],
-                            "allowed_tools": list(TOOLS),
-                            "budget": {"max_tokens": 20_000, "max_attempts": 3},
-                            "outputs": ["a.md"],
-                        }
-                    ]
-                }
-            ),
-            base_version=planning.version,
-            source={"planner": "fixture"},
-        )
-        return _payload_bytes(service, mission.id)
-
-    first = run(tmp_path / "one")
-    second = run(tmp_path / "two")
-    assert first == second
-    assert {kind for kind, _ in first} == {
-        "MissionCreated",
-        "MissionPlanning",
-        "TaskCommitted",
-        "TaskGraphCommitted",
-        "MissionActivated",
-        "PolicyBound",
-    } & {kind for kind, _ in first}
-    for kind, payload in first:
-        assert SEMANTICS_KEY not in payload, kind
-        assert "plan_revision" not in payload, kind
 
 
 # ================================================================== identity and replay
@@ -1518,27 +1400,6 @@ def test_an_unadopted_alternative_in_the_certificate_is_allowed(tmp_path):
     } == {str(network.method_instances[0].instance_id)}
 
 
-def test_several_dependencies_at_the_graph_layer_are_read_as_and(tmp_path):
-    """The other half of the same rule, stated as a *positive*.
-
-    ``C`` depending on both ``A`` and ``B``, with both typed relations recorded, is
-    admitted — the graph layer has one reading and it is AND.  The v2 cross-table
-    check is representation drift, not an OR gate, and this test says so out loud so
-    nobody re-reads it as one.
-    """
-
-    from agent_orchestrator.graph.task_graph import validate_graph_v2
-
-    mission = _v2_mission(tmp_path, key="and-semantics")
-    validated = validate_graph_v2(
-        mission,
-        _graph(_node("A"), _node("B"), _node("C", dependencies=["A", "B"])),
-        structure_budget=dataclasses.replace(V2_BUDGET, max_fan_out=4, max_depth=4),
-        typed_order=_typed(C=("A", "B")),
-    )
-    assert validated.order[-1] == "C"
-
-
 # ------------------------------------------------------------- the network must preserve
 def _shrunken_second_revision(world: World, **overrides):
     """A second revision whose network has lost the first revision's second node."""
@@ -2108,392 +1969,9 @@ def test_the_commit_ready_gate_refuses_before_anything_is_written(tmp_path):
     assert _new_table_counts(world.service)["plan_revisions"] == 0
 
 
-# ============================================== the v2 graph gate (graph/task_graph.py)
-# The hierarchical admission gate for the *projected* DAG.  ``validate_graph`` keeps
-# judging a legacy Mission against the two module constants — which is what every
-# existing receipt and rejection message was produced under — so the two gates are
-# tested against each other here, not one in terms of the other.
-V2_BUDGET = dataclasses.replace(
-    DEFAULT_PROJECTION_BUDGET, budget_version=7, max_nodes=3, max_depth=2, max_fan_out=1
-)
-
-
-def _node(key: str, dependencies=(), outputs=()):
-    return {
-        "key": key,
-        "goal": f"任务 {key}",
-        "rationale": f"{key} 服务根目标",
-        "dependencies": list(dependencies),
-        "success_criteria": [f"file:{key.lower()}.md"],
-        "verification_policy": ["format_check"],
-        "allowed_tools": list(TOOLS),
-        "budget": {"max_tokens": 20_000, "max_attempts": 3},
-        "outputs": list(outputs) or [f"{key.lower()}.md"],
-    }
-
-
-def _graph(*nodes):
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    return TaskGraphProposal.from_json({"tasks": list(nodes)})
-
-
-def _v2_mission(tmp_path, key: str = "v2"):
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec(key, mode=HIERARCHICAL_SEMANTICS))
-    return mission
-
-
-def _typed(**pairs):
-    """The ORDER/DATA relations behind the projected dependencies."""
-
-    return {key: tuple(value) for key, value in pairs.items()}
-
-
-def _v2_rejection(mission, proposal, **kwargs):
-    from agent_orchestrator.graph.task_graph import GraphRejected, validate_graph_v2
-
-    with pytest.raises(GraphRejected) as caught:
-        validate_graph_v2(mission, proposal, structure_budget=V2_BUDGET, **kwargs)
-    return caught.value
-
-
-def test_v2_admits_a_plan_that_fits_the_structure_budget(tmp_path):
-    from agent_orchestrator.graph.task_graph import validate_graph_v2
-
-    mission = _v2_mission(tmp_path)
-    validated = validate_graph_v2(
-        mission,
-        _graph(_node("A"), _node("B", dependencies=["A"])),
-        structure_budget=V2_BUDGET,
-        typed_order=_typed(B=("A",)),
-    )
-    assert validated.order == ("A", "B")
-    assert validated.roots == ("A",) and validated.leaves == ("B",)
-
-
-def test_v2_reports_the_bound_and_the_budget_version_rather_than_trimming(tmp_path):
-    """ADR-08: ``bound_reached`` with the dimension named — never a silently
-    shortened plan and never "the goal is impossible"."""
-
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(
-        mission,
-        _graph(
-            _node("A"),
-            _node("B", dependencies=["A"]),
-            _node("C", dependencies=["A"]),
-            _node("D", dependencies=["A"]),
-        ),
-        typed_order=_typed(B=("A",), C=("A",), D=("A",)),
-    )
-    assert error.reason == "bound_reached"
-    assert "max_nodes=3" in str(error) and "v7" in str(error)
-
-
-def test_v2_bounds_the_depth_against_the_budget_not_the_module_constant(tmp_path):
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(
-        mission,
-        _graph(_node("A"), _node("B", dependencies=["A"]), _node("C", dependencies=["B"])),
-        typed_order=_typed(B=("A",), C=("B",)),
-    )
-    assert error.reason == "bound_reached"
-    assert "max_depth=2" in str(error)
-
-
-def test_v2_bounds_the_fan_out(tmp_path):
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(
-        mission,
-        _graph(_node("A"), _node("B", dependencies=["A"]), _node("C", dependencies=["A"])),
-        typed_order=_typed(B=("A",), C=("A",)),
-    )
-    assert error.reason == "bound_reached"
-    assert "max_fan_out=1" in str(error)
-
-
-def test_v2_refuses_a_dependency_no_typed_relation_backs(tmp_path):
-    """Representation drift, direction 1: the projection a scheduler reads would
-    order work the plan never ordered.  Nothing here is about OR — the graph layer
-    reads several dependencies as AND, and the choice invariant is checked at the
-    delta layer (``_check_or_resolved_at_method_layer``)."""
-
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(
-        mission, _graph(_node("A"), _node("B", dependencies=["A"])), typed_order=_typed()
-    )
-    assert error.reason == "representation_drift"
-    assert "order work the plan never ordered" in str(error)
-
-
-def test_v2_refuses_a_typed_relation_the_projection_dropped(tmp_path):
-    """The other direction: the edge exists in the side table and not in the DAG the
-    scheduler would read, so the work would be dispatched before its producer."""
-
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(mission, _graph(_node("A"), _node("B")), typed_order=_typed(B=("A",)))
-    assert error.reason == "representation_drift"
-    assert "before its producer" in str(error)
-
-
-def test_v2_refuses_typed_relations_about_a_node_the_proposal_lacks(tmp_path):
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(mission, _graph(_node("A")), typed_order=_typed(Z=("A",)))
-    assert error.reason == "representation_drift" and "'Z'" in str(error)
-
-
-def test_v2_still_refuses_a_cycle_and_names_it_as_one(tmp_path):
-    """A cycle is a cycle in both modes, with the same reason and the ring named —
-    the new cross-table check must not relabel an old defect as a new one."""
-
-    mission = _v2_mission(tmp_path)
-    error = _v2_rejection(
-        mission,
-        _graph(_node("A", dependencies=["B"]), _node("B", dependencies=["A"])),
-        typed_order=_typed(A=("B",), B=("A",)),
-    )
-    assert error.reason == "cycle" and "A -> B -> A" in str(error)
-
-
-def test_v2_keeps_the_per_node_contract_checks(tmp_path):
-    mission = _v2_mission(tmp_path)
-    node = _node("A")
-    node["rationale"] = "  "
-    error = _v2_rejection(mission, _graph(node), typed_order=_typed())
-    assert error.reason == "contract" and "rationale" in str(error)
-
-
-def test_v2_keeps_the_mission_budget_check(tmp_path):
-    mission = _v2_mission(tmp_path)
-    node = _node("A")
-    node["budget"] = {"max_tokens": 500_000, "max_attempts": 3}
-    error = _v2_rejection(mission, _graph(node), typed_order=_typed())
-    assert error.reason == "budget"
-
-
-def test_the_legacy_gate_is_not_the_v2_gate(tmp_path):
-    """A graph the *budget* refuses is still admitted by ``validate_graph``, because
-    the legacy gate answers to ``MAX_TASKS`` / ``MAX_GRAPH_DEPTH`` and to nothing
-    else.  If this ever fails, the v1 gate has started reading the new budget."""
-
-    from agent_orchestrator.graph.task_graph import validate_graph
-
-    mission = _v2_mission(tmp_path)
-    proposal = _graph(_node("A"), _node("B", dependencies=["A"]), _node("C", dependencies=["B"]))
-    assert validate_graph(mission, proposal).order == ("A", "B", "C")
-    assert _v2_rejection(mission, proposal, typed_order=_typed(B=("A",), C=("B",))).reason == (
-        "bound_reached"
-    )
-
-
-def test_the_legacy_gate_never_asks_about_typed_relations(tmp_path):
-    """``dependencies`` alone is the whole relation in the legacy mode, so a graph
-    with no side table at all is fine there — and refused by v2."""
-
-    from agent_orchestrator.graph.task_graph import validate_graph
-
-    mission = _v2_mission(tmp_path)
-    proposal = _graph(_node("A"), _node("B", dependencies=["A"]))
-    assert validate_graph(mission, proposal).order == ("A", "B")
-    assert _v2_rejection(mission, proposal, typed_order=_typed()).reason == "representation_drift"
-
-
-# ============================================ the durable fact, and the frozen bytes
-def test_a_missing_semantic_binding_leaves_a_durable_rejection(tmp_path):
-    """Mutant: raise and write nothing.
-
-    Every other graph rejection records a ``TaskGraphRejected`` event — the refusal
-    itself is a fact somebody has to be able to read later.  A hierarchical refusal
-    that only raised would be the one kind of rejection with no trace, and the reason
-    name would exist only in a stack trace.
-    """
-
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec("durable", mode=HIERARCHICAL_SEMANTICS))
-    planning = service.begin_planning(mission.id)
-    proposal = TaskGraphProposal.from_json({"tasks": [_node("A")]})
-    with pytest.raises(PlanCommitRejected) as caught:
-        service.commit_task_graph(
-            mission.id, proposal, base_version=planning.version, source={"intent_id": "i-1"}
-        )
-    assert caught.value.reason == "MISSING_SEMANTIC_BINDING"
-    rejected = [e for e in service.store.list_events(mission.id) if e.type == "TaskGraphRejected"]
-    assert len(rejected) == 1
-    assert rejected[0].payload["reason"] == "MISSING_SEMANTIC_BINDING"
-    assert (
-        "MISSING" in rejected[0].payload["detail"] or "semantic" in (rejected[0].payload["detail"])
-    )
-    assert service.store.list_tasks(mission.id) == []
-
-
-def test_the_hierarchical_refusal_keeps_its_own_type_and_reason(tmp_path):
-    """The durable fact is shared with the legacy path; the *name* is not laundered.
-
-    A ``CommitRejected`` carrying the reason inside a message string would leave the
-    caller with nothing to branch on, and ``MISSING_SEMANTIC_BINDING`` is a machine
-    name the proposer acts on (§18.5).
-    """
-
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-    from agent_orchestrator.orchestrator.commit_service import CommitRejected
-
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec("typed-refusal", mode=HIERARCHICAL_SEMANTICS))
-    planning = service.begin_planning(mission.id)
-    with pytest.raises(PlanCommitRejected):
-        service.commit_task_graph(
-            mission.id,
-            TaskGraphProposal.from_json({"tasks": [_node("A")]}),
-            base_version=planning.version,
-            source={"intent_id": "i-2"},
-        )
-    assert issubclass(PlanCommitRejected, Exception)
-    assert not issubclass(PlanCommitRejected, CommitRejected)
-
-
-def test_a_legacy_graph_rejection_still_answers_with_commit_rejected(tmp_path):
-    """The legacy branch of the same ``except`` did not change shape."""
-
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-    from agent_orchestrator.orchestrator.commit_service import CommitRejected
-
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec("legacy-refusal", mode=LEGACY_SEMANTICS))
-    planning = service.begin_planning(mission.id)
-    blank = _node("A")
-    blank["rationale"] = "  "
-    with pytest.raises(CommitRejected) as caught:
-        service.commit_task_graph(
-            mission.id,
-            TaskGraphProposal.from_json({"tasks": [blank]}),
-            base_version=planning.version,
-            source={"intent_id": "i-3"},
-        )
-    assert "contract" in str(caught.value)
-    rejected = [e for e in service.store.list_events(mission.id) if e.type == "TaskGraphRejected"]
-    assert rejected and rejected[0].payload["reason"] == "contract"
-
-
-#: The canonical bytes of every event a legacy Mission's task-graph commit appends,
-#: hashed once and pinned here as a literal.  The "run it twice and compare" test
-#: beside it only proves the path is *deterministic*; this one proves it is the same
-#: path it was before P2.3a existed (§18.5 rule 3).  If this digest moves, an event
-#: an old Mission already wrote has changed shape, and a golden that recomputed
-#: itself from the live code could never say so.
-#: 2026-10-02: moved once because the policy parameters lost the Manager items, so the
-#: seeded policy version id that ``MissionCreated`` carries changed; moved again the same
-#: day for the same reason when ``candidates_per_task`` was removed, and again when the
-#: Arbiter and Synthesizer roles left the seeded prompt versions (only that id differs).
-LEGACY_GRAPH_EVENT_DIGEST = "348d70fa916357f83750c19918c09200f8fa7c33d15635cd2a5eb0ee6f6a0153"
-
-
-def _legacy_graph_world(root: Path) -> tuple[CommitService, str]:
-    from agent_orchestrator.graph.task_graph import TaskGraphProposal
-
-    service = CommitService(Store.open(root / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec("legacy-golden", mode=LEGACY_SEMANTICS))
-    planning = service.begin_planning(mission.id)
-    service.commit_task_graph(
-        mission.id,
-        TaskGraphProposal.from_json({"tasks": [_node("A"), _node("B", dependencies=["A"])]}),
-        base_version=planning.version,
-        source={"planner": "fixture"},
-    )
-    return service, mission.id
-
-
-def _event_digest(service: CommitService, mission_id: str) -> str:
-    import hashlib
-
-    body = canonical_json(
-        [
-            {"type": kind, "payload": json.loads(payload)}
-            for kind, payload in _payload_bytes(service, mission_id)
-        ]
-    )
-    return hashlib.sha256(body.encode()).hexdigest()
-
-
-def test_the_legacy_graph_commit_matches_the_frozen_event_digest(tmp_path):
-    service, mission_id = _legacy_graph_world(tmp_path)
-    assert _event_digest(service, mission_id) == LEGACY_GRAPH_EVENT_DIGEST
-
-
-def test_the_frozen_digest_is_not_recomputed_from_the_live_code(tmp_path):
-    """A golden that hashes whatever the code currently emits is always green.
-
-    So the constant above is asserted to be a literal 64-hex string that this module
-    does not derive — the whole point of pinning it.
-    """
-
-    del tmp_path
-    assert len(LEGACY_GRAPH_EVENT_DIGEST) == 64
-    assert set(LEGACY_GRAPH_EVENT_DIGEST) <= set("0123456789abcdef")
-
-
-def test_the_two_gates_report_a_shared_node_defect_identically(tmp_path):
-    """v1 and v2 run *one* per-node body, so the same defect reads the same either way.
-
-    Before the dedupe the two gates carried near-identical copies of about fifty
-    lines; a fix applied to one of them would silently diverge the other's messages,
-    and every existing receipt was produced by the v1 wording.
-    """
-
-    from agent_orchestrator.graph.task_graph import GraphRejected, validate_graph
-
-    mission = _v2_mission(tmp_path, key="shared-body")
-    blank = _node("A")
-    blank["rationale"] = "  "
-    proposal = _graph(blank)
-    with pytest.raises(GraphRejected) as legacy:
-        validate_graph(mission, proposal)
-    v2 = _v2_rejection(mission, proposal, typed_order=_typed())
-    assert (legacy.value.reason, legacy.value.detail) == (v2.reason, v2.detail)
-
-
-def test_the_two_gates_report_a_shared_tool_defect_identically(tmp_path):
-    from agent_orchestrator.graph.task_graph import GraphRejected, validate_graph
-
-    mission = _v2_mission(tmp_path, key="shared-tools")
-    node = _node("A")
-    node["allowed_tools"] = ["some_tool_the_mission_never_allowed"]
-    proposal = _graph(node)
-    with pytest.raises(GraphRejected) as legacy:
-        validate_graph(mission, proposal)
-    v2 = _v2_rejection(mission, proposal, typed_order=_typed())
-    assert (legacy.value.reason, legacy.value.detail) == (v2.reason, v2.detail)
-    assert legacy.value.reason == "tools"
-
-
 # ================================================================== mutation self-checks
 def _mutate(monkeypatch, name: str, body) -> None:
     monkeypatch.setattr(CommitService, name, body)
-
-
-def test_mutation_a_commit_that_skips_the_semantics_gate_is_caught(tmp_path, monkeypatch):
-    """Without the door, a legacy Mission's command reaches the migration-16 tables."""
-
-    world = _world(tmp_path, mode=LEGACY_SEMANTICS)
-    reached: list[str] = []
-
-    class Spy(HtnStore):
-        def __init__(self, store):  # noqa: ANN001
-            reached.append("semantic layer")
-            super().__init__(store)
-
-    monkeypatch.setattr(
-        "agent_orchestrator.orchestrator.plan_commits.semantics_of",
-        lambda mission: HIERARCHICAL_SEMANTICS,
-    )
-    monkeypatch.setattr("agent_orchestrator.orchestrator.plan_commits.HtnStore", Spy)
-    with pytest.raises(PlanCommitRejected) as caught:
-        world.commit()
-    assert caught.value.reason != "SEMANTICS_NOT_HIERARCHICAL"
-    with pytest.raises(AssertionError):  # what the door test asserts no longer holds
-        assert not reached
 
 
 def test_mutation_an_automatic_rebase_of_a_stale_base_is_caught(tmp_path, monkeypatch):

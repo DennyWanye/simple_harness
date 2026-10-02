@@ -3,7 +3,7 @@
 """Production FIRST tails: Commit contracts and actual Orchestrator/SDK controls."""
 
 import pytest
-from graph_helpers7 import graph_service, node
+from leaf_world import leaf_world
 
 from agent_orchestrator.contracts import ids
 from agent_orchestrator.governance.budgets import BudgetError, BudgetExhausted
@@ -13,8 +13,10 @@ from agent_orchestrator.orchestrator.commit_service import Reservation, task_acc
 
 @pytest.fixture
 def harness(tmp_path):
-    original, mission, tasks = graph_service(tmp_path, nodes=[node("A"), node("B", ["A"])])
-    commit = original
+    # 两个分层步骤 a → b（删旧平面模式 第三刀：原来是平面图 A → B）
+    world = leaf_world(tmp_path, key="g-1", leaves=("a", "b"), ordering=(("a", "b"),))
+    commit, mission = world.service, world.mission
+    tasks = {name.upper(): task for name, task in world.tasks.items()}
     try:
         yield commit, mission, tasks
     finally:

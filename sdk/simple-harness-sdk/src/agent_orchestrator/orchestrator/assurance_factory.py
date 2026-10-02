@@ -184,7 +184,7 @@ def record_mission_creation(
     if commit._assurance_factory is not None and commit._assurance_factory.selects(spec):
         commit._assurance_factory.create(mission, spec, event)
         return
-    lane = "COMPLETION_V1" if spec.bound_planning_protocol == PLANNING_DECISION_V1 else "LEGACY"
+    lane = "COMPLETION_V1"
     source_hash = fingerprint(event.to_json())
     body = {
         "schema_version": 1,

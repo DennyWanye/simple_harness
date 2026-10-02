@@ -6,9 +6,7 @@ from typing import Any
 
 from ..contracts import ContractError
 from ..governance.domains import (
-    AGENTDOJO_DOMAIN,
     APPWORLD_DOMAIN,
-    ARE_DOMAIN,
     CODE_DOMAIN,
     DOC_DOMAIN,
     DRONE_SIM_DOMAIN,
@@ -54,38 +52,11 @@ class DroneSimHandler(AppWorldHandler):
     name = "drone-sim"
 
 
-class AgentDojoHandler(CodeHandler):
-    name = "agentdojo"
-
-    def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
-        kwargs["local_code_execution"] = False
-        result = rule_check(*args, **kwargs)
-        return LayerResult(result.layer, result.status, result.summary, {
-            **dict(result.detail), "handler": self.name,
-            "benchmark_success": "external_evaluation_pending",
-        })
-
-
-
-class AREHandler(CodeHandler):
-    name = "are"
-
-    def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
-        kwargs["local_code_execution"] = False
-        result = rule_check(*args, **kwargs)
-        return LayerResult(result.layer, result.status, result.summary, {
-            **dict(result.detail), "handler": self.name,
-            "benchmark_success": "external_evaluation_pending",
-        })
-
-
 _HANDLERS = {
     CODE_DOMAIN: CodeHandler(),
     DOC_DOMAIN: DocumentHandler(),
     APPWORLD_DOMAIN: AppWorldHandler(),
     DRONE_SIM_DOMAIN: DroneSimHandler(),
-    AGENTDOJO_DOMAIN: AgentDojoHandler(),
-    ARE_DOMAIN: AREHandler(),
 }
 
 

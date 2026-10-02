@@ -426,9 +426,10 @@ def _run(root, checks):
     async def body():
         async with deployment(root) as world:
             assured, _ = world.commit.create_mission(spec("assured-v"))
+            # 删旧平面模式：没选保证通道的分层任务（完成要求 v1 通道）当"不走保证通道"的对照。
             legacy, _ = world.commit.create_mission(MissionSpec(
-                orchestration_semantics_version="legacy",
-                goal="legacy", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-v"))
+                goal="v1 unselected", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-v",
+                orchestration_semantics_version="hierarchical", planning_protocol_version="planning-decision-v1"))
             assert AssuranceStore(world.store).lane(assured.id) == "ASSURANCE_1_1"
             assert AssuranceStore(world.store).lane(legacy.id) != "ASSURANCE_1_1"
             await checks(world, assured, legacy)

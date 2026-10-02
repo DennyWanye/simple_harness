@@ -36,8 +36,6 @@ DOMAIN_SCHEMA_VERSION = 1
 CODE_DOMAIN = "code-v1"
 DOC_DOMAIN = "doc-research-v1"
 APPWORLD_DOMAIN = "appworld-v1"
-AGENTDOJO_DOMAIN = "agentdojo-v1"
-ARE_DOMAIN = "are-v1"
 DRONE_SIM_DOMAIN = "drone-sim-v1"
 # Missions that predate domain binding (plan D1; the same idea as ``policy-legacy``).
 # It is the code domain itself, not a second id for the same behaviour (review A P2-1).
@@ -441,48 +439,6 @@ APPWORLD_PROFILE_V3 = replace(
 )
 APPWORLD_PROFILE = APPWORLD_PROFILE_V3
 
-AGENTDOJO_PROFILE = DomainProfileV1(
-    id=AGENTDOJO_DOMAIN, version="1",
-    allowed_input_kinds=("text/*", "application/json"), allowed_artifact_kinds=("text/*",),
-    allowed_evidence_kinds=("file", "artifact", "tool-run", "knowledge"),
-    criterion_kinds=("file", "free", "arbitration"),
-    runs_layers=("format_check", "rule_check", "critic_review", "human_review"),
-    planner_floor=("format_check", "rule_check", "critic_review"),
-    default_policy=("format_check", "rule_check", "critic_review"),
-    conflict_template=ConflictTemplateV1(
-        policy=("format_check", "rule_check", "human_review"),
-        decides_with="human_review",
-    ),
-    synthesis_default_policy=("format_check", "rule_check", "critic_review"),
-    external_check="agentdojo-official-after-stop",
-    completion_rules={"claim_grading": "scoped-observation-v2", "handler": "agentdojo-v1"},
-    role_templates={role: f"{role}-agentdojo-v1" for role in (
-        "planner", "manager", "worker", "critic", "arbiter", "synthesizer",
-        "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-    )},
-)
-
-ARE_PROFILE = DomainProfileV1(
-    id=ARE_DOMAIN, version="1",
-    allowed_input_kinds=("text/*", "application/json"), allowed_artifact_kinds=("text/*",),
-    allowed_evidence_kinds=("file", "artifact", "tool-run", "knowledge"),
-    criterion_kinds=("file", "free", "arbitration"),
-    runs_layers=("format_check", "rule_check", "critic_review", "human_review"),
-    planner_floor=("format_check", "rule_check", "critic_review"),
-    default_policy=("format_check", "rule_check", "critic_review"),
-    conflict_template=ConflictTemplateV1(
-        policy=("format_check", "rule_check", "human_review"),
-        decides_with="human_review",
-    ),
-    synthesis_default_policy=("format_check", "rule_check", "critic_review"),
-    external_check="are-official-after-stop",
-    completion_rules={"claim_grading": "scoped-observation-v2", "handler": "are-v1"},
-    role_templates={role: f"{role}-are-v1" for role in (
-        "planner", "manager", "worker", "critic", "arbiter", "synthesizer",
-        "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-    )},
-)
-
 #: P2.3d / defect D1: the *hierarchical* Worker prompt each domain's Missions get.
 #:
 #: Kept beside the profiles rather than inside one.  ``DomainProfileV1.role_templates``
@@ -515,8 +471,6 @@ HIERARCHICAL_WORKER_TEMPLATES: Mapping[str, str] = MappingProxyType({
 
 DOMAINS: Mapping[str, DomainProfileV1] = MappingProxyType({
     CODE_DOMAIN: CODE_PROFILE, DOC_DOMAIN: DOC_PROFILE, APPWORLD_DOMAIN: APPWORLD_PROFILE,
-    AGENTDOJO_DOMAIN: AGENTDOJO_PROFILE,
-    ARE_DOMAIN: ARE_PROFILE,
     DRONE_SIM_DOMAIN: DRONE_SIM_PROFILE,
 })
 
