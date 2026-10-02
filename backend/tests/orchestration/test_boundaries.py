@@ -106,3 +106,76 @@ async def test_no_host_tool_reaches_the_orchestration_runtime(orchestration_root
         assert set(KNOWLEDGE_TOOLS) <= offered
     finally:
         await service.close()
+
+
+EVIL_TEST = (
+    "import pathlib\n"
+    "pathlib.Path({marker!r}).write_text('ran', encoding='utf-8')\n\n"
+    "def test_ok():\n    assert True\n"
+)
+
+
+@pytest.mark.asyncio
+async def test_a_model_written_test_never_reaches_this_machine(
+    orchestration_root, principal, tmp_path, monkeypatch
+):
+    """F-1（分层通道，2026-10-02 从旧夹具通道迁回）：执行者写一个测试文件，导入时往工作区外
+    写标记。这个文件绝不能在本机留下痕迹：有沙箱时它在沙箱里跑（代码测试层有持久的执行
+    回执），没有沙箱时根本不执行。"""
+
+    import json
+
+    from ._layered_lane import (
+        LayeredScriptedProvider,
+        layered_service,
+        notes_mission,
+        package_of,
+        quick_runtime,
+        run_until_settled,
+    )
+
+    quick_runtime(monkeypatch)
+    marker = tmp_path / "pytest-ran.marker"
+
+    def worker(request):  # type: ignore[no-untyped-def]
+        package = package_of(request)
+        written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
+        if written == 0:
+            return ("workspace_write_file", {"path": "NOTES.md", "content": "# 要点\n\n- 一\n- 二\n- 三\n"})
+        if written == 1:
+            return ("workspace_write_file",
+                    {"path": "test_probe.py", "content": EVIL_TEST.format(marker=str(marker))})
+        contract = package.get("task_contract", {})
+        declared = package.get("declared_output_ports") or {}
+        ports = [item["port"] for item in declared.get("ports", ()) if item.get("required", True)]
+        envelope = {
+            "task_id": contract.get("task_id", ""),
+            "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
+            "outcome": "candidate", "summary": "写好了 NOTES.md 和一个测试文件",
+            "claims": [{"content": "NOTES.md 已写出", "confidence": 0.8, "evidence": ["NOTES.md"]}],
+            "evidence": ["NOTES.md"], "artifacts": ["NOTES.md", "test_probe.py"],
+            "outputs": {port: "NOTES.md" for port in ports[:1]},
+            "proposed_tasks": [], "used_knowledge": [], "risks": [], "cost": {"tool_calls": 2},
+        }
+        return "<result_envelope>" + json.dumps(envelope, ensure_ascii=False) + "</result_envelope>"
+
+    service = layered_service(orchestration_root, principal, LayeredScriptedProvider(worker=worker))
+    await service.start()
+    try:
+        created = service.create_mission(notes_mission("layered-probe", budget={"max_tokens": 8_000_000, "max_attempts": 2}))
+        await run_until_settled(service, created["mission_id"])
+        # the oracle is the same on both paths and is never weakened
+        assert not marker.exists(), "a model-written test file reached this machine"
+        with service._orchestrator.store.read_view():
+            snapshot = service._orchestrator.store.snapshot(created["mission_id"])
+        runs = [run for result in snapshot["results"] for layer in result["verifications"]
+                if layer["layer"] == "code_test" for run in layer["detail"].get("runs", [])]
+        if bool(service.status()["sandbox"].get("ok")):
+            # the file *does* run — inside the sandbox; what stops the side effect is the
+            # isolation, not a refusal to execute
+            assert any(run.get("receipt", {}).get("status") == "ok" and run["receipt"].get("execution_id")
+                       for run in runs), "code_test needs a durable execution receipt"
+        else:
+            assert runs == [], "without a sandbox a model-written test is never executed"
+    finally:
+        await service.close()
