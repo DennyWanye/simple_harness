@@ -450,3 +450,102 @@ def test_verified_negative_with_expired_approval_finishes_original_budget(tmp_pa
     assert snapshot.effects[0][1] is OperationEffect.CONFIRMED_NOT_APPLIED
     assert not snapshot.unresolved
     assert not list(fixture.publish.root.rglob('*'))
+
+
+# ---------------------------------------------------------------------------------------
+# 2026-10-02 删旧平面模式：下面三项原来只在平面任务的动作上测过（step07 动作执行测试），
+# 平面删除后在带操作链接的分层动作上补回。
+# ---------------------------------------------------------------------------------------
+
+
+def _prove_not_started(fixture, adapter, action):  # type: ignore[no-untyped-def]
+    from agent_orchestrator.runtime.operation_reconciliation import context
+
+    resolved, _profile, registered, events = context(fixture.world.store, fixture.runtime, action)
+    evidence = adapter.observe(action=action, resolved=resolved, handoff_events=events,
+                               now_ms=int(fixture.world.store.now * 1000))
+    return fixture.world.service.record_scoped_reconciliation(
+        action["action_key"], evidence=evidence, adapter=registered,
+        service_authority=fixture.runtime.service_authority,
+    )
+
+
+def test_a_linked_action_gets_one_rehandoff_and_then_stops(tmp_path, monkeypatch) -> None:
+    """一次交接 + 至多一次重新交接；第二次"确认没执行"之后不再重交（``rehandoff_exhausted``）。"""
+
+    fixture, adapter, action = _world(tmp_path, monkeypatch)
+    proven = _prove_not_started(fixture, adapter, action)
+    assert proven["reconcile"] == "CONFIRMED_NOT_STARTED"
+    handed, reason = fixture.world.service.begin_handoff(
+        action["action_key"], owner="second-handoff", lease_seconds=30,
+        connectors=fixture.connectors, deployment=fixture.deployment, rehandoff=True,
+    )
+    assert reason is None and handed["handoffs"] == 2
+    unknown = fixture.world.service.record_action_outcome(
+        handed["action_key"], owner="second-handoff", outcome="unknown", error="lost reply again"
+    )
+    again = _prove_not_started(fixture, adapter, unknown)
+    assert again["reconcile"] == "CONFIRMED_NOT_STARTED"
+    third, reason = fixture.world.service.begin_handoff(
+        action["action_key"], owner="third-handoff", lease_seconds=30,
+        connectors=fixture.connectors, deployment=fixture.deployment, rehandoff=True,
+    )
+    assert reason == "rehandoff_exhausted"
+    current = fixture.world.store.get_action(action["action_key"])
+    assert current["handoffs"] == 2 and current["state"] != "HANDED_OFF"
+    assert not any(fixture.publish.root.rglob("*"))
+
+
+def test_the_mission_handoff_cap_refuses_a_linked_action_before_it_leaves(tmp_path) -> None:
+    """部署的"每个任务最多交接几个动作"在带链接的动作上照样生效，拒绝时连接器没被碰。"""
+
+    fixture = runtime_fixture.materialized_file_publish(tmp_path)
+    capped = dataclasses.replace(fixture.deployment, max_action_handoffs_per_mission=0)
+    handed, reason = fixture.world.service.begin_handoff(
+        fixture.action["action_key"], owner="capped", lease_seconds=30,
+        connectors=fixture.connectors, deployment=capped,
+    )
+    assert reason == "handoff_cap_reached"
+    assert int(fixture.world.store.get_action(fixture.action["action_key"]).get("handoffs") or 0) == 0
+    assert not any(fixture.publish.root.rglob("*"))
+    refused = [e for e in fixture.world.store.list_events(fixture.world.mission.id)
+               if e.type == "ActionHandoffRefused"]
+    assert refused and refused[-1].payload["reason"] == "handoff_cap_reached"
+
+
+@pytest.mark.parametrize("outcome", ("succeeded", "failed"))
+def test_a_person_rules_on_a_linked_action_nobody_can_settle(tmp_path, outcome) -> None:
+    """查不清的动作（没有登记的对账适配器）由人裁决：有依据、有证据、记 HumanOverride，
+    只管这一个版本；裁决后的动作不再接受第二次裁决。"""
+
+    from agent_orchestrator.governance.permissions import Principal
+    from agent_orchestrator.orchestrator.action_commits import ActionCommitError
+
+    fixture = runtime_fixture.materialized_file_publish(tmp_path)
+    handed, reason = fixture.world.service.begin_handoff(
+        fixture.action["action_key"], owner="no-adapter", lease_seconds=30,
+        connectors=fixture.connectors, deployment=fixture.deployment,
+    )
+    assert reason is None
+    unknown = fixture.world.service.record_action_outcome(
+        handed["action_key"], owner="no-adapter", outcome="unknown", error="lost reply"
+    )
+    assert unknown["state"] == "UNKNOWN"
+    person = Principal("operation-approver")
+    with pytest.raises(ActionCommitError, match="basis and evidence"):
+        fixture.world.service.override_action_outcome(
+            unknown["action_key"], principal=person, outcome=outcome, basis="", evidence={},
+        )
+    ruled = fixture.world.service.override_action_outcome(
+        unknown["action_key"], principal=person, outcome=outcome,
+        basis="查了发布目录", evidence={"checked": "publish root"},
+    )
+    assert ruled["state"] == ("SUCCEEDED" if outcome == "succeeded" else "FAILED")
+    overrides = [e for e in fixture.world.store.list_events(fixture.world.mission.id)
+                 if e.type == "HumanOverride"]
+    assert len(overrides) == 1 and overrides[0].payload["subject"] == unknown["action_key"]
+    with pytest.raises(ActionCommitError, match="only an UNKNOWN action"):
+        fixture.world.service.override_action_outcome(
+            unknown["action_key"], principal=person, outcome=outcome,
+            basis="again", evidence={"checked": "again"},
+        )

@@ -525,8 +525,7 @@ class ActionCommitsMixin:
         payload: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Put one new action version on the ledger: its approval request when the level
-        needs one, the row itself, and the events (shared by a proposal and a compensation,
-        P3.2 plan v3 D8 — a compensation is an action like any other)."""
+        needs one, the row itself, and the events."""
 
         mission_id = str(record["mission_id"])
         task_id = record.get("task_id")
@@ -597,97 +596,6 @@ class ActionCommitsMixin:
                 },
             )
         return record
-
-    def propose_compensation(
-        self,
-        action_key: str,
-        *,
-        operation: str,
-        params: Mapping[str, Any],
-        reason: str,
-        artifact_id: str,
-        artifact_hash: str,
-        connectors: Mapping[str, Any],
-        deployment: DeploymentPolicy,
-        target: str | None = None,
-    ) -> dict[str, Any]:
-        """Compensate a SUCCEEDED action (P3.2 plan v3 D8; review round 2 P2-1 / P2-7).
-
-        Recovery re-establishes what one action version was already allowed to do — same
-        business key, same idempotency key.  Compensation is something else: the world must
-        change *again*, so it is a new business action (``<action>#comp-<n>``) with its own
-        approval and its own idempotency key.  The original fact stays exactly as recorded;
-        ``compensates`` says what this one answers.  The Mission's action scope, the
-        deployment ceiling and the level rules apply as they do to any other action.
-        """
-
-        with self._store.transaction():
-            original = self._store.get_action(action_key)
-            if original is None:
-                raise ActionCommitError(f"unknown action {action_key}")
-            if original["state"] != "SUCCEEDED":
-                raise ActionCommitError(
-                    f"only a SUCCEEDED action can be compensated: {action_key} is "
-                    f"{original['state']} (an open one is superseded, a failed one retried)"
-                )
-            mission_id = str(original["mission_id"])
-            mission = self._store.get_mission(mission_id)
-            if mission is None or mission.status is not MissionStatus.ACTIVE:
-                raise CandidateRejected("mission_not_active", mission_id)
-            candidate = {
-                "connector": str(original["connector"]),
-                "operation": operation,
-                "target": str(original["target"] if target is None else target),
-                "params": dict(params),
-                "reason": reason,
-            }
-            cand, decision = check_candidate(
-                candidate,
-                criteria=mission.success_criteria,
-                connectors=connectors,
-                deployment=deployment,
-            )
-            root = str(original["action_id"]).split("#", 1)[0]
-            taken = {
-                str(row["action_id"])
-                for row in self._store.list_actions(mission_id)
-                if str(row["action_id"]).startswith(f"{root}#comp-")
-            }
-            action_id = f"{root}#comp-{len(taken) + 1}"
-            version = len(self._store.list_action_versions(action_id)) + 1
-            record: dict[str, Any] = {
-                "action_key": f"{action_id}:v{version}",
-                "action_id": action_id,
-                "version": version,
-                "mission_id": mission_id,
-                "task_id": original.get("task_id"),
-                "result_id": original.get("result_id"),
-                "attempt_id": original.get("attempt_id"),
-                "artifact_id": artifact_id,
-                "artifact_hash": artifact_hash,
-                "compensates": action_key,  # the fact this one answers; that fact stands
-                "connector": cand["connector"],
-                "operation": cand["operation"],
-                "target": cand["target"],
-                "params": dict(cand["params"]),
-                "params_hash": params_hash(cand["params"]),
-                "reason": cand["reason"],
-                "level": decision.level,
-                "required_approvals": decision.required_approvals,
-                "idempotency_key": f"{action_id}:v{version}",
-                "approval_request_id": None,
-                "after": str(original["state"]),
-                "handoffs": 0,
-                "receipt": None,
-                "history": [],
-                "created_at": self._store.now,
-            }
-            return self._open_action(
-                record,
-                decision,
-                deployment=deployment,
-                payload={"compensates": action_key, "artifact_hash": artifact_hash},
-            )
 
     def _supersede_action(self, action: Mapping[str, Any], *, by: str) -> None:
         old = dict(action)
@@ -977,7 +885,6 @@ class ActionCommitsMixin:
         may now call the connector; ``(None, reason)`` = it may not."""
 
         from .commit_service import mission_account  # noqa: PLC0415 - import cycle
-        from .planning_protocol_binding import planning_protocol_for_mission
 
         with self._store.transaction():
             action = self._store.get_action(action_key)
@@ -993,9 +900,9 @@ class ActionCommitsMixin:
                     require_taskgraph_unfenced(self._store, str(action["mission_id"]), str(action["task_id"]))
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
-            protocol = planning_protocol_for_mission(self._store, str(action["mission_id"]))
-            needs_planning_link = protocol is not None or bool(action.get("planning_origin"))
-            if reason is None and needs_planning_link:
+            # Every action is linked to the operation it was materialised from (2026-10-02:
+            # the flat mode, whose actions carried no link, was removed).
+            if reason is None:
                 from .planning_repair_continuations import planning_repair_stop_gate
 
                 action_task_id = str(action.get("task_id") or "")
@@ -1003,7 +910,7 @@ class ActionCommitsMixin:
                     self._store, str(action["mission_id"]), action_task_id
                 ):
                     reason = "planning_repair_stop_gate"
-            if reason is None and needs_planning_link:
+            if reason is None:
                 from ..storage.planning_admission_store import PlanningAdmissionStore
 
                 bridge = PlanningAdmissionStore(self._store).get_operation_action_link_for_action(
@@ -1093,16 +1000,9 @@ class ActionCommitsMixin:
                     task_id=action.get("task_id"),
                     payload={"action_key": action_key, "reason": reason, "rehandoff": rehandoff},
                 )
-                if (
-                    rehandoff
-                    and action.get("reconcile") == "CONFIRMED_NOT_STARTED"
-                    and not needs_planning_link
-                ):
-                    # an authoritative "never happened" that may not run again ends as FAILED
-                    # on the legacy path. The new protocol requires complete negative
-                    # proof; a refused retry cannot resolve UNKNOWN or release its hold.
-                    self._resolve_action(action, "FAILED", error=f"not_started:{reason}")
-                elif reason == "approval_expired":
+                # A refused re-hand-off never resolves UNKNOWN or releases its hold: only
+                # complete negative proof or a person's ruling settles it.
+                if reason == "approval_expired":
                     request = self._store.get_approval(str(action["approval_request_id"]))
                     if request is not None and request["state"] in {"PENDING", "GRANTED"}:
                         self._expire_request(request)

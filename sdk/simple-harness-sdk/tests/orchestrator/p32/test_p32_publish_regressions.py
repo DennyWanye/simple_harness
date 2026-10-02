@@ -6,9 +6,10 @@
 
 Three defects the first implementation had, each with the case that would have caught it:
 
-* **P1-1** the published file name was cut out of ``action-<hex>``, which dropped the
-  ``#comp-<n>`` a compensation carries — so a compensation produced *the same file name* as
-  the action it answers and could never be published (D8's whole point).
+* **P1-1** the published file name was cut out of ``action-<hex>``, so two different actions
+  whose keys shared that part produced *the same file name* and the second could never be
+  published.  (2026-10-02: the compensation entry that first hit this was removed; the
+  property — every key its own name — stays.)
 * **P1-2** ``execute`` treated "the ledger's last line for this key is not ABORTED" as "it
   was published", and returned ``applied=True`` without ever looking at the file.  A crash
   between the intent and the link would then be reported as a success with nothing on disk.
@@ -31,7 +32,7 @@ from agent_orchestrator.runtime.sandbox import ProcessOnlyExecutor, SandboxSpec
 REPORT = "# 周报 v1\n".encode()
 REVISED = "# 周报 v2（更正后）\n".encode()
 ORIGINAL_KEY = "action-2f8a1c4d9e0b7766:v1"
-COMPENSATION_KEY = "action-2f8a1c4d9e0b7766#comp-1:v1"
+COMPENSATION_KEY = "action-2f8a1c4d9e0b7766#second-1:v1"
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def test_every_key_gets_its_own_name_including_the_versions(connector, tmp_path)
         ORIGINAL_KEY,
         "action-2f8a1c4d9e0b7766:v2",
         COMPENSATION_KEY,
-        "action-2f8a1c4d9e0b7766#comp-2:v1",
+        "action-2f8a1c4d9e0b7766#second-2:v1",
     ):
         receipt = connector.execute(
             "publish", f"out/{key[-4:]}.md", _params(stored, REPORT), idempotency_key=key

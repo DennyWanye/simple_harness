@@ -62,10 +62,8 @@ def _name_for(idempotency_key: str, path: PurePosixPath) -> str:
     """``<stem>.<key digest>.v<version><suffix>`` — stable for one action version and
     distinct from every other action's file.
 
-    The digest covers the *whole* idempotency key (code review round 1 P1-1): slicing the
-    hex out of ``action-<hex>`` dropped the ``#comp-<n>`` a compensation carries, so a
-    compensation produced the same file name as the action it answers and could never be
-    published at all.
+    The digest covers the *whole* idempotency key (code review round 1 P1-1): slicing a
+    fixed part of the key out made two different actions share one file name.
     """
 
     head, _, version = idempotency_key.partition(":v")
