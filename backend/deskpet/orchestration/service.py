@@ -34,8 +34,6 @@ from typing import Any
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
 from .projection import (
-    citation_identity,
-    is_document_snapshot,
     project_approval,
     project_detail,
     project_events,
@@ -1426,16 +1424,7 @@ class OrchestrationService:
         with store.read_view():
             # The facade authenticates the Mission before any optional source read.
             view = self._call("snapshot", mission_id)
-            stale = None
-            if is_document_snapshot(view["snapshot"]):
-                from agent_orchestrator.memory.verified_knowledge import KnowledgeIndex
-
-                index = KnowledgeIndex.load(store, mission_id)
-                used = set(index.records)
-                used.update(kid for claim in view["snapshot"].get("claims", ())
-                            for kid in claim.get("dependencies", ()))
-                stale = index.stale(sorted(used))
-            detail = project_detail(view, blocked=self._blocked(mission_id), source_issues=stale)
+            detail = project_detail(view, blocked=self._blocked(mission_id))
             raw = view["snapshot"].get("mission", {})
             identifier = (raw.get("final_report") or {}).get("runtime_profile_id")
             profile = self._runtime_options.get("profiles", {}).get(identifier)
@@ -1543,24 +1532,6 @@ class OrchestrationService:
 
     def artifact_read(self, artifact_id: str) -> dict[str, Any]:
         return self._call("artifact_read", artifact_id)
-
-    def citation_read(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        required = {"mission_id", "result_id", "receipt_id", "citation_index"}
-        if not required <= set(request) or set(request) - required - {"offset", "limit"}:
-            raise OrchestrationRequestError("invalid_request", "引用读取只接受记录身份与字符分页")
-        for name in ("mission_id", "result_id", "receipt_id"):
-            if not isinstance(request[name], str) or not request[name].strip():
-                raise OrchestrationRequestError("invalid_request", f"缺少 {name}")
-        index, offset, limit = request["citation_index"], request.get("offset", 0), request.get("limit", 65536)
-        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 65536):
-            raise OrchestrationRequestError("invalid_request", "引用 offset/limit 无效")
-        result = self._call("citation_read", request["mission_id"],
-                            result_id=request["result_id"], receipt_id=request["receipt_id"],
-                            citation_index=index, offset=offset, limit=limit)
-        return {**dict(result), **{name: request[name] for name in required},
-                "version": result.get("version_hash"),
-                "citation_id": citation_identity(request["mission_id"], request["result_id"],
-                                                 request["receipt_id"], index)}
 
     async def storage_usage(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """``orchestration_storage_get``: cached disk usage of the task/session data,

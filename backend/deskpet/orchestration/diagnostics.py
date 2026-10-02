@@ -263,9 +263,6 @@ def _input_references(snapshot: Mapping[str, Any]) -> dict[str, Any]:
 
 def _verification(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     results = [row for row in snapshot.get("results", ()) if isinstance(row, Mapping)]
-    assessments = [
-        row for row in snapshot.get("criterion_assessments", ()) if isinstance(row, Mapping)
-    ]
     artifacts = [row for row in snapshot.get("artifacts", ()) if isinstance(row, Mapping)]
     return {
         "results": [
@@ -286,16 +283,6 @@ def _verification(snapshot: Mapping[str, Any]) -> dict[str, Any]:
                 ],
             }
             for row in results
-        ],
-        "criteria": [
-            {
-                "receipt_id": row.get("receipt_id"),
-                "criterion_id": row.get("criterion_id"),
-                "verdict": row.get("verdict"),
-                "output_hash": row.get("output_hash"),
-                "source_version_hashes": sorted(_mapping(row.get("source_versions")).values()),
-            }
-            for row in assessments
         ],
         "artifacts": [
             {

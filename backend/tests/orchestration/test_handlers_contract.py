@@ -32,7 +32,6 @@ def test_message_types_are_the_planned_set():
         "mission_source_register",
         "mission_source_supersede",
         "mission_source_revoke",
-        "mission_citation_read",
         "mission_list",
         "mission_get",
         "mission_events",

@@ -138,16 +138,10 @@ def distributions() -> dict[str, Any]:
 
 
 def _domain_features() -> dict[str, Any]:
-    """Report the installed SDK, including an older code-only candidate during upgrade."""
+    """Report the installed SDK's domain profiles and source commands."""
     from agent_orchestrator.api.facade import MissionControlV1
+    from agent_orchestrator.governance.domains import CODE_DOMAIN, DOMAINS
 
-    try:
-        from agent_orchestrator.governance.domains import CODE_DOMAIN, DOMAINS
-    except ModuleNotFoundError as error:
-        if error.name != "agent_orchestrator.governance.domains":
-            raise
-        return {"default": "code-v1", "items": [{"id": "code-v1", "version": "1"}],
-                "source_commands": [], "atomic_source_create": False, "citation_read": False}
     return {
         "default": CODE_DOMAIN,
         "items": [{"id": domain.id, "version": domain.version,
@@ -156,7 +150,6 @@ def _domain_features() -> dict[str, Any]:
         "source_commands": [verb for verb in ("register", "supersede", "revoke")
                             if callable(getattr(MissionControlV1, f"{verb}_source", None))],
         "atomic_source_create": callable(getattr(MissionControlV1, "create_with_sources", None)),
-        "citation_read": callable(getattr(MissionControlV1, "citation_read", None)),
     }
 
 

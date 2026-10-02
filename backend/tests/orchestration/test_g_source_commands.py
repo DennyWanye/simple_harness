@@ -1,4 +1,8 @@
-"""G real Host dispatch/facade oracles; no provider calls are needed for creation."""
+"""Reference material through the real Host dispatch and facade: atomic creation, source
+register/supersede/revoke and their approvals.  No provider calls are needed.
+
+2026-10-02 (strict citation option A): these run on the general task; the document
+domain, its citation reads and its source-currentness projection were removed."""
 
 from unittest.mock import Mock
 
@@ -11,7 +15,7 @@ from ._support import notes_provider, notes_request
 
 
 def batch(key="g-batch"):
-    return {"mission": notes_request(key, domain="doc-research-v1"),
+    return {"mission": notes_request(key),
             "sources": [{"path": "sources/A.md", "content": "# 标题\r\n\r\n原文。\r\n",
                          "kind": "text/markdown"}]}
 
@@ -25,46 +29,6 @@ async def opened(root, principal):
 
 
 @pytest.mark.asyncio
-async def test_real_snapshot_domain_wrapper_drives_projection_and_source_currentness(
-    orchestration_root, principal, monkeypatch
-):
-    from agent_orchestrator.memory.verified_knowledge import KnowledgeIndex
-    from deskpet.orchestration.projection import project_detail
-
-    service = await opened(orchestration_root, principal)
-    calls = []
-    original = KnowledgeIndex.stale
-
-    def tracked(index, ids=None):
-        calls.append(ids)
-        return original(index, ids)
-
-    monkeypatch.setattr(KnowledgeIndex, "stale", tracked)
-    try:
-        reply = await handle(service, "mission_create_with_sources", batch("snapshot-wrapper"))
-        assert reply["payload"]["ok"], reply
-        mid = reply["payload"]["data"]["mission_id"]
-        # Unmodified facade snapshot, not a model Mission with invented domain_id.
-        view = service._call("snapshot", mid)
-        snapshot = view["snapshot"]
-        assert "domain_id" not in snapshot["mission"]
-        frozen = snapshot["mission_domain"]
-        assert frozen["domain_id"] == frozen["json"]["id"] == "doc-research-v1"
-        expected = {"id": frozen["domain_id"], "version": frozen["domain_version"]}
-        assert project_detail(view)["document"]["domain"] == expected
-        assert service.mission_detail(mid)["document"]["domain"] == expected
-        assert len(calls) == 1  # Actual doc currentness entrance must not be skipped.
-
-        code = await handle(service, "mission_create", notes_request("snapshot-code"))
-        assert code["payload"]["ok"], code
-        assert "document" not in service.mission_detail(code["payload"]["data"]["mission_id"])
-        assert len(calls) == 1  # Code detail still performs no source-currentness read.
-        assert service._call("snapshot", mid) == view
-    finally:
-        await service.close()
-
-
-@pytest.mark.asyncio
 async def test_atomic_batch_through_real_handler_reopens_with_same_sources(orchestration_root, principal):
     service = await opened(orchestration_root, principal)
     try:
@@ -72,15 +36,15 @@ async def test_atomic_batch_through_real_handler_reopens_with_same_sources(orche
         assert reply["payload"]["ok"], reply
         assert reply["payload"]["request_id"] == "ipc-1"
         mid = reply["payload"]["data"]["mission_id"]
-        first = service.mission_detail(mid)["document"]
-        assert first["sources"][0]["path"] == "sources/A.md"
+        first = service.mission_detail(mid)["sources"]
+        assert first[0]["path"] == "sources/A.md"
         again = await handle(service, "mission_create_with_sources", batch())
         assert again["payload"]["data"]["mission_id"] == mid
     finally:
         await service.close()
     reopened = await opened(orchestration_root, principal)
     try:
-        assert reopened.mission_detail(mid)["document"]["sources"] == first["sources"]
+        assert reopened.mission_detail(mid)["sources"] == first
     finally:
         await reopened.close()
 
@@ -111,7 +75,7 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
             "mission_id": mid, "path": "sources/B.md", "content": "新资料。", "kind": "text/plain",
             "idempotency_key": "register-B"})
         assert registered["payload"]["ok"], registered
-        source = next(s for s in service.mission_detail(mid)["document"]["sources"] if s["path"] == "sources/B.md")
+        source = next(s for s in service.mission_detail(mid)["sources"] if s["path"] == "sources/B.md")
         request = {"mission_id": mid, "path": source["path"], "expected_version_hash": source["version_hash"],
                    "reason": "申请撤销", "idempotency_key": "revoke-B"}
         forged = await handle(service, "mission_source_revoke", {**request, "principal_id": "forged"})
@@ -126,7 +90,7 @@ async def test_register_and_reject_revoke_preserve_original_source(orchestration
         rejected = await handle(service, "mission_approval_decide", {
             "approval_id": approval["request_id"], "decision": "reject", "reason": "保留该资料"})
         assert rejected["payload"]["ok"], rejected
-        after = next(s for s in service.mission_detail(mid)["document"]["sources"] if s["path"] == source["path"])
+        after = next(s for s in service.mission_detail(mid)["sources"] if s["path"] == source["path"])
         assert after == source
     finally:
         await service.close()
@@ -140,7 +104,7 @@ async def test_source_change_uses_existing_approval_and_fixed_principal(orchestr
         reply = await handle(service, "mission_create_with_sources", batch())
         assert reply["payload"]["ok"], reply
         mid = reply["payload"]["data"]["mission_id"]
-        old = service.mission_detail(mid)["document"]["sources"][0]
+        old = service.mission_detail(mid)["sources"][0]
         command = {"mission_id": mid, "path": old["path"], "expected_version_hash": old["version_hash"],
                    "idempotency_key": "change", "reason": "用户撤销"}
         if operation == "supersede":
@@ -156,38 +120,7 @@ async def test_source_change_uses_existing_approval_and_fixed_principal(orchestr
         assert decided["payload"]["ok"], decided
         detail = service.mission_detail(mid)
         assert detail["approvals"][0]["granted_by"] == [principal.principal_id]
-        history = next(s for s in detail["document"]["sources"] if s["version_hash"] == old["version_hash"])
+        history = next(s for s in detail["sources"] if s["version_hash"] == old["version_hash"])
         assert history["revoked"] if operation == "revoke" else history["superseded_by"]
     finally:
         await service.close()
-
-
-@pytest.mark.asyncio
-async def test_citation_read_dispatch_preserves_binding_and_character_page(tmp_path, principal):
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
-    service._state = "available"
-    service._call = Mock(return_value={"text": "原\r\n文", "offset": 3, "next_offset": 7,
-                                     "total_chars": 10, "path": "sources/A.md", "version_hash": "a" * 64})
-    reply = await handle(service, "mission_citation_read", {
-        "mission_id": "m", "result_id": "r", "receipt_id": "receipt", "citation_index": 2,
-        "offset": 3, "limit": 4}, request_id="page")
-    assert reply["payload"]["ok"], reply
-    service._call.assert_called_once_with("citation_read", "m", result_id="r", receipt_id="receipt",
-                                          citation_index=2, offset=3, limit=4)
-    data = reply["payload"]["data"]
-    assert data["citation_index"] == 2 and data["citation_id"]
-    assert data["text"] == "原\r\n文" and data["next_offset"] == 7
-    assert data["version"] == data["version_hash"] == "a" * 64
-
-
-@pytest.mark.asyncio
-async def test_citation_read_rejects_client_path_before_facade(tmp_path, principal):
-    service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
-    service._state = "available"
-    service._call = Mock()
-    reply = await handle(service, "mission_citation_read", {
-        "mission_id": "m", "result_id": "r", "receipt_id": "receipt", "citation_index": 0,
-        "path": "/private/file"})
-    assert reply["payload"]["ok"] is False
-    service._call.assert_not_called()
-

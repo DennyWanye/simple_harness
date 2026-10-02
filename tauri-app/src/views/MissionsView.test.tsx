@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { useMissionsStore } from "../stores/missionsStore";
 import { useMissionsFeed } from "../stores/useMissionsFeed";
-import { MissionsView } from "./MissionsView";
+import { MissionsView, STRICT_QUOTES_CRITERION } from "./MissionsView";
 
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
@@ -73,7 +73,7 @@ const AVAILABLE = {
   active_missions: 0,
   allow_local_tests: false,
   allowed_tools: ["workspace_read_file", "workspace_write_file", "workspace_list"],
-  deployment_manifest: { features: { domains: { atomic_source_create: true, citation_read: true, items: [{ id: "doc-research-v1", version: "4" }], source_commands: ["register", "supersede", "revoke"] } } },
+  deployment_manifest: { features: { domains: { atomic_source_create: true, items: [{ id: "code-v1", version: "6" }], source_commands: ["register", "supersede", "revoke"] } } },
 };
 
 const MISSION_ROW = {
@@ -162,7 +162,7 @@ describe("P33 G creation and explicit approval branches", () => {
     });
   });
 
-  it("an older Host without document capabilities keeps the code entry only", () => {
+  it("a Host without source support offers neither reference material nor strict quotes", () => {
     const channel = new FakeChannel();
     render(<Workbench channel={channel} />);
     channel.reply("orchestration_status", { ...AVAILABLE, deployment_manifest: null });
@@ -298,11 +298,12 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.queryByText("old analysis")).toBeNull();
   });
 
-  it("renders document conclusions separately from Worker analysis", () => {
-    openMission({ ...DETAIL, document: { schema_version: 1, claims: [{ id: "c", content: "正式主张", status: "SUPPORTED" }], reviews: [], criteria: [] } });
-    expect(within(screen.getByRole("region", { name: "系统结论" })).getByText("正式主张")).toBeTruthy();
-    expect(within(screen.getByRole("region", { name: "系统结论" })).queryByText(/写好了 NOTES/)).toBeNull();
-    expect(screen.getByText(/分析 \/ 非结论（正文非结论陈述不做覆盖核对）/)).toBeTruthy();
+  it("shows the reference material panel only for a Mission that carries sources", () => {
+    openMission({ ...DETAIL, sources: [{ path: "sources/a.md", version_hash: "v1", kind: "markdown", revoked: false, superseded_by: null, revision: 1 }] });
+    expect(within(screen.getByRole("region", { name: "参考资料" })).getByText("sources/a.md")).toBeTruthy();
+    cleanup();
+    openMission(DETAIL);
+    expect(screen.queryByRole("region", { name: "参考资料" })).toBeNull();
   });
 
   it("defaults to code and preserves the existing mission_create request", () => {
@@ -353,7 +354,8 @@ describe("P33 G creation and explicit approval branches", () => {
     });
   });
 
-  it("pastes sources and sends one atomic doc batch; failure preserves the draft", () => {
+  it("strict quotes require material and add one requirement for the reviewer; failure preserves the draft", () => {
+    // 2026-10-02 用户决定（严格引用选 A）：不再由程序逐条核对引用，改成一条交给审阅员判断的要求
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fireEvent.click(screen.getByLabelText("严格引用模式"));
@@ -361,7 +363,7 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "说明否定条件" } });
     expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
     // 2026-09-26：按钮变灰时说出还差什么，不再"点了没反应"
-    expect(screen.getByTestId("submit-blocker").textContent).toContain("严格引用模式需要至少一份资料");
+    expect(screen.getByTestId("submit-blocker").textContent).toContain("严格引用需要至少一份资料");
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
@@ -372,7 +374,7 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(channel.all("mission_source_register")).toHaveLength(0);
     const batch = channel.last("mission_create_with_sources")?.payload;
     expect(batch).toEqual({
-      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], idempotency_key: expect.any(String) },
+      mission: { goal: "比较文档", success_criteria: ["说明否定条件", STRICT_QUOTES_CRITERION], idempotency_key: expect.any(String) },
       sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
     expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
@@ -909,10 +911,6 @@ describe("Result final rejection", () => {
         result_id: "other", attempt_id: "attempt-2", verdict: "FAIL", verification_state: "DONE",
         final_rejection: null, verification_layers: [],
       }],
-      document: {
-        claims: [{ id: "claim-1", status: "UNDER_REVIEW", content: "尚未被系统接受的主张", review_refs: ["review-r1"] }],
-        reviews: [{ request_id: "review-r1", state: "GRANTED" }],
-      },
       approvals: [{ request_id: "review-r1", kind: "review", state: "GRANTED" }],
     });
     const rejected = screen.getByTestId("result-final-rejected");
@@ -925,10 +923,6 @@ describe("Result final rejection", () => {
     const other = screen.getByTestId("result-final-other");
     expect(other.textContent).toContain("FAIL / DONE");
     expect(other.textContent).not.toMatch(/stale_source|sources\/A.md|拒绝原因/);
-    const claim = screen.getByTestId("document-claim-claim-1");
-    expect(claim.textContent).toContain("待核验（UNDER_REVIEW）");
-    expect(claim.textContent).not.toContain("已核验（VERIFIED）");
-    expect(claim.textContent).not.toContain("有依据支持（SUPPORTED）");
     expect(screen.getByText(/停止原因：max_attempts_reached/)).toBeTruthy();
   });
 

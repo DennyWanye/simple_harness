@@ -227,13 +227,6 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
                             "detail": {"verifier_version": "rule-v1", "quote": raw_detail},
                         }],
                     }],
-                    "criterion_assessments": [*view["snapshot"]["criterion_assessments"], {
-                        "receipt_id": "assessment-1", "criterion_id": "criterion-1",
-                        "verdict": "PASS", "output_hash": "b" * 64,
-                        "source_versions": {source_path: "a" * 64},
-                        "checked_scope": {"criterion": "RAW-GOAL-CANARY"},
-                        "evidence_refs": [{"quote": raw_detail}],
-                    }],
                     "sources": [*view["snapshot"]["sources"], {
                         "mission_id": mission_id, "path": source_path, "version_hash": "a" * 64,
                         "superseded_by": None, "revoked": False,
@@ -276,7 +269,6 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
         assert report["attribution"]["actions"][0]["target_sha256"] == sha256_hex(action_target)
         assert report["attribution"]["attempts"][0]["context_version"] == "context-v1"
         assert report["attribution"]["attempts"][0]["work"]["tokens"] == 12
-        assert report["verification"]["criteria"][-1]["source_version_hashes"] == ["a" * 64]
         assert report["verification"]["artifacts"][-1]["content_hash"] == "b" * 64
         assert report["input_references"]["sources"][-1]["version_hash"] == "a" * 64
         assert report["attribution"]["cost"]["unclassified"]["subject_sha256"] == [

@@ -16,7 +16,6 @@ from the Approval API.  ``ui_state`` is the P3.1 §3.4 vocabulary (请求已接�
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -80,25 +79,12 @@ def _bounded(value: Any, limit: int = PARAMS_LIMIT) -> Any:
     return {"truncated": True, "preview": encoded[:limit]}
 
 
-def citation_identity(mission_id: str, result_id: str, receipt_id: str, index: int) -> str:
-    """Transport identity only; authority remains the SDK's result/receipt/ref binding."""
-    encoded = json.dumps([mission_id, result_id, receipt_id, index], ensure_ascii=False,
-                         separators=(",", ":")).encode("utf-8")
-    return "citation-" + hashlib.sha256(encoded).hexdigest()
-
-
 def _pick(raw: Any, fields: Sequence[str]) -> dict[str, Any]:
     return {key: raw[key] for key in fields if key in raw} if isinstance(raw, Mapping) else {}
 
 
 def _rows(value: Any) -> list[Mapping[str, Any]]:
     return [row for row in value if isinstance(row, Mapping)] if isinstance(value, (list, tuple)) else []
-
-
-def is_document_snapshot(snapshot: Mapping[str, Any]) -> bool:
-    """SDK snapshots carry the frozen domain beside Mission, not inside its JSON."""
-    binding = snapshot.get("mission_domain")
-    return isinstance(binding, Mapping) and binding.get("domain_id") == "doc-research-v1"
 
 
 def _source_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -109,183 +95,15 @@ def _source_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _display_block(raw: Any) -> dict[str, Any]:
-    block = _pick(raw, ("start_line", "end_line", "preview", "truncated"))
-    if isinstance(raw, Mapping):
-        block["headings"] = [_pick(h, ("level", "start_line", "end_line", "preview")) for h in _rows(raw.get("headings"))]
-    return block
+def _sources(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Every registered source version of a Mission and its lifecycle (read model only).
 
-
-def _resolution(raw: Mapping[str, Any]) -> dict[str, Any]:
-    return {**_pick(raw, ("status", "kind", "target", "source_version", "source_trust")),
-            "locator": _pick(raw.get("locator"), ("start_line", "end_line")),
-            "display_block": _display_block(raw.get("display_block"))}
-
-
-def _assessment(raw: Mapping[str, Any]) -> dict[str, Any]:
-    return {**_pick(raw, ("criterion_id", "claim_id", "claim_revision", "output_ref", "output_hash",
-                          "receipt_id", "verdict", "verifier_adapter_id", "version", "task_contract_revision")),
-            "source_versions": dict(raw.get("source_versions") or {}),
-            "checked_scope": _pick(raw.get("checked_scope"), ("kind", "catalog", "criterion", "binding")),
-            "evidence_refs": [_resolution(ref) for ref in _rows(raw.get("evidence_refs"))]}
-
-
-def _review_applies(review: Mapping[str, Any], claim: Mapping[str, Any]) -> bool:
-    """Associate the durable reviewed result, never Task peers."""
-    if review.get("kind") == "review":
-        binding = review.get("binding") or {}
-        result_id = claim.get("result_id")
-        return bool(result_id) and (
-            review.get("subject_key") == binding.get("result_id") == result_id
-            and binding.get("mission_id") == claim.get("mission_id")
-            and binding.get("task_id") == claim.get("source_task")
-            and binding.get("attempt_id") == claim.get("source_attempt")
-        )
-    return False
-
-
-def _source_state(path: str, version: str, sources: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    old = next((s for s in sources if s.get("path") == path and s.get("version_hash") == version), None)
-    active = next((s for s in sources if s.get("path") == path and not s.get("revoked") and not s.get("superseded_by")), None)
-    return {"registered": old is not None,
-            **_pick(old, ("revoked", "superseded_by", "revision")),
-            "active_version_hash": None if active is None else active.get("version_hash")}
-
-
-def _issues(raw: Any) -> list[dict[str, Any]]:
-    return [_pick(row, ("code", "reason", "path", "version", "knowledge_id", "claim_id")) for row in _rows(raw)]
-
-
-def _source_issue(path: str, version: str, state: Mapping[str, Any]) -> list[dict[str, Any]]:
-    if not state["registered"]:
-        return [{"code": "unknown_source_provenance", "reason": "source_record_missing", "path": path, "version": version}]
-    reason = ("revoked" if state.get("revoked") else "superseded" if state.get("superseded_by")
-              else "not_current" if state.get("active_version_hash") != version else None)
-    return [] if reason is None else [{"code": "stale_source", "reason": reason, "path": path, "version": version}]
-
-
-def _document(snapshot: Mapping[str, Any], source_issues: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Read-model only: never regrade history or manufacture an accepted assessment.
-
-    Citation links retain indexes in the ORIGINAL receipt; filtering resolved refs first
-    would point the click at different evidence. The facade validates each click again.
+    2026-10-02 (strict citation option A): the document panel is gone; any Mission that
+    carries reference material shows its sources and their register/supersede/revoke
+    state here.
     """
-    mission = snapshot["mission"]
-    mid = str(mission["id"])
-    report = mission.get("final_report") or {}
-    domain = snapshot.get("mission_domain") or {}
-    sources = _rows(snapshot.get("sources"))
-    tasks = {t.get("id"): t for t in _rows(snapshot.get("tasks"))}
-    results = {r.get("envelope", {}).get("id"): r for r in _rows(snapshot.get("results"))}
-    accepted = {rid: r for rid, r in results.items()
-                if r.get("verdict") == "PASS" and r.get("verification_state") == "DONE"
-                and tasks.get(r.get("envelope", {}).get("task_id"), {}).get("accepted_result_id") == rid}
-    claims = _rows(snapshot.get("claims"))
-    claim_by_id = {c.get("id"): c for c in claims}
-    assessments = []
-    for row in _rows(snapshot.get("criterion_assessments")):
-        claim = claim_by_id.get(row.get("claim_id"), {})
-        rid = row.get("output_ref")
-        if (rid in accepted and claim.get("result_id") == rid
-                and claim.get("mission_id") == mid and row.get("receipt_id")):
-            assessments.append(row)
-    reviews = [_snapshot_approval(a, {}, document=True) for a in _rows(snapshot.get("approvals")) if a.get("kind") in {"review", "arbitration"}]
-    coverage = report.get("document_coverage") or {}
-    covered = _rows(coverage.get("criteria"))
-    raw_judgments = _rows(report.get("success_criteria"))
-    criterion_texts = list(mission.get("success_criteria") or ())
-    # The SDK records the actual Mission judgment separately from document
-    # coverage. STRUCTURAL means coverage deferred to a rule/execution check;
-    # it is not itself a PASS. Bind the final rows to the frozen criteria in order.
-    judgments = raw_judgments if (
-        len(raw_judgments) == len(criterion_texts)
-        and all(row.get("criterion") == text and type(row.get("met")) is bool
-                and isinstance(row.get("judge"), str) and bool(row["judge"])
-                for row, text in zip(raw_judgments, criterion_texts, strict=True))
-    ) else []
-    criteria = []
-    for ordinal, text in enumerate(criterion_texts, 1):
-        entry = next((c for c in covered if c.get("ordinal") == ordinal and c.get("text") == text), {})
-        criteria.append({"ordinal": ordinal, "text": text, "verdict": entry.get("verdict"),
-                         **_pick(entry, ("criterion_id", "kind", "reasons", "claim_ids", "task_assessment_receipt_ids",
-                                        "limitations", "excluded_claim_ids")),
-                         "final_judgment": _pick(judgments[ordinal - 1], ("met", "judge", "verdict")) if judgments else None,
-                         "source_provenance_issues": _issues(entry.get("source_provenance_issues"))})
-    knowledge = {k.get("id"): k for k in _rows(snapshot.get("knowledge"))}
-
-    def dependency_issues(kid: str) -> list[dict[str, Any]]:
-        # Recursion/currentness belongs to the SDK. The Host only renders its result.
-        if source_issues is not None:
-            return _issues(source_issues.get(kid))
-        return [{"code": "unknown_source_provenance", "reason": "source_state_not_loaded", "knowledge_id": kid}]
-
-    rendered = []
-    for claim in claims:
-        cid, rid = claim.get("id"), claim.get("result_id")
-        bound = [a for a in assessments if a.get("claim_id") == cid]
-        citations, issues = [], []
-        for row in bound:
-            for index, ref in enumerate(row.get("evidence_refs") or ()):
-                if not isinstance(ref, Mapping):
-                    continue
-                path, version = ref.get("target"), ref.get("source_version")
-                state = _source_state(path, version, sources) if path and version else {}
-                if state:
-                    issues.extend(_source_issue(path, version, state))
-                citations.append({"citation_id": citation_identity(mid, rid, row["receipt_id"], index),
-                                  "mission_id": mid, "result_id": rid, "receipt_id": row["receipt_id"],
-                                  "citation_index": index, "path": path, "version": version,
-                                  "resolution": ref.get("status"), "source_trust": ref.get("source_trust"),
-                                  "locator": _pick(ref.get("locator"), ("start_line", "end_line")),
-                                  "display_preview": _display_block(ref.get("display_block")),
-                                  "source_state": state})
-        for kid in claim.get("dependencies") or ():
-            issues.extend(dependency_issues(kid))
-        for record in knowledge.values():
-            if record.get("claim_id") == cid:
-                issues.extend(dependency_issues(record["id"]))
-        unique = {json.dumps(i, sort_keys=True, ensure_ascii=False): i for i in issues}
-        metadata = claim.get("confidence_metadata") or {}
-        basis = metadata.get("basis") or {}
-        trusts = list(metadata.get("evidence_trust") or ())
-        rendered.append({**_pick(claim, ("id", "version", "content", "type", "status", "result_id", "key", "stance")),
-                         "task_id": claim.get("source_task"), "attempt_id": claim.get("source_attempt"),
-                         "assessments": [_assessment(a) for a in bound], "citations": citations,
-                         "source_trust": trusts[0] if len(trusts) == 1 else None,
-                         "evidence_trust": trusts, "claim_trust": metadata.get("grade"),
-                         "scope_limited_to_source": basis.get("scope_limited_to_source"),
-                         "checked_scope": [_assessment(a)["checked_scope"] for a in bound],
-                         "source_issues": [unique[k] for k in sorted(unique)],
-                         "review_refs": [r["request_id"] for r in reviews if _review_applies(r, claim)]})
-    limitations = []
-    diagnostics = []
-    for rid, result in results.items():
-        envelope = result.get("envelope") or {}
-        if rid in accepted:
-            limitations.extend({"result_id": rid, **_pick(l, ("criterion_id", "claim_id", "missing"))}
-                               for l in _rows(envelope.get("limitations")))
-        for layer in _rows(result.get("verifications")):
-            detail = layer.get("detail") or {}
-            diagnostics.append({"result_id": rid, **_layer(layer),
-                                "evidence_resolutions": [{**_pick(r, ("claim_id", "citation_index")),
-                                                          **_resolution(r.get("resolution", r))}
-                                                         for r in _rows(detail.get("evidence_resolutions"))],
-                                "criterion_verdicts": [_pick(v, ("criterion_id", "kind", "scope", "verdict", "claim_ids", "reasons"))
-                                                       for v in _rows(detail.get("criterion_verdicts"))],
-                                "reason": detail.get("reason"),
-                                "source_provenance_issues": _issues(detail.get("source_provenance_issues"))})
-    judged_reason = (
-        mission.get("stop_reason")
-        if judgments and (
-            (mission.get("status") == "COMPLETED" and mission.get("stop_reason") == "verification_passed" and all(j["met"] for j in judgments))
-            or (mission.get("status") == "FAILED" and mission.get("stop_reason") == "mission_criteria_unmet" and not all(j["met"] for j in judgments))
-        ) else None
-    )
-    return {"schema_version": 1, "domain": {"id": domain.get("domain_id"), "version": domain.get("domain_version")},
-            "result": report.get("result") or judged_reason, "criteria": criteria, "claims": rendered,
-            "assessments": [_assessment(a) for a in assessments],
-            "sources": [_pick(s, ("path", "version_hash", "kind", "trust", "registered_at", "superseded_by", "revoked", "revision")) for s in sources],
-            "limitations": limitations, "reviews": reviews, "diagnostics": diagnostics}
+    return [_pick(s, ("path", "version_hash", "kind", "trust", "registered_at", "superseded_by",
+                      "revoked", "revision")) for s in _rows(snapshot.get("sources"))]
 
 
 def ui_state(
@@ -538,8 +356,7 @@ def project_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _snapshot_approval(raw: Mapping[str, Any], actions: Mapping[str, Mapping[str, Any]],
-                       *, document: bool = False) -> dict[str, Any]:
+def _snapshot_approval(raw: Mapping[str, Any], actions: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     bound = actions.get(str(raw.get("subject_key"))) if raw.get("kind") == "action" else None
     return {
         "request_id": raw.get("request_id"),
@@ -558,10 +375,6 @@ def _snapshot_approval(raw: Mapping[str, Any], actions: Mapping[str, Mapping[str
         "action": None if bound is None else _action(bound),
         "comments": _comments(raw),
         **_source_approval(raw),
-        **({"subject_key": raw.get("subject_key")} if document else {}),
-        **({"binding": _pick(raw.get("binding"), (
-            "mission_id", "task_id", "result_id", "attempt_id", "artifacts",
-        ))} if document and raw.get("kind") == "review" else {}),
     }
 
 
@@ -592,8 +405,7 @@ def project_events(page: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, Any]] = (),
-                   source_issues: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, Any]] = ()) -> dict[str, Any]:
     snapshot = dict(view.get("snapshot") or {})
     attempts_by_id = {a.get("id"): a for a in _rows(snapshot.get("attempts")) if a.get("id")}
     attempts = [_attempt(a) for a in snapshot.get("attempts") or ()]
@@ -650,15 +462,13 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         },
         "event_count": snapshot.get("event_count"),
         "through_seq": view.get("through_seq"),
-        **({"document": _document(snapshot, source_issues)} if is_document_snapshot(snapshot) else {}),
+        **({"sources": _sources(snapshot)} if _rows(snapshot.get("sources")) else {}),
     }
 
 
 __all__ = (
     "MISSION_FIELDS",
     "UI_STATES",
-    "citation_identity",
-    "is_document_snapshot",
     "model_text",
     "project_approval",
     "project_detail",
