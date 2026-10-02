@@ -15,7 +15,7 @@ deadline.
 
 This file pins the bounded answer:
 
-* after ``min(stall_seconds, 300)`` seconds on the same blocker the request is handed
+* after ``min(stall_seconds, 30)`` seconds on the same blocker the request is handed
   off **once more** to a new executor (``ServiceIntentRehandedOff``; same subject,
   same reservation);
 * a second unknown outcome ends the round through the role's own door — Planner:
@@ -64,7 +64,7 @@ from simple_harness.contracts import RunId  # noqa: E402
 from simple_harness.providers.errors import ProviderTransportError  # noqa: E402
 
 OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-LIMIT = 0.3  # seconds; ``stall_seconds`` below the 300 s ceiling, so it is the bound
+LIMIT = 0.3  # seconds; ``stall_seconds`` below the 30 s ceiling, so it is the bound
 
 
 def _transport_loss(request: Any) -> str:
@@ -400,11 +400,12 @@ def test_a_critic_blocked_twice_is_handed_back_to_the_runners_did_not_answer_pat
 def test_the_bound_is_the_smaller_of_stall_seconds_and_the_ceiling(tmp_path) -> None:
     evidence = Path(tmp_path) / "evidence"
     evidence.mkdir(parents=True, exist_ok=True)
-    assert MAX_SERVICE_BLOCKER_SECONDS == 300.0
-    small = Orchestrator(_config(evidence, stall_seconds=120.0), RoleScriptedProvider({}))
-    assert small._service_blocker_limit == 120.0
-    large = Orchestrator(_config(evidence, stall_seconds=1800.0), RoleScriptedProvider({}))
-    assert large._service_blocker_limit == 300.0
+    # 用户 2026-10-02：上限 300 秒改 30 秒（重启打断一次调用后不再原地等三分钟）。
+    assert MAX_SERVICE_BLOCKER_SECONDS == 30.0
+    small = Orchestrator(_config(evidence, stall_seconds=12.0), RoleScriptedProvider({}))
+    assert small._service_blocker_limit == 12.0
+    large = Orchestrator(_config(evidence, stall_seconds=180.0), RoleScriptedProvider({}))
+    assert large._service_blocker_limit == 30.0  # 产品默认的 180 秒不再是这里的界
 
 
 def test_a_legacy_mission_is_not_rehanded_off(tmp_path) -> None:

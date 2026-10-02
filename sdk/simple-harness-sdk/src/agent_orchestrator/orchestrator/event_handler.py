@@ -348,7 +348,11 @@ MAX_STALL_CARRY_ONS = 2
 #: deadline on one question nobody can answer: the loop hands the same request off
 #: once more, and if that is unknown too it ends the round through the role's own
 #: failure door.
-MAX_SERVICE_BLOCKER_SECONDS = 300.0
+#: 2026-10-02 用户决定：300 秒改 30 秒。原来实际生效的是 ``stall_seconds``（180 秒）——
+#: 服务重启打断一次模型调用后，任务要原地不动等满三分钟才重做。结果不明的调用再等也等不
+#: 来答案，30 秒足够把"慢"和"丢了"分开；真正还在进行的调用不走这条路（那是
+#: ``provider_response_wait``，由 ``stall_seconds`` 管）。
+MAX_SERVICE_BLOCKER_SECONDS = 30.0
 #: One re-hand-off per subject.  A second executor asking the same question is a
 #: retry; a third is a loop that spends the Mission account on a Provider that is
 #: down, which is what the deadline exists to end.
