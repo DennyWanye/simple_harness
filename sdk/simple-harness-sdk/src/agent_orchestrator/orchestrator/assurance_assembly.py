@@ -31,12 +31,6 @@ from ..assurance.refs import AssuranceRef
 from ..assurance.root_gate import CurrentReadPermission
 from ..contracts import Mission
 from ..contracts.resolution import (
-    AllExpr,
-    Criterion,
-    CriterionExpr,
-    CriterionOrigin,
-    EvaluationKind,
-    RequirementClass,
     RequirementsRevision,
 )
 from ..governance.permissions import Principal
@@ -185,43 +179,17 @@ class FixedPrincipalAuthority:
 
 
 # --------------------------------------------------------- requirements
-def mission_spec_requirements(
-    principal: Principal,
-) -> Callable[[Mission, Any], RequirementsRevision]:
-    """The original approved Requirements of a new Mission: its success criteria.
+def mission_requirements(principal: Principal) -> Callable[[Mission, Any], RequirementsRevision]:
+    """The original approved Requirements of a new Mission: the one document the root
+    initialisation writes too (``deployment.root.user_requirements``), so the factory and
+    the root agree byte for byte on revision 1 and neither writes a second body."""
 
-    Same document the Host's root initialisation writes (``req-<mission>-1``,
-    ``c-user-<n>``, USER_EXPLICIT / REQUIRED_OUTCOME / SEMANTIC, authority =
-    the authenticated principal), so the factory and the Host agree byte for
-    byte on revision 1 and neither writes a second body.
-    """
+    from ..deployment.root import user_requirements
 
     def build(mission: Mission, spec: Any) -> RequirementsRevision:
-        statements = tuple(spec.success_criteria)
-        if not statements:
+        if not tuple(spec.success_criteria):
             raise AssuranceError("FACTORY_REQUIREMENTS_MISMATCH", "no success criteria")
-        criteria = tuple(
-            Criterion(
-                f"c-user-{index + 1}",
-                1,
-                CriterionOrigin.USER_EXPLICIT,
-                statement,
-                RequirementClass.REQUIRED_OUTCOME,
-                EvaluationKind.SEMANTIC,
-            )
-            for index, statement in enumerate(statements)
-        )
-        expression: Any = CriterionExpr(criteria[0].criterion_id)
-        if len(criteria) > 1:
-            expression = AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria))
-        return RequirementsRevision(
-            revision_id=f"req-{mission.id}-1",
-            mission_id=mission.id,
-            revision=1,
-            criteria=criteria,
-            success_expression=expression,
-            authority_subject=principal.principal_id,
-        )
+        return user_requirements(mission, principal)
 
     return build
 
@@ -345,7 +313,7 @@ class AssuranceDeploymentPorts:
     tenant_id: str
     principal: Principal
     # The deployment's original approved Requirements builder; None selects
-    # ``mission_spec_requirements(principal)``.
+    # ``mission_requirements(principal)``.
     requirements: Callable[[Mission, Any], RequirementsRevision] | None = None
     # Which new Missions take the assured lane; None consults the single default
     # selection point ``default_assurance_profile_for_new_mission``.
@@ -468,7 +436,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         tenant_id=tenant_id,
         policy=policy,
         require_creation_root=require_root,
-        requirements=ports.requirements or mission_spec_requirements(ports.principal),
+        requirements=ports.requirements or mission_requirements(ports.principal),
         reconcile=lambda mission_id: activation_inventory(store, mission_id),
         selector=selector,
     )
@@ -528,6 +496,6 @@ __all__ = (
     "InstalledAssurance",
     "activation_inventory",
     "install_assurance",
-    "mission_spec_requirements",
+    "mission_requirements",
     "reconcile_startup",
 )

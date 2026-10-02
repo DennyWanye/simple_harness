@@ -65,7 +65,7 @@ def task_criterion_text(text: str, mission_texts: Sequence[str]) -> str:
 
     A hierarchical occurrence carries requirement ids on ``Task.success_criteria``
     (``c-user-<n>``: the factory's fixed name of the n-th original success criterion,
-    see ``mission_spec_requirements``); this maps one back to the user's own words.
+    see ``deployment.root.user_requirements``); this maps one back to the user's own words.
     Other strings are kept exactly.
     """
 

@@ -100,3 +100,51 @@
   - 真机跑之前先取消开发库里未结束的旧任务，因为它们的执行图历史已读不出；
   - `test_htn_deployment_wiring.py` 自己复制了一份证据轮的走法，原来就如此，不算这次退化；
   - 试用次数恒为 0，留到阶段 C3 处理。
+
+## 阶段 A′　产品同形测试世界 + 删两条旧路
+
+方案：`HTN补齐-阶段A撇-方案.md` 第 3 版（039f547b）。
+
+### A′-0　准备（2026-10-03）
+
+**清点**（`HTN补齐-阶段A撇-清点.md`）
+- 碰到旧路的 SDK 测试有 225 个文件、约 1700 个用例。
+- `taskgraph_enabled` 实际调用 48 处。
+
+**一次性探针**（`.local-test-evidence/2026-10-03/waiting-probe.json`，不留成测试）
+- 在 Host 产品组装上跑了四个场景：不授权空转、授权后撤销、等待期取消、等待期重启。
+- 等待期实际会走到 10 处，其中 1 处是全局扫描。
+
+**用户裁定**：AppWorld 分层臂与单代理对照臂删除、底层零件保留；命令行建任务删除；接缝脚本迁移；原生池拼装搬进 SDK；执行图在建任务时绑定。
+
+**裁决与复审**：`HTN补齐-阶段A撇-裁决.md`。
+
+### A′-1　部署组装搬进 SDK（第 1 步）
+
+- **身份基准**（8b656b2c，搬迁前提交）：用 Host 当时的代码对固定输入拼出全部执行池，覆盖两档尺寸 × 思考/非思考 × 有无向量模型，把配置行、根标记、准入相关字段、授权策略号、所有者合同、调用方回执取出来存成 `pool_identity_baseline.json`。随机的根化身号不算身份，排除在外。
+- **SDK 新增 `agent_orchestrator/deployment/`**：
+  - `native_pools.py`：原生执行池拼装，`NativePools` 与 `pool_options`；`calibrated` 也搬进来；
+  - `duties.py`：`DeploymentDuties`，含自动确认内容完成、自动授权规划、检查策略投影（各范围、根终审、做法计划）；
+  - `root.py`：唯一一份要求书 `user_requirements`、根初始化、开工条件与分层安装。
+- **SDK 默认要求书**：`assurance_assembly` 的默认构造改调 `user_requirements`，删 `mission_spec_requirements`。只有一条成功条件时，SDK 默认构造的哈希会变；Host 一直显式传入自己的那份，产品不受影响。
+- **Host 变薄**：
+  - `native_plane.py` 只剩 BGE-M3 向量模型和 `build_native_pools`（把本机资源交给 SDK）；
+  - `runtime_profile.py` 只剩 DeepSeek 计数器；
+  - `service.py` 只读权限模式，其余交 `DeploymentDuties`（一个服务一份，重建时重新 bind，已做记录跨重建保留）；
+  - `hierarchical.py` 只剩桌面规划世界和根的三个名字；
+  - `assurance.py` 删掉投影函数。
+- **字节钉死**（`test_pool_identity_bytes.py`）：
+  - 4 种组合下的执行池身份逐字节等于基准；要求书在 1、2、3 条成功条件下等于搬迁前 Host 的值；
+  - 自动确认的命令号、做法计划检查策略的批准回执号也由测试钉住；
+  - 改坏检验：改一个 `host-…` 字串、改配置修订号，4 条全部失败。
+- **数据目录副本启动检查**（一次性）：
+  - 在开发数据目录的 APFS 克隆上，用源码 SDK 启动应用，编排服务正常起来（`orchestration_ready state=available`），已有执行池照常加载，随后删克隆、恢复原目录。
+  - 克隆必须放在原路径：保证通道根身份绑在绝对路径上。
+- **定向测试**：
+  - Host 受影响文件，以及产品同形脚本化通道整圈（13 条）；
+  - SDK 保证通道测试目录 206 条，原因是默认要求书变了，这个目录直接受影响。
+- **核验**（Opus 只读）：无阻断。非阻断风险：
+  - 钉死测试没有直接取出上下文身份旁挂文件、准入指纹，也没有带沙箱执行器的组合。这几项是由已钉住的字段推出来的，核验员也逐行确认没有变化。
+  - SDK 里还有第二份要求书 `root_review.root_requirements` 和测试辅助 `decision_loop.auto_grant`，第 2 步删。
+  - 思考计数器的创建时机提前了，无害。
+  - 读不到权限模式时，每轮会多打一条警告。
