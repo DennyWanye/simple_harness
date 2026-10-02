@@ -8,19 +8,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import sys
+from pathlib import Path
+
 import pytest
 
-from agent_orchestrator.contracts import Budget
-from agent_orchestrator.orchestrator.commit_service import (
-    CommitService,
-    MissionSpec,
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "full_target"))
+
+from leaf_world import loop_config, loop_leaf  # noqa: E402
+
+from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     NonModelFailuresExhausted,
-    Reservation,
-    TaskProposal,
     mission_account,
     task_account,
 )
-from agent_orchestrator.orchestrator.failure_classes import (
+from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
+from agent_orchestrator.orchestrator.failure_classes import (  # noqa: E402
     FORMAT,
     INFRA,
     INTERRUPTED,
@@ -29,25 +33,7 @@ from agent_orchestrator.orchestrator.failure_classes import (
     NON_MODEL_FAILURE_CAP,
     classify_failure,
 )
-from agent_orchestrator.storage.store import Store
-
-SPEC = MissionSpec(
-    goal="写 wordfreq.py",
-    success_criteria=("pytest:tests/test_wordfreq.py",),
-    tenant_id="tenant-a",
-    idempotency_key="mission-charge",
-    allowed_tools=("workspace_read_file", "workspace_write_file", "run_tests"),
-    budget=Budget(max_tokens=1_000_000, max_attempts=12, max_cost_micros=None),
-    orchestration_semantics_version="legacy",
-)
-PROPOSAL = TaskProposal(
-    goal="写 wordfreq.py",
-    rationale="唯一任务",
-    success_criteria=("tests/test_wordfreq.py 通过",),
-    verification_policy=("format_check", "rule_check", "code_test"),
-    allowed_tools=("workspace_read_file", "workspace_write_file", "run_tests"),
-    budget=Budget(max_tokens=900_000, max_attempts=12),
-)
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
 
 
 def test_the_table_says_whose_fault_each_real_failure_is():
@@ -85,66 +71,69 @@ def test_the_table_says_whose_fault_each_real_failure_is():
     assert classify_failure(None) == MODEL
 
 
-def _setup(tmp_path):
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(SPEC)
-    planning = service.begin_planning(mission.id)
-    task, _ = service.commit_task_proposal(mission.id, PROPOSAL, base_version=planning.version, source={})
-    return service, mission, task
+def _counts(leaf):
+    with leaf.store.transaction():
+        return (leaf.service.ledger.account(task_account(leaf.task_id)).attempts_created,
+                leaf.service.ledger.account(mission_account(leaf.mission.id)).attempts_created,
+                leaf.task.attempt_count)
 
 
-def _running(service, task, n):
-    attempt, intent = service.create_attempt(
-        task.id, role="worker", model="m", prompt_version="v", context_version="c",
-        reservation=Reservation(tokens=1_000, cost_micros=0), intent_config={}, input_hash=f"h{n}")
-    service.claim_intent(intent.intent_id, owner="orch-1", lease_seconds=60)
-    service.record_agent_created(intent.intent_id, agent_id=f"agent-{n}", expected_turn_id=f"turn-{n}")
-    service.record_submitted(intent.intent_id, receipt={"turn_id": f"turn-{n}", "seq": 1})
-    return service.store.get_attempt(attempt.id)
+def _in_a_loop(tmp_path, case):
+    """真实主循环里一个分层任务的一个步骤。失败后的"再试一次"按生产顺序先拿"原样重试"
+    的规划决定——次数是在这条路径上扣的。"""
 
+    async def run():
+        async with Orchestrator(loop_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
+            await case(await loop_leaf(loop, tmp_path, key="mission-charge"))
 
-def _counts(service, mission, task):
-    with service.store.transaction():
-        return (service.ledger.account(task_account(task.id)).attempts_created,
-                service.ledger.account(mission_account(mission.id)).attempts_created,
-                service.store.get_task(task.id).attempt_count)
+    asyncio.run(run())
 
 
 def test_a_service_error_gives_the_attempt_back_and_a_model_mistake_does_not(tmp_path):
-    service, mission, task = _setup(tmp_path)
-    first = _running(service, task, 1)
-    assert _counts(service, mission, task) == (1, 1, 1)
-    service.reject_result(first.id, turn_id="turn-1", reason="turn_failed", detail={
-        "error": {"error_code": "provider_protocol_error", "source_kind": "tool_parse"},
-        "error_kind": "provider_error"})
-    assert _counts(service, mission, task) == (0, 0, 0)  # 账本与任务次数一起退
-    assert service.store.count_events(mission.id, "AttemptChargeReleased") == 1
-    # 按尝试幂等：同一尝试再退一次不会多退
-    with service.store.transaction():
-        assert service._release_attempt_charge(service.store.get_attempt(first.id)) is False
-    assert _counts(service, mission, task) == (0, 0, 0)
-    assert service.store.count_events(mission.id, "AttemptChargeReleased") == 1
+    async def case(leaf):
+        service = leaf.service
+        first = leaf.running()
+        assert _counts(leaf) == (1, 1, 1)
+        service.reject_result(first.id, turn_id=leaf.turn_of(first), reason="turn_failed", detail={
+            "error": {"error_code": "provider_protocol_error", "source_kind": "tool_parse"},
+            "error_kind": "provider_error"})
+        assert _counts(leaf) == (0, 0, 0)  # 账本与任务次数一起退
+        assert leaf.store.count_events(leaf.mission.id, "AttemptChargeReleased") == 1
+        # 按尝试幂等：同一尝试再退一次不会多退
+        with leaf.store.transaction():
+            assert service._release_attempt_charge(leaf.store.get_attempt(first.id)) is False
+        assert _counts(leaf) == (0, 0, 0)
+        assert leaf.store.count_events(leaf.mission.id, "AttemptChargeReleased") == 1
 
-    second = _running(service, task, 2)
-    service.reject_result(second.id, turn_id="turn-2", reason="turn_failed", detail={
-        "error": {"error_code": "react_max_turns_exceeded", "source_kind": "termination"},
-        "error_kind": "other"})
-    assert _counts(service, mission, task) == (1, 1, 1)  # 模型原地打转：扣
-    assert second.ordinal == 2  # 次数退了，尝试编号照常递增，不会撞号
+        await leaf.authorize_retry(first)
+        second = leaf.running(retry_of=first.id)
+        service.reject_result(second.id, turn_id=leaf.turn_of(second), reason="turn_failed", detail={
+            "error": {"error_code": "react_max_turns_exceeded", "source_kind": "termination"},
+            "error_kind": "other"})
+        assert _counts(leaf) == (1, 1, 1)  # 模型原地打转：扣
+        assert second.ordinal == 2  # 次数退了，尝试编号照常递增，不会撞号
 
-    third = _running(service, task, 3)
-    service.mark_attempt_timed_out(third.id, reason="executor_stalled", detail={"stalled_seconds": 900})
-    assert _counts(service, mission, task) == (1, 1, 1)
+        await leaf.authorize_retry(second)
+        third = leaf.running(retry_of=second.id)
+        service.mark_attempt_timed_out(third.id, reason="executor_stalled", detail={"stalled_seconds": 900})
+        assert _counts(leaf) == (1, 1, 1)
+
+    _in_a_loop(tmp_path, case)
 
 
 def test_a_step_stops_after_six_failures_that_were_not_the_models_fault(tmp_path):
-    service, mission, task = _setup(tmp_path)
-    for n in range(1, NON_MODEL_FAILURE_CAP + 1):
-        attempt = _running(service, task, n)
-        service.reject_result(attempt.id, turn_id=f"turn-{n}", reason="envelope_invalid",
-                              detail={"error": "block_missing"})
-    assert _counts(service, mission, task) == (0, 0, 0)
-    with pytest.raises(NonModelFailuresExhausted) as raised:
-        _running(service, task, NON_MODEL_FAILURE_CAP + 1)
-    assert raised.value.failure_count == NON_MODEL_FAILURE_CAP
-    assert len(service.store.list_attempts(task.id)) == NON_MODEL_FAILURE_CAP  # 什么都没写
+    async def case(leaf):
+        previous = None
+        for _ in range(NON_MODEL_FAILURE_CAP):
+            attempt = leaf.running(retry_of=None if previous is None else previous.id)
+            leaf.service.reject_result(attempt.id, turn_id=leaf.turn_of(attempt), reason="envelope_invalid",
+                                       detail={"error": "block_missing"})
+            await leaf.authorize_retry(attempt)
+            previous = attempt
+        assert _counts(leaf) == (0, 0, 0)
+        with pytest.raises(NonModelFailuresExhausted) as raised:
+            leaf.running(retry_of=previous.id)
+        assert raised.value.failure_count == NON_MODEL_FAILURE_CAP
+        assert len(leaf.store.list_attempts(leaf.task_id)) == NON_MODEL_FAILURE_CAP  # 什么都没写
+
+    _in_a_loop(tmp_path, case)
