@@ -325,7 +325,12 @@ def compile_successor(inputs: PreviewInputs, operation: Any) -> RefinementCompil
             raise ParameterBindingsError("successor type declares no parameter schema")
     else:
         schema = inputs.schemas.resolve(spec.parameter_schema_ref)
-        if schema is None or not schema.check(operation.bindings).ok:
+        # No undeclared field and no wrong type; a declared parameter may be left out,
+        # as a method step's arguments may (those are not checked against the step
+        # type at all, grounding.py) — 2026-10-03: the successor of a step whose
+        # arguments were {} could not be written at all.
+        check = None if schema is None else schema.check(operation.bindings)
+        if check is None or check.unknown or check.wrong_type:
             raise ParameterBindingsError("successor bindings fail the exact registered schema")
     identity = content_hash_of({"old": old.to_json(), "proposal": inputs.proposal.to_json()})
     task_id, occurrence = TaskRef("task-successor-" + identity), OccurrenceId("occ-successor-" + identity)

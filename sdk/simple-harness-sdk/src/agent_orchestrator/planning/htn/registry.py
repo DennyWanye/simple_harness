@@ -1307,6 +1307,11 @@ class MethodRegistry:
         registration = self.registration(ref)
         if registration is None:
             return False
+        # A method has one current definition: its latest version.  An earlier version
+        # is history; offering it made the Planner cite it and lose a round to
+        # METHOD_STALE (2026-10-03 product-world run).
+        if any(item[0] == ref.method_id and item[1] > ref.version for item in self._definitions):
+            return False
         if registration.status in GLOBALLY_RETRIEVABLE_STATUS:
             return True
         # Normalised here rather than trusted from the caller: the trial scope is a

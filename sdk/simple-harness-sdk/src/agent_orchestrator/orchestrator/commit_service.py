@@ -255,6 +255,10 @@ class CommitService(ProtectedTailCommitsMixin,
         mission_profile_validator: Callable[[str, Mapping[str, Any]], None] | None = None,
     ) -> None:
         self._store = store
+        #: The deployment's completion of a new Mission (its root and its TaskGraph
+        #: binding), run inside the creation transaction; installed by
+        #: ``deployment.assembly.UserMissionDeployment``.  Every creation door ends here.
+        self._mission_completer: Callable[[Mission], None] | None = None
         self._assurance_factory: Any = None
         self._assurance_root_gate: Any = None
         self._assurance_read_authority: Any = None
@@ -785,6 +789,11 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             from .assurance_factory import record_mission_creation
             record_mission_creation(self, mission, spec, creation_event)
+            # 2026-10-03: a Mission is created with its root and its TaskGraph binding in
+            # this one transaction, whichever door it came through.
+            if self._mission_completer is None:
+                raise CommitRejected("MISSION_DEPLOYMENT_UNBOUND")
+            self._mission_completer(mission)
             return mission, True
 
     def begin_planning(self, mission_id: str) -> Mission:

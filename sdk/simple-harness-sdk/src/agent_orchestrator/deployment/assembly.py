@@ -6,8 +6,9 @@
 * **安装**（主循环的 ``startup_assembly``）：按任务的规划世界与开工条件、执行图、保证通道
   （每个分层任务都走保证通道，要求书只有 ``user_requirements`` 一份，检查策略由
   :class:`DeploymentDuties` 投影）；保证通道根由 ``assurance_root_setup`` 以部署身份安装。
-* **建任务**：同一事务里经认证门面建任务、初始化根、绑定执行图——执行图在建任务时就绑上，
-  没有"已要求、还没绑定"的等待期（用户 2026-10-03 定）；规划授权照样卡住每一次计划提交。
+* **建任务**：经认证门面建任务；提交层在建任务的同一事务里调部署装上的"建任务收尾"，初始化根、
+  绑定执行图——任何建任务入口都走这一处，没有"已要求、还没绑定"的等待期（用户 2026-10-03 定）；
+  规划授权照样卡住每一次计划提交。
 * **每轮职责**：:class:`DeploymentDuties`（自动确认、自动授权、检查策略投影）。
 
 部署只给：认证身份、规划世界（产品领域知识）与根的名字、通知去处、构建指纹、执行图预算与部署
@@ -93,6 +94,7 @@ class UserMissionDeployment:
             # Projects each frozen Scope's check policy right before its first review.
             check_policy_projector=lambda mission_id: self.duties.project_check_policies(mission_id),
         ))
+        orchestrator.commit._mission_completer = lambda mission: self._complete(orchestrator, mission)
 
     def bind(self, orchestrator: Any, control: Any) -> None:
         self.duties.bind(orchestrator, control)
@@ -102,33 +104,27 @@ class UserMissionDeployment:
     # ---- create -------------------------------------------------------------------------------
 
     def create_mission(self, orchestrator: Any, control: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-        """Create a user Mission, its root and its TaskGraph binding in one transaction."""
-        with orchestrator.store.transaction():
-            receipt = control.create(body)
-            self._complete(orchestrator, receipt)
+        """Create a user Mission through the authenticated facade; the commit layer
+        completes it (root and TaskGraph binding) in the creation transaction."""
+        receipt = control.create(body)
         self.wake()
         return receipt
 
     def create_mission_with_sources(self, orchestrator: Any, control: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-        """The atomic batch: never create and then register in separate transactions."""
-        with orchestrator.store.transaction():
-            receipt = control.create_with_sources(body)
-            self._complete(orchestrator, receipt)
+        """The atomic batch: the Mission, its sources, its root and its binding together."""
+        receipt = control.create_with_sources(body)
         self.wake()
         return receipt
 
-    def _complete(self, orchestrator: Any, receipt: Mapping[str, Any]) -> None:
+    def _complete(self, orchestrator: Any, mission: Any) -> None:
         from ..orchestrator.taskgraph_policy import enable_command_id
 
-        mission = orchestrator.store.get_mission(str(receipt["mission_id"]))
         initialize_root(orchestrator, mission, self.principal, world_factory=self.world_factory,
                         root_type=self.names.root_type, task_prefix=self.names.task_prefix,
                         duty_prefix=self.names.duty_prefix, root_parameters=self.root_parameters)
-        if receipt.get("created") is True and self.taskgraph is not None:
-            from ..orchestrator.hierarchical_dispatch import is_hierarchical
-
-            if is_hierarchical(mission):
-                self.taskgraph.policy.enable_taskgraph_contract(mission.id, enable_command_id(mission.id))
+        if self.taskgraph is None:
+            raise RuntimeError("TASKGRAPH_DEPLOYMENT_UNINSTALLED")
+        self.taskgraph.policy.enable_taskgraph_contract(mission.id, enable_command_id(mission.id))
 
     # ---- per round ----------------------------------------------------------------------------
 

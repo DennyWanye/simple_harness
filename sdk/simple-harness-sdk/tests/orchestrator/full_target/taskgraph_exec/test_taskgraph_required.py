@@ -1,61 +1,47 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A hierarchical Mission's plan is committed only onto its TaskGraph binding.
+"""Every creation door yields a Mission bound to its TaskGraph, in one transaction.
 
-The product binds the TaskGraph in the creation transaction (user decision 2026-10-03), so
-there is no "required but not bound yet" waiting period any more.  The commit gate still
-holds for a Mission that somehow has no binding: here one is created by bypassing the
-deployment's create path (the authenticated facade, then the deployment's own root
-initializer — everything except the binding), and the Planner's real reply cannot commit
-an unbound plan: the commit is refused by name (``TASKGRAPH_NOT_BOUND``).
+User decision 2026-10-03: there is no "required but not bound yet" waiting period.  The
+commit layer runs the deployment's completion (root and TaskGraph binding) inside the
+creation transaction whichever door the request came through — the deployment's own
+create, the authenticated facade, or the SDK's ``MissionApi`` — so an unbound user Mission
+cannot exist.
 
-2026-10-03 (A′ step 2): today an unbound Mission without the old creation-time requirement
-row commits an unbound plan (the participant is only built for a bound Mission and the
-"required, not bound yet" check reads the requirement row the deployment no longer writes);
-the single ``TASKGRAPH_NOT_BOUND`` refusal arrives with the removal of the waiting mechanism
-(A′ plan §2 item 1).  Strict xfail until then.
+**Mutation**: drop the completion call in ``CommitService.create_mission`` → red (the
+facade and ``MissionApi`` Missions have no binding and no root).
 """
 from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-from production_fixture import enabled_world
-
-from agent_orchestrator.deployment.root import initialize_root
+from agent_orchestrator.api.missions import MissionApi
 from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, user_goal_world
+from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
-@pytest.mark.xfail(strict=True, reason="TASKGRAPH_NOT_BOUND for every unbound plan commit lands with the "
-                   "removal of the TaskGraph waiting mechanism (A′ plan §2 item 1); src unchanged in step 2")
-def test_no_unbound_plan_is_committed_for_a_hierarchical_mission(tmp_path):
-    """**Mutation**: drop the ``TASKGRAPH_NOT_BOUND`` refusal in the plan commit → red (the
-    plan commits without a TaskGraph revision record)."""
+def _bound(loop, mission_id: str) -> bool:
+    return loop.store.connection.execute(
+        "SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone() is not None
 
+
+def test_every_creation_door_binds_the_taskgraph_and_the_root(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key="tg-bound-mission") as world:
-            loop, product = world.loop, world.product
-            created = product.control.create({"goal": world.mission.goal, "idempotency_key": "tg-unbound",
-                                              "success_criteria": list(world.mission.success_criteria),
-                                              "budget": {"max_tokens": 8_000_000, "max_attempts": 12}})
-            unbound = loop.store.get_mission(created["mission_id"])
-            initialize_root(loop, unbound, product.deployment.principal, world_factory=user_goal_world,
-                            root_type=USER_GOAL_NAMES.root_type, task_prefix=USER_GOAL_NAMES.task_prefix,
-                            duty_prefix=USER_GOAL_NAMES.duty_prefix)
-            assert loop.store.connection.execute(
-                "SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?", (unbound.id,)).fetchone() is None
-
-            def refused():
-                return [e for e in loop.store.iter_events(unbound.id) if "TASKGRAPH_NOT_BOUND" in str(e.payload)]
-
-            def planned():
-                return refused() or HtnStore(loop.store).active_plan_revision(unbound.id)
-
-            await world.until(planned)
-            assert refused()
-            assert HtnStore(loop.store).active_plan_revision(unbound.id) is None
-            assert loop.store.connection.execute(
-                "SELECT COUNT(*) FROM taskgraph_revision_records WHERE mission_id=?", (unbound.id,)).fetchone()[0] == 0
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), auto=False) as world:
+            body = {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"]}
+            via_deployment = world.create({**body, "idempotency_key": "door-deployment"})["mission_id"]
+            via_facade = world.control.create({**body, "idempotency_key": "door-facade"})["mission_id"]
+            via_api, created = MissionApi(world.loop.commit, orchestrator=world.loop).create(
+                tenant_id=world.deployment.tenant_id, request={**body, "idempotency_key": "door-api"})
+            assert created is True
+            for mission_id in (via_deployment, via_facade, via_api.id):
+                assert _bound(world.loop, mission_id), mission_id
+                root = HtnStore(world.loop.store).latest_task_semantics(USER_GOAL_NAMES.task_prefix + mission_id)
+                assert root is not None, mission_id
+            # A replay of the same request returns the same Mission and binds nothing twice.
+            again = world.control.create({**body, "idempotency_key": "door-facade"})
+            assert again["mission_id"] == via_facade and again.get("created") is False
+            assert world.loop.store.connection.execute(
+                "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (via_facade,)).fetchone()[0] == 1
 
     asyncio.run(case())
