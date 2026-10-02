@@ -105,7 +105,6 @@ class VerifierRouter:
         human: Mapping[str, Any] | None = None,
         reuse: Mapping[str, LayerResult] | None = None,
         needs_human_allowed: bool = True,
-        ablated: frozenset[str] = frozenset(),
         domain: DomainProfileV1 | None = None,
         assessment_binding: AssessmentBindingV1 | None = None,
         evidence_resolver: EvidenceResolver | None = None,
@@ -145,12 +144,6 @@ class VerifierRouter:
             # criterion nobody can judge here; the rule layer must run and FAIL it, whatever
             # the policy says — a Critic's PASS alone may never complete it
             required.add("rule_check")
-        # step 8 (plan D8-7'): an ablation changes the effective policy explicitly — the layer
-        # is not required in this run and says so; it is never a silent PASS
-        removed = {layer for layer in ablated if layer in required}
-        required -= removed
-        # review P1-3 (§12.4): an ablation that leaves the Task no layer at all cannot pass
-        emptied = bool(removed) and not required
         layers: list[LayerResult] = []
         critic: CriticVerdict | None = None
         short_at: str | None = None
@@ -224,27 +217,6 @@ class VerifierRouter:
                 )
                 continue
             if layer not in required:
-                if layer in removed and emptied:
-                    await record(
-                        LayerResult(
-                            layer,
-                            ERROR,
-                            "ablation leaves no verification for this Task: zero layers is never a PASS",
-                            {"ablated": True, "required_by_policy": True, "no_layer_left": True},
-                        )
-                    )
-                    short_at = layer
-                    continue
-                if layer in removed:
-                    await record(
-                        LayerResult(
-                            layer,
-                            NOT_REQUIRED,
-                            "ablated: the Task policy requires it, this run removed it",
-                            {"ablated": True, "required_by_policy": True},
-                        )
-                    )
-                    continue
                 await record(
                     LayerResult(layer, NOT_REQUIRED, "not in the Task verification policy", {})
                 )

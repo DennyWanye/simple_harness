@@ -265,7 +265,7 @@ def test_policy_without_code_layer_never_executes_code(tmp_path, monkeypatch):
     assert verdict.passed and seen == [None] and verdict.layers[3].status == "NOT_REQUIRED"
 
 
-def test_disabled_execution_and_critic_ablation_keep_policy_boundaries(tmp_path, monkeypatch):
+def test_disabled_execution_keeps_the_policy_boundary(tmp_path, monkeypatch):
     case = _case(tmp_path, criteria=("file:math_ops.py",))
     calls = []
 
@@ -282,15 +282,6 @@ def test_disabled_execution_and_critic_ablation_keep_policy_boundaries(tmp_path,
         VerifierRouter(local_code_execution=False).verify(**case, run_critic=critic)
     )
     assert not disabled.passed and disabled.layers[3].status == "ERROR" and calls == [None]
-
-    async def ablated_code_test(*args, **kwargs):
-        calls.append("code_test")
-        return LayerResult("code_test", FAIL, "independent failure", {"runs": []})
-
-    monkeypatch.setattr(router_module, "code_test", ablated_code_test)
-    ablated = _verify(case, critic, ablated=frozenset({"critic_review"}))
-    assert not ablated.passed and ablated.layers[2].status == "NOT_REQUIRED"
-    assert ablated.layers[3].status == FAIL and calls[-1] == "code_test"
 
 
 def test_critic_rejection_preserves_actual_completed_test_evidence(tmp_path):

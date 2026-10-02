@@ -914,12 +914,10 @@ def test_the_legacy_merge_still_refuses_two_independent_branches() -> None:
         merge_accepted(list(tasks.values()), artifacts, tasks_by_id=tasks)
 
 
-def test_the_diagnostic_readers_still_call_the_legacy_functions() -> None:
-    """Decision 11: ``traces`` and ``evaluation`` are not moved onto the new path."""
+def test_the_diagnostic_reader_still_calls_the_legacy_function() -> None:
+    """Decision 11: ``traces`` is not moved onto the new path."""
 
-    from agent_orchestrator.observability import evaluation, traces
+    from agent_orchestrator.observability import traces
 
     assert "merge_accepted" in inspect.getsource(traces)
-    assert "merge_accepted" in inspect.getsource(evaluation)
     assert "materialise_v2" not in inspect.getsource(traces)
-    assert "materialise_v2" not in inspect.getsource(evaluation)

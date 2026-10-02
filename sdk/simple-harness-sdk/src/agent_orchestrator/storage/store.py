@@ -1352,60 +1352,11 @@ class Store:
         ).fetchall()
         return [dict(_loads(row[0])) for row in rows]
 
-    def insert_policy_proposal(self, record: Mapping[str, Any]) -> bool:
-        with self.transaction() as connection:
-            cursor = connection.execute(
-                "INSERT INTO policy_proposals(proposal_id,version_id,state,json,created_at,updated_at)"
-                " VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-                (
-                    str(record["proposal_id"]),
-                    str(record["version_id"]),
-                    str(record["state"]),
-                    canonical_json(dict(record)),
-                    self.now,
-                    self.now,
-                ),
-            )
-            return cursor.rowcount == 1
-
-    def update_policy_proposal(self, record: Mapping[str, Any]) -> None:
-        with self.transaction() as connection:
-            connection.execute(
-                "UPDATE policy_proposals SET state = ?, json = ?, updated_at = ? WHERE proposal_id = ?",
-                (
-                    str(record["state"]),
-                    canonical_json(dict(record)),
-                    self.now,
-                    str(record["proposal_id"]),
-                ),
-            )
-
-    def get_policy_proposal(self, proposal_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT json FROM policy_proposals WHERE proposal_id = ?", (proposal_id,)
-        ).fetchone()
-        return None if row is None else dict(_loads(row[0]))
-
     def list_policy_proposals(self) -> list[dict[str, Any]]:
         rows = self._connection.execute(
             "SELECT json FROM policy_proposals ORDER BY created_at, proposal_id"
         ).fetchall()
         return [dict(_loads(row[0])) for row in rows]
-
-    def insert_policy_evaluation(self, record: Mapping[str, Any]) -> bool:
-        with self.transaction() as connection:
-            cursor = connection.execute(
-                "INSERT INTO policy_evaluations(evaluation_id,proposal_id,verdict,json,created_at)"
-                " VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING",
-                (
-                    str(record["evaluation_id"]),
-                    str(record["proposal_id"]),
-                    str(record["verdict"]),
-                    canonical_json(dict(record)),
-                    self.now,
-                ),
-            )
-            return cursor.rowcount == 1
 
     def list_policy_evaluations(self, proposal_id: str) -> list[dict[str, Any]]:
         rows = self._connection.execute(
@@ -1413,23 +1364,6 @@ class Store:
             (proposal_id,),
         ).fetchall()
         return [dict(_loads(row[0])) for row in rows]
-
-    def insert_policy_decision(self, record: Mapping[str, Any]) -> bool:
-        with self.transaction() as connection:
-            cursor = connection.execute(
-                "INSERT INTO policy_decisions(receipt_hash,proposal_id,principal_id,decision,nonce,json,created_at)"
-                " VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-                (
-                    str(record["receipt_hash"]),
-                    str(record["proposal_id"]),
-                    str(record["principal_id"]),
-                    str(record["decision"]),
-                    str(record["nonce"]),
-                    canonical_json(dict(record)),
-                    self.now,
-                ),
-            )
-            return cursor.rowcount == 1
 
     def list_policy_decisions(self, proposal_id: str) -> list[dict[str, Any]]:
         rows = self._connection.execute(
@@ -1544,17 +1478,6 @@ class Store:
             sql, args = sql + " WHERE version_id = ?", (version_id,)
         rows = self._connection.execute(sql + " ORDER BY bound_at, mission_id", args).fetchall()
         return [dict(_loads(row[0])) for row in rows]
-
-    def has_non_fixture_missions(self) -> bool:
-        """Plan D9-8': has this deployment ever bound a Mission that did not run on
-        fixtures (a real model, or a kind nobody recorded)?"""
-
-        if not self.has_table("mission_policies"):
-            return False
-        row = self._connection.execute(
-            "SELECT 1 FROM mission_policies WHERE provider_kind != 'fixtures' LIMIT 1"
-        ).fetchone()
-        return row is not None
 
     def insert_graph_change(self, record: Mapping[str, Any]) -> None:
         with self.transaction() as connection:

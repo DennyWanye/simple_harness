@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Step 8 · code review round 1, P2-5: ``replay`` and ``evaluate`` answer a bad call with
-an error and exit 2 — never a traceback — and an incomplete replay exits 1."""
+"""Step 8 · code review round 1, P2-5: ``replay`` answers a bad call with an error and
+exit 2 — never a traceback — and an incomplete replay exits 1."""
 
 from __future__ import annotations
 
@@ -77,23 +77,4 @@ def test_review_p2_5_cli_errors_are_answers_not_tracebacks(tmp_path, capsys):
         )
         == 2
     )  # attribution needs the library
-    assert (
-        main(
-            [
-                "evaluate",
-                "--plan",
-                str(empty / "missing.json"),
-                "--evidence-dir",
-                str(tmp_path / "e1"),
-            ]
-        )
-        == 2
-    )
-    plan = Path(tmp_path) / "plan.json"
-    plan.write_text(
-        json.dumps({"name": "p", "cases": ["nope"], "strategies": [{"name": "s"}]}),
-        encoding="utf-8",
-    )
-    assert main(["evaluate", "--plan", str(plan), "--evidence-dir", str(tmp_path / "e2")]) == 2
-    out = capsys.readouterr().out
-    assert "Traceback" not in out and "unknown evaluation cases" in out
+    assert "Traceback" not in capsys.readouterr().out

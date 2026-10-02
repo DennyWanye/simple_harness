@@ -13,13 +13,10 @@ Subcommands (step 2):
     demo --scenario single-task|static-dag|knowledge-sharing|dynamic-dag|multi-mission|approval-action --provider fixtures|env --evidence-dir DIR
     approval list|approve|reject|revoke|comment|review|arbitrate|takeover|resolve --evidence-dir DIR --as PRINCIPAL ...
     replay --evidence-dir DIR MISSION_ID [--events FILE] [--failures] [--attribution] [--out FILE]
-    evaluate --plan plan.json --evidence-dir NEW_DIR [--provider fixtures|env]
-    demo --scenario evaluate-policies --provider fixtures|env --evidence-dir NEW_DIR
+    policy list|show|status --evidence-dir DIR
 
 ``replay`` (step 8) rebuilds a Mission's formal state from its events on a read-only copy
 of the library and compares it with the library; it never executes or writes.
-``evaluate`` runs a plan — named cases × strategies × trials — every run a new Mission in
-its own new directory, and writes ``evaluation.json`` / ``evaluation.md``.
 
 ``approval`` (step 7) acts as the caller named by ``--as`` — in this local build a
 self-declared identity; a real deployment binds it to its authentication.  ``demo
@@ -41,18 +38,15 @@ import json
 import os
 import sys
 import time
-from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .contracts import Budget
-from .governance.policies import DeploymentPolicy
 from .orchestrator.commit_service import CommitService, MissionSpec
 from .orchestrator.event_handler import Orchestrator
 from .runtime.assembly import OrchestratorConfig, PriceTable
-from .runtime.model_router import RoutingRules
 from .storage.store import Store
 
 EXIT_OK = 0
@@ -67,8 +61,6 @@ SCENARIOS = {
     "dynamic-dag": 5,
     "multi-mission": 6,
     "approval-action": 7,
-    "evaluate-policies": 8,
-    "policy-promotion": 9,
 }
 
 
@@ -238,17 +230,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
     if step is None:
         _print({"error": f"unknown scenario {args.scenario}"})
         return EXIT_USAGE
-    if step not in {2, 3, 4, 5, 6, 7, 8, 9}:
+    if step not in {2, 3, 4, 5, 6, 7}:
         _print({"scenario": args.scenario, "status": "not_implemented", "step": step})
         return EXIT_NOT_IMPLEMENTED
     if step == 6:
         return _demo_multi_mission(args)
     if step == 7:
         return _demo_approval_action(args)
-    if step == 8:
-        return _demo_evaluate_policies(args)
-    if step == 9:
-        return _demo_policy_promotion(args)
     from .observability.evidence import write_evidence
     from .testing.fixtures import (
         COMPARE_SEED,
@@ -826,229 +814,6 @@ def _demo_approval_action(args: argparse.Namespace) -> int:
     return asyncio.run(run())
 
 
-ORACLE_PAIRS = (
-    "from parse_kv import parse_kv\n\n\ndef test_pairs():\n"
-    "    assert parse_kv('x=1;y=2') == {'x': '1', 'y': '2'}\n"
-)
-ORACLE_SPACES = (
-    "from parse_kv import parse_kv\n\n\ndef test_spaces():\n"
-    "    assert parse_kv(' a = 1 ') == {'a': '1'}\n"
-)
-
-
-def _evaluation_cases(args: argparse.Namespace, names: list[str]) -> tuple[Any, ...]:
-    """The named cases an evaluation plan may use (fixtures, or the real provider for
-    ``parse-kv``); every trial gets a fresh provider (plan D8-6')."""
-
-    from .observability.evaluation import EvaluationCase, Oracle
-    from .testing.fixtures import (
-        DEMO_BAD,
-        DEMO_DAG_SPEC,
-        DEMO_GOOD,
-        DEMO_PROPOSAL,
-        DEMO_SEED,
-        TEXTKIT_SEED,
-        RoleScriptedProvider,
-        critic_step,
-        demo_static_dag_provider,
-        demo_worker_script,
-        proposal_step,
-    )
-
-    real = args.provider == "env"
-    tools = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
-
-    def parse_kv(tenant: str, key: str) -> MissionSpec:
-        return MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal="在隔离工作区实现字符串解析函数 parse_kv(text) -> dict（按 ; 分隔、= 分键值），并通过 tests/test_parse_kv.py；tests/ 下文件不可修改。",
-            success_criteria=("pytest:tests/test_parse_kv.py",),
-            tenant_id=tenant,
-            idempotency_key=key,
-            allowed_tools=tools,
-            budget=Budget(max_tokens=600_000 if real else 200_000, max_attempts=4),
-            workspace_seed=DEMO_SEED,
-        )
-
-    def textkit(tenant: str, key: str) -> MissionSpec:
-        return MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal=str(DEMO_DAG_SPEC["goal"]),
-            success_criteria=tuple(str(c) for c in DEMO_DAG_SPEC["success_criteria"]),
-            tenant_id=tenant,
-            idempotency_key=key,
-            allowed_tools=tuple(str(t) for t in DEMO_DAG_SPEC["allowed_tools"]),
-            budget=Budget(max_tokens=400_000, max_attempts=12),
-            workspace_seed=TEXTKIT_SEED,
-        )
-
-    def scripted(code: str, attempts: int = 1) -> Any:
-        def make() -> RoleScriptedProvider:
-            return RoleScriptedProvider(
-                {
-                    "planner": [proposal_step(DEMO_PROPOSAL)],
-                    "worker": demo_worker_script(code) * attempts,
-                    "critic": [critic_step(verdict="PASS", criteria_met=True)] * attempts,
-                }
-            )
-
-        return make
-
-    def env() -> Any:
-        return _provider(args, scenario="evaluate-policies")[0]
-
-    pairs = Oracle({"hidden/test_oracle.py": ORACLE_PAIRS}, "hidden/test_oracle.py")
-    spaces = Oracle({"hidden/test_oracle.py": ORACLE_SPACES}, "hidden/test_oracle.py")
-    catalog = {
-        "parse-kv": EvaluationCase(
-            "parse-kv",
-            parse_kv,
-            env if real else scripted(DEMO_GOOD),
-            kind="env" if real else "fixtures",
-            oracle=pairs,
-        ),
-    }
-    if not real:
-        catalog.update(
-            {
-                "parse-kv-strict": EvaluationCase(
-                    "parse-kv-strict", parse_kv, scripted(DEMO_GOOD), oracle=spaces
-                ),
-                "parse-kv-bad": EvaluationCase(
-                    "parse-kv-bad", parse_kv, scripted(DEMO_BAD, attempts=2)
-                ),
-                "textkit": EvaluationCase("textkit", textkit, demo_static_dag_provider),
-            }
-        )
-    unknown = [n for n in names if n not in catalog]
-    if unknown:
-        raise ValueError(  # review P2-5: a usage error, exit 2
-            f"unknown evaluation cases for --provider {args.provider}: {unknown}; known: {sorted(catalog)}"
-        )
-    return tuple(catalog[n] for n in names)
-
-
-def _evaluation_config(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
-    if args.provider != "env":
-        return {"test_timeout_seconds": getattr(args, "test_timeout", 120.0), **config}
-    _provider_object, model, price, _kind = _provider(args, scenario="evaluate-policies")
-    knobs = {k: v for k, v in REAL_KNOBS.items()}
-    return {
-        **knobs,
-        "model": model,
-        "price_table": price,
-        "test_timeout_seconds": getattr(args, "test_timeout", 120.0),
-        **config,
-    }
-
-
-def cmd_evaluate(args: argparse.Namespace) -> int:
-    """``evaluate --plan plan.json`` (plan D8-9'): cases × strategies × trials, every run a
-    new Mission in its own directory; the report lands in ``--evidence-dir``.  Exit 0 when
-    every run was counted, 1 when any run was a harness error, 2 for a bad or refused plan."""
-
-    from .observability.evaluation import EvaluationPlan, Strategy, run_plan
-
-    try:  # review P2-5: a bad plan is an answer (exit 2), never a traceback
-        data = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-        config = dict(data.get("config", {}))
-        if isinstance(config.get("global_budget"), dict):
-            config["global_budget"] = Budget.from_json(config["global_budget"])
-        plan = EvaluationPlan(
-            name=str(data["name"]),
-            cases=_evaluation_cases(args, [str(n) for n in data["cases"]]),
-            strategies=tuple(
-                Strategy(str(s["name"]), dict(s.get("overrides", {}))) for s in data["strategies"]
-            ),
-            trials=int(data.get("trials", 1)),
-            config=_evaluation_config(args, config),
-            timeout_seconds=float(data.get("timeout_seconds", 300.0)),
-            min_samples=int(data.get("min_samples", 3)),
-        )
-        report = run_plan(plan, Path(args.evidence_dir).resolve())
-    except (OSError, KeyError, TypeError, ValueError) as error:
-        _print({"error": str(error)})
-        return EXIT_USAGE
-    _print(
-        {"plan": report["plan"], "summary": report["summary"], "comparisons": report["comparisons"]}
-    )
-    errors = sum(v["harness_errors"] for v in report["summary"].values())
-    return EXIT_OK if errors == 0 else EXIT_FAILED  # a broken harness is not a clean evaluation
-
-
-def _demo_evaluate_policies(args: argparse.Namespace) -> int:
-    """Step 8 (ORCH §10): the same cases under two strategies (the full policy and one
-    without the Critic), two independent trials each, every run a new Mission; plus the
-    attribution of one completed run and the replay of one failed run."""
-
-    import tempfile
-
-    from .observability.evaluation import EvaluationPlan, Strategy, run_plan
-    from .observability.replay import library_copy, replay_mission
-    from .observability.secrets import redact_text
-    from .observability.traces import attribution
-
-    real = args.provider == "env"
-    names = ["parse-kv"] if real else ["parse-kv", "parse-kv-strict", "parse-kv-bad", "textkit"]
-    plan = EvaluationPlan(
-        name="evaluate-policies",
-        cases=_evaluation_cases(args, names),
-        strategies=(Strategy("full-policy"), Strategy("no-critic", {"ablations": ("critic",)})),
-        trials=2,
-        config=_evaluation_config(args, {}),
-        timeout_seconds=1800.0 if real else 300.0,
-    )
-    root = Path(args.evidence_dir).resolve()
-    try:
-        report = run_plan(plan, root)
-    except ValueError as error:
-        _print({"error": str(error)})
-        return EXIT_USAGE
-    samples: dict[str, Any] = {"attribution": None, "replay": None}
-    success = next((r for r in report["runs"] if r["category"] == "success"), None)
-    failure = next((r for r in report["runs"] if r["category"] == "failure"), None)
-    if success is not None:
-        with tempfile.TemporaryDirectory() as scratch:
-            store = Store.open_readonly(
-                library_copy(Path(success["run_dir"]) / "orchestrator.db", Path(scratch))
-            )
-            try:
-                samples["attribution"] = {
-                    "run": success["run_dir"],
-                    **attribution(store, success["mission_id"]),
-                }
-            finally:
-                store.close()
-    if failure is not None:
-        samples["replay"] = {
-            "run": failure["run_dir"],
-            **replay_mission(
-                mission_id=failure["mission_id"],
-                library=Path(failure["run_dir"]) / "orchestrator.db",
-                failures=True,
-            ),
-        }
-    text, _found = redact_text(
-        json.dumps(samples, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
-    )
-    (root / "samples.json").write_text(text, encoding="utf-8")
-    _print(
-        {
-            "scenario": "evaluate-policies",
-            "note": report["note"],
-            "runs": len(report["runs"]),
-            "summary": {
-                k: {f: v[f] for f in ("samples", "successes", "success_rate", "harness_errors")}
-                for k, v in report["summary"].items()
-            },
-            "comparisons": [c["verdict"] for c in report["comparisons"]],
-            "files": ["evaluation.json", "evaluation.md", "samples.json"],
-        }
-    )
-    errors = sum(v["harness_errors"] for v in report["summary"].values())
-    return EXIT_OK if errors == 0 else EXIT_FAILED
-
-
 def cmd_replay(args: argparse.Namespace) -> int:
     """``replay`` (plan D8-9'): read-only; a mismatch, a gap or coverage below 100 % exits
     1; a missing library, events file or Mission exits 2."""
@@ -1165,184 +930,35 @@ def cmd_approval(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _routing_from_json(data: Mapping[str, Any]) -> RoutingRules:
-    return RoutingRules(
-        default=str(data["default"]),
-        by_role={str(k): str(v) for k, v in dict(data.get("by_role") or {}).items()},
-        by_task_kind={str(k): str(v) for k, v in dict(data.get("by_task_kind") or {}).items()},
-        escalate={str(k): str(v) for k, v in dict(data.get("escalate") or {}).items()},
-        escalate_after_failures=int(data.get("escalate_after_failures", 1)),
-        fallback={str(k): str(v) for k, v in dict(data.get("fallback") or {}).items()},
-    )
-
-
-def _policy_cases(args: argparse.Namespace, names: list[str]) -> tuple[Any, ...]:
-    """The held-out cases ``policy evaluate`` may use (plan D9-7'): on fixtures the
-    multi-profile ``holdout`` case; with a real provider ``parse-kv`` (fresh provider
-    per trial, reported as a real trial)."""
-
-    from .observability.evaluation import EvaluationCase
-    from .testing.fixtures import (
-        POLICY_HOLDOUT_GOAL,
-        policy_demo_profiles,
-        policy_demo_routing,
-        policy_spec,
-    )
-
-    if args.provider == "env":
-
-        def parse_kv(tenant: str, key: str) -> MissionSpec:
-            return replace(
-                policy_spec(
-                    "在隔离工作区实现字符串解析函数 parse_kv(text) -> dict（按 ; 分隔、= 分键值），"
-                    "并通过 tests/test_parse_kv.py；tests/ 下文件不可修改。",
-                    tenant,
-                    key,
-                ),
-                budget=Budget(max_tokens=600_000, max_attempts=4),
-            )
-
-        catalog = {
-            "parse-kv": EvaluationCase(
-                "parse-kv",
-                parse_kv,
-                lambda: _provider(args, scenario="policy-promotion")[0],
-                kind="env",
-            )
-        }
-    else:
-        catalog = {
-            "holdout": EvaluationCase(
-                "holdout",
-                lambda tenant, key: policy_spec(POLICY_HOLDOUT_GOAL, tenant, key),
-                provider=lambda: None,
-                profiles=lambda: policy_demo_profiles(missions=1),
-                routing=policy_demo_routing(),
-            )
-        }
-    unknown = [n for n in names if n not in catalog]
-    if unknown:
-        raise ValueError(
-            f"unknown policy evaluation cases for --provider {args.provider}: {unknown}; "
-            f"known: {sorted(catalog)}"
-        )
-    return tuple(catalog[n] for n in names)
-
-
-def cmd_policy(args: argparse.Namespace) -> int:  # noqa: C901 - one command, several verbs
-    """``policy propose / evaluate / approve / reject / promote / rollback / list / show /
-    status`` (ORCH-BUILD §11.4; plan D9-11'): the caller named by ``--as`` decides (the
-    local build takes the name as given — a real deployment authenticates it).  Exit 0
-    done, 1 refused by a rule or a gate, 2 a bad call."""
+def cmd_policy(args: argparse.Namespace) -> int:
+    """``policy list / show / status`` (ORCH-BUILD §11.4): read the policy library.  The
+    library is opened as a read-only copy; nothing here writes.  Exit 0 done, 1 refused,
+    2 a bad call."""
 
     import tempfile
 
     from .api.policies import PolicyApi, PolicyRequestError
     from .governance.permissions import Principal
     from .governance.promotion import registry_consistency
-    from .observability.evaluation import EvaluationRefused
     from .observability.replay import library_copy
-    from .orchestrator.policy_commits import PolicyCommitError
 
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
     if not library.is_file():  # review P2-4: never create an empty library by accident
         _print({"error": f"no orchestrator library at {library}"})
         return EXIT_USAGE
     scratch = tempfile.TemporaryDirectory(prefix="orch-policy-")
-    reading = args.action in {"list", "show", "status"}
-    store = (
-        Store.open_readonly(library_copy(library, Path(scratch.name)))
-        if reading
-        else _open_store(args)
-    )
+    store = Store.open_readonly(library_copy(library, Path(scratch.name)))
     try:
-        commit = CommitService(store)
-        who = getattr(args, "as_principal", None) or "cli-reader"
-        principal = Principal(who, who)
+        reader = PolicyApi(CommitService(store), Principal("cli-reader", "cli-reader"))
         try:
             value: Any
-            if args.action in {"list", "show", "status"}:
-                reader = PolicyApi(commit, principal)
-                if args.action == "list":
-                    value = reader.list()
-                elif args.action == "show":
-                    value = reader.show(args.identifier)
-                else:
-                    value = {**reader.status(), "consistency": registry_consistency(store)}
-            elif args.action == "propose":
-                api = PolicyApi(commit, principal)
-                if args.params:
-                    value = api.propose(
-                        json.loads(Path(args.params).read_text(encoding="utf-8")), note=args.note
-                    )
-                else:
-                    from .governance.learning import learn_and_register
-
-                    active = store.active_policy()
-                    if active is None or not active.get("params"):
-                        raise ValueError("this library has no ACTIVE policy to learn against")
-                    routing = (
-                        None
-                        if not args.routing
-                        else _routing_from_json(
-                            json.loads(Path(args.routing).read_text(encoding="utf-8"))
-                        )
-                    )
-                    learned = learn_and_register(
-                        commit,
-                        [Path(h).resolve() for h in args.history],
-                        base_params=active["params"],
-                        routing=routing,
-                        min_missions=args.min_missions,
-                        min_group=args.min_group,
-                    )
-                    result = learned["result"]
-                    value = {
-                        "outcome": result.outcome,
-                        "reasons": result.reasons,
-                        "note": result.note,
-                        "proposal": learned["proposal"],
-                        "refusal": learned["refusal"],
-                    }
-                    if learned["proposal"] is None:
-                        _print(value)
-                        return EXIT_FAILED
-            elif args.action == "evaluate":
-                from .governance.gates import evaluate_candidate
-
-                outcome = evaluate_candidate(
-                    commit,
-                    args.proposal_id,
-                    cases=_policy_cases(
-                        args, args.case or (["parse-kv"] if args.provider == "env" else ["holdout"])
-                    ),
-                    directory=Path(args.eval_dir).resolve(),
-                    trials=args.trials,
-                    config=_evaluation_config(args, {}),
-                    timeout_seconds=args.timeout_seconds,
-                )
-                value = {
-                    "verdict": outcome["verdict"],
-                    "reasons": outcome["reasons"],
-                    "evidence_kind": outcome["evidence_kind"],
-                    "evaluation_id": outcome["evaluation"]["evaluation_id"],
-                    "report": str(Path(args.eval_dir).resolve() / "gate.json"),
-                }
-                if outcome["verdict"] != "PASSED":
-                    _print(value)
-                    return EXIT_FAILED
-            elif args.action in {"approve", "reject"}:
-                api = PolicyApi(commit, principal)
-                decide = api.approve if args.action == "approve" else api.reject
-                value = decide(args.proposal_id, nonce=args.nonce, note=args.note)
-            elif args.action == "promote":
-                deployment = DeploymentPolicy()  # review P2-5: the deployment's cooldown only
-                value = PolicyApi(commit, principal, deployment=deployment).promote(
-                    args.proposal_id, accept_fixture_evidence=args.accept_fixture_evidence
-                )
-            else:  # rollback
-                value = PolicyApi(commit, principal).rollback(to=args.to, reason=args.reason)
-        except (PolicyRequestError, PolicyCommitError, EvaluationRefused) as error:
+            if args.action == "list":
+                value = reader.list()
+            elif args.action == "show":
+                value = reader.show(args.identifier)
+            else:
+                value = {**reader.status(), "consistency": registry_consistency(store)}
+        except PolicyRequestError as error:
             _print({"error": str(error)})
             return EXIT_FAILED
         except (OSError, KeyError, TypeError, ValueError) as error:
@@ -1354,288 +970,6 @@ def cmd_policy(args: argparse.Namespace) -> int:  # noqa: C901 - one command, se
         scratch.cleanup()
     return EXIT_OK
 
-
-def _demo_policy_promotion(args: argparse.Namespace) -> int:  # noqa: C901 - one narrative
-    """Step 9 (ORCH-BUILD §11; original §28 stage four): history → a traceable candidate
-    from the rule improver → gates against the ACTIVE version (one candidate fails, one
-    passes and still only runs in evaluation libraries) → a person approves → promotion
-    (a Mission created before it keeps its version) → rollback (the rolled-back version's
-    events and costs untouched) — plus the honest refusal for too little history.  On
-    fixtures this proves the mechanism, never a quality gain."""
-
-    if args.provider != "fixtures":
-        _print(
-            {
-                "error": "policy-promotion runs on fixtures; a real trial is "
-                "`policy evaluate --provider env` on a proposal"
-            }
-        )
-        return EXIT_USAGE
-    from .api.policies import PolicyApi
-    from .governance.gates import evaluate_candidate_async
-    from .governance.learning import learn_and_register
-    from .governance.permissions import Principal
-    from .governance.promotion import DEPLOYMENT_TIMELINE, registry_consistency
-    from .observability.evaluation import EvaluationCase
-    from .observability.evidence import write_evidence
-    from .observability.secrets import redact_text
-    from .orchestrator.policy_commits import PolicyCommitError
-    from .testing.fixtures import (
-        POLICY_HISTORY_GOAL,
-        POLICY_HOLDOUT_GOAL,
-        policy_demo_profiles,
-        policy_demo_routing,
-        policy_spec,
-    )
-
-    root = Path(args.evidence_dir).resolve()
-    routing = policy_demo_routing()
-    key = args.idempotency_key
-    timeout = getattr(args, "test_timeout", 120.0)
-    history_config = OrchestratorConfig(
-        evidence_root=root / "history", max_concurrency=1, test_timeout_seconds=timeout
-    )
-    production_config = OrchestratorConfig(
-        evidence_root=root / "production", max_concurrency=1, test_timeout_seconds=timeout
-    )
-    person = Principal(args.as_principal, args.as_principal)
-    holdout = EvaluationCase(
-        "holdout",
-        lambda tenant, run_key: policy_spec(POLICY_HOLDOUT_GOAL, tenant, run_key),
-        provider=lambda: None,
-        profiles=lambda: policy_demo_profiles(missions=1),
-        routing=routing,
-    )
-
-    def write(name: str, value: Any) -> None:
-        text, _found = redact_text(
-            json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
-        )
-        (root / name).write_text(text, encoding="utf-8")
-
-    async def run() -> int:
-        # 1. history under the built-in policy: six Missions, the cheap profile fails first
-        async with Orchestrator(
-            history_config, profiles=policy_demo_profiles(missions=6), routing=routing
-        ) as history:
-            for n in range(6):
-                await history.submit_mission(
-                    policy_spec(POLICY_HISTORY_GOAL, args.tenant, f"{key}-history-{n}")
-                )
-                await history.run()
-        # 2. the production deployment
-        async with Orchestrator(
-            production_config, profiles=policy_demo_profiles(missions=3), routing=routing
-        ) as orch:
-            store, commit = orch.store, orch.commit
-            start_snapshot = orch.policy_snapshot()
-            seed = store.active_policy()
-            assert seed is not None
-            api = PolicyApi(
-                commit,
-                person,
-                deployment=DeploymentPolicy(policy_cooldown_seconds=0),  # demo: no waiting
-                max_concurrency=production_config.max_concurrency,
-                profiles=tuple(orch.model_router.profiles),
-            )
-            thin = learn_and_register(
-                commit,
-                [root / "history"],
-                base_params=seed["params"],
-                routing=routing,
-                min_missions=10,
-            )
-            learned = learn_and_register(
-                commit, [root / "history"], base_params=seed["params"], routing=routing
-            )
-            candidate = learned["proposal"]
-            if candidate is None:
-                _print(
-                    {
-                        "error": "the rule improver proposed nothing",
-                        "reasons": learned["result"].reasons,
-                    }
-                )
-                return EXIT_FAILED
-            flaky = api.propose(
-                {"routing": {"by_task_kind": {"code": "flaky"}}}, note="试试另一个档位"
-            )
-            failed = await evaluate_candidate_async(
-                commit,
-                flaky["proposal_id"],
-                cases=[holdout],
-                directory=root / "evaluations" / "flaky",
-                config={"test_timeout_seconds": timeout},
-            )
-            passed = await evaluate_candidate_async(
-                commit,
-                candidate["proposal_id"],
-                cases=[holdout],
-                directory=root / "evaluations" / "learned",
-                config={"test_timeout_seconds": timeout},
-            )
-            try:
-                api.promote(candidate["proposal_id"])
-                unapproved = "promoted without approval (must not happen)"
-            except PolicyCommitError as error:
-                unapproved = str(error)
-            before = await orch.submit_mission(
-                policy_spec(POLICY_HISTORY_GOAL, args.tenant, f"{key}-before")
-            )
-            api.approve(candidate["proposal_id"], note="门槛通过（机制验证），批准上线")
-            promoted = api.promote(candidate["proposal_id"])
-            await orch.run()  # `before` runs now — under the seed it was bound to
-            after = await orch.submit_mission(
-                policy_spec(POLICY_HISTORY_GOAL, args.tenant, f"{key}-after")
-            )
-            await orch.run()
-            events_before = [e.to_json() for e in store.iter_events(after.id)]
-
-            def usage(mission_id: str) -> Any:
-                return store.connection.execute(
-                    "SELECT SUM(input_tokens + output_tokens), COUNT(*) FROM imported_usage WHERE mission_id = ?",
-                    (mission_id,),
-                ).fetchone()
-
-            usage_before = usage(after.id)
-            health = api.status()
-            rolled = api.rollback(reason="演示：候选版本需要撤回")
-            events_unchanged = [e.to_json() for e in store.iter_events(after.id)] == events_before
-            usage_unchanged = usage(after.id) == usage_before
-            later = await orch.submit_mission(
-                policy_spec(POLICY_HISTORY_GOAL, args.tenant, f"{key}-later")
-            )
-            await orch.run()
-
-            def mission_view(mission: Any) -> dict[str, Any]:
-                final = store.get_mission(mission.id)
-                assert final is not None
-                attempts = [
-                    a for t in store.list_tasks(mission.id) for a in store.list_attempts(t.id)
-                ]
-                return {
-                    "mission_id": mission.id,
-                    "policy_version_id": orch.policy_version_of(mission.id),
-                    "status": str(final.status),
-                    "attempts": len(attempts),
-                    "first_profile": attempts[0].runtime_profile_id if attempts else None,
-                }
-
-            missions = {
-                "before": mission_view(before),
-                "after": mission_view(after),
-                "later": mission_view(later),
-            }
-            for name, mission in (("before", before), ("after", after), ("later", later)):
-                write_evidence(
-                    directory=root / "production" / "missions" / mission.id,
-                    store=store,
-                    commit=commit,
-                    mission_id=mission.id,
-                    baseline={
-                        "agent_orchestrator": __version__,
-                        "provider_kind": "fixtures",
-                        "policy_version_id": missions[name]["policy_version_id"],
-                        "policy_snapshot": start_snapshot,
-                        "routing": routing.to_json(),
-                    },
-                    workspaces_root=production_config.workspaces_root,
-                    test_report=missions[name],
-                    policy_snapshot=orch.policy_snapshot(),
-                )
-            consistency = registry_consistency(store)
-            proposals = store.list_policy_proposals()
-            write(
-                "registry.json",
-                {
-                    "versions": store.list_policy_versions(),
-                    "proposals": proposals,
-                    "evaluations": {
-                        p["proposal_id"]: store.list_policy_evaluations(p["proposal_id"])
-                        for p in proposals
-                    },
-                    "decisions": {
-                        p["proposal_id"]: store.list_policy_decisions(p["proposal_id"])
-                        for p in proposals
-                    },
-                    "activations": store.list_policy_activations(),
-                    "consistency": consistency,
-                },
-            )
-            lines = []
-            for event in store.iter_events(DEPLOYMENT_TIMELINE):
-                text, _found = redact_text(
-                    json.dumps(event.to_json(), ensure_ascii=False, sort_keys=True, default=str)
-                )
-                lines.append(text + "\n")
-            (root / "policy_events.jsonl").write_text("".join(lines), encoding="utf-8")
-            version = store.get_policy_version(str(candidate["version_id"]))
-            summary = {
-                "scenario": "policy-promotion",
-                "note": "机制验证（fixture）：证明提出 → 门槛 → 批准 → 晋级 → 回滚的闭环存在，不代表真实质量提升",
-                "thin_history": {
-                    "outcome": thin["result"].outcome,
-                    "reasons": thin["result"].reasons,
-                },
-                "learned": {
-                    "outcome": learned["result"].outcome,
-                    "proposal_id": candidate["proposal_id"],
-                    "learner": learned["result"].manifest["learner"],
-                    "training_missions": len(learned["result"].manifest["training"]),
-                    "routing": None
-                    if version is None
-                    else version["params"]["routing"]["by_task_kind"],
-                    "note": learned["result"].note,
-                },
-                "flaky": {
-                    "proposal_id": flaky["proposal_id"],
-                    "verdict": failed["verdict"],
-                    "reasons": failed["reasons"],
-                },
-                "gate": {
-                    "verdict": passed["verdict"],
-                    "reasons": passed["reasons"],
-                    "evidence_kind": passed["evidence_kind"],
-                    "directory": str(root / "evaluations" / "learned"),
-                },
-                "unapproved_promotion": unapproved,
-                "promotion": promoted,
-                "versions": {"seed": seed["version_id"], "candidate": candidate["version_id"]},
-                "missions": missions,
-                "rollback": {
-                    "version_id": rolled["version_id"],
-                    "from_version_id": rolled["from_version_id"],
-                    "still_bound": rolled["still_bound"],
-                    "events_unchanged": events_unchanged,
-                    "usage_unchanged": usage_unchanged,
-                },
-                "health": health["versions"],
-                "registry_consistency": consistency,
-                "files": [
-                    "summary.json",
-                    "registry.json",
-                    "policy_events.jsonl",
-                    "evaluations/",
-                    "production/missions/",
-                ],
-            }
-            write("summary.json", summary)
-            _print({k: v for k, v in summary.items() if k != "health"})
-            ok = (
-                thin["result"].outcome == "insufficient"
-                and failed["verdict"] == "FAILED"
-                and passed["verdict"] == "PASSED"
-                and missions["before"]["policy_version_id"] == seed["version_id"]
-                and missions["after"]["policy_version_id"] == candidate["version_id"]
-                and missions["later"]["policy_version_id"] == seed["version_id"]
-                and all(m["status"] == "COMPLETED" for m in missions.values())
-                and events_unchanged
-                and usage_unchanged
-                and not consistency
-            )
-            return EXIT_OK if ok else EXIT_FAILED
-
-    return asyncio.run(run())
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1754,44 +1088,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--attribution", action="store_true", help="add the contribution attribution"
     )
     replay.add_argument("--out", default=None, help="also write the report to this file")
-    evaluate = sub.add_parser("evaluate")  # step 8
-    common(evaluate, provider=True)
-    evaluate.add_argument(
-        "--plan", required=True, help="JSON: name, cases, strategies, trials, config"
-    )
-
-    policy = sub.add_parser("policy")  # step 9
+    policy = sub.add_parser("policy")  # read-only: the policy library has no write verbs
     policy_sub = policy.add_subparsers(dest="action", required=True)
-    p = policy_sub.add_parser("propose")
-    caller(p)
-    source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("--history", nargs="+", help="history evidence directories (read only)")
-    source.add_argument("--params", help="a person's parameters: JSON, whitelist only")
-    p.add_argument("--routing", default=None, help="JSON routing rules for rule R2")
-    p.add_argument("--min-missions", type=int, default=6, dest="min_missions")
-    p.add_argument("--min-group", type=int, default=5, dest="min_group")
-    p.add_argument("--note", default="")
-    p = policy_sub.add_parser("evaluate")
-    common(p, provider=True)
-    p.add_argument("proposal_id")
-    p.add_argument("--eval-dir", required=True, dest="eval_dir", help="a new directory")
-    p.add_argument("--trials", type=int, default=1)
-    p.add_argument("--case", action="append", default=None)
-    p.add_argument("--timeout", type=float, default=300.0, dest="timeout_seconds")
-    for name in ("approve", "reject"):
-        p = policy_sub.add_parser(name)
-        caller(p)
-        p.add_argument("proposal_id")
-        p.add_argument("--nonce", default=None)
-        p.add_argument("--note", default="")
-    p = policy_sub.add_parser("promote")
-    caller(p)
-    p.add_argument("proposal_id")
-    p.add_argument("--accept-fixture-evidence", action="store_true", dest="accept_fixture_evidence")
-    p = policy_sub.add_parser("rollback")
-    caller(p)
-    p.add_argument("--to", default=None, help="a RETIRED version (default: the most recent one)")
-    p.add_argument("--reason", required=True)
     for name in ("list", "status"):
         p = policy_sub.add_parser(name)
         common(p, provider=False)
@@ -1831,8 +1129,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_approval(args)
     if args.command == "replay":
         return cmd_replay(args)
-    if args.command == "evaluate":
-        return cmd_evaluate(args)
     if args.command == "policy":
         return cmd_policy(args)
     return EXIT_USAGE

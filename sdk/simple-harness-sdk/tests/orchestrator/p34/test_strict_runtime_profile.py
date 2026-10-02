@@ -4,23 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from dataclasses import replace
 from pathlib import Path
 
 import httpx
 import pytest
-from test_real_search_value import (
-    CONTEXT256_V7,
-    CONTEXT256_V9,
-    MODEL,
-    _approve_fixture_policy,
-    _official_runtime_options,
-    _search_runtime_config,
-    mission_spec,
-    native_ui_materials,
-)
 
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.deepseek_tokens import DeepSeekV41TokenEstimator
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.runtime.tool_gateway import read_tool_schemas
@@ -35,6 +23,7 @@ from simple_harness.providers import (
 )
 from simple_harness.providers.openai_compatible import openai_chat_request_payload
 
+MODEL = "deepseek-flash"
 STRICT = "deepseek-strict-v1"
 BETA = "https://api.deepseek.com/beta"
 LEGACY_FINGERPRINT = "deepseek-v41:0f06e5994d18d90023a59966c593aef152d66a0679f0df56c35e7268e15c959d"
@@ -138,65 +127,3 @@ def test_profile_rejects_mismatched_wire_counter_before_any_call(
                 RuntimeProfile("mismatch", _provider(client, provider_strict), MODEL,
                                context_policy=ContextPolicy(), tokenizer=counter)
     asyncio.run(case())
-
-
-def test_strict_pool_cold_read_and_legacy_replacement_refusal(tmp_path, tokenizer_path):
-    calls = []
-
-    def forbidden(req):
-        calls.append(req.url.path)
-        raise AssertionError("cold configuration checks cannot call provider")
-
-    async def case():
-        config = _search_runtime_config(tmp_path / "strict-pool", CONTEXT256_V9)
-        async with httpx.AsyncClient(transport=httpx.MockTransport(forbidden)) as client:
-            provider = _provider(client, True)
-            options = _official_runtime_options(
-                config, provider, base_url=BETA, model=MODEL,
-                tokenizer_path=tokenizer_path, budget_profile=CONTEXT256_V9,
-            )
-            profile = next(iter(options["profiles"].values()))
-            expected_id = "deepseek-strict-context-256k-v1"
-            assert profile.profile_id == expected_id
-            assert profile.default_max_output_tokens == config.default_max_output_tokens == 32768
-            assert profile.max_output_tokens_ceiling == 32768
-            assert profile.context_policy.max_input_tokens == 262144
-            async with Orchestrator(config, provider, **options) as orch:
-                version = _approve_fixture_policy(orch)
-                mission = await orch.submit_mission(replace(
-                    mission_spec(CONTEXT256_V9), search_policy_version_id=version,
-                ))
-                frozen = dict(mission.final_report)
-                assert frozen["runtime_profile_id"] == expected_id
-                assert orch._task_floor_for_mission(mission.id).base == 262144 + 32768
-            async with Orchestrator(config, provider, **options) as orch:
-                assert dict(orch.store.get_mission(mission.id).final_report) == frozen
-            legacy_provider = _provider(client, False)
-            legacy = RuntimeProfile(
-                expected_id, legacy_provider, MODEL, context_policy=profile.context_policy,
-                tokenizer=DeepSeekV41TokenEstimator(tokenizer_path),
-                default_max_output_tokens=32768, max_output_tokens_ceiling=32768,
-            )
-            with pytest.raises(ValueError, match="context identity"):
-                async with Orchestrator(config, legacy_provider, profiles={expected_id: legacy}):
-                    pass
-        assert calls == []
-    asyncio.run(case())
-
-
-def test_strict_export_preserves_fixed_material_and_acceptance():
-    old = native_ui_materials(CONTEXT256_V7)
-    new = native_ui_materials(CONTEXT256_V9)
-    old_spec, new_spec = dict(old["mission_spec"]), dict(new["mission_spec"])
-    for key in ("idempotency_key", "runtime_profile_id"):
-        old_spec.pop(key)
-        new_spec.pop(key)
-    assert old_spec == new_spec
-    for key in ("workspace_files", "test_scopes", "policy"):
-        if key in old:
-            assert old[key] == new[key]
-    assert new["runtime_contract"]["tool_schema_mode"] == STRICT
-    assert new["runtime_contract"]["endpoint"] == BETA + "/chat/completions"
-    assert old["contract_hash"] == (
-        "643dc6c26c02918246d33a4b0b77d47ff4c7a2fde3ba8963ccc86766175a10e5"
-    )

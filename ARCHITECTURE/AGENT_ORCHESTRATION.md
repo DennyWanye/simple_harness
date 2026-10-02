@@ -1,3 +1,5 @@
+最后更新：2026-10-02 CST（删旧平面模式第一刀·第 1 小步，SDK opt.128）。**策略评测与晋级整条线删除。** 一个编排库只有一个策略版本：建库时按部署配置写入的那一个；每个任务建立时绑定它。之后没有提议、评测、人工批准、晋级、回滚——策略接口（`api/policies.PolicyApi`）与命令行 `policy` 只剩 `list / show / status` 三个只读动作，命令行 `evaluate` 与两个演示（评测、晋级）删除。连带删除：只为评测服务的"评测库 / 钉候选版本"、"消融开关"（配置字段、检验路由里的消融分支、主循环两处读取）、晋级冷却时间配置。候选比较要先有经晋级批准的比较策略才能开，所以它从这一步起已经开不起来，源码留到第 4 小步删；Host 的"批准比较"测试场景（`native_compare.py`）已删。逐项记录见 `plans/2026-09-27-desktop-next/删旧平面模式-第一刀实施记录.md`。
+
 最后更新：2026-10-02 CST（SDK opt.127）。**强杀后端再重启，被打断的那一步原地重做，不再让任务失败。** 真机（`mission-baddf1eb2442858e`）：执行者的模型调用进行中强杀后端，重启后新进程接着跑那一轮，准入守卫拒绝了它——这次尝试的执行权（租约、执行图的当前派发、运行时租约）还记在已经不在了的那个进程名下；主循环把这种拒绝当成"不可重试"，判步骤失败、任务以"运行环境不可用"失败。现在准入守卫给这种情况单独的原因码 `lease_lost`（`runtime/provider_budget_guard.py`），"谁的错"分类表把它算作被打断（`orchestrator/failure_classes.py`），主循环不判停、留给"非模型原因原地重做"那条已有的路（不扣次数，同一步合计 6 次上限）。别的准入拒绝（预算、身份、配置）处理不变。测试：`tests/orchestrator/full_target/test_lease_lost_is_redone.py`、`p35/test_provider_budget_guard.py` 末尾一条、`step02/test_attempt_charge_by_fault.py` 分类表。
 
 最后更新：2026-10-02 CST（SDK opt.126）。**重启打断一次模型调用后的等待从 180 秒缩到 30 秒**（用户决定）：一次调用交出去之后结果不明（服务重启、连接断开）时，主循环等够时限才判它丢失并原地重做；这个时限原来取"多久没进展算卡住"的 180 秒，现在单独封顶 30 秒（`MAX_SERVICE_BLOCKER_SECONDS`）。真正还在进行的调用不走这条路，仍由 180 秒那个时限管。Host 层新增产品同形的脚本化场景（`backend/tests/orchestration/test_layered_scripted_lane.py`，六条：正常完成、审查判返工后重做、结果格式不对原地重做、一直不对到上限停下、调用中取消、调用中重启后接着跑）。
@@ -518,7 +520,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | true | 按 CLAUDE.md：测试阶段已完成的能力默认开启 |
-| `max_concurrency` / `max_concurrent_model_calls` | 1 / 1 | 与主对话共用 provider 限额。**只在编排库第一次 seed 时进入 ACTIVE 策略**，之后修改只会记一条 `PolicyConfigDrift`，要经策略晋级才会生效 |
+| `max_concurrency` / `max_concurrent_model_calls` | 1 / 1 | 与主对话共用 provider 限额。**只在编排库第一次 seed 时进入 ACTIVE 策略**，之后修改只会记一条 `PolicyConfigDrift`、不会生效（2026-10-02 起策略晋级流程已删，建库后没有任何东西替换当前版本；要不要改成"改了就换新版本"待用户定） |
 | `default_mission_max_tokens` / `default_mission_max_attempts` | 400000 / 12 | 代码常量（`OrchestrationSettings`），不从 config 读。**本部署不提供无上限的 Mission**：<br>• 请求里预算留空的项，由 Host 门口补上这个默认值；<br>• 用户填了的值原样保留；<br>• 0、负数、非整数一律拒绝，不会被默认值替换；<br>• 默认值在进 facade 之前补上，所以回执的 spec hash 已经包含它；<br>• `orchestration_status.mission_budget_defaults` 把默认值下发给表单占位符，详情显示实际生效的预算。<br>依据：原生验收时，留空预算的 Mission 被真实 Planner 编出 800 tokens 的 Task 预算，结果以 `budget_exhausted` 失败。裁决见计划 journal §4.4。<br>12 次的理由：Mission 级尝试次数统计的是所有 Task 的全部 Worker Attempt |
 | `decision_mode` | `"existing"` | NanoJev 决策滚动模式（§11）。白名单只有 `existing`｜`shadow`；**未知值/非字符串/缺键一律 `existing`**，`nanojev` 刻意不在白名单（Primary 是后续门）。只从 config 读，环境变量无效 |
 | `decision_shadow_timeout_seconds` | 空（无 Host 侧上限） | `shadow` 下观测的超时上限。只接受正数，硬上限 60s；0/负数/非数字/布尔 → 不设 Host 侧上限。超时按"观测失败"处理，plan 不受影响 |
@@ -611,7 +613,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 - **未验证**：真实模型/checkpoint 观测、真实 Mission 驱动循环内的端到端、Primary、`RETRY_OR_ESCALATE`。未打包、未发布。
   - **宿主崩溃后的逃逸进程认不出来**：金丝雀随执行目录一起删除，宿主重启时没有线索可扫（SDK journal 已登记，留待后续处理）。
 - DeepSeek 价目没有注入，金额显示"未计价"。
-- 策略只读：提议、评测、晋级要用 SDK CLI。
+- 策略只读：SDK 的策略接口与命令行也只剩 `list / show / status` 三个只读动作（提议、评测、晋级、回滚 2026-10-02 已删）。
 - 编排的证据目录（workspaces）不会自动清理。
 - PyInstaller 打包 spec 仍停在 0.6.4，尚未跟进。
 - 模型调用中途被杀之后，需要人来接管，SDK 不会自己收敛。自动恢复"结果未知"的回合，归入 P3.5 处理。租约为默认 60 s 时，"结果未知"要多久才出现，还没有在原生 App 里测过。

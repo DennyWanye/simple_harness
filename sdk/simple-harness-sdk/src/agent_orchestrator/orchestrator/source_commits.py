@@ -56,7 +56,6 @@ class SourceCommitsMixin:
             *,
             provider_kind: str = ...,
             policy_defaults: Mapping[str, Any] | None = ...,
-            policy_pin: Mapping[str, Any] | None = ...,
         ) -> tuple[Mission, bool]: ...
 
         def _emit(
@@ -80,7 +79,6 @@ class SourceCommitsMixin:
         principal: Principal,
         provider_kind: str = "unknown",
         policy_defaults: Mapping[str, Any] | None = None,
-        policy_pin: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """One initial source batch; the Orchestrator validates the deployment door.
 
@@ -140,7 +138,6 @@ class SourceCommitsMixin:
                 spec,
                 provider_kind=provider_kind,
                 policy_defaults=policy_defaults,
-                policy_pin=policy_pin,
             )
             receipts = [
                 self.register_source(

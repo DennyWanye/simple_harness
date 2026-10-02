@@ -468,7 +468,6 @@ class Orchestrator:
         routing: RoutingRules | None = None,
         connectors: Mapping[str, Any] | None = None,
         provider_kind: str | None = None,
-        policy_pin: Mapping[str, Any] | None = None,
         provider_token_estimator=None,
         provider_token_estimators: Mapping[str, Any] | None = None,
         operation_profiles: Any | None = None,
@@ -627,12 +626,11 @@ class Orchestrator:
         self._startup_assembly = startup_assembly
         self._actions: ActionExecutor | None = None
         self._routing = routing  # step 8 (D8-5'): part of the policy snapshot
-        # step 9 (plan D9-3' / D9-4'): the provider kind recorded with each binding, the
-        # evaluation pin (evaluation libraries only), per-version parameter and router caches
+        # step 9 (plan D9-3' / D9-4'): the provider kind recorded with each binding and the
+        # per-version parameter and router caches
         self._provider_kind = provider_kind or _provider_kind(
             provider, self._profiles, default_profile
         )
-        self._policy_pin = None if policy_pin is None else dict(policy_pin)
         self._policies: dict[str, dict[str, Any]] = {}
         self._routers: dict[tuple[str, str | None, str | None], ModelRouter] = {}
         self._route_drops: dict[str, dict[str, str]] = {}
@@ -789,7 +787,7 @@ class Orchestrator:
                     for key, profile in self._profiles.items()
                     if self._provider_admissions[key] is None
                 }
-            self._open_policy_library()  # step 9 (plan D9-3'): role, seed, drift
+            self._open_policy_library()  # step 9 (plan D9-3'): seed, drift
             self._assembled = assemble_orchestrator_runtime(
                 self._config,
                 profiles=self._profiles,
@@ -950,33 +948,11 @@ class Orchestrator:
 
         return resolve_params(self._config, routing=self._model_router.rules)
 
-    def _refuse_library(self, message: str) -> None:
-        if self._store is not None:
-            self._store.close()
-        self._store = None
-        self._commit = None
-        raise ValueError(message)
-
     def _open_policy_library(self) -> None:
-        """Plan D9-3': an evaluation library only takes pinned Missions; a production
-        library gets its seed (the resolved built-in policy) on first use; a
-        configuration whose whitelisted values differ from the ACTIVE version is
+        """Plan D9-3': a library gets its seed (the resolved built-in policy) on first
+        use; a configuration whose whitelisted values differ from the ACTIVE version is
         recorded as drift, and the ACTIVE version still governs."""
 
-        role = self.commit.library_role()
-        if self._policy_pin is not None:
-            if role == "production" or (role is None and self.store.list_missions()):
-                self._refuse_library(
-                    "a policy pin is only for an evaluation library; this is a production library"
-                )
-            self.commit.set_library_role("evaluation")
-            return
-        if role == "evaluation":
-            self._refuse_library(
-                "this is an evaluation library (pinned Missions only); a normal orchestrator does not run it"
-            )
-        if role is None:
-            self.commit.set_library_role("production")
         configured = self._config_policy()
         config_hash = sha256_hex(configured)[:16]
         active = self.commit.seed_policy(
@@ -2189,7 +2165,6 @@ class Orchestrator:
             principal=principal,
             provider_kind=self._provider_kind,
             policy_defaults=self._config_policy(),
-            policy_pin=self._policy_pin,
         )
 
     def _commit_mission(self, spec: MissionSpec) -> tuple[Mission, bool]:
@@ -2197,7 +2172,6 @@ class Orchestrator:
             spec,
             provider_kind=self._provider_kind,
             policy_defaults=self._config_policy(),
-            policy_pin=self._policy_pin,
         )
 
     def _check_mission_door(self, spec: MissionSpec) -> None:
@@ -8922,9 +8896,6 @@ class Orchestrator:
                 assessment_binding=assessment_binding,
                 evidence_resolver=evidence_resolver,
                 local_check_recorder_factory=local_check_factory,
-                ablated=frozenset({"critic_review"})
-                if "critic" in self._config.ablations
-                else frozenset(),
             )
         except _AcceptedSiblingSupersededVerification:
             self._note(f"result {result_id}: obsolete verifier after sibling acceptance")
@@ -13472,7 +13443,6 @@ class Orchestrator:
                 test_runs[criterion] = {**test_run.to_json(), "passed": test_run.passed}
             except Exception as error:  # noqa: BLE001
                 test_runs[criterion] = {"passed": False, "error": str(error), "stdout": ""}
-        judge_ablated = "critic" in self._config.ablations  # step 8 (D8-7'): no judge Critic
         # Assured lane: the free-text criteria were judged by the official
         # MISSION_FINAL review and restated, certified, on the adopted root
         # resolution. A second, uncertified judge Critic is not run (the assured
@@ -13480,7 +13450,7 @@ class Orchestrator:
         # (Host real model run 20, 2026-09-23: judge unavailable → criteria unmet).
         assured_grades = self._assured_root_grades(mission, new_mode)
         assured = assured_grades is not None or self._is_assured(mission.id)
-        needs_critic = not assured and not judge_ablated and any(
+        needs_critic = not assured and any(
             not c.startswith(("pytest:", "file:", ACTION_PREFIX))
             and (document_coverage is None or c.startswith("arbitration:"))
             for c in mission.success_criteria
@@ -13575,14 +13545,10 @@ class Orchestrator:
                         "criterion": criterion,
                         "met": bool(found and found.get("met")),
                         "judge": "critic_review",
-                        "source": "ablated"  # step 8: this run removed the judge Critic
-                        if judge_ablated
-                        else "unavailable"  # review P1-2: no judge ran — not a Verifier
+                        "source": "unavailable"  # review P1-2: no judge ran — not a Verifier
                         if critic is None
                         else ("task_critic" if reused_critic else "independent"),
-                        "reason": "judge ablated in this run"
-                        if judge_ablated
-                        else "no independent judge ran"
+                        "reason": "no independent judge ran"
                         if found is None
                         else found.get("reason"),
                     }

@@ -74,12 +74,12 @@ def test_demo_single_task_on_fixtures_writes_evidence(tmp_path, capsys):
 
 
 def test_every_scenario_is_implemented_and_an_unknown_one_is_a_usage_error(tmp_path, capsys):
-    """Step 9 implements the last scenario (policy-promotion): every step 2–9 has its
-    demo, and a scenario nobody built is an answer (exit 2), not a traceback."""
+    """Every listed scenario has its demo, and a scenario nobody built is an answer
+    (exit 2), not a traceback."""
 
     from agent_orchestrator.__main__ import EXIT_USAGE, SCENARIOS
 
-    assert sorted(SCENARIOS.values()) == list(range(2, 10)) and EXIT_NOT_IMPLEMENTED == 3
+    assert sorted(SCENARIOS.values()) == list(range(2, 8)) and EXIT_NOT_IMPLEMENTED == 3
     code = main(
         [
             "demo",

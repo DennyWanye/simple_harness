@@ -58,9 +58,6 @@ class DeploymentPolicy:
     approval_ttl_seconds: float = 24 * 3600.0
     max_action_handoffs_per_mission: int = 8  # D7-5': the hard cap under the Mission budget
     connector_timeout_seconds: float = 30.0
-    # step 9 (plan D9-9): the least time between two policy promotions / rollbacks'
-    # successors — frequent changes are bounded; a rollback itself is never held
-    policy_cooldown_seconds: float = 600.0
     # host support 0.9.8 (Host plan 2026-09-11 §3.1, plan review P0-1): False = no
     # model-written code runs on this machine — ``code_test`` is not a deployed layer,
     # ``pytest:`` criteria are refused, conflicts wait (DEFERRED) and ``run_tests`` is
@@ -137,7 +134,6 @@ class DeploymentPolicy:
             "approval_ttl_seconds": self.approval_ttl_seconds,
             "max_action_handoffs_per_mission": self.max_action_handoffs_per_mission,
             "connector_timeout_seconds": self.connector_timeout_seconds,
-            "policy_cooldown_seconds": self.policy_cooldown_seconds,
             "local_code_execution": self.local_code_execution,
             "code_execution": self.code_execution,
             "version": POLICY_VERSION,
@@ -346,7 +342,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "profile_failure_threshold",
             "profile_cooldown_seconds",
             "profile_wait_seconds",
-            "ablations",
             "extra",
         )
     },

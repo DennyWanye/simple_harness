@@ -851,7 +851,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         *,
         provider_kind: str = "unknown",
         policy_defaults: Mapping[str, Any] | None = None,
-        policy_pin: Mapping[str, Any] | None = None,
     ) -> tuple[Mission, bool]:
         """Idempotent on (tenant_id, idempotency_key); a different spec is a conflict."""
 
@@ -951,12 +950,11 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 limits=limits,
             )
             # step 9 (plan D9-3'): the policy version this Mission runs under, in the same
-            # transaction — a later promotion or configuration never changes it silently
+            # transaction — a later configuration never changes it silently
             binding = self.bind_policy(
                 mission_id,
                 provider_kind=provider_kind,
                 default_params=policy_defaults,
-                pin=policy_pin,
             )
             if spec.runtime_profile_id is not None:
                 if self._mission_profile_validator is None:

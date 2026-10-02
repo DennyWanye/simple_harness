@@ -34,22 +34,10 @@ from agent_orchestrator.observability.replay import (
 )
 from agent_orchestrator.storage.store import Store
 
-# Exact event kinds emitted by PolicyCommitsMixin._policy_event. The last two
-# are recorded deployment diagnostics, not formal registry transitions. Do not
+# Exact event kinds emitted by PolicyCommitsMixin._policy_event. The last one
+# is a recorded deployment diagnostic, not a formal registry transition. Do not
 # recognize these globally by prefix, or add them to the Mission projector.
-DEPLOYMENT_EVENTS = frozenset(
-    {
-        "PolicySeeded",
-        "PolicyProposed",
-        "PolicyEvaluated",
-        "PolicyApproved",
-        "PolicyRejected",
-        "PolicyPromoted",
-        "PolicyRolledBack",
-        "PolicyConfigDrift",
-        "PolicyProposalRefused",
-    }
-)
+DEPLOYMENT_EVENTS = frozenset({"PolicySeeded", "PolicyConfigDrift"})
 
 
 @cache
