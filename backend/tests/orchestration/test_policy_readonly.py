@@ -8,48 +8,21 @@ Draft written before the implementation (plan 2026-09-11 H2/H3).
 
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
 import pytest
 
-import deskpet.orchestration as orchestration_package
+from agent_orchestrator.api.policies import PolicyApi
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from deskpet.orchestration.native_fixture import FixtureWordCounter
 
 from ._support import notes_provider, notes_request
 
-WRITING_VERBS = {"propose", "approve", "reject", "promote", "rollback", "record_evaluation"}
 
+def test_the_policy_api_only_reads():
+    """Structure: the SDK's policy API has no verb that writes the policy library — what
+    the Host shows is all there is."""
 
-def test_no_host_module_calls_a_policy_writing_verb():
-    """Structure: nothing under deskpet/orchestration builds a PolicyApi and calls a verb that
-    writes the policy library (propose / approve / reject / promote / rollback)."""
-
-    package_dir = Path(orchestration_package.__file__).parent
-    offenders: list[str] = []
-    for path in sorted(package_dir.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        policy_names: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-                func = node.value.func
-                if isinstance(func, ast.Name) and func.id == "PolicyApi":
-                    policy_names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in WRITING_VERBS
-            ):
-                owner = node.func.value
-                if (isinstance(owner, ast.Name) and owner.id in policy_names) or (
-                    isinstance(owner, ast.Call)
-                    and isinstance(owner.func, ast.Name)
-                    and owner.func.id == "PolicyApi"
-                ):
-                    offenders.append(f"{path.name}:{node.lineno} {node.func.attr}")
-    assert offenders == []
+    public = {name for name in vars(PolicyApi) if not name.startswith("_")}
+    assert public == {"list", "show", "status"}
 
 
 @pytest.mark.asyncio
@@ -95,7 +68,7 @@ async def test_a_later_settings_change_is_shown_as_drift_not_applied(orchestrati
     await second.start()
     try:
         status = second.policy_status()
-        assert status["active_version_id"] == active  # nothing was promoted silently
+        assert status["active_version_id"] == active  # the edit did not replace it
         assert status["drift"] == [{"name": "mission_concurrency", "config": 2, "active": 1}]
     finally:
         await second.close()

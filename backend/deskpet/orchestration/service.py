@@ -293,10 +293,6 @@ class OrchestrationService:
                 from .native_search import native_search_provider
 
                 provider = native_search_provider()
-            elif case == "p34-approved-compare":
-                from .native_compare import native_compare_provider
-
-                provider = native_compare_provider()
             elif case == "native-context-rotation":
                 from .native_context import native_context_provider
 
@@ -397,15 +393,7 @@ class OrchestrationService:
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
         self._diagnostics_available = self._detect_diagnostics()
-        self._policy = PolicyApi(
-            self._orchestrator.commit, self._principal, deployment=self._deployment
-        )
-        if self._test_scenario == "document-ui" and os.environ.get(
-            "DESKPET_ORCH_UI_FIXTURE_CASE"
-        ) == "p34-approved-compare":
-            from .native_compare import install_compare_policy
-
-            install_compare_policy(self._orchestrator, self._principal)
+        self._policy = PolicyApi(self._orchestrator.commit, self._principal)
         # V1.4 scope amendment (2026-09-21): PR-7/NanoJev is deferred.
         # Retain the historical seam below without attaching it to this runtime.
 
@@ -1117,7 +1105,7 @@ class OrchestrationService:
             control = MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
             )
-            policy = PolicyApi(candidate.commit, self._principal, deployment=self._deployment)
+            policy = PolicyApi(candidate.commit, self._principal)
         except BaseException as error:
             try:
                 await candidate.__aexit__(type(error), error, error.__traceback__)

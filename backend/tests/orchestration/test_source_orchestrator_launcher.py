@@ -128,7 +128,7 @@ def test_publish_resume_does_not_repair_missing_or_changed_destination(launcher,
 
 
 @pytest.mark.parametrize("case", ["native-load-three-mission", "native-load-verifier-pressure",
-                                  "p34-approved-compare", "native-context-rotation"])
+                                  "native-context-rotation"])
 def test_load_case_requires_fixture_and_binds_actual_slot_limits(launcher, inputs, case):
     argv = [*_required_cli(inputs), "--fixture-case", case,
             "--logical-slots", "3", "--model-slots", "2"]

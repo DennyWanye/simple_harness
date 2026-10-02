@@ -12,7 +12,8 @@ trusted code, which model-written code is not.
 
 ``max_concurrency`` / ``max_concurrent_model_calls`` enter the ACTIVE policy only when
 the library is first seeded; a later change of the config records ``PolicyConfigDrift``
-and the ACTIVE version still governs until a promotion (plan review P1-5).
+and the ACTIVE version still governs (plan review P1-5); nothing replaces an ACTIVE
+version once the library exists.
 """
 
 from __future__ import annotations
