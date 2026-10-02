@@ -12,99 +12,128 @@
 * 涉及路径原样留在事件内容里。
 
 重试 / 换做法 / 补步骤 / 问人由规划器选；Harness 不取消步骤、不退做法、不写结论。
+
+产品同形部署上的真实回合（``taskgraph_exec.production_fixture``）：失败是执行者真交上来的结果
+没过检查（没写结论 / 结论没引证据），重试是规划器真答的"原样再做一次"，最终审查打回是审阅员
+真判的 REWORK。只有模型回复是脚本。
 """
 from __future__ import annotations
 
 import asyncio
+import json
+import sys
+from pathlib import Path
 
-from agent_orchestrator.contracts.models import TaskStatus
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.orchestrator.planning_repair_requests import (
-    collect_triggers,
-    pending_requests,
+_FULL_TARGET = Path(__file__).resolve().parent
+for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
+
+from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
+
+from agent_orchestrator.contracts.models import TaskStatus  # noqa: E402
+from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests  # noqa: E402
+from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+    retry_same_method,
+    review_input,
+    review_reply,
 )
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from test_h1i_production_entry import _config
-from test_h4_retry_runtime_entry import attempt, refined, repair, retry_payload
-
-REWRITE = {"paths": ["src/app.py"], "side_effect_kind": "READ_ONLY", "capabilities": []}
 
 
-def _running(loop, task_id, retry_of=None, turn="turn-1"):
-    row, intent = attempt(loop, task_id, retry_of)
-    loop.commit.claim_intent(intent.intent_id, owner=loop._owner, lease_seconds=60)
-    loop.commit.record_agent_created(intent.intent_id, agent_id="fixture", expected_turn_id=turn)
-    loop.commit.record_submitted(intent.intent_id, receipt={"turn_id": turn, "seq": 1})
-    return row
+def _result(mutate):  # type: ignore[no-untyped-def]
+    def reply(request):  # type: ignore[no-untyped-def]
+        body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+        mutate(body)
+        return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+    return reply
 
 
-def _facts(loop, mission_id):
-    return [row["request"]["context"] for row in pending_requests(loop.store, mission_id)]
+def _no_claims(body):  # type: ignore[no-untyped-def]
+    body["claims"] = []
 
 
-def test_a_refused_read_only_rewrite_is_one_request_carrying_count_fingerprint_and_paths(tmp_path):
+def _claims_without_evidence(body):  # type: ignore[no-untyped-def]
+    body["evidence"] = []
+    for claim in body["claims"]:
+        claim.pop("evidence", None)
+
+
+def _write():  # type: ignore[no-untyped-def]
+    return ("workspace_write_file", {"path": OUTPUT, "content": "# 要点\n"})
+
+
+def _retrying_planner(request):  # type: ignore[no-untyped-def]
+    """Adopt the method; on a failed step, retry it with the same method."""
+    return planner_reply(request) or retry_same_method(request)
+
+
+def _facts(store, mission_id):  # type: ignore[no-untyped-def]
+    return [row["request"]["context"] for row in pending_requests(store, mission_id)]
+
+
+def _failures(store, mission_id):  # type: ignore[no-untyped-def]
+    return [e for e in store.list_events(mission_id) if e.type == "VerificationFailed"]
+
+
+def _plan_shape(world):  # type: ignore[no-untyped-def]
+    network = world.dispatch.network(world.mission.id)
+    return int(network.plan_revision), sorted(str(i) for i in network.adopted_instance_ids)
+
+
+def test_a_failed_check_is_one_request_carrying_count_fingerprint_and_paths(tmp_path):
+    worker = scripted_worker(_write(), _result(_no_claims), _write(), _result(_no_claims))
+
     async def case():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, dispatch, task_id = await refined(loop, tmp_path, "facts-read-only-rewrite")
-            before = (int(dispatch.network(mission.id).plan_revision),
-                      sorted(str(i) for i in dispatch.network(mission.id).adopted_instance_ids))
-            first = _running(loop, task_id)
-            loop.commit.reject_result(first.id, turn_id="turn-1",
-                                      reason="read_only_leaf_rewrote_workspace", detail=REWRITE)
-            assert collect_triggers(loop, mission)
-            [context] = _facts(loop, mission.id)
-            assert context["event_type"] == "ResultRejected"
-            assert context["detail"]["reason"] == "read_only_leaf_rewrote_workspace"
-            assert context["detail"]["detail"]["paths"] == ["src/app.py"]
+        async with enabled_world(tmp_path, key="facts-repeated-failure", planner=_retrying_planner,
+                                 worker=worker) as world:
+            store, mission = world.store, world.mission
+            await world.commit_seed()
+            [task_id] = world.leaves()
+            before = _plan_shape(world)
+            await world.until(lambda: _facts(store, mission.id))
+            [context] = _facts(store, mission.id)
+            assert context["event_type"] == "VerificationFailed"
+            [failure] = context["detail"]["failures"]
+            assert failure["detail"]["problems"] == ["no claims were submitted"]
+            assert failure["detail"]["checked_artifacts"] == [OUTPUT]  # the paths, as they were
             occurrence = context["occurrence"]
             assert occurrence["step_failures"] == 1 and occurrence["consecutive_identical"] == 1
             fingerprint = occurrence["failure_fingerprint"]
             assert len(fingerprint) == 64
 
-            # the Planner chooses to retry; the same refusal again is the second of the same
-            def payload(package):
-                return retry_payload(dispatch, mission, task_id, first.id, package)
-            _, row = await repair(loop, mission, dispatch, task_id, payload)
-            assert row["status"] == "COMMITTED", row["detail_json"]
-            second = _running(loop, task_id, first.id, turn="turn-2")
-            loop.commit.reject_result(second.id, turn_id="turn-2",
-                                      reason="read_only_leaf_rewrote_workspace", detail=REWRITE)
-            assert collect_triggers(loop, mission)
-            [again] = _facts(loop, mission.id)
+            # the Planner chooses to retry; the same failure again is the second of the same
+            await world.until(lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id))
+            [again] = _facts(store, mission.id)
             assert again["occurrence"] == {
                 "step_failures": 2, "consecutive_identical": 2, "failure_fingerprint": fingerprint}
 
             # Harness reported and did nothing else: the step is not cancelled, the
             # method is still adopted, and no round was opened by a dedicated record
-            assert loop.store.get_task(task_id).status is not TaskStatus.CANCELLED
-            assert (int(dispatch.network(mission.id).plan_revision),
-                    sorted(str(i) for i in dispatch.network(mission.id).adopted_instance_ids)) == before
-            assert not [e for e in loop.store.list_events(mission.id)
+            assert store.get_task(task_id).status is not TaskStatus.CANCELLED
+            assert _plan_shape(world) == before
+            assert not [e for e in store.list_events(mission.id)
                         if e.type == "PlanningRejected" and e.payload.get("reason") in {
                             "read_only_leaf_needs_write", "repeated_verification_failure"}]
     asyncio.run(case())
 
 
 def test_a_different_failure_breaks_the_identical_run_but_not_the_step_count(tmp_path):
-    async def case():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, dispatch, task_id = await refined(loop, tmp_path, "facts-different-failure")
-            first = _running(loop, task_id)
-            loop.commit.reject_result(first.id, turn_id="turn-1",
-                                      reason="read_only_leaf_rewrote_workspace", detail=REWRITE)
-            assert collect_triggers(loop, mission)
-            [context] = _facts(loop, mission.id)
+    worker = scripted_worker(_write(), _result(_no_claims), _write(), _result(_claims_without_evidence))
 
-            def payload(package):
-                return retry_payload(dispatch, mission, task_id, first.id, package)
-            _, row = await repair(loop, mission, dispatch, task_id, payload)
-            assert row["status"] == "COMMITTED", row["detail_json"]
-            second = _running(loop, task_id, first.id, turn="turn-2")
-            loop.commit.reject_result(second.id, turn_id="turn-2",
-                                      reason="read_only_leaf_rewrote_workspace",
-                                      detail={**REWRITE, "paths": ["src/other.py"]})
-            assert collect_triggers(loop, mission)
-            [again] = _facts(loop, mission.id)
+    async def case():
+        async with enabled_world(tmp_path, key="facts-different-failure", planner=_retrying_planner,
+                                 worker=worker) as world:
+            store, mission = world.store, world.mission
+            await world.commit_seed()
+            await world.until(lambda: _facts(store, mission.id))
+            [context] = _facts(store, mission.id)
+            await world.until(lambda: len(_failures(store, mission.id)) == 2 and _facts(store, mission.id))
+            [again] = _facts(store, mission.id)
+            assert again["detail"]["failures"][0]["detail"]["problems"] == ["claims cite no evidence"]
             assert again["occurrence"]["step_failures"] == 2
             assert again["occurrence"]["consecutive_identical"] == 1
             assert again["occurrence"]["failure_fingerprint"] != context["occurrence"]["failure_fingerprint"]
@@ -118,36 +147,63 @@ def test_a_final_review_request_is_about_every_step_so_a_change_on_any_step_answ
     记成已处理）。最终审查审的是整个任务，不指向某一步：规划器给某个步骤补后继、或换掉根
     目标的做法，都是它的回答。
     """
-    from types import SimpleNamespace
+    seen: dict = {"final_reviews": 0}
 
-    from agent_orchestrator.orchestrator.planning_repair_requests import address_requests
+    def reviewer(request):  # type: ignore[no-untyped-def]
+        package = review_input(request)
+        if package is None:
+            return None
+        if str(package["review_key"]).startswith("assurance-mission-final:"):
+            seen["final_reviews"] += 1
+            if seen["final_reviews"] == 1:  # the first final review sends it back
+                return review_reply(package, verdict="REWORK", grade="FAIL", reason="要点没有写全。")
+        return review_reply(package)
+
+    def planner(request):  # type: ignore[no-untyped-def]
+        package = package_of(request)
+        if not package.get("repair_requests"):
+            return planner_reply(request)
+        world, task_id = seen["world"], seen["leaf"]
+        old = world.dispatch.network(world.mission.id).binding_for_task(task_id)
+        task_type = next(s for s in world.dispatch.require_planning_world().catalog.task_types()
+                         if s.goal_signature == old.goal_signature)
+        subject = next(row for row in package["planning_subjects"] if row["task_id"] == task_id)
+
+        def visible(kind, identity):  # type: ignore[no-untyped-def]
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+        # answered on one leaf: a successor that redoes it
+        return decision(subject["subject_key"], "REPAIR", {
+            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", task_id),
+            "obligation_ref": visible("obligation", str(old.obligation_id)),
+            "goal_type_ref": task_type.task_type_ref.to_json(),
+            "bindings": {"goal": "把要点写全。"}}, "最终审查说要点没写全，这一步换一个后继重做。")
+
+    provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
 
     async def case():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, dispatch, task_id = await refined(loop, tmp_path, "facts-final-review-scope")
-            network = dispatch.network(mission.id)
-            root = network.root_occurrence_ids[0]
-            record = SimpleNamespace(
-                record_id="rec-final-1", verdict="REWORK",
-                criteria=(SimpleNamespace(criterion_id="c-root", verdict="FAIL",
-                                          limitations=("the summary is missing",)),))
-            state = SimpleNamespace(record=record, package=SimpleNamespace(package_id="pkg-final-1"),
-                                    task_id=str(network.occurrence(root).task_id), detail="rejected")
-            assert loop._request_root_review_repair(mission, dispatch, state) is True
-            [pending] = pending_requests(loop.store, mission.id)
+        async with enabled_world(tmp_path, key="facts-final-review-scope", provider=provider) as world:
+            store, mission = world.store, world.mission
+            seen["world"] = world
+            await world.commit_seed()
+            [seen["leaf"]] = world.leaves()
+            network = world.dispatch.network(mission.id)
+
+            def final_review_request():  # type: ignore[no-untyped-def]
+                return [e.payload for e in store.list_events(mission.id) if e.type == "PlanningRepairRequested"
+                        and str(e.payload["source_key"]).startswith("root-review:")]
+
+            [requested] = await world.until(final_review_request)
             every_step = {str(spec.occurrence_id) for spec in network.occurrences} | {
                 str(spec.task_id) for spec in network.occurrences}
-            assert len(network.occurrences) > 1 and set(pending["trigger_scope"]) == every_step
+            assert len(network.occurrences) > 1 and set(requested["trigger_scope"]) == every_step
 
-            leaf = next(spec for spec in network.occurrences if str(spec.task_id) == task_id)
-            package = {
-                "planning_subjects": [{"subject_key": "subject-leaf", "task_id": task_id,
-                                       "occurrence_id": str(leaf.occurrence_id)}],
-                "repair_requests": [pending],
-            }
-            address_requests(loop.store, mission.id, package=package, decision_id="decision-on-a-leaf",
-                             decision_type="REPAIR", status="COMMITTED", subject_key="subject-leaf")
-            assert pending_requests(loop.store, mission.id) == []
+            # the Planner answers on one leaf; that committed change is an answer to it
+            await world.until(lambda: world.dispatch.network(mission.id).plan_revision == 2)
+            assert requested["request_id"] not in {row["request_id"] for row in pending_requests(store, mission.id)}
+            [addressed] = [e.payload for e in store.list_events(mission.id) if e.type == "PlanningRepairAddressed"
+                           and requested["request_id"] in e.payload["repair_request_ids"]]
+            assert addressed["status"] == "COMMITTED" and addressed["decision_type"] == "REPAIR"
     asyncio.run(case())
 
 

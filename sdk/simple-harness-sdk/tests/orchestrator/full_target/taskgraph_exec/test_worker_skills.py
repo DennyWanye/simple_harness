@@ -8,15 +8,17 @@ role lists them; the original Mission ∩ Task ∩ Role ∩ Deployment intersect
 them into the Worker's request — and only on a pool that serves them.  Every use asks the
 catalogue again, so a Skill suspended between two calls of one turn is refused by name.
 
-Real Orchestrator, real strict-graph enable, real Worker dispatch; only the model replies
-are scripted and the Skill is admitted through the test acceptance double.
+The dispatch-path cases run on the product deployment (``production_fixture``): its native
+pools, its Skill catalogue owner and its real Assurance acceptance reader.  A Skill is
+admitted only the product way — an evaluation Mission created under the evaluation's own
+key, its dispatch recorded, run to its accepted root conclusion, and that certificate named
+in the admission.  Only the model replies are scripted.
 """
 from __future__ import annotations
 
 import asyncio
 import sys
 from contextlib import asynccontextmanager
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -26,32 +28,21 @@ for _extra in (_TESTS / "agents", _TESTS / "agents" / "arp"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-import production_fixture  # noqa: E402
-import test_h1i_production_entry as entry  # noqa: E402
-from arp_fixture import ExactWordTokenizer, RecordingAuthorization, activation_receipt, meter_binding, standalone_profile, trusted_caller  # noqa: E402
-from skill_fixture import AcceptingAssurance, admit_skill, import_skill, lifecycle_command, md_bundle  # noqa: E402
-from test_execution_view import _run_worker  # noqa: E402
+from production_fixture import ProductionWorld, enabled_world, root_task, scripted_worker  # noqa: E402
+from skill_fixture import import_skill, lifecycle_command, md_bundle, trial_command  # noqa: E402
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi  # noqa: E402
-from agent_orchestrator.governance.permissions import Principal  # noqa: E402
+from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id  # noqa: E402
 from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES, DeploymentPolicy, effective_tools  # noqa: E402
-from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts  # noqa: E402
-from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance  # noqa: E402
 from agent_orchestrator.runtime import role_templates as roles  # noqa: E402
-from agent_orchestrator.runtime.model_router import RuntimeProfile as PoolProfile  # noqa: E402
-from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller  # noqa: E402
 from agent_orchestrator.runtime.tool_gateway import TOOL_NAMES  # noqa: E402
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, envelope_step, package_of  # noqa: E402
+from agent_orchestrator.testing.fixtures import role_of  # noqa: E402
+from agent_orchestrator.testing.product_world import DEFAULT_TOOLS  # noqa: E402
 from simple_harness.agents.arp import store as arp_store  # noqa: E402
+from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key  # noqa: E402
 from simple_harness.agents.arp.pins import Pin  # noqa: E402
-from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root  # noqa: E402
 from simple_harness.agents.arp.skill_tools import SKILL_DISCOVER_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, SKILL_LOAD_TOOL_NAME  # noqa: E402
-from simple_harness.agents.context.budget import ContextPolicy  # noqa: E402
 
 SKILLS = (SKILL_DISCOVER_TOOL_NAME, SKILL_LOAD_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME)
-OWNER = Pin("policy", "owner-skill-pool", 1, "0" * 64)
 
 
 # ---- the deployment declaration and the role ------------------------------------------------
@@ -93,67 +84,61 @@ def test_the_hierarchical_worker_lists_the_skill_tools():
 # ---- the real dispatch path ------------------------------------------------------------------
 
 
-def _native_pool(provider, tmp_path: Path, *, mission_loop=None):  # type: ignore[no-untyped-def]
-    """A native pool; with ``mission_loop`` it creates Agents in MISSION owner mode from the
-    orchestrator's own Mission source reader (the product's pools)."""
-    tokenizer = ExactWordTokenizer()
-    profile = standalone_profile()
-    sources = None
-    if mission_loop is not None:
-        from agent_orchestrator.runtime.mission_sources import MissionSourceReader
-        from arp_fixture import fixture_refs
-        from simple_harness.agents.arp.profile import RuntimeProfile
+#: The deployment offers the Skill tools; its pools serve them.
+SKILL_DEPLOYMENT = {"deployment_policy": DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS),
+                    "allowed_tools": (*DEFAULT_TOOLS, *SKILLS)}
 
-        profile = RuntimeProfile(profile_id=profile.profile_id, profile_revision=1, owner_mode="MISSION",
-                                 allow_lexical_degradation=True, context_policy=profile.context_policy, refs=fixture_refs())
-        sources = MissionSourceReader(lambda: mission_loop["loop"])
 
-    def arp_ports(execution_db: Path) -> ArpPorts:
-        root = bootstrap_root(execution_db.parent / "arp-root", root_id="root-skill-test")
-        return ArpPorts(root_dir=root.directory, profile=profile, activation_receipt=activation_receipt(),
-                        meter=meter_binding(tokenizer, input_limit=400_000, max_output=131_072), acceptance=AcceptingAssurance(),
-                        mission_sources=sources)
+def _owner_runtime(world: ProductionWorld):  # type: ignore[no-untyped-def]
+    """The deployment's Skill catalogue authority: the catalogue owner pool's runtime."""
+    return world.loop.assembled.pool(catalogue_owner_profile_id()).runtime
 
-    native = NativePlaneAssembly(arp_ports=arp_ports, authorization=RecordingAuthorization(),
-                                 caller_for=lambda intent: intent_caller(intent, principal_id="host:user", owner_contract_ref=OWNER))
-    return PoolProfile("default", provider, "agent-model", context_policy=ContextPolicy(), tokenizer=tokenizer, native_plane=native)
+
+def _caller(world: ProductionWorld, command_id: str):  # type: ignore[no-untyped-def]
+    """The deployment's authenticated control caller for one Skill command."""
+    return world.product.native.control_caller({"command_id": command_id})
 
 
 @asynccontextmanager
-async def _skill_world(tmp_path: Path, monkeypatch, *, worker_steps, native: bool, mission_mode: bool = False):  # type: ignore[no-untyped-def]
-    """``production_fixture.enabled_world`` with a deployment that offers the Skill tools
-    and a Mission charter that allows them; the pool is native or the legacy one."""
-    plain_spec = entry.MissionSpec
-    monkeypatch.setattr(entry, "MissionSpec", lambda **kw: plain_spec(**{**kw, "allowed_tools": (*kw["allowed_tools"], *SKILLS)}))
-    deployment = DeploymentPolicy(allowed_tools=(*TOOL_NAMES, *SKILLS), skill_tools=SKILLS)
-    config = replace(entry._config(tmp_path), deployment_policy=deployment)
-    reader = InstalledHtnWiringAcceptance()
-    reader._read()
-    provider = RoleScriptedProvider({"planner": [lambda request: entry._refine_reply(package_of(request))],
-                                     "worker": list(worker_steps)})
-    holder: dict = {}
-    extra = {"profiles": {"default": _native_pool(provider, tmp_path, mission_loop=holder if mission_mode else None)}} if native else {}
-    async with Orchestrator(config, provider, **extra) as loop:
-        holder["loop"] = loop
-        mission, _env, _binding, dispatch = entry._seed_new_protocol(loop, tmp_path, key="tg-worker-skills")
-        principal = Principal(loop._owner)
-        graph = loop.install_taskgraph(TaskGraphDeploymentPorts(
-            tenant_id=mission.tenant_id, principal=principal,
-            deployment_acceptance=reader, graph_budget=DEFAULT_PROJECTION_BUDGET))
-        intent = await entry._open_planner_round(loop, mission, dispatch, ordinal=1)
-        authorization = PlanningAuthorizationApi(loop.commit, tenant_id=mission.tenant_id, principal=principal)
-        grant = authorization.issue(mission.id, command_id="grant:skills", request_id=intent.intent_id)
-        graph.policy.enable_taskgraph_contract(mission.id, "enable:skills")
-        yield production_fixture.ProductionWorld(loop, mission, dispatch, graph, provider, intent, authorization, grant)
+async def _skill_world(tmp_path: Path, *, key: str, worker):  # type: ignore[no-untyped-def]
+    async with enabled_world(tmp_path, key=key, worker=worker, **SKILL_DEPLOYMENT) as world:
+        yield world
 
 
-def _worker_intent(world):  # type: ignore[no-untyped-def]
-    [intent_id] = [r[0] for r in world.loop.store.connection.execute(
-        "SELECT intent_id FROM dispatch_intents WHERE kind='attempt' AND mission_id=?", (world.mission.id,))]
-    return world.loop.store.get_intent(intent_id)
+def _worker_intent(world, mission_id=None):  # type: ignore[no-untyped-def]
+    [intent_id] = [r[0] for r in world.store.connection.execute(
+        "SELECT intent_id FROM dispatch_intents WHERE kind='attempt' AND mission_id=?", (mission_id or world.mission.id,))]
+    return world.store.get_intent(intent_id)
 
 
-def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspension_refuses_the_next_use(tmp_path, monkeypatch):
+def _session_of(runtime, intent):  # type: ignore[no-untyped-def]
+    connection = runtime.uow.database.connection
+    [session_id] = [r[0] for r in connection.execute("SELECT session_id FROM arp_agent_sessions WHERE agent_id=?", (intent.agent_id,))]
+    return connection, session_id
+
+
+def _last_worker_texts(world):  # type: ignore[no-untyped-def]
+    """The messages of the last Worker request (reviewers run on the same provider)."""
+    request = [r for r in world.provider.requests if role_of(r) == "worker"][-1]
+    return [str(m.content) for m in request.messages]
+
+
+def _pool_runtime(world, intent):  # type: ignore[no-untyped-def]
+    return world.loop.assembled.pool(intent.config["runtime_profile_id"]).runtime
+
+
+async def _complete(world, mission_id):  # type: ignore[no-untyped-def]
+    await world.until(lambda: str(world.store.get_mission(mission_id).status.value) == "COMPLETED", timeout=60)
+
+
+def _root_certificate(world, mission_id) -> Pin:  # type: ignore[no-untyped-def]
+    [row] = world.store.connection.execute(
+        "SELECT certificate_id, certificate_hash FROM assurance_use_certificates "
+        "WHERE mission_id=? AND purpose='ACCEPT' AND consumer_kind='ROOT_RESOLUTION'", (mission_id,)).fetchall()
+    return Pin("acceptance", str(row[0]), 0, str(row[1]))
+
+
+def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspension_refuses_the_next_use(tmp_path):
     seen: dict = {}
 
     def discover(request):  # type: ignore[no-untyped-def]
@@ -164,63 +149,62 @@ def test_a_mission_worker_discovers_and_executes_an_admitted_skill_and_a_suspens
         return (SKILL_EXECUTE_TOOL_NAME, {"skill_ref": seen["pin"], "arguments": {}})
 
     def suspend_then_execute(request):  # type: ignore[no-untyped-def]
-        runtime = seen["runtime"]
+        world, runtime = seen["world"], seen["runtime"]
         runtime.arp.lifecycle.transition(lifecycle_command(runtime, seen["revision"], "SUSPEND", acceptance=None),
-                                         caller=seen["caller"], command_id="suspend-1")
+                                         caller=_caller(world, "suspend-1"), command_id="suspend-1")
         return (SKILL_EXECUTE_TOOL_NAME, {"skill_ref": seen["pin"], "arguments": {}})
 
-    steps = (
-        discover, execute, suspend_then_execute,
-        ("workspace_write_file", {"path": "facts.md", "content": "Repository facts."}),
-        envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                      override=lambda value: {**value, "outputs": {"facts": "facts.md"}}),
-    )
+    # The first Mission is the Skill's evaluation (its Worker does the ordinary work); the
+    # second one's Worker uses the admitted Skill.
+    worker = scripted_worker()
+    using = scripted_worker(discover, execute, suspend_then_execute)
+
+    def route(request):  # type: ignore[no-untyped-def]
+        return (using if seen.get("admitted") else worker)(request)
 
     async def case():  # type: ignore[no-untyped-def]
-        async with _skill_world(tmp_path, monkeypatch, worker_steps=steps, native=True) as world:
-            runtime = world.loop.assembled.pool("default").runtime
+        async with _skill_world(tmp_path, key="tg-worker-skills-unused", worker=route) as world:
+            seen["world"] = world
+            runtime = _owner_runtime(world)
             revision = import_skill(runtime, md_bundle("repo-notes", "记录仓库事实时先列出文件。"), command="install-1").revision
-            admit_skill(runtime, revision, command="admit-1")
-            seen.update(runtime=runtime, revision=revision, pin=revision.pin.to_json(), caller=trusted_caller())
-            await world.commit_seed()
-            await _run_worker(world)
+            binding = runtime.arp.lifecycle.begin_trial(trial_command(runtime, revision), caller=_caller(world, "trial-1"),
+                                                        command_id="trial-1")
+            evaluation = Pin.from_json(binding["evaluation_ref"])
+            # The Host creates the evaluation Mission under the evaluation's key and records its dispatch.
+            created = world.product.create({"goal": world.mission.goal, "success_criteria": list(world.mission.success_criteria),
+                                             "idempotency_key": evaluation_mission_key(evaluation)})
+            trial_mission = created["mission_id"]
+            runtime.arp.lifecycle.record_evaluation_dispatch(
+                evaluation, mission_id=trial_mission, task_id=root_task(trial_mission),
+                caller=_caller(world, "dispatch-1"), command_id="dispatch-1")
+            await _complete(world, trial_mission)
+            await _complete(world, world.mission.id)  # no Worker of an earlier Mission is still running
+            runtime.arp.lifecycle.admit({
+                "schema_version": 1, "skill_ref": revision.pin.to_json(),
+                "evaluation_acceptance_ref": _root_certificate(world, trial_mission).to_json(),
+                "evaluation_policy_ref": binding["policy_ref"], "scope_ref": binding["scope_ref"],
+            }, caller=_caller(world, "admit-1"), command_id="admit-1")
+            seen.update(runtime=runtime, revision=revision, pin=revision.pin.to_json(), admitted=True)
 
-            intent = _worker_intent(world)
+            user = world.product.create({"goal": world.mission.goal, "success_criteria": list(world.mission.success_criteria),
+                                         "idempotency_key": "tg-worker-skills"})["mission_id"]
+            await world.until(lambda: world.store.connection.execute(
+                "SELECT COUNT(*) FROM results WHERE mission_id=? AND verification_state='DONE'", (user,)).fetchone()[0])
+
+            intent = _worker_intent(world, user)
             assert set(SKILLS) <= set(intent.config["allowed_tools"])
             assert set(SKILLS) <= set(intent.config["agent_config"]["tool_names"])
             assert set(SKILLS) <= set(seen["offered"])
-            connection = runtime.uow.database.connection
-            [session_id] = [r[0] for r in connection.execute("SELECT session_id FROM arp_agent_sessions WHERE agent_id=?", (intent.agent_id,))]
+            connection, session_id = _session_of(_pool_runtime(world, intent), intent)
             uses = arp_store.read_skill_uses(connection, session_id)
             assert [u["mode"] for u in uses] == ["INSTRUCTIONS"]  # the suspended call bound no use
-            texts = [str(m.content) for m in world.provider.requests[-1].messages]
-            assert any("记录仓库事实时先列出文件" in t for t in texts)  # the executed instructions reached the model
+            texts = _last_worker_texts(world)
             assert any("SKILL_NOT_ADMITTED" in t for t in texts), texts[-3:]  # re-checked at the next use
 
     asyncio.run(case())
 
 
-def test_a_legacy_pool_never_freezes_skill_tools_it_cannot_serve(tmp_path, monkeypatch):
-    steps = (
-        ("workspace_write_file", {"path": "facts.md", "content": "Repository facts."}),
-        envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                      override=lambda value: {**value, "outputs": {"facts": "facts.md"}}),
-    )
-
-    async def case():  # type: ignore[no-untyped-def]
-        async with _skill_world(tmp_path, monkeypatch, worker_steps=steps, native=False) as world:
-            await world.commit_seed()
-            await _run_worker(world)
-            intent = _worker_intent(world)
-            assert not set(SKILLS) & set(intent.config["allowed_tools"])
-            assert intent.config["prompt_version"] == "worker-hierarchical-v5"
-            assert world.loop.store.connection.execute(
-                "SELECT COUNT(*) FROM results WHERE mission_id=? AND verification_state='DONE'", (world.mission.id,)).fetchone()[0] >= 1
-
-    asyncio.run(case())
-
-
-def test_a_skill_in_trial_is_used_by_the_worker_of_its_own_evaluation_mission(tmp_path, monkeypatch):
+def test_a_skill_in_trial_is_used_by_the_worker_of_its_own_evaluation_mission(tmp_path):
     """NEXT-TG-1.0 §11 admission evaluation, real dispatch path in MISSION owner mode: before
     the trial is dispatched to this Mission the Worker's call is refused; once it is, the
     catalogue page says the Skill is usable here and the Worker executes it."""
@@ -230,40 +214,33 @@ def test_a_skill_in_trial_is_used_by_the_worker_of_its_own_evaluation_mission(tm
         return (SKILL_EXECUTE_TOOL_NAME, {"skill_ref": seen["pin"], "arguments": {}})
 
     def dispatch_then_discover(request):  # type: ignore[no-untyped-def]
-        world = seen["world"]
-        runtime = seen["runtime"]
+        world, runtime = seen["world"], seen["runtime"]
         runtime.arp.lifecycle.record_evaluation_dispatch(
-            seen["evaluation"], mission_id=world.mission.id, task_id=f"root-{world.mission.id}", caller=trusted_caller(), command_id="dispatch-1")
+            seen["evaluation"], mission_id=world.mission.id, task_id=root_task(world.mission.id),
+            caller=_caller(world, "dispatch-1"), command_id="dispatch-1")
         return (SKILL_DISCOVER_TOOL_NAME, {"limit": 8})
 
     def execute(request):  # type: ignore[no-untyped-def]
         return (SKILL_EXECUTE_TOOL_NAME, {"skill_ref": seen["pin"], "arguments": {}})
 
-    steps = (
-        refused_first, dispatch_then_discover, execute,
-        ("workspace_write_file", {"path": "facts.md", "content": "Repository facts."}),
-        envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                      override=lambda value: {**value, "outputs": {"facts": "facts.md"}}),
-    )
-
     async def case():  # type: ignore[no-untyped-def]
-        async with _skill_world(tmp_path, monkeypatch, worker_steps=steps, native=True, mission_mode=True) as world:
-            from skill_fixture import trial_command
-            runtime = world.loop.assembled.pool("default").runtime
+        worker = scripted_worker(refused_first, dispatch_then_discover, execute)
+        async with _skill_world(tmp_path, key="tg-worker-skills-trial", worker=worker) as world:
+            runtime = _owner_runtime(world)
             revision = import_skill(runtime, md_bundle("trial-notes", "试用：先列出文件再记录。"), command="install-1").revision
-            binding = runtime.arp.lifecycle.begin_trial(trial_command(runtime, revision), caller=trusted_caller(), command_id="trial-1")
+            binding = runtime.arp.lifecycle.begin_trial(trial_command(runtime, revision), caller=_caller(world, "trial-1"),
+                                                        command_id="trial-1")
             seen.update(world=world, runtime=runtime, pin=revision.pin.to_json(), evaluation=Pin.from_json(binding["evaluation_ref"]))
             await world.commit_seed()
-            await _run_worker(world)
+            await world.run_worker()
 
             intent = _worker_intent(world)
-            connection = runtime.uow.database.connection
-            [session_id] = [r[0] for r in connection.execute("SELECT session_id FROM arp_agent_sessions WHERE agent_id=?", (intent.agent_id,))]
+            connection, session_id = _session_of(_pool_runtime(world, intent), intent)
             from simple_harness.agents.arp import mission_sources
             assert mission_sources.read_record(connection, session_id)["sources"]["mission_id"] == world.mission.id
             uses = arp_store.read_skill_uses(connection, session_id)
             assert [u["mode"] for u in uses] == ["INSTRUCTIONS"]  # only the call after the dispatch
-            texts = [str(m.content) for m in world.provider.requests[-1].messages]
+            texts = _last_worker_texts(world)
             assert any("SKILL_NOT_ADMITTED" in t for t in texts)  # the call before the dispatch
             assert any('"name":"trial-notes"' in t and '"current_usable":true' in t and '"state":"TRIAL"' in t for t in texts), texts[-4:]
             assert any("试用：先列出文件再记录" in t for t in texts)

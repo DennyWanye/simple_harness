@@ -15,17 +15,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from production_fixture import _config
+from production_fixture import product_loop, root_of
 from agent_orchestrator.contracts import MissionStatus
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.governance.policies import deployed_layers
-from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
-from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
-from agent_orchestrator.planning.htn.observers.code import code_observers
-from agent_orchestrator.planning.htn.world import build_planning_world
-from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
@@ -35,12 +26,12 @@ def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
         str(tmp_path), 'after_executor'], capture_output=True, text=True, timeout=60, check=False)
     assert child.returncode == 84, (child.returncode, child.stdout, child.stderr)
     source = json.loads((tmp_path / 'recovery-source.json').read_text())
-    config = _config(tmp_path)
-    store = Store.open(config.orchestrator_db)
+    store = Store.open(root_of(tmp_path) / 'orchestrator.db')
     try:
         row = store.connection.execute(
             'SELECT json FROM mission_domains WHERE mission_id=?', (source['mission_id'],)).fetchone()
         body = json.loads(row[0])
+        # A Mission frozen by an older build: its domain profile has the retired shape.
         body.update(schema=1, planner_floor=[], synthesis_default_policy=[],
                     conflict_template={'policy': [], 'decides_with': 'code_test', 'probe': None})
         with store.transaction():
@@ -52,19 +43,11 @@ def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
     finally:
         store.close()
 
-    def assemble(loop):
-        mission = loop.store.get_mission(source['mission_id'])
-        planning = build_planning_world(mission.id, domains=('code',), semantics=HtnStore(loop.store),
-            deployed_layers=deployed_layers(loop._config.deployment_policy),
-            observers=code_observers(source['repository'], allow_test_execution=True))
-        loop.install_hierarchical(planning=planning)
-        loop.install_taskgraph(TaskGraphDeploymentPorts(tenant_id=mission.tenant_id,
-            principal=Principal(source['issuer_id']), deployment_acceptance=InstalledHtnWiringAcceptance(),
-            graph_budget=DEFAULT_PROJECTION_BUDGET))
-
     async def recover():
         provider = RoleScriptedProvider({})
-        async with Orchestrator(config, provider, startup_assembly=assemble) as loop:
+        # The product's own startup assembly (planning, TaskGraph, Assurance) on the same root.
+        async with product_loop(tmp_path, provider) as product:
+            loop = product.loop
             await loop.recover()
             await loop._cycle()
             stopped = loop.store.get_mission(source['mission_id'])

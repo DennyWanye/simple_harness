@@ -7,7 +7,7 @@
 冻结了旧版的尝试；引用了旧版的已通过结果）发一条"证据失效"修复请求；新登记资料不发请求；
 影响范围里的叶子步骤都在请求之后重新验收通过时，系统记"已处理"，不再逼规划器开新轮。
 
-真实编排器、真实严格执行图、真实执行者派发；只有模型回复是脚本。
+产品同形部署上的真实编排器、执行图与执行者派发；只有模型回复是脚本。
 """
 from __future__ import annotations
 
@@ -20,25 +20,28 @@ for _extra in (_TESTS / "orchestrator" / "full_target", _TESTS / "orchestrator" 
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import enabled_world  # noqa: E402
-from test_execution_view import _run_worker  # noqa: E402
+import json  # noqa: E402
 
-from agent_orchestrator.api.facade import MissionControlV1  # noqa: E402
+from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
+
 from agent_orchestrator.contracts.state_machines import TERMINAL_ATTEMPT  # noqa: E402
-from agent_orchestrator.governance.permissions import Principal  # noqa: E402
 from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
     ADDRESSED,
     REQUESTED,
     SOURCE_CHANGE_ASSESSED,
     collect_triggers,
 )
-from agent_orchestrator.testing.fixtures import envelope_step  # noqa: E402
 
-STEPS = (
-    ("workspace_write_file", {"path": "facts.md", "content": "Repository facts."}),
-    envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                  override=lambda value: {**value, "outputs": {"facts": "facts.md"}}),
-)
+
+def _no_claims(request):  # type: ignore[no-untyped-def]
+    """The file is written, but the result states no claim (its rule check fails)."""
+    body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+    body["claims"] = []
+    return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+
+
+def _worker():  # type: ignore[no-untyped-def]
+    return scripted_worker(("workspace_write_file", {"path": OUTPUT, "content": "Repository facts."}), _no_claims)
 PATH = "sources/data.csv"
 
 
@@ -52,23 +55,14 @@ def _source_requests(loop, mission_id: str):  # type: ignore[no-untyped-def]
     return [e for e in _events(loop, mission_id, REQUESTED) if str(e.payload["source_key"]).startswith("source:")]
 
 
-async def _until_attempt_exists(world) -> None:  # type: ignore[no-untyped-def]
-    async with asyncio.timeout(30):
-        while world.loop.store.connection.execute(
-                "SELECT 1 FROM attempts WHERE mission_id=?", (world.mission.id,)).fetchone() is None:
-            await world.loop._cycle()
-            await asyncio.sleep(.01)
-
-
 def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_system_settles_it_after_reacceptance(tmp_path):
     async def case():  # type: ignore[no-untyped-def]
-        async with enabled_world(tmp_path, key="tg-source-replan", worker_steps=STEPS) as world:
+        async with enabled_world(tmp_path, key="tg-source-replan", worker=_worker(), hold_worker=True) as world:
             loop, mission = world.loop, world.mission
-            control = MissionControlV1(loop, tenant_id=mission.tenant_id, principal=Principal(loop._owner))
+            control = world.product.control  # the deployment's authenticated control channel
             first = control.register_source({"mission_id": mission.id, "path": PATH, "content": "region,amount\n华东,1\n",
                                              "kind": "text", "idempotency_key": "reg-data-1"})
-            await world.commit_seed()
-            await _until_attempt_exists(world)
+            await world.commit_seed()  # the Worker's model call is held: its Attempt is running
             [attempt] = [a for t in loop.store.list_tasks(mission.id) for a in loop.store.list_attempts(t.id)]
             # 派发时冻结的就是第 1 版
             assert loop._frozen_source_binding(attempt)["source_versions"][PATH] == first["version_hash"]
@@ -89,8 +83,9 @@ def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_sy
             collect_triggers(loop, mission)
             assert not _source_requests(loop, mission.id)
 
-            # 执行者跑完（这个夹具的脚本执行者不交 claim，验收判 FAIL，走普通的验收失败请求）
-            await _run_worker(world)
+            # 执行者跑完（这里的脚本执行者不交 claim，验收判 FAIL，走普通的验收失败请求）
+            world.provider.release.set()
+            await world.run_worker()
             assert loop.store.get_attempt(attempt.id).status in TERMINAL_ATTEMPT
             collect_triggers(loop, mission)
             # 现在评估：拿着旧版跑过的尝试记在案，通过的结果没有引用它 → 只记评估、不发资料请求

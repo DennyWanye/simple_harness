@@ -1,198 +1,61 @@
 # SPDX-License-Identifier: Apache-2.0
-"""NEXT-TG-1.0 §6.4: a Mission created to run on the strict TaskGraph waits for it.
+"""A hierarchical Mission's plan is committed only onto its TaskGraph binding.
 
-The requirement is written in the creation transaction.  After the real planning
-grant and before the authenticated enable, the planning request neither dispatches
-(no local REFINE, no model call) nor can any plan be committed; the Mission waits
-visibly.  After the enable the same request commits a plan that carries its TaskGraph
-revision record.  The enable is recorded as a system action on the principal's
-behalf, and one Mission-derived command id yields one binding however often it runs.
+The product binds the TaskGraph in the creation transaction (user decision 2026-10-03), so
+there is no "required but not bound yet" waiting period any more.  The commit gate still
+holds for a Mission that somehow has no binding: here one is created by bypassing the
+deployment's create path (the authenticated facade, then the deployment's own root
+initializer — everything except the binding), and the Planner's real reply cannot commit
+an unbound plan: the commit is refused by name (``TASKGRAPH_NOT_BOUND``).
 
-The deployment-acceptance reader below is a unit-test double: this file tests the
-waiting/commit gates, not the installed source proof (``InstalledHtnWiringAcceptance``
-is exercised by the production-seed tests against the real installed package).
+2026-10-03 (A′ step 2): today an unbound Mission without the old creation-time requirement
+row commits an unbound plan (the participant is only built for a bound Mission and the
+"required, not bound yet" check reads the requirement row the deployment no longer writes);
+the single ``TASKGRAPH_NOT_BOUND`` refusal arrives with the removal of the waiting mechanism
+(A′ plan §2 item 1).  Strict xfail until then.
 """
 from __future__ import annotations
 
 import asyncio
-import sys
-from pathlib import Path
 
 import pytest
 
-_FULL_TARGET = Path(__file__).resolve().parents[1]
-if str(_FULL_TARGET) not in sys.path:
-    sys.path.insert(0, str(_FULL_TARGET))
+from production_fixture import enabled_world
 
-from test_h1i_production_entry import _config, _open_planner_round, _refine_reply, _seed_new_protocol
-
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.graph.revision_records import SourceRef
-from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
-from agent_orchestrator.orchestrator.taskgraph_requirement import (
-    awaiting_taskgraph,
-    enable_command_id,
-    missions_awaiting_taskgraph,
-    require_taskgraph,
-    taskgraph_required,
-)
+from agent_orchestrator.deployment.root import initialize_root
 from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.storage.store import StoreError
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of
+from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, user_goal_world
 
 
-def _acceptance(store, mission_id, policy):
-    return SourceRef(channel="h1h_deployment_acceptance", identity="d" * 64, revision=1, digest="d" * 64)
-
-
-async def _drive(loop, intent, *, rounds: int = 1):
-    for _ in range(rounds):
-        current = loop.store.get_intent(intent.intent_id)
-        if current.state == "SUBMITTED":
-            await loop._collect(current)
-        elif current.state in {"PENDING", "CLAIMED", "AGENT_CREATED"}:
-            await loop._dispatch(current)
-        await asyncio.sleep(0)
-    return loop.store.get_intent(intent.intent_id)
-
-
-def _world(loop, tmp_path, key, *, required=True):
-    mission, _env, _binding, dispatch = _seed_new_protocol(loop, tmp_path, key=key)
-    if required:
-        with loop.store.transaction():
-            require_taskgraph(loop.store, mission.id)
-    principal = Principal(loop._owner)
-    graph = loop.install_taskgraph(TaskGraphDeploymentPorts(
-        tenant_id=mission.tenant_id, principal=principal,
-        deployment_acceptance=_acceptance, graph_budget=DEFAULT_PROJECTION_BUDGET))
-    return mission, dispatch, principal, graph
-
-
-def test_a_required_mission_waits_after_its_grant_and_plans_only_once_bound(tmp_path):
-    """**Mutation**: drop the ``awaits_taskgraph`` gate in ``_dispatch`` → red (the
-    deterministic REFINE is attempted and refused by the commit gate, or commits)."""
+@pytest.mark.xfail(strict=True, reason="TASKGRAPH_NOT_BOUND for every unbound plan commit lands with the "
+                   "removal of the TaskGraph waiting mechanism (A′ plan §2 item 1); src unchanged in step 2")
+def test_no_unbound_plan_is_committed_for_a_hierarchical_mission(tmp_path):
+    """**Mutation**: drop the ``TASKGRAPH_NOT_BOUND`` refusal in the plan commit → red (the
+    plan commits without a TaskGraph revision record)."""
 
     async def case():
-        provider = RoleScriptedProvider({"planner": [lambda request: _refine_reply(package_of(request))]})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, dispatch, principal, graph = _world(loop, tmp_path, "tg-required")
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(loop.commit, tenant_id=mission.tenant_id, principal=principal).issue(
-                mission.id, command_id="grant:tg-required", request_id=intent.intent_id)
-            assert taskgraph_required(loop.store, mission.id)
-            assert missions_awaiting_taskgraph(loop.store) == [mission.id]
-
-            waiting = await _drive(loop, intent, rounds=3)
-            assert waiting.state == "PENDING"
-            assert HtnStore(loop.store).active_plan_revision(mission.id) is None
-            assert provider.by_role.get("planner", 0) == 0
-            assert loop._has_pending_planning_waits(mission.id)
-
-            receipt = graph.policy.enable_taskgraph_contract(mission.id, enable_command_id(mission.id))
-            assert not awaiting_taskgraph(loop.store, mission.id)
-            assert missions_awaiting_taskgraph(loop.store) == []
-            async with asyncio.timeout(20):
-                while (current := await _drive(loop, intent)).state != "SETTLED":
-                    assert current.state not in {"FAILED", "CANCELLED"}, current.state
-            active = HtnStore(loop.store).active_plan_revision(mission.id)
-            assert active is not None and active.revision == 1
+        async with enabled_world(tmp_path, key="tg-bound-mission") as world:
+            loop, product = world.loop, world.product
+            created = product.control.create({"goal": world.mission.goal, "idempotency_key": "tg-unbound",
+                                              "success_criteria": list(world.mission.success_criteria),
+                                              "budget": {"max_tokens": 8_000_000, "max_attempts": 12}})
+            unbound = loop.store.get_mission(created["mission_id"])
+            initialize_root(loop, unbound, product.deployment.principal, world_factory=user_goal_world,
+                            root_type=USER_GOAL_NAMES.root_type, task_prefix=USER_GOAL_NAMES.task_prefix,
+                            duty_prefix=USER_GOAL_NAMES.duty_prefix)
             assert loop.store.connection.execute(
-                "SELECT source_kind FROM taskgraph_revision_records WHERE mission_id=? AND revision=1",
-                (mission.id,)).fetchone()[0] == "SEED_COMMIT"
+                "SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?", (unbound.id,)).fetchone() is None
 
-            # One Mission-derived command id: a second (e.g. concurrent) enable reads
-            # the same receipt; there is one binding.
-            again = graph.policy.enable_taskgraph_contract(mission.id, enable_command_id(mission.id))
-            assert again == receipt
+            def refused():
+                return [e for e in loop.store.iter_events(unbound.id) if "TASKGRAPH_NOT_BOUND" in str(e.payload)]
+
+            def planned():
+                return refused() or HtnStore(loop.store).active_plan_revision(unbound.id)
+
+            await world.until(planned)
+            assert refused()
+            assert HtnStore(loop.store).active_plan_revision(unbound.id) is None
             assert loop.store.connection.execute(
-                "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mission.id,)).fetchone()[0] == 1
-            [event] = [e for e in loop.store.iter_events(mission.id) if e.type == "TaskGraphContractEnabled"]
-            assert event.actor_type == "system" and event.actor_id == principal.principal_id
-            assert event.payload["enabled_by"] == "HOST_DELEGATED"
-            with pytest.raises(Exception, match="TG_IMMUTABLE"):
-                loop.store.connection.execute("DELETE FROM taskgraph_requirements WHERE mission_id=?",
-                                              (mission.id,))
-
-    asyncio.run(case())
-
-
-def test_no_unbound_plan_is_committed_for_a_required_mission(tmp_path):
-    """The commit gate holds even when a caller bypasses the dispatch wait.
-
-    **Mutation**: drop the ``TASKGRAPH_REQUIRED_NOT_BOUND`` check → red (the plan
-    commits without a TaskGraph revision record)."""
-
-    async def case():
-        provider = RoleScriptedProvider({"planner": [lambda request: _refine_reply(package_of(request))]})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, dispatch, principal, _graph = _world(loop, tmp_path, "tg-required-commit")
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(loop.commit, tenant_id=mission.tenant_id, principal=principal).issue(
-                mission.id, command_id="grant:tg-required-commit", request_id=intent.intent_id)
-            from agent_orchestrator.orchestrator import taskgraph_requirement
-            original = taskgraph_requirement.awaits_taskgraph
-            taskgraph_requirement.awaits_taskgraph = lambda store, intent: False
-            try:
-                for _ in range(4):
-                    current = loop.store.get_intent(intent.intent_id)
-                    if current.state in {"SETTLED", "FAILED", "CANCELLED"}:
-                        break
-                    await _drive(loop, intent)
-            finally:
-                taskgraph_requirement.awaits_taskgraph = original
-            assert HtnStore(loop.store).active_plan_revision(mission.id) is None
-            refusals = [e for e in loop.store.iter_events(mission.id)
-                        if "TASKGRAPH_REQUIRED_NOT_BOUND" in str(e.payload)]
-            assert refusals
-
-    asyncio.run(case())
-
-
-def test_the_requirement_is_written_only_at_creation(tmp_path):
-    async def case():
-        provider = RoleScriptedProvider({"planner": [lambda request: _refine_reply(package_of(request))]})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, dispatch, principal, graph = _world(loop, tmp_path, "tg-late", required=False)
-            with pytest.raises(StoreError, match="TRANSACTION_REQUIRED"):
-                require_taskgraph(loop.store, mission.id)
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(loop.commit, tenant_id=mission.tenant_id, principal=principal).issue(
-                mission.id, command_id="grant:tg-late", request_id=intent.intent_id)
-            async with asyncio.timeout(20):
-                while (current := await _drive(loop, intent)).state != "SETTLED":
-                    assert current.state not in {"FAILED", "CANCELLED"}, current.state
-            # An existing Mission with a plan is not converted afterwards.
-            with pytest.raises(StoreError, match="ONLY_AT_CREATION"):
-                with loop.store.transaction():
-                    require_taskgraph(loop.store, mission.id)
-            assert not taskgraph_required(loop.store, mission.id)
-
-    asyncio.run(case())
-
-
-def test_a_revoked_grant_releases_the_wait_to_the_original_refusal(tmp_path):
-    """Review 2026-09-27 (blocking): held forever once the grant expired or was
-    revoked.  Without a current grant the request goes back to its original admission
-    and is refused there; no plan is committed and the Mission is not stuck waiting.
-
-    **Mutation**: drop the ``current_planning_grant`` condition → red (still PENDING)."""
-
-    async def case():
-        provider = RoleScriptedProvider({"planner": [lambda request: _refine_reply(package_of(request))]})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, dispatch, principal, _graph = _world(loop, tmp_path, "tg-revoked")
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            api = PlanningAuthorizationApi(loop.commit, tenant_id=mission.tenant_id, principal=principal)
-            grant = api.issue(mission.id, command_id="grant:tg-revoked", request_id=intent.intent_id)
-            assert (await _drive(loop, intent)).state == "PENDING"
-            api.revoke(grant.grant_id, expected_revision=grant.revision, command_id="revoke:tg-revoked",
-                       reason="用户撤销")
-            current = await _drive(loop, intent, rounds=4)
-            assert current.state != "PENDING"
-            assert HtnStore(loop.store).active_plan_revision(mission.id) is None
-            assert not loop._has_pending_planning_waits(mission.id) or current.state != "PENDING"
+                "SELECT COUNT(*) FROM taskgraph_revision_records WHERE mission_id=?", (unbound.id,)).fetchone()[0] == 0
 
     asyncio.run(case())

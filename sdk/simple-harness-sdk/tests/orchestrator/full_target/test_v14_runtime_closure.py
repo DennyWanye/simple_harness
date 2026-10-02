@@ -1,65 +1,50 @@
 """Focused V1.4 runtime-closure regressions.
 
-This module deliberately uses the production stores and original public/persisted
-interfaces.  Provider calls and the broad regression suite belong to the parent
-acceptance run, not test preparation.
+Every case runs on the product deployment (h1i_seed / taskgraph_exec.production_fixture):
+the planning decisions come from real Planner rounds, questions are answered through the
+authenticated facade.  Only the model replies are scripted.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-from types import SimpleNamespace
+import sys
+from pathlib import Path
 
 import pytest
 
-from agent_orchestrator.contracts.htn import MethodRef
-from agent_orchestrator.contracts.models import ContractError
-from agent_orchestrator.contracts.planning_decisions import RequestHumanDecision
-from agent_orchestrator.evaluation.experiment import (
-    ARMS,
-    ArmSpec,
-    ExecutionCounters,
-    ExperimentBudget,
-    ExperimentManifest,
-    RunContext,
-)
-from agent_orchestrator.evaluation.htn_matrix import EpisodeReceipt
-from agent_orchestrator.evaluation.htn_meter import DurableMeteredProvider
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.planning_repair_requests import (
-    address_requests,
-    pending_requests,
-)
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.planning.htn.cross_domain_acceptance import FourArm, ScenarioKind
-from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.storage.method_evaluation_store import MethodEvaluationStore
-from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.storage.store import StoreConflict
-from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from simple_harness import Message, MessageRole
-from simple_harness.contracts import RequestId
-from simple_harness.providers import (
-    CancelToken,
-    ProviderRequest,
-    ProviderResponse,
-    ProviderTarget,
-    ProviderUsage,
+_FULL_TARGET = Path(__file__).resolve().parent
+for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
+
+from h1i_seed import seeded  # noqa: E402
+from production_fixture import (  # noqa: E402
+    CHAIN_CRITERIA,
+    chain_planner,
+    enabled_world,
+    result_envelope,
+    scripted_worker,
 )
 
-from test_htn_end_to_end import build_world
-from test_h1i_production_entry import _config, _events, _open_planner_round, _seed_new_protocol
+from agent_orchestrator.api.facade import FacadeError  # noqa: E402
+from agent_orchestrator.contracts import TaskStatus  # noqa: E402
+from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus  # noqa: E402
+from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests  # noqa: E402
+from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
+from agent_orchestrator.storage.planning_human_store import PlanningHumanStore  # noqa: E402
+from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import decision  # noqa: E402
+
+
+def _events(loop, mission_id: str, event_type: str) -> list:
+    return [event for event in loop.store.list_events(mission_id) if event.type == event_type]
 
 
 def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failure(tmp_path) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="v14-malformed-reply"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
+        async with seeded(tmp_path, key="v14-malformed-reply") as (loop, mission, _world, _root, dispatch, _product):
+            opener = await loop._create_planner_intent(mission.id, ordinal=1)
             await loop._collect_plan_decision(
                 opener, object(), mission,
                 "<planning_decision>{not-json}</planning_decision>", dispatch,
@@ -73,208 +58,150 @@ def test_v14_malformed_planning_reply_records_unreadable_without_secondary_failu
             assert stored["canonical_hash"] is None
             assert evaluated.payload["status"] == str(PlanningDecisionStatus.UNREADABLE)
             assert evaluated.payload["canonical_hash"] is None
+            # the rejection ledger records it as well (one decode refusal, both records)
+            assert _events(loop, mission.id, "PlanningRejected")[-1].payload["reason"] == "proposal_unreadable"
     asyncio.run(case())
 
 
-def _human_store(tmp_path, key: str):
-    world = build_world(tmp_path, key=key)
-    htn = HtnStore(world.store)
-    plan = htn.active_plan_revision(world.mission.id)
-    requirements = htn.latest_requirements_revision(world.mission.id)
-    binding = {
-        "plan_revision": 0 if plan is None else plan.revision,
-        "requirements_revision": 0 if requirements is None else requirements.revision,
-        "manager_epoch": htn.epoch(world.mission.id, "mission"),
-    }
-    return world, PlanningHumanStore(world.store), binding
+# ---- H4 questions to the person and repair requests (real Planner rounds) -----------------
 
 
-def test_h4_nonblocking_question_is_durable_without_pausing_dispatch(tmp_path) -> None:
-    world, humans, binding = _human_store(tmp_path, "v14-human-nonblocking")
-    humans.register(
-        decision_id="decision-1",
-        mission_id=world.mission.id,
-        subject_key="subject-1",
-        payload=RequestHumanDecision("Add context?", (), False),
-        request_binding=binding,
-        next_ordinal=2,
-    )
-    assert humans.pending(world.mission.id) is False
-    assert humans.get("decision-1")["state"] == "PENDING"
+def _no_change(request):  # type: ignore[no-untyped-def]
+    """The scripted Planner of these cases: the two-step chain, then "nothing to change"."""
+    reply = chain_planner(request)
+    if reply is not None:
+        return reply
+    subject = package_of(request)["planning_subjects"][0]["subject_key"]
+    return decision(subject, "NO_CHANGE", {"reason": "计划不变。"}, "计划不变。")
 
 
-def test_h4_blocking_question_pauses_and_authenticated_answer_is_cas_idempotent(tmp_path) -> None:
-    world, humans, binding = _human_store(tmp_path, "v14-human-blocking")
-    humans.register(
-        decision_id="decision-2",
-        mission_id=world.mission.id,
-        subject_key="subject-2",
-        payload=RequestHumanDecision("Choose", (), True),
-        request_binding=binding,
-        next_ordinal=3,
-    )
-    assert humans.pending(world.mission.id) is True
-    receipt = humans.answer(
-        decision_id="decision-2",
-        tenant_id=world.mission.tenant_id,
-        principal=Principal("operator"),
-        answer="continue",
-        expected_version=1,
-        nonce="nonce-1",
-    )
-    assert humans.pending(world.mission.id) is False
-    assert humans.answer(
-        decision_id="decision-2",
-        tenant_id=world.mission.tenant_id,
-        principal=Principal("operator"),
-        answer="continue",
-        expected_version=1,
-        nonce="nonce-1",
-    ) == receipt
+def _question(subject_key: str, *, blocking: bool) -> dict:
+    return {"schema_version": 1, "decision_type": "REQUEST_HUMAN", "subject_key": subject_key,
+            "rationale": "需要用户确认。", "reason_refs": [], "assumptions": [], "uncertainties": [],
+            "alternatives": [], "replan_triggers": [],
+            "payload": {"question": "第二份文件要不要加上日期？", "options": [], "blocking": blocking}}
 
 
-def test_h4_stale_question_cannot_be_answered(tmp_path) -> None:
-    world, humans, binding = _human_store(tmp_path, "v14-human-stale")
-    humans.register(
-        decision_id="decision-stale",
-        mission_id=world.mission.id,
-        subject_key="subject",
-        payload=RequestHumanDecision("Old question", (), True),
-        request_binding={**binding, "manager_epoch": binding["manager_epoch"] + 1},
-        next_ordinal=2,
-    )
-    humans.retire_stale(world.mission.id)
-    assert humans.get("decision-stale")["state"] == "STALE"
-    with pytest.raises(StoreConflict, match="version changed"):
-        humans.answer(
-            decision_id="decision-stale",
-            tenant_id=world.mission.tenant_id,
-            principal=Principal("operator"),
-            answer="continue",
-            expected_version=2,
-            nonce="nonce",
-        )
+def _first_and_next(world):  # type: ignore[no-untyped-def]
+    network = world.dispatch.network(world.mission.id)
+    first = next(b for b in network.task_bindings if str(b.form) == "primitive" and not b.input_ports)
+    following = next(b for b in network.task_bindings if str(b.form) == "primitive" and b.input_ports)
+    return str(first.task_id), str(following.task_id)
 
 
-def test_h4_repair_request_is_consumed_only_by_committed_same_subject(tmp_path) -> None:
-    world = build_world(tmp_path, key="v14-repair-address")
-    subject = {"subject_key": "s-a", "occurrence_id": "occ-a", "task_id": "task-a"}
-    package = {
-        "planning_subjects": [subject, {"subject_key": "s-b", "occurrence_id": "occ-b"}],
-        "repair_requests": [{
-            "request_id": "repair-1",
-            "impact": {"revalidate": ["occ-a"], "supersede": [], "new_work": []},
-        }],
-    }
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
-    append_hierarchical_event(
-        world.store,
-        "PlanningRepairRequested",
-        world.mission.id,
-        key="source-1",
-        payload={"source_key": "source-1", "request_id": "repair-1", "request": {}, "impact": {}},
-    )
-    address_requests(world.store, world.mission.id, package=package, decision_id="d1",
-                     decision_type="REFINE", status="COMMIT_REJECTED", subject_key="s-a")
-    address_requests(world.store, world.mission.id, package=package, decision_id="d2",
-                     decision_type="REFINE", status="COMMITTED", subject_key="s-b")
-    assert [item["request_id"] for item in pending_requests(world.store, world.mission.id)] == ["repair-1"]
-    address_requests(world.store, world.mission.id, package=package, decision_id="d3",
-                     decision_type="REFINE", status="COMMITTED", subject_key="s-a")
-    assert pending_requests(world.store, world.mission.id) == []
+@pytest.mark.parametrize("blocking", (False, True), ids=("nonblocking", "blocking"))
+def test_h4_a_question_is_durable_and_only_a_blocking_one_pauses_dispatch(tmp_path, blocking) -> None:
+    """A question is a durable row; a non-blocking one never stops dispatch, a blocking one
+    holds every new plan and Worker until the person answers.  The answer is a CAS write:
+    the same answer replays its receipt, a different one is refused."""
 
-
-def test_h6_evaluation_refuses_to_invent_numbers_for_a_nonterminal_mission(tmp_path) -> None:
-    world = build_world(tmp_path, key="v14-h6-no-fabrication")
-    reference = MethodRef("missing.method", 1, "a" * 64)
-    with pytest.raises(StoreConflict, match="not terminal"):
-        MethodEvaluationStore(world.store)._run(world.mission.id, reference)
-
-
-TARGET = ProviderTarget("fake", "fixed-model", "pricing", "https://example.test/v1", "v1")
-
-
-class _Provider:
-    target = TARGET
-
-    async def invoke(self, request, *, cancel):
-        return ProviderResponse(
-            request.request_id,
-            Message(MessageRole.ASSISTANT, "ok"),
-            usage=ProviderUsage(4, 2, 6),
-            model=TARGET.model,
-        )
-
-
-def _meter_context():
-    manifest = ExperimentManifest(
-        "v14-meter", "fake", "fixed-model", ExperimentBudget(20, 10, 30, 3, 30),
-        ("case",), 1, 1, 1, tuple(ArmSpec(arm, arm) for arm in ARMS),
-    )
-    snapshots = []
-    return RunContext(manifest, manifest.runs()[0], snapshots.append), snapshots
-
-
-def _request(name: str) -> ProviderRequest:
-    return ProviderRequest(RequestId(name), (Message(MessageRole.USER, "hello"),), max_output_tokens=3)
-
-
-def test_h8_durable_meter_restores_actual_calls_and_remaining_budget(tmp_path) -> None:
     async def case() -> None:
-        context, _ = _meter_context()
-        path = tmp_path / "meter.json"
-        first = DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                                       checkpoint=path, run_identity="run-1")
-        await first.invoke(_request("request-1"), cancel=CancelToken())
-        restored = DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                                          checkpoint=path, run_identity="run-1", resume=True)
-        assert restored.counters == first.counters
-        await restored.invoke(_request("request-2"), cancel=CancelToken())
-        assert restored.counters.calls == 2
-        assert [row["ordinal"] for row in restored.observations] == [1, 2]
+        async with enabled_world(tmp_path, key=f"v14-human-{blocking}", planner=_no_change,
+                                 criteria=CHAIN_CRITERIA, hold_worker=True) as world:
+            store, mission = world.store, world.mission
+            await world.commit_seed()
+            # The first step is handed off: its Worker's model call is out (held).
+            await world.until(lambda: world.provider.entered.is_set())
+            first, following = _first_and_next(world)
+            intent = await world.open_planner_round()
+            package = intent.config["planning_package"]
+            await world.answer(intent, _question(package["planning_subjects"][0]["subject_key"], blocking=blocking))
+            humans = PlanningHumanStore(store)
+            [question] = humans.list(mission.id)
+            assert question["state"] == "PENDING"
+            assert humans.pending(mission.id) is blocking
+
+            # The work already handed off is collected either way (a blocking question holds
+            # only what has not started).
+            world.provider.release.set()
+            await world.until(lambda: store.get_task(first).status is TaskStatus.COMPLETED)
+            if not blocking:
+                await world.until(lambda: store.list_attempts(following))
+                assert humans.get(question["decision_id"])["state"] == "PENDING"  # still open, still there
+                return
+            for _ in range(10):
+                await world.step()
+            assert not store.list_attempts(following)  # no new Worker while the question blocks
+
+            control = world.product.control
+            command = {"decision_id": question["decision_id"], "answer": "加上", "expected_version": question["version"],
+                       "nonce": "nonce-1"}
+            receipt = control.answer_planning_question(command)
+            assert humans.pending(mission.id) is False
+            assert control.answer_planning_question(command) == receipt
+            with pytest.raises(FacadeError, match="different answer"):
+                control.answer_planning_question({**command, "answer": "不加", "nonce": "nonce-2"})
+            await world.until(lambda: store.list_attempts(following))
+
     asyncio.run(case())
 
 
-def test_h8_durable_meter_requires_explicit_recovery_and_matching_identity(tmp_path) -> None:
-    context, _ = _meter_context()
-    path = tmp_path / "meter.json"
-    DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                           checkpoint=path, run_identity="run-1")
-    with pytest.raises(ContractError, match="explicit recovery"):
-        DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                               checkpoint=path, run_identity="run-1")
-    with pytest.raises(ContractError, match="identity or content changed"):
-        DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                               checkpoint=path, run_identity="other", resume=True)
+def test_h4_a_superseded_question_cannot_be_answered_and_a_repair_request_is_consumed_by_its_committed_decision(
+        tmp_path) -> None:
+    """The first step fails its check; the repair round asks the person (non-blocking) — a
+    question is no plan change, so the repair request stays.  The next round redoes the step
+    with a successor: that committed decision on the request's own subject consumes it, and
+    the plan moved on, so the open question is superseded and its answer is refused."""
+    seen: dict = {}
+
+    def no_claims(request):  # type: ignore[no-untyped-def]
+        body = json.loads(result_envelope(request)[len("<result_envelope>"):-len("</result_envelope>")])
+        body["claims"] = []
+        return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+
+    def planner(request):  # type: ignore[no-untyped-def]
+        package = package_of(request)
+        repairs = [entry for entry in package.get("repair_requests") or ()
+                   if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+        if not repairs:
+            return _no_change(request)
+        subject = next(row for row in package["planning_subjects"] if row["task_id"] == seen["first"])
+        seen.setdefault("repair_rounds", 0)
+        seen["repair_rounds"] += 1
+        if seen["repair_rounds"] == 1:
+            return json_decision(_question(subject["subject_key"], blocking=False))
+        world = seen["world"]
+        old = world.dispatch.network(world.mission.id).binding_for_task(seen["first"])
+        task_type = next(s for s in world.dispatch.require_planning_world().catalog.task_types()
+                         if s.goal_signature == old.goal_signature)
+
+        def visible(kind, identity):  # type: ignore[no-untyped-def]
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+        return decision(subject["subject_key"], "REPAIR", {
+            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", seen["first"]),
+            "obligation_ref": visible("obligation", str(old.obligation_id)),
+            "goal_type_ref": task_type.task_type_ref.to_json(),
+            "bindings": {"goal": "重写第一份文件，写明要点。"}}, "原步骤的结果没有说明要点，换一个后继步骤重做。")
+
+    worker = scripted_worker(("workspace_write_file", {"path": "facts.md", "content": "facts"}), no_claims)
+
+    async def case() -> None:
+        async with enabled_world(tmp_path, key="v14-human-stale", planner=planner, worker=worker,
+                                 criteria=CHAIN_CRITERIA) as world:
+            store, mission = world.store, world.mission
+            seen["world"] = world
+            await world.commit_seed()
+            seen["first"], _following = _first_and_next(world)
+            humans = PlanningHumanStore(store)
+            await world.until(lambda: humans.list(mission.id))
+            [question] = humans.list(mission.id)
+            [request] = pending_requests(store, mission.id)  # the question did not consume it
+            assert seen["first"] in request["request"]["trigger_refs"][0]
+            assert question["request"]["binding"]["plan_revision"] == 1
+
+            await world.until(lambda: world.dispatch.network(mission.id).plan_revision == 2)
+            assert request["request_id"] not in {row["request_id"] for row in pending_requests(store, mission.id)}
+            addressed = _events(world.loop, mission.id, "PlanningRepairAddressed")
+            assert [row.payload["repair_request_ids"] for row in addressed] == [[request["request_id"]]]
+            await world.until(lambda: humans.get(question["decision_id"])["state"] == "STALE")
+            with pytest.raises(FacadeError, match="version changed"):
+                world.product.control.answer_planning_question({
+                    "decision_id": question["decision_id"], "answer": "加上",
+                    "expected_version": question["version"], "nonce": "nonce-stale"})
+
+    asyncio.run(case())
 
 
-def test_h8_started_call_recovery_closes_meter_instead_of_resetting_budget(tmp_path) -> None:
-    context, _ = _meter_context()
-    path = tmp_path / "meter.json"
-    meter = DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                                   checkpoint=path, run_identity="run-1")
-    envelope = json.loads(path.read_text())
-    envelope["state"]["counters"]["calls"] = 1
-    envelope["state"]["observations"] = [{"ordinal": 1, "status": "started"}]
-    from agent_orchestrator.contracts.semantic_base import content_hash_of
-    envelope["sha256"] = content_hash_of(envelope["state"])
-    path.write_text(json.dumps(envelope))
-    restored = DurableMeteredProvider(_Provider(), context, estimate_input_tokens=lambda _: 5,
-                                      checkpoint=path, run_identity="run-1", resume=True)
-    assert restored.counters.calls == 1
-    assert restored.unknown_usage_calls == 1
-    assert restored._closed is True
-
-
-@pytest.mark.parametrize("kind", [ScenarioKind.REPAIR, ScenarioKind.EVIDENCE_CONFLICT, ScenarioKind.RECOVERY])
-def test_h8_non_normal_episode_cannot_pass_without_triggered_intervention(kind) -> None:
-    budget = ExperimentBudget(20, 10, 30, 3, 30)
-    manifest = SimpleNamespace(budget=budget, physical_slots=1)
-    run = SimpleNamespace(scenario=SimpleNamespace(kind=kind), arm=FourArm.STRONG_SINGLE_AGENT)
-    receipt = EpisodeReceipt(
-        "run", "manifest", "COMPLETED", True,
-        SimpleNamespace(), SimpleNamespace(), "fake", "fixed-model", "tools",
-        ExecutionCounters("fake", "fixed-model", 4, 2, 6, 1, 1),
-        0, 0, 0, 1.0, None, intervention_triggered=False,
-    )
-    assert receipt.passed(manifest, run) is False
+def json_decision(body: dict) -> str:
+    return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"

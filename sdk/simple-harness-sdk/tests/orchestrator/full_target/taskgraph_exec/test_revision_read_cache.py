@@ -11,7 +11,7 @@ from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 
 def test_a_verified_revision_is_reused_only_while_nothing_changed(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-revision-cache') as world:
+        async with enabled_world(tmp_path, key='tg-revision-cache', hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
             reader = TaskGraphStore(store)

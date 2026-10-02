@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """NEXT-TG-1.0 §10: the orchestrator's Mission source reader for ARP MISSION pools.
 
-Real Orchestrator, real strict-graph enable, real Worker Attempt through the original
-dispatch path; only model replies are scripted.  While the Worker's model call is in
+Real Orchestrator on the product deployment (TaskGraph bound at creation), real Worker
+Attempt through the original dispatch path; only model replies are scripted.  While the Worker's model call is in
 flight (the moment a MISSION Session freezes its request) the reader binds the exact
 role-typed sources of the real dispatch intent and re-checks them; forged callers,
 moved sources, a paused task and a stopped intent are refused by name.  Nothing is
@@ -17,12 +17,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from production_fixture import enabled_world
-from test_execution_view import _run_worker
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world, result_envelope, scripted_worker
 from agent_orchestrator.orchestrator.state_machine import next_task
 from agent_orchestrator.runtime.mission_sources import MissionSourceReader
 from agent_orchestrator.runtime.native_plane import intent_caller
-from agent_orchestrator.testing.fixtures import envelope_step
+from agent_orchestrator.testing.fixtures import package_of
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import TrustedCaller
@@ -95,14 +94,15 @@ def test_worker_sources_are_exact_current_and_refused_when_they_move(tmp_path):
         except _Discard:
             pass
         reader.require_current(sources)
-        return ("workspace_write_file", {"path": "facts.md", "content": "Repository facts."})
+        [output] = package_of(request)["task_contract"]["outputs"]
+        return ("workspace_write_file", {"path": output, "content": "Repository facts."})
 
     def probe_second(request):
         store = seen["world"].loop.store
         sources = seen["sources"]
         seen["reader"].require_current(sources)  # still current after the tool call
-        # an unrelated branch changes (the sibling occurrence's task is paused): this
-        # Worker's sources stay current — rolled back afterwards
+        # an unrelated branch changes (the next step's task, READY behind this one, is
+        # paused): this Worker's sources stay current — rolled back afterwards
         sibling = store.connection.execute(
             "SELECT task_id FROM tasks WHERE mission_id=? AND task_id<>? AND status='READY' ORDER BY ordinal LIMIT 1",
             (sources["mission_id"], sources["attempt"]["task_id"])).fetchone()[0]
@@ -115,17 +115,17 @@ def test_worker_sources_are_exact_current_and_refused_when_they_move(tmp_path):
                 raise _Discard
         except _Discard:
             pass
-        step = envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                             override=lambda value: {**value, "outputs": {"facts": "facts.md"}})
-        return step(request) if callable(step) else step
+        return result_envelope(request)
 
     async def case():
-        async with enabled_world(tmp_path, key="tg-mission-sources", worker_steps=(captured(probe_first), captured(probe_second))) as world:
+        worker = scripted_worker(captured(probe_first), captured(probe_second))
+        async with enabled_world(tmp_path, key="tg-mission-sources", planner=chain_planner,
+                                 criteria=CHAIN_CRITERIA, worker=worker) as world:
             seen["world"] = world
             seen["reader"] = MissionSourceReader(lambda: world.loop)
             await world.commit_seed()
             try:
-                await _run_worker(world)
+                await world.run_worker()
             finally:
                 assert not seen.get("errors"), seen.get("errors")
             sources = seen["sources"]
@@ -222,7 +222,7 @@ def test_a_refused_agent_creation_stops_that_intent_only_never_the_loop(tmp_path
     """Review finding: a named native-plane refusal raised out of ``_dispatch`` and broke
     every cycle.  Now the intent is noted once and the loop keeps running."""
     async def case():
-        async with enabled_world(tmp_path, key="tg-refused-create", worker_steps=()) as world:
+        async with enabled_world(tmp_path, key="tg-refused-create") as world:
             await world.commit_seed()
             loop = world.loop
             original = loop.bridge_for

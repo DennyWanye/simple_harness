@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """NEXT-TG-1.0 §8: the execution-process read beside the strict TaskGraph read.
 
-Real Orchestrator, real strict-graph enable, real planner commit and a real Worker
-Attempt through the original dispatch/collect/verify path; only the model replies
-are scripted.  The execution read shares the graph's read token, pages without
+Real Orchestrator on the product deployment (TaskGraph bound at creation), real planner
+commit and a real Worker Attempt through the original dispatch/collect/verify path; only
+the model replies are scripted.  The execution read shares the graph's read token, pages without
 mixing cuts, links execution instances by recorded identities, shows a turn's
 visible work through the whitelist, and writes nothing.
 """
@@ -14,38 +14,20 @@ import json
 
 import pytest
 
-from production_fixture import enabled_world
+from production_fixture import OUTPUT, enabled_world, scripted_worker
 from agent_orchestrator.api.taskgraph import TaskGraphReadError
 from agent_orchestrator.orchestrator.taskgraph_execution_view import EDGE_KINDS, NODE_KINDS
-from agent_orchestrator.testing.fixtures import envelope_step
 
-WORKER = (
-    ("workspace_write_file", {"path": "facts.md", "content": "Repository facts, sk-" + "a" * 30}),
-    envelope_step(summary="Recorded repository facts.", artifacts=["facts.md"], claims=[],
-                  override=lambda value: {**value, "outputs": {"facts": "facts.md"}}),
-)
-
-
-async def _run_worker(world) -> None:
-    async with asyncio.timeout(30):
-        while True:
-            row = world.loop.store.connection.execute(
-                "SELECT status FROM attempts WHERE mission_id=? ORDER BY ordinal LIMIT 1",
-                (world.mission.id,)).fetchone()
-            verified = world.loop.store.connection.execute(
-                "SELECT COUNT(*) FROM results WHERE mission_id=? AND verification_state='DONE'",
-                (world.mission.id,)).fetchone()[0]
-            if row is not None and verified:
-                return
-            await world.loop._cycle()
-            await asyncio.sleep(.01)
+SECRET = "sk-" + "a" * 30
+def _worker():  # type: ignore[no-untyped-def]
+    return scripted_worker(("workspace_write_file", {"path": OUTPUT, "content": "Repository facts, " + SECRET}))
 
 
 def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key="tg-exec-view", worker_steps=WORKER) as world:
+        async with enabled_world(tmp_path, key="tg-exec-view", worker=_worker()) as world:
             await world.commit_seed()
-            await _run_worker(world)
+            await world.run_worker()
             store, mission, reads = world.loop.store, world.mission.id, world.graph.reads
             before = (store.last_event_seq(mission), world.provider.calls, store.connection.total_changes)
 
@@ -62,10 +44,13 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
 
             [attempt] = [n for n in nodes.values() if n["kind"] == "attempt"]
             [check] = [n for n in nodes.values() if n["kind"] == "check"]
-            [planner] = [n for n in nodes.values() if n["kind"] == "planning" and n["role"] == "planner"]
+            # The Planner proposed a method, it passed its independent review, then the Planner
+            # adopted it: two Planner rounds, the second one committed plan revision 1.
+            proposer, planner = [n for n in nodes.values() if n["kind"] == "planning" and n["role"] == "planner"]
+            assert [d["decision_type"] for d in proposer["decisions"]] == ["PROPOSE_METHOD"]
             structure = {n["occurrence_id"] for n in view["graph"]["nodes"]}
             assert attempt["occurrence_id"] in structure and attempt["plan_revision"] == 1
-            assert attempt["summary"]["text"] == "Recorded repository facts."
+            assert attempt["summary"]["text"] == "写好了要求的文件"
             assert attempt["summary"]["source_kind"] == "result_envelope"
             edges = {(e["kind"], e["source"], e["target"]) for e in view["execution_edges"]}
             assert ("attempt_of", attempt["node_id"], attempt["occurrence_id"]) in edges
@@ -79,10 +64,10 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
             assert detail["turn"]["coverage"] == "COMPLETE"
             tools = [item for item in detail["items"] if item["t"] == "tool"]
             assert tools and tools[0]["tool"] == "workspace_write_file" and tools[0]["ok"] is True
-            assert any(item["t"] == "submit" and item["text"] == "Recorded repository facts."
+            assert any(item["t"] == "submit" and item["text"] == "写好了要求的文件"
                        for item in detail["items"])
             text = json.dumps(detail, ensure_ascii=False)
-            assert "sk-" + "a" * 30 not in text  # tool arguments never leave, credentials redacted
+            assert SECRET not in text  # tool arguments never leave, credentials redacted
             assert "[role:worker]" not in text and "instructions" not in text
             pinned = reads.execution_detail(mission, attempt["node_id"],
                                             through_journal_seq=detail["turn"]["through_journal_seq"])

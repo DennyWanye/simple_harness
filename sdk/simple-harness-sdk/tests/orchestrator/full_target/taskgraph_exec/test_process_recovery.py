@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""C03 plan transaction windows; reserve and physical-turn windows remain separate."""
+"""C03 plan transaction windows; reserve and physical-turn windows remain separate.
+
+The child process runs the seed Mission on the product deployment and exits at one point
+(``crash_seed.py``); the parent reopens the same evidence root with the product's own
+startup assembly and a provider that answers nothing (recovery calls no model)."""
 import asyncio
 import hashlib
 import json
@@ -10,32 +14,42 @@ import sqlite3
 
 import pytest
 
-from production_fixture import _config
+from production_fixture import product_loop, root_of
 from agent_orchestrator.artifacts.store import read_nofollow
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.governance.policies import deployed_layers
-from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
-from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
-from agent_orchestrator.planning.htn.observers.code import code_observers
-from agent_orchestrator.planning.htn.world import build_planning_world
-from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+
+#: Model calls before any Worker: the Planner proposes, the reviewer reviews the method,
+#: the Planner adopts it.
+PLANNING_CALLS = 3
+
+
+def _crash(tmp_path, mode):
+    child = subprocess.run([sys.executable, str(Path(__file__).with_name('crash_seed.py')),
+        str(tmp_path), mode], capture_output=True, text=True, timeout=60, check=False)
+    (tmp_path / 'child.log').write_text(child.stdout + child.stderr)
+    return child
+
+
+def _physical_calls(root: Path):
+    calls = []
+    for database in sorted(root.glob('execution*.db')):
+        with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True) as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='provider_invocations'").fetchone():
+                calls += [(database.name, *row) for row in db.execute(
+                    'SELECT invocation_id,state,handoff_attempt FROM provider_invocations ORDER BY invocation_id')]
+    return calls
 
 
 @pytest.mark.parametrize('mode,exit_code,committed', (
     ('inside_commit', 81, 0), ('after_commit', 82, 1),
 ))
 def test_process_exit_reuses_original_reply_and_commit_identity(tmp_path, mode, exit_code, committed):
-    child = subprocess.run([sys.executable, str(Path(__file__).with_name('crash_seed.py')),
-        str(tmp_path), mode], capture_output=True, text=True, timeout=30, check=False)
-    (tmp_path / 'child.log').write_text(child.stdout + child.stderr)
+    child = _crash(tmp_path, mode)
     assert child.returncode == exit_code, (child.returncode, child.stdout, child.stderr)
     source = json.loads((tmp_path / 'recovery-source.json').read_text())
-    store = Store.open(_config(tmp_path).orchestrator_db)
+    store = Store.open(root_of(tmp_path) / 'orchestrator.db')
     try:
         for table in ('plan_revisions', 'taskgraph_revision_records'):
             assert store.connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == committed
@@ -45,17 +59,12 @@ def test_process_exit_reuses_original_reply_and_commit_identity(tmp_path, mode, 
 
     async def recover():
         provider = RoleScriptedProvider({})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
+        async with product_loop(tmp_path, provider) as product:
+            loop = product.loop
             mission = loop.store.get_mission(source['mission_id'])
             intent = loop.store.get_intent(source['intent_id'])
             assert mission is not None and intent is not None
-            planning = build_planning_world(mission.id, domains=('code',), semantics=HtnStore(loop.store),
-                deployed_layers=deployed_layers(loop._config.deployment_policy),
-                observers=code_observers(source['repository'], allow_test_execution=True))
-            dispatch = loop.install_hierarchical(planning=planning)
-            loop.install_taskgraph(TaskGraphDeploymentPorts(tenant_id=mission.tenant_id,
-                principal=Principal(source['issuer_id']), deployment_acceptance=InstalledHtnWiringAcceptance(),
-                graph_budget=DEFAULT_PROJECTION_BUDGET))
+            dispatch = loop._dispatch_for(mission.id)
             raw = read_nofollow(loop.assembled.workspaces.artifact_store.path_for(source['raw_artifact_ref']))
             assert hashlib.sha256(raw).hexdigest() == source['raw_output_hash'] == source['raw_artifact_ref']
             before = loop.store.connection.total_changes
@@ -75,20 +84,12 @@ def test_process_exit_reuses_original_reply_and_commit_identity(tmp_path, mode, 
     ('after_reserve', 83, 0), ('after_executor', 84, 1),
 ))
 def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path, mode, exit_code, attempt_count):
-    child = subprocess.run([sys.executable, str(Path(__file__).with_name('crash_seed.py')),
-        str(tmp_path), mode], capture_output=True, text=True, timeout=30, check=False)
-    (tmp_path / 'child.log').write_text(child.stdout + child.stderr)
+    child = _crash(tmp_path, mode)
     assert child.returncode == exit_code, (child.returncode, child.stdout, child.stderr)
     source = json.loads((tmp_path / 'recovery-source.json').read_text())
-    config = _config(tmp_path)
-
-    def physical_calls():
-        with sqlite3.connect(config.execution_db.resolve().as_uri() + '?mode=ro', uri=True) as db:
-            return [tuple(row) for row in db.execute(
-                'SELECT invocation_id,state,handoff_attempt FROM provider_invocations ORDER BY invocation_id')]
-
-    before_calls = physical_calls()
-    store = Store.open(config.orchestrator_db)
+    root = root_of(tmp_path)
+    before_calls = _physical_calls(root)
+    store = Store.open(root / 'orchestrator.db')
     try:
         for table in ('attempts', 'taskgraph_attempt_inputs'):
             assert store.connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == attempt_count
@@ -103,18 +104,22 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
         assert store.connection.execute(
             "SELECT COUNT(*) FROM events WHERE type='TaskGraphDispatchBound'").fetchone()[0] == attempt_count
         assert store.connection.execute('SELECT COUNT(*) FROM taskgraph_revision_records').fetchone()[0] == 1
-        # 2026-10-01: the seed plan is the Planner's own choice now (the program no longer
-        # selects a sole candidate for it), so one physical call was made before any Worker.
-        assert all(state == 'succeeded' and handoffs == 1 for _, state, handoffs in before_calls)
+        # The seed plan is the Planner's own choice (proposed, independently reviewed, adopted),
+        # so its model calls were made before any Worker.
+        assert all(state == 'succeeded' and handoffs == 1 for _, _, state, handoffs in before_calls)
         if mode == 'after_reserve':
-            assert len(before_calls) == 1
+            assert len(before_calls) == PLANNING_CALLS
+            # The Attempt's reservation was written in the transaction the exit cut short;
+            # what is on disk is what was committed before it.
+            reservations = [r[0] for r in store.connection.execute(
+                'SELECT reservation_id FROM budget_reservations ORDER BY reservation_id')]
             assert [r[0] for r in store.connection.execute(
                 'SELECT account_id FROM budget_accounts ORDER BY account_id')] == source['before_worker']['account_ids']
-            assert [r[0] for r in store.connection.execute(
-                'SELECT reservation_id FROM budget_reservations ORDER BY reservation_id')] == source['before_worker']['reservation_ids']
+            assert reservations == source['before_worker']['reservation_ids']
+            assert set(source['before_worker']['reservation_ids_in_transaction']) - set(reservations)
         else:
-            # The Planner's reply, then one tool request and the final result envelope.
-            assert len(before_calls) == 3
+            # The planning calls, then one tool request and the final result envelope.
+            assert len(before_calls) == PLANNING_CALLS + 2
     finally:
         store.close()
     if mode == 'after_reserve':
@@ -122,16 +127,8 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
 
     async def recover():
         provider = RoleScriptedProvider({})
-        def assemble_startup(loop):
-            mission = loop.store.get_mission(source['mission_id'])
-            planning = build_planning_world(mission.id, domains=('code',), semantics=HtnStore(loop.store),
-                deployed_layers=deployed_layers(loop._config.deployment_policy),
-                observers=code_observers(source['repository'], allow_test_execution=True))
-            loop.install_hierarchical(planning=planning)
-            loop.install_taskgraph(TaskGraphDeploymentPorts(tenant_id=mission.tenant_id,
-                principal=Principal(source['issuer_id']), deployment_acceptance=InstalledHtnWiringAcceptance(),
-                graph_budget=DEFAULT_PROJECTION_BUDGET))
-        async with Orchestrator(config, provider, startup_assembly=assemble_startup) as loop:
+        async with product_loop(tmp_path, provider) as product:
+            loop = product.loop
             intent = loop.store.get_intent(source['worker_intent_id'])
             assert intent is not None and intent.state == 'SUBMITTED'
             assert await loop._collect(intent)
@@ -139,7 +136,7 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
             # The original recovery pass imports durable physical usage after collection.
             await loop.recover()
             assert loop.commit.ledger.reservation(source['worker_attempt_id'])['state'] == 'SETTLED'
-            assert provider.calls == 0 and physical_calls() == before_calls
+            assert provider.calls == 0 and _physical_calls(root) == before_calls
             assert loop.store.connection.execute('SELECT COUNT(*) FROM attempts').fetchone()[0] == 1
             assert loop.store.connection.execute('SELECT COUNT(*) FROM taskgraph_revision_records').fetchone()[0] == 1
     asyncio.run(recover())

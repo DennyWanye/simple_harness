@@ -1,22 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Production-source history/authority assertions; each covers named subcases."""
+"""Production-source history/authority assertions; each covers named subcases.
+
+The Worker is held (a slow model) so nothing but the seed plan has happened when these read."""
 import asyncio
 import sqlite3
 
 import pytest
 
 from production_fixture import enabled_world
+from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.api.taskgraph import TaskGraphReadError
-from agent_orchestrator.contracts import Budget
+from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
+from agent_orchestrator.orchestrator.taskgraph_policy import enable_command_id
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 
 
 def test_historical_structure_is_nonexecutable_and_offline_projection_has_no_work(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-history-read') as world:
+        async with enabled_world(tmp_path, key='tg-history-read', hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
             before = (store.last_event_seq(mission), world.provider.calls)
@@ -39,7 +42,7 @@ def test_historical_structure_is_nonexecutable_and_offline_projection_has_no_wor
 
 def test_seed_certificate_uses_original_applied_check_and_receipt(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-original-applied') as world:
+        async with enabled_world(tmp_path, key='tg-original-applied', hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
             record = TaskGraphStore(store).read_revision(mission, 1).record
@@ -56,40 +59,48 @@ def test_seed_certificate_uses_original_applied_check_and_receipt(tmp_path):
 
 
 def test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects(tmp_path):
+    """A deployment serves one tenant: another tenant cannot put a Mission into it (the
+    assured creation refuses the tenant inside the creation transaction, nothing is left
+    behind), and a read for a Mission this tenant does not own is NOT_FOUND and writes nothing."""
     async def case():
-        async with enabled_world(tmp_path, key='tg-tenant-read') as world:
+        async with enabled_world(tmp_path, key='tg-tenant-read', hold_worker=True) as world:
             await world.commit_seed()
-            foreign, _ = world.loop.commit.create_mission(MissionSpec(
-                goal='Foreign Mission', success_criteria=('kept isolated',), tenant_id='other-tenant',
-                idempotency_key='foreign-tg-read', budget=Budget(max_tokens=10000, max_attempts=2)))
-            before = world.loop.store.last_event_seq(foreign.id)
+            store = world.store
+            missions = {mission.id for mission in store.list_missions()}
+            events = store.connection.execute('SELECT MAX(seq) FROM events').fetchone()[0]
+            foreign = MissionControlV1(world.loop, tenant_id='other-tenant', principal=Principal('other-user'))
+            with pytest.raises(FacadeError, match='ASSURANCE_CREATION_PROTOCOL_MISMATCH'):
+                foreign.create({'goal': 'Foreign Mission', 'success_criteria': ['kept isolated'],
+                                'idempotency_key': 'foreign-tg-read'})
+            assert {mission.id for mission in store.list_missions()} == missions
+            assert store.connection.execute('SELECT MAX(seq) FROM events').fetchone()[0] == events
+            changes = store.connection.total_changes
             with pytest.raises(TaskGraphReadError) as refused:
-                world.graph.reads.snapshot(foreign.id)
+                world.graph.reads.snapshot('mission-of-another-tenant')
             assert refused.value.code == 'NOT_FOUND'
-            assert world.loop.store.last_event_seq(foreign.id) == before
-            assert world.loop.store.connection.execute(
-                'SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?', (foreign.id,)).fetchone() is None
+            assert store.connection.total_changes == changes
     asyncio.run(case())
 
 
-def test_repeated_enable_reads_original_receipt_without_renewing_permission(tmp_path):
+def test_repeated_enable_reads_the_creation_receipt_without_renewing_permission(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-enable-replay') as world:
+        async with enabled_world(tmp_path, key='tg-enable-replay', hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
-            before = store.last_event_seq(mission)
-            receipt = world.graph.policy.enable_taskgraph_contract(mission, 'enable:tg-enable-replay')
-            assert receipt == store.get_receipt('enable:tg-enable-replay')
-            assert store.last_event_seq(mission) == before
-            # 片 A（2026-10-01）起做法由规划器选：建好第一份计划恰好问了规划器一次；
-            # 重复启用只读回原回执，不会再多问。
-            assert world.provider.calls == 1
+            before = (store.last_event_seq(mission), world.provider.calls)
+            # The enable the deployment issued when it created the Mission, run again.
+            command_id = enable_command_id(mission)
+            receipt = world.graph.policy.enable_taskgraph_contract(mission, command_id)
+            assert receipt == store.get_receipt(command_id)
+            assert receipt['mission_id'] == mission
+            # Reading the original result writes nothing and asks no model.
+            assert (store.last_event_seq(mission), world.provider.calls) == before
     asyncio.run(case())
 
 
 def test_first_epoch_invalidation_and_notification_share_rollback_boundary(tmp_path):
     async def case():
-        async with enabled_world(tmp_path, key='tg-epoch-source') as world:
+        async with enabled_world(tmp_path, key='tg-epoch-source', hold_worker=True) as world:
             await world.commit_seed()
             store, mission = world.loop.store, world.mission.id
             htn = HtnStore(store)
@@ -105,8 +116,10 @@ def test_first_epoch_invalidation_and_notification_share_rollback_boundary(tmp_p
             assert store.last_event_seq(mission) == before
             assert htn.bump_epoch(mission, scope, bumped_by='test-issuer') == 1
             events = store.list_events(mission, after_seq=before)
-            assert len(events) == 1 and events[0].type == 'TaskGraphSourceChanged'
-            source = events[0].payload['source_ref']
+            # The assured lane notes the same change in its own evidence clock.
+            assert {event.type for event in events} <= {'TaskGraphSourceChanged', 'AssuranceEvidenceChanged'}
+            [changed] = [event for event in events if event.type == 'TaskGraphSourceChanged']
+            source = changed.payload['source_ref']
             assert (source['kind'], source['id'], source['revision']) == ('validity_epoch', scope, 1)
     asyncio.run(case())
 

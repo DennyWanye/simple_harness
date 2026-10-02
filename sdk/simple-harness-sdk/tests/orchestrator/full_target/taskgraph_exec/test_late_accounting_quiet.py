@@ -9,7 +9,7 @@ from agent_orchestrator.orchestrator import accounting_recovery
 
 def test_open_holds_are_reread_only_after_a_write(tmp_path, monkeypatch):
     async def case():
-        async with enabled_world(tmp_path, key='tg-late-accounting-quiet') as world:
+        async with enabled_world(tmp_path, key='tg-late-accounting-quiet', hold_worker=True) as world:
             await world.commit_seed()
             orch = world.loop
             reads = []

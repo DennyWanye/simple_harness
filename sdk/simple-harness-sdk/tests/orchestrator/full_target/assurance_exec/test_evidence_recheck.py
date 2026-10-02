@@ -24,15 +24,13 @@ from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.orchestrator import planning_repair_requests
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer, AssuranceValidityConsumer
 from agent_orchestrator.orchestrator.assurance_recheck import changed_items, stale_certificates
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
 from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 SDK_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(SDK_ROOT / "scripts/assurance_seams"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from test_h1i_production_entry import _config, _events, _seed_new_protocol  # noqa: E402
+from h1i_seed import events, seeded  # noqa: E402
 
 ACCEPT_REPLY = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
     {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture",
@@ -148,8 +146,7 @@ def test_closeout_refuses_to_finish_on_stale_evidence_until_the_planner_handled_
 
 def test_the_planning_loop_records_one_evidence_invalidated_request_per_stale_finding(tmp_path, monkeypatch):
     async def case():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _world, _binding, dispatch = _seed_new_protocol(loop, tmp_path, key="evidence-stale")
+        async with seeded(tmp_path, key="evidence-stale") as (loop, mission, _world, _binding, dispatch, _product):
             task_id = str(dispatch.network(mission.id).occurrences[0].task_id)
             finding = {"certificate_id": "assurance-use:c1", "consumer_kind": "ACCEPTANCE", "consumer_id": "acc-1",
                        "scope_id": "scope-1", "task_id": task_id, "source_key": "evidence-stale:f1",
@@ -157,12 +154,12 @@ def test_the_planning_loop_records_one_evidence_invalidated_request_per_stale_fi
             monkeypatch.setattr(planning_repair_requests, "closeout_stale_findings", lambda store, mission_id: [finding])
             assert planning_repair_requests.stale_evidence_triggers(
                 loop, dispatch, mission, seen=set(), active_tasks={task_id}) is True
-            [request] = _events(loop, mission.id, "PlanningRepairRequested")
+            [request] = events(loop, mission.id, "PlanningRepairRequested")
             assert request.payload["source_key"] == "evidence-stale:f1"
             assert request.payload["request"]["trigger_refs"] == [task_id]
             assert request.payload["request"]["context"]["reason"] == "evidence_stale"
             assert request.payload["request"]["context"]["certificate_id"] == "assurance-use:c1"
             assert planning_repair_requests.stale_evidence_triggers(
                 loop, dispatch, mission, seen=set(), active_tasks={task_id}) is False  # the same finding, once
-            assert len(_events(loop, mission.id, "PlanningRepairRequested")) == 1
+            assert len(events(loop, mission.id, "PlanningRepairRequested")) == 1
     asyncio.run(case())
