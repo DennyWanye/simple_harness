@@ -77,8 +77,7 @@ def require_taskgraph_unfenced(store: Store, mission_id: str, task_id: str) -> N
         raise StoreConflict("TASKGRAPH_TARGET_FENCED")
 
 
-def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent, *,
-                                      selection_inputs: tuple[UpstreamInput, ...] | None = None) -> None:
+def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> None:
     """Recheck frozen input identity plus current control; no latest input resolution."""
     if intent.kind != "attempt" or not taskgraph_enabled(store, intent.mission_id):
         return
@@ -125,7 +124,7 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent, *,
         if str(frozen.consumer_task_ref) != attempt.task_id:
             raise StoreError("TASKGRAPH_FROZEN_INPUT_CONSUMER_MISMATCH")
         _intent_inputs(intent, frozen, source_revision=row["source_revision"],
-                       manifest_hash=row["manifest_hash"], selection_inputs=selection_inputs,
+                       manifest_hash=row["manifest_hash"],
                        carried=lambda producer: carried_inputs(store, intent.mission_id, producer))
     except (ContractError, ArtifactConflict) as error:
         raise StoreError("TASKGRAPH_FROZEN_INPUT_CORRUPT") from error
@@ -134,7 +133,6 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent, *,
 def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
                    source_revision: int, manifest_hash: str,
                    network: TaskNetworkSnapshot | None = None,
-                   selection_inputs: tuple[UpstreamInput, ...] | None = None,
                    carried: Callable[[str], Sequence[UpstreamInput]] | None = None) -> tuple[UpstreamInput, ...]:
     frozen = intent.config.get("taskgraph_inputs")
     version = frozen.get("version") if isinstance(frozen, Mapping) else None
@@ -147,10 +145,6 @@ def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
             or frozen["manifest_hash"] != manifest_hash):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
     rules = decode_target_rules(frozen["target_rules"])
-    if intent.config.get("selection_decision_id") is not None and selection_inputs is None:
-        raise StoreError("TASKGRAPH_SELECTION_SOURCE_REQUIRED")
-    if intent.config.get("selection_decision_id") is None and selection_inputs:
-        raise StoreError("TASKGRAPH_SELECTION_IDENTITY_MISSING")
     data_inputs = tuple(manifest_upstream_inputs(manifest, rules, network=network))
     if version == 2:
         raw = frozen["data_inputs"]
@@ -173,7 +167,7 @@ def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
                                      for item in materialized):
             raise StoreError("TASKGRAPH_FROZEN_DATA_PRODUCER_MISMATCH")
         data_inputs = materialized
-    expected = (*data_inputs, *(selection_inputs or ()))
+    expected = tuple(data_inputs)
     if canonical_json(intent.config.get("inputs")) != canonical_json([item.to_json() for item in expected]):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
     message = intent.config.get("message")
@@ -246,14 +240,11 @@ class TaskGraphDispatchBinding:
     def require_handoff(self, intent: DispatchIntent) -> None:
         if not self.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_HANDOFF_TRANSACTION_REQUIRED")
-        selection_inputs = None
         if intent.kind == "attempt":
             _require_materialization_receipt(self.store, intent)
-            attempt = self.store.get_attempt(intent.subject_id)
-            if attempt is None:
+            if self.store.get_attempt(intent.subject_id) is None:
                 raise StoreError("TASKGRAPH_ATTEMPT_UNAVAILABLE")
-            selection_inputs = self.selection_materials(attempt.task_id, intent.config.get("selection_decision_id"))
-        require_taskgraph_attempt_handoff(self.store, intent, selection_inputs=selection_inputs)
+        require_taskgraph_attempt_handoff(self.store, intent)
         if intent.kind == "attempt":
             self.recheck_handoff(self.store, intent)
             context = self.read_attempt(intent.mission_id, intent.subject_id)
@@ -288,29 +279,8 @@ class TaskGraphDispatchBinding:
                     raise StoreError("TASKGRAPH_SERVICE_TASK_IDENTITY_MISSING")
                 require_taskgraph_unfenced(self.store, intent.mission_id, task_id)
 
-    def selection_materials(self, task_id: str, decision_id: object) -> tuple[UpstreamInput, ...]:
-        if decision_id is None:
-            return ()
-        if not isinstance(decision_id, str) or not decision_id:
-            raise StoreError("TASKGRAPH_SELECTION_DECISION_INVALID")
-        task = self.store.get_task(task_id)
-        receipt = self.store.get_receipt(decision_id)
-        row = self.store.connection.execute("SELECT kind,subject_id FROM commit_receipts WHERE commit_id=?",
-                                            (decision_id,)).fetchone()
-        if (task is None or receipt is None or row is None or tuple(row) != ("selection_decision", task_id)
-                or receipt.get("task_id") != task_id or receipt.get("receipt_id") != decision_id
-                or receipt.get("action") != "synthesize"):
-            raise StoreError("TASKGRAPH_SELECTION_DECISION_SOURCE_MISMATCH")
-        # Original Selection verifies the persisted candidate hashes and original
-        # artifact bytes. These materials remain separate from accepted DATA.
-        artifacts = self.dispatch_for(task.mission_id).commit.selection_input_artifacts(decision_id)
-        if any(item.mission_id != task.mission_id or item.task_id != task_id for item in artifacts):
-            raise StoreError("TASKGRAPH_SELECTION_ARTIFACT_OWNER_MISMATCH")
-        return tuple(UpstreamInput(item.task_id, item.path, item.content_hash, item.id) for item in artifacts)
-
     def prepare(self, task_id: str, *, intent_config: Mapping[str, Any],
-                inputs: Sequence[Mapping[str, Any]], input_hash: str,
-                selection_decision_id: str | None = None) -> PreparedTaskGraphAttempt:
+                inputs: Sequence[Mapping[str, Any]], input_hash: str) -> PreparedTaskGraphAttempt:
         if not self.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_DISPATCH_REQUIRES_ATTEMPT_TRANSACTION")
         task = self.store.get_task(task_id)
@@ -334,8 +304,7 @@ class TaskGraphDispatchBinding:
             raise StoreError("TARGET_RULES_UNAVAILABLE")
         data_inputs = self.dispatch_for(task.mission_id).overlay_attempt_inputs(task.mission_id,
             manifest_upstream_inputs(manifest, rules, network=view.network))
-        expected = (*data_inputs,
-                    *self.selection_materials(task_id, selection_decision_id))
+        expected = tuple(data_inputs)
         if canonical_json([dict(item) for item in inputs]) != canonical_json([item.to_json() for item in expected]):
             raise StoreConflict("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
         message = intent_config.get("message")
@@ -349,10 +318,7 @@ class TaskGraphDispatchBinding:
         # Actual execution authority, current operation/running-work completeness,
         # current budgets/resources and the materialized request/manifest relationship
         # are rechecked by the original installed execution adapter, never plan grant.
-        if intent_config.get("selection_decision_id") not in (None, selection_decision_id):
-            raise StoreConflict("TASKGRAPH_EXECUTION_SELECTION_IDENTITY_CHANGED")
-        execution_config = {**dict(intent_config), "selection_decision_id": selection_decision_id}
-        self.recheck_execution(self.store, view, admission, manifest, execution_config, inputs, input_hash)
+        self.recheck_execution(self.store, view, admission, manifest, intent_config, inputs, input_hash)
         prepared = PreparedTaskGraphAttempt(admission=admission, manifest=manifest,
                                             target_rules_json=canonical_json(encode_target_rules(rules)),
                                             data_inputs_json=canonical_json([item.to_json() for item in data_inputs]))
@@ -377,8 +343,6 @@ class TaskGraphDispatchBinding:
             upstream = _intent_inputs(intent, manifest,
                                       source_revision=frozen.binding.source_revision,
                                       manifest_hash=frozen.binding.manifest_hash, network=network,
-                                      selection_inputs=self.selection_materials(frozen.binding.task_id,
-                                          intent.config.get("selection_decision_id")),
                                       carried=lambda producer: carried_inputs(self.store, mission_id, producer))
             return TaskGraphAttemptContext(inputs=frozen, history=history, manifest=manifest,
                                            network=network, upstream=upstream)

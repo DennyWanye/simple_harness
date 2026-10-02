@@ -13,9 +13,8 @@ hierarchical mode.  Everything it does is arranged around one sentence of ADR-13
 
 So the order below is not cosmetic.  The integer gate runs first because it is the
 cheap answer that every Mission already agrees on; the read-set runs second because
-it is the expensive one and only hierarchical Missions have it; and the automatic
-``allow_rebase`` replay of :meth:`CommitService.commit_graph_change` is deliberately
-*not* reachable from here (C19): a proposal whose read went stale is handed back to
+it is the expensive one and only hierarchical Missions have it; and there is
+deliberately no automatic replay of a stale proposal (C19): a proposal whose read went stale is handed back to
 its author to recompile against the new snapshot, because replaying it would mean
 deciding, on the author's behalf, that a fact it read did not matter.
 
@@ -662,11 +661,9 @@ class PlanCommitsMixin:
     def _check_integer_gate(mission: Mission, command: CommitPlanCommand) -> None:
         """ADR-13 clause 1, unchanged for both modes — and clause C19 on top of it.
 
-        There is deliberately no ``allow_rebase`` here.  The legacy
-        ``_commit_graph_change`` may replay a stale proposal whose operations touch
-        nothing that changed since; a hierarchical proposal may not, because the
-        thing that went stale might be a *fact it read*, which no overlap test on
-        task ids can see.
+        There is deliberately no ``allow_rebase`` here: a stale proposal is never
+        replayed, because the thing that went stale might be a *fact it read*, which
+        no overlap test on task ids can see.
         """
 
         current = int((mission.final_report or {}).get("graph_version") or 1)

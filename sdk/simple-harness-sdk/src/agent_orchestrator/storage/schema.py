@@ -596,6 +596,18 @@ CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inpu
 END;
 """
 
+# 2026-10-02: candidate comparison (selection rounds) and fragment validation were
+# removed.  Their tables are dropped by a new migration; migrations 12 and 14 keep their
+# original text, because an existing library is opened by comparing every recorded
+# migration's checksum.
+DDL_V31 = """
+DROP TABLE IF EXISTS selection_candidates;
+DROP TABLE IF EXISTS selection_rounds;
+DROP TABLE IF EXISTS search_bindings;
+DROP INDEX IF EXISTS fragment_validations_mission;
+DROP TABLE IF EXISTS fragment_validations;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -627,6 +639,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(28, "orchestrator-commit-receipts-kind-index", DDL_V28),
     Migration(29, "orchestrator-taskgraph-required", DDL_V29),
     Migration(30, "orchestrator-manifest-binding-revision-at-or-before", DDL_V30),
+    Migration(31, "orchestrator-drop-selection-and-fragments", DDL_V31),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

@@ -261,7 +261,6 @@ class AgentDojoRunner:
         evidence_root: Path,
         default_output_tokens: int = 8192,
         maximum_output_tokens: int = 32768,
-        dynamic_graph: bool = True,
         observation_redact_text: Callable[[str], str] | None = None,
     ) -> None:
         if not 1 <= context.manifest.physical_slots <= 2:
@@ -281,7 +280,6 @@ class AgentDojoRunner:
         self.root = Path(evidence_root)
         self.default_output_tokens = default_output_tokens
         self.maximum_output_tokens = maximum_output_tokens
-        self.dynamic_graph = dynamic_graph
         self.observation_redact_text = observation_redact_text
         self.last_result: dict[str, Any] | None = None
         self.meter: MeteredProvider | None = None
@@ -393,7 +391,6 @@ class AgentDojoRunner:
             model=self.context.manifest.model,
             max_concurrency=3,
             max_concurrent_model_calls=self.context.manifest.physical_slots,
-            dynamic_graph=self.dynamic_graph,
             knowledge_sharing=True,
             default_max_output_tokens=self.default_output_tokens,
             max_output_tokens_ceiling=self.maximum_output_tokens,

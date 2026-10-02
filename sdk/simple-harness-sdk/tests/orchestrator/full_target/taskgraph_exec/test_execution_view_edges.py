@@ -43,7 +43,7 @@ def _world(tmp_path):
                    "payload_json,created_at,schema_version) VALUES(?,?,?,?,?,?,?,?,?,?)",
                    (f"e{n}", f"k{n}", type_, "tr", M, "system", "s", json.dumps(payload), at, 1))
 
-    context = {"fragment_execution": {"context": {"occurrence_id": OCC, "plan_revision": 1}}, "role": "worker"}
+    context = {"attempt_execution": {"context": {"occurrence_id": OCC, "plan_revision": 1}}, "role": "worker"}
     for ordinal, attempt, retry, at in ((1, A1, None, 10.0), (2, A2, A1, 20.0)):
         db.execute("INSERT INTO attempts(attempt_id,task_id,mission_id,ordinal,status,version,agent_id,json,updated_at)"
                    " VALUES(?,?,?,?,?,?,?,?,?)",

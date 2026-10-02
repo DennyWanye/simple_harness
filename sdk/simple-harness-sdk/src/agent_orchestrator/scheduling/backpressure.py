@@ -38,11 +38,9 @@ class BackpressureLimits:
     max_running_attempts: int = 8
     max_pending_dispatch: int = 8
     max_pending_verifications: int = 4
-    max_graph_depth: int = 6  # step 5 knob, registered here
     max_attempts_per_task: int | None = (
         None  # per Task budget.max_attempts governs; None = no global cap
     )
-    max_proposals_per_agent: int = 3  # step 5 knob, registered here
     low_watermark_ratio: float = 0.5
 
     def __post_init__(self) -> None:
@@ -69,9 +67,7 @@ class BackpressureLimits:
             "max_running_attempts": self.max_running_attempts,
             "max_pending_dispatch": self.max_pending_dispatch,
             "max_pending_verifications": self.max_pending_verifications,
-            "max_graph_depth": self.max_graph_depth,
             "max_attempts_per_task": self.max_attempts_per_task,
-            "max_proposals_per_agent": self.max_proposals_per_agent,
             "low_watermark_ratio": self.low_watermark_ratio,
             "version": BACKPRESSURE_VERSION,
         }

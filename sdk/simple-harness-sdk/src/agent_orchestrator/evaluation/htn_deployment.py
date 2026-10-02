@@ -175,7 +175,7 @@ def build_deployment() -> tuple[RuntimeEpisodeExecutor, H8Manifest]:
         "max_concurrency", "default_max_output_tokens", "max_output_tokens_ceiling",
         "test_timeout_seconds", "turn_deadline_seconds", "max_model_calls_per_turn",
         "max_tool_calls_per_turn", "attempt_reserve_tokens", "planner_reserve_tokens",
-        "critic_reserve_tokens", "manager_reserve_tokens",
+        "critic_reserve_tokens",
     }
     if set(orchestrator) - allowed_orchestrator:
         raise ContractError("orchestrator configuration contains unsupported fields")

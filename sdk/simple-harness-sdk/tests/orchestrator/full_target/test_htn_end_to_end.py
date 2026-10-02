@@ -14,7 +14,6 @@ P2.3b left four blockers and this suite is the witness that each one is gone:
 (c) the Planner's prompt and package were chosen independently of the mode, so a
     real model was asked for a plan-revision proposal while holding the DAG package.
     §10.
-(d) ``commit_graph_change`` had no gate on a hierarchical Mission.  §9.
 
 Two properties run through all of it and are asserted rather than described: the
 **budget conservation equation** holds after every commit (§21.5), and a Mission is
@@ -99,7 +98,6 @@ from agent_orchestrator.orchestrator.accepted_outputs import (  # noqa: E402
     declared_output_ports,
 )
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    HIERARCHICAL_GRAPH_CHANGE_REFUSED,
     HIERARCHICAL_JUDGMENT_REFUSED,
     CommitRejected,
     CommitService,
@@ -863,7 +861,7 @@ def test_an_output_of_an_occurrence_the_plan_dropped_is_not_offered(world: World
 
 
 def test_migration_seventeen_is_additive_and_eighteen_is_still_present() -> None:
-    assert schema.SCHEMA_VERSION == 30  # 迁移 25～30 已追加在后
+    assert schema.SCHEMA_VERSION == 31  # 迁移 25～31 已追加在后
     assert schema.MIGRATIONS[16].ddl is acceptance_receipt_schema.DDL
     assert "ALTER TABLE" not in acceptance_receipt_schema.DDL.upper()
     assert schema.MIGRATIONS[17].version == 18
@@ -1044,48 +1042,6 @@ def test_the_contributions_are_read_from_the_acceptances_not_the_projection(
     live: World,
 ) -> None:
     assert live.dispatch.root_contributions(live.mission.id) == {}
-
-
-# ======================================================================================
-# 9. the Manager's graph-change gate (§18.5 rule 2)
-# ======================================================================================
-
-
-def test_a_graph_change_against_a_hierarchical_mission_is_refused(world: World) -> None:
-    with pytest.raises(CommitRejected, match="SEMANTICS_IS_HIERARCHICAL"):
-        world.service.commit_graph_change(
-            world.mission.id, _noop_change(), source={"intent_id": "i-1"}
-        )
-
-
-def test_the_refusal_points_at_the_door_that_is_open(world: World) -> None:
-    with pytest.raises(CommitRejected):
-        world.service.commit_graph_change(
-            world.mission.id, _noop_change(), source={"intent_id": "i-2"}
-        )
-    events = world.events(HIERARCHICAL_GRAPH_CHANGE_REFUSED)
-    assert events and events[0].payload["redirect"] == "commit_plan_revision"
-
-
-def test_the_refusal_writes_no_task_and_no_graph_version(world: World) -> None:
-    before = {task.id: task.version for task in world.tasks().values()}
-    with pytest.raises(CommitRejected):
-        world.service.commit_graph_change(
-            world.mission.id, _noop_change(), source={"intent_id": "i-3"}
-        )
-    assert {task.id: task.version for task in world.tasks().values()} == before
-
-
-def test_a_legacy_mission_still_reaches_the_legacy_graph_change(tmp_path) -> None:
-    """The gate is the *mode*, not a global switch: legacy is untouched."""
-
-    legacy = build_world(tmp_path, mode=LEGACY_SEMANTICS, key="p23c-legacy-gate")
-    with pytest.raises(CommitRejected) as caught:
-        legacy.service.commit_graph_change(
-            legacy.mission.id, _noop_change(), source={"intent_id": "i-4"}
-        )
-    assert "SEMANTICS_IS_HIERARCHICAL" not in str(caught.value)
-    assert legacy.events(HIERARCHICAL_GRAPH_CHANGE_REFUSED) == []
 
 
 # ======================================================================================
@@ -1679,17 +1635,6 @@ def _accepted_output(
         source_revision="rev-1",
         source_identity=ResourceIdentity(namespace="workspace:leaf", path="report.md"),
         disclosure=DisclosureState.DISCLOSABLE,
-    )
-
-
-def _noop_change():
-    from agent_orchestrator.graph.changes import TaskGraphChange
-
-    return TaskGraphChange(
-        base_graph_version=1,
-        basis={"trigger": "manual"},
-        rationale="a Manager proposal that should never reach the legacy path",
-        operations=(),
     )
 
 

@@ -89,7 +89,7 @@ def test_late_verifier_completion_preserves_winner_and_real_errors(
         config = OrchestratorConfig(
             evidence_root=tmp_path / "evidence",
             max_concurrency=2, candidates_per_task=2, verifier_workers=2,
-            manager_after_failures=10, test_timeout_seconds=30,
+            test_timeout_seconds=30,
         )
         async with Orchestrator(config, provider) as orch:
             mission = await orch.submit_mission(MissionSpec(

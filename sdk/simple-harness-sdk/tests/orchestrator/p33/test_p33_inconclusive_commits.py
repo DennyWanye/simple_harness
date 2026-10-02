@@ -404,7 +404,6 @@ def test_missing_limitations_count_actual_failures_allow_one_retry_then_stop(sce
     assert mission.status is MissionStatus.FAILED and mission.stop_reason == "insufficient_evidence"
     assert mission.final_report["result"] == "INSUFFICIENT"
     assert s.store.get_task(e.task.id).status is TaskStatus.FAILED
-    assert s.store.count_events(s.mission.id, "ManagementRequested") == 0
     before = s.store.snapshot(s.mission.id)
     assert not s.commit.stop_inconclusive_task(e.task.id)
     assert s.store.snapshot(s.mission.id) == before

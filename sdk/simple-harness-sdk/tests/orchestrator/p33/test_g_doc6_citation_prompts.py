@@ -39,11 +39,13 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
         "fbcefdba9801b4ec5dbd62adaafbd8490a63fe1240617c5271b1d7a73b901061"
     )
     for version, digest in (
-        (1, "8460551cd829aa1cb6819a2f05d978dd53f5e727d60c37696c749759168eec5b"),
-        (2, "0d06df7c7c87ec424602ab888e50a6fa1a9e2351f6223a9b62a983255f70f35e"),
+        (1, "215201bc43dfe4c085fe487bbed01593eccbced45282639afa11b7de23479bb7"),
+        (2, "066e8017288f143699ae12bd6069ea0625ddaf9bca827cf01e5615359f6067b4"),
     ):
         rows = {}
         for role in domains.DOC_PROFILE_V5.role_templates:
+            if role == "manager":  # the profile still names it; the role itself was removed
+                continue
             template = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v{version}"]
             rows[role] = {"instructions": template.instructions, "tools": list(template.tool_names)}
         assert sha256_hex(rows) == digest
@@ -53,9 +55,9 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
         for role, current in ROLES.items()
         for frozen in [
             TEMPLATE_VERSIONS[role][f"{role}-v2"]
-            if role in {"manager", "critic", "worker", "synthesizer"} else current
+            if role in {"critic", "worker", "synthesizer"} else current
         ]
-    }) == "933152b55f45fedd091514b55fad338e2316bcd05cd874c66ca048a15286a397"
+    }) == "8596b24d491c67a2c88faa00588680d8b518389f61d87c5707ad6091955a6718"
 
 
 @pytest.mark.parametrize("role", RESULT_ROLES)
@@ -80,7 +82,7 @@ def test_result_roles_offer_real_statement_support_and_page_range(role):
     assert "不能删除必要的准则关联" in selected.instructions
 
 
-@pytest.mark.parametrize("role", ("planner", "manager"))
+@pytest.mark.parametrize("role", ("planner",))
 def test_doc6_planning_prefers_complete_goals_and_accounts_for_split_cost(role):
     selected = template_for_domain(ROLES[role], domains.DOC_PROFILE_V6, {})
     previous = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v2"]

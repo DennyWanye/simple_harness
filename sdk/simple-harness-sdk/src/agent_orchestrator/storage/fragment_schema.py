@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Additive P34 fragment index; immutable content lives in commit_receipts."""
+"""The historical text of migration 14 (fragment validation, removed 2026-10-02).
+
+Kept only because an existing library is opened by comparing every recorded migration's
+checksum; migration 31 drops the table."""
 
 FRAGMENT_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS fragment_validations (

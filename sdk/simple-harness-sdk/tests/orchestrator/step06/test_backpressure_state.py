@@ -34,16 +34,14 @@ def obs(pv=0, run=0, disp=0, at=1.0):
     )
 
 
-def test_the_six_caps_are_registered_and_watermarks_derive_from_them():
+def test_the_caps_are_registered_and_watermarks_derive_from_them():
     limits = BackpressureLimits(max_pending_verifications=4, low_watermark_ratio=0.5)
     assert set(limits.to_json()) >= {
         "max_running_attempts",
         "max_pending_dispatch",
         "max_pending_verifications",
-        "max_graph_depth",
         "max_attempts_per_task",
-        "max_proposals_per_agent",
-    }  # §18.5's six caps, one registry
+    }  # §18.5's caps, one registry
     assert limits.high("pending_verifications") == 4 and limits.low("pending_verifications") == 2
     assert OBSERVED_DIMENSIONS == ("running_attempts", "pending_dispatch", "pending_verifications")
     with pytest.raises(ValueError):

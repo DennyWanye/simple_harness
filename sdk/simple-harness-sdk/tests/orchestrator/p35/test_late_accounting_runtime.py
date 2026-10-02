@@ -73,10 +73,6 @@ async def collected_unknown(orch, kind):
         ).to_json(),
         "message": message,
     }
-    if kind == "manager":
-        # Match the production Manager intent: its Task is explicit even when
-        # this accounting-only fixture has no historical Attempt reference.
-        config["task_id"] = tasks[0].id
     if kind == "attempt":
         _, intent = orch.commit.create_attempt(
             tasks[0].id, role="worker", model="agent-model", prompt_version="worker-v2",
@@ -134,7 +130,7 @@ def record_receipt(orch, intent, original, usage):
     )
 
 
-@pytest.mark.parametrize("kind", ["attempt", "plan", "critic", "manager"])
+@pytest.mark.parametrize("kind", ["attempt", "plan", "critic"])
 @pytest.mark.parametrize("cold", [False, True])
 def test_terminal_collected_original_receipt_is_automatically_imported_once(tmp_path, kind, cold):
     async def exercise():
@@ -166,10 +162,6 @@ def assert_paid(orch, intent, original, frozen, provider):
     for account in orch.commit.ledger._chain(reservation["account_id"]):
         assert account.settled_tokens == 150 and account.settled_cost_micros == 200
         assert account.reserved_tokens == account.reserved_cost_micros == 0
-    if intent.kind == "manager":
-        task_account = orch.commit.ledger.account("budget:" + intent.config["task_id"])
-        assert task_account.settled_tokens == task_account.reserved_tokens == 0
-        assert task_account.settled_cost_micros == task_account.reserved_cost_micros == 0
     assert business(orch, intent.mission_id) == frozen
     uow = orch.bridge_for(intent).runtime.uow
     assert uow.read_provider_invocation(original.invocation_id) == original

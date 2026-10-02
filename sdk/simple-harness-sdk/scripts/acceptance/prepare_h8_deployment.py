@@ -53,7 +53,7 @@ def main() -> None:
             "max_output_tokens_ceiling": 16384, "max_model_calls_per_turn": 20, "max_tool_calls_per_turn": 40,
             "turn_deadline_seconds": 600, "test_timeout_seconds": 30,
             "attempt_reserve_tokens": 80000, "planner_reserve_tokens": 40000,
-            "critic_reserve_tokens": 40000, "manager_reserve_tokens": 40000},
+            "critic_reserve_tokens": 40000},
         "extra_input_reserve_tokens": 1024,
         "completion_contracts": {"code-v1": {"mode": "CONTENT_ONLY", "content_criterion_ids": "ALL_ROOT_CONTENT", "effects": []},
             "drone-sim-v1": {"mode": "CONTENT_ONLY", "content_criterion_ids": "ALL_ROOT_CONTENT", "effects": []},

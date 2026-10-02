@@ -2039,7 +2039,7 @@ class ApprovalState:
         )
 
 
-#: The legacy universal candidate range (``planning/candidate_selection.py``).  ADR-08
+#: The legacy universal candidate range.  ADR-08
 #: replaced fixed universal limits with versioned capacity, so this is recorded as the
 #: deployment's historical default, not as a ceiling the contract imposes.
 LEGACY_CANDIDATE_RANGE = (1, 3)
@@ -2074,8 +2074,7 @@ class CandidatePolicy:
         )
         if self.synthesis_allowed and self.max_candidates < 2:
             raise ContractError(
-                "synthesis compares candidates, so it needs at least two of them "
-                "(planning/candidate_selection.py)"
+                "synthesis compares candidates, so it needs at least two of them"
             )
         if self.synthesis_allowed and self.reserve_tokens <= 0:
             raise ContractError(

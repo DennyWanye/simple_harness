@@ -111,7 +111,7 @@ from agent_orchestrator.scheduling.backpressure import (  # noqa: E402
 # here — which is the point: §18.5 constraint 2 is about the old entry being left
 # alone, not about it being equivalent to something new.
 LEGACY_FRONTIER_SHA256 = "0ae7cd4c24ee902e1fac2f8e8193920a64e9ff10c408baf0f33d1d6cc366e1b8"
-LEGACY_ALLOCATE_SHA256 = "5940ab39e18168a83f9af8c422a9924758faf41ddf8793021b5a89c6cb5ab78c"
+LEGACY_ALLOCATE_SHA256 = "d865d3d6b379a61e2b8cfedb8e7e24748dba8bdb6ec1164986184d81ea88ebd5"  # 2026-10-02: 删选择轮的两个参数
 
 ALL_STATUSES = tuple(TaskStatus)
 
@@ -535,20 +535,6 @@ def test_allocate_v2_respects_the_mission_concurrency_limit() -> None:
     assert plan.grants == ()
     assert plan.open_attempts == 1
     assert plan.slots == 0
-
-
-def test_allocate_v2_counts_a_waiting_attempt_as_free_capacity() -> None:
-    tasks, bindings, readiness = world()
-    open_attempt = attempt_row(str(T_B), 1, AttemptStatus.RUNNING)
-    plan = allocate_v2(
-        tasks,
-        (open_attempt,),
-        bindings,
-        readiness,
-        concurrency_limit=1,
-        waiting_attempt_ids=frozenset({open_attempt.id}),
-    )
-    assert plan.granted_task_ids == (str(T_B),)
 
 
 def test_allocate_v2_grants_the_configured_number_of_candidates() -> None:

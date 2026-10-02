@@ -99,7 +99,6 @@ def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
             for role, kind in (
                 ("planner", None),
                 ("worker", "code"),
-                ("manager", None),
                 ("critic", None),
                 ("synthesizer", "code"),
                 ("arbiter", "code"),
@@ -146,7 +145,6 @@ def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
             assert _route(orch, old_id, "worker", "code") == "default"
             assert _route(orch, new_id, "planner") == LONG
             assert _route(orch, new_id, "critic") == LONG
-            assert _route(orch, old_id, "manager") == "default"
 
     asyncio.run(reopen())
 

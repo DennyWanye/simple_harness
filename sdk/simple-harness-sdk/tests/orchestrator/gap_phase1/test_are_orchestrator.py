@@ -86,7 +86,6 @@ def runner(tmp_path, provider, **kwargs):
         evidence_root=tmp_path / "episode",
         default_output_tokens=1024,
         maximum_output_tokens=4096,
-        dynamic_graph=False,
         poll_seconds=0.005,
         **kwargs,
     )

@@ -9,7 +9,6 @@ only once the queue has drained to the low watermark is it cleared and work resu
 
 from __future__ import annotations
 
-import pytest
 
 from agent_orchestrator.contracts import (
     Attempt,
@@ -17,12 +16,6 @@ from agent_orchestrator.contracts import (
     Budget,
     Task,
     TaskStatus,
-)
-from agent_orchestrator.graph.changes import (
-    ChangeLimits,
-    GraphChangeRejected,
-    TaskGraphChange,
-    validate_change,
 )
 from agent_orchestrator.scheduling.allocator import allocate
 from agent_orchestrator.scheduling.backpressure import RAISED, BackpressureState
@@ -101,45 +94,3 @@ def test_under_pressure_only_conflict_and_starving_tasks_expand_plus_one_explora
     )
     assert [t.id for t, _ in none.grants] == ["m:task-5", "m:task-4"]
 
-
-def test_under_pressure_a_manager_may_not_add_tasks_but_may_still_change_roles(tmp_path):
-    from graph_helpers6 import add, change, graph_service
-
-    service, mission, t = graph_service(tmp_path)
-    tasks = service.store.list_tasks(mission.id)
-    growing = change(1, [add("X", [t["A"].id], parent_task_ids=[t["A"].id])])
-    with pytest.raises(GraphChangeRejected) as rejected:
-        validate_change(
-            mission,
-            tasks,
-            growing,
-            limits=ChangeLimits(admit_new_tasks=False),
-            proposals_by_attempt={},
-            committed_tokens_by_task={},
-        )
-    assert rejected.value.reason == "backpressure"
-    steering = TaskGraphChange.from_json(
-        {
-            "base_graph_version": 1,
-            "basis": {"trigger": "t"},
-            "rationale": "换角色",
-            "operations": [{"op": "set_role", "task_id": t["A"].id, "role": "simplifier"}],
-        }
-    )
-    validated = validate_change(
-        mission,
-        tasks,
-        steering,
-        limits=ChangeLimits(admit_new_tasks=False),
-        proposals_by_attempt={},
-        committed_tokens_by_task={},
-    )
-    assert validated.roles == {t["A"].id: "simplifier"}
-    validate_change(
-        mission,
-        tasks,
-        growing,
-        limits=ChangeLimits(admit_new_tasks=True),
-        proposals_by_attempt={},
-        committed_tokens_by_task={},
-    )

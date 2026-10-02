@@ -12,7 +12,7 @@ from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK
 from ..governance.budgets import BudgetError, BudgetExhausted
 from ..governance.mission_system_tail import MissionSystemTailLedger
 from ..governance.tail_budget import TailBudgetLedger, TailReserve
-from ..planning.candidate_selection import selection_revision
+from .tail_revision import task_tail_revision
 from ..verification.assessments import mission_contract_revision
 
 
@@ -81,7 +81,7 @@ class MissionTailCommitsMixin:
             pool["pool_id"],
             task_id=task.id,
             reserve=TailReserve(**original),
-            semantic_revision=selection_revision(self._store, task),
+            semantic_revision=task_tail_revision(self._store, task),
             route_binding=binding,
         )
 
@@ -126,7 +126,7 @@ class MissionTailCommitsMixin:
             attempt_id=attempt_id,
             subject_id=subject_id,
             reservation=reservation,
-            semantic_revision=selection_revision(self._store, task),
+            semantic_revision=task_tail_revision(self._store, task),
             route_binding=binding,
             critic=critic,
         )
@@ -204,7 +204,7 @@ class MissionTailCommitsMixin:
                 floor_tokens += first["minimum_tokens"]
                 floor_cost += first["cost_micros"]
         TailBudgetLedger(self._ledger).grow_tail_allocation(
-            row["hold_id"], subject_id, task_revision=selection_revision(self._store, task),
+            row["hold_id"], subject_id, task_revision=task_tail_revision(self._store, task),
             tokens=tokens, cost_micros=cost_micros,
             minimum=TailReserve(floor_tokens, floor_cost),
         )

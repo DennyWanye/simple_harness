@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ids
 from ..governance.budgets import BudgetError
 from ..governance.tail_budget import TailAllocation, TailBudgetLedger, TailReserve
-from ..planning.candidate_selection import selection_revision
+from .tail_revision import task_tail_revision
 
 
 class ProtectedTailCommitsMixin:
@@ -50,7 +50,7 @@ class ProtectedTailCommitsMixin:
             raise BudgetError("protected tail Task does not exist")
         # Semantic contract/policy/domain/constraints; ordinary lease/status
         # updates do not invalidate the protected original Task budget.
-        return selection_revision(self._store, task)
+        return task_tail_revision(self._store, task)
 
     def _protected_tail_task(self, task_id: str, semantic_revision: str):
         if not self._store.connection.in_transaction:
@@ -225,8 +225,7 @@ class ProtectedTailCommitsMixin:
 
         This is safe after Mission/Task cancellation and actual Attempt terminal
         transitions. It does not settle or release any transferred reservation;
-        those real subjects retain their UNKNOWN/settlement obligations. COMPARE
-        round holds remain owned by the selection lifecycle.
+        those real subjects retain their UNKNOWN/settlement obligations.
         """
         if not self._store.connection.in_transaction:
             raise BudgetError("terminal tail release requires its Commit transaction")
@@ -268,7 +267,7 @@ class ProtectedTailCommitsMixin:
                 if attempt_id is not None:
                     continue  # another system Attempt may still need this Task hold
             else:
-                continue  # not owned by FIRST/system hooks (e.g. COMPARE)
+                continue  # not owned by FIRST/system hooks
             stopped = (
                 mission.status in TERMINAL_MISSION
                 or origin.status in TERMINAL_TASK

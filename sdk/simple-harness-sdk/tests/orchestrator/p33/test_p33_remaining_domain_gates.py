@@ -4,9 +4,6 @@
 """P33-09 闸门 2/3/4/5：先固定 oracle，再实现真实 commit 路径测试。
 
 Oracle（测试实现前写定）：
-1. 闸门 2：合法文档图提交后，Manager 图变更仅把新增节点准则换成 pytest:；
-   commit_graph_change 必须因领域拒绝，原图、版本、预算、receipt 不变，
-   只允许追加 TaskGraphChangeRejected。恢复文档准则后同一入口必须提交成功。
 2. 闸门 3：通过 create_mission / begin_planning 建立合法空图，单 Task 提案
    仅加入 pytest: 准则；commit_task_proposal 必须经 _check_task_proposal 拒绝，
    不创建 Task、不激活 Mission、不留下预算账户或 receipt；合法对照可成功。
@@ -49,7 +46,6 @@ from agent_orchestrator.contracts import (
 from agent_orchestrator.governance import domains
 from agent_orchestrator.governance.domains import DOC_DOMAIN, DOC_PROFILE, DOC_PROFILE_V4
 from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.graph.changes import TaskGraphChange
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator import commit_service as commit_module
 from agent_orchestrator.orchestrator.commit_service import (
@@ -151,48 +147,6 @@ def _assert_domain_rejection(error, location):
     for expected in ("domain", DOC_DOMAIN, PYTEST_CRITERION, location):
         assert expected in message, message
     assert "verification_policy_undeployed" not in message
-
-
-def test_p33_09_gate2_graph_change_rejects_pytest_without_committing_state(service):
-    planning = _planning(service)
-    tasks, _ = _graph(service, planning, _node("A"))
-    mission = service.store.get_mission(planning.id)
-    assert mission.status is MissionStatus.ACTIVE
-    valid_node = {
-        "op": "add_task",
-        **_node("B", dependencies=(tasks[0].id,)),
-        "parent_task_ids": [tasks[0].id],  # 明确细化已存在的 Task，避免 goal_drift。
-    }
-    valid = {
-        "base_graph_version": mission.final_report["graph_version"],
-        "basis": {"trigger": "manager_review"},
-        "rationale": "补充对报告所需资料的核对",
-        "operations": [valid_node],
-    }
-    poisoned = TaskGraphChange.from_json(
-        {**valid, "operations": [{**valid_node, "success_criteria": [PYTEST_CRITERION]}]}
-    )
-    before = _state(service, mission.id)
-    events_before = service.store.iter_events(mission.id)
-
-    with pytest.raises(CommitRejected) as error:
-        service.commit_graph_change(mission.id, poisoned, source={"manager": "p33-09"})
-
-    _assert_domain_rejection(error, "graph change rejected (domain)")
-    assert _state(service, mission.id) == before
-    events_after = service.store.iter_events(mission.id)
-    assert events_after[:-1] == events_before
-    assert events_after[-1].type == "TaskGraphChangeRejected"
-    assert events_after[-1].payload["reason"] == "domain"
-    assert PYTEST_CRITERION in events_after[-1].payload["detail"]
-
-    created, receipt = service.commit_graph_change(
-        mission.id, TaskGraphChange.from_json(valid), source={"manager": "p33-09"}
-    )
-    assert len(created) == 1 and created[0].success_criteria == ("file:notes/B.md",)
-    assert created[0].dependency_ids == (tasks[0].id,)
-    assert receipt["from_version"] == 1 and receipt["to_version"] == 2
-    assert service.store.get_receipt(receipt["change_id"]) == receipt
 
 
 def test_p33_09_gate3_single_task_proposal_rejects_pytest_without_activating_mission(service):

@@ -15,7 +15,6 @@ import pytest
 
 from agent_orchestrator.contracts import Budget
 from agent_orchestrator.governance import domains
-from agent_orchestrator.graph.changes import TaskGraphChange
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator.commit_service import (
     CommitRejected,
@@ -94,21 +93,13 @@ def _state(service, mission_id):
     return snapshot
 
 
-@pytest.mark.parametrize("entry", ["graph", "patch", "single"])
+@pytest.mark.parametrize("entry", ["graph", "single"])
 def test_frozen_task_submission_requires_critic_only_for_doc5(frozen_service, entry):
     """Doc5's original floor also applies to doc6; older frozen profiles stay weak."""
     service, planning, strict = frozen_service
-    parent = None
-    if entry == "patch":
-        [parent], _ = service.commit_task_graph(
-            planning.id,
-            TaskGraphProposal.from_json({"tasks": [_node("A", REVIEWED)]}),
-            base_version=planning.version,
-            source={"planner": "initial"},
-        )
 
     def submit(policy):
-        node = _node("B" if entry == "patch" else "A", policy)
+        node = _node("A", policy)
         if entry == "single":
             proposal = TaskProposal(
                 goal=node["goal"],
@@ -122,30 +113,12 @@ def test_frozen_task_submission_requires_critic_only_for_doc5(frozen_service, en
                 planning.id, proposal, base_version=planning.version, source={"planner": "single"}
             )
             return [task], receipt
-        if entry == "graph":
-            return service.commit_task_graph(
-                planning.id,
-                TaskGraphProposal.from_json({"tasks": [node]}),
-                base_version=planning.version,
-                source={"planner": "graph"},
-            )
-        assert parent is not None
-        change = TaskGraphChange.from_json(
-            {
-                "base_graph_version": 1,
-                "basis": {"trigger": "manager_review"},
-                "rationale": "补充报告所需资料",
-                "operations": [
-                    {
-                        **node,
-                        "op": "add_task",
-                        "dependencies": [parent.id],
-                        "parent_task_ids": [parent.id],
-                    }
-                ],
-            }
+        return service.commit_task_graph(
+            planning.id,
+            TaskGraphProposal.from_json({"tasks": [node]}),
+            base_version=planning.version,
+            source={"planner": "graph"},
         )
-        return service.commit_graph_change(planning.id, change, source={"manager": "patch"})
 
     before = _state(service, planning.id)
     events_before = service.store.iter_events(planning.id)
@@ -154,8 +127,7 @@ def test_frozen_task_submission_requires_critic_only_for_doc5(frozen_service, en
             submit(WEAK)
         assert _state(service, planning.id) == before
         added = service.store.iter_events(planning.id)[len(events_before) :]
-        expected = {"graph": "TaskGraphRejected", "patch": "TaskGraphChangeRejected"}
-        assert [event.type for event in added] == ([] if entry == "single" else [expected[entry]])
+        assert [event.type for event in added] == ([] if entry == "single" else ["TaskGraphRejected"])
         assert all(event.payload["reason"] == "domain" for event in added)
         created, receipt = submit(REVIEWED)
         assert created[0].verification_policy == REVIEWED
@@ -213,7 +185,7 @@ def test_doc5_empty_single_policy_cannot_bypass_the_floor(tmp_path, monkeypatch,
         assert task.verification_policy == REVIEWED
 
 
-@pytest.mark.parametrize("role", ["planner", "manager"])
+@pytest.mark.parametrize("role", ["planner"])
 @pytest.mark.parametrize("version", ["5", "6"])
 def test_doc5_planning_prompts_require_actual_critic_policy(role, version):
     profile = domains.DOC_PROFILE_V5 if version == "5" else domains.DOC_PROFILE_V6

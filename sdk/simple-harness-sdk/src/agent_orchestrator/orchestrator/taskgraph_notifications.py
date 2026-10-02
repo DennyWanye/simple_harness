@@ -29,7 +29,7 @@ _RECHECK_EVENTS = frozenset({
     "InputSubmitted", "IntentSettled", "ServiceIntentRehandedOff", "BudgetReleased", "BudgetReserved",
     "ActionProposed", "ActionRefused", "ActionHandoffRefused", "ActionHandedOff",
     "KnowledgeCommitted", "KnowledgeSuperseded",
-    "TaskPaused", "TaskResumed", "SearchPolicyBound",
+    "TaskPaused", "TaskResumed",
     "ApprovalRequested", "ApprovalGranted", "ApprovalRejected", "ApprovalRevoked",
     "ApprovalExpired", "ApprovalCancelled", "ApprovalSuperseded",
     "TaskGraphSourceChanged",

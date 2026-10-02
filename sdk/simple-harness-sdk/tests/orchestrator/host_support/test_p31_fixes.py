@@ -6,7 +6,7 @@
 
 F-ORCH-1: a Task budget below what its first Attempt and that Attempt's Critic can reserve
 — ``k × (base + critic)`` with k candidates per Task, the critic part only when the policy
-names critic_review — is refused by the Graph Manager (``task_budget_below_floor``) and the
+names critic_review — is refused at the graph gate (``task_budget_below_floor``) and the
 proposer is told why; nothing invents a number for the model.  The floor is a necessary
 condition only: it never promises that repairs will be affordable.  System tasks
 (synthesis / conflict) are not proposals and are not bound by it.  Without ``task_floor``
@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-from agent_orchestrator.context.context_builder import build_manager_package
 from agent_orchestrator.contracts import (
     Artifact,
     AttemptStatus,
@@ -36,7 +35,6 @@ from agent_orchestrator.contracts import (
     ids,
 )
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.graph.changes import ChangeLimits, GraphChangeRejected, validate_change
 from agent_orchestrator.graph.task_graph import (
     GraphRejected,
     TaskBudgetFloor,
@@ -49,20 +47,15 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.fixtures import (
-    RECORDER_SEED,
-    RECORDER_SPEC,
     RoleScriptedProvider,
     critic_step,
-    demo_dynamic_dag_provider,
     envelope_step,
-    graph_change_step,
     graph_proposal_step,
     package_of,
-    recorder_manager_change,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "step05"))
-from graph_helpers import HASH, add, change, drive_to_running, graph_service  # noqa: E402
+from graph_helpers import HASH, drive_to_running, graph_service  # noqa: E402
 from graph_helpers import node as graph_node  # noqa: E402
 
 TOOLS3 = ("workspace_read_file", "workspace_write_file", "workspace_list")
@@ -186,89 +179,12 @@ def test_a_synthesis_template_is_not_bound_by_the_floor():
     )
 
 
-# ------------------------------------------------------------------ FX-2 the change gate
-def _validate(current, tasks, proposed, floor=FLOOR):
-    return validate_change(
-        current,
-        tasks,
-        proposed,
-        limits=ChangeLimits(),
-        proposals_by_attempt={},
-        committed_tokens_by_task={},
-        task_floor=floor,
-    )
-
-
-def test_a_manager_add_task_below_the_floor_is_refused(tmp_path):
-    service, current, t = graph_service(tmp_path)
-    tasks = service.store.list_tasks(current.id)
-    low = change(
-        1,
-        [
-            add(
-                "E",
-                [t["C"].id],
-                budget={"max_tokens": 800, "max_attempts": 2},
-                parent_task_ids=[t["C"].id],
-            )
-        ],
-    )
-    with pytest.raises(GraphChangeRejected) as rejected:
-        _validate(current, tasks, low)
-    assert rejected.value.reason == "budget" and "task_budget_below_floor" in str(rejected.value)
-    enough = change(
-        1,
-        [
-            add(
-                "E",
-                [t["C"].id],
-                budget={"max_tokens": 5000, "max_attempts": 2},
-                parent_task_ids=[t["C"].id],
-            )
-        ],
-    )
-    _validate(current, tasks, enough)
-    _validate(current, tasks, low, floor=None)  # without a floor the old behaviour stays
-
-
-def test_a_default_share_below_the_floor_is_refused(tmp_path):
-    # DIAMOND commits 4 × 20000; a pool of 82000 leaves 2000 for a new node without a budget
-    service, current, t = graph_service(tmp_path, budget=Budget(max_tokens=82_000, max_attempts=12))
-    tasks = service.store.list_tasks(current.id)
-    blank = change(
-        1, [add("E", [t["C"].id], budget={"max_attempts": 2}, parent_task_ids=[t["C"].id])]
-    )
-    with pytest.raises(GraphChangeRejected) as rejected:
-        _validate(current, tasks, blank)
-    assert "task_budget_below_floor" in str(rejected.value)
-
-
-def test_the_manager_package_names_the_floor(tmp_path):
-    service, current, t = graph_service(tmp_path)
-    package = build_manager_package(
-        current,
-        t["B"],
-        trigger={"kind": "test"},
-        verifier_feedback=[],
-        subgraph=[],
-        graph_version=1,
-        limits={},
-        knowledge=None,
-        budget_floor={"min_task_tokens": 4096, "min_task_tokens_with_critic_review": 10_096},
-    )
-    assert package.package["budget_floor"] == {
-        "min_task_tokens": 4096,
-        "min_task_tokens_with_critic_review": 10_096,
-    }
-
-
 # ------------------------------------------------------------------ FX-3 / FX-4 end to end
 def _config(tmp_path, **overrides):
     base = dict(
         evidence_root=Path(tmp_path) / "evidence",
         max_concurrency=1,
         test_timeout_seconds=60,
-        dynamic_graph=False,
         deployment_policy=OFF,
     )
     base.update(overrides)
@@ -400,64 +316,6 @@ def test_min_task_tokens_zero_switches_the_floor_off(tmp_path):
 
 
 # ------------------------------------------------------------------ code review round 1
-def _recorder_spec(key):
-    return MissionSpec(
-        goal=RECORDER_SPEC["goal"],
-        success_criteria=tuple(RECORDER_SPEC["success_criteria"]),
-        tenant_id="tenant-floor-manager",
-        idempotency_key=key,
-        allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
-        budget=Budget(max_tokens=300_000, max_attempts=16),
-        workspace_seed=RECORDER_SEED,
-        orchestration_semantics_version="legacy",
-    )
-
-
-def test_a_manager_below_the_floor_is_refused_and_told_why(tmp_path):
-    """Review P1-2: the Orchestrator's injection on the Manager path, end to end — the
-    first change asks 800 tokens for the new Task E (format + rule, floor 4096) and is
-    refused; the Manager is asked again, reads why, and the legal change completes."""
-
-    seen: list[dict] = []
-
-    def too_small(package):
-        return [
-            dict(op, budget={"max_tokens": 800, "max_attempts": 2}) if op.get("key") == "E" else op
-            for op in recorder_manager_change(package)
-        ]
-
-    provider = demo_dynamic_dag_provider(
-        manager_steps=[
-            _capturing(graph_change_step(too_small), seen),
-            _capturing(graph_change_step(recorder_manager_change), seen),
-        ]
-    )
-    cfg = OrchestratorConfig(
-        evidence_root=Path(tmp_path) / "evidence", max_concurrency=1, test_timeout_seconds=60
-    )
-
-    async def run():
-        async with Orchestrator(cfg, provider) as orchestrator:
-            created = await orchestrator.submit_mission(_recorder_spec("fx3-manager"))
-            await asyncio.wait_for(orchestrator.run(), timeout=240)
-            store = orchestrator.store
-            return store.get_mission(created.id), store.list_events(created.id)
-
-    current, events = asyncio.run(run())
-    rejected = [e for e in events if e.type == "TaskGraphChangeRejected"]
-    assert rejected and "task_budget_below_floor" in json.dumps(
-        rejected[0].payload, ensure_ascii=False
-    )
-    assert len(seen) == 2
-    for package in seen:
-        assert package["budget_floor"] == {
-            "min_task_tokens": 4096,
-            "min_task_tokens_with_critic_review": 10_096,
-        }
-    assert "task_budget_below_floor" in json.dumps(seen[1]["rejections"], ensure_ascii=False)
-    assert str(current.status) == "COMPLETED"
-
-
 @pytest.mark.parametrize(
     ("overrides", "profile_output", "expected"),
     [

@@ -167,11 +167,12 @@ def test_third_domain_is_explicit_and_unknown_does_not_become_document():
 
 
 def test_appworld_templates_never_expose_evaluator_or_pytest_tool():
-    for role in APPWORLD_PROFILE.role_templates:
+    # The profile still names the removed ``manager`` key; nothing asks for it.
+    for role in (name for name in APPWORLD_PROFILE.role_templates if name in ROLES):
         template = template_for_domain(ROLES[role], APPWORLD_PROFILE, {})
         assert "run_tests" not in template.tool_names
         assert not any("evaluat" in name for name in template.tool_names)
-        if role not in {"planner", "manager", "critic"}:
+        if role not in {"planner", "critic"}:
             assert "appworld_execute" in template.tool_names
 
 

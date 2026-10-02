@@ -135,17 +135,6 @@ def test_s8_01_knowledge_and_a_settled_conflict_are_on_the_path(tmp_path, capsys
     _reconciles(report)
 
 
-def test_s8_01_superseded_work_is_exploration_with_its_reason(tmp_path, capsys):
-    evidence, mission_id = _demo(tmp_path, "dynamic-dag")
-    capsys.readouterr()
-    report, _snapshot = _read(evidence, mission_id)
-    off = [a for a in report["attempts"] if not a["on_success_path"]]
-    assert off and all(a["exploration_reason"] for a in off)
-    assert report["cost"]["exploration"]["tokens"] > 0
-    assert "manager" in report["cost"]["services"]
-    _reconciles(report)
-
-
 def test_s8_01_an_approved_action_and_its_people_are_on_the_path(tmp_path, capsys):
     evidence, mission_id = _demo(tmp_path, "approval-action")
     capsys.readouterr()
@@ -295,35 +284,6 @@ def test_review_p1_4_reconciliation_fails_on_a_stray_subject_or_a_ledger_mismatc
 
 
 # ------------------------------------------------------------------ code re-review (round 2)
-def test_re_review_knowledge_an_arbitration_superseded_is_refuted_too(
-    tmp_path, capsys, monkeypatch
-):
-    import agent_orchestrator.observability.traces as traces_module
-
-    evidence, mission_id = _demo(tmp_path, "dynamic-dag")
-    capsys.readouterr()
-    report, _snapshot = _read(evidence, mission_id)
-    off = next(a for a in report["attempts"] if not a["on_success_path"])
-    original = traces_module.lineage
-
-    def with_superseded_loser(store, mid):  # a verified record an arbitration superseded
-        view = original(store, mid)
-        view["knowledge"] = [
-            *view["knowledge"],
-            {"id": "k-loser", "status": "SUPERSEDED", "source_attempt": off["attempt_id"]},
-        ]
-        view["edges"] = [*view["edges"], {"knowledge": "k-ruling", "resolves": "k-loser"}]
-        view["attempts"] = [*view["attempts"], {"attempt_id": off["attempt_id"]}]
-        return view
-
-    monkeypatch.setattr(traces_module, "lineage", with_superseded_loser)
-    again, _snapshot = _read(evidence, mission_id)
-    flagged = next(a for a in again["attempts"] if a["attempt_id"] == off["attempt_id"])
-    assert flagged["claim_refuted"] is True and flagged["on_success_path"] is False
-    assert flagged["exploration_reason"] == "claim_refuted"  # not pulled onto the path
-    assert off["attempt_id"] not in again["knowledge_path"]["refuted_on_path"]
-
-
 def test_re_review_a_finished_mission_with_usage_left_unsettled_is_not_reconciled(tmp_path, capsys):
     evidence, mission_id = _demo(tmp_path, "static-dag")
     capsys.readouterr()

@@ -132,8 +132,8 @@ class MissionSourceReader:
         mission = store.get_mission(intent.mission_id)
         if mission is None:
             raise ArpError("SOURCE_UNAVAILABLE", "the intent's Mission is not recorded")
-        fragment = config.get("fragment_execution")
-        context = fragment.get("context") if isinstance(fragment, Mapping) else None
+        execution = config.get("attempt_execution")
+        context = execution.get("context") if isinstance(execution, Mapping) else None
         base: dict[str, Any] = {
             "schema": SCHEMA,
             **_receipt(intent),

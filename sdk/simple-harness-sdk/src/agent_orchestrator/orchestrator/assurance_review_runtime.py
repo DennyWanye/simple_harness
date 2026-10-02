@@ -401,12 +401,7 @@ class AssuranceReviewRuntime:
                     AssuranceReader(self.store, tenant_id=mission.tenant_id, mission_id=mission.id),
                     prior[0],
                 )
-        selection = orch.commit.selection_deadline(attempt_id)
-        deadline = min(
-            self.store.now + orch._critic_wait, selection if selection is not None else float("inf")
-        )
-        if deadline <= self.store.now:
-            raise ContractError("selection deadline elapsed before Assurance review")
+        deadline = self.store.now + orch._critic_wait
         if invocation is None:
             decision = orch._route_service("critic", mission.id)
             fields, reservation = protected_critic_budget(orch, decision, task.id, attempt_id)

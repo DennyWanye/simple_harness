@@ -23,7 +23,7 @@ def require_mounts(inputs: Sequence[UpstreamInput], rules: TargetRules, *,
                    supplementary: Mapping[str, bytes] | None = None) -> None:
     """Reject collisions before a dict/update or a filesystem write loses them.
 
-    DATA and Selection mounts were independently selected by their original
+    DATA mounts were independently selected by their original
     authorities. Additional frozen source/fragment bytes may share an exact
     path only when they are byte-identical; they cannot replace selected DATA.
     """
@@ -113,11 +113,8 @@ class TaskGraphExecutionGuard:
         if mission is None or orch._active_source_binding(task.mission_id) != {
                 key: config[key] for key in ("source_versions", "source_roots") if key in config}:
             raise StoreConflict("TASKGRAPH_EXECUTION_SOURCE_BINDING_CHANGED")
-        # Count every original open Attempt, with the same explicit Selection
-        # waiting exclusion as original create_attempt. Caller-supplied optional
-        # limits cannot bypass the actual installed deployment cap.
-        waiting = orch.commit.selection_waiting_ids()
+        # Count every original open Attempt. Caller-supplied optional limits cannot
+        # bypass the actual installed deployment cap.
         opened = store.count_attempts_by_status(*(str(state) for state in OPEN_ATTEMPT_STATES))
-        opened -= sum(orch.commit._require_attempt(identity).status in OPEN_ATTEMPT_STATES for identity in waiting)
         if opened >= orch._config.max_running_attempts:
             raise StoreConflict("TASKGRAPH_EXECUTION_CAPACITY_REACHED")

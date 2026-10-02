@@ -54,7 +54,6 @@ OPEN_FIELDS = frozenset(
         "untrusted_sources",
         "synthesis",
         "conflict_reserve_tokens",
-        "search_policy_version_id",
         "runtime_profile_id",
         "orchestration_semantics_version",
         "planning_protocol_version",

@@ -29,7 +29,7 @@ from agent_orchestrator.orchestrator.commit_service import (
     Reservation,
     task_account,
 )
-from agent_orchestrator.planning.candidate_selection import selection_revision
+from agent_orchestrator.orchestrator.tail_revision import task_tail_revision
 from agent_orchestrator.runtime.agent_worker import AgentBridge
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.verification.assessments import mission_contract_revision
@@ -111,7 +111,7 @@ def test_mission_pool_to_real_system_task_conserves_ancestors_and_original_attem
     planned_system,
 ):
     commit, mission, work, system, pools = planned_system
-    revision = selection_revision(commit.store, system)
+    revision = task_tail_revision(commit.store, system)
     work_before = commit.ledger.account(task_account(work.id))
     before = account_values(commit)
     with commit.store.transaction():
@@ -169,7 +169,7 @@ def test_mission_pool_failures_leave_original_balances_even_when_caught_inside_t
     dimension,
 ):
     commit, _, work, system, pools = planned_system
-    revision = selection_revision(commit.store, system)
+    revision = task_tail_revision(commit.store, system)
     with commit.store.transaction():
         before = account_values(commit)
         args = dict(
@@ -230,7 +230,7 @@ def test_mission_pool_cannot_spend_task_cap_already_used_by_an_actual_reservatio
                 "synthesis-original",
                 task_id=system.id,
                 reserve=ALLOWANCE,
-                semantic_revision=selection_revision(commit.store, system),
+                semantic_revision=task_tail_revision(commit.store, system),
                 route_binding=BINDING,
             )
         assert account_values(commit) == before
@@ -243,7 +243,7 @@ def test_mission_pool_cannot_spend_task_cap_already_used_by_an_actual_reservatio
 
 def test_system_actual_attempt_creation_failure_rolls_back_provisional_transfer(planned_system):
     commit, _, _, system, pools = planned_system
-    revision = selection_revision(commit.store, system)
+    revision = task_tail_revision(commit.store, system)
     with commit.store.transaction():
         pools.transfer_to_task_hold(
             "synthesis-original",

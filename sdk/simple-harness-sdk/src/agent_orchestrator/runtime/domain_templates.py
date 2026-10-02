@@ -29,7 +29,6 @@ def register_document_templates() -> None:
     arbiter_base = TEMPLATE_VERSIONS["arbiter"]["arbiter-v2"]
     synthesizer_base = TEMPLATE_VERSIONS["synthesizer"]["synthesizer-v2"]
     planner_base = TEMPLATE_VERSIONS["planner"]["planner-v4"]
-    manager_base = TEMPLATE_VERSIONS["manager"]["manager-v2"]
     critic_base = TEMPLATE_VERSIONS["critic"]["critic-v2"]
 
     worker = _revise(
@@ -115,15 +114,6 @@ def register_document_templates() -> None:
         ),
     )
     register_template(replace(planner, instructions=planner.instructions + "\n" + NOTICE))
-    manager = _revise(
-        manager_base,
-        "manager-doc-research-v1",
-        (
-            "不含 code_test 时不要写 pytest: 条件。",
-            "遵守输入 domain 的准则文法与政策下限，文档领域不运行代码测试。",
-        ),
-    )
-    register_template(replace(manager, instructions=manager.instructions + "\n" + NOTICE))
     register_template(
         replace(
             critic_base,
@@ -133,7 +123,6 @@ def register_document_templates() -> None:
     )
     _register_document_submission_v2()
     _register_document_submission_v3()
-    _register_document_fragment_manager_v4()
     _register_document_scope_review()
     _register_document_ordinal_refs()
 
@@ -233,7 +222,7 @@ def _register_document_submission_v2() -> None:
         "connector",
         "failure_analyst",
     }
-    for name in (*sorted(result_roles), "planner", "manager", "critic"):
+    for name in (*sorted(result_roles), "planner", "critic"):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v1"]
         instructions = previous.instructions
         if name in result_roles:
@@ -246,7 +235,7 @@ def _register_document_submission_v2() -> None:
                 )
                 + wire
             )
-        elif name in {"planner", "manager"}:
+        elif name == "planner":
             instructions += planning
         else:
             instructions += (
@@ -337,34 +326,12 @@ def _register_document_submission_v3() -> None:
         "保留已接受结果及其真实依赖，仅在缺口需要时追加任务，"
         "不得因调整拆分而重写已冻结 intent 或把尚未验证的产物当作已完成。"
     )
-    for name in ("planner", "manager"):
+    for name in ("planner",):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v2"]
         register_template(replace(
             previous, prompt_version=f"{name}-doc-research-v3",
             instructions=previous.instructions + planning,
         ))
-
-
-def _register_document_fragment_manager_v4() -> None:
-    """New Missions can choose fragment validation; v1-v3 stay byte-for-byte frozen."""
-    from .role_templates import TEMPLATE_VERSIONS, _revise, register_template
-
-    previous = TEMPLATE_VERSIONS["manager"]["manager-doc-research-v3"]
-    code_fragment = TEMPLATE_VERSIONS["manager"]["manager-v3"]
-    guidance = "\n片段决策严格 JSON：" + code_fragment.instructions.split(
-        "\n片段决策严格 JSON：", 1
-    )[1]
-    manager = _revise(
-        previous,
-        "manager-doc-research-v4",
-        (
-            "最终回答必须只包含一个 <graph_change_proposal>…</graph_change_proposal> 块",
-            "最终回答只能包含一个 <graph_change_proposal>…</graph_change_proposal> 块，"
-            "或在 fragment_validation.available=true 时包含一个 "
-            "<fragment_validation_decision>…</fragment_validation_decision> 块；不可混用",
-        ),
-    )
-    register_template(replace(manager, instructions=manager.instructions + guidance))
 
 
 def _register_document_scope_review() -> None:

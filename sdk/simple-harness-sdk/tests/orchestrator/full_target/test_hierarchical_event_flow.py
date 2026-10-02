@@ -76,7 +76,6 @@ from agent_orchestrator.graph.projection_validation import GraphIntegrityError  
 from agent_orchestrator.orchestrator import hierarchical_dispatch as module  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
     ARTIFACT_MERGE_NOT_APPLICABLE,
-    MANAGEMENT_NOT_APPLICABLE,
     SERVICE_INTENT_REHANDED_OFF,
     CommitService,
     MissionSpec,
@@ -1055,35 +1054,9 @@ def _static_dag_case() -> tuple[Any, MissionSpec, int]:
     )
 
 
-def _dynamic_dag_case() -> tuple[Any, MissionSpec, int]:
-    """Step 5: a Worker proposal that reaches the graph only through the Manager."""
-
-    from agent_orchestrator.testing.fixtures import (
-        RECORDER_SEED,
-        RECORDER_SPEC,
-        demo_dynamic_dag_provider,
-    )
-
-    return (
-        demo_dynamic_dag_provider(),
-        MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal=str(RECORDER_SPEC["goal"]),
-            success_criteria=tuple(RECORDER_SPEC["success_criteria"]),
-            tenant_id="tenant-p23b-explode",
-            idempotency_key="explode-dynamic",
-            allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
-            budget=Budget(max_tokens=300_000, max_attempts=16),
-            workspace_seed=RECORDER_SEED,
-        ),
-        2,
-    )
-
-
 EXPLODE_CASES = [
     ("one task, repair and critic", _single_task_case),
     ("a parallel DAG with artifact flow", _static_dag_case),
-    ("a dynamic DAG through the Manager", _dynamic_dag_case),
 ]
 
 
@@ -1135,8 +1108,7 @@ NEW_EVENT_TYPES = frozenset(
         ROOT_REVIEW_REJECTED,
         ROOT_REVIEW_UNREADABLE,
         ROOT_REVIEW_CUT_BUDGET_SPENT,
-        MANAGEMENT_NOT_APPLICABLE,
-        # HTN 精简片 B：原专用细化入口的 ``HierarchicalRefinementRequested`` 已删除，
+            # HTN 精简片 B：原专用细化入口的 ``HierarchicalRefinementRequested`` 已删除，
         # "计划里有目标还没有做法"改走通用规划请求，它留下的是下面三种事件。
         PLANNING_REPAIR_REQUESTED,
         "PlanningServiceResumed",
@@ -1226,11 +1198,6 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     ``_ask_root_reviewer`` are deliberately **not** extra sites — they are reached
     only from ``_decide``, which has already asked, and are handed the answer.
 
-    P2.3d adds the sixteenth, ``_request_management``: a Manager on a hierarchical
-    Mission can only offer a legacy ``TaskGraphChange``, which ``commit_graph_change``
-    refuses unconditionally, so opening the round spends a model call and a manager
-    allowance on a question whose answer is fixed (defect D4).  Asking the mode there is
-    what keeps the legacy management loop on the Missions it can actually help.
     P2.3d adds the seventeenth, ``_refine_open_compounds``: a compound goal the plan has
     not refined is a hierarchical notion with no legacy counterpart, and asking the mode
     there is what keeps the extra Planner round off a Mission that has no plan revisions
@@ -1270,6 +1237,9 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     2026-10-02 HTN 精简片 D 第 2 项（计数 22→23）：``_refresh_document_judgments`` 重看一份留存
     的文档判定时，保证通道上的文字要求要读已认证的最终审查结论（``_assured_root_grades``），
     它需要分层调度；旧平面任务这里拿到 None，照旧只按覆盖结果重算。
+
+    2026-10-02 删旧平面模式第一刀（计数 23→22）：第十六处 ``_request_management``（管理员入口）
+    整条删除。
     """
 
     del tmp_path
@@ -1278,7 +1248,7 @@ def test_the_event_handler_asks_the_mode_before_consulting_the_assembly(tmp_path
     from agent_orchestrator.orchestrator import event_handler
 
     source = inspect.getsource(event_handler)
-    assert source.count("self._new_mode(mission)") == 23
+    assert source.count("self._new_mode(mission)") == 22
     assert "is_hierarchical(mission)" in inspect.getsource(event_handler.Orchestrator._new_mode)
 
 

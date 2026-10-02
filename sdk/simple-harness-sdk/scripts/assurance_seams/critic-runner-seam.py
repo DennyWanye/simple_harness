@@ -189,7 +189,7 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
             assert replay==verdict and provider.calls==1
             counts={'provider_calls':provider.calls,'official_records':store.connection.execute('SELECT COUNT(*) FROM review_records WHERE official=1').fetchone()[0]}
             output={'status':'PASS','scope':'original _run_critic -> dispatcher -> AgentRuntime -> collector -> REVIEW WorkStore -> official -> CriticVerdict and replay; fixture routing/ACL/lease and single-consumer pump; not full deployment, acceptance, real model or UI','counts':counts}
-            sources=['assurance_review_runtime.py','assurance_review_handoff.py','assurance_review_transport.py','assurance_review_consumer.py','assurance_review_import.py','assurance_content_review.py','event_handler.py','commit_service.py','selection_commits.py']
+            sources=['assurance_review_runtime.py','assurance_review_handoff.py','assurance_review_transport.py','assurance_review_consumer.py','assurance_review_import.py','assurance_content_review.py','event_handler.py','commit_service.py']
             output['source_hashes']={name:hashlib.sha256((SDK/'src/agent_orchestrator/orchestrator'/name).read_bytes()).hexdigest() for name in sources}
             path=(EVIDENCE / ('critic-runner-seam-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')+'.json'))
             path.write_text(json.dumps(output,ensure_ascii=False,indent=2)+'\n')

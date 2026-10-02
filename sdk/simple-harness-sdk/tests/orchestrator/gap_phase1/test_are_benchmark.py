@@ -188,7 +188,6 @@ def factory(tmp_path, providers, mode="good", close_provider=None):
             maximum_output_tokens=4096,
             close_provider=close_provider,
             before_handoff=handoff,
-            dynamic_graph=False,
         )
 
     return create

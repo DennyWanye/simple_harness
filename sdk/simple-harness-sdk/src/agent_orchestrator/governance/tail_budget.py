@@ -101,7 +101,7 @@ class TailBudgetLedger:
         self._transaction_required()
         _text(hold_id, "identity")
         _text(task_revision, "Task revision")
-        if purpose not in {"selection", "critic", "conflict", "synthesis"}:
+        if purpose not in {"critic", "conflict", "synthesis"}:
             raise BudgetError("unknown tail purpose")
         request = canonical_json(
             dict(
@@ -159,40 +159,6 @@ class TailBudgetLedger:
             self.store.connection.execute(
                 "SELECT * FROM budget_tail_holds WHERE hold_id=?", (hold_id,)
             ).fetchone()
-        )
-
-    def reserve_selection_tail(
-        self,
-        round_id: str,
-        task_account: str,
-        reserve: TailReserve,
-        *,
-        mission_id: str,
-        task_revision: str,
-    ) -> dict[str, Any]:
-        if reserve.attempts < 1:
-            raise BudgetError("selection tail must protect at least one real synthesis Attempt")
-        return self.reserve_tail(
-            round_id,
-            task_account,
-            reserve,
-            mission_id=mission_id,
-            task_revision=task_revision,
-            purpose="selection",
-        )
-
-    def transfer_selection_reserve(
-        self,
-        round_id: str,
-        attempt_subject: str,
-        allocations: Sequence[TailAllocation],
-        *,
-        task_revision: str,
-    ) -> dict[str, Any]:
-        if not any(a.subject_id == attempt_subject and a.counts_attempt for a in allocations):
-            raise BudgetError("selection transfer must include its real synthesis Attempt")
-        return self.transfer_tail(
-            round_id, attempt_subject, allocations, task_revision=task_revision
         )
 
     def transfer_tail(
@@ -273,7 +239,6 @@ class TailBudgetLedger:
             ):
                 raise BudgetError("tail cannot be diverted to an unrelated Task")
             allowed_roles = {
-                "selection": {"synthesis", "critic"},
                 "critic": {"critic"},
                 "conflict": {"conflict", "critic"},
                 "synthesis": {"synthesis", "critic"},

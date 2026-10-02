@@ -3,7 +3,7 @@
 """Durable dispatch/result anchors for the operation-completion protocol.
 
 The worker's resolved input set and its local output-port claims are needed again
-when a verified result is accepted after a restart or through Selection.  They
+when a verified result is accepted after a restart.  They
 therefore cannot live only in the event handler.  This module freezes and reads
 those anchors; it does not decide acceptance or materialise an output itself.
 """
@@ -143,7 +143,7 @@ class FrozenCompletionInputs:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class FrozenCompletionResultInputs:
-    """Result-specific durable anchors used by both normal and Selection acceptance."""
+    """Result-specific durable anchors used by acceptance."""
 
     frozen: FrozenCompletionInputs
     scope: Any
@@ -187,7 +187,6 @@ def freeze_attempt_completion_inputs(
     *,
     attempt_id: str,
     request_id: str,
-    selection_inputs: Sequence[UpstreamInput] = (),
 ) -> FrozenCompletionInputs | None:
     """Freeze the exact resolved manifest used to build a new-protocol Attempt.
 
@@ -228,10 +227,7 @@ def freeze_attempt_completion_inputs(
     target_rules = dispatch.target_rules_for(task_id)
     expected = manifest_upstream_inputs(manifest, target_rules, network=network)
     expected = dispatch.overlay_attempt_inputs(mission_id, expected)
-    # Candidate material is independently authorized by the original Selection
-    # decision. It remains outside the accepted DATA manifest and carries its
-    # candidate namespace; never promote it into a DATA binding.
-    if _exact_inputs(inputs) != _upstream_counter([*expected, *selection_inputs]):
+    if _exact_inputs(inputs) != _upstream_counter(expected):
         raise _refuse(
             "OP_COMPLETION_INPUTS_UNAVAILABLE", "dispatch inputs differ from frozen manifest"
         )
@@ -387,7 +383,7 @@ def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletion
     """Re-read frozen dispatch inputs and durable ResultSubmitted port claims.
 
     ``None`` is only the legacy path.  A new-protocol Result without these anchors
-    is refused so Selection and cold recovery cannot silently fall back to a current
+    is refused so cold recovery cannot silently fall back to a current
     plan or to handler-local state.
     """
 

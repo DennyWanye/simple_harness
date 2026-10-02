@@ -150,7 +150,6 @@ class AREOrchestratorRunner:
         max_inflight_tokens: int | None = None,
         default_output_tokens: int = 8192,
         maximum_output_tokens: int = 32768,
-        dynamic_graph: bool = True,
         close_provider: Callable[[], Awaitable[None]] | None = None,
         poll_seconds: float = 0.02,
     ) -> None:
@@ -170,7 +169,7 @@ class AREOrchestratorRunner:
             default_output_tokens,
             maximum_output_tokens,
         )
-        self.dynamic_graph, self.poll_seconds = dynamic_graph, poll_seconds
+        self.poll_seconds = poll_seconds
         self._close_provider = close_provider
         self._extra_input_reserve = extra_input_reserve
         self._before_handoff = before_handoff
@@ -271,7 +270,6 @@ class AREOrchestratorRunner:
             model=self.context.manifest.model,
             max_concurrency=3,
             max_concurrent_model_calls=self.context.manifest.physical_slots,
-            dynamic_graph=self.dynamic_graph,
             knowledge_sharing=True,
             default_max_output_tokens=self.default_output_tokens,
             max_output_tokens_ceiling=self.maximum_output_tokens,

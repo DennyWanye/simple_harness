@@ -36,8 +36,6 @@ class MissionStopReason(StrEnum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     ARTIFACT_CONFLICT = "artifact_conflict"  # step 3: independent branches disagree on a path
     RETRIEVAL_UNAVAILABLE = "retrieval_unavailable"  # step 4 (D4-11'): knowledge index unreadable
-    NO_PROGRESS = "no_progress"  # step 5 (D5-7): repeated no-progress and no change of approach
-    MANAGEMENT_EXHAUSTED = "management_exhausted"  # step 5: Manager rounds used up
     RUNTIME_UNAVAILABLE = (
         "runtime_unavailable"  # step 6 (D6-5'): a model service stayed unavailable
     )
@@ -50,8 +48,7 @@ class MissionStopReason(StrEnum):
     HUMAN_OVERRIDE = "human_override"  # step 7 (D7-9): a person took over and stopped the Task
     #: FULL-TARGET P2.3c part 2d: a hierarchical plan has nothing this execution cycle
     #: can dispatch, confirmed by a second full cycle that read the world again and
-    #: found it unchanged.  Deliberately **not** ``NO_PROGRESS`` (which is Task-level
-    #: and counted per attempt), ``PLANNING_FAILED`` (a plan was committed and
+    #: found it unchanged.  Deliberately **not** ``PLANNING_FAILED`` (a plan was committed and
     #: dispatched) or ``INSUFFICIENT_EVIDENCE`` / ``MISSION_CRITERIA_UNMET`` (those are
     #: *verdicts*, and no root Resolution was formed here) — §7.4 forbids reporting a
     #: bound, a timeout and an incomplete model under one name.

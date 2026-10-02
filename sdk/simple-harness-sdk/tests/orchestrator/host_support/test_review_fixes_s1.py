@@ -21,7 +21,6 @@ import json
 import pytest
 from test_local_code_execution import (
     NO_CODE,
-    OFF,
     TOOLS3,
     _config,
     _critics,
@@ -31,8 +30,6 @@ from test_local_code_execution import (
 )
 
 from agent_orchestrator.contracts import Budget, ContractError
-from agent_orchestrator.governance.policies import deployed_layers
-from agent_orchestrator.graph.changes import NewTaskNode, default_change_policy
 from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, graph_proposal_step
@@ -42,16 +39,6 @@ def _pytest_task(key="A", tools=TOOLS3):
     task = _task(key, NO_CODE, tools=tools)
     task["success_criteria"] = ["file:NOTES.md", "pytest:tests/test_notes.py"]
     return task
-
-
-# ------------------------------------------------------------------ P2-7
-def test_an_add_task_without_a_policy_gets_the_deployed_default():
-    node = NewTaskNode.from_json(
-        {"key": "N", "goal": "g", "rationale": "r", "success_criteria": ["file:x.md"]},
-        default_policy=default_change_policy(deployed_layers(OFF)),
-    )
-    assert "code_test" not in node.verification_policy
-    assert "critic_review" in node.verification_policy  # a substantive check remains
 
 
 # ------------------------------------------------------------------ P1-1

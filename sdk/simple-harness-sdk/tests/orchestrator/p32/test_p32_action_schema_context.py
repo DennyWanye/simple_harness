@@ -13,7 +13,7 @@ import re
 
 import pytest
 from fixtures_provider import RoleScriptedProvider, envelope_step, graph_proposal_step, package_of
-from graph_helpers7 import change, node, spec
+from graph_helpers7 import node, spec
 
 from agent_orchestrator import __version__ as ORCHESTRATOR_VERSION
 from agent_orchestrator.contracts import Artifact, ContractError
@@ -44,8 +44,7 @@ def _connector(tmp_path):
 @pytest.mark.parametrize("action_task,enabled,task_action_criterion,role", [
     (True, True, True, "worker"), (True, True, False, "worker"),
     (False, True, False, "worker"), (False, False, False, "worker"),
-    (True, True, True, "connector"),
-], ids=["publish", "mission-charter-publish", "ordinary", "disabled-ordinary", "connector"])
+], ids=["publish", "mission-charter-publish", "ordinary", "disabled-ordinary"])
 def test_actual_worker_provider_input_has_only_relevant_declared_schema(
     tmp_path, action_task, enabled, task_action_criterion, role,
 ):
@@ -81,14 +80,6 @@ def test_actual_worker_provider_input_has_only_relevant_declared_schema(
                 base_version=planning.version,
                 source={"planner": "fixture"},
             )
-            if role != "worker":
-                orch.commit.commit_graph_change(
-                    mission.id,
-                    change(orch.store.get_mission(mission.id).final_report["graph_version"], [
-                        {"op": "set_role", "task_id": tasks[0].id, "role": role},
-                    ]),
-                    source={"manager": "fixture"},
-                )
             task = orch.store.get_task(tasks[0].id)
             assert await orch._next_attempt(orch.store.get_mission(mission.id), task, [])
             [attempt] = orch.store.list_attempts(tasks[0].id)

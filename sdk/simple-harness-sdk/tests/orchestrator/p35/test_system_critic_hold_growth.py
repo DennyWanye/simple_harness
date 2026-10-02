@@ -111,7 +111,7 @@ def _scenario(tmp_path, mode):
     })
     config = OrchestratorConfig(
         evidence_root=tmp_path / "runtime", max_concurrency=1, candidates_per_task=1,
-        dynamic_graph=False, knowledge_sharing=False,
+        knowledge_sharing=False,
         attempt_reserve_tokens=60_000, critic_reserve_tokens=30_000,
         default_max_output_tokens=8192, max_output_tokens_ceiling=8192,
     )

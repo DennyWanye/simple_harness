@@ -1175,31 +1175,6 @@ def outcome_step(
     return step
 
 
-def graph_change_step(
-    operations: Sequence[dict[str, Any]] | Callable[[dict[str, Any]], list[dict[str, Any]]],
-    *,
-    rationale: str = "按执行证据调整计划",
-) -> Callable[[ProviderRequest], str]:
-    """A Manager step: the proposal is based on the graph_version the package carries;
-    ``operations`` may be a callable of the package (to reference task ids it lists)."""
-
-    def step(request: ProviderRequest) -> str:
-        package = package_of(request)
-        ops = operations(package) if callable(operations) else list(operations)
-        body = {
-            "base_graph_version": package.get("graph_version", 1),
-            "rationale": rationale,
-            "operations": ops,
-        }
-        return (
-            "<graph_change_proposal>"
-            + json.dumps(body, ensure_ascii=False)
-            + "</graph_change_proposal>"
-        )
-
-    return step
-
-
 def _write_files_then(
     files: dict[str, str], *, test_path: str | None, summary: str, claim: str
 ) -> list[object]:
@@ -1271,48 +1246,9 @@ def recorder_scripts() -> dict[str, list[object]]:
     }
 
 
-def recorder_manager_change(package: dict[str, Any]) -> list[dict[str, Any]]:
-    """The §7.4 decision: add E (format), add B2 (implement after E), supersede B."""
-
-    task_id = str(package["trigger"]["task_id"])
-    subgraph = {t["task_id"]: t for t in package.get("affected_subgraph", [])}
-    a_id = next(t for t in subgraph.values() if t["goal"].startswith("分析"))["task_id"]
-    return [
-        {
-            "op": "add_task",
-            "key": "E",
-            "goal": RECORDER_GOALS["E"],
-            "rationale": "B 实现依赖格式定义；确认格式解锁实现",
-            "dependencies": [a_id],
-            "success_criteria": ["file:FORMAT.md"],
-            "verification_policy": ["format_check", "rule_check"],
-            "allowed_tools": list(COMPARE_TOOLS),
-            "budget": {"max_tokens": 20_000, "max_attempts": 2},
-            "priority": 2.5,
-            "outputs": ["FORMAT.md"],
-            "parent_task_ids": [task_id],
-        },
-        {
-            "op": "add_task",
-            "key": "B2",
-            "goal": RECORDER_GOALS["B2"],
-            "rationale": "替代被阻塞的实现任务，按确认的格式实现",
-            "dependencies": [a_id, "E"],
-            "success_criteria": ["pytest:tests/test_recorder.py"],
-            "verification_policy": ["format_check", "rule_check", "code_test"],
-            "allowed_tools": list(COMPARE_TOOLS),
-            "budget": {"max_tokens": 30_000, "max_attempts": 3},
-            "priority": 2.0,
-            "outputs": ["recorder.py"],
-        },
-        {"op": "supersede_task", "task_id": task_id, "replacement_key": "B2"},
-    ]
-
-
 def demo_dynamic_dag_provider(
     *,
     scripts: dict[str, list[object]] | None = None,
-    manager_steps: Sequence[object] | None = None,
     tasks: Sequence[dict[str, Any]] | None = None,
     planner_steps: Sequence[object] | None = None,
     holds: dict[str, list[asyncio.Event | None]] | None = None,
@@ -1338,11 +1274,6 @@ def demo_dynamic_dag_provider(
         per_attempt=per_attempt,
         critic_delay_seconds=critic_delay_seconds,
         model=model,
-    )
-    provider.scripts["manager"] = (
-        list(manager_steps)
-        if manager_steps is not None
-        else [graph_change_step(recorder_manager_change)]
     )
     return provider
 
@@ -1413,7 +1344,6 @@ def demo_multi_mission_profiles(*, missions: int = 2, critic_delay_seconds: floa
         critic_steps=[critic_step(verdict="FAIL", criteria_met=False, blocker="再核对一次输入分析")]
         + [critic_step(verdict="PASS", criteria_met=True)] * (missions * 6),
         critic_delay_seconds=critic_delay_seconds,
-        manager_steps=[graph_change_step([])] * 4,
         model="fixture-large",
         # the first verdict is a FAIL: that Attempt climbs to the large pool (§9.3 ladder)
         per_attempt={"A": [scripts["A"]] * missions, "D": [scripts["D"]] * missions},
@@ -1424,7 +1354,7 @@ def demo_multi_mission_profiles(*, missions: int = 2, critic_delay_seconds: floa
     }
     rules = RoutingRules(
         default="small",
-        by_role={"planner": "large", "manager": "large", "critic": "large"},
+        by_role={"planner": "large", "critic": "large"},
         escalate={"small": "large"},
         fallback={"small": "large"},
     )

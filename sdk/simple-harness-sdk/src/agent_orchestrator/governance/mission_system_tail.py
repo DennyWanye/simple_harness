@@ -17,7 +17,7 @@ from simple_harness.contracts import canonical_json
 from simple_harness.execution.budget import FrozenPriceEstimator
 
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ids
-from ..planning.candidate_selection import selection_revision
+from ..orchestrator.tail_revision import task_tail_revision
 from ..verification.assessments import mission_contract_revision
 from .budgets import BudgetError, BudgetExhausted, BudgetLedger
 from .tail_budget import TailAllocation, TailBudgetLedger, TailReserve
@@ -218,7 +218,7 @@ class MissionSystemTailLedger:
             raise BudgetError("system transfer needs the actual same-Mission system Task")
         if (
             task.status in TERMINAL_TASK
-            or selection_revision(self.store, task) != semantic_revision
+            or task_tail_revision(self.store, task) != semantic_revision
         ):
             raise BudgetError("system Task is terminal or its semantic revision changed")
         if reserve.attempts < 1 or reserve.attempts > pool["remaining_attempts"]:
@@ -326,7 +326,7 @@ class MissionSystemTailLedger:
         if row is None or row["binding_json"] != canonical_json(route_binding.to_json()):
             raise BudgetError("system Task has no matching frozen routing/price authority")
         task = self.store.get_task(task_id)
-        if task is None or selection_revision(self.store, task) != semantic_revision:
+        if task is None or task_tail_revision(self.store, task) != semantic_revision:
             raise BudgetError("system Task semantic revision changed")
         if type(critic) is not bool or (critic and route_binding.critic is None):
             raise BudgetError("system Critic route was not reserved")

@@ -376,8 +376,14 @@ def test_real_migration_and_legacy(tmp_path):
     applied = len(before["orch_schema_migrations"])
     assert migrations[:applied] == [row[:3] for row in before["orch_schema_migrations"]]
     assert migrations[applied:] == [(m.version, m.name, m.checksum) for m in (assurance, *later)]
+    # Migration 31 (2026-10-02) drops the candidate-comparison and fragment tables;
+    # every other legacy table keeps its DDL.
+    dropped = {"selection_candidates", "selection_rounds", "search_bindings", "fragment_validations"}
     for name, ddl in ddl_before.items():
         current = upgraded.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+        if name in dropped:
+            assert current is None, name
+            continue
         assert current is not None and current[0] == ddl, name  # legacy DDL untouched
     backup = legacy_path.with_name(f"{legacy_path.name}.pre-schema-{schema.SCHEMA_VERSION}.backup")
     assert backup.is_file()

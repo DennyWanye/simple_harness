@@ -271,7 +271,6 @@ def test_a03_pressure_priority_drain_preserves_actual_conflict_and_final_tails(
             max_concurrency=6,
             max_concurrent_model_calls=4,
             candidates_per_task=1,
-            dynamic_graph=False,
             verifier_workers=1,
             max_pending_verifications=LIMIT,
             low_watermark_ratio=0.0,

@@ -234,7 +234,6 @@ def test_system_hold_partitions_first_critic_before_synthesis_worker(
             evidence_root=tmp_path / f"system-{allowance}",
             max_concurrency=1,
             candidates_per_task=1,
-            dynamic_graph=False,
         )
         async with Orchestrator(
             config,

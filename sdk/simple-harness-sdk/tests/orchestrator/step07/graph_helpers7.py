@@ -3,15 +3,14 @@
 # ruff: noqa: E501
 
 """Drivers for the step-5 unit tests: the §7.4 graph A → B → C, A → D on a bare Commit
-Service, plus change-proposal builders."""
+Service."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from agent_orchestrator.contracts import Artifact, Budget, ClaimProposal, ResultEnvelope, ids
-from agent_orchestrator.graph.changes import TaskGraphChange
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec, Reservation
 from agent_orchestrator.storage.store import Store
@@ -132,25 +131,3 @@ def complete(service: CommitService, task, *, agent="agent-1", turn="turn-1"):
         stored.envelope.id, verifier_results=[{"layer": "rule_check", "status": "PASS"}]
     )
 
-
-def change(
-    base: int,
-    operations: Sequence[Mapping[str, Any]],
-    *,
-    basis: Mapping[str, Any] | None = None,
-    rationale="按证据调整",
-) -> TaskGraphChange:
-    return TaskGraphChange.from_json(
-        {
-            "base_graph_version": base,
-            "basis": dict(basis or {"trigger": "test"}),
-            "rationale": rationale,
-            "operations": list(operations),
-        }
-    )
-
-
-def add(key: str, deps: Sequence[str], **overrides: Any) -> dict[str, Any]:
-    body = node(key, deps, **overrides)
-    body.pop("outputs", None)
-    return {"op": "add_task", **body, "outputs": overrides.get("outputs", [f"{key.lower()}.md"])}

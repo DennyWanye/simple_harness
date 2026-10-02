@@ -100,12 +100,11 @@ def test_no_decision_point_reads_a_whitelisted_value_from_the_configuration():
 
     source = Path(event_handler.__file__).read_text(encoding="utf-8")
     pattern = re.compile(
-        r"self\._config\.(candidates_per_task|exploration_slots|manager_after_failures"
-        r"|no_progress_limit|max_manager_rounds|aging_window_seconds)\b"
+        r"self\._config\.(candidates_per_task|exploration_slots|aging_window_seconds)\b"
     )
     assert pattern.findall(source) == []
     assert "self._model_router.route(" not in source  # routing goes through the Mission's router
-    for constant in ("PLANNER.prompt_version", "MANAGER.prompt_version", "CRITIC.prompt_version"):
+    for constant in ("PLANNER.prompt_version", "CRITIC.prompt_version"):
         assert constant not in source
     # The search-visibility role reads the Task kind without selecting a prompt.
     # Every prompt selection still goes through the Mission-bound template.

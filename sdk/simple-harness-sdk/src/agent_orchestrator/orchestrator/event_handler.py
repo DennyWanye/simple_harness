@@ -26,7 +26,6 @@ import contextlib
 import json
 import logging
 import os
-import re
 import sqlite3
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
@@ -37,7 +36,6 @@ from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState
 from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 
 from .accounting_recovery import import_late_accounting
-from .fragment_commits import SelectionFragmentExpired
 
 if TYPE_CHECKING:
     from ..runtime.provider_budget_guard import ProviderBudgetGuard
@@ -60,17 +58,9 @@ from ..artifacts.workspace import WorkspaceError
 from ..context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
-    assert_no_secrets,
     build_critic_package,
-    build_manager_package,
     build_planner_package,
     build_worker_package,
-)
-from ..context.manager_fragments import (
-    consumer_fragment_context,
-    manager_fragment_origin,
-    manager_validated_fragment,
-    validate_manager_fragment_choice,
 )
 from ..context.retrieval import (
     KnowledgeContext,
@@ -89,7 +79,6 @@ from ..contracts import (
     AttemptStatus,
     ClaimStatus,
     ContractError,
-    FragmentValidationDecisionV1,
     Mission,
     MissionStatus,
     MissionStopReason,
@@ -118,13 +107,11 @@ from ..governance.domains import (
 from ..governance.permissions import Principal
 from ..governance.policies import action_decision, deployed_layers, effective_tools
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
-from ..graph.changes import ChangeLimits, GraphChangeRejected, TaskGraphChange
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
 from ..graph.task_graph import TaskBudgetFloor
 from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
-from ..planning.fragments import _task_contract
 from ..planning.manager import terminal_task
 from ..planning.planner import parse_task_graph_proposal
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
@@ -161,9 +148,6 @@ from ..runtime.output_blocks import (
 )
 from ..runtime.role_templates import (
     CRITIC,
-    FRAGMENT_VALIDATION_DECISION_TAG,
-    GRAPH_CHANGE_PROPOSAL_TAG,
-    MANAGER,
     PLANNER,
     PLANNER_HIERARCHICAL,
     RESULT_ENVELOPE_TAG,
@@ -188,7 +172,6 @@ from ..storage.store import (
     StoreConflict,
     StoreError,
 )
-from ..verification.assessments import task_contract_revision
 from ..verification.critics import CriticVerdict, parse_critic_verdict
 from ..verification.deterministic_checks import LayerResult
 from ..verification.human_review import (
@@ -322,9 +305,6 @@ FAULT_POINTS = (
     "after_accept_before_supersede",  # step 3 (inside the accept transaction → rolls back)
     "after_task_completed",  # step 3 (accept committed, release / next cycle not yet run)
     "retrieval_unavailable",  # step 4 (S4-07): the knowledge index cannot be read
-    "before_graph_change",  # step 5: a Manager's proposal parsed, not yet committed
-    "after_fragment_commit",  # P34: graph/receipt durable, Manager intent not settled
-    "after_validated_fragment_graph_commit",  # P34: C retarget durable, Manager intent not settled
 )
 MAX_CRITIC_ATTEMPTS = 2
 SYSTEM_CRITIC_MODEL_CALLS = 12
@@ -369,9 +349,6 @@ CONFIG_DERIVED = frozenset(
         "candidates_per_task",
         "exploration_slots",
         "mission_concurrency",
-        "manager_after_failures",
-        "no_progress_limit",
-        "max_manager_rounds",
         "aging_window_seconds",
         "routing",
     }
@@ -1023,7 +1000,7 @@ class Orchestrator:
         return max(1, int(self.policy_for(mission_id)["candidates_per_task"]))
 
     def _budget_floor(self, mission_id: str) -> dict[str, int]:
-        """What the Planner / Manager is told a Task must at least hold."""
+        """What the Planner is told a Task must at least hold."""
 
         candidates = self._candidates_for(mission_id)
         floor = self._task_floor_for_mission(mission_id)
@@ -1190,44 +1167,6 @@ class Orchestrator:
         if differences:
             self.commit.record_interpreter_drift(
                 mission.id, version_id=version_id, differences=differences
-            )
-
-    def _refuse_policy_ops(self, mission_id: str, task_id: str, operations: Any) -> None:
-        """Plan D9-10' (review P2-1): a Manager proposal that smuggles a configuration or
-        safety change — any operation outside the closed vocabulary, or policy keys
-        carried inside a legal one — is refused on record; the closed vocabulary then
-        rejects the proposal exactly as before (unknown keys of a legal operation are
-        never read)."""
-
-        from ..governance.promotion import NON_PROMOTABLE, PROMOTABLE
-        from ..graph.changes import OPERATIONS
-
-        policy_keys = NON_PROMOTABLE | PROMOTABLE
-        items: set[str] = set()
-        names: list[str] = []
-        for op in operations if isinstance(operations, list) else []:
-            if not isinstance(op, Mapping):
-                continue
-            name = str(op.get("op"))
-            if name not in OPERATIONS:
-                names.append(name)
-                items.add(name)
-                if op.get("key"):
-                    items.add(str(op["key"]))
-                items.update(
-                    str(k) for k in op if k not in {"op", "key", "value", "reason", "task_id"}
-                )
-            else:
-                carried = sorted(str(k) for k in op if str(k) in policy_keys)
-                if carried:
-                    names.append(name)
-                    items.update(carried)
-        if items:
-            self.commit.record_policy_suggestion_refused(
-                mission_id,
-                source="manager",
-                keys=sorted(items),
-                detail={"task_id": task_id, "operations": names},
             )
 
     def policy_snapshot(self) -> dict[str, Any]:
@@ -1738,7 +1677,7 @@ class Orchestrator:
         return profile.model if profile is not None else self._config.model
 
     def _route_service(self, role: str, mission_id: str) -> RoutingDecision:
-        """Planner / Manager / Critic routing (D6-4'): by role, with the profile health
+        """Planner / Critic routing (D6-4'): by role, with the profile health
         applied; a cooling-down profile without fallback fails the caller fast."""
 
         return self._router_for(mission_id).route(
@@ -3754,7 +3693,6 @@ class Orchestrator:
             if (
                 stored.envelope.mission_id not in active
                 or stored.envelope.id in self._verifying
-                or self.commit.candidate_is_waiting(stored.envelope.id)
             ):
                 continue
             if len(self._verifying) >= self._config.verifier_workers:
@@ -5243,17 +5181,8 @@ class Orchestrator:
         from ..storage.planning_human_store import PlanningHumanStore
         if intent.kind != "critic" and PlanningHumanStore(self.store).pending(intent.mission_id):
             # Existing handed-off work is collected normally; do not start another
-            # plan, Worker or Manager while a blocking human question is pending.
+            # plan or Worker while a blocking human question is pending.
             return False
-        if intent.kind == "attempt":
-            deadline = self.commit.selection_deadline(intent.subject_id)
-            if deadline is not None and self.store.now >= deadline:
-                expired = self.commit.expire_selection_dispatch(
-                    intent.subject_id, owner=self._owner
-                )
-                if expired:
-                    await self._release_attempt(intent.subject_id, cancel=True)
-                return expired
         if intent.kind == "critic" and self._critic_subject_stopped(intent):
             return await self._collect_stopped_critic(intent)
         from ..storage.store import StoreError
@@ -5472,36 +5401,6 @@ class Orchestrator:
     def _bind_workspace(self, attempt: Attempt) -> None:
         mission = self.store.get_mission(attempt.mission_id)
         assert mission is not None
-        frozen_intent = self.store.get_intent_for_subject(attempt.id)
-        frozen_fragment = (
-            None if frozen_intent is None else frozen_intent.config.get("validated_fragment_input")
-        )
-        if frozen_fragment is not None:
-            try:
-                from ..planning.fragments import current_task_revision
-
-                consumer = self.store.get_task(attempt.task_id)
-                if consumer is None or not isinstance(frozen_fragment, Mapping):
-                    raise ContractError("validated fragment consumer intent unavailable")
-                revision = current_task_revision(self.store, consumer)
-                current_fragment = self.commit.fragment_input(
-                    str(frozen_fragment["fragment_id"]),
-                    consumer_task_revision_id=revision.revision_id,
-                )
-                current_bound = {
-                    key: item
-                    for key, item in current_fragment.items()
-                    if key != "consumer_task_revision_id"
-                }
-                frozen_bound = {
-                    key: item
-                    for key, item in frozen_fragment.items()
-                    if key != "consumer_task_revision_id"
-                }
-                if current_bound != frozen_bound:
-                    raise ContractError("validated fragment frozen consumer provenance changed")
-            except (ContractError, KeyError, TypeError) as error:
-                raise ArtifactConflict(f"validated fragment consumer binding: {error}") from error
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
         previous = None
         if attempt.retry_of is not None:
@@ -5547,17 +5446,15 @@ class Orchestrator:
         source_roots = binding.get("source_roots", ())
         source_files = self._source_files(attempt)
         task = self.store.get_task(attempt.task_id)
-        fragment_files = self.commit.fragment_validation_inputs(attempt.task_id)
         if graph_rules is not None:
             require_mounts(upstream, graph_rules, supplementary=source_files)
             combined = [*upstream, *(UpstreamInput("source", path, sha256_hex_text(data), "source")
                         for path, data in source_files.items() if path not in {item.path for item in upstream})]
-            require_mounts(combined, graph_rules, supplementary=fragment_files)
+            require_mounts(combined, graph_rules)
         else:
             inputs = {path: value for path, value in inputs.items()
                       if not _under_source_root(path, source_roots)}
         inputs.update(source_files)
-        inputs.update(fragment_files)
         # P3.2 D4 (review round 2 P2-4): a rebind — recover() and every dispatch — is
         # checked against the registered identity, never the directory's content
         base = sha256_hex(
@@ -5565,15 +5462,6 @@ class Orchestrator:
                 "seed": {path: sha256_hex_text(content) for path, content in seed.items()},
                 "inputs": {item.path: item.content_hash for item in self._upstream_inputs(attempt)},
                 "previous": attempt.retry_of,
-                **(
-                    {
-                        "fragment_input_hashes": {
-                            path: sha256_hex_text(data) for path, data in fragment_files.items()
-                        }
-                    }
-                    if fragment_files
-                    else {}
-                ),
                 **self._frozen_source_binding(attempt),
             }
         )
@@ -5750,16 +5638,16 @@ class Orchestrator:
             except ArtifactStoreError as error:
                 raise WorkspaceError(f"upstream input unreadable: {error}") from error
         rules = self._taskgraph_mount_rules(attempt)
-        for additional in (self._source_files(attempt), self.commit.fragment_validation_inputs(attempt.task_id)):
-            if rules is not None:
-                from .taskgraph_materialization import require_mounts
-                require_mounts([UpstreamInput("frozen", path, sha256_hex_text(data), "frozen")
-                                for path, data in files.items()], rules, supplementary=additional)
-            files.update(additional)
+        additional = self._source_files(attempt)
+        if rules is not None:
+            from .taskgraph_materialization import require_mounts
+            require_mounts([UpstreamInput("frozen", path, sha256_hex_text(data), "frozen")
+                            for path, data in files.items()], rules, supplementary=additional)
+        files.update(additional)
         return files
 
     def _read_only_initial(self, attempt: Attempt) -> dict[str, str]:
-        """Path → hash of seed ∪ overlay/upstream ∪ fragment baseline.
+        """Path → hash of seed ∪ overlay/upstream.
 
         Same set ``read_only_rewrites`` uses as ``initial`` and the gateway
         snapshot uses as ``read_only_existing``.  Retry copies of a previous
@@ -5771,8 +5659,7 @@ class Orchestrator:
             raise WorkspaceError("read-only snapshot: mission missing")
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
         upstream = self._upstream_inputs(attempt)
-        baseline = self.commit.fragment_collection_baseline(attempt.id)
-        allowed = set(read_only_existing_paths(seed, (item.path for item in upstream), baseline))
+        allowed = set(read_only_existing_paths(seed, (item.path for item in upstream)))
         initial: dict[str, str] = {}
         for path, content in seed.items():
             if path in allowed:
@@ -5780,9 +5667,6 @@ class Orchestrator:
         for item in upstream:
             if item.path in allowed:
                 initial[item.path] = item.content_hash
-        for path, digest in dict(baseline).items():
-            if path in allowed:
-                initial[path] = str(digest)
         return initial
 
     def _schedule_read_only_kept_writing_stop(self, attempt: Attempt) -> None:
@@ -6049,8 +5933,6 @@ class Orchestrator:
             await self._collect_plan(intent, result)
         elif intent.kind == "attempt":
             await self._collect_attempt(intent, result)
-        elif intent.kind == "manager":
-            await self._collect_manager(intent, result)
         return True
 
     def _critic_subject_stopped(self, intent: DispatchIntent) -> bool:
@@ -6175,14 +6057,6 @@ class Orchestrator:
             await self._planning_rejected(
                 intent, reason="planner_turn_missing", detail={"agent_id": intent.agent_id, "turn_failed": True}
             )
-            return True
-        if intent.kind == "manager":
-            if liveness.exists:
-                return False
-            self._import_usage(intent)
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, intent.mission_id)
-            await self._manager_unusable(intent, reason="manager_turn_missing")
             return True
         if intent.kind != "attempt":
             return False
@@ -6415,7 +6289,7 @@ class Orchestrator:
         gate that refuses the same result for the same reason every round re-verified
         it every 2-3 s forever while the UI said "running".  After
         ``VERDICT_REFUSAL_LIMIT`` identical refusals the result fails with the reason
-        recorded, so the ordinary retry / Manager / stall path takes over, visibly."""
+        recorded, so the ordinary retry path takes over, visibly."""
 
         signature = f"{type(error).__name__}:{error}"
         previous = self._verdict_refusals.get(result_id)
@@ -8346,8 +8220,9 @@ class Orchestrator:
         task = self.store.get_task(attempt.task_id)
         assert mission is not None and task is not None
         if envelope.outcome is not ResultOutcome.CANDIDATE:
-            # D5-5: execution evidence, not a candidate — history + a management decision
-            stored = self.commit.record_outcome_result(
+            # D5-5: execution evidence, not a candidate — kept as history; the Attempt
+            # ends in RETRY_WAIT and the Task is tried again within its allowance
+            self.commit.record_outcome_result(
                 attempt.id,
                 envelope=envelope,
                 turn_id=result.turn_id,
@@ -8358,14 +8233,7 @@ class Orchestrator:
             # open Assurance responsibility keeps the reservation held, visibly).
             self._settle_if_known(self.store.get_attempt(attempt.id) or attempt)
             await self._release_attempt(attempt.id, cancel=False)
-            self._note(f"attempt {attempt.id}: outcome {envelope.outcome} → manager decision")
-            await self._request_management(
-                mission,
-                task,
-                trigger=f"outcome:{stored.envelope.id}",
-                result_id=stored.envelope.id,
-                attempt_id=attempt.id,
-            )
+            self._note(f"attempt {attempt.id}: outcome {envelope.outcome} → RETRY_WAIT")
             return
         workspace = self.assembled.workspaces.get(attempt.id)
         artifacts = workspace.snapshot(
@@ -8989,19 +8857,6 @@ class Orchestrator:
             self._note(f"result {result_id} suspended: waiting for a person ({reason})")
             return True
         try:
-            if verdict.passed and self.commit.selection_policy_for(task.id) is not None:
-                selection = self.commit.selection_round(task.id)
-                assert selection is not None
-                self.commit.record_candidate_ready(
-                    result_id,
-                    owner=self._owner,
-                    round_id=selection["round_id"],
-                    expected_round_version=selection["version"],
-                    command_id="ready:" + result_id,
-                    connectors=self._connectors,
-                    deployment=self._config.deployment_policy,
-                )
-                return True
             if verdict.passed:
                 completed = self.commit.accept_result(
                     result_id,
@@ -9025,8 +8880,6 @@ class Orchestrator:
                            result_id, mission.id, type(error).__name__, error)
             return self._verdict_refused(result_id, error)
         self._verdict_refusals.pop(result_id, None)
-        if self.commit.selection_policy_for(task.id) is not None:
-            return True
         from .scoped_content_review import uses_completion_protocol
         completion_protocol = uses_completion_protocol(self.store, mission.id)
         accepted = verdict.passed and (
@@ -9048,21 +8901,6 @@ class Orchestrator:
             for sibling in self.store.list_attempts(task.id):
                 if sibling.status is AttemptStatus.SUPERSEDED:
                     await self._release_attempt(sibling.id, cancel=True)
-            live = self.store.get_mission(mission.id)
-            if (
-                stored.envelope.proposed_tasks
-                and completed.status is TaskStatus.COMPLETED
-                and live is not None
-                and live.status is MissionStatus.ACTIVE  # a finished Mission has no plan to amend
-            ):
-                # S5-01 / D5-5: a Worker's proposed_tasks reach the graph only via the Manager
-                await self._request_management(
-                    mission,
-                    completed,
-                    trigger=f"proposed:{result_id}",
-                    result_id=result_id,
-                    attempt_id=attempt.id,
-                )
         else:
             self._note(f"result {result_id} FAIL at {verdict.short_circuited_at}")
             undeployed = [
@@ -9090,52 +8928,8 @@ class Orchestrator:
                     if self.commit.stop_inconclusive_task(task.id):
                         await self._release_mission(mission.id)
                         self._note(f"task {task.id} stopped: insufficient_evidence (retry limit)")
-                    # Pure missing-limitations rework follows its own frozen allowance,
-                    # not the generic Manager stall route (which could replace the Task).
+                    # Pure missing-limitations rework follows its own frozen allowance.
                     return True
-            failures = self.commit.no_progress_count(task.id)
-            after = self.store.get_task(task.id)
-            # a Task that can still retry and keeps failing is a stall (§19.2); one that
-            # just spent its last attempt is stopped by the next _decide (max_attempts)
-            can_retry = (
-                after is not None
-                and after.status
-                not in {TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.COMPLETED}
-                and (
-                    after.budget.max_attempts is None
-                    or after.attempt_count < after.budget.max_attempts
-                )
-            )
-            manager_after = int(self.policy_for(mission.id)["manager_after_failures"])
-            if can_retry and failures >= manager_after:
-                # An admitted fragment consumer has already used a Manager round
-                # to replace A with F. Exhausting that separate governance budget
-                # must not erase its own still-funded verification retry.
-                fragment_parent = any(
-                    parent is not None and "fragment_validation" in parent.context
-                    for parent in (
-                        self.store.get_task(parent_id) for parent_id in task.dependency_ids
-                    )
-                )
-                frozen_attempt = self.store.get_intent_for_subject(attempt.id)
-                fragment_retry = (
-                    fragment_parent
-                    and frozen_attempt is not None
-                    and isinstance(frozen_attempt.config.get("validated_fragment_input"), Mapping)
-                    and self._manager_rounds(mission.id)
-                    >= int(self.policy_for(mission.id)["max_manager_rounds"])
-                )
-                if fragment_retry:
-                    self._note(f"task {task.id}: retrying accepted fragment under original budget")
-                else:
-                    # D5-6: repeated verification failures are a stall signal (§19.2)
-                    await self._request_management(
-                        mission,
-                        task,
-                        trigger=f"failures:{task.id}:{failures}",
-                        result_id=result_id,
-                        attempt_id=attempt.id,
-                    )
         return True
 
     def _critic_provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
@@ -9468,766 +9262,6 @@ class Orchestrator:
         protected.update(self._source_files(attempt))
         return protected
 
-    # ------------------------------------------------------- management (step 5)
-    def _tasks_under_management(self, mission_id: str) -> set[str]:
-        held: set[str] = set()
-        for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"):
-            if intent.kind != "manager" or intent.mission_id != mission_id:
-                continue
-            if intent.config.get("task_id"):
-                held.add(str(intent.config["task_id"]))
-            validated = intent.config.get("validated_fragment")
-            if isinstance(validated, Mapping) and validated.get("origin_task_id"):
-                held.add(str(validated["origin_task_id"]))
-        return held
-
-    def _eligible_validated_fragment_consumers(
-        self, summary: Mapping[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Freeze only unstarted C[A,B] fully covered by accepted F's projection."""
-        if summary.get("available") is not True:
-            return []
-        receipt = self.store.get_receipt(str(summary["projection_receipt_id"]))
-        if not isinstance(receipt, Mapping):
-            return []
-        try:
-            allowed = set(
-                receipt["projection"]["origin_revision"]["execution_constraints"]["allowed_tools"]
-            )
-            mapping = tuple(summary["criterion_mapping"])
-            if not mapping:
-                return []
-            origin_id = str(summary["origin_task_id"])
-            validation_id = str(summary["validation_task_id"])
-            all_tasks = {item.id: item for item in self.store.list_tasks(receipt["mission_id"])}
-        except (KeyError, TypeError):
-            return []
-        eligible = []
-        for task in all_tasks.values():
-            if (
-                task.kind != "work"
-                or task.status is not TaskStatus.BLOCKED
-                or self.store.list_attempts(task.id)
-                or len(task.dependency_ids) != 2
-                or origin_id not in task.dependency_ids
-                or not all(
-                    {item["origin_text"], item["text"]} & set(task.success_criteria)
-                    for item in mapping
-                )
-                or not set(task.allowed_tools) <= allowed
-            ):
-                continue
-            preserved = next(dep for dep in task.dependency_ids if dep != origin_id)
-            other = all_tasks.get(preserved)
-            if (
-                other is None
-                or other.kind != "work"
-                or preserved == validation_id
-                or {origin_id, validation_id}
-                & {item.id for item in ancestors(preserved, all_tasks)}
-            ):
-                continue
-            eligible.append(
-                {
-                    "task_id": task.id,
-                    "old_dependencies": list(task.dependency_ids),
-                    "preserved_dependency_id": preserved,
-                    "task_version": task.version,
-                    "contract_revision": task_contract_revision(_task_contract(task)),
-                }
-            )
-        return eligible
-
-    async def _request_accepted_fragment_management(self, mission: Mission) -> bool:
-        """Recoverable trigger after F acceptance; old management triggers are unchanged."""
-        if mission.status is not MissionStatus.ACTIVE or not self._config.dynamic_graph:
-            return False
-        if self._manager_rounds(mission.id) >= int(
-            self.policy_for(mission.id)["max_manager_rounds"]
-        ):
-            return False
-        for row in self.store.list_fragment_validations(mission.id):
-            validation = self.store.get_task(row["validation_task_id"])
-            if validation is None or validation.status is not TaskStatus.COMPLETED:
-                continue
-            summary = manager_validated_fragment(self.store, self.commit, validation.id)
-            if not self._eligible_validated_fragment_consumers(summary):
-                continue
-            trigger = (
-                f"validated_fragment:{summary['fragment_id']}:{summary['validation_result_id']}"
-            )
-            subject = f"{mission.id}:manager:{trigger}"
-            if self.store.get_intent_for_subject(subject) is not None:
-                continue
-            accepted_result = self.store.get_result(summary["validation_result_id"])
-            if accepted_result is None:
-                continue
-            created = await self._request_management(
-                mission,
-                validation,
-                trigger=trigger,
-                result_id=summary["validation_result_id"],
-                attempt_id=accepted_result.envelope.attempt_id,
-            )
-            if created is not None:
-                return True
-        return False
-
-    def _manager_rounds(self, mission_id: str) -> int:
-        return sum(1 for e in self.store.list_events(mission_id) if e.type == "ManagementRequested")
-
-    def _change_rejections(self, mission_id: str, trigger: str) -> list[dict[str, Any]]:
-        return [
-            {"reason": e.payload.get("reason"), "detail": e.payload.get("detail")}
-            for e in self.store.list_events(mission_id)
-            if e.type == "TaskGraphChangeRejected"
-            and str(e.payload.get("basis", {}).get("trigger", "")).split(":retry-")[0]
-            == trigger.split(":retry-")[0]
-        ]
-
-    def _affected_subgraph(self, task: Task, tasks: Sequence[Task]) -> list[dict[str, Any]]:
-        by_id = {t.id: t for t in tasks}
-        related = {task.id} | set(task.dependency_ids)
-        related |= {t.id for t in tasks if task.id in t.dependency_ids}
-        for dep in task.dependency_ids:  # siblings under the same dependency
-            related |= {t.id for t in tasks if dep in t.dependency_ids}
-        view = []
-        for tid in sorted(related, key=lambda x: by_id[x].id):
-            t = by_id[tid]
-            view.append(
-                {
-                    "task_id": t.id,
-                    "kind": t.kind,
-                    "goal": t.goal,
-                    "status": str(t.status),
-                    "dependencies": list(t.dependency_ids),
-                    "attempts": t.attempt_count,
-                    "paused": t.paused,
-                    "role": t.context.get("role", "worker"),
-                    "supersedes_task": t.context.get("supersedes_task"),
-                }
-            )
-        return view
-
-    async def _request_management(
-        self,
-        mission: Mission,
-        task: Task,
-        *,
-        trigger: str,
-        result_id: str | None,
-        attempt_id: str | None,
-    ) -> DispatchIntent | None:
-        """One durable, deduplicated management decision per trigger (D5-6 / S5-07)."""
-
-        current_mission = self.store.get_mission(mission.id)
-        current_task = self.store.get_task(task.id)
-        completed_proposal = (
-            current_task is not None
-            and current_task.status is TaskStatus.COMPLETED
-            and trigger.startswith(("proposed:", "validated_fragment:"))
-        )
-        if (
-            current_mission is None
-            or current_mission.status in TERMINAL_MISSION
-            or current_task is None
-            or (current_task.status in TERMINAL_TASK and not completed_proposal)
-        ):
-            return None
-        if self.commit.selection_policy_for(task.id) is not None:
-            # Individual candidate failures stay inside their original round.
-            # Only its durable, non-deadline empty decision can request one
-            # independent fragment review; it never reopens candidate allocation.
-            selection = self.commit.selection_round(task.id)
-            empty_decision = (
-                None
-                if selection is None or not selection["decision_id"]
-                else self.store.get_receipt(selection["decision_id"])
-            )
-            if (
-                selection is None
-                or empty_decision is None
-                or selection["state"] != "DECIDED"
-                or trigger != f"selection_fragment:{selection['round_id']}"
-                or empty_decision.get("action") != "stop"
-                or empty_decision.get("selected_results")
-                or empty_decision.get("reason") != "bounded_candidates_complete"
-                or self.store.now >= selection["deadline_at"]
-                or attempt_id not in selection["attempt_ids"]
-            ):
-                return None
-        if not self._config.dynamic_graph:  # D5-15: the layer's kill switch
-            self._note(f"dynamic graph disabled: no management for {task.id} ({trigger})")
-            return None
-        subject = f"{mission.id}:manager:{trigger}"
-        if self._new_mode(mission) is not None:
-            # P2.3d / defect D4.  A Manager on a hierarchical Mission can only produce a
-            # legacy ``TaskGraphChange``, and ``commit_graph_change`` refuses every one
-            # of them (``SEMANTICS_IS_HIERARCHICAL``).  Opening the round anyway spends a
-            # model call, a ``max_manager_rounds`` slot and — through the retry it does
-            # not produce — a ``no_progress_limit`` slot, so the Mission stops with
-            # ``management_exhausted`` or ``no_progress`` instead of with the reason the
-            # Task actually failed for.  The refusal belongs here, before the request.
-            self.commit.record_management_not_applicable(
-                mission.id, task_id=task.id, trigger=trigger, subject=subject
-            )
-            self._note(
-                f"hierarchical mission {mission.id}: no legacy management for {task.id} "
-                f"({trigger}); the open door is a plan revision proposal"
-            )
-            return None
-        existing = self.store.get_intent_for_subject(subject)
-        if existing is not None:
-            return existing
-        rounds = self._manager_rounds(mission.id)
-        bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's version
-        rounds_cap = int(bound["max_manager_rounds"])
-        if rounds >= rounds_cap:
-            self._commit_stop_task(
-                task.id,
-                stop_reason=MissionStopReason.MANAGEMENT_EXHAUSTED,
-                detail={
-                    "rounds": rounds,
-                    "max_manager_rounds": rounds_cap,
-                    "trigger": trigger,
-                },
-            )
-            await self._release_mission(mission.id)
-            self._note(f"task {task.id}: management rounds exhausted ({rounds})")
-            return None
-        mission = self.store.get_mission(mission.id) or mission
-        tasks = self.store.list_tasks(mission.id)
-        task = self.store.get_task(task.id) or task
-        report = dict(mission.final_report or {})
-        stored = self.store.get_result(result_id) if result_id else None
-        feedback: list[dict[str, Any]] = []
-        for attempt in self.store.list_attempts(task.id):
-            failure = attempt.failure or {}
-            if failure.get("reason") == "verification_failed":
-                feedback.extend(
-                    dict(item) for item in failure.get("failures", []) if isinstance(item, Mapping)
-                )
-        no_progress = self.commit.no_progress_count(task.id)
-        with self.store.transaction():
-            account = self.commit.ledger.account(mission_account(mission.id))
-        trigger_view: dict[str, Any] = {
-            "trigger": trigger,
-            "result_id": result_id,
-            "attempt_id": attempt_id,
-            "task_id": task.id,
-        }
-        if stored is not None:
-            trigger_view.update(
-                {
-                    "outcome": str(stored.envelope.outcome),
-                    "summary": stored.envelope.summary,
-                    "proposed_tasks": [dict(item) for item in stored.envelope.proposed_tasks],
-                    "risks": list(stored.envelope.risks),
-                }
-            )
-        fragment_origin = (
-            manager_fragment_origin(self.store, self.commit._source_cas(), result_id)
-            if result_id
-            else {"available": False, "reason": "no_result"}
-        )
-        validated_fragment = None
-        if trigger.startswith("validated_fragment:"):
-            validated_fragment = manager_validated_fragment(self.store, self.commit, task.id)
-            if (
-                validated_fragment.get("available") is not True
-                or validated_fragment["validation_result_id"] != result_id
-                or trigger != f"validated_fragment:{validated_fragment['fragment_id']}:{result_id}"
-            ):
-                return None
-            eligible = self._eligible_validated_fragment_consumers(validated_fragment)
-            if not eligible:
-                return None
-            validated_fragment = {**validated_fragment, "eligible_consumers": eligible}
-        limits = {
-            "max_graph_depth": self._config.max_graph_depth,
-            "max_proposals_per_agent": self._config.max_proposals_per_agent,
-            "max_supersede_chain": self._config.max_supersede_chain,
-            "mission_tokens_remaining": account.remaining_tokens(),
-            "task_attempts_remaining": None
-            if task.budget.max_attempts is None
-            else max(0, task.budget.max_attempts - task.attempt_count),
-            "no_progress_count": no_progress,
-            "no_progress_limit": int(bound["no_progress_limit"]),
-            "management_rounds_remaining": rounds_cap - rounds,
-        }
-        try:
-            knowledge = self._gather_knowledge(mission, task, {t.id: t for t in tasks})
-        except RetrievalUnavailable as error:
-            knowledge = KnowledgeContext.unavailable(str(error))
-        try:
-            package = build_manager_package(
-                mission,
-                task,
-                trigger=trigger_view,
-                verifier_feedback=feedback[-6:],
-                subgraph=self._affected_subgraph(task, tasks),
-                graph_version=int(report.get("graph_version") or 1),
-                limits=limits,
-                knowledge=knowledge,
-                rejections=self._change_rejections(mission.id, trigger),
-                deployed_layers=self._deployed,
-                budget_floor=self._budget_floor(mission.id),
-                domain=self.commit.domain_for(mission.id),
-                fragment_origin=fragment_origin,
-                validated_fragment=validated_fragment,
-            )
-        except ContextRejected as error:
-            self._note(f"task {task.id}: manager package refused ({error}); management postponed")
-            return None
-        try:
-            decision = self._route_service("manager", mission.id)
-        except RoutingUnavailable as unavailable:
-            # review P0-1: the decision is postponed; the Task keeps its own retries meanwhile
-            self._note(
-                f"task {task.id}: manager pool {unavailable.profile_id!r} unavailable; management postponed"
-            )
-            return None
-        template = self._template(MANAGER, mission.id)
-        config = AgentConfig(
-            name=f"manager-{rounds + 1}",
-            instructions=template.instructions,
-            model_profile_ref=decision.profile_id,
-            tool_names=(),
-            limits=AgentLimits(
-                max_model_calls_per_turn=4,
-                max_tool_calls_per_turn=1,
-                turn_deadline_seconds=self._config.turn_deadline_seconds,
-            ),
-        )
-        message = user_message_json(package.text)
-        intent = self.commit.create_service_intent(
-            kind="manager",
-            subject_id=subject,
-            mission_id=mission.id,
-            account_id=mission_account(mission.id),
-            creation_key=subject,
-            input_id="attempt-input",
-            input_hash=sha256_hex(message),
-            config={
-                "agent_config": config.to_json(),
-                "message": message,
-                "context_version": package.context_version,
-                "prompt_version": template.prompt_version,
-                "task_id": task.id,
-                "trigger": trigger,
-                "result_id": result_id,
-                "attempt_id": attempt_id,
-                "graph_version": int(report.get("graph_version") or 1),
-                "no_progress_count": no_progress,
-                "fragment_origin": fragment_origin,
-                **({"validated_fragment": validated_fragment} if validated_fragment else {}),
-                **self._service_config(decision),
-            },
-            reservation=self._reservation(self._config.manager_reserve_tokens, decision.profile_id),
-            task_id=task.id,
-            attempt_id=attempt_id,
-        )
-        self.commit.record_management_requested(
-            mission.id, task_id=task.id, trigger=trigger, subject=subject, round_number=rounds + 1
-        )
-        self._note(f"management requested for {task.id} ({trigger})")
-        return intent
-
-    async def _manager_unusable(self, intent: DispatchIntent, *, reason: str) -> None:
-        """No usable proposal from the Manager: the Task continues its own retry path
-        unless it is out of progress (D5-7)."""
-
-        task = self.store.get_task(str(intent.config.get("task_id")))
-        mission = self.store.get_mission(intent.mission_id)
-        if task is None or mission is None:
-            return
-        self.commit.record_management_decided(
-            mission.id,
-            task_id=task.id,
-            trigger=str(intent.config.get("trigger")),
-            decision="unusable",
-            detail={"reason": reason},
-        )
-        await self._enforce_no_progress(mission, task)
-
-    def _validate_validated_fragment_change(
-        self, intent: DispatchIntent, change: TaskGraphChange
-    ) -> Mapping[str, Any]:
-        """One frozen F plus one independent branch may feed an unstarted BLOCKED C."""
-        frozen = intent.config.get("validated_fragment")
-        if not isinstance(frozen, Mapping) or frozen.get("available") is not True:
-            raise ContractError("validated fragment Manager intent has no frozen acceptance")
-        if change.base_graph_version != intent.config.get("graph_version"):
-            raise ContractError("validated fragment Manager graph base changed")
-        change_id = ids.commit_id(
-            {
-                "kind": "graph_change",
-                "mission_id": intent.mission_id,
-                "proposal": change.proposal_hash,
-            },
-            change.base_graph_version,
-        )
-        known = self.store.get_receipt(change_id)
-        if known is not None:
-            source = known.get("source", {})
-            if (
-                source.get("intent_id") != intent.intent_id
-                or source.get("fragment_id") != frozen["fragment_id"]
-                or source.get("validation_result_id") != frozen["validation_result_id"]
-            ):
-                raise ContractError("validated fragment graph receipt has different provenance")
-            return frozen
-        current = manager_validated_fragment(
-            self.store, self.commit, str(frozen["validation_task_id"])
-        )
-        for key in (
-            "fragment_id",
-            "projection_receipt_id",
-            "validation_task_id",
-            "validation_result_id",
-            "material_refs",
-            "criterion_mapping",
-        ):
-            if current.get(key) != frozen.get(key):
-                raise ContractError("validated fragment acceptance or material changed")
-        retargets = [op for op in change.operations if op.op == "retarget_dependencies"]
-        cancels = [op for op in change.operations if op.op == "cancel_task"]
-        if (
-            len(retargets) != 1
-            or len(cancels) > 1
-            or len(change.operations) != len(retargets) + len(cancels)
-        ):
-            raise ContractError(
-                "validated fragment permits one blocked consumer retarget and origin cancel"
-            )
-        frozen_tasks = {item["task_id"]: item for item in frozen["tasks"]}
-        eligible = {item["task_id"]: item for item in frozen.get("eligible_consumers", ())}
-        consumer_id = str(retargets[0].args["task_id"])
-        consumer = self.store.get_task(consumer_id)
-        old = frozen_tasks.get(consumer_id)
-        choice = eligible.get(consumer_id)
-        if (
-            choice is None
-            or old is None
-            or old["status"] != "BLOCKED"
-            or old["attempts"] != 0
-            or consumer is None
-            or consumer.kind != "work"
-            or consumer.status is not TaskStatus.BLOCKED
-            or self.store.list_attempts(consumer_id)
-            or list(consumer.dependency_ids) != old["dependencies"]
-            or list(consumer.dependency_ids) != choice["old_dependencies"]
-            or consumer.version != choice["task_version"]
-            or task_contract_revision(_task_contract(consumer)) != choice["contract_revision"]
-        ):
-            raise ContractError("validated fragment consumer is stale or has started")
-        if not all(
-            {item["origin_text"], item["text"]} & set(consumer.success_criteria)
-            for item in frozen["criterion_mapping"]
-        ):
-            raise ContractError("validated fragment does not cover every mapped criterion")
-        receipt = self.store.get_receipt(str(frozen["projection_receipt_id"]))
-        if not isinstance(receipt, Mapping):
-            raise ContractError("validated fragment projection receipt unavailable")
-        allowed = set(
-            receipt["projection"]["origin_revision"]["execution_constraints"]["allowed_tools"]
-        )
-        if not set(consumer.allowed_tools) <= allowed:
-            raise ContractError("validated fragment scope does not cover consumer")
-        dependencies = tuple(str(item) for item in retargets[0].args["dependencies"])
-        validation_id = str(frozen["validation_task_id"])
-        other_id = str(choice["preserved_dependency_id"])
-        if (
-            len(dependencies) != 2
-            or set(dependencies) != {validation_id, other_id}
-            or set(choice["old_dependencies"]) != {str(frozen["origin_task_id"]), other_id}
-        ):
-            raise ContractError("validated fragment must replace only origin A with F")
-        other = self.store.get_task(other_id)
-        all_tasks = {item.id: item for item in self.store.list_tasks(intent.mission_id)}
-        if (
-            other_id not in frozen_tasks
-            or other is None
-            or other.kind != "work"
-            or other_id in {consumer_id, frozen["origin_task_id"]}
-            or {str(frozen["origin_task_id"]), validation_id}
-            & {item.id for item in ancestors(other_id, all_tasks)}
-        ):
-            raise ContractError("validated fragment second branch is not independent")
-        if cancels and cancels[0].args["task_id"] != frozen["origin_task_id"]:
-            raise ContractError("validated fragment can cancel only its original Task")
-        return frozen
-
-    async def _enforce_no_progress(self, mission: Mission, task: Task) -> bool:
-        task = self.store.get_task(task.id) or task
-        if task.status in TERMINAL_TASK:
-            return False
-        count = self.commit.no_progress_count(task.id)
-        limit = int(self.policy_for(mission.id)["no_progress_limit"])
-        if count >= limit:
-            self._commit_stop_task(
-                task.id,
-                stop_reason=MissionStopReason.NO_PROGRESS,
-                detail={
-                    "no_progress_count": count,
-                    "no_progress_limit": limit,
-                },
-            )
-            await self._release_mission(mission.id)
-            self._note(
-                f"task {task.id} stopped: no progress after {count} attempts and no change of approach"
-            )
-            return True
-        return False
-
-    async def _collect_manager(self, intent: DispatchIntent, result) -> None:  # type: ignore[no-untyped-def]
-        mission = self.store.get_mission(intent.mission_id)
-        assert mission is not None
-        self._import_usage(intent)
-        task_id = str(intent.config.get("task_id"))
-        trigger = str(intent.config.get("trigger"))
-        current_task = self.store.get_task(task_id)
-        completed_proposal = (
-            current_task is not None
-            and current_task.status is TaskStatus.COMPLETED
-            and trigger.startswith(("proposed:", "validated_fragment:"))
-        )
-        if (
-            mission.status in TERMINAL_MISSION
-            or current_task is None
-            or (current_task.status in TERMINAL_TASK and not completed_proposal)
-        ):
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        text = "" if result.public_output is None else str(result.public_output.content)
-        echoed = self.bridge_for(intent).echoed_models(agent_id=intent.agent_id or "")
-        if echoed and echoed != {self._expected_model(intent)}:
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            self._commit_stop_task(
-                task_id,
-                stop_reason=MissionStopReason.MODEL_ECHO_MISMATCH,
-                detail={"expected": self._expected_model(intent), "echoed": sorted(echoed)},
-            )
-            await self._release_mission(mission.id)
-            return
-        fragment_decision = None
-        try:
-            if result.state is not AgentTurnState.COMMITTED:
-                raise ContractError(f"manager turn failed: {jsonable(result.error or {})}")
-            has_fragment = (
-                re.search(rf"<\s*/?\s*{FRAGMENT_VALIDATION_DECISION_TAG}\b", text) is not None
-            )
-            has_graph = re.search(rf"<\s*/?\s*{GRAPH_CHANGE_PROPOSAL_TAG}\b", text) is not None
-            if has_fragment and has_graph:
-                raise ContractError("Manager cannot mix fragment and graph decisions")
-            if trigger.startswith("selection_fragment:") and not has_fragment:
-                raise ContractError(
-                    "exhausted selection allows only independent fragment validation"
-                )
-            if has_fragment:
-                fragment_decision = FragmentValidationDecisionV1.from_json(
-                    extract_block(text, FRAGMENT_VALIDATION_DECISION_TAG)
-                )
-                if fragment_decision.base_graph_version != intent.config.get("graph_version"):
-                    raise ContractError("fragment base graph differs from Manager intent")
-                validate_manager_fragment_choice(
-                    fragment_decision.proposal, intent.config.get("fragment_origin")
-                )
-            else:
-                raw = extract_block(text, GRAPH_CHANGE_PROPOSAL_TAG)
-                raw = {
-                    **{
-                        k: v
-                        for k, v in raw.items()
-                        if k in {"base_graph_version", "rationale", "operations"}
-                    },
-                    "basis": {  # the system fills the basis; a model may not forge it
-                        "trigger": trigger,
-                        "result_id": intent.config.get("result_id"),
-                        "attempt_id": intent.config.get("attempt_id"),
-                        "task_id": task_id,
-                    },
-                }
-                self._refuse_policy_ops(mission.id, task_id, raw.get("operations"))  # D9-10'
-                change = TaskGraphChange.from_json(raw)
-        except (ContractError, BlockError) as error:
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            self._note(f"manager proposal unusable for {task_id}: {error}")
-            await self._manager_unusable(intent, reason=f"proposal_unreadable: {error}")
-            return
-        # P1-3 (review): the intent is settled only after the decision is durable — a crash
-        # before the Commit re-collects the same turn and the receipt makes it idempotent
-        self._fault("before_graph_change", "manager")
-        task = self.store.get_task(task_id)
-        assert task is not None
-        limits = ChangeLimits(
-            max_graph_depth=self._config.max_graph_depth,
-            max_proposals_per_agent=self._config.max_proposals_per_agent,
-            max_supersede_chain=self._config.max_supersede_chain,
-            admit_new_tasks=not self._pressure.is_raised,  # §18.5 "禁止新任务继续分裂" (D6-3 ③)
-        )
-        no_progress = int(intent.config.get("no_progress_count", 0))
-        if fragment_decision is not None:
-            try:
-                receipt = self.commit.commit_fragment_validation(
-                    fragment_decision.proposal,
-                    command_id=intent.intent_id,
-                    base_graph_version=fragment_decision.base_graph_version,
-                    source={
-                        "intent_id": intent.intent_id,
-                        "agent_id": intent.agent_id,
-                        "turn_id": result.turn_id,
-                    },
-                    limits=limits,
-                    selection_round_id=(
-                        trigger.removeprefix("selection_fragment:")
-                        if trigger.startswith("selection_fragment:")
-                        else None
-                    ),
-                )
-            except SelectionFragmentExpired:
-                self._settle_intent(intent, "FAILED")
-                self._settle_service_if_known(intent.subject_id, mission.id)
-                self.commit.stop_selection(task_id, reason="selection_fragment_expired")
-                await self._release_mission(mission.id)
-                return
-            except (ContractError, CommitRejected, GraphChangeRejected, BudgetError) as error:
-                self.commit.record_management_decided(
-                    mission.id,
-                    task_id=task_id,
-                    trigger=trigger,
-                    decision="rejected",
-                    detail={"error": str(error), "kind": "fragment_validation"},
-                )
-                self._settle_intent(intent, "SETTLED")
-                self._settle_service_if_known(intent.subject_id, mission.id)
-                await self._enforce_no_progress(mission, task)
-                return
-            self._fault("after_fragment_commit", "manager")
-            self.commit.record_management_decided(
-                mission.id,
-                task_id=task_id,
-                trigger=trigger,
-                decision="fragment_validation",
-                detail={
-                    "fragment_id": receipt["fragment_id"],
-                    "validation_task_id": receipt["validation_task_id"],
-                    "graph_change_id": receipt["graph_change_id"],
-                },
-            )
-            self._settle_intent(intent, "SETTLED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        validated = None
-        if trigger.startswith("validated_fragment:"):
-            try:
-                validated = self._validate_validated_fragment_change(intent, change)
-            except ContractError as error:
-                self.commit.record_management_decided(
-                    mission.id,
-                    task_id=task_id,
-                    trigger=trigger,
-                    decision="rejected",
-                    detail={"error": str(error), "kind": "validated_fragment"},
-                )
-                self._settle_intent(intent, "SETTLED")
-                self._settle_service_if_known(intent.subject_id, mission.id)
-                return
-        if not change.operations or all(op.op == "set_priority" for op in change.operations):
-            # priority-only (or empty) proposals are "keep" (S5-02); validation happens inside
-            # the Commit transaction, so the test is on the operations themselves
-            self._settle_intent(intent, "SETTLED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            self.commit.record_management_decided(
-                mission.id,
-                task_id=task_id,
-                trigger=trigger,
-                decision="keep",
-                detail={"rationale": change.rationale},
-            )
-            if no_progress >= int(self.policy_for(mission.id)["no_progress_limit"]):
-                await self._enforce_no_progress(mission, task)
-            elif change.operations:
-                try:
-                    self.commit.commit_graph_change(
-                        mission.id,
-                        change,
-                        source={"intent_id": intent.intent_id, "agent_id": intent.agent_id},
-                        limits=limits,
-                    )
-                except CommitRejected as error:
-                    self._note(f"manager priority change refused: {error}")
-            return
-        try:
-            created, receipt = self.commit.commit_graph_change(
-                mission.id,
-                change,
-                source={
-                    "intent_id": intent.intent_id,
-                    "agent_id": intent.agent_id,
-                    "turn_id": result.turn_id,
-                    **(
-                        {
-                            "fragment_id": validated["fragment_id"],
-                            "validation_result_id": validated["validation_result_id"],
-                        }
-                        if validated is not None
-                        else {}
-                    ),
-                },
-                limits=limits,
-                allow_rebase=validated is None,
-            )
-        except CommitRejected as error:
-            self._settle_intent(intent, "SETTLED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            self._note(f"manager change rejected for {task_id}: {error}")
-            self.commit.record_management_decided(
-                mission.id,
-                task_id=task_id,
-                trigger=trigger,
-                decision="rejected",
-                detail={"error": str(error)},
-            )
-            retry = 0 if ":retry-" not in trigger else int(trigger.rsplit("-", 1)[1])
-            if validated is None and retry < 1:  # D5-10 / S5-08: old retry semantics
-                await self._request_management(
-                    mission,
-                    task,
-                    trigger=f"{trigger}:retry-{retry + 1}",
-                    result_id=intent.config.get("result_id"),
-                    attempt_id=intent.config.get("attempt_id"),
-                )
-            elif validated is None:
-                await self._enforce_no_progress(mission, task)
-            return
-        if validated is not None:
-            self._fault("after_validated_fragment_graph_commit", "manager")
-        self._settle_intent(intent, "SETTLED")
-        self._settle_service_if_known(intent.subject_id, mission.id)
-        self.commit.record_management_decided(
-            mission.id,
-            task_id=task_id,
-            trigger=trigger,
-            decision="changed",
-            detail={
-                "change_id": receipt["change_id"],
-                "to_version": receipt["to_version"],
-                "new_tasks": [t.id for t in created],
-                "superseded": receipt["superseded"],
-            },
-        )
-        for old_id in receipt["superseded"]:
-            for attempt in self.store.list_attempts(old_id):
-                if attempt.status is AttemptStatus.CANCELLED:
-                    await self._release_attempt(attempt.id, cancel=True)
-        self._note(
-            f"graph changed v{receipt['from_version']}→v{receipt['to_version']} for {task_id}: {[t.id for t in created]} superseded={receipt['superseded']}"
-        )
-
     async def _run_critic(
         self,
         mission: Mission,
@@ -10329,18 +9363,6 @@ class Orchestrator:
                     raise ContractError(
                         f"critic runtime profile {unavailable.profile_id!r} unavailable"
                     ) from unavailable
-                selection_deadline = (
-                    None
-                    if attempt_id is None or self.store.get_attempt(attempt_id) is None
-                    else self.commit.selection_deadline(attempt_id)
-                )
-                remaining_selection = (
-                    self._config.turn_deadline_seconds
-                    if selection_deadline is None
-                    else selection_deadline - self.store.now
-                )
-                if remaining_selection <= 0:
-                    raise ContractError("selection deadline elapsed before Critic")
                 config = AgentConfig(
                     name=f"critic-{ordinal}",
                     instructions=template.instructions,
@@ -10349,9 +9371,7 @@ class Orchestrator:
                     limits=AgentLimits(
                         max_model_calls_per_turn=SYSTEM_CRITIC_MODEL_CALLS,
                         max_tool_calls_per_turn=24,
-                        turn_deadline_seconds=min(
-                            self._config.turn_deadline_seconds, remaining_selection
-                        ),
+                        turn_deadline_seconds=self._config.turn_deadline_seconds,
                     ),
                 )
                 message = user_message_json(package.text)
@@ -10445,15 +9465,7 @@ class Orchestrator:
                     task_id=task_id,
                     attempt_id=attempt_id,
                 )
-            selection_deadline = (
-                None
-                if attempt_id is None or self.store.get_attempt(attempt_id) is None
-                else self.commit.selection_deadline(attempt_id)
-            )
-            deadline = min(
-                self.store.now + self._critic_wait,
-                selection_deadline if selection_deadline is not None else float("inf"),
-            )
+            deadline = self.store.now + self._critic_wait
             intent, result = await self._await_service_turn(intent, deadline, attempt_id=attempt_id)
             if self._critic_subject_stopped(intent):
                 await self._collect_after_stop(intent)
@@ -11021,7 +10033,6 @@ class Orchestrator:
             1
             for stored in self.store.list_results_by_verification("PENDING", "RUNNING")
             if stored.envelope.mission_id in active
-            and not self.commit.candidate_is_waiting(stored.envelope.id)
         )
         observation = Observation(
             running_attempts=running,
@@ -11124,176 +10135,6 @@ class Orchestrator:
                 return True
         return False
 
-    async def _selection_fragment_recovery(
-        self,
-        mission: Mission,
-        task: Task,
-        selection: Mapping[str, Any],
-        decision: Mapping[str, Any],
-    ) -> bool | None:
-        """None means stop; False waits without claiming progress; True dispatched.
-
-        The original round remains DECIDED and retains its cost, deadline and
-        candidate cap. Only a separately accepted F and normal Manager graph
-        commit can replace a blocked downstream dependency and cancel this A.
-        """
-        if (
-            not self._config.dynamic_graph
-            or decision.get("reason") != "bounded_candidates_complete"
-            or self.store.now >= selection["deadline_at"]
-        ):
-            return None
-        trigger = f"selection_fragment:{selection['round_id']}"
-        subject = f"{mission.id}:manager:{trigger}"
-        intent = self.store.get_intent_for_subject(subject)
-        if intent is None:
-            # Stable original candidate order; one opportunity for this round,
-            # never one Manager retry per failed candidate or per scheduler tick.
-            for attempt_id in selection["attempt_ids"]:
-                result = self.store.find_result_for_attempt(attempt_id)
-                if result is None or result.verdict != "FAIL":
-                    continue
-                catalog = manager_fragment_origin(
-                    self.store,
-                    self.commit._source_cas(),
-                    result.envelope.id,
-                )
-                if catalog.get("available") is not True:
-                    continue
-                try:
-                    requested = await self._request_management(
-                        mission,
-                        task,
-                        trigger=trigger,
-                        result_id=result.envelope.id,
-                        attempt_id=attempt_id,
-                    )
-                except BudgetExhausted as error:
-                    self._commit_stop_task(
-                        task.id,
-                        stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-                        detail={
-                            "reason": "selection_fragment_management_unfunded",
-                            "selection_round_id": selection["round_id"],
-                            "error": str(error),
-                        },
-                    )
-                    await self._release_mission(mission.id)
-                    return True
-                return True if requested is not None else None
-            return None
-        if intent.state in {"PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"}:
-            return False
-        if task.id in self._tasks_under_management(mission.id):
-            return False  # F accepted; its frozen downstream graph decision is in flight.
-        for receipt in self.store.list_fragment_validations(mission.id):
-            if receipt.get("origin", {}).get("result_id") != intent.config.get("result_id"):
-                continue
-            validation = self.store.get_task(receipt["validation_task_id"])
-            if validation is not None and validation.status not in TERMINAL_TASK:
-                return False
-        return None  # Invalid/no fragment, failed F, or rejected downstream patch: bounded stop.
-
-    async def _drive_selection(self, mission: Mission, task: Task) -> bool:
-        """Advance one bounded round; waiting candidates never impersonate running turns."""
-        if task.status in TERMINAL_TASK or task.status is TaskStatus.BLOCKED or task.paused:
-            return False
-        selection = self.commit.selection_round(task.id)
-        if selection is None:
-            try:
-                self.commit.begin_selection_round(task.id, command_id="round:" + task.id)
-            except BudgetExhausted:
-                self._commit_stop_task(
-                    task.id,
-                    stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-                    detail={"reason": "selection_tail_unavailable"},
-                )
-            return True
-        if selection["state"] in {"COMMITTED", "EXHAUSTED", "INVALIDATED"}:
-            return False
-        # Takeover uses the original Attempt lease CAS. Never cancel another live owner.
-        candidates = self.commit.selection_candidates(task.id)
-        for candidate in candidates:
-            if candidate["state"] != "READY":
-                continue
-            attempt = self.store.get_attempt(candidate["attempt_id"])
-            if attempt is None or attempt.status in TERMINAL_ATTEMPT:
-                continue
-            # A past deadline forbids new exploration/C, but an expired READY
-            # lease may still be acquired solely to finish best_complete_else_stop.
-            if candidate["state"] == "READY":
-                try:
-                    self.commit.renew_lease(
-                        attempt.id,
-                        owner=self._owner,
-                        lease_seconds=self._config.lease_seconds,
-                        minimum_remaining_seconds=self._config.lease_seconds / 2,
-                        liveness={
-                            "progress": attempt.progress_marker,
-                            "phase": "selection_finalize"
-                            if self.store.now >= selection["deadline_at"]
-                            else "selection_wait",
-                        },
-                    )
-                except CommitRejected:
-                    return False
-        try:
-            decision = self.commit.decide_selection(
-                task.id,
-                owner=self._owner,
-                command_id=f"decision:{selection['round_id']}:{selection['version']}",
-                connectors=self._connectors,
-                deployment=self._config.deployment_policy,
-            )
-        except CommitRejected:
-            if self.store.now >= selection["deadline_at"]:
-                self.commit.stop_selection(task.id, reason="selection_deadline_unavailable")
-                await self._release_mission(mission.id)
-                return True
-            raise
-        if decision is None:
-            return False
-        selection = self.commit.selection_round(task.id)
-        assert selection is not None
-        if decision["action"] == "stop":
-            recovery = await self._selection_fragment_recovery(mission, task, selection, decision)
-            if recovery is not None:
-                return recovery
-            self.commit.stop_selection(task.id, reason="selection_no_eligible_complete_candidate")
-            await self._release_mission(mission.id)
-            return True
-        if decision["action"] == "synthesize" and selection["synthesis_attempt_id"] is None:
-            current_task = self.store.get_task(task.id)
-            assert current_task is not None
-            return await self._next_attempt(
-                mission,
-                current_task,
-                self.store.list_attempts(task.id),
-                selection_decision=decision,
-            )
-        if decision["action"] == "synthesize":
-            result = self.store.find_result_for_attempt(selection["synthesis_attempt_id"])
-            if result is None or not self.commit.candidate_is_waiting(result.envelope.id):
-                return False
-            result_id = result.envelope.id
-        else:
-            result_id = decision["selected_results"][0]
-        receipt = self.commit.accept_selected_result(
-            result_id,
-            round_id=selection["round_id"],
-            decision_id=decision["receipt_id"],
-            expected_round_version=selection["version"],
-            owner=self._owner,
-            command_id="selection-accept:" + result_id,
-            connectors=self._connectors,
-            deployment=self._config.deployment_policy,
-        )
-        if receipt.get("accepted"):
-            for sibling in self.store.list_attempts(task.id):
-                if sibling.status is AttemptStatus.SUPERSEDED:
-                    await self._release_attempt(sibling.id, cancel=True)
-        return True
-
     async def _decide(self, mission: Mission) -> bool:
         # Review F1, before anything else: a hierarchical Mission on a deployment with
         # no assembly is not scheduled, not judged and not handed to ``allocate()``.
@@ -11321,8 +10162,6 @@ class Orchestrator:
         if await dispatch_materialized_operations(self, mission.id):
             return True
         if advance_operation_outcomes(self, mission.id):
-            return True
-        if await self._request_accepted_fragment_management(mission):
             return True
         if any(t.paused and t.pause_reason == "provider_admission:usage_unresolved" for t in tasks):
             # Read the SDK's actual reconciliation records before importing and
@@ -11430,26 +10269,6 @@ class Orchestrator:
                 if self.commit.record_synthesis_gated(task.id, conflict_ids=open_conflicts):
                     self._note(f"synthesis task {task.id} gated by open conflicts {open_conflicts}")
             tasks = [t for t in tasks if t not in gated]
-        compare_tasks = [t for t in tasks if self.commit.selection_policy_for(t.id) is not None]
-        for search_task in compare_tasks:
-            if await self._drive_selection(mission, search_task):
-                return True
-        # Completed compare predecessors are still allocator dependency facts.
-        # Removing them here makes a READY downstream Task appear blocked forever.
-        tasks = [
-            t
-            for t in tasks
-            if t.status in TERMINAL_TASK
-            or t not in compare_tasks
-            or (
-                (selection := self.commit.selection_round(t.id)) is not None
-                and selection["state"] == "COLLECTING"
-                and len(selection["attempt_ids"]) < selection["policy"]["max_candidates"]
-            )
-        ]
-        pending = self._tasks_under_management(mission.id)
-        if pending:  # D5-6: no new Attempt while the Manager decides about the Task
-            tasks = [t for t in tasks if t.id not in pending]
         bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's own version
         # P2.3c part 2 / §18.5 constraint 4 / §24.1 decision 6: a hierarchical Mission
         # allocates over *admissions*, never over the READY string.  P2.3b only had the
@@ -11512,7 +10331,6 @@ class Orchestrator:
                 reduced_concurrency_ratio=self._config.reduced_concurrency_ratio,
                 exploration_slots=int(bound["exploration_slots"]),
                 weights=bound["allocator_weights"],
-                waiting_attempt_ids=self.commit.selection_waiting_ids(),
             )
             granted_ids = [(str(item.task_id), n) for item, n in plan.grants]
         else:
@@ -11530,8 +10348,6 @@ class Orchestrator:
                 reduced_concurrency_ratio=self._config.reduced_concurrency_ratio,
                 exploration_slots=int(bound["exploration_slots"]),
                 weights=bound["allocator_weights"],
-                waiting_attempt_ids=self.commit.selection_waiting_ids(),
-                selection_task_ids=frozenset(t.id for t in compare_tasks),
             )
             granted_ids = [(granted.id, candidate) for granted, candidate in plan.grants]
         progressed = False
@@ -12444,12 +11260,10 @@ class Orchestrator:
         attempts: Sequence[Attempt],
         *,
         allocation: Mapping[str, Any] | None = None,
-        selection_decision: Mapping[str, Any] | None = None,
         admission: Any = None,
     ) -> bool:
-        # Review F1: every other caller of this entry (repair, selection, a manual
-        # drive) must be fail-closed too, or the refusal in ``_decide`` would only
-        # cover the common path.
+        # Review F1: every other caller of this entry (repair, a manual drive) must be
+        # fail-closed too, or the refusal in ``_decide`` would only cover the common path.
         if self._assembly_missing(mission, at="next_attempt"):
             return False
         # P2.3b / §18.5 rule 4: before anything else, a compound is refused here with
@@ -12474,7 +11288,7 @@ class Orchestrator:
             # controlled check passed at ``admitted_at_ms`` and grants nothing — so
             # this entry refuses a Task that arrived without one, however it got here.
             # ``_decide`` hands its admission down so the common path does not re-read
-            # the whole plan; every other caller (repair, selection, a manual drive)
+            # the whole plan; every other caller (repair, a manual drive)
             # pays for the fresh read rather than skipping the gate.
             if admission is None:
                 try:
@@ -12505,7 +11319,6 @@ class Orchestrator:
         active_missions = {item.id for item in self._active_missions()}
         pending_verification = sum(
             stored.envelope.mission_id in active_missions
-            and not self.commit.candidate_is_waiting(stored.envelope.id)
             for stored in self.store.list_results_by_verification("PENDING", "RUNNING")
         )
         potential_results = sum(
@@ -12517,12 +11330,10 @@ class Orchestrator:
         )
         if pending_verification + potential_results >= self._config.max_pending_verifications:
             return False
-        # a repair follows the last *failed* Attempt; a parallel candidate follows nobody
+        # a repair follows the last *failed* Attempt
         previous = next(
             (a for a in reversed(attempts) if a.status in TERMINAL_ATTEMPT and a.failure), None
         )
-        if selection_decision is not None:
-            previous = None
         feedback, verifier_feedback = retry_feedback(attempts, previous)
         for event in self.store.list_events(mission.id):  # D7-9': a person's notes, as data
             if event.type == "HumanCommentAdded" and event.payload.get("target_id") in {
@@ -12565,73 +11376,10 @@ class Orchestrator:
             await self._release_mission(mission.id)
             self._note(f"task {task.id} stopped: artifact conflict ({error})")
             return True
-        validated_input = None
-        validated_context = None
-        fragment_parents = [
-            parent
-            for parent in upstream_tasks
-            if parent.id in task.dependency_ids and "fragment_validation" in parent.context
-        ]
-        if fragment_parents:
-            try:
-                if len(fragment_parents) != 1:
-                    raise ContractError("consumer has multiple direct fragment validations")
-                fragment_id = fragment_parents[0].context["fragment_validation"]["fragment_id"]
-                validated_input = self.commit.fragment_input(
-                    fragment_id,
-                    **(
-                        {"selection_consumer_task_id": task.id}
-                        if attempts and self.commit.selection_policy_for(task.id) is not None
-                        else {"retry_consumer_task_id": task.id}
-                        if attempts
-                        else {"ready_consumer_task_id": task.id}
-                    ),
-                )
-                actual = {(item.artifact_id, item.path, item.content_hash) for item in inputs}
-                if not validated_input["material_refs"] or any(
-                    (item["artifact_id"], item["path"], item["content_hash"]) not in actual
-                    for item in validated_input["material_refs"]
-                ):
-                    raise ContractError("validated fragment material is absent from actual inputs")
-                validated_context = consumer_fragment_context(validated_input)
-                assert_no_secrets(validated_input)
-            except (ContractError, ContextRejected) as error:
-                self._commit_stop_task(
-                    task.id,
-                    stop_reason=MissionStopReason.CONTEXT_REJECTED,
-                    detail={"error": str(error)[:300]},
-                )
-                await self._release_mission(mission.id)
-                return True
         bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's own version
         role = self._template(role_for_task(task), mission.id)  # D5-9: approach
         if new_mode is not None:
             role = self._hierarchical_worker_template(role, mission.id)
-        if selection_decision is not None:
-            from ..runtime.role_templates import SYNTHESIZER
-
-            role = self._template(SYNTHESIZER, mission.id)
-            role = replace(
-                role,
-                prompt_version=role.prompt_version + ":compare-v2",
-                instructions=role.instructions + "\n候选输入不是正式知识；读取selection_inputs中的"
-                "独立候选文件，对照原完整Task合同生成新输出。不得将输入PASS视为输出PASS；"
-                "used_knowledge只能填写当前ContextPackage.verified_knowledge中的真实id；"
-                "若该目录为空，填写空数组[]，不要为满足通用综合提示虚构id。"
-                "候选artifact_id、result ID和验证片段fragment_id仅用于输入血缘与材料，"
-                "都不是知识id，不得填写到used_knowledge。相同逻辑文件由你明确合成新文件。",
-            )
-            inputs = [
-                *inputs,
-                *(
-                    UpstreamInput(
-                        artifact.task_id, artifact.path, artifact.content_hash, artifact.id
-                    )
-                    for artifact in self.commit.selection_input_artifacts(
-                        selection_decision["receipt_id"]
-                    )
-                ),
-            ]
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         try:
             knowledge = self._gather_knowledge(mission, task, all_tasks, search_visibility=True)
@@ -12688,18 +11436,13 @@ class Orchestrator:
             feedback=tuple(feedback),
         )
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
-        source_binding = (
-            self.commit.fragment_validation_binding(task.id)
-            if "fragment_validation" in task.context
-            else self._active_source_binding(mission.id)
-        )
-        fragment_files = self.commit.fragment_validation_inputs(task.id)
+        source_binding = self._active_source_binding(mission.id)
         source_versions = source_binding.get("source_versions")
         source_paths = set(source_versions or {})
         if source_binding:
             untrusted = sorted(set(untrusted) | source_paths)
         previous_files = sorted(
-            {*seed, *(item.path for item in inputs), *source_paths, *fragment_files}
+            {*seed, *(item.path for item in inputs), *source_paths}
         )
         if previous is not None:
             try:
@@ -12751,26 +11494,6 @@ class Orchestrator:
             await self._release_mission(mission.id)
             self._note(f"task {task.id} stopped: worker package refused ({error})")
             return True
-        if selection_decision is not None:
-            from ..context.context_builder import _seal
-
-            package = _seal(
-                {
-                    **dict(package.package),
-                    "selection_inputs": {
-                        "data_not_instruction": True,
-                        "version": "candidate-inputs-v1",
-                        "decision_id": selection_decision["receipt_id"],
-                        "inputs": [
-                            {"path": a.path, "hash": a.content_hash, "artifact_id": a.id}
-                            for a in self.commit.selection_input_artifacts(
-                                selection_decision["receipt_id"]
-                            )
-                        ],
-                        "marker": "UNVERIFIED candidate material; C needs its own complete verification",
-                    },
-                }
-            )
         if new_mode is not None:
             # P2.3c part 2d, decision 4: tell the leaf which output ports its own
             # occurrence declares.  The names are the plan's, not the model's — the
@@ -12843,39 +11566,6 @@ class Orchestrator:
             # byte-equivalent to the committed Task; the separate content scope
             # narrows this turn's responsibility without rewriting that contract.
             package = _seal({**dict(package.package), "task_content_scope": content_scope})
-        fragment_context = self.commit.fragment_validation_context(task.id)
-        if fragment_context:
-            from ..context.context_builder import _seal
-
-            package = _seal(
-                {
-                    **dict(package.package),
-                    "fragment_scope": {
-                        **dict(fragment_context),
-                        "data_not_instruction": True,
-                    },
-                }
-            )
-        if validated_context is not None:
-            from ..context.context_builder import _seal
-
-            package = _seal(
-                {
-                    **dict(package.package),
-                    "validated_fragment_input": {
-                        **validated_context,
-                        "data_not_instruction": True,
-                    },
-                }
-            )
-        selection = self.commit.selection_round(task.id)
-        remaining_selection = (
-            self._config.turn_deadline_seconds
-            if selection is None
-            else selection["deadline_at"] - self.store.now
-        )
-        if remaining_selection <= 0:
-            return False
         # D6-7: Mission ∩ Task ∩ Role ∩ Deployment, frozen into the intent below
         # P2.3u: a hierarchical read-only leaf also drops patch/apply-class tools.
         # ``new_mode`` was already asked at the top of this function (no extra site).
@@ -12934,7 +11624,6 @@ class Orchestrator:
                 max_tool_calls_per_turn=tool_cap,
                 turn_deadline_seconds=min(
                     self._config.turn_deadline_seconds,
-                    remaining_selection,
                     float(task.budget.max_runtime_seconds or self._config.turn_deadline_seconds),
                 ),
             ),
@@ -12943,7 +11632,7 @@ class Orchestrator:
         tokens = self._config.attempt_reserve_tokens
         critic_tail = None
         first_critic_binding: dict[str, Any] = {}
-        if "critic_review" in task.verification_policy and selection_decision is None:
+        if "critic_review" in task.verification_policy:
             try:
                 critic_decision = self._route_service("critic", mission.id)
             except RoutingUnavailable as unavailable:
@@ -12994,17 +11683,6 @@ class Orchestrator:
                 head_room = remaining - critic_share  # keep the Critic's own share free
                 if 0 < head_room < tokens:
                     tokens = head_room
-        if selection_decision is not None:
-            assert selection is not None
-            critic_tokens = (
-                self._config.critic_reserve_tokens
-                if "critic_review" in task.verification_policy
-                else 0
-            )
-            tokens = min(tokens, selection["policy"]["synthesis_reserve"]["tokens"] - critic_tokens)
-            if tokens <= 0:
-                self.commit.stop_selection(task.id, reason="selection_tail_insufficient")
-                return True
         if system_hold is not None:
             held = self.commit.protected_tail_hold(system_hold["hold_id"])
             allowance = None if held is None else self.commit.ledger.reservation(held["subject_id"])
@@ -13068,10 +11746,6 @@ class Orchestrator:
         try:
             attempt, _intent = self.commit.create_attempt(
                 task.id,
-                selection_decision_id=None
-                if selection_decision is None
-                else selection_decision["receipt_id"],
-                selection_owner=self._owner if selection_decision is not None else None,
                 critic_tail=critic_tail,
                 role=role.name,
                 model=decision.model,
@@ -13107,11 +11781,6 @@ class Orchestrator:
                     "retrieval_status": knowledge.retrieval.status,
                     "context_builder_version": CONTEXT_BUILDER_VERSION,
                     "untrusted_sources": untrusted,
-                    **(
-                        {"validated_fragment_input": validated_input}
-                        if validated_input is not None
-                        else {}
-                    ),
                     **({"read_only_leaf": True} if read_only else {}),
                     **source_binding,
                     "allocation": dict(

@@ -70,13 +70,6 @@ from ..governance.domains import (
     supports_document_assessments,
 )
 from ..governance.policies import DeploymentPolicy
-from ..graph.changes import (
-    ChangeLimits,
-    GraphChangeRejected,
-    TaskGraphChange,
-    node_budget,
-    validate_change,
-)
 from ..graph.task_graph import GraphRejected, TaskBudgetFloor, TaskGraphProposal, validate_graph
 from ..memory.claims import grade_claim, system_attribution
 from ..memory.source_dependencies import (
@@ -118,7 +111,6 @@ from ..verification.deterministic_checks import LayerResult
 from ..verification.human_review import review_request_id
 from ..verification.mission_coverage import mission_coverage, reconcile_document_judgments
 from .action_commits import ActionCommitsMixin
-from .fragment_commits import FragmentCommitsMixin
 from .human_commits import HumanCommitsMixin
 from .mission_tail_commits import MissionTailCommitsMixin
 from .obligation_commits import ObligationCommitsMixin
@@ -143,30 +135,9 @@ from .resolution_commits import ResolutionCommitsMixin
 from .operation_completion import OperationCompletionCommitsMixin
 from .operation_reconciliation import OperationReconciliationCommitsMixin
 from .operation_materialization import OperationMaterializationCommitsMixin
-from .selection_commits import SelectionCommitsMixin
 from .source_commits import SourceCommitsMixin
 from .state_machine import next_attempt, next_claim, next_mission, next_task
 
-#: P2.3c part 2.  Appended when a Manager offers a legacy ``TaskGraphChange`` against a
-#: hierarchical Mission.  A new event type rather than ``TaskGraphChangeRejected``: the
-#: proposal was not *invalid*, it arrived at the wrong door, and a Manager reading its
-#: own rejections has to be able to tell "fix the proposal" from "use the other entry".
-HIERARCHICAL_GRAPH_CHANGE_REFUSED = "HierarchicalGraphChangeRefused"
-
-#: P2.3d / defect D4.  Appended when a *management round would have been opened* for a
-#: hierarchical Mission and was not.  The Grok acceptance run showed the cost of not
-#: having this: ``_request_management`` had one switch (``dynamic_graph``) and no mode
-#: branch, so every hierarchical Task that failed verification opened a Manager intent,
-#: the Manager answered with a legacy ``TaskGraphChange``, ``commit_graph_change``
-#: refused it unconditionally (``SEMANTICS_IS_HIERARCHICAL``) and the round was a model
-#: call that could not possibly change anything.  Twenty L1 episodes burned
-#: ``max_manager_rounds`` that way and stopped with ``management_exhausted``; three L4
-#: episodes burned ``no_progress_limit`` and stopped with ``no_progress`` — in both
-#: cases hiding the real failure behind a repair loop that was closed by construction.
-#: The door that *is* open is a ``PlanRevisionProposal``; until a hierarchical Manager
-#: exists to walk through it (P3 / TaskGraph), the honest answer is to open no round and
-#: say so where an operator reads it.
-MANAGEMENT_NOT_APPLICABLE = "ManagementNotApplicableUnderHierarchical"
 #: P2.3k / defect N3.  Appended once per hierarchical Mission when the Mission Judge
 #: builds its integrated tree: the legacy ``merge_accepted`` (override legal only along
 #: ``Task.dependency_ids``, anything else an ``ArtifactConflict``) is not applied, because
@@ -251,7 +222,6 @@ class MissionSpec:
     synthesis: Mapping[str, Any] | None = None  # step 4 (D4-8): fixed synthesis Task template
     conflict_reserve_tokens: int = 0  # step 4 (D4-20): tokens set aside for Conflict Tasks
     domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
-    search_policy_version_id: str | None = None
     runtime_profile_id: str | None = None
     # 2026-10-01: the default is the hierarchical mode on the one planning protocol.
     # The flat mode is still served, but only for a spec that names it in so many words.
@@ -283,8 +253,6 @@ class MissionSpec:
             "task_kind": self.task_kind,
             "workspace_seed": dict(self.workspace_seed),
         }
-        if self.search_policy_version_id is not None:
-            data["search_policy_version_id"] = self.search_policy_version_id
         if self.untrusted_sources:
             data["untrusted_sources"] = list(self.untrusted_sources)
         if self.synthesis is not None:
@@ -380,7 +348,7 @@ def task_account(task_id: str) -> str:
     return f"budget:{task_id}"
 
 
-class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, SelectionCommitsMixin, FragmentCommitsMixin,
+class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin,
     ActionCommitsMixin, HumanCommitsMixin, PolicyCommitsMixin, SourceCommitsMixin, ObligationCommitsMixin,
     PlanningAdmissionCommitsMixin, PlanCommitsMixin, ResolutionCommitsMixin, OperationCompletionCommitsMixin,
     OperationMaterializationCommitsMixin, OperationReconciliationCommitsMixin,
@@ -966,8 +934,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     spec.runtime_profile_id,
                     dict(version.get("params") or policy_defaults or {}),
                 )
-            if spec.search_policy_version_id is not None:
-                self.bind_search_policy(mission_id, spec.search_policy_version_id)
             self._store.bind_mission_domain(
                 mission_id,
                 domain_id=domain.id,
@@ -1033,8 +999,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     raise CommitRejected(
                         "planning repair stop gate blocks a new service intent for this Task"
                     )
-            self._selection_service_identity(kind=kind, mission_id=mission_id, task_id=task_id,
-                attempt_id=attempt_id, subject_id=subject_id, account_id=account_id)
             first_hold = (
                 self.protected_tail_hold(self.critic_tail_id(attempt_id))
                 if kind == "critic" and attempt_id is not None and task_id is not None else None
@@ -1062,8 +1026,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     account_id=account_id, reservation=reservation,
                     semantic_revision=self.protected_tail_revision(task_id),
                 )
-            elif not self._selection_service_reserve(attempt_id, subject_id, account_id, reservation,
-                    kind=kind, mission_id=mission_id, task_id=task_id):
+            else:
                 self._ledger.reserve(
                     account_id=account_id,
                     subject_id=subject_id,
@@ -1482,440 +1445,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 payload={"task_ids": receipt["task_ids"]},
             )
             return tasks, receipt
-
-    # ------------------------------------------------------ graph changes (step 5)
-    def commit_graph_change(
-        self,
-        mission_id: str,
-        change: TaskGraphChange,
-        *,
-        source: Mapping[str, Any],
-        limits: ChangeLimits | None = None,
-        allow_rebase: bool = True,
-    ) -> tuple[list[Task], Mapping[str, Any]]:
-        """Apply a Manager's Task DAG change atomically (D5-2 / D5-3 / D5-10).
-
-        The proposal must be based on the current ``graph_version`` (CAS); a stale
-        base is rebased automatically when its operations touch none of the Tasks the
-        intervening changes affected, otherwise refused.  A repeated delivery of the
-        same proposal on the same base returns the same receipt.  Validation failures
-        write only ``TaskGraphChangeRejected`` and leave the formal graph untouched.
-
-        **A hierarchical Mission never gets this far** (P2.3c part 2).  The two paths
-        disagree about what a plan *is*: this one edits Task rows and bumps an integer
-        ``graph_version``, while the new mode's plan is a revision of a typed network
-        whose occurrences carry semantic bindings, memberships and adopted method
-        instances.  Letting a Manager edit the rows behind that network's back would
-        leave the two disagreeing with no way to tell which is the plan — the silent
-        half-mode §18.5 forbids — so the refusal is unconditional and names the door
-        that is open instead (a ``PlanRevisionProposal`` through
-        :meth:`commit_plan_revision`).  ADR-13 / C19 also forbid the ``allow_rebase``
-        replay for a new-mode proposal, which is a second reason this entry cannot be
-        the one a hierarchical Manager uses.
-        """
-
-        mission = self._store.get_mission(mission_id)
-        if mission is not None and semantics_of(mission) == HIERARCHICAL_SEMANTICS:
-            detail = (
-                f"mission {mission_id} runs under the hierarchical semantics; its plan is a "
-                "typed network with semantic bindings and adopted method instances, and a "
-                "TaskGraphChange edits Task rows and the integer graph_version instead. "
-                "Propose a PlanRevisionProposal and commit it through commit_plan_revision "
-                "(§18.5 rule 2, ADR-13 / C19: a new-mode proposal is handed back to its "
-                "author, never replayed on its behalf)."
-            )
-            self._emit(
-                HIERARCHICAL_GRAPH_CHANGE_REFUSED,
-                mission_id,
-                key=(
-                    f"{mission_id}:{change.base_graph_version}:{change.proposal_hash[:12]}"
-                    f":{source.get('intent_id', '')}"
-                ),
-                payload={
-                    "reason": "SEMANTICS_IS_HIERARCHICAL",
-                    "detail": detail,
-                    "base_graph_version": change.base_graph_version,
-                    "operations": [op.to_json() for op in change.operations],
-                    "redirect": "commit_plan_revision",
-                    "source": dict(source),
-                },
-            )
-            raise CommitRejected(f"graph change rejected (SEMANTICS_IS_HIERARCHICAL): {detail}")
-
-        limits = limits or ChangeLimits()
-        try:
-            return self._commit_graph_change(
-                mission_id, change, source=source, limits=limits, allow_rebase=allow_rebase
-            )
-        except GraphChangeRejected as error:
-            self._emit(
-                "TaskGraphChangeRejected",
-                mission_id,
-                key=f"{mission_id}:{change.base_graph_version}:{change.proposal_hash[:12]}:{source.get('intent_id', '')}",
-                payload={
-                    "reason": error.reason,
-                    "detail": error.detail,
-                    "base_graph_version": change.base_graph_version,
-                    "basis": dict(change.basis),
-                    "source": dict(source),
-                },
-            )
-            raise CommitRejected(
-                f"graph change rejected ({error.reason}): {error.detail}"
-            ) from error
-
-    def _commit_graph_change(
-        self,
-        mission_id: str,
-        change: TaskGraphChange,
-        *,
-        source: Mapping[str, Any],
-        limits: ChangeLimits,
-        allow_rebase: bool,
-    ) -> tuple[list[Task], Mapping[str, Any]]:
-        with self._store.transaction():
-            mission = self._require_mission(mission_id)
-            if mission.status is not MissionStatus.ACTIVE:
-                raise GraphChangeRejected(
-                    "mission_not_active", f"mission {mission_id} is {mission.status}"
-                )
-            report = dict(mission.final_report or {})
-            current = int(report.get("graph_version") or 1)
-            change_id = ids.commit_id(
-                {
-                    "kind": "graph_change",
-                    "mission_id": mission_id,
-                    "proposal": change.proposal_hash,
-                },
-                change.base_graph_version,
-            )
-            receipt = self._store.get_receipt(change_id)
-            if receipt is not None:  # S5-07: the same proposal on the same base, once
-                replayed = [self._require_task(task_id) for task_id in receipt["new_task_ids"]]
-                return replayed, receipt
-            rebased_from: int | None = None
-            if change.base_graph_version != current:
-                if not allow_rebase or change.base_graph_version > current:
-                    raise GraphChangeRejected(
-                        "stale_base",
-                        f"proposal is based on graph version {change.base_graph_version}, current is {current}",
-                    )
-                touched: set[str] = set()
-                for applied in self._store.list_graph_changes(
-                    mission_id, since_version=change.base_graph_version
-                ):
-                    touched.update(str(t) for t in applied.get("affected_task_ids", []))
-                overlap = touched & change.referenced_task_ids()
-                if overlap:
-                    raise GraphChangeRejected(
-                        "stale_base",
-                        f"proposal is based on graph version {change.base_graph_version}, current is {current}; "
-                        f"it touches tasks changed since: {sorted(overlap)}",
-                    )
-                rebased_from = change.base_graph_version
-            tasks = self._store.list_tasks(mission_id)
-            proposals_by_attempt: dict[str, int] = {}
-            for task in tasks:
-                for parent in (
-                    task.context.get("proposed_by_attempt", [])
-                    if isinstance(task.context.get("proposed_by_attempt"), list)
-                    else []
-                ):
-                    proposals_by_attempt[str(parent)] = proposals_by_attempt.get(str(parent), 0) + 1
-            committed: dict[str, int] = {}
-            for task in tasks:
-                if task.status is TaskStatus.CANCELLED or task.id in change.referenced_task_ids():
-                    account = self._ledger.account(task_account(task.id))
-                    committed[task.id] = int(account.settled_tokens) + int(account.reserved_tokens)
-            validated = validate_change(
-                mission,
-                tasks,
-                change,
-                limits=limits,
-                proposals_by_attempt=proposals_by_attempt,
-                committed_tokens_by_task=committed,
-                deployed_layers=self._deployed_layers,
-                task_floor=self._floor_for_mission(mission.id),
-                candidates=self._candidates(mission.id),
-                domain=self.domain_for(mission.id),
-            )
-            by_id = {task.id: task for task in tasks}
-            new_version = current + 1
-            key_to_id: dict[str, str] = {}
-            key_to_ordinal: dict[str, int] = {}
-            ordinal = len(tasks)
-            created: list[Task] = []
-            source_attempt = str(change.basis.get("attempt_id") or "")
-            for key in validated.order:  # topological among the new nodes → ordinal ≡ order
-                ordinal += 1
-                key_to_id[key] = ids.task_id(mission_id, ordinal)
-                key_to_ordinal[key] = ordinal
-            for key in validated.order:
-                node = next(n for n in validated.new_nodes if n.key == key)
-                dependencies = tuple(key_to_id.get(d, d) for d in node.dependencies)
-                supersedes = next(
-                    (old for old, rep in validated.superseded.items() if rep == key), None
-                )
-                context: dict[str, Any] = {
-                    "graph_version": new_version,
-                    "change_id": change_id,
-                    "role": node.role,
-                    "proposed_by_attempt": [source_attempt] if source_attempt else [],
-                }
-                if supersedes is not None:
-                    old = by_id[supersedes]
-                    context["supersedes_task"] = supersedes
-                    context["supersede_depth"] = int(old.context.get("supersede_depth", 0)) + 1
-                deps_done = all(
-                    by_id[d].status is TaskStatus.COMPLETED for d in dependencies if d in by_id
-                ) and all(d in by_id for d in dependencies)
-                task = Task(
-                    id=key_to_id[key],
-                    mission_id=mission_id,
-                    parent_task_ids=tuple(node.parent_task_ids)
-                    or ((supersedes,) if supersedes else ()),
-                    dependency_ids=dependencies,
-                    goal=node.goal,
-                    rationale=node.rationale,
-                    success_criteria=node.success_criteria,
-                    verification_policy=node.verification_policy,
-                    allowed_tools=node.allowed_tools or mission.allowed_tools,
-                    budget=node_budget(node, validated, mission),
-                    priority=node.priority,
-                    status=TaskStatus.READY if deps_done else TaskStatus.BLOCKED,
-                    version=1,
-                    root_goal=mission.goal,
-                    created_at=self._store.now,
-                    outputs=node.outputs,
-                    context=context,
-                    ready_at=self._store.now if deps_done else None,
-                )
-                self._store.insert_task(task, ordinal=key_to_ordinal[key])
-                self._ledger.open_account(
-                    account_id=task_account(task.id),
-                    scope="task",
-                    parent_id=mission_account(mission_id),
-                    mission_id=mission_id,
-                    limits=task.budget,
-                )
-                created.append(task)
-                self._emit(
-                    "TaskCommitted",
-                    mission_id,
-                    key=task.id,
-                    task_id=task.id,
-                    payload={
-                        "commit_id": change_id,
-                        "key": key,
-                        "dependencies": list(dependencies),
-                        "proposal": node.to_json(),
-                        "source": {
-                            **dict(source),
-                            "template": "change",
-                            "graph_version": new_version,
-                        },
-                    },
-                )
-            # in-place rewrites on BLOCKED tasks (data only, §25.1 untouched); a dependency
-            # naming a Task this same proposal supersedes follows the replacement (review P1-1)
-            translate = {
-                **key_to_id,
-                **{old: key_to_id[rep] for old, rep in validated.superseded.items()},
-            }
-            implicitly_rewired: list[str] = []
-            for task_id, deps in validated.retargets.items():
-                task = self._require_task(task_id)
-                resolved = tuple(translate.get(d, d) for d in deps)
-                self._store.update_task(
-                    next_task(
-                        task,
-                        dependency_ids=resolved,
-                        context={**dict(task.context), "graph_version": new_version},
-                    ),
-                    expected_version=task.version,
-                )
-                self._emit(
-                    "TaskDependenciesRewritten",
-                    mission_id,
-                    key=f"{task_id}:{new_version}",
-                    task_id=task_id,
-                    payload={
-                        "from": list(task.dependency_ids),
-                        "to": list(resolved),
-                        "graph_version": new_version,
-                    },
-                )
-            # dependents of a superseded task that were not explicitly retargeted follow the replacement
-            for old_id, replacement_key in validated.superseded.items():
-                new_id = key_to_id[replacement_key]
-                for task in self._store.list_tasks(mission_id):
-                    if (
-                        task.status is TaskStatus.BLOCKED
-                        and old_id in task.dependency_ids
-                        and task.id not in validated.retargets
-                    ):
-                        resolved = tuple(new_id if d == old_id else d for d in task.dependency_ids)
-                        implicitly_rewired.append(task.id)
-                        self._store.update_task(
-                            next_task(task, dependency_ids=resolved), expected_version=task.version
-                        )
-                        self._emit(
-                            "TaskDependenciesRewritten",
-                            mission_id,
-                            key=f"{task.id}:{new_version}",
-                            task_id=task.id,
-                            payload={
-                                "from": list(task.dependency_ids),
-                                "to": list(resolved),
-                                "graph_version": new_version,
-                                "follows_supersede": old_id,
-                            },
-                        )
-            for task_id, priority in validated.priorities.items():
-                task = self._require_task(task_id)
-                self._store.update_task(
-                    next_task(task, priority=priority), expected_version=task.version
-                )
-            for task_id, reason in validated.pauses.items():
-                task = self._require_task(task_id)
-                self._store.update_task(
-                    next_task(task, paused=True, pause_reason=reason or "paused by manager"),
-                    expected_version=task.version,
-                )
-                self._emit(
-                    "TaskPaused",
-                    mission_id,
-                    key=f"{task_id}:{new_version}",
-                    task_id=task_id,
-                    payload={"reason": reason},
-                )
-            for task_id in validated.resumes:
-                task = self._require_task(task_id)
-                self._store.update_task(
-                    next_task(task, paused=False, pause_reason=None), expected_version=task.version
-                )
-                self._emit(
-                    "TaskResumed",
-                    mission_id,
-                    key=f"{task_id}:{new_version}",
-                    task_id=task_id,
-                    payload={},
-                )
-            for task_id, role in validated.roles.items():
-                task = self._require_task(task_id)
-                self._store.update_task(
-                    next_task(task, context={**dict(task.context), "role": role}),
-                    expected_version=task.version,
-                )
-                self._emit(
-                    "TaskRoleChanged",
-                    mission_id,
-                    key=f"{task_id}:{new_version}",
-                    task_id=task_id,
-                    payload={"role": role},
-                )
-            # superseded / cancelled executing tasks: ACTIVE→CANCELLED (VERIFYING→ACTIVE first), attempts closed
-            for old_id, replacement_key in validated.superseded.items():
-                self._cancel_task_entity(
-                    old_id, reason="superseded", replaced_by=key_to_id[replacement_key]
-                )
-                self._inherit_obligation_on_replacement(
-                    self._store.connection,
-                    mission_id,
-                    old_id,
-                    key_to_id[replacement_key],
-                    reason="REPLACE",
-                    graph_version=new_version,
-                )
-            for old_id, reason in validated.cancels.items():
-                self._cancel_task_entity(
-                    old_id, reason=reason or "cancelled by manager", replaced_by=None
-                )
-            unblocked = [t.id for t in self._unblock(mission_id, unblocked_by=None)]
-            record = {
-                "change_id": change_id,
-                "mission_id": mission_id,
-                "from_version": current,
-                "to_version": new_version,
-                "proposal_hash": change.proposal_hash,
-                "rebased_from": rebased_from,
-                "basis": dict(change.basis),
-                "rationale": change.rationale,
-                "operations": [op.to_json() for op in change.operations],
-                "new_task_ids": [t.id for t in created],
-                "superseded": {old: key_to_id[rep] for old, rep in validated.superseded.items()},
-                "cancelled": list(validated.cancels),
-                "affected_task_ids": sorted(  # review P2-1: implicit rewires are affected too
-                    {key_to_id.get(t, t) for t in validated.affected_task_ids}
-                    | set(implicitly_rewired)
-                ),
-                "unblocked": unblocked,
-                "warnings": list(validated.warnings),
-                "depth": validated.depth,
-                "source": dict(source),
-            }
-            self._store.insert_graph_change(record)
-            self._store.update_mission(
-                next_mission(mission, final_report={**report, "graph_version": new_version}),
-                expected_version=mission.version,
-            )
-            self._store.insert_receipt(
-                commit_id=change_id,
-                kind="graph_change",
-                subject_id=mission_id,
-                base_version=change.base_graph_version,
-                proposal_hash=change.proposal_hash,
-                receipt=record,
-            )
-            self._emit(
-                "TaskGraphChanged",
-                mission_id,
-                key=change_id,
-                payload={k: v for k, v in record.items() if k not in {"operations"}}
-                | {"operations": len(change.operations)},
-            )
-            return created, record
-
-    def _cancel_task_entity(self, task_id: str, *, reason: str, replaced_by: str | None) -> Task:
-        """READY/ACTIVE → CANCELLED (VERIFYING → ACTIVE first: two legal edges), open
-        Attempts CANCELLED (late results stay history), unsubmitted intents closed."""
-
-        task = self._require_task(task_id)
-        if task.status is TaskStatus.VERIFYING:
-            task = next_task(task, TaskStatus.ACTIVE)
-            self._store.update_task(task, expected_version=task.version - 1)
-            stored = self._store.find_result_for_attempt(
-                next(
-                    (
-                        a.id
-                        for a in self._store.list_attempts(task_id)
-                        if a.status in SUBMITTED_STATES
-                    ),
-                    "",
-                )
-            )
-            if stored is not None and stored.verification_state in {"PENDING", "RUNNING"}:
-                self._store.set_result_verification(
-                    stored.envelope.id, state="REJECTED", verdict="superseded"
-                )
-        cancelled = next_task(
-            task,
-            TaskStatus.CANCELLED,
-            failure_reason=reason,
-            context={**dict(task.context), **({"replaced_by": replaced_by} if replaced_by else {})},
-        )
-        self._store.update_task(cancelled, expected_version=task.version)
-        for attempt in self._store.list_attempts(task_id):
-            if attempt.status in OPEN_ATTEMPT_STATES:
-                self._close_attempt(attempt, AttemptStatus.CANCELLED, reason=f"task_{reason}")
-        self._emit(
-            "TaskSuperseded" if replaced_by else "TaskCancelled",
-            task.mission_id,
-            key=task_id,
-            task_id=task_id,
-            payload={"reason": reason, "replaced_by": replaced_by},
-        )
-        return cancelled
 
     def unblock_dependents(self, task_id: str) -> list[Task]:
         """After a Task COMPLETED: every BLOCKED dependent whose dependencies are all
@@ -3130,7 +2659,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         # UNKNOWN actions are left to the reconciliation (reality may already have moved)
         self._cancel_open_actions(mission_id, reason="mission_stopped")
         self.release_terminal_tail_holds(mission_id=mission_id)
-        self.release_terminal_selection_holds(mission_id)
         self._release_terminal_mission_pools(mission_id)
         return cancelled
 
@@ -3238,8 +2766,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         max_running_attempts: int | None = None,
         runtime_profile_id: str = "default",
         routing: Mapping[str, Any] | None = None,
-        selection_decision_id: str | None = None,
-        selection_owner: str | None = None,
         critic_tail: Reservation | None = None,
     ) -> tuple[Attempt, DispatchIntent]:
         """Atomic Reserve + Attempt(PENDING) + dispatch intent (ORCH-BUILD §4.3 step 1).
@@ -3309,19 +2835,14 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 try:
                     graph_prepared = self._taskgraph_dispatch.prepare(
                         task_id, intent_config=intent_config, inputs=inputs, input_hash=input_hash,
-                        selection_decision_id=selection_decision_id,
                     )
                 except (StoreError, ContractError, ArtifactStoreError, ArtifactConflict, SourceUnavailable) as error:
                     # A named per-Mission refusal stays in the original admission
                     # path; it must not abort scheduling for unrelated Missions.
                     raise CommitRejected(str(error)) from error
                 intent_config = {**dict(intent_config), "taskgraph_inputs": graph_prepared.intent_binding()}
-            selection = self._admit_selection_attempt(
-                task, decision_id=selection_decision_id, owner=selection_owner, reservation=reservation,
-            )
-            waiting = self.selection_waiting_ids()
             existing = self._store.list_attempts(task_id)
-            open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES and a.id not in waiting]
+            open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES]
             if len(open_attempts) >= max(1, candidates_per_task):
                 raise CommitRejected(
                     f"task {task_id} already has {len(open_attempts)} open Attempt(s) "
@@ -3332,7 +2853,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     1
                     for other in self._store.list_tasks(task.mission_id)
                     for a in self._store.list_attempts(other.id)
-                    if a.status in OPEN_ATTEMPT_STATES and a.id not in waiting
+                    if a.status in OPEN_ATTEMPT_STATES
                 )
                 if open_in_mission >= max_open_attempts:
                     raise CommitRejected(
@@ -3343,9 +2864,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 open_everywhere = self._store.count_attempts_by_status(
                     *(str(s) for s in OPEN_ATTEMPT_STATES)
                 )
-                open_everywhere -= sum(
-                    self._require_attempt(aid).status in OPEN_ATTEMPT_STATES for aid in waiting
-                )
                 if open_everywhere >= max_running_attempts:
                     raise CommitRejected(
                         f"{open_everywhere} Attempts are open across all Missions "
@@ -3353,73 +2871,44 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     )
             ordinal = len(existing) + 1
             attempt_id = ids.attempt_id(task_id, ordinal)
-            from ..artifacts.versioning import UpstreamInput
-            selected_artifacts = (
-                [] if selection_decision_id is None
-                else self.selection_input_artifacts(selection_decision_id)
-            )
             from .completion_inputs import freeze_attempt_completion_inputs
             frozen_completion = freeze_attempt_completion_inputs(
                 self._store, self, task, inputs,
                 attempt_id=attempt_id, request_id=ids.intent_id("attempt", attempt_id),
-                selection_inputs=[
-                    UpstreamInput(a.task_id, a.path, a.content_hash, a.id)
-                    for a in selected_artifacts
-                ],
             )
             if self._source_artifact_store is not None:
-                from ..planning.fragments import freeze_fragment_execution
+                from .attempt_execution import freeze_attempt_execution
 
-                mounted = (None if selection_decision_id is None else {
-                    artifact.id: artifact.path
-                    for artifact in selected_artifacts
-                })
+                mounted = None
                 if frozen_completion is not None:
                     # The completion freezer just reconstructed and compared every
-                    # input against adopted DATA plus separately verified Selection
-                    # material. Neither namespace may override the other.
-                    exact_mounts = {str(item["artifact_id"]): str(item["path"]) for item in inputs}
-                    if len(exact_mounts) != len(inputs) or any(
-                        exact_mounts.get(artifact_id) != path
-                        for artifact_id, path in (mounted or {}).items()
-                    ):
+                    # input against adopted DATA; those are the exact mounts.
+                    mounted = {str(item["artifact_id"]): str(item["path"]) for item in inputs}
+                    if len(mounted) != len(inputs):
                         raise CommitRejected("completion input mount identities are ambiguous")
-                    mounted = exact_mounts
-                execution = freeze_fragment_execution(
+                execution = freeze_attempt_execution(
                     self._store, self._source_artifact_store, task=task,
                     intent_config=intent_config, inputs=inputs, retry_of=retry_of,
                     validated_input_paths=mounted if graph_prepared is None else None,
                     validated_input_identities=(None if graph_prepared is None else frozenset(
                         (str(item["artifact_id"]), str(item["path"]), str(item["content_hash"])) for item in inputs)),
                 )
-                if ("fragment_execution" in intent_config
-                        and sha256_hex(intent_config["fragment_execution"]) != sha256_hex(execution)):
-                    raise CommitRejected("fragment execution conflicts with actual frozen inputs")
-                intent_config = {**dict(intent_config), "fragment_execution": execution}
-            elif "fragment_execution" in intent_config:
-                raise CommitRejected("fragment execution requires an explicit artifact store")
+                if ("attempt_execution" in intent_config
+                        and sha256_hex(intent_config["attempt_execution"]) != sha256_hex(execution)):
+                    raise CommitRejected("attempt execution conflicts with actual frozen inputs")
+                intent_config = {**dict(intent_config), "attempt_execution": execution}
+            elif "attempt_execution" in intent_config:
+                raise CommitRejected("attempt execution requires an explicit artifact store")
             system_hold = self.system_task_hold(task.id)
             if critic_tail is not None and system_hold is None:
                 from ..governance.tail_budget import TailReserve
 
-                if selection_decision_id is not None:
-                    raise CommitRejected("selected synthesis must use its existing tail")
                 self.reserve_critic_tail(
                     attempt_id=attempt_id, task_id=task.id,
                     reserve=TailReserve(critic_tail.tokens, critic_tail.cost_micros),
                     semantic_revision=self.protected_tail_revision(task.id),
                 )
-            if selection_decision_id is not None:
-                assert selection is not None
-                from ..governance.tail_budget import TailAllocation, TailBudgetLedger
-                TailBudgetLedger(self._ledger).transfer_selection_reserve(
-                    selection["round_id"], attempt_id,
-                    [TailAllocation(attempt_id, task_account(task_id), "synthesis",
-                                    reservation.tokens, reservation.cost_micros,
-                                    reservation.tool_calls, counts_attempt=True)],
-                    task_revision=selection["task_revision_id"],
-                )
-            elif system_hold is not None:
+            if system_hold is not None:
                 self._consume_mission_system_hold(
                     task, attempt_id=attempt_id, subject_id=attempt_id, reservation=reservation,
                     profile_id=runtime_profile_id, model=model,
@@ -3461,9 +2950,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 feedback=tuple(feedback),
             )
             self._store.insert_attempt(attempt)
-            if selection is not None:
-                self._register_selection_attempt(selection, attempt_id,
-                                                 synthesis=selection_decision_id is not None)
             intent = DispatchIntent(
                 intent_id=ids.intent_id("attempt", attempt_id),
                 kind="attempt",
@@ -3476,9 +2962,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 input_hash=input_hash,
                 config={
                     **dict(intent_config),
-                    **({"selection_round_id": selection["round_id"],
-                        "selection_decision_id": selection_decision_id,
-                        "selection_deadline_at": selection["deadline_at"]} if selection else {}),
                     "attempt_id": attempt_id,  # authoritative (P1-7): never the caller's guess
                     "inputs": [dict(item) for item in inputs],
                     **({"completion_inputs": frozen_completion.to_json()}
@@ -3908,9 +3391,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             (f"AttemptChargeReleased:{attempt.id}",),
         ).fetchone() is not None:
             return False
-        intent = self._store.get_intent_for_subject(attempt.id)
-        if intent is not None and intent.config.get("selection_round_id"):
-            return False
         if self.system_task_hold(attempt.task_id) is not None:
             return False
         reservation = self._ledger.reservation(attempt.id)
@@ -4063,7 +3543,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         if prior_reservation is not None and prior_reservation["state"] != "SETTLED":
             self._return_system_unused_allowance(settled)
         self.release_terminal_tail_holds(mission_id=mission_id, task_id=task_id)
-        self.release_terminal_selection_holds(mission_id, task_id=task_id)
         self._release_terminal_mission_pools(mission_id)
         self._emit(
             "BudgetReleased",
@@ -4240,8 +3719,8 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
     ) -> StoredResult:
         """A non-candidate Result Envelope (§13 blocked / failure / no_progress /
         proposed_subtasks; D5-5): kept as history (never verified), the Attempt ends in
-        RETRY_WAIT with the outcome as its failure, the Task stays ACTIVE for the
-        Manager's decision (D5-6).  Idempotent on (attempt, turn).
+        RETRY_WAIT with the outcome as its failure and the Task stays ACTIVE: it is tried
+        again within its attempt allowance.  Idempotent on (attempt, turn).
 
         Settlement is the caller's next step, after it closes the dispatch intent
         (2026-09-25): settling in here ran before the intent was closed, which the
@@ -4335,17 +3814,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             )
             return stored
 
-    def no_progress_count(self, task_id: str) -> int:
-        """Attempts of the Task that ended without progress (D5-7): no_progress / failure
-        outcomes and failed verifications."""
-
-        count = 0
-        for attempt in self._store.list_attempts(task_id):
-            reason = str((attempt.failure or {}).get("reason", ""))
-            if reason in {"outcome_no_progress", "outcome_failure", "verification_failed"}:
-                count += 1
-        return count
-
     def record_artifact_merge_not_applicable(
         self,
         mission_id: str,
@@ -4358,7 +3826,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         """P2.3k / defect N3: the legacy artifact merge a hierarchical Mission does not run.
 
         Keyed by the subject so the durable record is written once per Mission judgment
-        tree rather than once per cycle, exactly like ``record_management_not_applicable``.
+        tree rather than once per cycle.
         It carries the same reason code the mode gate would have raised
         (``SEMANTICS_IS_HIERARCHICAL``) and, so the reader can see what the tree holds
         instead, every path more than one contribution wrote — with the writer that was
@@ -4387,65 +3855,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                     "overrides the rest (§9.1, §21.5)."
                 ),
             },
-        )
-
-    def record_management_not_applicable(
-        self, mission_id: str, *, task_id: str, trigger: str, subject: str
-    ) -> Event:
-        """P2.3d / defect D4: the management round a hierarchical Mission does not open.
-
-        Keyed by the subject, so the durable record is written once per trigger rather
-        than once per cycle, exactly like the intent it stands in for.  It carries the
-        same reason code the commit side would have raised, because it is the same
-        refusal moved one step earlier: ``SEMANTICS_IS_HIERARCHICAL``.
-        """
-
-        return self._emit(
-            MANAGEMENT_NOT_APPLICABLE,
-            mission_id,
-            key=subject,
-            task_id=task_id,
-            payload={
-                "reason": "SEMANTICS_IS_HIERARCHICAL",
-                "trigger": trigger,
-                "subject": subject,
-                "redirect": "commit_plan_revision",
-                "detail": (
-                    "this Mission runs under the hierarchical semantics; a Manager here "
-                    "can only offer a legacy TaskGraphChange, which commit_graph_change "
-                    "refuses unconditionally. No management round is opened, no manager "
-                    "or no_progress allowance is spent, and the Task's own failure path "
-                    "reports what actually happened (§18.5 rule 2)."
-                ),
-            },
-        )
-
-    def record_management_requested(
-        self, mission_id: str, *, task_id: str, trigger: str, subject: str, round_number: int
-    ) -> Event:
-        return self._emit(
-            "ManagementRequested",
-            mission_id,
-            key=subject,
-            task_id=task_id,
-            payload={"trigger": trigger, "subject": subject, "round": round_number},
-        )
-
-    def record_management_decided(
-        self,
-        mission_id: str,
-        *,
-        task_id: str,
-        trigger: str,
-        decision: str,
-        detail: Mapping[str, Any],
-    ) -> Event:
-        return self._emit(
-            "ManagementDecided",
-            mission_id,
-            key=f"{mission_id}:manager:{trigger}:{decision}",
-            task_id=task_id,
-            payload={"trigger": trigger, "decision": decision, "detail": jsonable(detail)},
         )
 
     def record_late_result(
@@ -5074,14 +4483,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             return self.fail_result(result_id, failures=[rejection], owner=owner)
         source_dependencies = None
         if domain.id == DOC_DOMAIN:
-            selection_versions, selection_issues = self._selection_source_lineage(attempt.id)
-            if selection_issues:
-                return self.fail_result(result_id, failures=[{
-                    "layer": "rule_check", "status": "ERROR" if any(
-                        issue.get("code") == "ERROR" for issue in selection_issues) else "FAIL",
-                    "summary": "selected source material no longer current",
-                    "detail": {"reason": "stale_source", "source_current_issues": selection_issues},
-                }], owner=owner)
             # Resolve every dependency before ANY new knowledge is projected. A
             # sibling claim of this result cannot become its own input mid-loop.
             source_dependencies = {
@@ -5098,11 +4499,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
                 )
                 for ordinal, _ in enumerate(stored.envelope.claims, 1)
             }
-            if selection_versions:
-                source_dependencies = {
-                    claim_id: (merge_source_versions(versions, selection_versions), issues)
-                    for claim_id, (versions, issues) in source_dependencies.items()
-                }
             errors = [
                 issue
                 for _, issues in source_dependencies.values()
@@ -5135,8 +4531,6 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
             try:
                 with self._store.transaction():
                     stored = self._require_result(result_id)
-                    if self.selection_policy_for(stored.envelope.task_id) is not None:
-                        raise CommitRejected("COMPARE requires the selected-result acceptance gate")
                     already_accepted = (stored.verification_state == "DONE"
                                         and stored.verdict == "PASS")
                     completed = self._accept_result(result_id, verifier_results=verifier_results,
@@ -5495,8 +4889,7 @@ class CommitService(MissionTailCommitsMixin, ProtectedTailCommitsMixin, Selectio
         while the Task stays COMPLETED.
         """
 
-        # P2.3c part 2c / review F6: the mode gate, in the same shape and the same
-        # place as ``commit_graph_change``'s — *before* the transaction, because the
+        # P2.3c part 2c / review F6: the mode gate — *before* the transaction, because the
         # refusal appends an event and an event emitted inside a transaction that then
         # raises is rolled back with it.  This entry is public and had no gate at all,
         # so a hierarchical Mission whose plan happened to contain only primitives

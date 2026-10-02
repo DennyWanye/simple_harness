@@ -147,37 +147,6 @@ class ProviderBudgetCommitAdapter:
         self.fingerprint = fingerprint
         self.accepted = frozenset({fingerprint}) if accepted is None else accepted
 
-    def _accepted_fragment_manager(self, intent, task) -> bool:
-        # A verified fragment completes before Manager can reconnect consumers.
-        # This completed Task is evidence, not Manager's live service authority.
-        # Require the original projection and accepted Result, never just a label.
-        summary = intent.config.get("validated_fragment")
-        if (
-            intent.kind != "manager"
-            or task.status is not TaskStatus.COMPLETED
-            or not isinstance(summary, Mapping)
-            or summary.get("available") is not True
-            or summary.get("validation_task_id") != task.id
-            or not task.accepted_result_id
-            or summary.get("validation_result_id") != task.accepted_result_id
-            or intent.config.get("result_id") != task.accepted_result_id
-        ):
-            return False
-        result = self.store.get_result(task.accepted_result_id)
-        if (
-            result is None
-            or result.verdict != "PASS"
-            or result.verification_state != "DONE"
-            or result.envelope.attempt_id != intent.config.get("attempt_id")
-        ):
-            return False
-        return any(
-            receipt.get("validation_task_id") == task.id
-            and receipt.get("fragment_id") == summary.get("fragment_id")
-            and receipt.get("projection_receipt_id") == summary.get("projection_receipt_id")
-            for receipt in self.store.list_fragment_validations(intent.mission_id)
-        )
-
     def authority(self, *, agent_id: str, turn_id: str):
         rows = self.store.connection.execute(
             "SELECT intent_id FROM dispatch_intents WHERE agent_id=? AND expected_turn_id=?",
@@ -201,24 +170,6 @@ class ProviderBudgetCommitAdapter:
                 raise _deny("provider Attempt is terminal")
             task_id = attempt.task_id
             lease = attempt
-        elif intent.kind == "manager":
-            # Manager owns a separate Mission-funded service turn. Its Attempt
-            # reference is historical evidence (often RETRY_WAIT), not the live
-            # parent authority required by a Critic. Resolve exact durable IDs;
-            # never infer ownership from the composite subject's spelling.
-            if not isinstance(task_id, str) or not task_id:
-                raise _deny("provider Manager has no explicit Task identity")
-            evidence_attempt_id = intent.config.get("attempt_id")
-            if evidence_attempt_id is not None:
-                if not isinstance(evidence_attempt_id, str) or not evidence_attempt_id:
-                    raise _deny("provider Manager Attempt reference is invalid")
-                evidence_attempt = self.store.get_attempt(evidence_attempt_id)
-                if (
-                    evidence_attempt is None
-                    or evidence_attempt.mission_id != mission.id
-                    or evidence_attempt.task_id != task_id
-                ):
-                    raise _deny("provider Manager Attempt differs from its Task or Mission")
         elif intent.config.get("attempt_id"):
             parent_attempt = self.store.get_attempt(str(intent.config["attempt_id"]))
             if parent_attempt is not None:
@@ -236,7 +187,6 @@ class ProviderBudgetCommitAdapter:
                 or task.mission_id != mission.id
                 or (
                     task.status in TERMINAL_TASK
-                    and not self._accepted_fragment_manager(intent, task)
                     and not self._accepted_operation_review(intent, task)
                 )
             ):

@@ -136,14 +136,6 @@ class OrchestratorConfig:
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
     planning_backend: PlanningBackend | None = field(default=None, repr=False, compare=False, kw_only=True)
     planning_backend_limits: PlanningLimits | None = field(default=None, kw_only=True)
-    dynamic_graph: bool = True  # False: no Manager decisions; non-candidate outcomes just retry
-    max_graph_depth: int = 6
-    max_proposals_per_agent: int = 3
-    max_supersede_chain: int = 2
-    manager_after_failures: int = 2
-    no_progress_limit: int = 2
-    max_manager_rounds: int = 4
-    manager_reserve_tokens: int = 6_000
     aging_window_seconds: float = 300.0
     # step 6 (D6-1 / D6-8)
     global_budget: Budget | None = None  # §18.2 Global Budget above every Mission; None = uncapped
@@ -214,15 +206,13 @@ class OrchestratorConfig:
         return self.price_table is None
 
     def backpressure_limits(self) -> BackpressureLimits:
-        """The six §18.5 caps as one registry (D6-2)."""
+        """The §18.5 caps as one registry (D6-2)."""
 
         return BackpressureLimits(
             max_running_attempts=int(self.max_running_attempts or 1),
             max_pending_dispatch=self.max_pending_dispatch,
             max_pending_verifications=self.max_pending_verifications,
-            max_graph_depth=self.max_graph_depth,
             max_attempts_per_task=None,
-            max_proposals_per_agent=self.max_proposals_per_agent,
             low_watermark_ratio=self.low_watermark_ratio,
         )
 
@@ -286,16 +276,7 @@ class OrchestratorConfig:
                 "critic_tokens": self.critic_reserve_tokens,
                 "attempt_tokens": self.attempt_reserve_tokens,
             },
-            "dynamic_graph": {
-                "enabled": self.dynamic_graph,
-                "max_graph_depth": self.max_graph_depth,
-                "max_proposals_per_agent": self.max_proposals_per_agent,
-                "max_supersede_chain": self.max_supersede_chain,
-                "manager_after_failures": self.manager_after_failures,
-                "no_progress_limit": self.no_progress_limit,
-                "max_manager_rounds": self.max_manager_rounds,
-                "aging_window_seconds": self.aging_window_seconds,
-            },
+            "aging_window_seconds": self.aging_window_seconds,
             "global_budget": None if self.global_budget is None else self.global_budget.to_json(),
             **({} if self.task_max_tokens is None else {"task_max_tokens": self.task_max_tokens}),
             "deployment_policy": self.deployment_policy.to_json(),

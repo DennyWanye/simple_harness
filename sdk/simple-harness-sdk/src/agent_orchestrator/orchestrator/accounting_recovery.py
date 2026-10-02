@@ -71,7 +71,7 @@ def _account_subject(commit, intent, task_id):
         if package.account not in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
             _require(task_id == binding.to_json()["subject"]["owner_task_ref"]["id"], "review account owner")
         return review_budget_subject(commit.store, mission.id, package, task_id)
-    return intent.mission_id if intent.kind == "manager" else (task_id or intent.mission_id)
+    return task_id or intent.mission_id
 
 
 def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False):

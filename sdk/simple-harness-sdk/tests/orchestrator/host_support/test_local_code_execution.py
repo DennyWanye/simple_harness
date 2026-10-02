@@ -24,12 +24,11 @@ import pytest
 
 from agent_orchestrator.contracts import STEP2_IMPLEMENTED_LAYERS, Budget
 from agent_orchestrator.governance.policies import DeploymentPolicy, deployed_layers
-from agent_orchestrator.graph.changes import default_change_policy
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
 from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.runtime.role_templates import MANAGER, PLANNER, TEMPLATE_VERSIONS
+from agent_orchestrator.runtime.role_templates import PLANNER, TEMPLATE_VERSIONS
 from agent_orchestrator.testing.fixtures import (
     RoleScriptedProvider,
     critic_step,
@@ -51,7 +50,6 @@ def _config(tmp_path, deployment=OFF):
         evidence_root=Path(tmp_path) / "evidence",
         max_concurrency=1,
         test_timeout_seconds=60,
-        dynamic_graph=False,  # no Manager: a scripted run must not ask for unscripted turns
         deployment_policy=deployment,
     )
 
@@ -120,23 +118,10 @@ def test_off_drops_code_test_and_refuses_run_tests_as_a_contradiction():
 # ------------------------------------------------------------------ SA-3
 def test_templates_offer_only_the_deployed_layers_and_keep_the_old_versions():
     assert PLANNER.prompt_version == "planner-v4"
-    assert MANAGER.prompt_version == "manager-v4"
-    for template in (PLANNER, MANAGER):
-        assert "deployed_verification_layers" in template.instructions
-        assert "format_check / rule_check / critic_review / code_test" not in template.instructions
+    assert "deployed_verification_layers" in PLANNER.instructions
+    assert "format_check / rule_check / critic_review / code_test" not in PLANNER.instructions
     # a library whose ACTIVE policy was seeded with the older prompts keeps working
     assert {"planner-v3", "planner-v4"} <= set(TEMPLATE_VERSIONS["planner"])
-    assert {"manager-v1", "manager-v2", "manager-v3", "manager-v4"} <= set(TEMPLATE_VERSIONS["manager"])
-
-
-def test_system_default_policies_follow_the_deployment():
-    assert "code_test" not in default_change_policy(deployed_layers(OFF))
-    assert default_change_policy(deployed_layers(ON)) == (
-        "format_check",
-        "rule_check",
-        "code_test",
-    )  # unchanged for every earlier deployment
-    assert set(default_change_policy(deployed_layers(OFF))) <= deployed_layers(OFF)
 
 
 # ------------------------------------------------------------------ SA-1

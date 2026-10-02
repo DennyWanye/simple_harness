@@ -723,10 +723,9 @@ def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, mon
         store.close()
 
 
-@pytest.mark.parametrize("entry", ["task_proposal", "graph_change", "tool", "connector_callback"])
+@pytest.mark.parametrize("entry", ["task_proposal", "tool", "connector_callback"])
 def test_model_entries_cannot_execute_a_source_command_or_consume_its_approval(env, entry):
     from agent_orchestrator.artifacts.workspace import WorkspaceManager
-    from agent_orchestrator.graph.changes import TaskGraphChange
     from agent_orchestrator.orchestrator.action_commits import ActionCommitError
     from agent_orchestrator.orchestrator.commit_service import TaskProposal
     from agent_orchestrator.runtime.connectors import Receipt
@@ -755,16 +754,6 @@ def test_model_entries_cannot_execute_a_source_command_or_consume_its_approval(e
                         "success_criteria": [],
                         "verification_policy": [],
                         operation: command,
-                    }
-                )
-        elif entry == "graph_change":
-            with pytest.raises(ContractError, match="unknown operation"):
-                TaskGraphChange.from_json(
-                    {
-                        "base_graph_version": 1,
-                        "basis": {},
-                        "rationale": "r",
-                        "operations": [{"op": operation, **command}],
                     }
                 )
         elif entry == "tool":

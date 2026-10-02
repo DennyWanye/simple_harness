@@ -2383,7 +2383,9 @@ def test_a_legacy_graph_rejection_still_answers_with_commit_rejected(tmp_path):
 #: path it was before P2.3a existed (§18.5 rule 3).  If this digest moves, an event
 #: an old Mission already wrote has changed shape, and a golden that recomputed
 #: itself from the live code could never say so.
-LEGACY_GRAPH_EVENT_DIGEST = "e6f14c8549711be84db3275702a28fadfd1013dff36a6d645bfe5c004314a34b"
+#: 2026-10-02: moved once because the policy parameters lost the Manager items, so the
+#: seeded policy version id that ``MissionCreated`` carries changed.
+LEGACY_GRAPH_EVENT_DIGEST = "b3819a45340b2626673aeb4a7762bc21fb8fc91be6f8ea5a44238bfc11cf5b40"
 
 
 def _legacy_graph_world(root: Path) -> tuple[CommitService, str]:

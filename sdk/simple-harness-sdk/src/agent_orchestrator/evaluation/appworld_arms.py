@@ -87,6 +87,14 @@ async def execute_arm(
             "executor: _orchestrated submits a legacy Mission, so running H here would "
             "record a legacy result under a hierarchical arm name"
         )
+    if arm == "F":
+        # The F arm was the D arm plus the Manager's graph changes.  The Manager was
+        # removed on 2026-10-02; running F here would produce a D run under the F name.
+        raise ValueError(
+            "the F arm needed the Manager's graph changes, which were removed on "
+            "2026-10-02; to reproduce a recorded F result, check out the commit that "
+            "result was frozen at"
+        )
     if (runtime.knowledge_protocol is not None
             and runtime.knowledge_protocol != HOST_KNOWLEDGE_EXECUTOR_IDS.get(arm)):
         raise ValueError("Host knowledge protocol requires its new D/F executor identity")
@@ -269,14 +277,13 @@ async def _orchestrated(
 ) -> dict[str, Any]:
     budget = config.budget
     tools = HOST_KNOWLEDGE_TOOLS if config.knowledge_protocol is not None else TOOLS
-    # D and F both use real Planner/Worker/Critic roles. D freezes its initial
-    # graph; F enables normal graph management. All role overhead uses one meter.
+    # D uses real Planner/Worker/Critic roles over its initial graph. All role
+    # overhead uses one meter.
     cfg = OrchestratorConfig(
         evidence_root=root / "orchestrator",
         model=config.model,
         max_concurrency=3,
         max_concurrent_model_calls=config.physical_slots,
-        dynamic_graph=arm == "F",
         knowledge_sharing=True,
         default_max_output_tokens=config.default_output_tokens,
         max_output_tokens_ceiling=config.maximum_output_tokens,
@@ -346,7 +353,6 @@ async def _orchestrated(
             "stop_reason": current.stop_reason,
             "tasks": [{"id": t.id, "status": str(t.status)} for t in tasks],
             "tool_calls": len(orch.assembled.gateway.calls),
-            "dynamic_graph": arm == "F",
         }
         if config.knowledge_protocol is not None:
             result["knowledge_protocol"] = config.knowledge_protocol

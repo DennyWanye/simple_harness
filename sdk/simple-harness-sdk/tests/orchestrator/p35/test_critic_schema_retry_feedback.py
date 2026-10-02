@@ -116,7 +116,6 @@ def test_critic_schema_retry_is_independent_and_both_services_are_charged(
         evidence_root=tmp_path / "runtime",
         max_concurrency=1,
         candidates_per_task=1,
-        dynamic_graph=False,
     )
     mission_spec = spec(
         "critic-schema-cold" if cold_restart else "critic-schema-hot",

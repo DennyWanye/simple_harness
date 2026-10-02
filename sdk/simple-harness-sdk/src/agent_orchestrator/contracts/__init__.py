@@ -19,12 +19,6 @@ from .evidence_state import (
     Validity,
     ValidityWitness,
 )
-from .fragments import (
-    FragmentProposalV1,
-    FragmentValidationDecisionV1,
-    ScopeProjectionV1,
-    TaskRevisionV1,
-)
 from .htn import (
     MethodContract,
     MethodInstanceDraft,
@@ -98,8 +92,6 @@ __all__ = (
     "Criterion",
     "EvidenceRef",
     "Event",
-    "FragmentProposalV1",
-    "FragmentValidationDecisionV1",
     "LimitationV1",
     "IllegalTransition",
     "GoalResolution",
@@ -119,13 +111,11 @@ __all__ = (
     "ReviewPurpose",
     "ReviewRecord",
     "SourceCitation",
-    "ScopeProjectionV1",
     "SupportCount",
     "Task",
     "TaskForm",
     "TaskSemanticBindingV1",
     "TaskStatus",
-    "TaskRevisionV1",
     "TemporalUse",
     "TruthValue",
     "TypedRef",

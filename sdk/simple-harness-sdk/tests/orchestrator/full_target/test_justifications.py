@@ -1029,17 +1029,6 @@ def test_a_justification_needs_a_rule_version() -> None:
         JustificationSet(conclusion="pred-a@1#abc", premises=("pred-b@1#abc",))
 
 
-def test_a_justification_may_not_carry_executable_content() -> None:
-    entry = JustificationSet(
-        conclusion="pred-a@1#abc",
-        premises=("pred-b@1#abc",),
-        rule_version="rule-v1",
-        source_group="lambda x: True",
-    )
-    with pytest.raises(ContractError, match="executable"):
-        SupportGraph([entry])
-
-
 def test_the_support_graph_is_immutable() -> None:
     graph = SupportGraph([rule("pred-a@1#abc", "pred-b@1#abc")])
     with pytest.raises(ContractError, match="immutable"):

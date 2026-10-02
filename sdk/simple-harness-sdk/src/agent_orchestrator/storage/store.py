@@ -1352,26 +1352,6 @@ class Store:
         ).fetchall()
         return [dict(_loads(row[0])) for row in rows]
 
-    def list_policy_proposals(self) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT json FROM policy_proposals ORDER BY created_at, proposal_id"
-        ).fetchall()
-        return [dict(_loads(row[0])) for row in rows]
-
-    def list_policy_evaluations(self, proposal_id: str) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT json FROM policy_evaluations WHERE proposal_id = ? ORDER BY rowid",
-            (proposal_id,),
-        ).fetchall()
-        return [dict(_loads(row[0])) for row in rows]
-
-    def list_policy_decisions(self, proposal_id: str) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT json FROM policy_decisions WHERE proposal_id = ? ORDER BY rowid",
-            (proposal_id,),
-        ).fetchall()
-        return [dict(_loads(row[0])) for row in rows]
-
     def insert_policy_activation(self, record: Mapping[str, Any]) -> int:
         with self.transaction() as connection:
             cursor = connection.execute(
@@ -1871,8 +1851,6 @@ class Store:
     def snapshot(self, mission_id: str) -> dict[str, Any]:
         """Everything about one Mission, for ``final_state.json`` and CLI ``get``."""
 
-        from ..planning.candidate_selection import selection_snapshot
-
         mission = self.get_mission(mission_id)
         if mission is None:
             raise StoreError(f"unknown mission {mission_id}")
@@ -1882,8 +1860,6 @@ class Store:
         return {
             "mission": mission.to_json(),
             "budget_usage": self.mission_budget_usage(mission_id),
-            "search": selection_snapshot(self, mission_id),
-            "fragments": self.list_fragment_validations(mission_id),
             "tasks": [task.to_json() for task in tasks],
             "attempts": [attempt.to_json() for attempt in attempts],
             "results": [
@@ -1936,19 +1912,6 @@ class Store:
             (mission_id,),
         ).fetchone()
         return None if row is None else dict(row)
-
-    def list_fragment_validations(self, mission_id: str) -> list[dict[str, Any]]:
-        if not self.has_table("fragment_validations"):
-            return []
-        rows = self.connection.execute(
-            "SELECT projection_receipt_id FROM fragment_validations "
-            "WHERE mission_id = ? ORDER BY created_at, fragment_id", (mission_id,),
-        ).fetchall()
-        receipts = [self.get_receipt(row[0]) for row in rows]
-        if any(receipt is None for receipt in receipts):
-            raise StoreError("fragment validation index has no immutable receipt")
-        return [dict(receipt) for receipt in receipts if receipt is not None]
-
 
 def _event_from_row(row: sqlite3.Row) -> Event:
     return Event(

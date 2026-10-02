@@ -36,9 +36,6 @@ INT_RANGES: dict[str, tuple[int, int | None]] = {
     "candidates_per_task": (1, 3),
     "exploration_slots": (0, 2),
     "mission_concurrency": (1, None),  # the upper bound is the deployment's max_concurrency
-    "manager_after_failures": (1, 5),
-    "no_progress_limit": (1, 5),
-    "max_manager_rounds": (1, 8),
 }
 FLOAT_RANGES: dict[str, tuple[float, float]] = {"aging_window_seconds": (60.0, 1800.0)}
 PROMOTABLE = frozenset(
@@ -66,9 +63,7 @@ NON_PROMOTABLE = frozenset(
         "planner_reserve_tokens",
         "critic_reserve_tokens",
         "attempt_reserve_tokens",
-        "manager_reserve_tokens",
         "knowledge_sharing",
-        "dynamic_graph",
         "max_concurrency",
         "max_running_attempts",
         "lease_seconds",
@@ -113,9 +108,6 @@ def resolve_params(
         "candidates_per_task": int(config.candidates_per_task),
         "exploration_slots": int(config.exploration_slots),
         "mission_concurrency": int(config.max_concurrency),
-        "manager_after_failures": int(config.manager_after_failures),
-        "no_progress_limit": int(config.no_progress_limit),
-        "max_manager_rounds": int(config.max_manager_rounds),
         "aging_window_seconds": float(config.aging_window_seconds),
         "routing": {
             "escalate_after_failures": int(getattr(routing, "escalate_after_failures", 1) or 1),
@@ -128,14 +120,8 @@ def resolve_params(
     return overlay(resolved, partial or {})
 
 
-def policy_fields(params: Mapping[str, Any]) -> frozenset[str]:
-    return (PROMOTABLE | {"schema_version", "search_selection"}
-            if type(params.get("schema_version")) is int and params.get("schema_version") == 2
-            else PROMOTABLE)
-
-
 def overlay(base: Mapping[str, Any], partial: Mapping[str, Any]) -> dict[str, Any]:
-    refused = sorted(set(partial) - policy_fields({**base, **partial}))
+    refused = sorted(set(partial) - PROMOTABLE)
     if refused:
         core = [k for k in refused if k in NON_PROMOTABLE]
         raise PolicyError(
@@ -144,14 +130,7 @@ def overlay(base: Mapping[str, Any], partial: Mapping[str, Any]) -> dict[str, An
         )
     merged = {key: value for key, value in base.items()}
     for key, value in partial.items():
-        if key == "search_selection":
-            from ..planning.candidate_selection import validate_selection_policy
-            merged[key] = validate_selection_policy(value)
-        elif key == "schema_version":
-            if type(value) is not int or value != 2:
-                raise PolicyError("invalid policy schema version")
-            merged[key] = value
-        elif key == "allocator_weights":
+        if key == "allocator_weights":
             merged[key] = {**dict(base[key]), **{str(k): float(v) for k, v in dict(value).items()}}
         elif key == "routing":
             routing = dict(value)

@@ -83,7 +83,7 @@
     {
       "component": "state machines",
       "source_path": "agent_orchestrator/contracts/state_machines.py",
-      "source_sha256": "dfddfcfd484f3beb089b81cc9702d0e3fb1986fe867d566d740734965c5caf07"
+      "source_sha256": "de46e35ff3548f9cfa4c511d76abc6d2700a3c709b33eee8672006fd7bc089e5"
     },
     {
       "component": "contract errors",

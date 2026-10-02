@@ -49,7 +49,7 @@ def test_new_default_and_frozen_legacy_keep_distinct_contract_versions():
         )
         with pytest.raises(ContractError, match="unknown fields.*schema_version"):
             ResultEnvelope.from_json({**example, "id": "result-provisional"})
-    for role in ("planner", "manager", "critic"):
+    for role in ("planner", "critic"):
         assert template_for_domain(ROLES[role], restored, {}) == template_for_domain(
             ROLES[role], APPWORLD_PROFILE, {}
         )
@@ -71,7 +71,9 @@ def test_the_hierarchical_worker_pointer_is_beside_the_profile_not_inside_it():
         hierarchical_worker_for_domain,
     )
 
-    assert set(APPWORLD_PROFILE.role_templates) <= set(ROLES), (
+    # ``manager`` was removed on 2026-10-02; the published profile keeps the key
+    # until the benchmark arms are settled, and ``template_for_domain`` never asks for it.
+    assert set(APPWORLD_PROFILE.role_templates) - {"manager"} <= set(ROLES), (
         "every key of role_templates names a role; a non-role key breaks both readers"
     )
     assert HIERARCHICAL_WORKER_TEMPLATES["appworld-v1"] == "worker-appworld-hierarchical-v1"

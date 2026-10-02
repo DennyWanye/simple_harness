@@ -36,7 +36,7 @@ def register_appworld_templates() -> None:
         "无法完成时如实提交失败/限制，不编造观察。"
     )
     for name, base in ROLES.items():
-        if name in {"planner", "manager", "critic"}:
+        if name in {"planner", "critic"}:
             instructions = base.instructions
             # Retain each role's exact output protocol, while removing code-only
             # checker options. Frozen domain gates independently enforce this.
@@ -69,7 +69,7 @@ def register_appworld_templates() -> None:
                 tool_names=tools,
             )
         )
-        if name not in {"planner", "manager", "critic"}:
+        if name not in {"planner", "critic"}:
             # Preserve v1 for frozen Missions. The result parser owns versioning;
             # schema_version was never a legal ResultEnvelope field.
             anchor = '{"schema_version":1,"task_id":'

@@ -246,105 +246,6 @@ SYNTHESIZER = _revise(
     ),
 )
 
-MANAGER_VERSION = "manager-v4"
-GRAPH_CHANGE_PROPOSAL_TAG = "graph_change_proposal"
-FRAGMENT_VALIDATION_DECISION_TAG = "fragment_validation_decision"
-
-MANAGER_V1 = RoleTemplate(
-    name="manager",
-    prompt_version="manager-v1",
-    tool_names=(),
-    instructions=(
-        "[role:manager]\n"
-        "你是编排系统的 Manager（带队走地图）。一个 Task 刚返回了执行证据（blocked / no_progress / failure / 提出的子任务，或反复验证失败）。"
-        "你观察 trigger、verifier_feedback、affected_subgraph 与 verified_knowledge，决定是否改变正式计划。你不执行任务、不调用工具。\n"
-        "你只能提出下列操作（系统会检查并 Commit，任何操作都不会直接生效）：\n"
-        "  add_task{key, goal, rationale, dependencies:[已有 task_id 或本提案里的 key], success_criteria, verification_policy, allowed_tools, budget:{max_tokens,max_attempts}, priority, outputs, parent_task_ids, role}\n"
-        "  supersede_task{task_id, replacement_key}（被替代的任务会被取消，替代者必须是本提案里的 add_task）\n"
-        "  retarget_dependencies{task_id, dependencies}（只对 BLOCKED 任务）\n"
-        "  set_priority{task_id, priority} · pause_task{task_id, reason} · resume_task{task_id} · cancel_task{task_id, reason}\n"
-        "  set_role{task_id, role}（role ∈ worker/explorer/exploiter/simplifier/connector/failure_analyst：换一种做法再试）\n"
-        "规则：新任务必须说明它如何服务根目标并且被某个任务依赖、替代某任务或细化某任务（parent_task_ids）；不能形成环；总深度、每个来源 Attempt 的新增任务数、Mission 剩余预算见 limits；"
-        "已 COMPLETED 的任务不能重做、只能被依赖；在执行中的任务要改合同只能 supersede；反复无进展时必须换角色/拆小或明确停止（cancel_task），空提案会被系统当作放弃。\n"
-        "最终回答必须只包含一个 <graph_change_proposal>…</graph_change_proposal> 块，块内 JSON：\n"
-        '  {"base_graph_version": 输入里的 graph_version, "rationale": str, "operations": [ … ]}（operations 可以为空 = 保持计划继续重试）。块外不要输出任何文字。'
-    ),
-)
-
-# host support 0.9.8: an add_task may only name deployed layers; manager-v1 stays registered
-MANAGER_V2 = _revise(
-    MANAGER_V1,
-    "manager-v2",
-    (
-        "空提案会被系统当作放弃。\n",
-        "空提案会被系统当作放弃。add_task 的 verification_policy 只能从输入 deployed_verification_layers 列出的层中选择"
-        "（省略时由系统按部署补默认）；不含 code_test 时不要写 pytest: 条件。\n",
-    ),
-)
-MANAGER_V3 = _revise(
-    MANAGER_V2,
-    "manager-v3",
-    (
-        "最终回答必须只包含一个 <graph_change_proposal>…</graph_change_proposal> 块",
-        "最终回答只能包含一个 <graph_change_proposal>…</graph_change_proposal> 块，"
-        "或在 fragment_validation.available=true 时包含一个 "
-        "<fragment_validation_decision>…</fragment_validation_decision> 块；不可混用",
-    ),
-)
-MANAGER_V3 = RoleTemplate(
-    name=MANAGER_V3.name,
-    prompt_version=MANAGER_V3.prompt_version,
-    tool_names=MANAGER_V3.tool_names,
-    instructions=MANAGER_V3.instructions
-    + "\n片段决策严格 JSON：{\"schema_version\":1,\"base_graph_version\":输入 graph_version,"
-    "\"proposal\":{\"schema_version\":1,\"origin\":输入 fragment_validation.origin,"
-    "\"criterion_ids\":[输入 criteria 的完整 id],"
-    "\"claim_refs\":[{\"claim_id\":str,\"claim_revision\":int}],"
-    "\"material_refs\":[artifact 的 kind/artifact_id/content_hash/byte_start/"
-    "byte_end_exclusive 或 citation 的 kind/receipt_id/citation_index],"
-    "\"rationale\":str}}。只能从输入冻结目录选，不能声明 PASS；新验证 Task 仍需独立执行。"
-)
-
-# The v4 default spells out the parser's tagged-union wire shape. Keep the examples
-# as JSON strings so tests parse the exact bytes a Manager receives in its system prompt.
-_MANAGER_V4_OPERATION_EXAMPLES = (
-    '{"op":"add_task","key":"follow_up","goal":"补足已验证的缺口","rationale":"该任务服务 Mission 根目标",'
-    '"dependencies":["existing-task-id"],"success_criteria":["file:follow_up.md"],'
-    '"verification_policy":["format_check","rule_check"],"allowed_tools":["workspace_write_file"],'
-    '"budget":{"max_tokens":1000,"max_attempts":1},"priority":1,"outputs":["follow_up.md"],'
-    '"parent_task_ids":["existing-task-id"],"role":"worker"}',
-    '{"op":"supersede_task","task_id":"active-task-id","replacement_key":"follow_up"}',
-    '{"op":"retarget_dependencies","task_id":"blocked-task-id","dependencies":["upstream-task-id"]}',
-    '{"op":"set_priority","task_id":"ready-task-id","priority":2}',
-    '{"op":"pause_task","task_id":"blocked-task-id","reason":"等待上游证据"}',
-    '{"op":"resume_task","task_id":"ready-task-id"}',
-    '{"op":"cancel_task","task_id":"active-task-id","reason":"该路线已无价值"}',
-    '{"op":"set_role","task_id":"ready-task-id","role":"simplifier"}',
-)
-_MANAGER_V4_WIRE_CONTRACT = (
-    "\n图变更 wire contract（选择 graph_change_proposal 时严格执行）：\n"
-    "块内顶层只能是 {\"base_graph_version\": 输入 graph_version, \"rationale\": str, \"operations\": [ … ]}；"
-    "不要输出 basis，系统会绑定 trigger/result/attempt/task。不得加入任何 wrapper 或额外字段，"
-    "包括 fragmentproposal、fragment_proposal、claim_refs_note 或自定义说明字段。\n"
-    "operations 的每项必须是一个扁平 JSON 对象，第一层用唯一判别字段 \"op\" 指定操作；"
-    "绝不能写 operationName{fields}，也不能写 {\"retarget_dependencies\":{…}}、{\"cancel_task\":{…}} 等嵌套包装。"
-    "add_task 的字段也必须直接平铺在同一对象，budget 是其唯一允许的嵌套对象；"
-    "只从输入 Task Contract、根目标、验证层、允许工具、剩余预算与 limits 取值，不能改写这些输入事实。\n"
-    "以下每行都是 operations 中一项可直接解析的 JSON 示例；替换示例值为本次输入的真实 id、key、预算和合同字段：\n"
-    + "\n".join(_MANAGER_V4_OPERATION_EXAMPLES)
-    + "\n当 trigger.trigger 以 selection_fragment: 开头时，只允许片段决策；"
-    "此时 graph_change_proposal 不被接受，不能重启候选或改写原选择轮次。"
-    + "\nfragment_validation.available=true 时若选择片段决策，仍只使用既有 fragment_validation_decision 的严格 schema；"
-    "不要混入 graph 字段、fragmentproposal、claim_refs_note 或其他额外字段。"
-)
-MANAGER = RoleTemplate(
-    name=MANAGER_V3.name,
-    prompt_version=MANAGER_VERSION,
-    tool_names=MANAGER_V3.tool_names,
-    instructions=MANAGER_V3.instructions + _MANAGER_V4_WIRE_CONTRACT,
-)
-
-
 def _variant(name: str, version: str, bias: str) -> RoleTemplate:
     # Published variant-v1 and their document descendants stay on worker-v2.
     return RoleTemplate(
@@ -391,7 +292,6 @@ ROLES = {
         CRITIC,
         ARBITER,
         SYNTHESIZER,
-        MANAGER,
         EXPLORER,
         EXPLOITER,
         SIMPLIFIER,
@@ -415,7 +315,7 @@ ROLE_MIX_START = {
 
 def role_for_task(task) -> RoleTemplate:  # type: ignore[no-untyped-def]
     """The template an Attempt of ``task`` uses: system kinds are fixed; a work Task
-    uses the Manager-set ``context.role`` (D5-9), else the Worker."""
+    uses its ``context.role`` variant when one is set, else the Worker."""
 
     if task.kind != "work":
         return TASK_ROLE_BY_KIND[task.kind]
@@ -423,7 +323,7 @@ def role_for_task(task) -> RoleTemplate:  # type: ignore[no-untyped-def]
 
 
 # step 9 (plan D9-1'): the prompt versions a policy may choose from.  Production code
-# registers the current template of every role, plus the previous Planner / Manager
+# registers the current template of every role, plus the previous Planner
 # versions below (host support 0.9.8) so that a library whose ACTIVE policy was seeded
 # with them keeps its words; tests may register more to prove a policy can switch.
 TEMPLATE_VERSIONS: dict[str, dict[str, RoleTemplate]] = {
@@ -435,12 +335,9 @@ def register_template(template: RoleTemplate) -> None:
     TEMPLATE_VERSIONS.setdefault(template.name, {})[template.prompt_version] = template
 
 
-# host support 0.9.8: the previous Planner / Manager prompts stay available — a library
+# host support 0.9.8: the previous Planner prompts stay available — a library
 # whose ACTIVE policy was seeded with them keeps running on the same words
 register_template(PLANNER_V3)
-register_template(MANAGER_V1)
-register_template(MANAGER_V2)
-register_template(MANAGER_V3)
 register_template(CRITIC_V2)
 register_template(WORKER_V2)
 register_template(SYNTHESIZER_V2)
@@ -1062,10 +959,6 @@ __all__ = (
     "EXPLOITER",
     "EXPLORER",
     "FAILURE_ANALYST",
-    "GRAPH_CHANGE_PROPOSAL_TAG",
-    "FRAGMENT_VALIDATION_DECISION_TAG",
-    "MANAGER",
-    "MANAGER_VERSION",
     "ROLE_MIX_START",
     "SIMPLIFIER",
     "TEMPLATE_VERSIONS",
@@ -1123,7 +1016,7 @@ _AGENTDOJO_GUIDANCE = (
     "utility and attack success are evaluated independently after all activity stops.\n"
 )
 for _name, _base in ROLES.items():
-    if _name in {"planner", "manager", "critic"}:
+    if _name in {"planner", "critic"}:
         _instructions = _base.instructions.replace("code_test", "critic_review")
         _tools = _base.tool_names if _name == "critic" else ()
     else:
@@ -1162,7 +1055,7 @@ _ARE_GUIDANCE = (
     "success are evaluated independently after all activity stops.\n"
 )
 for _name, _base in ROLES.items():
-    if _name in {"planner", "manager", "critic"}:
+    if _name in {"planner", "critic"}:
         _instructions = _base.instructions.replace("code_test", "critic_review")
         _tools = _base.tool_names if _name == "critic" else ()
     else:

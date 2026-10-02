@@ -310,13 +310,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "on_retrieval_failure",
             "max_retrieval_failures",
             "max_knowledge_items",
-            "dynamic_graph",
-            "max_graph_depth",
-            "max_proposals_per_agent",
-            "max_supersede_chain",
-            "manager_after_failures",
-            "no_progress_limit",
-            "max_manager_rounds",
             # P2.3c part 3a: how many times one requirements revision's root
             # MISSION_FINAL review may be re-cut.  It shapes when a hierarchical
             # Mission stops asking and takes the idle-stall path, so it is a
@@ -326,7 +319,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             # blocking root-review rejection by asking the Planner again.  Same reason
             # as the line above — it decides whether a Mission repairs or stalls.
             "max_root_review_repairs",
-            "manager_reserve_tokens",
             "aging_window_seconds",
             "global_budget",
             "task_max_tokens",  # fixed per-leaf allowance (2026-09-25)

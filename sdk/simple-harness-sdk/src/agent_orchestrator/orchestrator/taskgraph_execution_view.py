@@ -163,8 +163,8 @@ class ExecutionProjection:
             body = _json(raw) if isinstance(_json(raw), dict) else {}
             intent = self.by_subject.get(str(attempt_id))
             config = intent["config"] if intent else {}
-            context = (config.get("fragment_execution") or {}).get("context") if isinstance(
-                config.get("fragment_execution"), dict) else None
+            context = (config.get("attempt_execution") or {}).get("context") if isinstance(
+                config.get("attempt_execution"), dict) else None
             context = context if isinstance(context, dict) else {}
             occurrence = context.get("occurrence_id") or self.occurrence_of_task.get(str(task_id))
             node_id = f"attempt:{attempt_id}"

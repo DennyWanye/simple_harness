@@ -32,7 +32,7 @@ ALL_ROLES = (
 
 
 def _service_role(subject_id: str) -> str:
-    for marker, role in ((":planner:", "planner"), (":manager:", "manager"), (":critic", "critic")):
+    for marker, role in ((":planner:", "planner"), (":critic", "critic")):
         if marker in subject_id:
             return role
     if "-judge-" in subject_id or ":judge" in subject_id:  # the Mission-level judgment Critic
@@ -160,7 +160,6 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
             "duration_seconds": None
             if created is None or ended is None
             else round(ended - created, 3),
-            "graph_changes": store.count_events(mission_id, "TaskGraphChanged"),
             "escalations": sum(
                 1 for e in events if e.type == "ModelRouted" and e.payload.get("escalated_from")
             ),

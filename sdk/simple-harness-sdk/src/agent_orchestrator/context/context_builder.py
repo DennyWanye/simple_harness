@@ -601,81 +601,6 @@ def build_critic_package(
     return _seal(package)
 
 
-def build_manager_package(
-    mission: Mission,
-    task: Task,
-    *,
-    trigger: Mapping[str, Any],
-    verifier_feedback: Sequence[Mapping[str, Any]],
-    subgraph: Sequence[Mapping[str, Any]],
-    graph_version: int,
-    limits: Mapping[str, Any],
-    knowledge: KnowledgeContext | None,
-    rejections: Sequence[Mapping[str, Any]] = (),
-    deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
-    budget_floor: Mapping[str, int] | None = None,
-    domain: DomainProfileV1 = CODE_PROFILE,
-    fragment_origin: Mapping[str, Any] | None = None,
-    validated_fragment: Mapping[str, Any] | None = None,
-) -> TaskPackage:
-    """What the Manager sees (D5-6): the trigger, the Verifier's feedback, the affected
-    subgraph with its statuses and attempt counts, the graph version it must base its
-    proposal on, the hard limits and the knowledge summary — never a whole Mission dump."""
-
-    knowledge = knowledge or KnowledgeContext.unavailable("not retrieved")
-    package: dict[str, Any] = {
-        "role": "manager",
-        "mission_root_goal": mission.goal,
-        "mission_success_criteria": list(mission.success_criteria),
-        "graph_version": graph_version,
-        "trigger": dict(trigger),
-        "task_contract": _task_contract(task),
-        "task_state": {
-            "status": str(task.status),
-            "attempts": task.attempt_count,
-            "role": task.context.get("role", "worker"),
-            "supersede_depth": task.context.get("supersede_depth", 0),
-        },
-        "verifier_feedback": [dict(item) for item in verifier_feedback],
-        "affected_subgraph": [dict(item) for item in subgraph],
-        "limits": dict(limits),
-        # host support 0.9.8: the only layers an add_task's verification_policy may name here
-        "deployed_verification_layers": sorted(deployed_layers.intersection(domain.runs_layers)),
-        "verified_knowledge": [
-            {
-                "id": item["id"],
-                "key": item.get("key"),
-                "stance": item.get("stance"),
-                "content": item.get("content"),
-            }
-            for item in knowledge.verified
-        ],
-        "disputed_claims": [dict(item) for item in knowledge.disputed],
-        "rejections": [dict(item) for item in rejections],  # why the previous proposal was refused
-        # P3.1 fix F-ORCH-1 (plan review P2-4): what an add_task's budget must at least hold
-        "budget_floor": dict(budget_floor or {}),
-        "output_contract": "<graph_change_proposal>{json}</graph_change_proposal>",
-        "package_version": PACKAGE_VERSION,
-    }
-    if fragment_origin is not None:
-        package["fragment_validation"] = dict(fragment_origin)
-        if fragment_origin.get("available") is True:
-            package["output_contract"] = (
-                "<graph_change_proposal>{json}</graph_change_proposal> OR "
-                "<fragment_validation_decision>{json}</fragment_validation_decision>"
-            )
-    if validated_fragment is not None:
-        package["validated_fragment"] = dict(validated_fragment)
-        package["validated_fragment_rule"] = (
-            "仅对 validated_fragment.tasks 中未启动的 BLOCKED 普通 Task 提交 "
-            "retarget_dependencies；新依赖必须包含已验收的 validation_task_id 和另一独立分支。"
-            "可取消原失败 Task，不能改变已完成验证、扩大原准则或声称 consumer/Synthesis 已通过。"
-        )
-    _domain_section(package, domain, mission)
-    assert_no_secrets(package)
-    return _seal(package)
-
-
 class ContextRejected(ValueError):
     """A model package would carry a credential (§10.2 / §21.3); the orchestrator stops
     that piece of work visibly instead of crashing its loop (review P2-10)."""
@@ -714,7 +639,6 @@ __all__ = (
     "TaskPackage",
     "assert_no_secrets",
     "build_critic_package",
-    "build_manager_package",
     "build_planner_package",
     "build_worker_package",
 )

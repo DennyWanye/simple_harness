@@ -205,7 +205,7 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
             _add(per_attempt_verification[owner], tokens, cost, bool(unpriced))
         else:
             role = _service_role(subject)
-            if role in {"planner", "manager"}:
+            if role == "planner":
                 _add(services[role], tokens, cost, bool(unpriced))
             elif role == "critic":  # the Mission-level judgment Critic
                 _add(services["judge"], tokens, cost, bool(unpriced))

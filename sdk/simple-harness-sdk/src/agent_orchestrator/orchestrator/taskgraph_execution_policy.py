@@ -19,7 +19,7 @@ from ..governance.policies import DeploymentPolicy, effective_tools
 from ..governance.promotion import params_hash
 from ..graph.execution_contracts import CompleteRead
 from ..runtime.planning_operations import SourceUnavailable
-from ..runtime.role_templates import SYNTHESIZER, role_for_task
+from ..runtime.role_templates import role_for_task
 from ..storage.htn_store import HtnStore
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from .occurrence_tasks import read_only_leaf
@@ -79,26 +79,16 @@ class TaskGraphExecutionImports:
                 extra_tools = (tuple(config.agentdojo_tool_schemas) if domain.id == "agentdojo-v1"
                     else tuple(config.are_tool_schemas) if domain.id == "are-v1" else ())
                 read_only = binding is not None and read_only_leaf(binding)
-                selection_policy = orchestrator.commit.selection_policy_for(task.id)
-                # The real dispatch path can replace the ordinary worker role
-                # with SYNTHESIZER for a compare decision. Record both permission
-                # inputs, never union their tools or choose a role here.
-                roles = [("ordinary", role, role.prompt_version)]
-                if selection_policy is not None:
-                    selection_role = orchestrator._template(SYNTHESIZER, mission_id)
-                    roles.append(("selection", selection_role, selection_role.prompt_version + ":compare-v2"))
-                alternatives = []
-                for mode, template, prompt_version in roles:
-                    role_tools = (*template.tool_names, *extra_tools)
-                    alternatives.append({"mode": mode, "role": template.name,
-                        "prompt_version": prompt_version, "role_tools": list(role_tools),
+                role_tools = (*role.tool_names, *extra_tools)
+                tasks.append({"task_id": task.id,
+                    "task_tools": list(task.allowed_tools),
+                    "permission_input": {"role": role.name,
+                        "prompt_version": role.prompt_version, "role_tools": list(role_tools),
                         "effective_tools": list(effective_tools(mission_tools=mission.allowed_tools,
                             task_tools=task.allowed_tools, role_tools=role_tools, deployment=deployment,
-                            read_only_leaf=read_only))})
-                tasks.append({"task_id": task.id,
-                    "task_tools": list(task.allowed_tools), "permission_inputs": alternatives,
+                            read_only_leaf=read_only))},
                     "paused": task.paused, "pause_reason": task.pause_reason,
-                    "read_only_leaf": read_only, "selection_policy": selection_policy,
+                    "read_only_leaf": read_only,
                     "budget": task.budget.to_json()})
             profiles = []
             for identity, profile in sorted(orchestrator._profiles.items()):
@@ -133,7 +123,7 @@ class TaskGraphExecutionImports:
                          intent_config: Mapping[str, Any]) -> None:
         """Narrow the actual frozen Worker request inside original Attempt creation.
 
-        Original budget reservation, selection admission, materialization and
+        Original budget reservation, materialization and
         Provider/Tool/Action authorization still run in their existing entry points.
         """
         self._validate_request(store, task_id, policy_source, intent_config, creating=True)
@@ -166,12 +156,11 @@ class TaskGraphExecutionImports:
         if len(choices) != 1:
             raise StoreError("TASKGRAPH_EXECUTION_TASK_POLICY_MISSING")
         current = choices[0]
-        mode = "selection" if intent_config.get("selection_decision_id") is not None else "ordinary"
-        variants = [item for item in current["permission_inputs"] if item["mode"] == mode
-                    and item["role"] == intent_config.get("role")
-                    and item["prompt_version"] == intent_config.get("prompt_version")]
+        permission = current["permission_input"]
         frozen_version = intent_config.get("task_version")
-        if (len(variants) != 1 or type(frozen_version) is not int
+        if (permission["role"] != intent_config.get("role")
+                or permission["prompt_version"] != intent_config.get("prompt_version")
+                or type(frozen_version) is not int
                 or frozen_version > task.version or (creating and frozen_version != task.version)):
             raise StoreConflict("TASKGRAPH_EXECUTION_ROLE_OR_TASK_CHANGED")
         if intent_config.get("policy_version_id") != body["policy_binding"]["version_id"]:
@@ -182,7 +171,7 @@ class TaskGraphExecutionImports:
         agent = AgentConfig.from_json(dict(agent_json))
         offered = intent_config.get("allowed_tools")
         if (not isinstance(offered, (list, tuple)) or tuple(offered) != agent.tool_names
-                or not set(agent.tool_names) <= set(variants[0]["effective_tools"])
+                or not set(agent.tool_names) <= set(permission["effective_tools"])
                 or bool(intent_config.get("read_only_leaf", False)) != current["read_only_leaf"]):
             raise StoreConflict("TASKGRAPH_EXECUTION_PERMISSION_CHANGED")
         profile_id = intent_config.get("runtime_profile_id")
