@@ -330,3 +330,54 @@ async def test_a_backend_killed_inside_a_model_call_is_resumed_by_the_next_one(
         assert types.count("AttemptChargeReleased") == 1  # 被打断的那次不算次数
     finally:
         await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_creating_the_same_mission_twice_is_one_mission(orchestration_root, principal):
+    """同一个幂等键重复创建：第二次拿回同一个任务，不会建出第二个，也不会重跑。"""
+
+    provider = LayeredScriptedProvider()
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        first = service.create_mission(notes_mission("layered-same-key"))
+        again = service.create_mission(notes_mission("layered-same-key"))
+        assert first["created"] is True and again["created"] is False
+        assert again["mission_id"] == first["mission_id"]
+        mission = await run_until_settled(service, first["mission_id"])
+        assert mission.status.value == "COMPLETED"
+        calls = len(provider.asked)
+        after = service.create_mission(notes_mission("layered-same-key"))  # 完成之后再来一次
+        assert after["mission_id"] == first["mission_id"] and after["created"] is False
+        await service.drain(timeout=5)
+        assert len(provider.asked) == calls
+        assert len(service.list_missions()) == 1
+    finally:
+        await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_two_missions_run_side_by_side_and_both_complete(orchestration_root, principal):
+    """两个任务同时在库里：各走各的计划，都完成，互不占用对方的步骤。"""
+
+    provider = LayeredScriptedProvider()
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        one = service.create_mission(notes_mission("layered-pair-1"))["mission_id"]
+        two = service.create_mission(notes_mission("layered-pair-2", goal="写一份 TODO.md，列出三件事",
+                                                   success_criteria=["file:TODO.md"]))["mission_id"]
+        assert one != two
+        store = service._orchestrator.store
+        for _ in range(16):
+            await service.drain(timeout=30)
+            if all(store.get_mission(m).status.value == "COMPLETED" for m in (one, two)):
+                break
+        for mission_id, path in ((one, "NOTES.md"), (two, "TODO.md")):
+            mission = store.get_mission(mission_id)
+            assert mission.status.value == "COMPLETED", (mission_id, mission.status.value, _types(service, mission_id)[-12:])
+            assert _types(service, mission_id).count("PlanRevisionCommitted") == 1
+            leaf = next(task for task in store.list_tasks(mission_id) if task.status.value == "COMPLETED")
+            assert [store.get_artifact(item).path for item in leaf.accepted_artifacts] == [path]
+    finally:
+        await asyncio.wait_for(service.close(), 30)
