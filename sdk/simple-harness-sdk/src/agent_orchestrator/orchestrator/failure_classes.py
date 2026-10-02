@@ -69,6 +69,14 @@ def classify_failure(failure: Mapping[str, Any] | None) -> str:
         if failure.get("error_kind") in _INFRA_TURN_KINDS or error.get("source_kind") == "tool_parse":
             return INFRA
         return MODEL
+    if reason == "provider_admission_denied":
+        # 2026-10-02 真机：强杀后重启，接着跑的那一轮在准入处被拒，因为执行权还记在旧进程
+        # 名下（lease_lost）。这是被打断；别的准入拒绝（预算、身份、配置）不在此列。
+        error = failure.get("error")
+        detail = error.get("detail") if isinstance(error, Mapping) else None
+        if isinstance(detail, Mapping) and detail.get("reason_code") == "lease_lost":
+            return INTERRUPTED
+        return MODEL
     if reason == "runtime_unavailable":
         return INFRA
     if reason in _INTERRUPTED_REASONS:

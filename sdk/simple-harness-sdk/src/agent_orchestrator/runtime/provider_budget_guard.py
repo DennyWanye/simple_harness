@@ -68,6 +68,13 @@ def _deny(
     )
 
 
+#: 2026-10-02 真机（强杀后端再重启）：新进程接着跑被打断的那一轮，但这次尝试的执行权——
+#: 租约、执行图的当前派发、运行时租约——还记在已经不在了的那个进程名下。准入照样拒绝，
+#: 但这不是"授权不对"：是这一轮被打断了，主循环应当原地重做（新的一次尝试会在当前
+#: 进程名下重新取得执行权），而不是判这一步失败。所以单独一个原因码。
+LEASE_LOST = "lease_lost"
+
+
 def _tokens(value: object, name: str, *, positive: bool = False) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < int(positive):
         raise _deny(f"invalid {name} for provider admission")
@@ -238,7 +245,7 @@ class ProviderBudgetCommitAdapter:
         try:
             self.commit.require_taskgraph_handoff(intent)
         except StoreError as error:
-            raise _deny("TaskGraph attempt authority changed", reason_code="authority_rejected") from error
+            raise _deny("TaskGraph attempt authority changed", reason_code=LEASE_LOST) from error
         # Service intent leases govern pre-submit claiming, not an ongoing SDK
         # turn. SUBMITTED service authority additionally uses the SDK Run lease
         # CAS inside handoff. Attempts have an independently renewed live lease.
@@ -247,7 +254,10 @@ class ProviderBudgetCommitAdapter:
             lease.lease_owner != self.owner
             or (lease.lease_expires_at is None or lease.lease_expires_at <= self.store.now)
         ):
-            raise _deny("provider subject lease is expired or owned by another executor")
+            raise _deny(
+                "provider subject lease is expired or owned by another executor",
+                reason_code=LEASE_LOST,
+            )
         reservation = self.commit.ledger.reservation(intent.subject_id)
         if reservation is None or reservation["state"] != "RESERVED":
             raise _deny("provider subject has no live budget reservation")
@@ -498,7 +508,9 @@ class ProviderBudgetGuard:
                     or actual_lease.epoch != execution_lease.epoch
                     or actual_lease.expires_at <= self._clock()
                 ):
-                    raise _deny("provider SDK runtime lease is no longer current")
+                    raise _deny(
+                        "provider SDK runtime lease is no longer current", reason_code=LEASE_LOST
+                    )
                 intent, reservation = self.adapter.authority(
                     agent_id=binding.agent_id, turn_id=turn.turn_id
                 )

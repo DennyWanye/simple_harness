@@ -377,3 +377,30 @@ def test_a_call_left_on_the_wire_by_a_dead_process_frees_its_slot(tmp_path):
             await asyncio.gather(running, waiting, return_exceptions=True)
 
     asyncio.run(exercise())
+
+
+def test_a_turn_resumed_after_a_restart_is_denied_as_lease_lost_not_as_bad_authority(tmp_path):
+    """2026-10-02 真机：强杀后端再重启，新进程接着跑被打断的那一轮，但这次尝试的执行权还
+    记在旧进程名下——准入要拒绝它，而且要说清"执行权不在这个进程手里"（lease_lost），不能
+    混在"授权不对"（authority_rejected）里：前者是被打断，主循环原地重做；后者才是配置或
+    身份真的不对。"""
+
+    async def exercise():
+        async with setup_runtime(tmp_path) as (commit, _, task, guard, provider, runtime):
+            agent, attempt, key = await create_bound(commit, task, guard, runtime, "resumed")
+            # 重启之后：这次尝试的租约属于已经不在了的那个进程。
+            current = commit.store.get_attempt(attempt.id)
+            with commit.store.transaction():
+                commit.store.update_attempt(
+                    replace(current, lease_owner="orchestrator-that-was-killed"),
+                    expected_version=current.version,
+                )
+            result = await agent.ask("request", input_id=key, timeout=5)
+            assert str(result.state) == "failed"
+            assert provider.calls == 0  # 没有交给模型
+            assert result.error["error_code"] == "provider_admission_denied"
+            assert result.error["detail"]["reason_code"] == "lease_lost"
+            assert not grants(commit)
+
+    asyncio.run(exercise())
+

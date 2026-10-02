@@ -8311,6 +8311,11 @@ class Orchestrator:
                     self.commit.wait_for_admission_usage(attempt.id)
                     self._note(f"attempt {attempt.id}: admission waits for usage; no new Attempt")
                     return
+                if reason == "lease_lost":
+                    # 2026-10-02 真机：强杀后重启，这一轮的执行权还记在旧进程名下。被打断，
+                    # 不是这一步做不了：原地重做（不扣次数，同一步合计有上限）。
+                    self._note(f"attempt {attempt.id}: executor lost its lease → RETRY_WAIT")
+                    return
                 if reason == "cancelled":
                     self._commit_cancel_mission(attempt.mission_id)
                 elif reason == "deadline" and await self._runtime_exhausted(

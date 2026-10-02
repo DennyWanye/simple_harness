@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from graph_helpers7 import drive_to_running, graph_service
+from leaf_world import drive_to_running, leaf_world
 
 from agent_orchestrator.artifacts.workspace import WorkspaceCleanupIncomplete, WorkspaceManager
 from agent_orchestrator.governance.budgets import BudgetLedger, UsageFact
@@ -30,7 +30,9 @@ class NeverProvider:
 def test_sweep_failure_closes_all_pools_preserves_unknown_and_original_error(
     tmp_path, monkeypatch, close_raises
 ):
-    commit, mission, tasks = graph_service(tmp_path)
+    # 一个分层任务里的一个步骤：这里只需要一次正在进行的尝试和它的预留。
+    world = leaf_world(tmp_path, key="g-1", tenant_id="tenant-5")
+    commit, mission, tasks = world.service, world.mission, {"A": world.tasks["a"]}
     attempt = drive_to_running(commit, tasks["A"])
     with commit.store.transaction():
         commit.ledger.import_usage(

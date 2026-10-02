@@ -65,6 +65,12 @@ def test_the_table_says_whose_fault_each_real_failure_is():
         interrupted, {"layer": "code_test", "status": "FAIL", "summary": "1 failed"}]}) == MODEL
     assert classify_failure({"reason": "verification_failed", "failures": [
         {"layer": "rule_check", "status": "FAIL", "summary": "x"}]}) == MODEL
+    # 2026-10-02 真机：重启后接着跑的那一轮在准入处被拒，因为执行权还记在旧进程名下——被打断
+    denied = lambda code: {"reason": "provider_admission_denied", "error": {  # noqa: E731
+        "error_code": "provider_admission_denied", "source_kind": "provider_admission",
+        "detail": {"schema_version": 1, "reason_code": code}}, "error_kind": "admission_denied"}
+    assert classify_failure(denied("lease_lost")) == INTERRUPTED
+    assert classify_failure(denied("authority_rejected")) == MODEL  # 别的准入拒绝不变
     # 不在表里的一律按模型做错：宁可多扣，不能漏扣
     assert classify_failure({"reason": "model_echo_mismatch"}) == MODEL
     assert classify_failure({"reason": "something_new"}) == MODEL

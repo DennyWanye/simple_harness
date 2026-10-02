@@ -1,3 +1,5 @@
+最后更新：2026-10-02 CST（SDK opt.127）。**强杀后端再重启，被打断的那一步原地重做，不再让任务失败。** 真机（`mission-baddf1eb2442858e`）：执行者的模型调用进行中强杀后端，重启后新进程接着跑那一轮，准入守卫拒绝了它——这次尝试的执行权（租约、执行图的当前派发、运行时租约）还记在已经不在了的那个进程名下；主循环把这种拒绝当成"不可重试"，判步骤失败、任务以"运行环境不可用"失败。现在准入守卫给这种情况单独的原因码 `lease_lost`（`runtime/provider_budget_guard.py`），"谁的错"分类表把它算作被打断（`orchestrator/failure_classes.py`），主循环不判停、留给"非模型原因原地重做"那条已有的路（不扣次数，同一步合计 6 次上限）。别的准入拒绝（预算、身份、配置）处理不变。测试：`tests/orchestrator/full_target/test_lease_lost_is_redone.py`、`p35/test_provider_budget_guard.py` 末尾一条、`step02/test_attempt_charge_by_fault.py` 分类表。
+
 最后更新：2026-10-02 CST（SDK opt.126）。**重启打断一次模型调用后的等待从 180 秒缩到 30 秒**（用户决定）：一次调用交出去之后结果不明（服务重启、连接断开）时，主循环等够时限才判它丢失并原地重做；这个时限原来取"多久没进展算卡住"的 180 秒，现在单独封顶 30 秒（`MAX_SERVICE_BLOCKER_SECONDS`）。真正还在进行的调用不走这条路，仍由 180 秒那个时限管。Host 层新增产品同形的脚本化场景（`backend/tests/orchestration/test_layered_scripted_lane.py`，六条：正常完成、审查判返工后重做、结果格式不对原地重做、一直不对到上限停下、调用中取消、调用中重启后接着跑）。
 
 最后更新：2026-10-02 CST（旧分层旁路清理，SDK opt.124）。依据 `plans/2026-09-27-desktop-next/HTN-片0-实施记录.md`"新增欠账 片0-欠1"；逐步记录见同目录 `旧分层旁路清理-实施记录.md`。

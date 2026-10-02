@@ -315,7 +315,9 @@ def test_manager_exception_preserves_authority_pool_contract_and_cancel_guards(t
                 result = await ask()
             assert str(result.state) == "failed" and provider.calls == 0
             assert result.error["source_kind"] == "provider_admission"
-            assert result.error["detail"]["reason_code"] == "authority_rejected"
+            # 2026-10-02：租约过期/不在这个进程手里单独一个原因码（被打断，不是授权不对）。
+            assert result.error["detail"]["reason_code"] == (
+                "lease_lost" if case == "expired_lease" else "authority_rejected")
             assert not result.error["retryable"]
             persisted = runtime.uow.read_agent_turn_result(result.turn_id)
             assert persisted.result_json["error"] == result.error

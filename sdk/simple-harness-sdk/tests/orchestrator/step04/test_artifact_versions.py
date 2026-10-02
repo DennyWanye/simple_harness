@@ -11,6 +11,8 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+
+from agent_orchestrator.runtime.output_blocks import PortClaim
 from knowledge_helpers import (
     HASH_A,
     HASH_B,
@@ -18,12 +20,16 @@ from knowledge_helpers import (
     claim,
     drive_to_running,
     envelope,
-    two_branch_service,
+    two_leaf_service,
 )
 
 
+#: 分层步骤声明了一个必需的输出端口，结果要认领它。
+CLAIM = (PortClaim(port_key="result", path="tests/probe/test_impl_a.py"),)
+
+
 def test_same_path_candidates_get_distinct_versions(tmp_path):
-    service, mission, (task_a, _) = two_branch_service(tmp_path)
+    service, mission, (task_a, _) = two_leaf_service(tmp_path)
     first = drive_to_running(service, task_a)
     # a second candidate on the same Task (candidates_per_task=2)
     from agent_orchestrator.orchestrator.commit_service import Reservation
@@ -51,6 +57,7 @@ def test_same_path_candidates_get_distinct_versions(tmp_path):
         turn_id="turn-1",
         artifacts=[artifact(first, path, HASH_A, version=1)],
         usage_refs=(),
+        port_claims=CLAIM,
     )
     s2 = service.record_result(
         second.id,
@@ -58,6 +65,7 @@ def test_same_path_candidates_get_distinct_versions(tmp_path):
         turn_id="turn-2",
         artifacts=[artifact(second, path, HASH_B, version=1)],
         usage_refs=(),
+        port_claims=CLAIM,
     )
     versions = sorted(
         (a.version, a.attempt_id)
@@ -77,7 +85,7 @@ def test_same_path_candidates_get_distinct_versions(tmp_path):
 
 
 def test_duplicate_delivery_of_the_same_turn_keeps_the_version(tmp_path):
-    service, mission, (task_a, _) = two_branch_service(tmp_path)
+    service, mission, (task_a, _) = two_leaf_service(tmp_path)
     first = drive_to_running(service, task_a)
     path = "tests/probe/test_impl_a.py"
     s1 = service.record_result(
@@ -86,6 +94,7 @@ def test_duplicate_delivery_of_the_same_turn_keeps_the_version(tmp_path):
         turn_id="turn-1",
         artifacts=[artifact(first, path, HASH_A, version=1)],
         usage_refs=(),
+        port_claims=CLAIM,
     )
     again = service.record_result(
         first.id,
@@ -93,6 +102,7 @@ def test_duplicate_delivery_of_the_same_turn_keeps_the_version(tmp_path):
         turn_id="turn-1",
         artifacts=[artifact(first, path, HASH_A, version=1)],
         usage_refs=(),
+        port_claims=CLAIM,
     )
     assert again == s1
     versions = [
