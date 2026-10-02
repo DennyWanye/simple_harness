@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-from agent_orchestrator.api.facade import MissionControlV1
 from deskpet.orchestration.handlers import handle
 from ._word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
@@ -22,6 +21,24 @@ from ._layered_lane import (
 from ._support import notes_provider, notes_request
 
 
+def _foreign_copy(store, mission_id: str, *, tenant_id: str) -> str:
+    row = store.connection.execute(
+        "SELECT * FROM missions WHERE mission_id=?", (mission_id,)
+    ).fetchone()
+    copied = dict(row)
+    other = mission_id + "-foreign"
+    document = json.loads(copied["json"])
+    document.update({"id": other, "tenant_id": tenant_id, "idempotency_key": "p36-foreign"})
+    copied.update(mission_id=other, tenant_id=tenant_id, idempotency_key="p36-foreign",
+                  json=json.dumps(document, ensure_ascii=False, sort_keys=True))
+    with store.transaction():
+        store.connection.execute(
+            f"INSERT INTO missions({','.join(copied)}) VALUES ({','.join('?' * len(copied))})",
+            tuple(copied.values()),
+        )
+    return other
+
+
 @pytest.mark.asyncio
 async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overrides(
     orchestration_root, principal, monkeypatch
@@ -31,9 +48,9 @@ async def test_diagnostics_authenticates_before_reading_and_rejects_scope_overri
     await service.start()
     try:
         own = service.create_mission(notes_request("p36-owned"))["mission_id"]
-        foreign = MissionControlV1(service._orchestrator, tenant_id="another-user", principal=principal)
-        # another user's Mission, created straight through the SDK facade
-        other = foreign.create(notes_request("p36-foreign"))["mission_id"]
+        # 另一个用户的任务。这个部署的保证通道只为本机用户建任务（建别的用户的任务会被
+        # 拒），所以直接在测试库里复制一行、换掉归属，只为验证"别人的任务读不到"。
+        other = _foreign_copy(service._orchestrator.store, own, tenant_id="another-user")
         assert service.status()["diagnostics_available"] is True
         def forbidden(*args, **kwargs):
             pytest.fail("diagnostics read ran before ownership/request validation")
