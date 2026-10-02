@@ -9,7 +9,7 @@ import pytest
 
 from production_fixture import enabled_world
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
-from agent_orchestrator.api.taskgraph import TaskGraphReadError
+from agent_orchestrator.api.taskgraph import TaskGraphReadApi, TaskGraphReadError
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 from agent_orchestrator.orchestrator.taskgraph_policy import enable_command_id
@@ -61,7 +61,8 @@ def test_seed_certificate_uses_original_applied_check_and_receipt(tmp_path):
 def test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects(tmp_path):
     """A deployment serves one tenant: another tenant cannot put a Mission into it (the
     assured creation refuses the tenant inside the creation transaction, nothing is left
-    behind), and a read for a Mission this tenant does not own is NOT_FOUND and writes nothing."""
+    behind), and another tenant reading this tenant's existing Mission gets NOT_FOUND — the
+    same answer as for a Mission that does not exist — and writes nothing."""
     async def case():
         async with enabled_world(tmp_path, key='tg-tenant-read', hold_worker=True) as world:
             await world.commit_seed()
@@ -74,10 +75,22 @@ def test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects(tmp_path
                                 'idempotency_key': 'foreign-tg-read'})
             assert {mission.id for mission in store.list_missions()} == missions
             assert store.connection.execute('SELECT MAX(seq) FROM events').fetchone()[0] == events
+            own = world.graph.reads
+            foreign_reads = TaskGraphReadApi(
+                own._commit, tenant_id='other-tenant', principal=Principal('other-user'),
+                history=own._history, current_reader=own._current_reader,
+                epoch_reader=own._epoch_reader, resolution_reader=own._resolution_reader,
+                source_validator=own._source_validator,
+                current_source_validator=own._current_source_validator,
+                convergence_diagnostics=own._convergence_diagnostics, graph_budget=own._budget,
+                seed_reader=own._seed_reader, journal_reader=own._journal_reader)
+            assert own.snapshot(world.mission.id)  # it exists and this tenant reads it
             changes = store.connection.total_changes
-            with pytest.raises(TaskGraphReadError) as refused:
-                world.graph.reads.snapshot('mission-of-another-tenant')
-            assert refused.value.code == 'NOT_FOUND'
+            for reads, mission_id in ((foreign_reads, world.mission.id),
+                                      (own, 'mission-that-does-not-exist')):
+                with pytest.raises(TaskGraphReadError) as refused:
+                    reads.snapshot(mission_id)
+                assert refused.value.code == 'NOT_FOUND'
             assert store.connection.total_changes == changes
     asyncio.run(case())
 
