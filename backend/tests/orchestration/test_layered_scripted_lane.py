@@ -19,6 +19,7 @@ from ._layered_lane import (
     layered_service,
     notes_mission,
     planner_reply,
+    quick_runtime,
     retry_same_method,
     review_input,
     review_reply,
@@ -27,6 +28,11 @@ from ._layered_lane import (
 )
 from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from agent_orchestrator.storage.assurance_store import AssuranceStore
+
+
+@pytest.fixture(autouse=True)
+def _quick_runtime(monkeypatch):
+    quick_runtime(monkeypatch)
 
 
 def _types(service, mission_id: str) -> list[str]:

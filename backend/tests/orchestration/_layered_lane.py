@@ -265,6 +265,24 @@ class LayeredScriptedProvider(RoleScriptedProvider):
         return await super().invoke(request, cancel=cancel)
 
 
+def quick_runtime(monkeypatch: Any) -> None:
+    """测试里拿掉两处只耗时间、与编排行为无关的开销（一个任务从约 29 秒降下来）。
+
+    * 向量模型：执行面每轮调用前会用真实的向量模型给查询算一次向量（每次约 1 秒 CPU）。
+      这里让"向量模型没装"——这是产品支持的降级，会话改用按词检索；编排这一侧不受影响。
+    * 等待退避：主循环等在途的调用时，轮询间隔从 0.05 秒逐步退避到 1 秒（真实模型一轮要
+      几秒到几分钟，退避是为了不空转占 CPU）。脚本回复瞬间返回，退避只会多等。
+
+    只改这两处的耗时，不替换编排、执行图、保证通道里的任何东西。"""
+
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    import deskpet.orchestration.native_plane as native_plane
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+    monkeypatch.setattr(native_plane, "embedding_port", lambda _models_dir: (None, "测试里不装向量模型"))
+
+
 async def _auto_mode() -> str:
     return "auto"
 
