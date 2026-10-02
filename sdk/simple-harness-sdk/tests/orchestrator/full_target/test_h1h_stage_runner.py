@@ -5,15 +5,16 @@ from types import SimpleNamespace
 from h1h_stage_runner import CASE_IDS, IMPLEMENTED_NODEIDS, gate_exit_code, manifest, run
 
 
-def test_v14_h1h_manifest_registers_all_35_cases() -> None:
-    # 36 in the V1.4 matrix; I07 (legacy cold reopen) retired with the flat mode (2026-10-02).
-    assert len(CASE_IDS) == 35
+def test_v14_h1h_manifest_registers_all_34_cases() -> None:
+    # 36 in the V1.4 matrix; I07 (legacy cold reopen) retired with the flat mode (2026-10-02),
+    # O10 (running Attempt under a retired step) retired 2026-10-03: the state is unreachable.
+    assert len(CASE_IDS) == 34
     assert set(CASE_IDS) == {
         *(f"A{i:02d}" for i in range(1, 9)),
         *(f"O{i:02d}" for i in range(1, 11)),
         *(f"P{i:02d}" for i in range(1, 11)),
         *(f"I{i:02d}" for i in range(1, 9)),
-    } - {"I07"}
+    } - {"I07", "O10"}
 
 
 def test_all_cases_are_explicitly_registered_before_execution() -> None:
@@ -28,7 +29,7 @@ def test_all_cases_are_explicitly_registered_before_execution() -> None:
 
 def test_corrected_matrix_keeps_partial_and_uncovered_cases_honest() -> None:
     rows = {item["case_id"]: item for item in manifest()}
-    assert sum(row["coverage"] == "MATCH" for row in rows.values()) == 35
+    assert sum(row["coverage"] == "MATCH" for row in rows.values()) == 34
     assert sum(row["coverage"] == "PARTIAL" for row in rows.values()) == 0
     assert sum(row["coverage"] == "MISMATCH" for row in rows.values()) == 0
     assert rows["A02"]["coverage"] == "MATCH"
@@ -56,7 +57,7 @@ def test_all_matched_cases_require_their_mapped_tests_to_pass(tmp_path, monkeypa
     rows = manifest()
     run(rows, tmp_path)
     assert all(row["test_status"] == ("PASS" if row["nodeid"] else "NOT_RUN") for row in rows)
-    assert sum(row["status"] == "PASS" for row in rows) == 35
+    assert sum(row["status"] == "PASS" for row in rows) == 34
     assert next(row for row in rows if row["case_id"] == "I03")["status"] == "PASS"
     assert next(row for row in rows if row["case_id"] == "O09")["status"] == "PASS"
     assert gate_exit_code(rows) == 0

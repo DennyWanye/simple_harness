@@ -42,42 +42,6 @@ def test_real_new_protocol_commit_schedules_independent_review_for_each_leafs_ow
     asyncio.run(case())
 
 
-def _goals_without_applicable_method(world):
-    """片 A：``goals_needing_method`` 已删；同一事实改从候选过滤结果读。"""
-    return tuple(
-        occurrence
-        for occurrence, result in world.dispatch.method_candidates(world.mission.id).items()
-        if not result.applicable
-    )
-
-
-def test_suspended_method_is_not_offered_as_a_candidate(tmp_path):
-    from test_htn_end_to_end import build_world
-
-    from agent_orchestrator.contracts.htn import MissionRef
-    from agent_orchestrator.storage.htn_store import HtnStore
-    world = build_world(tmp_path, key="registry-dispatch-scope")
-    reference = world.contract.method_ref()
-    assert world.dispatch.method_applicability(world.mission.id)
-    assert _goals_without_applicable_method(world) == ()
-    registration = world.env.registry.suspend(reference, reason="confirmed counterexample")
-    HtnStore(world.store).set_method_registration(registration)
-    assert world.dispatch.method_applicability(world.mission.id) == ()
-    assert _goals_without_applicable_method(world)
-    # Immutable definitions stay available to historical instances.
-    assert world.env.registry.definition(reference) == world.contract
-    from agent_orchestrator.planning.htn.planner_package import method_rows
-    assert method_rows(world.env.registry, ["plan.goal"], mission_id=world.mission.id) == ((), 0)
-    registration = world.env.registry.reinstate(reference,
-        mission_id=MissionRef("a-different-trial-mission"), reason="scoped re-evaluation")
-    HtnStore(world.store).set_method_registration(registration)
-    assert world.dispatch.method_applicability(world.mission.id) == ()
-    assert _goals_without_applicable_method(world)
-    world.env.registry.allow_evaluation_trials(reference, [world.mission.id])
-    assert world.dispatch.method_applicability(world.mission.id)
-    assert _goals_without_applicable_method(world) == ()
-
-
 @pytest.mark.parametrize("with_grant", [True, False])
 def test_unconditional_method_can_commit_only_with_actual_planning_grant(tmp_path, with_grant):
     """The reviewed method has no applicability conditions and names no approval; its

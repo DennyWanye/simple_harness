@@ -3365,10 +3365,8 @@ class HierarchicalDispatch:
         _reconcile`` when something is retired — and not the proposal's own claim,
         which for a plain refinement keeps the command byte-for-byte as before.
 
-        Verification P1-2: the policy is a label the commit honours without anybody
-        stopping or reconciling anything; the commit under admission refuses a
-        retirement while the retired work has not converged
-        (``RUNNING_WORK_UNRESOLVED``).
+        Verification P1-2: the policy is a label, not an action; the TaskGraph commit
+        revokes the retired work's execution rights in its own transaction.
         """
 
         mission = self.mission(mission_id)

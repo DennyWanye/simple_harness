@@ -18,7 +18,9 @@ from typing import Any
 
 #: I07 ("legacy cold reopen") was retired with the flat orchestration mode on 2026-10-02:
 #: its test file was deleted and there is no legacy Mission left to reopen.
-RETIRED_CASE_IDS = frozenset({"I07"})
+#: O10 ("retired step still has a running Attempt") was retired on 2026-10-03: no product
+#: command reaches that state, and its refusal only existed on the unbound-TaskGraph path.
+RETIRED_CASE_IDS = frozenset({"I07", "O10"})
 CASE_IDS = tuple(
     case_id
     for prefix, count in (("A", 8), ("O", 10), ("P", 10), ("I", 8))
@@ -53,7 +55,6 @@ IMPLEMENTED_NODEIDS = {
         "test_o08_new_action_after_preview_is_detected_by_complete_set_reread"
     ),
     "O09": None,
-    "O10": None,
     "P01": "tests/orchestrator/full_target/test_h1h_plan_preview.py::test_preview_commit_passes_the_same_compilation_without_recompiling",
     "P02": None,
     "P03": None,
@@ -140,7 +141,6 @@ IMPLEMENTED_NODEIDS.update({
     "O03": "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_retired_unknown_action_blocks_official_commit_without_revision_or_outbox",
     "O07": "tests/orchestrator/full_target/test_h1h_operation_live_boundaries.py::test_o07_real_t0_t1_success_receipt_is_applied_and_wrong_receipt_is_refused",
     "O09": "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_o09_real_t0_materialization_rolls_back_link_fault_and_replays_once",
-    "O10": "tests/orchestrator/full_target/test_h1h_retired_running_work.py",
     "P02": "tests/orchestrator/full_target/test_h1h_p02_compiler_cycles.py",
     "P03": "tests/orchestrator/full_target/test_h1h_p03_compiler_data_coverage_resources.py",
     "P04": "tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py",
@@ -157,7 +157,7 @@ SUPPORTING_NODEIDS.update({
     "O08": ("tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_o08_real_handoff_after_preview_invalidates_original_snapshot",),
     "P03": ("tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p02_p03_real_compiler_refusal_keeps_typed_reason",),
 })
-MATCHED = MATCHED | {"A06", "O03", "O07", "O08", "O09", "O10", "P02", "P03", "P04", "P06", "P07", "I06", "O02", "O04", "I08"}
+MATCHED = MATCHED | {"A06", "O03", "O07", "O08", "O09", "P02", "P03", "P04", "P06", "P07", "I06", "O02", "O04", "I08"}
 PARTIAL = frozenset()
 COVERAGE_NOTES.update({
     "A06": "observed method gate=True and exact required_approvals=0 cannot replace a grant; same-Mission planning/action authority separation covered",

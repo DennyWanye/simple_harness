@@ -145,7 +145,7 @@ def _check_planning_commit(
     command: CommitPlanCommand,
     principal: PlanPrincipal,
     admission: PlanningCommitAdmission,
-    taskgraph: TaskGraphPlanCommitParticipant | None = None,
+    taskgraph: TaskGraphPlanCommitParticipant | None,
 ) -> CheckedPlanningCommit:
     """Run all H1-H producer checks inside ``commit_plan_revision``'s transaction."""
 
@@ -209,33 +209,27 @@ def _check_planning_commit(
         )
     if operations.read_digest != admission.operations.read_digest:
         _raise("OPERATION_SNAPSHOT_STALE", "operation bindings/links/actions changed since preview")
-    if taskgraph is None:
-        try:
-            operation_gate(operations)
-        except OperationSourceUnavailable as error:
-            _raise("OPERATION_UNRESOLVED", str(error))
+    from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
+    from ..graph.planning_scope import planning_convergence_scope
+    from ..runtime.taskgraph_operation_sources import read_operation_producers
+    if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant) or taskgraph.store is not store
+            or admission.taskgraph_candidate is None
+            or taskgraph.document != admission.taskgraph_candidate.document
+            or taskgraph.preview != admission.taskgraph_candidate.preview):
+        _raise("SOURCE_UNAVAILABLE", "TaskGraph original commit participant mismatch")
+    if taskgraph.preview.base_revision == 0:
+        if not operations.complete_empty:
+            _raise("OPERATION_UNRESOLVED", "initial TaskGraph seed has no Operation producer network")
     else:
-        from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
-        from ..graph.planning_scope import planning_convergence_scope
-        from ..runtime.taskgraph_operation_sources import read_operation_producers
-        if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant) or taskgraph.store is not store
-                or admission.taskgraph_candidate is None
-                or taskgraph.document != admission.taskgraph_candidate.document
-                or taskgraph.preview != admission.taskgraph_candidate.preview):
-            _raise("SOURCE_UNAVAILABLE", "TaskGraph original commit participant mismatch")
-        if taskgraph.preview.base_revision == 0:
-            if not operations.complete_empty:
-                _raise("OPERATION_UNRESOLVED", "initial TaskGraph seed has no Operation producer network")
-        else:
-            before = taskgraph.history.read_revision(command.mission_id, taskgraph.preview.base_revision).record.document
-            scope = planning_convergence_scope(before, taskgraph.document, operations,
-                                               read_operation_producers(store, operations))
-            if scope.unresolved_operations:
-                _raise("OPERATION_UNRESOLVED", "affected Operations require original reconciliation")
-        try:
-            operation_gate(operations)
-        except OperationSourceUnavailable as error:
-            _raise("OPERATION_UNRESOLVED", str(error))
+        before = taskgraph.history.read_revision(command.mission_id, taskgraph.preview.base_revision).record.document
+        scope = planning_convergence_scope(before, taskgraph.document, operations,
+                                           read_operation_producers(store, operations))
+        if scope.unresolved_operations:
+            _raise("OPERATION_UNRESOLVED", "affected Operations require original reconciliation")
+    try:
+        operation_gate(operations)
+    except OperationSourceUnavailable as error:
+        _raise("OPERATION_UNRESOLVED", str(error))
 
     try:
         runtime = read_running_work(
@@ -254,8 +248,6 @@ def _check_planning_commit(
         _raise("SOURCE_UNAVAILABLE", str(error))
     if runtime.snapshot_digest != admission.runtime_work.snapshot_digest:
         _raise("RUNTIME_WORK_STALE", "running work changed since preview")
-    if runtime.requires_convergence and taskgraph is None:
-        _raise("RUNNING_WORK_UNRESOLVED", "running work requires convergence before commit")
     return CheckedPlanningCommit(command_id=command.command_id, intent_hash=command.intent_hash(),
         authority_hash=sha256_hex(_authority_identity(authority)), operations_hash=operations.read_digest,
         runtime_work_hash=runtime.snapshot_digest)
