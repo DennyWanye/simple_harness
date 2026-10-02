@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: Apache-2.0
+"""产品同形测试世界的代表用例三：带对外操作（发布文件）的任务（HTN 补齐阶段 A′ 第 2 步）。
+
+产品流程见 plans/2026-09-28-system-operations/00-PLAN.md 第一部分"改完后，一个带发布的任务怎么走"：
+建任务 → 人在确认页确认完成映射并选上必须完成的效果（自动模式不代签带 ``action:`` 的任务）→
+内容步骤写出文件 → 系统按已批准效果自动准备申请单、审阅员通过 → 人点"批准" → 真实的
+``FilePublishConnector`` 发布到授权目录 → 系统读回核对、结果审阅通过 → 任务完成。
+"""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+from typing import Any
+
+import pytest
+
+from agent_orchestrator.governance.policies import DeploymentPolicy
+from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+TARGET = "reports/weekly.md"
+PUBLISH = "action:file_publish.publish:" + TARGET
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+
+
+def _workspace(world: Any, mission_id: str) -> dict[str, Any]:
+    return world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
+
+
+def _confirm_completion(world: Any, mission_id: str) -> dict[str, Any]:
+    """确认页做的事：内容要求照单确认，``action:`` 要求作为必须完成的效果，挂在根义务上，
+    完成标准选"内容哈希一致"（与前端默认一致）。"""
+
+    workspace = _workspace(world, mission_id)
+    assert workspace["state"] == "CONFIRMATION_REQUIRED" and workspace["editable"] is True, workspace
+    actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
+    content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+    [obligation] = workspace["obligations"]
+    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    ref = workspace["requirements_ref"]
+    return world.control.approve_operation_completion_spec({
+        "mission_id": mission_id, "command_id": "confirm-publish-completion",
+        "expected_requirements_ref": ref,
+        "proposal": {
+            "schema_version": 1, "mission_id": mission_id,
+            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
+            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
+            "effects": [{
+                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
+                "obligation_id": obligation["id"], "criterion_ids": actions,
+                "required_milestone": milestone["id"],
+                "milestone_policy_ref": milestone["milestone_policy_ref"],
+                "evidence_policy_ref": milestone["evidence_policy_ref"],
+            }],
+        },
+    })
+
+
+def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        provider = LayeredScriptedProvider()
+        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            created = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                    "success_criteria": ["file:" + TARGET, PUBLISH],
+                                    "idempotency_key": "operation-1"})
+            mission_id = created["mission_id"]
+
+            # 1～2. 自动模式不代签带 action: 的任务：确认页等着人
+            await world.drain()
+            assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
+            receipt = _confirm_completion(world, mission_id)
+            assert receipt["authority"]["kind"] == "USER_CONFIRMED"
+
+            # 3～4. 内容步骤写文件 → 系统准备申请单、审阅通过 → 等人批准
+            approvals: list[dict[str, Any]] = []
+            for _ in range(20):
+                await world.drain()
+                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                if approvals:
+                    break
+            assert len(approvals) == 1, (world.store.get_mission(mission_id).status, world.store.list_actions(mission_id))
+            assert not any(published.rglob("*.md"))  # 没批准之前什么都没发布
+
+            # 5. 人点"批准"
+            decided = world.control.decide(approvals[0]["request_id"], "approve")
+            assert decided["request_state"] in {"GRANTED", "APPROVED"}, decided
+
+            # 6～7. 真实连接器发布 → 读回核对 → 结果审阅 → 完成
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+
+            # 全程只有一次发布：一个动作、一次交接、连接器账本里一条发布意图、目标目录里一个文件
+            actions = world.store.list_actions(mission_id)
+            assert len({a["action_id"] for a in actions}) == 1, actions
+            action = actions[-1]
+            assert (action["connector"], action["operation"], action["target"], action["state"]) == (
+                "file_publish", "publish", TARGET, "SUCCEEDED"), action
+            assert action["handoffs"] == 1 and action["reason_source"] == "system"
+            ledger = [json.loads(line) for line in (tmp_path / "root" / "connectors" / "file_publish" / "ledger.jsonl")
+                      .read_text(encoding="utf-8").splitlines() if line.strip()]
+            assert [entry["state"] for entry in ledger if entry.get("state") == "PREPARED"] == ["PREPARED"], ledger
+            files = [p for p in published.rglob("*") if p.is_file()]
+            # 连接器只新建、不覆盖：发布名带内容版本号，回执里记着它
+            assert [p.relative_to(published).as_posix() for p in files] == [action["receipt"]["service_ref"]]
+
+            # 发布出去的字节与工作区里审过的那份产物逐字一致
+            [artifact] = [a for a in world.store.list_mission_artifacts(mission_id) if a.path == TARGET]
+            assert artifact.content_hash == action["params"]["content_hash"]
+            workspace_bytes = world.loop.assembled.workspaces.artifact_store.read(artifact.content_hash)
+            assert files[0].read_bytes() == workspace_bytes
+            assert hashlib.sha256(workspace_bytes).hexdigest() == action["receipt"]["after"]["content_hash"]
+
+    asyncio.run(case())

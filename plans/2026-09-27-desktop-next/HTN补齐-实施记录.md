@@ -148,3 +148,27 @@
   - SDK 里还有第二份要求书 `root_review.root_requirements` 和测试辅助 `decision_loop.auto_grant`，第 2 步删。
   - 思考计数器的创建时机提前了，无害。
   - 读不到权限模式时，每轮会多打一条警告。
+- **发布**：SDK opt.136（34168b49），Host 钉版 5869fdd7，已推送。用装好的 opt.136 安装包再跑一遍字节钉死（7 条），全部通过。
+
+### A′-2　产品同形测试世界（第 2 步，进行中；工作分支 htn-a-prime，ed967095）
+
+- **建任务路径并为 SDK 一份**：`deployment/assembly.py` 的 `UserMissionDeployment`，负责安装（分层世界与开工条件、执行图、保证通道、根安装）、建任务、每轮职责。
+  - 建任务在同一事务里经门面建任务、初始化根、**绑定执行图**（用户定：建任务时绑定）。
+  - Host 改为调用它；删掉 Host 的 `strict_taskgraph` 设置、"要求→等授权→启用"协调器、任务详情里的等待状态。
+- **执行图策略不再带授权引用**（`planning_delegation_ref`，没有代码读它），删掉 `_delegation`。
+  - 内核字串不升档：库表上的 CHECK 把它钉住了，改字串要重建表；旧绑定读出时按 `TASKGRAPH_POLICY_FIELDS_INVALID` 具名拒绝，已经能说清原因。
+- **测试计数器、脚本化回复只留 SDK 一份**：`testing/word_counter.py`、`testing/scripted_replies.py`。Host 的 25 处引用都改为直接引 SDK，Host 原文件删除。
+- **产品同形测试世界** `testing/product_world.py`：
+  - 部署组装、原生执行池、保证通道、建任务即绑定执行图，都和产品同一份；
+  - 替身只有三样：脚本化回复、测试计数器、通用"用户目标"规划世界。
+- **代表用例**：
+  - `tests/orchestrator/product_world/test_full_circle.py`：整圈；
+  - `test_sub_goal.py`：子目标；
+  - 对外操作那条由子代理在写。
+  - Host 新增 `test_taskgraph_bound_at_creation.py`，删掉只测等待机制的 `test_strict_taskgraph_default.py`。
+- **产品缺陷（产品同形世界首局子目标就发现）**：
+  - 症状：根做法把一条要求交给子目标、另一条交给收尾步骤，而且所有要求都是 `file:` 时，子目标那一行的完成条件为空，整份计划被拒。
+  - 原因：建任务行时，只把链接给普通步骤的要求算作"负责的要求"；子目标落到兜底分支，兜底分支又把已被认领的 `file:` 要求全部排除。
+  - 修复：`occurrence_tasks.py` 改为子目标步骤也计入链接给它的要求。
+  - 改坏检验：恢复成只算普通步骤，子目标用例失败。
+- **脚本化规划器**：子目标还没细化时，系统会发"目标未细化"的修复请求，现在按普通规划处理；中间目标负责的要求从 `criterion_evidence` 读。

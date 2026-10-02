@@ -133,9 +133,14 @@ class ProductWorld:
 async def product_world(
     root: Path, provider: Any, *, auto: bool = True, tenant_id: str = TENANT, principal: Any = None,
     world_factory: Callable[[Any, Any], Any] = user_goal_world, names: RootNames = USER_GOAL_NAMES,
-    allowed_tools: tuple[str, ...] = DEFAULT_TOOLS, **config: Any,
+    allowed_tools: tuple[str, ...] = DEFAULT_TOOLS, connectors: Mapping[str, Any] | None = None,
+    **config: Any,
 ):
-    """A started Orchestrator on the product's deployment, with scripted model replies."""
+    """A started Orchestrator on the product's deployment, with scripted model replies.
+
+    ``connectors`` 与 ``deployment_policy=``（落在 ``**config`` 里交给 ``OrchestratorConfig``）
+    照产品的接法透传：要发布文件的测试给一个真实的 ``FilePublishConnector`` 和启用它的部署策略。
+    """
     from ..api.facade import MissionControlV1
     from ..deployment.native_pools import NativePools, pool_options
     from ..governance.permissions import Principal
@@ -158,6 +163,8 @@ async def product_world(
         deployment.assemble(orchestrator)
         native.bind_orchestrator(orchestrator)
 
+    if connectors is not None:
+        options = {**options, "connectors": dict(connectors)}
     async with Orchestrator(cfg, provider, owner="product-world", startup_assembly=assemble,
                             assurance_root_setup=deployment.assurance_root_setup(), **options) as loop:
         control = MissionControlV1(loop, tenant_id=tenant_id, principal=principal)
