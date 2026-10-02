@@ -598,6 +598,50 @@ def ledger_for(
     return ledger
 
 
+def ground_draft(
+    env: Env,
+    binding: TaskSemanticBindingV1,
+    contract: MethodContract,
+    network: TaskNetworkSnapshot,
+    *,
+    bindings: Mapping[str, Any] | None = None,
+    sharing: Any = None,
+    occurrence_id: str | None = None,
+    snapshot: EvidenceSnapshot | None = None,
+):
+    """A method instance draft built the way production builds one.
+
+    The method is *named* — in production the planner (an LLM) names it in a
+    ``RefineOperation`` — and the Harness only checks and grounds it: the same
+    ``assess_method`` → ``ground_method`` sequence as
+    :func:`agent_orchestrator.planning.plan_preview.compile_candidate_from_snapshot`,
+    whose result goes to
+    :func:`~agent_orchestrator.planning.htn.compiler.compile_refinement_bundle`.
+    """
+
+    from agent_orchestrator.planning.htn.applicability import assess_method
+    from agent_orchestrator.planning.htn.grounding import ground_method
+
+    report = assess_method(
+        binding,
+        contract,
+        snapshot if snapshot is not None else env.snapshot(),
+        env.capabilities(),
+        registry=env.predicates,
+    )
+    return ground_method(
+        binding,
+        contract,
+        dict(bindings or {}),
+        report,
+        catalog=env.catalog,
+        schemas=env.schemas,
+        sharing=sharing,
+        plan_revision=network.plan_revision,
+        goal_occurrence_id=occurrence_id,
+    )
+
+
 def load_proposal(name: str) -> dict[str, Any]:
     """A scripted ``method_proposal`` block, as a model would emit it (§18.5 C8)."""
 

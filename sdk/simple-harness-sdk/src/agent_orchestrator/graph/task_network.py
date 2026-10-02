@@ -19,9 +19,6 @@ never second write authorities:
     the parent — which is precisely why "parent waits for child" and "child is
     opened by parent" stop being a cycle once they are compiled instead of
     unioned (TG §6).
-``support_view()`` / ``supervision_view()``
-    the evidence and coordination readings.  Neither ever contributes an edge to
-    the execution projection (TG §5: the four graphs are not merged).
 
 Two house rules the types enforce rather than document:
 
@@ -112,7 +109,7 @@ class RelationRow:
 
     This is a *reading*, not a storable fact.  The storable forms are
     ``ChildBinding`` (refinement), ``OrderConstraint``, ``DataRequirement`` and
-    ``contracts.htn.TypedEdge`` (the five relations with no dedicated type) — and
+    ``contracts.htn.TypedEdge`` (the two relations with no dedicated type) — and
     the contract ``TypedEdge`` deliberately refuses to carry refinement / ORDER /
     DATA, so those three are flattened into this row rather than smuggled into it.
     """
@@ -323,22 +320,6 @@ class RefinementView:
             seen.add(current)
             pending.extend(self.parents_of.get(current, ()))
         return frozenset(seen)
-
-
-@dataclass(frozen=True, slots=True)
-class SupportView:
-    """SUPPORT / ASSUMPTION readings.  One set is AND; sets are OR (TG §4.4)."""
-
-    #: keyed by the *subject* the evidence supports.  The contract points a SUPPORT
-    #: edge evidence → subject, so the subject is the target, not the source.
-    by_subject: Mapping[str, tuple[TypedEdge, ...]]
-    by_support_set: Mapping[str, tuple[TypedEdge, ...]]
-
-
-@dataclass(frozen=True, slots=True)
-class SupervisionView:
-    by_supervisor: Mapping[str, tuple[OccurrenceId, ...]]
-    supervisor_of: Mapping[OccurrenceId, tuple[str, ...]]
 
 
 # --------------------------------------------------------------------------------------
@@ -650,33 +631,6 @@ class TaskNetworkSnapshot:
             parents_of={key: tuple(value) for key, value in parents.items()},
         )
 
-    def support_view(self) -> SupportView:
-        by_subject: dict[str, list[TypedEdge]] = {}
-        by_set: dict[str, list[TypedEdge]] = {}
-        for edge in self.typed_edges:
-            if edge.relation not in (RelationKind.SUPPORT, RelationKind.ASSUMPTION):
-                continue
-            by_subject.setdefault(edge.target.id, []).append(edge)
-            by_set.setdefault(edge.label, []).append(edge)
-        return SupportView(
-            by_subject={key: tuple(value) for key, value in by_subject.items()},
-            by_support_set={key: tuple(value) for key, value in by_set.items()},
-        )
-
-    def supervision_view(self) -> SupervisionView:
-        by_supervisor: dict[str, list[OccurrenceId]] = {}
-        supervisor_of: dict[OccurrenceId, list[str]] = {}
-        for edge in self.typed_edges:
-            if edge.relation is not RelationKind.SUPERVISION:
-                continue
-            subject = OccurrenceId(edge.target.id)
-            by_supervisor.setdefault(edge.source.id, []).append(subject)
-            supervisor_of.setdefault(subject, []).append(edge.source.id)
-        return SupervisionView(
-            by_supervisor={key: tuple(value) for key, value in by_supervisor.items()},
-            supervisor_of={key: tuple(value) for key, value in supervisor_of.items()},
-        )
-
     # -- the execution projection -------------------------------------------------
 
     def execution_projection(self) -> ExecutionProjection:
@@ -844,8 +798,6 @@ __all__ = (
     "ProjectionNodeKind",
     "RefinementView",
     "RelationRow",
-    "SupervisionView",
-    "SupportView",
     "TaskNetworkSnapshot",
     "flip_from_dependency_map",
     "flip_to_dependency_map",

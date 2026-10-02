@@ -27,9 +27,7 @@ from agent_orchestrator.contracts.obligations import (
     ObligationLedger,
     ObligationLifecycle,
     SatisfactionPolicy,
-    Selector,
     ShapeChange,
-    achieve_outcome_admission,
     funding_owner_conflicts,
 )
 from agent_orchestrator.contracts.semantic_base import (
@@ -207,8 +205,8 @@ def test_an_unknown_field_never_rides_into_an_obligation() -> None:
 def test_a_refused_set_lifecycle_leaves_the_duty_open() -> None:
     """A SATISFIED without a resolution must not park the duty in SATISFIED anyway.
 
-    It would read as closed to every later check — ``achieve_outcome_admission``
-    would answer OBLIGATION_NOT_ACTIVE — while no resolution was ever recorded.
+    It would read as closed to every later check while no resolution was ever
+    recorded.
     """
 
     ledger = ObligationLedger()
@@ -223,7 +221,6 @@ def test_a_refused_set_lifecycle_leaves_the_duty_open() -> None:
     assert after == before
     assert after.lifecycle is ObligationLifecycle.UNSATISFIED
     assert after.resolution_ref is None
-    assert achieve_outcome_admission(after, selected_by=Selector.PLANNER_EXPLICIT).allowed is True
 
 
 def test_a_successful_set_lifecycle_stores_the_resolution_reference() -> None:

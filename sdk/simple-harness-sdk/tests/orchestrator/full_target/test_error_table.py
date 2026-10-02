@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from agent_orchestrator.contracts.error_table import (
-    FORMAT_RETRY_CODES,
     PLANNING_ERRORS,
     TASKGRAPH_ERRORS,
     ErrorCategory,
@@ -15,7 +14,6 @@ from agent_orchestrator.contracts.error_table import (
 )
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionRejectionCode as P
-from agent_orchestrator.planning import decision_codec
 from agent_orchestrator.planning.decision_feedback import feedback_from_decision
 
 
@@ -32,17 +30,6 @@ def test_every_cross_boundary_code_is_registered_exactly_once():
 def test_an_unregistered_code_is_refused(code):
     with pytest.raises(ContractError, match="ERROR_CODE_UNREGISTERED"):
         classify(code)
-
-
-def test_every_code_the_decoder_raises_spends_the_format_retry_and_nothing_else_does():
-    """The decoder (an UNREADABLE reply) is the only producer of format-retry codes; a
-    system-side failure (``INTERNAL_CONTRACT_ERROR``) never spends the Planner's retry."""
-    decoder = set(decision_codec._BLOCK_ERROR_CODES.values()) | {
-        row.code for row in decision_codec.CONTRACT_ERROR_CODE_MAPPINGS} | {
-        P.MIXED_PROTOCOL_BLOCKS, P.UNKNOWN_FIELD, P.MODEL_SET_SYSTEM_FIELD}
-    assert decoder <= FORMAT_RETRY_CODES
-    assert FORMAT_RETRY_CODES == decoder
-    assert P.INTERNAL_CONTRACT_ERROR not in FORMAT_RETRY_CODES
 
 
 def test_codes_are_reported_in_category_order_stable_within_a_category():

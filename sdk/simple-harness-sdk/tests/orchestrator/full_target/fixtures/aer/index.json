@@ -28,15 +28,5 @@
     "schema": "operation-envelope.schema.json",
     "fixture": "operation-envelope.invalid.json",
     "expect_valid": false
-  },
-  {
-    "schema": "reconciliation-result.schema.json",
-    "fixture": "reconciliation-result.valid.json",
-    "expect_valid": true
-  },
-  {
-    "schema": "reconciliation-result.schema.json",
-    "fixture": "reconciliation-result.invalid.json",
-    "expect_valid": false
   }
 ]

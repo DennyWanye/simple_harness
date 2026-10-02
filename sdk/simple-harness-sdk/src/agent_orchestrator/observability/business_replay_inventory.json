@@ -1,0 +1,2735 @@
+{
+ "inventory_version": 1,
+ "replay_version": "business-replay-v3",
+ "timestamp_rule": "以 _at / _at_ms 结尾的时间字段只核对与事件序号的先后一致，不按值相等比较；其余字段按值比较。",
+ "tables": {
+  "acceptance_commit_receipts": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "command_id",
+    "kind",
+    "subject_id",
+    "intent_hash",
+    "read_set_hash",
+    "event_id",
+    "output_identity_json",
+    "detail_json",
+    "applied_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.record_acceptance_receipt"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "GoalResolutionCommitted"
+   ]
+  },
+  "acceptance_outputs": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "acceptance_id",
+    "output_port",
+    "artifact_id",
+    "producer_occurrence",
+    "producer_task_ref",
+    "producer_result_id",
+    "support_revision",
+    "content_hash",
+    "source_revision",
+    "output_json",
+    "recorded_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_acceptance_output"
+   ],
+   "events": [
+    "AcceptanceCommitted"
+   ]
+  },
+  "acceptances": {
+   "class": "business",
+   "fields": [
+    "acceptance_id",
+    "mission_id",
+    "task_id",
+    "obligation_id",
+    "review_record_id",
+    "requirements_revision",
+    "contract_revision",
+    "input_manifest_hash",
+    "validity",
+    "accepted_at_ms",
+    "content_hash",
+    "acceptance_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_acceptance"
+   ],
+   "events": [
+    "AcceptanceCommitted"
+   ]
+  },
+  "actions": {
+   "class": "business",
+   "fields": [
+    "action_key",
+    "action_id",
+    "version",
+    "mission_id",
+    "state",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.put_action"
+   ],
+   "events": [
+    "ActionCancelled",
+    "ActionFailed",
+    "ActionHandedOff",
+    "ActionHandoffRefused",
+    "ActionNonapplicationFinalized",
+    "ActionOutcomeUnknown",
+    "ActionProposed",
+    "ActionReconciled",
+    "ActionRefused",
+    "ActionScopedReconciled",
+    "ActionSucceeded",
+    "ActionSuperseded",
+    "ApprovalExpired",
+    "ApprovalGranted",
+    "ApprovalRejected",
+    "ApprovalRevoked"
+   ]
+  },
+  "approval_decisions": {
+   "class": "business",
+   "fields": [
+    "receipt_hash",
+    "request_id",
+    "principal_id",
+    "decision",
+    "nonce",
+    "json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_decision"
+   ],
+   "events": [
+    "ApprovalGranted",
+    "ApprovalRejected",
+    "HumanOverride"
+   ]
+  },
+  "approvals": {
+   "class": "business",
+   "fields": [
+    "request_id",
+    "kind",
+    "mission_id",
+    "subject_key",
+    "state",
+    "version",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.put_approval"
+   ],
+   "events": [
+    "ActionCancelled",
+    "ActionProposed",
+    "ActionSuperseded",
+    "ApprovalCancelled",
+    "ApprovalExpired",
+    "ApprovalGranted",
+    "ApprovalRejected",
+    "ApprovalRequested",
+    "ApprovalRevoked",
+    "ApprovalSuperseded",
+    "HumanCommentAdded",
+    "HumanOverride",
+    "SourceRegistered",
+    "SourceRevoked",
+    "SourceSuperseded",
+    "VerificationSuspended"
+   ]
+  },
+  "artifacts": {
+   "class": "business",
+   "fields": [
+    "artifact_id",
+    "mission_id",
+    "task_id",
+    "attempt_id",
+    "path",
+    "content_hash",
+    "version",
+    "json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage",
+    "agent_orchestrator/storage/store.py:Store.update_artifact_storage",
+    "agent_orchestrator/storage/store.py:Store.update_artifact_verification",
+    "agent_orchestrator/storage/store.py:Store.upsert_artifact"
+   ],
+   "events": [
+    "AssuranceExecutionImported",
+    "AssuranceLocalCheckFinished",
+    "PreparationAccepted",
+    "ResultSubmitted",
+    "TaskCompleted",
+    "VerificationFailed",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage: 迁移时改写，不发事件",
+    "agent_orchestrator/storage/store.py:Store.update_artifact_storage: 启动时（Orchestrator.__aenter__）和离线恢复（restore_offline）改存放位置，不发事件"
+   ]
+  },
+  "assurance_blob_pins": {
+   "class": "business",
+   "fields": [
+    "pin_id",
+    "mission_id",
+    "review_key",
+    "blob_hash",
+    "object_ref_json",
+    "state",
+    "row_version",
+    "created_at_ms",
+    "released_at_ms",
+    "source_receipt_id",
+    "last_receipt_id"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.acquire_pin",
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.transition_pin"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.acquire_pin: 不发事件（只写 commit_receipts 回执）",
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.transition_pin: 不发事件（只写 commit_receipts 回执）"
+   ]
+  },
+  "assurance_check_bindings": {
+   "class": "business",
+   "fields": [
+    "check_binding_id",
+    "mission_id",
+    "execution_ref_hash",
+    "check_spec_hash",
+    "subject_hash",
+    "assertion_key",
+    "binding_hash",
+    "binding_json",
+    "import_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_check_binding"
+   ],
+   "events": [
+    "AssuranceCheckBound"
+   ]
+  },
+  "assurance_closeouts": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "resolution_id",
+    "state",
+    "row_version",
+    "check_body_hash",
+    "check_body_json",
+    "last_receipt_id",
+    "updated_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/assurance_consumers.py:AssuranceCloseoutConsumer._write_locked",
+    "agent_orchestrator/orchestrator/assurance_final_writer.py:finalize_assured_mission"
+   ],
+   "events": [
+    "AssuranceCloseoutEvaluated",
+    "AssuranceMissionFinalized",
+    "AssuranceStatusNotificationRequested",
+    "MissionCompleted",
+    "ReservationCountedAtUpperBound"
+   ]
+  },
+  "assurance_creation_contracts": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "lane",
+    "origin",
+    "source_hash",
+    "receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_creation_contract",
+    "agent_orchestrator/storage/assurance_upgrade.py:DDL"
+   ],
+   "events": [
+    "AssuranceProfileActivated",
+    "MissionCreated"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/assurance_upgrade.py:DDL: 迁移一次性补写（MIGRATION_CLASSIFICATION），不发事件"
+   ]
+  },
+  "assurance_criterion_policies": {
+   "class": "business",
+   "fields": [
+    "policy_id",
+    "mission_id",
+    "requirements_revision",
+    "requirements_hash",
+    "scope_hash",
+    "policy_hash",
+    "policy_json",
+    "approval_receipt_id"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_criterion_policy"
+   ],
+   "events": [
+    "AssuranceCheckPolicyApproved"
+   ]
+  },
+  "assurance_dependency_index": {
+   "class": "derived",
+   "fields": [
+    "mission_id",
+    "certificate_id",
+    "dependency_kind",
+    "dependency_key",
+    "fingerprint"
+   ],
+   "note": "保证通道依赖索引"
+  },
+  "assurance_disclosure_batches": {
+   "class": "business",
+   "fields": [
+    "review_key",
+    "batch_no",
+    "mission_id",
+    "previous_hash",
+    "batch_hash",
+    "batch_json",
+    "disclosure_event_id"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_disclosure"
+   ],
+   "events": [
+    "AssuranceEvidenceDisclosed"
+   ]
+  },
+  "assurance_environment_state": {
+   "class": "runtime",
+   "fields": [
+    "singleton",
+    "epoch",
+    "clock_generation",
+    "wall_high_ms",
+    "clock_state",
+    "row_version",
+    "change_receipt_id"
+   ],
+   "note": "保证通道全局纪元与时钟（单行）"
+  },
+  "assurance_event_cursors": {
+   "class": "runtime",
+   "fields": [
+    "mission_id",
+    "consumer",
+    "last_event_seq",
+    "row_version",
+    "updated_at_ms"
+   ],
+   "note": "保证通道事件游标"
+  },
+  "assurance_mission_bindings": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "contract_version",
+    "policy_hash",
+    "policy_json",
+    "activation_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.bind_profile_locked"
+   ],
+   "events": [
+    "AssuranceProfileActivated",
+    "MissionCreated"
+   ]
+  },
+  "assurance_pending_work": {
+   "class": "runtime",
+   "fields": [
+    "mission_id",
+    "consumer",
+    "work_key",
+    "trigger_event_id",
+    "target_epoch",
+    "target_fingerprint",
+    "state",
+    "row_version",
+    "tries",
+    "rechecks",
+    "recheck_started_at_ms",
+    "not_before_ms",
+    "wait_reason",
+    "owner",
+    "lease_until_ms"
+   ],
+   "note": "保证通道待办"
+  },
+  "assurance_review_bindings": {
+   "class": "business",
+   "fields": [
+    "review_key",
+    "mission_id",
+    "package_id",
+    "owner_task_id",
+    "request_command_id",
+    "round_no",
+    "requirements_revision",
+    "requirements_hash",
+    "subject_hash",
+    "input_manifest_hash",
+    "binding_hash",
+    "binding_json",
+    "source_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/assurance_review_transport.py:ensure_review_invocation"
+   ],
+   "events": [
+    "AssuranceReservationLinked",
+    "BudgetReserved"
+   ]
+  },
+  "assurance_review_invocations": {
+   "class": "business",
+   "fields": [
+    "review_key",
+    "ordinal",
+    "mission_id",
+    "dispatch_intent_id",
+    "invocation_hash",
+    "invocation_json",
+    "reservation_event_id",
+    "source_receipt_id"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/assurance_review_transport.py:ensure_review_invocation"
+   ],
+   "events": [
+    "AssuranceReservationLinked",
+    "BudgetReserved"
+   ]
+  },
+  "assurance_review_record_bindings": {
+   "class": "business",
+   "fields": [
+    "record_id",
+    "mission_id",
+    "review_key",
+    "source_turn_ref_hash",
+    "raw_output_hash",
+    "evidence_manifest_hash",
+    "binding_hash",
+    "binding_json",
+    "import_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/assurance_review_import.py:PreparedOfficialReview.import_locked"
+   ],
+   "events": [
+    "AssuranceReviewImported"
+   ]
+  },
+  "assurance_use_certificates": {
+   "class": "business",
+   "fields": [
+    "certificate_id",
+    "mission_id",
+    "consumer_kind",
+    "consumer_id",
+    "purpose",
+    "scope_id",
+    "read_set_hash",
+    "certificate_hash",
+    "certificate_json",
+    "issued_at_ms",
+    "not_after_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_certificate"
+   ],
+   "events": [
+    "AssuranceUseCertified"
+   ]
+  },
+  "attempts": {
+   "class": "business",
+   "fields": [
+    "attempt_id",
+    "task_id",
+    "mission_id",
+    "ordinal",
+    "status",
+    "version",
+    "lease_owner",
+    "lease_expires_at",
+    "agent_id",
+    "turn_id",
+    "json",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_attempt",
+    "agent_orchestrator/storage/store.py:Store.update_attempt"
+   ],
+   "events": [
+    "AgentCreated",
+    "AllocationDecided",
+    "AttemptCancelled",
+    "AttemptClaimed",
+    "AttemptCreated",
+    "AttemptLost",
+    "AttemptStarted",
+    "AttemptSuperseded",
+    "AttemptTimedOut",
+    "BudgetReserved",
+    "HeartbeatReceived",
+    "InputSubmitted",
+    "ModelRouted",
+    "OutcomeRecorded",
+    "ResultRejected",
+    "ResultSubmitted",
+    "TaskCompleted",
+    "VerificationFailed",
+    "VerificationPassed",
+    "VerificationStarted"
+   ]
+  },
+  "bound_inputs": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "plan_revision",
+    "requirement_id",
+    "input_binding_revision",
+    "producer_result_id",
+    "acceptance_id",
+    "artifact_id",
+    "content_hash",
+    "source_revision",
+    "binding_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_bound_input"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_bound_input: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "budget_accounts": {
+   "class": "business",
+   "fields": [
+    "account_id",
+    "scope",
+    "parent_id",
+    "mission_id",
+    "limits_json",
+    "reserved_tokens",
+    "settled_tokens",
+    "reserved_cost_micros",
+    "settled_cost_micros",
+    "unpriced_settlements",
+    "attempts_created",
+    "version",
+    "updated_at",
+    "reserved_tool_calls",
+    "settled_tool_calls",
+    "reserved_attempts"
+   ],
+   "writers": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger._apply",
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.open_account"
+   ],
+   "events": [
+    "ActionHandedOff",
+    "AttemptChargeReleased",
+    "AttemptCreated",
+    "BudgetReleased",
+    "BudgetReserved",
+    "MissionCreated",
+    "PlanOccurrencesMaterialised",
+    "ReservationCountedAtUpperBound",
+    "TaskCancelled",
+    "TaskCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger._apply: 经 BudgetLedger.grow（ProviderBudgetGuard._acquire 模型调用追加额度）不发事件"
+   ]
+  },
+  "budget_reservations": {
+   "class": "business",
+   "fields": [
+    "reservation_id",
+    "account_id",
+    "mission_id",
+    "subject_id",
+    "state",
+    "reserved_tokens",
+    "reserved_cost_micros",
+    "settled_tokens",
+    "settled_cost_micros",
+    "unpriced",
+    "created_at",
+    "updated_at",
+    "reserved_tool_calls",
+    "settled_tool_calls"
+   ],
+   "writers": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.grow",
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.reserve",
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle",
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle_at_upper_bound",
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle_known",
+    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
+   ],
+   "events": [
+    "ActionHandedOff",
+    "AttemptCreated",
+    "BudgetReleased",
+    "BudgetReserved",
+    "ReservationCountedAtUpperBound",
+    "TaskCancelled"
+   ],
+   "gaps": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.grow: 不发事件（唯一调用方 ProviderBudgetGuard._acquire 无事件）"
+   ]
+  },
+  "budget_tail_holds": {
+   "class": "business",
+   "fields": [
+    "hold_id",
+    "mission_id",
+    "account_id",
+    "subject_id",
+    "task_revision",
+    "purpose",
+    "request_json",
+    "remaining_attempts",
+    "state",
+    "release_reason",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.release_tail",
+    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.reserve_tail",
+    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
+   ],
+   "events": [
+    "AttemptCreated",
+    "BudgetReleased",
+    "BudgetReserved",
+    "TaskCancelled"
+   ]
+  },
+  "budget_tail_transfers": {
+   "class": "business",
+   "fields": [
+    "hold_id",
+    "transfer_id",
+    "request_json",
+    "receipt_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
+   ],
+   "events": [
+    "BudgetReserved"
+   ]
+  },
+  "claims": {
+   "class": "business",
+   "fields": [
+    "claim_id",
+    "mission_id",
+    "result_id",
+    "status",
+    "version",
+    "json",
+    "updated_at",
+    "key"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.upsert_claim"
+   ],
+   "events": [
+    "AttemptCancelled",
+    "AttemptSuperseded",
+    "ClaimDisputed",
+    "KnowledgeCommitted",
+    "KnowledgeSuperseded",
+    "KnowledgeUsed",
+    "OutcomeRecorded",
+    "ResultSubmitted",
+    "VerificationFailed",
+    "VerificationStarted"
+   ]
+  },
+  "commit_receipts": {
+   "class": "business",
+   "fields": [
+    "commit_id",
+    "kind",
+    "subject_id",
+    "base_version",
+    "proposal_hash",
+    "receipt_json",
+    "applied_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_upgrade.py:DDL",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt"
+   ],
+   "events": [
+    "ActionScopedReconciled",
+    "ApprovalRequested",
+    "AssuranceCheckBound",
+    "AssuranceCheckPolicyApproved",
+    "AssuranceCheckSpecRegistered",
+    "AssuranceClockStable",
+    "AssuranceCloseoutEvaluated",
+    "AssuranceExecutionImported",
+    "AssuranceLocalCheckFinished",
+    "AssuranceMissionFinalized",
+    "AssuranceProfileActivated",
+    "AssuranceProviderReconciliationRequired",
+    "AssuranceReservationLinked",
+    "AssuranceReviewAdjudicated",
+    "AssuranceReviewClassified",
+    "AssuranceReviewFormatExhausted",
+    "AssuranceReviewFormatRejected",
+    "AssuranceReviewImportRejected",
+    "AssuranceReviewImported",
+    "AssuranceReviewInterpretationRejected",
+    "AssuranceReviewLateTurn",
+    "AssuranceReviewSecondOpinionRequested",
+    "AssuranceReviewTurnImported",
+    "AssuranceStatusNotified",
+    "AssuranceUseCertified",
+    "AssuranceUseValidityChecked",
+    "MissionCreated",
+    "OperationCompletionSpecApproved",
+    "OperationIntentSubmitted",
+    "OperationMaterialized",
+    "OperationOutcomeReviewPrepared",
+    "OperationProposalReviewed",
+    "PolicyInterpreterDrift",
+    "PolicyRouteUnavailable",
+    "PolicySuggestionRefused",
+    "SourceRegistered",
+    "TaskGraphContractEnabled",
+    "TaskGraphDispatchBound",
+    "TimeDiscontinuity"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/assurance_upgrade.py:DDL: 迁移一次性补写 AssuranceLegacyClassified 回执，不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_review_pins.ensure_review_blob_pins / _transition（审阅对象钉住与释放）不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_root_commits.install_native_root / _initialize_clock / reauthorize_restored_read（保证通道根与时钟）不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 failure_classes.record_review_interruption（审阅调用被打断）在事件事务之外单独写，不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 operation_proposal_review.persist_action_proposal_review_inputs 在 operation_runtime.ensure_assured_proposal_reviews 路径上不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_changes.original_source_mutation 在 PolicyCommitsMixin.seed_policy / record_policy_drift、HtnStore.register_method / set_method_registration 路径上不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 MethodEvaluationStore.record_oracle 与 evaluation/htn_method_source.py（评测）不发事件"
+   ]
+  },
+  "criterion_evaluations": {
+   "class": "business",
+   "fields": [
+    "review_id",
+    "criterion_id",
+    "mission_id",
+    "package_id",
+    "verdict",
+    "check_execution",
+    "check_receipt_hash",
+    "outcome_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "AssuranceReviewImported",
+    "OperationProposalReviewed",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 operation_outcomes.record_operation_outcome_review（操作结果审阅记录）单独一个事务，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 RootReviewCoordinator.record_review（根审阅记录）不发事件"
+   ]
+  },
+  "data_requirements": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "plan_revision",
+    "requirement_id",
+    "producer_occurrence",
+    "output_port",
+    "consumer_occurrence",
+    "input_port",
+    "source_revision_policy",
+    "requirement_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_data_requirement"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "delivery_receipts": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "command_id",
+    "receipt_id",
+    "acceptance_id",
+    "stage",
+    "observed_at_ms",
+    "operation_id",
+    "intent_hash",
+    "receipt_json",
+    "recorded_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.record_delivery_receipt"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "DeliveryReceiptRecorded"
+   ]
+  },
+  "dispatch_intents": {
+   "class": "runtime",
+   "fields": [
+    "intent_id",
+    "kind",
+    "subject_id",
+    "mission_id",
+    "state",
+    "version",
+    "creation_key",
+    "input_id",
+    "input_hash",
+    "config_json",
+    "expected_turn_id",
+    "agent_id",
+    "receipt_json",
+    "lease_owner",
+    "lease_expires_at",
+    "replays",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "派发意图队列（租约/认领状态）"
+  },
+  "events": {
+   "class": "log",
+   "fields": [
+    "seq",
+    "event_id",
+    "idempotency_key",
+    "type",
+    "trace_id",
+    "mission_id",
+    "task_id",
+    "attempt_id",
+    "actor_type",
+    "actor_id",
+    "payload_json",
+    "created_at",
+    "schema_version"
+   ],
+   "note": "业务事件日志本身"
+  },
+  "goal_resolutions": {
+   "class": "business",
+   "fields": [
+    "resolution_id",
+    "mission_id",
+    "obligation_id",
+    "goal_task_id",
+    "requirements_version",
+    "contract_revision",
+    "method_instance_id",
+    "review_receipt_id",
+    "verdict",
+    "validity",
+    "adopted",
+    "content_hash",
+    "resolution_json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.adopt_goal_resolution",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_goal_resolution"
+   ],
+   "events": [
+    "GoalResolutionCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.adopt_goal_resolution: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "human_overrides": {
+   "class": "business",
+   "fields": [
+    "override_id",
+    "mission_id",
+    "json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_override"
+   ],
+   "events": [
+    "HumanOverride"
+   ]
+  },
+  "imported_usage": {
+   "class": "business",
+   "fields": [
+    "usage_ref",
+    "subject_id",
+    "mission_id",
+    "input_tokens",
+    "output_tokens",
+    "cost_micros",
+    "unpriced",
+    "unknown",
+    "imported_at"
+   ],
+   "writers": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.import_usage"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/governance/budgets.py:BudgetLedger.import_usage: 不发事件（经 CommitService.import_usage、accounting_recovery._import_hold）"
+   ]
+  },
+  "input_manifest_bindings": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "task_id",
+    "manifest_hash",
+    "attempt_id",
+    "request_id",
+    "input_binding_revision",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "AssuranceCheckSpecRegistered",
+    "AssuranceReservationLinked",
+    "AssuranceReviewImported",
+    "AssuranceReviewTurnImported",
+    "AttemptCreated",
+    "OperationIntentSubmitted",
+    "OperationOutcomeReviewPrepared",
+    "OperationProposalReviewed",
+    "PlanningMethodProposed",
+    "TaskGraphDispatchBound",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 AssuranceLocalChecks.prepare 时只有首次登记检查规格才发 AssuranceCheckSpecRegistered，之后不发事件"
+   ]
+  },
+  "input_manifests": {
+   "class": "business",
+   "fields": [
+    "manifest_hash",
+    "origin_mission_id",
+    "manifest_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "AssuranceCheckSpecRegistered",
+    "AssuranceReservationLinked",
+    "AssuranceReviewImported",
+    "AssuranceReviewTurnImported",
+    "AttemptCreated",
+    "OperationIntentSubmitted",
+    "OperationOutcomeReviewPrepared",
+    "OperationProposalReviewed",
+    "PlanningMethodProposed",
+    "TaskGraphDispatchBound",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 AssuranceLocalChecks.prepare 时只有首次登记检查规格才发 AssuranceCheckSpecRegistered，之后不发事件"
+   ]
+  },
+  "justification_sets": {
+   "class": "business",
+   "fields": [
+    "set_id",
+    "mission_id",
+    "subject_kind",
+    "subject_id",
+    "member_revision",
+    "member_digest",
+    "rule_ref",
+    "detail_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "knowledge": {
+   "class": "business",
+   "fields": [
+    "knowledge_id",
+    "mission_id",
+    "claim_id",
+    "key",
+    "status",
+    "version",
+    "source_task",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.upsert_knowledge"
+   ],
+   "events": [
+    "ClaimDisputed",
+    "KnowledgeCommitted",
+    "KnowledgeSuperseded",
+    "KnowledgeUsed"
+   ]
+  },
+  "method_child_occurrences": {
+   "class": "business",
+   "fields": [
+    "instance_id",
+    "slot_key",
+    "mission_id",
+    "occurrence_id",
+    "obligation_id",
+    "goal_occurrence_id",
+    "requiredness",
+    "reuse_policy",
+    "binding_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore._insert_child_occurrence"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "method_contracts": {
+   "class": "global",
+   "fields": [
+    "method_id",
+    "method_version",
+    "content_hash",
+    "registry_status",
+    "author",
+    "trial_scope_mission",
+    "registration_json",
+    "contract_json",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "做法库（跨任务）"
+  },
+  "method_evaluations": {
+   "class": "global",
+   "fields": [
+    "method_id",
+    "method_version",
+    "method_hash",
+    "set_hash",
+    "frozen_json",
+    "evidence_hash",
+    "evaluation_json",
+    "state",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "做法评测（阶段 C3 删）"
+  },
+  "method_instances": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "instance_id",
+    "goal_task_id",
+    "goal_occurrence_id",
+    "obligation_id",
+    "method_id",
+    "method_version",
+    "method_content_hash",
+    "plan_revision",
+    "state",
+    "parameters_digest",
+    "draft_json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_method_instance",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.set_method_instance_state"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "mission_domains": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "domain_id",
+    "domain_version",
+    "json",
+    "bound_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.bind_mission_domain"
+   ],
+   "events": [
+    "MissionCreated"
+   ]
+  },
+  "mission_planning_protocols": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "protocol_version",
+    "package_version",
+    "prompt_version",
+    "binding_hash",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.bind_mission_protocol"
+   ],
+   "events": [
+    "MissionCreated"
+   ]
+  },
+  "mission_policies": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "version_id",
+    "source",
+    "provider_kind",
+    "json",
+    "bound_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store._bind_legacy_missions",
+    "agent_orchestrator/storage/store.py:Store.bind_mission_policy"
+   ],
+   "events": [
+    "MissionCreated"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/store.py:Store._bind_legacy_missions: 迁移时补绑旧任务，不发事件"
+   ]
+  },
+  "missions": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "tenant_id",
+    "idempotency_key",
+    "status",
+    "version",
+    "spec_hash",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_mission",
+    "agent_orchestrator/storage/store.py:Store.update_mission"
+   ],
+   "events": [
+    "AssuranceCloseoutRequested",
+    "AssuranceMissionFinalized",
+    "MissionCancelled",
+    "MissionCompleted",
+    "MissionCreated",
+    "MissionFailed",
+    "MissionPlanning",
+    "MissionSuccessJudged",
+    "PlanRevisionCommitted",
+    "TaskCancelled",
+    "TaskFailed"
+   ]
+  },
+  "obligation_expansions": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "obligation_id",
+    "method_id",
+    "parameters_digest",
+    "ordinal",
+    "task_id",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "obligation_relations": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "parent_obligation_id",
+    "child_obligation_id",
+    "kind",
+    "active_revision",
+    "detail_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.add_relation"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.add_relation: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "obligation_shape_changes": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "obligation_id",
+    "ordinal",
+    "change",
+    "detail",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.note_shape_change",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.note_shape_change: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "obligations": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "obligation_id",
+    "goal_signature_id",
+    "scope",
+    "requiredness",
+    "lifecycle",
+    "resolution_ref",
+    "parent_obligation_id",
+    "budget_lineage_ref",
+    "failure_count",
+    "spent_tokens",
+    "spent_cost_micros",
+    "spent_attempts",
+    "fuel_limit",
+    "fuel_used",
+    "fuel_remaining",
+    "demand_admitted",
+    "obligation_json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.admit_demand",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.register",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.set_lifecycle",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.withdraw_demand"
+   ],
+   "events": [
+    "GoalResolutionCommitted",
+    "ObligationDemandAdmitted",
+    "ObligationDemandWithdrawn",
+    "PlanRevisionCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "observations": {
+   "class": "business",
+   "fields": [
+    "observation_id",
+    "mission_id",
+    "proposition_key",
+    "polarity",
+    "scope_id",
+    "source_kind",
+    "source_id",
+    "coverage",
+    "observer_id",
+    "observed_at_ms",
+    "recorded_at_ms",
+    "query_watermark_ms",
+    "valid_until_ms",
+    "observation_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation"
+   ],
+   "events": [
+    "TaskGraphSourceChanged"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件（调用方 planning_evidence.persist_questions 所在事务也不发别的事件）"
+   ]
+  },
+  "operation_acceptance_scopes": {
+   "class": "business",
+   "fields": [
+    "acceptance_id",
+    "mission_id",
+    "completion_scope_id",
+    "contribution_kind",
+    "scope_hash",
+    "contribution_hash",
+    "document_json",
+    "outcome_binding_id",
+    "delivery_receipt_id",
+    "producer_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_acceptance_scope"
+   ],
+   "events": [
+    "AcceptanceCommitted"
+   ]
+  },
+  "operation_bindings": {
+   "class": "business",
+   "fields": [
+    "principal_id",
+    "scope_id",
+    "operation_occurrence_id",
+    "operation_id",
+    "request_hash",
+    "mission_id",
+    "obligation_id",
+    "connector_id",
+    "connector_version",
+    "operation_kind",
+    "envelope_hash",
+    "envelope_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.bind_operation"
+   ],
+   "events": [
+    "OperationMaterialized"
+   ]
+  },
+  "operation_completion_scopes": {
+   "class": "business",
+   "fields": [
+    "scope_id",
+    "mission_id",
+    "plan_revision",
+    "occurrence_id",
+    "task_id",
+    "task_binding_revision",
+    "task_contract_hash",
+    "spec_id",
+    "spec_hash",
+    "scope_hash",
+    "document_json",
+    "plan_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_scope"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "operation_completion_specs": {
+   "class": "business",
+   "fields": [
+    "spec_id",
+    "mission_id",
+    "requirements_revision",
+    "requirements_hash",
+    "spec_hash",
+    "document_json",
+    "approval_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_spec"
+   ],
+   "events": [
+    "OperationCompletionSpecApproved"
+   ]
+  },
+  "operation_identities": {
+   "class": "business",
+   "fields": [
+    "operation_id",
+    "mission_id",
+    "request_hash",
+    "envelope_hash",
+    "envelope_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.bind_operation"
+   ],
+   "events": [
+    "OperationMaterialized"
+   ]
+  },
+  "operation_intent_bindings": {
+   "class": "business",
+   "fields": [
+    "intent_id",
+    "mission_id",
+    "tenant_id",
+    "principal_id",
+    "scope_id",
+    "source_kind",
+    "origin_receipt_id",
+    "slot_key",
+    "submission_receipt_id",
+    "submission_hash",
+    "supersedes_intent_id",
+    "producer_task_id",
+    "producer_occurrence_id",
+    "obligation_id",
+    "source_result_id",
+    "source_attempt_id",
+    "candidate_artifact_id",
+    "candidate_file_hash",
+    "task_contract_revision",
+    "task_contract_hash",
+    "requirements_revision",
+    "requirements_hash",
+    "plan_revision",
+    "plan_snapshot_hash",
+    "parameters_object_id",
+    "parameters_content_hash",
+    "params_hash",
+    "effect_object_id",
+    "effect_content_hash",
+    "proposal_object_id",
+    "proposal_content_hash",
+    "request_hash",
+    "review_package_id",
+    "binding_json",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_intent_store.py:OperationIntentStore.insert"
+   ],
+   "events": [
+    "OperationIntentSubmitted"
+   ]
+  },
+  "operation_outcome_review_bindings": {
+   "class": "business",
+   "fields": [
+    "binding_id",
+    "mission_id",
+    "spec_id",
+    "spec_hash",
+    "effect_key",
+    "completion_scope_id",
+    "intent_id",
+    "operation_id",
+    "operation_occurrence_id",
+    "action_key",
+    "action_version",
+    "request_hash",
+    "effect_contract_hash",
+    "source_manifest_hash",
+    "binding_hash",
+    "document_json",
+    "review_package_id",
+    "producer_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_outcome_binding"
+   ],
+   "events": [
+    "OperationOutcomeReviewPrepared"
+   ]
+  },
+  "operation_payload_objects": {
+   "class": "business",
+   "fields": [
+    "object_id",
+    "mission_id",
+    "object_kind",
+    "object_revision",
+    "content_hash",
+    "byte_length",
+    "media_type",
+    "storage_uri",
+    "source_receipt_id",
+    "created_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/operation_payload_store.py:OperationPayloadStore.put_payload"
+   ],
+   "events": [
+    "OperationIntentSubmitted"
+   ]
+  },
+  "orch_schema_migrations": {
+   "class": "runtime",
+   "fields": [
+    "version",
+    "name",
+    "checksum",
+    "applied_at"
+   ],
+   "note": "迁移记录"
+  },
+  "order_constraints": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "plan_revision",
+    "before_occurrence",
+    "after_occurrence",
+    "release_condition",
+    "constraint_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_order_constraint"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "plan_commit_receipts": {
+   "class": "business",
+   "fields": [
+    "command_id",
+    "mission_id",
+    "delta_id",
+    "base_plan_revision",
+    "new_plan_revision",
+    "intent_hash",
+    "read_set_hash",
+    "read_set_json",
+    "output_identity_json",
+    "receipt_json",
+    "applied_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.record_commit_receipt"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "plan_memberships": {
+   "class": "derived",
+   "fields": [
+    "mission_id",
+    "revision",
+    "occurrence_id",
+    "task_id",
+    "obligation_id",
+    "instance_id",
+    "form",
+    "requiredness",
+    "adopted",
+    "member_json",
+    "created_at"
+   ],
+   "note": "由计划修订的网络文档投影"
+  },
+  "plan_read_sets": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "proposal_id",
+    "subject_type",
+    "subject_id",
+    "semantic_revision",
+    "content_hash",
+    "item_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.record_read_set"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "plan_revisions": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "revision",
+    "state",
+    "base_revision",
+    "snapshot_hash",
+    "delta_id",
+    "read_set_json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.activate_plan_revision",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_plan_revision"
+   ],
+   "events": [
+    "PlanRevisionCommitted"
+   ]
+  },
+  "planning_admission_checks": {
+   "class": "business",
+   "fields": [
+    "check_id",
+    "request_id",
+    "decision_id",
+    "phase",
+    "snapshot_hash",
+    "decision_hash",
+    "authority_hash",
+    "operations_hash",
+    "delta_hash",
+    "check_schema",
+    "detail_json",
+    "checked_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_admission_check"
+   ],
+   "events": [
+    "PlanRevisionCommitted",
+    "PlanningRepairDeferred",
+    "TaskGraphRevisionRecorded"
+   ]
+  },
+  "planning_decisions": {
+   "class": "business",
+   "fields": [
+    "decision_id",
+    "request_id",
+    "attempt_ordinal",
+    "raw_output_hash",
+    "raw_artifact_ref",
+    "canonical_json",
+    "canonical_hash",
+    "decision_type",
+    "status",
+    "rejection_codes_json",
+    "detail_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.record_planning_decision"
+   ],
+   "events": [
+    "PlanningHumanRequested",
+    "PlanningMethodProposed",
+    "PlanningRejected",
+    "PlanningRetryAuthorized",
+    "TaskCommitted"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.record_planning_decision: 经 Orchestrator._collect_plan_decision.record_decision 的多数调用（进度状态 record_progress、证据轮、过期、延后修复 defer_current_repair 等）同一事务内不发事件"
+   ]
+  },
+  "planning_human_requests": {
+   "class": "business",
+   "fields": [
+    "decision_id",
+    "mission_id",
+    "subject_key",
+    "request_json",
+    "request_hash",
+    "state",
+    "answer_json",
+    "version",
+    "created_at",
+    "answered_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.answer",
+    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.register",
+    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.register_reusing_answer",
+    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.retire_stale"
+   ],
+   "events": [
+    "HumanCommentAdded",
+    "PlanningHumanAnswered",
+    "PlanningHumanRequested",
+    "PlanningHumanStale"
+   ]
+  },
+  "planning_lane_grants": {
+   "class": "business",
+   "fields": [
+    "grant_id",
+    "revision",
+    "mission_id",
+    "tenant_id",
+    "scope_id",
+    "grantee_id",
+    "issuer_id",
+    "issuer_command_id",
+    "issuer_receipt_hash",
+    "active",
+    "allowed_decisions_json",
+    "policy_hash",
+    "not_before_ms",
+    "expires_at_ms",
+    "content_hash",
+    "grant_json"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_grant"
+   ],
+   "events": [
+    "TaskGraphSourceChanged"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_grant: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件（调用方 PlanningAuthorizationApi.issue / renew / revoke 不发别的事件）"
+   ]
+  },
+  "planning_operation_action_links": {
+   "class": "business",
+   "fields": [
+    "operation_id",
+    "request_hash",
+    "operation_occurrence_id",
+    "mission_id",
+    "envelope_hash",
+    "principal_id",
+    "scope_id",
+    "obligation_id",
+    "producer_task_id",
+    "producer_htn_occurrence_id",
+    "producer_contract_revision",
+    "producer_plan_revision",
+    "action_key",
+    "action_id",
+    "action_version",
+    "params_hash",
+    "idempotency_key",
+    "provenance_receipt_id",
+    "link_hash",
+    "link_json"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_operation_action_link"
+   ],
+   "events": [
+    "ActionProposed",
+    "ActionRefused",
+    "ActionSuperseded",
+    "ApprovalRequested",
+    "ApprovalSuperseded"
+   ]
+  },
+  "planning_repair_continuations": {
+   "class": "business",
+   "fields": [
+    "continuation_id",
+    "mission_id",
+    "decision_id",
+    "request_id",
+    "command_id",
+    "raw_artifact_ref_json",
+    "raw_hash",
+    "decision_hash",
+    "codec_version",
+    "protocol_version",
+    "package_hash",
+    "prompt_hash",
+    "base_plan_revision",
+    "requirements_revision",
+    "authority_binding_json",
+    "targets_json",
+    "last_preview_hash",
+    "state",
+    "row_version",
+    "policy_version",
+    "created_at_ms",
+    "deadline_ms",
+    "resume_limit",
+    "resume_count",
+    "next_check_at_ms",
+    "owner_id",
+    "lease_until_ms",
+    "last_reason_code",
+    "updated_at_ms"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.administrative_transition",
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.claim_due",
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.put",
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.transition"
+   ],
+   "events": [
+    "PlanningRepairDeferred"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.claim_due: 认领续跑不发事件",
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.transition: 续跑状态迁移（resume_pending_planning_repairs / claim_due_planning_repair / settle_claimed_planning_repair）不发事件",
+    "agent_orchestrator/storage/planning_repair_store.py:PlanningRepairStore.administrative_transition: 管理迁移（set_planning_repair_state）不发事件"
+   ]
+  },
+  "planning_request_authority_bindings": {
+   "class": "business",
+   "fields": [
+    "request_id",
+    "mission_id",
+    "tenant_id",
+    "scope_id",
+    "planner_principal_id",
+    "grant_id",
+    "grant_revision",
+    "grant_hash",
+    "binding_hash",
+    "binding_json"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore._insert_binding"
+   ],
+   "events": [
+    "TaskGraphSourceChanged"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore._insert_binding: 经 bind_request（facade.planning_authorization / PlanningAuthorizationApi.bind_request）不发事件；经 put_grant 时只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件"
+   ]
+  },
+  "planning_requests": {
+   "class": "business",
+   "fields": [
+    "request_id",
+    "mission_id",
+    "protocol_version",
+    "package_version",
+    "package_hash",
+    "base_plan_revision",
+    "requirements_revision",
+    "scope_epoch_digest",
+    "subject_bindings_hash",
+    "visible_refs_digest",
+    "prompt_version",
+    "prompt_hash",
+    "intent_id",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.insert_planning_request",
+    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.rebind_planning_request_intent"
+   ],
+   "events": [
+    "BudgetReserved",
+    "PlanningDeploymentBound"
+   ]
+  },
+  "policy_activations": {
+   "class": "global",
+   "fields": [
+    "seq",
+    "version_id",
+    "action",
+    "json",
+    "created_at"
+   ],
+   "note": "策略启用记录"
+  },
+  "policy_decisions": {
+   "class": "global",
+   "fields": [
+    "receipt_hash",
+    "proposal_id",
+    "principal_id",
+    "decision",
+    "nonce",
+    "json",
+    "created_at"
+   ],
+   "note": "策略审批"
+  },
+  "policy_evaluations": {
+   "class": "global",
+   "fields": [
+    "evaluation_id",
+    "proposal_id",
+    "verdict",
+    "json",
+    "created_at"
+   ],
+   "note": "策略评测"
+  },
+  "policy_proposals": {
+   "class": "global",
+   "fields": [
+    "proposal_id",
+    "version_id",
+    "state",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "策略提案"
+  },
+  "policy_versions": {
+   "class": "global",
+   "fields": [
+    "version_id",
+    "params_hash",
+    "source",
+    "status",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "策略版本"
+  },
+  "provider_token_grants": {
+   "class": "runtime",
+   "fields": [
+    "invocation_id",
+    "handoff_ordinal",
+    "mission_id",
+    "subject_id",
+    "agent_id",
+    "turn_id",
+    "intent_id",
+    "owner",
+    "sdk_owner",
+    "sdk_epoch",
+    "fingerprint",
+    "request_hash",
+    "wire_hash",
+    "public_input_upper",
+    "prior_output_upper",
+    "output_ceiling",
+    "total_upper",
+    "state",
+    "actual_tokens",
+    "actual_output_tokens",
+    "version",
+    "created_at",
+    "updated_at",
+    "price_json",
+    "price_digest",
+    "cost_upper_micros",
+    "actual_cost_micros"
+   ],
+   "note": "模型调用令牌授权"
+  },
+  "requirements_revisions": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "revision",
+    "revision_id",
+    "content_hash",
+    "authority_subject",
+    "revision_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_requirements_revision"
+   ],
+   "events": [
+    "AssuranceProfileActivated",
+    "MissionCreated",
+    "ObligationDemandAdmitted"
+   ]
+  },
+  "results": {
+   "class": "business",
+   "fields": [
+    "result_id",
+    "attempt_id",
+    "task_id",
+    "mission_id",
+    "turn_id",
+    "result_hash",
+    "verification_state",
+    "verdict",
+    "json",
+    "received_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_result",
+    "agent_orchestrator/storage/store.py:Store.set_result_verification"
+   ],
+   "events": [
+    "ApprovalGranted",
+    "ApprovalRejected",
+    "ApprovalRequested",
+    "AttemptCancelled",
+    "AttemptSuperseded",
+    "OutcomeRecorded",
+    "PreparationAccepted",
+    "ResultSubmitted",
+    "TaskCompleted",
+    "VerificationFailed",
+    "VerificationPassed",
+    "VerificationStarted",
+    "VerificationSuspended"
+   ]
+  },
+  "review_packages": {
+   "class": "business",
+   "fields": [
+    "package_id",
+    "mission_id",
+    "purpose",
+    "review_account",
+    "obligation_id",
+    "subject_kind",
+    "subject_id",
+    "requirements_revision",
+    "input_manifest_hash",
+    "method_instance_id",
+    "package_hash",
+    "package_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "AssuranceReservationLinked",
+    "BudgetReserved",
+    "OperationIntentSubmitted",
+    "OperationOutcomeReviewPrepared",
+    "OperationProposalReviewed",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件"
+   ]
+  },
+  "review_records": {
+   "class": "business",
+   "fields": [
+    "record_id",
+    "package_id",
+    "mission_id",
+    "purpose",
+    "reviewer_agent_id",
+    "reviewer_turn_id",
+    "verdict",
+    "evidence_manifest_hash",
+    "official",
+    "record_hash",
+    "record_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "AssuranceReviewImported",
+    "OperationProposalReviewed",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 operation_outcomes.record_operation_outcome_review（操作结果审阅记录）单独一个事务，不发事件",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 RootReviewCoordinator.record_review（根审阅记录）不发事件"
+   ]
+  },
+  "scheduler_state": {
+   "class": "runtime",
+   "fields": [
+    "key",
+    "json",
+    "version",
+    "updated_at"
+   ],
+   "note": "调度器游标与等待表"
+  },
+  "sources": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "tenant_id",
+    "path",
+    "version_hash",
+    "kind",
+    "trust",
+    "registered_at",
+    "superseded_by",
+    "revoked",
+    "revision"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.put_source"
+   ],
+   "events": [
+    "ApprovalRequested",
+    "AssuranceReviewTurnImported",
+    "SourceRegistered",
+    "SourceRevoked",
+    "SourceSuperseded"
+   ]
+  },
+  "summaries": {
+   "class": "derived",
+   "fields": [
+    "summary_id",
+    "mission_id",
+    "scope",
+    "subject_id",
+    "version",
+    "json",
+    "created_at"
+   ],
+   "note": "由知识原文按规则生成"
+  },
+  "support_members": {
+   "class": "business",
+   "fields": [
+    "set_id",
+    "member_kind",
+    "member_id",
+    "mission_id",
+    "polarity",
+    "member_revision",
+    "member_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+   ]
+  },
+  "task_semantics": {
+   "class": "business",
+   "fields": [
+    "task_id",
+    "binding_revision",
+    "mission_id",
+    "obligation_id",
+    "form",
+    "semantic_scope",
+    "goal_signature_id",
+    "operator_ref",
+    "adopted_method_instance_id",
+    "input_binding_revision",
+    "dispatch_generation",
+    "content_hash",
+    "binding_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.put_task_semantics"
+   ],
+   "events": [
+    "ObligationDemandAdmitted",
+    "PlanRevisionCommitted"
+   ]
+  },
+  "taskgraph_attempt_inputs": {
+   "class": "business",
+   "fields": [
+    "attempt_id",
+    "mission_id",
+    "task_id",
+    "occurrence_id",
+    "source_revision",
+    "binding_revision",
+    "contract_hash",
+    "input_binding_revision",
+    "dispatch_generation",
+    "manifest_hash",
+    "intent_id",
+    "creation_key",
+    "input_id",
+    "frozen_input_hash",
+    "admission_check_id",
+    "origin_hash",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/taskgraph_attempt_inputs.py:TaskGraphAttemptInputStore.insert_attempt_inputs"
+   ],
+   "events": [
+    "TaskGraphDispatchBound"
+   ]
+  },
+  "taskgraph_convergence_jobs": {
+   "class": "business",
+   "fields": [
+    "job_id",
+    "mission_id",
+    "decision_id",
+    "request_id",
+    "command_id",
+    "source_revision",
+    "candidate_hash",
+    "impact_hash",
+    "state",
+    "row_version",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore._transition",
+    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore.begin_convergence"
+   ],
+   "events": [
+    "TaskGraphConvergenceAdvanced",
+    "TaskGraphConvergenceRequested"
+   ]
+  },
+  "taskgraph_convergence_targets": {
+   "class": "business",
+   "fields": [
+    "job_id",
+    "mission_id",
+    "source_revision",
+    "occurrence_id",
+    "task_id",
+    "expected_generation",
+    "target_kind"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore.begin_convergence"
+   ],
+   "events": [
+    "TaskGraphConvergenceRequested"
+   ]
+  },
+  "taskgraph_demand_refs": {
+   "class": "derived",
+   "fields": [
+    "mission_id",
+    "revision",
+    "consumer_instance_id",
+    "slot_key",
+    "slot_occurrence_id",
+    "producer_occurrence_id",
+    "obligation_id",
+    "mode",
+    "requiredness",
+    "source_slot_hash"
+   ],
+   "note": "同上"
+  },
+  "taskgraph_followups": {
+   "class": "runtime",
+   "fields": [
+    "message_id",
+    "mission_id",
+    "source_event_id",
+    "kind",
+    "subject_key",
+    "dedupe_key",
+    "payload_hash",
+    "payload_json",
+    "delivery_state",
+    "lease_owner",
+    "lease_until_ms",
+    "attempts",
+    "row_version",
+    "next_attempt_ms",
+    "last_error_code",
+    "consumer_receipt_json"
+   ],
+   "note": "执行图后续通知队列"
+  },
+  "taskgraph_member_pins": {
+   "class": "derived",
+   "fields": [
+    "mission_id",
+    "revision",
+    "occurrence_id",
+    "task_id",
+    "binding_revision",
+    "binding_hash"
+   ],
+   "note": "由执行图修订文档推出（build_revision_pins）"
+  },
+  "taskgraph_method_pins": {
+   "class": "derived",
+   "fields": [
+    "mission_id",
+    "revision",
+    "instance_id",
+    "goal_occurrence_id",
+    "adopted",
+    "draft_hash"
+   ],
+   "note": "同上"
+  },
+  "taskgraph_policy_bindings": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "kernel_version",
+    "policy_hash",
+    "policy_json",
+    "enabling_command_id",
+    "enabling_receipt_hash",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/taskgraph_policy.py:TaskGraphPolicyService.enable_taskgraph_contract"
+   ],
+   "events": [
+    "TaskGraphContractEnabled"
+   ]
+  },
+  "taskgraph_requirements": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "kernel_version",
+    "source",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph: 不发事件（SDK 内无调用方，Host deskpet/orchestration/service.py 调用）"
+   ]
+  },
+  "taskgraph_revision_records": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "revision",
+    "parent_revision",
+    "parent_manifest_hash",
+    "source_kind",
+    "requirements_revision",
+    "manifest_hash",
+    "sdk_snapshot_hash",
+    "network_json",
+    "certificate_json",
+    "admission_check_id",
+    "event_id",
+    "command_id",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/taskgraph_store.py:TaskGraphStore.insert_revision_record"
+   ],
+   "events": [
+    "TaskGraphRevisionRecorded"
+   ]
+  },
+  "tasks": {
+   "class": "business",
+   "fields": [
+    "task_id",
+    "mission_id",
+    "ordinal",
+    "status",
+    "version",
+    "json",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.insert_task",
+    "agent_orchestrator/storage/store.py:Store.update_task"
+   ],
+   "events": [
+    "AttemptChargeReleased",
+    "AttemptCreated",
+    "HumanOverride",
+    "MissionCompleted",
+    "MissionFailed",
+    "MissionSuccessJudged",
+    "OperationOutcomeAccepted",
+    "PlanOccurrencesMaterialised",
+    "PreparationAccepted",
+    "ResultSubmitted",
+    "TaskCancelled",
+    "TaskCommitted",
+    "TaskCompleted",
+    "TaskFailed",
+    "TaskPaused",
+    "TaskResumed",
+    "TaskVerificationAbandoned",
+    "VerificationFailed",
+    "VerificationPassed"
+   ]
+  },
+  "tool_calls": {
+   "class": "business",
+   "fields": [
+    "call_key",
+    "subject_id",
+    "mission_id",
+    "tool",
+    "outcome",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.record_tool_call"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/store.py:Store.record_tool_call: 不发事件（经 CommitService.record_tool_call ← Orchestrator._record_tool_call）"
+   ]
+  },
+  "validity_dirty": {
+   "class": "runtime",
+   "fields": [
+    "mission_id",
+    "subject_kind",
+    "subject_id",
+    "epoch",
+    "scope_id",
+    "reason",
+    "state",
+    "created_at",
+    "updated_at"
+   ],
+   "note": "有效性待重算标记"
+  },
+  "validity_epochs": {
+   "class": "business",
+   "fields": [
+    "mission_id",
+    "scope_id",
+    "epoch",
+    "bumped_by",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.bind_profile_locked",
+    "agent_orchestrator/storage/htn_store.py:HtnStore.bump_epoch",
+    "trigger:assurance_source_acceptance_commit_receipts_delete",
+    "trigger:assurance_source_acceptance_commit_receipts_insert",
+    "trigger:assurance_source_acceptance_commit_receipts_update",
+    "trigger:assurance_source_acceptance_outputs_delete",
+    "trigger:assurance_source_acceptance_outputs_insert",
+    "trigger:assurance_source_acceptance_outputs_update",
+    "trigger:assurance_source_acceptances_delete",
+    "trigger:assurance_source_acceptances_insert",
+    "trigger:assurance_source_acceptances_update",
+    "trigger:assurance_source_actions_delete",
+    "trigger:assurance_source_actions_insert",
+    "trigger:assurance_source_actions_update",
+    "trigger:assurance_source_approvals_delete",
+    "trigger:assurance_source_approvals_insert",
+    "trigger:assurance_source_approvals_update",
+    "trigger:assurance_source_artifacts_delete",
+    "trigger:assurance_source_artifacts_insert",
+    "trigger:assurance_source_artifacts_update",
+    "trigger:assurance_source_assurance_check_bindings_delete",
+    "trigger:assurance_source_assurance_check_bindings_insert",
+    "trigger:assurance_source_assurance_check_bindings_update",
+    "trigger:assurance_source_assurance_criterion_policies_delete",
+    "trigger:assurance_source_assurance_criterion_policies_insert",
+    "trigger:assurance_source_assurance_criterion_policies_update",
+    "trigger:assurance_source_assurance_review_record_bindings_delete",
+    "trigger:assurance_source_assurance_review_record_bindings_insert",
+    "trigger:assurance_source_assurance_review_record_bindings_update",
+    "trigger:assurance_source_bound_inputs_delete",
+    "trigger:assurance_source_bound_inputs_insert",
+    "trigger:assurance_source_bound_inputs_update",
+    "trigger:assurance_source_claims_delete",
+    "trigger:assurance_source_claims_insert",
+    "trigger:assurance_source_claims_update",
+    "trigger:assurance_source_criterion_assessments_delete",
+    "trigger:assurance_source_criterion_assessments_insert",
+    "trigger:assurance_source_criterion_assessments_update",
+    "trigger:assurance_source_criterion_evaluations_delete",
+    "trigger:assurance_source_criterion_evaluations_insert",
+    "trigger:assurance_source_criterion_evaluations_update",
+    "trigger:assurance_source_data_requirements_delete",
+    "trigger:assurance_source_data_requirements_insert",
+    "trigger:assurance_source_data_requirements_update",
+    "trigger:assurance_source_delivery_receipts_delete",
+    "trigger:assurance_source_delivery_receipts_insert",
+    "trigger:assurance_source_delivery_receipts_update",
+    "trigger:assurance_source_events_delete",
+    "trigger:assurance_source_events_insert",
+    "trigger:assurance_source_events_update",
+    "trigger:assurance_source_goal_resolutions_delete",
+    "trigger:assurance_source_goal_resolutions_insert",
+    "trigger:assurance_source_goal_resolutions_update",
+    "trigger:assurance_source_input_manifest_bindings_delete",
+    "trigger:assurance_source_input_manifest_bindings_insert",
+    "trigger:assurance_source_input_manifest_bindings_update",
+    "trigger:assurance_source_input_manifests_delete",
+    "trigger:assurance_source_input_manifests_insert",
+    "trigger:assurance_source_input_manifests_update",
+    "trigger:assurance_source_justification_sets_delete",
+    "trigger:assurance_source_justification_sets_insert",
+    "trigger:assurance_source_justification_sets_update",
+    "trigger:assurance_source_method_child_occurrences_delete",
+    "trigger:assurance_source_method_child_occurrences_insert",
+    "trigger:assurance_source_method_child_occurrences_update",
+    "trigger:assurance_source_method_instances_delete",
+    "trigger:assurance_source_method_instances_insert",
+    "trigger:assurance_source_method_instances_update",
+    "trigger:assurance_source_mission_policies_delete",
+    "trigger:assurance_source_mission_policies_insert",
+    "trigger:assurance_source_mission_policies_update",
+    "trigger:assurance_source_obligation_relations_delete",
+    "trigger:assurance_source_obligation_relations_insert",
+    "trigger:assurance_source_obligation_relations_update",
+    "trigger:assurance_source_obligations_delete",
+    "trigger:assurance_source_obligations_insert",
+    "trigger:assurance_source_obligations_update",
+    "trigger:assurance_source_observations_delete",
+    "trigger:assurance_source_observations_insert",
+    "trigger:assurance_source_observations_update",
+    "trigger:assurance_source_operation_acceptance_scopes_delete",
+    "trigger:assurance_source_operation_acceptance_scopes_insert",
+    "trigger:assurance_source_operation_acceptance_scopes_update",
+    "trigger:assurance_source_operation_bindings_delete",
+    "trigger:assurance_source_operation_bindings_insert",
+    "trigger:assurance_source_operation_bindings_update",
+    "trigger:assurance_source_operation_completion_scopes_delete",
+    "trigger:assurance_source_operation_completion_scopes_insert",
+    "trigger:assurance_source_operation_completion_scopes_update",
+    "trigger:assurance_source_operation_completion_specs_delete",
+    "trigger:assurance_source_operation_completion_specs_insert",
+    "trigger:assurance_source_operation_completion_specs_update",
+    "trigger:assurance_source_operation_identities_delete",
+    "trigger:assurance_source_operation_identities_insert",
+    "trigger:assurance_source_operation_identities_update",
+    "trigger:assurance_source_operation_intent_bindings_delete",
+    "trigger:assurance_source_operation_intent_bindings_insert",
+    "trigger:assurance_source_operation_intent_bindings_update",
+    "trigger:assurance_source_operation_outcome_review_bindings_delete",
+    "trigger:assurance_source_operation_outcome_review_bindings_insert",
+    "trigger:assurance_source_operation_outcome_review_bindings_update",
+    "trigger:assurance_source_operation_payload_objects_delete",
+    "trigger:assurance_source_operation_payload_objects_insert",
+    "trigger:assurance_source_operation_payload_objects_update",
+    "trigger:assurance_source_order_constraints_delete",
+    "trigger:assurance_source_order_constraints_insert",
+    "trigger:assurance_source_order_constraints_update",
+    "trigger:assurance_source_plan_memberships_delete",
+    "trigger:assurance_source_plan_memberships_insert",
+    "trigger:assurance_source_plan_memberships_update",
+    "trigger:assurance_source_plan_revisions_delete",
+    "trigger:assurance_source_plan_revisions_insert",
+    "trigger:assurance_source_plan_revisions_update",
+    "trigger:assurance_source_planning_lane_grants_delete",
+    "trigger:assurance_source_planning_lane_grants_insert",
+    "trigger:assurance_source_planning_lane_grants_update",
+    "trigger:assurance_source_planning_operation_action_links_delete",
+    "trigger:assurance_source_planning_operation_action_links_insert",
+    "trigger:assurance_source_planning_operation_action_links_update",
+    "trigger:assurance_source_planning_request_authority_bindings_delete",
+    "trigger:assurance_source_planning_request_authority_bindings_insert",
+    "trigger:assurance_source_planning_request_authority_bindings_update",
+    "trigger:assurance_source_requirements_revisions_delete",
+    "trigger:assurance_source_requirements_revisions_insert",
+    "trigger:assurance_source_requirements_revisions_update",
+    "trigger:assurance_source_results_delete",
+    "trigger:assurance_source_results_insert",
+    "trigger:assurance_source_results_update",
+    "trigger:assurance_source_review_packages_delete",
+    "trigger:assurance_source_review_packages_insert",
+    "trigger:assurance_source_review_packages_update",
+    "trigger:assurance_source_review_records_delete",
+    "trigger:assurance_source_review_records_insert",
+    "trigger:assurance_source_review_records_update",
+    "trigger:assurance_source_sources_delete",
+    "trigger:assurance_source_sources_insert",
+    "trigger:assurance_source_sources_update",
+    "trigger:assurance_source_support_members_delete",
+    "trigger:assurance_source_support_members_insert",
+    "trigger:assurance_source_support_members_update",
+    "trigger:assurance_source_task_semantics_delete",
+    "trigger:assurance_source_task_semantics_insert",
+    "trigger:assurance_source_task_semantics_update",
+    "trigger:assurance_source_validity_epochs_delete",
+    "trigger:assurance_source_validity_epochs_insert",
+    "trigger:assurance_source_validity_epochs_update",
+    "trigger:assurance_source_verifications_delete",
+    "trigger:assurance_source_verifications_insert",
+    "trigger:assurance_source_verifications_update"
+   ],
+   "events": [
+    "AssuranceEvidenceChanged",
+    "AssuranceProfileActivated",
+    "MissionCreated"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.bump_epoch: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件；即便调用也只在启用执行图时发 TaskGraphSourceChanged"
+   ]
+  },
+  "validity_witnesses": {
+   "class": "business",
+   "fields": [
+    "witness_id",
+    "mission_id",
+    "consumer_kind",
+    "consumer_id",
+    "purpose",
+    "scope_id",
+    "scope_epoch",
+    "support_revision",
+    "truth",
+    "freshness",
+    "availability",
+    "decision",
+    "as_of_ms",
+    "not_after_ms",
+    "witness_json",
+    "created_at",
+    "subject_digest"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_validity_witness"
+   ],
+   "events": [
+    "AcceptanceCommitted",
+    "OperationOutcomeAccepted",
+    "TaskGraphSourceChanged",
+    "VerificationPassed"
+   ],
+   "gaps": [
+    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_validity_witness: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件；在 CompositionAcceptanceAssembly.resolve_one、RootReviewCoordinator.cut、HierarchicalDispatch._record_witness 路径上同事务没有别的事件"
+   ]
+  },
+  "verifications": {
+   "class": "business",
+   "fields": [
+    "verification_id",
+    "result_id",
+    "attempt_id",
+    "layer",
+    "status",
+    "detail_json",
+    "created_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.upsert_verification"
+   ],
+   "events": [
+    "VerificationLayerRecorded"
+   ]
+  },
+  "workspaces": {
+   "class": "business",
+   "fields": [
+    "workspace_id",
+    "kind",
+    "mission_id",
+    "attempt_id",
+    "base_snapshot",
+    "state",
+    "json",
+    "created_at",
+    "updated_at"
+   ],
+   "writers": [
+    "agent_orchestrator/storage/store.py:Store.register_workspace",
+    "agent_orchestrator/storage/store.py:Store.set_workspace_state"
+   ],
+   "events": [],
+   "gaps": [
+    "agent_orchestrator/storage/store.py:Store.register_workspace: 不发事件（Orchestrator._bind_workspace / _register_copy）",
+    "agent_orchestrator/storage/store.py:Store.set_workspace_state: 不发事件（Orchestrator._bind_workspace / cleanup_workspaces）"
+   ]
+  }
+ }
+}

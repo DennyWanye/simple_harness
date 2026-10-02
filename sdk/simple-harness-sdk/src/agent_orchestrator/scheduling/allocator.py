@@ -7,9 +7,12 @@ Only occurrences the readiness gate admitted compete for a slot.  The candidate 
 is :func:`evaluate_frontier_v2`: records :func:`~..graph.eligibility.admit_for_dispatch`
 built, never the READY string, and a ``form=compound`` occurrence is intercepted by
 its **form** with ``NEEDS_REFINEMENT`` (§18.5 hard constraint 4).  The ordering is
-§29.3's starting formula with its weights verbatim:
+§29.3's starting formula with its weights verbatim, minus the ``unlock_value``
+term (0.20 in §29.3): it counted a task's legacy ``dependency_ids`` dependents,
+which are always empty under the execution graph, so the term was a constant 0
+and was removed on 2026-10-03 (HTN 补齐 阶段 A):
 
-      priority = 0.30·mission_importance + 0.20·unlock_value + 0.15·progress_signal
+      priority = 0.30·mission_importance + 0.15·progress_signal
                + 0.15·uncertainty + 0.10·waiting_age − 0.05·estimated_cost
                − 0.05·duplication_score
 
@@ -44,7 +47,6 @@ from .backpressure import BackpressureState
 ALLOCATOR_VERSION = "allocator-v1"
 WEIGHTS: Mapping[str, float] = {
     "mission_importance": 0.30,
-    "unlock_value": 0.20,
     "progress_signal": 0.15,
     "uncertainty": 0.15,
     "waiting_age": 0.10,
@@ -90,30 +92,6 @@ class TaskScore:
         }
 
 
-def _dependents(tasks: Sequence[Task]) -> dict[str, set[str]]:
-    """Transitive dependents per task (unlock value)."""
-
-    direct: dict[str, set[str]] = {t.id: set() for t in tasks}
-    for task in tasks:
-        for dep in task.dependency_ids:
-            direct.setdefault(dep, set()).add(task.id)
-    closure: dict[str, set[str]] = {}
-
-    def visit(tid: str) -> set[str]:
-        if tid in closure:
-            return closure[tid]
-        found: set[str] = set()
-        for child in direct.get(tid, ()):
-            found.add(child)
-            found |= visit(child)
-        closure[tid] = found
-        return found
-
-    for task in tasks:
-        visit(task.id)
-    return closure
-
-
 def score_tasks(
     tasks: Sequence[Task],
     attempts: Sequence[Attempt],
@@ -129,7 +107,6 @@ def score_tasks(
     if not live:
         return {}
     max_priority = max((t.priority for t in live), default=1.0) or 1.0
-    dependents = _dependents(live)
     total = max(1, len(live))
     attempts_by_task: dict[str, list[Attempt]] = {}
     for attempt in attempts:
@@ -152,7 +129,6 @@ def score_tasks(
             waiting = min(1.0, max(0.0, now - task.ready_at) / aging_window_seconds)
         parts = {
             "mission_importance": max(0.0, min(1.0, task.priority / max_priority)),
-            "unlock_value": len(dependents.get(task.id, ())) / total,
             "progress_signal": 0.5 if tries == 0 else max(0.0, 1.0 - failures / tries),
             "uncertainty": 0.5**tries,
             "waiting_age": waiting,

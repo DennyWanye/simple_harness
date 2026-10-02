@@ -13,9 +13,7 @@ as history that leaves the counters where they were.
 Recursion fuel follows the same rule (§6.4 v1.2): it is counted per obligation,
 not per ``goal signature + parameters``, and running out is ``BOUND_REACHED`` —
 a statement about this deployment's bounds, never ``UNSOLVABLE``, which would be
-a claim about the world.  The generic ``achieve_outcome`` capability may not take
-over once fuel is gone; :func:`achieve_outcome_admission` states that as a pure
-rule so no caller has to remember it.
+a claim about the world.
 """
 
 from __future__ import annotations
@@ -70,20 +68,6 @@ class ShapeChange(StrEnum):
     AGENT_REASSIGNED = "agent_reassigned"
     PARAMETERS_REBOUND = "parameters_rebound"
     SUCCESSOR_TASK = "successor_task"
-
-
-class AchieveOutcomeAdmission(StrEnum):
-    """Why the generic ``achieve_outcome`` capability may or may not be used here."""
-
-    ADMISSIBLE = "ADMISSIBLE"
-    FUEL_EXHAUSTED_NO_ESCAPE = "FUEL_EXHAUSTED_NO_ESCAPE"
-    NOT_EXPLICITLY_SELECTED = "NOT_EXPLICITLY_SELECTED"
-    OBLIGATION_NOT_ACTIVE = "OBLIGATION_NOT_ACTIVE"
-
-
-class Selector(StrEnum):
-    PLANNER_EXPLICIT = "planner_explicit"
-    AUTOMATIC_FALLBACK = "automatic_fallback"
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,45 +355,6 @@ class FuelDecision:
         return self.status is FuelStatus.GRANTED
 
 
-@dataclass(frozen=True, slots=True)
-class AchieveOutcomeDecision:
-    admission: AchieveOutcomeAdmission
-    reason: str
-
-    @property
-    def allowed(self) -> bool:
-        return self.admission is AchieveOutcomeAdmission.ADMISSIBLE
-
-
-def achieve_outcome_admission(
-    account: ObligationAccountView, *, selected_by: Selector
-) -> AchieveOutcomeDecision:
-    """§6.4: the generic atomic capability is a planner choice, not an escape hatch.
-
-    It is admissible only while fuel remains *and* only when a planner picked it
-    deliberately.  Once the obligation has reached ``BOUND_REACHED`` it cannot
-    quietly absorb the undecomposed compound goal, because that would convert a
-    reported bound into an unverified claim of completion.
-    """
-
-    if account.lifecycle is not ObligationLifecycle.UNSATISFIED:
-        return AchieveOutcomeDecision(
-            AchieveOutcomeAdmission.OBLIGATION_NOT_ACTIVE,
-            "the obligation is no longer open",
-        )
-    if account.remaining_fuel <= 0:
-        return AchieveOutcomeDecision(
-            AchieveOutcomeAdmission.FUEL_EXHAUSTED_NO_ESCAPE,
-            "recursion fuel is exhausted; report BOUND_REACHED instead of taking over",
-        )
-    if selected_by is not Selector.PLANNER_EXPLICIT:
-        return AchieveOutcomeDecision(
-            AchieveOutcomeAdmission.NOT_EXPLICITLY_SELECTED,
-            "achieve_outcome must be chosen explicitly by the planner",
-        )
-    return AchieveOutcomeDecision(AchieveOutcomeAdmission.ADMISSIBLE, "explicitly selected")
-
-
 class _Account:
     """Mutable ledger row.  Only :class:`ObligationLedger` touches it."""
 
@@ -677,8 +622,8 @@ class ObligationLedger:
         if target_lifecycle is ObligationLifecycle.SATISFIED and reference is None:
             raise ContractError("a SATISFIED obligation needs a resolution_ref")
         # Only now is anything written.  A refused transition must not leave the
-        # duty parked in the state it was refused for — that would silently take
-        # it out of achieve_outcome_admission's "still open" branch.
+        # duty parked in the state it was refused for — every later check would
+        # read it as closed while no resolution was ever recorded.
         account.lifecycle = target_lifecycle
         if reference is not None:
             account.resolution_ref = reference
@@ -796,8 +741,6 @@ def obligation_refs(value: object, name: str) -> tuple[ObligationId, ...]:
 
 
 __all__ = (
-    "AchieveOutcomeAdmission",
-    "AchieveOutcomeDecision",
     "BoundReachedReport",
     "ExpansionRecord",
     "FuelDecision",
@@ -807,9 +750,7 @@ __all__ = (
     "ObligationLedger",
     "ObligationLifecycle",
     "SatisfactionPolicy",
-    "Selector",
     "ShapeChange",
-    "achieve_outcome_admission",
     "funding_owner_conflicts",
     "obligation_refs",
 )

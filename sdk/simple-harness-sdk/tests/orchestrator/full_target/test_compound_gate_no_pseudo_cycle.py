@@ -32,6 +32,7 @@ from htn_world import (  # noqa: E402
     BUDGET,
     Env,
     atom,
+    ground_draft,
     ledger_for,
     method,
     out,
@@ -77,11 +78,6 @@ from agent_orchestrator.planning.htn.compiler import (  # noqa: E402
     unbound_required_ports,
 )
 from agent_orchestrator.planning.htn.grounding import ground_method  # noqa: E402
-from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
-    FrontierItem,
-    RefinementOutcome,
-    refine,
-)
 from agent_orchestrator.planning.htn.validation import (  # noqa: E402
     DeltaProblemKind,
     validate_delta,
@@ -1006,49 +1002,34 @@ def test_opening_the_duty_moves_fuel_out_of_the_parent() -> None:
 
 
 def test_a_newly_opened_sub_goal_can_be_refined() -> None:
-    """The whole point of CR#6: the child is workable the moment it is opened."""
+    """The whole point of CR#6: the child is workable the moment it is opened.
+
+    The child's method is named (as the planner would name it) and goes through the
+    production draft path — assess, ground, compile — against the network the
+    parent's increment produced.
+    """
 
     env, binding, draft, bundle = side_goal_bundle()
-    env.admit(aux_method())
+    inner = aux_method()
+    env.admit(inner)
     ledger = ledger_for(binding, fuel=3, mission=env.mission)
     apply_obligation_openings(ledger, bundle.delta)
     aux = next(item for item in draft.child_bindings if item.slot_key == "aux")
-    frontier = (FrontierItem.of(bundle.network.occurrence(aux.occurrence_id)),)
-    report = refine(
-        frontier,
-        network=bundle.network,
-        registry=env.registry,
+    assert aux.obligation_id in ledger.obligation_ids()
+    child_binding = bundle.network.binding_for_occurrence(aux.occurrence_id)
+    child_draft = ground_draft(
+        env, child_binding, inner, bundle.network, occurrence_id=aux.occurrence_id
+    )
+    child = compile_refinement_bundle(
+        child_draft,
+        bundle.network,
+        method=inner,
         catalog=env.catalog,
         schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.outcomes == (RefinementOutcome.REFINED,)
-
-
-def test_refining_a_duty_nobody_opened_says_so_instead_of_crashing() -> None:
-    env, binding, draft, bundle = side_goal_bundle()
-    env.admit(aux_method())
-    ledger = ledger_for(binding, fuel=3, mission=env.mission)
-    aux = next(item for item in draft.child_bindings if item.slot_key == "aux")
-    frontier = (FrontierItem.of(bundle.network.occurrence(aux.occurrence_id)),)
-    report = refine(
-        frontier,
-        network=bundle.network,
         registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
     )
-    assert report.outcomes == (RefinementOutcome.OBLIGATION_NOT_OPENED,)
-    assert "ObligationOpening" in report.decisions[0].reason
+    assert child.adopted_instance_id == child_draft.instance_id
+    assert child.network.adopted_instance_for(aux.occurrence_id) is not None
 
 
 def test_an_independently_authorized_slot_does_not_gate_the_parent() -> None:

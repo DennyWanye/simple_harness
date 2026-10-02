@@ -17,11 +17,10 @@ one structured verdict:
     physical capacity.  **Not computed here**: this module never reads a budget,
     a lease or a resource pool (plan §23, P2.1c: "不接 allocator；不调账本").
 
-:func:`evaluate_readiness` returns one :class:`ReadinessReason` out of twelve, and
-the twelve never collapse into "the task failed".  TG §8.2 is explicit that a
-missing input, an unreachable observation service and an external operation whose
-effect is UNKNOWN are three different answers needing three different responses —
-wait for a producer, retry an observation, reconcile an ``OperationId``.
+:func:`evaluate_readiness` returns one :class:`ReadinessReason` out of eleven, and
+the eleven never collapse into "the task failed".  TG §8.2 is explicit that a
+missing input and an unreachable observation service are different answers
+needing different responses — wait for a producer, retry an observation.
 
 Two refusals in particular are load-bearing:
 
@@ -89,9 +88,6 @@ from ..contracts.obligations import ObligationAccountView, ObligationLifecycle
 from ..contracts.resolution import (
     ApprovalDecision,
     ApprovalState,
-    EffectOutcome,
-    OperationCurrentState,
-    OperationEnvelope,
 )
 from ..contracts.semantic_base import (
     TypedRefKind,
@@ -112,9 +108,9 @@ class ReadinessReason(StrEnum):
     """TG §8.2 / implementation annex §6: one value per class of answer.
 
     They are deliberately not ranked by severity and never merged.  "The producer
-    has not finished" (``WAITING_DATA``), "we could not ask" (``OBSERVER_UNAVAILABLE``)
-    and "we asked and the world is in an unknown state" (``WAITING_OPERATION_UNKNOWN``)
-    lead to three different operator actions, so they stay three values.
+    has not finished" (``WAITING_DATA``) and "we could not ask"
+    (``OBSERVER_UNAVAILABLE``) lead to different operator actions, so they stay
+    separate values.
     """
 
     NOT_SELECTED = "NOT_SELECTED"
@@ -125,10 +121,6 @@ class ReadinessReason(StrEnum):
     WAITING_APPROVAL = "WAITING_APPROVAL"
     STALE_BINDING = "STALE_BINDING"
     READY_CANDIDATE = "READY_CANDIDATE"
-    #: An external effect that is not settled yet and conflicts with this work.
-    #: TG §11.5: keep reconciling the original ``OperationId`` and block the
-    #: conflicting successors — do not re-send and do not call it a failure.
-    WAITING_OPERATION_UNKNOWN = "WAITING_OPERATION_UNKNOWN"
     #: The observation service could not answer.  Not being able to read a fact is
     #: not the fact being false (AER §8.2 dimension 4).
     OBSERVER_UNAVAILABLE = "OBSERVER_UNAVAILABLE"
@@ -159,16 +151,6 @@ EXECUTION_REASONS: frozenset[ReadinessReason] = frozenset({ReadinessReason.READY
 #: Empty by construction, and asserted empty by the suite: no readiness verdict is
 #: by itself an admission (plan §24.1 decision 6).
 ADMITTED_DISPATCH_REASONS: frozenset[ReadinessReason] = frozenset()
-
-
-#: An effect nobody can yet call done or not done, so new work that conflicts with
-#: it has to wait.  ``NOT_HANDED_OFF`` is absent on purpose: nothing left the
-#: orchestrator, so there is no real-world effect to conflict with.  This is a
-#: narrower question than :attr:`OperationCurrentState.settled`, which also asks
-#: whether the *money* has stopped moving.
-UNSETTLED_EFFECTS: frozenset[EffectOutcome] = frozenset(
-    {EffectOutcome.PENDING, EffectOutcome.PARTIAL, EffectOutcome.UNKNOWN}
-)
 
 
 class OccurrenceOutcome(StrEnum):
@@ -341,46 +323,8 @@ class ActivePlanView:
 
 
 @dataclass(frozen=True, slots=True)
-class PendingOperation:
-    """One real-world operation whose effect readiness has to take into account.
-
-    The frozen semantics and the mutable control record stay apart exactly as
-    AER §12.2 requires: :class:`OperationEnvelope` says *what* was requested and
-    :class:`OperationCurrentState` says where it has got to.
-    """
-
-    envelope: OperationEnvelope
-    state: OperationCurrentState
-    #: The occurrences this operation's unsettled effect conflicts with.  Empty
-    #: means "nothing here waits on it"; the conflict analysis itself belongs to
-    #: the operation layer, not to a readiness gate.
-    conflicts_with: frozenset[OccurrenceId] = frozenset()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.envelope, OperationEnvelope):
-            raise ContractError("pending_operation.envelope must be an OperationEnvelope")
-        if not isinstance(self.state, OperationCurrentState):
-            raise ContractError("pending_operation.state must be an OperationCurrentState")
-        if self.state.operation_id != self.envelope.operation_id:
-            raise ContractError(
-                "pending_operation.state describes another operation than its envelope"
-            )
-        object.__setattr__(self, "conflicts_with", frozenset(self.conflicts_with))
-
-    @property
-    def effect_outcome(self) -> EffectOutcome:
-        return self.state.effect_outcome
-
-    @property
-    def effect_settled(self) -> bool:
-        """Whether the *effect* has stopped moving.  Says nothing about the money."""
-
-        return self.effect_outcome not in UNSETTLED_EFFECTS
-
-
-@dataclass(frozen=True, slots=True)
 class EvidenceView:
-    """The facts side of the judgement: witnesses, observability, live effects.
+    """The facts side of the judgement: witnesses, observability, support sets.
 
     ``witnesses`` is keyed by ``PreconditionRef.condition_digest`` so a witness
     cannot be attached to a precondition it was not computed for.
@@ -390,7 +334,6 @@ class EvidenceView:
     #: False when the observation service could not be reached at all.  It is a
     #: separate answer from "the fact is unknown" (AER §8.2).
     observer_available: bool = True
-    pending_operations: tuple[PendingOperation, ...] = ()
     support_sets: tuple[SupportSetRead, ...] = ()
     #: TG §11.2: "there is no conflicting writer" is itself a read, over a range
     #: that has a version.  Recorded in the report's read-set as an ``AbsenceRead``.
@@ -407,7 +350,6 @@ class EvidenceView:
             "operation_range_revision",
             index(self.operation_range_revision, "evidence.operation_range_revision"),
         )
-        object.__setattr__(self, "pending_operations", tuple(self.pending_operations))
         object.__setattr__(self, "support_sets", tuple(self.support_sets))
 
 
@@ -1017,26 +959,6 @@ def _stale_gate(context: _Context) -> _GateResult:
     return None
 
 
-def _operation_gate(context: _Context) -> _GateResult:
-    """TG §11.5: block the successors of an unsettled effect; never re-send blindly."""
-
-    problems = [
-        ReadinessDetail(
-            code=f"operation_{operation.effect_outcome!s}",
-            subject=str(operation.envelope.operation_id),
-            message=(
-                "an external effect that is not settled conflicts with this work; keep "
-                "reconciling the original OperationId (TG §11.5)"
-            ),
-        )
-        for operation in context.evidence.pending_operations
-        if not operation.effect_settled and context.view.occurrence_id in operation.conflicts_with
-    ]
-    if problems:
-        return (ReadinessReason.WAITING_OPERATION_UNKNOWN, tuple(problems))
-    return None
-
-
 # --------------------------------------------------------------------------------------
 # Gate order.  Declared once, and the precedence list is derived from it.
 # --------------------------------------------------------------------------------------
@@ -1053,7 +975,6 @@ _GATE_SEQUENCE: tuple[tuple[str, tuple[ReadinessReason, ...]], ...] = (
     ("_evidence_gate", _EVIDENCE_PRECEDENCE),
     ("_approval_gate", (ReadinessReason.WAITING_APPROVAL,)),
     ("_stale_gate", (ReadinessReason.STALE_BINDING,)),
-    ("_operation_gate", (ReadinessReason.WAITING_OPERATION_UNKNOWN,)),
 )
 
 
@@ -1746,7 +1667,6 @@ __all__ = (
     "EXECUTION_REASONS",
     "PLANNING_REASONS",
     "READINESS_PRECEDENCE",
-    "UNSETTLED_EFFECTS",
     "ActivePlanView",
     "AdmittedDispatch",
     "DispatchCandidacy",
@@ -1757,7 +1677,6 @@ __all__ = (
     "LegacyReadyVerdict",
     "NotEligible",
     "OccurrenceOutcome",
-    "PendingOperation",
     "PlanningFrontier",
     "ReadinessDetail",
     "ReadinessReason",

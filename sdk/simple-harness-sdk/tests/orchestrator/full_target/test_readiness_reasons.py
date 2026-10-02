@@ -9,9 +9,9 @@ contracts, a readiness report is computed from it, and the report is inspected.
 
 The four facts this suite exists to pin down are
 
-* each refusal keeps its own reason — a missing input, an unreachable observation
-  service and an external operation whose effect is UNKNOWN are three different
-  answers and never collapse into "the task failed" (TG §8.2);
+* each refusal keeps its own reason — a missing input and an unreachable
+  observation service are different answers and never collapse into "the task
+  failed" (TG §8.2);
 * a ``form=compound`` task is intercepted by its *form*, whatever the legacy
   ``TaskStatus`` string says, so ``READY`` can never walk a compound into the
   Worker path (plan §18.5 hard constraint 4);
@@ -94,11 +94,6 @@ from agent_orchestrator.contracts.obligations import ObligationAccountView, Obli
 from agent_orchestrator.contracts.resolution import (
     ApprovalDecision,
     ApprovalState,
-    EffectOutcome,
-    OperationControl,
-    OperationCurrentState,
-    OperationEnvelope,
-    OperationKind,
 )
 from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef
 from agent_orchestrator.contracts.state_machines import TaskStatus
@@ -116,7 +111,6 @@ from agent_orchestrator.graph.eligibility import (
     ExecutionFrontier,
     NotEligible,
     OccurrenceOutcome,
-    PendingOperation,
     PlanningFrontier,
     ReadinessReason,
     ReadinessReport,
@@ -451,58 +445,6 @@ def input_problem(kind: ResolutionProblemKind) -> ResolutionResult:
     return ResolutionResult(
         manifest=None,
         problems=(ResolutionProblem(kind=kind, detail=str(kind), input_port="in"),),
-    )
-
-
-def envelope(operation_id: str = "op-1") -> OperationEnvelope:
-    ref = TypedRef(kind=TypedRefKind.ARTIFACT, id="params", revision=1, content_hash=HASH_A)
-    return OperationEnvelope(
-        operation_id=operation_id,  # type: ignore[arg-type]
-        operation_occurrence_id="op-occ-1",  # type: ignore[arg-type]
-        mission_id=str(MISSION),
-        obligation_id=str(O_B),
-        scope_id=SCOPE,
-        connector_id="connector-x",
-        connector_version="v1",
-        operation_name="send-report",
-        operation_kind=OperationKind.STATE_WRITE,
-        target_ref="target-1",
-        expected_target_version=None,
-        parameters_artifact_ref=ref,
-        request_hash=HASH_B,
-        requirements_revision=11,
-        review_ref=TypedRef(kind=TypedRefKind.REVIEW, id="rev-1", revision=1, content_hash=HASH_A),
-        accepted_input_refs=(),
-        effect_contract_ref=TypedRef(
-            kind=TypedRefKind.OPERATION, id="eff-1", revision=1, content_hash=HASH_A
-        ),
-    )
-
-
-def operation_state(outcome: EffectOutcome, operation_id: str = "op-1") -> OperationCurrentState:
-    """An operation that has been authorised, unless it was never handed off."""
-
-    control = (
-        OperationControl.PROPOSED
-        if outcome is EffectOutcome.NOT_HANDED_OFF
-        else OperationControl.DISPATCHING
-    )
-    return OperationCurrentState(
-        operation_id=operation_id,  # type: ignore[arg-type]
-        authorization_state=control,
-        authorization_epoch=1,
-        dispatch_generation=1,
-        effect_outcome=outcome,
-    )
-
-
-def operations(outcome: EffectOutcome, *, conflicts: bool = True) -> tuple[PendingOperation, ...]:
-    return (
-        PendingOperation(
-            envelope=envelope(),
-            state=operation_state(outcome),
-            conflicts_with=frozenset({OCC_B}) if conflicts else frozenset({OCC_A}),
-        ),
     )
 
 
@@ -1125,64 +1067,7 @@ def test_a_plan_that_records_no_generation_for_the_occurrence_does_not_invent_st
 
 
 # --------------------------------------------------------------------------------------
-# 9. WAITING_OPERATION_UNKNOWN: an unsettled external effect is not a failure (TG §11.5)
-# --------------------------------------------------------------------------------------
-
-
-def test_a_conflicting_unknown_operation_blocks_the_successor() -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(EffectOutcome.UNKNOWN)))
-    assert report.reason is ReadinessReason.WAITING_OPERATION_UNKNOWN
-    assert "operation_UNKNOWN" in report.detail_codes
-
-
-def test_a_conflicting_pending_operation_blocks_the_successor() -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(EffectOutcome.PENDING)))
-    assert report.reason is ReadinessReason.WAITING_OPERATION_UNKNOWN
-    assert "operation_PENDING" in report.detail_codes
-
-
-def test_a_conflicting_partial_operation_blocks_the_successor() -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(EffectOutcome.PARTIAL)))
-    assert report.reason is ReadinessReason.WAITING_OPERATION_UNKNOWN
-
-
-def test_an_unknown_operation_that_does_not_conflict_does_not_block() -> None:
-    report = report_for(
-        evidence=evidence_of(pending_operations=operations(EffectOutcome.UNKNOWN, conflicts=False))
-    )
-    assert report.reason is ReadinessReason.READY_CANDIDATE
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [EffectOutcome.APPLIED, EffectOutcome.NOT_APPLIED, EffectOutcome.NOT_HANDED_OFF],
-)
-def test_a_settled_operation_does_not_block_its_successor(outcome: EffectOutcome) -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(outcome)))
-    assert report.reason is ReadinessReason.READY_CANDIDATE
-
-
-def test_an_unknown_operation_is_not_reported_as_a_missing_input() -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(EffectOutcome.UNKNOWN)))
-    assert report.reason is not ReadinessReason.WAITING_DATA
-    assert report.reason is not ReadinessReason.OBSERVER_UNAVAILABLE
-
-
-def test_the_blocking_operation_is_named_in_the_details() -> None:
-    report = report_for(evidence=evidence_of(pending_operations=operations(EffectOutcome.UNKNOWN)))
-    assert any(detail.subject == "op-1" for detail in report.details)
-
-
-def test_a_control_record_for_another_operation_is_refused_by_the_contract() -> None:
-    with pytest.raises(ContractError):
-        PendingOperation(
-            envelope=envelope("op-1"),
-            state=operation_state(EffectOutcome.UNKNOWN, "op-2"),
-        )
-
-
-# --------------------------------------------------------------------------------------
-# 10. READY_CANDIDATE, reason independence and precedence
+# 9. READY_CANDIDATE, reason independence and precedence
 # --------------------------------------------------------------------------------------
 
 
@@ -1195,7 +1080,7 @@ def test_the_happy_path_is_a_ready_candidate_with_no_details() -> None:
 
 def test_every_reason_is_its_own_value_and_none_are_merged() -> None:
     assert len({str(reason) for reason in ReadinessReason}) == len(list(ReadinessReason))
-    assert len(list(ReadinessReason)) == 12
+    assert len(list(ReadinessReason)) == 11
 
 
 def test_the_precedence_list_covers_every_reason_exactly_once() -> None:
@@ -1268,7 +1153,7 @@ def test_a_refused_report_still_carries_a_read_set() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# 11. EligiblePrimitiveTask: only the gate builds it, and it is not derivable from one
+# 10. EligiblePrimitiveTask: only the gate builds it, and it is not derivable from one
 # --------------------------------------------------------------------------------------
 
 
@@ -1423,7 +1308,7 @@ def test_the_admitted_record_says_it_is_not_a_security_token() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# 12. stale_after: every read-set lane invalidates a cached readiness
+# 11. stale_after: every read-set lane invalidates a cached readiness
 # --------------------------------------------------------------------------------------
 
 
@@ -1597,7 +1482,7 @@ def test_a_wider_current_observation_does_not_by_itself_invalidate() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# 13. The three frontiers (TG §8.1 / plan §24.1 decision 6)
+# 12. The three frontiers (TG §8.1 / plan §24.1 decision 6)
 # --------------------------------------------------------------------------------------
 
 
@@ -1703,7 +1588,7 @@ def test_the_planning_reasons_and_the_ready_candidate_reason_do_not_overlap() ->
 
 
 # --------------------------------------------------------------------------------------
-# 14. Purity, isolation and the legacy READY helper
+# 13. Purity, isolation and the legacy READY helper
 # --------------------------------------------------------------------------------------
 
 
@@ -1768,7 +1653,7 @@ def test_a_task_view_rejects_an_approval_that_is_not_the_contract_type() -> None
 
 
 # --------------------------------------------------------------------------------------
-# 15. Mutation self-proofs: each gate is load-bearing
+# 14. Mutation self-proofs: each gate is load-bearing
 # --------------------------------------------------------------------------------------
 
 
@@ -1836,15 +1721,6 @@ def test_mutant_stale_gate_lets_an_expired_generation_through(
     assert report_for(plan=plan).reason is ReadinessReason.STALE_BINDING
     monkeypatch.setattr(eligibility_module, "_stale_gate", _blind)
     assert report_for(plan=plan).reason is ReadinessReason.READY_CANDIDATE
-
-
-def test_mutant_operation_gate_lets_an_unknown_effect_through(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    evidence = evidence_of(pending_operations=operations(EffectOutcome.UNKNOWN))
-    assert report_for(evidence=evidence).reason is ReadinessReason.WAITING_OPERATION_UNKNOWN
-    monkeypatch.setattr(eligibility_module, "_operation_gate", _blind)
-    assert report_for(evidence=evidence).reason is ReadinessReason.READY_CANDIDATE
 
 
 def test_mutant_integrity_gate_lets_a_missing_binding_through(

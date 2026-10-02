@@ -16,8 +16,8 @@ real, and the last two sections are the scenarios that could not be written befo
 §4  the evidence round — an UNKNOWN precondition becomes a read-only occurrence
     that the observer index executes, and an observer that is down is
     ``OBSERVER_UNAVAILABLE`` with nothing written.
-§5  OR methods: a precondition the observer denies moves the choice to the other
-    branch.
+§5  OR methods: a precondition the observer denies refutes that branch and leaves
+    the other one as the only method that can be grounded.
 §6  a shared read-only subgoal is executed once.
 §7  the context the Planner writes a method from — typed, no authority vocabulary.
 §8  mutation self-check.
@@ -424,14 +424,15 @@ def test_an_observer_that_is_down_writes_nothing(tmp_path, worktree) -> None:
 # nothing executed them, so an UNKNOWN precondition stayed UNKNOWN and the OR choice
 # could only be moved by a test asserting the evidence by fiat (``Env.say``).  Here
 # the evidence arrives the way a deployment's does: an observer reads, the pipeline
-# records, and the next refinement round reads the store.
+# records, and the next applicability check reads the store.  Which alternative to
+# take stays the planner's judgement; what the store decides is which alternative
+# *can* be grounded.
 
 
 from htn_world import (  # noqa: E402
-    BUDGET,
     Env,
     atom,
-    ledger_for,
+    ground_draft,
     method,
     out,
     param,
@@ -446,11 +447,14 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     TaskForm,
 )
 from agent_orchestrator.planning.htn import evidence_round  # noqa: E402
+from agent_orchestrator.planning.htn.applicability import (  # noqa: E402
+    ApplicabilityStatus,
+    assess_method,
+)
 from agent_orchestrator.planning.htn.observers import denial, observed  # noqa: E402
 from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
-    RefinementOutcome,
-    planning_frontier,
-    refine,
+    evidence_requests,
+    unknown_predicates,
 )
 
 PRIMARY = "demo.primary-ready"
@@ -569,23 +573,65 @@ class DemoWorld:
     binding: Any
     store: Any
 
-    def refine(self):
+    def methods(self):
+        return {
+            contract.method_id: contract
+            for contract in (
+                self.env.registry.definition(reference)
+                for reference in self.env.registry.method_refs()
+            )
+            if contract is not None
+        }
+
+    def evidence(self):
+        """What the evidence round would ask about the root goal.
+
+        The same walk ``HierarchicalDispatch.run_evidence_round`` makes: every
+        method offered for the open compound goal, its UNKNOWN applicability atoms,
+        and the read-only occurrences that could answer them.
+        """
+
         network = root_network(self.env, self.binding)
-        return refine(
-            planning_frontier(network),
-            network=network,
-            registry=self.env.registry,
-            catalog=self.env.catalog,
-            schemas=self.env.schemas,
-            predicates=self.env.predicates,
+        spec = network.occurrence(network.root_occurrence_ids[0])
+        found: dict[str, Any] = {}
+        for contract in self.methods().values():
+            unknowns = unknown_predicates(
+                contract.applicable_when,
+                parameters=self.binding.typed_parameters,
+                predicates=self.env.predicates,
+                snapshot=self.world.snapshot(),
+            )
+            for request in evidence_requests(
+                unknowns,
+                for_occurrence=spec.occurrence_id,
+                obligation_id=spec.obligation_id,
+                catalog=self.env.catalog,
+                semantic_scope=self.binding.semantic_scope,
+                contract_revision=int(self.binding.contract_revision),
+            ):
+                found.setdefault(request.proposition_key, request)
+        return tuple(found[key] for key in sorted(found))
+
+    def status(self, method_id: str) -> ApplicabilityStatus:
+        return assess_method(
+            self.binding,
+            self.methods()[method_id],
+            self.world.snapshot(),
+            self.env.capabilities(),
+            registry=self.env.predicates,
+        ).status
+
+    def draft(self, method_id: str):
+        return ground_draft(
+            self.env,
+            self.binding,
+            self.methods()[method_id],
+            root_network(self.env, self.binding),
             snapshot=self.world.snapshot(),
-            capabilities=self.env.capabilities(),
-            ledger=ledger_for(self.binding, fuel=3, mission=self.env.mission),
-            budget=BUDGET,
         )
 
-    def asks(self, decision) -> tuple[Any, ...]:
-        """The grounded atoms behind this decision's evidence requests."""
+    def asks(self, requests) -> tuple[Any, ...]:
+        """The grounded atoms behind these evidence requests."""
 
         pending = evidence_round.pending_asks(
             _conditions(),
@@ -593,7 +639,7 @@ class DemoWorld:
             registry=self.env.predicates,
             snapshot=self.world.snapshot(),
         )
-        return evidence_round.asks_for_requests(decision.evidence, pending)
+        return evidence_round.asks_for_requests(requests, pending)
 
     def look(self, asks, *, now_ms: int = 1_000):
         return evidence_round.run_round(
@@ -636,16 +682,16 @@ def demo(tmp_path) -> DemoWorld:
 def test_an_unknown_precondition_asks_for_evidence_rather_than_dispatching(demo: DemoWorld) -> None:
     """ADR-07: UNKNOWN is a reason to look, never a reason to try the work."""
 
-    decision = demo.refine().decisions[0]
-    assert decision.outcome is RefinementOutcome.NEEDS_EVIDENCE
-    assert {item.predicate_ref.id for item in decision.evidence} == {PRIMARY, FALLBACK}
-    assert all(item.satisfiable for item in decision.evidence)
-    assert all(item.occurrence is not None for item in decision.evidence)
+    requests = demo.evidence()
+    assert {item.predicate_ref.id for item in requests} == {PRIMARY, FALLBACK}
+    assert all(item.satisfiable for item in requests)
+    assert all(item.occurrence is not None for item in requests)
+    assert demo.status("demo.primary") is ApplicabilityStatus.NEEDS_EVIDENCE
+    assert demo.status("demo.fallback") is ApplicabilityStatus.NEEDS_EVIDENCE
 
 
 def test_the_evidence_occurrence_is_a_read_only_observer_type(demo: DemoWorld) -> None:
-    decision = demo.refine().decisions[0]
-    for request in decision.evidence:
+    for request in demo.evidence():
         assert request.observer is not None
         assert request.observer.read_only
         assert request.binding.side_effect_kind is SideEffectKind.EXTERNAL_READ
@@ -653,42 +699,39 @@ def test_the_evidence_occurrence_is_a_read_only_observer_type(demo: DemoWorld) -
 
 
 def test_the_observer_index_executes_the_evidence_occurrence(demo: DemoWorld) -> None:
-    decision = demo.refine().decisions[0]
-    result = demo.look(demo.asks(decision))
+    result = demo.look(demo.asks(demo.evidence()))
     assert len(result.recorded) == 2
     assert demo.observer.calls == [PRIMARY, FALLBACK]
     stored = HtnStore(demo.store).list_observations(demo.env.mission)
     assert len(stored) == 2
 
 
-def test_the_denied_alternative_loses_and_the_other_one_is_chosen(demo: DemoWorld) -> None:
-    """The scenario §9 could not write: a look moves the OR choice."""
+def test_the_denied_alternative_is_refuted_and_the_other_one_applies(demo: DemoWorld) -> None:
+    """The scenario §9 could not write: a look decides which branch can be grounded."""
 
-    first = demo.refine().decisions[0]
-    assert first.outcome is RefinementOutcome.NEEDS_EVIDENCE
-    demo.look(demo.asks(first))
-    second = demo.refine().decisions[0]
-    assert second.outcome is RefinementOutcome.REFINED
-    assert second.draft.method_ref.method_id == "demo.fallback"
+    demo.look(demo.asks(demo.evidence()))
+    assert demo.status("demo.primary") is ApplicabilityStatus.PRECONDITION_FALSE
+    assert demo.status("demo.fallback") is ApplicabilityStatus.APPLICABLE
+    assert demo.draft("demo.fallback").method_ref.method_id == "demo.fallback"
 
 
 def test_the_refuted_alternative_contributes_no_occurrence(demo: DemoWorld) -> None:
-    demo.look(demo.asks(demo.refine().decisions[0]))
-    decision = demo.refine().decisions[0]
-    assert {str(item.slot_key) for item in decision.draft.child_bindings} == {"shared", "b"}
+    demo.look(demo.asks(demo.evidence()))
+    draft = demo.draft("demo.fallback")
+    assert {str(item.slot_key) for item in draft.child_bindings} == {"shared", "b"}
 
 
 def test_an_observer_that_cannot_answer_leaves_the_choice_unmade(demo: DemoWorld) -> None:
-    """OBSERVER_UNAVAILABLE is not FALSE: nothing is written and nothing is chosen."""
+    """OBSERVER_UNAVAILABLE is not FALSE: nothing is written and nothing is decided."""
 
     demo.observer.answers = {}
-    first = demo.refine().decisions[0]
-    result = demo.look(demo.asks(first))
+    result = demo.look(demo.asks(demo.evidence()))
     assert result.recorded == ()
     assert len(result.unavailable) == 2
     assert all(item.reason is ReadinessReason.OBSERVER_UNAVAILABLE for item in result.unavailable)
     assert HtnStore(demo.store).list_observations(demo.env.mission) == ()
-    assert demo.refine().decisions[0].outcome is RefinementOutcome.NEEDS_EVIDENCE
+    assert demo.status("demo.primary") is ApplicabilityStatus.NEEDS_EVIDENCE
+    assert demo.status("demo.fallback") is ApplicabilityStatus.NEEDS_EVIDENCE
 
 
 def test_an_observer_that_crashes_is_an_outage_and_not_a_polarity(demo: DemoWorld) -> None:
@@ -696,19 +739,18 @@ def test_an_observer_that_crashes_is_an_outage_and_not_a_polarity(demo: DemoWorl
         raise RuntimeError("the reader died")
 
     demo.observer.observe = explode  # type: ignore[method-assign]
-    result = demo.look(demo.asks(demo.refine().decisions[0]))
+    result = demo.look(demo.asks(demo.evidence()))
     assert result.recorded == ()
     assert len(result.unavailable) == 2
-    assert demo.refine().decisions[0].outcome is RefinementOutcome.NEEDS_EVIDENCE
+    assert demo.status("demo.primary") is ApplicabilityStatus.NEEDS_EVIDENCE
 
 
 def test_a_settled_proposition_is_not_looked_at_a_second_time(demo: DemoWorld) -> None:
     """A shared read-only question is asked once; the second round reads the record."""
 
-    demo.look(demo.asks(demo.refine().decisions[0]))
+    demo.look(demo.asks(demo.evidence()))
     assert len(demo.observer.calls) == 2
-    second = demo.refine().decisions[0]
-    assert demo.asks(second) == ()
+    assert demo.asks(demo.evidence()) == ()
     assert len(demo.observer.calls) == 2
 
 
@@ -1001,7 +1043,7 @@ def test_mutant_an_evidence_round_that_records_whatever_came_back(demo: DemoWorl
     """
 
     demo.observer.answers = {}
-    asks = demo.asks(demo.refine().decisions[0])
+    asks = demo.asks(demo.evidence())
     outcomes = [
         observe_predicate(demo.world.observer_index, item.predicate_ref, item.arguments, now_ms=1)
         for item in asks
@@ -1014,13 +1056,13 @@ def test_mutant_a_snapshot_cached_at_assembly_time(demo: DemoWorld) -> None:
     """Mutant: ``DeploymentPlanningWorld`` caches ``snapshot()`` on first call.
 
     Caught by ``test_the_evidence_snapshot_is_read_from_the_store_every_time`` and by
-    ``test_the_denied_alternative_loses_and_the_other_one_is_chosen``: a cached
-    snapshot means the round *after* an observation still cannot see it, and the OR
-    choice can never change however much the deployment looks.
+    ``test_the_denied_alternative_is_refuted_and_the_other_one_applies``: a cached
+    snapshot means the round *after* an observation still cannot see it, and no
+    branch could ever be refuted however much the deployment looks.
     """
 
     cached = demo.world.snapshot()
-    demo.look(demo.asks(demo.refine().decisions[0]))
+    demo.look(demo.asks(demo.evidence()))
     live = demo.world.snapshot()
     assert cached.support_revision == 0
     assert live.support_revision == 2

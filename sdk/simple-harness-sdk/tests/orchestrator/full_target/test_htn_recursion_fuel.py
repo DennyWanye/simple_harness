@@ -9,16 +9,12 @@ import pytest
 
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.obligations import (
-    AchieveOutcomeAdmission,
     BoundReachedReport,
     ExpansionRecord,
     FuelStatus,
     Obligation,
     ObligationLedger,
-    ObligationLifecycle,
-    Selector,
     ShapeChange,
-    achieve_outcome_admission,
 )
 
 
@@ -113,46 +109,6 @@ def test_the_same_unchanged_expansion_is_refused_without_burning_fuel() -> None:
 
     assert repeat.status is FuelStatus.REPEATED_EXPANSION
     assert ledger.remaining_fuel(target) == remaining
-
-
-def test_achieve_outcome_cannot_take_over_once_fuel_is_exhausted() -> None:
-    ledger = ledger_with(1)
-    target = duty().obligation_id
-    ledger.consume_fuel(target, expansion=expansion("method-a", "digest-1"))
-
-    decision = achieve_outcome_admission(
-        ledger.account(target), selected_by=Selector.PLANNER_EXPLICIT
-    )
-
-    assert decision.allowed is False
-    assert decision.admission is AchieveOutcomeAdmission.FUEL_EXHAUSTED_NO_ESCAPE
-
-
-def test_achieve_outcome_needs_an_explicit_planner_choice() -> None:
-    ledger = ledger_with(2)
-    target = duty().obligation_id
-
-    automatic = achieve_outcome_admission(
-        ledger.account(target), selected_by=Selector.AUTOMATIC_FALLBACK
-    )
-    explicit = achieve_outcome_admission(
-        ledger.account(target), selected_by=Selector.PLANNER_EXPLICIT
-    )
-
-    assert automatic.admission is AchieveOutcomeAdmission.NOT_EXPLICITLY_SELECTED
-    assert explicit.allowed is True
-
-
-def test_achieve_outcome_is_refused_for_a_duty_that_is_no_longer_open() -> None:
-    ledger = ledger_with(2)
-    target = duty().obligation_id
-    ledger.set_lifecycle(target, ObligationLifecycle.CANCELLED)
-
-    decision = achieve_outcome_admission(
-        ledger.account(target), selected_by=Selector.PLANNER_EXPLICIT
-    )
-
-    assert decision.admission is AchieveOutcomeAdmission.OBLIGATION_NOT_ACTIVE
 
 
 def test_a_second_obligation_has_its_own_tank() -> None:

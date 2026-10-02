@@ -6,9 +6,10 @@ The pipeline of §18.3, in the order a planner walks it:
 
 ``applicability.assess_method``
     four-valued: applicable, refuted, needs evidence, conflicted, unavailable.
-``refinement.refine``
-    which frontier item to expand, with which alternative, and what to do when
-    none fits — ask for a method, gather evidence, or report a bound.
+``refinement.planning_frontier`` / ``refinement.evidence_requests``
+    which compound occurrences are still open, and which read-only observers
+    could answer an UNKNOWN precondition.  *Which* method refines a goal is the
+    planner's (LLM's) judgement, not a function here.
 ``grounding.ground_method``
     type-check, bind, derive stable identities, decide what may be shared.
 ``compiler.compile_refinement``
@@ -93,15 +94,8 @@ from .method_selection import (
     validate_evidence_request,
 )
 from .refinement import (
-    AttemptPolicy,
     FrontierItem,
-    LeafDecision,
-    MethodProposalRequest,
-    RefinementDecision,
-    RefinementOutcome,
-    RefinementReport,
     planning_frontier,
-    refine,
 )
 from .registry import (
     AdmissionPolicy,
@@ -160,7 +154,6 @@ __all__ = (
     "ObserverRegistrationV1",
     "OperatorRegistrationV1",
     "PlanningDomainPackageV1",
-    "AttemptPolicy",
     "BudgetRequirement",
     "CapabilityRecord",
     "CapabilitySnapshot",
@@ -170,17 +163,12 @@ __all__ = (
     "FrontierItem",
     "GroundingError",
     "HddlExport",
-    "LeafDecision",
     "MethodCandidate",
     "MethodProposal",
-    "MethodProposalRequest",
     "MethodRegistry",
     "ObjectSchema",
     "PreconditionClass",
     "RefinementCompilation",
-    "RefinementDecision",
-    "RefinementOutcome",
-    "RefinementReport",
     "RejectionCode",
     "RootNetwork",
     "SchemaCatalog",
@@ -205,7 +193,6 @@ __all__ = (
     "normalize_candidates",
     "planning_frontier",
     "recheck_method_instance",
-    "refine",
     "to_hddl",
     "validate_delta",
     "validate_evidence_request",

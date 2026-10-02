@@ -907,45 +907,12 @@ def test_snapshot_relations_are_typed_per_kind() -> None:
         EndpointKind.TASK,
         EndpointKind.METHOD_INSTANCE,
     }
-    assert net.relations(RelationKind.SUPERVISION) == ()
+    assert net.relations(RelationKind.FUNDING) == ()
 
 
-def support_edge(evidence: str, subject: str, label: str) -> TypedEdge:
-    """The contract points a SUPPORT edge evidence → subject, not the other way."""
-
-    return TypedEdge(
-        relation=RelationKind.SUPPORT,
-        source=NetworkEndpoint(EndpointKind.EVIDENCE, evidence),
-        target=NetworkEndpoint(EndpointKind.OCCURRENCE, subject),
-        label=label,
-    )
-
-
-def test_support_view_keeps_sets_apart() -> None:
+def test_funding_and_supersedes_edges_never_enter_the_execution_projection() -> None:
     net = snapshot(
         typed_edges=(
-            support_edge("ev-1", "o-a", "set-1"),
-            TypedEdge(
-                relation=RelationKind.ASSUMPTION,
-                source=NetworkEndpoint(EndpointKind.EVIDENCE, "ev-2"),
-                target=NetworkEndpoint(EndpointKind.OCCURRENCE, "o-a"),
-                label="set-2",
-            ),
-        )
-    )
-    view = net.support_view()
-    assert set(view.by_support_set) == {"set-1", "set-2"}
-    assert len(view.by_subject["o-a"]) == 2
-
-
-def test_support_and_supervision_edges_never_enter_the_execution_projection() -> None:
-    net = snapshot(
-        typed_edges=(
-            TypedEdge(
-                relation=RelationKind.SUPERVISION,
-                source=NetworkEndpoint(EndpointKind.SUPERVISOR, "mgr-1"),
-                target=NetworkEndpoint(EndpointKind.OCCURRENCE, "o-b1"),
-            ),
             TypedEdge(
                 relation=RelationKind.FUNDING,
                 source=NetworkEndpoint(EndpointKind.OBLIGATION, "ob-t-root"),
@@ -956,28 +923,12 @@ def test_support_and_supervision_edges_never_enter_the_execution_projection() ->
                 source=NetworkEndpoint(EndpointKind.OCCURRENCE, "o-b2"),
                 target=NetworkEndpoint(EndpointKind.OCCURRENCE, "o-b1"),
             ),
-            support_edge("ev-1", "o-b1", "set-1"),
         )
     )
     before = snapshot().execution_projection()
     after = net.execution_projection()
     assert before.edges == after.edges
     assert validate_execution_projection(after, DEFAULT_PROJECTION_BUDGET).problems == ()
-
-
-def test_supervision_view_maps_scope_to_occurrences() -> None:
-    net = snapshot(
-        typed_edges=(
-            TypedEdge(
-                relation=RelationKind.SUPERVISION,
-                source=NetworkEndpoint(EndpointKind.SUPERVISOR, "mgr-1"),
-                target=NetworkEndpoint(EndpointKind.OCCURRENCE, "o-b1"),
-            ),
-        )
-    )
-    view = net.supervision_view()
-    assert view.by_supervisor["mgr-1"] == (OccurrenceId("o-b1"),)
-    assert view.supervisor_of[OccurrenceId("o-b1")] == ("mgr-1",)
 
 
 # --------------------------------------------------------------------------------------

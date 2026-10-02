@@ -19,7 +19,8 @@ Two naming rules from §18.3 are enforced by the types themselves:
 They are different classes with different required fields, so one cannot stand in
 for the other by accident or by re-labelling a payload.
 
-The five version axes of §6.4 / TG §3.3 are separate ``NewType``s so a
+The version axes of §6.4 / TG §3.3 (contract revision, dispatch generation,
+plan revision, input binding revision) are separate ``NewType``s so a
 ``plan_revision`` cannot be passed where a ``dispatch_generation`` belongs, and
 typed references carry their ``kind`` on the wire so no id prefix can buy a role.
 """
@@ -61,14 +62,13 @@ from .semantic_base import (
 
 METHOD_CONTRACT_SCHEMA_VERSION = 1
 PLAN_REVISION_PROPOSAL_SCHEMA_VERSION = 1
-EXECUTION_FEEDBACK_SCHEMA_VERSION = 1
 
 #: A structured condition may not grow without bound; a proposal that needs more
 #: than this is refused at the boundary rather than interpreted (§7.3 step 1).
 MAX_CONDITION_NODES = 512
 
 # --------------------------------------------------------------------------------------
-# Identities (TG §3.1) and the five version axes (§6.4 / TG §3.3)
+# Identities (TG §3.1) and the version axes (§6.4 / TG §3.3)
 # --------------------------------------------------------------------------------------
 
 MissionRef = NewType("MissionRef", str)
@@ -86,14 +86,10 @@ PolicyRef = NewType("PolicyRef", str)
 
 #: §6.4: goal / success-criteria / input-contract changes.
 ContractRevision = NewType("ContractRevision", int)
-#: §6.4: atomic record state CAS.
-RecordVersion = NewType("RecordVersion", int)
 #: §6.4: execution right or input superseded / cancelled.
 DispatchGeneration = NewType("DispatchGeneration", int)
 #: §6.4: adopted method, members, ORDER / DATA structure.
 PlanRevision = NewType("PlanRevision", int)
-#: §6.4: current usability of observations, supports and acceptances.
-ValidityRevision = NewType("ValidityRevision", int)
 #: TG §3.3: the local generation of this task's resolved inputs.
 InputBindingRevision = NewType("InputBindingRevision", int)
 
@@ -122,20 +118,12 @@ def contract_revision(value: object, name: str = "contract_revision") -> Contrac
     return ContractRevision(index(value, name))
 
 
-def record_version(value: object, name: str = "record_version") -> RecordVersion:
-    return RecordVersion(index(value, name))
-
-
 def dispatch_generation(value: object, name: str = "dispatch_generation") -> DispatchGeneration:
     return DispatchGeneration(index(value, name))
 
 
 def plan_revision(value: object, name: str = "plan_revision") -> PlanRevision:
     return PlanRevision(index(value, name))
-
-
-def validity_revision(value: object, name: str = "validity_revision") -> ValidityRevision:
-    return ValidityRevision(index(value, name))
 
 
 def input_binding_revision(
@@ -180,9 +168,6 @@ class RelationKind(StrEnum):
     SATISFIES = "satisfies"
     ORDER = "ORDER"
     DATA = "DATA"
-    SUPPORT = "SUPPORT"
-    ASSUMPTION = "ASSUMPTION"
-    SUPERVISION = "supervision"
     FUNDING = "funding"
     SUPERSEDES = "supersedes"
 
@@ -3232,227 +3217,6 @@ class ProposedPlanDelta:
         )
 
 
-class FeedbackOutcome(StrEnum):
-    """``execution-feedback-v1``: what the attempt produced, as the worker saw it."""
-
-    CANDIDATE = "candidate"
-    BLOCKED = "blocked"
-    FAILURE = "failure"
-    NO_PROGRESS = "no_progress"
-    PROPOSED_SUBTASKS = "proposed_subtasks"
-
-
-class DiagnosisCategory(StrEnum):
-    """§9.1: not every problem is "decompose it again"."""
-
-    NONE = "none"
-    MISSING_INFORMATION = "missing_information"
-    MISSING_PREREQUISITE = "missing_prerequisite"
-    CONTENT_DEFECT = "content_defect"
-    TOO_COMPLEX = "too_complex"
-    METHOD_INVALID = "method_invalid"
-    INFRASTRUCTURE = "infrastructure"
-    AUTHORIZATION = "authorization"
-    OPERATION_UNKNOWN = "operation_unknown"
-    NO_PROGRESS = "no_progress"
-
-
-@dataclass(frozen=True, slots=True)
-class FeedbackObservation:
-    """A worker statement always travels with the evidence it rests on."""
-
-    statement: str
-    evidence_refs: tuple[EvidenceRef, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "statement", text(self.statement, "observation.statement"))
-        if not self.evidence_refs:
-            raise ContractError("observation.evidence_refs must not be empty")
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "statement": self.statement,
-            "evidence_refs": [ref.to_json() for ref in self.evidence_refs],
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "observation") -> FeedbackObservation:
-        data = fields_of(value, name, required=("statement", "evidence_refs"))
-        return cls(
-            statement=data["statement"],
-            evidence_refs=sequence_of(
-                data["evidence_refs"],
-                f"{name}.evidence_refs",
-                lambda item, where: EvidenceRef.from_json(item, where),
-                minimum=1,
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class FeedbackDiagnosis:
-    category: DiagnosisCategory
-    explanation: str
-    uncertainty: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "category", enum_of(DiagnosisCategory, self.category, "diagnosis.category")
-        )
-        object.__setattr__(self, "explanation", text(self.explanation, "diagnosis.explanation"))
-        object.__setattr__(self, "uncertainty", text(self.uncertainty, "diagnosis.uncertainty"))
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "category": str(self.category),
-            "explanation": self.explanation,
-            "uncertainty": self.uncertainty,
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "diagnosis") -> FeedbackDiagnosis:
-        data = fields_of(value, name, required=("category", "explanation", "uncertainty"))
-        return cls(
-            category=data["category"],
-            explanation=data["explanation"],
-            uncertainty=data["uncertainty"],
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionFeedbackV1:
-    """``execution-feedback-v1`` (§9.1): what came back from one attempt.
-
-    P1.1 provides the boundary codec only — classifying the feedback and deciding
-    what to repair is P3's ``analyze_impact`` / decision table.  Carrying the
-    ``uncertainty`` field beside the diagnosis is deliberate: "we did not find it"
-    must stay distinguishable from "it is not there" (ADR-07).
-    """
-
-    feedback_id: str
-    mission_id: MissionRef
-    task_id: TaskRef
-    attempt_id: str
-    contract_revision: ContractRevision
-    input_manifest_hash: str
-    outcome: FeedbackOutcome
-    observations: tuple[FeedbackObservation, ...]
-    diagnosis: FeedbackDiagnosis
-    proposed_method_refs: tuple[VersionedRef, ...] = ()
-    artifact_refs: tuple[EvidenceRef, ...] = ()
-    unresolved_operation_ids: tuple[str, ...] = ()
-    cost_receipt_ids: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "feedback_id", identifier(self.feedback_id, "feedback.feedback_id")
-        )
-        object.__setattr__(self, "mission_id", mission_ref(self.mission_id, "feedback.mission_id"))
-        object.__setattr__(self, "task_id", task_ref(self.task_id, "feedback.task_id"))
-        object.__setattr__(self, "attempt_id", identifier(self.attempt_id, "feedback.attempt_id"))
-        object.__setattr__(
-            self,
-            "contract_revision",
-            contract_revision(self.contract_revision, "feedback.contract_revision"),
-        )
-        object.__setattr__(
-            self,
-            "input_manifest_hash",
-            hash_hex(self.input_manifest_hash, "feedback.input_manifest_hash"),
-        )
-        object.__setattr__(
-            self, "outcome", enum_of(FeedbackOutcome, self.outcome, "feedback.outcome")
-        )
-        if not isinstance(self.diagnosis, FeedbackDiagnosis):
-            raise ContractError("feedback.diagnosis must be a FeedbackDiagnosis")
-        object.__setattr__(
-            self,
-            "unresolved_operation_ids",
-            identifiers(self.unresolved_operation_ids, "feedback.unresolved_operation_ids"),
-        )
-        object.__setattr__(
-            self,
-            "cost_receipt_ids",
-            identifiers(self.cost_receipt_ids, "feedback.cost_receipt_ids"),
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "schema_version": EXECUTION_FEEDBACK_SCHEMA_VERSION,
-            "feedback_id": self.feedback_id,
-            "mission_id": str(self.mission_id),
-            "task_id": str(self.task_id),
-            "attempt_id": self.attempt_id,
-            "contract_revision": int(self.contract_revision),
-            "input_manifest_hash": self.input_manifest_hash,
-            "outcome": str(self.outcome),
-            "observations": [item.to_json() for item in self.observations],
-            "diagnosis": self.diagnosis.to_json(),
-            "proposed_method_refs": [ref.to_json() for ref in self.proposed_method_refs],
-            "artifact_refs": [ref.to_json() for ref in self.artifact_refs],
-            "unresolved_operation_ids": list(self.unresolved_operation_ids),
-            "cost_receipt_ids": list(self.cost_receipt_ids),
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "execution_feedback") -> ExecutionFeedbackV1:
-        data = fields_of(
-            value,
-            name,
-            required=(
-                "schema_version",
-                "feedback_id",
-                "mission_id",
-                "task_id",
-                "attempt_id",
-                "contract_revision",
-                "input_manifest_hash",
-                "outcome",
-                "observations",
-                "diagnosis",
-                "proposed_method_refs",
-                "artifact_refs",
-                "unresolved_operation_ids",
-                "cost_receipt_ids",
-            ),
-        )
-        schema_version(
-            data["schema_version"],
-            f"{name}.schema_version",
-            expected=EXECUTION_FEEDBACK_SCHEMA_VERSION,
-        )
-        # Worker-reported feedback is model output too: it may cite a tool receipt,
-        # but it may not be the thing that says the receipt came from a tool.
-        reject_model_claimed_provenance(data, name)
-        return cls(
-            feedback_id=data["feedback_id"],
-            mission_id=MissionRef(data["mission_id"]),
-            task_id=TaskRef(data["task_id"]),
-            attempt_id=data["attempt_id"],
-            contract_revision=ContractRevision(data["contract_revision"]),
-            input_manifest_hash=data["input_manifest_hash"],
-            outcome=data["outcome"],
-            observations=sequence_of(
-                data["observations"],
-                f"{name}.observations",
-                lambda item, where: FeedbackObservation.from_json(item, where),
-            ),
-            diagnosis=FeedbackDiagnosis.from_json(data["diagnosis"], f"{name}.diagnosis"),
-            proposed_method_refs=sequence_of(
-                data["proposed_method_refs"],
-                f"{name}.proposed_method_refs",
-                lambda item, where: VersionedRef.from_json(item, where),
-            ),
-            artifact_refs=sequence_of(
-                data["artifact_refs"],
-                f"{name}.artifact_refs",
-                lambda item, where: EvidenceRef.from_json(item, where),
-            ),
-            unresolved_operation_ids=tuple(data["unresolved_operation_ids"]),
-            cost_receipt_ids=tuple(data["cost_receipt_ids"]),
-        )
-
-
 # --------------------------------------------------------------------------------------
 # Typed relation edges (§6.5 / TG §4)
 # --------------------------------------------------------------------------------------
@@ -3465,8 +3229,6 @@ class EndpointKind(StrEnum):
     TASK = "task"
     METHOD_INSTANCE = "method_instance"
     OBLIGATION = "obligation"
-    EVIDENCE = "evidence"
-    SUPERVISOR = "supervisor"
 
 
 @dataclass(frozen=True, slots=True)
@@ -3487,27 +3249,12 @@ class NetworkEndpoint:
         return cls(kind=data["kind"], id=data["id"])
 
 
-_EVIDENCE_TARGETS = frozenset(
-    {
-        EndpointKind.TASK,
-        EndpointKind.OCCURRENCE,
-        EndpointKind.METHOD_INSTANCE,
-        EndpointKind.OBLIGATION,
-    }
-)
-
 #: §6.5: which endpoints each relation may join.  Written out per relation rather
 #: than left to a ``kind: str`` plus a free-form payload, because "these two things
-#: are related" is exactly the ambiguity the four-relation split exists to remove.
+#: are related" is exactly the ambiguity the per-relation split exists to remove.
 TYPED_EDGE_ENDPOINTS: Mapping[
     RelationKind, tuple[frozenset[EndpointKind], frozenset[EndpointKind]]
 ] = {
-    RelationKind.SUPPORT: (frozenset({EndpointKind.EVIDENCE}), _EVIDENCE_TARGETS),
-    RelationKind.ASSUMPTION: (frozenset({EndpointKind.EVIDENCE}), _EVIDENCE_TARGETS),
-    RelationKind.SUPERVISION: (
-        frozenset({EndpointKind.SUPERVISOR}),
-        frozenset({EndpointKind.TASK, EndpointKind.OCCURRENCE, EndpointKind.OBLIGATION}),
-    ),
     RelationKind.FUNDING: (
         frozenset({EndpointKind.OBLIGATION}),
         frozenset({EndpointKind.OBLIGATION}),
@@ -3543,11 +3290,9 @@ TYPED_EDGE_RELATIONS = frozenset(TYPED_EDGE_ENDPOINTS)
 class TypedEdge:
     """One relation with exactly one meaning (§6.5 / TG §4).
 
-    ``SUPPORT`` and ``ASSUMPTION`` say what a conclusion rests on — never that the
-    target may execute.  ``supervision`` is a coordination scope, not inherited
-    authority.  ``funding`` keeps the single-owner budget tree beside the DAG of
-    execution dependencies.  ``supersedes`` replaces a subject without rewriting
-    the history of the one it replaced.
+    ``funding`` keeps the single-owner budget tree beside the DAG of execution
+    dependencies.  ``supersedes`` replaces a subject without rewriting the history
+    of the one it replaced.
     """
 
     relation: RelationKind
@@ -3724,7 +3469,6 @@ def require_commit_ready(
 
 
 __all__ = (
-    "EXECUTION_FEEDBACK_SCHEMA_VERSION",
     "TYPED_EDGE_ENDPOINTS",
     "TYPED_EDGE_RELATIONS",
     "MAX_CONDITION_NODES",
@@ -3751,13 +3495,8 @@ __all__ = (
     "CriterionLink",
     "DataBindingId",
     "DataRequirement",
-    "DiagnosisCategory",
     "DispatchGeneration",
     "EndpointKind",
-    "ExecutionFeedbackV1",
-    "FeedbackDiagnosis",
-    "FeedbackObservation",
-    "FeedbackOutcome",
     "GoalSignature",
     "GraphStructureBudget",
     "InputBindingRevision",
@@ -3801,7 +3540,6 @@ __all__ = (
     "StructureBudget",
     "ReadItem",
     "ReadItemKind",
-    "RecordVersion",
     "RefineOperation",
     "RegistryAuthor",
     "RelationKind",
@@ -3822,7 +3560,6 @@ __all__ = (
     "TaskRef",
     "TaskSemanticBindingV1",
     "TypedEdge",
-    "ValidityRevision",
     "ValueExpr",
     "admit_method",
     "arguments_to_json",
@@ -3843,11 +3580,9 @@ __all__ = (
     "parse_plan_operation",
     "parse_value",
     "plan_revision",
-    "record_version",
     "require_commit_ready",
     "resource_conflicts",
     "task_ref",
     "task_ref_from_typed",
     "undeclared_set_ports",
-    "validity_revision",
 )

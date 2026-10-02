@@ -3,9 +3,9 @@
 
 """P1.1 red tests: the AER annex contracts (§13, §14.3, AER §4–6, §12).
 
-The eight annex fixtures, the operation payload conflict, the one-to-one match
+The six annex fixtures, the operation payload conflict, the one-to-one match
 between a review record and its package catalogue, and the invariants the codecs
-themselves enforce (I07, I10, I18).
+themselves enforce (I07, I18).
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from full_target_world import (
 
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
-    QueryCompleteness,
     TruthValue,
     Validity,
     ValidityWitness,
@@ -36,7 +35,6 @@ from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.resolution import (
     LEGACY_CANDIDATE_RANGE,
     OPERATION_PAYLOAD_CONFLICT,
-    AccountingState,
     AllExpr,
     AnyExpr,
     ApprovalDecision,
@@ -50,13 +48,8 @@ from agent_orchestrator.contracts.resolution import (
     CriterionVerdict,
     DeliveryReceipt,
     DeliveryStage,
-    EffectOutcome,
     EvaluationKind,
-    OperationControl,
-    OperationCurrentState,
     OperationEnvelope,
-    ReconciliationOutcome,
-    ReconciliationResult,
     RequirementClass,
     RequirementsRevision,
     ReviewAccount,
@@ -71,7 +64,6 @@ from agent_orchestrator.contracts.resolution import (
     envelope_conflict,
     hard_constraints_not_independent,
     match_review_criteria,
-    may_rehandoff,
     parse_success_expression,
 )
 from agent_orchestrator.contracts.semantic_base import (
@@ -87,18 +79,17 @@ CODECS: dict[str, Any] = {
     "review-record.schema.json": ReviewRecord.from_json,
     "validity-witness.schema.json": ValidityWitness.from_json,
     "operation-envelope.schema.json": OperationEnvelope.from_json,
-    "reconciliation-result.schema.json": ReconciliationResult.from_json,
 }
 
 
 # --------------------------------------------------------------------------------------
-# The eight annex fixtures
+# The six annex fixtures
 # --------------------------------------------------------------------------------------
 
 
-def test_all_eight_aer_fixtures_land_on_the_expected_side() -> None:
+def test_all_six_aer_fixtures_land_on_the_expected_side() -> None:
     index = load_aer_fixture_index()
-    assert len(index) == 8
+    assert len(index) == 6
 
     for entry in index:
         codec = CODECS[entry["schema"]]
@@ -172,53 +163,6 @@ def test_different_operation_ids_are_different_intents() -> None:
 def test_an_operation_envelope_round_trips() -> None:
     original = envelope()
     assert OperationEnvelope.from_json(original.to_json()) == original
-
-
-# --------------------------------------------------------------------------------------
-# Reconciliation (invariant I10)
-# --------------------------------------------------------------------------------------
-
-
-def reconciliation(
-    *,
-    outcome: ReconciliationOutcome = ReconciliationOutcome.UNKNOWN,
-    completeness: QueryCompleteness = QueryCompleteness.BEST_EFFORT,
-    old_request_cannot_apply: bool = False,
-    explanation: str = "nothing found, but the request may still be in flight",
-) -> ReconciliationResult:
-    return ReconciliationResult(
-        record_id="reconciliation-1",
-        operation_id="operation-1",  # type: ignore[arg-type]
-        request_hash=HASH_C,
-        connector_namespace="test-account/ledger-v1",
-        outcome=outcome,
-        observed_at_ms=1_500,
-        evidence_refs=(),
-        old_request_cannot_apply=old_request_cannot_apply,
-        query_completeness=completeness,
-        explanation=explanation,
-    )
-
-
-def test_an_empty_best_effort_lookup_does_not_license_a_resend() -> None:
-    assert may_rehandoff(reconciliation()) is False
-
-
-def test_a_final_negative_needs_an_authoritative_scoped_query() -> None:
-    with pytest.raises(ContractError, match="authoritative, scoped query"):
-        reconciliation(
-            outcome=ReconciliationOutcome.NOT_APPLIED_FINAL,
-            completeness=QueryCompleteness.BEST_EFFORT,
-        )
-    proven = reconciliation(
-        outcome=ReconciliationOutcome.NOT_APPLIED_FINAL,
-        completeness=QueryCompleteness.AUTHORITATIVE_WITH_SCOPE,
-    )
-    assert may_rehandoff(proven) is True
-
-
-def test_a_provably_unusable_old_request_may_be_re_handed_off() -> None:
-    assert may_rehandoff(reconciliation(old_request_cannot_apply=True)) is True
 
 
 # --------------------------------------------------------------------------------------
@@ -553,9 +497,20 @@ def test_the_aer_caps_are_exactly_the_ones_the_annex_schemas_declare() -> None:
 
 def test_an_explanation_of_exactly_ten_thousand_characters_is_accepted() -> None:
     at_limit = "说" * MAX_REASON
-    assert reconciliation(explanation=at_limit).explanation == at_limit
+    kept = CriterionOutcome(
+        criterion_id="c-1",
+        verdict=CriterionVerdict.UNKNOWN,
+        check_execution=CheckExecution.SUCCEEDED,
+        limitations=(at_limit,),
+    )
+    assert kept.limitations == (at_limit,)
     with pytest.raises(ContractError, match=f"exceeds {MAX_REASON} characters"):
-        reconciliation(explanation="说" * (MAX_REASON + 1))
+        CriterionOutcome(
+            criterion_id="c-1",
+            verdict=CriterionVerdict.UNKNOWN,
+            check_execution=CheckExecution.SUCCEEDED,
+            limitations=("说" * (MAX_REASON + 1),),
+        )
 
 
 def test_a_revision_at_the_safe_integer_ceiling_is_accepted_and_one_more_is_not() -> None:
@@ -569,15 +524,6 @@ def test_a_review_record_must_report_at_least_one_criterion() -> None:
     payload["criteria"] = []
     with pytest.raises(ContractError, match="at least 1 entries"):
         ReviewRecord.from_json(payload)
-
-
-def test_an_observation_must_arrive_with_at_least_one_piece_of_evidence() -> None:
-    from agent_orchestrator.contracts.htn import FeedbackObservation
-
-    with pytest.raises(ContractError, match="at least 1 entries"):
-        FeedbackObservation.from_json(
-            {"statement": "the source was unreachable", "evidence_refs": []}
-        )
 
 
 # --------------------------------------------------------------------------------------
@@ -813,79 +759,8 @@ def test_an_unknown_attribution_is_refused() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Contract round 4: the three operation axes, approvals and candidate policy
+# Contract round 4: approvals and candidate policy
 # --------------------------------------------------------------------------------------
-
-
-def operation_state(**overrides: Any) -> OperationCurrentState:
-    payload: dict[str, Any] = {
-        "operation_id": "operation-1",
-        "authorization_state": OperationControl.DISPATCHING,
-        "authorization_epoch": 2,
-        "dispatch_generation": 1,
-        "effect_outcome": EffectOutcome.PENDING,
-        "accounting_state": AccountingState.RESERVED,
-        "in_flight_handoff_id": "handoff-1",
-        "budget_refs": ("budget-root",),
-        "next_reconcile_at_ms": 5_000,
-    }
-    payload.update(overrides)
-    return OperationCurrentState(**payload)
-
-
-def test_the_three_operation_axes_are_recorded_separately() -> None:
-    state = operation_state()
-
-    assert state.authorization_state is OperationControl.DISPATCHING
-    assert state.effect_outcome is EffectOutcome.PENDING
-    assert state.accounting_state is AccountingState.RESERVED
-    assert OperationCurrentState.from_json(state.to_json()) == state
-
-
-def test_a_closed_operation_may_still_report_an_unknown_effect_and_unknown_usage() -> None:
-    """I10 and I13: closing the control flow neither decides the world nor erases cost."""
-
-    state = operation_state(
-        authorization_state=OperationControl.CLOSED,
-        effect_outcome=EffectOutcome.UNKNOWN,
-        accounting_state=AccountingState.USAGE_UNKNOWN,
-        in_flight_handoff_id=None,
-    )
-
-    assert state.effect_outcome is not EffectOutcome.NOT_APPLIED
-    assert state.settled is True
-
-
-def test_an_unauthorised_operation_cannot_already_have_an_effect() -> None:
-    """Invariants I03 / I04: approval precedes the action, never follows it."""
-
-    with pytest.raises(ContractError, match="approval followed the action"):
-        operation_state(
-            authorization_state=OperationControl.AWAITING_AUTHORIZATION,
-            effect_outcome=EffectOutcome.APPLIED,
-            in_flight_handoff_id=None,
-        )
-
-
-def test_not_handed_off_and_a_live_handoff_cannot_both_be_true() -> None:
-    with pytest.raises(ContractError, match="NOT_HANDED_OFF and a live handoff"):
-        operation_state(
-            authorization_state=OperationControl.READY,
-            effect_outcome=EffectOutcome.NOT_HANDED_OFF,
-            in_flight_handoff_id="handoff-1",
-        )
-
-
-def test_a_proposed_operation_that_has_not_been_handed_off_is_valid() -> None:
-    state = operation_state(
-        authorization_state=OperationControl.PROPOSED,
-        effect_outcome=EffectOutcome.NOT_HANDED_OFF,
-        accounting_state=AccountingState.UNRESERVED,
-        in_flight_handoff_id=None,
-        next_reconcile_at_ms=None,
-    )
-    assert state.settled is False
-    assert OperationCurrentState.from_json(state.to_json()) == state
 
 
 def test_a_granted_approval_names_who_granted_it_and_when() -> None:

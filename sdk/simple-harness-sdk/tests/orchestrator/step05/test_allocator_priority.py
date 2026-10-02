@@ -80,7 +80,6 @@ def _attempt(task_id, ordinal, status, reason=None):
 def test_weights_are_the_original_formula_and_scores_are_deterministic():
     assert WEIGHTS == {
         "mission_importance": 0.30,
-        "unlock_value": 0.20,
         "progress_signal": 0.15,
         "uncertainty": 0.15,
         "waiting_age": 0.10,
@@ -109,7 +108,6 @@ def test_weights_are_the_original_formula_and_scores_are_deterministic():
     assert one.version == ALLOCATOR_VERSION and one.tier == 1  # waited a whole window
     assert one.parts == {
         "mission_importance": 1.0,
-        "unlock_value": 2 / 3,
         "progress_signal": 0.0,
         "uncertainty": 0.25,
         "waiting_age": 1.0,
@@ -117,7 +115,7 @@ def test_weights_are_the_original_formula_and_scores_are_deterministic():
         "duplication_score": 1 / 3,
     }
     assert one.score == pytest.approx(
-        0.30 + 0.20 * 2 / 3 + 0.15 * 0.25 + 0.10 - 0.05 * 0.1 - 0.05 / 3
+        0.30 + 0.15 * 0.25 + 0.10 - 0.05 * 0.1 - 0.05 / 3
     )
     assert (
         score_tasks(

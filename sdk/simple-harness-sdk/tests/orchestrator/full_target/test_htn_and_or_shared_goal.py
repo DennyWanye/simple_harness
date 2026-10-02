@@ -29,7 +29,7 @@ from htn_world import (  # noqa: E402
     Env,
     acceptance_ref,
     atom,
-    ledger_for,
+    ground_draft,
     method,
     out,
     param,
@@ -59,17 +59,13 @@ from agent_orchestrator.planning.htn.compiler import (  # noqa: E402
     compile_refinement_bundle,
 )
 from agent_orchestrator.planning.htn.grounding import (  # noqa: E402
+    GroundingError,
     SharedGoalEntry,
     SharedGoalIndex,
     ShareVerdict,
     SharingSignature,
     ground_method,
     may_share,
-)
-from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
-    RefinementOutcome,
-    planning_frontier,
-    refine,
 )
 
 
@@ -171,62 +167,26 @@ def or_pair(env: Env):
     return primary, fallback
 
 
-def refined(env: Env, binding, network=None, *, fuel: int = 3):
-    network = network or root_network(env, binding)
-    ledger = ledger_for(binding, fuel=fuel, mission=env.mission)
-    return refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-
-
 # ============================================================================ OR
+#
+# Choosing between alternatives is the planner's judgement (an LLM names the method
+# in its RefineOperation).  What the Harness owns, and what these tests pin, is that
+# a refuted alternative cannot be grounded, and that the chosen one compiles into a
+# network where the loser contributes nothing and blocks nothing.
 
 
-def test_the_applicable_alternative_is_chosen() -> None:
+def test_the_refuted_alternative_is_reported_as_refuted_and_cannot_be_grounded() -> None:
     env = or_env()
-    or_pair(env)
+    primary, _ = or_pair(env)
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.FALSE)
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    report = refined(env, binding)
-    decision = report.decisions[0]
-    assert decision.outcome is RefinementOutcome.REFINED
-    assert decision.chosen is not None
-    assert decision.chosen.method.method_id == "demo.fallback"
-
-
-def test_both_alternatives_are_assessed_before_one_is_chosen() -> None:
-    env = or_env()
-    or_pair(env)
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.FALSE)
-    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    decision = refined(env, binding).decisions[0]
-    assert {item.method.method_id for item in decision.candidates} == {
-        "demo.primary",
-        "demo.fallback",
-    }
-
-
-def test_the_refuted_alternative_is_reported_as_refuted() -> None:
-    env = or_env()
-    or_pair(env)
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.FALSE)
-    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    decision = refined(env, binding).decisions[0]
-    primary = next(item for item in decision.candidates if item.method.method_id == "demo.primary")
-    assert primary.report.status is ApplicabilityStatus.PRECONDITION_FALSE
-    assert not primary.selectable
+    report = assess_method(
+        binding, primary, env.snapshot(), env.capabilities(), registry=env.predicates
+    )
+    assert report.status is ApplicabilityStatus.PRECONDITION_FALSE
+    with pytest.raises(GroundingError, match="grounded only where it applies"):
+        ground_draft(env, binding, primary, root_network(env, binding))
 
 
 def test_the_refuted_alternative_contributes_no_occurrence() -> None:
@@ -236,7 +196,7 @@ def test_the_refuted_alternative_contributes_no_occurrence() -> None:
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
     network = root_network(env, binding)
-    draft = refined(env, binding, network).drafts[0]
+    draft = ground_draft(env, binding, fallback, network)
     bundle = compile_refinement_bundle(
         draft,
         network,
@@ -258,7 +218,7 @@ def test_the_root_is_not_blocked_by_the_alternative_that_lost() -> None:
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
     network = root_network(env, binding)
-    draft = refined(env, binding, network).drafts[0]
+    draft = ground_draft(env, binding, fallback, network)
     bundle = compile_refinement_bundle(
         draft,
         network,
@@ -271,25 +231,13 @@ def test_the_root_is_not_blocked_by_the_alternative_that_lost() -> None:
     assert report.ok, [problem.detail for problem in report.problems]
 
 
-def test_two_applicable_alternatives_leave_the_choice_deterministic() -> None:
-    env = or_env()
-    or_pair(env)
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    first = refined(env, binding).decisions[0]
-    second = refined(env, binding).decisions[0]
-    assert first.chosen is not None and second.chosen is not None
-    assert first.chosen.method.method_id == second.chosen.method.method_id
-
-
 def test_only_one_alternative_is_adopted_per_occurrence() -> None:
     env = or_env()
     _, fallback = or_pair(env)
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
     network = root_network(env, binding)
-    draft = refined(env, binding, network).drafts[0]
+    draft = ground_draft(env, binding, fallback, network)
     bundle = compile_refinement_bundle(
         draft,
         network,
@@ -301,45 +249,6 @@ def test_only_one_alternative_is_adopted_per_occurrence() -> None:
     assert len(bundle.network.adopted_instance_ids) == 1
 
 
-def test_no_applicable_alternative_asks_for_a_new_method() -> None:
-    env = or_env()
-    or_pair(env)
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.FALSE)
-    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.FALSE)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    decision = refined(env, binding).decisions[0]
-    assert decision.outcome is RefinementOutcome.NO_APPLICABLE_METHOD
-    assert decision.proposal_request is not None
-    assert {item.method_id for item in decision.proposal_request.rejected} == {
-        "demo.primary",
-        "demo.fallback",
-    }
-
-
-def test_a_candidate_comparison_is_bounded_by_the_budget() -> None:
-    from dataclasses import replace
-
-    env = or_env()
-    for index in range(5):
-        env.admit(alternative(f"demo.many-{index}", "demo.primary-ready", "a"))
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    network = root_network(env, binding)
-    decision = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger_for(binding, mission=env.mission),
-        budget=replace(BUDGET, max_candidates=2),
-    ).decisions[0]
-    assert len(decision.candidates) == 2
-
-
 # =========================================================================== AND
 
 
@@ -349,7 +258,7 @@ def test_the_slots_of_one_method_are_all_required() -> None:
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
     binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
     network = root_network(env, binding)
-    draft = refined(env, binding, network).drafts[0]
+    draft = ground_draft(env, binding, fallback, network)
     alternative_view = network  # keep the pre-compilation network for contrast
     bundle = compile_refinement_bundle(
         draft,

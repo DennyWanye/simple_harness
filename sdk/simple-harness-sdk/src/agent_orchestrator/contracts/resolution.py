@@ -31,7 +31,6 @@ from typing import Any, NewType, TypeAlias
 
 from .evidence_state import (
     PreconditionPhase,
-    QueryCompleteness,
     TemporalUse,
     Validity,
     limitation_text,
@@ -40,7 +39,6 @@ from .evidence_state import (
 from .htn import GoalSignature, MethodInstanceId, ObligationId, TaskRef
 from .models import ContractError
 from .semantic_base import (
-    MAX_REASON,
     EvidenceRef,
     TypedRef,
     content_hash_of,
@@ -63,7 +61,6 @@ from .semantic_base import (
 GOAL_RESOLUTION_SCHEMA_VERSION = 1
 REVIEW_RECORD_SCHEMA_VERSION = 1
 OPERATION_ENVELOPE_SCHEMA_VERSION = 1
-RECONCILIATION_RESULT_SCHEMA_VERSION = 1
 
 #: A success expression that needs more nodes than this is refused, not walked.
 MAX_SUCCESS_EXPRESSION_NODES = 512
@@ -1759,198 +1756,6 @@ class OperationEnvelope:
         )
 
 
-class OperationControl(StrEnum):
-    """AER §13 axis 1: where the *orchestrator* has got to with this operation.
-
-    It says nothing about the world.  ``CLOSED`` means this side has finished
-    bookkeeping, not that the effect landed — that is :class:`EffectOutcome`.
-    """
-
-    PROPOSED = "PROPOSED"
-    AWAITING_AUTHORIZATION = "AWAITING_AUTHORIZATION"
-    READY = "READY"
-    DISPATCHING = "DISPATCHING"
-    QUIESCING = "QUIESCING"
-    CLOSED = "CLOSED"
-
-
-class EffectOutcome(StrEnum):
-    """AER §13 axis 2: what happened in the real world.
-
-    ``UNKNOWN`` is a real, terminal-for-now answer and is not ``NOT_APPLIED``
-    (invariant I10): a timeout says the orchestrator stopped waiting, never that
-    the other side did nothing.
-    """
-
-    NOT_HANDED_OFF = "NOT_HANDED_OFF"
-    PENDING = "PENDING"
-    APPLIED = "APPLIED"
-    NOT_APPLIED = "NOT_APPLIED"
-    PARTIAL = "PARTIAL"
-    UNKNOWN = "UNKNOWN"
-
-
-class AccountingState(StrEnum):
-    """AER §13 axis 3: what the money is doing.
-
-    Separate from both other axes because a cost that has been incurred must be
-    recorded even when the effect is UNKNOWN and the control flow closed
-    (invariant I13); ``USAGE_UNKNOWN`` is how that is said out loud.
-    """
-
-    UNRESERVED = "UNRESERVED"
-    RESERVED = "RESERVED"
-    PARTIALLY_SETTLED = "PARTIALLY_SETTLED"
-    SETTLED = "SETTLED"
-    USAGE_UNKNOWN = "USAGE_UNKNOWN"
-
-
-#: Control states in which the request has not yet been handed to a connector.
-_PRE_HANDOFF_CONTROL = frozenset(
-    {OperationControl.PROPOSED, OperationControl.AWAITING_AUTHORIZATION}
-)
-
-
-@dataclass(frozen=True, slots=True)
-class OperationCurrentState:
-    """AER §12.2 / §13: the mutable control record beside the frozen envelope.
-
-    :class:`OperationEnvelope` is the immutable semantics of one real intent; this
-    is everything a retry, an authorisation or a reconciliation may legitimately
-    change.  Keeping them in separate records is what stops a retry from editing
-    what is being requested while it edits how the request is being managed.
-    """
-
-    operation_id: OperationId
-    authorization_state: OperationControl
-    authorization_epoch: int
-    dispatch_generation: int
-    effect_outcome: EffectOutcome
-    accounting_state: AccountingState = AccountingState.UNRESERVED
-    in_flight_handoff_id: str | None = None
-    budget_refs: tuple[str, ...] = ()
-    next_reconcile_at_ms: int | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "operation_id",
-            OperationId(identifier(self.operation_id, "operation_state.operation_id")),
-        )
-        object.__setattr__(
-            self,
-            "authorization_state",
-            enum_of(
-                OperationControl, self.authorization_state, "operation_state.authorization_state"
-            ),
-        )
-        object.__setattr__(
-            self,
-            "authorization_epoch",
-            index(self.authorization_epoch, "operation_state.authorization_epoch"),
-        )
-        object.__setattr__(
-            self,
-            "dispatch_generation",
-            index(self.dispatch_generation, "operation_state.dispatch_generation"),
-        )
-        object.__setattr__(
-            self,
-            "effect_outcome",
-            enum_of(EffectOutcome, self.effect_outcome, "operation_state.effect_outcome"),
-        )
-        object.__setattr__(
-            self,
-            "accounting_state",
-            enum_of(AccountingState, self.accounting_state, "operation_state.accounting_state"),
-        )
-        object.__setattr__(
-            self,
-            "in_flight_handoff_id",
-            optional_identifier(self.in_flight_handoff_id, "operation_state.in_flight_handoff_id"),
-        )
-        object.__setattr__(
-            self, "budget_refs", identifiers(self.budget_refs, "operation_state.budget_refs")
-        )
-        object.__setattr__(
-            self,
-            "next_reconcile_at_ms",
-            optional_index(self.next_reconcile_at_ms, "operation_state.next_reconcile_at_ms"),
-        )
-        if (
-            self.effect_outcome is not EffectOutcome.NOT_HANDED_OFF
-            and self.authorization_state in _PRE_HANDOFF_CONTROL
-        ):
-            raise ContractError(
-                "an operation that has not been authorised cannot already have an effect; "
-                f"{self.authorization_state!s} with outcome {self.effect_outcome!s} "
-                "would mean approval followed the action (invariants I03, I04)"
-            )
-        if (
-            self.effect_outcome is EffectOutcome.NOT_HANDED_OFF
-            and self.in_flight_handoff_id is not None
-        ):
-            raise ContractError(
-                "an operation with an in-flight handoff has been handed off; "
-                "NOT_HANDED_OFF and a live handoff id cannot both be true"
-            )
-
-    @property
-    def settled(self) -> bool:
-        """Whether both the effect and the money have stopped moving."""
-
-        return self.effect_outcome not in {
-            EffectOutcome.PENDING,
-            EffectOutcome.NOT_HANDED_OFF,
-        } and self.accounting_state in {AccountingState.SETTLED, AccountingState.USAGE_UNKNOWN}
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "operation_id": str(self.operation_id),
-            "authorization_state": str(self.authorization_state),
-            "authorization_epoch": self.authorization_epoch,
-            "dispatch_generation": self.dispatch_generation,
-            "effect_outcome": str(self.effect_outcome),
-            "accounting_state": str(self.accounting_state),
-            "in_flight_handoff_id": self.in_flight_handoff_id,
-            "budget_refs": list(self.budget_refs),
-            "next_reconcile_at_ms": self.next_reconcile_at_ms,
-        }
-
-    @classmethod
-    def from_json(
-        cls, value: object, name: str = "operation_current_state"
-    ) -> OperationCurrentState:
-        data = fields_of(
-            value,
-            name,
-            required=(
-                "operation_id",
-                "authorization_state",
-                "authorization_epoch",
-                "dispatch_generation",
-                "effect_outcome",
-            ),
-            optional=(
-                "accounting_state",
-                "in_flight_handoff_id",
-                "budget_refs",
-                "next_reconcile_at_ms",
-            ),
-        )
-        return cls(
-            operation_id=OperationId(data["operation_id"]),
-            authorization_state=data["authorization_state"],
-            authorization_epoch=data["authorization_epoch"],
-            dispatch_generation=data["dispatch_generation"],
-            effect_outcome=data["effect_outcome"],
-            accounting_state=data.get("accounting_state", AccountingState.UNRESERVED),
-            in_flight_handoff_id=data.get("in_flight_handoff_id"),
-            budget_refs=tuple(data.get("budget_refs", ())),
-            next_reconcile_at_ms=data.get("next_reconcile_at_ms"),
-        )
-
-
 class ApprovalDecision(StrEnum):
     """Whether a human or policy approval has been given for this subject."""
 
@@ -2148,163 +1953,15 @@ def envelope_conflict(
     )
 
 
-class ReconciliationOutcome(StrEnum):
-    APPLIED = "APPLIED"
-    NOT_APPLIED_FINAL = "NOT_APPLIED_FINAL"
-    PENDING = "PENDING"
-    PARTIAL = "PARTIAL"
-    UNKNOWN = "UNKNOWN"
-
-
-@dataclass(frozen=True, slots=True)
-class ReconciliationResult:
-    """``reconciliation-result.schema.json``: what a lookup actually established.
-
-    An empty lookup is not a proof of non-application (invariant I10); only a
-    server-side proof, or a demonstrably still-valid idempotency key, lets a
-    request be handed off again.
-    """
-
-    record_id: str
-    operation_id: OperationId
-    request_hash: str
-    connector_namespace: str
-    outcome: ReconciliationOutcome
-    observed_at_ms: int
-    evidence_refs: tuple[TypedRef, ...]
-    old_request_cannot_apply: bool
-    query_completeness: QueryCompleteness
-    explanation: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "record_id", identifier(self.record_id, "reconciliation.record_id")
-        )
-        object.__setattr__(
-            self,
-            "operation_id",
-            OperationId(identifier(self.operation_id, "reconciliation.operation_id")),
-        )
-        object.__setattr__(
-            self, "request_hash", hash_hex(self.request_hash, "reconciliation.request_hash")
-        )
-        object.__setattr__(
-            self,
-            "connector_namespace",
-            identifier(self.connector_namespace, "reconciliation.connector_namespace"),
-        )
-        object.__setattr__(
-            self,
-            "outcome",
-            enum_of(ReconciliationOutcome, self.outcome, "reconciliation.outcome"),
-        )
-        object.__setattr__(
-            self, "observed_at_ms", index(self.observed_at_ms, "reconciliation.observed_at_ms")
-        )
-        object.__setattr__(
-            self,
-            "old_request_cannot_apply",
-            flag(self.old_request_cannot_apply, "reconciliation.old_request_cannot_apply"),
-        )
-        object.__setattr__(
-            self,
-            "query_completeness",
-            enum_of(
-                QueryCompleteness, self.query_completeness, "reconciliation.query_completeness"
-            ),
-        )
-        object.__setattr__(
-            self,
-            "explanation",
-            text(self.explanation, "reconciliation.explanation", limit=MAX_REASON),
-        )
-        if (
-            self.outcome is ReconciliationOutcome.NOT_APPLIED_FINAL
-            and self.query_completeness is not QueryCompleteness.AUTHORITATIVE_WITH_SCOPE
-        ):
-            raise ContractError(
-                "NOT_APPLIED_FINAL requires an authoritative, scoped query (AER §14.3)"
-            )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "schema_version": RECONCILIATION_RESULT_SCHEMA_VERSION,
-            "record_id": self.record_id,
-            "operation_id": str(self.operation_id),
-            "request_hash": self.request_hash,
-            "connector_namespace": self.connector_namespace,
-            "outcome": str(self.outcome),
-            "observed_at_ms": self.observed_at_ms,
-            "evidence_refs": [ref.to_json() for ref in self.evidence_refs],
-            "old_request_cannot_apply": self.old_request_cannot_apply,
-            "query_completeness": str(self.query_completeness),
-            "explanation": self.explanation,
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "reconciliation_result") -> ReconciliationResult:
-        data = fields_of(
-            value,
-            name,
-            required=(
-                "schema_version",
-                "record_id",
-                "operation_id",
-                "request_hash",
-                "connector_namespace",
-                "outcome",
-                "observed_at_ms",
-                "evidence_refs",
-                "old_request_cannot_apply",
-                "query_completeness",
-                "explanation",
-            ),
-        )
-        schema_version(
-            data["schema_version"],
-            f"{name}.schema_version",
-            expected=RECONCILIATION_RESULT_SCHEMA_VERSION,
-        )
-        return cls(
-            record_id=data["record_id"],
-            operation_id=OperationId(data["operation_id"]),
-            request_hash=data["request_hash"],
-            connector_namespace=data["connector_namespace"],
-            outcome=data["outcome"],
-            observed_at_ms=data["observed_at_ms"],
-            evidence_refs=sequence_of(
-                data["evidence_refs"],
-                f"{name}.evidence_refs",
-                lambda item, where: TypedRef.from_json(item, where),
-            ),
-            old_request_cannot_apply=data["old_request_cannot_apply"],
-            query_completeness=data["query_completeness"],
-            explanation=data["explanation"],
-        )
-
-
-def may_rehandoff(result: ReconciliationResult) -> bool:
-    """AER §14.3: an empty or best-effort lookup never licenses a re-send."""
-
-    if result.old_request_cannot_apply:
-        return True
-    return (
-        result.outcome is ReconciliationOutcome.NOT_APPLIED_FINAL
-        and result.query_completeness is QueryCompleteness.AUTHORITATIVE_WITH_SCOPE
-    )
-
-
 __all__ = (
     "GOAL_RESOLUTION_SCHEMA_VERSION",
     "LEGACY_CANDIDATE_RANGE",
     "MAX_SUCCESS_EXPRESSION_NODES",
     "OPERATION_ENVELOPE_SCHEMA_VERSION",
     "OPERATION_PAYLOAD_CONFLICT",
-    "RECONCILIATION_RESULT_SCHEMA_VERSION",
     "REVIEW_PURPOSE_ACCOUNTS",
     "REVIEW_RECORD_SCHEMA_VERSION",
     "Acceptance",
-    "AccountingState",
     "AcceptanceId",
     "AllExpr",
     "AmendmentPolicy",
@@ -2321,20 +1978,15 @@ __all__ = (
     "CriterionVerdict",
     "DeliveryReceipt",
     "DeliveryStage",
-    "EffectOutcome",
     "EvaluationKind",
     "GoalResolution",
     "GoalResolutionId",
     "GoalSignature",
     "OperationConflict",
-    "OperationControl",
-    "OperationCurrentState",
     "OperationEnvelope",
     "OperationId",
     "OperationKind",
     "OperationOccurrenceId",
-    "ReconciliationOutcome",
-    "ReconciliationResult",
     "RequiredEvidencePolicy",
     "RequirementClass",
     "RequirementsRevision",
@@ -2356,7 +2008,6 @@ __all__ = (
     "expression_criterion_ids",
     "hard_constraints_not_independent",
     "match_review_criteria",
-    "may_rehandoff",
     "parse_success_expression",
     "unknown_expression_criteria",
 )

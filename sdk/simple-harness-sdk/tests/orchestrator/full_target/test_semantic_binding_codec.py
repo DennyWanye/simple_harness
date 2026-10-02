@@ -46,7 +46,6 @@ from agent_orchestrator.contracts.htn import (
     DataRequirement,
     DispatchGeneration,
     EndpointKind,
-    ExecutionFeedbackV1,
     GoalSignature,
     GraphStructureBudget,
     MethodContract,
@@ -491,7 +490,7 @@ def test_condition_digest_is_stable_across_equal_conditions() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The plan pack's 13 schema fixtures, structural level
+# The plan pack's 10 schema fixtures, structural level
 # --------------------------------------------------------------------------------------
 
 
@@ -500,13 +499,12 @@ def _codec_for(schema: str) -> Any:
         "method-contract-v1.schema.json": MethodContract.from_json,
         "plan-revision-proposal-v1.schema.json": PlanProposal.from_json,
         "goal-resolution-v1.schema.json": GoalResolution.from_json,
-        "execution-feedback-v1.schema.json": ExecutionFeedbackV1.from_json,
     }[schema]
 
 
-def test_all_thirteen_plan_fixtures_land_on_the_expected_side() -> None:
+def test_all_ten_plan_fixtures_land_on_the_expected_side() -> None:
     fixtures = load_plan_fixtures()
-    assert len(fixtures) == 13
+    assert len(fixtures) == 10
 
     for fixture in fixtures:
         codec = _codec_for(fixture["schema"])
@@ -520,7 +518,7 @@ def test_all_thirteen_plan_fixtures_land_on_the_expected_side() -> None:
 
 
 def test_the_structurally_valid_but_semantically_invalid_resolution_still_decodes() -> None:
-    """Fixture 13: ACCEPT with a failing required criterion is a *domain* rejection.
+    """Fixture 10: ACCEPT with a failing required criterion is a *domain* rejection.
 
     The codec's job ends at structure; refusing the ACCEPT is P1.1b's acceptance
     rules, and conflating the two would let a structural check masquerade as a
@@ -537,6 +535,12 @@ def test_the_structurally_valid_but_semantically_invalid_resolution_still_decode
     assert any(item.verdict.value == "FAIL" for item in resolution.criteria)
 
 
+#: Index files from which the deleted ReconciliationResult / ExecutionFeedbackV1
+#: samples were removed (fixtures/SOURCE.md, "本地删减").  Their recorded SHA-256 is
+#: still checked; only the byte-for-byte comparison with upstream is skipped.
+LOCALLY_TRIMMED_COPIES = frozenset({"aer/index.json", "plan_pack/fixtures.json"})
+
+
 def test_repo_copies_match_the_upstream_plan_pack() -> None:
     """The in-repo fixtures are a copy; this is what makes the copy honest.
 
@@ -548,7 +552,7 @@ def test_repo_copies_match_the_upstream_plan_pack() -> None:
     """
 
     manifest = source_manifest()
-    assert len(manifest) == 18
+    assert len(manifest) == 14
 
     for local, _upstream, digest in manifest:
         assert sha256_of(FIXTURE_ROOT / local) == digest, f"{local} drifted from SOURCE.md"
@@ -557,6 +561,8 @@ def test_repo_copies_match_the_upstream_plan_pack() -> None:
         pytest.skip("upstream FULL-TARGET-1.4 plan pack not present on this machine")
 
     for local, upstream, _digest in manifest:
+        if local in LOCALLY_TRIMMED_COPIES:
+            continue
         assert (FIXTURE_ROOT / local).read_bytes() == (UPSTREAM_ROOT / upstream).read_bytes(), (
             f"{local} no longer matches {upstream}"
         )
@@ -914,9 +920,6 @@ def test_the_same_path_in_two_namespaces_is_two_resources() -> None:
 @pytest.mark.parametrize(
     "relation,source,target",
     [
-        (RelationKind.SUPPORT, EndpointKind.EVIDENCE, EndpointKind.TASK),
-        (RelationKind.ASSUMPTION, EndpointKind.EVIDENCE, EndpointKind.METHOD_INSTANCE),
-        (RelationKind.SUPERVISION, EndpointKind.SUPERVISOR, EndpointKind.OCCURRENCE),
         (RelationKind.FUNDING, EndpointKind.OBLIGATION, EndpointKind.OBLIGATION),
         (RelationKind.SUPERSEDES, EndpointKind.TASK, EndpointKind.TASK),
     ],
@@ -936,11 +939,10 @@ def test_each_typed_relation_accepts_its_own_endpoints(
 @pytest.mark.parametrize(
     "relation,source,target,message",
     [
-        (RelationKind.SUPPORT, EndpointKind.TASK, EndpointKind.TASK, "source must be one of"),
         (
-            RelationKind.SUPERVISION,
-            EndpointKind.SUPERVISOR,
-            EndpointKind.EVIDENCE,
+            RelationKind.FUNDING,
+            EndpointKind.OBLIGATION,
+            EndpointKind.TASK,
             "target must be one of",
         ),
         (
@@ -1075,21 +1077,6 @@ def test_a_proposal_may_attribute_work_to_a_model_but_not_to_a_tool() -> None:
     payload["trigger_refs"][0]["produced_by"] = "tool"
     with pytest.raises(ContractError, match="may not claim 'tool'"):
         PlanProposal.from_json(payload)
-
-
-def test_worker_feedback_may_not_attribute_its_own_evidence_to_the_system() -> None:
-    fixture = next(
-        item for item in load_plan_fixtures() if item["name"] == "execution-feedback-v1-valid"
-    )
-    payload = dict(fixture["payload"])
-    assert ExecutionFeedbackV1.from_json(payload).outcome.value == "blocked"
-
-    import copy
-
-    tampered = copy.deepcopy(payload)
-    tampered["observations"][0]["evidence_refs"][0]["produced_by"] = "system"
-    with pytest.raises(ContractError, match="may not claim 'system'"):
-        ExecutionFeedbackV1.from_json(tampered)
 
 
 def test_an_unattributed_reference_keeps_the_bytes_it_had_before_provenance_existed() -> None:

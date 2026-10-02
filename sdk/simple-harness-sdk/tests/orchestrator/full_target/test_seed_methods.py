@@ -10,11 +10,14 @@ both without knowing either, so the decisive test in this file is the third one:
 ``fixtures/htn/domains/widget`` is an invented domain that exists only as JSON, and
 it decomposes through exactly the same calls.
 
-The recursion tests pin §6.4 v1.2 end to end: fuel belongs to the *obligation*, a
-repeat of the same method and parameters is refused before fuel is spent, an
-expansion that repeats an ancestor against the same world snapshot changes no
-state, and exhaustion is ``BOUND_REACHED`` with the structure expanded so far kept
-— never ``UNSOLVABLE``.
+Which method refines a goal is the planner's judgement (an LLM names it in a
+``RefineOperation``); these tests name the method and send it through the
+production draft path — assess, ground, compile — exactly as
+``plan_preview.compile_candidate_from_snapshot`` does.  The recursion tests pin the
+structure a recursive method produces: a compound child of the same goal type, no
+newly minted duty, and a base case that leaves nothing to refine.  Recursion fuel
+is the ledger's business (``test_htn_recursion_fuel.py``) and is spent when a plan
+commit opens a child duty.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ from htn_world import (  # noqa: E402
     DOMAIN_ROOT,
     Env,
     add_domain,
-    ledger_for,
+    ground_draft,
     ref,
     root_network,
     seed_env,
@@ -42,12 +45,14 @@ from htn_world import (  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     MethodRegistryStatus,
-    SideEffectKind,
     TaskForm,
 )
-from agent_orchestrator.contracts.obligations import FuelStatus  # noqa: E402
 from agent_orchestrator.graph.projection_validation import (  # noqa: E402
     validate_execution_projection,
+)
+from agent_orchestrator.planning.htn.applicability import (  # noqa: E402
+    ApplicabilityStatus,
+    assess_method,
 )
 from agent_orchestrator.planning.htn.backends.panda import (  # noqa: E402
     PandaToolchain,
@@ -58,14 +63,11 @@ from agent_orchestrator.planning.htn.backends.panda import (  # noqa: E402
 from agent_orchestrator.planning.htn.compiler import (  # noqa: E402
     compile_refinement_bundle,
 )
+from agent_orchestrator.planning.htn.grounding import GroundingError  # noqa: E402
 from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
-    AttemptPolicy,
-    FrontierItem,
-    RefinementOutcome,
-    bounded_attempt_admissible,
-    leaf_decision,
+    evidence_requests,
     planning_frontier,
-    refine,
+    unknown_predicates,
 )
 from agent_orchestrator.planning.htn.registry import method_is_recursive  # noqa: E402
 from agent_orchestrator.planning.htn.seed_methods import (  # noqa: E402
@@ -109,35 +111,52 @@ def world_for_widget(env: Env) -> Env:
     return env
 
 
-def decompose(env: Env, binding, *, fuel: int = 3, network=None, ledger=None):
+def decompose(env: Env, binding, method_id: str, *, network=None, occurrence_id=None):
+    """Refine one goal with the named seed method, the way production does.
+
+    The planner names the method; the Harness assesses, grounds and compiles it.
+    Returns the draft, the method contract and the compiled increment.
+    """
+
     network = network or root_network(env, binding)
-    ledger = ledger or ledger_for(binding, fuel=fuel, mission=env.mission)
-    report = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    return network, ledger, report
-
-
-def compile_first(env: Env, network, report):
-    draft = report.drafts[0]
-    contract = env.registry.definition(draft.method_ref)
-    assert contract is not None
-    return contract, compile_refinement_bundle(
+    contract = _seed_method(env, method_id)
+    draft = ground_draft(env, binding, contract, network, occurrence_id=occurrence_id)
+    bundle = compile_refinement_bundle(
         draft,
         network,
         method=contract,
         catalog=env.catalog,
         schemas=env.schemas,
         registry=env.registry,
+    )
+    return draft, contract, bundle
+
+
+def code_goal(env: Env):
+    return task_binding(
+        env,
+        "code.fix-failing-test",
+        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
+    )
+
+
+def appworld_goal(env: Env):
+    return task_binding(
+        env, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}
+    )
+
+
+def widget_goal(env: Env):
+    return task_binding(env, "widget.build-widget", parameters={"widget": "w-1", "tier": 2})
+
+
+def assessment(env: Env, binding, method_id: str):
+    return assess_method(
+        binding,
+        _seed_method(env, method_id),
+        env.snapshot(),
+        env.capabilities(),
+        registry=env.predicates,
     )
 
 
@@ -249,56 +268,45 @@ def test_an_unknown_directory_is_not_a_domain() -> None:
 
 def test_the_code_domain_decomposes_its_goal() -> None:
     env = world_for_code(seed_env())
-    binding = task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-    )
-    _, _, report = decompose(env, binding)
-    assert report.outcomes == (RefinementOutcome.REFINED,)
+    draft, _, bundle = decompose(env, code_goal(env), "code.fix-by-patch")
+    assert {item.slot_key for item in draft.child_bindings} == {
+        "facts",
+        "reproduce",
+        "patch",
+        "verify",
+    }
+    assert bundle.adopted_instance_id == draft.instance_id
 
 
 def test_the_code_decomposition_compiles_to_a_valid_increment() -> None:
     env = world_for_code(seed_env())
-    binding = task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-    )
-    network, _, report = decompose(env, binding)
-    _, bundle = compile_first(env, network, report)
+    _, _, bundle = decompose(env, code_goal(env), "code.fix-by-patch")
     assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
 def test_the_appworld_domain_decomposes_its_goal() -> None:
     env = world_for_appworld(seed_env())
-    binding = task_binding(
-        env, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}
-    )
-    _, _, report = decompose(env, binding)
-    assert report.outcomes == (RefinementOutcome.REFINED,)
+    draft, _, bundle = decompose(env, appworld_goal(env), "appworld.fulfil-by-api")
+    assert draft.child_bindings
+    assert bundle.adopted_instance_id == draft.instance_id
 
 
 def test_the_appworld_decomposition_compiles_to_a_valid_increment() -> None:
     env = world_for_appworld(seed_env())
-    binding = task_binding(
-        env, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}
-    )
-    network, _, report = decompose(env, binding)
-    _, bundle = compile_first(env, network, report)
+    _, _, bundle = decompose(env, appworld_goal(env), "appworld.fulfil-by-api")
     assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
-def test_the_appworld_alternative_is_chosen_when_the_api_does_not_cover_it() -> None:
+def test_when_the_api_does_not_cover_it_only_the_search_alternative_applies() -> None:
     env = world_for_appworld(seed_env())
     env.say("appworld.api-supports-request", {"app": "mail"}, TruthValue.FALSE)
-    binding = task_binding(
-        env, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}
-    )
-    _, _, report = decompose(env, binding)
-    decision = report.decisions[0]
-    assert decision.chosen is not None
-    assert decision.chosen.method.method_id == "appworld.fulfil-by-search"
+    binding = appworld_goal(env)
+    refuted = assessment(env, binding, "appworld.fulfil-by-api")
+    assert refuted.status is ApplicabilityStatus.PRECONDITION_FALSE
+    with pytest.raises(GroundingError):
+        decompose(env, binding, "appworld.fulfil-by-api")
+    _, _, bundle = decompose(env, binding, "appworld.fulfil-by-search")
+    assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
 def test_the_two_domains_go_through_the_same_calls() -> None:
@@ -306,19 +314,11 @@ def test_the_two_domains_go_through_the_same_calls() -> None:
 
     code = world_for_code(seed_env())
     app = world_for_appworld(seed_env())
-    code_report = decompose(
-        code,
-        task_binding(
-            code,
-            "code.fix-failing-test",
-            parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-        ),
-    )[2]
-    app_report = decompose(
-        app,
-        task_binding(app, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}),
-    )[2]
-    assert code_report.outcomes == app_report.outcomes
+    _, _, code_bundle = decompose(code, code_goal(code), "code.fix-by-patch")
+    _, _, app_bundle = decompose(app, appworld_goal(app), "appworld.fulfil-by-api")
+    for bundle in (code_bundle, app_bundle):
+        assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
+        assert len(bundle.network.adopted_instance_ids) == 1
 
 
 # ======================================================== a third, invented domain
@@ -337,28 +337,26 @@ def test_a_third_domain_needs_only_data() -> None:
 
 def test_the_invented_domain_decomposes_its_goal() -> None:
     env = widget_env()
-    binding = task_binding(env, "widget.build-widget", parameters={"widget": "w-1", "tier": 2})
-    _, _, report = decompose(env, binding)
-    assert report.outcomes == (RefinementOutcome.REFINED,)
+    draft, _, bundle = decompose(env, widget_goal(env), "widget.build-from-parts")
+    assert draft.child_bindings
+    assert bundle.adopted_instance_id == draft.instance_id
 
 
 def test_the_invented_domain_compiles_to_a_valid_increment() -> None:
     env = widget_env()
-    binding = task_binding(env, "widget.build-widget", parameters={"widget": "w-1", "tier": 2})
-    network, _, report = decompose(env, binding)
-    _, bundle = compile_first(env, network, report)
+    _, _, bundle = decompose(env, widget_goal(env), "widget.build-from-parts")
     assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
-def test_the_invented_domain_picks_its_own_alternative() -> None:
+def test_the_invented_domain_s_own_alternative_applies_when_the_first_is_refuted() -> None:
     env = widget_env()
     env.say("widget.parts-in-stock", {"widget": "w-1"}, TruthValue.FALSE)
     env.say("widget.kit-available", {"widget": "w-1"}, TruthValue.TRUE)
-    binding = task_binding(env, "widget.build-widget", parameters={"widget": "w-1", "tier": 2})
-    _, _, report = decompose(env, binding)
-    decision = report.decisions[0]
-    assert decision.chosen is not None
-    assert decision.chosen.method.method_id == "widget.build-from-kit"
+    binding = widget_goal(env)
+    refuted = assessment(env, binding, "widget.build-from-parts")
+    assert refuted.status is ApplicabilityStatus.PRECONDITION_FALSE
+    _, _, bundle = decompose(env, binding, "widget.build-from-kit")
+    assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
 def test_registering_a_third_domain_does_not_disturb_the_first_two() -> None:
@@ -370,157 +368,60 @@ def test_registering_a_third_domain_does_not_disturb_the_first_two() -> None:
 
 # ===================================================================== recursion
 
+RECURSIVE = "code.review-changes-recursively"
 
-def recursive_setup(fuel: int):
+
+def recursive_setup():
     env = seed_env()
     env.say("code.changeset-too-large", {"changeset": "cs-1"}, TruthValue.TRUE)
     env.say("code.changeset-too-large", {"changeset": "chunk"}, TruthValue.TRUE)
     binding = task_binding(
         env, "code.review-changes", parameters={"changeset": "cs-1", "depth_budget": 3}
     )
-    network = root_network(env, binding)
-    ledger = ledger_for(binding, fuel=fuel, mission=env.mission)
-    return env, binding, network, ledger
+    return env, binding, root_network(env, binding)
 
 
-def expand_once(env: Env, network, ledger, frontier=None):
-    report = refine(
-        frontier if frontier is not None else planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
+def expand_once(env: Env, network, method_id: str = RECURSIVE):
+    """Refine the one open compound occurrence of ``network`` with the named method."""
+
+    frontier = planning_frontier(network)
+    assert len(frontier) == 1, frontier
+    item = frontier[0]
+    binding = network.binding_for_occurrence(item.occurrence_id)
+    _, _, bundle = decompose(
+        env, binding, method_id, network=network, occurrence_id=item.occurrence_id
     )
-    if not report.drafts:
-        return report, network
-    draft = report.drafts[0]
-    contract = env.registry.definition(draft.method_ref)
-    assert contract is not None
-    bundle = compile_refinement_bundle(
-        draft,
-        network,
-        method=contract,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-    )
-    return report, bundle.network
-
-
-def test_the_recursive_method_is_chosen_when_the_changeset_is_too_large() -> None:
-    env, _, network, ledger = recursive_setup(3)
-    report, _ = expand_once(env, network, ledger)
-    decision = report.decisions[0]
-    assert decision.chosen is not None
-    assert decision.chosen.method.method_id == "code.review-changes-recursively"
-
-
-def test_the_first_expansion_spends_one_unit_of_fuel() -> None:
-    env, binding, network, ledger = recursive_setup(3)
-    expand_once(env, network, ledger)
-    assert ledger.remaining_fuel(binding.obligation_id) == 2
+    return bundle
 
 
 def test_the_recursion_opens_a_compound_child_of_the_same_goal_type() -> None:
-    env, _, network, ledger = recursive_setup(3)
-    _, network = expand_once(env, network, ledger)
+    env, _, network = recursive_setup()
+    network = expand_once(env, network).network
     signatures = {
-        network.binding_for_occurrence(item).goal_signature.signature_id
+        network.binding_for_occurrence(item.occurrence_id).goal_signature.signature_id
         for item in planning_frontier(network)
-        and [item.occurrence_id for item in planning_frontier(network)]
     }
     assert signatures == {"code.review-changes"}
 
 
-def test_the_recursion_expands_a_second_level_under_fuel() -> None:
-    env, binding, network, ledger = recursive_setup(3)
-    _, network = expand_once(env, network, ledger)
-    report, network = expand_once(env, network, ledger)
-    assert report.outcomes == (RefinementOutcome.REFINED,)
-    assert ledger.remaining_fuel(binding.obligation_id) == 1
+def test_the_recursion_expands_a_second_level() -> None:
+    env, _, network = recursive_setup()
+    first = expand_once(env, network)
+    child = planning_frontier(first.network)[0].occurrence_id
+    second = expand_once(env, first.network)
+    assert second.network.adopted_instance_for(child) is not None
+    assert len(planning_frontier(second.network)) == 1
 
 
-def test_a_child_duty_spends_the_parent_obligation_s_fuel() -> None:
+def test_a_recursive_child_opens_no_new_duty() -> None:
     """§6.1: splitting a task does not mint a fresh retry allowance."""
 
-    env, binding, network, ledger = recursive_setup(3)
-    _, network = expand_once(env, network, ledger)
-    expand_once(env, network, ledger)
-    assert ledger.obligation_ids() == (binding.obligation_id,)
-
-
-def test_exhausted_fuel_reports_a_bound_not_an_impossible_goal() -> None:
-    env, _, network, ledger = recursive_setup(1)
-    _, network = expand_once(env, network, ledger)
-    report, _ = expand_once(env, network, ledger)
-    assert report.outcomes == (RefinementOutcome.BOUND_REACHED,)
-
-
-def test_the_bound_report_names_the_obligation_and_its_expansions() -> None:
-    env, binding, network, ledger = recursive_setup(1)
-    _, network = expand_once(env, network, ledger)
-    report, _ = expand_once(env, network, ledger)
-    bound = report.decisions[0].bound_report
-    assert bound is not None
-    assert bound.obligation_id == binding.obligation_id
-    assert bound.expansions
-
-
-def test_the_bound_report_is_serialised_as_bound_reached() -> None:
-    env, _, network, ledger = recursive_setup(1)
-    _, network = expand_once(env, network, ledger)
-    report, _ = expand_once(env, network, ledger)
-    bound = report.decisions[0].bound_report
-    assert bound is not None
-    assert bound.to_json()["status"] == str(FuelStatus.BOUND_REACHED)
-
-
-def test_the_structure_expanded_so_far_survives_the_bound() -> None:
-    env, _, network, ledger = recursive_setup(1)
-    _, expanded = expand_once(env, network, ledger)
-    before = {str(spec.occurrence_id) for spec in expanded.occurrences}
-    _, after_network = expand_once(env, expanded, ledger)
-    assert {str(spec.occurrence_id) for spec in after_network.occurrences} == before
-
-
-def test_the_bound_is_never_reported_as_unsolvable() -> None:
-    env, _, network, ledger = recursive_setup(1)
-    _, network = expand_once(env, network, ledger)
-    report, _ = expand_once(env, network, ledger)
-    assert "UNSOLVABLE" not in report.decisions[0].reason
-    assert "bound" in report.decisions[0].reason
-
-
-def test_repeating_the_same_expansion_is_refused_before_fuel_is_spent() -> None:
-    env, binding, network, ledger = recursive_setup(3)
-    expand_once(env, network, ledger)
-    remaining = ledger.remaining_fuel(binding.obligation_id)
-    report, _ = expand_once(env, network, ledger)
-    assert report.outcomes == (RefinementOutcome.REPEATED_EXPANSION,)
-    assert ledger.remaining_fuel(binding.obligation_id) == remaining
-
-
-def test_an_expansion_that_repeats_an_ancestor_changes_no_state() -> None:
-    env, binding, network, ledger = recursive_setup(5)
-    _, network = expand_once(env, network, ledger)
-    _, network = expand_once(env, network, ledger)
-    remaining = ledger.remaining_fuel(binding.obligation_id)
-    report, _ = expand_once(env, network, ledger)
-    assert report.outcomes == (RefinementOutcome.NO_STATE_CHANGE,)
-    assert ledger.remaining_fuel(binding.obligation_id) == remaining
-
-
-def test_the_no_state_change_reason_names_the_ancestor() -> None:
-    env, _, network, ledger = recursive_setup(5)
-    _, network = expand_once(env, network, ledger)
-    _, network = expand_once(env, network, ledger)
-    report, _ = expand_once(env, network, ledger)
-    assert "already expanded" in report.decisions[0].reason
+    env, _, network = recursive_setup()
+    first = expand_once(env, network)
+    second = expand_once(env, first.network)
+    for bundle in (first, second):
+        assert bundle.new_obligations == ()
+        assert bundle.delta.obligation_openings == ()
 
 
 def test_the_base_case_method_ends_the_recursion() -> None:
@@ -529,70 +430,46 @@ def test_the_base_case_method_ends_the_recursion() -> None:
     binding = task_binding(
         env, "code.review-changes", parameters={"changeset": "cs-1", "depth_budget": 1}
     )
-    network, _, report = decompose(env, binding)
-    decision = report.decisions[0]
-    assert decision.chosen is not None
-    assert decision.chosen.method.method_id == "code.review-changes-directly"
-    del network
+    _, _, bundle = decompose(env, binding, "code.review-changes-directly")
+    assert planning_frontier(bundle.network) == ()
 
 
 # ====================================================================== evidence
 
 
-def primitive_frontier(env: Env, network, slot_key: str, draft):
-    binding = next(item for item in draft.child_bindings if item.slot_key == slot_key)
-    spec = network.occurrence(binding.occurrence_id)
-    return (FrontierItem.of(spec),)
+def patch_evidence(*, clean: TruthValue):
+    """Evidence requests for the patch leaf's own preconditions."""
 
-
-def patch_leaf(env: Env, *, clean: TruthValue):
+    env = seed_env()
     env.say("code.repo-checked-out", {"repository": "repo-1"}, TruthValue.TRUE)
     env.say("code.test-is-failing", {"test": "test_alpha"}, TruthValue.TRUE)
     env.say("code.working-tree-clean", {"repository": "repo-1"}, clean)
-    binding = task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
+    draft, _, bundle = decompose(env, code_goal(env), "code.fix-by-patch")
+    slot = next(item for item in draft.child_bindings if item.slot_key == "patch")
+    leaf = bundle.network.binding_for_occurrence(slot.occurrence_id)
+    spec = env.catalog.require(ref("code.apply-patch"))
+    unknowns = unknown_predicates(
+        spec.preconditions,
+        parameters=leaf.typed_parameters,
+        predicates=env.predicates,
+        snapshot=env.snapshot(),
     )
-    network, ledger, report = decompose(env, binding)
-    contract, bundle = compile_first(env, network, report)
-    draft = report.drafts[0]
-    return env, bundle.network, ledger, draft
+    return evidence_requests(
+        unknowns,
+        for_occurrence=slot.occurrence_id,
+        obligation_id=slot.obligation_id,
+        catalog=env.catalog,
+        semantic_scope=leaf.semantic_scope,
+        contract_revision=int(leaf.contract_revision),
+    )
 
 
 def test_an_unknown_precondition_produces_an_evidence_occurrence() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.UNKNOWN)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.outcomes == (RefinementOutcome.NEEDS_EVIDENCE,)
-    assert report.decisions[0].evidence
+    assert patch_evidence(clean=TruthValue.UNKNOWN)
 
 
 def test_the_evidence_occurrence_is_read_only() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.UNKNOWN)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    request = report.decisions[0].evidence[0]
+    request = patch_evidence(clean=TruthValue.UNKNOWN)[0]
     assert request.observer is not None
     assert request.observer.read_only
     assert request.binding is not None
@@ -600,55 +477,12 @@ def test_the_evidence_occurrence_is_read_only() -> None:
 
 
 def test_the_evidence_occurrence_names_the_predicate_it_would_answer() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.UNKNOWN)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    request = report.decisions[0].evidence[0]
+    request = patch_evidence(clean=TruthValue.UNKNOWN)[0]
     assert request.predicate_ref.id == "code.working-tree-clean"
 
 
-def test_the_high_risk_leaf_is_not_dispatched_while_the_precondition_is_unknown() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.UNKNOWN)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.decisions[0].outcome is not RefinementOutcome.LEAF
-
-
-def test_a_resolved_precondition_makes_the_leaf_a_leaf() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.TRUE)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.outcomes == (RefinementOutcome.LEAF,)
+def test_a_resolved_precondition_asks_for_no_evidence() -> None:
+    assert patch_evidence(clean=TruthValue.TRUE) == ()
 
 
 def test_an_unobservable_predicate_says_so_rather_than_guessing() -> None:
@@ -675,88 +509,12 @@ def test_an_unobservable_predicate_says_so_rather_than_guessing() -> None:
     del spec
 
 
-# ================================================================= attempt policy
-
-
-def test_a_read_only_leaf_may_be_tried_before_it_is_planned() -> None:
-    env = seed_env()
-    spec = env.catalog.require(ref("code.read-repository-facts"))
-    assert bounded_attempt_admissible(spec) is AttemptPolicy.BOUNDED_ATTEMPT_FIRST
-
-
-def test_a_reversible_local_write_may_be_tried() -> None:
-    env = seed_env()
-    spec = env.catalog.require(ref("code.apply-patch"))
-    assert bounded_attempt_admissible(spec) is AttemptPolicy.BOUNDED_ATTEMPT_FIRST
-
-
-def test_an_irreversible_external_write_is_planned_first() -> None:
-    """§7.2: "just try it once" is not how a send gets decided."""
-
-    env = seed_env()
-    spec = env.catalog.require(ref("appworld.submit-action"))
-    assert spec.side_effect_kind is SideEffectKind.EXTERNAL_STATE_WRITE
-    assert bounded_attempt_admissible(spec) is AttemptPolicy.PLAN_BEFORE_ATTEMPT
-
-
-def test_a_compound_task_is_never_a_leaf() -> None:
-    env = world_for_code(seed_env())
-    binding = task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-    )
-    decision = leaf_decision(
-        binding,
-        env.catalog.require(ref("code.fix-failing-test")),
-        capabilities=env.capabilities(),
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert not decision.is_leaf
-    assert "refined by a method" in decision.reason
-
-
-def test_a_leaf_without_an_operator_is_not_executable_here() -> None:
-    env = world_for_code(seed_env())
-    binding = task_binding(env, "code.verify-tests", parameters={"repository": "repo-1"})
-    decision = leaf_decision(
-        binding,
-        None,
-        capabilities=env.capabilities(),
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert not decision.is_leaf
-    assert "no registered operator" in decision.reason
-
-
-def test_a_missing_capability_stops_a_leaf() -> None:
-    env = world_for_code(seed_env())
-    binding = task_binding(env, "code.verify-tests", parameters={"repository": "repo-1"})
-    decision = leaf_decision(
-        binding,
-        env.catalog.require(ref("code.verify-tests")),
-        capabilities=env.capabilities(unavailable=("tests.run",)),
-        snapshot=env.snapshot(),
-        predicates=env.predicates,
-    )
-    assert not decision.is_leaf
-    assert decision.missing_capabilities == ("tests.run",)
-
-
 # ========================================================================== HDDL
 
 
 def code_delta(env: Env | None = None):
     env = world_for_code(env or seed_env())
-    binding = task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-    )
-    network, _, report = decompose(env, binding)
-    contract, bundle = compile_first(env, network, report)
+    _, contract, bundle = decompose(env, code_goal(env), "code.fix-by-patch")
     return env, contract, bundle
 
 
@@ -1103,8 +861,7 @@ def test_an_unexpanded_compound_is_outside_the_fragment() -> None:
     binding = task_binding(
         env, "code.review-changes", parameters={"changeset": "cs-1", "depth_budget": 3}
     )
-    network, _, report = decompose(env, binding)
-    _, bundle = compile_first(env, network, report)
+    _, _, bundle = decompose(env, binding, RECURSIVE)
     export = to_hddl(bundle.delta, network=bundle.network)
     assert isinstance(export, UnsupportedFeature)
     assert "unexpanded-compound-occurrence" in export.features
@@ -1233,72 +990,6 @@ def test_the_adapter_reports_solver_unavailable_rather_than_a_pass() -> None:
         export.domain_text, export.problem_text, plan_text_for(export, bundle)
     )
     assert result.status is VerificationStatus.SOLVER_UNAVAILABLE
-
-
-# ============================================================= evidence and fuel
-
-
-def test_gathering_evidence_costs_no_recursion_fuel() -> None:
-    """§6.4: fuel pays for expansions.  Looking something up is not one."""
-
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.UNKNOWN)
-    before = ledger.remaining_fuel(draft.obligation_id)
-    report = refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.outcomes == (RefinementOutcome.NEEDS_EVIDENCE,)
-    assert ledger.remaining_fuel(draft.obligation_id) == before
-
-
-def test_a_leaf_that_is_ready_costs_no_fuel_either() -> None:
-    env, network, ledger, draft = patch_leaf(seed_env(), clean=TruthValue.TRUE)
-    before = ledger.remaining_fuel(draft.obligation_id)
-    refine(
-        primitive_frontier(env, network, "patch", draft),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert ledger.remaining_fuel(draft.obligation_id) == before
-
-
-def test_a_compound_with_no_applicable_method_costs_no_fuel() -> None:
-    env = seed_env()
-    binding = task_binding(
-        env, "code.review-changes", parameters={"changeset": "cs-1", "depth_budget": 1}
-    )
-    network = root_network(env, binding)
-    ledger = ledger_for(binding, mission=env.mission)
-    before = ledger.remaining_fuel(binding.obligation_id)
-    report = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert report.outcomes == (RefinementOutcome.NEEDS_EVIDENCE,)
-    assert ledger.remaining_fuel(binding.obligation_id) == before
 
 
 # ================================ G2: the seed library can express a shared reading

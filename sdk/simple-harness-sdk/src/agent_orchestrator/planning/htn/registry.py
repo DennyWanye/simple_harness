@@ -372,19 +372,6 @@ class TaskTypeSpec:
     def read_only(self) -> bool:
         return self.side_effect_kind in READ_ONLY_EFFECTS
 
-    @property
-    def low_risk(self) -> bool:
-        """§7.2 / ADaPT: may this be *tried* before it is planned?
-
-        Only when nothing irreversible happens outside the orchestrator.  A local
-        write that the type declares reversible qualifies; an external state or
-        event write never does, however small it looks.
-        """
-
-        if self.read_only:
-            return True
-        return self.side_effect_kind is SideEffectKind.LOCAL_WRITE and self.reversible
-
     def output_port(self, port_key: str) -> PortSpec | None:
         for port in self.output_ports:
             if port.port_key == port_key:

@@ -9,8 +9,6 @@ codec, so no test here depends on a live model.
 
 What is pinned:
 
-* an empty library answers a goal with a :class:`MethodProposalRequest`, not with
-  a guess;
 * a well-formed proposal walks ``DRAFT → STRUCTURALLY_VALID → TRIAL_ADMITTED`` and
   stops there — ``promote`` answers ``PROMOTION_NOT_AVAILABLE``, because
   ``EVALUATED → ADMITTED`` needs the offline evaluation P8 delivers (§7.3);
@@ -31,32 +29,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
 
 from htn_world import (  # noqa: E402
-    BUDGET,
     Env,
     atom,
-    ledger_for,
     load_proposal,
     method,
     param,
     ref,
-    root_network,
     seed_env,
     step,
-    task_binding,
 )
 
-from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     MethodRegistryStatus,
     RegistryAuthor,
     TaskForm,
 )
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
-from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
-    RefinementOutcome,
-    planning_frontier,
-    refine,
-)
 from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     AdmissionStepId,
     AdmissionVerdict,
@@ -84,107 +72,6 @@ def proposal(name: str) -> MethodProposal:
 def admitted(env: Env, name: str):
     submission = proposal(name)
     return env.registry.admit(submission, author=submission.author, policy=env.policy())
-
-
-def code_root(env: Env):
-    return task_binding(
-        env,
-        "code.fix-failing-test",
-        parameters={"repository": "repo-1", "failing_test": "test_alpha"},
-    )
-
-
-def observed_world(env: Env) -> Env:
-    env.say("code.repo-checked-out", {"repository": "repo-1"}, TruthValue.TRUE)
-    env.say("code.test-is-failing", {"test": "test_alpha"}, TruthValue.TRUE)
-    env.say("code.working-tree-clean", {"repository": "repo-1"}, TruthValue.TRUE)
-    return env
-
-
-# ============================================================ an empty library
-
-
-def test_an_empty_library_asks_for_a_method() -> None:
-    env = observed_world(code_env())
-    binding = code_root(env)
-    network = root_network(env, binding)
-    decision = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger_for(binding, mission=env.mission),
-        budget=BUDGET,
-    ).decisions[0]
-    assert decision.outcome is RefinementOutcome.NO_APPLICABLE_METHOD
-    assert decision.proposal_request is not None
-
-
-def test_the_request_names_the_goal_type_a_method_would_have_to_target() -> None:
-    env = observed_world(code_env())
-    binding = code_root(env)
-    network = root_network(env, binding)
-    decision = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger_for(binding, mission=env.mission),
-        budget=BUDGET,
-    ).decisions[0]
-    request = decision.proposal_request
-    assert request is not None
-    assert request.goal_type_ref is not None
-    assert request.goal_type_ref.id == "code.fix-failing-test"
-
-
-def test_the_request_is_json_serialisable_for_a_synthesiser() -> None:
-    env = observed_world(code_env())
-    binding = code_root(env)
-    network = root_network(env, binding)
-    decision = refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger_for(binding, mission=env.mission),
-        budget=BUDGET,
-    ).decisions[0]
-    assert decision.proposal_request is not None
-    payload = decision.proposal_request.to_json()
-    assert payload["goal_signature"]["signature_id"] == "code.fix-failing-test"
-
-
-def test_no_fuel_is_spent_when_there_is_nothing_to_expand() -> None:
-    env = observed_world(code_env())
-    binding = code_root(env)
-    network = root_network(env, binding)
-    ledger = ledger_for(binding, mission=env.mission)
-    refine(
-        planning_frontier(network),
-        network=network,
-        registry=env.registry,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        snapshot=env.snapshot(),
-        capabilities=env.capabilities(),
-        ledger=ledger,
-        budget=BUDGET,
-    )
-    assert ledger.remaining_fuel(binding.obligation_id) == 3
 
 
 # ================================================================ the happy path
