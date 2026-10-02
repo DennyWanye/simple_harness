@@ -28,8 +28,6 @@ from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 from .taskgraph_policy import TaskGraphPolicyService
 from .taskgraph_policy_sources import DeploymentAcceptanceReader, StoreTaskGraphPolicyAuthority
 from .taskgraph_resolutions import TaskGraphResolutionReader
-from .taskgraph_baseline import TaskGraphBaselineCapture
-from .taskgraph_baseline_proof import TaskGraphBaselineProof
 from .taskgraph_operator import TaskGraphOperatorGuard, TaskGraphOperatorService
 from .taskgraph_runtime import TaskGraphRuntimeCommands
 from .taskgraph_settlement import TaskGraphSettlementReader
@@ -171,9 +169,7 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
         principal=ports.principal, graph_budget=ports.graph_budget, validate_read=validate_read,
         deployment_acceptance=ports.deployment_acceptance)
     policy = TaskGraphPolicyService(store, tenant_id=ports.tenant_id, principal=ports.principal,
-        authority=policy_authority, capture_baseline=TaskGraphBaselineCapture(dispatch_for, history=history,
-            prove_quiescence=TaskGraphBaselineProof(orchestrator)).capture,
-        validate_read=validate_read)
+        authority=policy_authority, validate_read=validate_read)
     installed = InstalledTaskGraph(reads=reads, policy=policy, operator=operator, notifications=notifications,
                                    dispatch=dispatch, convergence=convergence, local_sources=local_sources, preview=preview, execution_sources=plan_sources)
     commit._taskgraph_dispatch = dispatch

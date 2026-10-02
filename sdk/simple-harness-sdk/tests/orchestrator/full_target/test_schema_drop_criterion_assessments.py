@@ -51,7 +51,7 @@ def test_a_version_32_library_opens_and_loses_exactly_that_table(tmp_path) -> No
     create = v10[v10.index(f"CREATE TABLE {TABLE}") :]
     connection = sqlite3.connect(path)
     connection.executescript(create)  # migration 10's own text: the table and its index
-    connection.execute("DELETE FROM orch_schema_migrations WHERE version = 33")
+    connection.execute("DELETE FROM orch_schema_migrations WHERE version >= 33")
     connection.commit()
     connection.close()
     before = _objects(path, "table")
@@ -60,4 +60,4 @@ def test_a_version_32_library_opens_and_loses_exactly_that_table(tmp_path) -> No
     Store.open(path).close()
 
     assert _objects(path, "table") == before - {TABLE}
-    assert schema.SCHEMA_VERSION == 33
+    assert schema.SCHEMA_VERSION >= 33

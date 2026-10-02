@@ -629,6 +629,46 @@ DROP INDEX IF EXISTS criterion_assessments_result_idx;
 DROP TABLE IF EXISTS criterion_assessments;
 """
 
+# 2026-10-03（HTN 补齐阶段 A）：删"老任务迁入执行图"（CAPTURED_BASELINE）。执行图在第一份计划之前
+# 绑定，已有计划的任务不再迁入。SQLite 去掉表上的 CHECK 要重建整张表与其触发器，所以旧的 CHECK
+# 文字留在迁移 25 里不动；两个守卫触发器去掉迁入分支并在库层拒绝再写这种来源，每条历史与每次
+# 尝试的输入都必须指向一次真实的 APPLIED 计划准入。
+DDL_V34 = """
+DROP TRIGGER tg_revision_source_guard;
+CREATE TRIGGER tg_revision_source_guard BEFORE INSERT ON taskgraph_revision_records BEGIN
+ SELECT CASE WHEN NOT EXISTS (
+  SELECT 1 FROM events e WHERE e.event_id=NEW.event_id AND e.mission_id=NEW.mission_id
+ ) THEN RAISE(ABORT,'TG_REVISION_EVENT_MISMATCH') END;
+ SELECT CASE WHEN NEW.source_kind NOT IN ('SEED_COMMIT','COMMIT')
+  THEN RAISE(ABORT,'TG_REVISION_SOURCE_KIND_REMOVED') END;
+ SELECT CASE WHEN NOT EXISTS (
+  SELECT 1 FROM planning_admission_checks c JOIN planning_requests r ON r.request_id=c.request_id
+  WHERE c.check_id=NEW.admission_check_id AND c.phase='APPLIED' AND r.mission_id=NEW.mission_id
+ ) THEN RAISE(ABORT,'TG_REVISION_ADMISSION_MISMATCH') END;
+END;
+DROP TRIGGER tg_attempt_identity_guard;
+CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inputs BEGIN
+ SELECT CASE WHEN NOT EXISTS (
+  SELECT 1 FROM attempts a JOIN dispatch_intents d ON d.subject_id=a.attempt_id
+  JOIN plan_memberships m ON m.mission_id=a.mission_id AND m.task_id=a.task_id
+  JOIN task_semantics s ON s.task_id=a.task_id AND s.binding_revision=NEW.binding_revision
+  JOIN taskgraph_revision_records rr ON rr.mission_id=NEW.mission_id AND rr.revision=NEW.source_revision
+  JOIN planning_admission_checks c ON c.check_id=NEW.admission_check_id
+  JOIN planning_requests r ON r.request_id=c.request_id
+  JOIN input_manifest_bindings b ON b.mission_id=a.mission_id AND b.task_id=a.task_id
+   AND b.manifest_hash=NEW.manifest_hash AND b.input_binding_revision<=NEW.input_binding_revision
+  WHERE a.attempt_id=NEW.attempt_id AND a.mission_id=NEW.mission_id AND a.task_id=NEW.task_id
+   AND d.intent_id=NEW.intent_id AND d.mission_id=NEW.mission_id
+   AND d.creation_key=NEW.creation_key AND d.input_id=NEW.input_id AND d.input_hash=NEW.frozen_input_hash
+   AND m.revision=NEW.source_revision AND m.occurrence_id=NEW.occurrence_id AND m.form='primitive'
+   AND s.mission_id=NEW.mission_id AND s.form='primitive'
+   AND s.input_binding_revision=NEW.input_binding_revision AND s.dispatch_generation=NEW.dispatch_generation
+   AND rr.admission_check_id=NEW.admission_check_id
+   AND r.mission_id=NEW.mission_id AND c.phase='APPLIED'
+ ) THEN RAISE(ABORT,'TG_ATTEMPT_IDENTITY_MISMATCH') END;
+END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -663,6 +703,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(31, "orchestrator-drop-selection-and-fragments", DDL_V31),
     Migration(32, "orchestrator-drop-conflicts-graph-changes-system-tail", DDL_V32),
     Migration(33, "orchestrator-drop-criterion-assessments", DDL_V33),
+    Migration(34, "orchestrator-drop-captured-baseline", DDL_V34),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

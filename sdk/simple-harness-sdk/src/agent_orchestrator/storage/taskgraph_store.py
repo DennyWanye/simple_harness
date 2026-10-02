@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import astuple
 from typing import Iterator, NoReturn
@@ -17,7 +16,7 @@ from ..contracts.models import ContractError
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
 from ..graph.revision_pins import DemandRef, MemberPin, MethodPin, RevisionPins, build_revision_pins, verify_revision_pins
-from ..graph.revision_records import BaselineProofContext, CapturedBaselineCertificate, HistoricalRevision, PlanAdmissionCertificate, RevisionCertificate, RevisionRecord, SourceRef, certificate_from_json
+from ..graph.revision_records import HistoricalRevision, PlanAdmissionCertificate, RevisionCertificate, RevisionRecord, SourceRef, certificate_from_json
 from .store import Store
 from .htn_store import HtnStore
 from .taskgraph_history_sources import validate_revision_sources
@@ -25,9 +24,6 @@ from .taskgraph_history_sources import validate_revision_sources
 
 class GraphIntegrityError(ContractError):
     pass
-
-
-RefVerifier = Callable[[sqlite3.Connection, SourceRef, BaselineProofContext], bool]
 
 
 def _fail(message: str) -> NoReturn:
@@ -39,11 +35,10 @@ def _document_hash(document: NetworkDocumentV1) -> str:
 
 
 class TaskGraphStore:
-    def __init__(self, store: Store, *, external_ref_verifier: RefVerifier | None = None) -> None:
+    def __init__(self, store: Store) -> None:
         if not isinstance(store, Store):
             _fail("TaskGraphStore requires Store")
         self._store = store
-        self._external_ref_verifier = external_ref_verifier
         # (mission, revision) -> (read generation it was verified under, result)
         self._verified: dict[tuple[str, int], tuple[tuple[int, int, int], HistoricalRevision]] = {}
 
@@ -81,16 +76,6 @@ class TaskGraphStore:
             "producer_occurrence_id,obligation_id,mode,requiredness,source_slot_hash "
             "FROM taskgraph_demand_refs WHERE mission_id=? AND revision=?", (mission, revision)))
         return RevisionPins(member_pins=members, method_pins=methods, demand_refs=demands)
-
-    def _verify_ref(self, connection: sqlite3.Connection, reference: SourceRef,
-                    context: BaselineProofContext) -> None:
-        if reference.channel == "taskgraph_baseline_quiescence":
-            from ..orchestrator.taskgraph_baseline_proof import verify_baseline_proof
-            if not verify_baseline_proof(connection, reference, context):
-                _fail("original baseline quiescence proof does not bind this capture")
-            return
-        if self._external_ref_verifier is None or self._external_ref_verifier(connection, reference, context) is not True:
-            _fail(f"required certificate source channel {reference.channel!r} is unavailable")
 
     def _verify_policy(self, connection: sqlite3.Connection, mission: str) -> None:
         row = connection.execute("SELECT * FROM taskgraph_policy_bindings WHERE mission_id=?", (mission,)).fetchone()
@@ -174,38 +159,7 @@ class TaskGraphStore:
                 if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
                     _fail("APPLIED check has an invalid H1 source digest")
         else:
-            if admission is not None or certificate.codec_manifest_hash != document.codec_manifest_hash:
-                _fail("CAPTURED_BASELINE certificate identity mismatch")
-            reference = certificate.baseline_command_ref
-            baseline_receipt = self._store.get_receipt(command)
-            policy = connection.execute("SELECT * FROM taskgraph_policy_bindings WHERE mission_id=?", (mission,)).fetchone()
-            if (reference.channel != "taskgraph_baseline_capture" or reference.identity != command
-                    or reference.revision != document.revision or baseline_receipt is None
-                    or baseline_receipt.get("schema_version") != 1 or baseline_receipt.get("kind") != "TaskGraphBaselineCaptured"
-                    or baseline_receipt.get("command_id") != command or baseline_receipt.get("mission_id") != mission
-                    or baseline_receipt.get("revision") != document.revision
-                    or baseline_receipt.get("manifest_hash") != _document_hash(document)
-                    or baseline_receipt.get("captured_through_seq") != certificate.captured_through_seq
-                    or baseline_receipt.get("codec_manifest_hash") != document.codec_manifest_hash
-                    or baseline_receipt.get("quiescence_ref") != certificate.quiescence_ref.to_json()
-                    or baseline_receipt.get("policy_ref") != certificate.policy_ref.to_json()
-                    or hashlib.sha256(canonical_json(dict(baseline_receipt)).encode()).hexdigest() != reference.digest):
-                _fail("baseline command receipt does not bind this capture")
-            if (policy is None or baseline_receipt.get("enabling_command_id") != policy["enabling_command_id"]
-                    or certificate.policy_ref != SourceRef(channel="taskgraph_policy",
-                        identity=policy["enabling_command_id"], revision=1, digest=policy["policy_hash"])):
-                _fail("baseline policy reference does not bind this Mission")
-            plan = connection.execute("SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?",
-                                      (mission, document.revision)).fetchone()
-            if plan is None or baseline_receipt.get("sdk_snapshot_hash") != plan[0]:
-                _fail("baseline receipt SDK snapshot mismatch")
-            # Checking only a reference hash would accept a valid proof from a
-            # different Mission or capture. Require its actual producer to bind
-            # all capture coordinates, including the event boundary.
-            self._verify_ref(connection, certificate.quiescence_ref, BaselineProofContext(
-                mission_id=mission, revision=document.revision, command_id=command,
-                enabling_command_id=policy["enabling_command_id"], manifest_hash=_document_hash(document),
-                captured_through_seq=certificate.captured_through_seq))
+            _fail("certificate kind is unsupported")
 
     def insert_revision_record(self, *, document: NetworkDocumentV1, source_kind: str,
                                sdk_snapshot_hash: str, certificate: RevisionCertificate,
@@ -215,12 +169,8 @@ class TaskGraphStore:
         mission, revision = document.mission_id, document.revision
         manifest = _document_hash(document)
         pins = build_revision_pins(document)
-        if source_kind not in {"SEED_COMMIT", "COMMIT", "CAPTURED_BASELINE"}:
+        if source_kind not in {"SEED_COMMIT", "COMMIT"}:
             _fail("source_kind is invalid")
-        if (source_kind == "CAPTURED_BASELINE") != isinstance(
-            certificate, CapturedBaselineCertificate
-        ):
-            _fail("source_kind and certificate kind disagree")
         with self._savepoint() as connection:
             plan = connection.execute("SELECT snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision=?", (mission, revision)).fetchone()
             if plan is None or plan[0] != sdk_snapshot_hash:
@@ -239,7 +189,7 @@ class TaskGraphStore:
                         or certificate.preview.base_revision != parent_revision):
                     _fail("COMMIT preview does not bind the parent revision")
             elif previous is not None:
-                _fail("seed/baseline cannot be inserted after revision history exists")
+                _fail("seed cannot be inserted after revision history exists")
             if source_kind == "SEED_COMMIT" and (
                     revision != 1 or not isinstance(certificate, PlanAdmissionCertificate)
                     or certificate.preview.base_revision != 0):
@@ -248,8 +198,6 @@ class TaskGraphStore:
             event = connection.execute("SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?", (event_id,)).fetchone()
             if event is None or event[0] != mission or event[2] != "TaskGraphRevisionRecorded":
                 _fail("revision event is unavailable or belongs to another mission")
-            if isinstance(certificate, CapturedBaselineCertificate) and certificate.captured_through_seq >= event[3]:
-                _fail("baseline capture boundary must precede its revision event")
             payload = json.loads(event[1])
             parent_document = None if parent_revision is None else self.read_revision(mission, parent_revision).record.document
             required_event = revision_event_payload(document, source_kind=source_kind,
@@ -324,7 +272,7 @@ class TaskGraphStore:
             if row["requirements_revision"] != document.requirements_ref.revision:
                 _fail("revision record requirements mismatch")
             if row["parent_revision"] is None:
-                if row["parent_manifest_hash"] is not None or row["source_kind"] not in {"SEED_COMMIT", "CAPTURED_BASELINE"}:
+                if row["parent_manifest_hash"] is not None or row["source_kind"] != "SEED_COMMIT":
                     _fail("invalid root revision parent")
                 other = connection.execute(
                     "SELECT 1 FROM taskgraph_revision_records WHERE mission_id=? AND revision<>? "
@@ -344,10 +292,6 @@ class TaskGraphStore:
                     revision != 1 or not isinstance(certificate, PlanAdmissionCertificate)
                     or certificate.preview.base_revision != 0):
                 _fail("invalid seed revision origin")
-            if (row["source_kind"] == "CAPTURED_BASELINE") != isinstance(
-                certificate, CapturedBaselineCertificate
-            ):
-                _fail("source_kind and certificate kind disagree")
             if (row["source_kind"] == "COMMIT"
                     and isinstance(certificate, PlanAdmissionCertificate)
                     and certificate.preview.base_revision != row["parent_revision"]):
@@ -356,8 +300,6 @@ class TaskGraphStore:
             event = connection.execute("SELECT mission_id,payload_json,type,seq FROM events WHERE event_id=?", (row["event_id"],)).fetchone()
             if event is None or event[0] != mission_id or event[2] != "TaskGraphRevisionRecorded":
                 _fail("revision event is unavailable or belongs to another mission")
-            if isinstance(certificate, CapturedBaselineCertificate) and certificate.captured_through_seq >= event[3]:
-                _fail("baseline capture boundary must precede its revision event")
             parent_document = None
             if row["parent_revision"] is not None:
                 parent_row = connection.execute("SELECT network_json FROM taskgraph_revision_records WHERE mission_id=? AND revision=?",

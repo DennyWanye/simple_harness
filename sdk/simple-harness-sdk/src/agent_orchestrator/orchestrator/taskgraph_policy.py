@@ -89,14 +89,13 @@ class TaskGraphPolicyAuthority(Protocol):
 
 class TaskGraphPolicyService:
     def __init__(self, store: Store, *, tenant_id: str, principal: Principal,
-                 authority: TaskGraphPolicyAuthority, capture_baseline: Callable[..., None],
+                 authority: TaskGraphPolicyAuthority,
                  validate_read: Callable[[Principal, str], None]) -> None:
         _text(tenant_id, "tenant_id")
         self.store = store
         self.tenant_id = tenant_id
         self.principal = principal
         self.authority = authority
-        self.capture_baseline = capture_baseline
         self.validate_read = validate_read
 
     def matches_binding(self, commit: Any, tenant_id: str, principal: Any) -> bool:
@@ -126,6 +125,10 @@ class TaskGraphPolicyService:
             if (semantics_of(mission) != HIERARCHICAL_SEMANTICS or mission.status in TERMINAL_MISSION
                     or protocol is None or protocol.get("protocol_version") != PLANNING_DECISION_V1):
                 raise StoreError("TASKGRAPH_MISSION_NOT_ELIGIBLE")
+            # A Mission is bound before its first plan; one that already has a plan
+            # revision is never converted and no baseline history is captured.
+            if db.execute("SELECT 1 FROM plan_revisions WHERE mission_id=? LIMIT 1", (mission_id,)).fetchone():
+                raise StoreError("TASKGRAPH_MISSION_ALREADY_PLANNED")
             policy = self.authority.installed_policy(self.store, mission_id)
             old = db.execute("SELECT policy_hash FROM taskgraph_policy_bindings WHERE mission_id=?",
                              (mission_id,)).fetchone()
@@ -152,15 +155,4 @@ class TaskGraphPolicyService:
                                           actor_type="system", actor_id=self.principal.principal_id,
                                           payload={**receipt, "enabled_by": "HOST_DELEGATED"},
                                           idempotency_key=event_key, created_at=self.store.now))
-            active = db.execute("SELECT revision FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'",
-                                (mission_id,)).fetchall()
-            if len(active) > 1:
-                raise StoreError("TASKGRAPH_MULTIPLE_ACTIVE_REVISIONS")
-            if active:
-                self.capture_baseline(self.store, mission_id=mission_id, revision=active[0][0],
-                                      command_id=command_id, caller=self.principal, policy=policy)
-                baseline = db.execute("SELECT source_kind,admission_check_id FROM taskgraph_revision_records "
-                                      "WHERE mission_id=? AND revision=?", (mission_id, active[0][0])).fetchone()
-                if baseline is None or tuple(baseline) != ("CAPTURED_BASELINE", None):
-                    raise StoreError("TASKGRAPH_BASELINE_NOT_CAPTURED")
             return receipt

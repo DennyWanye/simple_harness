@@ -91,43 +91,7 @@ class PlanAdmissionCertificate:
                 "admission_check_ref": self.admission_check_ref.to_json()}
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CapturedBaselineCertificate:
-    captured_through_seq: int
-    baseline_command_ref: SourceRef
-    quiescence_ref: SourceRef
-    policy_ref: SourceRef
-    codec_manifest_hash: str
-    version: int = 1
-    kind: str = "CAPTURED_BASELINE"
-
-    def __post_init__(self) -> None:
-        if type(self.version) is not int or self.version != 1 or self.kind != "CAPTURED_BASELINE":
-            _bad("CAPTURED_BASELINE certificate discriminator is invalid")
-        _integer(self.captured_through_seq, "captured_through_seq")
-        _hash(self.codec_manifest_hash, "codec_manifest_hash")
-
-    def to_json(self) -> dict[str, Any]:
-        return {"version": 1, "kind": self.kind,
-                "captured_through_seq": self.captured_through_seq,
-                "baseline_command_ref": self.baseline_command_ref.to_json(),
-                "quiescence_ref": self.quiescence_ref.to_json(),
-                "policy_ref": self.policy_ref.to_json(),
-                "codec_manifest_hash": self.codec_manifest_hash}
-
-
-RevisionCertificate: TypeAlias = PlanAdmissionCertificate | CapturedBaselineCertificate
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class BaselineProofContext:
-    """Exact capture identity a historical quiescence receipt must bind."""
-    mission_id: str
-    revision: int
-    command_id: str
-    enabling_command_id: str
-    manifest_hash: str
-    captured_through_seq: int
+RevisionCertificate: TypeAlias = PlanAdmissionCertificate
 
 
 def certificate_from_json(value: object) -> RevisionCertificate:
@@ -142,17 +106,6 @@ def certificate_from_json(value: object) -> RevisionCertificate:
             preview=PreviewBindingV1.from_json(value["preview"]),
             commit_receipt_ref=SourceRef.from_json(value["commit_receipt_ref"]),
             admission_check_ref=SourceRef.from_json(value["admission_check_ref"]))
-    if kind == "CAPTURED_BASELINE":
-        expected = {"version", "kind", "captured_through_seq", "baseline_command_ref",
-                    "quiescence_ref", "policy_ref", "codec_manifest_hash"}
-        if set(value) != expected:
-            _bad("CAPTURED_BASELINE certificate has missing or unknown fields")
-        return CapturedBaselineCertificate(version=value["version"], kind=value["kind"],
-            captured_through_seq=value["captured_through_seq"],
-            baseline_command_ref=SourceRef.from_json(value["baseline_command_ref"]),
-            quiescence_ref=SourceRef.from_json(value["quiescence_ref"]),
-            policy_ref=SourceRef.from_json(value["policy_ref"]),
-            codec_manifest_hash=value["codec_manifest_hash"])
     _bad("certificate kind is unsupported")
 
 
@@ -179,5 +132,5 @@ class HistoricalRevision:
     reason: str = "HISTORICAL_STRUCTURE_NON_EXECUTABLE"
 
 
-__all__ = ["CapturedBaselineCertificate", "HistoricalRevision", "PlanAdmissionCertificate",
+__all__ = ["HistoricalRevision", "PlanAdmissionCertificate",
            "RevisionCertificate", "RevisionRecord", "SourceRef", "certificate_from_json"]

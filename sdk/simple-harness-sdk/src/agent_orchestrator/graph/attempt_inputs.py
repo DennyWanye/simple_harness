@@ -63,21 +63,19 @@ class AttemptInputBinding:
     creation_key: str
     input_id: str
     frozen_input_hash: str
-    admission_check_id: str | None
+    admission_check_id: str
     origin_hash: str
     created_at: float
 
     def __post_init__(self) -> None:
         for field in ("attempt_id", "mission_id", "task_id", "occurrence_id", "intent_id",
-                      "creation_key", "input_id"):
+                      "creation_key", "input_id", "admission_check_id"):
             _text(getattr(self, field), field)
         for field in ("source_revision", "binding_revision", "input_binding_revision",
                       "dispatch_generation"):
             _integer(getattr(self, field), field)
         for field in ("contract_hash", "manifest_hash", "frozen_input_hash", "origin_hash"):
             _hash(getattr(self, field), field)
-        if self.admission_check_id is not None:
-            _text(self.admission_check_id, "admission_check_id")
         if (isinstance(self.created_at, bool) or not isinstance(self.created_at, (int, float))
                 or not math.isfinite(self.created_at)):
             _bad("created_at must be a number")

@@ -94,6 +94,14 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
             assert store.connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] == attempt_count
         assert store.connection.execute(
             "SELECT COUNT(*) FROM dispatch_intents WHERE kind='attempt'").fetchone()[0] == attempt_count
+        # §10.1: the dispatch transaction that binds an Attempt writes exactly one
+        # TaskGraphDispatchBound naming it (HTN 补齐阶段 A).
+        assert [tuple(r) for r in store.connection.execute(
+            "SELECT e.attempt_id FROM events e JOIN taskgraph_attempt_inputs i ON i.attempt_id=e.attempt_id "
+            "WHERE e.type='TaskGraphDispatchBound'")] == [tuple(r) for r in store.connection.execute(
+            "SELECT attempt_id FROM taskgraph_attempt_inputs")]
+        assert store.connection.execute(
+            "SELECT COUNT(*) FROM events WHERE type='TaskGraphDispatchBound'").fetchone()[0] == attempt_count
         assert store.connection.execute('SELECT COUNT(*) FROM taskgraph_revision_records').fetchone()[0] == 1
         # 2026-10-01: the seed plan is the Planner's own choice now (the program no longer
         # selects a sole candidate for it), so one physical call was made before any Worker.

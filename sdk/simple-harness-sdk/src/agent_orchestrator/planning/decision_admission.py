@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
+from ..contracts.error_table import ordered
 from ..contracts.evidence_state import TruthValue
 from ..contracts.htn import MethodRef, MethodRegistryStatus
 from ..contracts.models import ContractError
@@ -48,17 +49,17 @@ from ..contracts.planning_decisions import (
     PlanningRefV1,
     PlanningRequestBinding,
     PlanningRetryBudgetView,
+    ProposeMethodDecision,
     RefineDecision,
-    RepairRefineDeeperDecision,
-    RepairRebindInputDecision,
     RepairCancelBranchDecision,
+    RepairProposeSuccessorDecision,
+    RepairRebindInputDecision,
+    RepairRefineDeeperDecision,
+    RepairReplaceMethodDecision,
     RepairRetrySameMethodDecision,
     RepairRuntimeBlockedDecision,
-    RepairProposeSuccessorDecision,
-    RepairReplaceMethodDecision,
     RequestEvidenceDecision,
     RequestHumanDecision,
-    ProposeMethodDecision,
     WaitDecision,
     canonical_decision_hash,
 )
@@ -75,8 +76,8 @@ from ..governance.planning_authorization import (
     PlanningAuthorizationSnapshot,
     check_planning_authorization,
 )
-from ..runtime.planning_operations import OperationSnapshot
 from ..graph.planning_scope import PlanningConvergenceScope
+from ..runtime.planning_operations import OperationSnapshot
 
 REJECTION = PlanningDecisionRejectionCode
 
@@ -718,16 +719,12 @@ class _Stage:
 
 
 def _feedback(context: AdmissionContext, stage: _Stage) -> PlanningFeedbackV1:
-    """The refusal value: §39 shape, stable code order, deduplicated codes."""
+    """The refusal value: §39 shape, deduplicated codes in §12 category order."""
 
-    seen: list[PlanningDecisionRejectionCode] = []
-    for problem in stage.problems:
-        if problem.code not in seen:
-            seen.append(problem.code)
     return PlanningFeedbackV1(
         previous_decision_id=context.decision_id,
         status=PlanningDecisionStatus.REJECTED,
-        rejection_codes=tuple(seen),
+        rejection_codes=ordered(problem.code for problem in stage.problems),
         problems=tuple(stage.problems),
         changed_refs=(),
         budgets=context.retry_budgets,

@@ -21,6 +21,8 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from ..contracts.error_table import ordered
+from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
     PlanningDecisionRejectionCode,
     PlanningDecisionStatus,
@@ -82,7 +84,7 @@ def _code(value: object) -> PlanningDecisionRejectionCode:
     try:
         return PlanningDecisionRejectionCode(str(value))
     except ValueError:
-        return PlanningDecisionRejectionCode.MALFORMED_DECISION
+        raise ContractError(f"ERROR_CODE_UNREGISTERED: {value!r}") from None
 
 
 def _problems(codes: list[PlanningDecisionRejectionCode], detail: Mapping[str, Any]) -> list:
@@ -119,7 +121,7 @@ def feedback_from_decision(
     return PlanningFeedbackV1(
         previous_decision_id=str(row["decision_id"]),
         status=PlanningDecisionStatus(str(row["status"])),
-        rejection_codes=tuple(dict.fromkeys(codes)),
+        rejection_codes=ordered(codes),
         problems=tuple(_problems(codes, detail)),
         changed_refs=(),
         budgets=budgets if isinstance(budgets, PlanningRetryBudgetView)

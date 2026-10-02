@@ -18,7 +18,7 @@ from ..graph.network_codec import decode
 from ..graph.revision_pins import build_revision_pins
 from ..graph.revision_records import HistoricalRevision
 from ..storage.store import Store
-from ..storage.taskgraph_store import RefVerifier, TaskGraphStore
+from ..storage.taskgraph_store import TaskGraphStore
 
 
 def _fail(message: str) -> NoReturn:
@@ -160,7 +160,6 @@ def replay_taskgraph(
     mission_id: str,
     through_revision: int,
     target_path: str | Path,
-    external_ref_verifier: RefVerifier | None = None,
 ) -> ReplayReport:
     """Verify and replay structure only; never creates a runnable SDK Store."""
 
@@ -181,15 +180,15 @@ def replay_taskgraph(
         os.close(descriptor)
         descriptor = None
         with source.read_view():
-            reader = TaskGraphStore(source, external_ref_verifier=external_ref_verifier)
+            reader = TaskGraphStore(source)
             rows = source.connection.execute(
                 "SELECT revision,source_kind FROM taskgraph_revision_records WHERE mission_id=? "
                 "AND revision<=? ORDER BY revision", (mission_id, through_revision),).fetchall()
             if not rows or int(rows[-1][0]) != through_revision:
                 _fail("the requested through revision is unavailable")
             start_revision, start_kind = int(rows[0][0]), str(rows[0][1])
-            if start_kind not in {"SEED_COMMIT", "CAPTURED_BASELINE"}:
-                _fail("history does not begin at an explicit seed or captured baseline")
+            if start_kind != "SEED_COMMIT":
+                _fail("history does not begin at an explicit seed")
             expected_revisions = tuple(range(start_revision, through_revision + 1))
             if tuple(int(row[0]) for row in rows) != expected_revisions:
                 _fail("revision history is incomplete")

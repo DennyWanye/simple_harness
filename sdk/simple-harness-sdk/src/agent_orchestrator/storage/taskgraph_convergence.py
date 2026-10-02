@@ -304,3 +304,16 @@ class TaskGraphConvergenceStore:
         )
         if changed.rowcount != 1:
             raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+        if state == job.state:
+            return
+        # §10.1 auxiliary event, written only by this transition's own Commit; the new
+        # row version is the transition's identity, so a retried Commit reuses it.
+        version = job.row_version + 1
+        identity = derive_id("tg-convergence-advanced", job.job_id, str(version))
+        self.store.append_event(Event(
+            id=identity, type="TaskGraphConvergenceAdvanced", trace_id=job.command_id,
+            mission_id=job.mission_id, task_id=None, attempt_id=None, actor_type="system",
+            actor_id="taskgraph-convergence",
+            payload={"schema_version": 1, "job_id": job.job_id, "decision_id": job.decision_id,
+                     "from_state": job.state, "to_state": state, "row_version": version},
+            idempotency_key=identity, created_at=now_ms / 1000))

@@ -18,7 +18,7 @@ from ..graph.revision_records import RevisionRecord
 from ..graph.task_network import TaskNetworkSnapshot
 from ..runtime.planning_operations import SourceUnavailable
 from ..storage.store import Store
-from ..storage.taskgraph_store import RefVerifier, TaskGraphStore
+from ..storage.taskgraph_store import TaskGraphStore
 from .taskgraph_policy import InstalledGraphPolicy, KERNEL_VERSION
 from .taskgraph_epochs import current_scope_epochs
 
@@ -53,14 +53,13 @@ class SeedStructuralReadContext:
 
 class TaskGraphSources:
     def __init__(self, store: Store, *, tenant_id: str, principal: Principal,
-                 external_ref_verifier: RefVerifier | None = None,
                  history: TaskGraphStore | None = None) -> None:
         self.store = store
         self.tenant_id = tenant_id
         self.principal = principal
-        if history is not None and (history.store is not store or external_ref_verifier is not None):
-            raise ValueError("bind the original same-Store history or supply its verifier, not both")
-        self.history = history if history is not None else TaskGraphStore(store, external_ref_verifier=external_ref_verifier)
+        if history is not None and history.store is not store:
+            raise ValueError("bind the original same-Store history")
+        self.history = history if history is not None else TaskGraphStore(store)
 
     def read_structure(self, mission_id: str, *, revision: int | None = None) -> StructuralReadContext:
         """Historical reads never depend on a currently active planning grant."""

@@ -159,15 +159,11 @@ class TaskGraphAttemptInputStore:
                     or validated_revision.admission_check_id != record["admission_check_id"]):
                 _fail("validated revision identity disagrees with the source record")
             admission = record["admission_check_id"]
-            if record["source_kind"] == "CAPTURED_BASELINE":
-                if admission is not None:
-                    _fail("CAPTURED_BASELINE must not carry an admission check")
-            else:
-                check = connection.execute(
-                    "SELECT c.phase,r.mission_id FROM planning_admission_checks c JOIN planning_requests r "
-                    "ON r.request_id=c.request_id WHERE c.check_id=?", (admission,)).fetchone()
-                if check is None or check[0] != "APPLIED" or check[1] != attempt.mission_id:
-                    _fail("source revision does not name a real APPLIED admission check")
+            check = connection.execute(
+                "SELECT c.phase,r.mission_id FROM planning_admission_checks c JOIN planning_requests r "
+                "ON r.request_id=c.request_id WHERE c.check_id=?", (admission,)).fetchone()
+            if admission is None or check is None or check[0] != "APPLIED" or check[1] != attempt.mission_id:
+                _fail("source revision does not name a real APPLIED admission check")
             identity = {
                 "attempt_id": attempt_id, "mission_id": attempt.mission_id,
                 "task_id": attempt.task_id, "occurrence_id": occurrence_id,

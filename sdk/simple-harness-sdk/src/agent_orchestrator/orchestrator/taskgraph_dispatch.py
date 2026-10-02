@@ -13,12 +13,13 @@ from simple_harness.contracts import canonical_json
 from ..artifacts.input_bindings import InputManifest, TargetRules
 from ..artifacts.taskgraph_inputs import decode_frozen_manifest, decode_target_rules, encode_target_rules, require_current_manifest_use
 from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs
-from ..contracts.models import Attempt, ContractError, sha256_hex
+from ..contracts.models import Attempt, ContractError, Event, sha256_hex
 from ..graph.attempt_inputs import AttemptInputBinding, FrozenAttemptInputs
 from ..graph.eligibility import EligiblePrimitiveTask, admit_for_dispatch
 from ..graph.network_codec import decode
 from ..graph.revision_records import HistoricalRevision
 from ..graph.task_network import TaskNetworkSnapshot
+from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import HtnStore
 from .hierarchical_dispatch import carried_inputs
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
@@ -355,9 +356,23 @@ class TaskGraphDispatchBinding:
         digest = HtnStore(self.store).insert_input_manifest(attempt.mission_id, attempt.task_id,
             prepared.manifest.to_json(), attempt_id=attempt.id,
             input_binding_revision=int(admission.input_binding_revision))
-        self.inputs.insert_attempt_inputs(attempt_id=attempt.id, occurrence_id=str(admission.occurrence_id),
+        bound = self.inputs.insert_attempt_inputs(attempt_id=attempt.id, occurrence_id=str(admission.occurrence_id),
             source_revision=int(admission.plan_revision), binding_revision=int(admission.contract_revision),
             manifest_hash=digest, created_at=self.store.now)
+        # §10.1 auxiliary event, written in this dispatch transaction only; the Attempt is
+        # the dispatch command's identity, so a retried dispatch reuses the same event.
+        identity = derive_id("tg-dispatch-bound", attempt.id)
+        self.store.append_event(Event(
+            id=identity, type="TaskGraphDispatchBound", trace_id=intent.intent_id,
+            mission_id=attempt.mission_id, task_id=attempt.task_id, attempt_id=attempt.id,
+            actor_type="system", actor_id="taskgraph-dispatch",
+            payload={"schema_version": 1, "intent_id": intent.intent_id,
+                     "occurrence_id": bound.occurrence_id, "source_revision": bound.source_revision,
+                     "binding_revision": bound.binding_revision,
+                     "input_binding_revision": bound.input_binding_revision,
+                     "dispatch_generation": bound.dispatch_generation,
+                     "manifest_hash": bound.manifest_hash, "origin_hash": bound.origin_hash},
+            idempotency_key=identity, created_at=self.store.now))
         receipt = {"version": 2, "kind": "TaskGraphAttemptMaterialized", "attempt_id": attempt.id,
                    "mission_id": attempt.mission_id, "intent_id": intent.intent_id,
                    "input_hash": intent.input_hash, "binding": prepared.intent_binding(),

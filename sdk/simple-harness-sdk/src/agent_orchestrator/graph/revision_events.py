@@ -17,12 +17,11 @@ def revision_event_payload(document: NetworkDocumentV1, *, source_kind: str,
         if parent is None or decision_id is None:
             raise ContractError("TASKGRAPH_COMMIT_EVENT_SOURCE_MISSING")
         effects = compute_plan_effects(parent, document)
-    elif source_kind in {"SEED_COMMIT", "CAPTURED_BASELINE"}:
-        if parent is not None or ((source_kind == "CAPTURED_BASELINE") != (decision_id is None)):
+    elif source_kind == "SEED_COMMIT":
+        if parent is not None or decision_id is None:
             raise ContractError("TASKGRAPH_ROOT_EVENT_SOURCE_MISMATCH")
         occurrences = tuple(str(item.occurrence_id) for item in decode(document.to_json()).snapshot.occurrences)
-        effects = PlanEffectSet(retained=occurrences if source_kind == "CAPTURED_BASELINE" else (),
-            revalidate=(), retiring=(), newly_materialized=occurrences if source_kind == "SEED_COMMIT" else (),
+        effects = PlanEffectSet(retained=(), revalidate=(), retiring=(), newly_materialized=occurrences,
             shared_retained=(), coverage="CONSERVATIVE")
     else:
         raise ContractError("TASKGRAPH_EVENT_SOURCE_KIND_UNKNOWN")
