@@ -98,16 +98,3 @@ def planning_world(loop: Any, mission: Any) -> Any:
 ROOT_TYPE = "desktop.user-goal"
 ROOT_TASK_PREFIX = "desktop-root-"
 ROOT_DUTY_PREFIX = "desktop-duty-"
-
-
-def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
-    from agent_orchestrator.deployment.root import initialize_root as sdk_initialize_root
-
-    sdk_initialize_root(loop, mission, principal, world_factory=planning_world, root_type=ROOT_TYPE,
-                        task_prefix=ROOT_TASK_PREFIX, duty_prefix=ROOT_DUTY_PREFIX)
-
-
-def install(loop: Any) -> None:
-    from agent_orchestrator.deployment.root import install_planning
-
-    install_planning(loop, planning_world)

@@ -58,10 +58,6 @@ class OrchestrationSettings:
     # Empty means no directory is authorised, and then nothing can be published at all —
     # the connector is not even enabled, so a Mission may not carry a publish criterion.
     publish_dir: str = ""
-    # NEXT-TG-1.0 §6.4 (user 2026-09-27: finished features stay on): every new
-    # Mission runs on the strict TaskGraph.  ``strict_taskgraph = false`` in
-    # ``[orchestration]`` is the only way to create unbound Missions again.
-    strict_taskgraph: bool = True
     # 2026-09-25 user decision: task/session data is kept forever for audit; the Settings
     # page only reminds the user once ``<user_data>/data/agent-orchestrator`` passes this.
     storage_warn_bytes: int = 5 * 1024**3
@@ -135,7 +131,6 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
-        strict_taskgraph=raw.get("strict_taskgraph", True) is not False,
         storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),

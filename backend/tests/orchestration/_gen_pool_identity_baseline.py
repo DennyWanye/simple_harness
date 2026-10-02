@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, ".")
 sys.path.insert(0, "tests/orchestration")
 import _pool_identity as P  # noqa: E402
-from _word_counter import FixtureWordCounter  # noqa: E402
+from agent_orchestrator.testing.word_counter import FixtureWordCounter  # noqa: E402
 
 out = {}
 for models, snapshot in P.VARIANTS:

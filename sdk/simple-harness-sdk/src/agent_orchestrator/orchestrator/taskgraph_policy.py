@@ -19,10 +19,14 @@ from ..graph.notification_contracts import _text
 from ..graph.revision_records import SourceRef
 from ..planning.htn.grounding import derive_id
 from ..storage.store import Store, StoreConflict, StoreError
+from ..storage.taskgraph_store import KERNEL_VERSION  # noqa: E402 - the one kernel identity
 from .plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from .planning_protocol_binding import planning_protocol_for_mission
 
-KERNEL_VERSION = "taskgraph-exec-v2"
+
+def enable_command_id(mission_id: str) -> str:
+    """The one command id for a Mission's binding: concurrent tries yield one binding."""
+    return f"taskgraph-enable:{mission_id}:{KERNEL_VERSION}"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -34,7 +38,7 @@ class InstalledGraphPolicy:
         raw = json.loads(self.canonical_document)
         if not isinstance(raw, dict) or canonical_json(raw) != self.canonical_document:
             raise StoreError("TASKGRAPH_POLICY_NOT_CANONICAL")
-        if set(raw) != {"kernel_version", "graph_structure_budget", "planning_delegation_ref",
+        if set(raw) != {"kernel_version", "graph_structure_budget",
                         "candidate_policy_ref", "schema_policy_ref", "target_policy_ref", "deployment_policy_ref"}:
             raise StoreError("TASKGRAPH_POLICY_FIELDS_INVALID")
         if raw["kernel_version"] != KERNEL_VERSION:

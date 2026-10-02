@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.orchestration.lock import InstanceLock
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,

@@ -2,7 +2,7 @@
 import pytest
 
 from deskpet.orchestration.handlers import handle
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from ._support import notes_provider, notes_request
 
@@ -49,9 +49,10 @@ async def test_host_roots_are_atomic_isolated_and_recoverable(orchestration_root
         assert service.create_mission(notes_request("htn-first"))["created"] is False
         assert loop.store.connection.total_changes == changes
         with monkeypatch.context() as scoped:
-            def broken(*args):
+            def broken(*args, **kwargs):
                 raise RuntimeError("root preparation failed")
-            scoped.setattr(hierarchical, "initialize_root", broken)
+            import agent_orchestrator.deployment.assembly as deployment_assembly
+            scoped.setattr(deployment_assembly, "initialize_root", broken)
             with pytest.raises(RuntimeError, match="root preparation failed"):
                 service.create_mission(notes_request("htn-rollback"))
         assert loop.store.find_mission(service.tenant_id, "htn-rollback") is None

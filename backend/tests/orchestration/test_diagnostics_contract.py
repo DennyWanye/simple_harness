@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from deskpet.orchestration.handlers import handle
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._layered_lane import (

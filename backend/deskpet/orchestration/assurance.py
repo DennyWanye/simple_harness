@@ -5,7 +5,7 @@ Three read verbs (``mission_assurance_snapshot`` / ``_review`` / ``_use_check``)
 delegate to the SDK's fixed-caller ``AssuranceApi`` through the same
 ``MissionControlV1`` the Host already builds from its authenticated Principal:
 a request body can never name a tenant or principal. Deployment assembly
-(``install_assurance``) binds the four consumers, factory and native root on
+(``agent_orchestrator.deployment.assembly``) binds the four consumers, factory and native root on
 each Orchestrator lifetime; nothing here is reachable from model or IPC input.
 """
 from __future__ import annotations
@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections import deque
 from collections.abc import Mapping
 from typing import Any
 
@@ -21,7 +20,6 @@ from .service import OrchestrationRequestError
 
 logger = logging.getLogger(__name__)
 
-ROOT_COMMAND_ID = "host-native-root"
 ASSURANCE_VERBS = ("snapshot", "review", "use_check")
 
 
@@ -52,63 +50,6 @@ def host_fingerprint() -> str:
         "sdk_wheel_sha256": SDK_WHEEL_SHA256,
     }
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def root_setup(service: Any):
-    """``Orchestrator(assurance_root_setup=...)``: the authenticated native installation.
-
-    Idempotent per root directory and caller: a second lifetime over the same
-    root replays the same receipt; a different principal or tenant is refused by
-    the SDK as an identity conflict, never silently adopted.
-    """
-
-    def install(orchestrator: Any) -> None:
-        orchestrator.commit.install_assurance_root(
-            principal=service._principal, tenant_id=service.tenant_id, command_id=ROOT_COMMAND_ID,
-        )
-
-    return install
-
-
-def install_assurance(service: Any, orchestrator: Any) -> Any:
-    """Bind the SDK's Assurance deployment on this Orchestrator lifetime.
-
-    Returns the SDK's ``InstalledAssurance``.
-    """
-    from agent_orchestrator.assurance.policy import AssurancePolicy
-    from agent_orchestrator.orchestrator.assurance_assembly import (
-        AssuranceDeploymentPorts,
-        install_assurance as sdk_install,
-    )
-    from agent_orchestrator.deployment.root import user_requirements
-
-    notices: deque[dict[str, Any]] = service._assurance_notices
-
-    def select_profile(spec: Any) -> Any:
-        # The single Host selection point: every planning-decision Mission of this
-        # tenant is assured. There is no opt-out (片 D 第 6 项, 2026-10-02): the lane
-        # without Assurance was only reachable through one, and it is gone.
-        return AssurancePolicy()
-
-    def notify(payload: Mapping[str, Any]) -> None:
-        # At-least-once local status transport: the change pump re-reads the
-        # Mission and pushes ``mission_changed``; the payload is retained for
-        # the status surface, never re-interpreted as a completion.
-        notices.append(dict(payload))
-        service.wake()
-
-    ports = AssuranceDeploymentPorts(
-        tenant_id=service.tenant_id,
-        principal=service._principal,
-        requirements=lambda mission, spec: user_requirements(mission, service._principal),
-        select_profile=select_profile,
-        notify_transport=notify,
-        host_fingerprint=host_fingerprint(),
-        # Projects each frozen Scope's check policy right before its first review
-        # (the after-run projection in ``service._drive`` is the catch-up path).
-        check_policy_projector=lambda mission_id: service._duties.project_check_policies(mission_id),
-    )
-    return sdk_install(orchestrator, ports)
 
 
 def _invalid(message: str = "Assurance 请求的字段或版本无效") -> None:

@@ -11,16 +11,13 @@ from ..artifacts.input_bindings import ResolutionPolicy
 from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import sha256_hex
 from ..governance.permissions import Principal
-from ..governance.planning_authorization import planning_policy_for_mission
 from ..governance.policies import DeploymentPolicy
 from ..governance.promotion import params_hash
 from ..graph.revision_records import SourceRef
 from ..runtime.planning_operations import SourceUnavailable
-from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import Store, StoreError
 from .taskgraph_execution_sources import _document
-from .taskgraph_policy import InstalledGraphPolicy, KERNEL_VERSION
-
+from .taskgraph_policy import KERNEL_VERSION, InstalledGraphPolicy
 
 # This is the final deployed H1-H acceptance adapter, not a caller-supplied bool.
 # It must compare actual installed source/config bytes and original acceptance
@@ -59,41 +56,12 @@ class StoreTaskGraphPolicyAuthority:
         self.validate_read(self.principal, mission_id)
         return mission
 
-    def _delegation(self, mission_id: str) -> dict[str, Any]:
-        store = self.store
-        policy, now = planning_policy_for_mission(store, mission_id), int(store.now * 1000)
-        admission = PlanningAdmissionStore(store)
-        identities = store.connection.execute(
-            "SELECT DISTINCT grant_id FROM planning_lane_grants WHERE mission_id=? ORDER BY grant_id", (mission_id,)).fetchall()
-        for row in identities:
-            # Each lineage is read at its real current revision, so an older
-            # active grant cannot conceal its later revocation or expiration.
-            grant = admission.get_grant(row[0])
-            if grant is None:
-                raise SourceUnavailable("taskgraph_planning_delegation_unreadable")
-            if (grant["mission_id"] != mission_id or grant["tenant_id"] != self.tenant_id
-                    or grant["issuer_id"] != self.principal.principal_id or grant["scope_id"] != "mission"
-                    or not grant["active"] or grant["policy_hash"] != policy.policy_hash
-                    or not grant["not_before_ms"] <= now < grant["expires_at_ms"]
-                    or not {"REFINE", "REPAIR/REPLACE_METHOD"} <= set(grant["allowed_decisions"])):
-                continue
-            # The original command's receipt hash binds exactly this revision.
-            # Both issue and renewal use the same receipt envelope.
-            expected = sha256_hex({"command_hash": grant["command_hash"], "grant_id": grant["grant_id"],
-                                   "revision": grant["revision"], "grant_hash": grant["grant_hash"]})
-            if (not grant["planner_principal_id"] or not grant["issuer_command_id"]
-                    or grant["issuer_receipt_hash"] != expected):
-                raise SourceUnavailable("taskgraph_planning_issuer_receipt_invalid")
-            return grant
-        raise StoreError("TASKGRAPH_ENABLE_PLANNING_AUTHORIZATION_REQUIRED")
-
     def installed_policy(self, store: Store, mission_id: str) -> InstalledGraphPolicy:
         self._mission(store, mission_id)
         current = self._deployment_documents(mission_id)
         installed = self._installed.setdefault(mission_id, current)
         if current != installed:
             raise SourceUnavailable("taskgraph_installed_policy_changed")
-        grant = self._delegation(mission_id)
         binding = store.get_mission_policy(mission_id)
         version = None if binding is None else store.get_policy_version(binding["version_id"])
         if (binding is None or binding.get("mission_id") != mission_id or version is None
@@ -107,8 +75,6 @@ class StoreTaskGraphPolicyAuthority:
             # source codec revision. This is neither health nor acceptance.
             return SourceRef(channel=channel, identity=digest, revision=1, digest=digest).to_json()
         body: dict[str, Any] = {"kernel_version": KERNEL_VERSION, "graph_structure_budget": self.graph_budget.to_json(),
-                "planning_delegation_ref": SourceRef(channel="planning_lane_grant", identity=grant["grant_id"],
-                    revision=grant["revision"], digest=grant["grant_hash"]).to_json(),
                 "candidate_policy_ref": SourceRef(channel="mission_policy_parameters", identity=version["version_id"],
                     revision=1, digest=version["params_hash"]).to_json(),
                 "schema_policy_ref": installed_ref("schema_compatibility_policy_v1", installed["schema"]),

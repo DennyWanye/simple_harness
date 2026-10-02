@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 
 def _heartbeat(attempt_id: str, liveness: dict[str, Any]) -> SimpleNamespace:

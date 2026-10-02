@@ -143,8 +143,6 @@ class OrchestrationService:
         # input. None selects the package-owned production deployment reader.
         self._taskgraph_deployment = taskgraph_deployment
         self._taskgraph: Any = None
-        #: Mission id → the last enable refusal that was not "no grant yet".
-        self._taskgraph_faults: dict[str, str] = {}
         # ARP-EXEC-1.1.1 (RP-E3): the Host's native runtime plane composition, built per
         # Orchestrator lifetime; ``native_test_counter`` is trusted test composition only
         # (a certified fixture counter standing in for the DeepSeek one).
@@ -186,11 +184,25 @@ class OrchestrationService:
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
         self._permission_mode_reader = permission_mode_reader
-        # 部署每轮职责（自动确认、自动授权、检查策略投影）在 SDK 里只有一份（HTN 补齐阶段 A′）；
-        # Host 只告诉它"现在是不是自动模式"。跨重建保留已做过的记录。
-        from agent_orchestrator.deployment.duties import DeploymentDuties
-        self._duties = DeploymentDuties(None, None, tenant_id=self.tenant_id, principal=self._principal,
-                                        wake=lambda: self.wake())
+        # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份（HTN 补齐阶段 A′）；Host 交出
+        # 桌面规划世界、认证身份、通知去处与构建指纹，并告诉它"现在是不是自动模式"。
+        from agent_orchestrator.deployment.assembly import RootNames, UserMissionDeployment
+
+        from .assurance import host_fingerprint
+        from .hierarchical import ROOT_DUTY_PREFIX, ROOT_TASK_PREFIX, ROOT_TYPE, planning_world
+
+        def notify(payload: Mapping[str, Any]) -> None:
+            # At-least-once local status transport: the change pump re-reads the Mission and
+            # pushes ``mission_changed``; the payload is retained for the status surface.
+            self._assurance_notices.append(dict(payload))
+            self.wake()
+
+        self._user_missions = UserMissionDeployment(
+            tenant_id=self.tenant_id, principal=self._principal, world_factory=planning_world,
+            names=RootNames(ROOT_TYPE, ROOT_TASK_PREFIX, ROOT_DUTY_PREFIX),
+            host_fingerprint=host_fingerprint(), notify=notify, wake=lambda: self.wake(),
+            taskgraph_ports=taskgraph_deployment)
+        self._duties = self._user_missions.duties
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -301,30 +313,25 @@ class OrchestrationService:
             # 2026-09-30 用户决定：旧式执行池删除，编排只在原生池上跑；没有认证计数器
             # （非 DeepSeek 模型）就明说不支持，不再退回旧池。
             raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
-        taskgraph = assurance = None
-
         def assemble_startup(orchestrator: Any) -> None:
-            nonlocal taskgraph, assurance
-            self._install_hierarchical(orchestrator)
-            taskgraph = self._install_taskgraph(orchestrator)
-            assurance = self._install_assurance(orchestrator)
+            self._user_missions.assemble(orchestrator)
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
         self._orchestrator = Orchestrator(
             self._config, provider, owner=self.owner, connectors=self._connectors,
             startup_assembly=assemble_startup,
-            assurance_root_setup=self._assurance_root_setup(),
+            assurance_root_setup=self._user_missions.assurance_root_setup(),
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
         self._bind_host_duties(self._orchestrator)
-        self._taskgraph = taskgraph
-        self._assurance = assurance
+        self._taskgraph = self._user_missions.taskgraph
+        self._assurance = self._user_missions.assurance
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
-        self._duties.bind(self._orchestrator, self._control)
+        self._user_missions.bind(self._orchestrator, self._control)
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = PolicyApi(self._orchestrator.commit, self._principal)
 
@@ -406,7 +413,7 @@ class OrchestrationService:
     async def _close_runtime(self) -> None:
         orchestrator, self._orchestrator = self._orchestrator, None
         self._control = None
-        self._duties.bind(None, None)
+        self._user_missions.bind(None, None)
         self._policy = None
         self._taskgraph = None
         self._assurance = None
@@ -483,7 +490,6 @@ class OrchestrationService:
         """The Host's own per-round work: policies, grants, TaskGraph enables, confirmations."""
         self._project_assurance_policies()
         await self._auto_authorize_planning()
-        self._enable_required_taskgraphs()
         await self._auto_confirm_content_completion()
 
     def _bind_host_duties(self, orchestrator: Any) -> None:
@@ -535,15 +541,6 @@ class OrchestrationService:
             except TimeoutError:
                 pass
             self._wake.clear()
-
-    def _install_hierarchical(self, orchestrator: Any) -> None:
-        from .hierarchical import install
-        install(orchestrator)
-
-    def _initialize_hierarchical_root(self, mission_id: str) -> None:
-        from .hierarchical import initialize_root
-        mission = self._orchestrator.store.get_mission(mission_id)
-        initialize_root(self._orchestrator, mission, self._principal)
 
     # ------------------------------------------------------------ native plane (RP-E3)
     def _native_skill_tools(self) -> tuple[str, ...]:
@@ -725,15 +722,6 @@ class OrchestrationService:
         self.wake()
         return dict(body)
 
-    def _assurance_root_setup(self) -> Any:
-        """The authenticated native root installation."""
-        from .assurance import root_setup
-        return root_setup(self)
-
-    def _install_assurance(self, orchestrator: Any) -> Any:
-        from .assurance import install_assurance
-        return install_assurance(self, orchestrator)
-
     def _project_assurance_policies(self) -> int:
         """After every loop round: the per-Scope check policies an assured Mission needs
         before its content reviews (the SDK's ``DeploymentDuties.project_check_policies``)."""
@@ -764,69 +752,6 @@ class OrchestrationService:
         issued = self._duties.auto_authorize_planning(auto=await self._auto_mode())
         return issued
 
-    def _require_strict_taskgraph(self, receipt: Mapping[str, Any]) -> None:
-        """NEXT-TG-1.0 §6.4: a Mission this deployment creates runs on the strict TaskGraph.
-
-        Written in the creation transaction, from this deployment's own setting — not
-        from the page, the model or an environment variable.  An idempotent replay of
-        an existing Mission (``created`` false) is never converted.
-        """
-        if (not self.settings.strict_taskgraph or self._taskgraph is None
-                or receipt.get("created") is not True):
-            return
-        from agent_orchestrator.orchestrator.taskgraph_requirement import require_taskgraph
-        require_taskgraph(self._orchestrator.store, str(receipt["mission_id"]))
-
-    def _enable_required_taskgraphs(self) -> int:
-        """Bind every required Mission whose planning grant is now in place.
-
-        Runs after the auto grant, after a manual grant, and every loop round (so a
-        restart retries the same command).  The command id is derived from the
-        Mission, so two tries yield one binding.  "No grant yet" is the normal wait;
-        any other refusal is a deployment fault that is logged once per reason and
-        keeps the Mission waiting — it never falls back to an unbound plan.
-        """
-        if self._taskgraph is None or self._orchestrator is None:
-            return 0
-        from agent_orchestrator.orchestrator.taskgraph_requirement import (
-            enable_command_id,
-            missions_awaiting_taskgraph,
-        )
-        enabled = 0
-        for mission_id in missions_awaiting_taskgraph(self._orchestrator.store):
-            try:
-                self._taskgraph.policy.enable_taskgraph_contract(mission_id, enable_command_id(mission_id))
-            except Exception as error:  # noqa: BLE001 - one Mission's refusal must not stop others
-                reason = f"{type(error).__name__}: {error}"[:300]
-                if "PLANNING_AUTHORIZATION_REQUIRED" in reason:
-                    self._taskgraph_faults.pop(mission_id, None)
-                    continue
-                if self._taskgraph_faults.get(mission_id) != reason:
-                    self._taskgraph_faults[mission_id] = reason
-                    logger.warning("taskgraph enable refused mission=%s: %s", mission_id, reason)
-                continue
-            self._taskgraph_faults.pop(mission_id, None)
-            enabled += 1
-        if enabled:
-            self.wake()
-        return enabled
-
-    def _install_taskgraph(self, orchestrator: Any) -> Any:
-        from agent_orchestrator.orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
-        from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
-        from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
-
-        ports = self._taskgraph_deployment
-        if ports is None:
-            ports = TaskGraphDeploymentPorts(tenant_id=self.tenant_id, principal=self._principal,
-                graph_budget=DEFAULT_PROJECTION_BUDGET, deployment_acceptance=InstalledHtnWiringAcceptance())
-        if (not isinstance(ports, TaskGraphDeploymentPorts)
-                or ports.tenant_id != self.tenant_id or ports.principal != self._principal):
-            raise RuntimeError("执行图部署必须绑定当前认证身份和租户")
-        # The SDK creates readers/history against this candidate's original
-        # Store. Rebuild must not retain any collaborator from the closed Store.
-        return orchestrator.install_taskgraph(ports)
-
     async def _rebuild(self) -> None:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
@@ -834,7 +759,7 @@ class OrchestrationService:
 
         old, self._orchestrator = self._orchestrator, None
         self._control = None
-        self._duties.bind(None, None)
+        self._user_missions.bind(None, None)
         self._policy = None
         self._taskgraph = None
         self._assurance = None
@@ -852,20 +777,15 @@ class OrchestrationService:
         )
         if not self._runtime_options["profiles"]:
             raise ProviderUnavailable(ONLY_DEEPSEEK_REASON)
-        taskgraph = assurance = None
-
         def assemble_startup(orchestrator: Any) -> None:
-            nonlocal taskgraph, assurance
-            self._install_hierarchical(orchestrator)
-            taskgraph = self._install_taskgraph(orchestrator)
-            assurance = self._install_assurance(orchestrator)
+            self._user_missions.assemble(orchestrator)
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
         candidate = Orchestrator(
             self._config, self._effective_provider, owner=self.owner, connectors=self._connectors,
             startup_assembly=assemble_startup,
-            assurance_root_setup=self._assurance_root_setup(),
+            assurance_root_setup=self._user_missions.assurance_root_setup(),
             **self._runtime_options,
         )
         try:
@@ -885,11 +805,11 @@ class OrchestrationService:
         self._orchestrator = candidate
         self._bind_host_duties(candidate)
         self._control = control
-        self._duties.bind(candidate, control)
+        self._user_missions.bind(candidate, control)
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = policy
-        self._taskgraph = taskgraph
-        self._assurance = assurance
+        self._taskgraph = self._user_missions.taskgraph
+        self._assurance = self._user_missions.assurance
 
     async def drain(self, timeout: float = 60.0) -> bool:
         """Tests (``drive=False``): run the loop until idle or ``timeout``.  False when it
@@ -1025,6 +945,17 @@ class OrchestrationService:
             raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
         return self._control
 
+    def _deploy(self, method: str, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Create through the SDK's one user-Mission deployment (root and TaskGraph binding in
+        the same transaction), translating facade refusals like ``_call``."""
+        from agent_orchestrator.api.facade import FacadeError
+
+        control = self._require()
+        try:
+            return dict(getattr(self._user_missions, method)(self._orchestrator, control, body))
+        except FacadeError as error:
+            raise OrchestrationRequestError(FACADE_CODES.get(error.code, error.code), str(error)) from error
+
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         from agent_orchestrator.api.facade import FacadeError
 
@@ -1145,11 +1076,7 @@ class OrchestrationService:
             raise OrchestrationRequestError(
                 "orchestration_degraded", "编排循环目前不正常，暂不接受新的 Mission；已有的仍可取消或接管"
             )
-        with self._orchestrator.store.transaction():
-            receipt = self._call("create", self._door(request))
-            self._initialize_hierarchical_root(receipt["mission_id"])
-            self._require_strict_taskgraph(receipt)
-        self.wake()
+        receipt = self._deploy("create_mission", self._door(request))
         return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
 
     def create_mission_with_sources(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -1160,13 +1087,9 @@ class OrchestrationService:
         if set(request) != {"mission", "sources"} or not isinstance(request["mission"], Mapping):
             raise OrchestrationRequestError("invalid_request", "需要 mission 与 sources 原子批次")
         self._refuse_secrets(request)
-        with self._orchestrator.store.transaction():
-            receipt = self._call("create_with_sources", {
-                "mission": self._door(request["mission"]), "sources": request["sources"],
-            })
-            self._initialize_hierarchical_root(receipt["mission_id"])
-            self._require_strict_taskgraph(receipt)
-        self.wake()
+        receipt = self._deploy("create_mission_with_sources", {
+            "mission": self._door(request["mission"]), "sources": request["sources"],
+        })
         return dict(receipt)
 
     def planning_authorization(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -1176,8 +1099,6 @@ class OrchestrationService:
         # Enabling the kernel remains an explicit authenticated internal command;
         # do not turn every active planning grant into a durable policy binding.
         receipt = self._call("planning_authorization", dict(request))
-        # NEXT-TG-1.0 §6.4: the same coordinator as the auto grant, right after it.
-        self._enable_required_taskgraphs()
         self.wake()
         return dict(receipt)
 
@@ -1344,24 +1265,7 @@ class OrchestrationService:
                        if profile.context_policy.max_total_tokens is not None else {}),
                     "fingerprint": profile.context_snapshot()["fingerprint"],
                 }
-            detail["taskgraph"] = self._taskgraph_state(mission_id)
             return detail
-
-    def _taskgraph_state(self, mission_id: str) -> dict[str, Any]:
-        """NEXT-TG-1.0 §6.4: is this Mission waiting for its strict TaskGraph, and why.
-
-        ``waiting`` with no ``fault`` is the normal wait for a planning grant; a
-        ``fault`` is the enable refusal the coordinator logged (a deployment problem).
-        """
-        from agent_orchestrator.orchestrator.taskgraph_requirement import (
-            awaiting_taskgraph,
-            taskgraph_required,
-        )
-        store = self._orchestrator.store
-        required = taskgraph_required(store, mission_id)
-        waiting = required and awaiting_taskgraph(store, mission_id)
-        return {"required": required, "waiting": waiting,
-                "fault": self._taskgraph_faults.get(mission_id) if waiting else None}
 
     def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .taskgraph import read_taskgraph

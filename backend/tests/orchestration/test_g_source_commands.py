@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 from deskpet.orchestration.handlers import handle
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request

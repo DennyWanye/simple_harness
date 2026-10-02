@@ -11,7 +11,7 @@ import json
 import pytest
 from agent_orchestrator.contracts.models import sha256_hex
 from deskpet.orchestration import diagnostics
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.diagnostics import (
     MAX_SUPPORT_BYTES,
     build_diagnostics,

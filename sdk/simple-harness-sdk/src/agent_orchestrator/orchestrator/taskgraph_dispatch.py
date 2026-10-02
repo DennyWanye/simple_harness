@@ -11,7 +11,12 @@ from typing import Any
 from simple_harness.contracts import canonical_json
 
 from ..artifacts.input_bindings import InputManifest, TargetRules
-from ..artifacts.taskgraph_inputs import decode_frozen_manifest, decode_target_rules, encode_target_rules, require_current_manifest_use
+from ..artifacts.taskgraph_inputs import (
+    decode_frozen_manifest,
+    decode_target_rules,
+    encode_target_rules,
+    require_current_manifest_use,
+)
 from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs
 from ..contracts.models import Attempt, ContractError, Event, sha256_hex
 from ..graph.attempt_inputs import AttemptInputBinding, FrozenAttemptInputs
@@ -21,16 +26,15 @@ from ..graph.revision_records import HistoricalRevision
 from ..graph.task_network import TaskNetworkSnapshot
 from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import HtnStore
-from .hierarchical_dispatch import carried_inputs
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
-from ..storage.taskgraph_store import TaskGraphStore
-from .hierarchical_dispatch import HierarchicalDispatch, NetworkView
+from ..storage.taskgraph_store import KERNEL_VERSION, TaskGraphStore
+from .hierarchical_dispatch import HierarchicalDispatch, NetworkView, carried_inputs
 
 
 def taskgraph_enabled(store: Store, mission_id: str) -> bool:
     row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
-    if row is not None and row[0] != "taskgraph-exec-v2":
+    if row is not None and row[0] != KERNEL_VERSION:
         raise StoreError("TASKGRAPH_KERNEL_UNSUPPORTED")
     return row is not None
 

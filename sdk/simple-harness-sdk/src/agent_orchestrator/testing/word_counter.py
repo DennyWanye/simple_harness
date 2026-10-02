@@ -1,9 +1,6 @@
-# SPDX-FileCopyrightText: 2026 DennyWanye
-# SPDX-License-Identifier: BUSL-1.1
-
-"""The certified word counter of the Host's scripted test lanes (moved out of the deleted
-flat fixture module on 2026-10-02; the two identity strings are unchanged, so existing
-execution pools keep their identity)."""
+# SPDX-License-Identifier: Apache-2.0
+"""The certified word counter of the scripted test lanes (Host and SDK share this one copy since
+2026-10-03; the identity strings are unchanged, so existing execution pools keep their identity)."""
 
 from __future__ import annotations
 

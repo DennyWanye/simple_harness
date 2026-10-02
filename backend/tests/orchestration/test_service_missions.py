@@ -16,7 +16,7 @@ from deskpet.orchestration.service import (
     OrchestrationService,
     OrchestrationSettings,
 )
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 from ._support import mission_count as _mission_count
 from ._support import notes_provider, notes_request

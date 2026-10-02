@@ -15,11 +15,32 @@ from simple_harness.contracts import canonical_json
 from ..contracts.models import ContractError
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
-from ..graph.revision_pins import DemandRef, MemberPin, MethodPin, RevisionPins, build_revision_pins, verify_revision_pins
-from ..graph.revision_records import HistoricalRevision, PlanAdmissionCertificate, RevisionCertificate, RevisionRecord, SourceRef, certificate_from_json
-from .store import Store
+from ..graph.revision_pins import (
+    DemandRef,
+    MemberPin,
+    MethodPin,
+    RevisionPins,
+    build_revision_pins,
+    verify_revision_pins,
+)
+from ..graph.revision_records import (
+    HistoricalRevision,
+    PlanAdmissionCertificate,
+    RevisionCertificate,
+    RevisionRecord,
+    SourceRef,
+    certificate_from_json,
+)
 from .htn_store import HtnStore
+from .store import Store
 from .taskgraph_history_sources import validate_revision_sources
+
+#: The one kernel identity (a CHECK on ``taskgraph_policy_bindings`` pins it).  Since
+#: 2026-10-03 (HTN 补齐阶段 A′) a Mission is bound in its creation transaction and the policy
+#: no longer carries a planning-grant reference (nothing read it — every plan commit keeps its
+#: own planning-authority gate); an older binding still carrying it is refused by name
+#: (``TASKGRAPH_POLICY_FIELDS_INVALID``), so the kernel string itself did not need to move.
+KERNEL_VERSION = "taskgraph-exec-v2"
 
 
 class GraphIntegrityError(ContractError):
@@ -79,7 +100,7 @@ class TaskGraphStore:
 
     def _verify_policy(self, connection: sqlite3.Connection, mission: str) -> None:
         row = connection.execute("SELECT * FROM taskgraph_policy_bindings WHERE mission_id=?", (mission,)).fetchone()
-        if row is None or row["kernel_version"] != "taskgraph-exec-v2":
+        if row is None or row["kernel_version"] != KERNEL_VERSION:
             _fail("TaskGraph policy is not enabled")
         raw = str(row["policy_json"])
         if canonical_json(json.loads(raw)) != raw or hashlib.sha256(raw.encode()).hexdigest() != row["policy_hash"]:

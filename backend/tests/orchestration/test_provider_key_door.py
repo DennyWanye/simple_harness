@@ -15,7 +15,7 @@ import json
 
 import pytest
 
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.provider import ProviderSnapshot
 from deskpet.orchestration.service import (
     OrchestrationRequestError,

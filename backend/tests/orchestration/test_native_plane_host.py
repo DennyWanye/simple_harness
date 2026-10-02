@@ -16,7 +16,7 @@ import asyncio
 import pytest
 
 from deskpet.orchestration.handlers import handle
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.provider import ProviderSnapshot
 from deskpet.orchestration.runtime_profile import ONLY_DEEPSEEK_REASON
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings

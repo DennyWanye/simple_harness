@@ -527,10 +527,13 @@ def occurrence_task(
     """
 
     primitive = binding.form is TaskForm.PRIMITIVE
-    owned_refs = [ref for ref, _ in owned if ref in set(binding.requirement_refs)] if primitive else []
+    # 2026-10-03（产品同形测试世界首局子目标发现）：上级做法链接给子目标步骤的要求就是它负责的
+    # 要求（"要求原样交给子目标"），与链接给普通步骤一样计入；此前只有普通步骤计入，子目标落到
+    # 兜底分支，兜底又把已被认领的 file: 要求全部排除，所有要求都是 file: 时子目标一条都不剩。
+    owned_refs = [ref for ref, _ in owned if ref in set(binding.requirement_refs)]
     criteria = occurrence_criteria(binding, requirements, owned=owned_refs, claimed=claimed)
     goal = binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}"
-    if owned_refs:
+    if owned_refs and primitive:
         goal = scoped_goal(goal, criteria, [text for ref, text in owned if ref in owned_refs])
     policy = occurrence_policy(
         criteria, deployed, declared_policy,

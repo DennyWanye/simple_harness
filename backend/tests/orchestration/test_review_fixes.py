@@ -18,7 +18,7 @@ import asyncio
 import pytest
 
 from deskpet.orchestration.handlers import handle
-from ._word_counter import FixtureWordCounter
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
