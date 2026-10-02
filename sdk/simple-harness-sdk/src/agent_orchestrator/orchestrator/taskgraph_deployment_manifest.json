@@ -1,5 +1,5 @@
 {
-  "deployment_id": "0e1ee1c0494af133f1d5020711ad1053f829501539ff55c533ec237119879fd2",
+  "deployment_id": "4017a6b5f8ad8d4810acab121bf05ead170c9d075888ac41537759d4713f70fa",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -243,7 +243,7 @@
     "agent_orchestrator/orchestrator/system_operations.py": "2ad043af68b86869c32bfa8f5c19b0491ebe766a6acdc421cd107e427baa2bfc",
     "agent_orchestrator/orchestrator/tail_revision.py": "d749f7e3862901cab16e13243eb8b7eae2b603d1d582b9aa0792df6da0a22563",
     "agent_orchestrator/orchestrator/taskgraph_action_settlement.py": "1fba1d3822b41b837a905f35a849ec82d331061f10593744c71384ca7f12a855",
-    "agent_orchestrator/orchestrator/taskgraph_assembly.py": "5c92de1fe9983c949a6c7823aa31c170bb57c05a77df9450c0c3d007e63b6f6d",
+    "agent_orchestrator/orchestrator/taskgraph_assembly.py": "c5b3c30dafdc860f754e8ec776edb7b681c1ef33d1e2922749a05891031b6b7b",
     "agent_orchestrator/orchestrator/taskgraph_bindings.py": "143106c1cd7f1678d676ad34cd58a6afa3c6c9f1a000c4cb8542188fc2b12755",
     "agent_orchestrator/orchestrator/taskgraph_candidate.py": "3dcdd256618d5f9a541f199cc4a28fcd8db97ba86732d7994d26e6b5acc608ef",
     "agent_orchestrator/orchestrator/taskgraph_completion_sources.py": "3cae97b5a4ef9a92bd7e3ec3420abd4997bfbb653b0262154e300e2bbc59b6fa",
@@ -407,7 +407,7 @@
     "agent_orchestrator/storage/taskgraph_history_sources.py": "d5bc48080461e9a7256ac63654a025bed1c6124a001923eb6059735768eea8c8",
     "agent_orchestrator/storage/taskgraph_schema.py": "1c94f1e44bbf8d064ab5ac162e306c205a465d3a51dac1f99de2033e37ed1b54",
     "agent_orchestrator/storage/taskgraph_source_events.py": "fc65102410efa32dee0204c799b38c13290a75dddd0ab383b37387ecd1202b25",
-    "agent_orchestrator/storage/taskgraph_store.py": "13af00059d7c32883b8dc52182703d563bfe3a765d96e8713254e0a2e35a98ed",
+    "agent_orchestrator/storage/taskgraph_store.py": "ad830dd87e3412dfae7c9530e2c6f276e3f9b35fc50cf7a6acc81b73b56af5ce",
     "agent_orchestrator/storage/validity_subject_schema.py": "d0e6fab12c74c73042de5eaf6a1dd8268856dd582bd6a3ffea66619df5a1e4fe",
     "agent_orchestrator/testing/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/testing/fixtures.py": "14b2a90b960768dd7ad5bab9d36cfccce03966e2377626442a5a2da560a68652",

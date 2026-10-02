@@ -262,20 +262,46 @@ class TaskGraphStore:
     def read_revision(self, mission_id: str, revision: int) -> HistoricalRevision:
         """Validate every ancestor under one snapshot; never trust a parent's hash column alone.
 
-        A result verified while nothing in the store changed is the result: it is reused
-        only under an equal :meth:`Store.read_generation` (any write, anywhere, re-verifies).
+        A verified result is reused only while the rows it was verified from are byte-for-
+        byte the same (:meth:`_history_fingerprint`).  2026-10-03: the key was the whole
+        Store's write generation, which every loop cycle moves, so every cycle re-verified
+        the whole chain — CPU grew with each plan revision.
         """
-        generation = self._store.read_generation()
         key = (mission_id, int(revision))
-        cached = self._verified.get(key)
-        if generation is not None and cached is not None and cached[0] == generation:
-            return cached[1]
-        selected = self._read_revision_verified(mission_id, revision)
-        if generation is not None and self._store.read_generation() == generation:
-            if len(self._verified) >= 256:
-                self._verified.clear()
-            self._verified[key] = (generation, selected)
+        with self._store.read_view():
+            token = self._history_fingerprint(mission_id, int(revision))
+            cached = self._verified.get(key)
+            if cached is not None and cached[0] == token:
+                return cached[1]
+            selected = self._read_revision_verified(mission_id, revision)
+        if len(self._verified) >= 256:
+            self._verified.clear()
+        self._verified[key] = (token, selected)
         return selected
+
+    def _history_fingerprint(self, mission_id: str, revision: int) -> str:
+        """Every stored byte a verified revision rests on, in one cheap read: the revision
+        rows of the chain, their plan snapshots, the policy binding and the pin rows.  These
+        tables are append-only; any changed byte (corruption included) re-verifies."""
+        connection = self._store.connection
+        digest = hashlib.sha256()
+        for row in connection.execute(
+                "SELECT * FROM taskgraph_revision_records WHERE mission_id=? AND revision<=? "
+                "ORDER BY revision", (mission_id, revision)):
+            digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
+        for row in connection.execute(
+                "SELECT revision, snapshot_hash FROM plan_revisions WHERE mission_id=? AND revision<=? "
+                "ORDER BY revision", (mission_id, revision)):
+            digest.update(canonical_json(list(tuple(row))).encode())
+        for table in ("taskgraph_policy_bindings",):
+            for row in connection.execute(f"SELECT * FROM {table} WHERE mission_id=?", (mission_id,)):
+                digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
+        for table in ("taskgraph_member_pins", "taskgraph_method_pins", "taskgraph_demand_refs"):
+            for row in connection.execute(
+                    f"SELECT * FROM {table} WHERE mission_id=? AND revision<=? ORDER BY rowid",
+                    (mission_id, revision)):
+                digest.update(canonical_json([str(value) for value in tuple(row)]).encode())
+        return digest.hexdigest()
 
     def _read_revision_verified(self, mission_id: str, revision: int) -> HistoricalRevision:
         with self._store.read_view():

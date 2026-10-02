@@ -95,7 +95,9 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
     def validate_sources(principal: Any, mission_id: str, view: Any) -> None:
         with store.read_view():
             validate_read(principal, mission_id)
-            local = plan_sources.read_execution(mission_id).local
+            # Only the local plan sources are compared here; the original runtime and
+            # execution-policy importers are read where a decision consumes them.
+            local = plan_sources.local.read(mission_id)
             if (local.view.network != view.network or local.view.witnesses != view.witnesses
                     or local.view.starts != view.starts or local.view.licences != view.licences
                     or local.view.accepted != view.accepted):
