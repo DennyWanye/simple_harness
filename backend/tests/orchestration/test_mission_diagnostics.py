@@ -75,6 +75,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report.keys() == {
             "mission_id",
             "replay",
+            "business_replay",
             "attribution",
             "verification",
             "costs",
@@ -83,6 +84,8 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
             "scope",
         }
         assert report["mission_id"] == selected["mission_id"]
+        assert report["business_replay"]["version"] == "business-replay-v3"
+        assert report["business_replay"]["mission_rows"]["missions"] == 1
         assert report["scope"]["selected_only"] is True
         assert foreign["mission_id"] not in rendered
         assert "FOREIGN-MISSION-SENTINEL" not in rendered

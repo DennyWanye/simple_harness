@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_orchestrator.contracts.models import sha256_hex
+from agent_orchestrator.observability.business_replay import coverage_report
 from agent_orchestrator.observability.replay import (
     FORMAL_FIELDS,
     REPLAY_VERSION,
@@ -398,6 +399,8 @@ def build_diagnostics(
             "comparison": comparison,
             "failure_timeline": _timeline(failure_timeline(events, projection)),
         },
+        # 全业务重放 v3 的骨架：哪些业务表已能由事件重建（HTN 补齐阶段 A；阶段 G 取代上面的 v2）
+        "business_replay": coverage_report(store, mission_id),
         "attribution": attribution_report,
         "verification": _verification(snapshot),
         "costs": {

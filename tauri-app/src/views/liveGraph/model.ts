@@ -158,7 +158,7 @@ export function phaseDisplay(phase: string): Display { return phase ? PHASE[phas
 export const READINESS: Record<string, string> = {
   NOT_SELECTED: "未选入执行", NEEDS_REFINEMENT: "等待拆分", WAITING_ORDER: "等上一步完成",
   WAITING_DATA: "等上游交付", WAITING_EVIDENCE: "等证据", WAITING_APPROVAL: "等批准",
-  STALE_BINDING: "计划已变，待重新绑定", READY_CANDIDATE: "可以开始", WAITING_OPERATION_UNKNOWN: "操作结果核对中",
+  STALE_BINDING: "计划已变，待重新绑定", READY_CANDIDATE: "可以开始",
   OBSERVER_UNAVAILABLE: "来源暂不可读", GRAPH_INTEGRITY: "结构待修复", VALIDITY_RECHECK_PENDING: "等有效性复核",
 };
 export function readinessLabel(reason: string | null): string | null {
