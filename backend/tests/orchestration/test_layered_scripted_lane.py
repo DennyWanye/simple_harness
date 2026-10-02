@@ -271,3 +271,62 @@ async def test_a_general_mission_with_attached_sources_gives_them_to_the_worker(
         assert "sources" in json.dumps(first.get("source_roots"), ensure_ascii=False)
     finally:
         await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_a_backend_killed_inside_a_model_call_is_resumed_by_the_next_one(
+    orchestration_root, principal, tmp_path, monkeypatch
+):
+    """后端在执行者的模型调用进行中被强杀（没有任何收尾），重启后任务接着做完。
+
+    强杀打断一次调用有两种落点，真机 2026-10-02 两种都碰到了：
+    * 调用已经交给模型、结果不明（本场景走的是这一种）：系统等够时限后判那次调用丢失，
+      不算次数，原地重做。
+    * 调用还没交出去、新进程接着跑那一轮（mission-baddf1eb2442858e）：准入因为执行权还记
+      在旧进程名下而拒绝它，修复前主循环把这种拒绝当成不可重试、任务直接失败。这一种由
+      SDK 的 ``full_target/test_lease_lost_is_redone.py`` 保护（SDK opt.127）——模拟修复前
+      的行为时本场景照样通过，所以它保护不到那一种。"""
+
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
+    marker = tmp_path / "worker.marker"
+    child = subprocess.Popen(
+        [sys.executable, "-m", "tests.orchestration._layered_child", str(orchestration_root), str(marker)],
+        cwd=Path(__file__).resolve().parents[2], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    try:
+        deadline = time.monotonic() + 90
+        while not marker.exists():
+            assert child.poll() is None, child.stderr.read().decode(errors="replace")[-2000:]
+            assert time.monotonic() < deadline, "子进程没有走到执行者的模型调用"
+            await asyncio.sleep(0.1)
+        os.kill(child.pid, signal.SIGKILL)
+        child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.kill()
+
+    provider = LayeredScriptedProvider()
+    service = layered_service(orchestration_root, principal, provider, lease_seconds=4.0)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        mission_id = service.list_missions()[0]["id"]
+        mission = await run_until_settled(service, mission_id, rounds=20)
+        types = _types(service, mission_id)
+        assert mission.status.value == "COMPLETED", (mission.status.value, mission.final_report, types[-20:])
+        assert types.count("PlanRevisionCommitted") == 1  # 计划没有重做
+        assert "planner" not in provider.asked  # 重做是系统批准的
+        store = service._orchestrator.store
+        attempts = [a for task in store.list_tasks(mission_id) for a in store.list_attempts(task.id)]
+        assert len(attempts) == 2 and attempts[-1].status.value == "COMPLETED"
+        assert types.count("AttemptChargeReleased") == 1  # 被打断的那次不算次数
+    finally:
+        await asyncio.wait_for(service.close(), 30)
