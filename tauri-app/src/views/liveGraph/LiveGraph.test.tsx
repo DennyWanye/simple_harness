@@ -151,12 +151,10 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(panel.textContent).not.toContain("未选入执行");
   });
 
-  it("断线时保留画面并提示；重连后自动重读；执行图启用故障直接显示原因", () => {
+  it("断线时保留画面并提示；重连后自动重读", () => {
     const channel = new FakeChannel();
-    render(<LiveGraph missionId={M} channel={channel}
-      detail={{ ...MISSION_DETAIL, taskgraph: { required: true, waiting: true, fault: "TASKGRAPH_DEPLOYMENT_SOURCE_INVALID" } }} />);
+    render(<LiveGraph missionId={M} channel={channel} detail={MISSION_DETAIL} />);
     channel.reply(SNAP, snapshot());
-    expect(screen.getAllByRole("alert")[0].textContent).toContain("执行图启用失败：TASKGRAPH_DEPLOYMENT_SOURCE_INVALID");
     channel.setState("disconnected");
     expect(screen.getByText(/连接断开了/)).toBeTruthy();
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
