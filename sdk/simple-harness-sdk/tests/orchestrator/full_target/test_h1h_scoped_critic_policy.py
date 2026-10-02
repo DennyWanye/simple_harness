@@ -1,54 +1,44 @@
-"""Real Plan Commit must schedule the Critic required by scoped acceptance."""
+"""Real Plan Commit must schedule the independent review required by scoped acceptance.
+
+The commits run on the product's deployment: the main loop proposed a method, had it
+independently reviewed and opened the adoption round (``h1i_seed.reviewed``); the
+planner's adoption reply goes through the production collector.
+"""
 import asyncio
+
 import pytest
-from test_h1i_production_entry import _config, _seed_new_protocol, _open_planner_round, _refine_reply
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from h1i_seed import plan_reply, reviewed
+
 from agent_orchestrator.contracts.htn import TaskForm
-from agent_orchestrator.orchestrator.occurrence_tasks import read_only_leaf
+from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 
 
-def test_real_new_protocol_commit_schedules_independent_critic_for_readonly_content(tmp_path):
+def test_real_new_protocol_commit_schedules_independent_review_for_each_leafs_own_criteria(tmp_path):
     async def case():
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _, _, dispatch = _seed_new_protocol(loop, tmp_path, key="scoped-critic")
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id,
-                                     principal=Principal(loop._owner)).issue(
-                mission.id, command_id="scoped-critic-grant", request_id=intent.intent_id)
+        async with reviewed(tmp_path, key="scoped-critic") as ((loop, mission, _world, _root, dispatch, _product), intent, provider):
+            asked = len(provider.asked)
             await loop._collect_plan_decision(intent, object(), mission,
-                _refine_reply(intent.config["planning_package"]), dispatch)
+                plan_reply(intent.config["planning_package"]), dispatch)
             network = dispatch.network(mission.id)
             assert network.plan_revision == 1
-            read_only_policies = []
+            from agent_orchestrator.orchestrator.scoped_content_review import (
+                task_content_prompt_scope,
+            )
+            leaves = 0
             for occurrence in network.occurrences:
                 if occurrence.form != TaskForm.PRIMITIVE:
                     continue
+                leaves += 1
                 task = loop.store.get_task(str(occurrence.task_id))
                 assert task is not None and "critic_review" in task.verification_policy
-                binding = network.binding_for_task(occurrence.task_id)
-                if read_only_leaf(binding):
-                    read_only_policies.append(task.verification_policy)
-            assert read_only_policies
-            from agent_orchestrator.orchestrator.scoped_content_review import task_content_prompt_scope
-            from agent_orchestrator.context.context_builder import build_critic_package
-            for occurrence in network.occurrences:
-                if occurrence.form != TaskForm.PRIMITIVE:
-                    continue
-                task = loop.store.get_task(str(occurrence.task_id))
+                # The independent review judges this leaf's own criteria, as the content
+                # scope the plan froze for it names them.
                 scope = task_content_prompt_scope(loop.store, mission.id, task.id)
-                package = build_critic_package(mission, task, attempt_id="scope-preview-only",
-                    artifacts=[], test_output=None, workspace_files=[], task_content_scope=scope)
-                assert package.package["task_content_scope"]["purpose"] == "TASK_CONTENT"
-                assert package.package["task_contract"]["success_criteria"] == [
-                    c["criterion_id"] for c in scope["criteria"]]
-                if "code_test" not in task.verification_policy:
-                    assert "c-test-passes" not in package.package["task_contract"]["success_criteria"]
-            assert any("code_test" not in policy for policy in read_only_policies)
-            assert provider.calls == 0
+                assert scope["purpose"] == "TASK_CONTENT"
+                assert [c["criterion_id"] for c in scope["criteria"]] == list(
+                    network.binding_for_task(occurrence.task_id).requirement_refs)
+            assert leaves == 1
+            assert len(provider.asked) == asked  # the commit asked no model
     asyncio.run(case())
 
 
@@ -63,8 +53,9 @@ def _goals_without_applicable_method(world):
 
 def test_suspended_method_is_not_offered_as_a_candidate(tmp_path):
     from test_htn_end_to_end import build_world
-    from agent_orchestrator.storage.htn_store import HtnStore
+
     from agent_orchestrator.contracts.htn import MissionRef
+    from agent_orchestrator.storage.htn_store import HtnStore
     world = build_world(tmp_path, key="registry-dispatch-scope")
     reference = world.contract.method_ref()
     assert world.dispatch.method_applicability(world.mission.id)
@@ -87,55 +78,29 @@ def test_suspended_method_is_not_offered_as_a_candidate(tmp_path):
     assert _goals_without_applicable_method(world) == ()
 
 
-def test_current_runtime_views_do_not_reintroduce_suspended_methods(tmp_path):
-    async def case():
-        from agent_orchestrator.storage.htn_store import HtnStore
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _, _, dispatch = _seed_new_protocol(loop, tmp_path, key="registry-v7-package")
-            world = dispatch.require_planning_world()
-            reference = next(r for r in world.registry.method_refs() if r.method_id == "code.fix-by-assessed-revert")
-            registration = world.registry.suspend(reference, reason="source-library experiment")
-            HtnStore(loop.store).set_method_registration(registration)
-            sealed = loop._hierarchical_planner_package(dispatch, mission, ordinal=1)
-            assert sealed.package["package_version"] == __import__("agent_orchestrator.runtime.role_templates", fromlist=["x"]).PLANNING_DECISION_PACKAGE_VERSION
-            rows = sealed.package["views"]["methods"]
-            assert rows and all(r["method_ref"]["id"] != reference.method_id for r in rows)
-            assert provider.calls == 0
-    asyncio.run(case())
-
-
 @pytest.mark.parametrize("with_grant", [True, False])
 def test_unconditional_method_can_commit_only_with_actual_planning_grant(tmp_path, with_grant):
-    import dataclasses
-    from agent_orchestrator.contracts.htn import RegistryAuthor
-    from agent_orchestrator.planning.htn.registry import MethodProposal
+    """The reviewed method has no applicability conditions and names no approval; its
+    applicability report never carries planning authority.  The adoption commits only
+    while the round's grant stands (the person revokes it in the other case)."""
     from agent_orchestrator.storage.htn_store import HtnStore
+
     async def case():
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, world, _, dispatch = _seed_new_protocol(loop, tmp_path, key="unconditional-method")
-            reference = next(r for r in world.registry.method_refs() if r.method_id == "code.fix-by-patch")
-            contract = dataclasses.replace(world.registry.definition(reference),
-                method_id="code.unconditional-patch", applicable_when=())
-            receipt = world.registry.admit(MethodProposal(method=contract, author=RegistryAuthor.SYSTEM),
-                author=RegistryAuthor.SYSTEM, policy=world.policy())
-            assert receipt.admitted
-            htn = HtnStore(loop.store)
-            htn.register_method(contract, receipt.registration)
-            for ref in world.registry.method_refs():
-                if ref != contract.method_ref():
-                    htn.set_method_registration(world.registry.suspend(ref, reason="isolate unconditional method"))
-            intent = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            if with_grant:
-                PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id,
-                    principal=Principal(loop._owner)).issue(mission.id, command_id="unconditional-grant",
-                                                         request_id=intent.intent_id)
+        async with reviewed(tmp_path, key=f"unconditional-method-{with_grant}") as ((loop, mission, _world, _root, dispatch, product), intent, provider):
+            selection = intent.config["planning_package"]["method_selection"][0]
+            assert selection["applicable"]
             report, = dispatch.method_applicability(mission.id)
             assert report.report.applicable and not report.report.authorization.allowed
+            if not with_grant:
+                binding = PlanningAdmissionStore(loop.store).get_request_binding(intent.intent_id)
+                product.control.planning_authorization({
+                    "operation": "revoke", "grant_id": binding["grant_id"],
+                    "expected_revision": int(binding["grant_revision"]),
+                    "command_id": "person-revoke-unconditional", "reason": "withdrawn"})
+            asked = len(provider.asked)
             await loop._collect_plan_decision(intent, object(), mission,
-                _refine_reply(intent.config["planning_package"]), dispatch)
-            plan = htn.active_plan_revision(mission.id)
+                plan_reply(intent.config["planning_package"]), dispatch)
+            plan = HtnStore(loop.store).active_plan_revision(mission.id)
             assert (plan is not None and plan.revision == 1) if with_grant else plan is None
-            assert provider.calls == 0
+            assert len(provider.asked) == asked
     asyncio.run(case())

@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_h1i_production_entry import _config, _open_planner_round, _seed_new_protocol
+from h1i_seed import seeded
+from test_h1i_production_entry import _open_planner_round
 
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
@@ -22,7 +23,6 @@ from agent_orchestrator.planning.decision_codec import (
 )
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import StoreConflict
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 _FIXTURE_DIR = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid"
 
@@ -67,10 +67,7 @@ def test_malformed_decode_only_reply_is_unreadable_but_preserves_exact_raw_artif
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="i01-malformed-decode-only"
-            )
+        async with seeded(tmp_path, key="i01-malformed-decode-only") as (loop, mission, _world, _root, dispatch, _product):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             raw = _malformed_decode_only_raw(opener.config["planning_package"])
             with pytest.raises(PlanningDecisionCodecError):
@@ -88,6 +85,27 @@ def test_malformed_decode_only_reply_is_unreadable_but_preserves_exact_raw_artif
             assert loop.assembled.workspaces.artifact_store.read(
                 row["raw_artifact_ref"]
             ) == raw.encode("utf-8")
+            # A decode refusal writes both ledgers: the new evaluation event and the
+            # rejection the retry accounting reads (was test_h1h_request_binding).
+            events = loop.store.list_events(mission.id)
+            evaluated = [event for event in events if event.type == "PlanningDecisionEvaluated"]
+            rejected = [event for event in events if event.type == "PlanningRejected"]
+            assert len(evaluated) == 1
+            assert {
+                "decision_id",
+                "request_id",
+                "attempt_ordinal",
+                "decision_type",
+                "status",
+                "rejection_codes",
+                "canonical_hash",
+            } <= set(evaluated[0].payload)
+            assert evaluated[0].payload["status"] == str(PlanningDecisionStatus.UNREADABLE)
+            assert evaluated[0].payload["attempt_ordinal"] == 0
+            assert evaluated[0].payload["decision_type"] is None
+            assert evaluated[0].payload["canonical_hash"] is None
+            assert len(rejected) == 1
+            assert rejected[0].payload["reason"] == "proposal_unreadable"
 
     asyncio.run(case())
 
@@ -97,10 +115,7 @@ def test_raw_artifact_write_failure_leaves_no_collector_db_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="i01-raw-artifact-failure"
-            )
+        async with seeded(tmp_path, key="i01-raw-artifact-failure") as (loop, mission, _world, _root, dispatch, _product):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             raw = _raw_fixture("repair-propose-successor", opener.config["planning_package"])
             before = _sql_snapshot(loop, mission.id)
@@ -128,10 +143,7 @@ def test_terminal_replay_never_writes_raw_artifact_or_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="i01-terminal-raw-replay"
-            )
+        async with seeded(tmp_path, key="i01-terminal-raw-replay") as (loop, mission, _world, _root, dispatch, _product):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             raw = _raw_fixture("bind-existing-goal-reuse", opener.config["planning_package"])
             await loop._collect_plan_decision(opener, object(), mission, raw, dispatch)

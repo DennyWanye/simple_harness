@@ -3,7 +3,9 @@
 
 """P02/P03 compiler-refusal preservation through real production PreviewInputs.
 
-The collector is entered only to capture its frozen proposal and PreviewInputs.  Each
+The collector is entered only to capture its frozen proposal and PreviewInputs, on the
+adoption round the main loop opened after the planner's proposed method passed its
+independent review (``h1i_seed.reviewed``).  Each
 case then replaces one frozen input value, recomputes the mandatory source hash, and
 calls the production dispatch preview.  No compiler, projection validator, report,
 provider, or result is mocked.
@@ -20,25 +22,16 @@ from typing import Any
 
 import pytest
 import test_projection_integrity as projection
+from h1i_seed import plan_reply, reviewed
 from test_h1h_preview_purity import _PreviewInputsCaptured
-from test_h1i_production_entry import (
-    _config,
-    _open_planner_round,
-    _refine_reply,
-    _seed_new_protocol,
-)
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.htn import OrderConstraint, PortCardinality, PortSpec, TaskForm
 from agent_orchestrator.contracts.models import sha256_hex
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.plan_preview import (
     PreviewInputs,
     PreviewUnavailable,
     _source_snapshot_payload,
 )
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
 def _with_network(inputs: PreviewInputs, network: Any) -> PreviewInputs:
@@ -54,14 +47,7 @@ def _with_network(inputs: PreviewInputs, network: Any) -> PreviewInputs:
 async def _capture_production_preview_inputs(
     tmp_path: Path, *, key: str
 ) -> tuple[Any, PreviewInputs, Any]:
-    provider = RoleScriptedProvider({"planner": []})
-    async with Orchestrator(_config(tmp_path), provider) as loop:
-        mission, _env, _contract, dispatch = _seed_new_protocol(loop, tmp_path, key=key)
-        opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-        PlanningAuthorizationApi(
-            loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-        ).issue(mission.id, command_id=f"{key}:grant", request_id=opener.intent_id)
-
+    async with reviewed(tmp_path, key=key) as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
         captured: dict[str, Any] = {}
         original = dispatch.preview_plan_proposal
 
@@ -75,7 +61,7 @@ async def _capture_production_preview_inputs(
                 opener,
                 object(),
                 mission,
-                _refine_reply(opener.config["planning_package"]),
+                plan_reply(opener.config["planning_package"]),
                 dispatch,
             )
         except _PreviewInputsCaptured:
@@ -198,15 +184,9 @@ def test_real_collector_persists_the_compiler_bound_code(
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 
     async def run() -> None:
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="preview-bound-collector"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(
-                loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-            ).issue(mission.id, command_id="preview-bound-grant", request_id=opener.intent_id)
+        async with reviewed(tmp_path, key="preview-bound-collector") as ((loop, mission, _world, _root, dispatch, _product), opener, provider):
+            asked = len(provider.asked)
+            gateway = len(loop.assembled.gateway.calls)
             original = dispatch.preview_plan_proposal
 
             def bounded(proposal, *, inputs):
@@ -225,13 +205,13 @@ def test_real_collector_persists_the_compiler_bound_code(
                 )
 
             dispatch.preview_plan_proposal = bounded
-            before_tree = _tree_hash(tmp_path / "repo")
+            before_tree = _tree_hash(Path(loop.assembled.workspaces.root))
             try:
                 await loop._collect_plan_decision(
                     opener,
                     object(),
                     mission,
-                    _refine_reply(opener.config["planning_package"]),
+                    plan_reply(opener.config["planning_package"]),
                     dispatch,
                 )
             finally:
@@ -256,9 +236,9 @@ def test_real_collector_persists_the_compiler_bound_code(
             assert "COVERAGE_GAP" not in row["rejection_codes"]
             assert not HtnStore(loop.store).list_plan_revisions(mission.id)
             assert not loop.store.list_actions(mission.id)
-            assert _tree_hash(tmp_path / "repo") == before_tree
-            assert provider.calls == 0
-            assert not loop.assembled.gateway.calls
+            assert _tree_hash(Path(loop.assembled.workspaces.root)) == before_tree
+            assert len(provider.asked) == asked
+            assert len(loop.assembled.gateway.calls) == gateway
 
     asyncio.run(run())
 

@@ -257,32 +257,39 @@ def test_host_explicit_tokenizer_must_match_persisted_identity(tmp_path):
 
 def test_actual_orchestrator_freezes_context_before_dispatch_and_refuses_substitution(tmp_path):
     # 删旧平面模式第三刀：规划请求改在真实主循环的分层世界里建（平面规划请求已删）。
-    from test_h1i_production_entry import _seed_new_protocol
-    from test_h4_retry_runtime_entry import grant
+    # HTN 补齐阶段 A′：任务建在产品同形部署上（h1i_seed），执行池是产品的原生执行池。
+    import sys
+    from pathlib import Path
 
+    full_target = Path(__file__).resolve().parents[1] / "full_target"
+    if str(full_target) not in sys.path:
+        sys.path.insert(0, str(full_target))
+    from h1i_seed import CONFIG, seeded
+
+    from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
     from agent_orchestrator.contracts import ContractError
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+    from agent_orchestrator.testing.product_world import product_world
 
     async def run():
-        provider = RoleScriptedProvider({})
-        profile = _profile(provider)
-        config = OrchestratorConfig(evidence_root=tmp_path)
-        async with Orchestrator(config, profiles={"default": profile}) as orch:
-            mission, _, _, _ = _seed_new_protocol(orch, tmp_path, key="context-freeze")
+        async with seeded(tmp_path, key="context-freeze") as (orch, mission, _, _, _, product):
+            provider = product.provider
             intent = await orch._create_planner_intent(mission.id, ordinal=1)
-            grant(orch, mission, intent)
+            PlanningAuthorizationApi(orch.store, tenant_id=mission.tenant_id,
+                                     principal=product.deployment.principal).issue(
+                mission.id, command_id="grant-" + intent.intent_id, request_id=intent.intent_id)
             frozen = orch.store.get_intent(intent.intent_id)
-            assert frozen.config["runtime_context"] == profile.context_snapshot()
+            profile = orch._profiles[frozen.config["runtime_profile_id"]]
+            assert frozen.config.get("runtime_context") == profile.context_snapshot()
             original_hash = frozen.input_hash
             wrong = dict(frozen.config)
-            wrong["runtime_context"] = {**profile.context_snapshot(), "fingerprint": "0" * 64}
+            wrong["runtime_context"] = {**(profile.context_snapshot() or {}), "fingerprint": "0" * 64}
             with pytest.raises(ContractError, match="context identity"):
                 await orch._dispatch(replace(frozen, config=wrong))
             assert provider.calls == 0
             assert orch.store.get_intent(intent.intent_id).input_hash == original_hash
         # Real closed-library recovery of the pending intent, with no rewrite.
-        async with Orchestrator(config, profiles={"default": _profile(provider)}) as reopened:
+        async with product_world(tmp_path / "root", RoleScriptedProvider({}), auto=False, **CONFIG) as reopened:
             restored = reopened.store.get_intent(intent.intent_id)
             assert restored.config == frozen.config and restored.input_hash == original_hash
-            assert provider.calls == 0
+            assert reopened.provider.calls == 0
     asyncio.run(run())

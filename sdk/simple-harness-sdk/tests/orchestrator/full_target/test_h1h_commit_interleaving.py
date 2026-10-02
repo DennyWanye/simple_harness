@@ -1,4 +1,12 @@
-"""I06 deterministic SQLite interleavings; draft only, intentionally not executed."""
+"""I06 deterministic SQLite interleavings.
+
+The authority interleaving runs on the product's deployment: the main loop proposed a
+method, had it reviewed and opened the adoption round (``h1i_seed.reviewed``); while the
+collector is between preview and commit, the person renews the grant on another
+connection that holds the write lock until the plan writer's BEGIN IMMEDIATE.  The
+handoff interleaving still uses the materialised file-publish fixture (the external
+operation world is rewritten together with representative case 3).
+"""
 
 from __future__ import annotations
 
@@ -9,15 +17,15 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import pytest
 
 _FULL = Path.cwd() / "tests" / "orchestrator" / "full_target"
 if str(_FULL) not in sys.path:
     sys.path.insert(0, str(_FULL))
 
+from h1i_seed import plan_reply, reviewed  # noqa: E402
 from test_h1h_commit_guard import _plan_revision_count  # noqa: E402
 from test_htn_store import envelope  # noqa: E402
-from test_plan_commits import ROOT_TASK, _second_revision, _world  # noqa: E402
+from test_plan_commits import ROOT_TASK  # noqa: E402
 from operation_completion.operation_runtime_fixture import materialized_file_publish  # noqa: E402
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi  # noqa: E402
@@ -34,7 +42,6 @@ from agent_orchestrator.governance.planning_authorization import (  # noqa: E402
     build_planning_authorization,
     planning_policy_for_mission,
 )
-from agent_orchestrator.governance.policies import DeploymentPolicy  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import CommitService  # noqa: E402
 from agent_orchestrator.orchestrator.plan_commits import (  # noqa: E402
     PLAN_REVISION_COMMITTED,
@@ -220,83 +227,120 @@ def _second_materialized_revision(command, *, command_id: str):
     )
 
 
-@pytest.mark.parametrize("mutation", ("authority", "handoff"))
-def test_i06_concurrent_authority_or_action_commit_makes_plan_commit_stale(
-    tmp_path, mutation: str
-) -> None:
-    """The writer mutation is held open while the plan writer starts.
+def test_i06_concurrent_authority_write_makes_the_collectors_plan_commit_stale(tmp_path) -> None:
+    """The renewal is held open on another connection while the collector goes on to
+    write; the plan writer contends on a real BEGIN IMMEDIATE, and after the renewal
+    commits, the commit's in-transaction authority reread refuses the old binding."""
+
+    import asyncio
+
+    async def case() -> None:
+        async with reviewed(tmp_path, key="h1h-i06-interleave-authority") as ((loop, mission, _world, _root, dispatch, product), opener, _provider):
+            binding = PlanningAdmissionStore(loop.store).get_request_binding(opener.intent_id)
+            assert binding is not None
+            mutation_written = threading.Event()
+            plan_begin_immediate = threading.Event()
+            results: dict[str, object] = {}
+
+            def renew_on_another_connection() -> None:
+                other_store = Store.open(loop.store.path)
+                try:
+                    with other_store.transaction():
+                        results["renewed"] = PlanningAuthorizationApi(
+                            other_store, tenant_id=mission.tenant_id,
+                            principal=product.deployment.principal,
+                        ).renew(binding["grant_id"], expected_revision=int(binding["grant_revision"]),
+                                command_id="renew-h1h-i06-interleaved")
+                        mutation_written.set()
+                        assert plan_begin_immediate.wait(timeout=5), "plan writer never began"
+                finally:
+                    other_store.close()
+
+            def trace(statement: str) -> None:
+                if statement.strip().upper() == "BEGIN IMMEDIATE":
+                    plan_begin_immediate.set()
+
+            original = dispatch.preview_plan_proposal
+            pool = ThreadPoolExecutor(max_workers=1)
+            future = None
+
+            def preview_then_contend(proposal, *, inputs):  # type: ignore[no-untyped-def]
+                nonlocal future
+                result = original(proposal, inputs=inputs)
+                future = pool.submit(renew_on_another_connection)
+                assert mutation_written.wait(timeout=5), "renewal did not take the write lock"
+                loop.store.connection.set_trace_callback(trace)
+                return result
+
+            dispatch.preview_plan_proposal = preview_then_contend  # type: ignore[method-assign]
+            try:
+                await loop._collect_plan_decision(
+                    opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
+                )
+            finally:
+                loop.store.connection.set_trace_callback(None)
+                dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
+                pool.shutdown(wait=True)
+            assert future is not None
+            future.result(timeout=10)
+            assert "renewed" in results
+
+            stored = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(
+                opener.intent_id, 0
+            )
+            assert stored is not None
+            assert stored["status"] == "COMMIT_REJECTED", stored
+            assert stored["rejection_codes"] == ["REQUEST_BINDING_STALE"], stored
+            assert HtnStore(loop.store).list_plan_revisions(mission.id) == ()
+            assert not [e for e in loop.store.list_events(mission.id) if e.type == PLAN_REVISION_COMMITTED]
+            assert not loop.store.list_actions(mission.id)
+
+    asyncio.run(case())
+
+
+def test_i06_concurrent_action_commit_makes_plan_commit_stale(tmp_path) -> None:
+    """The handoff writer is held open while the plan writer starts.
 
     The plan commit therefore contends on a real BEGIN IMMEDIATE.  After the
     first writer commits, its in-transaction producer reread must reject the old
     admission; no guard result or SQLite error is mocked.
     """
 
-    operation_fixture = None
-    if mutation == "handoff":
-        operation_fixture = materialized_file_publish(tmp_path)
-        world = operation_fixture.world
-    else:
-        world = _world(tmp_path, key=f"h1h-i06-interleave-{mutation}")
-        # The initial production commit performs the real PLANNING -> ACTIVE
-        # transition. I06 then races a valid second PlanRevision against the
-        # authority writer; no Mission status is edited by the fixture.
-        world.service.begin_planning(world.mission.id)
-        world.commit()
+    operation_fixture = materialized_file_publish(tmp_path)
+    world = operation_fixture.world
     assert world.store.get_mission(world.mission.id).status.value == "ACTIVE"
-    command = (
-        _second_materialized_revision(
-            operation_fixture.plan_command, command_id=f"cmd-i06-{mutation}"
-        )
-        if operation_fixture is not None
-        else _second_revision(world, command_id=f"cmd-i06-{mutation}")
+    command = _second_materialized_revision(
+        operation_fixture.plan_command, command_id="cmd-i06-handoff"
     )
-    action = connectors = None
-    action_deployment = None
-    if mutation == "handoff":
-        assert operation_fixture is not None
-        action, connectors = operation_fixture.action, operation_fixture.connectors
-        action_deployment = operation_fixture.deployment
-    api, grant, admission = _admission_for_active_revision(world, command)
+    action, connectors = operation_fixture.action, operation_fixture.connectors
+    action_deployment = operation_fixture.deployment
+    _api, _grant, admission = _admission_for_active_revision(world, command)
     before_events = tuple(world.store.list_events(world.mission.id))
-    before_actions = tuple(world.store.list_actions(world.mission.id))
     before_revisions = _plan_revision_count(world)
     assert before_revisions == 1
 
     mutation_written = threading.Event()
     plan_begin_immediate = threading.Event()
 
-    def mutate() -> tuple[str, object]:
+    def mutate() -> object:
         other_store = Store.open(world.store.path)
         try:
             service = CommitService(other_store)
             with other_store.transaction():
-                if mutation == "authority":
-                    changed = PlanningAuthorizationApi(
-                        other_store,
-                        tenant_id=world.mission.tenant_id,
-                        principal=Principal(world.principal.principal_id),
-                    ).renew(
-                        grant.grant_id,
-                        expected_revision=1,
-                        command_id="renew-h1h-i06-interleaved",
-                    )
-                else:
-                    assert action is not None and connectors is not None
-                    assert action_deployment is not None
-                    changed = service.begin_handoff(
-                        action["action_key"],
-                        owner="i06-concurrent-owner",
-                        lease_seconds=30.0,
-                        connectors=connectors,
-                        deployment=action_deployment,
-                    )
-                    assert changed[0] is not None and changed[1] is None
-                    assert changed[0]["state"] == "HANDED_OFF"
+                changed = service.begin_handoff(
+                    action["action_key"],
+                    owner="i06-concurrent-owner",
+                    lease_seconds=30.0,
+                    connectors=connectors,
+                    deployment=action_deployment,
+                )
+                assert changed[0] is not None and changed[1] is None
+                assert changed[0]["state"] == "HANDED_OFF"
                 mutation_written.set()
                 assert plan_begin_immediate.wait(
                     timeout=5
                 ), "plan writer never executed BEGIN IMMEDIATE"
-            return mutation, changed
+            return changed
         finally:
             other_store.close()
 
@@ -318,28 +362,20 @@ def test_i06_concurrent_authority_or_action_commit_makes_plan_commit_stale(
         with ThreadPoolExecutor(max_workers=2) as pool:
             mutation_future = pool.submit(mutate)
             commit_future = pool.submit(commit_plan)
-            mutation_result = mutation_future.result(timeout=10)
+            mutation_future.result(timeout=10)
             commit_result = commit_future.result(timeout=10)
     finally:
         world.store.connection.set_trace_callback(None)
 
-    assert mutation_result[0] == mutation
     assert isinstance(commit_result, PlanCommitRejected)
-    if mutation == "authority":
-        assert "REQUEST_BINDING_STALE" in str(commit_result)
-    else:
-        assert "OPERATION_SNAPSHOT_STALE" in str(commit_result)
+    assert "OPERATION_SNAPSHOT_STALE" in str(commit_result)
     assert _plan_revision_count(world) == before_revisions
 
     after_events = tuple(world.store.list_events(world.mission.id))
     assert len([event for event in after_events if event.type == PLAN_REVISION_COMMITTED]) == 1
-    if mutation == "authority":
-        assert tuple(world.store.list_actions(world.mission.id)) == before_actions
-        assert not [event for event in after_events if event.type == "ActionHandedOff"]
-    else:
-        handed = [event for event in after_events if event.type == "ActionHandedOff"]
-        assert len(handed) == 1
-        assert handed[0].payload["action_key"] == action["action_key"]
-        # Only the real competing handoff may add an outbox/event.  The stale
-        # planning transaction must contribute none.
-        assert len(after_events) == len(before_events) + 1
+    handed = [event for event in after_events if event.type == "ActionHandedOff"]
+    assert len(handed) == 1
+    assert handed[0].payload["action_key"] == action["action_key"]
+    # Only the real competing handoff may add an outbox/event.  The stale
+    # planning transaction must contribute none.
+    assert len(after_events) == len(before_events) + 1

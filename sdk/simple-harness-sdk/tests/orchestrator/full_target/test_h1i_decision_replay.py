@@ -1,4 +1,8 @@
-"""Committed H1-I decisions replay before authority and mutation checks."""
+"""Committed H1-I decisions replay before authority and mutation checks.
+
+The decision that committed is the main loop's own (``h1i_seed.committed``: proposal,
+independent review, adoption); the case replays that round's exact raw reply.
+"""
 
 from __future__ import annotations
 
@@ -6,21 +10,14 @@ import asyncio
 from typing import Any
 
 import pytest
-from test_h1i_production_entry import (
-    _config,
-    _events,
-    _open_planner_round,
-    _refine_reply,
-    _seed_new_protocol,
-)
+from h1i_seed import committed, committing_round, grant_for
+from h1i_seed import events as _events
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
-from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import StoreConflict
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
 def _receipt(loop: Orchestrator, mission_id: str, intent_id: str) -> tuple[Any, int, int, int, int]:
@@ -44,25 +41,18 @@ def _receipt(loop: Orchestrator, mission_id: str, intent_id: str) -> tuple[Any, 
 
 def test_committed_refine_replays_after_grant_revocation_without_new_mutation(tmp_path) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1i-committed-replay"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            api = PlanningAuthorizationApi(
-                loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-            )
-            grant = api.issue(
-                mission.id, command_id="grant-committed-replay", request_id=opener.intent_id
-            )
-            raw = _refine_reply(opener.config["planning_package"])
-            await loop._collect_plan_decision(opener, object(), mission, raw, dispatch)
+        async with committed(tmp_path, key="h1i-committed-replay") as (loop, mission, _world, _root, dispatch, product):
+            opener, raw = committing_round(loop, mission.id)
             before = _receipt(loop, mission.id, opener.intent_id)
             assert before[0]["status"] == str(PlanningDecisionStatus.COMMITTED)
+            assert before[0]["decision_type"] == "REFINE"
 
-            api.revoke(
-                grant.grant_id,
-                expected_revision=1,
+            grant_id, revision = grant_for(loop, opener.intent_id)
+            PlanningAuthorizationApi(
+                loop.store, tenant_id=mission.tenant_id, principal=product.deployment.principal
+            ).revoke(
+                grant_id,
+                expected_revision=revision,
                 command_id="revoke-committed-replay",
                 reason="replay must not need live authority",
             )
@@ -81,21 +71,10 @@ def test_committed_refine_rejects_different_raw_at_same_ordinal_without_rewritin
     tmp_path,
 ) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1i-committed-replay-conflict"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(
-                loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-            ).issue(
-                mission.id,
-                command_id="grant-committed-replay-conflict",
-                request_id=opener.intent_id,
-            )
-            raw = _refine_reply(opener.config["planning_package"])
-            await loop._collect_plan_decision(opener, object(), mission, raw, dispatch)
+        async with committed(tmp_path, key="h1i-committed-replay-conflict") as (loop, mission, _world, _root, dispatch, _product):
+            opener, raw = committing_round(loop, mission.id)
             before = _receipt(loop, mission.id, opener.intent_id)
+            assert before[0]["status"] == str(PlanningDecisionStatus.COMMITTED)
             conflicting_raw = raw + "\n"  # Even equivalent JSON has a different raw identity.
             assert conflicting_raw != raw
             with pytest.raises(StoreConflict):

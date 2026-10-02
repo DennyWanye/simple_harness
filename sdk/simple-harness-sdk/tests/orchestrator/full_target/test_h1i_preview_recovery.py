@@ -8,23 +8,20 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_h1i_production_entry import _config
+from h1i_seed import CONFIG, grant_for
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.artifacts.store import read_nofollow
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.governance.policies import deployed_layers
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.planning.htn.observers.code import code_observers
-from agent_orchestrator.planning.htn.world import build_planning_world
-from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import product_world
 from simple_harness.contracts import canonical_json
 
 # This is deliberately a fresh child process: os._exit must bypass all context-manager
 # cleanup after COMPILED has been durably recorded and before the plan write begins.
+# The child runs the product's own main loop (proposal, its independent review,
+# adoption); the round that adopts the method dies at the plan write.
 _I04_CHILD = r"""
 import asyncio
 import json
@@ -36,49 +33,38 @@ root = Path(sys.argv[1])
 full_target = Path.cwd() / "tests" / "orchestrator" / "full_target"
 sys.path.insert(0, str(full_target))
 
-from test_h1i_production_entry import (
-    _config, _open_planner_round, _refine_reply, _seed_new_protocol,
-)
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
+from h1i_seed import CONFIG, CRITERIA, GOAL, planner
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+# Never persist raw here: recovery must retrieve it by the decision's
+# raw_artifact_ref from the ArtifactStore after this process dies.
+fixture = {}
+collect = Orchestrator._collect_plan_decision
+
+async def remember_round(self, intent, *args, **kwargs):
+    fixture["intent_id"] = intent.intent_id
+    return await collect(self, intent, *args, **kwargs)
+
+def crash_at_real_plan_write_entry(self, *args, **kwargs):
+    # event_handler has persisted COMPILED immediately before opening its
+    # transaction and calling this exact production method.
+    (root / "recovery-fixture.json").write_text(json.dumps(fixture), encoding="utf-8")
+    os._exit(93)
+
+Orchestrator._collect_plan_decision = remember_round
+HierarchicalDispatch.commit_preview_plan_proposal = crash_at_real_plan_write_entry
 
 async def main():
-    async with Orchestrator(_config(root), RoleScriptedProvider({"planner": []})) as loop:
-        mission, _env, _contract, dispatch = _seed_new_protocol(
-            loop, root, key="h1i-i04-compiled-exit"
-        )
-        opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-        PlanningAuthorizationApi(
-            loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-        ).issue(
-            mission.id,
-            command_id="grant-h1i-i04-compiled-exit",
-            request_id=opener.intent_id,
-        )
-        raw = _refine_reply(opener.config["planning_package"])
-        # Never persist raw here: recovery must retrieve it by the decision's
-        # raw_artifact_ref from the ArtifactStore after this process dies.
-        (root / "recovery-fixture.json").write_text(
-            json.dumps({
-                "mission_id": mission.id,
-                "intent_id": opener.intent_id,
-                "repository": str(root / "repo"),
-                "issuer_id": loop._owner,
-            }),
-            encoding="utf-8",
-        )
-
-        def crash_at_real_plan_write_entry(self, *args, **kwargs):
-            # event_handler has persisted COMPILED immediately before opening its
-            # transaction and calling this exact production method.
-            os._exit(93)
-
-        HierarchicalDispatch.commit_preview_plan_proposal = crash_at_real_plan_write_entry
-        await loop._collect_plan_decision(opener, object(), mission, raw, dispatch)
-        raise AssertionError("I04 forced-exit point was not reached")
+    provider = LayeredScriptedProvider(planner=planner)
+    async with product_world(root / "root", provider, **CONFIG) as world:
+        created = world.create({"goal": GOAL, "idempotency_key": "h1i-i04-compiled-exit",
+                                "success_criteria": list(CRITERIA)})
+        fixture["mission_id"] = created["mission_id"]
+        await world.run_until_settled(created["mission_id"], rounds=12)
+    raise AssertionError("I04 forced-exit point was not reached")
 
 asyncio.run(main())
 """
@@ -132,7 +118,8 @@ def test_i04_compiled_exit_recovers_only_from_durable_raw_artifact(
 
     async def recover() -> None:
         provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
+        async with product_world(tmp_path / "root", provider, auto=False, **CONFIG) as product:
+            loop = product.loop
             mission = loop.store.get_mission(fixture["mission_id"])
             intent = loop.store.get_intent(fixture["intent_id"])
             assert mission is not None and intent is not None
@@ -152,29 +139,17 @@ def test_i04_compiled_exit_recovers_only_from_durable_raw_artifact(
             raw = raw_bytes.decode("utf-8")
             frozen_raw = (raw_ref, str(compiled["raw_output_hash"]), raw_bytes)
 
-            world = build_planning_world(
-                mission.id,
-                domains=("code",),
-                semantics=HtnStore(loop.store),
-                deployed_layers=deployed_layers(loop._config.deployment_policy),
-                observers=code_observers(fixture["repository"], allow_test_execution=True),
-            )
-            dispatch = loop.install_hierarchical(planning=world)
+            dispatch = loop._dispatch_for(mission.id)
 
             if revoke_after_crash:
-                grant = loop.store.connection.execute(
-                    "SELECT grant_id,revision FROM planning_lane_grants "
-                    "WHERE mission_id = ? ORDER BY revision DESC LIMIT 1",
-                    (mission.id,),
-                ).fetchone()
-                assert grant is not None
+                grant_id, revision = grant_for(loop, intent.intent_id)
                 PlanningAuthorizationApi(
                     loop.store,
                     tenant_id=mission.tenant_id,
-                    principal=Principal(fixture["issuer_id"]),
+                    principal=product.deployment.principal,
                 ).revoke(
-                    str(grant["grant_id"]),
-                    expected_revision=int(grant["revision"]),
+                    grant_id,
+                    expected_revision=revision,
                     command_id="revoke-h1i-i04-after-crash",
                     reason="recovery must reread current authority",
                 )

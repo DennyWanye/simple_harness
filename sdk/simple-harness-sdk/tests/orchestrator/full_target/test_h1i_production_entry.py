@@ -91,6 +91,20 @@ def test_the_planning_request_is_the_package_and_nothing_appended(tmp_path: Path
             assert "REMINDER" not in message and "plan_revision_proposal" not in message
             assert message.startswith("## context_builder_version")
             assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
+            # The request binding is that sealed package (was test_h1h_request_binding).
+            from agent_orchestrator.contracts.planning_decisions import PLANNING_DECISION_V1
+            from agent_orchestrator.storage.htn_store import HtnStore
+            from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+
+            binding = PlanningDecisionStore(loop.store).get_planning_request(intent.intent_id)
+            assert binding is not None
+            assert binding.mission_id == mission.id
+            assert binding.intent_id == intent.intent_id
+            assert binding.created_at == intent.created_at
+            assert binding.protocol_version == PLANNING_DECISION_V1
+            assert binding.base_plan_revision == 0
+            requirements = HtnStore(loop.store).latest_requirements_revision(mission.id)
+            assert binding.requirements_revision == requirements.revision == 1
 
     asyncio.run(case())
 
@@ -131,6 +145,17 @@ def test_format_retry_keeps_opener_package_and_request_identity(tmp_path: Path) 
             assert request is not None
             assert tuple(request)[:2] == (opener.intent_id, retry.intent_id)
             assert tuple(request)[2:] == frozen_request_facts
+            # Still one row: the re-ask moved only the answering intent; the request keeps
+            # its identity and creation time (was test_h1h_wiring).
+            rows = loop.store.connection.execute(
+                "SELECT request_id, intent_id FROM planning_requests WHERE mission_id = ?",
+                (mission.id,),
+            ).fetchall()
+            assert [tuple(row) for row in rows] == [(opener.intent_id, retry.intent_id)]
+            from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+
+            binding = PlanningDecisionStore(loop.store).get_planning_request(opener.intent_id)
+            assert binding is not None and binding.created_at == opener.created_at
             assert _events(loop, mission.id, "PlanningRejected")[-1].payload["reason"] == (
                 "proposal_unreadable"
             )

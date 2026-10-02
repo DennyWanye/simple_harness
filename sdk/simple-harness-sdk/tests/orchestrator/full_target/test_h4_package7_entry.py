@@ -1,73 +1,142 @@
-"""Package 7 enters the real collector without upgrading frozen older Missions."""
+"""Package 7 enters the real collector without upgrading frozen older Missions.
+
+All on the product's deployment and its main loop (``h1i_seed``): the planner proposes a
+two-step chain (``write`` delivers, ``continue`` consumes that delivery), the method is
+independently reviewed and adopted; ``write``'s result is sent back by its reviewer, and
+the planner's repair round replaces that unaccepted step with a successor that keeps its
+duty.  Both decisions go through the production collector.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
+from h1i_seed import CONFIG, events, run_until
+from taskgraph_exec.production_fixture import CHAIN_CRITERIA, chain_planner
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL, PLANNING_DECISION_PACKAGE_VERSION
+from agent_orchestrator.runtime.role_templates import (
+    PLANNER_HIERARCHICAL,
+    PLANNING_DECISION_PACKAGE_VERSION,
+)
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from test_h1i_production_entry import _config, _seed_new_protocol, _refine_reply
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    review_input,
+    review_reply,
+)
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
 @pytest.mark.parametrize("drop_version", [False, True])
 def test_package7_initial_refinement_reaches_atomic_commit(tmp_path, drop_version):
+    seen: dict[str, Any] = {"rework": False, "requests": []}
+
+    def reviewer(request: Any) -> str:
+        package = review_input(request)
+        assert package is not None
+        if (package.get("package") or {}).get("purpose") == "TASK_CONTENT" and not seen["rework"]:
+            seen["rework"] = True  # the first step's first result is sent back
+            return review_reply(package, verdict="REWORK", grade="FAIL", reason="要点太笼统，请写具体。")
+        return review_reply(package)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        seen["requests"].append(request)
+        if not package.get("repair_requests"):
+            return chain_planner(request)
+        # The repair round: replace the step that was sent back, keeping its duty.
+        world = seen["world"]
+        dispatch = world.loop._dispatch_for(seen["mission_id"])
+        network = dispatch.network(seen["mission_id"])
+        seen["before"] = network
+        old = next(binding for binding in network.task_bindings
+                   if str(binding.form) == "primitive" and not binding.input_ports)
+        seen["old"] = old
+        task_type = next(spec for spec in dispatch.planning.catalog.task_types()
+                         if spec.goal_signature == old.goal_signature)
+        subject = next(row for row in package["planning_subjects"] if row["task_id"] == str(old.task_id))
+
+        def visible(kind: str, identity: str) -> dict[str, Any]:
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+        body = {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
+            "rationale": "Replace this unaccepted Task while retaining its duty.", "reason_refs": [], "assumptions": [],
+            "uncertainties": [], "alternatives": [], "replan_triggers": [],
+            "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", str(old.task_id)),
+                "obligation_ref": visible("obligation", str(old.obligation_id)),
+                "goal_type_ref": task_type.task_type_ref.to_json(),
+                # The step type's parameter schema requires its goal; the plan's own step
+                # carries none (reported: the materialised step's bindings are empty).
+                "bindings": {**dict(old.typed_parameters), "goal": "写出 facts.md，三条具体的要点"}}}
+        if drop_version:
+            # 2026-09-30 无损补齐：只缺 version、id + content_hash 在 successor_types 里唯一对上。
+            del body["payload"]["goal_type_ref"]["version"]
+        seen["successor_request"] = request
+        return "<planning_decision>" + json.dumps(body) + "</planning_decision>"
+
     async def case():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _world, _binding, dispatch = _seed_new_protocol(loop, tmp_path, key="h4-package7")
-            intent = await loop._create_planner_intent(mission.id, ordinal=1)
-            assert intent.config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
-            package = intent.config["planning_package"]
-            assert package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
-            assert {"REPAIR", "BIND_EXISTING_GOAL"}.issubset(package["planning_protocol"]["enabled_decision_types"])
-            assert {"REBIND_INPUT", "CANCEL_BRANCH", "PROPOSE_SUCCESSOR"}.issubset(
-                package["planning_protocol"]["enabled_repair_kinds"])
-            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)).issue(
-                mission.id, command_id="grant-h4-entry", request_id=intent.intent_id)
-            await loop._collect_plan_decision(intent, object(), mission, _refine_reply(package), dispatch)
-            decision = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(intent.intent_id, 0)
-            assert decision is not None and decision["status"] == "COMMITTED", None if decision is None else (decision["status"], decision["detail_json"])
-            assert int(dispatch.network(mission.id).plan_revision) == 1
-            network = dispatch.network(mission.id)
-            old = next(binding for binding in network.task_bindings
-                       if str(binding.form) == "primitive" and not binding.input_ports)
-            task_type = next(spec for spec in _world.catalog.task_types() if spec.goal_signature == old.goal_signature)
-            next_intent = await loop._create_planner_intent(mission.id, ordinal=2)
-            next_package = next_intent.config["planning_package"]
-            subject = next(row for row in next_package["planning_subjects"] if row["task_id"] == str(old.task_id))
-            def visible(kind, identity):
-                return next(row for row in next_package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
-            body = {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject["subject_key"],
-                "rationale": "Replace this unaccepted Task while retaining its duty.", "reason_refs": [], "assumptions": [],
-                "uncertainties": [], "alternatives": [], "replan_triggers": [],
-                "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", str(old.task_id)),
-                    "obligation_ref": visible("obligation", str(old.obligation_id)),
-                    "goal_type_ref": task_type.task_type_ref.to_json(), "bindings": dict(old.typed_parameters)}}
-            if drop_version:
-                # 2026-09-30 无损补齐：只缺 version、id + content_hash 在 successor_types 里唯一对上。
-                del body["payload"]["goal_type_ref"]["version"]
-            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)).issue(
-                mission.id, command_id="grant-h4-successor", request_id=next_intent.intent_id)
-            await loop._collect_plan_decision(next_intent, object(), loop.store.get_mission(mission.id),
-                "<planning_decision>" + json.dumps(body) + "</planning_decision>", dispatch)
-            stored = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(next_intent.intent_id, 0)
-            assert stored is not None and stored["status"] == "COMMITTED", None if stored is None else (stored["status"], stored["detail_json"])
-            assert int(dispatch.network(mission.id).plan_revision) == 2
-            _assert_successor_convergence(network, dispatch.network(mission.id), old)
-            evaluated = [event.payload for event in loop.store.list_events(mission.id)
-                         if event.type == "PlanningDecisionEvaluated"
-                         and event.payload.get("request_id") == next_intent.intent_id]
-            assert [row.get("autofilled", []) for row in evaluated] == (
-                [["/payload/goal_type_ref/version"]] if drop_version else [[]])
-            assert old.task_id not in {spec.task_id for spec in dispatch.network(mission.id).occurrences}
-            from agent_orchestrator.orchestrator.planning_repair_requests import collect_triggers, pending_requests
-            collect_triggers(loop, loop.store.get_mission(mission.id))
-            assert not pending_requests(loop.store, mission.id)
+        provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
+        try:
+            async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+                created = world.create({"goal": "先写 facts.md，再接着写 NOTES.md",
+                                        "idempotency_key": f"h4-package7-{drop_version}",
+                                        "success_criteria": list(CHAIN_CRITERIA)})
+                loop = world.loop
+                mission = loop.store.get_mission(created["mission_id"])
+                seen.update(world=world, mission_id=mission.id)
+                dispatch = loop._dispatch_for(mission.id)
+
+                def successor_settled() -> bool:
+                    rows = [e for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                            if e.payload.get("decision_type") == "REPAIR"]
+                    if rows and rows[-1].payload["status"] == "COMMITTED":
+                        provider.held.update({"worker", "planner"})  # nothing else needs to run
+                        return True
+                    return False
+
+                await run_until(world, successor_settled, timeout=60)
+
+                adoption = [e.payload for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                            if e.payload.get("decision_type") == "REFINE"]
+                assert [row["status"] for row in adoption] == ["COMMITTED"]
+                first_package = package_of(seen["requests"][0])
+                assert first_package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
+                assert {"REPAIR", "BIND_EXISTING_GOAL"}.issubset(
+                    first_package["planning_protocol"]["enabled_decision_types"])
+                assert {"REBIND_INPUT", "CANCEL_BRANCH", "PROPOSE_SUCCESSOR"}.issubset(
+                    first_package["planning_protocol"]["enabled_repair_kinds"])
+                intent_id = next(e.payload["request_id"] for e in events(loop, mission.id, "PlanningDecisionEvaluated")
+                                 if e.payload.get("decision_type") == "REPAIR")
+                assert loop.store.get_intent(intent_id).config["prompt_version"] == PLANNER_HIERARCHICAL.prompt_version
+                stored = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(intent_id, 0)
+                assert stored is not None and stored["status"] == "COMMITTED", stored
+                assert int(dispatch.network(mission.id).plan_revision) == 2
+                old = seen["old"]
+                _assert_successor_convergence(seen["before"], dispatch.network(mission.id), old)
+                evaluated = [event.payload for event in events(loop, mission.id, "PlanningDecisionEvaluated")
+                             if event.payload.get("request_id") == intent_id]
+                assert [row.get("autofilled", []) for row in evaluated] == (
+                    [["/payload/goal_type_ref/version"]] if drop_version else [[]])
+                assert old.task_id not in {spec.task_id for spec in dispatch.network(mission.id).occurrences}
+                from agent_orchestrator.orchestrator.planning_repair_requests import (
+                    collect_triggers,
+                    pending_requests,
+                )
+                collect_triggers(loop, loop.store.get_mission(mission.id))
+                assert not pending_requests(loop.store, mission.id)
+        finally:
+            provider.release.set()
+
     asyncio.run(case())
 
 
@@ -77,6 +146,7 @@ def _assert_successor_convergence(before_network, after_network, old):
     只被这一个父目标（换了新方法实例）需要的步骤不是共享的：它应列为"输入已替换"去重做。
     真正共享（另一个仍在的使用方也要它）时照旧拒绝。"""
     from dataclasses import replace as _replace
+
     from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
     from agent_orchestrator.graph.convergence import compute_convergence_impact
     from agent_orchestrator.graph.network_codec import encode

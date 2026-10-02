@@ -11,6 +11,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from h1i_seed import seeded
 
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
@@ -20,11 +21,8 @@ from agent_orchestrator.contracts.planning_decisions import (
     exposed_enablement,
     internal_enablement_keys,
 )
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime import role_templates
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from test_h1i_production_entry import _config, _seed_new_protocol
 
 
 def test_exposed_values_are_legal_and_slash_free() -> None:
@@ -59,8 +57,7 @@ def test_the_current_package_pairs_with_the_one_prompt() -> None:
 
 def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_path: Path) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _world, _binding, _dispatch = _seed_new_protocol(loop, tmp_path, key="enablement")
+        async with seeded(tmp_path, key="enablement") as (loop, mission, _world, _binding, _dispatch, _product):
             binding = PlanningDecisionStore(loop.store).get_mission_protocol(mission.id)
             assert (binding["package_version"], binding["prompt_version"]) == (
                 role_templates.PLANNING_DECISION_PACKAGE_VERSION,
@@ -79,8 +76,8 @@ def test_package_lists_types_and_kinds_and_admission_reads_internal_keys(tmp_pat
 
 def test_mission_bound_to_a_historical_package_fails_loudly(tmp_path: Path) -> None:
     async def case() -> None:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _world, _binding, _dispatch = _seed_new_protocol(loop, tmp_path, key="historical")
+        async with seeded(tmp_path, key="historical") as (loop, mission, _world, _binding, _dispatch, _product):
+            # A library written by an older build: its durable binding names package 7.
             store = PlanningDecisionStore(loop.store)
             with loop.store.transaction() as connection:  # rewrite the durable binding to package 7
                 connection.execute(

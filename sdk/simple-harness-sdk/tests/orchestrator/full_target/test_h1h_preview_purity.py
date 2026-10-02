@@ -3,6 +3,10 @@
 The capture stop is intentionally a BaseException so the collector cannot translate
 it into a planning refusal/retry; all writes before that stop establish the legal
 request/decision fixture and are outside the purity measurement.
+
+The round is the adoption round the main loop opened after the planner's proposed
+method passed its independent review (``h1i_seed.reviewed``); the planner's reply to
+it is delivered through the production collector.
 """
 
 from __future__ import annotations
@@ -12,18 +16,9 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from test_h1i_production_entry import (
-    _config,
-    _open_planner_round,
-    _refine_reply,
-    _seed_new_protocol,
-)
+from h1i_seed import plan_reply, reviewed
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.plan_preview import CandidatePreview
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
 class _PreviewInputsCaptured(BaseException):
@@ -46,16 +41,7 @@ def test_p05_same_frozen_production_preview_is_deterministic_and_side_effect_fre
     tmp_path: Path,
 ) -> None:
     async def case() -> None:
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="p05-preview-purity"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(
-                loop.store, tenant_id=mission.tenant_id, principal=Principal(loop._owner)
-            ).issue(mission.id, command_id="p05-preview-grant", request_id=opener.intent_id)
-
+        async with reviewed(tmp_path, key="p05-preview-purity") as ((loop, mission, _world, _root, dispatch, _product), opener, provider):
             captured: dict[str, Any] = {}
             original_preview = dispatch.preview_plan_proposal
 
@@ -70,7 +56,7 @@ def test_p05_same_frozen_production_preview_is_deterministic_and_side_effect_fre
                     opener,
                     object(),
                     mission,
-                    _refine_reply(opener.config["planning_package"]),
+                    plan_reply(opener.config["planning_package"]),
                     dispatch,
                 )
             except _PreviewInputsCaptured:
@@ -80,8 +66,8 @@ def test_p05_same_frozen_production_preview_is_deterministic_and_side_effect_fre
 
             assert set(captured) == {"proposal", "inputs"}
             db_before = loop.store.connection.total_changes
-            repo_before = _tree_hash(tmp_path / "repo")
-            provider_before = provider.calls
+            tree_before = _tree_hash(Path(loop.assembled.workspaces.root))
+            provider_before = len(provider.asked)
             gateway_before = len(loop.assembled.gateway.calls)
 
             first = dispatch.preview_plan_proposal(captured["proposal"], inputs=captured["inputs"])
@@ -92,8 +78,8 @@ def test_p05_same_frozen_production_preview_is_deterministic_and_side_effect_fre
             assert first.compilation_hash == second.compilation_hash
             assert first.source_snapshot_hash == second.source_snapshot_hash
             assert loop.store.connection.total_changes == db_before
-            assert _tree_hash(tmp_path / "repo") == repo_before
-            assert provider.calls == provider_before == 0
-            assert len(loop.assembled.gateway.calls) == gateway_before == 0
+            assert _tree_hash(Path(loop.assembled.workspaces.root)) == tree_before
+            assert len(provider.asked) == provider_before
+            assert len(loop.assembled.gateway.calls) == gateway_before
 
     asyncio.run(case())

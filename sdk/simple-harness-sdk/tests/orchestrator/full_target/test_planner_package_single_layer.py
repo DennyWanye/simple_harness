@@ -23,9 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from simple_harness.contracts import canonical_json
+from h1i_seed import reviewed
 
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.htn import planner_package
 from agent_orchestrator.planning.htn.planner_package import (
     MAX_ACCEPTED_RESULTS,
@@ -43,8 +42,7 @@ from agent_orchestrator.runtime.role_templates import (
     PLANNER_HIERARCHICAL,
     PLANNING_DECISION_PACKAGE_VERSION,
 )
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from test_h1i_production_entry import _config, _seed_new_protocol
+from simple_harness.contracts import canonical_json
 
 #: What the package may carry at the top level.  Anything else is a second place for a
 #: fact that already has one.
@@ -66,10 +64,12 @@ GONE = {
 
 
 def _first_request(tmp_path: Path, key: str) -> dict[str, Any]:
+    """The request of the first round that can choose a method: the main loop opened it on
+    the product's deployment after the planner's proposed method passed its independent
+    review (``h1i_seed.reviewed``); the root goal is still open."""
+
     async def case() -> dict[str, Any]:
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({"planner": []})) as loop:
-            mission, _world, _binding, _dispatch = _seed_new_protocol(loop, tmp_path, key=key)
-            intent = await loop._create_planner_intent(mission.id, ordinal=1)
+        async with reviewed(tmp_path, key=key) as (_seed, intent, _provider):
             return {"package": intent.config["planning_package"],
                     "message": intent.config["message"]["content"]}
 
@@ -80,7 +80,8 @@ def test_the_request_is_nine_views_and_nothing_twice(tmp_path: Path) -> None:
     package = _first_request(tmp_path, "single-layer-shape")["package"]
     assert set(package) == TOP_LEVEL
     assert not GONE & set(package)
-    assert tuple(package["views"]) == VIEW_NAMES
+    # (the package is read back from the stored intent, whose JSON keys are canonical)
+    assert sorted(package["views"]) == sorted(VIEW_NAMES) and len(VIEW_NAMES) == 9
     assert package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
 
     # the open root goal is said once, in views.goals, with its parameters

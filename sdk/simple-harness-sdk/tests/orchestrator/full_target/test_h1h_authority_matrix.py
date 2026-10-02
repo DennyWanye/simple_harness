@@ -1,132 +1,48 @@
+"""H1-H §8 A02-A04: planning authority at the real collector and Plan Commit.
+
+Every case runs on the product's deployment: the main loop has proposed a method, had
+it independently reviewed and opened the adoption round, whose authority the
+deployment's duty issued (``h1i_seed.reviewed``).  The planner's reply is delivered
+through the production collector.  Faults are external events only: damaged or
+unreadable authority rows (adjudication ①b1), the person revoking or renewing the
+grant, or the grant running out, while the reply is in the collector (between preview
+and commit); a delivery presenting another principal or scope is sent ahead of the
+real one at the commit entry and must be refused (①a).
+"""
+
 from __future__ import annotations
 
 import asyncio
 import dataclasses
+from typing import Any
 
 import pytest
-from test_h1h_commit_guard import _plan_revision_count, _setup
-from test_h1i_production_entry import (
-    _config,
-    _events,
-    _open_planner_round,
-    _refine_reply,
-    _seed_new_protocol,
-)
-from test_plan_commits import _world
+from h1i_seed import events as _events
+from h1i_seed import plan_reply, refuse_tampered_first, reviewed
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
-from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.planning_authorization import (
     PlanningLanePolicy,
     SourceUnavailable,
     StorePlanningAuthorityReader,
     build_planning_authorization,
 )
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
+from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
-def _write_counts(world) -> tuple[int, int, int]:
-    """The three externally observable write surfaces guarded by §8 A02-A06."""
+def _caller(binding: dict[str, Any]) -> PlanPrincipal:
+    """The bound planner principal, as the collector presents it."""
 
-    return (
-        _plan_revision_count(world),
-        len(world.store.list_events(world.mission.id)),
-        len(world.store.list_actions(world.mission.id)),
-    )
+    return PlanPrincipal(str(binding["planner_principal_id"]), str(binding["scope_id"]))
 
 
-def test_a02_never_authorized_request_is_authorization_required_and_writes_nothing(
-    tmp_path,
-) -> None:
-    """A real request that was never bound has no planning authority.
-
-    This is intentionally a red product expectation at the time it was added: the
-    collector currently classifies a missing request-authority binding as the
-    generic SOURCE_UNAVAILABLE.  Section 8 A02 requires the never-authorized
-    branch to be AUTHORIZATION_REQUIRED.
-    """
-
-    world = _world(tmp_path, key="h1h-a02-missing-grant")
-    _, _, admission = _setup(world)
-    before = _write_counts(world)
-
-    world.store.connection.execute(
-        "DELETE FROM planning_request_authority_bindings WHERE request_id = ?",
-        (admission.request_id,),
-    )
-
-    with pytest.raises(PlanCommitRejected, match="AUTHORIZATION_REQUIRED"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _write_counts(world) == before
-
-
-def test_a02_dangling_bound_grant_is_source_unavailable_and_writes_nothing(
-    tmp_path,
-) -> None:
-    world = _world(tmp_path, key="h1h-a02-dangling-grant")
-    _, grant, admission = _setup(world)
-    before = _write_counts(world)
-
-    # Preserve the sealed request and authority binding while fault-injecting a
-    # missing referenced source row.  The collector and commit path remain real.
-    world.store.connection.execute("PRAGMA foreign_keys = OFF")
-    try:
-        world.store.connection.execute(
-            "DELETE FROM planning_lane_grants WHERE grant_id = ?",
-            (grant.grant_id,),
-        )
-    finally:
-        world.store.connection.execute("PRAGMA foreign_keys = ON")
-
-    with pytest.raises(PlanCommitRejected, match="SOURCE_UNAVAILABLE"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _write_counts(world) == before
-
-
-def test_a02_unreadable_authority_table_is_source_unavailable_and_writes_nothing(
-    tmp_path,
-) -> None:
-    world = _world(tmp_path, key="h1h-a02-unreadable-source")
-    _, _, admission = _setup(world)
-    before = _write_counts(world)
-
-    # Rename the real SQLite producer table so its production SELECT raises an
-    # sqlite error.  This exercises the defensive producer boundary without a
-    # fake reader or synthetic admission context.
-    world.store.connection.execute(
-        "ALTER TABLE planning_request_authority_bindings "
-        "RENAME TO unavailable_planning_request_authority_bindings"
-    )
-    try:
-        with pytest.raises(PlanCommitRejected, match="SOURCE_UNAVAILABLE"):
-            world.service.commit_planning_revision(
-                world.command,
-                world.principal,
-                admission=admission,
-            )
-    finally:
-        world.store.connection.execute(
-            "ALTER TABLE unavailable_planning_request_authority_bindings "
-            "RENAME TO planning_request_authority_bindings"
-        )
-
-    assert _write_counts(world) == before
+def _binding(loop: Any, intent: Any) -> dict[str, Any]:
+    binding = PlanningAdmissionStore(loop.store).get_request_binding(intent.intent_id)
+    assert binding is not None
+    return binding
 
 
 @pytest.mark.parametrize(
@@ -140,30 +56,29 @@ def test_a02_unreadable_authority_table_is_source_unavailable_and_writes_nothing
 def test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes(
     tmp_path, table: str, column: str, where_column: str
 ) -> None:
-    world = _world(tmp_path, key=f"h1h-a02-malformed-{column}")
-    _, grant, admission = _setup(world)
-    before = _write_counts(world)
-    identity = admission.request_id if where_column == "request_id" else grant.grant_id
+    async def case() -> None:
+        async with reviewed(tmp_path, key=f"h1h-a02-malformed-{column}") as ((loop, mission, *_rest), intent, _provider):
+            binding = _binding(loop, intent)
+            identity = intent.intent_id if where_column == "request_id" else binding["grant_id"]
+            # The table/column names come only from the closed parametrization above.
+            loop.store.connection.execute(
+                f"UPDATE {table} SET {column} = ? WHERE {where_column} = ?",  # noqa: S608
+                ("{not-json", identity),
+            )
+            before = loop.store.connection.total_changes
+            authority = build_planning_authorization(
+                intent.intent_id,
+                read=StorePlanningAuthorityReader(PlanningAdmissionStore(loop.store), loop.store),
+                caller=_caller(binding),
+                policy=PlanningLanePolicy(),
+                now_ms=int(loop.store.now * 1000),
+            )
+            assert isinstance(authority, SourceUnavailable)
+            assert authority.reason_code == "SOURCE_UNAVAILABLE"
+            assert authority.source == "planning_authority"
+            assert loop.store.connection.total_changes == before
 
-    # The table/column names come only from the closed parametrization above.
-    world.store.connection.execute(
-        f"UPDATE {table} SET {column} = ? WHERE {where_column} = ?",  # noqa: S608
-        ("{not-json", identity),
-    )
-    authority = build_planning_authorization(
-        admission.request_id,
-        read=StorePlanningAuthorityReader(
-            PlanningAdmissionStore(world.store), world.store
-        ),
-        caller=world.principal,
-        policy=PlanningLanePolicy(),
-        now_ms=int(world.store.now * 1000),
-    )
-
-    assert isinstance(authority, SourceUnavailable)
-    assert authority.reason_code == "SOURCE_UNAVAILABLE"
-    assert authority.source == "planning_authority"
-    assert _write_counts(world) == before
+    asyncio.run(case())
 
 
 @pytest.mark.parametrize(
@@ -171,7 +86,9 @@ def test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes
     (
         ("missing_binding", "AUTHORIZATION_REQUIRED"),
         ("dangling_grant", "INTERNAL_CONTRACT_ERROR"),
-        ("malformed_json", "INTERNAL_CONTRACT_ERROR"),
+        ("malformed_binding_json", "INTERNAL_CONTRACT_ERROR"),
+        ("malformed_allowed_decisions_json", "INTERNAL_CONTRACT_ERROR"),
+        ("malformed_grant_json", "INTERNAL_CONTRACT_ERROR"),
         ("unreadable_sqlite", "INTERNAL_CONTRACT_ERROR"),
     ),
 )
@@ -183,45 +100,39 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
     Producer diagnostics remain in detail: missing authority is the existing
     AUTHORIZATION_REQUIRED code; corrupt or unreadable authority uses the existing
     INTERNAL_CONTRACT_ERROR code with SOURCE_UNAVAILABLE detail.  None is a codec
-    failure, so the durable status must be REJECTED rather than UNREADABLE.
+    failure, so the durable status must be REJECTED rather than UNREADABLE.  Nothing
+    reaches the plan or the action ledger (was also the commit-level A02 matrix).
     """
 
     async def case() -> None:
-        async with Orchestrator(
-            _config(tmp_path), RoleScriptedProvider({"planner": []})
-        ) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key=f"h1h-a02-collector-{fault}"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            grant = None
-            if fault != "missing_binding":
-                grant = PlanningAuthorizationApi(
-                    loop.store,
-                    tenant_id=mission.tenant_id,
-                    principal=Principal(loop._owner),
-                ).issue(
-                    mission.id,
-                    command_id=f"grant-h1h-a02-{fault}",
-                    request_id=opener.intent_id,
-                )
-
+        async with reviewed(tmp_path, key=f"h1h-a02-collector-{fault}") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+            binding = _binding(loop, opener)
             renamed = False
-            if fault == "dangling_grant":
-                assert grant is not None
+            if fault == "missing_binding":
+                loop.store.connection.execute(
+                    "DELETE FROM planning_request_authority_bindings WHERE request_id = ?",
+                    (opener.intent_id,),
+                )
+            elif fault == "dangling_grant":
                 loop.store.connection.execute("PRAGMA foreign_keys = OFF")
                 try:
                     loop.store.connection.execute(
                         "DELETE FROM planning_lane_grants WHERE grant_id = ?",
-                        (grant.grant_id,),
+                        (binding["grant_id"],),
                     )
                 finally:
                     loop.store.connection.execute("PRAGMA foreign_keys = ON")
-            elif fault == "malformed_json":
+            elif fault == "malformed_binding_json":
                 loop.store.connection.execute(
                     "UPDATE planning_request_authority_bindings SET binding_json = ? "
                     "WHERE request_id = ?",
                     ("{not-json", opener.intent_id),
+                )
+            elif fault.startswith("malformed_"):
+                column = fault.removeprefix("malformed_")
+                loop.store.connection.execute(
+                    f"UPDATE planning_lane_grants SET {column} = ? WHERE grant_id = ?",  # noqa: S608
+                    ("{not-json", binding["grant_id"]),
                 )
             elif fault == "unreadable_sqlite":
                 loop.store.connection.execute(
@@ -237,7 +148,7 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
                     opener,
                     object(),
                     mission,
-                    _refine_reply(opener.config["planning_package"]),
+                    plan_reply(opener.config["planning_package"]),
                     dispatch,
                 )
             finally:
@@ -258,8 +169,9 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
             assert evaluated.payload["canonical_hash"] is not None
             if fault != "missing_binding":
                 assert "SOURCE_UNAVAILABLE" in str(evaluated.payload["detail"])
-            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == before_revisions
+            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == before_revisions == 0
             assert len(loop.store.list_actions(mission.id)) == before_actions
+            assert not _events(loop, mission.id, "PlanRevisionCommitted")
             assert loop.store.connection.execute(
                 "SELECT count(*) FROM planning_requests WHERE request_id = ?",
                 (opener.intent_id,),
@@ -270,27 +182,12 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
 
 def test_real_collector_success_event_uses_the_stored_canonical_hash(tmp_path) -> None:
     async def case() -> None:
-        async with Orchestrator(
-            _config(tmp_path), RoleScriptedProvider({"planner": []})
-        ) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1h-canonical-success"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            PlanningAuthorizationApi(
-                loop.store,
-                tenant_id=mission.tenant_id,
-                principal=Principal(loop._owner),
-            ).issue(
-                mission.id,
-                command_id="grant-h1h-canonical-success",
-                request_id=opener.intent_id,
-            )
+        async with reviewed(tmp_path, key="h1h-canonical-success") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
             await loop._collect_plan_decision(
                 opener,
                 object(),
                 mission,
-                _refine_reply(opener.config["planning_package"]),
+                plan_reply(opener.config["planning_package"]),
                 dispatch,
             )
 
@@ -308,13 +205,7 @@ def test_real_collector_success_event_uses_the_stored_canonical_hash(tmp_path) -
 
 def test_real_collector_codec_failure_has_no_canonical_hash(tmp_path) -> None:
     async def case() -> None:
-        async with Orchestrator(
-            _config(tmp_path), RoleScriptedProvider({"planner": []})
-        ) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1h-canonical-unreadable"
-            )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
+        async with reviewed(tmp_path, key="h1h-canonical-unreadable") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
             await loop._collect_plan_decision(
                 opener,
                 object(),
@@ -343,51 +234,96 @@ def test_real_collector_codec_failure_has_no_canonical_hash(tmp_path) -> None:
     ),
 )
 def test_a03_wrong_bound_principal_or_scope_is_refused_without_leak_or_writes(
-    tmp_path, principal_changes: dict[str, str], reason: str
+    tmp_path, monkeypatch: pytest.MonkeyPatch, principal_changes: dict[str, str], reason: str
 ) -> None:
-    world = _world(tmp_path, key="h1h-a03-wrong-principal")
-    _, _, admission = _setup(world)
-    before = _write_counts(world)
-    other = dataclasses.replace(world.principal, **principal_changes)
+    """The commit entry, delivered the real command by another principal or into another
+    scope, refuses by name, writes nothing and names no grant; the real delivery then
+    commits."""
 
-    with pytest.raises(PlanCommitRejected, match=reason) as refused:
-        world.service.commit_planning_revision(
-            world.command,
-            other,
-            admission=admission,
-        )
+    refusals = refuse_tampered_first(
+        monkeypatch,
+        lambda command, principal, kwargs: (
+            command, dataclasses.replace(principal, **principal_changes), kwargs
+        ),
+        reason,
+    )
 
-    assert admission.authority.grant_id not in str(refused.value)
-    assert _write_counts(world) == before
+    async def case() -> None:
+        async with reviewed(tmp_path, key=f"h1h-a03-{reason.lower()}") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+            grant_id = _binding(loop, opener)["grant_id"]
+            await loop._collect_plan_decision(
+                opener,
+                object(),
+                mission,
+                plan_reply(opener.config["planning_package"]),
+                dispatch,
+            )
+            assert len(refusals) == 1
+            assert grant_id not in refusals[0]
+            assert _events(loop, mission.id, "PlanningDecisionEvaluated")[-1].payload[
+                "status"
+            ] == str(PlanningDecisionStatus.COMMITTED)
+            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == 1
+
+    asyncio.run(case())
 
 
-@pytest.mark.parametrize("change", ("revoke", "renew"))
+@pytest.mark.parametrize("change", ("revoke", "renew", "expire"))
 def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
     tmp_path, change: str
 ) -> None:
-    world = _world(tmp_path, key=f"h1h-a04-{change}")
-    api, grant, admission = _setup(world)
-    before = _write_counts(world)
+    """The person revokes or renews the grant, or it runs out, while the reply is between
+    preview and commit: the commit rechecks authority inside its transaction, refuses,
+    and the reply is never rebound to the new grant (was also commit_guard A05 / I06)."""
 
-    if change == "revoke":
-        api.revoke(
-            grant.grant_id,
-            expected_revision=grant.revision,
-            command_id="h1h-a04-revoke",
-            reason="replace authority",
-        )
-    else:
-        api.renew(
-            grant.grant_id,
-            expected_revision=grant.revision,
-            command_id="h1h-a04-renew",
-        )
+    async def case() -> None:
+        async with reviewed(tmp_path, key=f"h1h-a04-{change}") as ((loop, mission, _world, _root, dispatch, product), opener, _provider):
+            binding = _binding(loop, opener)
+            grant = PlanningAdmissionStore(loop.store).get_grant(
+                binding["grant_id"], binding["grant_revision"]
+            )
+            assert grant is not None
+            original = dispatch.preview_plan_proposal
 
-    with pytest.raises(PlanCommitRejected, match="REQUEST_BINDING_STALE"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
+            def preview_then_change(proposal: Any, *, inputs: Any) -> Any:
+                result = original(proposal, inputs=inputs)
+                if change == "expire":
+                    loop.store._clock = lambda: (int(grant["expires_at_ms"]) + 1) / 1000
+                else:
+                    command = {"operation": change, "grant_id": binding["grant_id"],
+                               "expected_revision": int(binding["grant_revision"]),
+                               "command_id": f"person-{change}-{opener.intent_id}"}
+                    if change == "revoke":
+                        command["reason"] = "the person withdrew planning authority"
+                    product.control.planning_authorization(command)
+                return result
 
-    assert _write_counts(world) == before
+            dispatch.preview_plan_proposal = preview_then_change  # type: ignore[method-assign]
+            try:
+                await loop._collect_plan_decision(
+                    opener,
+                    object(),
+                    mission,
+                    plan_reply(opener.config["planning_package"]),
+                    dispatch,
+                )
+            finally:
+                dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
+
+            stored = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(
+                opener.intent_id, 0
+            )
+            assert stored is not None
+            assert stored["status"] == str(PlanningDecisionStatus.COMMIT_REJECTED), stored
+            expected = "AUTHORIZATION_REQUIRED" if change == "expire" else "REQUEST_BINDING_STALE"
+            assert stored["rejection_codes"] == [expected], stored
+            assert [item["reason"] for item in stored["detail"]["refusals"]] == [expected]
+            assert HtnStore(loop.store).list_plan_revisions(mission.id) == ()
+            assert not _events(loop, mission.id, "PlanRevisionCommitted")
+            # Never rebound: the request still names the grant it was bound to.
+            after = _binding(loop, opener)
+            assert (after["grant_id"], after["grant_revision"]) == (
+                binding["grant_id"], binding["grant_revision"]
+            )
+
+    asyncio.run(case())

@@ -7,11 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from test_h1i_production_entry import _config, _seed_new_protocol
+from h1i_seed import committed, root_task
 
-from agent_orchestrator.contracts import Budget, Task, TaskStatus
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.contracts import TaskStatus
 
 
 def test_planner_task_state_projection_holds_one_write_snapshot(
@@ -23,31 +21,20 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
     authoritative execution outcome but before the package collector reads the Task
     row again.  The Planner-intent wrapper must already hold BEGIN IMMEDIATE, so the
     second connection is refused and the frozen package carries one coherent state.
+
+    The Task is the first plan revision's leaf, committed and dispatched by the main
+    loop; its executor's call is held, so the leaf is running when the planner's next
+    request is built.
     """
 
     async def case() -> None:
-        async with Orchestrator(
-            _config(tmp_path), RoleScriptedProvider({"planner": []})
-        ) as loop:
-            mission, _env, binding, dispatch = _seed_new_protocol(
-                loop, tmp_path, key="h1i-wait-snapshot"
-            )
-            task = Task(
-                id=str(binding.task_id),
-                mission_id=mission.id,
-                parent_task_ids=(),
-                dependency_ids=(),
-                goal="WAIT snapshot target",
-                rationale="exercise the authoritative v6 task-state projection",
-                success_criteria=("state:completed",),
-                verification_policy=("rule_check",),
-                allowed_tools=(),
-                budget=Budget(max_tokens=1_000, max_attempts=1),
-                priority=1.0,
-                status=TaskStatus.ACTIVE,
-                version=1,
-            )
-            loop.store.insert_task(task, ordinal=999)
+        async with committed(tmp_path, key="h1i-wait-snapshot") as (loop, mission, _world, _root, dispatch, _product):
+            leaves = [
+                task for task in loop.store.list_tasks(mission.id)
+                if task.id != root_task(mission.id) and task.status is TaskStatus.ACTIVE
+            ]
+            assert len(leaves) == 1, leaves
+            task = leaves[0]
             failed = replace(task, status=TaskStatus.FAILED, version=task.version + 1)
             original = dispatch.occurrence_outcomes
             lock_refused = False
@@ -81,7 +68,7 @@ def test_planner_task_state_projection_holds_one_write_snapshot(
                 return outcomes
 
             monkeypatch.setattr(dispatch, "occurrence_outcomes", outcomes_with_competing_writer)
-            intent = await loop._create_planner_intent(mission.id, ordinal=1)
+            intent = await loop._create_planner_intent(mission.id, ordinal=3)
 
             assert lock_refused
             stored = loop.store.get_task(task.id)

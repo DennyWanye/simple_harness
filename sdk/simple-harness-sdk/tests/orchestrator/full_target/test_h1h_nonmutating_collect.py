@@ -8,37 +8,36 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import test_h1i_production_entry as production_entry
-from test_h1i_production_entry import (
-    _config,
-    _events,
-    _open_planner_round,
-    _seed_new_protocol,
-)
-from test_h1i_wait_lifecycle import _ensure_wait_task, _wait_reply
+from h1i_seed import committed, events, root_task, seeded
+from test_h1i_production_entry import _open_planner_round
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.planning_decisions import (
     PlanningDecisionEnvelopeV1,
     PlanningDecisionStatus,
 )
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.decision_codec import serialize_planning_decision
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
-_FIXTURES = (
-    Path(production_entry.__file__).resolve().parent / "fixtures" / "planning_decision_v1" / "valid"
-)
+_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "planning_decision_v1" / "valid"
+_events = events
 
 
 def _state_free_reply(
-    decision_type: str, package: dict[str, Any]
+    decision_type: str, package: dict[str, Any], leaf_id: str
 ) -> tuple[str, dict[str, Any] | None]:
+    body = json.loads(
+        (_FIXTURES / f"{decision_type.lower().replace('_', '-')}.json").read_text(encoding="utf-8")
+    )
+    body["subject_key"] = package["planning_subjects"][0]["subject_key"]
     if decision_type == "WAIT":
-        return _wait_reply(package)
+        # WAIT for the leaf the main loop dispatched (its executor's call is held).
+        visible = next(
+            ref for ref in package["visible_refs"] if ref["kind"] == "task" and ref["id"] == leaf_id
+        )
+        body["payload"]["wait_for"] = [visible]
+        return serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(body)), visible
     body = json.loads(
         (_FIXTURES / f"{decision_type.lower().replace('_', '-')}.json").read_text(encoding="utf-8")
     )
@@ -51,24 +50,27 @@ def test_p08_state_free_decisions_use_real_collector_without_shape_or_operation_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision_type: str
 ) -> None:
     async def case() -> None:
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(
-                loop, tmp_path, key=f"h1h-p08-{decision_type.lower()}"
+        async with committed(tmp_path, key=f"h1h-p08-{decision_type.lower()}") as (loop, mission, _world, _root, dispatch, product):
+            provider = product.provider
+            asked = len(provider.asked)
+            [leaf] = [task for task in loop.store.list_tasks(mission.id) if task.id != root_task(mission.id)]
+            revisions = HtnStore(loop.store).list_plan_revisions(mission.id)
+            committed_events = len(_events(loop, mission.id, "PlanRevisionCommitted"))
+            opener = await _open_planner_round(
+                loop, mission, dispatch, ordinal=loop._next_planning_ordinal(mission.id)
             )
-            opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             PlanningAuthorizationApi(
                 loop.store,
                 tenant_id=mission.tenant_id,
-                principal=Principal(loop._owner),
+                principal=product.deployment.principal,
             ).issue(
                 mission.id,
                 command_id=f"grant-h1h-p08-{decision_type.lower()}",
                 request_id=opener.intent_id,
             )
-            reply, wait_ref = _state_free_reply(decision_type, opener.config["planning_package"])
-            if wait_ref is not None:
-                _ensure_wait_task(loop, mission, wait_ref)
+            reply, wait_ref = _state_free_reply(
+                decision_type, opener.config["planning_package"], leaf.id
+            )
 
             def forbidden(*_args: Any, **_kwargs: Any) -> Any:
                 raise AssertionError("state-free decision entered shape/operation preview")
@@ -91,8 +93,8 @@ def test_p08_state_free_decisions_use_real_collector_without_shape_or_operation_
             assert decision["status"] == str(PlanningDecisionStatus.NO_STATE_CHANGE)
             assert decision["decision_type"] == decision_type
             assert decision["canonical_hash"] is not None
-            assert HtnStore(loop.store).list_plan_revisions(mission.id) == ()
-            assert not _events(loop, mission.id, "PlanRevisionCommitted")
+            assert HtnStore(loop.store).list_plan_revisions(mission.id) == revisions
+            assert len(_events(loop, mission.id, "PlanRevisionCommitted")) == committed_events
             assert _events(loop, mission.id, "PlanningDecisionEvaluated")[-1].payload[
                 "status"
             ] == str(PlanningDecisionStatus.NO_STATE_CHANGE)
@@ -100,7 +102,7 @@ def test_p08_state_free_decisions_use_real_collector_without_shape_or_operation_
                 registered = _events(loop, mission.id, "PlanningWaitRegistered")
                 assert len(registered) == 1
                 assert registered[0].payload["wait_for"] == [wait_ref]
-            assert provider.calls == 0
+            assert provider.asked[asked:] == []
 
     asyncio.run(case())
 
@@ -114,16 +116,14 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
 
     from agent_orchestrator.api.planning_answers import answer_planning_question, answer_source_path
     from agent_orchestrator.contracts import ContractError
-    from agent_orchestrator.contracts.planning_decisions import RequestHumanDecision
     from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
 
     async def case() -> None:
-        provider = RoleScriptedProvider({"planner": []})
-        async with Orchestrator(_config(tmp_path), provider) as loop:
-            mission, _env, _contract, dispatch = _seed_new_protocol(loop, tmp_path, key="h1h-answer-source")
+        async with seeded(tmp_path, key="h1h-answer-source") as (loop, mission, _world, _root, dispatch, product):
+            user = product.deployment.principal
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
             PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id,
-                                     principal=Principal(loop._owner)).issue(
+                                     principal=user).issue(
                 mission.id, command_id="grant-h1h-answer-source", request_id=opener.intent_id)
             # 片 A（2026-10-01）："卡住了"只有问用户一种：问题由规划器的 REQUEST_HUMAN 登记
             # （声明受阻这种决定已删除），被测的"回答附资料"行为不变。
@@ -136,7 +136,7 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
             question = PlanningHumanStore(loop.store).list(mission.id)[0]
 
             data = "month,region,amount\n2026-07,华东,120\n2026-08,华北,98"
-            call = dict(tenant_id=mission.tenant_id, principal=Principal(loop._owner),
+            call = dict(tenant_id=mission.tenant_id, principal=user,
                         decision_id=question["decision_id"], answer=data,
                         expected_version=question["version"], nonce="n-src", attach_as_source=True)
             receipt = answer_planning_question(loop, **call)
@@ -158,13 +158,22 @@ def test_an_answer_with_material_is_registered_as_a_source_the_next_attempt_moun
             assert answer_planning_question(loop, **call) == receipt
             assert len(_events(loop, mission.id, "SourceRegistered")) == 1
 
-            # 选项式问题的回答是选项键，不能当资料
-            PlanningHumanStore(loop.store).register(
-                decision_id="q-choice", mission_id=mission.id, subject_key=body["subject_key"],
-                payload=RequestHumanDecision("选哪个？", ({"key": "a", "label": "甲"},), True),
-                request_binding=dict(question["request"]["binding"]), next_ordinal=3)
+            # 选项式问题的回答是选项键，不能当资料：规划器下一轮再问一个选项式问题（经收集器登记）
+            ask = await _open_planner_round(
+                loop, mission, dispatch, ordinal=loop._next_planning_ordinal(mission.id)
+            )
+            PlanningAuthorizationApi(loop.store, tenant_id=mission.tenant_id, principal=user).issue(
+                mission.id, command_id="grant-h1h-answer-choice", request_id=ask.intent_id)
+            choice_body = {**body, "subject_key": ask.config["planning_package"]["planning_subjects"][0]["subject_key"],
+                           "payload": {"question": "选哪个？", "options": [{"key": "a", "label": "甲"}],
+                                       "blocking": True}}
+            await loop._collect_plan_decision(
+                ask, object(), mission,
+                serialize_planning_decision(PlanningDecisionEnvelopeV1.from_json(choice_body)), dispatch)
+            choice = next(item for item in PlanningHumanStore(loop.store).list(mission.id)
+                          if item["decision_id"] != question["decision_id"])
             with pytest.raises(ContractError, match="choice answer"):
-                answer_planning_question(loop, **{**call, "decision_id": "q-choice", "answer": "a",
-                                                  "expected_version": 0, "nonce": "n-choice"})
+                answer_planning_question(loop, **{**call, "decision_id": choice["decision_id"], "answer": "a",
+                                                  "expected_version": choice["version"], "nonce": "n-choice"})
 
     asyncio.run(case())

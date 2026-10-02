@@ -32,14 +32,14 @@ IMPLEMENTED_NODEIDS = {
     "A03": "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a03_wrong_bound_principal_or_scope_is_refused_without_leak_or_writes",
     "A04": "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound",
     "A05": (
-        "tests/orchestrator/full_target/test_h1h_commit_guard.py::"
-        "test_a05_expired_grant_is_rechecked_inside_commit_and_rolls_back"
+        "tests/orchestrator/full_target/test_h1h_authority_matrix.py::"
+        "test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound[expire]"
     ),
     "A06": None,
     "A07": "tests/orchestrator/full_target/test_h1h_planning_authorization.py::test_issue_command_replay_and_changed_input_conflict",
     "A08": (
-        "tests/orchestrator/full_target/test_h1h_commit_guard.py::"
-        "test_a08_replay_returns_original_receipt_after_revoke_without_new_revision"
+        "tests/orchestrator/full_target/test_h1i_decision_replay.py::"
+        "test_committed_refine_replays_after_grant_revocation_without_new_mutation"
     ),
     "O01": "tests/orchestrator/full_target/test_h1h_operation_matrix.py::test_o01_store_complete_empty_has_digest_and_read_error_is_not_empty",
     "O02": "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_missing_bridge_is_source_unavailable_instead_of_latest_join",
@@ -70,8 +70,8 @@ IMPLEMENTED_NODEIDS = {
     "I04": "tests/orchestrator/full_target/test_h1i_preview_recovery.py",
     "I05": "tests/orchestrator/full_target/test_h1i_commit_recovery.py",
     "I06": (
-        "tests/orchestrator/full_target/test_h1h_commit_guard.py::"
-        "test_i06_grant_change_between_preview_and_commit_is_stale"
+        "tests/orchestrator/full_target/test_h1h_authority_matrix.py::"
+        "test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound[renew]"
     ),
     "I08": None,
 }
@@ -111,9 +111,6 @@ SUPPORTING_NODEIDS = {
     "A03": ("tests/orchestrator/full_target/test_h1h_authority_isolation.py",),
     "O04": ("tests/orchestrator/full_target/test_h1h_operation_tenant.py",),
     "A02": (
-        "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_never_authorized_request_is_authorization_required_and_writes_nothing",
-        "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_dangling_bound_grant_is_source_unavailable_and_writes_nothing",
-        "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_unreadable_authority_table_is_source_unavailable_and_writes_nothing",
         "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes",
     ),
     "I03": (
@@ -127,7 +124,7 @@ SUPPORTING_NODEIDS = {
 
 COVERAGE_NOTES = {
     "A03": "principal/scope and issuer/tenant receipt isolation, cross-Mission issue/bind rejection are covered",
-    "A08": "direct Commit replay after revoke and other-principal denial are both asserted",
+    "A08": "collector replay after revoke keeps the receipt; the other-principal denial at the commit entry is A03",
     "O04": "key/version/hash/dangling-link faults covered; tenant isolation remains",
     "O08": "new action is asserted; a newly started handoff remains uncovered",
     "O09": "handoff guard tests remain local to the handoff seam; atomic producer/link write is absent",
@@ -153,7 +150,7 @@ IMPLEMENTED_NODEIDS.update({
     "I08": "tests/orchestrator/full_target/test_h1h_no_nanojev_process.py",
 })
 SUPPORTING_NODEIDS.update({
-    "A06": ("tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_never_authorized_request_is_authorization_required_and_writes_nothing", "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_a06_zero_action_approvals_and_observed_method_gate_cannot_replace_grant"),
+    "A06": ("tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant", "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_a06_zero_action_approvals_and_observed_method_gate_cannot_replace_grant"),
     "O02": ("tests/orchestrator/full_target/test_h1h_operation_alias.py", "tests/orchestrator/full_target/test_h1h_operation_two_real_producers.py"),
     "O03": ("tests/orchestrator/full_target/test_h1h_retired_method_unknown_action.py",),
     "O07": ("tests/orchestrator/full_target/operation_completion/test_scoped_reconciliation.py",),

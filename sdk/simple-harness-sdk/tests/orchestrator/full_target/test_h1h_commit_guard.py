@@ -1,9 +1,20 @@
+"""H1-H commit guards.
+
+The O08 / O03 cases below still build their state on the retiring ``test_plan_commits``
+world: a new or unresolved operation action needs the external-operation product world
+(rewritten together with representative case 3).  The A05 / I06 grant-change cases moved
+into ``test_h1h_authority_matrix.py::test_a04_*`` (main loop); A08 replay-after-revoke is
+``test_h1i_decision_replay.py::test_committed_refine_replays_after_grant_revocation_*``.
+"""
+
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import hashlib
 
 import pytest
+from h1i_seed import plan_reply, refuse_tampered_first, reviewed
 from test_htn_store import envelope
 from test_plan_commits import _world
 
@@ -113,52 +124,6 @@ def _plan_revision_count(world) -> int:
     return len(HtnStore(world.store).list_plan_revisions(world.mission.id))
 
 
-def test_a05_expired_grant_is_rechecked_inside_commit_and_rolls_back(tmp_path) -> None:
-    world = _world(tmp_path, key="h1h-a05")
-    _, _, admission = _setup(world)
-    before_events = tuple(world.store.list_events(world.mission.id))
-    before_changes = world.store.connection.total_changes
-    world.store._clock = lambda: (admission.authority.expires_at_ms + 1) / 1000
-
-    with pytest.raises(PlanCommitRejected, match="AUTHORIZATION_REQUIRED"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _plan_revision_count(world) == 0
-    assert tuple(world.store.list_events(world.mission.id)) == before_events
-    assert world.store.connection.total_changes == before_changes
-
-
-def test_a08_replay_returns_original_receipt_after_revoke_without_new_revision(tmp_path) -> None:
-    world = _world(tmp_path, key="h1h-a08")
-    command = world.command
-    api, grant, admission = _setup(world, command=command)
-    first = world.service.commit_planning_revision(
-        command,
-        world.principal,
-        admission=admission,
-    )
-    api.revoke(grant.grant_id, expected_revision=1, command_id="revoke-h1h", reason="stop")
-
-    replay = world.service.commit_planning_revision(
-        command,
-        world.principal,
-        admission=admission,
-    )
-
-    assert replay == first
-    assert _plan_revision_count(world) == 1
-    with pytest.raises(PlanCommitRejected, match="PRINCIPAL_MISMATCH"):
-        world.service.commit_planning_revision(
-            command,
-            dataclasses.replace(world.principal, principal_id="other-manager"),
-            admission=admission,
-        )
-
-
 def test_o08_new_action_after_preview_is_detected_by_complete_set_reread(tmp_path) -> None:
     world = _world(tmp_path, key="h1h-o08")
     _, _, admission = _setup(world)
@@ -264,31 +229,30 @@ def test_o03_retired_unknown_action_blocks_official_commit_without_revision_or_o
     assert world.store.connection.total_changes == before_changes
 
 
-def test_i06_grant_change_between_preview_and_commit_is_stale(tmp_path) -> None:
-    world = _world(tmp_path, key="h1h-i06")
-    api, grant, admission = _setup(world)
-    api.renew(grant.grant_id, expected_revision=1, command_id="renew-h1h")
+def test_preview_read_set_identity_mismatch_refuses_before_writes(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delivery whose admission names another preview read set than the command's is
+    refused by the preview identity gate before anything is written; the real delivery
+    of the same round then commits (adjudication ①a)."""
 
-    with pytest.raises(PlanCommitRejected, match="REQUEST_BINDING_STALE"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
+    refusals = refuse_tampered_first(
+        monkeypatch,
+        lambda command, principal, kwargs: (
+            command,
+            principal,
+            {**kwargs, "admission": dataclasses.replace(
+                kwargs["admission"], preview_read_set_hash="0" * 64)},
+        ),
+        "PREVIEW_IDENTITY_STALE",
+    )
 
-    assert _plan_revision_count(world) == 0
+    async def case() -> None:
+        async with reviewed(tmp_path, key="h1h-preview-read-set") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+            await loop._collect_plan_decision(
+                opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
+            )
+            assert len(refusals) == 1
+            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == 1
 
-
-def test_preview_read_set_identity_mismatch_refuses_before_writes(tmp_path) -> None:
-    world = _world(tmp_path, key="h1h-preview-read-set")
-    _, _, admission = _setup(world)
-    admission = dataclasses.replace(admission, preview_read_set_hash="0" * 64)
-
-    with pytest.raises(PlanCommitRejected, match="PREVIEW_IDENTITY_STALE"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _plan_revision_count(world) == 0
+    asyncio.run(case())
