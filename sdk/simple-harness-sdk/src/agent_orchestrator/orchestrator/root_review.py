@@ -1347,13 +1347,11 @@ class RootReviewCoordinator:
                     "evidence": _evidence_label(outputs, artifacts, review),
                 }
             )
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            from .taskgraph_review_evidence import accepted_verification_evidence
-            for contribution in contributions:
-                acceptance = semantics.get_acceptance(str(contribution["acceptance_id"]))
-                contribution["verification_evidence"] = accepted_verification_evidence(
-                    self.store, semantics, mission_id, acceptance)
+        from .taskgraph_review_evidence import accepted_verification_evidence
+        for contribution in contributions:
+            acceptance = semantics.get_acceptance(str(contribution["acceptance_id"]))
+            contribution["verification_evidence"] = accepted_verification_evidence(
+                self.store, semantics, mission_id, acceptance)
 
         from .completion_status import current_effect_proofs
 

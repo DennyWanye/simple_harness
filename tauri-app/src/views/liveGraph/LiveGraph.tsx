@@ -117,7 +117,6 @@ type Pending = { id: string; pages: ExecutionPage[]; restarted: boolean };
 
 function errorText(code: string, detail: string): string {
   if (code === "NOT_ENABLED") return "这个任务创建于执行图启用之前，没有执行图。";
-  if (code === "ACTIVATION_PENDING") return "执行图正在启用：等规划授权发出后由系统启用，稍后自动出现。";
   return detail || "执行图读取失败，请稍后重试";
 }
 
@@ -368,7 +367,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         {view?.coverage === "PENDING_IMPORT" && <span className="lg-muted">有模型回合正在进行</span>}
         {stalledCount > 0 && <span className="lg-stall">{stalledCount} 次执行可能卡住</span>}
       </div>
-      {error && <p role="alert" className={error.code === "ACTIVATION_PENDING" || error.code === "NOT_ENABLED" ? "lg-muted" : "lg-error"}>
+      {error && <p role="alert" className={error.code === "NOT_ENABLED" ? "lg-muted" : "lg-error"}>
         {error.text}{stale ? "（下面是上次读到的画面，可能已过期）" : ""}</p>}
       {slowRead && <p className="lg-muted lg-slow" role="status">读取较慢，可能后台正忙。<button type="button" onClick={retry}>重试</button></p>}
       {!view && !error && <p className="lg-muted" role="status">正在读取执行图…</p>}

@@ -533,9 +533,8 @@ class CommitService(ProtectedTailCommitsMixin,
         return self._taskgraph_dispatch.read_attempt(mission_id, attempt_id)
 
     def require_taskgraph_handoff(self, intent: DispatchIntent) -> None:
-        from .taskgraph_dispatch import taskgraph_enabled
-        if not taskgraph_enabled(self._store, intent.mission_id):
-            return
+        from ..storage.taskgraph_store import require_bound
+        require_bound(self._store, intent.mission_id)
         if self._taskgraph_dispatch is None:
             raise StoreError("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
         from ..runtime.planning_operations import SourceUnavailable
@@ -563,9 +562,7 @@ class CommitService(ProtectedTailCommitsMixin,
     ) -> Event:
         idempotency_key = f"{event_type}:{key}"
         from .taskgraph_terminal import TERMINAL_EVENTS, record_terminal_event
-        from .taskgraph_dispatch import taskgraph_enabled
-        bind_terminal = (event_type in TERMINAL_EVENTS and task_id is not None
-                         and taskgraph_enabled(self._store, mission_id))
+        bind_terminal = event_type in TERMINAL_EVENTS and task_id is not None
         if bind_terminal:
             from ..storage.htn_store import HtnStore
             semantic = HtnStore(self._store).task_semantics_of(mission_id, str(task_id))
@@ -955,22 +952,11 @@ class CommitService(ProtectedTailCommitsMixin,
                     )
                     self._store.upsert_claim(next_claim(moved, ClaimStatus.REJECTED))
         intent = self._store.get_intent_for_subject(attempt.id)
-        turn_in_flight = intent is not None and intent.state == "SUBMITTED"
         if intent is not None and intent.state in {"PENDING", "CLAIMED", "AGENT_CREATED"}:
             self._settle_intent(intent, "FAILED")
         # A SUBMITTED intent stays open: its SDK turn is still running and the loop
         # collects it later (usage imported, late result kept as history, D3-6'); the
-        # reservation is settled at that point, never before the turn's cost is known.
-        reservation = self._ledger.reservation(attempt.id)
-        from .taskgraph_dispatch import taskgraph_enabled
-        if (
-            not turn_in_flight
-            and not taskgraph_enabled(self._store, attempt.mission_id)
-            and reservation is not None
-            and reservation["state"] != "SETTLED"
-            and not self._ledger.has_unknown_usage(attempt.id)
-        ):
-            self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+        # late-accounting scanner settles the reservation once the turn's cost is known.
         self._emit(
             "AttemptSuperseded" if target is AttemptStatus.SUPERSEDED else "AttemptCancelled",
             attempt.mission_id,
@@ -1431,17 +1417,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 # whether there is a real invocation/cost; do not settle as zero.
                 continue
             self._settle_intent(intent, "FAILED")
-            reservation = self._ledger.reservation(intent.subject_id)
-            if reservation is not None and reservation["state"] != "SETTLED":
-                task_id = (
-                    intent.subject_id.split(":attempt-")[0]
-                    if ":attempt-" in intent.subject_id
-                    else None
-                )
-                from .taskgraph_dispatch import taskgraph_enabled
-                if (not assured and not taskgraph_enabled(self._store, mission_id)
-                        and not self._ledger.has_unknown_usage(intent.subject_id)):
-                    self._settle_subject(intent.subject_id, mission_id, task_id=task_id)
         # D7-4' / D7-5': open actions and requests end with the Mission; handed-off and
         # UNKNOWN actions are left to the reconciliation (reality may already have moved)
         self._cancel_open_actions(mission_id, reason="mission_stopped")
@@ -1541,23 +1516,25 @@ class CommitService(ProtectedTailCommitsMixin,
                 if permit is None or permit["failed_attempt_id"] != retry_of:
                     raise CommitRejected("H4 retry needs a current committed RETRY_SAME_METHOD decision")
                 intent_config = {**dict(intent_config), "planning_retry_decision_id": permit["decision_id"]}
-            from .taskgraph_dispatch import taskgraph_enabled
-            graph_prepared = None
-            if taskgraph_enabled(self._store, task.mission_id):
-                if self._taskgraph_dispatch is None:
-                    raise CommitRejected("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
-                from ..artifacts.store import ArtifactStoreError
-                from ..artifacts.versioning import ArtifactConflict
-                from ..runtime.planning_operations import SourceUnavailable
-                try:
-                    graph_prepared = self._taskgraph_dispatch.prepare(
-                        task_id, intent_config=intent_config, inputs=inputs, input_hash=input_hash,
-                    )
-                except (StoreError, ContractError, ArtifactStoreError, ArtifactConflict, SourceUnavailable) as error:
-                    # A named per-Mission refusal stays in the original admission
-                    # path; it must not abort scheduling for unrelated Missions.
-                    raise CommitRejected(str(error)) from error
-                intent_config = {**dict(intent_config), "taskgraph_inputs": graph_prepared.intent_binding()}
+            from ..storage.taskgraph_store import require_bound
+            try:
+                require_bound(self._store, task.mission_id)
+            except StoreError as error:
+                raise CommitRejected(str(error)) from error
+            if self._taskgraph_dispatch is None:
+                raise CommitRejected("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
+            from ..artifacts.store import ArtifactStoreError
+            from ..artifacts.versioning import ArtifactConflict
+            from ..runtime.planning_operations import SourceUnavailable
+            try:
+                graph_prepared = self._taskgraph_dispatch.prepare(
+                    task_id, intent_config=intent_config, inputs=inputs, input_hash=input_hash,
+                )
+            except (StoreError, ContractError, ArtifactStoreError, ArtifactConflict, SourceUnavailable) as error:
+                # A named per-Mission refusal stays in the original admission
+                # path; it must not abort scheduling for unrelated Missions.
+                raise CommitRejected(str(error)) from error
+            intent_config = {**dict(intent_config), "taskgraph_inputs": graph_prepared.intent_binding()}
             existing = self._store.list_attempts(task_id)
             open_attempts = [a for a in existing if a.status in OPEN_ATTEMPT_STATES]
             if open_attempts:
@@ -1595,19 +1572,11 @@ class CommitService(ProtectedTailCommitsMixin,
             if self._source_artifact_store is not None:
                 from .attempt_execution import freeze_attempt_execution
 
-                mounted = None
-                if frozen_completion is not None:
-                    # The completion freezer just reconstructed and compared every
-                    # input against adopted DATA; those are the exact mounts.
-                    mounted = {str(item["artifact_id"]): str(item["path"]) for item in inputs}
-                    if len(mounted) != len(inputs):
-                        raise CommitRejected("completion input mount identities are ambiguous")
                 execution = freeze_attempt_execution(
                     self._store, self._source_artifact_store, task=task,
                     intent_config=intent_config, inputs=inputs, retry_of=retry_of,
-                    validated_input_paths=mounted if graph_prepared is None else None,
-                    validated_input_identities=(None if graph_prepared is None else frozenset(
-                        (str(item["artifact_id"]), str(item["path"]), str(item["content_hash"])) for item in inputs)),
+                    validated_input_identities=frozenset(
+                        (str(item["artifact_id"]), str(item["path"]), str(item["content_hash"])) for item in inputs),
                 )
                 if ("attempt_execution" in intent_config
                         and sha256_hex(intent_config["attempt_execution"]) != sha256_hex(execution)):
@@ -1684,9 +1653,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 created_at=self._store.now,
             )
             self._store.insert_intent(intent)
-            if graph_prepared is not None:
-                assert self._taskgraph_dispatch is not None
-                self._taskgraph_dispatch.record(graph_prepared, attempt, intent)
+            self._taskgraph_dispatch.record(graph_prepared, attempt, intent)
             if task.status is TaskStatus.READY:
                 self._store.update_task(
                     next_task(task, TaskStatus.ACTIVE, attempt_count=task.attempt_count + 1),
@@ -1893,7 +1860,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 raise CommitRejected(
                     f"intent {intent_id} is {intent.state}; only a SUBMITTED turn is re-handed off"
                 )
-            from .taskgraph_dispatch import taskgraph_enabled
             ordinal = self.rehandoffs_of(intent.subject_id, intent.mission_id) + 1
             now = self._store.now
             updated = DispatchIntent(
@@ -1923,12 +1889,10 @@ class CommitService(ProtectedTailCommitsMixin,
                     "rehandoff": ordinal,
                     "previous_agent_id": intent.agent_id,
                     "previous_turn_id": intent.expected_turn_id,
-                    **({"previous_creation_key": intent.creation_key,
-                        "next_creation_key": updated.creation_key,
-                        "input_id": intent.input_id, "input_hash": intent.input_hash,
-                        "config_hash": sha256_hex(intent.config)}
-                       if self._taskgraph_dispatch is not None
-                       and taskgraph_enabled(self._store, intent.mission_id) else {}),
+                    "previous_creation_key": intent.creation_key,
+                    "next_creation_key": updated.creation_key,
+                    "input_id": intent.input_id, "input_hash": intent.input_hash,
+                    "config_hash": sha256_hex(intent.config),
                     "reason": reason,
                     "detail": dict(detail),
                 },
@@ -1938,20 +1902,12 @@ class CommitService(ProtectedTailCommitsMixin,
     def rehandoffs_of(self, subject_id: str, mission_id: str) -> int:
         """How many times this subject's turn was re-handed off (read off the log)."""
 
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self._store, mission_id):
-            # The generic list_events default is one page. A long-lived Mission
-            # must not reuse a previous handoff ordinal after that page fills.
-            return sum(1 for row in self._store.connection.execute(
-                "SELECT payload_json FROM events WHERE mission_id=? AND type=? ORDER BY seq",
-                (mission_id, SERVICE_INTENT_REHANDED_OFF))
-                if json.loads(row[0]).get("subject_id") == subject_id)
-        return sum(
-            1
-            for event in self._store.list_events(mission_id)
-            if event.type == SERVICE_INTENT_REHANDED_OFF
-            and event.payload.get("subject_id") == subject_id
-        )
+        # The generic list_events default is one page. A long-lived Mission
+        # must not reuse a previous handoff ordinal after that page fills.
+        return sum(1 for row in self._store.connection.execute(
+            "SELECT payload_json FROM events WHERE mission_id=? AND type=? ORDER BY seq",
+            (mission_id, SERVICE_INTENT_REHANDED_OFF))
+            if json.loads(row[0]).get("subject_id") == subject_id)
 
     def record_submitted(self, intent_id: str, *, receipt: Mapping[str, Any]) -> DispatchIntent:
         """Save the real SDK receipt; the Attempt becomes RUNNING (§25.2 start)."""
@@ -2126,13 +2082,8 @@ class CommitService(ProtectedTailCommitsMixin,
             updated = next_attempt(attempt, AttemptStatus.LOST, failure={"reason": reason})
             self._store.update_attempt(updated, expected_version=attempt.version)
             self._release_attempt_charge(updated)
-            from .taskgraph_dispatch import taskgraph_enabled
             # Loss is a control-plane observation, not proof that the SDK call
-            # stopped. Preserve the transition even when physical settlement is
-            # unavailable; the original late-accounting scanner owns that hold.
-            if (not taskgraph_enabled(self._store, attempt.mission_id)
-                    and not self._ledger.has_unknown_usage(attempt.id)):
-                self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+            # stopped; the original late-accounting scanner owns settlement.
             self._emit(
                 "AttemptLost",
                 attempt.mission_id,
@@ -2158,13 +2109,8 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             self._store.update_attempt(updated, expected_version=attempt.version)
             self._release_attempt_charge(updated)
-            from .taskgraph_dispatch import taskgraph_enabled
             # A stalled live turn must first lose execution rights and receive
-            # cancellation. Trying to settle it here would reject the whole
-            # timeout transaction and prevent the caller from cancelling it.
-            if (not taskgraph_enabled(self._store, attempt.mission_id)
-                    and not self._ledger.has_unknown_usage(attempt.id)):
-                self._settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
+            # cancellation; the original late-accounting scanner owns settlement.
             self._emit(
                 "AttemptTimedOut",
                 attempt.mission_id,
@@ -2231,13 +2177,11 @@ class CommitService(ProtectedTailCommitsMixin,
             if self._assurance_settlement is None:
                 raise BudgetError("Assurance physical settlement reader is not installed; reservation held")
             self._assurance_settlement.require_settled_locked(subject_id, mission_id)
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self._store, mission_id):
-            if self._taskgraph_dispatch is None:
-                raise CommitRejected("TASKGRAPH_SETTLEMENT_ASSEMBLY_REQUIRED")
-            # A terminal business state and even a known-only accounting request
-            # cannot erase a live historical executor or an unresolved tool effect.
-            self._taskgraph_dispatch.recheck_settlement(self._store, subject_id, mission_id)
+        if self._taskgraph_dispatch is None:
+            raise CommitRejected("TASKGRAPH_SETTLEMENT_ASSEMBLY_REQUIRED")
+        # A terminal business state and even a known-only accounting request
+        # cannot erase a live historical executor or an unresolved tool effect.
+        self._taskgraph_dispatch.recheck_settlement(self._store, subject_id, mission_id)
         if tool_calls is None:
             tool_calls = 0 if self.tool_calls_for is None else int(self.tool_calls_for(subject_id))
         settled = (

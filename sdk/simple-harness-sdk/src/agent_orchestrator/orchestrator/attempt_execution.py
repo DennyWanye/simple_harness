@@ -48,17 +48,14 @@ def freeze_attempt_execution(
     intent_config: Mapping[str, Any],
     inputs: Sequence[Mapping[str, Any]],
     retry_of: str | None,
-    validated_input_paths: Mapping[str, str] | None = None,
-    validated_input_identities: frozenset[tuple[str, str, str]] | None = None,
+    validated_input_identities: frozenset[tuple[str, str, str]],
 ) -> dict[str, Any]:
     """System-only creation hook. Never apply it when replaying an old intent.
 
-    ``validated_input_paths`` comes only from Commit's own checked completion inputs,
-    never from intent_config or model metadata. It maps a real artifact ID to its one
-    approved mount path, without changing its bytes. TaskGraph instead supplies the
-    exact (artifact, mount path, hash) set checked by its DATA resolver, which also
-    permits one artifact at two distinct approved paths without collapsing either
-    mount. The stored manifests include whole input files, not selected excerpts.
+    TaskGraph supplies the exact (artifact, mount path, hash) set checked by its DATA
+    resolver, which also permits one artifact at two distinct approved paths without
+    collapsing either mount. The stored manifests include whole input files, not
+    selected excerpts.
     """
     mission = store.get_mission(task.mission_id)
     if mission is None:
@@ -70,14 +67,10 @@ def freeze_attempt_execution(
             raise ContractError("attempt execution: seed must be text")
         data = text.encode("utf-8")
         files[path] = {"content_hash": artifact_store.put_bytes(data), "kind": "seed"}
-    validated_paths = dict(validated_input_paths or {})
-    if set(validated_paths) - {item.get("artifact_id") for item in inputs}:
-        raise ContractError("attempt execution: validated input path has no actual input")
-    if validated_input_identities is not None:
-        actual = frozenset((str(item.get("artifact_id")), str(item.get("path")), str(item.get("content_hash")))
-                           for item in inputs)
-        if actual != validated_input_identities or len(actual) != len(inputs):
-            raise ContractError("attempt execution: validated input identities differ from actual inputs")
+    actual = frozenset((str(item.get("artifact_id")), str(item.get("path")), str(item.get("content_hash")))
+                       for item in inputs)
+    if actual != validated_input_identities or len(actual) != len(inputs):
+        raise ContractError("attempt execution: validated input identities differ from actual inputs")
     mounted_paths: set[str] = set()
     for item in inputs:
         artifact = store.get_artifact(item.get("artifact_id", ""))
@@ -85,10 +78,7 @@ def freeze_attempt_execution(
             artifact is None
             or artifact.mission_id != mission.id
             or artifact.content_hash != item.get("content_hash")
-            or (validated_input_identities is None
-                and validated_paths.get(artifact.id, artifact.path) != item.get("path"))
-            or (validated_input_identities is not None
-                and (artifact.id, str(item.get("path")), artifact.content_hash) not in validated_input_identities)
+            or (artifact.id, str(item.get("path")), artifact.content_hash) not in validated_input_identities
         ):
             raise ContractError("attempt execution: frozen input identity mismatch")
         mounted = _path(item["path"])

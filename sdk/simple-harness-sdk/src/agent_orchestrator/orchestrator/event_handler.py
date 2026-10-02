@@ -181,7 +181,6 @@ from .action_commits import (
 )
 from .commit_service import (
     GLOBAL_ACCOUNT,
-    SERVICE_INTENT_REHANDED_OFF,
     CommitRejected,
     CommitService,
     MissionSpec,
@@ -562,7 +561,6 @@ class Orchestrator:
         #: repeats every round is noted once per distinct reason (NEXT-TG-1.0 §5.1).
         self._collection_refusals: dict[str, str] = {}
         #: planning intents already noted as waiting for their TaskGraph binding.
-        self._taskgraph_waits_noted: set[str] = set()
         self._creation_refusals_noted: set[str] = set()
         # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
         self._agent_sweep_at: float | None = None
@@ -1625,24 +1623,6 @@ class Orchestrator:
             return self._provider_admissions[profile_id]
         return self._provider_admission
 
-    def _release_unknown_grants(self, intent: DispatchIntent) -> None:
-        """Drop HELD grants for this intent so a re-hand-off is not refused by them.
-
-        P2.3l / N5.  No-op when the deployment has no ``ProviderBudgetGuard``.
-        """
-
-        from .taskgraph_dispatch import taskgraph_enabled
-        from ..storage.assurance_store import AssuranceStore
-        if (taskgraph_enabled(self.store, intent.mission_id)
-                or AssuranceStore(self.store).lane(intent.mission_id) == "ASSURANCE_1_1"):
-            # TaskGraph never treats a business timeout/retry as provider proof.
-            # The original guard's actual accounting recovery resolves the hold.
-            return
-        guard = self._admission_for(self.profile_of(intent))
-        if guard is None:
-            return
-        guard.release_held_grants(intent_id=intent.intent_id, reason="provider_outcome_unknown")
-
     def _frozen_admission_fingerprints(self, profile_id: str) -> set[str]:
         """Admission identities persisted in this pool's dispatch intents."""
         if not self.store.has_table("dispatch_intents"):
@@ -1659,84 +1639,31 @@ class Orchestrator:
                     found.add(value)
         return found
 
-    def _release_mission_unknown_grants(self, mission_id: str) -> None:
-        for intent in self.store.list_intents(
-            "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"
-        ):
-            if intent.mission_id == mission_id:
-                self._release_unknown_grants(intent)
-
     def _prepare_terminal_ledger(self, mission_id: str) -> None:
-        """Drop HELD/UNKNOWN grants and settle known facts.
-
-        P2.3r / N9.  Unknown usage stays on the books (P2.3l P1-1); the
-        reservation is released so ``reserved`` is 0 at the Mission terminal.
-        """
+        """Withdraw future execution and import what is known; keep every
+        physical/accounting obligation (P2.3r / N9).  An unknown call is never
+        settled as known-only zero usage."""
 
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-            from ..runtime.planning_operations import SourceUnavailable
-            reader = TaskGraphRuntimeImports(self)
-            # Withdraw future execution, keep all physical/accounting obligations.
-            # This branch never settles an unknown call as known-only zero usage.
-            for intent in self.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"):
-                if intent.mission_id != mission_id:
-                    continue
-                try:
-                    source = reader.read_subject(intent)
-                    self.commit.import_usage(intent.subject_id, mission_id, source.usage)
-                except (SourceUnavailable, BudgetError, ContractError) as error:
-                    self._note(f"{intent.subject_id}: TaskGraph terminal accounting retained ({error})")
-                if intent.state not in {"FAILED", "SETTLED"}:
-                    self._settle_intent(intent, "FAILED")
-            return  # the fixed late-accounting reader owns eventual settlement
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1":
-            # Cancellation closes business ownership, not physical/accounting
-            # responsibility. The original late collector and settlement reader
-            # retain even AGENT_CREATED's possible submit/receipt crash window.
-            for intent in self.store.list_intents(
-                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"
-            ):
-                if intent.mission_id != mission_id or intent.agent_id is None:
-                    continue
-                try:
-                    self._import_usage(intent)
-                except Exception as error:  # noqa: BLE001 - unavailable accounting stays held
-                    self._note(f"{intent.subject_id}: Assurance accounting retained ({type(error).__name__})")
-            return
+        from ..storage.taskgraph_store import require_bound
+        require_bound(self.store, mission_id)
+        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+        from ..runtime.planning_operations import SourceUnavailable
+        reader = TaskGraphRuntimeImports(self)
         for intent in self.store.list_intents(
-            "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"
-        ):
+                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"):
             if intent.mission_id != mission_id:
                 continue
             try:
-                self._import_usage(intent)
-            except Exception as error:  # noqa: BLE001 - runtime ledger unreachable
-                self._note(f"{intent.subject_id}: terminal usage import failed ({error})")
-        self._release_mission_unknown_grants(mission_id)
-        report = self.commit.ledger.costs_report(mission_id)
-        for row in report["reservations"]:
-            if row["state"] == "SETTLED":
-                continue
-            subject_id = str(row["subject_id"])
-            task_id = subject_id.split(":attempt-")[0] if ":attempt-" in subject_id else None
-            try:
-                self.commit.settle_subject_known(subject_id, mission_id, task_id=task_id)
-            except BudgetError as error:
-                self._note(f"{subject_id}: terminal settle_known skipped ({error})")
-        # A SUBMITTED after-handoff UNKNOWN never settles on its own; leaving it
-        # open keeps ``run()`` waiting on ``_has_inflight`` after the Mission is
-        # already FAILED (C1-r0).  Close it now that usage is on the books.
-        for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"):
-            if intent.mission_id != mission_id:
-                continue
-            self._settle_intent(intent, "FAILED")
+                source = reader.read_subject(intent)
+                self.commit.import_usage(intent.subject_id, mission_id, source.usage)
+            except (SourceUnavailable, BudgetError, ContractError) as error:
+                self._note(f"{intent.subject_id}: TaskGraph terminal accounting retained ({error})")
+            if intent.state not in {"FAILED", "SETTLED"}:
+                self._settle_intent(intent, "FAILED")
+        # The fixed late-accounting reader owns eventual settlement.
 
     def _commit_fail_mission(
         self,
@@ -3019,16 +2946,12 @@ class Orchestrator:
             missions = [mission for mission in missions if mission.id == mission_id]
         from ..storage.planning_human_store import PlanningHumanStore
         from .planning_selection import awaits_authority
-        from .taskgraph_requirement import awaits_taskgraph
         pending_intents = self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
         from .planning_runtime_block import pending_block
         for mission in missions:
             if pending_block(self.store, mission.id) is not None:
                 return True
-            # A planning request still waiting for its TaskGraph binding is external
-            # work too (NEXT-TG-1.0 §6.4): not a stall, not a reason to plan again.
-            if any(intent.mission_id == mission.id
-                   and (awaits_authority(self.store, intent) or awaits_taskgraph(self.store, intent))
+            if any(intent.mission_id == mission.id and awaits_authority(self.store, intent)
                    for intent in pending_intents):
                 return True
             if PlanningHumanStore(self.store).pending(mission.id):
@@ -4786,15 +4709,6 @@ class Orchestrator:
         from .planning_selection import awaits_authority
         if awaits_authority(self.store, intent):
             return False
-        # NEXT-TG-1.0 §6.4: a Mission created to run on the strict TaskGraph plans
-        # only once it is bound.  Its planning request waits here (after the grant,
-        # before any local or model dispatch); it never commits an unbound plan.
-        from .taskgraph_requirement import awaits_taskgraph
-        if awaits_taskgraph(self.store, intent):
-            if intent.intent_id not in self._taskgraph_waits_noted:
-                self._taskgraph_waits_noted.add(intent.intent_id)
-                self._note(f"intent {intent.intent_id}: waiting for the Mission's TaskGraph binding")
-            return False
         if intent.config.get("native_planning_decision") is None and self._pool_missing(intent):
             return False
         self._context_profile_for(intent.config)
@@ -4896,13 +4810,8 @@ class Orchestrator:
         return True
 
     def _upstream_inputs(self, attempt: Attempt) -> list[UpstreamInput]:
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, attempt.mission_id):
-            context = self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
-            return list(context.upstream)
-        intent = self.store.get_intent_for_subject(attempt.id)
-        raw = [] if intent is None else list(intent.config.get("inputs", []))
-        return [UpstreamInput.from_json(item) for item in raw]
+        context = self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
+        return list(context.upstream)
 
     def _active_source_binding(self, mission_id: str) -> dict[str, Any]:
         domain = self.commit.domain_for(mission_id)
@@ -4958,14 +4867,13 @@ class Orchestrator:
         self._require_assurance_execution_root()
         if binding.view != "work":
             return
-        from .taskgraph_dispatch import taskgraph_enabled
         from ..storage.store import StoreError
+        from ..storage.taskgraph_store import require_bound
         with self.store.read_view():
             attempt = self.store.get_attempt(binding.attempt_id)
             if attempt is None:
                 raise StoreError("TASKGRAPH_TOOL_ATTEMPT_MISSING")
-            if not taskgraph_enabled(self.store, attempt.mission_id):
-                return
+            require_bound(self.store, attempt.mission_id)
             if binding.mission_id is not None and binding.mission_id != attempt.mission_id:
                 raise StoreError("TASKGRAPH_TOOL_MISSION_MISMATCH")
             intent = self.store.get_intent_for_subject(attempt.id)
@@ -4974,9 +4882,6 @@ class Orchestrator:
             self.commit.require_taskgraph_handoff(intent)
 
     def _taskgraph_mount_rules(self, attempt: Attempt) -> Any:
-        from .taskgraph_dispatch import taskgraph_enabled
-        if not taskgraph_enabled(self.store, attempt.mission_id):
-            return None
         from ..artifacts.taskgraph_inputs import decode_target_rules
         self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
         intent = self.store.get_intent_for_subject(attempt.id)
@@ -4994,18 +4899,15 @@ class Orchestrator:
         from .taskgraph_materialization import require_mounts, verify_materialized
         graph_rules = self._taskgraph_mount_rules(attempt)
         upstream = self._upstream_inputs(attempt)
-        taskgraph_context = None
-        manifest_paths: set[str] = set()
-        if graph_rules is not None:
-            require_mounts(upstream, graph_rules)
-            taskgraph_context = self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
-            from ..artifacts.versioning import manifest_upstream_inputs
-            manifest_paths = {
-                item.path
-                for item in manifest_upstream_inputs(
-                    taskgraph_context.manifest, graph_rules, network=taskgraph_context.network
-                )
-            }
+        require_mounts(upstream, graph_rules)
+        taskgraph_context = self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
+        from ..artifacts.versioning import manifest_upstream_inputs
+        manifest_paths = {
+            item.path
+            for item in manifest_upstream_inputs(
+                taskgraph_context.manifest, graph_rules, network=taskgraph_context.network
+            )
+        }
         inputs: dict[str, Path | bytes] = {}
         for item in upstream:
             artifact = self.store.get_artifact(item.artifact_id)
@@ -5026,20 +4928,16 @@ class Orchestrator:
             # exact declared paths from the frozen manifest. Overlay/Selection
             # material remains an explicit, separately verified input so accepted
             # producer files are not silently dropped from a real TaskGraph tree.
-            if graph_rules is None or item.path not in manifest_paths:
+            if item.path not in manifest_paths:
                 inputs[item.path] = Path(artifact.storage_uri)
         binding = self._frozen_source_binding(attempt)
         source_roots = binding.get("source_roots", ())
         source_files = self._source_files(attempt)
         task = self.store.get_task(attempt.task_id)
-        if graph_rules is not None:
-            require_mounts(upstream, graph_rules, supplementary=source_files)
-            combined = [*upstream, *(UpstreamInput("source", path, sha256_hex_text(data), "source")
-                        for path, data in source_files.items() if path not in {item.path for item in upstream})]
-            require_mounts(combined, graph_rules)
-        else:
-            inputs = {path: value for path, value in inputs.items()
-                      if not _under_source_root(path, source_roots)}
+        require_mounts(upstream, graph_rules, supplementary=source_files)
+        combined = [*upstream, *(UpstreamInput("source", path, sha256_hex_text(data), "source")
+                    for path, data in source_files.items() if path not in {item.path for item in upstream})]
+        require_mounts(combined, graph_rules)
         inputs.update(source_files)
         # P3.2 D4 (review round 2 P2-4): a rebind — recover() and every dispatch — is
         # checked against the registered identity, never the directory's content
@@ -5067,18 +4965,8 @@ class Orchestrator:
             )
         exists = root_path.exists()
         building = False
-        if record is None and exists:  # a tree from before 0.10: adopted as it is
-            if graph_rules is not None:
-                raise ArtifactConflict("TASKGRAPH_UNREGISTERED_WORKSPACE")
-            self.store.register_workspace(
-                attempt.id,
-                kind="attempt",
-                mission_id=attempt.mission_id,
-                attempt_id=attempt.id,
-                base_snapshot=base,
-                state="ACTIVE",
-                detail={**detail, "adopted": True},
-            )
+        if record is None and exists:
+            raise ArtifactConflict("TASKGRAPH_UNREGISTERED_WORKSPACE")
         elif record is None or record["state"] == "CREATING":
             if record is not None:  # a tree half-made by a crash is rebuilt
                 self.assembled.workspaces.remove(attempt.id)
@@ -5107,12 +4995,10 @@ class Orchestrator:
             )
         except WorkspaceError as error:  # P3.2 D3: e.g. a symlink in the previous tree
             raise ArtifactConflict(str(error)) from error
-        if graph_rules is not None and building:
+        if building:
             from ..artifacts.versioning import materialise_v2
 
             context = taskgraph_context
-            if context is None:
-                raise ArtifactConflict("TaskGraph input context is unavailable")
             artifacts = {}
             for entry in context.manifest.bindings:
                 artifact = self.store.get_artifact(entry.artifact_id)
@@ -5139,18 +5025,15 @@ class Orchestrator:
                                target_rules=graph_rules, network=context.network)
             except (ArtifactConflict, WorkspaceError) as error:
                 raise ArtifactConflict(f"TaskGraph DATA materialisation failed: {error}") from error
-        if building and graph_rules is None:
-            self.store.set_workspace_state(attempt.id, "ACTIVE")
-        if graph_rules is not None and not building:
+        if not building:
             # Detect tampering before a protected-file refresh could overwrite it.
             verify_materialized(workspace.root,
                 [item for item in upstream if task is None or item.path not in task.outputs])
         if task is not None:
             protected_files = self._protected_files(mission, task, attempt)
-            if graph_rules is not None:
-                require_mounts(upstream, graph_rules, supplementary={
-                    path: content if isinstance(content, bytes) else content.encode("utf-8")
-                    for path, content in protected_files.items()})
+            require_mounts(upstream, graph_rules, supplementary={
+                path: content if isinstance(content, bytes) else content.encode("utf-8")
+                for path, content in protected_files.items()})
             for path, content in protected_files.items():
                 if isinstance(content, bytes):
                     if not building:
@@ -5168,13 +5051,12 @@ class Orchestrator:
                 ):
                     workspace.write_text(path, content)
 
-        if graph_rules is not None:
-            # A declared output may legitimately change after initial binding.
-            # Recovery still verifies every protected input against its origin.
-            verify_materialized(workspace.root, upstream if building else
-                [item for item in upstream if task is None or item.path not in task.outputs])
-            if building:
-                self.store.set_workspace_state(attempt.id, "ACTIVE")
+        # A declared output may legitimately change after initial binding.
+        # Recovery still verifies every protected input against its origin.
+        verify_materialized(workspace.root, upstream if building else
+            [item for item in upstream if task is None or item.path not in task.outputs])
+        if building:
+            self.store.set_workspace_state(attempt.id, "ACTIVE")
 
     def _register_copy(
         self, kind: str, name: str, *, mission_id: str, attempt_id: str, detail: dict[str, Any]
@@ -5688,47 +5570,17 @@ class Orchestrator:
     def _settle_intent(self, intent: DispatchIntent, state: str) -> None:
         self.commit.settle_intent(intent.intent_id, state)
 
-    def _service_agent_ids(self, intent: DispatchIntent) -> list[str]:
-        """Every executor this subject ever had, including abandoned re-hand-offs."""
-
-        agents: list[str] = []
-        seen: set[str] = set()
-        for event in self.store.list_events(intent.mission_id):
-            if event.type != SERVICE_INTENT_REHANDED_OFF:
-                continue
-            if event.payload.get("subject_id") != intent.subject_id:
-                continue
-            previous = event.payload.get("previous_agent_id")
-            if isinstance(previous, str) and previous and previous not in seen:
-                seen.add(previous)
-                agents.append(previous)
-        if isinstance(intent.agent_id, str) and intent.agent_id not in seen:
-            agents.append(intent.agent_id)
-        return agents
-
     def _import_usage(self, intent: DispatchIntent) -> None:
-        from .taskgraph_dispatch import taskgraph_enabled
-        from ..storage.assurance_store import AssuranceStore
-        if (taskgraph_enabled(self.store, intent.mission_id)
-                or AssuranceStore(self.store).lane(intent.mission_id) == "ASSURANCE_1_1"):
-            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-            # Read the latest control row but retain all original executor/input
-            # identities. A service rehandoff cannot drop an older physical cost.
-            current = self.store.get_intent(intent.intent_id)
-            if current is None:
-                raise BudgetError("ORIGINAL_ACCOUNTING_INTENT_MISSING")
-            source = TaskGraphRuntimeImports(self).read_subject(current)
-            self.commit.import_usage(current.subject_id, current.mission_id, source.usage)
-            return
-        agents = self._service_agent_ids(intent)
-        if not agents:
-            return
-        bridge = self.bridge_for(intent)
-        facts = []
-        for agent_id in agents:
-            facts.extend(bridge.usage_facts(agent_id=agent_id, include_unknown=True))
-        if facts:
-            self.commit.import_usage(intent.subject_id, intent.mission_id, facts)
+        from ..storage.taskgraph_store import require_bound
+        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+        require_bound(self.store, intent.mission_id)
+        # Read the latest control row but retain all original executor/input
+        # identities. A service rehandoff cannot drop an older physical cost.
+        current = self.store.get_intent(intent.intent_id)
+        if current is None:
+            raise BudgetError("ORIGINAL_ACCOUNTING_INTENT_MISSING")
+        source = TaskGraphRuntimeImports(self).read_subject(current)
+        self.commit.import_usage(current.subject_id, current.mission_id, source.usage)
 
     def _reimport_unsettled(self, mission: Mission) -> None:
         """D3-6': LOST / TIMED_OUT / SUPERSEDED / CANCELLED Attempts whose reservation is
@@ -5761,28 +5613,12 @@ class Orchestrator:
         with self.store.transaction():
             unknown_imported = self.commit.ledger.imported_unknown_count(subject_id) > 0
             unknown = self.commit.ledger.has_unknown_usage(subject_id)
-        mission = self.store.get_mission(mission_id)
-        from .taskgraph_dispatch import taskgraph_enabled
-        graph_enabled = taskgraph_enabled(self.store, mission_id)
-        from ..storage.assurance_store import AssuranceStore
-        assured = mission is not None and AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
-        if assured and (unknown_imported or unknown):
-            self._note(f"{subject_id}: Assurance unknown provider charge, original reservation held")
-            return
-        if unknown_imported and mission is not None and not graph_enabled:
-            # P2.3l P1-1: credit known facts, release the reservation, keep the
-            # unknown rows.
-            self.commit.settle_subject_known(subject_id, mission_id, task_id=task_id)
-            self._note(f"{subject_id}: known usage settled; unknown calls remain on the ledger")
-            return
-        if unknown:
-            self._note(f"{subject_id}: unknown provider charge, reservation held")
+        if unknown_imported or unknown:
+            self._note(f"{subject_id}: unknown provider charge, original reservation held")
             return
         try:
             self.commit.settle_subject(subject_id, mission_id, task_id=task_id)
         except BudgetError:
-            if not graph_enabled and not assured:
-                raise
             self._note(f"{subject_id}: physical settlement pending, reservation held")
 
     #: The same result refused for the same reason this many rounds in a row is a
@@ -5833,22 +5669,14 @@ class Orchestrator:
         try:
             self.commit.settle_subject(attempt.id, attempt.mission_id, task_id=attempt.task_id)
         except BudgetError:
-            from ..storage.assurance_store import AssuranceStore
-            from .taskgraph_dispatch import taskgraph_enabled
-            # Assurance 1.1 (Host real-model run 4, 2026-09-23): an assured Attempt whose
+            # Assurance 1.1 (Host real-model run 4, 2026-09-23): an Attempt whose
             # physical/accounting responsibility is still open (a provider turn that
             # failed before any usage fact, an UNKNOWN charge) keeps its reservation,
             # visible and traceable, exactly like the service path above — it must
             # not crash the loop, which would re-raise on every later round.
-            if AssuranceStore(self.store).lane(attempt.mission_id) == "ASSURANCE_1_1":
-                self.commit.record_reservation_held(attempt.id, attempt.mission_id,
-                    task_id=attempt.task_id, reason="assurance_settlement_pending")
-                self._note(f"attempt {attempt.id}: Assurance settlement pending, reservation held")
-                return
-            if not taskgraph_enabled(self.store, attempt.mission_id):
-                raise
             self.commit.record_reservation_held(attempt.id, attempt.mission_id,
-                task_id=attempt.task_id, reason="taskgraph_physical_work_unresolved")
+                task_id=attempt.task_id, reason="assurance_settlement_pending")
+            self._note(f"attempt {attempt.id}: settlement pending, reservation held")
 
     async def _planning_rejected(
         self, intent: DispatchIntent, *, reason: str, detail: Mapping[str, Any]
@@ -6299,7 +6127,6 @@ class Orchestrator:
         from ..governance.planning_authorization import (
             SourceUnavailable as AuthoritySourceUnavailable,
         )
-        from ..graph.task_network import DEFAULT_PROJECTION_BUDGET
         from ..orchestrator.planning_admission_commits import PlanningCommitAdmission
         from ..planning.decision_adapter import (
             AdapterContext,
@@ -6408,21 +6235,19 @@ class Orchestrator:
                 return
 
         if existing is not None and existing["status"] == str(PlanningDecisionStatus.COMPILED):
-            from .taskgraph_dispatch import taskgraph_enabled
-            if taskgraph_enabled(self.store, mission.id):
-                from ..graph.execution_contracts import PreviewBindingV1
-                held = PreviewBindingV1.from_json(existing.get("detail", {}).get("taskgraph_preview"))
-                if held.required_convergence_ids:
-                    if new_mode._taskgraph_preview is None or len(held.required_convergence_ids) != 1:
-                        raise ContractError("SOURCE_UNAVAILABLE: TaskGraph continuation is not installed")
-                    row = self.store.connection.execute("SELECT state FROM taskgraph_convergence_jobs "
-                        "WHERE mission_id=? AND job_id=?", (mission.id, held.required_convergence_ids[0])).fetchone()
-                    if row is not None and row["state"] in {"FENCED", "WAITING"}:
-                        # The original reply is durable. Waiting resumes that reply
-                        # from the convergence consumer, never by calling Planner.
-                        self._settle_intent(intent, "SETTLED")
-                        self._settle_service_if_known(intent.subject_id, mission.id)
-                        return
+            from ..graph.execution_contracts import PreviewBindingV1
+            held = PreviewBindingV1.from_json(existing.get("detail", {}).get("taskgraph_preview"))
+            if held.required_convergence_ids:
+                if new_mode._taskgraph_preview is None or len(held.required_convergence_ids) != 1:
+                    raise ContractError("SOURCE_UNAVAILABLE: TaskGraph continuation is not installed")
+                row = self.store.connection.execute("SELECT state FROM taskgraph_convergence_jobs "
+                    "WHERE mission_id=? AND job_id=?", (mission.id, held.required_convergence_ids[0])).fetchone()
+                if row is not None and row["state"] in {"FENCED", "WAITING"}:
+                    # The original reply is durable. Waiting resumes that reply
+                    # from the convergence consumer, never by calling Planner.
+                    self._settle_intent(intent, "SETTLED")
+                    self._settle_service_if_known(intent.subject_id, mission.id)
+                    return
 
         # Preserve the exact reply before decoding it. A content-addressed write
         # precedes every new row; failure must not leave a fabricated/null raw ref.
@@ -6654,11 +6479,9 @@ class Orchestrator:
             return
 
         record_progress(PlanningDecisionStatus.DECODED)
-        from .taskgraph_dispatch import taskgraph_enabled
         pre_admitted = pre_admit_planning_decision(
             decision, context=DecisionAdmissionContext(context,
-                allow_convergence_preview=(new_mode._taskgraph_preview is not None
-                    and taskgraph_enabled(self.store, mission.id))), for_repair_preview=True,
+                allow_convergence_preview=new_mode._taskgraph_preview is not None), for_repair_preview=True,
         )
         from ..contracts.planning_decisions import RepairRuntimeBlockedDecision
         if isinstance(pre_admitted, PreAdmittedPlanningDecision) and isinstance(decision.payload, RepairRuntimeBlockedDecision):
@@ -6998,21 +6821,18 @@ class Orchestrator:
                     raise ContractError(f"SOURCE_UNAVAILABLE: {error}") from error
                 world = new_mode.require_planning_world()
                 network = new_mode.network(mission.id)
-                from .taskgraph_dispatch import taskgraph_enabled
+                from ..storage.taskgraph_store import require_bound
                 from .taskgraph_policy import read_installed_graph_policy
                 from ..contracts.htn import GraphStructureBudget
-                uses_taskgraph = taskgraph_enabled(self.store, mission.id)
-                preview_budget = (GraphStructureBudget.from_json(
+                require_bound(self.store, mission.id)
+                preview_budget = GraphStructureBudget.from_json(
                     read_installed_graph_policy(self.store, mission.id).to_json()["graph_structure_budget"])
-                    if uses_taskgraph else DEFAULT_PROJECTION_BUDGET)
-                taskgraph_sources = None
-                if uses_taskgraph:
-                    if new_mode._taskgraph_preview is None or context.authorization.planning_snapshot is None:
-                        raise ContractError("SOURCE_UNAVAILABLE: TaskGraph preview assembly is missing")
-                    source_principal = PlanPrincipal(
-                        principal_id=context.authorization.planning_snapshot.planner_principal_id,
-                        scope_id="mission", manager_epoch=new_mode.semantics().epoch(mission.id, "mission"))
-                    taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
+                if new_mode._taskgraph_preview is None or context.authorization.planning_snapshot is None:
+                    raise ContractError("SOURCE_UNAVAILABLE: TaskGraph preview assembly is missing")
+                source_principal = PlanPrincipal(
+                    principal_id=context.authorization.planning_snapshot.planner_principal_id,
+                    scope_id="mission", manager_epoch=new_mode.semantics().epoch(mission.id, "mission"))
+                taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
                 from .repair_impact import read_repair_impact_indexes
                 from .planning_graph_repairs import graph_repair_sources
                 from ..contracts.htn import BindSharedGoalOperation, CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation
@@ -7033,9 +6853,8 @@ class Orchestrator:
                         predicates=world.predicates,
                         requirements_revision=context.requirements_revision,
                         budget=preview_budget,
-                        taskgraph_contract=uses_taskgraph,
-                        sharing_entries=(taskgraph_sources.sharing.entries
-                            if taskgraph_sources is not None else None),
+                        taskgraph_contract=True,
+                        sharing_entries=taskgraph_sources.sharing.entries,
                         system_identity_seed=self._owner,
                         now_ms=int(self.store.now * 1000),
                         capabilities=world.capabilities(),
@@ -7109,20 +6928,17 @@ class Orchestrator:
                 preview_compilation_hash=preview.compilation_hash,
                 preview_read_set_hash=sha256_hex(preview.compilation.delta.read_set.to_json()),
             )
-            if uses_taskgraph:
-                if taskgraph_sources is None:
-                    raise ContractError("SOURCE_UNAVAILABLE: TaskGraph sources were not captured")
-                preview_command = new_mode.build_command(mission.id, proposal, preview.compilation,
-                    principal=source_principal, command_id=f"plan:{intent.intent_id}",
-                    source={"intent_id": intent.intent_id, "agent_id": intent.agent_id,
-                        "preview_compilation_hash": preview.compilation_hash,
-                        "preview_source_snapshot_hash": preview.source_snapshot_hash})
-                frozen_graph = new_mode._taskgraph_preview.freeze(preview_command, preview, taskgraph_sources)
-                planning_commit_admission = replace(planning_commit_admission, taskgraph_candidate=frozen_graph)
-                from ..graph.planning_scope import planning_convergence_scope
-                context = replace(context, taskgraph_scope=planning_convergence_scope(
-                    taskgraph_sources.before, frozen_graph.document, context.operations.snapshot,
-                    taskgraph_sources.operation_producers))
+            preview_command = new_mode.build_command(mission.id, proposal, preview.compilation,
+                principal=source_principal, command_id=f"plan:{intent.intent_id}",
+                source={"intent_id": intent.intent_id, "agent_id": intent.agent_id,
+                    "preview_compilation_hash": preview.compilation_hash,
+                    "preview_source_snapshot_hash": preview.source_snapshot_hash})
+            frozen_graph = new_mode._taskgraph_preview.freeze(preview_command, preview, taskgraph_sources)
+            planning_commit_admission = replace(planning_commit_admission, taskgraph_candidate=frozen_graph)
+            from ..graph.planning_scope import planning_convergence_scope
+            context = replace(context, taskgraph_scope=planning_convergence_scope(
+                taskgraph_sources.before, frozen_graph.document, context.operations.snapshot,
+                taskgraph_sources.operation_producers))
             context = replace(
                 context,
                 plan_shape=PlanShapeView(
@@ -9005,7 +8821,6 @@ class Orchestrator:
             assert intent.agent_id is not None
             self.assembled.gateway.unbind(intent.agent_id)
             await self._cancel_turn(intent)  # advisory: the waiting run has no loop to stop
-            self._release_unknown_grants(intent)
             self.commit.rehandoff_service_intent(
                 intent.intent_id,
                 owner=self._owner,
@@ -9046,7 +8861,6 @@ class Orchestrator:
 
 
         role = str(intent.config.get("role", ""))
-        self._release_unknown_grants(intent)
         self._import_usage(intent)  # facts of the executor that did answer, if any
         self._settle_intent(intent, "FAILED")
         self._settle_service_if_known(intent.subject_id, mission.id)
@@ -9089,18 +8903,14 @@ class Orchestrator:
         *,
         detail: Mapping[str, Any],
     ) -> None:
-        """N consecutive after-handoff 0-token UNKNOWNs: named stop, grants released."""
+        """N consecutive after-handoff 0-token UNKNOWNs: named stop."""
 
         del new_mode
-        self._release_mission_unknown_grants(mission.id)
         self._import_usage(intent)
         self._settle_intent(intent, "FAILED")
         if intent.kind == "attempt":
             attempt = self.store.get_attempt(intent.subject_id)
             if attempt is not None:
-                from .taskgraph_dispatch import taskgraph_enabled
-                if not taskgraph_enabled(self.store, mission.id):
-                    self.commit.settle_subject_known(attempt.id, mission.id, task_id=attempt.task_id)
                 self.commit.mark_attempt_lost(attempt.id, reason="provider_outcome_unknown")
                 await self._release_attempt(attempt.id, cancel=True)
             await self._fail_runtime_unavailable(
@@ -9148,20 +8958,15 @@ class Orchestrator:
         is what stops the hang.
         """
 
-        self._release_unknown_grants(intent)
         self._import_usage(intent)
         self._settle_intent(intent, "FAILED")
         attempt = self.store.get_attempt(intent.subject_id)
         if attempt is None:
             return
-        from .taskgraph_dispatch import taskgraph_enabled
-        if not taskgraph_enabled(self.store, mission.id):
-            self.commit.settle_subject_known(attempt.id, mission.id, task_id=attempt.task_id)
         self.commit.mark_attempt_lost(attempt.id, reason="provider_outcome_unknown")
         await self._release_attempt(attempt.id, cancel=True)
         streak = self._after_handoff_zero_streak.get(mission.id, 0)
         if streak >= MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS:
-            self._release_mission_unknown_grants(mission.id)
             await self._fail_runtime_unavailable(
                 mission,
                 reason="provider_outcome_unknown",
@@ -9177,7 +8982,6 @@ class Orchestrator:
     ) -> None:
         """Named stop: MissionFailed + runtime_unavailable, never PLANNING with no reason."""
 
-        self._release_mission_unknown_grants(mission.id)
         current = self.store.get_mission(mission.id)
         if current is None or current.status in TERMINAL_MISSION:
             return

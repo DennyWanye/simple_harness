@@ -443,13 +443,9 @@ class LeafAcceptanceAssembly:
         """
 
         outcomes = layer_outcomes(layers)
-        from .taskgraph_dispatch import taskgraph_enabled
         from .taskgraph_review import read_review_origin
-        origin = None
-        if taskgraph_enabled(self.store, mission_id):
-            origin = read_review_origin(self.commit, mission_id, task_id, result_id)
-        binding = (origin.semantic if origin is not None
-                   else self.semantics.task_semantics_of(mission_id, task_id))
+        origin = read_review_origin(self.commit, mission_id, task_id, result_id)
+        binding = origin.semantic
         if binding is None:
             raise ContractError(
                 f"task {task_id!r} has no TaskSemanticBindingV1 in mission {mission_id!r}; in "
@@ -470,12 +466,9 @@ class LeafAcceptanceAssembly:
         revision = projection.requirements
         outcomes = layer_outcomes(self.store.list_verifications(result_id))
         producer_agent_ids = (projection.producer_agent_id,)
-        if origin is not None:
-            manifest = origin.context.inputs.binding.manifest_hash
-            if input_manifest_hash and input_manifest_hash != manifest:
-                raise ContractError("TASKGRAPH_REVIEW_MANIFEST_MISMATCH")
-        else:
-            manifest = input_manifest_hash or self._manifest_hash(mission_id, task_id)
+        manifest = origin.context.inputs.binding.manifest_hash
+        if input_manifest_hash and input_manifest_hash != manifest:
+            raise ContractError("TASKGRAPH_REVIEW_MANIFEST_MISMATCH")
         from ..storage.assurance_store import AssuranceStore
 
         assured = AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
@@ -582,31 +575,6 @@ class LeafAcceptanceAssembly:
         return self.commit.accept_review(command, principal)
 
     # -- the anchors ----------------------------------------------------------------
-    def _manifest_hash(self, mission_id: str, task_id: str) -> str:
-        """Freeze what this dispatch consumed, and return the library's own digest.
-
-        An ``Acceptance`` names the inputs it was granted, and ``accept_review``
-        re-reads that manifest from the store — so the hash has to be the one
-        ``insert_input_manifest`` computed over the stored document, never a digest
-        this module invented over a shape nobody kept.
-
-        A deployment with no hierarchical assembly to ask records the **empty**
-        manifest: "this dispatch consumed nothing" is a claim the acceptance can
-        make honestly, and it is a different claim from "nobody resolved the inputs".
-        """
-
-        document: dict[str, Any] = {"consumer_task_ref": str(task_id), "bindings": []}
-        if self.dispatch is not None:
-            network = self.dispatch.network(mission_id)
-            spec = next(
-                (item for item in network.occurrences if str(item.task_id) == str(task_id)), None
-            )
-            if spec is not None:
-                resolved = self.dispatch.resolved_inputs(mission_id, network, spec)
-                if resolved.manifest is not None and resolved.manifest.is_frozen:
-                    document = dict(resolved.manifest.to_json())
-        return self.semantics.insert_input_manifest(mission_id, str(task_id), document)
-
     def _occurrence_in_active_revision(
         self, mission_id: str, task_id: str
     ) -> tuple[int, OccurrenceId] | None:

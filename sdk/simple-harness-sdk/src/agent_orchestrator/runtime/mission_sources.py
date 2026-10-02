@@ -204,26 +204,19 @@ class MissionSourceReader:
         live = store.get_attempt(intent.subject_id)
         if live.status in TERMINAL_ATTEMPT:
             raise ArpError("REQUEST_SOURCE_STALE", "the Worker Attempt is terminal", detail={"status": str(live.status)})
-        from ..orchestrator.taskgraph_dispatch import taskgraph_enabled
+        from ..contracts import ContractError
+        from ..storage.store import StoreError
 
-        if taskgraph_enabled(store, intent.mission_id):
-            from ..contracts import ContractError
-            from ..storage.store import StoreError
-
-            try:
-                # the installed, validating history reader (the same one recovery/review use)
-                frozen = commit.taskgraph_attempt_context(intent.mission_id, intent.subject_id).inputs
-            except (ContractError, StoreError, ValueError) as error:
-                raise ArpError("REQUEST_SOURCE_STALE", "the Attempt's frozen InputManifest is unavailable or moved",
-                               detail={"reason": str(error)[:200]}) from error
-            identity = dict(frozen.binding.identity_json())
-            if identity.get("intent_id") != intent.intent_id:
-                raise ArpError("REF_IDENTITY_MISMATCH", "the frozen InputManifest belongs to another intent")
-            manifest: dict[str, Any] = {"manifest_hash": frozen.binding.manifest_hash, "binding": identity}
-        else:
-            manifest = {"not_applicable": "mission_not_taskgraph_bound",
-                        "inputs_hash": _hash(intent.config.get("inputs")),
-                        "completion_inputs_hash": _hash(intent.config.get("completion_inputs"))}
+        try:
+            # the installed, validating history reader (the same one recovery/review use)
+            frozen = commit.taskgraph_attempt_context(intent.mission_id, intent.subject_id).inputs
+        except (ContractError, StoreError, ValueError) as error:
+            raise ArpError("REQUEST_SOURCE_STALE", "the Attempt's frozen InputManifest is unavailable or moved",
+                           detail={"reason": str(error)[:200]}) from error
+        identity = dict(frozen.binding.identity_json())
+        if identity.get("intent_id") != intent.intent_id:
+            raise ArpError("REF_IDENTITY_MISMATCH", "the frozen InputManifest belongs to another intent")
+        manifest: dict[str, Any] = {"manifest_hash": frozen.binding.manifest_hash, "binding": identity}
         return {"source_kind": "worker", "attempt": attempt, "input_manifest": manifest}
 
     def _reviewer(self, store: Any, intent: Any) -> dict[str, Any]:

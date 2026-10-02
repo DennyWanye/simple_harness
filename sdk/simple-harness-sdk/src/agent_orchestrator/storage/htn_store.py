@@ -1560,13 +1560,10 @@ class HtnStore:
                 "SELECT epoch FROM validity_epochs WHERE mission_id = ? AND scope_id = ?",
                 (mission, scope),
             ).fetchone()
-            from .taskgraph_source_events import taskgraph_enabled
-            # TaskGraph readers already treat a missing row as epoch zero. The
-            # first invalidation must move past that reading too; inserting zero
-            # would leave the original witnesses current. Keep the pre-existing
-            # initialization convention for Missions outside the bound protocol.
-            epoch = (int(taskgraph_enabled(self._store, mission)) if row is None
-                     else int(row[0]) + 1)
+            # TaskGraph readers treat a missing row as epoch zero, so the first
+            # invalidation moves to one; inserting zero would leave the original
+            # witnesses current.
+            epoch = 1 if row is None else int(row[0]) + 1
             connection.execute(
                 "INSERT INTO validity_epochs(mission_id,scope_id,epoch,bumped_by,updated_at)"
                 " VALUES (?,?,?,?,?) ON CONFLICT(mission_id,scope_id) DO UPDATE SET"

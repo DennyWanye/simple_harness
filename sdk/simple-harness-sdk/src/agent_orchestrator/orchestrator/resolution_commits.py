@@ -628,8 +628,7 @@ class ResolutionCommitsMixin:
                     replayed=True,
                 )
             binding = self._require_binding(semantics, command.mission_id, command.task_id)
-            from .taskgraph_dispatch import taskgraph_enabled
-            if taskgraph_enabled(self._store, command.mission_id) and command.purpose is ReviewPurpose.TASK_CONTENT:
+            if command.purpose is ReviewPurpose.TASK_CONTENT:
                 from .taskgraph_review import read_review_origin
                 result_id = command.source.get("result_id")
                 if not isinstance(result_id, str):
@@ -892,9 +891,8 @@ class ResolutionCommitsMixin:
         from .accepted_outputs import check_against_ports
 
         outputs = tuple(command.outputs)
-        from .taskgraph_dispatch import taskgraph_enabled
         pinned = None
-        if taskgraph_enabled(self._store, command.mission_id) and command.purpose is ReviewPurpose.TASK_CONTENT:
+        if command.purpose is ReviewPurpose.TASK_CONTENT:
             from .taskgraph_review import read_review_origin
             result_id = command.source.get("result_id")
             if not isinstance(result_id, str) or not result_id:

@@ -28,15 +28,8 @@ from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import HtnStore
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
-from ..storage.taskgraph_store import KERNEL_VERSION, TaskGraphStore
+from ..storage.taskgraph_store import TaskGraphStore, require_bound
 from .hierarchical_dispatch import HierarchicalDispatch, NetworkView, carried_inputs
-
-
-def taskgraph_enabled(store: Store, mission_id: str) -> bool:
-    row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
-    if row is not None and row[0] != KERNEL_VERSION:
-        raise StoreError("TASKGRAPH_KERNEL_UNSUPPORTED")
-    return row is not None
 
 
 def _mission_judge_tasks(store: Store, intent: DispatchIntent, view_id: str) -> set[str]:
@@ -72,8 +65,7 @@ def _mission_judge_tasks(store: Store, intent: DispatchIntent, view_id: str) -> 
 
 
 def require_taskgraph_unfenced(store: Store, mission_id: str, task_id: str) -> None:
-    if not taskgraph_enabled(store, mission_id):
-        return
+    require_bound(store, mission_id)
     found = store.connection.execute(
         "SELECT 1 FROM taskgraph_convergence_targets t JOIN taskgraph_convergence_jobs j ON j.job_id=t.job_id "
         "WHERE t.mission_id=? AND t.task_id=? AND j.state IN ('FENCED','WAITING','READY') LIMIT 1",
@@ -84,8 +76,9 @@ def require_taskgraph_unfenced(store: Store, mission_id: str, task_id: str) -> N
 
 def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> None:
     """Recheck frozen input identity plus current control; no latest input resolution."""
-    if intent.kind != "attempt" or not taskgraph_enabled(store, intent.mission_id):
+    if intent.kind != "attempt":
         return
+    require_bound(store, intent.mission_id)
     attempt = store.get_attempt(intent.subject_id)
     if attempt is None or attempt.mission_id != intent.mission_id:
         raise StoreError("TASKGRAPH_ATTEMPT_UNAVAILABLE")

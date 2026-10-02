@@ -234,25 +234,13 @@ def _import_hold(orch, intent_id: str) -> bool:
             reservation = orch.commit.ledger.reservation(intent.subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 return False
-            from .taskgraph_dispatch import taskgraph_enabled
-            graph_enabled = taskgraph_enabled(store, intent.mission_id)
-            from ..storage.assurance_store import AssuranceStore
-            assured = AssuranceStore(store).lane(intent.mission_id) == "ASSURANCE_1_1"
-            # TaskGraph can also prove a request never materialized. Legacy
-            # unguarded intents retain their historical recovery path.
-            if not graph_enabled and not assured and not intent.config.get("provider_admission_fingerprint"):
-                return False
-            bridge = orch.bridge_for(intent)  # exact persisted pool; never fallback
-            if graph_enabled or assured:
-                from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-                source = TaskGraphRuntimeImports(orch).read_subject(intent)
-                facts, complete, task_id = source.usage, source.accounting_complete, source.task_id
-            else:
-                if intent.agent_id is None or intent.expected_turn_id is None:
-                    return False
-                facts, complete, task_id = _facts(orch.commit, bridge, intent, reservation)
+            from ..storage.taskgraph_store import require_bound
+            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+            require_bound(store, intent.mission_id)
+            source = TaskGraphRuntimeImports(orch).read_subject(intent)
+            facts, complete, task_id = source.usage, source.accounting_complete, source.task_id
             imported = orch.commit.import_usage(intent.subject_id, intent.mission_id, facts)
-            settled = (complete and (not (graph_enabled or assured) or source.physical_settled)
+            settled = (complete and source.physical_settled
                        and not orch.commit.ledger.has_unknown_usage(intent.subject_id))
             if settled:
                 orch.commit._settle_subject(

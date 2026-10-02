@@ -1134,9 +1134,6 @@ class ActionCommitsMixin:
                         subject, mission_id, task_id=None, tool_calls=int(action.get("handoffs") or 0)
                     )
                 except BudgetError:
-                    from .taskgraph_dispatch import taskgraph_enabled
-                    if not taskgraph_enabled(self._store, mission_id):
-                        raise
                     # Persist the real outcome even while an earlier handoff or
                     # incomplete negative proof prevents releasing its account.
                     self.record_reservation_held(subject, mission_id, task_id=None,

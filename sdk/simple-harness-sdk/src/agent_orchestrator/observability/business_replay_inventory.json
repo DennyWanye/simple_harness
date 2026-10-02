@@ -2376,22 +2376,6 @@
     "TaskGraphContractEnabled"
    ]
   },
-  "taskgraph_requirements": {
-   "class": "business",
-   "fields": [
-    "mission_id",
-    "kernel_version",
-    "source",
-    "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph"
-   ],
-   "events": [],
-   "gaps": [
-    "agent_orchestrator/orchestrator/taskgraph_requirement.py:require_taskgraph: 不发事件（SDK 内无调用方，Host deskpet/orchestration/service.py 调用）"
-   ]
-  },
   "taskgraph_revision_records": {
    "class": "business",
    "fields": [

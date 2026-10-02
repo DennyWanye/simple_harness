@@ -32,7 +32,7 @@ from ..graph.revision_records import (
     certificate_from_json,
 )
 from .htn_store import HtnStore
-from .store import Store
+from .store import Store, StoreError
 from .taskgraph_history_sources import validate_revision_sources
 
 #: The one kernel identity (a CHECK on ``taskgraph_policy_bindings`` pins it).  Since
@@ -41,6 +41,24 @@ from .taskgraph_history_sources import validate_revision_sources
 #: own planning-authority gate); an older binding still carrying it is refused by name
 #: (``TASKGRAPH_POLICY_FIELDS_INVALID``), so the kernel string itself did not need to move.
 KERNEL_VERSION = "taskgraph-exec-v2"
+
+
+def taskgraph_enabled(store: Store, mission_id: str) -> bool:
+    """Whether the Mission is bound.  Every user Mission is bound when it is created
+    (2026-10-03); only global scans and read pages still ask, to skip older unbound
+    Missions of a development library.  Everything acting on one Mission uses
+    :func:`require_bound`."""
+    row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
+    if row is not None and row[0] != KERNEL_VERSION:
+        raise StoreError("TASKGRAPH_KERNEL_UNSUPPORTED")
+    return row is not None
+
+
+def require_bound(store: Store, mission_id: str) -> None:
+    """An internal contract: a Mission acted on is bound (it was bound at creation)."""
+    if not taskgraph_enabled(store, mission_id):
+        raise StoreError("TASKGRAPH_NOT_BOUND")
+
 
 
 class GraphIntegrityError(ContractError):
@@ -351,4 +369,4 @@ class TaskGraphStore:
             return tuple(row for row in history.record.pins.demand_refs if row.producer_occurrence_id == producer_occurrence_id)
 
 
-__all__ = ["GraphIntegrityError", "TaskGraphStore"]
+__all__ = ["GraphIntegrityError", "TaskGraphStore", "require_bound", "taskgraph_enabled"]

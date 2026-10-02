@@ -140,9 +140,6 @@ from ..verification.acceptance_rules import CompoundFacts, ExecutionPosture, Ind
 from .accepted_outputs import (
     accepted_output_from_json,
 )
-from .accepted_outputs import (
-    stored_coverage as _stored_coverage,
-)
 from .plan_commits import (
     HIERARCHICAL_SEMANTICS,
     PLAN_REVISION_COMMITTED,
@@ -658,16 +655,15 @@ class HierarchicalDispatch:
     @classmethod
     def for_commit(cls, commit: CommitService, mission_id: str) -> HierarchicalDispatch:
         """Use the installed graph readers for an enabled Mission's original commits."""
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(commit.store, mission_id):
-            binding = commit._taskgraph_dispatch
-            if binding is None:
-                raise StoreError("TASKGRAPH_DISPATCH_ASSEMBLY_REQUIRED")
-            dispatch = binding.dispatch_for(mission_id)
-            if not isinstance(dispatch, cls) or dispatch.store is not commit.store or dispatch.commit is not commit:
-                raise StoreError("TASKGRAPH_DISPATCH_STORE_MISMATCH")
-            return dispatch
-        return cls(commit.store, commit)
+        from ..storage.taskgraph_store import require_bound
+        require_bound(commit.store, mission_id)
+        binding = commit._taskgraph_dispatch
+        if binding is None:
+            raise StoreError("TASKGRAPH_DISPATCH_ASSEMBLY_REQUIRED")
+        dispatch = binding.dispatch_for(mission_id)
+        if not isinstance(dispatch, cls) or dispatch.store is not commit.store or dispatch.commit is not commit:
+            raise StoreError("TASKGRAPH_DISPATCH_STORE_MISMATCH")
+        return dispatch
 
     def target_rules_for(self, task_id: str) -> TargetRules:
         """The original workspace destination policy, resolved for one Task."""
@@ -722,7 +718,7 @@ class HierarchicalDispatch:
         return snapshot
 
     def _read_network(
-        self, mission_id: str, *, capturing_baseline: bool = False
+        self, mission_id: str
     ) -> tuple[TaskNetworkSnapshot, PlanIntegrityError | None]:
         """The plan as it can be read, plus what was wrong with it.
 
@@ -742,98 +738,25 @@ class HierarchicalDispatch:
             # root is its own occurrence, which is why the compiler owns the shape.
             return self._read_seed_network(mission_id)
         revision = int(active.revision)
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id) and not capturing_baseline:
-            from dataclasses import replace
-            from ..graph.network_codec import decode
-            from ..runtime.planning_operations import SourceUnavailable
-            if self._taskgraph_history is None:
-                raise SourceUnavailable("taskgraph_history_reader_unavailable")
-            frozen = decode(self._taskgraph_history.read_revision(mission_id, revision).record.document.to_json()).snapshot
-            current_bindings = []
-            for original in frozen.task_bindings:
-                current = semantics.task_semantics_of(mission_id, str(original.task_id))
-                if current is None:
-                    raise missing_bindings(mission_id, [str(original.task_id)])
-                current_bindings.append(current)
-            # Roots, memberships, adoptions and declared endpoints come from the
-            # verified full record. Current control is a separate binding overlay;
-            # never infer new roots or drop dangling edges while reading a graph.
-            return replace(frozen, task_bindings=tuple(current_bindings)), None
-        if capturing_baseline and (not self.store.connection.in_transaction or self.store.connection.execute(
-                "SELECT 1 FROM taskgraph_revision_records WHERE mission_id=?", (mission_id,)).fetchone() is not None):
-            raise ContractError("explicit baseline capture requires an uncaptured plan in the enable transaction")
-        members = semantics.list_plan_memberships(mission_id, revision)
-        bindings: dict[TaskRef, TaskSemanticBindingV1] = {}
-        missing: list[str] = []
-        occurrences: list[OccurrenceSpec] = []
-        for spec in members:
-            task_id = str(spec.task_id)
-            binding = semantics.task_semantics_of(mission_id, task_id)
-            if binding is None:
-                missing.append(task_id)
-                continue
-            bindings[TaskRef(task_id)] = binding
-            occurrences.append(spec)
-        known = {spec.occurrence_id for spec in occurrences}
-        # P2.3j: a RETIRED instance is history, not plan.  Its children left the
-        # memberships with the revision that retired it (TG §9.3), so keeping the
-        # instance would bind slots to occurrences this snapshot does not hold and
-        # the read would refuse.  Its record stays in the store — the repair round
-        # reads it back through the durable rejection — but the network only
-        # carries what the active revision still projects.
-        instances = tuple(
-            draft
-            for draft in semantics.list_method_instances(mission_id)
-            if TaskRef(str(draft.goal_id)) in bindings
-            and semantics.method_instance_state(mission_id, str(draft.instance_id)) != "RETIRED"
-        )
-        adopted = tuple(
-            draft.instance_id
-            for draft in instances
-            if semantics.method_instance_state(mission_id, str(draft.instance_id)) == "ADOPTED"
-        )
-        child_ids = {
-            child.occurrence_id
-            for draft in instances
-            if draft.instance_id in set(adopted)
-            for child in draft.child_bindings
-        }
-        roots = tuple(
-            spec.occurrence_id for spec in occurrences if spec.occurrence_id not in child_ids
-        )
-        snapshot = TaskNetworkSnapshot(
-            mission_id=MissionRef(mission_id),
-            plan_revision=PlanRevision(revision),
-            occurrences=tuple(occurrences),
-            task_bindings=tuple(bindings[key] for key in sorted(bindings, key=str)),
-            method_instances=instances,
-            adopted_instance_ids=adopted,
-            root_occurrence_ids=roots,
-            order_constraints=tuple(
-                item
-                for item in semantics.list_order_constraints(mission_id, revision)
-                if item.before in known and item.after in known
-            ),
-            data_requirements=tuple(
-                item
-                for item in semantics.list_data_requirements(mission_id, revision)
-                if item.producer_occurrence in known and item.consumer_occurrence in known
-            ),
-            required_obligations=tuple(
-                dict.fromkeys(
-                    spec.obligation_id for spec in occurrences if spec.occurrence_id in roots
-                )
-            ),
-            # P2.3c part 2c: re-derived, because it is not a column.  See
-            # :func:`~.accepted_outputs.stored_coverage` — round one's claims were
-            # simply absent from a
-            # network read back out of the store, so a *second* refinement round was
-            # refused with ``root_coverage_gap`` and no plan could ever go two levels
-            # deep.
-            obligation_coverage=_stored_coverage(semantics, instances, adopted, bindings),
-        )
-        return snapshot, (missing_bindings(mission_id, missing) if missing else None)
+        from dataclasses import replace
+
+        from ..graph.network_codec import decode
+        from ..runtime.planning_operations import SourceUnavailable
+        from ..storage.taskgraph_store import require_bound
+        require_bound(self.store, mission_id)
+        if self._taskgraph_history is None:
+            raise SourceUnavailable("taskgraph_history_reader_unavailable")
+        frozen = decode(self._taskgraph_history.read_revision(mission_id, revision).record.document.to_json()).snapshot
+        current_bindings = []
+        for original in frozen.task_bindings:
+            current = semantics.task_semantics_of(mission_id, str(original.task_id))
+            if current is None:
+                raise missing_bindings(mission_id, [str(original.task_id)])
+            current_bindings.append(current)
+        # Roots, memberships, adoptions and declared endpoints come from the
+        # verified full record. Current control is a separate binding overlay;
+        # never infer new roots or drop dangling edges while reading a graph.
+        return replace(frozen, task_bindings=tuple(current_bindings)), None
 
     def seed_network(self, mission_id: str) -> TaskNetworkSnapshot:
         """The one-occurrence starting network of a Mission with no plan revision.
@@ -933,17 +856,12 @@ class HierarchicalDispatch:
         "unknown", which refuses rather than allows.
         """
 
-        semantics = self.semantics()
-        scopes = {"mission"} | {
-            str(witness.scope_id) for witness in semantics.list_validity_witnesses(mission_id)
-        }
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            # A newly bumped scope can have no witness yet. Its barrier still
-            # belongs in the complete current read token and input policy.
-            from .taskgraph_epochs import current_scope_epochs
-            return current_scope_epochs(self.store, mission_id)
-        return {scope: semantics.epoch(mission_id, scope) for scope in sorted(scopes)}
+        # A newly bumped scope can have no witness yet. Its barrier still belongs in
+        # the complete current read token and input policy.
+        from ..storage.taskgraph_store import require_bound
+        from .taskgraph_epochs import current_scope_epochs
+        require_bound(self.store, mission_id)
+        return current_scope_epochs(self.store, mission_id)
 
     def obligation_accounts(
         self, mission_id: str, network: TaskNetworkSnapshot
@@ -987,13 +905,10 @@ class HierarchicalDispatch:
             raise integrity
         plan = self.plan_view(mission_id, network, integrity=integrity)
         outcomes = self.occurrence_outcomes(mission_id, network)
-        settlements = None
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            if not callable(self._taskgraph_settlement_reader):
-                from ..runtime.planning_operations import SourceUnavailable
-                raise SourceUnavailable("taskgraph_settlement_reader_unavailable")
-            settlements = self._taskgraph_settlement_reader(mission_id, network, outcomes)
+        if not callable(self._taskgraph_settlement_reader):
+            from ..runtime.planning_operations import SourceUnavailable
+            raise SourceUnavailable("taskgraph_settlement_reader_unavailable")
+        settlements = self._taskgraph_settlement_reader(mission_id, network, outcomes)
         resolved = self.resolved_occurrences(mission_id, network)
         witnesses = self.witnesses(mission_id, network)
         accepted = self.accepted_outputs(mission_id, network, outcomes=outcomes)
@@ -1078,57 +993,19 @@ class HierarchicalDispatch:
         ``RUNNING`` or ``UNKNOWN`` however its legacy Task row happens to read.
         """
 
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            from .taskgraph_outcomes import read_taskgraph_outcomes
-            return read_taskgraph_outcomes(self.store, mission_id, network)
-        from .completion_status import read_occurrence_completion
-        from .operation_completion import OperationCompletionError
-
-        # An occurrence is ACCEPTED when its frozen completion scope is complete — a
-        # leaf's accepted preparation and proven effects, a compound's recorded
-        # resolution.  A Task row's status never is: completed *without* that is
-        # SETTLED_OTHER (TG decision 1: an unknown ending never settles anything).
-        planned = self.semantics().active_plan_revision(mission_id) is not None
-        outcomes: dict[OccurrenceId, OccurrenceOutcome] = {}
-        for spec in network.occurrences:
-            status = None
-            if planned:
-                try:
-                    status = read_occurrence_completion(
-                        self.store, mission_id, str(spec.occurrence_id)
-                    )
-                except OperationCompletionError as error:
-                    if error.code not in {
-                        "OP_COMPLETION_SCOPE_UNRESOLVED", "OP_REQUIREMENT_MAPPING_MISSING"
-                    }:
-                        raise
-                    # A planner may repair missing scope publication. Missing
-                    # completion facts never make the occurrence ACCEPTED.
-            if status is not None and status.complete:
-                outcomes[spec.occurrence_id] = OccurrenceOutcome.ACCEPTED
-                continue
-            task = self.store.get_task(str(spec.task_id))
-            outcomes[spec.occurrence_id] = (
-                OccurrenceOutcome.FAILED if task is not None and task.status is TaskStatus.FAILED
-                else OccurrenceOutcome.CANCELLED
-                if task is not None and task.status is TaskStatus.CANCELLED
-                else OccurrenceOutcome.SETTLED_OTHER
-                if task is not None and task.status is TaskStatus.COMPLETED
-                else OccurrenceOutcome.RUNNING
-            )
-        return outcomes
+        from ..storage.taskgraph_store import require_bound
+        from .taskgraph_outcomes import read_taskgraph_outcomes
+        require_bound(self.store, mission_id)
+        return read_taskgraph_outcomes(self.store, mission_id, network)
 
     def resolved_occurrences(
         self, mission_id: str, network: TaskNetworkSnapshot
     ) -> frozenset[OccurrenceId]:
         """Occurrences whose duty has an *adopted* GoalResolution (§7.2)."""
 
-        from .taskgraph_dispatch import taskgraph_enabled
         if self.semantics().active_plan_revision(mission_id) is None:
             # No plan is committed yet, so nothing has a completion scope or a resolution.
-            if taskgraph_enabled(self.store, mission_id):
-                self.seed_network(mission_id)  # verify the original seed
+            self.seed_network(mission_id)  # verify the original seed
             return frozenset()
         from .completion_status import read_occurrence_completion
         return frozenset(spec.occurrence_id for spec in network.occurrences
@@ -1218,16 +1095,13 @@ class HierarchicalDispatch:
         cached on the dataclass, for the same reason nothing else on this class is
         cached: a bumped epoch has to be visible to the very next read.
 
-        Legacy callers retain explicitly supplied epochs. TaskGraph always binds
-        its installed policy to the actual current epochs and evaluation clock.
+        The installed policy is always bound to the actual current epochs and
+        evaluation clock.
         """
 
         from dataclasses import replace as _replace
 
         policy = self.resolution_policy
-        from .taskgraph_dispatch import taskgraph_enabled
-        if policy.scope_epochs and not taskgraph_enabled(self.store, mission_id):
-            return policy
         return _replace(
             policy,
             scope_epochs=self.scope_epochs(mission_id),
@@ -3530,12 +3404,10 @@ class HierarchicalDispatch:
 
         mission = self.mission(mission_id)
         policy: dict[str, Any] = {}
-        from .taskgraph_dispatch import taskgraph_enabled
-        if taskgraph_enabled(self.store, mission_id):
-            from .taskgraph_policy import read_installed_graph_policy
-            from ..contracts.htn import GraphStructureBudget
-            policy["structure_budget"] = GraphStructureBudget.from_json(
-                read_installed_graph_policy(self.store, mission_id).to_json()["graph_structure_budget"])
+        from ..contracts.htn import GraphStructureBudget
+        from .taskgraph_policy import read_installed_graph_policy
+        policy["structure_budget"] = GraphStructureBudget.from_json(
+            read_installed_graph_policy(self.store, mission_id).to_json()["graph_structure_budget"])
         if compilation.delta.retired_instance_ids or compilation.superseded_occurrences:
             policy["running_work_policy"] = RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE
         if compilation.superseded_occurrences:
