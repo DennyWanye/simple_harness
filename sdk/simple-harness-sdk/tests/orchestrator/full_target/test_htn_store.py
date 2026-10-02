@@ -617,8 +617,8 @@ def planned(htn: HtnStore) -> HtnStore:
 
 
 def test_operation_completion_is_the_new_head_without_replacing_admission() -> None:
-    assert schema.SCHEMA_VERSION == 31  # 迁移 25～31 已追加在后
-    assert schema.SCHEMA_NAME == "orchestrator-drop-selection-and-fragments"
+    assert schema.SCHEMA_VERSION == 32  # 迁移 25～32 已追加在后
+    assert schema.SCHEMA_NAME == "orchestrator-drop-conflicts-graph-changes-system-tail"
     assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL
@@ -945,29 +945,6 @@ LEGACY_TAIL_ROWS: tuple[tuple[str, str, tuple[Any, ...]], ...] = (
         "budget_tail_transfers",
         "INSERT INTO budget_tail_transfers VALUES (?,?,?,?,?)",
         ("hold-1", "transfer-1", "{}", "{}", 1.0),
-    ),
-    (
-        "mission_system_tail_pools",
-        "INSERT INTO mission_system_tail_pools VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            "pool-1",
-            MISSION,
-            "attempt-1",
-            "conflict",
-            "1",
-            "{}",
-            "{}",
-            1,
-            "HELD",
-            None,
-            1.0,
-            1.0,
-        ),
-    ),
-    (
-        "mission_system_tail_tasks",
-        "INSERT INTO mission_system_tail_tasks VALUES (?,?,?,?,?,?)",
-        ("task-1", "pool-1", "hold-1", "{}", "{}", 1.0),
     ),
 )
 LEGACY_TAIL_TABLES: tuple[str, ...] = tuple(entry[0] for entry in LEGACY_TAIL_ROWS)

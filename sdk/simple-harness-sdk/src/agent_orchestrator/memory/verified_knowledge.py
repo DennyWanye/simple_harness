@@ -52,8 +52,6 @@ class KnowledgeRecord:
     supersedes: str | None = None
     superseded_by: str | None = None
     disputed_by: tuple[str, ...] = ()
-    confirmed_by: tuple[str, ...] = ()
-    resolves: tuple[str, ...] = ()
     evidence_trust: tuple[str, ...] = ()
     source_versions: Mapping[str, tuple[str, ...]] | None = None
 
@@ -86,8 +84,6 @@ class KnowledgeRecord:
             "dependencies",
             "used_by",
             "disputed_by",
-            "confirmed_by",
-            "resolves",
             "evidence_trust",
         ):
             object.__setattr__(self, name, _texts(getattr(self, name), f"knowledge.{name}"))

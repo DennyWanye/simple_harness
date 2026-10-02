@@ -76,17 +76,11 @@ def spec_from_request(
     untrusted = request.get("untrusted_sources", ())
     if isinstance(untrusted, str) or not all(isinstance(s, str) for s in untrusted):
         raise MissionRequestError("untrusted_sources must be a list of path prefixes")
-    reserve = request.get("conflict_reserve_tokens", 0)
-    if isinstance(reserve, bool) or not isinstance(reserve, int) or reserve < 0:
-        raise MissionRequestError("conflict_reserve_tokens must be a non-negative integer")
     runtime_profile = request.get("runtime_profile_id")
     if runtime_profile is not None and (
         not isinstance(runtime_profile, str) or not runtime_profile.strip()
     ):
         raise MissionRequestError("runtime_profile_id must be a nonempty profile reference")
-    synthesis = request.get("synthesis")
-    if synthesis is not None and not isinstance(synthesis, Mapping):
-        raise MissionRequestError("synthesis must be an object (a fixed synthesis Task template)")
     # §8.1: the charter names the wire.  An *omitted* key keeps the MissionSpec default
     # (hierarchical mode, current protocol); a present value — including a non-string or
     # an unknown name — is handed to the constructor so ``checked_planning_protocol``
@@ -111,8 +105,6 @@ def spec_from_request(
             task_kind=str(request.get("task_kind", "code")),
             workspace_seed=dict(request.get("workspace_seed", {})),
             untrusted_sources=tuple(untrusted),
-            synthesis=None if synthesis is None else dict(synthesis),
-            conflict_reserve_tokens=reserve,
             domain=str(request.get("domain", CODE_DOMAIN)),
             runtime_profile_id=runtime_profile,
             **protocol_kwargs,

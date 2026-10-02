@@ -169,7 +169,7 @@ def test_domain_snapshot_survives_registry_change_and_database_reopen(tmp_path, 
         reopened.close()
 
 
-@pytest.mark.parametrize("role", ["worker", "arbiter", "synthesizer"])
+@pytest.mark.parametrize("role", ["worker"])
 def test_context_visibility_obeys_document_domain(tmp_path, role):
     service, mission, tasks = graph_service(tmp_path, domain=domains.DOC_DOMAIN)
     task = tasks["A"]

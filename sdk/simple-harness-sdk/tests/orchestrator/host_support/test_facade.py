@@ -98,7 +98,6 @@ def test_open_fields_round_trip(tmp_path):
             _command(
                 "k-fields",
                 untrusted_sources=["docs/"],
-                conflict_reserve_tokens=12_000,
                 workspace_seed={"docs/brief.md": "资料"},
                 stop_conditions=["verification_passed", "budget_exhausted"],
             )
@@ -108,53 +107,9 @@ def test_open_fields_round_trip(tmp_path):
     mission = _with(tmp_path, body)
     report = mission["final_report"]
     assert report["untrusted_sources"] == ["docs/"]
-    assert report["conflict_reserve_tokens"] == 12_000
     assert report["workspace_seed"] == {"docs/brief.md": "资料"}
     assert mission["stop_conditions"] == ["verification_passed", "budget_exhausted"]
     assert mission["budget"]["max_tokens"] == 200_000 and mission["budget"]["max_attempts"] == 4
-
-
-SYNTHESIS = {
-    "goal": "把两份笔记合成一份",
-    "success_criteria": ["file:SUMMARY.md"],
-    "verification_policy": ["format_check", "rule_check", "critic_review"],
-    "outputs": ["SUMMARY.md"],
-    "budget": {"max_tokens": 20_000, "max_attempts": 2},
-}
-
-
-def test_a_synthesis_template_round_trips(tmp_path):
-    def body(orchestrator, control):
-        receipt = control.create(_command("k-synth", synthesis=SYNTHESIS))
-        return control.snapshot(receipt["mission_id"])["snapshot"]["mission"]["final_report"]
-
-    assert _with(tmp_path, body)["synthesis"] == SYNTHESIS
-
-
-@pytest.mark.parametrize(
-    ("template", "fragment"),
-    [
-        ({**SYNTHESIS, "allowed_tools": [*TOOLS3, "run_tests"]}, "synthesis.allowed_tools"),
-        ({**SYNTHESIS, "surprise": 1}, "synthesis.surprise"),
-        ({**SYNTHESIS, "budget": {"max_cost_micros": 5}}, "synthesis.budget.max_cost_micros"),
-        ({**SYNTHESIS, "verification_policy": ["formal_check"]}, "undeployed"),
-        ({**SYNTHESIS, "verification_policy": ["format_check", "code_test"]}, "code_test"),
-        ({**SYNTHESIS, "budget": {"max_tokens": 10**9}}, "exceeds the Mission budget"),
-        ({**SYNTHESIS, "goal": " "}, "synthesis.goal"),
-        ({**SYNTHESIS, "success_criteria": "file:SUMMARY.md"}, "synthesis.success_criteria"),
-    ],
-)
-def test_a_synthesis_template_meets_the_door(tmp_path, template, fragment):
-    """Review round 2 P1-A: the template is no side door past the strict fields."""
-
-    def body(orchestrator, control):
-        with pytest.raises(FacadeError) as refused:
-            control.create(_command("k-synth-bad", synthesis=template))
-        return refused.value, len(orchestrator.store.list_missions())
-
-    error, count = _with(tmp_path, body)
-    assert error.code == "invalid_request" and fragment in str(error)
-    assert count == 0
 
 
 @pytest.mark.parametrize("name", ["success_criteria", "stop_conditions", "untrusted_sources"])
@@ -173,6 +128,9 @@ def test_a_string_is_not_a_list_of_strings(tmp_path, name):
     ("overrides", "field"),
     [
         ({"surprise": 1}, "surprise"),
+        # removed on 2026-10-02 with conflict Tasks and the final synthesis Task
+        ({"conflict_reserve_tokens": 12_000}, "conflict_reserve_tokens"),
+        ({"synthesis": {"goal": "合成"}}, "synthesis"),
         ({"allowed_tools": list(TOOLS3)}, "allowed_tools"),
         ({"risk_level": "production"}, "risk_level"),
         ({"task_kind": "research"}, "task_kind"),

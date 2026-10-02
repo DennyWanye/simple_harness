@@ -79,7 +79,7 @@ def test_every_scenario_is_implemented_and_an_unknown_one_is_a_usage_error(tmp_p
 
     from agent_orchestrator.__main__ import EXIT_USAGE, SCENARIOS
 
-    assert sorted(SCENARIOS.values()) == [2, 3, 4, 6, 7] and EXIT_NOT_IMPLEMENTED == 3
+    assert sorted(SCENARIOS.values()) == [2, 3, 6, 7] and EXIT_NOT_IMPLEMENTED == 3
     code = main(
         [
             "demo",

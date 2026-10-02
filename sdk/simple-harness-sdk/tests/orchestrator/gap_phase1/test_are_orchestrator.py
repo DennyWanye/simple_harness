@@ -477,6 +477,8 @@ def test_are_capability_snapshot_is_distinct_and_defaults_do_not_add_identity(tm
     assert snapshot["config"]["are_tool_schemas"] == schemas
     assert "agentdojo_invoke" not in snapshot["config"]
     for role in resolve_domain("code-v1").role_templates:
+        if role not in ROLES:  # the profile still names removed roles
+            continue
         template = template_for_domain(ROLES[role], resolve_domain("code-v1"), {})
         assert template.prompt_version == f"{role}-code-observation-v3"
 

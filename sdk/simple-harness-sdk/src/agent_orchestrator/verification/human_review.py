@@ -9,8 +9,7 @@ reliably judge (``needs_human``, original §22 "模型无法可靠判断成功�
 short-circuits the others: the code tests still run first, and a person's PASS never
 covers a failing layer.  While nobody has answered, the result is SUSPENDED.
 
-A Verifier conflict also goes to a person, as arbitration (this build's two kinds, plan
-D7-8'): a step-4 Conflict Task that could not settle a contradiction, and a Mission-level
+A Verifier conflict also goes to a person, as arbitration (plan D7-8'): a Mission-level
 judge Critic that finds a criterion unmet although every deterministic criterion is met
 and the Tasks' own Critics passed."""
 

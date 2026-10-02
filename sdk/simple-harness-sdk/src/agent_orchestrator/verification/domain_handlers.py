@@ -36,7 +36,6 @@ class AppWorldHandler(CodeHandler):
     def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
         # This gate checks submitted reports and references only. Official task
         # success is scored from the saved world after ALL agent activity stops.
-        kwargs["require_synthesis_knowledge"] = False
         kwargs["local_code_execution"] = False
         result = rule_check(*args, **kwargs)
         return LayerResult(
@@ -59,7 +58,6 @@ class AgentDojoHandler(CodeHandler):
     name = "agentdojo"
 
     def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
-        kwargs["require_synthesis_knowledge"] = False
         kwargs["local_code_execution"] = False
         result = rule_check(*args, **kwargs)
         return LayerResult(result.layer, result.status, result.summary, {
@@ -73,7 +71,6 @@ class AREHandler(CodeHandler):
     name = "are"
 
     def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
-        kwargs["require_synthesis_knowledge"] = False
         kwargs["local_code_execution"] = False
         result = rule_check(*args, **kwargs)
         return LayerResult(result.layer, result.status, result.summary, {

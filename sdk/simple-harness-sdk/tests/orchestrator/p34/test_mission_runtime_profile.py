@@ -100,8 +100,6 @@ def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
                 ("planner", None),
                 ("worker", "code"),
                 ("critic", None),
-                ("synthesizer", "code"),
-                ("arbiter", "code"),
             ):
                 assert _route(orch, new["mission_id"], role, kind) == LONG
             # Both Missions have the same policy version; the router cache must differ.

@@ -151,31 +151,14 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         for tid in sorted(path_tasks)
     ]
 
-    # -- the knowledge path; a refuted claim's Attempt is exploration unless on the path anyway
+    # -- the knowledge path
     knowledge = (
         lineage(store, mission_id)
         if success
-        else {"knowledge": [], "claims": [], "attempts": [], "edges": []}
-    )
-    refuted = {
-        str(c.get("source_attempt")) for c in knowledge.get("claims", []) if c.get("source_attempt")
-    }
-    # re-review: verified knowledge an arbitration superseded is refuted too (its record
-    # enters the lineage through the resolution's ``resolves`` edge)
-    resolved_ids = {str(e["resolves"]) for e in knowledge.get("edges", []) if e.get("resolves")}
-    refuted.update(
-        str(k["source_attempt"])
-        for k in knowledge.get("knowledge", [])
-        if str(k.get("id")) in resolved_ids
-        and str(k.get("status")) == "SUPERSEDED"
-        and k.get("source_attempt")
+        else {"knowledge": [], "attempts": [], "edges": []}
     )
     path_attempts = {aid for tid in path_tasks if (aid := accepted_attempt(by_id[tid]))}
-    path_attempts.update(
-        str(a["attempt_id"])
-        for a in knowledge.get("attempts", [])
-        if str(a["attempt_id"]) not in refuted
-    )
+    path_attempts.update(str(a["attempt_id"]) for a in knowledge.get("attempts", []))
 
     # -- usage, row by row (plan D8-4')
     attempts = {a.id: a for t in tasks for a in store.list_attempts(t.id)}
@@ -235,9 +218,7 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         reason = None
         if not on_path:
             status = str(attempt.status)
-            if attempt_id in refuted:
-                reason = "claim_refuted"
-            elif owner_task is not None and str(owner_task.status) == "CANCELLED":
+            if owner_task is not None and str(owner_task.status) == "CANCELLED":
                 reason = "task_superseded_or_cancelled"
             elif status == "SUPERSEDED":
                 reason = "candidate_superseded"
@@ -270,9 +251,6 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                 "prompt_version": attempt.prompt_version,
                 "status": str(attempt.status),
                 "on_success_path": on_path,
-                # review P1-1 (plan D8-4'' revision): an Attempt whose own accepted products are
-                # on the path stays there, flagged when one of its claims was refuted
-                "claim_refuted": attempt_id in refuted,
                 "exploration_reason": reason,
                 "work": _money(work),
                 "verification": _money(check),
@@ -356,8 +334,6 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         "path_tasks": path_task_view,
         "knowledge_path": {
             "knowledge": [k.get("id") for k in knowledge.get("knowledge", [])],
-            "refuted_claims": [c.get("id") for c in knowledge.get("claims", [])],
-            "refuted_on_path": sorted(refuted & path_attempts),
             "edges": knowledge.get("edges", []),
         },
         "attempts": attempt_view,

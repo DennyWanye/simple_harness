@@ -68,7 +68,7 @@
     {
       "component": "models",
       "source_path": "agent_orchestrator/contracts/models.py",
-      "source_sha256": "ca16ec7c103bbeed6e2cfd43c8cf847f2604b275b9b997b62550b4431708b582"
+      "source_sha256": "b2844eb1d08a520e230ab71a60fccafd70d932a27bf7c2f23e6c3ca666b15119"
     },
     {
       "component": "network",

@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Additive Mission-level system pools; schema aggregation assigns the version."""
+"""Historical text of migration 15 only (the Mission-level system pools for conflict and
+synthesis Tasks).  Both were removed on 2026-10-02 and migration 32 drops these tables;
+the text stays because applied migrations are checked byte for byte."""
 
 DDL = """
 CREATE TABLE mission_system_tail_pools (

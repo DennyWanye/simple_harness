@@ -32,10 +32,6 @@ class ProtectedTailCommitsMixin:
         return "first-critic:" + attempt_id
 
     @staticmethod
-    def system_tail_id(task_id: str) -> str:
-        return "system:" + task_id
-
-    @staticmethod
     def _protected_critic_subject(attempt_id: str, subject_id: str, store: Any = None) -> None:
         if isinstance(subject_id, str) and (
             re.fullmatch(re.escape(attempt_id) + r":critic:[1-9][0-9]*", subject_id) is not None
@@ -149,71 +145,6 @@ class ProtectedTailCommitsMixin:
             task_revision=semantic_revision,
         )
 
-    def reserve_system_tail(
-        self,
-        *,
-        task_id: str,
-        reserve: TailReserve,
-        semantic_revision: str,
-    ) -> dict[str, Any]:
-        """After real synthesis/conflict Task and account writes, before graph commit.
-
-        The explicit allowance includes the bounded system Attempt plus its
-        required Critic. No imaginary future Task/account is created here.
-        """
-        task = self._protected_tail_task(task_id, semantic_revision)
-        if task.kind not in {"conflict", "synthesis"} or reserve.attempts < 1:
-            raise BudgetError("system tail needs an actual system Task and protected Attempt")
-        return TailBudgetLedger(self._ledger).reserve_tail(
-            self.system_tail_id(task_id),
-            f"budget:{task_id}",
-            reserve,
-            mission_id=task.mission_id,
-            task_revision=semantic_revision,
-            purpose=task.kind,
-        )
-
-    def consume_system_tail(
-        self,
-        *,
-        task_id: str,
-        subject_id: str,
-        reservation: Any,
-        semantic_revision: str,
-        attempt_id: str,
-        critic: bool = False,
-    ) -> dict[str, Any]:
-        """Transfer to one actual system Attempt, or later to its actual Critic.
-
-        The caller creates the Attempt/intent in the same transaction and skips
-        its ordinary reserve. Actual system Attempts still consume the original
-        max_attempts; Critic allocation leaves remaining protected counts alone.
-        """
-        task = self._protected_tail_task(task_id, semantic_revision)
-        if task.kind not in {"conflict", "synthesis"} or type(critic) is not bool:
-            raise BudgetError("system tail needs an actual system Task and role")
-        self._protected_attempt(task_id, attempt_id, allow_next=not critic)
-        if critic:
-            self._protected_critic_subject(attempt_id, subject_id, self._store)
-        if not critic and subject_id != attempt_id:
-            raise BudgetError("system Attempt subject differs from actual Attempt ID")
-        return TailBudgetLedger(self._ledger).transfer_tail(
-            self.system_tail_id(task_id),
-            subject_id,
-            [
-                TailAllocation(
-                    subject_id,
-                    f"budget:{task_id}",
-                    "critic" if critic else task.kind,
-                    reservation.tokens,
-                    reservation.cost_micros,
-                    reservation.tool_calls,
-                    counts_attempt=not critic,
-                )
-            ],
-            task_revision=semantic_revision,
-        )
-
     def release_terminal_tail_holds(
         self,
         *,
@@ -221,7 +152,7 @@ class ProtectedTailCommitsMixin:
         task_id: str | None = None,
         attempt_id: str | None = None,
     ) -> list[str]:
-        """Release only unused FIRST/system holds whose actual subject stopped.
+        """Release only unused FIRST Critic holds whose actual subject stopped.
 
         This is safe after Mission/Task cancellation and actual Attempt terminal
         transitions. It does not settle or release any transferred reservation;
@@ -263,11 +194,8 @@ class ProtectedTailCommitsMixin:
                     raise BudgetError("terminal Critic tail has no actual parent Attempt")
                 if attempt_id is not None and parent.id != attempt_id:
                     continue
-            elif row["hold_id"] == self.system_tail_id(origin_id) and row["purpose"] == origin.kind:
-                if attempt_id is not None:
-                    continue  # another system Attempt may still need this Task hold
             else:
-                continue  # not owned by FIRST/system hooks
+                continue  # not a FIRST Critic hold
             stopped = (
                 mission.status in TERMINAL_MISSION
                 or origin.status in TERMINAL_TASK

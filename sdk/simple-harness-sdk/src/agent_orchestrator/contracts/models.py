@@ -63,7 +63,7 @@ def default_change_policy(
     return ("format_check", "rule_check", "critic_review")
 
 
-TASK_KINDS = ("work", "conflict", "synthesis")
+TASK_KINDS = ("work",)
 
 
 class ContractError(ValueError):
@@ -310,7 +310,7 @@ class Task:
     attempt_count: int = 0
     failure_reason: str | None = None
     outputs: tuple[str, ...] = ()  # step 3 (D3-7'): upstream paths this Task may rewrite
-    kind: str = "work"  # step 4 (D4-7/D4-8): work | conflict | synthesis (system templates)
+    kind: str = "work"  # the only kind (conflict / synthesis templates removed 2026-10-02)
     context: Mapping[str, Any] = field(default_factory=dict)  # system data of a template Task
     ready_at: float | None = None  # step 5 (D5-8): when the Task became READY (waiting_age)
     paused: bool = False  # step 5 (D5-1): Manager pause — a scheduling flag, not a state
@@ -916,8 +916,6 @@ class Claim:
     contradicts: tuple[str, ...] = ()
     superseded_by: str | None = None
     disputed_by: tuple[str, ...] = ()
-    resolved_by: str | None = None
-    conflict_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "source_task", "source_attempt", "mission_id", "result_id"):
@@ -975,8 +973,6 @@ class Claim:
             "contradicts": list(self.contradicts),
             "superseded_by": self.superseded_by,
             "disputed_by": list(self.disputed_by),
-            "resolved_by": self.resolved_by,
-            "conflict_id": self.conflict_id,
         }
 
     @classmethod
@@ -1003,8 +999,6 @@ class Claim:
             contradicts=tuple(data.get("contradicts", ()) or ()),
             superseded_by=data.get("superseded_by"),
             disputed_by=tuple(data.get("disputed_by", ()) or ()),
-            resolved_by=data.get("resolved_by"),
-            conflict_id=data.get("conflict_id"),
         )
 
 

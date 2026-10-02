@@ -180,7 +180,6 @@ def finalize_assured_mission(
         final_report=report,
     )
     store.update_mission(done, expected_version=mission.version)
-    commit._release_terminal_mission_pools(mission_id)
     final = commit._emit(
         "MissionCompleted",
         mission_id,

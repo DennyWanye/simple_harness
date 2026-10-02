@@ -197,7 +197,7 @@ def _decision_rows(store: Store) -> list[tuple[Any, ...]]:
 
 
 def test_migration_nineteen_is_the_new_head() -> None:
-    assert schema.SCHEMA_VERSION == 31  # 迁移 25～31 已追加在后
+    assert schema.SCHEMA_VERSION == 32  # 迁移 25～32 已追加在后
     assert schema.MIGRATIONS[18].name == "orchestrator-planning-decision-v1"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[18].checksum == MIGRATION_19_CHECKSUM

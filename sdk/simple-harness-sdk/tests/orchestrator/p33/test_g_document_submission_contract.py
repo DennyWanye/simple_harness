@@ -23,8 +23,6 @@ from agent_orchestrator.runtime.role_templates import ROLES, TEMPLATE_VERSIONS, 
 OLD = {
     "worker": "ad12ce4a26e4029f54d3eea83151517955bf57e15b17c317adf8b9ba256c9df8",
     "planner": "123d0b299d3e58f221feb298ff5b1ae7d86933682484cc8997a5607698556194",
-    "arbiter": "abdeee0163e22a9466634871801214c976b04fd125550912d4ff4451b79c78e6",
-    "synthesizer": "5dc715184141a1a335be93504016e7b524dd1a1935499bab816ec677e337907c",
 }
 
 
@@ -32,8 +30,6 @@ OLD = {
     "role",
     [
         "worker",
-        "arbiter",
-        "synthesizer",
     ],
 )
 def test_current_document_prompt_example_is_a_real_valid_literal_claim(role):

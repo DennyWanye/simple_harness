@@ -17,7 +17,6 @@
     "client_result_id",
     "tampered",
     "knowledge",
-    "require_synthesis_knowledge",
     "action_problems",
     "local_code_execution",
     "domain",
@@ -100,9 +99,6 @@
         "object",
         "null"
       ]
-    },
-    "require_synthesis_knowledge": {
-      "type": "boolean"
     },
     "action_problems": {
       "type": [

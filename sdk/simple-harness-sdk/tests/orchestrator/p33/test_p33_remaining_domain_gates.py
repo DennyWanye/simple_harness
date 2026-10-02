@@ -34,20 +34,17 @@ from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
 from agent_orchestrator.context.context_builder import _task_contract
 from agent_orchestrator.contracts import (
-    AttemptStatus,
     Budget,
     ClaimProposal,
-    ClaimStatus,
     MissionStatus,
     ResultEnvelope,
     SourceCitation,
     TaskStatus,
 )
 from agent_orchestrator.governance import domains
-from agent_orchestrator.governance.domains import DOC_DOMAIN, DOC_PROFILE, DOC_PROFILE_V4
+from agent_orchestrator.governance.domains import DOC_DOMAIN, DOC_PROFILE
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator import commit_service as commit_module
 from agent_orchestrator.orchestrator.commit_service import (
     CommitRejected,
     CommitService,
@@ -277,111 +274,3 @@ def _document_result(service, task, *, stance, cas=None):
     )
     return stored
 
-
-def test_p33_09_gate4_conflict_insert_rejects_pytest_and_rolls_back_accept(service, monkeypatch):
-    # This oracle isolates the historical conflict-insert transaction. Current
-    # doc5 acceptance requires actual Critic execution, covered by its runtime suite.
-    planning = _planning(service, profile=DOC_PROFILE_V4, conflict_reserve_tokens=20_000)
-    nodes = [_node("A"), _node("B")]
-    for key, node in zip(("A", "B"), nodes, strict=True):
-        node["success_criteria"].append(f"cite:sources/{key}.md")
-    (task_a, task_b), _ = _graph(service, planning, *nodes)
-    first = _document_result(service, task_a, stance="affirms")
-    assert service.accept_result(first.envelope.id, verifier_results=()).status is (
-        TaskStatus.COMPLETED
-    )
-    first_claim = service.store.list_claims(first.envelope.id)[0]
-    assert first_claim.status is ClaimStatus.SUPPORTED  # 引用已核验，但推论只能 SUPPORTED。
-    second = _document_result(service, task_b, stance="refutes")
-    assert second.verification_state == "RUNNING" and second.verdict is None
-    assert service.store.list_conflicts(planning.id) == []
-    before = _state(service, planning.id)
-    events_before = service.store.iter_events(planning.id)
-    original_factory = commit_module.conflict_task
-    generated = []
-
-    def poisoned_factory(*args, **kwargs):
-        task = original_factory(*args, **kwargs)
-        generated.append(task)
-        return replace(task, success_criteria=(*task.success_criteria, PYTEST_CRITERION))
-
-    with monkeypatch.context() as patch:
-        patch.setattr(commit_module, "conflict_task", poisoned_factory)
-        with pytest.raises(CommitRejected) as error:
-            service.accept_result(second.envelope.id, verifier_results=())
-
-    _assert_domain_rejection(error, "system template conflict")
-    assert len(generated) == 1  # 真正走到系统模板，不能提前 DEFERRED 或在其他校验失败。
-    assert generated[0].kind == "conflict"
-    assert generated[0].verification_policy == DOC_PROFILE_V4.conflict_template.policy
-    assert _state(service, planning.id) == before
-    assert service.store.iter_events(planning.id) == events_before
-    assert service.store.get_claim(first_claim.id) == first_claim
-    assert service.store.get_attempt(second.envelope.attempt_id).status is AttemptStatus.VERIFYING
-    assert service.store.get_task(task_b.id).status is TaskStatus.VERIFYING
-    assert service.store.get_result(second.envelope.id) == second
-    assert service.store.list_conflicts(planning.id) == []
-
-    completed = service.accept_result(second.envelope.id, verifier_results=())
-    assert completed.status is TaskStatus.COMPLETED
-    conflicts = service.store.list_conflicts(planning.id)
-    assert len(conflicts) == 1 and conflicts[0]["state"] == "OPEN"
-    conflict_task = service.store.get_task(conflicts[0]["task_id"])
-    assert conflict_task.id == generated[0].id and conflict_task.kind == "conflict"
-    assert conflict_task.status is TaskStatus.READY
-    assert "human_review" in conflict_task.verification_policy
-    assert not any(c.startswith("pytest:") for c in conflict_task.success_criteria)
-    assert {c.status for c in service.store.list_mission_claims(planning.id)} == {
-        ClaimStatus.DISPUTED
-    }
-    assert service.store.get_mission(planning.id).final_report["conflict_reserve_remaining"] == 0
-
-
-def test_p33_09_gate5_synthesis_insert_rejects_pytest_and_rolls_back_entire_graph(
-    service, monkeypatch
-):
-    planning = _planning(
-        service,
-        synthesis={
-            "goal": "汇总资料比较报告",
-            "success_criteria": ["file:REPORT.md"],
-            "budget": {"max_tokens": 20_000, "max_attempts": 3},
-            "outputs": ["REPORT.md"],
-        },
-    )
-    before = _state(service, planning.id)
-    events_before = service.store.iter_events(planning.id)
-    original_factory = commit_module.synthesis_task
-    generated = []
-    planner_tasks_seen = []
-
-    def poisoned_factory(*args, **kwargs):
-        task = original_factory(*args, **kwargs)
-        generated.append(task)
-        # 此刻合法 Planner Task 已在事务内写入；回滚必须连它与账户/事件一起撤销。
-        planner_tasks_seen.extend(service.store.list_tasks(planning.id))
-        return replace(task, success_criteria=(*task.success_criteria, PYTEST_CRITERION))
-
-    with monkeypatch.context() as patch:
-        patch.setattr(commit_module, "synthesis_task", poisoned_factory)
-        with pytest.raises(CommitRejected) as error:
-            _graph(service, planning, _node("A"))
-
-    _assert_domain_rejection(error, "system template synthesis")
-    assert len(generated) == 1 and generated[0].kind == "synthesis"
-    assert generated[0].verification_policy == DOC_PROFILE.synthesis_default_policy
-    assert len(planner_tasks_seen) == 1 and planner_tasks_seen[0].kind == "work"
-    assert generated[0].dependency_ids == (planner_tasks_seen[0].id,)
-    assert _state(service, planning.id) == before
-    assert service.store.iter_events(planning.id) == events_before
-    assert service.store.list_tasks(planning.id) == []
-    assert service.store.get_mission(planning.id).status is MissionStatus.PLANNING
-
-    tasks, receipt = _graph(service, planning, _node("A"))
-    assert [task.kind for task in tasks] == ["work", "synthesis"]
-    assert tasks[-1].id == generated[0].id
-    assert tasks[-1].success_criteria == ("file:REPORT.md",)
-    assert tasks[-1].dependency_ids == (tasks[0].id,)
-    assert receipt["terminal_task_id"] == tasks[-1].id
-    assert service.store.get_mission(planning.id).status is MissionStatus.ACTIVE
-    assert service.store.get_receipt(receipt["commit_id"]) == receipt

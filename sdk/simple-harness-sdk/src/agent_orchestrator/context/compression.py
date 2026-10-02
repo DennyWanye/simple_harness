@@ -64,7 +64,6 @@ def compress(
     result_summaries: Mapping[str, str],
     knowledge: Sequence[KnowledgeRecord],
     claims: Sequence[Claim],
-    open_conflicts: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     task_ids = {task.id for task in tasks}
     scoped_knowledge = [k for k in knowledge if k.source_task in task_ids]
@@ -88,7 +87,6 @@ def compress(
             for k in scoped_knowledge
         ],
         "disputed": [c.id for c in scoped_claims if c.status is ClaimStatus.DISPUTED],
-        "open_conflicts": [str(c.get("conflict_id")) for c in open_conflicts],
         "sources": {
             "results": sorted({c.result_id for c in scoped_claims}),
             "claims": [c.id for c in scoped_claims],

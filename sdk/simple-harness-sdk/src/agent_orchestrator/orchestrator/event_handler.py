@@ -112,7 +112,7 @@ from ..graph.projection_validation import GraphIntegrityError
 from ..graph.task_graph import TaskBudgetFloor
 from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
-from ..planning.manager import terminal_task
+from ..graph.terminal import terminal_task
 from ..planning.planner import parse_task_graph_proposal
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
 from ..runtime.agent_worker import AgentBridge, Liveness, user_message_json
@@ -619,12 +619,10 @@ class Orchestrator:
             self._task_floor = self._budget_floor_rule()  # P3.1 fix F-ORCH-1
             self._commit = CommitService(
                 self._store,
-                conflict_tasks=self._config.knowledge_sharing,
                 global_budget=self._config.global_budget,
                 task_max_tokens=self._config.task_max_tokens,
                 deployed_layers=self._deployed,
                 task_floor=self._task_floor,
-                system_tail_factory=self._mission_system_tail_plan,
                 mission_profile_validator=self._validate_mission_profile,
                 task_floor_for=self._task_floor_for_mission,
             )
@@ -2171,17 +2169,11 @@ class Orchestrator:
         self._check_source_publish_roots(spec)
         if not self._config.deployment_policy.local_code_execution:
             tests = [c for c in spec.success_criteria if c.startswith("pytest:")]
-            template = dict(spec.synthesis or {})  # review round 1 P2-5: refused up front
-            tests += [
-                c for c in template.get("success_criteria", ()) if str(c).startswith("pytest:")
-            ]
-            if tests or "code_test" in template.get("verification_policy", ()):
+            if tests:
                 raise ContractError(
-                    "pytest criteria and code_test need local code execution, which this "
-                    f"deployment has turned off: {tests or ['synthesis: code_test']}"
+                    "pytest criteria need local code execution, which this deployment has "
+                    f"turned off: {tests}"
                 )
-        if spec.synthesis is not None:
-            self._check_synthesis_template(spec)
 
     def _check_source_publish_roots(self, spec: MissionSpec) -> None:
         """A publisher cannot write the actual source CAS or its workspace mounts.
@@ -2216,37 +2208,6 @@ class Orchestrator:
                 raise ContractError("source_publish_root_unavailable")
             if publication_overlaps_storage(root, protected):
                 raise ContractError("source_publish_root_overlap")
-
-    def _check_synthesis_template(self, spec: MissionSpec) -> None:
-        """Review round 2 P1-A: a synthesis template is a Task contract written by the
-        caller; it meets a Planner Task's gates at the door, not first at graph commit."""
-
-        from ..contracts import Budget
-
-        template = dict(spec.synthesis or {})
-        goal, criteria = template.get("goal"), template.get("success_criteria")
-        if not isinstance(goal, str) or not goal.strip():
-            raise ContractError("synthesis.goal must be a non-blank string")
-        if (
-            isinstance(criteria, str)
-            or not isinstance(criteria, (list, tuple))
-            or not criteria
-            or not all(isinstance(c, str) and c.strip() for c in criteria)
-        ):
-            raise ContractError("synthesis.success_criteria must be a list of non-blank strings")
-        policy = template.get("verification_policy")
-        if policy is not None:
-            undeployed = set(policy) - self._deployed
-            if undeployed:
-                raise ContractError(
-                    f"synthesis.verification_policy names undeployed layers: {sorted(undeployed)}"
-                )
-        if not Budget.from_json(template.get("budget", {})).fits_within(spec.budget):
-            raise ContractError("synthesis.budget exceeds the Mission budget (§18.2)")
-        tools = template.get("allowed_tools")
-        if tools is not None and set(tools) - set(spec.allowed_tools):
-            raise ContractError("synthesis.allowed_tools must stay inside the Mission's tools")
-        self._check_action_criteria(tuple(criteria))
 
     def _check_action_criteria(self, criteria: Sequence[str]) -> None:
         """D7-3' / review P2-10: an action criterion must name an enabled connector and an
@@ -5005,24 +4966,6 @@ class Orchestrator:
         rate = max(table.input_micros_per_million_tokens, table.output_micros_per_million_tokens)
         return Reservation(tokens=tokens, cost_micros=(tokens * rate + 999_999) // 1_000_000)
 
-    def _system_reservation(self, tokens: int, profile_id: str, calls: int) -> Reservation:
-        from .mission_tail_commits import system_cost_upper
-
-        profile = self._profiles[profile_id]
-        table = profile.price_table
-        if table is None:
-            return self._reservation(tokens, profile_id)
-        return Reservation(
-            tokens,
-            system_cost_upper(
-                tokens,
-                rate=max(
-                    table.input_micros_per_million_tokens, table.output_micros_per_million_tokens
-                ),
-                physical_calls=calls,
-            ),
-        )
-
     def _first_critic_reservation(self, budget: FirstRequestBudget, profile_id: str) -> Reservation:
         table = self._profiles[profile_id].price_table
         if table is None:
@@ -5033,121 +4976,6 @@ class Orchestrator:
             output_tokens * table.output_micros_per_million_tokens + 999_999
         ) // 1_000_000
         return Reservation(budget.minimum_tokens, cost)
-
-    def _mission_system_tail_plan(
-        self,
-        mission: Mission,
-        purpose: str,
-        *,
-        agent_config=None,
-        critic=False,
-        critic_ordinal=None,
-    ):
-        """Protect only the existing explicit system allowance, never enlarge it.
-
-        The same frozen Mission policy supplies both original and consumption
-        routes. Provider health/upgrade cannot silently reprice an existing hold.
-        """
-        from ..governance.mission_system_tail import SystemTailBinding, SystemTailRoute
-        from ..governance.tail_budget import TailReserve
-        from .mission_tail_commits import system_cost_upper
-
-        if agent_config is not None:
-            raw_limits = agent_config.get("limits") if isinstance(agent_config, Mapping) else None
-            actual_calls = (
-                raw_limits.get("max_model_calls_per_turn")
-                if isinstance(raw_limits, Mapping)
-                else None
-            )
-            ceiling = SYSTEM_CRITIC_MODEL_CALLS if critic else self._config.max_model_calls_per_turn
-            if type(actual_calls) is not int or not 0 < actual_calls <= ceiling:
-                raise BudgetError("system Agent limits exceed the frozen physical call bound")
-            if critic and (
-                type(critic_ordinal) is not int or not 1 <= critic_ordinal <= MAX_CRITIC_ATTEMPTS
-            ):
-                raise BudgetError("system Critic ordinal exceeds the frozen physical call bound")
-
-        report = mission.final_report or {}
-        template = report.get("synthesis") or {}
-        if purpose == "synthesis":
-            if not template:
-                return None
-            limits = template.get("budget") or {}
-            tokens = int(limits.get("max_tokens") or 0)
-            attempts = int(limits.get("max_attempts") or 1)
-            policy = template.get(
-                "verification_policy", self.commit.domain_for(mission.id).synthesis_default_policy
-            )
-            role = "synthesizer"
-        else:
-            tokens = int(report.get("conflict_reserve_tokens") or 0)
-            attempts = min(2, mission.budget.max_attempts or 2)
-            limits = {}
-            policy = self.commit.domain_for(mission.id).conflict_template.policy
-            role = "arbiter"
-        if tokens <= 0:
-            return None
-
-        def route(name, task_kind):
-            decision = self._router_for(mission.id).route(
-                role=name,
-                task_kind=task_kind,
-                previous_attempts=(),
-                unavailable_until={},
-                now=self.store.now,
-            )
-            profile = self._profiles[decision.profile_id]
-            identity = {
-                "schema": 1,
-                "profile_id": profile.profile_id,
-                "model": profile.model,
-                "provider_kind": profile.provider_kind,
-                "context": profile.context_snapshot(),
-                "attempt_tokens": self._config.attempt_reserve_tokens,
-                "critic_tokens": self._config.critic_reserve_tokens,
-                "tool_cap": self._config.max_tool_calls_per_turn,
-                "max_model_calls_per_turn": self._config.max_model_calls_per_turn,
-                "critic_model_calls": SYSTEM_CRITIC_MODEL_CALLS,
-                "critic_turns": MAX_CRITIC_ATTEMPTS,
-                "empty_response_retries": self._config.empty_response_retries,
-                "default_max_output_tokens": profile.default_max_output_tokens,
-                "max_output_tokens_ceiling": profile.max_output_tokens_ceiling,
-            }
-            return SystemTailRoute(
-                decision.profile_id,
-                decision.model,
-                sha256_hex(identity),
-                None if profile.price_table is None else profile.price_table.estimator(),
-            )
-
-        worker = route(role, str(report.get("task_kind") or "code"))
-        critic = route("critic", None) if "critic_review" in policy else None
-        # A single conservative ceiling over the total token allowance covers
-        # either role; this is explicit price authority, not an estimated bill.
-        rates = [
-            max(r.price.input_micros_per_million_tokens, r.price.output_micros_per_million_tokens)
-            for r in (worker, critic)
-            if r is not None and r.price is not None
-        ]
-        # TerminationState.before_provider increments a durable ordinal BEFORE
-        # every call; AgentTurn output-cap retry resets only phase, not totals.
-        # Thus retries are already inside each AgentLimits cap, not a multiplier.
-        calls = attempts * (
-            self._config.max_model_calls_per_turn
-            + (MAX_CRITIC_ATTEMPTS * SYSTEM_CRITIC_MODEL_CALLS if critic else 0)
-        )
-        cost = system_cost_upper(tokens, rate=max(rates), physical_calls=calls) if rates else 0
-        tools_limit = limits.get("max_tool_calls", mission.budget.max_tool_calls)
-        if tools_limit is None and self._config.global_budget is not None:
-            tools_limit = self._config.global_budget.max_tool_calls
-        tools = (
-            0
-            if tools_limit is None
-            else min(int(tools_limit), self._config.max_tool_calls_per_turn * attempts)
-        )
-        return TailReserve(tokens, cost, tools, attempts), SystemTailBinding(
-            worker, critic, "runtime-system-physical-call-double-ceil-v2"
-        )
 
     async def _dispatch(self, intent: DispatchIntent) -> bool:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""
@@ -5815,17 +5643,6 @@ class Orchestrator:
                 raise RetrievalUnavailable("source dependency index could not be read")
             summaries = build_summaries(self.store, mission.id, stale=stale)
             disputes = disputed_claims(claims, mission_id=mission.id)
-            if document:
-                for conflict in self.store.list_conflicts(mission.id):
-                    if conflict["state"] != "RESOLVED_BY_HUMAN":
-                        continue
-                    for item in disputes:
-                        if item["claim_id"] in conflict["claim_ids"]:
-                            item["human_arbitration"] = {
-                                "conflict_id": conflict["conflict_id"],
-                                "resolution": dict(conflict.get("resolution") or {}),
-                                "marker": "人工裁决仅适用于本争议及其条件，不提升证据等级",
-                            }
         except (StoreBusy, OSError, ValueError) as error:  # index unreadable / not ready
             raise RetrievalUnavailable(str(error)) from error
         ranked = rank_knowledge(
@@ -8722,7 +8539,6 @@ class Orchestrator:
                 recorder=recorder,
                 tampered=tampered,
                 knowledge=KnowledgeIndex.load(self.store, mission.id),
-                require_synthesis_knowledge=self._config.knowledge_sharing,
                 action_problems=action_problems,
                 human=human,
                 reuse=reuse,
@@ -8975,10 +8791,6 @@ class Orchestrator:
                 versions={"critic_review": provenance["verifier_version"]} if provenance else {},
                 default_version=VERIFIER_VERSION,
             )
-            if request["state"] == "GRANTED" and self.commit._is_document_conflict(task):
-                # A legacy ordinary approval cannot resolve a document conflict.
-                # Reuse valid checks, then request the bound arbitration on resume.
-                human = None
         escalated_before = any(
             r["kind"] == "review"
             and r.get("reason") == "needs_human"
@@ -8987,26 +8799,6 @@ class Orchestrator:
             for r in self.store.list_approvals(task.mission_id)
         )
         return human, reuse, not escalated_before
-
-    def _arbitrate_conflict(self, mission: Mission, task: Task, detail: Mapping[str, Any]) -> bool:
-        """D7-8' kind ①: a Conflict Task that used its attempts without settling the
-        contradiction goes to a person instead of failing the Mission."""
-
-        conflict_id = str(task.context.get("conflict_id"))
-        conflict = self.store.get_conflict(conflict_id) or {}
-        sides = list(conflict.get("sides") or task.context.get("sides") or [])
-        options = [f"keep:{side['claim_id']}" for side in sides] + ["unresolved"]
-        _request, created = self.commit.request_arbitration(
-            mission.id,
-            subject=conflict_id,
-            topic="conflict",
-            options=options,
-            context={"key": task.context.get("key"), "sides": sides, "attempts": dict(detail)},
-            task_id=task.id,
-        )
-        if created:
-            self._note(f"task {task.id}: conflict {conflict_id} goes to a person (arbitration)")
-        return created
 
     def _arbitrated(
         self,
@@ -9311,9 +9103,7 @@ class Orchestrator:
                         task_content_scope=content_scope,
                         workspace_files=copy.list_files(),
                         knowledge=self._knowledge_or_unavailable(mission, task),
-                        visibility="critic"
-                        if task is not None and task.kind == "conflict"
-                        else "verifier",
+                        visibility="verifier",
                         domain=self.commit.domain_for(mission.id),
                         source_versions=source_binding.get("source_versions"),
                         mission_source_catalog=source_binding.get("mission_source_catalog"),
@@ -9421,12 +9211,6 @@ class Orchestrator:
                     reservation=(
                         first_reservation
                         if first_reservation is not None
-                        else self._system_reservation(
-                            critic_tokens,
-                            decision.profile_id,
-                            SYSTEM_CRITIC_MODEL_CALLS,
-                        )
-                        if task_id is not None and self.commit.system_task_hold(task_id) is not None
                         else self._reservation(critic_tokens, decision.profile_id)
                     ),
                     task_id=task_id,
@@ -10227,15 +10011,6 @@ class Orchestrator:
         if any(task.status is TaskStatus.FAILED for task in tasks):
             return False  # the stop cascade already ended the Mission
         attempts = [a for task in tasks for a in self.store.list_attempts(task.id)]
-        open_conflicts = [
-            c["conflict_id"] for c in self.store.list_conflicts(mission.id, state="OPEN")
-        ]
-        if open_conflicts:  # D4-8': an open conflict gates the synthesis Task (no state change)
-            gated = [t for t in tasks if t.kind == "synthesis" and t.status is TaskStatus.READY]
-            for task in gated:
-                if self.commit.record_synthesis_gated(task.id, conflict_ids=open_conflicts):
-                    self._note(f"synthesis task {task.id} gated by open conflicts {open_conflicts}")
-            tasks = [t for t in tasks if t not in gated]
         bound = self.policy_for(mission.id)  # step 9 (plan D9-4'): the Mission's own version
         # P2.3c part 2 / §18.5 constraint 4 / §24.1 decision 6: a hierarchical Mission
         # allocates over *admissions*, never over the READY string.  P2.3b only had the
@@ -11568,8 +11343,7 @@ class Orchestrator:
         tool_cap = self._config.max_tool_calls_per_turn
         if task.budget.max_tool_calls is not None:
             tool_cap = min(tool_cap, task.budget.max_tool_calls)
-        system_hold = self.commit.system_task_hold(task.id)
-        if self._tool_calls_limited(mission, task) and system_hold is None:
+        if self._tool_calls_limited(mission, task):
             # review P1-2: never reserve more than the chain can still hold; in-flight
             # reservations are not spending — only a spent dimension is exhaustion
             reservable, spent_room = self._tool_call_room(mission, task)
@@ -11621,10 +11395,6 @@ class Orchestrator:
                     self._config.critic_reserve_tokens, critic_decision.profile_id
                 )
         self._deferred.pop(task.id, None)
-        if system_hold is not None:
-            # The original Task hold already protects both roles. Do not create
-            # another FIRST Critic reservation against its fully reserved cap.
-            critic_tail = None
         if self._pressure.is_raised:  # §18.5 "缩小每个 Attempt 预算" (D6-3 ④)
             tokens = max(4_000, int(tokens * self._config.reduced_reserve_ratio))
         if task.budget.max_tokens is not None:
@@ -11644,66 +11414,6 @@ class Orchestrator:
                 head_room = remaining - critic_share  # keep the Critic's own share free
                 if 0 < head_room < tokens:
                     tokens = head_room
-        if system_hold is not None:
-            held = self.commit.protected_tail_hold(system_hold["hold_id"])
-            allowance = None if held is None else self.commit.ledger.reservation(held["subject_id"])
-            if allowance is None:
-                raise ContractError("system Task has no original protected allowance")
-            frozen_first = first_critic_binding.get("first_critic_budget")
-            critic_share = (
-                frozen_first["minimum_tokens"]
-                if frozen_first is not None
-                else self._config.critic_reserve_tokens
-                if "critic_review" in task.verification_policy
-                else 0
-            )
-            room = allowance["reserved_tokens"] - critic_share
-            if allowance["state"] == "SETTLED" or room <= 0:
-                self._commit_stop_task(
-                    task.id,
-                    stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-                    detail={"reason": "system_tail_exhausted", "dimension": "tokens"},
-                )
-                await self._release_mission(mission.id)
-                return True
-            tokens = min(tokens, room)
-            if frozen_first is not None:
-                cost_room = allowance["reserved_cost_micros"] - frozen_first["cost_micros"]
-                if cost_room < 0:
-                    self._commit_stop_task(
-                        task.id,
-                        stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-                        detail={
-                            "reason": "system_first_critic_cost_insufficient",
-                            "dimension": "cost_micros",
-                        },
-                    )
-                    await self._release_mission(mission.id)
-                    return True
-                while (
-                    tokens > 0
-                    and self._system_reservation(
-                        tokens, decision.profile_id, config.limits.max_model_calls_per_turn
-                    ).cost_micros
-                    > cost_room
-                ):
-                    tokens //= 2
-                if tokens <= 0:
-                    self._commit_stop_task(
-                        task.id,
-                        stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-                        detail={
-                            "reason": "system_first_critic_cost_insufficient",
-                            "dimension": "cost_micros",
-                        },
-                    )
-                    await self._release_mission(mission.id)
-                    return True
-            if self._tool_calls_limited(mission, task):
-                tool_cap = min(tool_cap, allowance["reserved_tool_calls"])
-                config = replace(
-                    config, limits=replace(config.limits, max_tool_calls_per_turn=tool_cap)
-                )
         try:
             attempt, _intent = self.commit.create_attempt(
                 task.id,
@@ -11713,13 +11423,7 @@ class Orchestrator:
                 prompt_version=role.prompt_version,
                 context_version=package.context_version,
                 reservation=replace(
-                    (
-                        self._system_reservation(
-                            tokens, decision.profile_id, config.limits.max_model_calls_per_turn
-                        )
-                        if system_hold is not None
-                        else self._reservation(tokens, decision.profile_id)
-                    ),
+                    self._reservation(tokens, decision.profile_id),
                     tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
                 ),
                 runtime_profile_id=decision.profile_id,
@@ -11812,24 +11516,8 @@ class Orchestrator:
                     f"mission {mission.id} stopped: {reason} ({error.dimension}, mission pool)"
                 )
             else:
-                if (
-                    task.kind == "conflict"
-                    and reason is MissionStopReason.MAX_ATTEMPTS_REACHED
-                    and self.commit.domain_for(mission.id).id != "doc-research-v1"
-                ):
-                    return self._arbitrate_conflict(mission, task, detail)  # D7-8' ①
                 self._commit_stop_task(task.id, stop_reason=reason, detail=detail)
                 self._note(f"task {task.id} stopped: {reason} ({error.dimension})")
-            await self._release_mission(mission.id)
-            return True
-        except BudgetError as error:
-            if system_hold is None:
-                raise
-            self._commit_stop_task(
-                task.id,
-                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
-                detail={"reason": "system_tail_binding_unavailable", "error": str(error)},
-            )
             await self._release_mission(mission.id)
             return True
         self._note(

@@ -99,10 +99,38 @@ def find_contradiction(
     return None
 
 
+def mission_disputes(store: Store, mission_id: str) -> list[dict[str, Any]]:
+    """Every contested claim of the Mission, read from the claims themselves (pure read).
+
+    A claim is contested when it is DISPUTED or another claim names it in ``disputed_by``
+    (VERIFIED knowledge has no edge to DISPUTED and stays formal, marked).  Both sides of
+    a contradiction name each other, so "who disagrees" is always on the claim.  Ordered
+    by claim id so the final report is byte-stable."""
+
+    rows = []
+    for claim in store.list_mission_claims(mission_id):
+        if claim.status is not ClaimStatus.DISPUTED and not claim.disputed_by:
+            continue
+        record = store.get_knowledge(claim.id)
+        rows.append(
+            {
+                "claim_id": claim.id,
+                "key": claim.key,
+                "stance": claim.stance,
+                "status": str(claim.status),
+                "source_task": claim.source_task,
+                "disputed_by": list(claim.disputed_by),
+                "in_knowledge": record is not None and record.status == "VERIFIED",
+            }
+        )
+    return sorted(rows, key=lambda row: row["claim_id"])
+
+
 __all__ = (
     "CONFLICTABLE",
     "Contradiction",
     "find_contradiction",
+    "mission_disputes",
     "supported_contradiction",
     "uncertainty_conflicts",
     "document_uncertainty_conflicts",

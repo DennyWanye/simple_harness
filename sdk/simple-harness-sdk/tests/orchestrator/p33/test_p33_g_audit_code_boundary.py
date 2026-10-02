@@ -341,7 +341,6 @@ def test_real_code_verified_target_survives_same_mission_document_attribution_at
             assert store.get_knowledge(target_id) == knowledge
             assert store.get_result(code.envelope.id) == target_result
             assert store.list_verifications(code.envelope.id) == target_rows
-            assert store.list_conflicts(mission.id) == []
             assert store.count_events(mission.id, "ClaimDisputed") == 0
         assert store.get_mission_domain(mission.id) == original_domain
     finally:

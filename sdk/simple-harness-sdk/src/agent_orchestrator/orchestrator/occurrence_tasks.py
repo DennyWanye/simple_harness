@@ -65,7 +65,6 @@ from ..contracts.htn import (
 )
 from ..contracts.models import ContractError, default_change_policy
 from ..contracts.resolution import RequirementsRevision
-from ..planning.manager import system_reserve_tokens
 
 #: ``Task.context`` keys this bridge writes.  Namespaced so nothing in the legacy
 #: path can collide with them, and readable so an operator can tell a materialised
@@ -210,17 +209,12 @@ class Materialisation:
 
 
 def task_pool_tokens(mission: Mission) -> int | None:
-    """The tokens a materialised plan may spend: the Mission's, minus the reserve.
-
-    The same quantity the DAG Planner is handed as ``budget_for_tasks`` (D4-20), read
-    through the same function, so the two modes cannot disagree about how big the
-    system reserve is.
-    """
+    """The tokens a materialised plan may spend: the Mission's whole token budget."""
 
     ceiling = mission.budget.max_tokens
     if ceiling is None:
         return None
-    return max(0, int(ceiling) - system_reserve_tokens(mission))
+    return int(ceiling)
 
 
 def share_tokens(available: int | None, funded_now: int, reserved_subtrees: int = 0) -> int | None:

@@ -125,7 +125,6 @@ def rule_check(
     verification_copy: Workspace,
     tampered: Sequence[str] = (),
     knowledge: KnowledgeIndex | None = None,
-    require_synthesis_knowledge: bool = True,
     extra_problems: Sequence[str] = (),
     local_code_execution: bool = True,
     domain: DomainProfileV1 | None = None,
@@ -136,10 +135,6 @@ def rule_check(
     problems.extend(extra_problems)  # step 7 (D7-2''): action candidates, checked by the caller
     if knowledge is not None:
         problems.extend(check_used_knowledge(envelope.used_knowledge, knowledge))
-    if task.kind == "synthesis" and require_synthesis_knowledge and not envelope.used_knowledge:
-        problems.append(
-            "a synthesis result must cite the Verified Knowledge it combined (used_knowledge)"
-        )
     problems.extend(check_arbitration(envelope, task, domain=domain))
     by_path = {artifact.path: artifact for artifact in artifacts}
     if envelope.outcome.value != "candidate":

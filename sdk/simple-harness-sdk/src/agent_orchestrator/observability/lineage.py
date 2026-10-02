@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from ..planning.manager import terminal_task
+from ..graph.terminal import terminal_task
 
 if TYPE_CHECKING:
     from ..storage.store import Store
@@ -36,7 +36,6 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
         }
     terminal = terminal_task(tasks)
     knowledge_seen: dict[str, dict[str, Any]] = {}
-    claims_seen: dict[str, dict[str, Any]] = {}
     attempts: dict[str, dict[str, Any]] = {}
     task_ids: list[str] = []
     edges: list[dict[str, Any]] = []
@@ -61,8 +60,8 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
             task_ids.append(attempt.task_id)
 
     def add_record(record, *, via: dict[str, Any] | None = None) -> None:  # type: ignore[no-untyped-def]
-        """A knowledge record on the path: note it once, then follow what it resolves,
-        what it superseded and what confirmed it (and the results behind those)."""
+        """A knowledge record on the path: note it once, then follow what it superseded
+        (and the results behind those)."""
 
         if record.id in knowledge_seen:
             return
@@ -70,32 +69,10 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
         if via is not None:
             edges.append(via)
         queue.append(record.source_result)
-        for resolved in record.resolves:
-            resolved_record = store.get_knowledge(resolved)
-            if resolved_record is not None:
-                add_record(resolved_record, via={"knowledge": record.id, "resolves": resolved})
-                continue
-            contested = store.get_claim(resolved)  # a claim that never became knowledge
-            if contested is not None and contested.id not in claims_seen:
-                claims_seen[contested.id] = {
-                    "id": contested.id,
-                    "status": str(contested.status),
-                    "key": contested.key,
-                    "stance": contested.stance,
-                    "source_task": contested.source_task,
-                    "source_attempt": contested.source_attempt,
-                    "resolved_by": contested.resolved_by,
-                }
-                edges.append({"knowledge": record.id, "resolves_claim": contested.id})
-                note_attempt(contested.source_attempt)
         if record.supersedes:
             old = store.get_knowledge(record.supersedes)
             if old is not None:
                 add_record(old, via={"knowledge": record.id, "supersedes": old.id})
-        for confirmation in record.confirmed_by:  # the arbitration that upheld it
-            confirming = store.get_knowledge(confirmation)
-            if confirming is not None:
-                add_record(confirming, via={"knowledge": record.id, "confirmed_by": confirming.id})
 
     if terminal.accepted_result_id:
         queue.append(terminal.accepted_result_id)
@@ -124,7 +101,6 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
         "terminal_task_id": terminal.id,
         "terminal_result_id": terminal.accepted_result_id,
         "knowledge": list(knowledge_seen.values()),
-        "claims": list(claims_seen.values()),
         "tasks": task_ids,
         "attempts": list(attempts.values()),
         "agents": agents,
@@ -144,7 +120,6 @@ def _view(record) -> dict[str, Any]:  # type: ignore[no-untyped-def]
         "proposed_by": record.proposed_by,
         "verifier": dict(record.verifier),
         "used_by": list(record.used_by),
-        "resolves": list(record.resolves),
         "supersedes": record.supersedes,
         "superseded_by": record.superseded_by,
     }

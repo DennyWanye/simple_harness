@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 from test_local_code_execution import (
     NO_CODE,
     TOOLS3,
@@ -29,8 +28,6 @@ from test_local_code_execution import (
     _task,
 )
 
-from agent_orchestrator.contracts import Budget, ContractError
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, graph_proposal_step
 
@@ -98,26 +95,3 @@ def test_the_gateway_refuses_run_tests_even_when_a_binding_lists_it(tmp_path, py
 
 
 # ------------------------------------------------------------------ P2-5
-def test_a_synthesis_template_asking_for_tests_is_refused_at_the_door(tmp_path):
-    spec = MissionSpec(
-        goal="写 NOTES.md",
-        success_criteria=("file:NOTES.md",),
-        tenant_id="t",
-        idempotency_key="synth",
-        allowed_tools=TOOLS3,
-        budget=Budget(max_tokens=300_000, max_attempts=6),
-        synthesis={
-            "goal": "合成",
-            "success_criteria": ["pytest:tests/test_all.py"],
-            "verification_policy": ["format_check", "rule_check", "code_test"],
-        },
-        orchestration_semantics_version="legacy",
-    )
-
-    async def run():
-        async with Orchestrator(_config(tmp_path), RoleScriptedProvider({})) as orchestrator:
-            with pytest.raises(ContractError, match="local code execution"):
-                await orchestrator.submit_mission(spec)
-            return len(orchestrator.store.list_missions())
-
-    assert asyncio.run(run()) == 0

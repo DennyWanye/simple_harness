@@ -8,8 +8,7 @@ F-ORCH-1: a Task budget below what its first Attempt and that Attempt's Critic c
 — ``base + critic``, the critic part only when the policy
 names critic_review — is refused at the graph gate (``task_budget_below_floor``) and the
 proposer is told why; nothing invents a number for the model.  The floor is a necessary
-condition only: it never promises that repairs will be affordable.  System tasks
-(synthesis / conflict) are not proposals and are not bound by it.  Without ``task_floor``
+condition only: it never promises that repairs will be affordable.  Without ``task_floor``
 the gates behave as before (only the Orchestrator injects one).
 F-ORCH-3: the artifacts of an accepted result become VERIFIED and those of a failed result
 REJECTED, each in its own commit transaction.
@@ -155,20 +154,6 @@ def test_a_pool_share_below_the_floor_is_refused_too():
 
 def test_no_floor_argument_keeps_the_old_behaviour():
     validate_graph(mission(), proposal(node("A", tokens=800, policy=WITH_CRITIC)))
-
-
-def test_a_synthesis_template_is_not_bound_by_the_floor():
-    template = {
-        "goal": "汇总各部分",
-        "success_criteria": ["file:SUMMARY.md"],
-        "budget": {"max_tokens": 1000, "max_attempts": 1},
-    }
-    bounded = mission(
-        budget=Budget(max_tokens=100_000, max_attempts=6), final_report={"synthesis": template}
-    )
-    validate_graph(
-        bounded, proposal(node("A", tokens=30_000, policy=WITH_CRITIC)), task_floor=FLOOR
-    )
 
 
 # ------------------------------------------------------------------ FX-3 / FX-4 end to end

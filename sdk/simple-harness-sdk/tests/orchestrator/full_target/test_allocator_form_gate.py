@@ -580,7 +580,7 @@ def test_the_pressure_filter_agrees_with_the_legacy_inline_one() -> None:
     """The legacy body may not be edited, so the helper is checked against it."""
 
     rows = [
-        task_row("t-1", kind="conflict"),
+        task_row("t-1"),
         task_row("t-2", ready_at=0.0),
         task_row("t-3"),
         task_row("t-4"),

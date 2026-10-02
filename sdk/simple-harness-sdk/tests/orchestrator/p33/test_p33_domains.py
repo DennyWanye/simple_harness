@@ -25,7 +25,7 @@ from agent_orchestrator.governance.domains import (
     check_against_domain,
     resolve_domain,
 )
-from agent_orchestrator.planning.manager import CONFLICT_POLICY
+from agent_orchestrator.governance.domains import CONFLICT_POLICY
 
 
 # ---------------------------------------------------------------- 注册表与冻结

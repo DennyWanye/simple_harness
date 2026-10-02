@@ -241,11 +241,15 @@ def test_binding_is_transactional_on_creation_failure(tmp_path) -> None:
     service = CommitService(store)
     observed: dict[str, object] = {}
 
-    def fail_after_binding(mission: object) -> None:
-        observed["binding"] = planning_protocol_for_mission(store, mission.id)  # type: ignore[attr-defined]
-        raise CommitRejected("boom")
+    emit = service._emit
 
-    service._reserve_mission_system_pools = fail_after_binding  # type: ignore[method-assign]
+    def fail_after_binding(kind: str, mission_id: str, **kwargs: object):  # type: ignore[no-untyped-def]
+        if kind == "MissionCreated":  # written right after the binding, in the same transaction
+            observed["binding"] = planning_protocol_for_mission(store, mission_id)
+            raise CommitRejected("boom")
+        return emit(kind, mission_id, **kwargs)
+
+    service._emit = fail_after_binding  # type: ignore[method-assign]
     with pytest.raises(CommitRejected, match="boom"):
         service.create_mission(_spec("rollback"))
     assert observed["binding"] is not None

@@ -3,7 +3,6 @@
 """FIRST cap must bind the persisted intent to the actual prepared provider wire."""
 
 import asyncio
-import json
 
 import pytest
 from fixtures_provider import (
@@ -11,16 +10,12 @@ from fixtures_provider import (
     critic_step,
     envelope_step,
     graph_proposal_step,
-    package_of,
 )
-from graph_helpers7 import node, spec
-from test_provider_budget_guard import Counter, grants, setup_runtime
+from graph_helpers7 import node
+from test_provider_budget_guard import grants, setup_runtime
 
-from agent_orchestrator.contracts import Budget, MissionStatus
 from agent_orchestrator.orchestrator.commit_service import Reservation, task_account
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.agent_worker import user_message_json
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.first_request_budget import (
     ProviderInputCap,
     frozen_provider_input_cap,
@@ -176,119 +171,3 @@ def _context_profile(
         price_table=price_table,
     )
 
-
-@pytest.mark.parametrize("allowance", [40_000, 100_000])
-@pytest.mark.parametrize("worker_input", [1000, 20_000])
-def test_system_hold_partitions_first_critic_before_synthesis_worker(
-    tmp_path, allowance, worker_input
-):
-    async def exercise():
-        provider = _production_first_provider(task_tokens=100_000)
-        # Create real VERIFIED input via an executable assertion, rather than
-        # mistaking an unsupported Critic-reviewed claim for reusable knowledge.
-        provider.scripts["planner"] = [
-            graph_proposal_step(
-                [
-                    node(
-                        "A",
-                        success_criteria=["file:a.md", "pytest:tests/test_input.py"],
-                        verification_policy=["format_check", "rule_check", "code_test"],
-                        budget={"max_tokens": 100_000, "max_attempts": 1},
-                    )
-                ]
-            )
-        ]
-        provider.scripts["worker"] = [
-            ("workspace_write_file", {"path": "a.md", "content": "input"}),
-            envelope_step(
-                summary="input",
-                artifacts=["a.md"],
-                claims=["input"],
-                override=lambda body: {**body, "evidence": ["a.md", "pytest:tests/test_input.py"]},
-            ),
-        ]
-
-        def finish_synthesis(request):
-            knowledge_ids = [item["id"] for item in package_of(request)["verified_knowledge"]]
-            assert knowledge_ids, "synthesis must consume the actual upstream verified result"
-            return envelope_step(
-                summary="combined verified finding",
-                artifacts=["s.md"],
-                claims=["synthesis"],
-                override=lambda body: {**body, "used_knowledge": knowledge_ids},
-            )(request)
-
-        provider.extend(
-            "synthesizer",
-            [
-                ("workspace_read_file", {"path": "a.md"}),
-                ("workspace_write_file", {"path": "s.md", "content": "# synthesis\n"}),
-                finish_synthesis,
-            ],
-        )
-        provider.scripts["critic"] = [
-            ("workspace_read_file", {"path": "s.md"}),
-            critic_step(verdict="PASS", criteria_met=True),
-        ]
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / f"system-{allowance}",
-            max_concurrency=1,
-        )
-        async with Orchestrator(
-            config,
-            profiles={"default": _context_profile(provider)},
-            provider_token_estimator=Counter(worker_input),
-        ) as orch:
-            mission = await orch.submit_mission(
-                spec(
-                    success_criteria=("file:s.md",),
-                    budget=Budget(max_tokens=300_000, max_attempts=12),
-                    workspace_seed={
-                        "tests/test_input.py": (
-                            "from pathlib import Path\n\ndef test_actual_input():\n"
-                            "    assert Path('a.md').read_text() == 'input'\n"
-                        )
-                    },
-                    synthesis={
-                        "goal": "Combine the actual file using pytest:tests/test_input.py",
-                        "success_criteria": ["file:s.md"],
-                        "outputs": ["s.md"],
-                        "verification_policy": ["format_check", "rule_check", "critic_review"],
-                        "budget": {"max_tokens": allowance, "max_attempts": 1},
-                    },
-                )
-            )
-            await asyncio.wait_for(orch.run(), 15)
-            upstream = next(
-                task for task in orch.store.list_tasks(mission.id) if task.kind != "synthesis"
-            )
-            assert orch.store.list_attempts(upstream.id)
-            system = next(
-                task for task in orch.store.list_tasks(mission.id) if task.kind == "synthesis"
-            )
-            hold = orch.commit.system_task_hold(system.id)
-            assert hold is not None
-            transfers = orch.store.connection.execute(
-                "SELECT transfer_id,request_json FROM budget_tail_transfers WHERE hold_id=?",
-                (hold["hold_id"],),
-            ).fetchall()
-            if allowance < 65_536 + 8192:
-                assert provider.by_role.get("synthesizer", 0) == 0
-                assert provider.by_role.get("critic", 0) == 0
-                assert orch.store.list_attempts(system.id) == []
-                assert transfers == []
-                assert orch.store.get_mission(mission.id).status is not MissionStatus.COMPLETED
-            else:
-                assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED
-                [attempt] = orch.store.list_attempts(system.id)
-                frozen = orch.store.get_intent_for_subject(attempt.id).config["first_critic_budget"]
-                assert frozen["minimum_tokens"] == 65_536 + 8192
-                assert len(transfers) == 2
-                critic = next(row for row in transfers if ":critic:1" in row["transfer_id"])
-                allocation = json.loads(critic["request_json"])["allocations"][0]
-                assert allocation["tokens"] == frozen["minimum_tokens"]
-                assert allocation["cost_micros"] == frozen["cost_micros"]
-                assert provider.by_role["synthesizer"] >= 1
-                assert provider.by_role["critic"] >= 1
-
-    asyncio.run(exercise())

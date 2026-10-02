@@ -148,7 +148,7 @@ def test_first_tail_and_attempt_rollback_together_and_terminal_release_is_scoped
         assert commit.ledger.account(task_account(task.id)).attempts_created == 1
 
 
-def test_system_hook_rejects_imaginary_task_or_attempt_and_normal_work_task(harness):
+def test_first_critic_hook_rejects_an_imaginary_attempt(harness):
     commit, _, tasks = harness
     task = tasks["A"]
     with commit.store.transaction():
@@ -160,18 +160,6 @@ def test_system_hook_rejects_imaginary_task_or_attempt_and_normal_work_task(harn
                 task_id=task.id,
                 reserve=TailReserve(1000, 0),
                 semantic_revision=revision,
-            )
-        with pytest.raises(BudgetError, match="system Task"):
-            commit.reserve_system_tail(
-                task_id=task.id,
-                reserve=TailReserve(1000, 0, attempts=1),
-                semantic_revision=revision,
-            )
-        with pytest.raises(BudgetError, match="does not exist"):
-            commit.reserve_system_tail(
-                task_id="imaginary-system",
-                reserve=TailReserve(1000, 0, attempts=1),
-                semantic_revision="invented",
             )
         assert balances(commit, task) == before
 

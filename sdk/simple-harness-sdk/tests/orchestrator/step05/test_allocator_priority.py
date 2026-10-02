@@ -129,23 +129,21 @@ def test_weights_are_the_original_formula_and_scores_are_deterministic():
     )
 
 
-def test_eligibility_precedes_scoring_and_conflict_tasks_come_first():
+def test_eligibility_precedes_scoring():
     tasks = [
         _task(
             "m:task-1", priority=9.0, status=TaskStatus.BLOCKED, deps=("m:task-9",)
         ),  # not eligible: dependency missing
         _task("m:task-2", priority=0.5, ready_at=0.0),
         _task("m:task-3", priority=5.0, ready_at=0.0),
-        _task("m:task-4", priority=10.0, ready_at=0.0, kind="conflict"),
         _task("m:task-9", priority=1.0, status=TaskStatus.COMPLETED),
     ]
     tasks[1] = Task.from_json({**tasks[1].to_json(), "paused": True})
     plan = allocate(tasks, [], concurrency_limit=1, now=10.0)
-    assert [t.id for t, _ in plan.grants] == ["m:task-4"]  # the dispute first, one slot
+    assert [t.id for t, _ in plan.grants] == ["m:task-3"]
     plan = allocate(tasks, [], concurrency_limit=3, now=10.0)
     assert [t.id for t, _ in plan.grants] == [
-        "m:task-4",
-        "m:task-3",
+        "m:task-3"
     ]  # paused task-2 and BLOCKED task-1 are not eligible
     assert plan.to_json()["grants"][0]["allocator_version"] == ALLOCATOR_VERSION
 

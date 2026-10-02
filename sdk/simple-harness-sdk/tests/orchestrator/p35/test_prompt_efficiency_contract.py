@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Frozen history, actual code-domain requests and independent synthesis rejection.
+"""Frozen history and actual code-domain requests.
 
 The scripted transports establish assembly and verification contracts, not that a
 real model follows the efficiency instructions or that P34 fits its fixed budget.
@@ -14,26 +14,15 @@ import hashlib
 import pytest
 from graph_helpers7 import node, spec
 
-from agent_orchestrator.contracts import AttemptStatus, Budget, MissionStatus
+from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.governance import domains
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.runtime.role_templates import (
-    SYNTHESIZER,
-    WORKER,
-    template_for_domain,
-)
+from agent_orchestrator.runtime.role_templates import WORKER, template_for_domain
 from agent_orchestrator.testing.fixtures import (
-    COMPARE_SEED,
-    COMPARE_SPEC,
-    COMPARE_SYNTHESIS,
-    COMPARE_TASKS,
     RoleScriptedProvider,
-    compare_script_synthesizer,
     critic_step,
-    demo_knowledge_sharing_provider,
     envelope_step,
     graph_proposal_step,
     package_of,
@@ -50,7 +39,7 @@ def _digest(value):
 
 def _assert_request_binding(orch, provider, role, expected_tools):
     template = template_for_domain(
-        {"worker": WORKER, "synthesizer": SYNTHESIZER}[role], domains.CODE_PROFILE, {}
+        {"worker": WORKER}[role], domains.CODE_PROFILE, {}
     )
     assert template.prompt_version == f"{role}-code-observation-v3"
     assert "不能推出任意业务性质或其他版本仍然正确" in template.instructions
@@ -115,49 +104,3 @@ def test_new_worker_reaches_actual_code_request_with_only_exposed_tools(
 
     asyncio.run(exercise())
 
-
-def test_new_synthesizer_request_cannot_reuse_source_success_as_own_verification(tmp_path):
-    # Reuse the shipped end-to-end fixture: both sources pass, the first synthesis
-    # introduces a real wrong value, and the independent code_test rejects it.
-    provider = demo_knowledge_sharing_provider(
-        tasks=[task for task in COMPARE_TASKS if task["key"] in {"A", "B"}],
-        per_attempt={"S": [
-            compare_script_synthesizer(wrong=True), compare_script_synthesizer(),
-        ]},
-    )
-
-    async def exercise():
-        async with Orchestrator(OrchestratorConfig(
-            evidence_root=tmp_path, max_concurrency=1, test_timeout_seconds=60,
-        ), provider) as orch:
-            mission = await orch.submit_mission(MissionSpec(
-                goal=COMPARE_SPEC["goal"],
-                success_criteria=tuple(COMPARE_SPEC["success_criteria"]),
-                tenant_id="prompt-efficiency", idempotency_key="synthesis-independent",
-                allowed_tools=tuple(COMPARE_SPEC["allowed_tools"]),
-                budget=Budget(max_tokens=200_000, max_attempts=12),
-                workspace_seed=COMPARE_SEED, untrusted_sources=("docs/",),
-                synthesis=COMPARE_SYNTHESIS,
-                orchestration_semantics_version="legacy",
-            ))
-            await asyncio.wait_for(orch.run(), 60)
-            assert orch.commit.domain_for(mission.id).id == "code-v1"
-            assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED
-            _assert_request_binding(orch, provider, "worker", (*FILE_TOOLS, "run_tests"))
-            _assert_request_binding(orch, provider, "synthesizer", (*FILE_TOOLS, "run_tests"))
-            synthesis = next(t for t in orch.store.list_tasks(mission.id) if t.kind == "synthesis")
-            attempts = orch.store.list_attempts(synthesis.id)
-            assert [attempt.status for attempt in attempts] == [
-                AttemptStatus.RETRY_WAIT, AttemptStatus.COMPLETED,
-            ]
-            assert any(
-                failure["layer"] == "code_test" and failure["status"] == "FAIL"
-                for failure in attempts[0].failure["failures"]
-            )
-            accepted = orch.store.get_result(synthesis.accepted_result_id)
-            assert accepted.envelope.used_knowledge
-            rows = orch.store.list_verifications(synthesis.accepted_result_id)
-            assert any(row["layer"] == "code_test" and row["status"] == "PASS" for row in rows)
-            assert synthesis.success_criteria == tuple(COMPARE_SYNTHESIS["success_criteria"])
-
-    asyncio.run(exercise())

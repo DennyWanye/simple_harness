@@ -137,7 +137,6 @@ def e_scenes(tmp_path, monkeypatch):
                     idempotency_key="e-oracle",
                     domain=domain,
                     budget=Budget(max_tokens=120_000, max_attempts=40),
-                    conflict_reserve_tokens=15_000,
                     orchestration_semantics_version="legacy",
                 )
             )
@@ -246,7 +245,7 @@ def submit(
         contract[name] = list(contract[name])
     attempt, intent = s.commit.create_attempt(
         task.id,
-        role="arbiter" if task.kind == "conflict" else "worker",
+        role="worker",
         model="fixture",
         prompt_version="fixture-v1",
         context_version="fixture-v1",

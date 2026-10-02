@@ -37,7 +37,6 @@ FORMAL_FIELDS: dict[str, tuple[str, ...]] = {
     "attempt": ("status",),
     "result": ("verification_state", "verdict"),
     "knowledge": ("status", "superseded_by"),
-    "conflict": ("state",),
     "action": ("state", "receipt_hash"),
     "approval": ("state",),
     "override": ("present",),
@@ -70,7 +69,6 @@ NO_FORMAL_EFFECT = frozenset(
         "VerificationLayerRecorded",
         "ClaimDisputed",
         "KnowledgeUsed",
-        "SynthesisGated",
         "OutcomeRecorded",
         "ToolCallRejected",
         "RetrievalUnavailable",
@@ -132,7 +130,6 @@ class Projection:
         self._attempt_of_result: dict[str, str] = {}
         self._action_of_request: dict[str, str] = {}
         self._kind_of_request: dict[str, str] = {}
-        self._conflict_of_task: dict[str, str] = {}
         # task -> the result that passed while its TaskCompleted is not yet seen
         self._passed_waiting: dict[str, str] = {}
         self._judged = False
@@ -223,9 +220,6 @@ class Projection:
         elif kind == "TaskFailed":
             self._set("task", task_id, status="FAILED")
             self._passed_waiting.pop(str(task_id), None)
-            conflict = self._conflict_of_task.get(str(task_id))
-            if conflict and self.objects["conflict"].get(conflict, {}).get("state") == "OPEN":
-                self._set("conflict", conflict, state="UNRESOLVED")
         elif kind in {"TaskCancelled", "TaskSuperseded"}:
             self._set("task", task_id, status="CANCELLED")
             self._passed_waiting.pop(str(task_id), None)
@@ -291,7 +285,7 @@ class Projection:
             self._set("attempt", attempt_id, status="LOST")
         elif kind == "AttemptTimedOut":
             self._set("attempt", attempt_id, status="TIMED_OUT")
-        # ---------------------------------------------------------- knowledge / conflicts
+        # ---------------------------------------------------------- knowledge
         elif kind == "KnowledgeCommitted":
             self._set("knowledge", p.get("knowledge_id"), status="VERIFIED", superseded_by=None)
         elif kind == "KnowledgeSuperseded":
@@ -301,18 +295,6 @@ class Projection:
                 status="SUPERSEDED",
                 superseded_by=p.get("superseded_by") or p.get("by"),
             )
-        elif kind == "ConflictOpened":
-            self._set("conflict", p.get("conflict_id"), state="OPEN")
-            if p.get("task_id"):
-                self._conflict_of_task[str(p["task_id"])] = str(p.get("conflict_id"))
-                self._passed_waiting.pop(str(p["task_id"]), None)
-                self._set("task", p.get("task_id"), status="READY", accepted_result_id=None)
-        elif kind == "ConflictOpenDeferred":
-            self._set("conflict", p.get("conflict_id"), state="DEFERRED")
-        elif kind == "ConflictResolved":
-            self._set("conflict", p.get("conflict_id"), state="RESOLVED")
-        elif kind == "ConflictResolvedByHuman":
-            self._set("conflict", p.get("conflict_id"), state="RESOLVED_BY_HUMAN")
         # ---------------------------------------------------------- actions / approvals
         elif kind == "ActionProposed":
             open_state = "AWAITING_APPROVAL" if str(p.get("level")) in {"L2", "L3"} else "PROPOSED"
@@ -450,10 +432,6 @@ class Projection:
                         "action_outcome_missing", object="action", id=key, state=action["state"]
                     )
                     action.update(state=None, receipt_hash=None)
-            for key, conflict in self.objects["conflict"].items():
-                if conflict.get("state") == "OPEN":
-                    self._gap("conflict_outcome_missing", object="conflict", id=key)
-                    conflict["state"] = None
         for task_id, task in self.objects["task"].items():
             if task.get("status") != "COMPLETED":
                 continue
@@ -539,9 +517,6 @@ def formal_from_snapshot(snapshot: Mapping[str, Any]) -> dict[str, dict[str, dic
         "knowledge": {
             str(k["id"]): {"status": k.get("status"), "superseded_by": k.get("superseded_by")}
             for k in snapshot.get("knowledge", [])
-        },
-        "conflict": {
-            str(c["conflict_id"]): {"state": c.get("state")} for c in snapshot.get("conflicts", [])
         },
         "action": {
             str(a["action_key"]): {

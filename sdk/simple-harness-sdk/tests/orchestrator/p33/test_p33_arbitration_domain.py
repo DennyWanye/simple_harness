@@ -36,7 +36,6 @@ def _task(criteria, directory="arbitration/k"):
         priority=1.0,
         status=TaskStatus.READY,
         version=1,
-        kind="conflict",
         context={"artifact_dir": directory},
     )
 

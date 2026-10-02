@@ -62,7 +62,6 @@ def test_demo_multi_mission_on_fixtures_writes_per_mission_evidence(tmp_path, ca
             "trace.json",
             "metrics.json",
             "scheduler.json",
-            "graph_history.json",
             "lineage.json",
         } <= files
         assert any(f.startswith("artifacts/") for f in files)

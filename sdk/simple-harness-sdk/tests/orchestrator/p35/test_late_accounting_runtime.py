@@ -55,7 +55,6 @@ def open_orch(root, provider):
 
 async def collected_unknown(orch, kind):
     mission = await orch.submit_mission(spec(
-        conflict_reserve_tokens=0,
         budget=Budget(max_tokens=200000, max_cost_micros=20000, max_attempts=12),
     ))
     planning = orch.commit.begin_planning(mission.id)

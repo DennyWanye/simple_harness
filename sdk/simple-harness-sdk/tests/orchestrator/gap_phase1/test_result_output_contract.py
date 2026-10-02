@@ -26,8 +26,6 @@ def example(text):
     "role",
     [
         "worker",
-        "synthesizer",
-        "arbiter",
     ],
 )
 def test_concrete_example_has_actual_ids_and_frozen_legacy_unchanged(tmp_path, role):

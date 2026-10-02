@@ -547,15 +547,7 @@ def protected_critic_budget(orch: Any, decision: Any, task_id: str, attempt_id: 
             "provider_output_ceiling": actual.output_ceiling,
             "provider_first_cost_micros": reservation.cost_micros,
         }, reservation
-    from .event_handler import SYSTEM_CRITIC_MODEL_CALLS
-
-    reservation = (
-        orch._system_reservation(
-            orch._config.critic_reserve_tokens, decision.profile_id, SYSTEM_CRITIC_MODEL_CALLS
-        )
-        if orch.commit.system_task_hold(task_id) is not None
-        else orch._reservation(orch._config.critic_reserve_tokens, decision.profile_id)
-    )
+    reservation = orch._reservation(orch._config.critic_reserve_tokens, decision.profile_id)
     return {
         "first_critic_budget_unknown": worker.config.get(
             "first_critic_budget_unknown", "original_intent_has_no_first_cap"

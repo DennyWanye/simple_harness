@@ -290,7 +290,7 @@ def test_worker_package_has_all_eleven_items_and_shows_only_verified_as_fact():
     assert package.context_version.startswith("ctx-")
 
 
-def test_verifier_and_critic_templates_withhold_the_submitter_and_arbiter_sees_the_dispute():
+def test_the_verifier_template_withholds_the_submitter():
     task = _task("m:task-2")
     verifier = build_critic_package(
         _mission(),
@@ -314,53 +314,6 @@ def test_verifier_and_critic_templates_withhold_the_submitter_and_arbiter_sees_t
     assert not {"summary", "confidence", "self_reported_confidence"} & set(keys_of(verifier))
     assert verifier["visibility"].startswith("verifier") and "candidate_claims" not in verifier
     assert verifier["disputed_claims"][0]["status"] == "DISPUTED"
-    critic = build_critic_package(
-        _mission(),
-        _task("m:task-5", kind="conflict"),
-        attempt_id="a",
-        artifacts=(),
-        test_output=None,
-        workspace_files=(),
-        knowledge=_knowledge_context(),
-        visibility="critic",
-    ).package
-    assert (
-        critic["candidate_claims"][0]["marker"].startswith("UNVERIFIED")
-        and critic["rejected_claims"]
-    )
-    assert "dispute" in critic
-    conflict = Task.from_json(
-        {
-            **_task("m:task-5", kind="conflict").to_json(),
-            "context": {"key": "impl_a.empty_input", "claim_ids": ["K-1", "C-9"]},
-        }
-    )
-    arbiter = build_worker_package(
-        _mission(),
-        conflict,
-        _attempt(conflict),
-        previous_attempts=(),
-        verifier_feedback=(),
-        workspace_files=(),
-        knowledge=_knowledge_context(),
-        role="arbiter",
-    ).package
-    assert arbiter["dispute"]["key"] == "impl_a.empty_input" and arbiter["visibility"].startswith(
-        "arbiter"
-    )
-    synth = build_worker_package(
-        _mission(),
-        _task("m:task-6", kind="synthesis"),
-        _attempt(_task("m:task-6")),
-        previous_attempts=(),
-        verifier_feedback=(),
-        workspace_files=(),
-        knowledge=_knowledge_context(),
-        role="synthesizer",
-    ).package
-    assert synth["global_summary"]["version"] == "sum-2" and synth["visibility"].startswith(
-        "synthesizer"
-    )
 
 
 def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_package():

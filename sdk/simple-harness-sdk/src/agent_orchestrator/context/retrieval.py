@@ -285,8 +285,7 @@ def disputed_claims(claims: Sequence[Claim], *, mission_id: str) -> list[dict[st
             "content": claim.content,
             "evidence": list(claim.evidence),  # P2-8: the verifier sees the references
             "source_task": claim.source_task,
-            "conflict_id": claim.conflict_id,
-            "resolved_by": claim.resolved_by,
+            "disputed_by": list(claim.disputed_by),  # who disagrees
             "marker": "DISPUTED — 争议中，不是事实",
         }
         for claim in claims

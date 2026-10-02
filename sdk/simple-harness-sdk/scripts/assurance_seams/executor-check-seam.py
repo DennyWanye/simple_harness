@@ -114,7 +114,7 @@ async def main():
 
         def inputs_for(copy):
             return freeze_verifier_inputs(mission=mission, task=exec_task, envelope=stored.envelope, artifacts=(bound_artifact,),
-                verification_copy=copy, client_result_id=None, tampered=(), knowledge=None, require_synthesis_knowledge=False,
+                verification_copy=copy, client_result_id=None, tampered=(), knowledge=None,
                 action_problems=None, local_code_execution=True, domain=None, assessment_binding=None)
 
         async def run(name, source, *, timeout=60.0):

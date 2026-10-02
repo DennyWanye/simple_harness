@@ -52,8 +52,6 @@ OPEN_FIELDS = frozenset(
         "budget",
         "stop_conditions",
         "untrusted_sources",
-        "synthesis",
-        "conflict_reserve_tokens",
         "runtime_profile_id",
         "orchestration_semantics_version",
         "planning_protocol_version",
@@ -67,19 +65,6 @@ CLOSED_FIELDS = {
     "task_kind": "not open on this surface",
 }
 OPEN_BUDGET = frozenset({"max_tokens", "max_attempts"})
-# review round 2 P1-A: a synthesis template is a Task contract written by the caller
-OPEN_SYNTHESIS = frozenset(
-    {
-        "goal",
-        "success_criteria",
-        "rationale",
-        "outputs",
-        "verification_policy",
-        "priority",
-        "budget",
-    }
-)
-CLOSED_SYNTHESIS = frozenset({"allowed_tools"})
 LIST_FIELDS = ("success_criteria", "stop_conditions", "untrusted_sources")
 CLOSED_BUDGET = frozenset(
     {"max_cost_micros", "max_runtime_seconds", "max_concurrency", "max_tool_calls"}
@@ -553,46 +538,7 @@ class MissionControlV1:
             or not all(isinstance(k, str) and isinstance(v, str) for k, v in seed.items())
         ):
             raise FacadeError("invalid_request", "workspace_seed must map paths to text")
-        MissionControlV1._strict_synthesis(command.get("synthesis"))
         return dict(command)
-
-    @staticmethod
-    def _strict_synthesis(template: Any) -> None:
-        if template is None:
-            return
-        if not isinstance(template, Mapping):
-            raise FacadeError("invalid_request", "synthesis must be an object")
-        unknown = sorted(set(template) - OPEN_SYNTHESIS - CLOSED_SYNTHESIS)
-        if unknown:
-            raise FacadeError(
-                "invalid_request",
-                f"unknown synthesis fields: {['synthesis.' + k for k in unknown]}",
-            )
-        closed = sorted(set(template) & CLOSED_SYNTHESIS)
-        if closed:
-            raise FacadeError(
-                "invalid_request",
-                f"synthesis fields not open to this surface: {['synthesis.' + k for k in closed]}",
-            )
-        budget = template.get("budget", {})
-        if not isinstance(budget, Mapping) or set(budget) - OPEN_BUDGET:
-            raise FacadeError(
-                "invalid_request",
-                "synthesis.budget fields not open to this surface: "
-                f"{['synthesis.budget.' + str(k) for k in sorted(set(budget) - OPEN_BUDGET)]}",
-            )
-        goal, criteria = template.get("goal"), template.get("success_criteria")
-        if not isinstance(goal, str) or not goal.strip():
-            raise FacadeError("invalid_request", "synthesis.goal must be a non-blank string")
-        if (
-            isinstance(criteria, str)
-            or not isinstance(criteria, (list, tuple))
-            or not criteria
-            or not all(isinstance(c, str) and c.strip() for c in criteria)
-        ):
-            raise FacadeError(
-                "invalid_request", "synthesis.success_criteria must be a list of non-blank strings"
-            )
 
     @staticmethod
     def _texts(request: Mapping[str, Any]) -> list[str]:
@@ -604,9 +550,6 @@ class MissionControlV1:
         ]
         for path, body in dict(request.get("workspace_seed") or {}).items():
             texts += [str(path), str(body)]
-        template = dict(request.get("synthesis") or {})
-        texts += [str(template.get("goal", "")), str(template.get("rationale", ""))]
-        texts += [str(c) for c in template.get("success_criteria", ()) or ()]
         return texts
 
     def cancel(self, mission_id: str) -> dict[str, Any]:
@@ -796,6 +739,8 @@ class MissionControlV1:
                 and (request := planning.get_planning_request_for_intent(intent.intent_id)) is not None]
             from .operation_workspace import operation_workspace
             snapshot["operation_workspace"] = operation_workspace(self._orchestrator, mission, principal=self._principal)
+            from ..verification.conflicts import mission_disputes
+            snapshot["disputes"] = mission_disputes(store, mission.id)  # read from the claims
             through = store.last_event_seq(mission.id)
         report = dict(mission.final_report or {})
         return {

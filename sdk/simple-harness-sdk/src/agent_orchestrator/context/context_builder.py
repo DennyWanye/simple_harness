@@ -13,15 +13,8 @@ Visibility templates (§10.2, plan D4-10'):
 
 * ``worker``      — only VERIFIED knowledge is offered as fact; disputed claims are
   listed but marked; no candidate claims at all.
-* ``synthesizer`` — every VERIFIED item plus the branch / global summaries.
-* ``arbiter``     — the two sides of a dispute with their evidence references, never
-  the authors' own explanations.
 * ``verifier``    — the independent layer: artifacts, test output, criteria, the
   disputed claims' evidence references; **no** submitter summary or confidence.
-* ``critic``      — like verifier plus the candidate and rejected claims (used for the
-  arbitration review).
-* Search variants use a separate, versioned and bounded optional-data matrix;
-  legacy worker/synthesizer/critic serialization remains unchanged.
 
 External content is never inlined: the package carries paths only (D4-12).  The
 serialised package's hash is the Attempt's ``context_version`` (§26.3) and is
@@ -47,12 +40,11 @@ from ..governance.domains import (
     supports_document_assessments,
 )
 from ..observability.secrets import environment_secrets, find_secrets
-from ..planning.manager import system_reserve_tokens
 from .retrieval import KnowledgeContext
 
 CONTEXT_BUILDER_VERSION = "context-builder-v4"  # host support 0.9.8: deployed_verification_layers
-VISIBILITY_TEMPLATES = ("worker", "synthesizer", "arbiter", "verifier", "critic")
-ENABLED_TEMPLATES = ("worker", "synthesizer", "arbiter", "verifier", "critic")
+VISIBILITY_TEMPLATES = ("worker", "verifier")
+ENABLED_TEMPLATES = ("worker", "verifier")
 
 _SECRET_MARKERS = ("api_key", "apikey", "secret", "password", "passwd", "credential")
 _SECRET_EXACT = ("token", "access_token", "auth_token", "bearer", "authorization")
@@ -191,7 +183,7 @@ def _knowledge_section(
         "superseded_knowledge": [dict(item) for item in retrieval["superseded"]],
         "disputed_claims": [dict(item) for item in knowledge.disputed],  # §10 item 7 (marked)
     }
-    if visibility in {"synthesizer", "worker"}:
+    if visibility == "worker":
         section["branch_summary"] = (  # §10 item 4
             dict(knowledge.branch_summary)
             if knowledge.branch_summary is not None
@@ -200,25 +192,10 @@ def _knowledge_section(
                 "reason": knowledge.summary_status.get("reason"),
             }
         )
-    if visibility == "synthesizer":
-        section["global_summary"] = (
-            dict(knowledge.global_summary)
-            if knowledge.global_summary is not None
-            else {"status": knowledge.summary_status.get("status", "unavailable")}
-        )
-        section["raw_logs"] = (  # §11 layer 1 / §10 "只引用不直接喂": ids and counts only
-            dict(knowledge.raw_refs)
-            if knowledge.raw_refs is not None
-            else {"status": "unavailable"}
-        )
     if visibility == "verifier":  # D4-10': the independent layer gets references, not prose
         section["disputed_claims"] = [
             {k: v for k, v in item.items() if k != "content"} for item in section["disputed_claims"]
         ]
-    if visibility == "critic":
-        section["candidate_claims"] = [dict(item) for item in knowledge.candidates]
-    if visibility == "critic":
-        section["rejected_claims"] = [dict(item) for item in knowledge.rejected]
     if visibility == "worker":
         section["visibility"] = domain.context_wording.get(
             "worker",
@@ -354,17 +331,6 @@ def build_worker_package(
         # Attempt.feedback is a string rendering of the same raw verification
         # detail. Its current machine diagnostics are carried once above.
         package["feedback"] = [{"diagnostics_in_verifier_feedback": True}] if attempt.feedback else []
-    if role == "arbiter":
-        package["dispute"] = dict(task.context)
-        package["visibility"] = domain.context_wording.get(
-            "arbiter",
-            "arbiter: 只看双方 Claim 与证据引用，不看作者自述；结论必须有外部检查（pytest 证据）",
-        )
-    if role == "synthesizer":
-        package["visibility"] = domain.context_wording.get(
-            "synthesizer",
-            "synthesizer: 组合各分支 VERIFIED 成果，不是选最高分；只把 VERIFIED 当事实；used_knowledge 必须列出引用",
-        )
     package["package_version"] = PACKAGE_VERSION
     _domain_section(package, domain, mission)
     _source_section(package, domain, source_versions)
@@ -400,16 +366,10 @@ def build_planner_package(
         "constraint": (
             "a static DAG of one or more Tasks (no cycles, dependencies by key); "
             "success_criteria must be machine-checkable; task budgets sum within "
-            "budget_for_tasks (the Mission budget minus the system reserve)"
+            "budget_for_tasks (the Mission budget)"
         ),
         "budget_for_tasks": {  # D4-20: the pool the Planner's graph may use
-            "max_tokens": (
-                None
-                if mission.budget.max_tokens is None
-                else max(0, mission.budget.max_tokens - system_reserve_tokens(mission))
-            ),
-            "system_reserve_tokens": system_reserve_tokens(mission),
-            "synthesis_task": (mission.final_report or {}).get("synthesis") is not None,
+            "max_tokens": mission.budget.max_tokens,
             # P3.1 fix F-ORCH-1: the least one Task may hold (with / without critic_review)
             **dict(budget_floor or {}),
         },
@@ -527,8 +487,6 @@ def build_critic_package(
         )
         section.pop("branch_summary", None)
         package.update(section)
-    if task is not None and task.kind == "conflict":
-        package["dispute"] = dict(task.context)
     _domain_section(package, domain, mission)
     _source_section(package, domain, source_versions)
     if mission_source_catalog is not None:

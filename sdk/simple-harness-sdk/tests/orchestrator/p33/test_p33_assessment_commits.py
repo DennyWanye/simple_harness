@@ -594,7 +594,6 @@ def test_attribution_cannot_explicitly_dispute_legacy_world_knowledge_at_accept(
     )
     before_claim = first.store.get_claim(old_id)
     before_knowledge = first.store.get_knowledge(old_id)
-    before_conflicts = first.store.list_conflicts(first.mission.id)
     second = submitted(
         prior=first,
         proposals=lambda citation: (
@@ -618,7 +617,6 @@ def test_attribution_cannot_explicitly_dispute_legacy_world_knowledge_at_accept(
     assert second.store.get_knowledge(old_id) == before_knowledge
     assert second.store.get_claim(old_id).disputed_by == ()
     assert second.store.get_knowledge(old_id).disputed_by == ()
-    assert second.store.list_conflicts(first.mission.id) == before_conflicts
     assert second.store.count_events(first.mission.id, "ClaimDisputed") == 0
 
 
@@ -643,7 +641,6 @@ def test_source_supersession_requires_same_key_and_exact_sentence_identity(submi
     old_id = ids.claim_id(first.envelope.id, 1)
     before_claim = first.store.get_claim(old_id)
     before_knowledge = first.store.get_knowledge(old_id)
-    before_conflicts = first.store.list_conflicts(first.mission.id)
     quote = (
         first_quote
         if relation == "same_identity"
@@ -678,5 +675,4 @@ def test_source_supersession_requires_same_key_and_exact_sentence_identity(submi
         assert second.store.get_claim(old_id) == before_claim
         assert second.store.get_knowledge(old_id) == before_knowledge
         assert second.store.count_events(first.mission.id, "KnowledgeSuperseded") == 0
-    assert second.store.list_conflicts(first.mission.id) == before_conflicts
     assert_replay(second)

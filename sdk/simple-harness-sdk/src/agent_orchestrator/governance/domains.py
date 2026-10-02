@@ -25,7 +25,11 @@ from types import MappingProxyType
 from typing import Any
 
 from ..contracts.models import SYSTEM_DEFAULT_POLICY, VERIFICATION_LAYERS
-from ..planning.manager import ARBITRATION_PREFIX, CONFLICT_POLICY
+
+# Named by the published domain profiles' conflict templates (the conflict Task itself was
+# removed on 2026-10-02; the profile fields go with the third cut).
+CONFLICT_POLICY = ("format_check", "rule_check", "critic_review", "code_test")
+ARBITRATION_PREFIX = "arbitration"
 
 DOMAIN_SCHEMA_VERSION = 1
 

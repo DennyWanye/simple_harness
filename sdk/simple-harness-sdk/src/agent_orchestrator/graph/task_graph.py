@@ -22,7 +22,6 @@ from ..contracts import Budget, ContractError, Mission
 from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import STEP2_IMPLEMENTED_LAYERS, VERIFICATION_LAYERS
 from ..governance.domains import DomainProfileV1, check_against_domain, resolve_domain
-from ..planning.manager import inherit_limits, system_reserve_tokens
 from .deduplicator import find_duplicates
 from .dependency_checker import DependencyError, check_dependencies, roots_and_leaves
 
@@ -212,14 +211,13 @@ def normalise_budgets(mission: Mission, proposal: TaskGraphProposal) -> TaskGrap
     """
 
     count = max(1, len(proposal.tasks))
-    reserve = system_reserve_tokens(mission)  # D4-20: synthesis + conflict reserve
     nodes = []
     for node in proposal.tasks:
         changes: dict[str, Any] = {}
         for name in ("max_tokens", "max_cost_micros", "max_tool_calls"):
             parent = getattr(mission.budget, name)
             if getattr(node.budget, name) is None and parent is not None:
-                pool = max(0, parent - reserve) if name == "max_tokens" else parent
+                pool = parent
                 # review P1-2: a pool dimension is shared out, never copied to every Task
                 changes[name] = max(1, pool // count) if name == "max_tool_calls" else pool // count
         for name in ("max_attempts", "max_concurrency", "max_runtime_seconds"):
@@ -380,8 +378,7 @@ def validate_graph(
         task_floor=task_floor,
         domain=profile,
     )
-    # §18.2: the children's budgets come from the parent — in sum, per limited dimension;
-    # the system tasks' reserve (D4-20) is part of the sum on the token dimension
+    # §18.2: the children's budgets come from the parent — in sum, per limited dimension
     for name in ("max_tokens", "max_cost_micros"):
         parent = getattr(mission.budget, name)
         if parent is None:
@@ -391,26 +388,11 @@ def validate_graph(
             raise GraphRejected(
                 "budget", f"every task must bound {name} when the Mission bounds it"
             )
-        reserve = system_reserve_tokens(mission) if name == "max_tokens" else 0
-        if total + reserve > parent:
+        if total > parent:
             raise GraphRejected(
                 "budget",
-                f"sum of task {name} ({total}) plus the system reserve ({reserve}) exceeds "
-                f"the Mission ({parent}); dimension={name} remaining={max(0, parent - reserve)}",
-            )
-    template = (mission.final_report or {}).get("synthesis")
-    if template:  # P1-2: the synthesis Task's own budget must fit the Mission too
-        try:
-            synthesis_budget = inherit_limits(
-                Budget.from_json(dict(template).get("budget", {})), mission.budget
-            )
-        except ContractError as error:
-            raise GraphRejected("budget", f"synthesis template budget invalid: {error}") from error
-        if not synthesis_budget.fits_within(mission.budget):
-            raise GraphRejected(
-                "budget",
-                f"synthesis task budget {synthesis_budget.to_json()} exceeds the Mission "
-                "budget (§18.2)",
+                f"sum of task {name} ({total}) exceeds the Mission ({parent}); "
+                f"dimension={name} remaining={parent}",
             )
     roots, leaves = roots_and_leaves(proposal.edges())
     if not roots or not leaves:
@@ -581,12 +563,11 @@ def validate_graph_v2(
             raise GraphRejected(
                 "budget", f"every task must bound {name} when the Mission bounds it"
             )
-        reserve = system_reserve_tokens(mission) if name == "max_tokens" else 0
-        if total + reserve > parent:
+        if total > parent:
             raise GraphRejected(
                 "budget",
-                f"sum of task {name} ({total}) plus the system reserve ({reserve}) exceeds "
-                f"the Mission ({parent}); dimension={name} remaining={max(0, parent - reserve)}",
+                f"sum of task {name} ({total}) exceeds the Mission ({parent}); "
+                f"dimension={name} remaining={parent}",
             )
     roots, leaves = roots_and_leaves(proposal.edges())
     if not roots or not leaves:

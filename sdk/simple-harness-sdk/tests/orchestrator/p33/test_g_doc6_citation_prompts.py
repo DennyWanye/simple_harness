@@ -25,7 +25,7 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.role_templates import ROLES, TEMPLATE_VERSIONS, template_for_domain
 from agent_orchestrator.verification.evidence_resolver import EvidenceResolver
 
-RESULT_ROLES = ("worker", "arbiter", "synthesizer")
+RESULT_ROLES = ("worker",)
 #: The result-role keys the published document profiles still carry (the five Worker
 #: variants were removed on 2026-10-02; the profiles keep their keys, unread).
 PROFILE_RESULT_KEYS = (
@@ -42,8 +42,8 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
         "fbcefdba9801b4ec5dbd62adaafbd8490a63fe1240617c5271b1d7a73b901061"
     )
     for version, digest in (
-        (1, "a3e8493e546de7e2aeea2f8455c8f94b9765598376e8ebcf954f362002e63602"),
-        (2, "9642fc48c2d955ac61d26a4da728d46a5f29e5bb3dcc6ed88395ed03001ad405"),
+        (1, "6fcbd71ae4dd8f17dcb1e7b218a8a13b29828eba6449a3ba297c97349621ff3b"),
+        (2, "73326d014696bdee5633d9afc78bbf9838e5826868c831eda7183dbd3a8c0f4b"),
     ):
         rows = {}
         for role in domains.DOC_PROFILE_V5.role_templates:
@@ -60,7 +60,7 @@ def test_published_profiles_and_prompt_bytes_are_unchanged():
             TEMPLATE_VERSIONS[role][f"{role}-v2"]
             if role in {"critic", "worker", "synthesizer"} else current
         ]
-    }) == "0c20a98d1d2d1bec2892633bcf99998e9b8faf752ccaddeabe0299f715ce7c79"
+    }) == "584b873e1ba517f89277c37a97ca0d39eb0750d61f8a1ffffb5fed09bc7f42d1"
 
 
 @pytest.mark.parametrize("role", RESULT_ROLES)

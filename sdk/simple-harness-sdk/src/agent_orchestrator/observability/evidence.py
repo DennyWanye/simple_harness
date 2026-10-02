@@ -16,7 +16,7 @@ from typing import Any
 
 from ..orchestrator.commit_service import CommitService
 from ..storage.store import Store
-from .graph_history import graph_history
+from ..verification.conflicts import mission_disputes
 from .lineage import lineage
 from .metrics import metrics
 from .secrets import environment_secrets, find_secrets, redact_text
@@ -86,7 +86,7 @@ def write_evidence(
         directory / "knowledge.json",
         {
             "knowledge": snapshot.get("knowledge", []),
-            "conflicts": snapshot.get("conflicts", []),
+            "disputes": mission_disputes(store, mission_id),
             "summaries": snapshot.get("summaries", []),
         },
     )
@@ -108,7 +108,6 @@ def write_evidence(
                 "drift_detail": [] if start is None else snapshot_diff(start, policy_snapshot),
             },
         )
-    dump(directory / "graph_history.json", graph_history(store, mission_id))  # step 5
     requests = snapshot.get("approvals", [])
     dump(  # step 7 (D7-11): the action ledger and the human record
         directory / "actions.json",

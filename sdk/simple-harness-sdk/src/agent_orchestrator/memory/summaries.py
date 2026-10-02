@@ -47,7 +47,6 @@ def build_summaries(
         affected_by_task.setdefault(record.source_task, set()).add(record.id)
     knowledge = [record for record in knowledge if record.id not in invalid]
     claims = store.list_mission_claims(mission_id)
-    open_conflicts = store.list_conflicts(mission_id, state="OPEN")
     result_summaries: dict[str, str] = {}
     for task in tasks:
         if task.accepted_result_id:
@@ -74,7 +73,6 @@ def build_summaries(
             result_summaries=result_summaries,
             knowledge=knowledge,
             claims=claims,
-            open_conflicts=open_conflicts,
         )
     summaries[f"mission:{mission_id}"] = compress(
         scope="mission",
@@ -83,7 +81,6 @@ def build_summaries(
         result_summaries=result_summaries,
         knowledge=knowledge,
         claims=claims,
-        open_conflicts=open_conflicts,
     )
     if affected_by_task:
         for summary in summaries.values():

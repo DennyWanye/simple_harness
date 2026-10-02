@@ -89,7 +89,6 @@ def test_k04_long_condition_is_available_in_full_context_with_source_provenance(
         result_summaries={task.id: "历史结论。" * 80 + condition},
         knowledge=(record,),
         claims=(),
-        open_conflicts=(),
     )
 
     assert record.content.index(condition) > 200

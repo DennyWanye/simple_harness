@@ -26,8 +26,6 @@ def register_document_templates() -> None:
     # These versions are immutable registry entries. Future code defaults must
     # retain them; changing a document prompt requires a new document version.
     worker_base = TEMPLATE_VERSIONS["worker"]["worker-v2"]
-    arbiter_base = TEMPLATE_VERSIONS["arbiter"]["arbiter-v2"]
-    synthesizer_base = TEMPLATE_VERSIONS["synthesizer"]["synthesizer-v2"]
     planner_base = TEMPLATE_VERSIONS["planner"]["planner-v4"]
     critic_base = TEMPLATE_VERSIONS["critic"]["critic-v2"]
 
@@ -54,42 +52,6 @@ def register_document_templates() -> None:
     )
     register_template(
         replace(worker, tool_names=tuple(n for n in worker.tool_names if n != "run_tests"))
-    )
-    arbiter = _revise(
-        arbiter_base,
-        "arbiter-doc-research-v1",
-        (
-            "只根据 dispute 里双方的 Claim 内容与证据引用做**外部检查**：在工作区 arbitration/<key>/ 目录下写一个探针测试（test_probe.py），用 run_tests 运行它，让实际行为说话；同时写 arbitration/<key>/verdict.md 记录依据。",
-            "只根据 dispute 里双方的 Claim 内容与来源依据核对各自范围；在 arbitration/<key>/verdict.md 记录双方依据与待裁决问题，提交人工审阅。"
-            + NOTICE,
-        ),
-        (
-            "工具：workspace_list、workspace_read_file、workspace_write_file、run_tests。",
-            "工具：workspace_list、workspace_read_file、workspace_write_file。",
-        ),
-        EVIDENCE,
-        (
-            'evidence 必须包含 "pytest:arbitration/<key>/test_probe.py"；只给意见、不跑检查的结论会被验收拒绝。',
-            "evidence 列出实际来源与裁决材料；你的意见不能决定正式结论，必须经过领域要求的人工裁决。",
-        ),
-    )
-    register_template(
-        replace(arbiter, tool_names=tuple(n for n in arbiter.tool_names if n != "run_tests"))
-    )
-    synthesizer = _revise(
-        synthesizer_base,
-        "synthesizer-doc-research-v1",
-        ("只把 verified_knowledge 当事实；", NOTICE),
-        (
-            "写完用 run_tests 运行任务要求的测试；",
-            "写完核对任务要求的来源与结论，缺失依据必须说明；",
-        ),
-        EVIDENCE,
-    )
-    register_template(
-        replace(
-            synthesizer, tool_names=tuple(n for n in synthesizer.tool_names if n != "run_tests")
-        )
     )
     planner = _revise(
         planner_base,
@@ -134,7 +96,7 @@ def _register_document_ordinal_refs() -> None:
         "没有足够依据排除全部反例时，停止提出全来源缺失结论；"
         "改为精确引用来源中明确记载的缺口，并保留其他阶段的实际记录及不确定性。"
     )
-    for role in ("worker", "arbiter", "synthesizer"):
+    for role in ("worker",):
         previous = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v4"]
         register_template(replace(previous, prompt_version=f"{role}-doc-research-v5",
                                   instructions=previous.instructions + refs + review))
@@ -195,7 +157,7 @@ def _register_document_submission_v2() -> None:
         "每个 Task 的预算需覆盖多次模型输入、输出、独立核验和必要返工，"
         "不要把首次预留下限当成整次任务的足够预算。"
     )
-    result_roles = {"worker", "arbiter", "synthesizer"}
+    result_roles = {"worker"}
     for name in (*sorted(result_roles), "planner", "critic"):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v1"]
         instructions = previous.instructions
@@ -261,7 +223,7 @@ def _register_document_submission_v3() -> None:
         "确认连续页面的原始bytes hash一致并拼接完整引文，再使用覆盖它的起止行范围。"
         "starts_mid_line/ends_mid_line 表示页切在行中，不能把单页片段当作完整行。"
     )
-    for name in ("worker", "arbiter", "synthesizer"):
+    for name in ("worker",):
         previous = TEMPLATE_VERSIONS[name][f"{name}-doc-research-v2"]
         register_template(replace(
             previous, prompt_version=f"{name}-doc-research-v3",
@@ -322,7 +284,7 @@ def _register_document_scope_review() -> None:
         "分析与 limitations 也须对照反例，标为分析并不豁免来源一致性；"
         "无法消解的新旧记录应明确并列其原文范围与局限。"
     )
-    for role in ("worker", "arbiter", "synthesizer"):
+    for role in ("worker",):
         previous = TEMPLATE_VERSIONS[role][f"{role}-doc-research-v3"]
         register_template(replace(
             previous, prompt_version=f"{role}-doc-research-v4",

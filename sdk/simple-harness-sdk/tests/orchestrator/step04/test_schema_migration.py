@@ -43,7 +43,7 @@ def test_v1_library_is_backed_up_and_upgraded_to_v2(tmp_path):
     tables = {
         r[0] for r in store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    assert {"knowledge", "summaries", "conflicts"} <= tables
+    assert {"knowledge", "summaries"} <= tables
     assert store.connection.execute("SELECT count(*) FROM missions").fetchone()[0] == 1
     assert (tmp_path / f"orchestrator.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()
     store.close()

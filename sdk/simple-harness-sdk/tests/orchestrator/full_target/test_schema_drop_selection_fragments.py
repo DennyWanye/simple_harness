@@ -32,19 +32,19 @@ def test_a_new_library_has_none_of_the_dropped_tables(tmp_path) -> None:
     store.close()
     tables = _tables(tmp_path / "orchestrator.db")
     assert not tables & DROPPED
-    assert {"missions", "tasks", "graph_changes", "policy_proposals"} <= tables  # kept
+    assert {"missions", "tasks", "claims", "policy_proposals"} <= tables  # kept
 
 
 def test_a_version_30_library_opens_and_loses_exactly_those_tables(tmp_path) -> None:
     """A version-30 library, rebuilt from a current one: the two old migrations' own
-    text creates the tables again and migration 31 is not yet recorded."""
+    text creates the tables again and migrations 31 and later are not yet recorded."""
 
     path = tmp_path / "orchestrator.db"
     Store.open(path).close()
     connection = sqlite3.connect(path)
     connection.executescript(schema.MIGRATIONS[11].ddl)  # migration 12, unchanged text
     connection.executescript(schema.MIGRATIONS[13].ddl)  # migration 14, unchanged text
-    connection.execute("DELETE FROM orch_schema_migrations WHERE version = 31")
+    connection.execute("DELETE FROM orch_schema_migrations WHERE version >= 31")
     connection.commit()
     connection.close()
     assert [m.version for m in schema.MIGRATIONS[11:14:2]] == [12, 14]
@@ -55,5 +55,4 @@ def test_a_version_30_library_opens_and_loses_exactly_those_tables(tmp_path) -> 
 
     after = _tables(path)
     assert after == before - DROPPED
-    assert schema.SCHEMA_VERSION == 31
-    assert (tmp_path / "orchestrator.db.pre-schema-31.backup").is_file()
+    assert (tmp_path / f"orchestrator.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()

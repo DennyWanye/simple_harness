@@ -311,7 +311,6 @@ async def warm(root, marker):
         spec(
             goal=GOAL,
             workspace_seed=SEEDS,
-            conflict_reserve_tokens=0,
             success_criteria=("file:a.md",),
             budget=Budget(max_tokens=1_000_000, max_cost_micros=10_000_000, max_attempts=12),
         )

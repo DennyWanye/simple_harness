@@ -100,7 +100,6 @@ class VerifierRouter:
         recorder: Callable[[LayerResult], Awaitable[None]] | None = None,
         tampered: Sequence[str] = (),
         knowledge: KnowledgeIndex | None = None,
-        require_synthesis_knowledge: bool = True,
         action_problems: Sequence[str] | None = None,
         human: Mapping[str, Any] | None = None,
         reuse: Mapping[str, LayerResult] | None = None,
@@ -123,7 +122,6 @@ class VerifierRouter:
                 mission=mission, task=task, envelope=envelope, artifacts=artifacts,
                 verification_copy=verification_copy, client_result_id=client_result_id,
                 tampered=tampered, knowledge=knowledge,
-                require_synthesis_knowledge=require_synthesis_knowledge,
                 action_problems=action_problems, local_code_execution=self._local_code_execution,
                 domain=actual_domain, assessment_binding=assessment_binding,
             )
@@ -177,7 +175,6 @@ class VerifierRouter:
             result = handler.rules(
                 envelope, task, artifacts=artifacts, verification_copy=verification_copy,
                 tampered=tampered, knowledge=knowledge,
-                require_synthesis_knowledge=require_synthesis_knowledge,
                 extra_problems=action_problems or (),
                 local_code_execution=self._local_code_execution, domain=actual_domain,
             )

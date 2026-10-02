@@ -10,7 +10,7 @@ Subcommands (step 2):
     mission get|cancel|events --evidence-dir DIR MISSION_ID
     attempt get --evidence-dir DIR ATTEMPT_ID
     artifact show --evidence-dir DIR ARTIFACT_ID
-    demo --scenario single-task|static-dag|knowledge-sharing|multi-mission|approval-action --provider fixtures|env --evidence-dir DIR
+    demo --scenario single-task|static-dag|multi-mission|approval-action --provider fixtures|env --evidence-dir DIR
     approval list|approve|reject|revoke|comment|review|arbitrate|takeover|resolve --evidence-dir DIR --as PRINCIPAL ...
     replay --evidence-dir DIR MISSION_ID [--events FILE] [--failures] [--attribution] [--out FILE]
     policy list|show|status --evidence-dir DIR
@@ -57,7 +57,6 @@ EXIT_WAITING = 4  # step 7: the Mission waits for a person
 SCENARIOS = {
     "single-task": 2,
     "static-dag": 3,
-    "knowledge-sharing": 4,
     "multi-mission": 6,
     "approval-action": 7,
 }
@@ -88,10 +87,6 @@ def _provider(args: argparse.Namespace, *, scenario: str = "single-task"):  # ty
 
         if scenario == "static-dag":
             return demo_static_dag_provider(), "agent-model", None, "fixtures"
-        if scenario == "knowledge-sharing":
-            from .testing.fixtures import demo_knowledge_sharing_provider
-
-            return demo_knowledge_sharing_provider(), "agent-model", None, "fixtures"
         return demo_single_task_provider(), "agent-model", None, "fixtures"
     if args.provider == "env":
         base_url = os.environ.get("SH_BASEURL")
@@ -225,7 +220,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     if step is None:
         _print({"error": f"unknown scenario {args.scenario}"})
         return EXIT_USAGE
-    if step not in {2, 3, 4, 6, 7}:
+    if step not in {2, 3, 6, 7}:
         _print({"scenario": args.scenario, "status": "not_implemented", "step": step})
         return EXIT_NOT_IMPLEMENTED
     if step == 6:
@@ -234,9 +229,6 @@ def cmd_demo(args: argparse.Namespace) -> int:
         return _demo_approval_action(args)
     from .observability.evidence import write_evidence
     from .testing.fixtures import (
-        COMPARE_SEED,
-        COMPARE_SPEC,
-        COMPARE_SYNTHESIS,
         DEMO_DAG_SPEC,
         DEMO_SEED,
         TEXTKIT_SEED,
@@ -259,23 +251,6 @@ def cmd_demo(args: argparse.Namespace) -> int:
             ),
             budget=Budget(max_tokens=400_000, max_attempts=3),
             workspace_seed=DEMO_SEED,
-        )
-    elif step == 4:
-        spec = MissionSpec(
-            orchestration_semantics_version="legacy",
-            goal=str(COMPARE_SPEC["goal"]),
-            success_criteria=tuple(str(c) for c in COMPARE_SPEC["success_criteria"]),
-            tenant_id=args.tenant,
-            idempotency_key=args.idempotency_key,
-            allowed_tools=tuple(str(t) for t in COMPARE_SPEC["allowed_tools"]),
-            budget=Budget(max_tokens=1_200_000 if kind == "env" else 400_000, max_attempts=16),
-            workspace_seed=COMPARE_SEED,
-            untrusted_sources=tuple(str(p) for p in COMPARE_SPEC["untrusted_sources"]),
-            synthesis={
-                **COMPARE_SYNTHESIS,
-                "budget": {"max_tokens": 200_000 if kind == "env" else 30_000, "max_attempts": 2},
-            },
-            conflict_reserve_tokens=200_000 if kind == "env" else 20_000,
         )
     else:
         spec = MissionSpec(
@@ -325,10 +300,6 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 "knowledge": [
                     {"id": k.id, "status": k.status, "key": k.key, "used_by": list(k.used_by)}
                     for k in orchestrator.store.list_knowledge(mission.id)
-                ],
-                "conflicts": [
-                    {"conflict_id": c["conflict_id"], "key": c["key"], "state": c["state"]}
-                    for c in orchestrator.store.list_conflicts(mission.id)
                 ],
                 "graph_version": (final.final_report or {}).get("graph_version"),
                 "lineage": {

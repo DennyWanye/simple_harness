@@ -608,6 +608,19 @@ DROP INDEX IF EXISTS fragment_validations_mission;
 DROP TABLE IF EXISTS fragment_validations;
 """
 
+# 2026-10-02: conflict Tasks, the final synthesis Task and their Mission-level system
+# pools were removed; a contradiction is now read from the claims themselves.  The graph
+# change ledger lost its last writer (conflict Tasks).  Migrations 2, 3 and 15 keep their
+# original text.
+DDL_V32 = """
+DROP INDEX IF EXISTS conflicts_mission_idx;
+DROP TABLE IF EXISTS conflicts;
+DROP INDEX IF EXISTS graph_changes_mission_idx;
+DROP TABLE IF EXISTS graph_changes;
+DROP TABLE IF EXISTS mission_system_tail_tasks;
+DROP TABLE IF EXISTS mission_system_tail_pools;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -640,6 +653,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(29, "orchestrator-taskgraph-required", DDL_V29),
     Migration(30, "orchestrator-manifest-binding-revision-at-or-before", DDL_V30),
     Migration(31, "orchestrator-drop-selection-and-fragments", DDL_V31),
+    Migration(32, "orchestrator-drop-conflicts-graph-changes-system-tail", DDL_V32),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

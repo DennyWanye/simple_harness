@@ -79,7 +79,7 @@ from ..planning.htn.compiler import (
     DemandNotAdmissible,
     apply_obligation_openings,
 )
-from ..planning.manager import inherit_limits
+from ..governance.budget_limits import inherit_limits
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError

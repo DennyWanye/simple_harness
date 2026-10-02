@@ -14,12 +14,14 @@ from agent_orchestrator.governance.domains import (
 )
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 
-RESULT_ROLES = ("worker", "arbiter", "synthesizer")
-#: Roles removed on 2026-10-02 (the Manager and the five Worker variants only it could
-#: set).  Published profiles still name them until the benchmark arms are settled;
+RESULT_ROLES = ("worker",)
+#: Roles removed on 2026-10-02 (the Manager, the five Worker variants only it could set,
+#: the Arbiter of conflict Tasks and the Synthesizer of the final synthesis Task).
+#: Published profiles still name them until the benchmark arms are settled;
 #: ``template_for_domain`` never asks for them.
 REMOVED_ROLES = frozenset(
-    {"manager", "explorer", "exploiter", "simplifier", "connector", "failure_analyst"}
+    {"manager", "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
+     "arbiter", "synthesizer"}
 )
 
 

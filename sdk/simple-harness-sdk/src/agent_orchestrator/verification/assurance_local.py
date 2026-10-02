@@ -39,7 +39,6 @@ def freeze_verifier_inputs(
     client_result_id: str | None,
     tampered: Sequence[str],
     knowledge: KnowledgeIndex | None,
-    require_synthesis_knowledge: bool,
     action_problems: Sequence[str] | None,
     local_code_execution: bool,
     domain: DomainProfileV1 | None,
@@ -75,7 +74,6 @@ def freeze_verifier_inputs(
                 key: str(value) for key, value in sorted(knowledge.claim_status.items())
             },
         },
-        "require_synthesis_knowledge": require_synthesis_knowledge,
         "action_problems": None if action_problems is None else list(action_problems),
         "local_code_execution": local_code_execution,
         "domain": None if domain is None else domain.to_json(),

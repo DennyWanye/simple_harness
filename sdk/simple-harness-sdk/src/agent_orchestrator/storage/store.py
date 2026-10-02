@@ -1459,77 +1459,6 @@ class Store:
         rows = self._connection.execute(sql + " ORDER BY bound_at, mission_id", args).fetchall()
         return [dict(_loads(row[0])) for row in rows]
 
-    def insert_graph_change(self, record: Mapping[str, Any]) -> None:
-        with self.transaction() as connection:
-            connection.execute(
-                "INSERT INTO graph_changes(change_id,mission_id,from_version,to_version,proposal_hash,json,created_at)"
-                " VALUES (?,?,?,?,?,?,?) ON CONFLICT(change_id) DO NOTHING",
-                (
-                    str(record["change_id"]),
-                    str(record["mission_id"]),
-                    int(record["from_version"]),
-                    int(record["to_version"]),
-                    str(record["proposal_hash"]),
-                    canonical_json(dict(record)),
-                    self.now,
-                ),
-            )
-
-    def get_graph_change(self, change_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT json FROM graph_changes WHERE change_id = ?", (change_id,)
-        ).fetchone()
-        return None if row is None else _loads(row[0])
-
-    def list_graph_changes(
-        self, mission_id: str, *, since_version: int = 0
-    ) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT json FROM graph_changes WHERE mission_id = ? AND from_version >= ? ORDER BY to_version",
-            (mission_id, since_version),
-        ).fetchall()
-        return [_loads(row[0]) for row in rows]
-
-    # --------------------------------------------------------------- conflicts
-    def upsert_conflict(self, conflict: Mapping[str, Any]) -> None:
-        with self.transaction() as connection:
-            connection.execute(
-                "INSERT INTO conflicts(conflict_id,mission_id,key,state,task_id,version,json,created_at,updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(conflict_id) DO UPDATE SET state = excluded.state,"
-                " task_id = excluded.task_id, version = excluded.version, json = excluded.json,"
-                " updated_at = excluded.updated_at",
-                (
-                    str(conflict["conflict_id"]),
-                    str(conflict["mission_id"]),
-                    str(conflict["key"]),
-                    str(conflict["state"]),
-                    conflict.get("task_id"),
-                    int(conflict.get("version", 1)),
-                    canonical_json(dict(conflict)),
-                    float(conflict.get("created_at") or self.now),
-                    self.now,
-                ),
-            )
-
-    def get_conflict(self, conflict_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT json FROM conflicts WHERE conflict_id = ?", (conflict_id,)
-        ).fetchone()
-        return None if row is None else _loads(row[0])
-
-    def list_conflicts(self, mission_id: str, *, state: str | None = None) -> list[dict[str, Any]]:
-        if state is None:
-            rows = self._connection.execute(
-                "SELECT json FROM conflicts WHERE mission_id = ? ORDER BY created_at, conflict_id",
-                (mission_id,),
-            ).fetchall()
-        else:
-            rows = self._connection.execute(
-                "SELECT json FROM conflicts WHERE mission_id = ? AND state = ? ORDER BY created_at, conflict_id",
-                (mission_id, state),
-            ).fetchall()
-        return [_loads(row[0]) for row in rows]
-
     # --------------------------------------------------------------- artifacts
     def upsert_artifact(self, artifact: Artifact) -> None:
         with self.transaction() as connection:
@@ -1869,9 +1798,7 @@ class Store:
             ],
             "claims": [claim.to_json() for claim in self.list_mission_claims(mission_id)],
             "knowledge": [record.to_json() for record in self.list_knowledge(mission_id)],
-            "conflicts": self.list_conflicts(mission_id),
             "summaries": self.list_summaries(mission_id),
-            "graph_changes": self.list_graph_changes(mission_id),
             "artifacts": [
                 artifact.to_json()
                 for attempt in attempts

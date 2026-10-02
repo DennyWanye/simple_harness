@@ -112,7 +112,7 @@ class TaskScore:
     task_id: str
     score: float
     parts: Mapping[str, float]
-    tier: int  # 0 = conflict task, 1 = starving (waited a whole window), 2 = formula
+    tier: int  # 1 = starving (waited a whole window), 2 = formula
     version: str = ALLOCATOR_VERSION
     weights_hash: str | None = None  # step 9 (plan D9-4'): which weights scored it
 
@@ -197,7 +197,7 @@ def score_tasks(
             "duplication_score": (len(goals[normalise_goal(task.goal)]) - 1) / total,
         }
         score = sum(float(table[name]) * value for name, value in parts.items())
-        tier = 0 if task.kind == "conflict" else (1 if waiting >= 1.0 else 2)
+        tier = 1 if waiting >= 1.0 else 2
         scores[task.id] = TaskScore(task.id, score, parts, tier, weights_hash=hashed)
     return scores
 

@@ -66,23 +66,22 @@ def _attempt(task_id, ordinal, status=AttemptStatus.RETRY_WAIT):
     )
 
 
-def test_under_pressure_only_conflict_and_starving_tasks_expand_plus_one_exploration_slot():
+def test_under_pressure_only_starving_tasks_expand_plus_one_exploration_slot():
     raised = BackpressureState(level=RAISED, raised={"pending_verifications": {}}, since=1.0)
     tasks = [
         _task("m:task-1", priority=5.0, ready_at=100.0),  # formula tier, already tried
         _task("m:task-2", priority=4.0, ready_at=100.0),  # formula tier, never tried → exploration
         _task("m:task-3", priority=3.0, ready_at=100.0),  # formula tier, never tried → waits
         _task("m:task-4", priority=0.5, ready_at=0.0),  # starving (waited a whole window)
-        _task("m:task-5", priority=0.1, kind="conflict", ready_at=100.0),  # conflict tier
     ]
     attempts = [_attempt("m:task-1", 1)]
     plan = allocate(
         tasks, attempts, concurrency_limit=8, now=350.0, aging_window_seconds=300.0, pressure=raised
     )
     assert plan.concurrency_limit == 4 and plan.pressure == "RAISED"  # halved
-    assert [t.id for t, _ in plan.grants] == ["m:task-5", "m:task-4", "m:task-2"]
+    assert [t.id for t, _ in plan.grants] == ["m:task-4", "m:task-2"]
     calm = allocate(tasks, attempts, concurrency_limit=8, now=350.0, aging_window_seconds=300.0)
-    assert len(calm.grants) == 5 and calm.pressure is None
+    assert len(calm.grants) == 4 and calm.pressure is None
     none = allocate(
         tasks,
         attempts,
@@ -92,5 +91,5 @@ def test_under_pressure_only_conflict_and_starving_tasks_expand_plus_one_explora
         pressure=raised,
         exploration_slots=0,
     )
-    assert [t.id for t, _ in none.grants] == ["m:task-5", "m:task-4"]
+    assert [t.id for t, _ in none.grants] == ["m:task-4"]
 

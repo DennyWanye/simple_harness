@@ -35,12 +35,11 @@ import pytest
 
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.artifacts.store import ArtifactStore
-from agent_orchestrator.contracts import ContractError, TaskStatus
+from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.governance.domains import (
     CODE_DOMAIN,
     DOC_DOMAIN,
     DOC_PROFILE,
-    DOC_PROFILE_V4,
 )
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
@@ -638,56 +637,6 @@ def test_facade_rechecks_physical_storage_on_new_commands_and_pending_approval(e
     assert seen == [e.mission.id, e.mission.id]
     assert e.store.snapshot(e.mission.id) == before
     assert e.store.list_decisions(pending["request_id"]) == []
-
-
-def test_revocation_does_not_close_a_real_conflict_task_or_rewrite_claims(env):
-    from test_p33_remaining_domain_gates import (
-        _document_result,
-        _graph,
-        _node,
-        _planning,
-    )
-
-    e = env
-    # Preserve the historical V4 conflict/revocation oracle only for this Mission;
-    # the env fixture and all other source commands still use the current domain.
-    e.mission = _planning(e.commit, profile=DOC_PROFILE_V4, conflict_reserve_tokens=20_000)
-    e.api = MissionControlV1(
-        e.host, tenant_id=e.mission.tenant_id, principal=Principal("person-one")
-    )
-    nodes = [_node("A"), _node("B")]
-    for key, node in zip(("A", "B"), nodes, strict=True):
-        node["success_criteria"].append(f"cite:sources/{key}.md")
-    tasks, _ = _graph(e.commit, e.mission, *nodes)
-    for task, stance in zip(tasks, ("affirms", "refutes"), strict=True):
-        result = _document_result(e.commit, task, stance=stance, cas=e.cas)
-        e.commit.accept_result(result.envelope.id, verifier_results=())
-    [conflict] = e.store.list_conflicts(e.mission.id)
-    assert conflict["state"] == "OPEN"
-    conflict_task = e.store.get_task(conflict["task_id"])
-    assert conflict_task.kind == "conflict" and conflict_task.status is TaskStatus.READY
-    claims = e.store.list_mission_claims(e.mission.id)
-    knowledge = e.store.list_knowledge(e.mission.id)
-    # Revoke the actual cited source of one side, not an unrelated newly added file.
-    source_path = "sources/A.md"
-    source = e.store.get_source(e.mission.id, source_path)
-    _approve(
-        e,
-        e.api.revoke_source(
-            {
-                "mission_id": e.mission.id,
-                "path": source_path,
-                "expected_version_hash": source["version_hash"],
-                "reason": "来源已撤回",
-                "idempotency_key": "revoke-conflict-source",
-            }
-        ),
-    )
-    assert e.store.list_conflicts(e.mission.id) == [conflict]
-    assert e.store.get_task(conflict_task.id) == conflict_task
-    assert e.store.list_mission_claims(e.mission.id) == claims
-    assert e.store.list_knowledge(e.mission.id) == knowledge
-    _assert_replay(e)
 
 
 def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, monkeypatch):
