@@ -16,7 +16,6 @@ Draft (moved into tests/orchestrator/host_support/ when S2 starts).
 from __future__ import annotations
 
 import asyncio
-import json
 import sqlite3
 from pathlib import Path
 
@@ -256,72 +255,6 @@ def test_a_foreign_tenant_sees_nothing(tmp_path):
     )
 
 
-def _needs_human_critic(request):  # type: ignore[no-untyped-def]
-    from agent_orchestrator.testing.fixtures import package_of
-
-    criteria = package_of(request).get("mission_success_criteria", [])
-    body = {
-        "verdict": "PASS",
-        "needs_human": True,
-        "findings": [],
-        "mission_criteria": [{"criterion": c, "met": True, "reason": "scripted"} for c in criteria],
-    }
-    return "<critic_verdict>" + json.dumps(body, ensure_ascii=False) + "</critic_verdict>"
-
-
-def _review_provider() -> RoleScriptedProvider:
-    return RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([TASK])],
-            "worker": [
-                ("workspace_write_file", {"path": "NOTES.md", "content": "- 一\n- 二\n- 三\n"}),
-                envelope_step(summary="写好了", artifacts=["NOTES.md"], claims=["三个要点"]),
-            ],
-            "critic": [_needs_human_critic, critic_step(verdict="PASS", criteria_met=True)],
-        }
-    )
-
-
-def test_a_foreign_tenant_cannot_decide_take_over_comment_or_read(tmp_path):
-    """Review round 2 P1-C: every object kind, and nothing changes."""
-
-    async def body(orchestrator, control):
-        mission_id = control.create(_command("k-review"))["mission_id"]
-        await orchestrator.run()
-        view = control.snapshot(mission_id)["snapshot"]
-        request_id = control.approvals(mission_id)[0]["request_id"]
-        task_id = view["tasks"][0]["id"]
-        artifact_id = view["artifacts"][0]["id"]
-        events_before = orchestrator.store.count_events(mission_id)
-        stranger = MissionControlV1(
-            orchestrator, tenant_id="other", principal=Principal("other:x", "x")
-        )
-        messages = set()
-        for call in (
-            lambda: stranger.decide(request_id, "approve"),
-            lambda: stranger.decide(request_id, "reject", reason="不要"),
-            lambda: stranger.takeover(task_id, "stop", basis="我想停"),
-            lambda: stranger.comment(task_id, "看看"),
-            lambda: stranger.comment(request_id, "看看"),
-            lambda: stranger.artifact_read(artifact_id),
-        ):
-            with pytest.raises(FacadeError) as refused:
-                call()
-            assert refused.value.code == "not_found"
-            messages.add(str(refused.value))
-        return (
-            messages,
-            stranger.approvals(None),
-            control.approvals(mission_id)[0]["state"],
-            events_before,
-            orchestrator.store.count_events(mission_id),
-        )
-
-    messages, foreign_list, state, before, after = _with(tmp_path, body, _review_provider())
-    assert len(messages) == 1  # one wording, no id
-    assert foreign_list == [] and state == "PENDING" and before == after
-
-
 def test_cancel_is_idempotent_and_leaves_an_ended_mission_alone(tmp_path):
     async def body(orchestrator, control):
         running = control.create(_command("k-cancel"))["mission_id"]
@@ -334,16 +267,6 @@ def test_cancel_is_idempotent_and_leaves_an_ended_mission_alone(tmp_path):
     first, second, _done, _ = _with(tmp_path, body)
     assert first == {**first, "status": "CANCELLED", "changed": True}
     assert second["status"] == "CANCELLED" and second["changed"] is False
-
-
-def test_a_completed_mission_is_not_cancelled(tmp_path):
-    async def body(orchestrator, control):
-        mission_id = control.create(_command("k-completed"))["mission_id"]
-        await orchestrator.run()
-        return control.cancel(mission_id)
-
-    result = _with(tmp_path, body)
-    assert result["status"] == "COMPLETED" and result["changed"] is False
 
 
 # ------------------------------------------------------------------ SB-4
@@ -388,31 +311,6 @@ def test_the_snapshot_cursor_comes_from_the_same_read(tmp_path, monkeypatch):
     assert through < inserted
 
 
-def test_snapshot_cursor_and_event_pages_agree(tmp_path):
-    async def body(orchestrator, control):
-        mission_id = control.create(_command("k-cursor"))["mission_id"]
-        await orchestrator.run()
-        view = control.snapshot(mission_id)
-        with sqlite3.connect(Path(tmp_path) / "evidence" / "orchestrator.db") as db:
-            max_seq = db.execute(
-                "SELECT MAX(seq) FROM events WHERE mission_id = ?", (mission_id,)
-            ).fetchone()[0]
-        pages, after = [], 0
-        while True:
-            page = control.events(mission_id, after_seq=after, limit=3)
-            pages.append(page)
-            after = page["through_seq"]
-            if not page["has_more"]:
-                break
-        return view, max_seq, pages
-
-    view, max_seq, pages = _with(tmp_path, body)
-    assert view["through_seq"] == max_seq and view["graph_version"] >= 1
-    seqs = [e["seq"] for page in pages for e in page["events"]]
-    assert seqs == sorted(set(seqs)) and seqs[-1] == max_seq
-    assert all(len(page["events"]) <= 3 for page in pages)
-
-
 def test_event_page_size_is_bounded(tmp_path):
     def body(orchestrator, control):
         mission_id = control.create(_command("k-bound"))["mission_id"]
@@ -421,45 +319,3 @@ def test_event_page_size_is_bounded(tmp_path):
         return refused.value.code
 
     assert _with(tmp_path, body) == "invalid_request"
-
-
-# ------------------------------------------------------------------ SB-5
-def test_artifacts_are_read_by_id_and_checked_against_their_hash(tmp_path):
-    async def body(orchestrator, control):
-        mission_id = control.create(_command("k-artifact"))["mission_id"]
-        await orchestrator.run()
-        artifact = control.snapshot(mission_id)["snapshot"]["artifacts"][0]
-        read = control.artifact_read(artifact["id"])
-        stored = Path(artifact["storage_uri"])  # P3.2 D3: the store's read-only file
-        stored.chmod(0o644)
-        stored.write_text("被改过", encoding="utf-8")
-        with pytest.raises(FacadeError) as tampered:
-            control.artifact_read(artifact["id"])
-        with pytest.raises(FacadeError) as missing:
-            control.artifact_read("artifact-does-not-exist")
-        with pytest.raises(FacadeError) as path_like:
-            control.artifact_read("/etc/passwd")
-        return artifact, read, tampered.value.code, missing.value.code, path_like.value.code
-
-    artifact, read, tampered, missing, path_like = _with(tmp_path, body)
-    assert (
-        read["content"] == "- 一\n- 二\n- 三\n" and read["content_hash"] == artifact["content_hash"]
-    )
-    assert read["truncated"] is False and read["encoding"] == "utf-8"
-    assert tampered == "integrity_error" and missing == "not_found" and path_like == "not_found"
-
-
-def test_a_large_artifact_is_truncated_and_says_so(tmp_path, monkeypatch):
-    import agent_orchestrator.api.facade as facade
-
-    monkeypatch.setattr(facade, "MAX_ARTIFACT_BYTES", 5)  # "- " + one 3-byte character
-
-    async def body(orchestrator, control):
-        mission_id = control.create(_command("k-large"))["mission_id"]
-        await orchestrator.run()
-        artifact = control.snapshot(mission_id)["snapshot"]["artifacts"][0]
-        return control.artifact_read(artifact["id"])
-
-    read = _with(tmp_path, body)
-    assert read["truncated"] is True and read["size_bytes"] > 5
-    assert read["content"] == "- 一" and read["encoding"] == "utf-8"

@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
-from test_process_kill_recovery import _cleanup, _kill, _marker, _rows
+
+MAX_MARKER_SECONDS = 15  # Includes interpreter/import startup.
+REAP_SECONDS = 3
 
 CHILD = """
 import json, sqlite3, sys, time
@@ -27,6 +35,57 @@ Path(marker).write_text(json.dumps({'mode': mode}))
 while True:
     time.sleep(1)
 """
+
+
+def _stderr(log):
+    with log.open("rb") as stream:
+        stream.seek(max(0, log.stat().st_size - 8192))
+        return stream.read().decode("utf-8", errors="replace")
+
+
+def _marker(child, marker, log):
+    deadline = time.monotonic() + MAX_MARKER_SECONDS
+    while time.monotonic() < deadline:
+        if marker.exists():
+            return json.loads(marker.read_text(encoding="utf-8"))
+        if child.poll() is not None:
+            raise AssertionError(f"child exited {child.returncode}: {_stderr(log)}")
+        time.sleep(0.02)
+    raise AssertionError(f"durable marker timeout: {_stderr(log)}")
+
+
+def _kill(child):
+    os.killpg(child.pid, signal.SIGKILL)
+    child.wait(timeout=REAP_SECONDS)
+    assert child.returncode == -signal.SIGKILL
+
+
+def _cleanup(child):
+    if child.poll() is None:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    child.wait(timeout=REAP_SECONDS)
+
+
+def _rows(path, query, args=()):
+    # Only called after the owning process has exited. A hot rollback journal
+    # requires recovery even for SELECT; let SQLite recover an evidence copy,
+    # leaving the original DB and sidecars untouched for the actual cold owner.
+    # Copy WAL too; immutable=1 or copying only the main file would lose facts.
+    with tempfile.TemporaryDirectory(prefix="sqlite-observation-", dir=path.parent) as directory:
+        copied = Path(directory) / path.name
+        shutil.copyfile(path, copied)
+        for suffix in ("-journal", "-wal"):
+            sidecar = Path(str(path) + suffix)
+            if sidecar.is_file():
+                shutil.copyfile(sidecar, Path(str(copied) + suffix))
+        connection = sqlite3.connect(copied)
+        try:
+            return connection.execute(query, args).fetchall()
+        finally:
+            connection.close()
 
 
 def _identity(path):

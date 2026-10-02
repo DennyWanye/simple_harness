@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -240,6 +241,17 @@ def worker_reply(request: Any) -> Reply | None:
     return "<result_envelope>" + json.dumps(envelope, ensure_ascii=False) + "</result_envelope>"
 
 
+def broken_result(request: Any) -> Reply | None:
+    """一份格式不对的结果：认领了一个这一步没有声明的输出端口（文件照常写出）。"""
+
+    reply = worker_reply(request)
+    if isinstance(reply, tuple):
+        return reply
+    body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
+    body["outputs"] = {"no-such-port": (body["artifacts"] or ["x"])[0]}
+    return "<result_envelope>" + json.dumps(body, ensure_ascii=False) + "</result_envelope>"
+
+
 class LayeredScriptedProvider(RoleScriptedProvider):
     """按角色现算回复的脚本化提供者；``asked`` 记下每次被问到的角色，按顺序。"""
 
@@ -253,10 +265,18 @@ class LayeredScriptedProvider(RoleScriptedProvider):
         super().__init__({})
         self._answer = {"planner": planner, REVIEWER: reviewer, "worker": worker}
         self.asked: list[str] = []
+        #: 被扣住的角色：对它的调用停在半路不返回，直到 ``release`` 被置位（模拟一次很慢
+        #: 的模型调用，用来在调用进行中重启服务或取消任务）。
+        self.held: set[str] = set()
+        self.release = asyncio.Event()
+        self.entered = asyncio.Event()
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         role = role_of(request)
         self.asked.append(role)
+        if role in self.held:
+            self.entered.set()
+            await self.release.wait()
         answer = self._answer.get(role)
         reply = None if answer is None else answer(request)
         if reply is None:

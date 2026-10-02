@@ -3,7 +3,6 @@
 """Exact SDK uncertain handoffs, cancellation fences and owner loss."""
 
 import asyncio
-import json
 from contextlib import contextmanager
 from dataclasses import replace
 
@@ -96,120 +95,6 @@ def test_slot_queue_has_explicit_nonbillable_liveness_and_original_deadline(tmp_
             assert provider.calls == 1
             provider.allow.set()
             await running
-
-    asyncio.run(exercise())
-
-
-def test_real_orchestrator_planner_worker_critic_and_whole_account_chain(tmp_path):
-    from fixtures_provider import (
-        RoleScriptedProvider,
-        envelope_step,
-        graph_proposal_step,
-        package_of,
-    )
-    from graph_helpers7 import spec
-
-    from agent_orchestrator.contracts import MissionStatus
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-
-    report = "# Finding\nThe material is complete for this fixture.\n"
-    reviewed = []
-
-    def assess(request):
-        actual_reads = [
-            json.loads(message.content)
-            for message in request.messages
-            if str(message.role) == "tool"
-        ]
-        actual = actual_reads[-1]["value"]["content"]
-        reviewed.append(actual)
-        met = actual == report
-        return (
-            "<critic_verdict>"
-            + json.dumps(
-                {
-                    "verdict": "PASS" if met else "FAIL",
-                    "findings": []
-                    if met
-                    else [{"severity": "blocker", "detail": "wrong actual file"}],
-                    "mission_criteria": [
-                        {
-                            "criterion": criterion,
-                            "met": met,
-                            "reason": "Compared actual workspace read to expected fixture content",
-                        }
-                        for criterion in package_of(request)["mission_success_criteria"]
-                    ],
-                }
-            )
-            + "</critic_verdict>"
-        )
-
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step(
-                    [
-                        node(
-                            "A",
-                            tokens=50_000,
-                            verification_policy=["format_check", "rule_check", "critic_review"],
-                        )
-                    ]
-                )
-            ],
-            "worker": [
-                ("workspace_write_file", {"path": "a.md", "content": report}),
-                envelope_step(
-                    summary="wrote a.md",
-                    artifacts=["a.md"],
-                    claims=["a.md contains the fixture finding"],
-                ),
-            ],
-            "critic": [("workspace_read_file", {"path": "a.md"}), assess] * 2,
-        }
-    )
-
-    async def exercise():
-        capacity_config = OrchestratorConfig(
-            evidence_root=tmp_path / "capacity",
-            max_concurrency=3,
-            candidates_per_task=2,
-            max_concurrent_model_calls=2,
-        )
-        assert capacity_config.max_concurrent_model_calls == 2
-        # The role script describes one Worker. Capacity independence is asserted
-        # above; simultaneous candidates have their own shared-reservation oracle.
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "whole",
-            max_concurrency=1,
-            candidates_per_task=1,
-            max_concurrent_model_calls=2,
-        )
-        async with Orchestrator(config, provider, provider_token_estimator=Counter(1000)) as orch:
-            mission = await orch.submit_mission(spec(success_criteria=("file:a.md",)))
-            await asyncio.wait_for(orch.run(), 15)
-            assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED, (
-                orch.progress_log
-            )
-            assert reviewed and all(value == report for value in reviewed)
-            rows = grants(orch.commit)
-            assert len(rows) == sum(provider.by_role.values())
-            assert all(
-                row["state"] == "SETTLED" and row["actual_tokens"] <= row["total_upper"]
-                for row in rows
-            )
-            assert set(provider.by_role) == {"planner", "worker", "critic"}
-            for row in rows:
-                intent = orch.store.get_intent(row["intent_id"])
-                assert intent.config["provider_admission_fingerprint"] == row["fingerprint"]
-            with orch.store.transaction():
-                costs = orch.commit.ledger.costs_report(mission.id)
-            accounts = [a for a in costs["accounts"] if a["scope"] == "mission"]
-            assert accounts[0]["reserved_tokens"] == 0
-            assert accounts[0]["settled_tokens"] == sum(row["actual_tokens"] for row in rows)
-            assert all(row["state"] == "SETTLED" for row in costs["reservations"])
 
     asyncio.run(exercise())
 

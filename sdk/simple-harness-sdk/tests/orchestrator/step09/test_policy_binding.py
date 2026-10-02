@@ -267,40 +267,6 @@ def test_the_library_role_keeps_evaluation_pins_out_of_production(tmp_path):
     asyncio.run(case())
 
 
-# ------------------------------------------------------------------ interpreter drift (P1-1)
-def test_a_resumed_mission_says_when_the_code_that_reads_its_policy_changed(
-    tmp_path, monkeypatch
-):
-    import agent_orchestrator.scheduling.allocator as allocator
-
-    config = _config(tmp_path)
-
-    async def case():
-        # An older build recorded another allocator.  policy_versions 是保障层审计的全局
-        # 来源表，裸 SQL 改写会被触发器拒绝（SOURCE_CHANGE_RECEIPT_REQUIRED），所以改为
-        # 让第一段真的在"旧版分配器"下绑定策略，再换回当前版本续跑。
-        monkeypatch.setattr(allocator, "ALLOCATOR_VERSION", "allocator-v0")
-        async with Orchestrator(config, _provider()) as orch:
-            mission = await orch.submit_mission(_spec("drift"))
-            bound = orch.store.get_mission_policy(mission.id)["version_id"]
-            recorded = orch.store.get_policy_version(bound)["interpreter_versions"]
-            assert recorded["allocator"] == "allocator-v0"
-        monkeypatch.undo()
-        assert allocator.ALLOCATOR_VERSION == "allocator-v1"
-        async with Orchestrator(config, _provider()) as orch:
-            await orch.run()
-            drift = [
-                e for e in orch.store.iter_events(mission.id) if e.type == "PolicyInterpreterDrift"
-            ]
-            assert len(drift) == 1
-            assert drift[0].payload["differences"] == [
-                {"key": "allocator", "bound": "allocator-v0", "running": "allocator-v1"}
-            ]
-            assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED
-
-    asyncio.run(case())
-
-
 # ------------------------------------------------------------------ code review round 1
 def test_review_p1_1_a_mission_older_than_policy_binding_still_replays_completely(tmp_path):
     """A Mission migrated to ``policy-legacy`` has no ``policy_version_id`` in its

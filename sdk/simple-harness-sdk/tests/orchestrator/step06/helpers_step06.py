@@ -39,7 +39,3 @@ def config(tmp_path, **overrides):
 
 def only(keys):
     return [t for t in RECORDER_TASKS if t["key"] in keys]
-
-
-def events_of(store, mission_id, *types):
-    return [e for e in store.list_events(mission_id) if not types or e.type in types]

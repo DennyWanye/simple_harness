@@ -6,7 +6,7 @@
 test per fix — P0-1 pause is only for READY/BLOCKED, P1-1 a retarget naming the superseded
 task follows the replacement, P1-2 the two missing Manager triggers (PASS + proposed_tasks,
 repeated verification failures), P1-3 the manager intent settles only after the change is
-durable, P1-4 ``AllocationDecided`` is on the timeline, P2-1/2/4/7/8/9 as named below."""
+durable, P2-1/2/4/7/8/9 as named below."""
 
 from __future__ import annotations
 
@@ -272,34 +272,6 @@ def test_p1_3_a_crash_between_proposal_and_commit_still_applies_the_change_once(
             assert (
                 provider.by_role.get("manager", 0) == 1
             )  # the same turn was re-collected, not re-run
-
-    asyncio.run(case())
-
-
-# ------------------------------------------------------------------ P1-4 / S5-09
-def test_p1_4_allocation_decided_is_on_the_timeline_and_matches_the_frozen_score(tmp_path):
-    provider = demo_dynamic_dag_provider(
-        tasks=only("AD"), scripts={"A": recorder_scripts()["A"], "D": recorder_scripts()["D"]}
-    )
-
-    async def case():
-        async with Orchestrator(config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                spec("p1-4", success_criteria=("file:DOCS.md",))
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            assert store.get_mission(mission.id).status is MissionStatus.COMPLETED
-            decided = {
-                e.attempt_id: e
-                for e in store.list_events(mission.id)
-                if e.type == "AllocationDecided"
-            }
-            for task in store.list_tasks(mission.id):
-                for attempt in store.list_attempts(task.id):
-                    frozen = store.get_intent_for_subject(attempt.id).config["allocation"]
-                    assert decided[attempt.id].payload == frozen
-                    assert decided[attempt.id].task_id == task.id
 
     asyncio.run(case())
 

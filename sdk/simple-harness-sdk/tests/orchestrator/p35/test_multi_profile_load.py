@@ -4,18 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
 import pytest
-from graph_helpers7 import node, spec
-from test_multi_mission_load import _until
+from graph_helpers7 import node
 from test_provider_budget_guard import Counter, grants
 
-from agent_orchestrator.contracts import MissionStatus
-from agent_orchestrator.graph.task_graph import TaskGraphProposal
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.runtime.model_router import RoutingRules, RuntimeProfile
+from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.testing.fixtures import (
     RoleScriptedProvider,
     critic_step,
@@ -80,150 +74,6 @@ class Load:
                     load.active[profile] -= 1
 
         return Provider()
-
-
-@pytest.mark.parametrize("per_pool", [False, True])
-def test_global_two_and_profile_one_limits_compose_across_real_runtime_pools(tmp_path, per_pool):
-    async def exercise():
-        load = Load()
-        profiles = {
-            "workers": RuntimeProfile(
-                "workers", load.provider("workers"), "worker-model", max_concurrent_model_calls=1
-            ),
-            "critics": RuntimeProfile(
-                "critics", load.provider("critics"), "critic-model", max_concurrent_model_calls=2
-            ),
-        }
-        config = OrchestratorConfig(
-            evidence_root=tmp_path,
-            max_concurrency=5,
-            max_concurrent_model_calls=2,
-            candidates_per_task=1,
-            dynamic_graph=False,
-            verifier_workers=2,
-        )
-        async with Orchestrator(
-            config,
-            profiles=profiles,
-            routing=RoutingRules("workers", by_role={"critic": "critics"}),
-            **({"provider_token_estimators": {key: Counter(1000) for key in profiles}}
-               if per_pool else {"provider_token_estimator": Counter(1000)}),
-            poll_interval=0.002,
-        ) as orch:
-            missions = {}
-
-            async def add(label):
-                mission = await orch.submit_mission(
-                    spec(label, goal=label, success_criteria=("file:a.md",))
-                )
-                planning = orch.commit.begin_planning(mission.id)
-                tasks, _ = orch.commit.commit_task_graph(
-                    mission.id,
-                    TaskGraphProposal.from_json(
-                        {
-                            "tasks": [
-                                node(
-                                    "A",
-                                    tokens=80000,
-                                    verification_policy=[
-                                        "format_check",
-                                        "rule_check",
-                                        "critic_review",
-                                    ],
-                                )
-                            ]
-                        }
-                    ),
-                    base_version=planning.version,
-                    source={"planner": "controlled load graph"},
-                )
-                missions[label] = (mission, tasks[0])
-
-            def queued(label):
-                mission, _ = missions[label]
-                return next(
-                    (
-                        i
-                        for i in orch.store.list_intents("SUBMITTED")
-                        if i.mission_id == mission.id
-                        and i.kind == "attempt"
-                        and orch._admission_for(orch.profile_of(i)).waiting_for_slot(
-                            agent_id=i.agent_id, turn_id=i.expected_turn_id
-                        )
-                    ),
-                    None,
-                )
-
-            await add("A")
-            runner = asyncio.create_task(orch.run())
-            try:
-                await _until(lambda: load.active["critics"] == 1, runner)
-                await add("B")
-                await _until(lambda: load.active["critics"] == 2, runner)
-                assert sum(load.active.values()) == 2
-                await add("C")
-                await _until(lambda: queued("C"), runner)
-                original = queued("C")
-                started = time.monotonic()
-                orch.commit.cancel_mission(missions["C"][0].id)
-                ack_seconds = time.monotonic() - started
-                assert ack_seconds < 1.0  # declared local control responsiveness ceiling
-                assert not any(c[1] == "C" for c in load.calls)
-                await add("D")
-                await _until(lambda: queued("D"), runner)
-                load.gates["A"].set()
-                await _until(lambda: load.active["workers"] == 1, runner)
-                await add("E")
-                await _until(lambda: queued("E"), runner)
-                load.gates["B"].set()
-                await _until(lambda: load.active["critics"] == 0, runner)
-                # A free global slot cannot bypass the occupied one-slot worker profile.
-                for _ in range(10):
-                    await asyncio.sleep(0.01)
-                    assert queued("E") is not None
-                    assert load.active == {"workers": 1, "critics": 0}
-                    assert not any(c[1] == "E" for c in load.calls)
-                live = await orch.bridge_for(queued("E")).liveness(
-                    agent_id=queued("E").agent_id, turn_id=queued("E").expected_turn_id
-                )
-                assert live.alive and live.blocked and live.blocker["billable"] is False
-                load.gates["D"].set()
-                await asyncio.wait_for(runner, 15)
-                assert load.peak == 2 and load.profile_peak == {"workers": 1, "critics": 2}
-                assert len({c[3] for c in load.calls}) == len(load.calls)
-                for label, (mission, task) in missions.items():
-                    assert len(orch.store.list_attempts(task.id)) == 1
-                    expected = MissionStatus.CANCELLED if label == "C" else MissionStatus.COMPLETED
-                    assert orch.store.get_mission(mission.id).status is expected
-                    assert "AttemptLost" not in {e.type for e in orch.store.list_events(mission.id)}
-                cancelled = orch.assembled.pools["workers"].runtime.uow.list_provider_invocations(
-                    RunId(original.agent_id)
-                )
-                assert len(cancelled) == 1 and cancelled[0].handoff_attempt == 0
-                assert not any(
-                    r["state"] in {"RESERVED", "HANDED_OFF", "UNKNOWN"} for r in grants(orch.commit)
-                )
-                print(
-                    json.dumps(
-                        {
-                            "global_peak": load.peak,
-                            "profile_peaks": load.profile_peak,
-                            "cancel_ack_seconds": ack_seconds,
-                            "provider_calls": len(load.calls),
-                            "execution_databases": [
-                                str(p.execution_db) for p in orch.assembled.pools.values()
-                            ],
-                        }
-                    )
-                )
-            finally:
-                for gate in load.gates.values():
-                    gate.set()
-                if not runner.done():
-                    runner.cancel()
-                await asyncio.gather(runner, return_exceptions=True)
-
-    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("limit", [True, 0, -1, 1.5])

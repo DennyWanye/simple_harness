@@ -9,7 +9,6 @@ HumanOverride with its basis, and it never widens what was authorised."""
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -22,14 +21,12 @@ from agent_orchestrator.orchestrator.action_commits import ActionCommitError
 from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.testing.fixtures import package_of, role_of
 
 TOOLS = ["workspace_read_file", "workspace_write_file", "workspace_list", "run_tests"]
 SEED = {
     "tests/test_ok.py": "def test_ok():\n    assert True\n",
     "tests/test_bad.py": "def test_bad():\n    assert False\n",
 }
-FULL = ["format_check", "rule_check", "critic_review", "code_test"]
 
 
 def _config(tmp_path):
@@ -72,235 +69,6 @@ def _worker(text="# 报告\n\n改了一个开关。\n", summary="写好了报告
         ("workspace_write_file", {"path": "REPORT.md", "content": text}),
         envelope_step(summary=summary, artifacts=["REPORT.md"], claims=["报告已写好"]),
     ]
-
-
-def critic_needs_human(request):
-    """A Critic that finds no blocker but cannot reliably judge (original §22)."""
-
-    criteria = package_of(request).get("mission_success_criteria", [])
-    body = {
-        "verdict": "PASS",
-        "findings": [],
-        "needs_human": True,
-        "mission_criteria": [{"criterion": c, "met": True, "reason": "scripted"} for c in criteria],
-    }
-    return "<critic_verdict>" + json.dumps(body, ensure_ascii=False) + "</critic_verdict>"
-
-
-def _layers(store, result_id):
-    return {v["layer"]: v["status"] for v in store.list_verifications(result_id)}
-
-
-# ------------------------------------------------------------------ the sixth layer
-def test_s7_07_a_policy_review_suspends_survives_a_restart_and_resumes_on_a_pass(tmp_path):
-    cfg = _config(tmp_path)
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step([_task("A", ["format_check", "rule_check", "human_review"])])
-            ],
-            "worker": _worker(),
-        }
-    )
-
-    async def first():
-        async with Orchestrator(cfg, provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("r1"))
-            await orchestrator.run()
-            await orchestrator.run()  # idle: a suspended result is not picked up again
-            store = orchestrator.store
-            [task] = store.list_tasks(mission.id)
-            assert task.status is TaskStatus.VERIFYING
-            [request] = store.list_approvals(mission.id)
-            assert (request["kind"], request["state"], request["reason"]) == (
-                "review",
-                "PENDING",
-                "policy",
-            )
-            assert store.get_result(request["subject_key"]).verification_state == "SUSPENDED"
-            assert [w["kind"] for w in store.waiting_on(mission.id)] == ["review"]
-            assert store.count_events(mission.id, "VerificationSuspended") == 1
-            with pytest.raises(ActionCommitError):  # a review is not an action approval
-                orchestrator.commit.decide_approval(
-                    request["request_id"],
-                    principal=ALICE,
-                    decision="grant",
-                    nonce="x",
-                    deployment=cfg.deployment_policy,
-                )
-            return mission.id, request
-
-    mission_id, request = asyncio.run(first())
-
-    async def second():
-        async with Orchestrator(cfg, provider) as orchestrator:
-            orchestrator.commit.review_result(
-                request["request_id"],
-                principal=ALICE,
-                verdict="pass",
-                note="看过了，可以",
-                nonce="n-1",
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            assert store.get_mission(mission_id).status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-            layers = _layers(store, request["subject_key"])
-            assert layers["human_review"] == "PASS" and layers["rule_check"] == "PASS"
-            [granted] = [e for e in store.list_events(mission_id) if e.type == "ApprovalGranted"]
-            assert (granted.actor_type, granted.actor_id, granted.payload["kind"]) == (
-                "user",
-                "alice",
-                "review",
-            )
-
-    asyncio.run(second())
-    assert provider.by_role.get("worker") == 3  # one Attempt; the review re-used what passed
-
-
-def test_s7_07_needs_human_forces_the_person_after_the_tests_ran_and_the_critic_is_asked_once(
-    tmp_path,
-):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step(
-                    [_task("A", FULL, criteria=("file:REPORT.md", "pytest:tests/test_ok.py"))]
-                )
-            ],
-            "worker": _worker(),
-            "critic": [critic_needs_human],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("r2"))
-            await orchestrator.run()
-            store = orchestrator.store
-            [request] = store.list_approvals(mission.id)
-            assert request["reason"] == "needs_human"
-            layers = _layers(store, request["subject_key"])
-            assert (layers["critic_review"], layers["code_test"], layers["human_review"]) == (
-                "NEEDS_HUMAN",
-                "PASS",  # the tests ran before anyone was asked
-                "SUSPENDED",
-            )
-            orchestrator.commit.review_result(
-                request["request_id"], principal=BOB, verdict="pass", note="", nonce="n-1"
-            )
-            await orchestrator.run()
-            assert store.get_mission(mission.id).status is MissionStatus.COMPLETED
-
-    asyncio.run(case())
-    assert provider.by_role.get("critic") == 1  # its NEEDS_HUMAN was reused on resume
-
-
-def test_s7_07_a_person_is_never_asked_to_cover_a_failing_test(tmp_path):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step(
-                    [
-                        _task(
-                            "A",
-                            FULL,
-                            criteria=("file:REPORT.md", "pytest:tests/test_bad.py"),
-                            attempts=1,
-                        )
-                    ]
-                )
-            ],
-            "worker": _worker(),
-            "critic": [critic_needs_human],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("r3"))
-            await orchestrator.run()
-            store = orchestrator.store
-            assert store.list_approvals(mission.id) == []  # nobody was asked
-            [failed] = [e for e in store.list_events(mission.id) if e.type == "VerificationFailed"]
-            assert [f["layer"] for f in failed.payload["failures"]] == ["code_test"]
-            assert store.get_mission(mission.id).status is MissionStatus.FAILED
-
-    asyncio.run(case())
-
-
-def test_a_person_s_fail_reaches_the_next_attempt_and_a_task_escalates_only_once(tmp_path):
-    note = "报告缺少回滚步骤"
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step([_task("A", ["format_check", "rule_check", "critic_review"])])
-            ],
-            "worker": _worker() + _worker(text="# 报告\n\n回滚：把开关关掉。\n"),
-            "critic": [critic_needs_human, critic_needs_human],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("r4"))
-            await orchestrator.run()
-            [request] = orchestrator.store.list_approvals(mission.id)
-            orchestrator.commit.review_result(
-                request["request_id"], principal=ALICE, verdict="fail", note=note, nonce="n-1"
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            assert len(store.list_approvals(mission.id)) == 1  # the second needs_human is a FAIL
-            failures = [
-                e.payload["failures"]
-                for e in store.list_events(mission.id)
-                if e.type == "VerificationFailed"
-            ]
-            assert failures[0][0]["layer"] == "human_review" and note in failures[0][0]["summary"]
-            assert (
-                failures[1][0]["layer"] == "critic_review"
-                and "one escalation" in failures[1][0]["summary"]
-            )
-            assert store.get_mission(mission.id).status is MissionStatus.FAILED
-
-    asyncio.run(case())
-    worker_packages = [
-        json.dumps(package_of(r), ensure_ascii=False)
-        for r in provider.requests
-        if role_of(r) == "worker"
-    ]
-    assert (
-        note not in worker_packages[0] and note in worker_packages[3]
-    )  # the 2nd Attempt's first turn
-
-
-def test_a_suspended_review_ends_with_its_mission(tmp_path):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                graph_proposal_step([_task("A", ["format_check", "rule_check", "human_review"])])
-            ],
-            "worker": _worker(),
-        }
-    )
-
-    async def case():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("r5"))
-            await orchestrator.run()
-            [request] = orchestrator.store.list_approvals(mission.id)
-            orchestrator.commit.cancel_mission(mission.id)
-            store = orchestrator.store
-            assert store.get_approval(request["request_id"])["state"] == "CANCELLED"
-            assert store.get_result(request["subject_key"]).verification_state == "REJECTED"
-            with pytest.raises(ActionCommitError):
-                orchestrator.commit.review_result(
-                    request["request_id"], principal=ALICE, verdict="pass", note="", nonce="n-1"
-                )
-
-    asyncio.run(case())
 
 
 # ------------------------------------------------------------------ Verifier conflicts

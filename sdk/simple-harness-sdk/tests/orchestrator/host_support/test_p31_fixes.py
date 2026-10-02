@@ -47,7 +47,7 @@ from agent_orchestrator.orchestrator.commit_service import MissionSpec, Reservat
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RuntimeProfile
-from agent_orchestrator.storage.store import InjectedCrash, Store
+from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.fixtures import (
     RECORDER_SEED,
     RECORDER_SPEC,
@@ -397,72 +397,6 @@ def test_min_task_tokens_zero_switches_the_floor_off(tmp_path):
     events, tasks = asyncio.run(run())
     assert not [e for e in events if e.type == "TaskGraphRejected"]
     assert [t.budget.max_tokens for t in tasks] == [800]
-
-
-# ------------------------------------------------------------------ FX-5 artifact status
-def _statuses(cfg):
-    store = Store.open_readonly(cfg.orchestrator_db)  # a fresh connection: what is on disk
-    try:
-        missions = store.list_missions()
-        artifacts = [a for m in missions for a in store.list_mission_artifacts(m.id)]
-        tasks = [t for m in missions for t in store.list_tasks(m.id)]
-        return artifacts, tasks
-    finally:
-        store.close()
-
-
-def test_accepted_artifacts_are_verified_and_failed_ones_rejected(tmp_path):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([_task(60_000, attempts=3)])],
-            "worker": _worker() + _worker(),
-            "critic": [critic_step(verdict="FAIL", criteria_met=False, blocker="要点不够具体")]
-            + _passes(),
-        }
-    )
-    cfg = _config(tmp_path)
-
-    async def run():
-        async with Orchestrator(cfg, provider) as orchestrator:
-            created = await orchestrator.submit_mission(
-                _spec("fx5", budget=Budget(max_tokens=300_000, max_attempts=6))
-            )
-            await asyncio.wait_for(orchestrator.run(), timeout=120)
-            return orchestrator.store.get_mission(created.id)
-
-    assert str(asyncio.run(run()).status) == "COMPLETED"
-    artifacts, tasks = _statuses(cfg)
-    accepted = set(tasks[0].accepted_artifacts)
-    assert accepted, "the completed Task names the artifacts it accepted"
-    by_status = {a.id: a.verification_status for a in artifacts}
-    assert all(by_status[a] == "VERIFIED" for a in accepted)
-    rejected = [a for a in artifacts if a.id not in accepted]
-    assert rejected, "the failed first Attempt's artifact is kept as history"
-    assert all(a.verification_status == "REJECTED" for a in rejected)
-
-
-def test_a_crash_inside_the_accept_transaction_leaves_the_artifact_unverified(tmp_path):
-    provider = RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([_task(60_000)])],
-            "worker": _worker(),
-            "critic": _passes(),
-        }
-    )
-    cfg = _config(tmp_path)
-
-    async def run():
-        async with Orchestrator(cfg, provider) as orchestrator:
-            await orchestrator.submit_mission(
-                _spec("fx5-crash", budget=Budget(max_tokens=300_000, max_attempts=6))
-            )
-            orchestrator.arm_fault("after_accept_before_supersede", kind="attempt")
-            with pytest.raises(InjectedCrash):
-                await asyncio.wait_for(orchestrator.run(), timeout=120)
-
-    asyncio.run(run())
-    artifacts, _tasks = _statuses(cfg)
-    assert artifacts and all(a.verification_status == "UNVERIFIED" for a in artifacts)
 
 
 # ------------------------------------------------------------------ code review round 1

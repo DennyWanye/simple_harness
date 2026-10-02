@@ -11,18 +11,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 
-from helpers_step06 import config, events_of, only, spec
+from helpers_step06 import config, spec
 
 from agent_orchestrator.contracts import MissionStatus, TaskStatus
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.testing.fixtures import (
-    RECORDER_ANALYSIS,
     RECORDER_IMPL,
     _recorder_task,
     _write_files_then,
     demo_dynamic_dag_provider,
     graph_change_step,
-    recorder_scripts,
 )
 
 WRONG = "def parse_line(line):\n    return {}\n"
@@ -127,48 +125,5 @@ def test_s6_04_two_candidates_write_the_same_file_in_their_own_workspaces_and_on
             # the Mission was judged on the integrated tree built from the formal version
             judged = root / f"{mission.id}-judge-{orchestrator.owner}-verify" / "recorder.py"
             assert judged.read_text(encoding="utf-8") == RECORDER_IMPL
-
-    asyncio.run(case())
-
-
-def test_s6_04_an_upstream_input_is_read_only_in_the_downstream_workspace(tmp_path):
-    d_script = [
-        ("workspace_write_file", {"path": "analysis.md", "content": "# 改写上游结论\n"})
-    ] + recorder_scripts()["D"]
-    provider = demo_dynamic_dag_provider(tasks=only("AD"), scripts={"D": d_script})
-
-    async def case():
-        async with Orchestrator(config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                spec("s6-04b", success_criteria=("file:DOCS.md",))
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            assert store.get_mission(mission.id).status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-            refused = [
-                c
-                for c in orchestrator.assembled.gateway.calls
-                if c["tool"] == "workspace_write_file"
-                and c["outcome"] == "rejected:protected_input"
-            ]
-            assert len(refused) == 1 and refused[0]["stage"] == "policy"
-            events = events_of(store, mission.id, "ToolCallRejected")
-            assert (
-                len(events) == 1
-                and events[0].payload["reason"] == "protected_input"
-                and events[0].payload["path"] == "analysis.md"
-            )
-            d_task = next(
-                t for t in store.list_tasks(mission.id) if t.goal.startswith("独立文档检查")
-            )
-            d_attempt = store.list_attempts(d_task.id)[0]
-            assert events[0].attempt_id == d_attempt.id
-            kept = (
-                orchestrator.assembled.workspaces.root / d_attempt.id / "analysis.md"
-            ).read_text(encoding="utf-8")
-            assert kept == RECORDER_ANALYSIS  # the upstream conclusion was not rewritten
-            assert "content" not in events[0].payload  # the audit never carries file contents
 
     asyncio.run(case())

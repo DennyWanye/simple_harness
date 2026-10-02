@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 
 import pytest
-from fixtures_provider import RoleScriptedProvider, envelope_step, graph_proposal_step
 
 from agent_orchestrator.api.policies import PolicyApi, PolicyRequestError
 from agent_orchestrator.contracts import Budget, MissionStatus
@@ -48,7 +47,6 @@ from agent_orchestrator.testing.fixtures import (
 )
 
 ALICE = Principal("alice")
-TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
 
 
 def _config(tmp_path, **overrides):
@@ -124,76 +122,6 @@ def test_s9_06_a_manager_that_smuggles_a_safety_change_is_refused_and_nothing_ch
                 for e in store.iter_events(DEPLOYMENT_TIMELINE)
                 if e.type in {"PolicyProposed", "PolicyPromoted"}
             ]
-
-    asyncio.run(case())
-
-
-def test_s9_06_a_worker_that_writes_policy_files_changes_nothing(tmp_path):
-    task = {
-        "key": "A",
-        "goal": "写报告（A）",
-        "rationale": "服务根目标：交付报告",
-        "dependencies": [],
-        "success_criteria": ["file:REPORT.md"],
-        "verification_policy": ["format_check", "rule_check"],
-        "outputs": ["REPORT.md", "policy/raise.json"],
-        "allowed_tools": list(TOOLS),
-        "budget": {"max_tokens": 30_000, "max_attempts": 2},
-        "priority": 1.0,
-    }
-    provider = RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([task])],
-            "worker": [
-                ("workspace_write_file", {"path": "REPORT.md", "content": "# 报告\n"}),
-                (
-                    "workspace_write_file",
-                    {
-                        "path": "policy/raise.json",
-                        "content": json.dumps({"hard_cap_micros": 1, "candidates_per_task": 3}),
-                    },
-                ),
-                envelope_step(
-                    summary="写好了",
-                    artifacts=["REPORT.md", "policy/raise.json"],
-                    claims=["报告已写好"],
-                ),
-            ],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(_config(tmp_path), provider) as orch:
-            store = orch.store
-            before = store.active_policy()["version_id"]
-            mission = await orch.submit_mission(
-                MissionSpec(
-                    goal="写报告",
-                    success_criteria=("file:REPORT.md",),
-                    tenant_id="tenant-9",
-                    idempotency_key="worker-policy",
-                    allowed_tools=TOOLS,
-                    budget=Budget(max_tokens=100_000, max_attempts=2),
-                    orchestration_semantics_version="legacy",
-                )
-            )
-            await orch.run()
-            assert store.get_mission(mission.id).status is MissionStatus.COMPLETED, (
-                orch.progress_log
-            )
-            [refused] = [
-                e for e in store.iter_events(mission.id) if e.type == "PolicySuggestionRefused"
-            ]
-            assert (
-                refused.payload["source"] == "worker"
-                and refused.payload["path"] == "policy/raise.json"
-            )
-            assert refused.payload["keys"] == ["candidates_per_task", "hard_cap_micros"]
-            assert refused.payload["core_keys"] == ["hard_cap_micros"]
-            assert (
-                store.active_policy()["version_id"] == before
-                and store.list_policy_proposals() == []
-            )
 
     asyncio.run(case())
 

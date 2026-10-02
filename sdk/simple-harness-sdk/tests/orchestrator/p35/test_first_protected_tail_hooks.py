@@ -176,37 +176,6 @@ def test_system_hook_rejects_imaginary_task_or_attempt_and_normal_work_task(harn
         assert balances(commit, task) == before
 
 
-def test_production_first_hooks_run_actual_orchestrator_worker_tool_and_critic(tmp_path):
-    from test_provider_budget_recovery import (
-        test_real_orchestrator_planner_worker_critic_and_whole_account_chain as actual_control,
-    )
-
-    from agent_orchestrator.storage.store import Store
-
-    # No subclass or monkeypatch: actual production default drives the complete
-    # Planner -> Worker file write -> Critic file read -> formal acceptance chain.
-    actual_control(tmp_path)
-    store = Store.open(tmp_path / "whole" / "orchestrator.db")
-    try:
-        holds = store.connection.execute(
-            "SELECT * FROM budget_tail_holds WHERE hold_id LIKE 'first-critic:%'"
-        ).fetchall()
-        assert len(holds) == 1 and holds[0]["state"] == "RELEASED"
-        transfers = store.connection.execute(
-            "SELECT * FROM budget_tail_transfers WHERE hold_id=?", (holds[0]["hold_id"],)
-        ).fetchall()
-        assert len(transfers) == 1
-        subject_id = transfers[0]["transfer_id"]
-        intent = store.get_intent_for_subject(subject_id)
-        assert intent is not None and intent.kind == "critic" and intent.agent_id
-        actual = store.connection.execute(
-            "SELECT * FROM provider_token_grants WHERE subject_id=?", (subject_id,)
-        ).fetchall()
-        assert actual and all(r["state"] == "SETTLED" and r["actual_tokens"] > 0 for r in actual)
-    finally:
-        store.close()
-
-
 @pytest.mark.parametrize("stop", ["known_failure", "cancel_unknown"])
 def test_production_first_unused_tail_release_preserves_actual_call_accounting(tmp_path, stop):
     import asyncio

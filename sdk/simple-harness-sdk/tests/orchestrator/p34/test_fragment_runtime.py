@@ -12,7 +12,6 @@ import json
 
 import pytest
 from fixtures_provider import RoleScriptedProvider, envelope_step, package_of
-from test_g_source_instructions_runtime import _drive
 
 from agent_orchestrator.api.facade import MissionControlV1
 from agent_orchestrator.contracts import Budget, TaskStatus
@@ -28,6 +27,30 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig
 
 PATH = "sources/observations.md"
 QUOTE = "本次记录只覆盖离线实验。"
+
+
+async def _drive(orch, task):
+    task = orch.store.get_task(task.id)
+    assert await orch._next_attempt(orch.store.get_mission(task.mission_id), task, [])
+    [attempt] = orch.store.list_attempts(task.id)
+    intent = orch.store.get_intent_for_subject(attempt.id)
+    assert await orch._dispatch(intent)
+    intent = orch.store.get_intent(intent.intent_id)
+
+    async def completed():
+        while True:
+            value = await orch.bridge_for(intent).result(
+                agent_id=intent.agent_id, turn_id=intent.expected_turn_id
+            )
+            if value is not None:
+                return value
+            await asyncio.sleep(0.01)
+
+    await orch._collect_attempt(intent, await asyncio.wait_for(completed(), 15))
+    result = orch.store.find_result_for_attempt(attempt.id)
+    assert result is not None, orch.progress_log[-10:]
+    assert await asyncio.wait_for(orch._verify(result.envelope.id), 15)
+    return attempt, orch.store.get_result(result.envelope.id)
 
 
 @pytest.mark.parametrize("change_input", [False, True])

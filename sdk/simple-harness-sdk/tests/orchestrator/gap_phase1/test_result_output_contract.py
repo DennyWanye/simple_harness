@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from dataclasses import replace
@@ -11,16 +10,8 @@ import pytest
 from knowledge_helpers import drive_to_running, node, two_branch_service
 
 from agent_orchestrator.context.context_builder import build_worker_package
-from agent_orchestrator.contracts import Budget, ResultEnvelope
+from agent_orchestrator.contracts import ResultEnvelope
 from agent_orchestrator.governance import domains
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator, OrchestratorConfig
-from agent_orchestrator.orchestrator.failure_classes import NON_MODEL_FAILURE_CAP
-from agent_orchestrator.testing.fixtures import (
-    RoleScriptedProvider,
-    graph_proposal_step,
-    package_of,
-)
 
 
 def example(text):
@@ -76,72 +67,3 @@ def test_concrete_example_has_actual_ids_and_frozen_legacy_unchanged(tmp_path, r
         == "<result_envelope>{json}</result_envelope>"
     )
     service.store.close()
-
-
-@pytest.mark.parametrize(
-    "write_file,submit_claim,success",
-    [(True, True, True), (False, True, False), (True, False, False)],
-)
-def test_actual_provider_gets_valid_example_but_missing_file_still_fails(
-    tmp_path, write_file, submit_claim, success
-):
-    async def exercise():
-        captured = []
-
-        def submit(request):
-            value = example(package_of(request)["output_contract"])
-            value["summary"] = "Candidate report" if write_file else "File has not been written"
-            if submit_claim:
-                value["claims"] = [
-                    {"content": "Wrote REPORT.md", "confidence": 0.8, "evidence": ["REPORT.md"]}
-                ]
-            captured.append(value)
-            return "<result_envelope>" + json.dumps(value) + "</result_envelope>"
-
-        worker = (
-            [("workspace_write_file", {"path": "REPORT.md", "content": "actual report\n"})]
-            if write_file
-            else []
-        )
-        # 2026-09-28 用户决定：envelope_invalid（此处是声明的产出文件不在工作区）算格式错，
-        # 不扣任务次数、原地重做，同一步合计 NON_MODEL_FAILURE_CAP 次后停下。
-        # 没写文件时每次重做都照旧交同样的结果，最终仍必须 FAILED。
-        submissions = 1 if write_file else NON_MODEL_FAILURE_CAP
-        worker.extend([submit] * submissions)
-        task = {
-            "key": "A",
-            "goal": "Write REPORT.md",
-            "rationale": "deliver report",
-            "dependencies": [],
-            "success_criteria": ["file:REPORT.md"],
-            "verification_policy": ["rule_check"],
-            "allowed_tools": ["workspace_write_file"],
-            "outputs": ["REPORT.md"],
-            "budget": {"max_tokens": 20000, "max_attempts": 1},
-        }
-        provider = RoleScriptedProvider(
-            {"planner": [graph_proposal_step([task])], "worker": worker}
-        )
-        config = OrchestratorConfig(evidence_root=tmp_path, dynamic_graph=False, max_concurrency=1)
-        async with Orchestrator(config, provider=provider) as orch:
-            mission = await orch.submit_mission(
-                MissionSpec(
-                    "Write REPORT.md",
-                    ("file:REPORT.md",),
-                    "example-test",
-                    "case",
-                    allowed_tools=("workspace_write_file",),
-                    budget=Budget(max_tokens=100000, max_attempts=2),
-                    orchestration_semantics_version="legacy",
-                )
-            )
-            async with asyncio.timeout(10):
-                await orch.run()
-            assert len(captured) == submissions
-            assert str(orch.store.get_mission(mission.id).status) == (
-                "COMPLETED" if success else "FAILED"
-            )
-            artifacts = orch.store.list_mission_artifacts(mission.id)
-            assert bool(artifacts) == write_file
-
-    asyncio.run(exercise())

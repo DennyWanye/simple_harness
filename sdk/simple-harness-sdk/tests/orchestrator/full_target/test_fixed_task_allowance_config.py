@@ -8,14 +8,10 @@ of the config record only when set, so every earlier configuration keeps its rec
 from __future__ import annotations
 
 import asyncio
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "step02"))
-from test_recovery_matrix import _provider  # noqa: E402
 
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
 def test_the_fixed_allowance_is_recorded_only_when_set(tmp_path) -> None:
@@ -29,7 +25,7 @@ def test_the_orchestrator_hands_the_allowance_to_the_commit_service(tmp_path) ->
                                 task_max_tokens=1_000_000)
 
     async def case() -> int | None:
-        async with Orchestrator(config, _provider(), owner="allowance") as orchestrator:
+        async with Orchestrator(config, RoleScriptedProvider({}), owner="allowance") as orchestrator:
             return orchestrator.commit._task_max_tokens
 
     assert asyncio.run(case()) == 1_000_000

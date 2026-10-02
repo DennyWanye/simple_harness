@@ -16,6 +16,7 @@ import pytest
 from ._layered_lane import (
     REVIEWER,
     LayeredScriptedProvider,
+    broken_result,
     layered_service,
     notes_mission,
     planner_reply,
@@ -25,6 +26,7 @@ from ._layered_lane import (
     review_reply,
     reviewer_reply,
     run_until_settled,
+    worker_reply,
 )
 from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from agent_orchestrator.storage.assurance_store import AssuranceStore
@@ -108,3 +110,131 @@ async def test_a_step_review_that_sends_the_work_back_is_redone_and_then_accepte
         assert provider.asked.count("planner") == 3  # 提做法、采用、决定原样重试
     finally:
         await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_result_is_redone_in_place_without_charging_the_step(orchestration_root, principal):
+    """执行者第一次交的结果格式不对（不是它做错了事）：系统自己批准原地重做，不问规划器，
+    这一次不算在这一步的次数里；第二次交对了，任务完成。"""
+
+    results = {"n": 0}
+
+    def worker(request):
+        reply = worker_reply(request)
+        if isinstance(reply, tuple):
+            return reply
+        results["n"] += 1
+        return broken_result(request) if results["n"] == 1 else reply
+
+    provider = LayeredScriptedProvider(worker=worker)
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        created = service.create_mission(notes_mission("layered-format-1"))
+        mission = await run_until_settled(service, created["mission_id"])
+        types = _types(service, mission.id)
+        assert mission.status.value == "COMPLETED", (mission.status.value, types[-15:])
+        assert types.count("ResultRejected") == 1
+        assert types.count("AttemptChargeReleased") == 1  # 次数退回
+        assert types.count("PlanningRetryAuthorized") == 1
+        assert provider.asked.count("planner") == 2  # 只有提做法和采用；重做不是规划器决定的
+        leaf = next(task for task in service._orchestrator.store.list_tasks(mission.id)
+                    if task.status.value == "COMPLETED")
+        assert leaf.attempt_count == 1
+    finally:
+        await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_results_that_are_never_well_formed_stop_the_mission_at_the_cap(orchestration_root, principal):
+    """每次交的结果格式都不对：原地重做有上限，到了上限任务明确停下，不会无限重做。"""
+
+    from agent_orchestrator.orchestrator.failure_classes import NON_MODEL_FAILURE_CAP
+
+    provider = LayeredScriptedProvider(worker=broken_result)
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        created = service.create_mission(notes_mission("layered-format-cap"))
+        mission = await run_until_settled(service, created["mission_id"])
+        types = _types(service, mission.id)
+        assert mission.status.value == "FAILED", (mission.status.value, types[-15:])
+        assert types.count("ResultRejected") == NON_MODEL_FAILURE_CAP
+        assert "MissionCompleted" not in types
+    finally:
+        await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_a_mission_cancelled_during_a_model_call_ends_cancelled(orchestration_root, principal):
+    """执行者的调用还在进行时取消任务：任务以"已取消"结束，不再派发新的工作。"""
+
+    provider = LayeredScriptedProvider()
+    provider.held.add("worker")
+    service = layered_service(orchestration_root, principal, provider)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        created = service.create_mission(notes_mission("layered-cancel-1"))
+        mission_id = created["mission_id"]
+        for _ in range(8):
+            await service.drain(timeout=3)
+            if provider.entered.is_set():
+                break
+        assert provider.entered.is_set(), provider.asked
+        service.cancel_mission(mission_id)
+        provider.release.set()
+        mission = await run_until_settled(service, mission_id)
+        types = _types(service, mission_id)
+        assert mission.status.value == "CANCELLED", (mission.status.value, types[-15:])
+        assert "MissionCompleted" not in types
+        asked_after = len(provider.asked)
+        await service.drain(timeout=5)
+        assert len(provider.asked) == asked_after  # 取消之后没有新的模型调用
+    finally:
+        provider.release.set()
+        await asyncio.wait_for(service.close(), 30)
+
+
+@pytest.mark.asyncio
+async def test_a_restart_during_a_model_call_resumes_and_completes(orchestration_root, principal, monkeypatch):
+    """执行者的调用进行到一半时服务重启：新服务接着同一个库把任务做完。
+
+    被打断的那次调用结果不明。系统等够时限（产品里 180 秒，这里调成 3 秒）后判它丢失、
+    原地重做一次——不用人接管，也不重做计划。"""
+
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
+    first = LayeredScriptedProvider()
+    first.held.add("worker")
+    service = layered_service(orchestration_root, principal, first, lease_seconds=4.0)
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        created = service.create_mission(notes_mission("layered-restart-1"))
+        mission_id = created["mission_id"]
+        for _ in range(8):
+            await service.drain(timeout=3)
+            if first.entered.is_set():
+                break
+        assert first.entered.is_set(), first.asked
+    finally:
+        await asyncio.wait_for(service.close(), 30)
+        first.release.set()
+
+    second = LayeredScriptedProvider()
+    reopened = layered_service(orchestration_root, principal, second, lease_seconds=4.0)
+    await asyncio.wait_for(reopened.start(), 30)
+    try:
+        mission = await run_until_settled(reopened, mission_id, rounds=20)
+        types = _types(reopened, mission_id)
+        assert mission.status.value == "COMPLETED", (mission.status.value, types[-20:])
+        assert types.count("PlanRevisionCommitted") == 1  # 计划没有重做
+        assert types.count("AttemptLost") == 1  # 被打断的那次调用判为丢失
+        assert types.count("AttemptChargeReleased") == 1  # 不是模型做错，这一次不算次数
+        assert "planner" not in second.asked  # 原地重做是系统批准的，没有问规划器
+        assert second.asked.count("worker") == 2  # 新服务把那一步重新做了一遍
+        attempts = [a for task in reopened._orchestrator.store.list_tasks(mission_id)
+                    for a in reopened._orchestrator.store.list_attempts(task.id)]
+        assert [a.status.value for a in attempts] == ["LOST", "COMPLETED"]
+    finally:
+        await asyncio.wait_for(reopened.close(), 30)

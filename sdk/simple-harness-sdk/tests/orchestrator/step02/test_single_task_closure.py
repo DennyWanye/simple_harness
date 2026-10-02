@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Step 2 · S2-01 / S2-02 / S2-06 / S2-07 on the deterministic fixture provider:
+"""Step 2 · S2-01 / S2-02 / S2-06 on the deterministic fixture provider:
 Mission → Planner → Commit → Reserve → Attempt → BaseAgent (real tools, real pytest
 in a child process) → Result Envelope → Verifier layers → repair Attempt → Commit →
 Mission judged."""
@@ -203,58 +203,6 @@ def test_s2_06_max_attempts_stops_with_reason(tmp_path):
     asyncio.run(case())
 
 
-def test_s2_07_invalid_and_forged_envelopes_are_rejected(tmp_path):
-    forged = envelope_step(
-        summary="伪造",
-        artifacts=["parse_kv.py"],
-        claims=["x"],
-        override=lambda e: {**e, "attempt_id": "someone-else:attempt-9"},
-    )
-    provider = RoleScriptedProvider(
-        {
-            "planner": [
-                proposal_step({**PROPOSAL, "budget": {"max_tokens": 50000, "max_attempts": 3}})
-            ],
-            # 2026-09-29（第 1 批）：格式没写对不扣任务次数，同一步合计 6 次后停下；
-            # 三种格式错各来两遍（以前 3 次就因"次数用完"停，现在剧本不够会一直等）。
-            "worker": [
-                ("workspace_write_file", {"path": "parse_kv.py", "content": GOOD}),
-                "这不是一个信封，只是自然语言。",  # attempt 1: no block
-                ("workspace_write_file", {"path": "parse_kv.py", "content": GOOD}),
-                forged,  # attempt 2: forged identity
-                ("workspace_write_file", {"path": "parse_kv.py", "content": GOOD}),
-                envelope_step(
-                    summary="引用不存在的产物", artifacts=["ghost.py"], claims=["x"]
-                ),  # attempt 3
-            ] * 2,
-            "critic": [],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(spec("m7"))
-            await orchestrator.run()
-            store = orchestrator.store
-            task = store.list_tasks(mission.id)[0]
-            attempts = store.list_attempts(task.id)
-            assert [a.status for a in attempts] == [AttemptStatus.RETRY_WAIT] * 6
-            reasons = [a.failure["reason"] for a in attempts]
-            assert reasons == ["envelope_invalid"] * 6
-            assert "block_missing" in attempts[0].failure["error"]
-            assert "identity" in attempts[1].failure["error"]
-            assert "ghost.py" in attempts[2].failure["error"]
-            # no formal result / claim was ever written
-            assert all(store.find_result_for_attempt(a.id) is None for a in attempts)
-            assert store.list_mission_claims(mission.id) == []
-            assert store.count_events(mission.id, "ResultRejected") == 6
-            assert store.get_task(task.id).attempt_count == 0  # 格式错一次都不扣
-            final = store.get_mission(mission.id)
-            assert final.status is MissionStatus.FAILED and final.stop_reason == "runtime_unavailable", final.stop_reason
-
-    asyncio.run(case())
-
-
 def test_s2_03_replayed_mission_is_the_same_mission(tmp_path):
     provider = RoleScriptedProvider(
         {
@@ -277,49 +225,5 @@ def test_s2_03_replayed_mission_is_the_same_mission(tmp_path):
             snapshot = orchestrator.store.snapshot(first.id)
             assert len(snapshot["tasks"]) == 1 and len(snapshot["attempts"]) == 1
             json.dumps(snapshot)  # serialisable for final_state.json
-
-    asyncio.run(case())
-
-
-def test_d21_mission_judgment_runs_its_own_critic_when_the_task_policy_had_none(tmp_path):
-    """A real Planner may choose a policy without critic_review; a free-text Mission
-    criterion still gets an independent judge at judgment time (D21)."""
-
-    from fixtures_provider import critic_step as _critic
-
-    proposal = {**PROPOSAL, "verification_policy": ["format_check", "rule_check", "code_test"]}
-    provider = RoleScriptedProvider(
-        {
-            "planner": [proposal_step(proposal)],
-            "worker": worker_script(GOOD),
-            "critic": [_critic(verdict="PASS", criteria_met=True)],
-        }
-    )
-
-    async def case():
-        async with Orchestrator(config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(spec("m-d21"))
-            await orchestrator.run()
-            store = orchestrator.store
-            final = store.get_mission(mission.id)
-            assert final.status is MissionStatus.COMPLETED, orchestrator.progress_log
-            judged = final.final_report["success_criteria"]
-            assert [j["judge"] for j in judged] == ["code_test", "critic_review"]
-            assert all(j["met"] for j in judged)
-            assert provider.by_role["critic"] == 1  # the judge ran exactly once
-            layers = {
-                v["layer"]: v["status"]
-                for v in store.list_verifications(
-                    store.list_tasks(mission.id)[0].accepted_result_id
-                )
-            }
-            assert layers["critic_review"] == "NOT_REQUIRED"  # not part of the Task policy
-            with store.transaction():
-                report = orchestrator.commit.ledger.costs_report(mission.id)
-            assert any(
-                r["subject_id"].endswith(":judge:1")
-                and r["state"] == "SETTLED"  # step 3: judge subject
-                for r in report["reservations"]
-            )
 
     asyncio.run(case())

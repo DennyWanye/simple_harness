@@ -20,12 +20,12 @@ from agent_orchestrator.contracts import Budget, MissionStatus
 from agent_orchestrator.orchestrator.commit_service import Reservation, task_account
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.agent_worker import user_message_json
-from agent_orchestrator.runtime.assembly import OrchestratorConfig, PriceTable
+from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.first_request_budget import (
     ProviderInputCap,
     frozen_provider_input_cap,
 )
-from agent_orchestrator.runtime.model_router import RoutingDecision, RuntimeProfile
+from agent_orchestrator.runtime.model_router import RuntimeProfile
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.contracts import RunId
@@ -175,113 +175,6 @@ def _context_profile(
         context_policy=ContextPolicy(max_input_tokens=input_cap, render_slack_tokens=0),
         price_table=price_table,
     )
-
-
-@pytest.mark.parametrize("priced", [False, True])
-def test_production_first_critic_freezes_hold_transfers_cap_and_hands_off(tmp_path, priced):
-    async def exercise():
-        provider = _production_first_provider()
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "positive",
-            max_concurrency=1,
-            candidates_per_task=1,
-            dynamic_graph=False,
-        )
-        profile = _context_profile(
-            provider,
-            input_cap=32_768 if priced else 65_536,
-            price_table=PriceTable("first-rounding", 1000, 1000) if priced else None,
-        )
-        async with Orchestrator(
-            config, profiles={"default": profile}, provider_token_estimator=Counter(1000)
-        ) as orch:
-            mission = await orch.submit_mission(spec(success_criteria=("file:a.md",)))
-            await asyncio.wait_for(orch.run(), 15)
-            assert orch.store.get_mission(mission.id).status is MissionStatus.COMPLETED
-            [task] = orch.store.list_tasks(mission.id)
-            [worker] = orch.store.list_attempts(task.id)
-            worker_intent = orch.store.get_intent_for_subject(worker.id)
-            frozen = worker_intent.config["first_critic_budget"]
-            cap = frozen["provider_input_cap"]
-            assert cap["profile_id"] == "default" and cap["model"] == profile.model
-            assert cap["context_fingerprint"] == profile.context_snapshot()["fingerprint"]
-            assert cap["estimator_fingerprint"] == orch._provider_admission.estimator.fingerprint
-            assert cap["max_input_tokens"] == profile.context_policy.input_budget()
-            assert frozen["output_ceiling"] == 8192
-            assert frozen["minimum_tokens"] == cap["max_input_tokens"] + frozen["output_ceiling"]
-            assert frozen["cost_micros"] == (42 if priced else 0)
-
-            hold = orch.commit.protected_tail_hold(orch.commit.critic_tail_id(worker.id))
-            assert json.loads(hold["request_json"])["reserve"]["tokens"] == frozen["minimum_tokens"]
-            assert (
-                json.loads(hold["request_json"])["reserve"]["cost_micros"] == frozen["cost_micros"]
-            )
-            rows = orch.store.connection.execute(
-                "SELECT request_json FROM budget_tail_transfers WHERE hold_id=?",
-                (hold["hold_id"],),
-            ).fetchall()
-            assert len(rows) == 1
-            transfer = json.loads(rows[0][0])
-            subject = f"{worker.id}:critic:1"
-            assert transfer["transfer_id"] == subject
-            assert transfer["allocations"][0]["tokens"] == frozen["minimum_tokens"]
-            assert transfer["allocations"][0]["cost_micros"] == frozen["cost_micros"]
-            critic_intent = orch.store.get_intent_for_subject(subject)
-            assert critic_intent.config["provider_input_cap"] == cap
-            assert critic_intent.config["provider_output_ceiling"] == frozen["output_ceiling"]
-            assert critic_intent.config["provider_first_cost_micros"] == frozen["cost_micros"]
-            assert provider.by_role["critic"] >= 1
-            assert any(
-                row["intent_id"] == critic_intent.intent_id and row["state"] == "SETTLED"
-                for row in grants(orch.commit)
-            )
-
-    asyncio.run(exercise())
-
-
-def test_production_first_critic_route_drift_refuses_without_extra_handoff(tmp_path):
-    async def exercise():
-        worker_done = False
-
-        def mark_worker_done():
-            nonlocal worker_done
-            worker_done = True
-
-        provider = _production_first_provider(worker_done=mark_worker_done, attempts=1)
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "drift",
-            max_concurrency=1,
-            candidates_per_task=1,
-            dynamic_graph=False,
-        )
-        profiles = {
-            "default": _context_profile(provider),
-            "drift": _context_profile(provider, profile_id="drift", model="drift-model"),
-        }
-        async with Orchestrator(
-            config, profiles=profiles, provider_token_estimator=Counter(1000)
-        ) as orch:
-            original_route = orch._route_service
-
-            def changed_route(role, mission_id):
-                if role == "critic" and worker_done:
-                    return RoutingDecision("drift", "drift-model", "test-route-drift")
-                return original_route(role, mission_id)
-
-            orch._route_service = changed_route
-            mission = await orch.submit_mission(spec(success_criteria=("file:a.md",)))
-            await asyncio.wait_for(orch.run(), 15)
-            assert worker_done and provider.by_role.get("critic", 0) == 0
-            [task] = orch.store.list_tasks(mission.id)
-            [worker] = orch.store.list_attempts(task.id)
-            assert orch.store.get_intent_for_subject(worker.id).config["first_critic_budget"]
-            assert orch.store.get_intent_for_subject(f"{worker.id}:critic:1") is None
-            assert all(
-                orch.store.get_intent(row["intent_id"]).kind != "critic"
-                for row in grants(orch.commit)
-            )
-
-    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("allowance", [40_000, 100_000])

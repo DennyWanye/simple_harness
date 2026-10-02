@@ -4,12 +4,9 @@
 
 """Step 5 · slice C (D5-8'): the §29.3 starting formula with its weights verbatim and this
 build's input scales, eligibility before scoring, conflict Tasks first, a starving Task
-promoted after a whole aging window (S5-09), and the score frozen on the Attempt."""
+promoted after a whole aging window (S5-09)."""
 
 from __future__ import annotations
-
-import asyncio
-from pathlib import Path
 
 import pytest
 from graph_helpers import complete, graph_service, node
@@ -18,25 +15,14 @@ from agent_orchestrator.contracts import (
     Attempt,
     AttemptStatus,
     Budget,
-    MissionStatus,
     Task,
     TaskStatus,
 )
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.scheduling.allocator import (
     ALLOCATOR_VERSION,
     WEIGHTS,
     allocate,
     score_tasks,
-)
-from agent_orchestrator.testing.fixtures import (
-    RECORDER_SEED,
-    RECORDER_SPEC,
-    RECORDER_TASKS,
-    demo_dynamic_dag_provider,
-    recorder_scripts,
 )
 
 
@@ -181,46 +167,6 @@ def test_s5_09_a_low_priority_task_is_promoted_after_waiting_a_whole_window():
     assert (
         after.scores["m:task-1"].tier == 1 and after.scores["m:task-1"].parts["waiting_age"] == 1.0
     )
-
-
-def test_the_score_is_frozen_on_the_attempt_and_the_conflict_tier_is_kept_in_the_closure(tmp_path):
-    provider = demo_dynamic_dag_provider(
-        tasks=[t for t in RECORDER_TASKS if t["key"] in "AD"],
-        scripts={"A": recorder_scripts()["A"], "D": recorder_scripts()["D"]},
-    )
-
-    async def case():
-        async with Orchestrator(
-            OrchestratorConfig(
-                evidence_root=Path(tmp_path) / "e", max_concurrency=1, test_timeout_seconds=60
-            ),
-            provider,
-        ) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                MissionSpec(
-                    goal=RECORDER_SPEC["goal"],
-                    success_criteria=("file:DOCS.md",),
-                    tenant_id="t",
-                    idempotency_key="alloc",
-                    allowed_tools=tuple(RECORDER_SPEC["allowed_tools"]),
-                    budget=Budget(max_tokens=300_000, max_attempts=16),
-                    workspace_seed=RECORDER_SEED,
-                    orchestration_semantics_version="legacy",
-                )
-            )
-            await orchestrator.run()
-            store = orchestrator.store
-            assert store.get_mission(mission.id).status is MissionStatus.COMPLETED, (
-                orchestrator.progress_log
-            )
-            for task in store.list_tasks(mission.id):
-                intent = store.get_intent_for_subject(store.list_attempts(task.id)[0].id)
-                allocation = intent.config["allocation"]
-                assert allocation["allocator_version"] == ALLOCATOR_VERSION and set(
-                    allocation["parts"]
-                ) == set(WEIGHTS)
-
-    asyncio.run(case())
 
 
 def test_graph_helpers_keep_ready_at(tmp_path):

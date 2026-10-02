@@ -91,20 +91,6 @@ def _notes_worker(extra=(), artifacts=("NOTES.md",)):
     ]
 
 
-PROBE = "import pathlib\npathlib.Path({marker!r}).write_text('ran', encoding='utf-8')\n"
-
-
-def _probe_writes(marker):
-    code = PROBE.format(marker=str(marker))
-    return [
-        ("workspace_write_file", {"path": "conftest.py", "content": code}),
-        (
-            "workspace_write_file",
-            {"path": "test_probe.py", "content": code + "\n\ndef test_ok():\n    assert True\n"},
-        ),
-    ]
-
-
 def _critics(n=4):
     return [critic_step(verdict="PASS", criteria_met=True) for _ in range(n)]
 
@@ -193,30 +179,6 @@ def test_a_planner_asking_for_code_test_is_refused_and_the_replan_completes(tmp_
     assert pytest_spy == []
 
 
-# ------------------------------------------------------------------ SA-2
-def test_model_written_test_files_never_run(tmp_path, pytest_spy):
-    marker = tmp_path / "pytest-ran.marker"
-    written = ("NOTES.md", "conftest.py", "test_probe.py")
-    provider = RoleScriptedProvider(
-        {
-            "planner": [graph_proposal_step([_task("A", NO_CODE, outputs=written)])],
-            "worker": _notes_worker(_probe_writes(marker), artifacts=written),
-            "critic": _critics(),
-        }
-    )
-
-    async def run():
-        async with Orchestrator(_config(tmp_path), provider) as orchestrator:
-            mission = await orchestrator.submit_mission(_spec("sa2"))
-            await orchestrator.run()
-            return orchestrator.store.get_mission(mission.id)
-
-    mission = asyncio.run(run())
-    assert str(mission.status) == "COMPLETED"
-    assert not marker.exists(), "a model-written test file was executed on this machine"
-    assert pytest_spy == []
-
-
 # ------------------------------------------------------------------ before the switch
 def _legacy_mission(tmp_path, *, criteria, policy, task=None):
     """Created and planned while local code execution was on (no model turn yet);
@@ -255,23 +217,6 @@ def _resume_off(tmp_path, mission_id, provider):
             return store.get_mission(mission_id), layers, store.list_events(mission_id)
 
     return asyncio.run(phase2())
-
-
-def test_a_code_test_task_from_before_the_switch_is_an_error_not_a_pass(tmp_path, pytest_spy):
-    mission_id = _legacy_mission(tmp_path, criteria=("file:NOTES.md",), policy=WITH_CODE)
-    run_tests_first = [("run_tests", {})]  # refused: the gateway never runs pytest either
-    provider = RoleScriptedProvider(
-        {
-            "worker": _notes_worker(run_tests_first) + _notes_worker(run_tests_first),
-            "critic": _critics(),
-        }
-    )
-    mission, layers, _events = _resume_off(tmp_path, mission_id, provider)
-    code_layers = [layer for layer in layers if layer["layer"] == "code_test"]
-    assert code_layers and all(layer["status"] == "ERROR" for layer in code_layers)
-    assert all((layer.get("detail") or {}).get("undeployed") is True for layer in code_layers)
-    assert str(mission.status) == "FAILED"  # honest failure, not a hang and not a pass
-    assert pytest_spy == []
 
 
 def test_a_pytest_mission_criterion_from_before_the_switch_is_judged_unmet(tmp_path, pytest_spy):

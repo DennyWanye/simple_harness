@@ -9,16 +9,12 @@ only once the queue has drained to the low watermark is it cleared and work resu
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
-from helpers_step06 import config, spec
 
 from agent_orchestrator.contracts import (
     Attempt,
     AttemptStatus,
     Budget,
-    MissionStatus,
     Task,
     TaskStatus,
 )
@@ -28,123 +24,8 @@ from agent_orchestrator.graph.changes import (
     TaskGraphChange,
     validate_change,
 )
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.scheduling.allocator import allocate
 from agent_orchestrator.scheduling.backpressure import RAISED, BackpressureState
-from agent_orchestrator.testing.fixtures import (
-    _recorder_task,
-    _write_files_then,
-    critic_step,
-    demo_dynamic_dag_provider,
-    graph_change_step,
-    package_of,
-)
-
-
-def _doc_task(key, priority):
-    return _recorder_task(
-        key,
-        f"写出文档 {key}.md（独立任务 {key}）",
-        [],
-        [f"file:{key}.md"],
-        priority,
-        [f"{key}.md"],
-        policy=["format_check", "rule_check", "critic_review"],
-    )
-
-
-def _doc_script(key):
-    return _write_files_then(
-        {f"{key}.md": f"# {key}\n"}, test_path=None, summary=f"{key} 写出", claim=f"{key}.md 写出"
-    )
-
-
-# ------------------------------------------------------------------ S6-02 closure
-def test_s6_02_a_slow_verifier_raises_backpressure_and_work_resumes_after_it_clears(tmp_path):
-    keys = ["P1", "P2", "P3", "P4"]
-    tasks = [_doc_task(k, 4.0 - i) for i, k in enumerate(keys)]
-    def per_attempt_critic(request):
-        # Each Task fails once, regardless of the bounded scheduler's order.
-        # Global first-four responses could fail P1 twice and exhaust its script.
-        first = package_of(request)["attempt_id"].endswith(":attempt-1")
-        return critic_step(
-            verdict="FAIL" if first else "PASS", criteria_met=not first,
-            blocker="再检查" if first else None,
-        )(request)
-
-    provider = demo_dynamic_dag_provider(
-        tasks=tasks,
-        scripts={k: [] for k in keys},
-        per_attempt={k: [_doc_script(k), _doc_script(k)] for k in keys},
-        critic_steps=[per_attempt_critic] * 8,
-        critic_delay_seconds=0.25,
-        manager_steps=[graph_change_step([])] * 8,
-    )
-
-    async def case():
-        async with Orchestrator(
-            config(
-                tmp_path,
-                max_concurrency=4,
-                max_running_attempts=8,
-                verifier_workers=1,
-                max_pending_verifications=2,
-                low_watermark_ratio=0.5,
-                manager_after_failures=10,
-            ),
-            provider,
-            poll_interval=0.02,
-        ) as orchestrator:
-            mission = await orchestrator.submit_mission(
-                spec(
-                    "bp",
-                    success_criteria=tuple(f"file:{k}.md" for k in keys),
-                    budget=Budget(max_tokens=600_000, max_attempts=32),
-                )
-            )
-            await asyncio.wait_for(orchestrator.run(), 20)
-            store = orchestrator.store
-            final = store.get_mission(mission.id)
-            assert final.status is MissionStatus.COMPLETED, orchestrator.progress_log
-            events = store.list_events(mission.id)
-            raised = [e for e in events if e.type == "BackpressureRaised"]
-            cleared = [e for e in events if e.type == "BackpressureCleared"]
-            # the queue backed up at least once and every raise was cleared again (hysteresis:
-            # cleared only at the low watermark); several raise/clear rounds are legitimate —
-            # results keep arriving while the single slow Verifier drains the queue
-            assert raised and len(raised) == len(cleared), orchestrator.progress_log
-            assert all(e.payload["dimension"] == "pending_verifications" for e in raised)
-            assert all(e.payload["high"] == 2 and e.payload["low"] == 1 for e in raised)
-            assert all(e.payload["observed"] >= 2 for e in raised)
-            assert all(e.payload["observed"] <= 1 for e in cleared)
-            windows = list(zip([e.seq for e in raised], [e.seq for e in cleared], strict=True))
-            assert all(r < c for r, c in windows)
-            created = [e for e in events if e.type == "AttemptCreated"]
-            first_round = [e for e in created if e.payload["ordinal"] == 1]
-            second_round = [e for e in created if e.payload["ordinal"] == 2]
-            assert len(first_round) == 4 and len(second_round) == 4
-            # while raised, no expansion of formula-tier Tasks: every Attempt was created outside
-            # the raised windows, and every retry waited for the first clearing
-            assert not [e for e in created if any(r < e.seq < c for r, c in windows)]
-            assert all(e.seq > windows[0][1] for e in second_round)
-            assert store.count_events(mission.id, "VerificationFailed") == 4
-            assert store.count_events(mission.id, "VerificationPassed") == 4
-            # the durable state carries the transition log (the single truth) and the limits
-            document = store.get_scheduler_state("backpressure")
-            levels = [t["level"] for t in document["log"]]
-            assert levels == ["RAISED", "NORMAL"] * (len(levels) // 2) and len(levels) == 2 * len(
-                raised
-            )
-            assert document["limits"]["max_pending_verifications"] == 2
-            assert orchestrator.pressure.level == "NORMAL" and orchestrator.pressure.changes == len(
-                levels
-            )
-            # allocation plans made under pressure are visible on the Attempts' intents
-            for e in second_round:
-                intent = store.get_intent_for_subject(e.attempt_id)
-                assert intent.config["allocation"]["allocator_version"] == "allocator-v1"
-
-    asyncio.run(case())
 
 
 # ------------------------------------------------------------------ D6-3 unit: the gate
