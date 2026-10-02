@@ -385,12 +385,9 @@ class PlanCommitsMixin:
         不归这道闸管。闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
         """
 
-        from ..storage.assurance_store import AssuranceStore
         from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_proposed_methods
 
         if not command.delta.method_instances:
-            return
-        if AssuranceStore(self._store).lane(command.mission_id) != "ASSURANCE_1_1":
             return
         refused = unreviewed_proposed_methods(self._store, command.mission_id, command.delta.method_instances)
         if refused:

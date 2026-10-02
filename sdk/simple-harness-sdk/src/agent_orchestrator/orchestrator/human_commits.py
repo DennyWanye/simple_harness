@@ -301,12 +301,9 @@ class HumanCommitsMixin:
         auditable ground — never an edit of the immutable record.
         """
         from ..assurance.codec import fingerprint
-        from ..storage.assurance_store import AssuranceStore
         from ..storage.htn_store import HtnStore
 
         mission_id = str(request["mission_id"])
-        if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
-            return
         stored = self._store.get_result(result_id)
         if stored is None:
             return

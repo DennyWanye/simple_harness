@@ -1021,12 +1021,12 @@ class HtnStore:
                 from ..assurance.codec import AssuranceError
                 from .assurance_store import AssuranceStore
 
-                if AssuranceStore(self._store).lane(mission) == "ASSURANCE_1_1":
-                    from ..orchestrator.assurance_review_import import PreparedOfficialReview
+                from ..orchestrator.assurance_review_import import PreparedOfficialReview
 
-                    if not isinstance(assurance_import, PreparedOfficialReview):
-                        raise AssuranceError("REVIEW_RUNTIME_IMPORT_REQUIRED")
-                    assurance_import.require_locked(self._store, record)
+                AssuranceStore(self._store).require_assured(mission)
+                if not isinstance(assurance_import, PreparedOfficialReview):
+                    raise AssuranceError("REVIEW_RUNTIME_IMPORT_REQUIRED")
+                assurance_import.require_locked(self._store, record)
             self._execute(
                 connection,
                 "INSERT INTO review_records(record_id,package_id,mission_id,purpose,"

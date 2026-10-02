@@ -58,7 +58,6 @@ from ..artifacts.workspace import WorkspaceError
 from ..context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
-    build_critic_package,
     build_worker_package,
 )
 from ..context.retrieval import (
@@ -116,7 +115,6 @@ from ..runtime.assembly import (
 from ..runtime.first_request_budget import (
     FirstRequestBudget,
     FirstRequestBudgetUnknown,
-    ProviderInputCap,
     actual_output_ceiling,
     first_request_budget,
     frozen_provider_input_cap,
@@ -139,7 +137,6 @@ from ..runtime.output_blocks import (
     parse_port_claims,
 )
 from ..runtime.role_templates import (
-    CRITIC,
     PLANNER_HIERARCHICAL,
     RESULT_ENVELOPE_TAG,
     role_for_task,
@@ -160,7 +157,7 @@ from ..storage.store import (
     StoreConflict,
     StoreError,
 )
-from ..verification.critics import CriticVerdict, parse_critic_verdict
+from ..verification.critics import CriticVerdict
 from ..verification.deterministic_checks import LayerResult
 from ..verification.human_review import (
     NEEDS_HUMAN,
@@ -401,7 +398,6 @@ def planning_failure_detail(error: Exception, detail: dict[str, Any]) -> dict[st
 def _turn_failed(event: Any) -> bool:
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
     return isinstance(detail, Mapping) and detail.get("turn_failed") is True
-
 
 
 def _task_ref_hashes(semantics: Any) -> frozenset[str]:
@@ -1707,59 +1703,6 @@ class Orchestrator:
     def _reset_after_handoff_unknown_streak(self, mission_id: str) -> None:
         self._after_handoff_zero_streak[mission_id] = 0
 
-    @staticmethod
-    def _provider_usage_tokens(record: object) -> int:
-        payload = getattr(record, "usage_json", None)
-        if not isinstance(payload, Mapping):
-            return 0
-        observed = payload.get("usage")
-        if not isinstance(observed, Mapping):
-            return 0
-        total = observed.get("total_tokens")
-        if isinstance(total, int) and not isinstance(total, bool) and total > 0:
-            return total
-        inp = observed.get("input_tokens")
-        out = observed.get("output_tokens")
-        if not isinstance(inp, int) or isinstance(inp, bool):
-            inp = 0
-        if not isinstance(out, int) or isinstance(out, bool):
-            out = 0
-        return inp + out
-
-    def _count_zero_token_after_handoff(self, intent: DispatchIntent) -> int:
-        """Count a new after-handoff 0-token UNKNOWN on this executor; return the streak."""
-
-        mission_id = intent.mission_id
-        if intent.agent_id is None:
-            return self._after_handoff_zero_streak.get(mission_id, 0)
-        from simple_harness.contracts import RunId
-
-        try:
-            records = self.bridge_for(intent).runtime.uow.list_provider_invocations(
-                RunId(str(intent.agent_id))
-            )
-        except Exception:  # noqa: BLE001 - runtime ledger unreachable
-            return self._after_handoff_zero_streak.get(mission_id, 0)
-        for record in records:
-            invocation_id = getattr(record, "invocation_id", None)
-            if not isinstance(invocation_id, str):
-                continue
-            if invocation_id in self._counted_after_handoff_unknowns:
-                continue
-            if str(getattr(record, "state", "")) != "unknown":
-                continue
-            if getattr(record, "error_code", None) != "provider_error_after_handoff":
-                continue
-            if getattr(record, "handed_off_at", None) is None:
-                continue
-            self._counted_after_handoff_unknowns.add(invocation_id)
-            if self._provider_usage_tokens(record) > 0:
-                self._after_handoff_zero_streak[mission_id] = 0
-            else:
-                self._after_handoff_zero_streak[mission_id] = (
-                    self._after_handoff_zero_streak.get(mission_id, 0) + 1
-                )
-        return self._after_handoff_zero_streak.get(mission_id, 0)
 
     @staticmethod
     def _assured_review_intent(intent: DispatchIntent) -> bool:
@@ -1767,15 +1710,6 @@ class Orchestrator:
         read-only evidence tools through ``_bind_critic``; nothing else does."""
         return intent.config.get("assurance_protocol") == "assurance-exec-v1.1"
 
-    @staticmethod
-    def _is_planner_service(intent: DispatchIntent) -> bool:
-        if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
-            return False
-        return intent.kind == "plan" and str(intent.config.get("role", "")) not in {
-            "root_reviewer",
-            "operation_proposal_reviewer",
-            "operation_outcome_reviewer",
-        }
 
     def _service_config(self, decision: RoutingDecision) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -1911,10 +1845,6 @@ class Orchestrator:
         logger.info("orchestrator.progress", extra={"detail": text})
 
     # ------------------------------------------------------------------ api
-    async def submit_mission(self, spec: MissionSpec) -> Mission:
-        self._check_mission_door(spec)
-        mission, _ = self._commit_mission(spec)
-        return mission
 
     def create_mission(self, *, tenant_id: str, request: Mapping[str, Any]) -> tuple[Mission, bool]:
         """Host support 0.9.8 (plan review P1-1): the one door that knows the deployment —
@@ -5287,18 +5217,6 @@ class Orchestrator:
             global_summary=summaries.get(f"mission:{mission.id}"),
         )
 
-    def _knowledge_or_unavailable(
-        self, mission: Mission, task: Task | None
-    ) -> KnowledgeContext | None:
-        """For the Critic / Verifier layer: never blocks a verification on retrieval."""
-
-        if task is None:
-            return None
-        tasks_by_id = {t.id: t for t in self.store.list_tasks(mission.id)}
-        try:
-            return self._gather_knowledge(mission, task, tasks_by_id)
-        except RetrievalUnavailable as error:
-            return KnowledgeContext.unavailable(str(error))
 
     # --------------------------------------------------------------- collect
     async def _collect(self, intent: DispatchIntent) -> bool:
@@ -5379,8 +5297,7 @@ class Orchestrator:
                     self._released.add(key)
                     await self._cancel_turn(intent)
             return False
-        from ..storage.assurance_store import AssuranceStore
-        if result is None and AssuranceStore(self.store).lane(intent.mission_id) == "ASSURANCE_1_1":
+        if result is None:
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
             from ..runtime.planning_operations import SourceUnavailable
             try:
@@ -5871,22 +5788,6 @@ class Orchestrator:
             )
             self._note(f"planner: model echo mismatch {sorted(echoed)} → mission stopped")
             return
-        # P2.3c part 3a: the root MISSION_FINAL reviewer rides on the same ``plan``
-        # intent kind (it has no Attempt, so the ``critic`` kind's attempt-bound
-        # collection does not apply) and its reply is a verdict, not a proposal.
-        if str(intent.config.get("role", "")) == "root_reviewer":
-            await self._collect_root_review(intent, result, mission, text)
-            return
-        if str(intent.config.get("role", "")) == "operation_proposal_reviewer":
-            from .operation_runtime import collect_operation_review
-
-            await collect_operation_review(self, intent, result, mission, text)
-            return
-        if str(intent.config.get("role", "")) == "operation_outcome_reviewer":
-            from .operation_runtime import collect_operation_outcome_review
-
-            await collect_operation_outcome_review(self, intent, result, mission, text)
-            return
         # P2.3b: the Planner speaks the typed contract (§18.3); the reply goes to the
         # assembly.  With no assembly installed there is nothing that could read it.
         if new_mode is None:
@@ -5901,83 +5802,6 @@ class Orchestrator:
 
         ensure_operation_runtime(self)
         return self.commit.submit_operation_intent(command, tenant_id=tenant_id, principal=principal)
-
-    async def _collect_root_review(  # type: ignore[no-untyped-def]
-        self, intent: DispatchIntent, result, mission: Mission, text: str
-    ) -> None:
-        """A ``<critic_verdict>`` reply → the official root ``ReviewRecord`` (AER I05).
-
-        The conclusion is the reviewer's and nothing here adjusts it: ``PASS``
-        becomes ``ACCEPT``, ``FAIL`` becomes ``REJECTED``, and a criterion the
-        reviewer reported ``met: false`` is written ``FAIL`` — there is no branch
-        that produces an ACCEPT out of a reply that did not say PASS.
-
-        An unreadable reply writes **no** record.  ``parse_critic_verdict`` is strict
-        on purpose (AER-V04: a malformed verdict is an error, never a PASS), and an
-        answer we could not read is not a conclusion, so the package keeps its one
-        official-record slot free and the Mission reaches the idle-stall path with
-        ``HierarchicalRootReviewUnreadable`` written down.  Asking again with the same
-        anchor would spend the Mission account on the same question.
-        """
-
-        from ..contracts.resolution import CriterionVerdict, ReviewVerdict
-
-        new_mode = self._new_mode(mission)
-        package_id = str(intent.config.get("review_package_id", ""))
-        expected = [str(item) for item in intent.config.get("review_criteria", [])]
-        if new_mode is None:
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        coordinator = self._root_review(mission, new_mode)
-        try:
-            package = coordinator.semantics.get_review_package(package_id)
-        except StoreError as error:
-            self._note(f"root review reply names no stored package ({error})")
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        try:
-            if result.state is not AgentTurnState.COMMITTED:
-                raise ContractError(f"root reviewer turn failed: {dict(result.error or {})}")
-            verdict = parse_critic_verdict(text, expected_criteria=expected)
-        except (ContractError, BlockError) as error:
-            coordinator.record_unreadable(
-                mission.id,
-                package,
-                detail=str(error),
-                reviewer_turn_id=str(getattr(result, "turn_id", "") or intent.intent_id),
-            )
-            self._note(f"mission {mission.id}: the root review reply was unreadable ({error})")
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        verdicts = {
-            str(item.get("criterion")): (
-                CriterionVerdict.PASS if bool(item.get("met")) else CriterionVerdict.FAIL
-            )
-            for item in verdict.mission_criteria
-        }
-        try:
-            record = coordinator.record_review(
-                mission.id,
-                package,
-                verdict=ReviewVerdict.ACCEPT if verdict.passed else ReviewVerdict.REJECTED,
-                criterion_verdicts=verdicts,
-                reviewer_agent_id=str(intent.agent_id or "root-reviewer"),
-                reviewer_turn_id=str(getattr(result, "turn_id", "") or intent.intent_id),
-                findings=verdict.findings,
-            )
-        except (ContractError, StoreError) as error:
-            self._note(f"mission {mission.id}: the root review record was refused ({error})")
-            self._settle_intent(intent, "FAILED")
-            self._settle_service_if_known(intent.subject_id, mission.id)
-            return
-        self._note(
-            f"mission {mission.id}: root review {record.record_id} concluded {record.verdict!s}"
-        )
-        self._settle_intent(intent, "SETTLED" if verdict.passed else "FAILED")
-        self._settle_service_if_known(intent.subject_id, mission.id)
 
     def _planner_intents_in_flight(self, mission_id: str) -> bool:
         """An open ``plan`` intent that is a *Planner* round, not a synthesis round.
@@ -6592,31 +6416,29 @@ class Orchestrator:
                         service_detail = {**persist_method(new_mode, *prepared_method),
                                           "subject_task_id": str(checked.subject["task_id"])}
                         event_type = "PlanningMethodProposed"
-                        from ..storage.assurance_store import AssuranceStore
-                        if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
-                            # BW03: the admitted draft gets its independent METHOD_PLAN
-                            # review on the round transport, authored by this intent.
-                            from ..assurance.codec import AssuranceError
-                            from ..assurance.refs import Pin as AssurancePin
-                            if self._assurance_reviews is None:
-                                raise ContractError("Assurance review builder is not installed for METHOD_PLAN")
-                            method_reference = prepared_method[1].method_ref()
-                            # 审阅以被规划的目标为归属任务；根目标在第一份计划前还没有任务行。
-                            subject_spec = next(
-                                spec for spec in new_mode.network(mission.id).occurrences
-                                if str(spec.task_id) == str(checked.subject["task_id"]))
-                            self.commit.materialise_planning_subject(mission.id, subject_spec)
-                            try:
-                                review = self._assurance_reviews.ensure_method_plan(
-                                    mission, task_id=str(checked.subject["task_id"]),
-                                    method_ref=AssurancePin(method_reference.method_id,
-                                                            int(method_reference.version),
-                                                            method_reference.content_hash),
-                                    producer_agent_ids=(str(intent.agent_id or ""),))
-                            except AssuranceError as error:
-                                raise _AssuranceReviewUnavailable("METHOD_PLAN", error) from error
-                            service_detail = {**service_detail,
-                                              "assurance_review_key": review.to_json()["review_key"]}
+                        # BW03: the admitted draft gets its independent METHOD_PLAN
+                        # review on the round transport, authored by this intent.
+                        from ..assurance.codec import AssuranceError
+                        from ..assurance.refs import Pin as AssurancePin
+                        if self._assurance_reviews is None:
+                            raise ContractError("Assurance review builder is not installed for METHOD_PLAN")
+                        method_reference = prepared_method[1].method_ref()
+                        # 审阅以被规划的目标为归属任务；根目标在第一份计划前还没有任务行。
+                        subject_spec = next(
+                            spec for spec in new_mode.network(mission.id).occurrences
+                            if str(spec.task_id) == str(checked.subject["task_id"]))
+                        self.commit.materialise_planning_subject(mission.id, subject_spec)
+                        try:
+                            review = self._assurance_reviews.ensure_method_plan(
+                                mission, task_id=str(checked.subject["task_id"]),
+                                method_ref=AssurancePin(method_reference.method_id,
+                                                        int(method_reference.version),
+                                                        method_reference.content_hash),
+                                producer_agent_ids=(str(intent.agent_id or ""),))
+                        except AssuranceError as error:
+                            raise _AssuranceReviewUnavailable("METHOD_PLAN", error) from error
+                        service_detail = {**service_detail,
+                                          "assurance_review_key": review.to_json()["review_key"]}
                     record_decision(request_id=request_id, attempt_ordinal=attempt_ordinal,
                         raw_output_hash=raw_hash, raw_artifact_ref=raw_artifact_ref,
                         decision_id=decision_id, status=PlanningDecisionStatus.NO_STATE_CHANGE,
@@ -7944,14 +7766,12 @@ class Orchestrator:
         domain = self.commit.domain_for(mission.id)
         try:
             local_check_factory = None
-            from ..storage.assurance_store import AssuranceStore
 
-            if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
-                if self._assurance_local_checks is None:
-                    from ..assurance.codec import AssuranceError
+            if self._assurance_local_checks is None:
+                from ..assurance.codec import AssuranceError
 
-                    raise AssuranceError("ASSURANCE_LOCAL_CHECKS_UNBOUND")
-                local_check_factory = self._assurance_local_checks.prepare
+                raise AssuranceError("ASSURANCE_LOCAL_CHECKS_UNBOUND")
+            local_check_factory = self._assurance_local_checks.prepare
             verdict = await self._router.verify(
                 mission=mission,
                 task=task,
@@ -8093,29 +7913,9 @@ class Orchestrator:
         Missing or ambiguous execution identity is never proof of a prompt version.
         """
 
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1":
-            if self._assurance_reviews is None:
-                return {}
-            return self._assurance_reviews.provenance(mission_id, attempt_id)
-        settled = []
-        for ordinal in range(1, MAX_CRITIC_ATTEMPTS + 1):
-            intent = self.store.get_intent_for_subject(f"{attempt_id}:critic:{ordinal}")
-            if intent is not None and intent.state == "SETTLED":
-                settled.append(intent)
-        if len(settled) != 1:
+        if self._assurance_reviews is None:
             return {}
-        intent = settled[0]
-        version = intent.config.get("prompt_version")
-        if (
-            intent.kind != "critic"
-            or intent.mission_id != mission_id
-            or intent.config.get("attempt_id") != attempt_id
-            or not isinstance(version, str)
-            or not version
-        ):
-            return {}
-        return {"critic_intent_id": intent.intent_id, "verifier_version": version}
+        return self._assurance_reviews.provenance(mission_id, attempt_id)
 
     def _human_inputs(
         self, result_id: str, task: Task
@@ -8342,244 +8142,13 @@ class Orchestrator:
         test_output: str | None,
         attempt_id: str | None = None,
     ) -> CriticVerdict:
-        from ..verification.critics import critic_schema_retry_feedback
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
-            from ..assurance.codec import AssuranceError
-            if task is None or attempt_id is None or self._assurance_reviews is None:
-                raise ContractError("Assurance review builder is not installed for this purpose")
-            try:
-                return await self._assurance_reviews.run_task(mission, task, attempt_id=attempt_id)
-            except (AssuranceError, RoutingUnavailable) as error:
-                raise ContractError(f"Assurance review unavailable: {error}") from error
-
-        task_id = None if task is None else task.id
-        last_error: ContractError | None = None
-        for ordinal in range(1, MAX_CRITIC_ATTEMPTS + 1):
-            current_mission = self.store.get_mission(mission.id)
-            current_task = None if task_id is None else self.store.get_task(task_id)
-            current_attempt = None if attempt_id is None else self.store.get_attempt(attempt_id)
-            if (
-                current_mission is None
-                or current_mission.status in TERMINAL_MISSION
-                or (current_task is not None and current_task.status in TERMINAL_TASK)
-                or (current_attempt is not None and current_attempt.status in TERMINAL_ATTEMPT)
-            ):
-                raise CommitRejected("Critic subject stopped before dispatch")
-            subject = f"{subject_prefix}:{ordinal}"
-            intent = self.store.get_intent_for_subject(subject)
-            if intent is None:
-                template = self._template(CRITIC, mission.id)
-                content_scope = None
-                from .scoped_content_review import task_content_prompt_scope
-                if task is not None:
-                    from ..runtime.role_templates import CRITIC_TASK_CONTENT
-                    content_scope = task_content_prompt_scope(self.store, mission.id, task.id,
-                                                              attempt_id=attempt_id)
-                    template = CRITIC_TASK_CONTENT
-                copy = self.assembled.workspaces.verification_view(view_id)
-                source_attempt = None if attempt_id is None else self.store.get_attempt(attempt_id)
-                source_binding = (
-                    {} if source_attempt is None else self._frozen_source_binding(source_attempt)
-                )
-                untrusted = [
-                    str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])
-                ]
-                if source_binding:
-                    untrusted = sorted(
-                        set(untrusted) | set(source_binding.get("source_versions", {}))
-                    )
-                try:
-                    package = build_critic_package(
-                        mission,
-                        task,
-                        attempt_id=view_id,
-                        artifacts=[
-                            {
-                                "path": a.path,
-                                "content_hash": a.content_hash,
-                                "size_bytes": a.size_bytes,
-                            }
-                            for a in artifacts
-                        ],
-                        test_output=test_output,
-                        task_content_scope=content_scope,
-                        workspace_files=copy.list_files(),
-                        knowledge=self._knowledge_or_unavailable(mission, task),
-                        visibility="verifier",
-                        domain=self.commit.domain_for(mission.id),
-                        source_versions=source_binding.get("source_versions"),
-                        feedback=critic_schema_retry_feedback(
-                            last_error, prompt_version=template.prompt_version
-                        ),
-                    )
-                except ContextRejected as error:
-                    raise ContractError(f"critic package refused: {error}") from error
-                try:
-                    decision = self._route_service("critic", mission.id)
-                except RoutingUnavailable as unavailable:
-                    # review P0-1: an unavailable Critic makes the layer an ERROR (never a PASS)
-                    raise ContractError(
-                        f"critic runtime profile {unavailable.profile_id!r} unavailable"
-                    ) from unavailable
-                config = AgentConfig(
-                    name=f"critic-{ordinal}",
-                    instructions=template.instructions,
-                    model_profile_ref=decision.profile_id,
-                    tool_names=template.tool_names,
-                    limits=AgentLimits(
-                        max_model_calls_per_turn=SYSTEM_CRITIC_MODEL_CALLS,
-                        max_tool_calls_per_turn=24,
-                        turn_deadline_seconds=self._config.turn_deadline_seconds,
-                    ),
-                )
-                message = user_message_json(package.text)
-                first_cap = None
-                first_output_ceiling = None
-                first_reservation = None
-                first_unknown = None
-                critic_tokens = self._config.critic_reserve_tokens
-                if ordinal == 1 and attempt_id is not None and task_id is not None:
-                    worker_intent = self.store.get_intent_for_subject(attempt_id)
-                    if worker_intent is None:
-                        raise ContractError("FIRST Critic has no original Worker intent")
-                    frozen_first = worker_intent.config.get("first_critic_budget")
-                    if frozen_first is not None:
-                        if not isinstance(frozen_first, Mapping):
-                            raise ContractError("frozen FIRST Critic budget is malformed")
-                        try:
-                            first_cap = ProviderInputCap.from_json(
-                                frozen_first.get("provider_input_cap")
-                            )
-                        except (TypeError, ValueError) as error:
-                            raise ContractError(
-                                "frozen FIRST Critic input cap is malformed"
-                            ) from error
-                        actual_first = self._first_critic_budget(decision)
-                        if (
-                            not isinstance(actual_first, FirstRequestBudget)
-                            or actual_first.provider_input_cap != first_cap
-                            or frozen_first.get("output_ceiling") != actual_first.output_ceiling
-                            or frozen_first.get("minimum_tokens") != actual_first.minimum_tokens
-                            or frozen_first.get("cost_micros")
-                            != self._first_critic_reservation(
-                                actual_first, decision.profile_id
-                            ).cost_micros
-                        ):
-                            raise ContractError(
-                                "FIRST Critic route or cap differs from protected tail"
-                            )
-                        first_reservation = self._first_critic_reservation(
-                            actual_first, decision.profile_id
-                        )
-                        first_output_ceiling = actual_first.output_ceiling
-                    else:
-                        first_unknown = worker_intent.config.get(
-                            "first_critic_budget_unknown", "original_intent_has_no_first_cap"
-                        )
-                first_fields: dict[str, Any] = {}
-                if first_cap is not None:
-                    assert first_reservation is not None
-                    first_fields = {
-                        "provider_input_cap": first_cap.to_json(),
-                        "provider_output_ceiling": first_output_ceiling,
-                        "provider_first_cost_micros": first_reservation.cost_micros,
-                    }
-                intent = self.commit.create_service_intent(
-                    kind="critic",
-                    subject_id=subject,
-                    mission_id=mission.id,
-                    account_id=account_id,
-                    creation_key=subject,
-                    input_id="attempt-input",
-                    input_hash=sha256_hex(message),
-                    config={
-                        "agent_config": config.to_json(),
-                        "message": message,
-                        "attempt_id": view_id,
-                        "context_version": package.context_version,
-                        "prompt_version": template.prompt_version,
-                        **({"task_content_scope": content_scope} if content_scope is not None else {}),
-                        **source_binding,
-                        "untrusted_sources": untrusted,
-                        **self._service_config(decision),
-                        **first_fields,
-                        **(
-                            {"first_critic_budget_unknown": first_unknown}
-                            if first_unknown is not None
-                            else {}
-                        ),
-                    },
-                    reservation=(
-                        first_reservation
-                        if first_reservation is not None
-                        else self._reservation(critic_tokens, decision.profile_id)
-                    ),
-                    task_id=task_id,
-                    attempt_id=attempt_id,
-                )
-            deadline = self.store.now + self._critic_wait
-            intent, result = await self._await_service_turn(intent, deadline, attempt_id=attempt_id)
-            if self._critic_subject_stopped(intent):
-                await self._collect_after_stop(intent)
-                raise CommitRejected("Critic subject stopped before verdict collection")
-            if result is None:
-                # An unanswered SDK turn is not a malformed *completed* verdict.
-                # Keep SUBMITTED for after-stop collection, request cooperative
-                # cancellation and fail this verification without a new ordinal.
-                # Do not freeze a running invocation's provisional zero usage
-                # into the append-only imported_usage ledger.
-                self.assembled.gateway.unbind(intent.agent_id)
-                await self._cancel_turn(intent)
-                raise ContractError("critic did not answer within the wait window")
-            self._import_usage(intent)
-            self.assembled.gateway.unbind(intent.agent_id)
-            critic_turn_error = result.error
-            critic_admission_detail = (
-                critic_turn_error.get("detail") if isinstance(critic_turn_error, Mapping) else None
-            )
-            if (
-                result.state is not AgentTurnState.COMMITTED
-                and isinstance(critic_turn_error, Mapping)
-                and critic_turn_error.get("error_code") == "provider_admission_denied"
-                and critic_turn_error.get("source_kind") == "provider_admission"
-                and critic_turn_error.get("retryable") is False
-                and isinstance(critic_admission_detail, Mapping)
-                and type(critic_admission_detail.get("schema_version")) is int
-                and critic_admission_detail["schema_version"] == 1
-            ):
-                self._note_turn_health(intent, result)
-                self._settle_intent(intent, "FAILED")
-                self._settle_service_if_known(subject, mission.id, task_id)
-                # Outside the schema-retry catch below. A cold collector reads
-                # the same SDK failure and takes the same non-retry path.
-                raise _CriticAdmissionFailure(critic_turn_error)
-            try:
-                self._note_turn_health(intent, result)  # review P2-2: Critic turns count too
-                echoed = self.bridge_for(intent).echoed_models(agent_id=intent.agent_id)
-                if echoed and echoed != {self._expected_model(intent)}:
-                    raise ContractError(f"critic model echo mismatch: {sorted(echoed)}")
-                if result.state is not AgentTurnState.COMMITTED:
-                    raise ContractError(f"critic turn failed: {dict(result.error or {})}")
-                text = "" if result.public_output is None else str(result.public_output.content)
-                frozen_scope = intent.config.get("task_content_scope")
-                expected = (tuple(c["criterion_id"] for c in frozen_scope["criteria"])
-                            if frozen_scope is not None else mission.success_criteria)
-                verdict = parse_critic_verdict(text, expected_criteria=expected)
-                if frozen_scope is not None and verdict.verdict == "PASS" and any(
-                    not c["met"] for c in verdict.mission_criteria
-                ):
-                    raise ContractError("content PASS contradicts a required local criterion")
-            except ContractError as error:
-                last_error = error
-                self._settle_intent(intent, "FAILED")
-                self._settle_service_if_known(subject, mission.id, task_id)
-                continue
-            self._settle_intent(intent, "SETTLED")
-            self._settle_service_if_known(subject, mission.id, task_id)
-            return verdict
-        assert last_error is not None
-        raise last_error
+        from ..assurance.codec import AssuranceError
+        if task is None or attempt_id is None or self._assurance_reviews is None:
+            raise ContractError("Assurance review builder is not installed for this purpose")
+        try:
+            return await self._assurance_reviews.run_task(mission, task, attempt_id=attempt_id)
+        except (AssuranceError, RoutingUnavailable) as error:
+            raise ContractError(f"Assurance review unavailable: {error}") from error
 
     async def _await_service_turn(  # type: ignore[no-untyped-def]
         self, intent: DispatchIntent, deadline: float, *, attempt_id: str | None
@@ -8707,148 +8276,57 @@ class Orchestrator:
         mission = self.store.get_mission(intent.mission_id)
         if mission is None or mission.status in TERMINAL_MISSION:
             return None
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self.store).lane(intent.mission_id) == "ASSURANCE_1_1":
-            from .assurance_review_wait import record_provider_wait
-            record_provider_wait(self.commit, intent, liveness)
-            # Preserve the exact original executor, reservation and UNKNOWN
-            # grants. The ordinary collector can still import a later answer.
-            # Neither an auth failure nor a business timeout is accounting proof.
-            # Never re-handed off here (that re-sends the original request).
-            planning = (
-                intent.kind == "plan"
-                and not self._assured_review_intent(intent)
-                and str(intent.config.get("role", ""))
-                not in {"root_reviewer", "operation_proposal_reviewer", "operation_outcome_reviewer"}
-            )
-            if intent.kind == "attempt":
-                # 2026-09-26 Host run: a Worker whose hand-off came back half-read
-                # (200 OK, body never finished) was settled UNKNOWN and then waited on
-                # the Provider blocker for 35 minutes — nothing here ended an assured
-                # Attempt.  After the same bound as a Planner round it ends as LOST, so
-                # the ordinary repair/retry path runs; the UNKNOWN charge keeps its
-                # reservation held (overcount, never undercount, never freeze).
-                since = self._service_blocked_since.setdefault(key, self.store.now)
-                waited = self.store.now - since
-                if waited < self._service_blocker_limit:
-                    return None
-                self._service_blocked_since.pop(key, None)
-                await self._give_up_blocked_assured_attempt(intent, detail={
-                    "waited_seconds": round(waited, 3),
-                    "limit_seconds": self._service_blocker_limit,
-                    "blocker": dict(liveness.blocker or {}),
-                    "assurance_lane": True,
-                })
-                return "give_up"
-            new_mode = self._new_mode(mission) if planning else None
-            if new_mode is None:
-                return "give_up"  # reviews keep their original executor (§6.2)
-            # A Planner round is not a review: after the same bound as
-            # P2.3f it ends through its own failure door instead of waiting for the wall
-            # clock (host-final-arp10, 2026-09-24: ~17 minutes frozen).  On this lane that
-            # door keeps the UNKNOWN grants and the reservation (never under-counted).
+        from .assurance_review_wait import record_provider_wait
+        record_provider_wait(self.commit, intent, liveness)
+        # Preserve the exact original executor, reservation and UNKNOWN
+        # grants. The ordinary collector can still import a later answer.
+        # Neither an auth failure nor a business timeout is accounting proof.
+        # Never re-handed off here (that re-sends the original request).
+        planning = intent.kind == "plan" and not self._assured_review_intent(intent)
+        if intent.kind == "attempt":
+            # 2026-09-26 Host run: a Worker whose hand-off came back half-read
+            # (200 OK, body never finished) was settled UNKNOWN and then waited on
+            # the Provider blocker for 35 minutes — nothing here ended an assured
+            # Attempt.  After the same bound as a Planner round it ends as LOST, so
+            # the ordinary repair/retry path runs; the UNKNOWN charge keeps its
+            # reservation held (overcount, never undercount, never freeze).
             since = self._service_blocked_since.setdefault(key, self.store.now)
             waited = self.store.now - since
             if waited < self._service_blocker_limit:
-                return "give_up"
+                return None
             self._service_blocked_since.pop(key, None)
-            await self._give_up_blocked_plan_intent(
-                intent,
-                mission,
-                new_mode,
-                detail={
-                    "waited_seconds": round(waited, 3),
-                    "limit_seconds": self._service_blocker_limit,
-                    "blocker": dict(liveness.blocker or {}),
-                    "rehandoffs": 0,
-                    "assurance_lane": True,
-                },
-            )
-            return "give_up"
-        new_mode = self._new_mode(mission)
-        if new_mode is None:
-            return None  # no assembly: the executor's wait is the executor's
-        if auth_blocked:
-            await self._give_up_blocked_plan_intent(
-                intent,
-                mission,
-                new_mode,
-                detail={"blocker": dict(liveness.blocker or {}), "auth": True, "rehandoffs": 0},
-            )
-            return "give_up"
-        streak = self._count_zero_token_after_handoff(intent)
-        bounded = streak >= MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS and (
-            intent.kind == "attempt" or self._is_planner_service(intent)
-        )
-        now = self.store.now
-        since = self._service_blocked_since.get(key)
-        if bounded:
-            self._service_blocked_since.pop(key, None)
-            done = self.commit.rehandoffs_of(intent.subject_id, intent.mission_id)
-            detail = {
-                "consecutive_after_handoff_unknowns": streak,
-                "limit": MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS,
+            await self._give_up_blocked_assured_attempt(intent, detail={
+                "waited_seconds": round(waited, 3),
+                "limit_seconds": self._service_blocker_limit,
                 "blocker": dict(liveness.blocker or {}),
-                "rehandoffs": done,
-            }
-            if intent.kind == "attempt":
-                await self._stop_consecutive_after_handoff_unknowns(
-                    intent, mission, new_mode, detail=detail
-                )
-            else:
-                # Planner: keep P2.3f's PlanningRejected, then the ladder
-                # refuses a new ordinal (P2.3p).
-                await self._give_up_blocked_plan_intent(intent, mission, new_mode, detail=detail)
+                "assurance_lane": True,
+            })
             return "give_up"
-        if since is None:
-            self._service_blocked_since[key] = now
-            self._note(
-                f"{intent.subject_id}: turn {intent.expected_turn_id} is waiting on an unknown "
-                f"Provider outcome; acting in {self._service_blocker_limit:.0f}s"
-            )
-            return None
-        waited = now - since
+        new_mode = self._new_mode(mission) if planning else None
+        if new_mode is None:
+            return "give_up"  # reviews keep their original executor (§6.2)
+        # A Planner round is not a review: after the same bound as
+        # P2.3f it ends through its own failure door instead of waiting for the wall
+        # clock (host-final-arp10, 2026-09-24: ~17 minutes frozen).  On this lane that
+        # door keeps the UNKNOWN grants and the reservation (never under-counted).
+        since = self._service_blocked_since.setdefault(key, self.store.now)
+        waited = self.store.now - since
         if waited < self._service_blocker_limit:
-            return None
+            return "give_up"
         self._service_blocked_since.pop(key, None)
-        detail = {
-            "waited_seconds": round(waited, 3),
-            "limit_seconds": self._service_blocker_limit,
-            "blocker": dict(liveness.blocker or {}),
-        }
-        done = self.commit.rehandoffs_of(intent.subject_id, intent.mission_id)
-        if done < MAX_SERVICE_REHANDOFFS and intent.kind != "attempt":
-            assert intent.agent_id is not None
-            self.assembled.gateway.unbind(intent.agent_id)
-            await self._cancel_turn(intent)  # advisory: the waiting run has no loop to stop
-            self.commit.rehandoff_service_intent(
-                intent.intent_id,
-                owner=self._owner,
-                lease_seconds=self._config.lease_seconds,
-                reason="provider_outcome_unknown",
-                detail=detail,
-            )
-            self._note(
-                f"{intent.subject_id}: unknown Provider outcome for {waited:.0f}s; handed off "
-                f"once more (re-hand-off {done + 1} of {MAX_SERVICE_REHANDOFFS})"
-            )
-            return "rehandoff"
-        if intent.kind == "critic":
-            self._note(
-                f"{intent.subject_id}: unknown Provider outcome again after {done} re-hand-off(s); "
-                "the Critic runner ends the wait"
-            )
-            return "give_up"
-        if intent.kind == "attempt":
-            await self._give_up_blocked_attempt(
-                intent, mission, detail={**detail, "rehandoffs": done}
-            )
-            return "give_up"
         await self._give_up_blocked_plan_intent(
-            intent, mission, new_mode, detail={**detail, "rehandoffs": done}
+            intent,
+            mission,
+            new_mode,
+            detail={
+                "waited_seconds": round(waited, 3),
+                "limit_seconds": self._service_blocker_limit,
+                "blocker": dict(liveness.blocker or {}),
+                "rehandoffs": 0,
+                "assurance_lane": True,
+            },
         )
         return "give_up"
-
     async def _give_up_blocked_plan_intent(
         self,
         intent: DispatchIntent,
@@ -8860,7 +8338,6 @@ class Orchestrator:
         """The second unknown outcome ends the round through the role's own door."""
 
 
-        role = str(intent.config.get("role", ""))
         self._import_usage(intent)  # facts of the executor that did answer, if any
         self._settle_intent(intent, "FAILED")
         self._settle_service_if_known(intent.subject_id, mission.id)
@@ -8868,59 +8345,10 @@ class Orchestrator:
             f"{intent.subject_id}: unknown Provider outcome again after "
             f"{detail.get('rehandoffs')} re-hand-off(s); the round ends"
         )
-        if role == "root_reviewer":
-            coordinator = self._root_review(mission, new_mode)
-            package_id = str(intent.config.get("review_package_id", ""))
-            try:
-                package = coordinator.semantics.get_review_package(package_id)
-            except StoreError as error:
-                self._note(f"root review re-hand-off names no stored package ({error})")
-                return
-            coordinator.record_unreadable(
-                mission.id,
-                package,
-                detail=f"provider_outcome_unknown after {detail.get('rehandoffs')} re-hand-off(s)",
-                reviewer_turn_id=intent.expected_turn_id or "",
-            )
-            return
-        if role in {"operation_proposal_reviewer", "operation_outcome_reviewer"}:
-            with self.store.transaction():
-                self.commit._emit(
-                    "OperationReviewDeferred", mission.id, key=intent.intent_id,
-                    payload={"intent_id": intent.config.get("operation_intent_id"),
-                             "reason": "provider_outcome_unknown", "role": role},
-                )
-            return
         await self._planning_rejected(
             intent, reason="provider_outcome_unknown", detail=dict(detail)
         )
 
-    async def _stop_consecutive_after_handoff_unknowns(
-        self,
-        intent: DispatchIntent,
-        mission: Mission,
-        new_mode: HierarchicalDispatch,
-        *,
-        detail: Mapping[str, Any],
-    ) -> None:
-        """N consecutive after-handoff 0-token UNKNOWNs: named stop."""
-
-        del new_mode
-        self._import_usage(intent)
-        self._settle_intent(intent, "FAILED")
-        if intent.kind == "attempt":
-            attempt = self.store.get_attempt(intent.subject_id)
-            if attempt is not None:
-                self.commit.mark_attempt_lost(attempt.id, reason="provider_outcome_unknown")
-                await self._release_attempt(attempt.id, cancel=True)
-            await self._fail_runtime_unavailable(
-                mission, reason="provider_outcome_unknown", detail=dict(detail)
-            )
-            return
-        self._settle_service_if_known(intent.subject_id, mission.id)
-        await self._fail_runtime_unavailable(
-            mission, reason="provider_outcome_unknown", detail=dict(detail)
-        )
 
     async def _give_up_blocked_assured_attempt(
         self, intent: DispatchIntent, *, detail: Mapping[str, Any]
@@ -8943,35 +8371,6 @@ class Orchestrator:
         self._note(f"attempt {attempt.id} LOST: unknown Provider outcome for "
                    f"{detail.get('waited_seconds')}s on the Assurance lane; reservation held")
 
-    async def _give_up_blocked_attempt(
-        self,
-        intent: DispatchIntent,
-        mission: Mission,
-        *,
-        detail: Mapping[str, Any],
-    ) -> None:
-        """End a Worker turn waiting on an unknown after-handoff outcome (P2.3p).
-
-        Attempt intents are never re-handed off (``rehandoff_service_intent``).
-        The first 0-token UNKNOWN still waits the P2.3f bound then fails this
-        Attempt so ``max_attempts`` may retry; the consecutive Mission bound
-        is what stops the hang.
-        """
-
-        self._import_usage(intent)
-        self._settle_intent(intent, "FAILED")
-        attempt = self.store.get_attempt(intent.subject_id)
-        if attempt is None:
-            return
-        self.commit.mark_attempt_lost(attempt.id, reason="provider_outcome_unknown")
-        await self._release_attempt(attempt.id, cancel=True)
-        streak = self._after_handoff_zero_streak.get(mission.id, 0)
-        if streak >= MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS:
-            await self._fail_runtime_unavailable(
-                mission,
-                reason="provider_outcome_unknown",
-                detail={**dict(detail), "consecutive_after_handoff_unknowns": streak},
-            )
 
     async def _fail_runtime_unavailable(
         self,
@@ -9906,120 +9305,24 @@ class Orchestrator:
         return ordinal
 
     async def _ask_root_reviewer(self, mission: Mission, coordinator: Any, package: Any) -> bool:
-        """Create the root reviewer's intent.  Idempotent per review package.
+        """Open the Assurance MISSION_FINAL review of the cut package.  Idempotent per
+        review package; a package already out for review is not progress."""
 
-        ``kind="plan"`` rather than ``"critic"``: the ``critic`` kind is the Task
-        Critic's, which is bound to an Attempt and collected by the attempt runner,
-        and a review of the whole composition has no Attempt.  The *role* is its own
-        (``root_reviewer``) and so is the account — ``ReviewAccount.MISSION``, never a
-        Task budget (§13 v1.4, §18.5).
-        """
-
-        from ..runtime.role_templates import ROOT_REVIEWER
-        from .root_review import MAX_ROOT_REVIEW_ASKS, ROOT_REVIEW_UNREADABLE
-
-        # An unreadable reply is not an answer, so this is not asking the same
-        # question twice: it is the same question put once more, with the parse error
-        # attached, exactly as ``critic_schema_retry_feedback`` does for the Task
-        # Critic.  Bounded at two — a model that cannot produce the block twice is a
-        # deployment problem, and the Mission goes to the idle-stall path with the
-        # reason written down rather than spending the Mission account in a loop.
-        unreadable = [
-            event
-            for event in self.store.list_events(mission.id)
-            if event.type == ROOT_REVIEW_UNREADABLE
-            and str((event.payload or {}).get("package_id", "")) == str(package.package_id)
-        ]
-        ordinal = len(unreadable) + 1
-        if ordinal > MAX_ROOT_REVIEW_ASKS:
-            return False
-        subject = f"{mission.id}:root-review:{package.package_id}:{ordinal}"
-        if self.store.get_intent_for_subject(subject) is not None:
-            return False
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self.store).lane(mission.id) == "ASSURANCE_1_1":
-            # BW03: the cut package is reviewed on the Assurance round transport;
-            # the legacy root reviewer intent and its raw-verdict collector are
-            # not used for an assured Mission.
-            from ..assurance.codec import AssuranceError
-            if self._assurance_reviews is None:
-                raise ContractError("Assurance review builder is not installed for MISSION_FINAL")
-            from .assurance_purpose_reviews import purpose_review_key
-            review_key = purpose_review_key("MISSION_FINAL", mission.id, str(package.package_id))
-            already = self.store.connection.execute(
-                "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
-                (mission.id, review_key)).fetchone() is not None
-            try:
-                self._assurance_reviews.ensure_mission_final(
-                    mission, package=package, dispatch=coordinator.dispatch)
-            except AssuranceError as error:
-                self._note(f"mission {mission.id}: Assurance MISSION_FINAL review unavailable ({error})")
-                return False
-            # As on the legacy path: a package already out for review is not progress.
-            return not already
-        request = coordinator.request(
-            mission.id,
-            package,
-            schema_feedback=(
-                ""
-                if not unreadable
-                else "上一次回答无法解析："
-                + str((unreadable[-1].payload or {}).get("detail", ""))
-                + "。请重新给出同一份判断，整段回答只包含一个 <critic_verdict>…</critic_verdict> 块。"
-            ),
-        )
-        template = self._template(ROOT_REVIEWER, mission.id)
-        decision = self._route_service("critic", mission.id)
-        config = AgentConfig(
-            name=f"root-reviewer-{str(package.package_id)[-8:]}",
-            instructions=template.instructions,
-            model_profile_ref=decision.profile_id,
-            # A root review reads the package it was handed and answers; it has no
-            # tools.  ``tool_names=()`` is the gate — the limit is only a bound, and
-            # :class:`AgentLimits` refuses a non-positive one, so a zero here raised
-            # ``ValueError`` and the Mission died on the way to its own review.
-            tool_names=(),
-            limits=AgentLimits(
-                max_model_calls_per_turn=2,
-                max_tool_calls_per_turn=1,
-                turn_deadline_seconds=self._config.turn_deadline_seconds,
-            ),
-        )
-        message = user_message_json(json.dumps(request.to_json(), ensure_ascii=False))
+        from ..assurance.codec import AssuranceError
+        if self._assurance_reviews is None:
+            raise ContractError("Assurance review builder is not installed for MISSION_FINAL")
+        from .assurance_purpose_reviews import purpose_review_key
+        review_key = purpose_review_key("MISSION_FINAL", mission.id, str(package.package_id))
+        already = self.store.connection.execute(
+            "SELECT 1 FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
+            (mission.id, review_key)).fetchone() is not None
         try:
-            self.commit.create_service_intent(
-                kind="plan",
-                subject_id=subject,
-                mission_id=mission.id,
-                # §13 v1.4: the cost of a MISSION_FINAL review lands on the Mission
-                # account.  ``coordinator.account`` is read from
-                # ``account_for_purpose`` so the two cannot drift.
-                account_id=mission_account(mission.id),
-                creation_key=subject,
-                input_id="attempt-input",
-                input_hash=sha256_hex(message),
-                config={
-                    "agent_config": config.to_json(),
-                    "message": message,
-                    "context_version": request.content_hash(),
-                    "prompt_version": template.prompt_version,
-                    "base_version": mission.version,
-                    "ordinal": 1,
-                    "role": "root_reviewer",
-                    "budget_account": str(coordinator.account),
-                    "review_package_id": str(package.package_id),
-                    "review_criteria": list(request.criterion_ids),
-                    **self._service_config(decision),
-                },
-                reservation=self._reservation(
-                    self._config.critic_reserve_tokens, decision.profile_id
-                ),
-            )
-        except (ContractError, CommitRejected, BudgetError, RoutingUnavailable) as error:
-            self._note(f"mission {mission.id}: the root reviewer was not asked ({error})")
+            self._assurance_reviews.ensure_mission_final(
+                mission, package=package, dispatch=coordinator.dispatch)
+        except AssuranceError as error:
+            self._note(f"mission {mission.id}: Assurance MISSION_FINAL review unavailable ({error})")
             return False
-        self._note(f"mission {mission.id}: root reviewer asked about {package.package_id}")
-        return True
+        return not already
 
     async def _root_resolution_formed(
         self, mission: Mission, new_mode: HierarchicalDispatch
@@ -10750,9 +10053,8 @@ class Orchestrator:
         """D21 / ORCH §12.4 / D3-9': judge the Mission's own success criteria on the
         *integrated* tree — the seed plus every Task's accepted artifacts applied in
         topological order — independently of the Task PASSes.  ``pytest:`` criteria run
-        there, ``file:`` criteria are checked there and free-text criteria go to an
-        independent Critic bound to that tree (reused from the single Task's own
-        critic_review when the Mission has exactly one Task)."""
+        there, ``file:`` criteria are checked there and free-text criteria restate the
+        certified grades of the official MISSION_FINAL review."""
 
         self._reimport_unsettled(mission)
         # P2.3k / defect N3: the tree is read from the root resolution's own
@@ -10829,37 +10131,10 @@ class Orchestrator:
                 test_runs[criterion] = {**test_run.to_json(), "passed": test_run.passed}
             except Exception as error:  # noqa: BLE001
                 test_runs[criterion] = {"passed": False, "error": str(error), "stdout": ""}
-        # Assured lane: the free-text criteria were judged by the official
-        # MISSION_FINAL review and restated, certified, on the adopted root
-        # resolution. A second, uncertified judge Critic is not run (the assured
-        # _run_critic refuses it); the judgment restates the certified grades
-        # (Host real model run 20, 2026-09-23: judge unavailable → criteria unmet).
+        # The free-text criteria were judged by the official MISSION_FINAL review and
+        # restated, certified, on the adopted root resolution; the judgment restates
+        # the certified grades (Host real model run 20, 2026-09-23).
         assured_grades = self._assured_root_grades(mission, new_mode)
-        assured = assured_grades is not None or self._is_assured(mission.id)
-        needs_critic = not assured and any(
-            not c.startswith(("pytest:", "file:", ACTION_PREFIX))
-            for c in mission.success_criteria
-        )
-        critic: CriticVerdict | None = None
-        reused_critic = False
-        if needs_critic:
-            if len(tasks) == 1 and stored is not None:
-                critic = self._critic_verdicts.get(stored.envelope.id)
-                reused_critic = critic is not None
-            if critic is None:
-                test_output = "\n".join(str(r.get("stdout", "")) for r in test_runs.values())
-                try:
-                    critic = await self._run_critic(
-                        mission,
-                        None,
-                        view_id=view_id,
-                        subject_prefix=f"{mission.id}:judge",
-                        account_id=mission_account(mission.id),
-                        artifacts=artifacts,
-                        test_output=test_output or None,
-                    )
-                except (ContractError, BudgetExhausted) as error:
-                    self._note(f"mission {mission.id}: independent judge unavailable ({error})")
         judgments: list[dict[str, Any]] = []
         for ordinal, criterion in enumerate(mission.success_criteria):
             if criterion.startswith("pytest:"):
@@ -10888,7 +10163,7 @@ class Orchestrator:
                 )
             elif criterion.startswith(ACTION_PREFIX):
                 continue  # D7-7': judged from the action ledger by the caller
-            elif assured:
+            else:
                 grade = None if assured_grades is None else assured_grades.get(criterion)
                 judgments.append(
                     {
@@ -10902,37 +10177,12 @@ class Orchestrator:
                         else "no certified root resolution judged this criterion",
                     }
                 )
-            else:
-                found: Mapping[str, Any] | None = None
-                if critic is not None:
-                    found = next(
-                        (c for c in critic.mission_criteria if c.get("criterion") == criterion),
-                        None,
-                    )
-                judgments.append(
-                    {
-                        "criterion": criterion,
-                        "met": bool(found and found.get("met")),
-                        "judge": "critic_review",
-                        "source": "unavailable"  # review P1-2: no judge ran — not a Verifier
-                        if critic is None
-                        else ("task_critic" if reused_critic else "independent"),
-                        "reason": "no independent judge ran"
-                        if found is None
-                        else found.get("reason"),
-                    }
-                )
         return judgments, summary
-
-    def _is_assured(self, mission_id: str) -> bool:
-        from ..storage.assurance_store import AssuranceStore
-
-        return AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
 
     def _assured_root_grades(self, mission: Mission, new_mode: Any) -> dict[str, str] | None:
         """Criterion statement → certified grade from the adopted root resolutions
-        of an assured hierarchical Mission; None when not assured or not formed."""
-        if new_mode is None or not self._is_assured(mission.id):
+        of the Mission; None when they are not formed."""
+        if new_mode is None:
             return None
         from ..storage.htn_store import HtnStore
 

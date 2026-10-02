@@ -16,18 +16,13 @@ from ..contracts.operation_completion import (
 )
 from ..contracts.resolution import (
     AllExpr,
-    CheckExecution,
     CriterionExpr,
-    CriterionOutcome,
-    CriterionVerdict,
     DeliveryReceipt,
     DeliveryStage,
     ReviewBinding,
     ReviewPackage,
     ReviewPackageId,
     ReviewPurpose,
-    ReviewRecord,
-    ReviewRecordId,
     ReviewVerdict,
     WorkspaceAccess,
 )
@@ -41,7 +36,6 @@ from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import Store, StoreError
-from ..verification.critics import parse_critic_verdict
 from .completion_status import _owner_scope
 from .operation_completion import OperationCompletionReader
 
@@ -394,78 +388,6 @@ def persist_operation_outcome_review(
     )
 
 
-def record_operation_outcome_review(
-    store: Store, *, mission_id: str, binding_id: str, dispatch: Any, turn_id: str, text: str
-) -> ReviewRecord:
-    row = OperationCompletionStore(store).get_outcome_binding_exact(mission_id, binding_id)
-    if row is None:
-        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE")
-    htn = HtnStore(store)
-    package = htn.get_review_package(row["review_package_id"])
-    actual = store.get_intent(dispatch.intent_id)
-    existing = htn.official_review_record(str(package.package_id))
-    if (
-        actual is None
-        or (actual.state != "SUBMITTED" and existing is None)
-        or actual.agent_id != dispatch.agent_id
-        or actual.expected_turn_id != turn_id
-        or actual.config.get("role") != "operation_outcome_reviewer"
-        or actual.config.get("outcome_binding_id") != binding_id
-        or actual.config.get("review_package_id") != str(package.package_id)
-        or actual.mission_id != mission_id
-    ):
-        raise OperationOutcomeError("OP_REVIEW_NOT_OFFICIAL", "runtime review identity differs")
-    if not actual.agent_id or package.produced_by(actual.agent_id):
-        raise OperationOutcomeError("OP_REVIEWER_NOT_INDEPENDENT")
-    verdict = parse_critic_verdict(
-        text, expected_criteria=[c.criterion_id for c in package.criteria]
-    )
-    refs = tuple(
-        TypedRef(
-            TypedRefKind.TOOL_RECEIPT,
-            ref.id,
-            ref.revision,
-            ref.content_hash,
-            produced_by=Provenance.TOOL,
-        )
-        for ref in row["document"].source_receipt_refs
-    )
-    for ref in refs:
-        receipt = store.get_receipt(ref.id)
-        if receipt is None or content_hash_of(receipt) != ref.content_hash:
-            raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE")
-    outcomes = tuple(
-        CriterionOutcome(
-            criterion_id=item["criterion"],
-            verdict=CriterionVerdict.PASS if item["met"] else CriterionVerdict.FAIL,
-            check_execution=CheckExecution.SUCCEEDED,
-            evidence_refs=refs,
-        )
-        for item in verdict.mission_criteria
-    )
-    record = ReviewRecord(
-        ReviewRecordId("review:" + binding_id),
-        package.package_id,
-        ReviewPurpose.OPERATION_OUTCOME,
-        package.binding,
-        actual.agent_id,
-        turn_id,
-        content_hash_of({"critic": verdict.to_json(), "dispatch": dispatch.intent_id}),
-        outcomes,
-        ReviewVerdict.ACCEPT
-        if verdict.passed
-        and not verdict.needs_human
-        and all(c.verdict is CriterionVerdict.PASS for c in outcomes)
-        else ReviewVerdict.REJECTED,
-    )
-    existing = htn.official_review_record(str(package.package_id))
-    if existing is None:
-        htn.insert_review_record(record, official=True)
-    elif existing != record:
-        raise OperationOutcomeError("OP_REVIEW_BINDING_MISMATCH", "official review conflict")
-    return record
-
-
 @dataclass(frozen=True, slots=True)
 class ScopedOutcomeProjection:
     scope: Any
@@ -634,22 +556,20 @@ def accept_operation_outcome(
     try:
         return _accept_operation_outcome(commit, mission_id, binding_id, candidate)
     finally:
-        if candidate is not None:
-            commit._assurance_validity.forget(mission_id, str(candidate.record.record_id))
+        commit._assurance_validity.forget(mission_id, str(candidate.record.record_id))
 
 
 def _assured_outcome_use(commit: Any, mission_id: str, binding_id: str) -> Any:
-    """An assured Mission's outcome acceptance is licensed by a current UseCertificate
-    prepared here, outside the write lock, and committed by ``accept_review`` beside
-    the Acceptance — never by the legacy self-issued witness."""
+    """The outcome acceptance is licensed by a current UseCertificate prepared here,
+    outside the write lock, and committed by ``accept_review`` beside the Acceptance."""
+    from ..assurance.codec import AssuranceError
     from ..storage.assurance_store import AssuranceStore
 
     store = commit.store
     try:
-        if AssuranceStore(store).lane(mission_id) != "ASSURANCE_1_1":
-            return None
-    except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
-        return None
+        AssuranceStore(store).require_assured(mission_id)
+    except AssuranceError as error:
+        raise OperationOutcomeError(error.code, "the Mission is not assured") from error
     row = OperationCompletionStore(store).get_outcome_binding_exact(mission_id, binding_id)
     record = (
         None if row is None else HtnStore(store).official_review_record(row["review_package_id"])
@@ -699,17 +619,11 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
             now_ms = previous.accepted_at_ms
         issuer = "operation-outcome-acceptor"
         anchors = LeafAcceptanceAssembly(store, commit, reviewer_agent_id=issuer)
-        if candidate is not None and candidate.record != record:
+        if candidate.record != record:
             raise OperationOutcomeError(
                 "OP_REVIEW_NOT_OFFICIAL", "use certificate names another record"
             )
-        witness_id = (
-            candidate.certificate_id
-            if candidate is not None
-            else anchors._witness(
-                mission_id, task.id, acceptance_id=acceptance_id, now_ms=now_ms
-            ).witness_id
-        )
+        witness_id = candidate.certificate_id
         command = AcceptReviewCommand(
             command_id="accept:" + binding_id,
             mission_id=mission_id,

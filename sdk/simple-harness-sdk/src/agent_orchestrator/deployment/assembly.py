@@ -75,7 +75,6 @@ class UserMissionDeployment:
 
     def assemble(self, orchestrator: Any) -> None:
         """``Orchestrator(startup_assembly=...)``: planning, TaskGraph and Assurance."""
-        from ..assurance.policy import AssurancePolicy
         from ..orchestrator.assurance_assembly import AssuranceDeploymentPorts, install_assurance
         from ..orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
         from ..orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
@@ -90,8 +89,6 @@ class UserMissionDeployment:
         self.assurance = install_assurance(orchestrator, AssuranceDeploymentPorts(
             tenant_id=self.tenant_id, principal=self.principal,
             requirements=lambda mission, spec: user_requirements(mission, self.principal),
-            # Every planning-decision Mission of this deployment is assured.
-            select_profile=lambda _spec: AssurancePolicy(),
             notify_transport=self.notify, host_fingerprint=self.host_fingerprint,
             # Projects each frozen Scope's check policy right before its first review.
             check_policy_projector=lambda mission_id: self.duties.project_check_policies(mission_id),

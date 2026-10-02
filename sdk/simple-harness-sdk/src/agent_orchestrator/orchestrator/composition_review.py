@@ -31,12 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..contracts.evidence_state import (
-    Availability,
-    TruthValue,
     Validity,
-    ValidityWitness,
-    WitnessDecision,
-    WitnessPurpose,
 )
 from ..contracts.htn import (
     MethodInstanceId,
@@ -49,9 +44,7 @@ from ..contracts.htn import (
 )
 from ..contracts.models import ContractError
 from ..contracts.resolution import (
-    CheckExecution,
     Criterion,
-    CriterionOutcome,
     CriterionVerdict,
     GoalResolution,
     GoalResolutionId,
@@ -61,8 +54,6 @@ from ..contracts.resolution import (
     ReviewPackage,
     ReviewPackageId,
     ReviewPurpose,
-    ReviewRecord,
-    ReviewRecordId,
     ReviewVerdict,
     WorkspaceAccess,
 )
@@ -72,11 +63,9 @@ from ..contracts.semantic_base import (
     content_hash_of,
 )
 from ..graph.task_network import GATING_REQUIREDNESS
-from ..knowledge.validity import NO_SUBJECT, witness_subject
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from ..verification.acceptance_rules import CompoundFacts, ExecutionPosture, IndependenceFacts
-from .accepted_outputs import carried_criteria_in_revision
 from .hierarchical_dispatch import CompoundPhase, HierarchicalDispatch, next_compound_phase
 from .resolution_commits import (
     CommitGoalResolutionCommand,
@@ -209,7 +198,7 @@ class CompositionAcceptanceAssembly:
         manifest = self._manifest_hash(mission_id, str(spec.task_id))
         from ..storage.assurance_store import AssuranceStore
 
-        assured = AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
+        AssuranceStore(self.store).require_assured(mission_id)
         package = self._package(
             mission_id,
             spec,
@@ -221,105 +210,42 @@ class CompositionAcceptanceAssembly:
             method_instance_id=instance_id,
             criteria=projection.criteria,
             expression=projection.expression,
-            persist=not assured,
         )
-        if assured:
-            # BW03: an assured Mission's composition is judged by an independent
-            # review on the round transport. The self-composed record and the
-            # legacy witness below never license it; consuming the official
-            # COMPOSITION record in commit_goal_resolution is the terminal-writer
-            # work and is not licensed from here.
-            from ..assurance.codec import AssuranceError
-            from .assurance_purpose_reviews import assurance_review_runtime
+        # BW03: the composition is judged by an independent review on the round
+        # transport; the official COMPOSITION record is consumed below.
+        from ..assurance.codec import AssuranceError
+        from .assurance_purpose_reviews import assurance_review_runtime
 
-            mission = self.store.get_mission(mission_id)
-            try:
-                assurance_review_runtime(self.commit).ensure_composition(
-                    mission, package=package, occurrence_id=str(occurrence_id), accepted=accepted
-                )
-            except AssuranceError as error:
-                raise ContractError(f"Assurance COMPOSITION review unavailable: {error}") from error
-            # 2026-10-01（第 3 项）：消费正式记录。此前这里直接返回，记录进来后没人读它，
-            # 中间目标永远收不了尾（真机库里从没跑过三层计划，所以没暴露）。
-            from .review_adjudication import adjudication_of
-
-            record = self.semantics.official_review_record(str(package.package_id))
-            if record is None:
-                return None
-            ruling = (adjudication_of(self.store, str(record.record_id))
-                      if record.verdict is ReviewVerdict.INCONCLUSIVE else None)
-            action = assured_composition_action(record, ruling)
-            if action == "ask":
-                if self.ask_person is not None:
-                    self.ask_person(record, str(spec.task_id), str(occurrence_id))
-                return None
-            if action == "repair":
-                if self.on_rejected is not None:
-                    self.on_rejected(record, package, str(spec.task_id), str(occurrence_id))
-                return None
-            return self._commit_assured_composition(
-                mission_id, spec, binding, revision, package, record, accepted, producers,
-                instance_id=instance_id, manifest=manifest, now_ms=now_ms,
+        mission = self.store.get_mission(mission_id)
+        try:
+            assurance_review_runtime(self.commit).ensure_composition(
+                mission, package=package, occurrence_id=str(occurrence_id), accepted=accepted
             )
-        record = self._record(mission_id, package, occurrence_id, accepted, gating)
-        if record.verdict is not ReviewVerdict.ACCEPT:
+        except AssuranceError as error:
+            raise ContractError(f"Assurance COMPOSITION review unavailable: {error}") from error
+        # 2026-10-01（第 3 项）：消费正式记录。此前这里直接返回，记录进来后没人读它，
+        # 中间目标永远收不了尾（真机库里从没跑过三层计划，所以没暴露）。
+        from .review_adjudication import adjudication_of
+
+        record = self.semantics.official_review_record(str(package.package_id))
+        if record is None:
             return None
-        witness = self._witness(mission_id, str(spec.task_id), now_ms=now_ms)
-        resolution = GoalResolution(
-            resolution_id=GoalResolutionId(
-                f"res-{occurrence_id}-{content_hash_of(str(package.package_id))[:16]}"
-            ),
-            mission_id=mission_id,
-            obligation_id=str(spec.obligation_id),
-            goal_task_id=str(spec.task_id),
-            requirements_version=int(revision.revision),
-            contract_revision=int(binding.contract_revision),
-            method_instance_id=instance_id,
-            input_manifest_hash=manifest,
-            artifact_refs=(),
-            child_resolution_ids=tuple(ref.id for ref in package.candidate_refs
-                if ref.kind is TypedRefKind.RESOLUTION),
-            criteria=tuple(
-                ResolutionCriterion(criterion_id=item.criterion_id, verdict=item.verdict)
-                for item in record.criteria
-            ),
-            review_receipt_id=str(record.record_id),
-            verdict=ReviewVerdict.ACCEPT,
-            validity=Validity.CURRENT,
+        ruling = (adjudication_of(self.store, str(record.record_id))
+                  if record.verdict is ReviewVerdict.INCONCLUSIVE else None)
+        action = assured_composition_action(record, ruling)
+        if action == "ask":
+            if self.ask_person is not None:
+                self.ask_person(record, str(spec.task_id), str(occurrence_id))
+            return None
+        if action == "repair":
+            if self.on_rejected is not None:
+                self.on_rejected(record, package, str(spec.task_id), str(occurrence_id))
+            return None
+        return self._commit_assured_composition(
+            mission_id, spec, binding, revision, package, record, accepted, producers,
+            instance_id=instance_id, manifest=manifest, now_ms=now_ms,
         )
-        command = CommitGoalResolutionCommand(
-            command_id=f"compose:{occurrence_id}:{int(view.network.plan_revision)}",
-            mission_id=mission_id,
-            resolution=resolution,
-            package=package,
-            record=record,
-            requirements=revision,
-            witness_id=witness.witness_id,
-            independence=IndependenceFacts(
-                producer_agent_ids=producers,
-                reviewer_can_write_candidate=False,
-            ),
-            posture=ExecutionPosture(),
-            read_set=self._read_set(mission_id, binding, revision),
-            decided_at_ms=now_ms,
-            purpose=ReviewPurpose.COMPOSITION,
-            compound=CompoundFacts(
-                selected_method_legal=True,
-                contributing_occurrence_ids=tuple(sorted(accepted)),
-                composition_obligation_passed=record.verdict is ReviewVerdict.ACCEPT,
-            ),
-            is_mission_root=False,
-            semantic_review_required=True,
-            issued_by=self.issued_by,
-            scope_id=self.scope_id,
-            source={"occurrence_id": str(occurrence_id), "policy": COMPOSITION_REVIEW_POLICY},
-        )
-        principal = ResolutionPrincipal(
-            principal_id=self.issued_by,
-            scope_id=self.scope_id,
-            manager_epoch=self.semantics.epoch(mission_id, self.scope_id),
-        )
-        return self.commit.commit_goal_resolution(command, principal)
+
 
     def _commit_assured_composition(
         self, mission_id, spec, binding, revision, package, record, accepted, producers, *,
@@ -431,7 +357,6 @@ class CompositionAcceptanceAssembly:
         method_instance_id: str,
         criteria: tuple[Criterion, ...],
         expression: Any,
-        persist: bool = True,
     ) -> ReviewPackage:
         # ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
         from .completion_support import read_completion_support
@@ -476,157 +401,8 @@ class CompositionAcceptanceAssembly:
             requirements_content_hash=revision.content_hash(),
             method_instance_id=MethodInstanceId(method_instance_id),
         )
-        if not persist:
-            return package
-        try:
-            stored = self.semantics.get_review_package(str(package.package_id))
-        except StoreError:
-            self.semantics.insert_review_package(package)
-            return package
-        if stored.content_hash() != package.content_hash():
-            self.semantics.insert_review_package(package)
         return package
 
-    def _record(
-        self,
-        mission_id: str,
-        package: ReviewPackage,
-        occurrence_id: OccurrenceId,
-        accepted: Mapping[str, tuple[str, ...]],
-        gating: Sequence[Any],
-    ) -> ReviewRecord:
-        outcomes = self._outcomes(mission_id, package, occurrence_id, accepted)
-        passed = all(item.verdict is CriterionVerdict.PASS for item in outcomes) and all(
-            str(binding.occurrence_id) in accepted for binding in gating
-        )
-        record = ReviewRecord(
-            record_id=ReviewRecordId(f"rec-{content_hash_of(str(package.package_id))[:32]}"),
-            package_id=package.package_id,
-            purpose=package.purpose,
-            binding=package.binding,
-            reviewer_agent_id=COMPOSITION_REVIEWER,
-            reviewer_turn_id=f"compose-{occurrence_id}",
-            evidence_manifest_hash=content_hash_of(
-                {key: list(refs) for key, refs in accepted.items()}
-            ),
-            criteria=outcomes,
-            verdict=ReviewVerdict.ACCEPT if passed else ReviewVerdict.REJECTED,
-        )
-        official = self.semantics.official_review_record(str(package.package_id))
-        if official is None or official.to_json() != record.to_json():
-            self.semantics.insert_review_record(record, official=True)
-        return record
-
-    def _outcomes(
-        self,
-        mission_id: str,
-        package: ReviewPackage,
-        occurrence_id: OccurrenceId,
-        accepted: Mapping[str, tuple[str, ...]],
-    ) -> tuple[CriterionOutcome, ...]:
-        semantics = self.semantics
-        active = semantics.active_plan_revision(mission_id)
-        links = (
-            ()
-            if active is None
-            else tuple(
-                item
-                for item in carried_criteria_in_revision(
-                    semantics, mission_id, int(active.revision)
-                )
-                if str(item.parent_task_id)
-                == str(package.binding.subject_ref.id)
-            )
-        )
-        by_parent: dict[str, list[Any]] = {}
-        for link in links:
-            by_parent.setdefault(str(link.parent_criterion_id), []).append(link)
-        outcomes: list[CriterionOutcome] = []
-        for criterion in package.criteria:
-            name = str(criterion.criterion_id)
-            # AER I05/I07: ``c-composition`` is a synthetic local name used when
-            # the compound's goal signature published no coverage_criteria.  Child
-            # acceptances are not a mapping and must not become PASS.
-            linked = by_parent.get(name, ())
-            verdict = CriterionVerdict.UNKNOWN
-            for link in linked:
-                child_key = str(link.occurrence_id)
-                if child_key not in accepted:
-                    continue
-                if self._child_covers(mission_id, accepted[child_key], link.leaf_criterion_id):
-                    verdict = CriterionVerdict.PASS
-                    break
-            limitations = (
-                (COMPOSITION_UNCOVERED,)
-                if verdict is CriterionVerdict.UNKNOWN
-                else ()
-            )
-            outcomes.append(
-                CriterionOutcome(
-                    criterion_id=name,
-                    verdict=verdict,
-                    check_execution=(
-                        CheckExecution.SUCCEEDED
-                        if verdict is CriterionVerdict.PASS
-                        else CheckExecution.NOT_RUN
-                    ),
-                    limitations=limitations,
-                )
-            )
-        del occurrence_id
-        return tuple(outcomes)
-
-    def _child_covers(
-        self, mission_id: str, acceptance_ids: Sequence[str], leaf_criterion_id: str
-    ) -> bool:
-        from .completion_support import read_completion_support
-
-        for source_id in acceptance_ids:
-            support = read_completion_support(self.store, mission_id, source_id)
-            if any(item.criterion_id == leaf_criterion_id and item.verdict is CriterionVerdict.PASS
-                   for item in support.record.criteria):
-                return True
-        return False
-
-    def _witness(self, mission_id: str, task_id: str, *, now_ms: int) -> ValidityWitness:
-        semantics = self.semantics
-        epoch = int(semantics.epoch(mission_id, self.scope_id))
-        support_revision = len(semantics.list_acceptances(mission_id))
-        witness = ValidityWitness(
-            witness_id="wit-"
-            + content_hash_of(
-                {
-                    "consumer": str(task_id),
-                    "purpose": str(WitnessPurpose.ACCEPT),
-                    "scope": self.scope_id,
-                    "epoch": epoch,
-                    "support_revision": int(support_revision),
-                    "subject": NO_SUBJECT,
-                    "lane": "composition",
-                }
-            )[:32],
-            consumer_ref=TypedRef(
-                kind=TypedRefKind.TASK,
-                id=str(task_id),
-                revision=1,
-                content_hash=content_hash_of(str(task_id)),
-            ),
-            purpose=WitnessPurpose.ACCEPT,
-            truth=TruthValue.TRUE,
-            freshness=Validity.CURRENT,
-            availability=Availability.READABLE,
-            decision=WitnessDecision.USABLE,
-            scope_id=self.scope_id,
-            scope_epoch=epoch,
-            support_revision=int(support_revision),
-            as_of_ms=int(now_ms),
-        )
-        subject = witness_subject(witness)
-        try:
-            return semantics.get_validity_witness(witness.witness_id)
-        except StoreError:
-            semantics.insert_validity_witness(mission_id, witness, subject=subject)
-            return witness
 
     def _read_set(
         self, mission_id: str, binding: Any, revision: RequirementsRevision

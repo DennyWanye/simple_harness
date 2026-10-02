@@ -252,19 +252,17 @@ def read_task_content_projection(
             else item
             for item in projected
         )
-        from ..storage.assurance_store import AssuranceStore
 
-        if AssuranceStore(store).lane(mission_id) == "ASSURANCE_1_1":
-            # Assured lane: the official review judged the package frozen from the
-            # approved check-policy view (read_task_content_candidate).  Acceptance
-            # reads the same view — the same criteria, order and required checks —
-            # or the acceptance formula refuses every reviewed ACCEPT as
-            # CRITERIA_NOT_MATCHED (Host native run arp.15, 2026-09-24).  This reader's
-            # own guards above (verified result, recorded Critic PASS, scope) still hold.
-            approved = read_task_check_policy_projection(store, mission_id, task_id)
-            if {item.criterion_id for item in approved.criteria} != {item.criterion_id for item in criteria}:
-                raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "review scope differs")
-            criteria = tuple(approved.criteria)
+        # Assured lane: the official review judged the package frozen from the
+        # approved check-policy view (read_task_content_candidate).  Acceptance
+        # reads the same view — the same criteria, order and required checks —
+        # or the acceptance formula refuses every reviewed ACCEPT as
+        # CRITERIA_NOT_MATCHED (Host native run arp.15, 2026-09-24).  This reader's
+        # own guards above (verified result, recorded Critic PASS, scope) still hold.
+        approved = read_task_check_policy_projection(store, mission_id, task_id)
+        if {item.criterion_id for item in approved.criteria} != {item.criterion_id for item in criteria}:
+            raise OperationCompletionError("OP_COMPLETION_SCOPE_UNRESOLVED", "review scope differs")
+        criteria = tuple(approved.criteria)
         passed_checks = {item.layer for item in layers if item.passed}
         for criterion in criteria:
             missing = set(criterion.required_evidence_policy.required_check_ids) - passed_checks
@@ -346,8 +344,6 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
     from .leaf_acceptance import (
         LEAF_REVIEW_POLICY,
         accepted_outputs_for,
-        layer_outcomes,
-        outcomes_for,
     )
     from .resolution_commits import AcceptReviewCommand, ResolutionCommitRejected
 
@@ -441,35 +437,23 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         raise ResolutionCommitRejected(
             "OP_CONTENT_REVIEW_UNAVAILABLE", "review outputs differ from durable result claims"
         )
-    from ..storage.assurance_store import AssuranceStore
 
-    if AssuranceStore(store).lane(command.mission_id) == "ASSURANCE_1_1":
-        # Assurance 1.1: the review is the official record the authenticated
-        # importer stored for this package, never a projection of local layers
-        # (its V1 criteria deliberately hide SEMANTIC grades). The critic layer,
-        # when it was recorded, must name that same official record.
-        official = semantics.official_review_record(str(command.package.package_id))
-        if official is None or official.to_json() != command.record.to_json():
-            raise ResolutionCommitRejected(
-                "OP_CONTENT_REVIEW_UNAVAILABLE", "review is not the official Assurance record"
-            )
-        for row in store.list_verifications(result_id):
-            if row["layer"] != "critic_review" or row["status"] not in {"PASS", "FAIL"}:
-                continue
-            named = dict(row.get("detail") or {}).get("official_review_record_id")
-            if named is not None and str(named) != str(command.record.record_id):
-                raise ResolutionCommitRejected(
-                    "OP_CONTENT_REVIEW_UNAVAILABLE",
-                    "recorded critic layer names a different official record",
-                )
-        return projection
-    expected_outcomes = outcomes_for(
-        projection.criteria,
-        layer_outcomes(store.list_verifications(result_id)),
-        result_id=result_id,
-    )
-    if command.record.criteria != expected_outcomes:
+    # Assurance 1.1: the review is the official record the authenticated
+    # importer stored for this package, never a projection of local layers
+    # (its V1 criteria deliberately hide SEMANTIC grades). The critic layer,
+    # when it was recorded, must name that same official record.
+    official = semantics.official_review_record(str(command.package.package_id))
+    if official is None or official.to_json() != command.record.to_json():
         raise ResolutionCommitRejected(
-            "OP_CONTENT_REVIEW_UNAVAILABLE", "review differs from recorded verification"
+            "OP_CONTENT_REVIEW_UNAVAILABLE", "review is not the official Assurance record"
         )
+    for row in store.list_verifications(result_id):
+        if row["layer"] != "critic_review" or row["status"] not in {"PASS", "FAIL"}:
+            continue
+        named = dict(row.get("detail") or {}).get("official_review_record_id")
+        if named is not None and str(named) != str(command.record.record_id):
+            raise ResolutionCommitRejected(
+                "OP_CONTENT_REVIEW_UNAVAILABLE",
+                "recorded critic layer names a different official record",
+            )
     return projection

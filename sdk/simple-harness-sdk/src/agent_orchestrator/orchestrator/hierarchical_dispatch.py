@@ -466,7 +466,6 @@ class RootResolutionInputs:
     requirements: RequirementsRevision | None = None
     package: ReviewPackage | None = None
     record: ReviewRecord | None = None
-    witness_id: str = ""
     contributions: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     #: ``primitive`` / ``compound`` form of the root occurrence (read, never assumed).
     root_form: str = ""
@@ -2036,31 +2035,8 @@ class HierarchicalDispatch:
                 ),
                 occurrence_id=str(root),
             )
-        witness = next(
-            (
-                item
-                for item in semantics.list_validity_witnesses(mission_id)
-                if item.purpose is WitnessPurpose.ACCEPT
-                and item.consumer_ref.kind is TypedRefKind.TASK
-                and item.consumer_ref.id == str(spec.task_id)
-            ),
-            None,
-        )
-        from ..storage.assurance_store import AssuranceStore
-
-        assured_lane = AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1"
-        if witness is None and not assured_lane:
-            # Handoff item 7: an assured Mission's root is licensed by the current
-            # UseCertificate ``attempt_root_resolution`` prepares, not by the
-            # legacy self-issued witness; its absence refuses nothing there.
-            return RootResolutionInputs(
-                reason="ROOT_WITNESS_MISSING",
-                detail=(
-                    f"no purpose=ACCEPT ValidityWitness is stored for task {spec.task_id!s}; a "
-                    "witness is not transferable and the commit consumes one (§11.5)"
-                ),
-                occurrence_id=str(root),
-            )
+        # Handoff item 7: the root is licensed by the current UseCertificate
+        # ``attempt_root_resolution`` prepares.
         instance = network.adopted_instance_for(root)
         # Direct children of the adopted root method, not every Acceptance in the
         # Mission: what supports the root is each direct child's current completion
@@ -2078,7 +2054,6 @@ class HierarchicalDispatch:
             requirements=requirements,
             package=package,
             record=record,
-            witness_id="" if witness is None else str(witness.witness_id),
             contributions=contributions,
             root_form=str(spec.form),
         )
@@ -2193,26 +2168,20 @@ class HierarchicalDispatch:
         # UseCertificate over the bound MISSION_FINAL manifest, prepared here outside
         # the write lock and committed by ``commit_goal_resolution`` under it. The
         # resolution then restates the manifest's current effective grades.
-        from ..storage.assurance_store import AssuranceStore
+        from ..assurance.codec import AssuranceError
 
-        candidate = None
-        witness_id = inputs.witness_id
-        effective_grades: Mapping[str, str] | None = None
-        if AssuranceStore(self.store).lane(mission_id) == "ASSURANCE_1_1":
-            from ..assurance.codec import AssuranceError
-
-            validity = getattr(self.commit, "_assurance_validity", None)
-            try:
-                if validity is None:
-                    raise AssuranceError("USE_CERTIFICATE_REQUIRED")
-                candidate = validity.prepare_root_use(inputs.record, resolution_id=resolution_id)
-            except AssuranceError as error:
-                return self._refuse_root_resolution(
-                    mission_id, inputs, command_id=command_id, reason=error.code,
-                    detail="the current use certificate could not be prepared: " + str(error),
-                )
-            witness_id = candidate.certificate_id
-            effective_grades = candidate.effective_grades
+        validity = getattr(self.commit, "_assurance_validity", None)
+        try:
+            if validity is None:
+                raise AssuranceError("USE_CERTIFICATE_REQUIRED")
+            candidate = validity.prepare_root_use(inputs.record, resolution_id=resolution_id)
+        except AssuranceError as error:
+            return self._refuse_root_resolution(
+                mission_id, inputs, command_id=command_id, reason=error.code,
+                detail="the current use certificate could not be prepared: " + str(error),
+            )
+        witness_id = candidate.certificate_id
+        effective_grades: Mapping[str, str] | None = candidate.effective_grades
         resolution = GoalResolution(
             resolution_id=GoalResolutionId(resolution_id),
             mission_id=mission_id,

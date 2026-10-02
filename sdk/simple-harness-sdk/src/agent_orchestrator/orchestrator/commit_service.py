@@ -1409,9 +1409,7 @@ class CommitService(ProtectedTailCommitsMixin,
         for intent in self._store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
             if intent.mission_id != mission_id:
                 continue
-            from ..storage.assurance_store import AssuranceStore
-            assured = AssuranceStore(self._store).lane(mission_id) == "ASSURANCE_1_1"
-            if (intent.kind == "critic" or assured) and intent.state == "AGENT_CREATED":
+            if intent.state == "AGENT_CREATED":
                 # The SDK submit may already have happened before its receipt
                 # reached this database. Only the exact-turn collector can know
                 # whether there is a real invocation/cost; do not settle as zero.
@@ -1826,88 +1824,6 @@ class CommitService(ProtectedTailCommitsMixin,
             return intent.creation_key
         return intent.subject_id
 
-    def rehandoff_service_intent(
-        self,
-        intent_id: str,
-        *,
-        owner: str,
-        lease_seconds: float,
-        reason: str,
-        detail: Mapping[str, Any],
-    ) -> DispatchIntent:
-        """Hand a SUBMITTED service intent off once more, to a new executor (P2.3f).
-
-        The subject, the reservation and the frozen request bytes are unchanged; what
-        changes is the executor: ``creation_key`` gets a ``:rehandoff:<n>`` suffix so
-        the runtime creates a fresh Agent instead of idempotently returning the one
-        whose turn is stuck, and the intent goes back to CLAIMED so the ordinary
-        dispatch path creates and submits it.  The abandoned turn is named in the
-        event; its provider invocation stays UNKNOWN in the runtime ledger, which is
-        the truth, and the reservation is only settled when no charge is unknown.
-
-        Never for an ``attempt`` intent: a Worker turn has a workspace and a
-        selection, and its recovery is the Attempt state machine's business.
-        """
-
-        with self._store.transaction():
-            intent = self._require_intent(intent_id)
-            if intent.kind == "attempt":
-                raise CommitRejected("a Worker intent is not re-handed off by this path")
-            from ..storage.assurance_store import AssuranceStore
-            if AssuranceStore(self._store).lane(intent.mission_id) == "ASSURANCE_1_1":
-                raise CommitRejected("Assurance unknown outcomes require original-call reconciliation")
-            if intent.state != "SUBMITTED":
-                raise CommitRejected(
-                    f"intent {intent_id} is {intent.state}; only a SUBMITTED turn is re-handed off"
-                )
-            ordinal = self.rehandoffs_of(intent.subject_id, intent.mission_id) + 1
-            now = self._store.now
-            updated = DispatchIntent(
-                **{
-                    **intent.to_json(),
-                    "state": "CLAIMED",
-                    "version": intent.version + 1,
-                    "creation_key": f"{intent.subject_id}:rehandoff:{ordinal}",
-                    "expected_turn_id": None,
-                    "agent_id": None,
-                    "receipt": None,
-                    "lease_owner": owner,
-                    "lease_expires_at": now + lease_seconds,
-                    "replays": intent.replays + 1,
-                }
-            )
-            self._store.update_intent(updated, expected_version=intent.version)
-            self._emit(
-                SERVICE_INTENT_REHANDED_OFF,
-                intent.mission_id,
-                key=f"{intent.subject_id}:{ordinal}",
-                payload={
-                    "intent_id": intent.intent_id,
-                    "kind": intent.kind,
-                    "subject_id": intent.subject_id,
-                    "role": str(intent.config.get("role", "")) or None,
-                    "rehandoff": ordinal,
-                    "previous_agent_id": intent.agent_id,
-                    "previous_turn_id": intent.expected_turn_id,
-                    "previous_creation_key": intent.creation_key,
-                    "next_creation_key": updated.creation_key,
-                    "input_id": intent.input_id, "input_hash": intent.input_hash,
-                    "config_hash": sha256_hex(intent.config),
-                    "reason": reason,
-                    "detail": dict(detail),
-                },
-            )
-            return updated
-
-    def rehandoffs_of(self, subject_id: str, mission_id: str) -> int:
-        """How many times this subject's turn was re-handed off (read off the log)."""
-
-        # The generic list_events default is one page. A long-lived Mission
-        # must not reuse a previous handoff ordinal after that page fills.
-        return sum(1 for row in self._store.connection.execute(
-            "SELECT payload_json FROM events WHERE mission_id=? AND type=? ORDER BY seq",
-            (mission_id, SERVICE_INTENT_REHANDED_OFF))
-            if json.loads(row[0]).get("subject_id") == subject_id)
 
     def record_submitted(self, intent_id: str, *, receipt: Mapping[str, Any]) -> DispatchIntent:
         """Save the real SDK receipt; the Attempt becomes RUNNING (§25.2 start)."""
@@ -2169,14 +2085,12 @@ class CommitService(ProtectedTailCommitsMixin,
         tool_calls: int | None = None,
         known_only: bool = False,
     ) -> Mapping[str, Any]:
-        from ..storage.assurance_store import AssuranceStore
-        if AssuranceStore(self._store).lane(mission_id) == "ASSURANCE_1_1":
-            # A terminal business state cannot downgrade UNKNOWN to known-only
-            # zero. Keep the original ledger's strict settlement check in force.
-            known_only = False
-            if self._assurance_settlement is None:
-                raise BudgetError("Assurance physical settlement reader is not installed; reservation held")
-            self._assurance_settlement.require_settled_locked(subject_id, mission_id)
+        # A terminal business state cannot downgrade UNKNOWN to known-only
+        # zero. Keep the original ledger's strict settlement check in force.
+        known_only = False
+        if self._assurance_settlement is None:
+            raise BudgetError("Assurance physical settlement reader is not installed; reservation held")
+        self._assurance_settlement.require_settled_locked(subject_id, mission_id)
         if self._taskgraph_dispatch is None:
             raise CommitRejected("TASKGRAPH_SETTLEMENT_ASSEMBLY_REQUIRED")
         # A terminal business state and even a known-only accounting request
@@ -2733,7 +2647,6 @@ class CommitService(ProtectedTailCommitsMixin,
         the mission epoch by now, so a candidate prepared earlier would be stale.
         Outside the write transaction, read only; the UoW then locks it first."""
         from ..assurance.codec import AssuranceError
-        from ..storage.assurance_store import AssuranceStore
         from .resolution_commits import ResolutionCommitRejected
 
         with self._store.read_view():
@@ -2741,8 +2654,6 @@ class CommitService(ProtectedTailCommitsMixin,
             if stored is None:
                 return None
             mission_id = stored.envelope.mission_id
-            if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
-                return None
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
                 return None  # replay; the committed certificate licenses it
         validity = getattr(self, "_assurance_validity", None)
@@ -2764,12 +2675,9 @@ class CommitService(ProtectedTailCommitsMixin,
         is committed later by ``accept_review`` in this same generation. A missing
         candidate is not licensed here; ``accept_review`` refuses it."""
         from ..assurance.codec import AssuranceError
-        from ..storage.assurance_store import AssuranceStore
         from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
         from .resolution_commits import ResolutionCommitRejected
 
-        if AssuranceStore(self._store).lane(mission_id) != "ASSURANCE_1_1":
-            return
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
             return
