@@ -199,7 +199,7 @@ async def test_a_mission_cancelled_during_a_model_call_ends_cancelled(orchestrat
 async def test_a_restart_during_a_model_call_resumes_and_completes(orchestration_root, principal, monkeypatch):
     """执行者的调用进行到一半时服务重启：新服务接着同一个库把任务做完。
 
-    被打断的那次调用结果不明。系统等够时限（产品里 180 秒，这里调成 3 秒）后判它丢失、
+    被打断的那次调用结果不明。系统等够时限（产品里 30 秒，这里调成 3 秒）后判它丢失、
     原地重做一次——不用人接管，也不重做计划。"""
 
     import agent_orchestrator.orchestrator.event_handler as event_handler
