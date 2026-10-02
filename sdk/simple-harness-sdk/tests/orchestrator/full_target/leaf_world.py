@@ -56,6 +56,9 @@ GOAL_TYPE = "leafw.goal"
 STEP_TYPE = "leafw.step"
 METHOD_ID = "leafw.method"
 FUEL = 8
+#: 根目标的那一条要求。与步骤语义绑定里的要求编号同名，步骤才认得它是自己承担的要求
+#: （产品里两边都是 ``c-user-<n>``）。
+ROOT_CRITERION = "req-1"
 
 
 # --------------------------------------------------------------------------------------
@@ -96,6 +99,7 @@ def leaf_world(
     budget: Budget | None = None,
     task_max_tokens: int | None = None,
     global_budget: Budget | None = None,
+    root_statement: str | None = None,
     clock: Any = None,
     name: str = "orchestrator.db",
     spec_overrides: Mapping[str, Any] | None = None,
@@ -128,7 +132,7 @@ def leaf_world(
         GOAL_TYPE,
         form=TaskForm.COMPOUND,
         parameters=(("subject", "string"),),
-        criteria=("c-root",),
+        criteria=(ROOT_CRITERION,),
         domain="leafw",
     )
     names = tuple(leaves)
@@ -156,7 +160,7 @@ def leaf_world(
             for item in names
         ),
         ordering=tuple(ordering),
-        links=(("c-root", names[-1], "c-done"),),
+        links=((ROOT_CRITERION, names[-1], "c-done"),),
         finalizer=names[-1],
     )
     receipt = env.admit(contract)
@@ -175,7 +179,12 @@ def leaf_world(
     )
     HtnStore(store).put_task_semantics(mission.id, binding)
     HtnStore(store).register_method(contract, env.registry.registration(contract.method_ref()))
-    approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
+    # ``root_statement``：根要求的原文。写成 ``pytest:<目标>`` 或 ``file:<路径>`` 时，承担
+    # 这条要求的步骤会带上这条检查（步骤的判据就是这样来的）。
+    approve_content_only_completion(
+        service, mission, binding, command_id=f"approve-{key}",
+        statements=None if root_statement is None else {ROOT_CRITERION: root_statement},
+    )
     service.begin_planning(mission.id)
     env.semantics = HtnStore(store)
     dispatch = HierarchicalDispatch(store, service, planning=env)

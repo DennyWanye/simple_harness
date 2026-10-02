@@ -63,9 +63,15 @@ def two_branch_service(tmp_path, *, key: str = "k-1", nodes=None, **spec_overrid
     return service, service.store.get_mission(mission.id), tasks
 
 
-def two_leaf_service(tmp_path, *, key: str = "k-1", **spec_overrides):
+def two_leaf_service(
+    tmp_path, *, key: str = "k-1", check: str = "pytest:tests/probe/test_impl_a.py", **spec_overrides
+):
     """分层版的"两个并列步骤"（删旧平面模式 第 2 步）：一个已提交计划的分层 Mission，根做法
-    是 a、b 两个互不依赖的原子步骤；返回 (service, mission, [步骤 a 的任务, 步骤 b 的任务])。"""
+    是 a、b 两个互不依赖的原子步骤；返回 (service, mission, [步骤 a 的任务, 步骤 b 的任务])。
+
+    ``check`` 是根要求的原文；写成 pytest 目标时两个步骤都带上这条检查，和平面夹具里每个
+    任务自带 ``pytest:tests/probe/…`` 判据是同一回事——没有它，"这条结论有没有被那次测试
+    证实"这类断言在分层步骤上会空过。"""
 
     import sys
     from pathlib import Path
@@ -83,6 +89,7 @@ def two_leaf_service(tmp_path, *, key: str = "k-1", **spec_overrides):
         success_criteria=("pytest:tests/test_comparison.py",),
         tenant_id="tenant-4",
         budget=Budget(max_tokens=100_000, max_attempts=6),
+        root_statement=check,
         spec_overrides={"untrusted_sources": ("docs/",), **spec_overrides},
     )
     return world.service, world.mission, [world.tasks["a"], world.tasks["b"]]
