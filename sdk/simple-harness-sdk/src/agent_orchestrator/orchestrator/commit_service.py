@@ -1573,7 +1573,7 @@ class CommitService(ProtectedTailCommitsMixin,
             attempt_id = ids.attempt_id(task_id, ordinal)
             from .completion_inputs import freeze_attempt_completion_inputs
             frozen_completion = freeze_attempt_completion_inputs(
-                self._store, self, task, inputs,
+                self._store, self, task,
                 attempt_id=attempt_id, request_id=ids.intent_id("attempt", attempt_id),
             )
             if self._source_artifact_store is not None:
@@ -1648,8 +1648,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     **dict(intent_config),
                     "attempt_id": attempt_id,  # authoritative (P1-7): never the caller's guess
                     "inputs": [dict(item) for item in inputs],
-                    **({"completion_inputs": frozen_completion.to_json()}
-                       if frozen_completion is not None else {}),
+                    "completion_inputs": frozen_completion.to_json(),
                 },
                 expected_turn_id=None,
                 agent_id=None,
@@ -2761,7 +2760,7 @@ class CommitService(ProtectedTailCommitsMixin,
             completed = next_task(
                 task,
                 (TaskStatus.VERIFYING
-                 if frozen_completion is not None and frozen_completion.scope.required_effect_keys
+                 if frozen_completion.scope.required_effect_keys
                  else TaskStatus.COMPLETED),
                 accepted_result_id=result_id,
                 accepted_artifacts=stored.artifacts,
@@ -2774,20 +2773,19 @@ class CommitService(ProtectedTailCommitsMixin,
             self.refuse_policy_files(
                 stored, mission_id=mission.id, task_id=task.id, result_id=result_id
             )
-            if frozen_completion is not None:
-                from .leaf_acceptance import LeafAcceptanceAssembly
-                # Preparation, its accepted bytes and contribution share the result
-                # transaction. No effect proposal is inferred from a Worker file.
-                LeafAcceptanceAssembly(self._store, self).accept(
-                    mission.id, task.id, result_id=result_id,
-                    layers=self._store.list_verifications(result_id),
-                    artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
-                    producer_agent_ids=(attempt.agent_id,),
-                    reviewer_agent_id=f"critic:{attempt.id}",
-                    now_ms=int(self._store.now * 1000),
-                    input_manifest_hash=frozen_completion.frozen.manifest_hash,
-                    port_claims=frozen_completion.port_claims,
-                )
+            from .leaf_acceptance import LeafAcceptanceAssembly
+            # Preparation, its accepted bytes and contribution share the result
+            # transaction. No effect proposal is inferred from a Worker file.
+            LeafAcceptanceAssembly(self._store, self).accept(
+                mission.id, task.id, result_id=result_id,
+                layers=self._store.list_verifications(result_id),
+                artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
+                producer_agent_ids=(attempt.agent_id,),
+                reviewer_agent_id=f"critic:{attempt.id}",
+                now_ms=int(self._store.now * 1000),
+                input_manifest_hash=frozen_completion.frozen.manifest_hash,
+                port_claims=frozen_completion.port_claims,
+            )
             if not self._ledger.has_unknown_usage(attempt.id):  # ORCH §12.2 (P2-12)
                 self._settle_subject(attempt.id, mission.id, task_id=task.id)
             self._emit(

@@ -15,7 +15,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..artifacts.versioning import UpstreamInput, manifest_upstream_inputs
 from ..contracts.htn import TaskRef
 from ..contracts.models import sha256_hex
 from ..contracts.operation_completion import PlanRevisionPinV1
@@ -28,7 +27,6 @@ from .hierarchical_dispatch import HierarchicalDispatch
 from .leaf_acceptance import accepted_outputs_for
 from .operation_completion import OperationCompletionError, OperationCompletionReader
 
-_PROTOCOL = "planning-decision-v1"
 _RESULT_SUBMITTED = "ResultSubmitted"
 
 
@@ -150,56 +148,25 @@ class FrozenCompletionResultInputs:
     port_claims: tuple[PortClaim, ...]
 
 
-def _new_protocol(store: Store, mission_id: str) -> bool:
-    row = store.connection.execute(
-        "SELECT protocol_version FROM mission_planning_protocols WHERE mission_id=?", (mission_id,)
-    ).fetchone()
-    return row is not None and row[0] == _PROTOCOL
-
-
-def _exact_inputs(values: Sequence[Mapping[str, Any]]) -> Counter[tuple[str, str, str, str]]:
-    rows: Counter[tuple[str, str, str, str]] = Counter()
-    for value in values:
-        if not isinstance(value, Mapping) or set(value) != {
-            "task_id",
-            "path",
-            "content_hash",
-            "artifact_id",
-        }:
-            raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "dispatch inputs differ")
-        if any(not isinstance(value[name], str) for name in value):
-            raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "dispatch input type differs")
-        rows[(value["task_id"], value["path"], value["content_hash"], value["artifact_id"])] += 1
-    return rows
-
-
-def _upstream_counter(inputs: Sequence[UpstreamInput]) -> Counter[tuple[str, str, str, str]]:
-    return Counter(
-        (item.task_id, item.path, item.content_hash, item.artifact_id) for item in inputs
-    )
-
-
 def freeze_attempt_completion_inputs(
     store: Store,
     commit: Any,
     task: Any,
-    inputs: Sequence[Mapping[str, Any]],
     *,
     attempt_id: str,
     request_id: str,
-) -> FrozenCompletionInputs | None:
-    """Freeze the exact resolved manifest used to build a new-protocol Attempt.
+) -> FrozenCompletionInputs:
+    """Freeze the exact resolved manifest used to build an Attempt.
 
     Call this from the ``create_attempt`` writer transaction, after the Attempt and
-    dispatch intent identities exist.  Legacy Missions return ``None`` unchanged.
+    dispatch intent identities exist.  That transaction's TaskGraph dispatch
+    preparation already refused an unfrozen manifest and any input that differs from it.
     """
 
     mission_id = str(getattr(task, "mission_id", ""))
     task_id = str(getattr(task, "id", ""))
     if not mission_id or not task_id:
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "Task identity is unavailable")
-    if not _new_protocol(store, mission_id):
-        return None
     if (
         not isinstance(attempt_id, str)
         or not attempt_id
@@ -222,16 +189,6 @@ def freeze_attempt_completion_inputs(
     )
     resolved = dispatch.resolved_inputs(mission_id, network, members[0])
     manifest = resolved.manifest
-    if manifest is None or not manifest.is_frozen:
-        raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "dispatch manifest is not frozen")
-    target_rules = dispatch.target_rules_for(task_id)
-    expected = manifest_upstream_inputs(manifest, target_rules, network=network)
-    expected = dispatch.overlay_attempt_inputs(mission_id, expected)
-    if _exact_inputs(inputs) != _upstream_counter(expected):
-        raise _refuse(
-            "OP_COMPLETION_INPUTS_UNAVAILABLE", "dispatch inputs differ from frozen manifest"
-        )
-
     document = manifest.to_json()
     embedded_hash = document.get("manifest_hash")
     if not isinstance(embedded_hash, str) or embedded_hash != manifest.manifest_hash():
@@ -322,7 +279,6 @@ def validate_result_port_claims(
         or envelope is None
         or getattr(envelope, "mission_id", None) != mission_id
         or getattr(envelope, "task_id", None) != task_id
-        or not _new_protocol(store, mission_id)
     ):
         raise _refuse("OP_COMPLETION_PORT_CLAIMS_UNAVAILABLE", "result identity differs")
     if not all(isinstance(item, PortClaim) for item in port_claims):
@@ -379,12 +335,11 @@ def validate_result_port_claims(
     return tuple({"port_key": item.port_key, "path": item.path} for item in port_claims)
 
 
-def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletionResultInputs | None:
+def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletionResultInputs:
     """Re-read frozen dispatch inputs and durable ResultSubmitted port claims.
 
-    ``None`` is only the legacy path.  A new-protocol Result without these anchors
-    is refused so cold recovery cannot silently fall back to a current
-    plan or to handler-local state.
+    A Result without these anchors is refused so cold recovery cannot silently fall back
+    to a current plan or to handler-local state.
     """
 
     envelope = getattr(result, "envelope", None)
@@ -396,8 +351,6 @@ def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletion
         str(envelope.attempt_id),
         str(envelope.id),
     )
-    if not _new_protocol(store, mission_id):
-        return None
     attempt = store.get_attempt(attempt_id)
     intent = store.get_intent_for_subject(attempt_id)
     if (
