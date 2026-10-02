@@ -63,6 +63,37 @@ def two_branch_service(tmp_path, *, key: str = "k-1", nodes=None, **spec_overrid
     return service, service.store.get_mission(mission.id), tasks
 
 
+def two_leaf_service(tmp_path, *, key: str = "k-1", **spec_overrides):
+    """分层版的"两个并列步骤"（删旧平面模式 第 2 步）：一个已提交计划的分层 Mission，根做法
+    是 a、b 两个互不依赖的原子步骤；返回 (service, mission, [步骤 a 的任务, 步骤 b 的任务])。"""
+
+    import sys
+    from pathlib import Path
+
+    full_target = Path(__file__).resolve().parents[1] / "full_target"
+    if str(full_target) not in sys.path:
+        sys.path.append(str(full_target))
+    from leaf_world import leaf_world
+
+    world = leaf_world(
+        tmp_path,
+        key=key,
+        leaves=("a", "b"),
+        goal="比较两个实现对同一输入合同的支持程度",
+        success_criteria=("pytest:tests/test_comparison.py",),
+        tenant_id="tenant-4",
+        budget=Budget(max_tokens=100_000, max_attempts=6),
+        spec_overrides={"untrusted_sources": ("docs/",), **spec_overrides},
+    )
+    return world.service, world.mission, [world.tasks["a"], world.tasks["b"]]
+
+
+def _is_layered(service, mission_id: str) -> bool:
+    from agent_orchestrator.orchestrator.scoped_content_review import uses_completion_protocol
+
+    return uses_completion_protocol(service.store, mission_id)
+
+
 def drive_to_running(
     service: CommitService,
     task,
@@ -155,12 +186,28 @@ def submit(
     hashes=None,
 ):
     hashes = hashes or {}
+    layered = _is_layered(service, attempt.mission_id)
+    extra: dict[str, Any] = {}
+    if layered and artifact_paths:
+        # 分层步骤声明了一个必需的输出端口：结果要认领它（生产里由执行者在结果里写）。
+        from agent_orchestrator.runtime.output_blocks import PortClaim
+
+        extra["port_claims"] = (PortClaim(port_key="result", path=artifact_paths[0]),)
     stored = service.record_result(
         attempt.id,
         envelope=env,
         turn_id=turn,
         artifacts=[artifact(attempt, path, hashes.get(path, HASH_A)) for path in artifact_paths],
         usage_refs=(),
+        **extra,
     )
+    if layered:
+        # 主循环收到结果后先结清这次派发，再开始核验。
+        service.settle_intent(service.store.get_intent_for_subject(attempt.id).intent_id, "SETTLED")
     service.start_verification(stored.envelope.id)
+    if layered:
+        # 分层步骤一律带内容审查这一层；接受结果之前必须已有它的通过记录。
+        service.record_verification_layer(
+            stored.envelope.id, layer="critic_review", status="PASS", detail={"producer": "fixture"}
+        )
     return stored

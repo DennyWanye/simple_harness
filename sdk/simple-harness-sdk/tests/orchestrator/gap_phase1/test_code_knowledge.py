@@ -14,6 +14,7 @@ from knowledge_helpers import (
     passed_layers,
     submit,
     two_branch_service,
+    two_leaf_service,
 )
 
 from agent_orchestrator.artifacts.workspace import Workspace
@@ -24,6 +25,8 @@ from agent_orchestrator.verification.deterministic_checks import code_test
 def _accept(
     tmp_path, evidence, content="All backups remain recoverable after any hardware failure"
 ):
+    # 留在平面任务上，原因同下面 k03：这一步要自带 pytest 判据，否则"没被判成已验证"是空过
+    # （关掉严格定级后分层步骤上这两条照样通过）。
     service, mission, (task, _) = two_branch_service(tmp_path)
     attempt = drive_to_running(service, task)
     result = submit(service, attempt, envelope(attempt, claims=[claim(content, evidence=evidence)]))
@@ -46,7 +49,7 @@ def test_k02_dangling_reference_does_not_support_a_claim(tmp_path, reference):
 
 
 def test_new_missions_freeze_strict_code_grading(tmp_path):
-    service, mission, _ = two_branch_service(tmp_path)
+    service, mission, _ = two_leaf_service(tmp_path)
     domain = service.domain_for(mission.id)
     assert domain.version == "5"  # 2026-09-26：通用任务 v5 只加资料目录，判分规则仍同 v4
     assert domain.completion_rules["claim_grading"] == "scoped-observation-v2"
@@ -56,6 +59,10 @@ def test_new_missions_freeze_strict_code_grading(tmp_path):
 @pytest.mark.anyio
 @pytest.mark.parametrize("mutation", [None, "hash", "result", "attempt", "unrecorded", "receipt"])
 async def test_k03_only_current_recorded_execution_produces_scoped_knowledge(tmp_path, mutation):
+    # 这一条整条留在平面任务上（2026-10-02）：它要求这一步自己的判据就是一个 pytest 目标，
+    # 分层测试工具造的步骤还带不了这样的判据。试过把五种"不该产生知识"的情况搬到分层
+    # 步骤上——全部空过（那种步骤本来就不会产生这类知识），故意改坏定级代码也抓不住，
+    # 所以退回。删平面那一刀之前：给工具补上"步骤判据可配"再迁，不能直接删。
     service, mission, (task, _) = two_branch_service(tmp_path)
     attempt = drive_to_running(service, task)
     source = "def test_addition():\n    assert 2 + 2 == 4\n"
@@ -130,7 +137,7 @@ def test_missing_domain_binding_keeps_legacy_semantics():
 
 @pytest.mark.parametrize("scope", ["same", "other-mission", "other-attempt", "failed"])
 def test_k02_tool_reference_must_resolve_to_success_in_this_attempt(tmp_path, scope):
-    service, mission, (task, _) = two_branch_service(tmp_path)
+    service, mission, (task, _) = two_leaf_service(tmp_path)
     attempt = drive_to_running(service, task)
     ref = "run-1:call-1"
     service.store.record_tool_call(

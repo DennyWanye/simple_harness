@@ -20,7 +20,7 @@ from knowledge_helpers import (
     envelope,
     passed_layers,
     submit,
-    two_branch_service,
+    two_leaf_service,
 )
 
 from agent_orchestrator.context.compression import compress
@@ -64,7 +64,7 @@ def _record(
 
 
 def test_k04_long_condition_is_available_in_full_context_with_source_provenance(tmp_path):
-    service, mission, (task, _) = two_branch_service(tmp_path)
+    service, mission, (task, _) = two_leaf_service(tmp_path)
     condition = "关键条件：未经书面同意不得删除归档。"
     record = _record(
         "K-long-condition",
@@ -116,7 +116,7 @@ def test_k04_long_condition_is_available_in_full_context_with_source_provenance(
 def test_k05_exact_identifiers_paths_and_bilingual_queries_select_the_explicit_record(
     tmp_path, query, case
 ):
-    service, mission, (task, _) = two_branch_service(tmp_path)
+    service, mission, (task, _) = two_leaf_service(tmp_path)
     relevant = _record(
         "K-retention-42",
         mission.id,
@@ -149,7 +149,7 @@ def test_k05_exact_identifiers_paths_and_bilingual_queries_select_the_explicit_r
 
 
 def test_k06_superseded_knowledge_is_not_projected_as_current_in_downstream_summary(tmp_path):
-    service, mission, (task, _) = two_branch_service(tmp_path)
+    service, mission, (task, _) = two_leaf_service(tmp_path)
     old = _record(
         "K-withdrawn",
         mission.id,
@@ -188,7 +188,7 @@ def test_k06_superseded_knowledge_is_not_projected_as_current_in_downstream_summ
 
 @pytest.mark.parametrize("query", ("K-retention-42", "sources/retention-policy.md"))
 def test_k05_exact_reference_respects_scope_currentness_and_lexical_ranking(tmp_path, query):
-    _, mission, (task, _) = two_branch_service(tmp_path)
+    _, mission, (task, _) = two_leaf_service(tmp_path)
     target = _record(
         "K-retention-42",
         mission.id,
@@ -227,7 +227,7 @@ def test_k05_exact_reference_respects_scope_currentness_and_lexical_ranking(tmp_
     "query", ("sources", "retention-policy.md", "SOURCES/retention-policy.md", "K-retention-420")
 )
 def test_k05_reference_fragments_and_case_variants_are_not_exact_hits(tmp_path, query):
-    _, mission, (task, _) = two_branch_service(tmp_path)
+    _, mission, (task, _) = two_leaf_service(tmp_path)
     record = _record(
         "K-retention-42",
         mission.id,
@@ -242,7 +242,7 @@ def test_k05_reference_fragments_and_case_variants_are_not_exact_hits(tmp_path, 
 def test_original_knowledge_tools_preserve_tail_and_reject_stale_or_foreign_reads(tmp_path):
     from agent_orchestrator.context.knowledge_tools import read_knowledge_tool
 
-    service, mission, (task, _) = two_branch_service(tmp_path)
+    service, mission, (task, _) = two_leaf_service(tmp_path)
     condition = "关键条件：只有校验完整备份后才允许离线恢复。"
     record = _record("K-long", mission.id, task.id, "背景。" * 900 + condition)
     service.store.upsert_knowledge(record)
@@ -295,7 +295,7 @@ def test_k06_invalidated_basis_masks_accepted_consumer_without_rewriting_history
             domains.CODE_DOMAIN: domains.CODE_PROFILE_V1,
         },
     )
-    service, mission, (task_a, task_b) = two_branch_service(tmp_path)
+    service, mission, (task_a, task_b) = two_leaf_service(tmp_path)
     attempt_a = drive_to_running(service, task_a)
     path_a = "tests/probe/test_impl_a.py"
     source = submit(
