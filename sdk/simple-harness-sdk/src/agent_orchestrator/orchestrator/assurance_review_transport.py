@@ -752,7 +752,11 @@ _FORMAT_FEEDBACK = {
         "the grades named in the request."
     ),
     "REVIEW_SCHEMA_VERSION": "schema_version must be the integer 2.",
-    "JSON_INVALID": "the reply is not one JSON object; answer with the JSON object only.",
+    "JSON_INVALID": (
+        "the reply is not one JSON object. Answer with the JSON object only: the first "
+        "character is { and the last is }, no code fence around it and no text before or "
+        "after it."
+    ),
     "JSON_DUPLICATE_KEY": "an object repeats a key; give each key once.",
 }
 
