@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 """HA-3 ③ / HA-6 ⑤, review P1-3: the provider's own key is refused wherever a person's
-text enters the orchestration library — every string of a create request (stop conditions,
-synthesis, workspace seed included), decisions, takeovers and comments.
+text enters the orchestration library — every string of a create request (stop conditions
+and workspace seed included), decisions, takeovers and comments.
 
 The key used here is deliberately *not* ``sk-`` shaped: the generic patterns cannot see it,
 so only the provider-key branch of the door can refuse it.
@@ -57,9 +57,8 @@ def _service(root, principal):  # type: ignore[no-untyped-def]
         {"success_criteria": ["file:NOTES.md", f"不要写出 {KEY}"]},
         {"stop_conditions": [f"遇到 {KEY} 就停"]},
         {"workspace_seed": {"CONFIG.md": f"key = {KEY}"}},
-        {"synthesis": {"goal": f"汇总 {KEY}"}},
     ],
-    ids=["goal", "criteria", "stop_conditions", "workspace_seed", "synthesis"],
+    ids=["goal", "criteria", "stop_conditions", "workspace_seed"],
 )
 async def test_the_provider_key_is_refused_anywhere_in_a_create(orchestration_root, principal, overrides):
     service = _service(orchestration_root, principal)

@@ -302,10 +302,6 @@ class OrchestrationService:
                     fixture_root, control_root=self.root / "native-load-controls"
                 )
                 self._native_verifier_pressure = case == "native-load-verifier-pressure"
-            elif case == "n4-document-contextual-arbitration":
-                from .native_arbitration import document_arbitration_provider
-
-                provider = document_arbitration_provider(fixture_root)
             elif case:
                 from .native_cases import document_case_provider
 
@@ -1294,7 +1290,7 @@ class OrchestrationService:
             or not all(isinstance(c, str) and c.strip() for c in criteria)
         ):
             raise OrchestrationRequestError("invalid_request", "成功条件不能为空，每行一条")
-        # every string of the request — stop conditions, synthesis and the workspace seed
+        # every string of the request — stop conditions and the workspace seed
         # included, not only the goal and the criteria (review P1-3)
         self._refuse_secrets(body)
         # P3.2 (plan D9): both gates now ask what this deployment can really do, instead of

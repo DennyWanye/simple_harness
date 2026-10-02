@@ -145,7 +145,7 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
                 "attempt_id": "attempt-1", "task_id": "task-1", "agent_id": "agent-1",
                 "role": "Worker", "model": "deepseek-flash", "runtime_profile_id": "context-256k",
                 "prompt_version": "worker-v1", "status": "COMPLETED",
-                "on_success_path": False, "claim_refuted": False,
+                "on_success_path": False,
                 "exploration_reason": "mission_not_completed", "tool_calls": 2,
                 "work": {"tokens": 12, "rows": 1, "cost_micros": None,
                          "cost_note": "unpriced deployment: money is not recorded (null, never zero)"},

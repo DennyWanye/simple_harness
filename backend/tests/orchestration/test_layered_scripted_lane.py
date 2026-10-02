@@ -73,6 +73,11 @@ async def test_a_mission_on_the_default_deployment_completes_on_scripted_replies
         leaf = next(task for task in store.list_tasks(mission.id) if task.status.value == "COMPLETED")
         assert leaf.accepted_result_id is not None
         assert [store.get_artifact(item).path for item in leaf.accepted_artifacts] == ["NOTES.md"]
+
+        # 争议从结论本身读出，最终报告和详情都带着它（这一局没有相反结论，为空）。
+        assert mission.final_report["disputes"] == []
+        assert "conflicts" not in mission.final_report
+        assert service.mission_detail(mission.id)["disputes"] == []
     finally:
         await asyncio.wait_for(service.close(), 30)
 

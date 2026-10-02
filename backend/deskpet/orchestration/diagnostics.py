@@ -195,20 +195,14 @@ def _attribution(value: object, snapshot: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "knowledge_path": {
             "knowledge": [item for item in knowledge.get("knowledge", ()) if isinstance(item, str)],
-            "refuted_claims": [
-                item for item in knowledge.get("refuted_claims", ()) if isinstance(item, str)
-            ],
-            "refuted_on_path": [
-                item for item in knowledge.get("refuted_on_path", ()) if isinstance(item, str)
-            ],
-            "edges": [_pick(edge, ("knowledge", "resolves", "resolves_claim", "supersedes",
-                                   "confirmed_by", "result", "produced", "uses", "version"))
+            "edges": [_pick(edge, ("knowledge", "supersedes", "result", "produced", "uses",
+                                   "version"))
                       for edge in _rows(knowledge.get("edges"))],
         },
         "attempts": [
             {**_pick(row, ("attempt_id", "task_id", "agent_id", "role", "model",
                            "runtime_profile_id", "prompt_version", "status", "on_success_path",
-                           "claim_refuted", "exploration_reason", "tool_calls")),
+                           "exploration_reason", "tool_calls")),
              "context_version": context_versions.get(row.get("attempt_id")),
              "work": _money(row.get("work")), "verification": _money(row.get("verification"))}
             for row in _rows(source.get("attempts"))

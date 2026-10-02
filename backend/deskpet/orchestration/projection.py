@@ -106,20 +106,6 @@ def _source_approval(raw: Mapping[str, Any]) -> dict[str, Any]:
         return {"source_change": _pick(raw.get("binding"), (
             "operation", "path", "expected_version_hash", "version_hash", "old_revision", "kind", "reason",
         ))}
-    if raw.get("kind") == "arbitration" and isinstance(raw.get("binding"), Mapping) and "sides" in raw["binding"]:
-        binding = raw.get("binding") or {}
-        # Show durable conflict scope and final side revisions, never accept client replacements.
-        return {"arbitration": {
-            **_pick(binding, ("mission_id", "task_id", "result_id", "conflict_id", "conflict_version", "key")),
-            **_pick(raw, ("ruling", "basis", "decided_by", "closed_at")),
-            "sides": [{**_pick(side, ("claim_id", "version", "claim_version", "status", "content", "key", "stance",
-                                      "evidence", "source_task", "source_versions", "assessment_revisions")),
-                       "checked_scope": [_pick(scope, ("kind", "catalog", "criterion", "binding"))
-                                         for scope in _rows(side.get("checked_scope"))],
-                       "evidence_refs": [_resolution(ref) for ref in _rows(side.get("evidence_refs"))]}
-                      for side in _rows(binding.get("sides"))],
-            "scope": "仅适用于本争议及其条件，不提升证据等级",
-        }}
     return {}
 
 
@@ -145,7 +131,7 @@ def _assessment(raw: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _review_applies(review: Mapping[str, Any], claim: Mapping[str, Any]) -> bool:
-    """Associate the durable reviewed result or conflict sides, never Task peers."""
+    """Associate the durable reviewed result, never Task peers."""
     if review.get("kind") == "review":
         binding = review.get("binding") or {}
         result_id = claim.get("result_id")
@@ -154,14 +140,6 @@ def _review_applies(review: Mapping[str, Any], claim: Mapping[str, Any]) -> bool
             and binding.get("mission_id") == claim.get("mission_id")
             and binding.get("task_id") == claim.get("source_task")
             and binding.get("attempt_id") == claim.get("source_attempt")
-        )
-    if review.get("kind") == "arbitration":
-        binding = review.get("arbitration") or {}
-        return (
-            binding.get("mission_id") == claim.get("mission_id")
-            and bool(binding.get("conflict_id"))
-            and review.get("subject_key") == binding.get("conflict_id")
-            and any(side.get("claim_id") == claim.get("id") for side in _rows(binding.get("sides")))
         )
     return False
 
@@ -660,16 +638,7 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         "operation_workspace": snapshot.get("operation_workspace"),
         "waiting_on": waiting_on,
         "blocked": [dict(b) for b in blocked],
-        "graph_changes": len(snapshot.get("graph_changes") or ()),
-        "conflicts": [
-            {
-                "conflict_id": c.get("conflict_id"),
-                "state": c.get("state"),
-                "key": c.get("key"),
-                "deferred_reason": c.get("deferred_reason"),
-            }
-            for c in snapshot.get("conflicts") or ()
-        ],
+        "disputes": [dict(d) for d in snapshot.get("disputes") or ()],
         "mission_policy": {"version_id": policy.get("version_id"), "source": policy.get("source")},
         "usage": {
             "attempts": len(attempts),

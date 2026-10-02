@@ -184,22 +184,6 @@ def test_sdk_lineage_issues_are_rendered_without_regrading_or_rederiving():
     assert issue in claim["source_issues"] and claim["status"] == "VERIFIED"
 
 
-def test_document_arbitration_shows_real_ruling_basis_and_final_side_revision():
-    request = {"request_id": "arb", "kind": "arbitration", "state": "RULED",
-               "decided_by": "human", "ruling": "contextual", "basis": "只在范围甲成立",
-               "binding": {"conflict_id": "c", "result_id": "r", "sides": [
-                   {"claim_id": "claim-0", "claim_version": 4, "content": "原结论",
-                    "checked_scope": [{"kind": "source_citation", "criterion": "甲"}],
-                    "assessment_revisions": {"receipt-0": 1}}]}}
-    view = document_view(1)
-    view["snapshot"]["approvals"] = [request]
-    arbitration = project_detail(view)["document"]["reviews"][0]["arbitration"]
-    assert arbitration["ruling"] == "contextual" and arbitration["basis"] == "只在范围甲成立"
-    assert arbitration["sides"][0]["claim_version"] == 4
-    assert arbitration["sides"][0]["assessment_revisions"] == {"receipt-0": 1}
-    assert "arbitration" not in project_approval({"kind": "arbitration", "binding": {"topic": "old code"}})
-
-
 def test_review_refs_bind_result_not_another_result_of_the_same_task():
     view = document_view(1)
     snapshot = view["snapshot"]
@@ -242,20 +226,6 @@ def test_review_refs_bind_result_not_another_result_of_the_same_task():
     code["snapshot"]["mission_domain"] = {"domain_id": "code-v1", "domain_version": "1"}
     for review in project_detail(code)["approvals"]:
         assert "subject_key" not in review and "binding" not in review
-
-
-def test_arbitration_refs_bind_actual_sides_not_result_or_task_peers():
-    view = document_view(2)
-    view["snapshot"]["approvals"] = [{
-        "request_id": "side-review", "kind": "arbitration", "task_id": "t", "state": "RULED",
-        "subject_key": "conflict", "binding": {
-            "mission_id": "m", "task_id": "t", "result_id": "r", "conflict_id": "conflict",
-            "sides": [{"claim_id": "claim-0", "claim_version": 4}],
-        },
-    }]
-    claims = project_detail(view)["document"]["claims"]
-    assert claims[0]["review_refs"] == ["side-review"]
-    assert claims[1]["review_refs"] == []
 
 
 def test_assessment_preserves_full_contract_revision_and_source_versions():

@@ -109,7 +109,6 @@ const DETAIL = {
     },
   ],
   waiting_on: ["approval-1"],
-  graph_changes: [],
   mission_policy: { version_id: "policy-seed-abc" },
   usage: { input_tokens: 1200, output_tokens: 300, amount_micros: null },
   event_count: 7,
@@ -126,20 +125,6 @@ function renderAvailable() {
   render(<Workbench channel={channel} />);
   channel.reply("orchestration_status", AVAILABLE);
   return channel;
-}
-
-function fillValidSynthesisForm({ missionBudget = true }: { missionBudget?: boolean } = {}) {
-  fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "完成研究" } });
-  fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-  if (missionBudget) {
-    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "100" } });
-    fireEvent.change(screen.getByLabelText("尝试次数上限"), { target: { value: "2" } });
-  }
-  fireEvent.click(screen.getByLabelText("最终独立综合"));
-  fireEvent.change(screen.getByLabelText("最终独立综合目标"), { target: { value: "独立汇总" } });
-  fireEvent.change(screen.getByLabelText("最终独立综合成功条件"), { target: { value: "file:FINAL.md" } });
-  fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "50" } });
-  fireEvent.change(screen.getByLabelText("最终独立综合尝试次数上限"), { target: { value: "1" } });
 }
 
 function openMission(detail: Record<string, unknown> = DETAIL, row: Record<string, unknown> = MISSION_ROW) {
@@ -368,108 +353,6 @@ describe("P33 G creation and explicit approval branches", () => {
     });
   });
 
-  it.each(["code", "doc-research-v1"] as const)("在 %s Mission 中用相同的最终独立综合章程提交", (domain) => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    if (domain === "doc-research-v1") {
-      fireEvent.click(screen.getByLabelText("严格引用模式"));
-      fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
-      fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
-      fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "可供综合的资料" } });
-    }
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "完成研究" } });
-    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
-    fireEvent.change(screen.getByLabelText("尝试次数上限"), { target: { value: "12" } });
-    fireEvent.click(screen.getByLabelText("最终独立综合"));
-    fireEvent.change(screen.getByLabelText("最终独立综合目标"), { target: { value: "独立汇总结论" } });
-    fireEvent.change(screen.getByLabelText("最终独立综合成功条件"), { target: { value: "file:FINAL.md\n结论可追溯" } });
-    fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "60000" } });
-    fireEvent.change(screen.getByLabelText("最终独立综合尝试次数上限"), { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-
-    const payload = domain === "code"
-      ? channel.last("mission_create")?.payload
-      : (channel.last("mission_create_with_sources")?.payload as { mission: Record<string, unknown> }).mission;
-    expect(payload).toMatchObject({
-      goal: "完成研究",
-      success_criteria: ["file:REPORT.md"],
-      budget: { max_tokens: 240000, max_attempts: 12 },
-      synthesis: {
-        goal: "独立汇总结论",
-        success_criteria: ["file:FINAL.md", "结论可追溯"],
-        budget: { max_tokens: 60000, max_attempts: 2 },
-      },
-    });
-    expect(Object.keys((payload as { synthesis: Record<string, unknown> }).synthesis).sort()).toEqual(["budget", "goal", "success_criteria"]);
-  });
-
-  it.each([
-    ["目标为空", "最终独立综合目标", ""],
-    ["成功条件为空", "最终独立综合成功条件", ""],
-    ["Token 为零", "最终独立综合 Token 上限", "0"],
-    ["Token 为负数", "最终独立综合 Token 上限", "-1"],
-    ["Token 为小数", "最终独立综合 Token 上限", "1.5"],
-    ["Token 非数字", "最终独立综合 Token 上限", "NaN"],
-    ["尝试次数为零", "最终独立综合尝试次数上限", "0"],
-    ["尝试次数为负数", "最终独立综合尝试次数上限", "-1"],
-    ["尝试次数为小数", "最终独立综合尝试次数上限", "1.5"],
-    ["尝试次数非数字", "最终独立综合尝试次数上限", "NaN"],
-  ])("最终独立综合%s时禁止提交", (_case, label, value) => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fillValidSynthesisForm();
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-    expect(screen.getByRole("alert").textContent).toContain("最终独立综合");
-    expect(channel.all("mission_create")).toHaveLength(0);
-  });
-
-  it("最终独立综合超过 Mission 上限或系统 Token 预留时禁止提交", () => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fillValidSynthesisForm();
-    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
-    fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "101" } });
-    expect(submit.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("最终独立综合 Token 上限"), { target: { value: "100" } });
-    fireEvent.change(screen.getByLabelText("最终独立综合尝试次数上限"), { target: { value: "3" } });
-    expect(submit.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("最终独立综合尝试次数上限"), { target: { value: "2" } });
-    expect(submit.disabled).toBe(false);
-    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "1" } });
-    expect(submit.disabled).toBe(true);
-    expect(channel.all("mission_create")).toHaveLength(0);
-  });
-
-  it("最终独立综合失败时保留同一请求，成功后重置", () => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fillValidSynthesisForm();
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    const first = channel.last("mission_create")?.payload as Record<string, unknown>;
-    channel.reply("mission_create", {}, false, "invalid_request");
-    expect((screen.getByLabelText("最终独立综合") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText("最终独立综合目标") as HTMLTextAreaElement).value).toBe("独立汇总");
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.last("mission_create")?.payload).toEqual(first);
-    channel.reply("mission_create", {}, false, "invalid_request");
-    fireEvent.change(screen.getByLabelText("最终独立综合目标"), { target: { value: "修订后的独立汇总" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    const changed = channel.last("mission_create")?.payload as Record<string, unknown>;
-    expect(changed.idempotency_key).not.toBe(first.idempotency_key);
-    expect((changed.synthesis as Record<string, unknown>).goal).toBe("修订后的独立汇总");
-    channel.reply("mission_create", { mission_id: "mission-new" });
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect((screen.getByLabelText("最终独立综合") as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(screen.getByLabelText("最终独立综合"));
-    expect((screen.getByLabelText("最终独立综合目标") as HTMLTextAreaElement).value).toBe("");
-    expect((screen.getByLabelText("最终独立综合成功条件") as HTMLTextAreaElement).value).toBe("");
-    expect((screen.getByLabelText("最终独立综合 Token 上限") as HTMLInputElement).value).toBe("");
-    expect((screen.getByLabelText("最终独立综合尝试次数上限") as HTMLInputElement).value).toBe("");
-  });
-
   it("pastes sources and sends one atomic doc batch; failure preserves the draft", () => {
     const channel = renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
@@ -483,14 +366,13 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
-    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
     expect(screen.queryByTestId("submit-blocker")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.all("mission_source_register")).toHaveLength(0);
     const batch = channel.last("mission_create_with_sources")?.payload;
     expect(batch).toEqual({
-      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], conflict_reserve_tokens: 30000, idempotency_key: expect.any(String) },
+      mission: { domain: "doc-research-v1", goal: "比较文档", success_criteria: ["说明否定条件"], idempotency_key: expect.any(String) },
       sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
     expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
@@ -521,14 +403,6 @@ describe("P33 G creation and explicit approval branches", () => {
     expect(channel.last("mission_approval_decide")?.payload).toEqual({ approval_id: "source-approval", decision: "approve" });
   });
 
-  it("arbitration sends only actual keep/contextual/unresolved options with basis", () => {
-    const channel = openMission({ ...DETAIL, approvals: [{ request_id: "arb", kind: "arbitration", state: "PENDING", options: ["keep:c1", "contextual", "unresolved", "approve"] }] });
-    const approval = screen.getByTestId("approval-arb");
-    expect(within(approval).queryByRole("button", { name: "裁决：approve" })).toBeNull();
-    fireEvent.change(within(approval).getByLabelText("仲裁依据"), { target: { value: "条件不同" } });
-    fireEvent.click(within(approval).getByRole("button", { name: "裁决：contextual" }));
-    expect(channel.last("mission_approval_decide")?.payload).toEqual({ approval_id: "arb", decision: "arbitrate", ruling: "contextual", basis: "条件不同" });
-  });
 });
 
 describe("MissionsView（HA-10）", () => {
@@ -1159,65 +1033,6 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
     const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
     expect(payload.goal).toBe("写 NOTES.md");
     expect("budget" in payload).toBe(false); // the Host decides the defaults, the form never guesses
-  });
-
-  it("最终独立综合可使用 Host 下发的默认上限，而不补写 Mission budget", () => {
-    const channel = new FakeChannel();
-    render(<Workbench channel={channel} />);
-    channel.reply("orchestration_status", { ...AVAILABLE, mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 } });
-    channel.reply("mission_list", { missions: [] });
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fillValidSynthesisForm({ missionBudget: false });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    const payload = channel.last("mission_create")?.payload as Record<string, unknown>;
-    expect("budget" in payload).toBe(false);
-    expect(payload.synthesis).toEqual({
-      goal: "独立汇总",
-      success_criteria: ["file:FINAL.md"],
-      budget: { max_tokens: 50, max_attempts: 1 },
-    });
-  });
-
-  it("从原总预算中显式预留冲突核对额度", () => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对两份资料" } });
-    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
-    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.last("mission_create")?.payload).toMatchObject({
-      budget: { max_tokens: 240000 }, conflict_reserve_tokens: 30000,
-    });
-  });
-
-  it("成功创建后新表单不继承上一任务的冲突预留", () => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对资料" } });
-    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: "30000" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    channel.reply("mission_create", { mission_id: "mission-new" });
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect((screen.getByLabelText("冲突核对预留 Token") as HTMLInputElement).value).toBe("");
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "写新报告" } });
-    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NEW.md" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.all("mission_create")).toHaveLength(2);
-    expect(channel.last("mission_create")?.payload).not.toHaveProperty("conflict_reserve_tokens");
-  });
-
-  it.each(["-1", "1.5", "NaN", "240001"])("拒绝无效冲突预留 %s", (reserve) => {
-    const channel = renderAvailable();
-    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "核对资料" } });
-    fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
-    fireEvent.change(screen.getByLabelText("Token 上限"), { target: { value: "240000" } });
-    fireEvent.change(screen.getByLabelText("冲突核对预留 Token"), { target: { value: reserve } });
-    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole("alert").textContent).toContain("冲突核对预留");
-    expect(channel.all("mission_create")).toHaveLength(0);
   });
 
   it("没有下发默认值时，占位符仍是「可选」", () => {
