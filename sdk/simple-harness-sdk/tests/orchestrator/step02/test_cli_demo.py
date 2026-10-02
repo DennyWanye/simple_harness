@@ -2,97 +2,44 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Step 2 · C4: ``python -m agent_orchestrator mission create`` validates and is idempotent,
-and the operator commands read back the same library (the flat-mode demos were removed on
-2026-10-02)."""
+"""Step 2 · C4: the operator commands read back the library a deployment wrote.
+
+Missions are created only by a deployment (``mission create`` was removed on 2026-10-03);
+here the SDK's product-shaped world creates one, and the CLI reads it back."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
-from agent_orchestrator.__main__ import EXIT_OK, main
+import pytest
 
-EVIDENCE_FILES = {
-    "baseline.json",
-    "events.jsonl",
-    "final_state.json",
-    "verification.json",
-    "costs.json",
-    "test-report.json",
-}
+from agent_orchestrator.__main__ import EXIT_OK, EXIT_USAGE, main
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import product_world
 
 
-def test_mission_create_validates_and_is_idempotent(tmp_path, capsys):
+def _created(evidence: Path, key: str) -> str:
+    async def case() -> str:
+        async with product_world(evidence, RoleScriptedProvider({})) as world:
+            return world.create({"goal": "x", "success_criteria": ["file:a.py"], "idempotency_key": key})["mission_id"]
+
+    return asyncio.run(case())
+
+
+def test_the_cli_has_no_create_command(capsys):
+    with pytest.raises(SystemExit):
+        main(["mission", "create", "--evidence-dir", "x"])
+
+
+def test_read_commands_answer_for_a_deployment_created_mission(tmp_path, capsys):
     evidence = Path(tmp_path) / "evidence"
-    spec_path = Path(tmp_path) / "spec.json"
-    spec_path.write_text(json.dumps({"goal": "x", "success_criteria": [], "idempotency_key": "k"}))
-    import pytest
-
-    from agent_orchestrator.api.missions import MissionRequestError
-
-    with pytest.raises(MissionRequestError):
-        main(
-            [
-                "mission",
-                "create",
-                "--evidence-dir",
-                str(evidence),
-                "--spec",
-                str(spec_path),
-                "--tenant",
-                "t",
-            ]
-        )
-    spec_path.write_text(
-        json.dumps(
-            {
-                "goal": "x",
-                "success_criteria": ["file:a.py"],
-                "idempotency_key": "k",
-                "budget": {"max_attempts": 1},
-            }
-        )
-    )
-    assert (
-        main(
-            [
-                "mission",
-                "create",
-                "--evidence-dir",
-                str(evidence),
-                "--spec",
-                str(spec_path),
-                "--tenant",
-                "t",
-            ]
-        )
-        == EXIT_OK
-    )
-    first = json.loads(capsys.readouterr().out)
-    assert first["created"] is True
-    assert (
-        main(
-            [
-                "mission",
-                "create",
-                "--evidence-dir",
-                str(evidence),
-                "--spec",
-                str(spec_path),
-                "--tenant",
-                "t",
-            ]
-        )
-        == EXIT_OK
-    )
-    second = json.loads(capsys.readouterr().out)
-    assert second["created"] is False and second["mission_id"] == first["mission_id"]
-    # the read commands answer for the Mission just created
-    assert main(["mission", "get", "--evidence-dir", str(evidence), first["mission_id"]]) == EXIT_OK
+    mission_id = _created(evidence, "k")
+    assert main(["mission", "get", "--evidence-dir", str(evidence), mission_id]) == EXIT_OK
     snapshot = json.loads(capsys.readouterr().out)
-    assert snapshot["mission"]["id"] == first["mission_id"]
-    assert main(["mission", "events", "--evidence-dir", str(evidence), first["mission_id"]]) == EXIT_OK
+    assert snapshot["mission"]["id"] == mission_id
+    assert main(["mission", "events", "--evidence-dir", str(evidence), mission_id]) == EXIT_OK
     events = json.loads(capsys.readouterr().out)
     assert events and events[0]["type"] == "MissionCreated"
 
@@ -102,16 +49,11 @@ def test_replay_answers_with_a_usage_error_or_a_complete_report(tmp_path, capsys
     a Mission just created replays consistently with full coverage, and so does its
     attribution read (exit 0)."""
 
-    from agent_orchestrator.__main__ import EXIT_USAGE
-
     evidence = Path(tmp_path) / "evidence"
     assert main(["replay", "--evidence-dir", str(evidence), "mission-x"]) == EXIT_USAGE
     assert "no library" in json.loads(capsys.readouterr().out)["error"]
 
-    spec_path = Path(tmp_path) / "spec.json"
-    spec_path.write_text(json.dumps({"goal": "x", "success_criteria": ["file:a.py"], "idempotency_key": "r"}))
-    assert main(["mission", "create", "--evidence-dir", str(evidence), "--spec", str(spec_path), "--tenant", "t"]) == EXIT_OK
-    mission_id = json.loads(capsys.readouterr().out)["mission_id"]
+    mission_id = _created(evidence, "r")
     assert main(["replay", "--evidence-dir", str(evidence), "--attribution", mission_id]) == EXIT_OK
     report = json.loads(capsys.readouterr().out)
     assert report["comparison"]["consistent"] is True and report["gaps"] == []
