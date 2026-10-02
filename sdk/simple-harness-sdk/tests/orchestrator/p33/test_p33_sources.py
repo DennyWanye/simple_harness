@@ -36,11 +36,7 @@ import pytest
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.contracts import ContractError
-from agent_orchestrator.governance.domains import (
-    CODE_DOMAIN,
-    DOC_DOMAIN,
-    DOC_PROFILE,
-)
+from agent_orchestrator.governance.domains import CODE_DOMAIN, CODE_PROFILE
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.observability.replay import (
@@ -66,7 +62,7 @@ def env(tmp_path):
     store = Store.open(tmp_path / "orchestrator.db", clock=lambda: now[0])
     cas = ArtifactStore(tmp_path / "cas")
     commit = CommitService(
-        store, artifact_store=cas, deployed_layers=frozenset(DOC_PROFILE.runs_layers)
+        store, artifact_store=cas, deployed_layers=frozenset(CODE_PROFILE.runs_layers)
     )
     deployment = DeploymentPolicy(approval_ttl_seconds=10)
     host = SimpleNamespace(
@@ -79,7 +75,7 @@ def env(tmp_path):
             success_criteria=("file:REPORT.md",),
             tenant_id="one",
             idempotency_key="source-mission",
-            domain=DOC_DOMAIN,
+            domain=CODE_DOMAIN,
         )
     )
     api = MissionControlV1(host, tenant_id="one", principal=Principal("person-one"))
@@ -543,7 +539,7 @@ def test_code_missions_and_commit_without_cas_keep_old_behavior(env):
         )
     )
     before = e.store.snapshot(mission.id)
-    # 2026-09-26 用户决定：通用（code）任务 v5 也可附资料，但只限 ``sources/`` 目录；
+    # 2026-09-26 用户决定：通用（code）任务也可附资料，但只限 ``sources/`` 目录；
     # 目录外的路径照旧按"找不到"拒绝，一个字节都不写。
     with pytest.raises(FacadeError) as outside:
         _register(e, mission_id=mission.id, path="notes/report.md")
@@ -613,7 +609,7 @@ def test_memory_store_requires_explicit_cas_instead_of_writing_cwd(tmp_path, mon
                 success_criteria=("file:x",),
                 tenant_id="one",
                 idempotency_key="memory",
-                domain=DOC_DOMAIN,
+                domain=CODE_DOMAIN,
                 )
         )
         with pytest.raises(SourceCommitError, match="explicit CAS"):

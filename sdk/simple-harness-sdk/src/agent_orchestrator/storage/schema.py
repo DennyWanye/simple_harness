@@ -621,6 +621,14 @@ DROP TABLE IF EXISTS mission_system_tail_tasks;
 DROP TABLE IF EXISTS mission_system_tail_pools;
 """
 
+# 2026-10-02 (删旧平面模式第三刀第 5 步, strict citation option A): the document domain's
+# per-criterion citation receipts lost their only writer.  Migration 26's import barrier
+# is frozen as literal text, so its triggers on this table go with the table.
+DDL_V33 = """
+DROP INDEX IF EXISTS criterion_assessments_result_idx;
+DROP TABLE IF EXISTS criterion_assessments;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -654,6 +662,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(30, "orchestrator-manifest-binding-revision-at-or-before", DDL_V30),
     Migration(31, "orchestrator-drop-selection-and-fragments", DDL_V31),
     Migration(32, "orchestrator-drop-conflicts-graph-changes-system-tail", DDL_V32),
+    Migration(33, "orchestrator-drop-criterion-assessments", DDL_V33),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

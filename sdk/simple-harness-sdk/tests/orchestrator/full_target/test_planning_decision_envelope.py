@@ -263,7 +263,6 @@ def test_repair_kind_members_are_pinned() -> None:
         ("CANCEL_BRANCH", "CANCEL_BRANCH"),
         ("RETRY_SAME_METHOD", "RETRY_SAME_METHOD"),
         ("DECLARE_RUNTIME_BLOCKED", "DECLARE_RUNTIME_BLOCKED"),
-        ("REQUEST_COMPENSATION", "REQUEST_COMPENSATION"),
         ("PROPOSE_SUCCESSOR", "PROPOSE_SUCCESSOR"),
     ]
 

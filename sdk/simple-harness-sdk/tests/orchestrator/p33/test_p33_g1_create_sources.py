@@ -21,7 +21,7 @@ import pytest
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.api.missions import spec_from_request
 from agent_orchestrator.artifacts.store import ArtifactStore
-from agent_orchestrator.governance.domains import DOC_DOMAIN
+from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.observability.replay import (
@@ -45,7 +45,7 @@ def command():
         "mission": {
             "goal": "比较原始资料",
             "success_criteria": ["file:REPORT.md"],
-            "domain": DOC_DOMAIN,
+            "domain": CODE_DOMAIN,
             "idempotency_key": "g1-batch",
             "budget": {"max_tokens": 30000, "max_attempts": 4},
         },

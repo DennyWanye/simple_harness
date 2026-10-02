@@ -18,8 +18,10 @@ from knowledge_helpers import (
     passed_layers,
     submit,
     two_leaf_service,
+    verify_claims_citing_pytest,
 )
 
+from agent_orchestrator.governance.domains import CODE_PROFILE
 from agent_orchestrator.artifacts.paths import normalise_workspace_path, under_prefix
 from agent_orchestrator.contracts import Budget, ClaimStatus, jsonable
 from agent_orchestrator.memory.claims import grade_claim
@@ -73,6 +75,7 @@ def test_one_canonical_path_backs_the_untrusted_rule():
             verifier_results=[],
             artifact_paths=["docs/vendor_notes.md", "notes/x.md"],
             untrusted_prefixes=["docs/"],
+            domain=CODE_PROFILE,
         )
         assert grade.status is ClaimStatus.UNDER_REVIEW and grade.basis["grade"] == "unsupported", (
             evidence
@@ -155,7 +158,8 @@ def test_v1_library_with_duplicate_lineage_rows_upgrades_and_renumbers(tmp_path)
 
 
 # ------------------------------------------------------------------ P2-13 / real-run finding
-def test_supersession_keeps_the_record_version_and_sdk_errors_are_jsonable(tmp_path):
+def test_supersession_keeps_the_record_version_and_sdk_errors_are_jsonable(tmp_path, monkeypatch):
+    verify_claims_citing_pytest(monkeypatch)
     service, mission, (t1, t2) = two_leaf_service(tmp_path)
     a1 = drive_to_running(service, t1)
     s1 = submit(

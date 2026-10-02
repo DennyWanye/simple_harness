@@ -617,8 +617,8 @@ def planned(htn: HtnStore) -> HtnStore:
 
 
 def test_operation_completion_is_the_new_head_without_replacing_admission() -> None:
-    assert schema.SCHEMA_VERSION == 32  # 迁移 25～32 已追加在后
-    assert schema.SCHEMA_NAME == "orchestrator-drop-conflicts-graph-changes-system-tail"
+    assert schema.SCHEMA_VERSION == 33  # 迁移 25～33 已追加在后
+    assert schema.SCHEMA_NAME == "orchestrator-drop-criterion-assessments"
     assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL
@@ -883,11 +883,6 @@ LEGACY_TAIL_ROWS: tuple[tuple[str, str, tuple[Any, ...]], ...] = (
         "sources",
         "INSERT INTO sources VALUES (?,?,?,?,?,?,?,?,?,?)",
         (MISSION, "t", "docs/a.md", "d" * 64, "file", "untrusted_external", 1.0, None, 0, 1),
-    ),
-    (
-        "criterion_assessments",
-        "INSERT INTO criterion_assessments VALUES (?,?,?,?,?,?,?,?)",
-        ("receipt-1", MISSION, "task-1", "result-1", "claim-1", "c-1", "{}", 1.0),
     ),
     (
         "provider_token_grants",

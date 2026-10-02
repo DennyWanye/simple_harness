@@ -695,7 +695,6 @@
         "CANCEL_BRANCH",
         "RETRY_SAME_METHOD",
         "DECLARE_RUNTIME_BLOCKED",
-        "REQUEST_COMPENSATION",
         "PROPOSE_SUCCESSOR"
       ]
     },
@@ -904,38 +903,6 @@
           }
         }
       }
-    },
-    "repairCompensationPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "repair_kind",
-        "action_key",
-        "action_hash",
-        "reason"
-      ],
-      "properties": {
-        "repair_kind": {
-          "$ref": "#/$defs/repairKind",
-          "const": "REQUEST_COMPENSATION"
-        },
-        "action_key": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        },
-        "action_hash": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 20000
-        }
-      }
     }
   },
   "allOf": [
@@ -1016,9 +983,6 @@
               },
               {
                 "$ref": "#/$defs/repairRuntimeBlockedPayload"
-              },
-              {
-                "$ref": "#/$defs/repairCompensationPayload"
               },
               {
                 "$ref": "#/$defs/repairProposeSuccessorPayload"

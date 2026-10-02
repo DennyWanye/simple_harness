@@ -45,11 +45,12 @@ def test_k02_dangling_reference_does_not_support_a_claim(tmp_path, reference):
     assert stored_claim.status is ClaimStatus.UNDER_REVIEW
 
 
-def test_new_missions_freeze_strict_code_grading(tmp_path):
+def test_new_missions_freeze_the_current_code_profile(tmp_path):
+    # One grading rule for every domain (删旧平面模式第三刀): there is no per-profile switch.
     service, mission, _ = two_leaf_service(tmp_path)
     domain = service.domain_for(mission.id)
-    assert domain.version == "5"  # 2026-09-26：通用任务 v5 只加资料目录，判分规则仍同 v4
-    assert domain.completion_rules["claim_grading"] == "scoped-observation-v2"
+    assert domain.version == "6"
+    assert "claim_grading" not in domain.completion_rules
     assert domain.completion_rules["result_envelope_contract"] == "candidate-json-v1"
 
 
@@ -120,12 +121,16 @@ async def test_k03_only_current_recorded_execution_produces_scoped_knowledge(tmp
         assert semantic[0].status is ClaimStatus.UNDER_REVIEW
 
 
-def test_missing_domain_binding_keeps_legacy_semantics():
-    from agent_orchestrator.governance.domains import DomainProfileV1, resolve_domain
+def test_no_domain_is_the_current_general_profile_and_round_trips():
+    from agent_orchestrator.governance.domains import (
+        CODE_PROFILE,
+        DomainProfileV1,
+        resolve_domain,
+    )
 
-    legacy = resolve_domain(None)
-    assert legacy.version == "1"
-    assert DomainProfileV1.from_json(legacy.to_json()) == legacy
+    general = resolve_domain(None)
+    assert general is CODE_PROFILE
+    assert DomainProfileV1.from_json(general.to_json()) == general
 
 
 @pytest.mark.parametrize("scope", ["same", "other-mission", "other-attempt", "failed"])

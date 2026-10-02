@@ -21,11 +21,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..artifacts.paths import under_prefix
 from ..artifacts.workspace import Workspace, sha256_file
 from ..contracts import Artifact, ResultEnvelope, Task
 from ..contracts.models import sha256_hex
-from ..governance.domains import CODE_PROFILE, DomainProfileV1
+from ..governance.domains import DomainProfileV1
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..runtime.tool_gateway import run_pytest
 
@@ -71,52 +70,6 @@ def check_used_knowledge(used_knowledge: Sequence[str], index: KnowledgeIndex) -
     return index.check(used_knowledge)
 
 
-def check_arbitration(
-    envelope: ResultEnvelope, task: Task, *, domain: DomainProfileV1 | None = None
-) -> list[str]:
-    """D4-7: an ``arbitration:<key>`` criterion demands exactly one claim on that key —
-    an opinion is not a resolution.
-
-    P3.3 (plan v3 D1/D6): *what* backs it is the domain's business.  The code domain is
-    unchanged: a ``pytest:`` probe run under ``arbitration/<key>/``.  A domain whose
-    template settles disputes with a person (``decides_with == "human_review"``) demands
-    no such evidence — requiring a citation kind the domain forbids would leave every
-    conflict Task permanently unfinishable.
-    """
-
-    profile = domain if domain is not None else CODE_PROFILE
-    external = profile.conflict_template.decides_with
-    problems: list[str] = []
-    for criterion in task.success_criteria:
-        if not criterion.startswith("arbitration:"):
-            continue
-        key = criterion.removeprefix("arbitration:").strip()
-        matching = [claim for claim in envelope.claims if claim.key == key]
-        if len(matching) != 1:
-            problems.append(
-                f"arbitration of {key!r} needs exactly one claim on that key (got {len(matching)})"
-            )
-            continue
-        if external == "human_review":
-            # the sixth layer is the external check here; nothing to demand of the citation
-            continue
-        evidence = matching[0].evidence or envelope.evidence
-        probes = [item for item in evidence if item.startswith("pytest:")]
-        if not probes:
-            problems.append(
-                f"arbitration of {key!r} must cite an external check (pytest: evidence), not an opinion"
-            )
-            continue
-        directory = str(task.context.get("artifact_dir") or "")
-        if directory and not any(
-            under_prefix(item.removeprefix("pytest:"), (directory,)) for item in probes
-        ):
-            problems.append(
-                f"arbitration of {key!r} must run its probe under {directory}/ (got {probes})"
-            )
-    return problems
-
-
 def rule_check(
     envelope: ResultEnvelope,
     task: Task,
@@ -135,7 +88,6 @@ def rule_check(
     problems.extend(extra_problems)  # step 7 (D7-2''): action candidates, checked by the caller
     if knowledge is not None:
         problems.extend(check_used_knowledge(envelope.used_knowledge, knowledge))
-    problems.extend(check_arbitration(envelope, task, domain=domain))
     by_path = {artifact.path: artifact for artifact in artifacts}
     if envelope.outcome.value != "candidate":
         problems.append(f"outcome is {envelope.outcome}, not a candidate")
@@ -157,12 +109,7 @@ def rule_check(
             problems.append(f"artifact {reference!r} hash differs from the recorded artifact")
     if not envelope.claims:
         problems.append("no claims were submitted")
-    document_citations = (
-        domain is not None
-        and domain.id == "doc-research-v1"
-        and all(claim.citations for claim in envelope.claims)
-    )
-    if envelope.claims and not envelope.evidence and not document_citations:
+    if envelope.claims and not envelope.evidence:
         problems.append("claims cite no evidence")
     for criterion in task.success_criteria:
         if criterion.startswith("file:"):
@@ -315,7 +262,6 @@ __all__ = (
     "NOT_REQUIRED",
     "PASS",
     "LayerResult",
-    "check_arbitration",
     "check_used_knowledge",
     "code_test",
     "format_check",

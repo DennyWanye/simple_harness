@@ -10,7 +10,7 @@ import pytest
 
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
 from agent_orchestrator.contracts import ContractError
-from agent_orchestrator.governance.domains import APPWORLD_PROFILE, CODE_PROFILE, DOC_PROFILE
+from agent_orchestrator.governance.domains import APPWORLD_PROFILE, CODE_PROFILE
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
 from agent_orchestrator.verification.domain_handlers import handler_for
@@ -157,23 +157,25 @@ def test_appworld_capability_snapshot_is_stable_and_does_not_serialize_callback(
     assert enabled["hash"] == equivalent["hash"] != disabled["hash"]
 
 
-def test_third_domain_is_explicit_and_unknown_does_not_become_document():
+def test_domains_are_explicit_and_unknown_is_refused():
     assert handler_for(CODE_PROFILE).name == "code"
-    assert handler_for(DOC_PROFILE).name == "document"
     assert handler_for(APPWORLD_PROFILE).name == "appworld"
-    assert not handler_for(APPWORLD_PROFILE).document_assessments
     with pytest.raises(ContractError, match="No verification handler"):
         handler_for(replace(APPWORLD_PROFILE, id="unknown"))
 
 
 def test_appworld_templates_never_expose_evaluator_or_pytest_tool():
-    # The profile still names removed roles (Manager, Worker variants); nothing asks for them.
-    for role in (name for name in APPWORLD_PROFILE.role_templates if name in ROLES):
-        template = template_for_domain(ROLES[role], APPWORLD_PROFILE, {})
+    from agent_orchestrator.runtime.role_templates import hierarchical_worker_for_domain
+
+    templates = [
+        template_for_domain(ROLES[role], APPWORLD_PROFILE, {})
+        for role in APPWORLD_PROFILE.role_templates
+    ]
+    worker = hierarchical_worker_for_domain(APPWORLD_PROFILE)
+    for template in (*templates, worker):
         assert "run_tests" not in template.tool_names
         assert not any("evaluat" in name for name in template.tool_names)
-        if role not in {"planner", "critic"}:
-            assert "appworld_execute" in template.tool_names
+    assert "appworld_execute" in worker.tool_names
 
 
 @pytest.mark.anyio

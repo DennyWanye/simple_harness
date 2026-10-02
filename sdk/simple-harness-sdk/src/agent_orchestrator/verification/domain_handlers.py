@@ -8,7 +8,6 @@ from ..contracts import ContractError
 from ..governance.domains import (
     APPWORLD_DOMAIN,
     CODE_DOMAIN,
-    DOC_DOMAIN,
     DRONE_SIM_DOMAIN,
     DomainProfileV1,
 )
@@ -17,15 +16,9 @@ from .deterministic_checks import LayerResult, rule_check
 
 class CodeHandler:
     name = "code"
-    document_assessments = False
 
     def rules(self, *args: Any, **kwargs: Any) -> LayerResult:
         return rule_check(*args, **kwargs)
-
-
-class DocumentHandler(CodeHandler):
-    name = "document"
-    document_assessments = True
 
 
 class AppWorldHandler(CodeHandler):
@@ -54,7 +47,6 @@ class DroneSimHandler(AppWorldHandler):
 
 _HANDLERS = {
     CODE_DOMAIN: CodeHandler(),
-    DOC_DOMAIN: DocumentHandler(),
     APPWORLD_DOMAIN: AppWorldHandler(),
     DRONE_SIM_DOMAIN: DroneSimHandler(),
 }

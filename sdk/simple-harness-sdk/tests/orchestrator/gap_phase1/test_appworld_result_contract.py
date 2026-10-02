@@ -1,64 +1,26 @@
-"""The example shown to AppWorld result-producing roles must pass real ingress."""
+"""The AppWorld profile's prompt choices: one current profile, roles it names are real.
 
-import json
+删旧平面模式第三刀第 4 步（2026-10-02）：AppWorld 只留一份当前档案；平面 AppWorld
+执行者模板（v1～v3）与历史档案版本一起删了，档案里只剩审阅员覆盖，分层执行者由
+``HIERARCHICAL_WORKER_TEMPLATES`` 指定。
+"""
 
-import pytest
-
-from agent_orchestrator.contracts import ContractError, ResultEnvelope
-from agent_orchestrator.governance.domains import (
-    APPWORLD_PROFILE,
-    APPWORLD_PROFILE_V1,
-    APPWORLD_PROFILE_V2,
-    DomainProfileV1,
-    resolve_domain,
-)
+from agent_orchestrator.governance.domains import APPWORLD_PROFILE, resolve_domain
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 
-RESULT_ROLES = ("worker",)
-#: Roles removed on 2026-10-02 (the Manager, the five Worker variants only it could set,
-#: the Arbiter of conflict Tasks, the Synthesizer of the final synthesis Task and the
-#: flat-mode Planner — the hierarchical Planner is not chosen per profile).
-#: Published profiles still name them until the benchmark arms are settled;
-#: ``template_for_domain`` never asks for them.
-REMOVED_ROLES = frozenset(
-    {"manager", "explorer", "exploiter", "simplifier", "connector", "failure_analyst",
-     "arbiter", "synthesizer", "planner"}
-)
+
+def test_the_appworld_profile_has_one_current_version():
+    assert resolve_domain("appworld-v1") is APPWORLD_PROFILE
+    assert APPWORLD_PROFILE.version == "4"
 
 
-@pytest.mark.parametrize("role", RESULT_ROLES)
-def test_published_appworld_result_example_passes_strict_ingress(role):
-    prompt = template_for_domain(ROLES[role], APPWORLD_PROFILE, {}).instructions
-    example, _ = json.JSONDecoder().raw_decode(prompt[prompt.index('{"'):])
-    # Ingress supplies its own result identity; the Agent supplies the other fields.
-    envelope = ResultEnvelope.from_json({**example, "id": "result-provisional"})
-    assert envelope.outcome == "candidate"
-
-
-def test_new_default_and_frozen_legacy_keep_distinct_contract_versions():
-    assert resolve_domain("appworld-v1").version == "3"
-    restored = DomainProfileV1.from_json(APPWORLD_PROFILE_V1.to_json())
-    assert restored.version == "1"
-    for role in RESULT_ROLES:
-        legacy = template_for_domain(ROLES[role], restored, {})
-        current = template_for_domain(ROLES[role], APPWORLD_PROFILE, {})
-        assert legacy.prompt_version == f"{role}-appworld-v1"
-        assert current.prompt_version == f"{role}-appworld-v3"
-        assert {"knowledge_list", "knowledge_read"} <= set(current.tool_names)
-        assert "SUPERSEDED" in current.instructions
-        previous = template_for_domain(ROLES[role], APPWORLD_PROFILE_V2, {})
-        assert previous.prompt_version == f"{role}-appworld-v2"
-        assert "knowledge_list" not in previous.tool_names
-        assert "used_knowledge只填写当前上下文提供的ID。" in previous.instructions
-        example, _ = json.JSONDecoder().raw_decode(
-            legacy.instructions[legacy.instructions.index('{"'):]
-        )
-        with pytest.raises(ContractError, match="unknown fields.*schema_version"):
-            ResultEnvelope.from_json({**example, "id": "result-provisional"})
-    for role in ("critic",):
-        assert template_for_domain(ROLES[role], restored, {}) == template_for_domain(
-            ROLES[role], APPWORLD_PROFILE, {}
-        )
+def test_the_appworld_critic_override_resolves_to_a_registered_template():
+    assert dict(APPWORLD_PROFILE.role_templates) == {"critic": "critic-appworld-v1"}
+    critic = template_for_domain(ROLES["critic"], APPWORLD_PROFILE, {})
+    assert critic.prompt_version == "critic-appworld-v1"
+    # roles the profile does not override fall back to the system template
+    worker = template_for_domain(ROLES["worker"], APPWORLD_PROFILE, {})
+    assert worker == ROLES["worker"]
 
 
 def test_the_hierarchical_worker_pointer_is_beside_the_profile_not_inside_it():
@@ -66,18 +28,13 @@ def test_the_hierarchical_worker_pointer_is_beside_the_profile_not_inside_it():
 
     It is **not** a ``role_templates`` entry: that mapping is read as "role name →
     prompt version" both by ``template_for_domain`` and by callers that iterate it, so
-    a ``worker_hierarchical`` key there is a key that breaks both readings.  Keeping
-    the pointer beside the profiles also means no profile version has to move: the
-    hierarchical mode had no working AppWorld path to replay.
+    a ``worker_hierarchical`` key there is a key that breaks both readings.
     """
 
     from agent_orchestrator.governance.domains import HIERARCHICAL_WORKER_TEMPLATES
-    from agent_orchestrator.runtime.role_templates import (
-        ROLES,
-        hierarchical_worker_for_domain,
-    )
+    from agent_orchestrator.runtime.role_templates import hierarchical_worker_for_domain
 
-    assert set(APPWORLD_PROFILE.role_templates) - REMOVED_ROLES <= set(ROLES), (
+    assert set(APPWORLD_PROFILE.role_templates) <= set(ROLES), (
         "every key of role_templates names a role; a non-role key breaks both readers"
     )
     assert HIERARCHICAL_WORKER_TEMPLATES["appworld-v1"] == "worker-appworld-hierarchical-v1"

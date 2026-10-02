@@ -91,7 +91,7 @@ def read_local_check_binding_locked(
         or result["mission_id"] != mission_id
         or event["task_id"] != result["task_id"]
         or event["attempt_id"] != result["attempt_id"]
-        or manifest.get("schema") != "assurance-local-verification-input-v1"
+        or manifest.get("schema") != "assurance-local-verification-input-v2"
         or manifest.get("envelope") != result
         or manifest.get("tenant_id") != adapter.tenant_id
         or manifest.get("subject_hash") != result_ref.pin.content_hash

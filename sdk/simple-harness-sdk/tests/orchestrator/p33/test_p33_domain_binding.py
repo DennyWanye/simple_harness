@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from agent_orchestrator.contracts import Budget
-from agent_orchestrator.governance.domains import CODE_DOMAIN, DOC_DOMAIN
+from agent_orchestrator.governance.domains import APPWORLD_DOMAIN, CODE_DOMAIN
 from agent_orchestrator.orchestrator.commit_service import CommitRejected, MissionSpec
 from agent_orchestrator.storage.store import Store
 
@@ -39,12 +39,12 @@ def test_p33_a14_a_mission_freezes_its_domain_at_creation(tmp_path) -> None:
     from agent_orchestrator.orchestrator.commit_service import CommitService
 
     service = CommitService(store)
-    mission, _ = service.create_mission(spec("d-1", domain=DOC_DOMAIN))
+    mission, _ = service.create_mission(spec("d-1", domain=APPWORLD_DOMAIN))
     binding = store.get_mission_domain(mission.id)
     assert binding is not None
-    assert binding["domain_id"] == DOC_DOMAIN
+    assert binding["domain_id"] == APPWORLD_DOMAIN
     # 快照是内容的一份副本，不是指向当前注册表的指针：回放只读它
-    assert binding["json"]["id"] == DOC_DOMAIN
+    assert binding["json"]["id"] == APPWORLD_DOMAIN
     assert "code_test" not in binding["json"]["default_policy"]
 
 
@@ -85,6 +85,6 @@ def test_p33_a18_mission_created_carries_the_domain(tmp_path) -> None:
 
     store = Store.open(tmp_path / "orchestrator.db")
     service = CommitService(store)
-    mission, _ = service.create_mission(spec("d-4", domain=DOC_DOMAIN))
+    mission, _ = service.create_mission(spec("d-4", domain=APPWORLD_DOMAIN))
     created = [e for e in store.list_events(mission.id) if e.type == "MissionCreated"]
-    assert created and created[0].payload["domain_id"] == DOC_DOMAIN
+    assert created and created[0].payload["domain_id"] == APPWORLD_DOMAIN

@@ -24,7 +24,7 @@ if str(_OPERATION) not in sys.path:
 from operation_runtime_fixture import materialized_file_publish  # noqa: E402
 
 from agent_orchestrator.artifacts.store import ArtifactStore
-from agent_orchestrator.governance.domains import CODE_PROFILE_V4, DOC_DOMAIN
+from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
@@ -100,7 +100,7 @@ def source_mission(e, *, revoked=False, ended=False):
             success_criteria=("file:notes.md",),
             tenant_id="another-tenant",
             idempotency_key="document",
-            domain=DOC_DOMAIN,
+            domain=CODE_DOMAIN,
         )
     )
     receipt = e.service.register_source(
@@ -201,15 +201,15 @@ def test_revoked_history_and_ended_mission_still_protect_shared_storage(env):
     assert publisher.executions == 0
 
 
-def test_document_domain_without_registered_sources_already_reserves_storage(env):
+def test_mission_without_registered_sources_already_reserves_storage(env):
     e = env
     e.service.create_mission(
         MissionSpec(
             goal="等待导入来源",
             success_criteria=("file:notes.md",),
-            tenant_id="doc",
+            tenant_id="another",
             idempotency_key="empty-document",
-            domain=DOC_DOMAIN,
+            domain=CODE_DOMAIN,
         )
     )
     publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
@@ -217,10 +217,10 @@ def test_document_domain_without_registered_sources_already_reserves_storage(env
     assert publisher.executions == 0
 
 
-@pytest.mark.parametrize("documents", [False, True])
-def test_disjoint_publish_executes_with_or_without_document_missions(env, documents):
+@pytest.mark.parametrize("sources", [False, True])
+def test_disjoint_publish_executes_with_or_without_source_missions(env, sources):
     e = env
-    if documents:
+    if sources:
         source_mission(e)
     # Prefix sibling is not a descendant: library/workspaces-published remains valid.
     root = e.roots[1].with_name("workspaces-published")
@@ -230,18 +230,6 @@ def test_disjoint_publish_executes_with_or_without_document_missions(env, docume
     assert result["state"] == "SUCCEEDED" and publisher.executions == 1
     published = Path(result["receipt"]["after"]["path"]).read_bytes()
     assert published == e.cas.path_for(e.action["params"]["content_hash"]).read_bytes()
-
-
-def test_pure_code_library_keeps_legacy_publishing_without_roots_hook(env, monkeypatch):
-    e = env
-    # 2026-09-26 起新建的通用（code）任务 v5 带 ``sources/`` 资料目录，不再算"纯代码库"；
-    # 纯代码库只剩冻结在 v1～v4 通用档案下的旧任务。这里把库里任务按冻结的 v4 档案读，
-    # 验证旧库照旧无需物理目录钩子即可发布。
-    monkeypatch.setattr(e.service, "domain_for", lambda mission_id: CODE_PROFILE_V4)
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "legacy-ledger")
-    run = ActionExecutor(e.service, {"file_publish": publisher}, DEPLOYMENT, owner="legacy")
-    result = asyncio.run(run.hand_off(e.action["action_key"]))
-    assert result["state"] == "SUCCEEDED" and publisher.executions == 1
 
 
 def test_current_code_library_without_roots_hook_fails_closed(env):
@@ -254,7 +242,7 @@ def test_current_code_library_without_roots_hook_fails_closed(env):
     assert publisher.executions == 0
 
 
-def test_document_library_without_physical_roots_fails_closed(env):
+def test_source_library_without_physical_roots_fails_closed(env):
     e = env
     source_mission(e)
     run = ActionExecutor(e.service, {"file_publish": e.publisher}, DEPLOYMENT, owner="no-roots")
@@ -263,7 +251,7 @@ def test_document_library_without_physical_roots_fails_closed(env):
     assert e.publisher.executions == 0
 
 
-def test_guard_observes_document_missions_created_after_executor_construction(env):
+def test_guard_observes_source_missions_created_after_executor_construction(env):
     e = env
     publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
     run = executor(e, publisher)

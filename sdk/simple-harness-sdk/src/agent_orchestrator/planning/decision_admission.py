@@ -54,7 +54,6 @@ from ..contracts.planning_decisions import (
     RepairCancelBranchDecision,
     RepairRetrySameMethodDecision,
     RepairRuntimeBlockedDecision,
-    RepairCompensationRequestDecision,
     RepairProposeSuccessorDecision,
     RepairReplaceMethodDecision,
     RequestEvidenceDecision,
@@ -1136,7 +1135,7 @@ def _check_payload(
     """§43 stage 8 / §24–§31: the per-type payload rules."""
 
     payload = decision.payload
-    if isinstance(payload, (RepairRuntimeBlockedDecision, RepairCompensationRequestDecision)):
+    if isinstance(payload, RepairRuntimeBlockedDecision):
         if not context.repair_allowed:
             stage.refuse(REJECTION.REPAIR_NOT_ALLOWED, "repair is disabled for this request",
                          field_path="/payload/repair_kind")

@@ -51,11 +51,8 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
 )
 from agent_orchestrator.planning.htn.method_proposals import SYSTEM_BOUND_FIELDS  # noqa: E402
 from agent_orchestrator.runtime.role_templates import (  # noqa: E402
-    PLAN_REVISION_PROPOSAL_TAG,
     PLANNER_HIERARCHICAL,
     PLANNER_HIERARCHICAL_VERSION,
-    TASK_GRAPH_PROPOSAL_TAG,
-    TASK_PROPOSAL_TAG,
     TEMPLATE_VERSIONS,
     registered_versions,
 )
@@ -123,8 +120,8 @@ def test_the_mission_is_supplied_by_the_caller_not_the_block():
     assert str(_parse().mission_id) == MISSION
     assert "mission_id" not in json.loads(
         _block()
-        .removeprefix(f"<{PLAN_REVISION_PROPOSAL_TAG}>")
-        .removesuffix(f"</{PLAN_REVISION_PROPOSAL_TAG}>")
+        .removeprefix("<plan_revision_proposal>")
+        .removesuffix("</plan_revision_proposal>")
     )
 
 
@@ -282,15 +279,6 @@ def test_an_unknown_operation_is_refused_with_the_known_ones_named():
 
 def test_an_unknown_running_work_policy_is_refused():
     assert "running_work_policy" in _refused(running_work_policy="just_kill_it")
-
-
-def test_the_two_new_tags_are_distinct_from_each_other_and_from_the_old_ones():
-    tags = {
-        PLAN_REVISION_PROPOSAL_TAG,
-        TASK_GRAPH_PROPOSAL_TAG,
-        TASK_PROPOSAL_TAG,
-    }
-    assert len(tags) == 3
 
 
 # ============================================================ the template registry

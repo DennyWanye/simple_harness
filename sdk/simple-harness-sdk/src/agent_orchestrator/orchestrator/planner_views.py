@@ -209,11 +209,6 @@ def read_planner_package(
         "sharing_candidates": list(sharing),
         "successor_types": ([task_type_row(spec, world.schemas) for spec in world.catalog.task_types()]
                             if has_steps else []),
-        "compensation_candidates": [
-            {"action_key": action["action_key"], "action_hash": content_hash_of(action),
-             "connector": action["connector"], "operation": action["operation"],
-             "target": action["target"]}
-            for action in store.list_actions(mission.id) if action["state"] == "SUCCEEDED"][-16:],
         "evidence_predicates": [
             signature.to_json() for signature in world.predicates.signatures()
             if observers is not None and observers.observer_for(signature.predicate_ref.id) is not None],

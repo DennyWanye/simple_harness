@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from hashlib import sha256
 from typing import Any
 
-from ..memory.verified_knowledge import KnowledgeIndex
 from ..storage.store import Store
 from .retrieval import knowledge_view
 
@@ -17,14 +16,10 @@ def read_knowledge_tool(
     gate = getattr(store, "_assurance_root_gate", None)
     if gate is not None:
         gate.require_execution()
-    index = KnowledgeIndex.load(store, mission_id)
-    stale = index.stale()
-    if any(issue.get("code") == "ERROR" for issues in stale.values() for issue in issues):
-        raise ValueError("knowledge currentness unavailable")
     records = [
         r
         for r in store.list_knowledge(mission_id)
-        if r.status == "VERIFIED" and r.superseded_by is None and r.id not in stale
+        if r.status == "VERIFIED" and r.superseded_by is None
     ]
     records.sort(key=lambda r: r.id)
     offset = args.get("offset", 0)

@@ -18,13 +18,12 @@ import contextlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from hashlib import sha256
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .taskgraph_dispatch import TaskGraphDispatchBinding
 
-from simple_harness.agents import AgentTurnResult, AgentTurnState
+from simple_harness.agents import AgentTurnState
 
 from ..artifacts.store import ArtifactStore
 from ..artifacts.versioning import next_versions
@@ -39,7 +38,6 @@ from ..contracts import (
     Claim,
     ClaimStatus,
     ContractError,
-    CriterionAssessmentV1,
     Event,
     Mission,
     MissionStatus,
@@ -60,20 +58,12 @@ from ..contracts.planning_decisions import PLANNING_DECISION_V1
 from ..governance.budgets import AccountSnapshot, BudgetError, BudgetLedger, UsageFact
 from ..governance.domains import (
     CODE_DOMAIN,
-    DOC_DOMAIN,
     DomainProfileV1,
     check_against_domain,
-    requires_document_critic_proof,
-    requires_mission_source_binding,
     resolve_domain,
-    supports_document_assessments,
 )
 from ..governance.policies import DeploymentPolicy
-from ..memory.claims import grade_claim, system_attribution
-from ..memory.source_dependencies import (
-    source_current_issues,
-    source_dependencies_for,
-)
+from ..memory.claims import grade_claim
 from ..memory.summaries import refresh_summaries
 from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord
 from ..observability.lineage import lineage
@@ -89,26 +79,11 @@ from ..scheduling.backpressure import (
     evaluate,
 )
 from ..storage.store import DispatchIntent, Store, StoredResult, StoreError
-from ..verification.assessments import (
-    AssessmentBindingV1,
-    assessment_binding_for,
-    inconclusive_retryable,
-    mission_contract_revision,
-    mission_criterion_catalog,
-    task_contract_revision,
-    validated_assessments,
-)
 from ..verification.conflicts import (
     Contradiction,
-    document_uncertainty_conflicts,
     find_contradiction,
     mission_disputes,
-    supported_contradiction,
 )
-from ..verification.critics import parse_critic_verdict
-from ..verification.deterministic_checks import LayerResult
-from ..verification.human_review import review_request_id
-from ..verification.mission_coverage import mission_coverage, reconcile_document_judgments
 from .action_commits import ActionCommitsMixin
 from .human_commits import HumanCommitsMixin
 from .obligation_commits import ObligationCommitsMixin
@@ -184,18 +159,6 @@ class NonModelFailuresExhausted(CommitRejected):
         super().__init__(
             f"task {task_id} failed {failure_count} times for reasons that are not the model's"
             f" own mistakes (format, service or interruption); cap {cap}"
-        )
-
-
-class InconclusiveRetryExhausted(CommitRejected):
-    """The frozen uncertainty rework allowance is spent; no budget was reserved."""
-
-    def __init__(self, task_id: str, failure_count: int, retry_limit: int) -> None:
-        self.task_id = task_id
-        self.failure_count = failure_count
-        self.retry_limit = retry_limit
-        super().__init__(
-            f"task {task_id} has {failure_count} inconclusive failures (limit={retry_limit})"
         )
 
 
@@ -926,12 +889,13 @@ class CommitService(ProtectedTailCommitsMixin,
             return intent
 
     def domain_for(self, mission_id: str) -> DomainProfileV1:
-        """The frozen domain profile of this Mission; ``code-v1`` for anything created
-        before domain binding existed (plan D1, A07)."""
+        """The frozen domain profile of this Mission.  Every Mission freezes one at
+        creation; a Mission without one, or with a snapshot of another schema, is refused
+        (no old-data compatibility) and the loop's contract gate stops it by name."""
 
         binding = self._store.get_mission_domain(mission_id)
         if binding is None:
-            return resolve_domain(None)
+            raise CommitRejected("invalid frozen domain: mission has no frozen domain profile")
         try:
             domain = DomainProfileV1.from_json(binding["json"])
             if (domain.id, domain.version) != (binding["domain_id"], binding["domain_version"]):
@@ -1024,11 +988,6 @@ class CommitService(ProtectedTailCommitsMixin,
         task: Task,
         attempt: Attempt,
         stored: StoredResult,
-        *,
-        verifier_results: Sequence[Mapping[str, Any]],
-        assessments: Sequence[CriterionAssessmentV1] = (),
-        source_dependencies: Mapping[str, tuple[dict[str, tuple[str, ...]], list[dict[str, Any]]]]
-        | None = None,
     ) -> list[dict[str, Any]]:
         """D4-2/D4-3/D4-4/D4-5 inside the accept transaction: grade every claim of the
         accepted result from the verification that ran, project the VERIFIED ones into
@@ -1037,11 +996,6 @@ class CommitService(ProtectedTailCommitsMixin,
 
         envelope = stored.envelope
         domain = self.domain_for(mission.id)
-        document = domain.id == DOC_DOMAIN
-        proposals = {
-            ids.claim_id(envelope.id, index): proposal
-            for index, proposal in enumerate(envelope.claims, 1)
-        }
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         artifact_paths = [
             artifact.path
@@ -1049,41 +1003,34 @@ class CommitService(ProtectedTailCommitsMixin,
             for artifact in [self._store.get_artifact(artifact_id)]
             if artifact is not None
         ]
-        layers = [dict(item) for item in verifier_results]
-        strict_code = domain.completion_rules.get("claim_grading") == "scoped-observation-v2"
-        # Only runtime-recorded verification is evidence in the new code profile.
-        # Caller-supplied acceptance summaries are not execution receipts.
-        if strict_code:
-            layers = [dict(item) for item in self._store.list_verifications(envelope.id)]
-        observations = []
-        grading_layers = layers
-        if strict_code:
-            from ..memory.code_observations import scoped_test_observations
+        # Only runtime-recorded verification is evidence; caller-supplied acceptance
+        # summaries are not execution receipts.
+        layers = [dict(item) for item in self._store.list_verifications(envelope.id)]
+        from ..memory.code_observations import scoped_test_observations
 
-            artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
-            observations = scoped_test_observations(
-                envelope, [a for a in artifacts if a is not None], layers, self._store.now, task
-            )
-            grading_layers = [{"layer": "code_test", "detail": {"runs": [
-                {"target": record.verifier["target"], "passed": True}
-                for _, record in observations
-            ]}}]
+        artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
+        observations = scoped_test_observations(
+            envelope, [a for a in artifacts if a is not None], layers, self._store.now, task
+        )
+        grading_layers = [{"layer": "code_test", "detail": {"runs": [
+            {"target": record.verifier["target"], "passed": True}
+            for _, record in observations
+        ]}}]
         resolved_refs: set[str] = set()
-        if strict_code:
-            for proposal in envelope.claims:
-                for ref in proposal.evidence or envelope.evidence:
-                    if ref.startswith("knowledge:"):
-                        record = self._store.get_knowledge(ref.removeprefix("knowledge:"))
-                        if (record is not None and record.id in envelope.used_knowledge
-                                and record.mission_id == mission.id and record.status == "VERIFIED"
-                                and record.superseded_by is None
-                                and self._accepted_result(record.source_result)):
-                            resolved_refs.add(ref)
-                    elif ref.startswith("tool-run:"):
-                        run = self._store.get_tool_call(ref.removeprefix("tool-run:"))
-                        if (run is not None and run["mission_id"] == mission.id
-                                and run["subject_id"] == attempt.id and run["outcome"] == "succeeded"):
-                            resolved_refs.add(ref)
+        for proposal in envelope.claims:
+            for ref in proposal.evidence or envelope.evidence:
+                if ref.startswith("knowledge:"):
+                    record = self._store.get_knowledge(ref.removeprefix("knowledge:"))
+                    if (record is not None and record.id in envelope.used_knowledge
+                            and record.mission_id == mission.id and record.status == "VERIFIED"
+                            and record.superseded_by is None
+                            and self._accepted_result(record.source_result)):
+                        resolved_refs.add(ref)
+                elif ref.startswith("tool-run:"):
+                    run = self._store.get_tool_call(ref.removeprefix("tool-run:"))
+                    if (run is not None and run["mission_id"] == mission.id
+                            and run["subject_id"] == attempt.id and run["outcome"] == "succeeded"):
+                        resolved_refs.add(ref)
         report: list[dict[str, Any]] = []
         existing_claims = [
             other
@@ -1091,99 +1038,27 @@ class CommitService(ProtectedTailCommitsMixin,
             if other.result_id != envelope.id and self._accepted_result(other.result_id)
         ]
         for claim in self._store.list_claims(envelope.id):
-            if document:
-                grade = grade_claim(
-                    claim.id,
-                    claim.evidence,
-                    verifier_results=layers,
-                    artifact_paths=artifact_paths,
-                    untrusted_prefixes=untrusted,
-                    domain=domain,
-                    proposal=proposals.get(claim.id),
-                    assessments=assessments,
-                )
-            else:
-                grade = grade_claim(
-                    claim.id,
-                    claim.evidence,
-                    verifier_results=grading_layers,
-                    artifact_paths=artifact_paths,
-                    untrusted_prefixes=untrusted,
-                    domain=domain,
-                    proposal=proposals.get(claim.id),
-                    resolved_refs=frozenset(resolved_refs),
-                )
-            versions: dict[str, tuple[str, ...]] | None = None
-            if document:
-                if source_dependencies is None or claim.id not in source_dependencies:
-                    raise CommitRejected(
-                        "document projection requires precomputed source provenance"
-                    )
-                versions, issues = source_dependencies[claim.id]
-                grade = replace(
-                    grade,
-                    basis={
-                        **dict(grade.basis),
-                        "source_versions": {
-                            path: list(hashes) for path, hashes in versions.items()
-                        },
-                        **({"source_provenance_issues": issues} if issues else {}),
-                    },
-                )
-            attribution = system_attribution(grade.basis) if document else None
-            reserved_key = (
-                document
-                and attribution is None
-                and claim.key is not None
-                and claim.key.startswith("attribution:")
+            grade = grade_claim(
+                claim.id,
+                claim.evidence,
+                verifier_results=grading_layers,
+                artifact_paths=artifact_paths,
+                untrusted_prefixes=untrusted,
+                domain=domain,
+                resolved_refs=frozenset(resolved_refs),
             )
-            if reserved_key:
-                grade = replace(grade, basis={**dict(grade.basis), "key_downgraded": True})
             metadata = {
                 **dict(claim.confidence_metadata),
                 "grade": str(grade.status).lower()
                 if grade.status is not ClaimStatus.UNDER_REVIEW
-                else str(grade.basis.get("grade", "unsupported"))
-                if document
                 else "unsupported",
                 "basis": dict(grade.basis),
                 "evidence_trust": list(grade.evidence_trust),
             }
-            if document:
-                # System attribution precedes every conflict/supersession decision.
-                # replace preserves the persisted revision until next_claim commits it.
-                claim = replace(claim, type="statement")
-                if reserved_key:
-                    claim = replace(claim, key=None)
-                    metadata["key_downgraded"] = True
-                if attribution is not None:
-                    claim = replace(
-                        claim,
-                        content=str(attribution["content"]),
-                        key=str(attribution["key"]),
-                        stance=str(attribution["stance"]),
-                        type="attribution",
-                    )
-                candidate = replace(claim, status=grade.status, confidence_metadata=metadata)
-                targets = {other.id: other for other in existing_claims}
-                rejected = [
-                    reference
-                    for reference in claim.contradicts
-                    if reference not in targets
-                    or not supported_contradiction(candidate, targets[reference])
-                ]
-                metadata["contradicts_rejected"] = rejected
-                claim = replace(
-                    claim,
-                    contradicts=tuple(
-                        reference for reference in claim.contradicts if reference not in rejected
-                    ),
-                )
             supersedes: str | None = None
             proposed = claim.confidence_metadata.get("proposed_supersedes")
             if proposed is not None:
                 target = self._store.get_knowledge(str(proposed))
-                target_attribution = system_attribution(target.verifier) if target else None
                 if grade.status is not ClaimStatus.VERIFIED:
                     metadata["supersedes_rejected"] = (
                         f"only a VERIFIED claim may supersede knowledge (graded {grade.status})"
@@ -1196,14 +1071,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     )
                 elif claim.key is None or claim.key != target.key:
                     metadata["supersedes_rejected"] = "supersession requires the same key"
-                elif (attribution is not None or target_attribution is not None) and (
-                    attribution is None
-                    or target_attribution is None
-                    or list(attribution["identity"]) != list(target_attribution["identity"])
-                ):
-                    metadata["supersedes_rejected"] = (
-                        "attribution supersession requires the same source identity"
-                    )
                 else:
                     supersedes = target.id
             results = (
@@ -1214,14 +1081,7 @@ class CommitService(ProtectedTailCommitsMixin,
             target_status = grade.status
             # D4-6': conflict precedes grading — a contested claim is capped at DISPUTED
             # and never projected, whatever its own evidence says
-            if document:
-                contradiction = find_contradiction(
-                    replace(claim, status=grade.status, confidence_metadata=metadata),
-                    existing_claims,
-                    domain=domain,
-                )
-            else:
-                contradiction = find_contradiction(claim, existing_claims)
+            contradiction = find_contradiction(claim, existing_claims)
             if contradiction is not None:
                 target_status = ClaimStatus.DISPUTED
                 metadata["grade_before_dispute"] = metadata["grade"]
@@ -1260,7 +1120,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     created_at=self._store.now,
                     supersedes=supersedes,
                     evidence_trust=grade.evidence_trust,
-                    source_versions=versions,
                 )
                 self._store.upsert_knowledge(record)
                 self._emit(
@@ -1279,15 +1138,14 @@ class CommitService(ProtectedTailCommitsMixin,
                 )
                 if supersedes is not None:
                     self._supersede_knowledge(supersedes, by=record.id)
-        if strict_code:
-            for observation, record in observations:
-                self._store.upsert_claim(observation)
-                self._store.upsert_knowledge(record)
-                report.append({"claim_id": observation.id, "status": "VERIFIED", "key": None})
-                self._emit("KnowledgeCommitted", mission.id, key=record.id,
-                           task_id=task.id, attempt_id=attempt.id,
-                           payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
-                                    "system_observation": True})
+        for observation, record in observations:
+            self._store.upsert_claim(observation)
+            self._store.upsert_knowledge(record)
+            report.append({"claim_id": observation.id, "status": "VERIFIED", "key": None})
+            self._emit("KnowledgeCommitted", mission.id, key=record.id,
+                       task_id=task.id, attempt_id=attempt.id,
+                       payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
+                                "system_observation": True})
         for reference in envelope.used_knowledge:
             used = self._store.get_knowledge(reference)
             if used is None or used.mission_id != mission.id or used.status != "VERIFIED":
@@ -1614,54 +1472,6 @@ class CommitService(ProtectedTailCommitsMixin,
         return updated
 
     # ------------------------------------------------------------- attempts
-    def inconclusive_failure_count(self, task_id: str) -> int:
-        """Count durable failures, never invocations or reconstructed retry requests."""
-
-        self._require_task(task_id)
-        return sum(
-            attempt.status is AttemptStatus.RETRY_WAIT
-            and (attempt.failure or {}).get("reason") == "inconclusive"
-            for attempt in self._store.list_attempts(task_id)
-        )
-
-    @staticmethod
-    def _inconclusive_retry_limit(domain: DomainProfileV1) -> int:
-        limit = domain.completion_rules.get("inconclusive_retry_limit")
-        if type(limit) is not int or limit < 0:
-            raise CommitRejected("invalid frozen inconclusive retry limit")
-        return limit
-
-    def stop_inconclusive_task(self, task_id: str) -> bool:
-        """Stop spent rework only after already dispatched candidates have converged."""
-
-        with self._store.transaction():
-            task = self._require_task(task_id)
-            mission = self._require_mission(task.mission_id)
-            domain = self.domain_for(task.mission_id)
-            if (
-                not supports_document_assessments(domain)
-                or mission.status is not MissionStatus.ACTIVE
-                or task.status in TERMINAL_TASK
-            ):
-                return False
-            count = self.inconclusive_failure_count(task_id)
-            limit = self._inconclusive_retry_limit(domain)
-            if count <= limit or any(
-                attempt.status in OPEN_ATTEMPT_STATES
-                for attempt in self._store.list_attempts(task_id)
-            ):
-                return False
-            self.stop_task(
-                task_id,
-                stop_reason=MissionStopReason.INSUFFICIENT_EVIDENCE,
-                detail={
-                    "reason": "inconclusive_retry_exhausted",
-                    "failure_count": count,
-                    "retry_limit": limit,
-                },
-            )
-            return True
-
     def authorize_planning_retry(self, *, mission_id: str, task_id: str,
                                  payload: Any, expected_plan_revision: int,
                                  decision_id: str, canonical_hash: str, request_id: str) -> dict[str, Any]:
@@ -1731,24 +1541,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 if permit is None or permit["failed_attempt_id"] != retry_of:
                     raise CommitRejected("H4 retry needs a current committed RETRY_SAME_METHOD decision")
                 intent_config = {**dict(intent_config), "planning_retry_decision_id": permit["decision_id"]}
-            domain = self.domain_for(task.mission_id)
-            if supports_document_assessments(domain):
-                mission = self._require_mission(task.mission_id)
-                frozen = {
-                    "check_spec_ids": sorted(domain.adapters.values()),
-                    "mission_contract_revision": mission_contract_revision(mission),
-                    "mission_criteria": [dict(item) for item in mission_criterion_catalog(mission)],
-                }
-                for name, value in frozen.items():
-                    if name in intent_config and sha256_hex(intent_config[name]) != sha256_hex(
-                        value
-                    ):
-                        raise CommitRejected(f"dispatch {name} conflicts with the frozen Mission")
-                intent_config = {**dict(intent_config), **frozen}
-                count = self.inconclusive_failure_count(task_id)
-                limit = self._inconclusive_retry_limit(domain)
-                if count > limit:
-                    raise InconclusiveRetryExhausted(task_id, count, limit)
             from .taskgraph_dispatch import taskgraph_enabled
             graph_prepared = None
             if taskgraph_enabled(self._store, task.mission_id):
@@ -2895,9 +2687,6 @@ class CommitService(ProtectedTailCommitsMixin,
             if (
                 stored.verification_state == "DONE"
                 and stored.verdict == "PASS"
-                and (self.domain_for(stored.envelope.mission_id).id == DOC_DOMAIN
-                     or self.domain_for(stored.envelope.mission_id).completion_rules.get(
-                         "claim_grading") == "scoped-observation-v2")
             ):
                 known = next(
                     (
@@ -2935,291 +2724,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 },
             )
 
-    def _assessment_binding(
-        self, stored: StoredResult, task: Task, attempt: Attempt
-    ) -> AssessmentBindingV1:
-        artifacts = []
-        for artifact_id in stored.artifacts:
-            artifact = self._store.get_artifact(artifact_id)
-            if artifact is None:
-                raise CommitRejected("assessment artifact is unavailable")
-            artifacts.append(artifact)
-        return assessment_binding_for(
-            self._store,
-            task=task,
-            attempt=attempt,
-            envelope=stored.envelope,
-            artifacts=artifacts,
-        )
-
-    def _validated_criterion_assessments(
-        self, stored: StoredResult, task: Task, attempt: Attempt
-    ) -> tuple[CriterionAssessmentV1, ...]:
-        """Read the real rule row and recheck its frozen binding inside accept."""
-
-        row = next(
-            (
-                row
-                for row in self._store.list_verifications(stored.envelope.id)
-                if row["layer"] == "rule_check"
-            ),
-            None,
-        )
-        if row is None:
-            raise CommitRejected("doc assessment requires a recorded rule_check layer")
-        try:
-            binding = self._assessment_binding(stored, task, attempt)
-            return validated_assessments(
-                LayerResult(
-                    str(row["layer"]),
-                    str(row["status"]),
-                    str(row["detail"].get("summary", "")),
-                    row["detail"],
-                ),
-                binding=binding,
-            )
-        except ContractError as error:
-            raise CommitRejected(f"doc assessment rejected: {error}") from error
-
-    def _require_document_human_pass(
-        self, stored: StoredResult, task: Task, rows: Sequence[Mapping[str, Any]]
-    ) -> None:
-        """A recorded NEEDS_HUMAN is not approval; require the actual same-result review."""
-
-        request_id = review_request_id(stored.envelope.id)
-        request = self._store.get_approval(request_id)
-        required = (
-            "human_review" in task.verification_policy
-            or any(row["status"] == "NEEDS_HUMAN" for row in rows)
-            or request is not None
-        )
-        if not required:
-            return
-        human = next((row for row in rows if row["layer"] == "human_review"), None)
-        expected = {
-            "mission_id": task.mission_id,
-            "task_id": task.id,
-            "result_id": stored.envelope.id,
-            "attempt_id": stored.envelope.attempt_id,
-            "artifacts": sorted(stored.artifacts),
-        }
-        if (
-            request is None
-            or request.get("kind") != "review"
-            or request.get("state") != "GRANTED"
-            or request.get("mission_id") != task.mission_id
-            or request.get("task_id") != task.id
-            or request.get("subject_key") != stored.envelope.id
-            or request.get("binding") != expected
-            or human is None
-            or human["status"] != "PASS"
-            or human["detail"].get("request_id") != request_id
-            or not request.get("decided_by")
-            or human["detail"].get("principal_id") != request.get("decided_by")
-            or not any(
-                decision.get("decision") == "grant"
-                and decision.get("principal_id") == request.get("decided_by")
-                for decision in self._store.list_decisions(request_id)
-            )
-        ):
-            raise CommitRejected("document acceptance requires the actual same-result human PASS")
-
-    @staticmethod
-    def _critic_verdict_binding(intent: DispatchIntent, stored: StoredResult) -> dict[str, Any]:
-        return {
-            "schema": 1,
-            "kind": "critic_verdict",
-            "intent_id": intent.intent_id,
-            "mission_id": stored.envelope.mission_id,
-            "task_id": stored.envelope.task_id,
-            "attempt_id": stored.envelope.attempt_id,
-            "result_id": stored.envelope.id,
-            "input_hash": intent.input_hash,
-            "agent_id": intent.agent_id,
-            "turn_id": intent.expected_turn_id,
-            "prompt_version": intent.config.get("prompt_version"),
-        }
-
-    def settle_critic_verdict(
-        self, intent_id: str, *, result: AgentTurnResult,
-    ) -> DispatchIntent:
-        """Freeze the actual SDK verdict and settle its doc5 intent atomically.
-
-        Trusted runtime calls this with the COMMITTED result read from AgentBridge,
-        never with a Worker/caller-supplied PASS or parsed verification row. The
-        existing receipt is append-only per intent, including genuine FAIL and
-        NEEDS_HUMAN. This is not a defense against rewriting the entire SQL store
-        or a malicious runtime fabricating SDK results.
-        """
-
-        with self._store.transaction():
-            intent = self._require_intent(intent_id)
-            attempt_id = intent.config.get("attempt_id")
-            stored = (
-                self._store.find_result_for_attempt(attempt_id)
-                if isinstance(attempt_id, str) else None
-            )
-            domain = self.domain_for(intent.mission_id)
-            if (
-                not requires_document_critic_proof(domain)
-                or intent.kind != "critic" or intent.state not in {"SUBMITTED", "SETTLED"}
-                or stored is None or stored.envelope.mission_id != intent.mission_id
-                or not intent.subject_id.startswith(f"{attempt_id}:critic:")
-                or result.state is not AgentTurnState.COMMITTED
-                or result.agent_id != intent.agent_id or result.turn_id != intent.expected_turn_id
-                or not intent.receipt
-                or intent.receipt.get("agent_id") != result.agent_id
-                or intent.receipt.get("turn_id") != result.turn_id
-                or intent.receipt.get("seq") != result.seq
-                or sha256_hex(intent.config.get("message")) != intent.input_hash
-                or result.public_output is None
-            ):
-                raise CommitRejected("Critic proof requires its actual committed SDK result")
-            assert stored is not None and result.public_output is not None
-            text = str(result.public_output.content)
-            parsed = parse_critic_verdict(
-                text, expected_criteria=self._require_mission(intent.mission_id).success_criteria,
-            )
-            proof = {
-                **self._critic_verdict_binding(intent, stored),
-                "output_hash": sha256(text.encode("utf-8")).hexdigest(),
-                "verdict": parsed.to_json(),
-            }
-            key = "critic-verdict:" + intent.intent_id
-            existing = self._store.get_receipt(key)
-            if existing is not None:
-                if existing != proof:
-                    raise CommitRejected("Critic verdict proof is immutable for this intent")
-            else:
-                self._store.insert_receipt(
-                    commit_id=key, kind="critic_verdict", subject_id=intent.intent_id,
-                    base_version=None, proposal_hash=sha256_hex(proof), receipt=proof,
-                )
-            return self._settle_intent(intent, "SETTLED")
-
-    def _require_doc5_critic_pass(
-        self, stored: StoredResult, task: Task, attempt: Attempt,
-        domain: DomainProfileV1, rows: Sequence[Mapping[str, Any]],
-    ) -> None:
-        """A doc5 floor requires the executed Critic, not just a policy or PASS row.
-
-        The durable dispatch proof binds its settled turn and frozen review input
-        to this attempt's result. Human escalation is checked separately by the
-        existing same-result approval gate; it never substitutes for this proof.
-        """
-
-        def refuse() -> None:
-            raise CommitRejected("doc5 acceptance requires the actual same-result Critic proof")
-
-        row = next((item for item in rows if item["layer"] == "critic_review"), None)
-        if row is None or row["status"] not in {"PASS", "NEEDS_HUMAN"}:
-            refuse()
-        assert row is not None
-        detail = row["detail"]
-        intent_id = detail.get("critic_intent_id")
-        intent = self._store.get_intent(intent_id) if isinstance(intent_id, str) else None
-        if intent is None:
-            refuse()
-        assert intent is not None
-        prefix = f"{attempt.id}:critic:"
-        ordinal = intent.subject_id.removeprefix(prefix)
-        result_for_attempt = self._store.find_result_for_attempt(attempt.id)
-        if (
-            intent.kind != "critic"
-            or intent.state != "SETTLED"
-            or intent.mission_id != task.mission_id
-            or not intent.subject_id.startswith(prefix)
-            or not ordinal.isdecimal() or int(ordinal) < 1
-            or intent.creation_key != intent.subject_id
-            or intent.intent_id != ids.intent_id("critic", intent.subject_id)
-            or not intent.agent_id or not intent.expected_turn_id
-            or not intent.receipt
-            or intent.receipt.get("turn_id") != intent.expected_turn_id
-            or intent.receipt.get("agent_id") != intent.agent_id
-            or intent.config.get("attempt_id") != attempt.id
-            or intent.config.get("prompt_version") != detail.get("verifier_version")
-            or detail.get("verifier_version") != domain.role_templates.get("critic")
-            or result_for_attempt is None
-            or result_for_attempt.envelope.id != stored.envelope.id
-        ):
-            refuse()
-        # More than one settled review for the same attempt is ambiguous; do not
-        # pick whichever row happens to say PASS. Failed parsing ordinals remain OK.
-        settled = [
-            item for item in self._store.list_intents("SETTLED")
-            if item.kind == "critic" and item.subject_id.startswith(prefix)
-        ]
-        if len(settled) != 1 or settled[0].intent_id != intent.intent_id:
-            refuse()
-        proof = self._store.get_receipt("critic-verdict:" + intent.intent_id)
-        if proof is None or any(
-            proof.get(key) != value
-            for key, value in self._critic_verdict_binding(intent, stored).items()
-        ):
-            refuse()
-        assert proof is not None
-        try:
-            message = intent.config.get("message")
-            if not isinstance(message, Mapping) or sha256_hex(message) != intent.input_hash:
-                refuse()
-            assert isinstance(message, Mapping)
-            text = message.get("content")
-            if not isinstance(text, str):
-                refuse()
-            assert isinstance(text, str)
-
-            def section(name: str) -> Any:
-                pieces = text.split(f"\n\n## {name}\n")
-                if len(pieces) != 2:
-                    refuse()
-                return json.loads(pieces[1].split("\n\n## ", 1)[0])
-
-            if (stored.verification_state == "DONE" and stored.verdict == "PASS"
-                    and task.accepted_result_id == stored.envelope.id):
-                from ..verification.assessments import accepted_assessments_for
-
-                binding = accepted_assessments_for(self._store, task=task)[0]
-            else:
-                binding = self._assessment_binding(stored, task, attempt)
-            if (
-                task_contract_revision(section("task_contract")) != binding.task_contract_revision
-                or section("mission_success_criteria") != list(
-                    self._require_mission(task.mission_id).success_criteria
-                )
-                or dict(intent.config.get("source_versions", {})) != dict(binding.source_versions)
-                or tuple(intent.config.get("source_roots", ())) != binding.source_roots
-            ):
-                refuse()
-            artifacts: list[dict[str, Any]] = []
-            for artifact_id in stored.artifacts:
-                artifact = self._store.get_artifact(artifact_id)
-                if artifact is None:
-                    refuse()
-                assert artifact is not None
-                artifacts.append({
-                    "path": artifact.path, "content_hash": artifact.content_hash,
-                    "size_bytes": artifact.size_bytes,
-                })
-            if sorted(section("submitted_artifacts"), key=lambda item: item["path"]) != sorted(
-                artifacts, key=lambda item: item["path"]
-            ):
-                refuse()
-            if f"\n\n## attempt_id\n{attempt.id}\n\n" not in text:
-                refuse()
-            verdict = parse_critic_verdict(
-                "<critic_verdict>" + json.dumps(dict(detail), ensure_ascii=False)
-                + "</critic_verdict>",
-                expected_criteria=self._require_mission(task.mission_id).success_criteria,
-            )
-            if not verdict.passed or (row["status"] == "NEEDS_HUMAN") != verdict.needs_human:
-                refuse()
-            if verdict.to_json() != proof.get("verdict"):
-                refuse()
-        except (ContractError, TypeError, ValueError, KeyError) as error:
-            raise CommitRejected(
-                "doc5 acceptance requires the actual same-result Critic proof"
-            ) from error
-
     def _acceptance_materials(
         self, stored: StoredResult, task: Task, attempt: Attempt, mission: Mission,
         *, verifier_results: Sequence[Mapping[str, Any]], owner: str | None,
@@ -3227,112 +2731,10 @@ class CommitService(ProtectedTailCommitsMixin,
     ) -> dict[str, Any] | Task:
         """Shared nonpublishing eligibility; failures retain their actual failure path.
 
-        A valid return has not accepted the result, written assessments, graded a
-        claim, published an action, or completed/superseded an Attempt.
+        A valid return has not accepted the result, graded a claim, published an
+        action, or completed/superseded an Attempt.
         """
         result_id = stored.envelope.id
-        assessments: tuple[CriterionAssessmentV1, ...] = ()
-        domain = self.domain_for(mission.id)
-        if domain.id == DOC_DOMAIN:
-            assessments = self._validated_criterion_assessments(stored, task, attempt)
-            if supports_document_assessments(domain):
-                hard_failures = tuple(
-                    LayerResult(
-                        row["layer"],
-                        row["status"],
-                        str(row["detail"].get("summary", "")),
-                        row["detail"],
-                    ).to_json()
-                    for row in self._store.list_verifications(result_id)
-                    if row["status"] in {"FAIL", "ERROR"}
-                )
-                if hard_failures:
-                    return self.fail_result(result_id, failures=hard_failures, owner=owner)
-            if supports_document_assessments(domain):
-                rows = self._store.list_verifications(result_id)
-                # 2026-09-25 UI 全量点击: under Assurance 1.1 the review proof is the
-                # official review record plus the use certificate locked below; the legacy
-                # same-result Critic proof never exists there (its review intent is the
-                # assurance content review), so demanding it refused every assured document
-                # acceptance and the result was re-verified every loop round.
-                from ..storage.assurance_store import AssuranceStore
-                if (requires_document_critic_proof(domain)
-                        and AssuranceStore(self._store).lane(mission.id) != "ASSURANCE_1_1"):
-                    self._require_doc5_critic_pass(stored, task, attempt, domain, rows)
-                self._require_document_human_pass(stored, task, rows)
-                conflicts = document_uncertainty_conflicts(
-                    self._store,
-                    mission_id=mission.id,
-                    envelope=stored.envelope,
-                    assessments=assessments,
-                )
-                if conflicts:
-                    rule_detail = next(
-                        row["detail"] for row in rows if row["layer"] == "rule_check"
-                    )
-                    failure = LayerResult(
-                        "rule_check",
-                        "FAIL",
-                        "uncertainty conflicts with another claim",
-                        {
-                            **dict(rule_detail),
-                            "reason": "uncertainty_conflict",
-                            "conflicts": conflicts,
-                        },
-                    )
-                    self.record_verification_layer(
-                        result_id,
-                        layer=failure.layer,
-                        status=failure.status,
-                        detail=failure.detail,
-                    )
-                    return self.fail_result(
-                        result_id, failures=(failure.to_json(),), owner=owner
-                    )
-            # The caller's PASS list remains the legacy code API, never the doc
-            # assessment authority or an opportunity to invent audited layers.
-            verifier_results = tuple(
-                LayerResult(
-                    row["layer"],
-                    row["status"],
-                    str(row["detail"].get("summary", "")),
-                    row["detail"],
-                ).to_json()
-                for row in self._store.list_verifications(result_id)
-                if row["status"] == "PASS"
-            )
-            citations = tuple(
-                citation
-                for proposal in stored.envelope.claims
-                for citation in proposal.citations
-            )
-            if citations:
-                current_issues = (
-                    [{"code": "ERROR", "reason": "source_artifact_store_unavailable"}]
-                    if self._source_artifact_store is None
-                    else source_current_issues(
-                        self._store, mission.id, citations, self._source_artifact_store
-                    )
-                )
-                if current_issues:
-                    failure = LayerResult(
-                        "rule_check",
-                        "ERROR"
-                        if any(issue["code"] == "ERROR" for issue in current_issues)
-                        else "FAIL",
-                        "source currentness changed before acceptance",
-                        {
-                            "reason": "source_unavailable"
-                            if any(issue["code"] == "ERROR" for issue in current_issues)
-                            else "stale_source",
-                            "source_current_issues": current_issues,
-                        },
-                    )
-                    # Keep the valid frozen rule receipt; this is a separate live
-                    # acceptance check, recorded by VerificationFailed/failure detail.
-                    return self.fail_result(
-                        result_id, failures=(failure.to_json(),), owner=owner
-                    )
         stale = KnowledgeIndex.load(self._store, mission.id).check(
             stored.envelope.used_knowledge
         )
@@ -3351,43 +2753,7 @@ class CommitService(ProtectedTailCommitsMixin,
             )
         # 2026-09-29（plans/2026-09-28-system-operations）：操作申请单由系统按已批准效果
         # 生成，步骤结果里的 actions/*.json 只是普通文件，不检查也不退回。
-        source_dependencies = None
-        if domain.id == DOC_DOMAIN:
-            # Resolve every dependency before ANY new knowledge is projected. A
-            # sibling claim of this result cannot become its own input mid-loop.
-            source_dependencies = {
-                ids.claim_id(result_id, ordinal): source_dependencies_for(
-                    self._store,
-                    mission_id=mission.id,
-                    evidence_refs=[
-                        ref
-                        for assessment in assessments
-                        if assessment.claim_id == ids.claim_id(result_id, ordinal)
-                        for ref in assessment.to_json()["evidence_refs"]
-                    ],
-                    used_knowledge=stored.envelope.used_knowledge,
-                )
-                for ordinal, _ in enumerate(stored.envelope.claims, 1)
-            }
-            errors = [
-                issue
-                for _, issues in source_dependencies.values()
-                for issue in issues
-                if issue["code"] == "ERROR"
-            ]
-            if errors:
-                failure = LayerResult(
-                    "rule_check",
-                    "ERROR",
-                    "source provenance unavailable",
-                    {
-                        "reason": "source_provenance_unavailable",
-                        "issues": errors,
-                    },
-                )
-                return self.fail_result(result_id, failures=(failure.to_json(),), owner=owner)
-        return {"assessments": assessments, "verifier_results": verifier_results,
-                "source_dependencies": source_dependencies}
+        return {"verifier_results": verifier_results}
 
     def accept_result(
         self, result_id: str, *, verifier_results: Sequence[Mapping[str, Any]],
@@ -3516,29 +2882,17 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             if isinstance(materials, Task):
                 return materials
-            assessments = materials["assessments"]
             verifier_results = materials["verifier_results"]
-            source_dependencies = materials["source_dependencies"]
             if task.status is TaskStatus.ACTIVE:
                 verifying = next_task(task, TaskStatus.VERIFYING)
                 self._store.update_task(verifying, expected_version=task.version)
                 task = verifying
-            for assessment in assessments:
-                self._store.insert_criterion_assessment(
-                    mission_id=mission.id,
-                    task_id=task.id,
-                    result_id=result_id,
-                    assessment=assessment,
-                )
             self._store.set_result_verification(result_id, state="DONE", verdict="PASS")
             grading = self._grade_and_project(
                 mission,
                 task,
                 attempt,
                 stored,
-                verifier_results=verifier_results,
-                assessments=assessments,
-                source_dependencies=source_dependencies,
             )
             self._store.update_attempt(
                 next_attempt(attempt, AttemptStatus.COMPLETED), expected_version=attempt.version
@@ -3607,107 +2961,6 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             return completed
 
-    def document_handoff_refusal(self, mission_id: str) -> str | None:
-        """Called inside begin_handoff's transaction, before reservation/outbox write.
-
-        Each effect takes a fresh source eligibility decision; a previous connector's
-        await cannot lend its old source snapshot to the next action.
-        """
-        domain = self.domain_for(mission_id)
-        if not requires_mission_source_binding(domain):
-            return None
-        mission = self._require_mission(mission_id)
-        try:
-            coverage = mission_coverage(
-                self._store, mission, domain, artifact_store=self._source_artifact_store,
-                assured=self._on_assured_lane(mission_id),
-            )
-        except ContractError as error:
-            self.fail_mission(
-                mission_id,
-                stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                detail={"source_assessment_error": str(error)},
-            )
-            return "document_sources_unavailable"
-        if any(
-            row["verdict"] == "FAIL" and row.get("excluded_claim_ids")
-            for row in coverage["criteria"]
-        ):
-            self.fail_mission(
-                mission_id,
-                stop_reason=MissionStopReason.MISSION_CRITERIA_UNMET,
-                detail={"document_coverage": coverage},
-            )
-            return "document_sources_stale"
-        return None
-
-    def _on_assured_lane(self, mission_id: str) -> bool:
-        from ..storage.assurance_store import AssuranceStore
-
-        return AssuranceStore(self._store).lane(mission_id) == "ASSURANCE_1_1"
-
-    def stop_insufficient_mission(self, mission_id: str) -> Mission | None:
-        """Recompute the original Mission catalogue before any judge or publication."""
-
-        with self._store.transaction():
-            mission = self._require_mission(mission_id)
-            domain = self.domain_for(mission_id)
-            if (
-                not supports_document_assessments(domain)
-                or mission.status is not MissionStatus.ACTIVE
-            ):
-                return None
-            tasks = [
-                task
-                for task in self._store.list_tasks(mission_id)
-                if task.status is not TaskStatus.CANCELLED
-                and not (task.paused and task.status in {TaskStatus.READY, TaskStatus.BLOCKED})
-            ]
-            if not tasks or any(task.status is not TaskStatus.COMPLETED for task in tasks):
-                return None
-            coverage = mission_coverage(
-                self._store, mission, domain, artifact_store=self._source_artifact_store,
-                assured=self._on_assured_lane(mission_id),
-            )
-            if not coverage["insufficient"]:
-                return None
-            return self._stop_insufficient_mission(mission, tasks, coverage)
-
-    def _stop_insufficient_mission(
-        self, mission: Mission, tasks: Sequence[Task], coverage: Mapping[str, Any]
-    ) -> Mission:
-        """Only called with authoritative coverage inside the current writer transaction."""
-
-        terminal = terminal_task(list(tasks))
-        report = {
-            **dict(mission.final_report or {}),
-            "result": "INSUFFICIENT",
-            "stop_reason": "insufficient_evidence",
-            "document_coverage": dict(coverage),
-            "accepted_result_id": terminal.accepted_result_id,
-            "accepted_artifacts": list(terminal.accepted_artifacts),
-            "terminal_task_id": terminal.id,
-            "tasks": self._task_reports(mission.id),
-            "attempts": sum(task.attempt_count for task in tasks),
-            "lineage": lineage(self._store, mission.id),
-        }
-        failed = next_mission(
-            mission,
-            MissionStatus.FAILED,
-            stop_reason=str(MissionStopReason.INSUFFICIENT_EVIDENCE),
-            final_report=report,
-        )
-        self._store.update_mission(failed, expected_version=mission.version)
-        self._cascade_stop(mission.id, skip_task=None)
-        final = self._emit(
-            "MissionFailed",
-            mission.id,
-            key=mission.id,
-            payload={"stop_reason": failed.stop_reason, "final_report": report},
-        )
-        self._assured_terminal_notice(mission.id, final, failed.version)
-        return failed
-
     def judge_mission(
         self, mission_id: str, *, judgments: Sequence[Mapping[str, Any]], summary: str
     ) -> Mission:
@@ -3757,38 +3010,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 raise CommitRejected("mission judgment requires every live Task to be COMPLETED")
             mutable_judgments = [dict(item) for item in judgments]
             judgments = mutable_judgments
-            domain = self.domain_for(mission_id)
-            document_coverage = None
-            if supports_document_assessments(domain):
-                # 片 D 第 2 项：保证通道上，文字要求的结论是最终审查的，这里只守秩序——
-                # 秩序检查没过的要求不许记成满足；"不确定"占比不再停机。
-                assured = self._on_assured_lane(mission_id)
-                try:
-                    document_coverage = mission_coverage(
-                        self._store, mission, domain, artifact_store=self._source_artifact_store,
-                        assured=assured,
-                    )
-                except ContractError as error:
-                    if not requires_mission_source_binding(domain):
-                        raise
-                    return self.fail_mission(
-                        mission.id,
-                        stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                        detail={"source_assessment_error": str(error)},
-                    )
-                if document_coverage["insufficient"]:
-                    return self._stop_insufficient_mission(mission, tasks, document_coverage)
-                if [item.get("criterion") for item in judgments] != list(mission.success_criteria):
-                    raise CommitRejected(
-                        "judgments must cover the Mission success criteria in order"
-                    )
-                objection = reconcile_document_judgments(
-                    mutable_judgments, document_coverage["criteria"], assured=assured,
-                    refresh_stale=requires_mission_source_binding(domain))
-                if objection is not None:
-                    raise CommitRejected(
-                        f"Mission content judgment disagrees with deterministic coverage ({objection})"
-                    )
             for task in all_tasks:  # a paused READY route ends with the Mission as not needed
                 if task.paused and task.status is TaskStatus.READY:
                     self._store.update_task(
@@ -3809,11 +3030,6 @@ class CommitService(ProtectedTailCommitsMixin,
             terminal = terminal_task(tasks)
             report = {
                 **dict(mission.final_report or {}),
-                **(
-                    {"document_coverage": document_coverage}
-                    if document_coverage is not None
-                    else {}
-                ),
                 "accepted_result_id": terminal.accepted_result_id,
                 "accepted_artifacts": list(terminal.accepted_artifacts),
                 "terminal_task_id": terminal.id,
@@ -4055,137 +3271,20 @@ class CommitService(ProtectedTailCommitsMixin,
         failures: Sequence[Mapping[str, Any]],
         owner: str | None = None,
     ) -> Task:
-        """FAIL: doc claims stay unsupported; code claims are rejected. Retry is separate."""
+        """FAIL: the result's claims are rejected. Retry is separate."""
 
         with self._store.transaction():
             stored = self._require_result(result_id)
             if stored.verification_state == "DONE" and stored.verdict == "FAIL":
                 return self._require_task(stored.envelope.task_id)
-            if (
-                stored.verification_state == "DONE"
-                and stored.verdict == "PASS"
-                and self.domain_for(stored.envelope.mission_id).id == DOC_DOMAIN
-            ):
-                raise CommitRejected("accepted result verification history is immutable")
             attempt = self._require_attempt(stored.envelope.attempt_id)
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
-            domain = self.domain_for(task.mission_id)
-            document = domain.id == DOC_DOMAIN
-            proposals = {
-                ids.claim_id(result_id, index): proposal
-                for index, proposal in enumerate(stored.envelope.claims, 1)
-            }
-            recorded = tuple(self._store.list_verifications(result_id))
             failure_reason = "verification_failed"
-            if document and supports_document_assessments(domain):
-                rule = next((row for row in recorded if row["layer"] == "rule_check"), None)
-                other_failure = any(
-                    row["layer"] != "rule_check" and row["status"] in {"FAIL", "ERROR"}
-                    for row in recorded
-                ) or any(item.get("layer") != "rule_check" for item in failures)
-                if rule is not None and rule["status"] == "FAIL" and not other_failure:
-                    try:
-                        binding = self._assessment_binding(stored, task, attempt)
-                        retryable = inconclusive_retryable(rule, binding=binding)
-                    except ContractError:
-                        retryable = False
-                    if retryable:
-                        # The retry helper validated the full failed evaluation. Recheck
-                        # live peers before classifying its sole missing-limitations failure.
-                        assessments = tuple(
-                            CriterionAssessmentV1.from_json(item)
-                            for item in rule["detail"]["criterion_assessments"]
-                        )
-                        conflicts = document_uncertainty_conflicts(
-                            self._store,
-                            mission_id=task.mission_id,
-                            envelope=stored.envelope,
-                            assessments=assessments,
-                        )
-                        if conflicts:
-                            failure = LayerResult(
-                                "rule_check",
-                                "FAIL",
-                                "uncertainty conflicts with another claim",
-                                {
-                                    **dict(rule["detail"]),
-                                    "reason": "uncertainty_conflict",
-                                    "conflicts": conflicts,
-                                },
-                            )
-                            self.record_verification_layer(
-                                result_id,
-                                layer=failure.layer,
-                                status=failure.status,
-                                detail=failure.detail,
-                            )
-                            failures = (failure.to_json(),)
-                            recorded = tuple(self._store.list_verifications(result_id))
-                        else:
-                            # Extra caller failures cannot be hidden behind the authentic
-                            # rule row, including commit-time stale inputs/action rejection.
-                            detail = {
-                                k: v
-                                for k, v in rule["detail"].items()
-                                if k not in {"summary", "verifier_version"}
-                            }
-                            if all(
-                                item.get("status") == "FAIL"
-                                and sha256_hex(
-                                    {
-                                        k: v
-                                        for k, v in item.get("detail", {}).items()
-                                        if k not in {"summary", "verifier_version"}
-                                    }
-                                )
-                                == sha256_hex(detail)
-                                for item in failures
-                            ):
-                                failure_reason = "inconclusive"
             self._store.set_result_verification(result_id, state="DONE", verdict="FAIL")
             for artifact_id in stored.artifacts:  # P3.1 fix F-ORCH-3: judged, and not accepted
                 self._store.update_artifact_verification(artifact_id, "REJECTED")
             for claim in self._store.list_claims(result_id):
-                if document:
-                    grade = grade_claim(
-                        claim.id,
-                        claim.evidence,
-                        verifier_results=recorded,
-                        artifact_paths=(),
-                        untrusted_prefixes=(),
-                        domain=domain,
-                        proposal=proposals.get(claim.id),
-                        assessments=(),
-                    )
-                    basis = {
-                        **dict(grade.basis),
-                        "verification_failures": [
-                            dict(item) for item in recorded if item["status"] != "PASS"
-                        ],
-                    }
-                    reserved_key = claim.key is not None and claim.key.startswith("attribution:")
-                    if reserved_key:
-                        basis["key_downgraded"] = True
-                    self._store.upsert_claim(
-                        next_claim(
-                            replace(
-                                claim, type="statement", key=None if reserved_key else claim.key
-                            ),
-                            ClaimStatus.UNDER_REVIEW
-                            if claim.status is not ClaimStatus.UNDER_REVIEW
-                            else None,
-                            verifier_results=tuple(dict(item) for item in failures),
-                            confidence_metadata={
-                                **dict(claim.confidence_metadata),
-                                "grade": "unsupported",
-                                "basis": basis,
-                                "evidence_trust": list(grade.evidence_trust),
-                                **({"key_downgraded": True} if reserved_key else {}),
-                            },
-                        )
-                    )
-                    continue
                 self._store.upsert_claim(
                     next_claim(
                         claim,
@@ -4258,10 +3357,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 "tasks": self._task_reports(mission.id),
             }
             report.update(self._ledger.usage_flags(mission.id))
-            if stop_reason is MissionStopReason.INSUFFICIENT_EVIDENCE:
-                domain = self.domain_for(mission.id)
-                if supports_document_assessments(domain):
-                    report["result"] = "INSUFFICIENT"
             done = next_mission(
                 mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
             )
@@ -4360,7 +3455,6 @@ class CommitService(ProtectedTailCommitsMixin,
 __all__ = (
     "CommitRejected",
     "CommitService",
-    "InconclusiveRetryExhausted",
     "MissionConflict",
     "MissionSpec",
     "Reservation",

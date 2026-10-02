@@ -15,6 +15,7 @@ from knowledge_helpers import (
     passed_layers,
     submit,
     two_leaf_service,
+    verify_claims_citing_pytest,
 )
 
 from agent_orchestrator.context.compression import GLOBAL_BRANCH, branch_of
@@ -352,7 +353,8 @@ def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_
 
 
 # ------------------------------------------------------------------ D4-13'
-def test_summaries_are_deterministic_scoped_by_branch_and_never_change_claim_status(tmp_path):
+def test_summaries_are_deterministic_scoped_by_branch_and_never_change_claim_status(tmp_path, monkeypatch):
+    verify_claims_citing_pytest(monkeypatch)
     service, mission, (task_a, task_b) = two_leaf_service(tmp_path)
     tasks_by_id = {t.id: t for t in service.store.list_tasks(mission.id)}
     assert branch_of(task_a, tasks_by_id) == task_a.id

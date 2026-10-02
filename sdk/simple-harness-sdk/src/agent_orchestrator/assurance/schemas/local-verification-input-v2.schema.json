@@ -17,10 +17,8 @@
     "client_result_id",
     "tampered",
     "knowledge",
-    "action_problems",
     "local_code_execution",
-    "domain",
-    "assessment_binding"
+    "domain"
   ],
   "properties": {
     "mission_id": {
@@ -44,7 +42,7 @@
       "minLength": 1
     },
     "schema": {
-      "const": "assurance-local-verification-input-v1"
+      "const": "assurance-local-verification-input-v2"
     },
     "subject_hash": {
       "type": "string",
@@ -100,25 +98,10 @@
         "null"
       ]
     },
-    "action_problems": {
-      "type": [
-        "array",
-        "null"
-      ],
-      "items": {
-        "type": "string"
-      }
-    },
     "local_code_execution": {
       "type": "boolean"
     },
     "domain": {
-      "type": [
-        "object",
-        "null"
-      ]
-    },
-    "assessment_binding": {
       "type": [
         "object",
         "null"

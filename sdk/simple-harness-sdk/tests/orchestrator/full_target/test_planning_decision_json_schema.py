@@ -142,9 +142,6 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/repairRuntimeBlockedPayload/properties/blockers/minItems": 1,
     "#/$defs/repairRuntimeBlockedPayload/properties/blockers/maxItems": MAX_PD_BLOCKERS,
     "#/$defs/repairRuntimeBlockedPayload/properties/resumable_if/maxItems": MAX_LIST,
-    "#/$defs/repairCompensationPayload/properties/action_key/maxLength": MAX_ID,
-    "#/$defs/repairCompensationPayload/properties/action_hash/maxLength": 64,
-    "#/$defs/repairCompensationPayload/properties/reason/maxLength": MAX_TEXT,
 }
 
 #: The only subschemas allowed to keep arbitrary extra keys (V2 §32: the codec never
@@ -178,7 +175,6 @@ REPAIR_PAYLOAD_BY_KIND = {
     "CANCEL_BRANCH": "#/$defs/repairCancelBranchPayload",
     "RETRY_SAME_METHOD": "#/$defs/repairRetrySameMethodPayload",
     "DECLARE_RUNTIME_BLOCKED": "#/$defs/repairRuntimeBlockedPayload",
-    "REQUEST_COMPENSATION": "#/$defs/repairCompensationPayload",
     "PROPOSE_SUCCESSOR": "#/$defs/repairProposeSuccessorPayload",
 }
 REPAIR_PAYLOAD_REFS = tuple(REPAIR_PAYLOAD_BY_KIND.values())

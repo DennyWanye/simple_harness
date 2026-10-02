@@ -9,13 +9,15 @@ Use the existing Store runner; never executescript inside a Store transaction.
 
 from importlib.resources import files
 
-from .assurance_barrier_schema import DDL as BARRIER_DDL
 from .assurance_upgrade import DDL as UPGRADE_DDL
 
+# The import barrier is frozen as the literal text migration 26 shipped with
+# (删旧平面模式第三刀第 5 步): its generator read the live source-table inventory, so
+# shrinking the inventory would have rewritten an already-applied migration.
 DDL = (
     files(__package__).joinpath("assurance_schema.sql").read_text(encoding="utf-8")
     + "\n"
-    + BARRIER_DDL
+    + files(__package__).joinpath("assurance_barrier_v26.sql").read_text(encoding="utf-8")
     + "\n"
     + UPGRADE_DDL
 )

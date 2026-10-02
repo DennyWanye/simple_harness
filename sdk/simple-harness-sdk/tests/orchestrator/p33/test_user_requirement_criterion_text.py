@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""2026-09-26 真机文档任务：分层任务的成功条件存的是需求编号 c-user-N，文档核验曾把它当准则原文，
+"""2026-09-26 真机文档任务：分层任务的成功条件存的是需求编号 c-user-N，核验曾把它当准则原文，
 工人只看到"c-user-1"，任何结论都无法与之逐字绑定，文档 Mission 永远交付不了。"""
-from agent_orchestrator.verification.assessments import task_criterion_text
+from agent_orchestrator.verification.criteria import task_criterion_text
 
 STATEMENT = "summary.md 列出三条要点并注明来自哪个来源"
 

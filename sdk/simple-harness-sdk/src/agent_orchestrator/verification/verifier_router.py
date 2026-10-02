@@ -27,9 +27,8 @@ from typing import TYPE_CHECKING, Any
 from ..artifacts.workspace import Workspace
 from ..contracts import Artifact, ContractError, Mission, ResultEnvelope, Task
 from ..contracts.models import VERIFICATION_LAYERS
-from ..governance.domains import DomainProfileV1, supports_document_assessments
+from ..governance.domains import DomainProfileV1
 from ..memory.verified_knowledge import KnowledgeIndex
-from .assessments import AssessmentBindingV1, citation_integrity, doc_rule_reusable
 from .critics import CriticVerdict
 from .deterministic_checks import (
     ERROR,
@@ -41,7 +40,6 @@ from .deterministic_checks import (
     format_check,
 )
 from .domain_handlers import handler_for
-from .evidence_resolver import EvidenceResolver
 from .human_review import NEEDS_HUMAN, SUSPENDED, human_layer
 
 if TYPE_CHECKING:
@@ -100,18 +98,14 @@ class VerifierRouter:
         recorder: Callable[[LayerResult], Awaitable[None]] | None = None,
         tampered: Sequence[str] = (),
         knowledge: KnowledgeIndex | None = None,
-        action_problems: Sequence[str] | None = None,
         human: Mapping[str, Any] | None = None,
         reuse: Mapping[str, LayerResult] | None = None,
         needs_human_allowed: bool = True,
         domain: DomainProfileV1 | None = None,
-        assessment_binding: AssessmentBindingV1 | None = None,
-        evidence_resolver: EvidenceResolver | None = None,
         local_check_recorder_factory: Callable[[dict[str, Any]], LocalVerificationRecorder] | None = None,
     ) -> Verdict:
         actual_domain = domain if domain is not None else self._domain
         handler = handler_for(actual_domain)
-        document = handler.document_assessments
         local_check_recorder = None
         frozen_input_hash = None
 
@@ -122,8 +116,7 @@ class VerifierRouter:
                 mission=mission, task=task, envelope=envelope, artifacts=artifacts,
                 verification_copy=verification_copy, client_result_id=client_result_id,
                 tampered=tampered, knowledge=knowledge,
-                action_problems=action_problems, local_code_execution=self._local_code_execution,
-                domain=actual_domain, assessment_binding=assessment_binding,
+                local_code_execution=self._local_code_execution, domain=actual_domain,
             )
 
         if local_check_recorder_factory is not None:
@@ -133,8 +126,6 @@ class VerifierRouter:
             frozen_input_hash = fingerprint(actual_inputs)
             local_check_recorder = local_check_recorder_factory(actual_inputs)
         required = set(task.verification_policy)
-        if action_problems is not None:  # D7-2'': a result carrying actions/ is always rule-checked
-            required.add("rule_check")
         if not self._local_code_execution and any(
             c.startswith("pytest:") for c in task.success_criteria
         ):
@@ -175,23 +166,9 @@ class VerifierRouter:
             result = handler.rules(
                 envelope, task, artifacts=artifacts, verification_copy=verification_copy,
                 tampered=tampered, knowledge=knowledge,
-                extra_problems=action_problems or (),
                 local_code_execution=self._local_code_execution, domain=actual_domain,
             )
-            if not document:
-                return result
-            if assessment_binding is None or evidence_resolver is None:
-                return LayerResult(
-                    "rule_check", ERROR, "document assessment binding/resolver unavailable",
-                    {**dict(result.detail), "assessment_error": "missing_binding_or_resolver"},
-                )
-            try:
-                return citation_integrity(
-                    binding=assessment_binding, envelope=envelope,
-                    resolver=evidence_resolver, structural_result=result,
-                )
-            except ContractError as error:
-                return LayerResult("rule_check", ERROR, str(error), {"assessment_error": str(error)})
+            return result
 
         for layer in VERIFICATION_LAYERS:
             if layer == "human_review" and escalated:
@@ -223,10 +200,6 @@ class VerifierRouter:
                 # Until a persisted exact local receipt is revalidated, perform
                 # the side-effect-free check again. Old layer cache is not proof.
                 reusable = False
-            if reusable and reuse is not None and document and layer == "rule_check":
-                reusable = assessment_binding is not None and doc_rule_reusable(
-                    reuse[layer], binding=assessment_binding
-                )
             if reusable and reuse is not None:  # D7-8': resume reuses what actually passed
                 result = reuse[layer]
                 if layer == "critic_review":
@@ -337,10 +310,7 @@ class VerifierRouter:
                     layer, ERROR, "layer not deployed in this build", {"undeployed": True}
                 )
             if result.status == NEEDS_HUMAN:
-                if not needs_human_allowed and (
-                    layer != "critic_review"
-                    or (actual_domain is not None and supports_document_assessments(actual_domain))
-                ):
+                if not needs_human_allowed and layer != "critic_review":
                     result = LayerResult(
                         layer,
                         FAIL,

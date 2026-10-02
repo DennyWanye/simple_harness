@@ -102,8 +102,8 @@ with TemporaryDirectory(prefix='assurance-check-binding-') as temp:
     inputs=freeze_verifier_inputs(mission=world.mission,task=task,envelope=stored.envelope,
         artifacts=(artifact,),verification_copy=Workspace(workspace,stored.envelope.attempt_id,False,cas),
         client_result_id=None,tampered=(),knowledge=None,
-        action_problems=None,local_code_execution=False,domain=None,assessment_binding=None)
-    validate('local-verification-input-v1.schema.json',inputs)
+        local_code_execution=False,domain=None)
+    validate('local-verification-input-v2.schema.json',inputs)
     adapter=AssuranceLocalChecks(commit,tenant_id=world.mission.tenant_id,cas=cas,
         require_current_root=commit._assurance_root_gate.require_execution)
     recorder=adapter.prepare(inputs)

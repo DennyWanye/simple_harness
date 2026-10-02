@@ -239,7 +239,6 @@ class RepairKind(StrEnum):
     CANCEL_BRANCH = "CANCEL_BRANCH"
     RETRY_SAME_METHOD = "RETRY_SAME_METHOD"
     DECLARE_RUNTIME_BLOCKED = "DECLARE_RUNTIME_BLOCKED"
-    REQUEST_COMPENSATION = "REQUEST_COMPENSATION"
     PROPOSE_SUCCESSOR = "PROPOSE_SUCCESSOR"
 
 
@@ -1705,38 +1704,8 @@ PAYLOAD_BY_DECISION_TYPE: Mapping[PlanningDecisionType, type[Any]] = MappingProx
     }
 )
 
-@dataclass(frozen=True, slots=True)
-class RepairCompensationRequestDecision:
-    """Request human disposition of an exact successful action, never execute its inverse."""
-
-    repair_kind: RepairKind
-    action_key: str
-    action_hash: str
-    reason: str
-
-    def __post_init__(self) -> None:
-        kind = enum_of(RepairKind, self.repair_kind, "repair_compensation.repair_kind")
-        if kind is not RepairKind.REQUEST_COMPENSATION:
-            raise ContractError("repair_compensation.repair_kind must be REQUEST_COMPENSATION")
-        object.__setattr__(self, "repair_kind", kind)
-        object.__setattr__(self, "action_key", identifier(self.action_key, "repair_compensation.action_key"))
-        object.__setattr__(self, "action_hash", hash_hex(self.action_hash, "repair_compensation.action_hash"))
-        object.__setattr__(self, "reason", text(self.reason, "repair_compensation.reason"))
-
-    def to_json(self) -> dict[str, Any]:
-        return {"repair_kind": str(self.repair_kind), "action_key": self.action_key,
-                "action_hash": self.action_hash, "reason": self.reason}
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "repair_compensation") -> RepairCompensationRequestDecision:
-        data = fields_of(value, name, required=("repair_kind", "action_key", "action_hash", "reason"))
-        return cls(repair_kind=data["repair_kind"], action_key=data["action_key"],
-                   action_hash=data["action_hash"], reason=data["reason"])
-
-
 REPAIR_PAYLOAD_BY_KIND: Mapping[RepairKind, type[Any]] = MappingProxyType(
     {
-        RepairKind.REQUEST_COMPENSATION: RepairCompensationRequestDecision,
         RepairKind.DECLARE_RUNTIME_BLOCKED: RepairRuntimeBlockedDecision,
         RepairKind.RETRY_SAME_METHOD: RepairRetrySameMethodDecision,
         RepairKind.CANCEL_BRANCH: RepairCancelBranchDecision,
@@ -1752,8 +1721,6 @@ def _payload_class(
     decision_type: PlanningDecisionType, payload: object, name: str
 ) -> type[Any]:
     if decision_type is PlanningDecisionType.REPAIR:
-        if isinstance(payload, RepairCompensationRequestDecision):
-            return RepairCompensationRequestDecision
         if isinstance(payload, RepairRuntimeBlockedDecision):
             return RepairRuntimeBlockedDecision
         if isinstance(payload, RepairRetrySameMethodDecision):
@@ -1783,7 +1750,6 @@ def _payload_class(
 
 _ALL_PAYLOAD_CLASSES = (
     RefineDecision,
-    RepairCompensationRequestDecision,
     RepairRuntimeBlockedDecision,
     RepairRetrySameMethodDecision,
     RepairRefineDeeperDecision,
@@ -2058,7 +2024,6 @@ __all__ = (
     "RepairCancelBranchDecision",
     "RepairRetrySameMethodDecision",
     "RepairRuntimeBlockedDecision",
-    "RepairCompensationRequestDecision",
     "RepairKind",
     "RepairProposeSuccessorDecision",
     "RepairReplaceMethodDecision",

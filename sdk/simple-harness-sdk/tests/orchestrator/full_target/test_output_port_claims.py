@@ -34,7 +34,6 @@ from agent_orchestrator.runtime.role_templates import (
     WORKER,
     WORKER_HIERARCHICAL,
     WORKER_HIERARCHICAL_VERSION,
-    WORKER_V2,
     registered_versions,
 )
 
@@ -184,9 +183,7 @@ def test_the_worker_template_never_asks_the_model_for_a_system_bound_field() -> 
 FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     # name: (prompt_version, sha256 of instructions)
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
-    "WORKER_V2": ("worker-v2", "c0c35d2d2639ea6655c66bf7b30b6f46cf04ffbb458a79caba63b6477ae46f37"),
     "CRITIC": ("critic-v3", "427fb096fc0c4cf6acc67358cd631d3f3c4c39ce2fea60b768a529f6290b7120"),
-    "CRITIC_V2": ("critic-v2", "8eb51a32c06bfa16da88e4e89a28f48b50ce2e06969aec467abd803078a1c5ce"),
     # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
     "WORKER_HIERARCHICAL": (
         "worker-hierarchical-v5",
@@ -195,11 +192,8 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
 }
 
 #: P2.3d / defect D1: the same freeze for the versions a *domain module* registers.
-#: They are not module attributes, so they are looked up in ``TEMPLATE_VERSIONS`` —
-#: the base is in the table too, because "the hierarchical one is the AppWorld one
-#: plus an ``outputs`` field" is only true while the base does not move.
+#: They are not module attributes, so they are looked up in ``TEMPLATE_VERSIONS``.
 FROZEN_REGISTERED_DIGESTS: dict[str, str] = {
-    "worker-appworld-v3": "8fbea8282c1e8f4814e75fc9943bc41da21016db0af2026fe037f001b81bdd88",
     "worker-appworld-hierarchical-v1": (
         "9ad842af04458dd7f57d1935fb669a57fdb4b63d850427b5974716e3da994917"
     ),
@@ -225,8 +219,7 @@ def test_a_shipped_prompt_keeps_its_bytes(name: str) -> None:
     """Every shipped template still hashes to the digest frozen beside it.
 
     The hierarchical prompt is a *new version*, not an edit of the shipped ones, and
-    this is what says so: ``worker-v3`` and ``worker-v2`` are the bytes every
-    replayable Mission ran on, and ``worker-hierarchical-v1`` is now one of them too.
+    this is what says so: each shipped template keeps the bytes it was frozen with.
     """
 
     import hashlib
@@ -246,11 +239,9 @@ def test_the_frozen_digests_cover_the_prompts_this_slice_depends_on() -> None:
     """The hierarchical worker is in the table; so are the DAG-mode templates it must
     not have touched."""
 
-    assert {"WORKER", "WORKER_V2", "WORKER_HIERARCHICAL"} <= set(FROZEN_PROMPT_DIGESTS)
-    assert {"CRITIC", "CRITIC_V2"} <= set(FROZEN_PROMPT_DIGESTS)
+    assert {"WORKER", "WORKER_HIERARCHICAL", "CRITIC"} <= set(FROZEN_PROMPT_DIGESTS)
     assert FROZEN_PROMPT_DIGESTS["WORKER_HIERARCHICAL"][0] == WORKER_HIERARCHICAL_VERSION
     assert WORKER.prompt_version == "worker-v3"
-    assert WORKER_V2.prompt_version == "worker-v2"
 
 
 def test_the_hierarchical_worker_versions_are_the_current_one_and_the_domain_ones() -> None:
@@ -271,7 +262,6 @@ def test_the_hierarchical_worker_versions_are_the_current_one_and_the_domain_one
         "a DAG-mode pin must not be honoured in the hierarchical mode: worker-v3 "
         "never asks for outputs, and every leaf would then be refused as unclaimed"
     )
-    assert "worker-appworld-v3" not in HIERARCHICAL_WORKER_VERSIONS
 
 
 def test_a_claim_is_checked_against_the_files_this_envelope_declares() -> None:

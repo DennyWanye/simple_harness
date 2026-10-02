@@ -25,7 +25,6 @@ from ..assurance.refs import AssuranceRef
 from ..contracts import Artifact, Mission, ResultEnvelope, Task
 from ..governance.domains import DomainProfileV1
 from ..memory.verified_knowledge import KnowledgeIndex
-from .assessments import AssessmentBindingV1
 from .deterministic_checks import ERROR, LayerResult
 
 
@@ -39,14 +38,12 @@ def freeze_verifier_inputs(
     client_result_id: str | None,
     tampered: Sequence[str],
     knowledge: KnowledgeIndex | None,
-    action_problems: Sequence[str] | None,
     local_code_execution: bool,
     domain: DomainProfileV1 | None,
-    assessment_binding: AssessmentBindingV1 | None,
 ) -> dict[str, Any]:
     """Build from the router's ACTUAL arguments before executing its checks."""
     body = {
-        "schema": "assurance-local-verification-input-v1",
+        "schema": "assurance-local-verification-input-v2",
         "mission_id": mission.id,
         "tenant_id": mission.tenant_id,
         "task_id": task.id,
@@ -74,10 +71,8 @@ def freeze_verifier_inputs(
                 key: str(value) for key, value in sorted(knowledge.claim_status.items())
             },
         },
-        "action_problems": None if action_problems is None else list(action_problems),
         "local_code_execution": local_code_execution,
         "domain": None if domain is None else domain.to_json(),
-        "assessment_binding": None if assessment_binding is None else assessment_binding.to_json(),
     }
     canonical(body)  # The original manifest is bounded; no prefix or truncated success.
     return body

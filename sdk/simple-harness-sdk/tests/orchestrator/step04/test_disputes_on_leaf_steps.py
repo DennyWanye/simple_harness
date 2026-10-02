@@ -8,7 +8,15 @@
 
 from __future__ import annotations
 
-from knowledge_helpers import claim, drive_to_running, envelope, passed_layers, submit, two_leaf_service
+from knowledge_helpers import (
+    claim,
+    drive_to_running,
+    envelope,
+    passed_layers,
+    submit,
+    two_leaf_service,
+    verify_claims_citing_pytest,
+)
 
 from agent_orchestrator.contracts import ClaimStatus
 from agent_orchestrator.memory.summaries import build_summaries
@@ -59,7 +67,8 @@ def test_two_supported_claims_that_contradict_are_both_disputed_and_name_each_ot
     assert not any(d["in_knowledge"] for d in disputes)
 
 
-def test_a_claim_against_verified_knowledge_is_disputed_and_kept_out_of_knowledge(tmp_path):
+def test_a_claim_against_verified_knowledge_is_disputed_and_kept_out_of_knowledge(tmp_path, monkeypatch):
+    verify_claims_citing_pytest(monkeypatch)
     service, mission, (task_a, task_b) = two_leaf_service(tmp_path, key="k-know")
     a1 = drive_to_running(service, task_a)
     sa = submit(

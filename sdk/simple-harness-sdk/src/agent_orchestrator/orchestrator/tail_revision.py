@@ -14,7 +14,7 @@ from typing import Any
 
 from ..contracts import Task
 from ..contracts.models import sha256_hex
-from ..verification.assessments import mission_contract_revision, task_contract_revision
+from ..verification.criteria import mission_contract_revision, task_contract_revision
 
 TAIL_REVISION_VERSION = "task-tail-v1"
 

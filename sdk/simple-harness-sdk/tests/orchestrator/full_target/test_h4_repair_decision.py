@@ -30,7 +30,7 @@ def request(**kwargs: object) -> RepairRequestV1:
     )
 
 
-def test_h4_action_vocabulary_is_exactly_eleven_values() -> None:
+def test_h4_action_vocabulary_is_exactly_nine_values() -> None:
     assert {item.value for item in RepairActionType} == {
         "RETRY_SAME_METHOD",
         "REFINE_DEEPER",
@@ -39,7 +39,6 @@ def test_h4_action_vocabulary_is_exactly_eleven_values() -> None:
         "REBIND_INPUT",
         "BIND_EXISTING_GOAL",
         "CANCEL_BRANCH",
-        "REQUEST_COMPENSATION",
         "DECLARE_RUNTIME_BLOCKED",
         "PROPOSE_SUCCESSOR",
     }

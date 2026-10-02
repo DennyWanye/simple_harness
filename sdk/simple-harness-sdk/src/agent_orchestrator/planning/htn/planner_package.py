@@ -21,8 +21,7 @@ What the model reads is facts, in nine views, plus the things it is asked to act
     per goal that still needs a method: which library methods can run, and the
     material a new method is written from.
 the candidate lists
-    ``sharing_candidates``, ``successor_types``, ``compensation_candidates``,
-    ``evidence_predicates`` — what the corresponding decisions may name.
+    ``sharing_candidates``, ``successor_types``, ``evidence_predicates`` — what the corresponding decisions may name.
 the protocol fields
     ``planning_protocol``, ``planning_subjects``, ``visible_refs``,
     ``previous_feedback``, ``decision_limits`` (V2 §38).

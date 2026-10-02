@@ -98,11 +98,6 @@ from ..contracts.resolution import DeliveryStage
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import IllegalTransition
 from ..governance.budgets import BudgetError, BudgetExhausted
-from ..governance.domains import (
-    requires_document_critic_proof,
-    requires_mission_source_binding,
-    supports_document_assessments,
-)
 from ..governance.permissions import Principal
 from ..governance.policies import action_decision, deployed_layers, effective_tools
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
@@ -1511,6 +1506,21 @@ class Orchestrator:
             )
             self._note(f"mission {mission.id}: flat orchestration mode removed → stopped")
             return True
+        try:
+            # 删旧平面模式第三刀第 4 步: a domain snapshot frozen under another profile
+            # schema is not read through a compatibility path.
+            self.commit.domain_for(mission.id)
+        except CommitRejected as error:
+            if mission.status is MissionStatus.CREATED:
+                self.commit.begin_planning(mission.id)
+            self._stop_planning_round(
+                mission.id,
+                reason="unsupported_domain_profile",
+                detail={"error": str(error)[:300]},
+                stop_reason=MissionStopReason.PLANNING_FAILED,
+            )
+            self._note(f"mission {mission.id}: {error} → stopped")
+            return True
         from .planning_backend_runtime import frozen_deployment_conflict
         from .planning_protocol_binding import current_planning_protocol
 
@@ -2110,10 +2120,25 @@ class Orchestrator:
             if decision.refused is not None:
                 raise ContractError(f"action criterion {criterion!r} refused: {decision.refused}")
 
+    def _domain_unreadable(self, mission_id: str) -> bool:
+        """A Mission whose frozen domain this build cannot read (another profile schema).
+
+        Startup binding and recovery read the frozen domain; such a Mission is left
+        unbound here and stopped by name by the loop's contract gate in its first round,
+        instead of taking ``__aenter__`` / ``recover`` down for every Mission.
+        """
+        try:
+            self.commit.domain_for(mission_id)
+        except CommitRejected:
+            return True
+        return False
+
     def _bind_startup_tools(self) -> None:
         """Reconstruct frozen tool authority before SDK automatic recovery starts."""
         for intent in self.store.list_intents("AGENT_CREATED", "SUBMITTED"):
             if intent.agent_id is None or self._pool_missing(intent):
+                continue
+            if self._domain_unreadable(intent.mission_id):
                 continue
             if intent.kind == "attempt":
                 attempt = self.store.get_attempt(intent.subject_id)
@@ -2148,9 +2173,6 @@ class Orchestrator:
                         or turn.turn_id != intent.expected_turn_id
                     ):
                         raise ContractError("Critic SDK turn differs from frozen intent")
-                # A submitted SDK turn can resume during __aenter__: validate
-                # before granting it tools, never rebind an invalid source tree.
-                self._validate_mission_judge_intent(intent)
                 self._bind_critic(intent.agent_id, intent.config)
 
     async def recover(self) -> None:
@@ -2169,6 +2191,8 @@ class Orchestrator:
                 # The frozen turn belongs to another runtime pool. Leave its
                 # workspace and SDK turn untouched for that pool to recover.
                 continue
+            if self._domain_unreadable(intent.mission_id):
+                continue  # stopped by name by the contract gate in the first round
             if intent.kind == "attempt":
                 attempt = self.store.get_attempt(intent.subject_id)
                 if attempt is not None:
@@ -2179,18 +2203,6 @@ class Orchestrator:
                     self.assembled.gateway.unbind(intent.agent_id)
                     await self._cancel_turn(intent)
                     continue
-                try:
-                    self._validate_mission_judge_intent(intent)
-                except ContractError as error:
-                    self.assembled.gateway.unbind(intent.agent_id)
-                    await self._cancel_turn(intent)
-                    self._commit_fail_mission(
-                        intent.mission_id,
-                        stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                        detail={"source_binding_error": str(error)},
-                    )
-                    # Fail closed before bridge.recover could wake this invalid turn.
-                    raise
                 self._bind_critic(intent.agent_id, intent.config)
         for mission in self._active_missions():
             try:
@@ -4786,7 +4798,6 @@ class Orchestrator:
         if intent.config.get("native_planning_decision") is None and self._pool_missing(intent):
             return False
         self._context_profile_for(intent.config)
-        self._validate_mission_judge_intent(intent)
         claimed = self.commit.claim_intent(
             intent.intent_id, owner=self._owner, lease_seconds=self._config.lease_seconds
         )
@@ -5308,36 +5319,6 @@ class Orchestrator:
             ),
         )
 
-    def _validate_mission_judge_intent(self, intent: DispatchIntent) -> None:
-        if intent.kind != "critic" or not intent.subject_id.startswith(
-            f"{intent.mission_id}:judge:"
-        ):
-            return
-        domain = self.commit.domain_for(intent.mission_id)
-        if not requires_mission_source_binding(domain):
-            return
-        from ..verification.mission_sources import ensure_mission_tree
-
-        mission = self.store.get_mission(intent.mission_id)
-        if mission is None:
-            raise ContractError("Mission source owner unavailable")
-        if sha256_hex(intent.config.get("message")) != intent.input_hash:
-            raise ContractError("Mission source request identity mismatch")
-        from simple_harness.contracts import canonical_json as context_json
-
-        message = intent.config.get("message")
-        text = message.get("content") if isinstance(message, Mapping) else None
-        catalog = intent.config.get("mission_source_catalog")
-        view_id = intent.config.get("attempt_id")
-        if not isinstance(text, str) or not isinstance(catalog, Mapping):
-            raise ContractError("Mission source request catalog unavailable")
-        if (
-            f"## mission_source_catalog\n{context_json(dict(catalog))}\n\n" not in text
-            or f"## attempt_id\n{view_id}\n\n" not in text
-        ):
-            raise ContractError("Mission source request catalog differs from frozen tree")
-        ensure_mission_tree(self.store, mission, domain, self.assembled.workspaces, intent.config)
-
     def _bind_critic(self, agent_id: str, config: Mapping[str, Any]) -> None:
         if config.get("assurance_protocol") == "assurance-exec-v1.1":
             # Frozen initial materials use the Assurance disclosure gate. Never
@@ -5386,13 +5367,7 @@ class Orchestrator:
         try:
             records = self.store.list_knowledge(mission.id)
             claims = self.store.list_mission_claims(mission.id)
-            document = self.commit.domain_for(mission.id).id == "doc-research-v1"
-            stale = KnowledgeIndex.load(self.store, mission.id).stale() if document else None
-            if stale and any(
-                issue.get("code") == "ERROR" for issues in stale.values() for issue in issues
-            ):
-                raise RetrievalUnavailable("source dependency index could not be read")
-            summaries = build_summaries(self.store, mission.id, stale=stale)
+            summaries = build_summaries(self.store, mission.id)
             disputes = disputed_claims(claims, mission_id=mission.id)
         except (StoreBusy, OSError, ValueError) as error:  # index unreadable / not ready
             raise RetrievalUnavailable(str(error)) from error
@@ -5401,7 +5376,6 @@ class Orchestrator:
             records,
             tasks_by_id=tasks_by_id,
             limit=self._config.max_knowledge_items,
-            stale=stale,
         )
         by_id = {record.id: record for record in records}
         from ..context.compression import GLOBAL_BRANCH, branch_of
@@ -6563,7 +6537,7 @@ class Orchestrator:
                 mission=mission,
                 new_mode=new_mode,
                 raw_text=text,
-                include_plan_sources=phase_key not in {"REPAIR/DECLARE_RUNTIME_BLOCKED", "REPAIR/REQUEST_COMPENSATION"}
+                include_plan_sources=phase_key != "REPAIR/DECLARE_RUNTIME_BLOCKED"
                 and decision.decision_type not in {
                     PlanningDecisionType.WAIT,
                     PlanningDecisionType.NO_CHANGE,
@@ -6686,7 +6660,7 @@ class Orchestrator:
                 allow_convergence_preview=(new_mode._taskgraph_preview is not None
                     and taskgraph_enabled(self.store, mission.id))), for_repair_preview=True,
         )
-        from ..contracts.planning_decisions import RepairRuntimeBlockedDecision, RepairCompensationRequestDecision
+        from ..contracts.planning_decisions import RepairRuntimeBlockedDecision
         if isinstance(pre_admitted, PreAdmittedPlanningDecision) and isinstance(decision.payload, RepairRuntimeBlockedDecision):
             from .planning_runtime_block import register_block
             try:
@@ -6768,8 +6742,7 @@ class Orchestrator:
                 await reject_planning(intent, reason="proposal_not_grounded", detail=detail)
             return
         if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
-            and (decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD}
-                 or isinstance(decision.payload, RepairCompensationRequestDecision))):
+            and decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD}):
             from .planning_method_proposal import prepare_method, persist_method
             from ..contracts.planning_decisions import RequestHumanDecision, ProposeMethodDecision
             prepared_method = None
@@ -6783,18 +6756,11 @@ class Orchestrator:
                     checked = pre_admit_planning_decision(decision, context=current)
                     if not isinstance(checked, PreAdmittedPlanningDecision):
                         raise ContractError("planning service request is no longer admitted")
-                    if isinstance(decision.payload, (RequestHumanDecision, RepairCompensationRequestDecision)):
-                        repair_context = None
-                        if isinstance(decision.payload, RepairCompensationRequestDecision):
-                            from .planning_compensation import prepare_request
-                            human_payload, repair_context = prepare_request(
-                                self.store, mission.id, decision.payload, intent.config.get("planning_package"))
-                        else:
-                            human_payload = decision.payload
+                    if isinstance(decision.payload, RequestHumanDecision):
                         question, service_detail = self._register_human_question(
                             mission, new_mode, decision_id=decision_id, subject_key=decision.subject_key,
-                            payload=human_payload, current=current,
-                            next_ordinal=int(intent.config.get("ordinal", 1)) + 1, repair_context=repair_context)
+                            payload=decision.payload, current=current,
+                            next_ordinal=int(intent.config.get("ordinal", 1)) + 1, repair_context=None)
                         event_type = "PlanningHumanRequested"
                     else:
                         assert isinstance(decision.payload, ProposeMethodDecision)
@@ -7965,21 +7931,6 @@ class Orchestrator:
         raw.pop("id", None)
         raw.pop("result_id", None)
         raw.setdefault("mission_id", attempt.mission_id)
-        domain = self.commit.domain_for(attempt.mission_id)
-        if domain.id == "doc-research-v1" and domain.version == "9":
-            from ..verification.document_refs import expand_document_claim_refs
-
-            intent = self.store.get_intent_for_subject(attempt.id)
-            mission = self.store.get_mission(attempt.mission_id)
-            if (
-                intent is None
-                or mission is None
-                or intent.kind != "attempt"
-                or intent.mission_id != attempt.mission_id
-                or intent.subject_id != attempt.id
-            ):
-                raise ContractError("document refs require the original Attempt intent")
-            raw = expand_document_claim_refs(raw, intent_config=intent.config, mission=mission)
         provisional = ResultEnvelope.from_json({**raw, "id": "result-provisional"})
         if provisional.attempt_id != attempt.id or provisional.task_id != attempt.task_id:
             raise ContractError(
@@ -8175,35 +8126,6 @@ class Orchestrator:
 
         human, reuse, escalation_left = self._human_inputs(result_id, task)
         domain = self.commit.domain_for(mission.id)
-        assessment_binding = None
-        evidence_resolver = None
-        if domain.id == "doc-research-v1":
-            from ..verification.assessments import assessment_binding_for
-            from ..verification.evidence_resolver import EvidenceResolver
-
-            try:
-                assessment_binding = assessment_binding_for(
-                    self.store,
-                    task=task,
-                    attempt=attempt,
-                    envelope=stored.envelope,
-                    artifacts=artifacts,
-                )
-            except ContractError as error:
-                # A frozen contract cannot be reconstructed from today's Task or source
-                # registry. Persist a real failure; never fabricate a reusable PASS.
-                failure = LayerResult(
-                    "rule_check",
-                    "ERROR" if supports_document_assessments(domain) else "FAIL",
-                    "document assessment binding invalid",
-                    {"reason": "assessment_binding_invalid", "error": str(error)},
-                )
-                await recorder(failure)
-                self.commit.fail_result(result_id, failures=[failure.to_json()], owner=self._owner)
-                return True
-            evidence_resolver = EvidenceResolver(
-                self.store, self.assembled.workspaces.artifact_store
-            )
         try:
             local_check_factory = None
             from ..storage.assurance_store import AssuranceStore
@@ -8229,8 +8151,6 @@ class Orchestrator:
                 reuse=reuse,
                 needs_human_allowed=escalation_left,
                 domain=domain,
-                assessment_binding=assessment_binding,
-                evidence_resolver=evidence_resolver,
                 local_check_recorder_factory=local_check_factory,
             )
         except _AcceptedSiblingSupersededVerification:
@@ -8275,35 +8195,6 @@ class Orchestrator:
             await self._release_mission(mission.id)
             self._note(f"task {task.id}: Critic admission denied ({reason}) -> stopped")
             return True
-        if supports_document_assessments(domain) and assessment_binding is not None:
-            from ..verification.assessments import validated_assessments
-            from ..verification.conflicts import document_uncertainty_conflicts
-
-            rule = next((r for r in verdict.layers if r.layer == "rule_check"), None)
-            if rule is not None and rule.status in {"PASS", NEEDS_HUMAN}:
-                assessments = validated_assessments(rule, binding=assessment_binding)
-                conflicts = document_uncertainty_conflicts(
-                    self.store,
-                    mission_id=mission.id,
-                    envelope=stored.envelope,
-                    assessments=assessments,
-                )
-                if conflicts:
-                    failure = LayerResult(
-                        "rule_check",
-                        "FAIL",
-                        "uncertainty conflicts with another claim",
-                        {
-                            **dict(rule.detail),
-                            "reason": "uncertainty_conflict",
-                            "uncertainty_conflicts": conflicts,
-                        },
-                    )
-                    await recorder(failure)
-                    self.commit.fail_result(
-                        result_id, failures=[failure.to_json()], owner=self._owner
-                    )
-                    return True
         if verdict.critic is not None:
             self._critic_verdicts[result_id] = verdict.critic
         if verdict.suspended:  # D7-8': the sixth layer waits for a person
@@ -8375,17 +8266,6 @@ class Orchestrator:
                 await self._release_mission(mission.id)
                 self._note(f"task {task.id} stopped: verifier(s) {undeployed} not deployed")
                 return True
-            if supports_document_assessments(domain):
-                failed_attempt = self.store.get_attempt(attempt.id)
-                if (
-                    failed_attempt is not None
-                    and (failed_attempt.failure or {}).get("reason") == "inconclusive"
-                ):
-                    if self.commit.stop_inconclusive_task(task.id):
-                        await self._release_mission(mission.id)
-                        self._note(f"task {task.id} stopped: insufficient_evidence (retry limit)")
-                    # Pure missing-limitations rework follows its own frozen allowance.
-                    return True
         return True
 
     def _critic_provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
@@ -8645,7 +8525,6 @@ class Orchestrator:
         artifacts: Sequence[Artifact],
         test_output: str | None,
         attempt_id: str | None = None,
-        mission_source_binding: Mapping[str, Any] | None = None,
     ) -> CriticVerdict:
         from ..verification.critics import critic_schema_retry_feedback
         from ..storage.assurance_store import AssuranceStore
@@ -8673,9 +8552,7 @@ class Orchestrator:
                 raise CommitRejected("Critic subject stopped before dispatch")
             subject = f"{subject_prefix}:{ordinal}"
             intent = self.store.get_intent_for_subject(subject)
-            if intent is not None:
-                self._validate_mission_judge_intent(intent)
-            else:
+            if intent is None:
                 template = self._template(CRITIC, mission.id)
                 content_scope = None
                 from .scoped_content_review import task_content_prompt_scope
@@ -8692,9 +8569,6 @@ class Orchestrator:
                 untrusted = [
                     str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])
                 ]
-                if mission_source_binding is not None:
-                    source_binding = dict(mission_source_binding)
-                    untrusted = sorted(set(untrusted) | set(source_binding["untrusted_sources"]))
                 if source_binding:
                     untrusted = sorted(
                         set(untrusted) | set(source_binding.get("source_versions", {}))
@@ -8719,7 +8593,6 @@ class Orchestrator:
                         visibility="verifier",
                         domain=self.commit.domain_for(mission.id),
                         source_versions=source_binding.get("source_versions"),
-                        mission_source_catalog=source_binding.get("mission_source_catalog"),
                         feedback=critic_schema_retry_feedback(
                             last_error, prompt_version=template.prompt_version
                         ),
@@ -8886,14 +8759,7 @@ class Orchestrator:
                 self._settle_intent(intent, "FAILED")
                 self._settle_service_if_known(subject, mission.id, task_id)
                 continue
-            domain = self.commit.domain_for(mission.id)
-            if task is not None and requires_document_critic_proof(domain):
-                # The actual SDK COMMITTED output, not the mutable layer row, is
-                # the durable verdict authority. Receipt + settlement are atomic.
-                assert result is not None
-                self.commit.settle_critic_verdict(intent.intent_id, result=result)
-            else:
-                self._settle_intent(intent, "SETTLED")
+            self._settle_intent(intent, "SETTLED")
             self._settle_service_if_known(subject, mission.id, task_id)
             return verdict
         assert last_error is not None
@@ -9597,20 +9463,9 @@ class Orchestrator:
                 # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
                 # it.  Nothing to re-judge and nothing to dispatch: idle, not stalled.
                 return False
-            try:
-                if any(c.startswith(ACTION_PREFIX) for c in current.success_criteria):
-                    return await self._decide_actions(current, live)  # D7-7' two-stage judgment
-                return await self._judge(current, live)
-            except ContractError as error:
-                if not requires_mission_source_binding(self.commit.domain_for(current.id)):
-                    raise
-                self._commit_fail_mission(
-                    current.id,
-                    stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                    detail={"source_assessment_error": str(error)},
-                )
-                await self._release_mission(current.id)
-                return True
+            if any(c.startswith(ACTION_PREFIX) for c in current.success_criteria):
+                return await self._decide_actions(current, live)  # D7-7' two-stage judgment
+            return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)
             return True
         if any(task.status is TaskStatus.FAILED for task in tasks):
@@ -11011,13 +10866,8 @@ class Orchestrator:
                 max_running_attempts=self._config.max_running_attempts,
             )
         except CommitRejected as error:
-            from .commit_service import InconclusiveRetryExhausted, NonModelFailuresExhausted
+            from .commit_service import NonModelFailuresExhausted
 
-            if isinstance(error, InconclusiveRetryExhausted):
-                if self.commit.stop_inconclusive_task(task.id):
-                    await self._release_mission(mission.id)
-                    self._note(f"task {task.id} stopped: insufficient_evidence (retry limit)")
-                    return True
             if isinstance(error, NonModelFailuresExhausted):
                 # 2026-09-28：格式、服务、打断这类不扣次数的失败同一步已到上限——多半是服务
                 # 或格式本身有问题，停下这一步并写明，不无限重做。
@@ -11074,57 +10924,13 @@ class Orchestrator:
         )
         return True
 
-    def _refresh_document_judgments(
-        self,
-        mission: Mission,
-        judgments: Sequence[Mapping[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Re-read the document rows of a kept judgment against the sources as they are now.
-
-        片 D 第 2 项：保证通道上文字要求的结论是最终审查的，这里只重看秩序检查（资料换了
-        版本会让它变）；``cite:`` 要求和不走保证通道的任务照旧整行按覆盖结果重算。
-        """
-        domain = self.commit.domain_for(mission.id)
-        result = [dict(item) for item in judgments]
-        if not requires_mission_source_binding(domain):
-            return result
-        from ..verification.mission_coverage import (
-            document_judgment,
-            mission_coverage,
-            replace_document_judgment,
-        )
-
-        assured = self._is_assured(mission.id)
-        coverage = mission_coverage(
-            self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store,
-            assured=assured,
-        )
-        assessed = {
-            item["text"]: item for item in coverage["criteria"] if item["verdict"] != "STRUCTURAL"
-        }
-        grades = self._assured_root_grades(mission, self._new_mode(mission)) if assured else None
-        for item in result:
-            row = assessed.get(item["criterion"])
-            if row is not None:
-                replace_document_judgment(item, document_judgment(
-                    item["criterion"], row, assured=assured,
-                    grade=None if grades is None else grades.get(item["criterion"])))
-                item.update(
-                    excluded_claim_ids=list(row["excluded_claim_ids"]),
-                    source_provenance_issues=list(row["source_provenance_issues"]),
-                )
-        return result
-
     async def _judge(self, mission: Mission, tasks: Sequence[Task]) -> bool:
         key = judgment_key(tasks)
         cached = self.commit.criteria_judgment(mission.id, key)  # booked only for an arbitration
-        if cached is not None and await self._stop_document_insufficient(mission):
-            return True
         evaluated = cached if cached is not None else await self._evaluate_criteria(mission, tasks)
         if evaluated is None:
             return True
         judgments, summary = evaluated
-        judgments = self._refresh_document_judgments(mission, judgments)
         ruled, created = self._arbitrated(mission, tasks, key, judgments)
         if ruled is None:  # D7-8' ②: a person rules first; the judgment is kept meanwhile
             if cached is None:
@@ -11133,26 +10939,6 @@ class Orchestrator:
         judged = self.commit.judge_mission(mission.id, judgments=ruled, summary=summary)
         self._note(f"mission {mission.id} judged: {judged.status} ({judged.stop_reason})")
         return True
-
-    async def _stop_document_insufficient(self, mission: Mission) -> bool:
-        domain = self.commit.domain_for(mission.id)
-        if not supports_document_assessments(domain):
-            return False
-        try:
-            stopped = self.commit.stop_insufficient_mission(mission.id)
-        except ContractError as error:
-            self._commit_fail_mission(
-                mission.id,
-                stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                detail={"assessment_error": str(error)},
-            )
-            await self._release_mission(mission.id)
-            return True
-        if stopped is not None:
-            await self._release_mission(mission.id)
-            self._note(f"mission {mission.id} stopped: insufficient_evidence")
-            return True
-        return False
 
     async def _evaluate_criteria(
         self, mission: Mission, tasks: Sequence[Task]
@@ -11165,17 +10951,6 @@ class Orchestrator:
         critic_review when the Mission has exactly one Task)."""
 
         self._reimport_unsettled(mission)
-        domain = self.commit.domain_for(mission.id)
-        document_coverage = None
-        if supports_document_assessments(domain):
-            if await self._stop_document_insufficient(mission):
-                return None
-            from ..verification.mission_coverage import mission_coverage
-
-            document_coverage = mission_coverage(
-                self.store, mission, domain, artifact_store=self.assembled.workspaces.artifact_store,
-                assured=self._is_assured(mission.id),
-            )
         # P2.3k / defect N3: the tree is read from the root resolution's own
         # contributions, never from ``Task.dependency_ids`` (a materialised occurrence
         # leaves them empty by design, §18.5 constraint 4).
@@ -11213,56 +10988,7 @@ class Orchestrator:
         # P0-2: one judgment tree per orchestrator instance — another instance may be
         # running pytest in its own; the judgment Commit itself is idempotent
         view_id = f"{mission.id}-judge-{self._owner}"
-        mission_sources = None
-        if requires_mission_source_binding(domain):
-            from ..verification.mission_sources import ensure_mission_tree, prepare_mission_tree
-
-            existing = next(
-                (
-                    self.store.get_intent_for_subject(f"{mission.id}:judge:{n}")
-                    for n in range(1, MAX_CRITIC_ATTEMPTS + 1)
-                    if self.store.get_intent_for_subject(f"{mission.id}:judge:{n}") is not None
-                ),
-                None,
-            )
-            try:
-                if existing is not None:
-                    self._validate_mission_judge_intent(existing)
-                    view_id = str(existing.config["attempt_id"])
-                    mission_sources = {
-                        k: existing.config[k]
-                        for k in (
-                            "mission_source_catalog",
-                            "mission_judge_tree",
-                            "source_roots",
-                            "untrusted_sources",
-                        )
-                    }
-                else:
-                    mission_sources = prepare_mission_tree(
-                        self.store,
-                        mission,
-                        domain,
-                        self.assembled.workspaces.artifact_store,
-                        seed=seed,
-                        files=files,
-                    )
-                copy = ensure_mission_tree(
-                    self.store,
-                    mission,
-                    domain,
-                    self.assembled.workspaces,
-                    {**mission_sources, "attempt_id": view_id},
-                )
-            except ContractError as error:
-                self._commit_fail_mission(
-                    mission.id,
-                    stop_reason=MissionStopReason.VERIFIER_UNAVAILABLE,
-                    detail={"source_binding_error": str(error)},
-                )
-                return None
-        else:
-            copy = self.assembled.workspaces.integrated_copy(view_id, seed=seed, files=files)
+        copy = self.assembled.workspaces.integrated_copy(view_id, seed=seed, files=files)
         self._register_copy(
             "judge",
             f"{view_id}-verify",
@@ -11308,17 +11034,12 @@ class Orchestrator:
         assured = assured_grades is not None or self._is_assured(mission.id)
         needs_critic = not assured and any(
             not c.startswith(("pytest:", "file:", ACTION_PREFIX))
-            and (document_coverage is None or c.startswith("arbitration:"))
             for c in mission.success_criteria
         )
         critic: CriticVerdict | None = None
         reused_critic = False
         if needs_critic:
-            if (
-                len(tasks) == 1
-                and stored is not None
-                and not requires_mission_source_binding(domain)
-            ):
+            if len(tasks) == 1 and stored is not None:
                 critic = self._critic_verdicts.get(stored.envelope.id)
                 reused_critic = critic is not None
             if critic is None:
@@ -11332,7 +11053,6 @@ class Orchestrator:
                         account_id=mission_account(mission.id),
                         artifacts=artifacts,
                         test_output=test_output or None,
-                        mission_source_binding=mission_sources,
                     )
                 except (ContractError, BudgetExhausted) as error:
                     self._note(f"mission {mission.id}: independent judge unavailable ({error})")
@@ -11364,17 +11084,6 @@ class Orchestrator:
                 )
             elif criterion.startswith(ACTION_PREFIX):
                 continue  # D7-7': judged from the action ledger by the caller
-            elif (
-                document_coverage is not None
-                and document_coverage["criteria"][ordinal]["verdict"] != "STRUCTURAL"
-            ):
-                # 片 D 第 2 项：保证通道上的文字要求以已认证的最终审查结论为准，覆盖结果
-                # 只留秩序检查；``cite:`` 要求和不走保证通道的任务照旧由覆盖结果决定。
-                from ..verification.mission_coverage import document_judgment
-
-                judgments.append(document_judgment(
-                    criterion, document_coverage["criteria"][ordinal], assured=assured,
-                    grade=None if assured_grades is None else assured_grades.get(criterion)))
             elif assured:
                 grade = None if assured_grades is None else assured_grades.get(criterion)
                 judgments.append(
@@ -11451,8 +11160,6 @@ class Orchestrator:
         leaves the Mission ACTIVE without progress, so ``run()`` goes idle."""
 
         progressed = False
-        if await self._stop_document_insufficient(mission):
-            return True
         key = judgment_key(tasks)
         cached = self.commit.criteria_judgment(mission.id, key)
         if cached is None:
@@ -11465,7 +11172,6 @@ class Orchestrator:
             cached = evaluated
             progressed = True
         plain, summary = cached
-        plain = self._refresh_document_judgments(mission, plain)
         ruled, created = self._arbitrated(mission, tasks, key, plain)
         if ruled is None:
             return progressed or created  # a person rules on a Verifier conflict first

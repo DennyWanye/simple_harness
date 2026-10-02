@@ -164,3 +164,32 @@ def submit(
         stored.envelope.id, layer="critic_review", status="PASS", detail={"producer": "fixture"}
     )
     return stored
+
+
+def verify_claims_citing_pytest(monkeypatch) -> None:
+    """Stand-in grader: a claim citing ``pytest:`` evidence is graded VERIFIED.
+
+    The current code profile never lets a passing test verify a semantic claim (only
+    system-generated scoped observations are VERIFIED, ``gap_phase1/test_code_knowledge``).
+    Tests that use this are about what happens **after** a claim is VERIFIED — knowledge
+    projection, disputes against it, summaries, supersession — not about how grading
+    decides; the real grading result is kept for every other claim."""
+
+    from dataclasses import replace
+
+    from agent_orchestrator.contracts import ClaimStatus
+    from agent_orchestrator.orchestrator import commit_service
+
+    real = commit_service.grade_claim
+
+    def grade(claim_id, evidence, **kwargs):
+        graded = real(claim_id, evidence, **kwargs)
+        if any(str(item).startswith("pytest:") for item in evidence):
+            return replace(
+                graded,
+                status=ClaimStatus.VERIFIED,
+                basis={"layer": "code_test", "evidence": [str(item) for item in evidence]},
+            )
+        return graded
+
+    monkeypatch.setattr(commit_service, "grade_claim", grade)

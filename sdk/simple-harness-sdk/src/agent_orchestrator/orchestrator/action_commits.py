@@ -214,7 +214,6 @@ class ActionCommitsMixin:
         _store: Store
         _ledger: BudgetLedger
 
-        def document_handoff_refusal(self, mission_id: str) -> str | None: ...
 
         def _validate_source_binding(self, request: Mapping[str, Any]) -> None: ...
 
@@ -970,8 +969,6 @@ class ActionCommitsMixin:
                         and not self._planning_rehandoff_proven(action, bridge)
                     ):
                         reason = "rehandoff_needs_authoritative_not_applied_proof"
-            if reason is None:
-                reason = self.document_handoff_refusal(str(action["mission_id"]))
             # The executor knows physical deployment roots. Check them against the
             # same registry snapshot as this handoff, before charging or writing the
             # outbox; use the ordinary refusal/reconciliation path below.

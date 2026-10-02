@@ -17,9 +17,11 @@ from __future__ import annotations
 import pytest
 
 from agent_orchestrator.governance.domains import (
+    APPWORLD_DOMAIN,
     CODE_DOMAIN,
-    DOC_DOMAIN,
-    LEGACY_DOMAIN,
+    CODE_PROFILE,
+    DOMAINS,
+    DRONE_SIM_DOMAIN,
     DomainProfileV1,
     resolve_domain,
 )
@@ -28,10 +30,11 @@ from agent_orchestrator.governance.domains import (
 # ---------------------------------------------------------------- 注册表与冻结
 
 
-def test_p33_a01_two_domains_are_registered_and_resolvable() -> None:
-    assert resolve_domain(CODE_DOMAIN).id == CODE_DOMAIN
-    assert resolve_domain(DOC_DOMAIN).id == DOC_DOMAIN
-    assert isinstance(resolve_domain(DOC_DOMAIN), DomainProfileV1)
+def test_p33_a01_registered_domains_are_resolvable() -> None:
+    assert set(DOMAINS) == {CODE_DOMAIN, APPWORLD_DOMAIN, DRONE_SIM_DOMAIN}
+    for domain_id in DOMAINS:
+        assert resolve_domain(domain_id).id == domain_id
+        assert isinstance(resolve_domain(domain_id), DomainProfileV1)
 
 
 def test_p33_a02_an_unknown_domain_is_refused_not_defaulted() -> None:
@@ -39,7 +42,7 @@ def test_p33_a02_an_unknown_domain_is_refused_not_defaulted() -> None:
         resolve_domain("whatever-v9")
 
 
-def test_p33_a03_missions_from_before_this_version_bind_the_code_domain() -> None:
-    """0.10 之前的 Mission 没有领域绑定；它们必须落回与今天完全相同的行为。"""
+def test_p33_a03_no_domain_is_the_general_task() -> None:
+    """不指定领域的任务就是通用任务（code 领域的当前档案）。"""
 
-    assert LEGACY_DOMAIN == CODE_DOMAIN
+    assert resolve_domain(None) is CODE_PROFILE

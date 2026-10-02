@@ -15,13 +15,15 @@ from knowledge_helpers import (
     passed_layers,
     submit,
     two_leaf_service,
+    verify_claims_citing_pytest,
 )
 
 from agent_orchestrator.contracts import ClaimStatus, TaskStatus
 from agent_orchestrator.memory.blackboard import Blackboard
 
 
-def test_blackboard_is_read_only_and_keeps_knowledge_and_candidates_apart(tmp_path):
+def test_blackboard_is_read_only_and_keeps_knowledge_and_candidates_apart(tmp_path, monkeypatch):
+    verify_claims_citing_pytest(monkeypatch)
     service, mission, (task_a, _task_b) = two_leaf_service(tmp_path)
     attempt = drive_to_running(service, task_a)
     stored = submit(

@@ -57,7 +57,7 @@ def build_summaries(
                     stale_tasks.add(task.id)
                     affected_by_task.setdefault(task.id, set()).update(inherited)
                 result_summaries[task.id] = (
-                    "来源依赖已失效，历史分析不作为当前结论；需重新核查。"
+                    "所依赖的知识已失效，历史分析不作为当前结论；需重新核查。"
                     if task.id in stale_tasks
                     else stored.envelope.summary
                 )
@@ -90,13 +90,7 @@ def build_summaries(
                 kid: [dict(issue) for issue in invalid[kid]] for kid in sorted(affected_ids)
             }
             if affected:
-                has_noncurrent = any(
-                    issue.get("code") == "noncurrent_knowledge"
-                    for issues in affected.values() for issue in issues
-                )
-                summary["summary_version"] = (
-                    "summary-current-v3" if has_noncurrent else "summary-doc-source-v2"
-                )
+                summary["summary_version"] = "summary-current-v3"
                 summary["uncertainty"]["stale_knowledge"] = affected
                 summary.pop("version")
                 summary["version"] = "sum-" + sha256_hex(summary)[:16]

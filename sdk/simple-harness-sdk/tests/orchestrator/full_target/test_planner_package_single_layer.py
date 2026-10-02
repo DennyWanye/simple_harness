@@ -53,7 +53,7 @@ TOP_LEVEL = {
     "planning_protocol", "planning_subjects", "visible_refs", "previous_feedback",
     "decision_limits", "views", "repair_requests", "human_answers", "method_selection",
     "method_proposal_contexts", "sharing_candidates", "successor_types",
-    "compensation_candidates", "evidence_predicates", "truncated", "omitted_counts",
+    "evidence_predicates", "truncated", "omitted_counts",
 }
 
 #: The intermediate mapping the views used to be converted from, and the fields that
@@ -61,7 +61,7 @@ TOP_LEVEL = {
 GONE = {
     "plan", "method_library", "applicability", "facts", "operators", "planning_rejected",
     "constraint", "output_contract", "planning_attempt", "active_method_instances",
-    "data_rebind_candidates",
+    "data_rebind_candidates", "compensation_candidates",
 }
 
 
@@ -110,7 +110,7 @@ def test_the_prompt_names_only_fields_the_package_has(tmp_path: Path) -> None:
     package = _first_request(tmp_path, "single-layer-prompt")["package"]
     for name in ("views", "method_selection", "method_proposal_contexts", "repair_requests",
                  "human_answers", "previous_feedback", "planning_subjects", "successor_types",
-                 "sharing_candidates", "compensation_candidates", "evidence_predicates"):
+                 "sharing_candidates", "evidence_predicates"):
         assert name in prompt and name in package, name
     for view in ("goals", "plans", "methods", "failures"):
         assert f"      {view}：" in prompt, view

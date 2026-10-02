@@ -10,7 +10,6 @@ and importing them wholesale here would say nothing about which belong together.
 """
 
 from . import evidence_state, htn, ids, obligations, resolution, semantic_base
-from .assessments import ASSESSMENT_SCHEMA_VERSION, CriterionAssessmentV1
 from .evidence_state import (
     PreconditionPhase,
     SupportCount,
@@ -73,8 +72,6 @@ from .state_machines import (
 )
 
 __all__ = (
-    "ASSESSMENT_SCHEMA_VERSION",
-    "CriterionAssessmentV1",
     "CONTRACT_SCHEMA_VERSION",
     "STEP2_IMPLEMENTED_LAYERS",
     "TERMINAL_ATTEMPT",

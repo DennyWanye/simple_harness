@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ClaimStatus, ContractError
@@ -53,7 +52,6 @@ class KnowledgeRecord:
     superseded_by: str | None = None
     disputed_by: tuple[str, ...] = ()
     evidence_trust: tuple[str, ...] = ()
-    source_versions: Mapping[str, tuple[str, ...]] | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -87,14 +85,6 @@ class KnowledgeRecord:
             "evidence_trust",
         ):
             object.__setattr__(self, name, _texts(getattr(self, name), f"knowledge.{name}"))
-        if self.source_versions is not None:
-            from .source_dependencies import merge_source_versions
-
-            object.__setattr__(
-                self,
-                "source_versions",
-                MappingProxyType(merge_source_versions(self.source_versions)),
-            )
 
     def to_json(self) -> dict[str, Any]:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
@@ -103,12 +93,6 @@ class KnowledgeRecord:
                 data[name] = list(value)
             elif isinstance(value, Mapping):
                 data[name] = dict(value)
-        if self.source_versions is None:
-            data.pop("source_versions")
-        else:
-            data["source_versions"] = {
-                path: list(versions) for path, versions in self.source_versions.items()
-            }
         return data
 
     @classmethod
@@ -143,26 +127,6 @@ class KnowledgeIndex:
 
     def verified(self) -> list[KnowledgeRecord]:
         return [r for r in self.records.values() if r.status == "VERIFIED"]
-
-    def stale(self, ids: Sequence[str] | None = None) -> dict[str, list[dict[str, Any]]]:
-        """Separate current-source diagnostics; ``check`` keeps its original meaning."""
-        from .source_dependencies import stale_knowledge_for
-
-        selected = tuple(self.records) if ids is None else tuple(ids)
-        if not selected:
-            return {}
-        if self._store is None:
-            return {
-                kid: [
-                    {
-                        "code": "ERROR",
-                        "reason": "source_provenance_unavailable",
-                        "knowledge_id": kid,
-                    }
-                ]
-                for kid in sorted(set(selected))
-            }
-        return stale_knowledge_for(self._store, mission_id=self.mission_id, ids=selected)
 
     def check(self, used_knowledge: Sequence[str]) -> list[str]:
         """Problems with ``used_knowledge`` references (empty list = all usable)."""

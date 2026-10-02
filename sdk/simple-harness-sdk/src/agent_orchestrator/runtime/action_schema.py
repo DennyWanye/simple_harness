@@ -39,7 +39,7 @@ _USER_REQUIREMENT_ID = re.compile(r"c-user-[1-9][0-9]*")
 def _task_action_scope(
     mission_criteria: Sequence[str], task_criteria: Sequence[str]
 ) -> set[tuple[str, str, str]]:
-    from ..verification.assessments import task_criterion_text
+    from ..verification.criteria import task_criterion_text
 
     # 2026-09-28 真机第四局：分层步骤的要求是编号（c-user-5 = 第 5 条原始要求），直接按
     # 文字解析一条也认不出，每一步都看到了整个任务的全部操作。先还原成原文再收窄。

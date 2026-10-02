@@ -49,7 +49,7 @@ _PAYLOAD_NAMES = frozenset({
     "refine", "repair_retry", "repair_cancel", "repair_rebind", "repair_refine",
     "repair_replace", "repair_successor", "bind_goal", "repair_blocked",
     "wait", "no_change", "request_evidence", "request_human", "propose_method",
-    "repair_compensation", "payload",
+    "payload",
 })
 
 _LEADING_NAME = re.compile(r"^([A-Za-z_]+)((?:\.[A-Za-z_]+|\[\d+\])*)")

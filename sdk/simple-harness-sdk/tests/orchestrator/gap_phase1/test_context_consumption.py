@@ -15,7 +15,6 @@ from dataclasses import replace
 
 import pytest
 from knowledge_helpers import (
-    claim,
     drive_to_running,
     envelope,
     passed_layers,
@@ -278,36 +277,13 @@ def test_original_knowledge_tools_preserve_tail_and_reject_stale_or_foreign_read
         )
 
 
-@pytest.mark.parametrize("invalidation", ("superseded", "withdrawn"))
-def test_k06_invalidated_basis_masks_accepted_consumer_without_rewriting_history(
-    tmp_path, invalidation, monkeypatch
-):
-    # These are historical accepted semantic claims. Freeze their original
-    # grading version while exercising today's downstream projection.
-    from agent_orchestrator.governance import domains
-
-    monkeypatch.setattr(
-        domains,
-        "DOMAINS",
-        {
-            **domains.DOMAINS,
-            domains.CODE_DOMAIN: domains.CODE_PROFILE_V1,
-        },
-    )
+def test_k06_invalidated_basis_masks_accepted_consumer_without_rewriting_history(tmp_path):
+    # The upstream basis is a verified knowledge record a downstream Attempt used; it is
+    # superseded later.  Today's projection must mask the consumer without rewriting
+    # its stored result or the knowledge history.
     service, mission, (task_a, task_b) = two_leaf_service(tmp_path)
-    attempt_a = drive_to_running(service, task_a)
-    path_a = "tests/probe/test_impl_a.py"
-    source = submit(
-        service,
-        attempt_a,
-        envelope(
-            attempt_a,
-            claims=[claim("恢复条件已验证。", key="recovery", evidence=[f"pytest:{path_a}"])],
-            summary="恢复条件已验证。",
-        ),
-    )
-    service.accept_result(source.envelope.id, verifier_results=passed_layers(path_a))
-    (root,) = service.store.list_knowledge(mission.id)
+    root = _record("K-root", mission.id, task_a.id, "恢复条件已验证。", key="recovery")
+    service.store.upsert_knowledge(root)
     attempt_b = drive_to_running(service, task_b, agent="consumer", turn="turn-b")
     path_b = "tests/probe/test_impl_b.py"
     consumer = submit(
@@ -327,14 +303,9 @@ def test_k06_invalidated_basis_masks_accepted_consumer_without_rewriting_history
     valid = _record("K-independent", mission.id, task_b.id, "独立有效的检查结果。")
     service.store.upsert_knowledge(valid)
     original = build_summaries(service.store, mission.id)
-    if invalidation == "superseded":
-        service.store.upsert_knowledge(replace(root, status="SUPERSEDED", superseded_by=valid.id))
-        stale = None
-    else:
-        # Exercise the public projection input, not a fabricated source-revocation API.
-        stale = {root.id: [{"code": "stale_source", "reason": "revoked"}]}
+    service.store.upsert_knowledge(replace(root, status="SUPERSEDED", superseded_by=valid.id))
     history = [record.to_json() for record in service.store.list_knowledge(mission.id)]
-    fresh = build_summaries(service.store, mission.id, stale=stale)
+    fresh = build_summaries(service.store, mission.id)
     branch = fresh[task_b.id]
     row = next(row for row in branch["tasks"] if row["task_id"] == task_b.id)
     assert row["accepted_summary"] != consumer.envelope.summary
@@ -347,29 +318,4 @@ def test_k06_invalidated_basis_masks_accepted_consumer_without_rewriting_history
         service.store.get_result(consumer.envelope.id).envelope.summary == consumer.envelope.summary
     )
     assert [record.to_json() for record in service.store.list_knowledge(mission.id)] == history
-    assert build_summaries(service.store, mission.id, stale=stale) == fresh
-
-
-def test_v3_usage_guidance_preserves_frozen_v2_profile_and_prompt():
-    from hashlib import sha256
-
-    from agent_orchestrator.contracts.models import sha256_hex
-    from agent_orchestrator.governance.domains import CODE_PROFILE, CODE_PROFILE_V2, DomainProfileV1
-    from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
-
-    frozen = DomainProfileV1.from_json(CODE_PROFILE_V2.to_json())
-    assert (
-        sha256_hex(frozen.to_json())
-        == "ce2a010cf776fe2149d45f252c551f6b59c34003541ee5029b936e4f8d6305a5"
-    )
-    old = template_for_domain(ROLES["worker"], frozen, {})
-    assert (
-        sha256(old.instructions.encode()).hexdigest()
-        == "2acc1fde38b872e9819d132c0cf93d6b277d0336e95ea0862f9a8b016839c334"
-    )
-    assert old.prompt_version == "worker-code-observation-v2"
-    current = template_for_domain(ROLES["worker"], CODE_PROFILE, {})
-    assert CODE_PROFILE.version == "5"  # 2026-09-26：v5 只加资料目录，提示词仍是 v3
-    assert current.prompt_version == "worker-code-observation-v3"
-    assert "提及但明确排除" in current.instructions
-    assert "你引用过的知识 id 必须写进" not in current.instructions
+    assert build_summaries(service.store, mission.id) == fresh

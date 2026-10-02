@@ -140,7 +140,7 @@ class LocalCheckImporter:
             self.reader.read_exact_metadata(self.result_ref)
             manifest = decode(self.reader.read_exact_metadata(self.manifest_ref).body_json)
             if (
-                manifest.get("schema") != "assurance-local-verification-input-v1"
+                manifest.get("schema") != "assurance-local-verification-input-v2"
                 or manifest.get("result_id") != self.result_ref.pin.id
                 or manifest.get("subject_hash") != self.result_ref.pin.content_hash
                 or manifest.get("mission_id") != self.mission_id
@@ -373,8 +373,6 @@ class AssuranceLocalChecks:
             "verification/verifier_router.py",
             "verification/deterministic_checks.py",
             "verification/domain_handlers.py",
-            "verification/assessments.py",
-            "verification/adapters.py",
             "verification/evidence_resolver.py",
             "verification/assurance_local.py",
             "assurance/local_checks.py",

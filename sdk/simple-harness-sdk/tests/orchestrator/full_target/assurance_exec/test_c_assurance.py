@@ -375,11 +375,12 @@ def test_real_migration_and_legacy(tmp_path):
     applied = len(before["orch_schema_migrations"])
     assert migrations[:applied] == [row[:3] for row in before["orch_schema_migrations"]]
     assert migrations[applied:] == [(m.version, m.name, m.checksum) for m in (assurance, *later)]
-    # Migrations 31 and 32 (2026-10-02) drop the candidate-comparison, fragment, conflict,
-    # graph-change and system-pool tables;
+    # Migrations 31, 32 and 33 (2026-10-02) drop the candidate-comparison, fragment,
+    # conflict, graph-change, system-pool and criterion-assessment tables;
     # every other legacy table keeps its DDL.
     dropped = {"selection_candidates", "selection_rounds", "search_bindings", "fragment_validations",
-               "conflicts", "graph_changes", "mission_system_tail_pools", "mission_system_tail_tasks"}
+               "conflicts", "graph_changes", "mission_system_tail_pools", "mission_system_tail_tasks",
+               "criterion_assessments"}
     for name, ddl in ddl_before.items():
         current = upgraded.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
         if name in dropped:

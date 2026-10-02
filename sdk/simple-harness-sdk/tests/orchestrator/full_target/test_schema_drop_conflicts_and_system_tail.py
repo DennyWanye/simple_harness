@@ -48,7 +48,7 @@ def test_a_version_31_library_opens_and_loses_exactly_those_tables(tmp_path) -> 
     connection.executescript(conflicts)  # migration 2, its conflict table and index
     connection.executescript(schema.MIGRATIONS[2].ddl)  # migration 3, unchanged text
     connection.executescript(schema.MIGRATIONS[14].ddl)  # migration 15, unchanged text
-    connection.execute("DELETE FROM orch_schema_migrations WHERE version = 32")
+    connection.execute("DELETE FROM orch_schema_migrations WHERE version >= 32")
     connection.commit()
     connection.close()
     assert [schema.MIGRATIONS[i].version for i in (1, 2, 14)] == [2, 3, 15]
@@ -58,5 +58,5 @@ def test_a_version_31_library_opens_and_loses_exactly_those_tables(tmp_path) -> 
     Store.open(path).close()
 
     assert _tables(path) == before - DROPPED
-    assert schema.SCHEMA_VERSION == 32
-    assert (tmp_path / "orchestrator.db.pre-schema-32.backup").is_file()
+    assert schema.SCHEMA_VERSION >= 32
+    assert (tmp_path / f"orchestrator.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()

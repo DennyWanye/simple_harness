@@ -49,7 +49,7 @@ def test_internal_keys_refuse_kinds_without_repair() -> None:
 
 
 def test_the_current_package_pairs_with_the_one_prompt() -> None:
-    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 10
+    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 11
     assert role_templates.PLANNING_DECISION_PROMPT_VERSION == role_templates.PLANNER_HIERARCHICAL_VERSION
     assert role_templates.hierarchical_planner_pairing_is_valid(
         role_templates.PLANNING_DECISION_PROMPT_VERSION, role_templates.PLANNING_DECISION_PACKAGE_VERSION)

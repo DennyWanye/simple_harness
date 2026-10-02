@@ -13,7 +13,7 @@ from .refs import Pin
 
 DOCUMENT_NAMES = frozenset(
     {
-        "local-verification-input-v1.schema.json",
+        "local-verification-input-v2.schema.json",
         "local-check-receipt-v1.schema.json",
         "local-layer-scope-v1.json",
         "check-spec-v1.schema.json",
@@ -122,7 +122,7 @@ def local_layer_spec(layer: str, implementation_hash: str) -> CheckSpec:
         implementation_hash=implementation_hash,
         assertion_key=f"{layer}:exact-layer-v1",
         execution_kind="LOCAL_RECORDED",
-        input_schema_ref=document_pin("local-verification-input-v1.schema.json"),
+        input_schema_ref=document_pin("local-verification-input-v2.schema.json"),
         result_schema_ref=document_pin("local-check-receipt-v1.schema.json"),
         scope_rule_ref=document_pin("local-layer-scope-v1.json"),
         environment_requirements=(
@@ -147,7 +147,7 @@ def executor_layer_spec(layer: str, implementation_hash: str) -> CheckSpec:
         implementation_hash=implementation_hash,
         assertion_key=f"{layer}:pytest-exact-run-v1",
         execution_kind="EXECUTOR",
-        input_schema_ref=document_pin("local-verification-input-v1.schema.json"),
+        input_schema_ref=document_pin("local-verification-input-v2.schema.json"),
         result_schema_ref=document_pin("local-check-receipt-v1.schema.json"),
         scope_rule_ref=document_pin("local-layer-scope-v1.json"),
         environment_requirements=(

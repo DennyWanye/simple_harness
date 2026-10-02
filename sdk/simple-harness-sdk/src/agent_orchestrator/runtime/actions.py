@@ -128,14 +128,9 @@ class ActionExecutor:
         """
         if action["connector"] != "file_publish":
             return None
-        store = self._commit.store
-        has_sources = any(
-            self._commit.domain_for(mission.id).source_roots
-            or store.list_sources(mission.id, active_only=False)
-            for mission in store.list_missions()
-        )
-        if not has_sources:
-            return None  # The pure code library retains its existing publishing behavior.
+        # Every Mission's profile now carries ``sources/`` (general task with material,
+        # 2026-09-26), so the overlap check always runs; it never decodes another
+        # Mission's frozen domain (one this build cannot read would refuse every publish).
         root = getattr(self._connectors.get("file_publish"), "root", None)
         if not isinstance(root, (str, Path)) or not self._source_storage_roots:
             return "source_publish_root_unavailable"

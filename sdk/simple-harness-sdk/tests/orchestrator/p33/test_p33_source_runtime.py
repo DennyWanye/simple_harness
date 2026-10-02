@@ -3,7 +3,7 @@
 
 """B 运行时 oracle：登记来源版本冻结进 intent，重启不改写；发布不得写源根。
 
-文档来源只由 Host/人登记；同一 source 的新版出现后，旧 Attempt 的材料仍是旧版，
+来源只由 Host/人登记；同一 source 的新版出现后，旧 Attempt 的材料仍是旧版，
 新 Attempt 才看到新版。Worker 改写已登记来源并报 artifact 必须拒绝；解析与
 验证使用 CAS 原文。这里用确定性 Provider，真实模型和 Host 原生仍属于 G。
 """
@@ -14,7 +14,7 @@ import pytest
 from fixtures_provider import RoleScriptedProvider
 
 from agent_orchestrator.contracts import Budget, ContractError
-from agent_orchestrator.governance.domains import CODE_DOMAIN, DOC_DOMAIN
+from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
@@ -36,7 +36,7 @@ def spec(key: str = "g-1", **overrides) -> MissionSpec:
 
 
 @pytest.mark.parametrize("location", ["cas", "workspace", "ancestor", "symlink", "case_alias"])
-def test_document_mission_rejects_publisher_overlapping_actual_source_roots(tmp_path, location):
+def test_source_mission_rejects_publisher_overlapping_actual_source_roots(tmp_path, location):
     async def case():
         evidence = tmp_path / "evidence"
         locations = {
@@ -59,11 +59,8 @@ def test_document_mission_rejects_publisher_overlapping_actual_source_roots(tmp_
         async with Orchestrator(
             config, RoleScriptedProvider({}), connectors={"file_publish": publisher}
         ) as orch:
-            with pytest.raises(ContractError, match="source_publish_root_overlap"):
-                await orch.submit_mission(spec("overlap", domain=DOC_DOMAIN))
-            assert orch.store.list_missions() == []
-            # 2026-09-26（用户决定）：通用任务（code-v1 第 5 版）也能带资料，
-            # 同样有资料目录，所以同样拒绝与证据存储重叠的发布目录。
+            # 2026-09-26（用户决定）：通用任务（code-v1）能带资料，有资料目录，
+            # 所以拒绝与证据存储重叠的发布目录。
             with pytest.raises(ContractError, match="source_publish_root_overlap"):
                 await orch.submit_mission(spec("general", domain=CODE_DOMAIN))
             assert orch.store.list_missions() == []
@@ -71,7 +68,7 @@ def test_document_mission_rejects_publisher_overlapping_actual_source_roots(tmp_
     asyncio.run(case())
 
 
-def test_document_mission_accepts_disjoint_publish_directory(tmp_path):
+def test_source_mission_accepts_disjoint_publish_directory(tmp_path):
     async def case():
         config = OrchestratorConfig(
             evidence_root=tmp_path / "evidence",
@@ -81,7 +78,7 @@ def test_document_mission_accepts_disjoint_publish_directory(tmp_path):
         async with Orchestrator(
             config, RoleScriptedProvider({}), connectors={"file_publish": publisher}
         ) as orch:
-            assert (await orch.submit_mission(spec(domain=DOC_DOMAIN))).id
+            assert (await orch.submit_mission(spec(domain=CODE_DOMAIN))).id
 
     asyncio.run(case())
 
@@ -93,7 +90,7 @@ def test_source_storage_validation_uses_current_deployment_after_reopen(tmp_path
             deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
         )
         async with Orchestrator(config, RoleScriptedProvider({})) as first:
-            mission = await first.submit_mission(spec(domain=DOC_DOMAIN))
+            mission = await first.submit_mission(spec(domain=CODE_DOMAIN))
         unsafe = FilePublishConnector(config.workspaces_root, tmp_path / "ledger")
         async with Orchestrator(
             config, RoleScriptedProvider({}), connectors={"file_publish": unsafe}
