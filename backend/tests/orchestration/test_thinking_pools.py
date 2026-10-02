@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import httpx
 
-from deskpet.orchestration.native_plane import native_profile_id
+from agent_orchestrator.deployment.native_pools import calibrated, native_profile_id
 from deskpet.orchestration.provider import ProviderSnapshot, build_provider, provider_on_client
 from deskpet.orchestration.runtime_profile import deepseek_thinking
 from deskpet.orchestration.service import OrchestrationService
@@ -111,10 +111,10 @@ def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp
     assert counter.margin is thinking_counter.margin and counter.margin.value == 160  # one margin per relay host
     counter.margin.observe(reported=500, counted=200, has_tools=True)
     assert (tmp_path / "relay-tool-margin" / "relay.example.test.json").is_file()
-    wrapped = runtime_profile.calibrated(object(), counter)
+    wrapped = calibrated(object(), counter)
     assert isinstance(wrapped, CalibratingProvider)
     raw = object()
-    assert runtime_profile.calibrated(raw, official) is raw  # the official endpoint is not recalibrated
+    assert calibrated(raw, official) is raw  # the official endpoint is not recalibrated
 
 
 def test_declared_relay_echo_aliases_reach_every_pool_provider() -> None:

@@ -26,7 +26,6 @@ import os
 import secrets
 import sys
 from collections.abc import Awaitable, Callable, Iterator, Mapping
-from hashlib import sha256
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -41,8 +40,9 @@ from .projection import (
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from .storage_usage import StorageUsage
+from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS
+
 from .runtime_profile import (
-    CONTEXT_INPUT_LIMITS,
     ONLY_DEEPSEEK_REASON,
     source_runtime_options,
 )
@@ -183,14 +183,14 @@ class OrchestrationService:
         # Orchestrator lifetime, and the NOTIFY payloads it delivered (bounded).
         self._assurance: Any = None
         self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
-        self._assurance_policy_scopes: set[str] = set()  # Scopes whose check policy this Host approved
-        self._assurance_policy_warned: set[str] = set()  # goals whose refused projection was already logged
-        self._assurance_unassured_missions: set[str] = set()  # Missions outside the assured lane
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
         self._permission_mode_reader = permission_mode_reader
-        self._auto_completion_done: set[str] = set()  # requirements this Host confirmed (or must not)
-        self._auto_planning_requests: set[str] = set()  # requests this Host already issued for
+        # 部署每轮职责（自动确认、自动授权、检查策略投影）在 SDK 里只有一份（HTN 补齐阶段 A′）；
+        # Host 只告诉它"现在是不是自动模式"。跨重建保留已做过的记录。
+        from agent_orchestrator.deployment.duties import DeploymentDuties
+        self._duties = DeploymentDuties(None, None, tenant_id=self.tenant_id, principal=self._principal,
+                                        wake=lambda: self.wake())
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -324,6 +324,7 @@ class OrchestrationService:
         self._control = MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
+        self._duties.bind(self._orchestrator, self._control)
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = PolicyApi(self._orchestrator.commit, self._principal)
 
@@ -405,6 +406,7 @@ class OrchestrationService:
     async def _close_runtime(self) -> None:
         orchestrator, self._orchestrator = self._orchestrator, None
         self._control = None
+        self._duties.bind(None, None)
         self._policy = None
         self._taskgraph = None
         self._assurance = None
@@ -552,7 +554,7 @@ class OrchestrationService:
 
     def _build_native(self) -> Any:
         """The Host's native-plane composition (the only execution plane since 2026-09-30)."""
-        from .native_plane import HostNativePlane
+        from .native_plane import build_native_pools
 
         if self._native_test_counter is not None:
             meter_factory = self._native_test_counter.meter_factory
@@ -565,14 +567,14 @@ class OrchestrationService:
             models_dir = Path(user_models_dir())
         except Exception:  # noqa: BLE001 - no model directory means lexical-only, reported
             models_dir = None
-        return HostNativePlane(
+        return build_native_pools(
             tenant_id=self.tenant_id, principal_id=str(self._principal.principal_id),
             allowed_tools=tuple(self._deployment.allowed_tools) if self._deployment is not None else (),
             models_dir=models_dir, meter_factory=meter_factory, script_executor=self._executor,
         )
 
     def _native_profile_ids(self) -> list[str]:
-        from .native_plane import is_native_profile
+        from agent_orchestrator.deployment.native_pools import is_native_profile
         return [key for key in self._runtime_options.get("profiles", {}) if is_native_profile(key)]
 
     def _native_pool(self, profile_id: str | None) -> Any:
@@ -733,129 +735,33 @@ class OrchestrationService:
         return install_assurance(self, orchestrator)
 
     def _project_assurance_policies(self) -> int:
-        """After every loop round: the per-Scope check policies an assured Mission
-        needs before its content reviews (see ``assurance.project_check_policies``)."""
+        """After every loop round: the per-Scope check policies an assured Mission needs
+        before its content reviews (the SDK's ``DeploymentDuties.project_check_policies``)."""
         if self._assurance is None:
             return 0
-        from .assurance import project_check_policies
         try:
-            return project_check_policies(self)
+            return self._duties.project_check_policies()
         except Exception:  # noqa: BLE001 - never stops the loop; retried next round
             logger.exception("assurance check policy projection failed")
             return 0
 
-    async def _auto_confirm_content_completion(self) -> int:
-        """Auto permission mode: confirm content-only completion requirements.
-
-        User decision 2026-09-26: a new Mission waited in CREATED for the person to
-        confirm its completion requirements and looked stuck.  When every criterion
-        is content (no ``action:`` criterion, so no operation effect) the Host
-        confirms the exact mapping the page would send — every required criterion
-        as content — recorded as ``HOST_AUTO_PERMISSION`` on the principal's
-        behalf, never as a person's click.  Anything with an operation, manual
-        mode, or an unreadable mode keeps the button.
-
-        2026-10-02 (HTN 精简 片 D 第 4 项): "an operation" is exactly a criterion with
-        the structured ``action:`` prefix, which the main Agent writes when it puts the
-        task together.  The Host used to guess from words (发布、上传、deploy……) whether
-        a plain sentence meant an operation; that was the program judging meaning, and
-        it is gone.  A plain-words criterion is content, and whether it is met is the
-        final review's conclusion.
-        """
-        if self._permission_mode_reader is None or self._control is None or self._orchestrator is None:
-            return 0
+    async def _auto_mode(self) -> bool:
+        """Whether the person chose auto permission; unreadable means manual."""
+        if self._permission_mode_reader is None:
+            return False
         try:
-            mode = str(await self._permission_mode_reader())
+            return str(await self._permission_mode_reader()) == "auto"
         except Exception:  # noqa: BLE001 - unreadable mode means manual
-            return 0
-        if mode != "auto":
-            return 0
-        store = self._orchestrator.store
-        confirmed = 0
-        rows = store.connection.execute(
-            "SELECT mission_id FROM missions WHERE status='CREATED' ORDER BY created_at LIMIT 50"
-        ).fetchall()
-        for (mission_id,) in rows:
-            mission = store.get_mission(str(mission_id))
-            if mission is None or any(
-                str(c).strip().startswith("action:") for c in mission.success_criteria
-            ):
-                continue
-            try:
-                workspace = (self._call("snapshot", mission.id)["snapshot"] or {}).get("operation_workspace")
-            except Exception:  # noqa: BLE001 - retried next round
-                continue
-            if not isinstance(workspace, Mapping) or workspace.get("state") != "CONFIRMATION_REQUIRED" \
-                    or workspace.get("editable") is not True or not workspace.get("requirements_ref"):
-                continue
-            ref = dict(workspace["requirements_ref"])
-            key = f"{mission.id}:{ref.get('revision')}:{ref.get('content_hash')}"
-            if key in self._auto_completion_done:
-                continue
-            content = [str(c["id"]) for c in workspace.get("criteria") or () if c.get("required") is True]
-            if not content:
-                self._auto_completion_done.add(key)
-                continue
-            try:
-                self._call("approve_operation_completion_spec", {
-                    "mission_id": mission.id,
-                    "command_id": "host-auto-completion-" + sha256(key.encode()).hexdigest()[:32],
-                    "expected_requirements_ref": ref,
-                    "proposal": {"schema_version": 1, "mission_id": mission.id,
-                                 "requirements_ref": {"id": ref["id"], "revision": ref["revision"],
-                                                      "content_hash": ref["content_hash"]},
-                                 "mode": "CONTENT_ONLY", "content_criterion_ids": content, "effects": []},
-                    "approval_source": "HOST_AUTO_PERMISSION",
-                })
-            except Exception:  # noqa: BLE001 - one refusal must not block the others
-                logger.exception("auto completion confirmation failed for %s", mission.id)
-                continue
-            self._auto_completion_done.add(key)
-            confirmed += 1
-        if confirmed:
-            self.wake()
-        return confirmed
+            logger.warning("permission mode unreadable; confirmations and planning authority stay manual")
+            return False
+
+    async def _auto_confirm_content_completion(self) -> int:
+        """Auto permission mode: the SDK confirms content-only completion requirements."""
+        return self._duties.auto_confirm_content_completion(auto=await self._auto_mode())
 
     async def _auto_authorize_planning(self) -> int:
-        """Auto permission mode: issue each pending planning authority for the person.
-
-        Planning authority lets the planner plan this round; it approves no effect,
-        review or operation (those keep their own cards).  The grant is recorded as
-        ``HOST_AUTO_PERMISSION`` on the principal's behalf — never as a person's
-        click.  Manual mode, or a mode that cannot be read, leaves the button.
-        """
-        if self._permission_mode_reader is None or self._control is None:
-            return 0
-        try:
-            mode = str(await self._permission_mode_reader())
-        except Exception:  # noqa: BLE001 - unreadable mode means manual
-            logger.warning("permission mode unreadable; planning authority stays manual")
-            return 0
-        if mode != "auto":
-            return 0
-        issued = 0
-        try:
-            pending = self._call("pending_planning_authorizations")
-        except Exception:  # noqa: BLE001 - never stops the loop; retried next round
-            logger.exception("pending planning authority read failed")
-            return 0
-        for row in pending:
-            request_id = str(row["request_id"])
-            if request_id in self._auto_planning_requests:
-                continue
-            try:
-                self._call("planning_authorization", {
-                    "operation": "issue", "mission_id": str(row["mission_id"]),
-                    "request_id": request_id, "command_id": f"host-auto-planning:{request_id}",
-                    "approval_source": "HOST_AUTO_PERMISSION",
-                })
-            except Exception:  # noqa: BLE001 - one refusal must not block the others
-                logger.exception("auto planning authority failed for %s", request_id)
-                continue
-            self._auto_planning_requests.add(request_id)
-            issued += 1
-        if issued:
-            self.wake()
+        """Auto permission mode: the SDK issues each pending planning authority."""
+        issued = self._duties.auto_authorize_planning(auto=await self._auto_mode())
         return issued
 
     def _require_strict_taskgraph(self, receipt: Mapping[str, Any]) -> None:
@@ -928,6 +834,7 @@ class OrchestrationService:
 
         old, self._orchestrator = self._orchestrator, None
         self._control = None
+        self._duties.bind(None, None)
         self._policy = None
         self._taskgraph = None
         self._assurance = None
@@ -978,6 +885,7 @@ class OrchestrationService:
         self._orchestrator = candidate
         self._bind_host_duties(candidate)
         self._control = control
+        self._duties.bind(candidate, control)
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = policy
         self._taskgraph = taskgraph
@@ -997,7 +905,7 @@ class OrchestrationService:
     # ------------------------------------------------------------ status
     def _context_profiles(self) -> list[dict[str, Any]]:
         profiles = self._runtime_options.get("profiles", {})
-        from .native_plane import native_profile_id
+        from agent_orchestrator.deployment.native_pools import native_profile_id
 
         rows = []
         for tokens in CONTEXT_INPUT_LIMITS:
@@ -1039,7 +947,7 @@ class OrchestrationService:
         return cached
 
     def _context_default(self) -> str | None:
-        from .native_plane import native_profile_id
+        from agent_orchestrator.deployment.native_pools import native_profile_id
 
         available = {p["profile_id"] for p in self._context_profiles()}
         # The thinking setting picks the pool of a *new* Mission only; an existing Mission keeps

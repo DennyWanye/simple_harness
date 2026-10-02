@@ -102,3 +102,36 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
         "status": status,
         "pools": pools,
     }
+
+
+VARIANTS = tuple((models, snapshot) for models in (False, True) for snapshot in (False, True))
+
+
+def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> dict[str, Any]:
+    """Assemble every pool of one variant through the Host's real entry points."""
+
+    from types import SimpleNamespace
+
+    from agent_orchestrator.runtime.assembly import OrchestratorConfig
+
+    import deskpet.orchestration.runtime_profile as rp
+    from deskpet.orchestration.native_plane import build_native_pools
+
+    class Provider:
+        async def invoke(self, request: Any, *, cancel: Any = None) -> Any:
+            raise RuntimeError("not used")
+
+    native = build_native_pools(tenant_id=TENANT, principal_id=PRINCIPAL, allowed_tools=TOOLS,
+                                models_dir=fake_models_dir(tmp) if models else None,
+                                meter_factory=stub_meter_factory, clock_ms=lambda: 1)
+    config = OrchestratorConfig(evidence_root=tmp / "root", model=MODEL, price_table=None)
+    original = rp.deepseek_counter_for
+    rp.deepseek_counter_for = lambda snap, settings=None, **kw: counter_factory() if snap is not None else None
+    try:
+        snap = SimpleNamespace(requested_model=MODEL, base_url="https://api.deepseek.com") if snapshot else None
+        options = rp.source_runtime_options(config, Provider(), snap, native=native,
+                                            native_test_counter=None if snapshot else counter_factory(),
+                                            thinking_provider=Provider() if snapshot else None)
+    finally:
+        rp.deepseek_counter_for = original
+    return identity(native, options, tmp / "scratch")

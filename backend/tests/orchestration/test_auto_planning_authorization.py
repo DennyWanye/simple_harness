@@ -27,6 +27,11 @@ def _service(tmp_path, mode, control):
     service = OrchestrationService(tmp_path, OrchestrationSettings(), principal=object(),
                                    drive=False, permission_mode_reader=read, native_test_counter=FixtureWordCounter())
     service._state, service._control = "available", control
+    import sqlite3
+    from types import SimpleNamespace
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE missions(mission_id, status, created_at)")
+    service._duties.bind(SimpleNamespace(store=SimpleNamespace(connection=db)), control)
     return service
 
 

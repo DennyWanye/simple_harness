@@ -131,9 +131,8 @@ async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(o
     """Real model run 2 (2026-09-23): content reviews need the per-Scope check
     policy the Host projects from the confirmed requirements. Before the plan
     freezes a Scope there is nothing to project; the projection never raises."""
-    from deskpet.orchestration.assurance import project_check_policies
-
     service = await _service(orchestration_root, principal)
+    project_check_policies = service._duties.project_check_policies
     try:
         created = await handle(service, "mission_create", {"request_id": "c1", **notes_request("policy-ws")})
         assert created["payload"]["ok"] is True, created
@@ -141,9 +140,16 @@ async def test_check_policy_projection_is_replay_safe_and_needs_a_frozen_scope(o
         # 2026-10-01 (HTN 精简 片 A): the one thing there is to project before any Scope
         # exists is the root goal's METHOD_PLAN policy — the Planner proposes its own
         # method for it, and that method's independent review needs the policy first.
-        assert project_check_policies(service) == 1
-        assert project_check_policies(service, mission_id) == 0
-        assert service._assurance_policy_scopes == {f"method-plan:desktop-root-{mission_id}:1:r1"}
+        assert project_check_policies() == 1
+        assert project_check_policies(mission_id) == 0
+        assert service._duties.policy_scopes == {f"method-plan:desktop-root-{mission_id}:1:r1"}
+        # 命令号是已有回执的身份（HTN 补齐阶段 A′ 搬进 SDK 时字节不变）
+        from agent_orchestrator.assurance.codec import fingerprint
+        [receipt_id] = [row[0] for row in service._orchestrator.store.connection.execute(
+            "SELECT approval_receipt_id FROM assurance_criterion_policies WHERE mission_id=?", (mission_id,))]
+        assert receipt_id == "assurance-check-policy-approval:" + fingerprint({
+            "mission": mission_id, "tenant": service.tenant_id, "principal": principal.principal_id,
+            "command": f"host-check-policy:method-plan:desktop-root-{mission_id}:1:r1"})
         row = service._orchestrator.store.connection.execute(
             "SELECT COUNT(*) FROM assurance_criterion_policies WHERE mission_id=?", (mission_id,)).fetchone()
         assert row[0] == 1
@@ -158,8 +164,6 @@ async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(o
     """Real model run 7 (2026-09-23): the plan froze the Scope and ran the review in
     one loop run, so the after-run projection was too late. The SDK review runtime
     now calls the Host projector right before preparing a review."""
-    from deskpet.orchestration.assurance import project_check_policies
-
     service = await _service(orchestration_root, principal)
     try:
         runtime = service._orchestrator._assurance_reviews
@@ -167,6 +171,6 @@ async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(o
         assert projector is not None
         # Same function as the loop hook: nothing to project before a Scope is frozen.
         assert projector("mission-none") == 0
-        assert project_check_policies(service, "mission-none") == 0
+        assert service._duties.project_check_policies("mission-none") == 0
     finally:
         await service.close()

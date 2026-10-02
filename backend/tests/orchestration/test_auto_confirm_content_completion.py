@@ -13,7 +13,9 @@ import asyncio
 import sqlite3
 from types import SimpleNamespace
 
-from deskpet.orchestration.service import OrchestrationService
+from hashlib import sha256
+
+from agent_orchestrator.deployment.duties import DeploymentDuties
 
 REF = {"kind": "requirements", "id": "req-1", "revision": 1, "content_hash": "a" * 64}
 
@@ -25,28 +27,27 @@ def _service(*, mode="auto", criteria=("file:a.md", "file:b.md"), state="CONFIRM
     mission = SimpleNamespace(id="m1", success_criteria=tuple(criteria))
     calls = []
 
-    def call(method, *args):
-        calls.append((method, args))
-        if method == "snapshot":
+    class Control:
+        def snapshot(self, mission_id):
+            calls.append(("snapshot", (mission_id,)))
             return {"snapshot": {"operation_workspace": {
                 "state": state, "editable": True, "requirements_ref": REF,
                 "criteria": [{"id": "c-user-1", "required": True}, {"id": "c-user-2", "required": True},
                              {"id": "c-note", "required": False}]}}}
-        return {}
 
-    async def reader():
-        return mode
+        def approve_operation_completion_spec(self, command):
+            calls.append(("approve_operation_completion_spec", (command,)))
+            return {}
 
-    fake = SimpleNamespace(
-        _permission_mode_reader=reader, _control=object(), _auto_completion_done=set(),
-        _orchestrator=SimpleNamespace(store=SimpleNamespace(connection=db, get_mission=lambda _id: mission)),
-        _call=call, wake=lambda: calls.append(("wake", ())),
-    )
-    return fake, calls
+    orchestrator = SimpleNamespace(store=SimpleNamespace(connection=db, get_mission=lambda _id: mission))
+    duties = DeploymentDuties(orchestrator, Control(), tenant_id="t", principal=SimpleNamespace(principal_id="p"),
+                              wake=lambda: calls.append(("wake", ())))
+    return (duties, mode), calls
 
 
 def _run(fake):
-    return asyncio.run(OrchestrationService._auto_confirm_content_completion(fake))
+    duties, mode = fake
+    return duties.auto_confirm_content_completion(auto=mode == "auto")
 
 
 def test_content_only_requirements_are_confirmed_by_the_host_once():
@@ -57,6 +58,9 @@ def test_content_only_requirements_are_confirmed_by_the_host_once():
     assert command["proposal"]["mode"] == "CONTENT_ONLY" and command["proposal"]["effects"] == []
     assert command["proposal"]["content_criterion_ids"] == ["c-user-1", "c-user-2"]
     assert command["expected_requirements_ref"] == REF
+    # 命令号是已有回执的身份（HTN 补齐阶段 A′ 搬进 SDK 时字节不变）
+    key = f"m1:{REF['revision']}:{REF['content_hash']}"
+    assert command["command_id"] == "host-auto-completion-" + sha256(key.encode()).hexdigest()[:32]
     assert ("wake", ()) in calls
     assert _run(fake) == 0  # the same requirements are never confirmed twice
 

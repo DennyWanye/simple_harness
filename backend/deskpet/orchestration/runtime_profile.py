@@ -22,7 +22,6 @@ from urllib.parse import urlparse
 from .provider import DEEPSEEK_OFFICIAL_HOSTS, ProviderSnapshot
 
 TOKENIZER_PATH_ENV = "DESKPET_ORCH_TOKENIZER_PATH"
-CONTEXT_INPUT_LIMITS = (262_144, 524_288)
 
 
 logger = logging.getLogger(__name__)
@@ -101,16 +100,6 @@ def deepseek_counter_for(snapshot: ProviderSnapshot | None, settings: Any = None
     )
 
 
-def calibrated(provider: Any, counter: Any) -> Any:
-    """A relay pool's provider learns the relay margin from every reported prompt count."""
-
-    from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
-
-    if provider is None or not isinstance(counter, RelayDeepSeekCounter):
-        return provider
-    return CalibratingProvider(provider, counter)
-
-
 def deepseek_thinking(snapshot: ProviderSnapshot | None, settings: Any = None) -> str | None:
     """The explicit thinking mode of the Host's shared provider: ``disabled`` for a DeepSeek
     model (it thinks by default, and a tool loop without replayed reasoning is rejected);
@@ -138,59 +127,28 @@ def source_runtime_options(
 ) -> dict[str, Any]:
     """The native-plane pools of this deployment (``profiles`` empty when it has none).
 
+    The pools themselves are assembled by the SDK (``deployment.native_pools.pool_options``);
+    the Host supplies its certified counters and providers.
+
     A pool needs a certified counter: the DeepSeek one for a DeepSeek endpoint, or the
     trusted test composition's ``native_test_counter`` (tests and fixture scenarios).
     Any other model gets no pool at all; the service reports ``ONLY_DEEPSEEK_REASON``.
     """
 
-    from agent_orchestrator.runtime.assembly import resolve_profile_context_policy
-    from agent_orchestrator.runtime.model_router import RuntimeProfile
-    from simple_harness.agents.context.budget import ContextPolicy
-
-    from .native_plane import native_profile_id
+    from agent_orchestrator.deployment.native_pools import pool_options
 
     state_dir = getattr(config, "evidence_root", None)
     counter = deepseek_counter_for(snapshot, settings, state_dir=state_dir)
     if counter is None:
         counter = native_test_counter
-    options: dict[str, Any] = {"profiles": {}}
-    if counter is None or native is None or provider is None:
-        return options
-    counters: dict[str, Any] = {}
-
-    def register(identifier: str, tokens: int, pool_counter: Any, base: Any, *, kind: str,
-                 default_output: int = 8192) -> None:
-        wanted = ContextPolicy(
-            max_input_tokens=tokens, output_reserve=32768,
-            max_tool_result_tokens=16384, render_slack_tokens=0,
-        )
-        policy = resolve_profile_context_policy(
-            config, profile_id=identifier, tokenizer=pool_counter, fresh_policy=wanted,
-        )
-        if policy != wanted:
-            raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
-        counters[identifier] = pool_counter
-        options["profiles"][identifier] = RuntimeProfile(
-            identifier, calibrated(base, pool_counter), config.model, price_table=config.price_table,
-            provider_kind=kind, context_policy=policy, tokenizer=pool_counter,
-            default_max_output_tokens=default_output, max_output_tokens_ceiling=32768,
-            native_plane=native.assembly(identifier, tokens=tokens, counter=pool_counter),
-        )
-
-    kind = "env" if snapshot is not None else "fixtures"
-    for tokens in CONTEXT_INPUT_LIMITS:
-        register(native_profile_id(tokens), tokens, counter, provider, kind=kind)
-    # Thinking-mode pools (user decision 2026-09-24: both modes supported): a separate
-    # provider (thinking enabled, reasoning replayed) and a counter bound to the same mode.
+    # Thinking-mode pools (user decision 2026-09-24): the thinking provider with a counter
+    # bound to the same mode; only for a DeepSeek endpoint.
     thinking_counter = (
         deepseek_counter_for(snapshot, settings, thinking="enabled", state_dir=state_dir)
         if thinking_provider is not None and snapshot is not None else None
     )
-    if thinking_counter is not None:
-        for tokens in CONTEXT_INPUT_LIMITS:
-            # Reasoning shares the output limit: at 8192 a thinking reviewer spent the budget
-            # thinking and its verdict JSON was cut mid-string (2026-09-25 desktop run).
-            register(native_profile_id(tokens, thinking=True), tokens, thinking_counter,
-                     thinking_provider, kind="env", default_output=32768)
-    options["provider_token_estimators"] = dict(counters)
-    return options
+    return pool_options(
+        config, native=native, provider=provider, counter=counter,
+        provider_kind="env" if snapshot is not None else "fixtures",
+        thinking_provider=thinking_provider, thinking_counter=thinking_counter,
+    )

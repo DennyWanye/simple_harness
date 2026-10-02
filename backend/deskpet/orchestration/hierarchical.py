@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: BUSL-1.1
-"""Desktop-owned HTN declarations and atomic user-Mission initialization.
+"""Desktop-owned HTN declarations: the desktop planning world (product domain knowledge).
 
-User criteria remain explicit requirements. Completion mapping and planning
-authorization are confirmed through the existing authenticated UI commands.
+The root initialisation, the one requirements document and the start gate are the SDK's
+(``agent_orchestrator.deployment.root``); the Host hands in this world and the root names.
 No model, observer result or approval is fabricated during assembly.
 """
 from __future__ import annotations
@@ -92,98 +92,22 @@ def planning_world(loop: Any, mission: Any) -> Any:
     return world
 
 
-def root_requirements(mission: Any, principal: Any) -> Any:
-    """Revision 1 of the user's explicit criteria: ``req-<mission>-1`` / ``c-user-<n>``.
-
-    The same document is the approved Requirements builder of the Assurance
-    factory (plan S02), so the assured lane and this root initialization agree
-    byte for byte and neither writes a second body.
-    """
-    from agent_orchestrator.contracts.resolution import (
-        AllExpr, Criterion, CriterionExpr, CriterionOrigin, EvaluationKind,
-        RequirementClass, RequirementsRevision,
-    )
-
-    refs = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
-    criteria = tuple(Criterion(identifier, 1, CriterionOrigin.USER_EXPLICIT, statement,
-        RequirementClass.REQUIRED_OUTCOME, EvaluationKind.SEMANTIC)
-        for identifier, statement in zip(refs, mission.success_criteria, strict=True))
-    return RequirementsRevision(
-        revision_id=f"req-{mission.id}-1", mission_id=mission.id, revision=1, criteria=criteria,
-        success_expression=AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria)),
-        authority_subject=principal.principal_id,
-    )
+#: The root goal type and the task/duty id prefixes of a user Mission's root.  They are
+#: part of every existing Mission's identity; the SDK's ``deployment.root`` builds the
+#: root from them (one copy of the requirements and the root initialisation).
+ROOT_TYPE = "desktop.user-goal"
+ROOT_TASK_PREFIX = "desktop-root-"
+ROOT_DUTY_PREFIX = "desktop-duty-"
 
 
 def initialize_root(loop: Any, mission: Any, principal: Any) -> None:
-    """Join the caller's create transaction; replay never inserts another root.
+    from agent_orchestrator.deployment.root import initialize_root as sdk_initialize_root
 
-    An assured Mission's factory already wrote revision 1 inside the same create
-    transaction; that body must be byte-identical and is never inserted twice.
-    """
-    from agent_orchestrator.contracts.htn import ContractRevision, ObligationId, TaskRef, TaskSemanticBindingV1
-    from agent_orchestrator.contracts.obligations import Obligation
-    from agent_orchestrator.contracts.semantic_base import content_hash_of
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import is_hierarchical
-    from agent_orchestrator.storage.htn_store import HtnStore
-    from agent_orchestrator.storage.obligation_store import ObligationStore
-
-    if not is_hierarchical(mission):
-        return
-    htn = HtnStore(loop.store)
-    task_id, duty_id = "desktop-root-" + mission.id, "desktop-duty-" + mission.id
-    if htn.latest_task_semantics(task_id) is not None:
-        return
-    world = planning_world(loop, mission)
-    definition = next(t for t in world.catalog.task_types() if t.task_type_ref.id == "desktop.user-goal")
-    parameters = {"goal": mission.goal}
-    binding = TaskSemanticBindingV1(
-        task_id=TaskRef(task_id), obligation_id=ObligationId(duty_id), contract_revision=ContractRevision(1),
-        contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": parameters}),
-        form=definition.form, goal_signature=definition.goal_signature, typed_parameters=parameters,
-        output_ports=definition.output_ports,
-        requirement_refs=tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria))),
-        semantic_scope="mission",
-    )
-    # Root requirements are reviewed over accepted contributions. Concrete
-    # file/pytest statements are projected to leaf checks by the materializer;
-    # naming those checks as root executions would require invented receipts.
-    requirements = root_requirements(mission, principal)
-    assert tuple(c.criterion_id for c in requirements.criteria) == tuple(binding.requirement_refs)
-    existing = htn.latest_requirements_revision(mission.id)
-    if existing is not None and (existing.revision != 1
-                                 or existing.content_hash() != requirements.content_hash()):
-        raise RuntimeError("root requirements already exist with a different body")
-    with loop.store.transaction():
-        ObligationStore(loop.store).register(Obligation(
-            obligation_id=ObligationId(duty_id), mission_id=mission.id,
-            requirement_refs=binding.requirement_refs, goal_signature_id=definition.goal_signature.signature_id,
-        ), recursion_fuel=8)
-        loop.commit.admit_obligation_demand(mission.id, ObligationId(duty_id),
-            principal=principal.principal_id, requester={"kind": "mission_root"},
-            evidence={"mission_id": mission.id, "requirement_refs": list(binding.requirement_refs)})
-        htn.put_task_semantics(mission.id, binding)
-        if existing is None:
-            htn.insert_requirements_revision(requirements)
+    sdk_initialize_root(loop, mission, principal, world_factory=planning_world, root_type=ROOT_TYPE,
+                        task_prefix=ROOT_TASK_PREFIX, duty_prefix=ROOT_DUTY_PREFIX)
 
 
 def install(loop: Any) -> None:
-    from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
-    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError, OperationCompletionReader
-    from agent_orchestrator.storage.htn_store import HtnStore
+    from agent_orchestrator.deployment.root import install_planning
 
-    def ready(mission: Any) -> bool:
-        requirements = HtnStore(loop.store).latest_requirements_revision(mission.id)
-        if requirements is None:
-            return False
-        try:
-            OperationCompletionReader(loop.store).read_requirements(mission.id, TypedRef(
-                kind=TypedRefKind.REQUIREMENTS, id=str(requirements.revision_id),
-                revision=requirements.revision, content_hash=requirements.content_hash()))
-        except OperationCompletionError as error:
-            if error.code == "OP_REQUIREMENT_MAPPING_MISSING":
-                return False
-            raise
-        return True
-
-    loop.install_hierarchical_deployment(lambda mission: planning_world(loop, mission), start_gate=ready)
+    install_planning(loop, planning_world)

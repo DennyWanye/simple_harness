@@ -80,7 +80,7 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
         AssuranceDeploymentPorts,
         install_assurance as sdk_install,
     )
-    from .hierarchical import root_requirements
+    from agent_orchestrator.deployment.root import user_requirements
 
     notices: deque[dict[str, Any]] = service._assurance_notices
 
@@ -100,13 +100,13 @@ def install_assurance(service: Any, orchestrator: Any) -> Any:
     ports = AssuranceDeploymentPorts(
         tenant_id=service.tenant_id,
         principal=service._principal,
-        requirements=lambda mission, spec: root_requirements(mission, service._principal),
+        requirements=lambda mission, spec: user_requirements(mission, service._principal),
         select_profile=select_profile,
         notify_transport=notify,
         host_fingerprint=host_fingerprint(),
         # Projects each frozen Scope's check policy right before its first review
         # (the after-run projection in ``service._drive`` is the catch-up path).
-        check_policy_projector=lambda mission_id: project_check_policies(service, mission_id=mission_id),
+        check_policy_projector=lambda mission_id: service._duties.project_check_policies(mission_id),
     )
     return sdk_install(orchestrator, ports)
 
@@ -139,188 +139,3 @@ def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[
         raise OrchestrationRequestError(
             "assurance_unavailable" if error.code == "PROFILE_UNBOUND" else error.code, str(error)
         ) from error
-
-
-def project_check_policies(service: Any, mission_id: str | None = None) -> int:
-    """Approve, under the Host's authenticated caller, the lossless check-policy
-    mapping for every frozen completion Scope of an assured Mission that has none.
-
-    The person already confirmed the requirements mapping (the completion Spec);
-    each Scope the plan later freezes needs the SDK's per-Scope check policy before
-    its content review can run (``CHECK_POLICY_UNRESOLVED`` otherwise — Host real
-    model run 2, 2026-09-23). The mapping is the SDK's lossless projection of the
-    original requirements (semantic criteria → SEMANTIC, named checks → the exact
-    registered CheckSpecs); the Host adds nothing and drops nothing. One command
-    per Scope, replay-safe through the SDK's own approval receipt.
-    """
-    orchestrator = service._orchestrator
-    if service._assurance is None or orchestrator is None:
-        return 0
-    from agent_orchestrator.assurance.codec import AssuranceError, fingerprint
-    from agent_orchestrator.orchestrator.assurance_check_policy import (
-        lossless_scope_mapping,
-        mission_final_scope_id,
-    )
-    from agent_orchestrator.storage.assurance_store import AssuranceStore
-
-    store = orchestrator.store
-    done: set[str] = service._assurance_policy_scopes
-    sql = "SELECT mission_id, scope_id, document_json FROM operation_completion_scopes"
-    args: tuple[Any, ...] = ()
-    if mission_id is not None:
-        sql += " WHERE mission_id=?"
-        args = (mission_id,)
-    rows = store.connection.execute(sql + " ORDER BY created_at_ms, scope_id", args).fetchall()
-    def approve(mid: str, scope_id: str, purpose: str, effect_key: str | None = None) -> bool:
-        # One command per (Scope, purpose[, effect]); the SDK approval receipt makes
-        # replays free. MISSION_FINAL is the root review's own domain (root Scope + the
-        # whole root requirements) — Host real model run 15, 2026-09-23. The two
-        # operation reviews live on the effect owner's Scope (NEXT-TG-1.0, 2026-09-27:
-        # an assured publish was refused CHECK_POLICY_UNRESOLVED at submission).
-        key = {"CONTENT": scope_id, "MISSION_FINAL": f"mission-final:{scope_id}",
-               "ACTION_PROPOSAL": f"action-proposal:{scope_id}",
-               "OPERATION_OUTCOME": f"operation-outcome:{scope_id}:{effect_key}"}[purpose]
-        if key in done:
-            return False
-        command_id = f"host-check-policy:{key}"
-        receipt_id = "assurance-check-policy-approval:" + fingerprint({
-            "mission": mid, "tenant": service.tenant_id,
-            "principal": service._principal.principal_id, "command": command_id,
-        })
-        if store.get_receipt(receipt_id) is not None:
-            done.add(key)
-            return False
-        try:
-            requirements_ref, scope_ref, mapping = lossless_scope_mapping(
-                orchestrator.commit, mission_id=mid, scope_id=scope_id, purpose=purpose,
-                effect_key=effect_key)
-            command = {
-                "mission_id": mid, "command_id": command_id,
-                "requirements_ref": requirements_ref.to_json(),
-                "completion_scope": scope_ref.to_json(),
-                "candidate_mapping": [policy.to_json() for policy in mapping],
-                # 2026-09-25: this is the Host approving on the principal's behalf, and
-                # the audit event says so (actor_type=system), not "a human approved".
-                "approval_source": "HOST_LOSSLESS_AUTO",
-            }
-            if purpose != "CONTENT":
-                command["purpose"] = purpose
-            if effect_key is not None:
-                command["effect_key"] = effect_key
-            service._call("approve_assurance_check_policy", command)
-        except Exception as error:  # noqa: BLE001 - one Scope must never stop the round
-            # Retried on the next round; a Scope whose projection is not current
-            # yet (or never resolvable) is reported, never guessed. 2026-09-27: an old
-            # Mission's stale plan raised OperationCompletionError here and the whole
-            # round stopped, so a new Mission got no policy at all.
-            logger.warning("assurance %s check policy not projected for %s: %s: %s",
-                           purpose, scope_id, type(error).__name__, error)
-            return False
-        done.add(key)
-        return True
-
-    approved = 0
-    assured: set[str] = set()
-    unassured: set[str] = service._assurance_unassured_missions
-    for row in rows:
-        mid, scope_id = str(row[0]), str(row[1])
-        if mid in unassured:
-            continue
-        if mid not in assured:
-            mission = store.get_mission(mid)
-            if mission is None or str(getattr(mission.status, "value", mission.status)) in {
-                    "COMPLETED", "FAILED", "CANCELLED"}:
-                unassured.add(mid)  # a finished Mission needs no new policy
-                continue
-            try:
-                if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
-                    unassured.add(mid)
-                    continue
-            except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
-                unassured.add(mid)
-                continue
-            assured.add(mid)
-        approved += approve(mid, scope_id, "CONTENT")
-        owned = tuple(json.loads(row[2]).get("owned_effect_keys") or ())
-        if owned:
-            approved += approve(mid, scope_id, "ACTION_PROPOSAL")
-            for effect_key in owned:
-                approved += approve(mid, scope_id, "OPERATION_OUTCOME", str(effect_key))
-    for mid in sorted(assured):
-        try:
-            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
-                continue
-        except Exception:  # noqa: BLE001 - not assured
-            continue
-        root_scope = mission_final_scope_id(orchestrator, mid)
-        if root_scope is not None:
-            approved += approve(mid, root_scope, "MISSION_FINAL")
-    approved += _project_method_plan_policies(service, mission_id, unassured)
-    return approved
-
-
-def _project_method_plan_policies(service: Any, mission_id: str | None, unassured: set[str]) -> int:
-    """Approve the METHOD_PLAN check policy for every goal a method may be proposed for.
-
-    2026-10-01 (HTN 精简 片 A): the Planner proposes its own methods, and a proposed
-    method is adopted only after its independent review.  That review is prepared
-    inside the Planner decision's own transaction, where this projector cannot run,
-    so the policy has to be there *before* the Planner is asked: from Mission creation
-    for the root goal (no plan and no Scope exist yet), and from the commit of the plan
-    that introduced it for a sub-goal.  The policy is approved on the exact goal Task
-    (its contract revision and hash), by the SDK's own lossless mapping of the
-    requirements that goal covers; the Host adds nothing and drops nothing.
-    """
-    from agent_orchestrator.orchestrator.assurance_check_policy import (
-        lossless_planning_subject_mapping,
-    )
-    from agent_orchestrator.storage.assurance_store import AssuranceStore
-    from agent_orchestrator.storage.htn_store import HtnStore
-
-    orchestrator = service._orchestrator
-    store = orchestrator.store
-    done: set[str] = service._assurance_policy_scopes
-    sql = ("SELECT mission_id FROM missions WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED')")
-    args: tuple[Any, ...] = ()
-    if mission_id is not None:
-        sql += " AND mission_id=?"
-        args = (mission_id,)
-    approved = 0
-    for (mid,) in store.connection.execute(sql + " ORDER BY created_at, mission_id", args).fetchall():
-        mid = str(mid)
-        if mid in unassured:
-            continue
-        try:
-            if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
-                unassured.add(mid)
-                continue
-        except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
-            unassured.add(mid)
-            continue
-        htn = HtnStore(store)
-        requirements = htn.latest_requirements_revision(mid)
-        # The policy is approved against one requirements revision; a revised requirements
-        # document needs its own approval, so the revision is part of what "done" means.
-        revision = 0 if requirements is None else int(requirements.revision)
-        for binding in htn.list_task_semantics(mid, form="compound"):
-            key = f"method-plan:{binding.task_id}:{int(binding.contract_revision)}:r{revision}"
-            if key in done:
-                continue
-            try:
-                requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
-                    orchestrator.commit, mission_id=mid, task_id=str(binding.task_id))
-                service._call("approve_assurance_check_policy", {
-                    "mission_id": mid, "command_id": f"host-check-policy:{key}",
-                    "requirements_ref": requirements_ref.to_json(),
-                    "planning_subject": subject_ref.to_json(),
-                    "candidate_mapping": [policy.to_json() for policy in mapping],
-                    "purpose": "METHOD_PLAN", "approval_source": "HOST_LOSSLESS_AUTO"})
-            except Exception as error:  # noqa: BLE001 - one goal must never stop the round
-                if key not in service._assurance_policy_warned:  # retried every round; said once
-                    service._assurance_policy_warned.add(key)
-                    logger.warning("assurance METHOD_PLAN check policy not projected for %s: %s: %s",
-                                   binding.task_id, type(error).__name__, error)
-                continue
-            done.add(key)
-            approved += 1
-    return approved

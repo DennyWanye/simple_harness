@@ -1,88 +1,27 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Host composition of the native runtime plane (ARP-EXEC-1.1.1, RP-E3).
+"""Host 这一侧的原生执行池资源（2026-10-03 起，拼装本身在 SDK ``agent_orchestrator.deployment.native_pools``）。
 
-The SDK's native plane refuses to guess: a pool on it needs the deployment's real
-authorization port, a certified token meter, an authenticated creation caller for
-every dispatch intent, and the Host's own ports (session root, Assurance acceptance
-reader, artifact reader, embedding resource).  This module builds those from what the
-Host really has and reports what it does not have (no BGE-M3 weights → lexical only;
-no approved script executor → SCRIPT skills refused by name).  Nothing here reads a
-request body: tenant, principal and policy come from deployment composition only.
+Host 只提供本机资源：BGE-M3 向量模型（没装就只按词检索，如实报告原因）、已证明可用的沙箱脚本
+执行器（没有就按名字拒绝 SCRIPT 技能）、用量计数器。执行池的身份与拼装只有 SDK 那一份。
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from agent_orchestrator.runtime.assembly import OWNER_SCOPE
-from agent_orchestrator.runtime.mission_sources import MissionSourceReader
-from simple_harness.agents.arp.shared_catalogue import SharedSkillCatalogue, mirror_caller
-from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller
-from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
-from simple_harness.agents.arp.assurance_acceptance import AssuranceSkillAcceptance
-from simple_harness.agents.arp.errors import ArpError
-from simple_harness.agents.arp.pins import Pin
-from simple_harness.agents.arp.ports import ArpPorts, TrustedCaller, bootstrap_root, now_ms
-from simple_harness.agents.arp.profile import ProfileRefs
-from simple_harness.agents.arp.profile import RuntimeProfile as ArpRuntimeProfile
-from simple_harness.agents.arp.profile import default_policy
-from simple_harness.agents.arp.strict import digest
-from simple_harness.runtime.ports import AuthorizationResult
+from agent_orchestrator.deployment.native_pools import NativePools
 
 from .skill_script_runner import SandboxScriptRunner
 
 logger = logging.getLogger(__name__)
 
-NATIVE_PROFILE_PREFIX = "deepseek-native-"
 BGE_M3_SUBDIR = "bge-m3-int8"
-NATIVE_OUTPUT_TOKENS = 32_768
-
-
-#: NEXT-TG-1.0 §11: the one pool whose catalogue is the deployment's Skill authority; every
-#: other native pool mirrors it.  Fixed (the first native pool), so it never moves between
-#: restarts.
-def catalogue_owner_profile_id() -> str:
-    from .runtime_profile import CONTEXT_INPUT_LIMITS
-
-    return native_profile_id(CONTEXT_INPUT_LIMITS[0])
-
-
-def native_profile_id(tokens: int, *, thinking: bool = False) -> str:
-    """A native pool's id.  Thinking-mode pools are separate pools (own id, own execution
-    library, own provider and counter): an Agent's thinking mode is frozen by the pool its
-    Mission was frozen on, so changing the deployment setting never breaks existing Agents."""
-    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{'thinking-' if thinking else ''}v1"
-
-
-def is_native_profile(profile_id: str | None) -> bool:
-    return isinstance(profile_id, str) and profile_id.startswith(NATIVE_PROFILE_PREFIX)
-
-
-class DeploymentToolAuthorization:
-    """The pool's real authorization port: the deployment policy decides by tool name.
-
-    It is not ``AllowAll``: a tool outside ``DeploymentPolicy.allowed_tools`` is denied
-    with the policy named, and the policy identity is part of the port.  The Assurance
-    reviewers' two read-only evidence tools are part of the policy: every role of a
-    Mission runs on the Mission's pool, and a reviewer that cannot read evidence can only
-    answer INCONCLUSIVE (the tool gateway still confines them to the reviewer role).
-    """
-
-    def __init__(self, allowed_tools: Sequence[str]) -> None:
-        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(ASSURANCE_EVIDENCE_TOOLS)
-        self.policy_id = "host-deployment-policy:" + digest(sorted(self._allowed))[:16]
-
-    async def request_authorization(self, request: Any) -> AuthorizationResult:
-        name = getattr(getattr(request, "tool_call", None), "name", None)
-        if name in self._allowed:
-            return AuthorizationResult.allow()
-        return AuthorizationResult.deny(f"tool {name!r} is outside {self.policy_id}")
 
 
 BGE_M3_MODEL_FILE = "model.int8.onnx"
@@ -192,231 +131,30 @@ def embedding_port(models_dir: Path | None) -> tuple[BgeM3EmbeddingPort | None, 
     return BgeM3EmbeddingPort(model_dir), None
 
 
-def _scaled_policy(policy_id: str, *, tokens: int, output_tokens: int, embedding: bool) -> dict[str, Any]:
-    policy = default_policy(policy_id)
-    policy["max_context_tokens"] = tokens
-    policy["output_reserve_tokens"] = output_tokens
-    policy["embedding_required_for_activation"] = embedding
-    if tokens < 524_288:
-        scale = tokens / 524_288
-        for name in ("recent_min_tokens", "recall_max_tokens", "fixed_soft_max_tokens"):
-            policy[name] = max(4096, int(policy[name] * scale))
-        policy["section_soft_caps"] = {k: max(2048, int(v * scale)) for k, v in policy["section_soft_caps"].items()}
-    return policy
+def build_native_pools(
+    *,
+    tenant_id: str,
+    principal_id: str,
+    allowed_tools: Sequence[str],
+    models_dir: Path | None,
+    meter_factory: Callable[..., Any],
+    script_executor: Any | None = None,
+    clock_ms: Callable[[], int] | None = None,
+) -> NativePools:
+    """The SDK's native pools over this machine's resources."""
 
-
-class HostNativePlane:
-    """Everything the Host supplies to run pools on the native plane."""
-
-    def __init__(
-        self,
-        *,
-        tenant_id: str,
-        principal_id: str,
-        allowed_tools: Sequence[str],
-        models_dir: Path | None,
-        meter_factory: Callable[..., Any],
-        clock_ms: Callable[[], int] = now_ms,
-        script_executor: Any | None = None,
-    ) -> None:
-        self.tenant_id = tenant_id
+    embedding, reason = embedding_port(models_dir)
+    extra = {} if clock_ms is None else {"clock_ms": clock_ms}
+    return NativePools(
+        tenant_id=tenant_id, principal_id=principal_id, allowed_tools=allowed_tools,
+        meter_factory=meter_factory, embedding=embedding, embedding_reason=reason,
         # The sandbox executor this deployment proved at start (P3.2 probe); None when the
         # machine has no usable sandbox, and then SCRIPT skills are refused by name.
-        self.script_executor = script_executor
-        self.principal_id = principal_id
-        self.clock_ms = clock_ms
-        self.authorization = DeploymentToolAuthorization(allowed_tools)
-        self.owner_contract = Pin(
-            "policy", f"host-owner:{tenant_id}", 1,
-            digest({"tenant_id": tenant_id, "authorization": self.authorization.policy_id}),
-        )
-        # One acceptance reader per pool: the SDK binds a reader to the pool's own Skill
-        # lifecycle (``bind_lifecycle``), so a shared reader would answer for the last pool.
-        self.acceptances: dict[str, AssuranceSkillAcceptance] = {}
-        self.embedding, self.embedding_reason = embedding_port(models_dir)
-        self.embedding_ref = Pin(
-            "deployment", "bge-m3-int8-local", 1,
-            digest({"fingerprint": None if self.embedding is None else self.embedding.fingerprint}),
-        )
-        self._meter_factory = meter_factory
-        self._orchestrator: Any = None
-        # The SDK's own Mission source reader over this Orchestrator's records (bound late:
-        # pools are assembled before the Orchestrator exists).  The Host adds nothing to it.
-        self.mission_sources = MissionSourceReader(lambda: self._orchestrator)
-        # One Skill catalogue authority for all native pools (the owner pool's catalogue).
-        self.catalogue_owner_id = catalogue_owner_profile_id()
-        self.shared_catalogue = SharedSkillCatalogue(caller=mirror_caller(f"host:{tenant_id}"))
-        self.profiles: dict[str, dict[str, Any]] = {}
-        self._runtimes: dict[str, Any] = {}
-
-    # ---- late bindings (the Orchestrator exists only after the profiles do) ----------------
-
-    def bind_orchestrator(self, orchestrator: Any) -> None:
-        self._orchestrator = orchestrator
-        for acceptance in self.acceptances.values():
-            acceptance.store = orchestrator.store
-        self.sync_catalogue(reason="startup")
-
-    def sync_catalogue(self, *, reason: str) -> dict[str, Any] | None:
-        """Mirror the owner's Skills into every member pool (idempotent); a failure is
-        logged and changes nothing — each use still asks the owner first."""
-        if self.shared_catalogue.owner_id is None:
-            return None
-        try:
-            report = self.shared_catalogue.sync()
-        except Exception:  # noqa: BLE001 - never block the orchestrator on a mirror pass
-            logger.warning("shared skill catalogue sync failed (%s)", reason, exc_info=True)
-            return None
-        failed = [(pool, row) for pool, body in report["members"].items() for row in body.get("skills", []) if not row.get("mirrored")]
-        if failed:
-            logger.info("shared skill catalogue (%s): %d skill(s) not usable in some pools: %s", reason, len(failed),
-                        [(pool, row.get("skill_ref", {}).get("id"), row.get("error")) for pool, row in failed][:8])
-        return report
-
-    def _root_incarnation(self) -> Any:
-        gate = getattr(self._orchestrator, "_assurance_root_gate", None)
-        if gate is None:
-            raise ArpError("SOURCE_UNAVAILABLE", "the Assurance root gate is not installed on this deployment")
-        return gate.require_execution()
-
-    def artifacts(self, ref: Pin) -> bytes:
-        assembled = getattr(self._orchestrator, "assembled", None)
-        if assembled is None:
-            raise ArpError("SOURCE_UNAVAILABLE", "artifact store is not assembled")
-        from agent_orchestrator.artifacts.store import ArtifactStoreError
-
-        try:
-            return assembled.workspaces.artifact_store.read(ref.content_hash)
-        except ArtifactStoreError as error:
-            raise ArpError("SOURCE_UNAVAILABLE", f"artifact bytes unavailable: {error.reason}") from error
-
-    # ---- callers -----------------------------------------------------------------------------
-
-    def _principal_ref(self) -> Pin:
-        return Pin("principal", self.principal_id, 0, digest({"principal_id": self.principal_id}))
-
-    def intent_caller(self, intent: Any) -> TrustedCaller:
-        return intent_caller(intent, principal_id=self.principal_id, owner_contract_ref=self.owner_contract)
-
-    def control_caller(self, body: Mapping[str, Any]) -> TrustedCaller:
-        """The caller of one control-channel request: deterministic in the request body so a
-        replayed command hashes the same, and never derived from anything the body claims
-        about its principal."""
-
-        command_id = body.get("command_id") if isinstance(body.get("command_id"), str) else None
-        receipt = {"principal_id": self.principal_id, "tenant_id": self.tenant_id, "body": dict(body)}
-        key = command_id or f"read:{digest(receipt)[:16]}"
-        return TrustedCaller(
-            principal_ref=self._principal_ref(),
-            owner_contract_ref=self.owner_contract,
-            command_receipt_ref=Pin("receipt", f"host:control:{key}", 0, digest(receipt)),
-        )
-
-    # ---- per-pool assembly ----------------------------------------------------------------
-
-    def assembly(self, profile_id: str, *, tokens: int, counter: Any, output_tokens: int = NATIVE_OUTPUT_TOKENS) -> NativePlaneAssembly:
-        acceptance = AssuranceSkillAcceptance(store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation)
-        if self._orchestrator is not None:
-            acceptance.store = self._orchestrator.store
-        self.acceptances[profile_id] = acceptance
-        # Wire-only scope (2026-09-24): the DeepSeek endpoint keeps no output beyond the wire,
-        # so no prior-output reserve reader is bound — one would double-charge every earlier
-        # output of the run and shrink the window over a long session.
-        meter = self._meter_factory(counter, input_limit_tokens=tokens, max_output_tokens=output_tokens)
-        root_id = f"host:{self.tenant_id}:{profile_id}"
-        owner = profile_id == self.catalogue_owner_id
-        # The SDK derives the catalogue namespace from the session root and the pool's
-        # owner scope; the Host records the same value so control requests can name it.
-        namespace = f"{root_id}/{OWNER_SCOPE}/-"
-        policy = _scaled_policy(f"host-native-{profile_id}", tokens=tokens, output_tokens=output_tokens, embedding=False)
-        activation = {"kind": "deployment_activation", "profile_id": profile_id, "revision": 1, "tenant_id": self.tenant_id}
-        refs = ProfileRefs(
-            retention_policy_ref=Pin("policy", "host-retention-default", 1, digest({"retention": "default"})),
-            capability_registry_ref=Pin("catalogue", namespace, 1, digest({"namespace": namespace})),
-            activation_receipt_ref=Pin("receipt", f"host:native-plane:{profile_id}:activate", 0, digest(activation)),
-            default_skill_policy_ref=Pin("policy", "host-skill-default", 1, digest({"skills": "default"})),
-            embedding_deployment_ref=self.embedding_ref,
-            catalogue_namespace_id=namespace,
-        )
-        # MISSION (NEXT-TG-1.0 §10): every Agent of an orchestrator pool is created from
-        # the exact role-typed sources the SDK's own Mission source reader derives from the
-        # claimed dispatch intent, and each new request re-checks them.  Revision 2: the
-        # revision-1 STANDALONE_CHAT profile row stays in existing libraries and its old
-        # Sessions keep running under it; a profile row is never rewritten in place.
-        profile = ArpRuntimeProfile(
-            profile_id=profile_id, profile_revision=2, owner_mode="MISSION",
-            allow_lexical_degradation=True, context_policy=policy, refs=refs,
-        )
-        self.profiles[profile_id] = {
-            "profile_id": profile_id, "max_context_tokens": tokens, "output_tokens": output_tokens,
-            "counter": getattr(counter, "fingerprint", None), "count_mode": meter.count_mode,
-            "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
-            "embedding_reason": self.embedding_reason,
-            "script_runner": "unavailable" if self.script_executor is None else f"sandbox:{self.script_executor.kind}",
-            "catalogue_namespace_id": namespace, "owner_mode": "MISSION",
-            "catalogue_role": "owner" if owner else "member",
-        }
-
-        def after_build(runtime: Any) -> None:
-            actual = runtime.arp.catalogue.namespace_id
-            if actual != namespace:  # never report a namespace the runtime does not use
-                self.profiles[profile_id]["catalogue_namespace_id"] = actual
-            # 2026-09-25 主流程优化条目 6: keep the live runtime so status() can report
-            # the health of its background loops (a rebuild re-registers it).
-            self._runtimes[profile_id] = runtime
-            if owner:
-                self.shared_catalogue.bind_owner(profile_id, runtime)
-            else:
-                self.shared_catalogue.bind_member(profile_id, runtime)
-
-        def arp_ports(execution_db: Path) -> ArpPorts:
-            root = bootstrap_root(execution_db.with_name(execution_db.name + ".arp-root"), root_id=root_id)
-            return ArpPorts(
-                root_dir=root.directory, profile=profile, activation_receipt=activation, clock_ms=self.clock_ms,
-                meter=meter, embedding=self.embedding,
-                embedding_resource_ref=None if self.embedding is None else self.embedding_ref,
-                acceptance=acceptance, artifacts=self.artifacts,
-                mission_sources=self.mission_sources,
-                catalogue_authority=None if owner else self.shared_catalogue,
-                # SCRIPT skills run in the sandbox model-written code uses; without a
-                # proven sandbox they are refused by name (RUNNER_UNAVAILABLE).
-                script_runner=None if self.script_executor is None else SandboxScriptRunner(
-                    self.script_executor, execution_db.with_name(execution_db.name + ".skill-runs")
-                ),
-            )
-
-        return NativePlaneAssembly(arp_ports=arp_ports, authorization=self.authorization, caller_for=self.intent_caller, after_build=after_build)
-
-    def background_health(self, profile_id: str) -> list[dict[str, Any]]:
-        """The pool's background-loop health rows (empty until the runtime is built)."""
-
-        runtime = self._runtimes.get(profile_id)
-        reader = getattr(runtime, "background_health", None)
-        if reader is None:
-            return []
-        try:
-            return [row.to_json() for row in reader()]
-        except Exception:  # noqa: BLE001 - status must never fail because health did
-            logger.warning("native pool %s: background health unreadable", profile_id, exc_info=True)
-            return []
-
-    def status(self) -> dict[str, Any]:
-        return {
-            "enabled": True,
-            "available": bool(self.profiles),
-            "profiles": [{**v, "background": self.background_health(k)} for k, v in self.profiles.items()],
-            "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
-            "embedding_reason": self.embedding_reason,
-            "authorization_policy": self.authorization.policy_id,
-            "skill_catalogue_owner": self.shared_catalogue.owner_id,
-        }
+        script_runner=None if script_executor is None else (
+            lambda runs_dir: SandboxScriptRunner(script_executor, runs_dir)),
+        script_runner_label=None if script_executor is None else f"sandbox:{script_executor.kind}",
+        **extra,
+    )
 
 
-__all__ = (
-    "BgeM3EmbeddingPort",
-    "DeploymentToolAuthorization",
-    "HostNativePlane",
-    "embedding_port",
-    "is_native_profile",
-    "native_profile_id",
-)
+__all__ = ("BgeM3EmbeddingPort", "build_native_pools", "embedding_port")

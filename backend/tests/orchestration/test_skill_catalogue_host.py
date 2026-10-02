@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.native_plane import catalogue_owner_profile_id
+from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id
 
 from .test_native_plane_host import _service
 
