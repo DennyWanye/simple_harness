@@ -3,16 +3,23 @@
 These cases intentionally exercise ``StoreOperationReader`` and the immutable
 operation/action tables.  They do not replace the missing production caller
 that supplies ``planning_origin`` to ``propose_action`` (O09).
+
+2026-10-03（HTN 补齐阶段 A′，分诊表 D）：任务行经产品那一份部署组装建出（``product_world``：建任务
+时初始化根、绑定执行图、走保证通道），主循环不跑、不问模型；之后照旧只用存储层的写入口放操作
+绑定、动作和链接，测读侧。此前借 ``test_plan_commits._world``（裸 ``CommitService`` 建任务）。
 """
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import hashlib
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from test_htn_store import envelope
-from test_plan_commits import _world
 
 from agent_orchestrator.runtime.planning_operations import (
     OperationEffect,
@@ -21,17 +28,41 @@ from agent_orchestrator.runtime.planning_operations import (
     build_operation_snapshot,
     operation_gate,
 )
+from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+#: The planning principal the operation rows name (as the plan-commit principal did).
+PRINCIPAL = SimpleNamespace(principal_id="manager-1", scope_id="mission")
+
+
+def in_product_world(tmp_path, keys: tuple[str, ...], body: Callable[..., Any]) -> Any:
+    """Create one user Mission per key on the product's deployment (the loop is never run),
+    then call ``body(world, *missions)`` synchronously inside it; ``world`` carries
+    ``store`` / ``semantics`` / ``principal`` / ``mission`` (the first Mission)."""
+
+    async def case() -> Any:
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as product:
+            missions = []
+            for key in keys:
+                created = product.create({"goal": "写一份 NOTES.md", "idempotency_key": key,
+                                          "success_criteria": ["file:NOTES.md"]})
+                missions.append(product.store.get_mission(created["mission_id"]))
+            world = SimpleNamespace(store=product.store, semantics=HtnStore(product.store), principal=PRINCIPAL,
+                                    mission=missions[0])
+            return body(world, *missions)
+
+    return asyncio.run(case())
 
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _bound_store_sources(tmp_path):
+def _bound_store_sources(world):
     """Use the real operation binding producer and Store-backed reader."""
 
-    world = _world(tmp_path, key="h1h-operation-matrix")
     origin = dataclasses.replace(
         envelope(),
         mission_id=world.mission.id,
@@ -84,26 +115,27 @@ def _bound_store_sources(tmp_path):
 
     link["link_json"] = canonical_json(link)
     PlanningAdmissionStore(world.store).put_operation_action_link(link)
-    return world, action, link
+    return action, link
 
 
 def test_o01_store_complete_empty_has_digest_and_read_error_is_not_empty(
     tmp_path, monkeypatch
 ) -> None:
-    world = _world(tmp_path, key="h1h-o01")
-    reader = StoreOperationReader(world.store)
+    def check(world, mission) -> None:
+        reader = StoreOperationReader(world.store)
+        complete_empty = build_operation_snapshot(mission.id, reader=reader)
+        assert complete_empty.complete_empty is True
+        assert complete_empty.read_digest
 
-    complete_empty = build_operation_snapshot(world.mission.id, reader=reader)
-    assert complete_empty.complete_empty is True
-    assert complete_empty.read_digest
+        def broken_bindings(self, mission_id: str):
+            del self, mission_id
+            raise RuntimeError("database unavailable")
 
-    def broken_bindings(self, mission_id: str):
-        del self, mission_id
-        raise RuntimeError("database unavailable")
+        monkeypatch.setattr(PlanningAdmissionStore, "list_operation_bindings", broken_bindings)
+        with pytest.raises(SourceUnavailable, match="operation_read_failed"):
+            build_operation_snapshot(mission.id, reader=reader)
 
-    monkeypatch.setattr(PlanningAdmissionStore, "list_operation_bindings", broken_bindings)
-    with pytest.raises(SourceUnavailable, match="operation_read_failed"):
-        build_operation_snapshot(world.mission.id, reader=reader)
+    in_product_world(tmp_path, ("h1h-o01",), check)
 
 
 @pytest.mark.parametrize(
@@ -118,60 +150,66 @@ def test_o01_store_complete_empty_has_digest_and_read_error_is_not_empty(
 def test_o04_store_identity_or_link_fault_is_source_unavailable(
     tmp_path, mutation: str, reason: str
 ) -> None:
-    world, action, link = _bound_store_sources(tmp_path)
-    adapter = PlanningAdmissionStore(world.store)
-    from simple_harness.contracts import canonical_json
+    def check(world, mission) -> None:
+        action, link = _bound_store_sources(world)
+        adapter = PlanningAdmissionStore(world.store)
+        from simple_harness.contracts import canonical_json
 
-    if mutation == "dangling_link":
-        # The production schema rightly prevents this state.  Temporarily disable
-        # the SQLite constraint *before* the test transaction to emulate legacy
-        # corruption, then restore it before the production reader is reopened.
-        world.store.connection.execute("PRAGMA foreign_keys = OFF")
-        try:
+        if mutation == "dangling_link":
+            # The production schema rightly prevents this state.  Temporarily disable
+            # the SQLite constraint *before* the test transaction to emulate legacy
+            # corruption, then restore it before the production reader is reopened.
+            world.store.connection.execute("PRAGMA foreign_keys = OFF")
+            try:
+                with world.store.transaction() as connection:
+                    connection.execute(
+                        "DELETE FROM actions WHERE action_key=?", (action["action_key"],)
+                    )
+            finally:
+                world.store.connection.execute("PRAGMA foreign_keys = ON")
+        else:
             with world.store.transaction() as connection:
+                if mutation == "action_key":
+                    broken_link = {**link, "action_key": "wrong-action:v1"}
+                elif mutation == "action_version":
+                    broken_link = {**link, "action_version": 2}
+                else:
+                    broken_link = {**link, "params_hash": _digest("wrong-params")}
+                broken_link["link_json"] = canonical_json(broken_link)
                 connection.execute(
-                    "DELETE FROM actions WHERE action_key=?", (action["action_key"],)
+                    "UPDATE planning_operation_action_links SET link_json=? WHERE operation_id=?",
+                    (broken_link["link_json"], link["operation_id"]),
                 )
-        finally:
-            world.store.connection.execute("PRAGMA foreign_keys = ON")
-    else:
-        with world.store.transaction() as connection:
-            if mutation == "action_key":
-                broken_link = {**link, "action_key": "wrong-action:v1"}
-            elif mutation == "action_version":
-                broken_link = {**link, "action_version": 2}
-            else:
-                broken_link = {**link, "params_hash": _digest("wrong-params")}
-            broken_link["link_json"] = canonical_json(broken_link)
-            connection.execute(
-                "UPDATE planning_operation_action_links SET link_json=? WHERE operation_id=?",
-                (broken_link["link_json"], link["operation_id"]),
-            )
 
-    # The producer reads only real Store rows.  It must never repair any of
-    # these bad identities by choosing a latest action or returning an empty set.
-    with pytest.raises(SourceUnavailable, match=reason):
-        build_operation_snapshot(world.mission.id, reader=StoreOperationReader(world.store))
-    assert adapter.get_operation_binding(link["operation_occurrence_id"]) is not None
+        # The producer reads only real Store rows.  It must never repair any of
+        # these bad identities by choosing a latest action or returning an empty set.
+        with pytest.raises(SourceUnavailable, match=reason):
+            build_operation_snapshot(world.mission.id, reader=StoreOperationReader(world.store))
+        assert adapter.get_operation_binding(link["operation_occurrence_id"]) is not None
+
+    in_product_world(tmp_path, ("h1h-o04",), check)
 
 
 @pytest.mark.parametrize("now_ms", (99, 101))
 def test_o05_store_handed_off_lease_never_becomes_not_applied(tmp_path, now_ms: int) -> None:
-    world, action, _link = _bound_store_sources(tmp_path)
-    handed_off = {
-        **action,
-        "state": "HANDED_OFF",
-        "handoffs": 1,
-        "lease_expires_at": 0.1,  # Store timestamps are seconds; now_ms brackets 100 ms.
-    }
-    world.store.put_action(handed_off)
+    def check(world, mission) -> None:
+        action, _link = _bound_store_sources(world)
+        handed_off = {
+            **action,
+            "state": "HANDED_OFF",
+            "handoffs": 1,
+            "lease_expires_at": 0.1,  # Store timestamps are seconds; now_ms brackets 100 ms.
+        }
+        world.store.put_action(handed_off)
 
-    snapshot = build_operation_snapshot(
-        world.mission.id,
-        reader=StoreOperationReader(world.store),
-        now_ms=now_ms,
-    )
+        snapshot = build_operation_snapshot(
+            world.mission.id,
+            reader=StoreOperationReader(world.store),
+            now_ms=now_ms,
+        )
 
-    assert snapshot.effects == (("operation-1", OperationEffect.IN_FLIGHT),)
-    with pytest.raises(SourceUnavailable, match="operation_unresolved"):
-        operation_gate(snapshot)
+        assert snapshot.effects == (("operation-1", OperationEffect.IN_FLIGHT),)
+        with pytest.raises(SourceUnavailable, match="operation_unresolved"):
+            operation_gate(snapshot)
+
+    in_product_world(tmp_path, ("h1h-o05",), check)

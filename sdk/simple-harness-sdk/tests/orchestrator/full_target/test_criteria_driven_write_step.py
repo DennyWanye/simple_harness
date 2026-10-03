@@ -17,50 +17,77 @@ requires added tests unless a write step declares a ``tests`` output port that
 verify binds; the synthesizer prompt and request carry that requirement; a
 read-only Worker is told to report a missing test as a finding; exhausting
 root-review repairs is a named stop.
+
+2026-10-03（HTN 补齐阶段 A′）：这里的主循环用例早已没有，旧的代码领域搭建（裸 ``CommitService``
+建任务、``install_hierarchical(planning=)``）随之删掉；只留六条直接测函数的用例（覆盖层、做法
+受理、请求材料、执行者提示词），代码领域做法只当素材。
 """
 
 from __future__ import annotations
 
-import asyncio
 import copy
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_htn_deployment_wiring import _task_of  # noqa: E402
-from test_inspect_leaf_patch_input import (  # noqa: E402
-    _CodeWorld,
-)
-from test_read_only_rewrite_bound import (  # noqa: E402
-    PATCHED_COLLECTOR,
-    SEED,
-    TOOLS,
-    _four_step,
-    _LeafWorker,
-    _write_and_envelope,
-)
-from test_root_review_repair_library import (  # noqa: E402
-    C1_FINDING,
-)
+from test_inspect_leaf_patch_input import _c1_method  # noqa: E402
 
-from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    Orchestrator,
-)
 from agent_orchestrator.planning.htn.seed_methods.loader import seed_content_hash  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
-    package_of,
-)
 
 TESTS_PATH = "tests/test_concurrent_contract.py"
-TESTS_BODY = "def test_contract_is_present():\n    assert True\n"
+
+
+def _four_step(method_id: str, *, suffix: str = "") -> dict[str, Any]:
+    """facts → reproduce → apply-patch → verify; both root criteria hang on verify
+    （原在 ``test_read_only_rewrite_bound``，那里的主循环用例已删，搬来这里作素材）。"""
+
+    rename = {
+        "read-facts": f"read-facts{suffix}",
+        "reproduce": f"reproduce{suffix}",
+        "apply-patch": f"apply-patch{suffix}",
+        "verify": f"verify{suffix}",
+    }
+    body = copy.deepcopy(_c1_method())
+    body["method_id"] = method_id
+    kept = []
+    for item in body["steps"]:
+        if item["local_id"] not in rename:
+            continue
+        item["local_id"] = rename[item["local_id"]]
+        for binding in item.get("arguments", {}).values():
+            if isinstance(binding, dict) and binding.get("step") in rename:
+                binding["step"] = rename[binding["step"]]
+        kept.append(item)
+    body["steps"] = kept
+    body["ordering"] = [
+        {"after": rename["reproduce"], "before": rename["read-facts"]},
+        {"after": rename["apply-patch"], "before": rename["reproduce"]},
+        {"after": rename["verify"], "before": rename["apply-patch"]},
+    ]
+    body["composition"] = {
+        "criterion_links": [
+            {
+                "child_criterion_id": "c-tests-verified",
+                "child_step": rename["verify"],
+                "evidence_requirement": "verify-tests report after the applied patch",
+                "parent_criterion_id": "c-test-passes",
+            },
+            {
+                "child_criterion_id": "c-tests-verified",
+                "child_step": rename["verify"],
+                "evidence_requirement": "the report explains the applied change",
+                "parent_criterion_id": "c-change-explained",
+            },
+        ],
+        "finalizer_step": rename["verify"],
+        "independent_review_required": True,
+        "outputs": {},
+    }
+    body["required_capabilities"] = ["repo.read", "repo.write", "tests.run"]
+    return body
 
 
 def _type_ref(type_id: str, version: int) -> dict[str, Any]:
@@ -111,176 +138,6 @@ def _tests_method(method_id: str, *, suffix: str = "") -> dict[str, Any]:
 
 def _missing_tests_method(method_id: str, *, suffix: str = "") -> dict[str, Any]:
     return _bind_tests(_four_step(method_id, suffix=suffix), require=False)
-
-
-class _TestsWorker(_LeafWorker):
-    """Apply-patch claims the tests port; verify only writes REPORT.md."""
-
-    def __init__(
-        self, *, mode: str, rewrite_limit: int | None = None, claim_tests: bool = False
-    ) -> None:
-        super().__init__(mode=mode, rewrite_limit=rewrite_limit)
-        self.patch_feedback = ""
-        self.patch_ports: set[Any] = set()
-        self.claim_tests = claim_tests
-
-    def __call__(self, request: Any) -> Any:
-        package = package_of(request)
-        attempt_id = str((package.get("attempt") or {}).get("attempt_id") or "")
-        if attempt_id not in self._queues:
-            self._queues[attempt_id] = self._script(package, request)
-        queue = self._queues[attempt_id]
-        if not queue:
-            raise AssertionError(f"worker script exhausted for {attempt_id}")
-        step = queue.pop(0)
-        if callable(step) and not isinstance(step, (str, tuple)):
-            return step(request)
-        return step
-
-    def _script(self, package: dict[str, Any], request: Any | None = None) -> list[Any]:
-        goal = str((package.get("task_contract") or {}).get("goal") or "")
-        blob = json.dumps(package, ensure_ascii=False)
-        if request is not None:
-            blob += "".join(
-                m.content if isinstance(m.content, str) else str(m.content)
-                for m in request.messages
-            )
-        ports: set[str] = set()
-        section = package.get("declared_output_ports") or {}
-        for item in (section.get("ports") if isinstance(section, dict) else []) or []:
-            name = item.get("port") or item.get("port_key") or item.get("name")
-            if name:
-                ports.add(str(name))
-        if '"port": "tests"' in blob or '"port":"tests"' in blob:
-            ports.add("tests")
-        feedback = json.dumps(package.get("review_feedback") or {}, ensure_ascii=False)
-        if "not in the tree" in blob or "absent" in blob:
-            feedback = blob
-        if "apply a patch" in goal:
-            self.patch_feedback = feedback
-            self.patch_ports = ports
-            writes = [
-                ("metrics/collector.py", PATCHED_COLLECTOR),
-                ("applied.patch", "--- a/metrics/collector.py\n+++ b/metrics/collector.py\n"),
-                (TESTS_PATH, TESTS_BODY),
-                ("REPORT.md", "# patch\nlocked collector.record and added contract tests\n"),
-            ]
-            artifacts = [
-                "metrics/collector.py",
-                "applied.patch",
-                TESTS_PATH,
-                "REPORT.md",
-            ]
-            outputs = {"patch": "applied.patch"}
-            if self.claim_tests or "tests" in ports:
-                outputs["tests"] = TESTS_PATH
-            return _write_and_envelope(writes, artifacts, outputs)
-        if "run the test suite" in goal:
-            self.verify_attempts += 1
-            return _write_and_envelope(
-                [("REPORT.md", f"# verify\n{TESTS_PATH} collected, 5 passed\n")],
-                ["REPORT.md"],
-                {"report": "REPORT.md"},
-            )
-        return super()._script(package)
-
-
-def _conservation(loop: Orchestrator, mission_id: str) -> dict[str, Any]:
-    report = loop.commit.ledger.costs_report(mission_id)
-    account = next(
-        item for item in report["accounts"] if item["account_id"] == mission_account(mission_id)
-    )
-    remaining = int(account["remaining_tokens"] or 0)
-    reserved = int(account["reserved_tokens"])
-    settled = int(account["settled_tokens"])
-    pool = int(account["limits"]["max_tokens"])
-    return {
-        "holds": remaining + reserved + settled == pool,
-        "remaining": remaining,
-        "reserved": reserved,
-        "settled": settled,
-        "pool": pool,
-        "held_reservations": list(report["held_reservations"]),
-    }
-
-
-def _run(
-    world: _CodeWorld,
-    tmp_path,
-    provider: RoleScriptedProvider,
-    *,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    evidence = Path(tmp_path) / "evidence"
-    world.store.close()
-
-    async def case() -> dict[str, Any]:
-        fields: dict[str, Any] = {
-            "evidence_root": evidence,
-            "max_concurrency": 1,
-            "test_timeout_seconds": 30,
-            "max_planning_attempts": 1,
-        }
-        extra_fields = dict(extra or {})
-        extra_fields.pop("cycles", None)
-        fields.update(extra_fields)
-        config = OrchestratorConfig(**fields)
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.world.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.world)
-            await asyncio.wait_for(loop.run(max_cycles=400), timeout=60)
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            events = list(loop.store.list_events(mission.id))
-            dispatch = loop._hierarchical or world.dispatch
-            verify_id = _task_of(dispatch, mission.id, "code.verify-tests")
-            apply_id = _task_of(dispatch, mission.id, "code.apply-patch")
-            verify_inputs: list[str] = []
-            apply_package: dict[str, Any] = {}
-            attempts = list(loop.store.list_attempts(verify_id)) if verify_id else []
-            if attempts:
-                intent = loop.store.get_intent_for_subject(attempts[0].id)
-                if intent is not None:
-                    verify_inputs = [
-                        item["path"] for item in (intent.config.get("inputs") or [])
-                    ]
-            apply_attempts = list(loop.store.list_attempts(apply_id)) if apply_id else []
-            if apply_attempts:
-                intent = loop.store.get_intent_for_subject(apply_attempts[-1].id)
-                if intent is not None:
-                    apply_package = dict(intent.config.get("package") or {})
-            return {
-                "status": mission.status,
-                "stop_reason": mission.stop_reason,
-                "report": dict(mission.final_report or {}),
-                "types": [item.type for item in events],
-                "events": events,
-                "conservation": _conservation(loop, mission.id),
-                "verify_inputs": verify_inputs,
-                "apply_package": apply_package,
-                "roles": dict(provider.by_role),
-                "task_status": {
-                    task.id: str(task.status) for task in loop.store.list_tasks(mission.id)
-                },
-                "progress": list(loop.progress_log),
-            }
-
-    return asyncio.run(case())
-
-
-def _world(tmp_path, *, key: str, method: dict[str, Any]) -> _CodeWorld:
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    return _CodeWorld(
-        evidence,
-        method=method,
-        key=key,
-        db_name="orchestrator.db",
-        allowed_tools=TOOLS,
-        workspace_seed=SEED,
-        success_criteria=("file:REPORT.md",),
-        max_attempts=20,
-    )
 
 
 # ======================================================================================
@@ -424,43 +281,6 @@ def test_a_method_that_declares_and_binds_the_tests_port_is_admitted() -> None:
     env = build_planning_world("p23t-admit-ok", domains=("code",))
     receipt = _admit(env, _tests_method("code.fix-by-patch-then-verify.with-tests"))
     assert receipt.admitted, receipt.problems
-
-
-# ======================================================================================
-# 2. True Orchestrator.run()
-# ======================================================================================
-
-
-def _rejecting_reviewer(request: Any) -> str:
-    shown = json.loads(
-        next(m.content for m in reversed(request.messages) if str(m.role).endswith("user"))
-    )
-    return (
-        "<critic_verdict>"
-        + json.dumps(
-            {
-                "verdict": "FAIL",
-                "findings": [
-                    {
-                        "severity": "blocker",
-                        "criterion_id": (shown.get("criteria") or [{}])[0].get("criterion_id")
-                        or "c-test-passes",
-                        "detail": C1_FINDING["detail"],
-                    }
-                ],
-                "mission_criteria": [
-                    {
-                        "criterion": item["criterion_id"],
-                        "met": False,
-                        "reason": "scripted reject",
-                    }
-                    for item in shown.get("criteria") or []
-                ],
-            },
-            ensure_ascii=False,
-        )
-        + "</critic_verdict>"
-    )
 
 
 def test_the_read_only_worker_prompt_reports_missing_tests_as_findings() -> None:

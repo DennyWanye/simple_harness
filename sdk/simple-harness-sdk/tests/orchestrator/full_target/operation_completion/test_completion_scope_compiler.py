@@ -29,38 +29,34 @@ from agent_orchestrator.planning.htn.completion_scopes import (
     _plan_identity,
     compile_completion_scopes,
 )
-from agent_orchestrator.storage.htn_store import HtnStore
 
 _FULL_TARGET = Path(__file__).resolve().parents[1]
 if str(_FULL_TARGET) not in sys.path:
     sys.path.insert(0, str(_FULL_TARGET))
 
-from test_plan_commits import ROOT_DUTY, ROOT_TASK, _world  # noqa: E402
+from test_plan_commits import ROOT_DUTY, ROOT_TASK, _pure_bundle  # noqa: E402
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
 
 
-def _committed_network(tmp_path):
-    """Commit the ordinary full-target plan and retain its authoritative receipt hash."""
+def _compiled_network():
+    """The ordinary full-target plan, compiled for real and pinned by its structural identity.
 
-    world = _world(tmp_path, key="completion-scope-compiler")
-    world.commit()
-    # ``World`` deliberately exposes the compiled plan through its refinement
-    # bundle.  There is no ``World.network()`` convenience API: retaining this
-    # concrete TaskNetworkSnapshot proves the compiler sees the same structure
-    # sent to the real plan-commit writer.
-    plan = world.bundle.network
-    stored = HtnStore(world.store).active_plan_revision(world.mission.id)
-    assert stored is not None
+    2026-10-03（HTN 补齐阶段 A′）：完成范围编译器是纯函数——吃计划、要求书、覆盖记录和计划钉，
+    不读库。此前这里借裸 ``CommitService`` 建任务、提交第一版计划，再从库里读回同一份计划和它的
+    快照哈希；产品上建任务必经部署，那条路已建不出来。这里直接用细化编译器的产物
+    （``test_plan_commits._pure_bundle``：根目标 + 两步做法），计划钉取编译器自己的结构身份
+    （提交时写进库的就是它）。改成直接测函数（E），记偏离（分诊表原记 D）。
+    """
+
+    _env, _binding, bundle = _pure_bundle()
+    plan = bundle.network
     return (
-        world,
+        str(plan.mission_id),
         plan,
-        PlanRevisionPinV1(
-            revision=stored.revision,
-            snapshot_hash=stored.snapshot_hash,
-        ),
+        PlanRevisionPinV1(revision=plan.plan_revision, snapshot_hash=_plan_identity(plan)),
     )
 
 
@@ -211,8 +207,8 @@ def _single_root_coverage(plan, primitive) -> tuple[CarriedCriterion | Obligatio
 def test_oc2_default_root_owns_effect_and_same_obligation_siblings_remain_content(tmp_path) -> None:
     """§2.2 default owner: root aggregate owns; siblings do not inherit effects."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
-    spec = _spec(world.mission.id)
+    mission_id, plan, plan_ref = _compiled_network()
+    spec = _spec(mission_id)
     scopes = compile_completion_scopes(spec, plan, _approved_coverage(plan), plan_ref=plan_ref)
 
     root = str(plan.root_occurrence_ids[0])
@@ -234,7 +230,7 @@ def test_oc2_default_root_owns_effect_and_same_obligation_siblings_remain_conten
 def test_oc2_preparation_leaf_freezes_existing_local_review_scope(tmp_path) -> None:
     """A required Task output may use the fixed leaf policy without covering the root."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
+    mission_id, plan, plan_ref = _compiled_network()
     leaves = tuple(item for item in plan.occurrences if item.form is TaskForm.PRIMITIVE)
     local_leaf = next(
         item
@@ -249,7 +245,7 @@ def test_oc2_preparation_leaf_freezes_existing_local_review_scope(tmp_path) -> N
     linked = next(item for item in leaves if item.occurrence_id != local_leaf.occurrence_id)
 
     scopes = compile_completion_scopes(
-        _spec(world.mission.id),
+        _spec(mission_id),
         plan,
         _one_linked_leaf_coverage(plan, linked),
         plan_ref=plan_ref,
@@ -270,7 +266,7 @@ def test_oc2_preparation_leaf_freezes_existing_local_review_scope(tmp_path) -> N
 def test_oc2_local_review_scope_requires_a_declared_required_output(tmp_path) -> None:
     """The fixed policy is not authority to invent content for an output-free leaf."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
+    mission_id, plan, plan_ref = _compiled_network()
     leaves = tuple(item for item in plan.occurrences if item.form is TaskForm.PRIMITIVE)
     local_leaf = next(
         item
@@ -302,7 +298,7 @@ def test_oc2_local_review_scope_requires_a_declared_required_output(tmp_path) ->
         CompletionScopeCompilationError, match="no provable completion contribution"
     ):
         compile_completion_scopes(
-            _spec(world.mission.id),
+            _spec(mission_id),
             changed_plan,
             _one_linked_leaf_coverage(changed_plan, linked),
             plan_ref=plan_ref,
@@ -312,7 +308,7 @@ def test_oc2_local_review_scope_requires_a_declared_required_output(tmp_path) ->
 def test_oc2_single_primitive_mission_root_is_a_real_mixed_effect_owner(tmp_path) -> None:
     """§2.2 permits one adopted primitive root to carry the required effect."""
 
-    _, plan, _ = _committed_network(tmp_path)
+    _, plan, _ = _compiled_network()
     primitive, single_root, plan_ref = _single_primitive_root(plan)
     scopes = compile_completion_scopes(
         _spec(str(single_root.mission_id)),
@@ -331,7 +327,7 @@ def test_oc2_single_primitive_mission_root_is_a_real_mixed_effect_owner(tmp_path
 def test_oc2_content_only_single_real_root_is_content_not_implicit_aggregate(tmp_path) -> None:
     """§2.2 CONTENT_ONLY retains a one-root scope without inventing an effect."""
 
-    _, plan, _ = _committed_network(tmp_path)
+    _, plan, _ = _compiled_network()
     primitive, single_root, plan_ref = _single_primitive_root(plan)
     scopes = compile_completion_scopes(
         _content_only_spec(str(single_root.mission_id)),
@@ -353,7 +349,7 @@ def test_oc2_distinct_obligation_effect_is_owned_by_its_child_and_aggregated_at_
 ) -> None:
     """§2.2: effects aggregate upward but retain the obligation-specific owner."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
+    mission_id, plan, plan_ref = _compiled_network()
     primitives = tuple(item for item in plan.occurrences if item.form is TaskForm.PRIMITIVE)
     delegated = primitives[0]
     delegated_obligation = "obligation-delivery"
@@ -372,7 +368,7 @@ def test_oc2_distinct_obligation_effect_is_owned_by_its_child_and_aggregated_at_
             for binding in plan.task_bindings
         ),
     )
-    raw = _spec(world.mission.id).to_json()
+    raw = _spec(mission_id).to_json()
     raw["effects"].append(
         {
             "effect_key": "deliver-to-recipient",
@@ -425,8 +421,8 @@ def test_oc2_ambiguous_or_unproven_scope_is_rejected_without_owner_guessing(
 ) -> None:
     """§2.2 fail closed: method/action text never supplies missing authority."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
-    spec = _spec(world.mission.id)
+    mission_id, plan, plan_ref = _compiled_network()
+    spec = _spec(mission_id)
     coverage = _approved_coverage(plan)
     if fault == "ambiguous_root":
         primitives = tuple(item for item in plan.occurrences if item.form is TaskForm.PRIMITIVE)
@@ -483,8 +479,8 @@ def test_oc2_ambiguous_or_unproven_scope_is_rejected_without_owner_guessing(
 def test_oc2_plan_or_spec_task_identity_mismatch_never_reuses_a_scope(tmp_path) -> None:
     """§2.2 exact pins: stale plan/spec/task identity is not a reusable scope."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
-    spec = _spec(world.mission.id)
+    mission_id, plan, plan_ref = _compiled_network()
+    spec = _spec(mission_id)
     wrong_ref = PlanRevisionPinV1(revision=plan_ref.revision, snapshot_hash="f" * 64)
 
     with pytest.raises(CompletionScopeCompilationError, match="snapshot hash"):
@@ -497,7 +493,7 @@ def test_oc2_plan_or_spec_task_identity_mismatch_never_reuses_a_scope(tmp_path) 
 
 @pytest.mark.parametrize("has_output", [True, False])
 def test_effect_only_primitive_requires_real_preparation_output(tmp_path, has_output):
-    world, plan, _ = _committed_network(tmp_path)
+    mission_id, plan, _ = _compiled_network()
     primitive, single, _ = _single_primitive_root(plan)
     binding = single.task_bindings[0]
     binding = dataclasses.replace(binding,
@@ -507,7 +503,7 @@ def test_effect_only_primitive_requires_real_preparation_output(tmp_path, has_ou
     if has_output:
         assert any(port.required for port in binding.output_ports)
     single = dataclasses.replace(single, task_bindings=(binding,))
-    spec = dataclasses.replace(_spec(world.mission.id), content_criterion_ids=())
+    spec = dataclasses.replace(_spec(mission_id), content_criterion_ids=())
     pin = PlanRevisionPinV1(revision=single.plan_revision, snapshot_hash=_plan_identity(single))
     if not has_output:
         with pytest.raises(CompletionScopeCompilationError, match="no reviewable preparation output"):
@@ -536,8 +532,8 @@ def test_a_linked_leaf_is_reviewed_on_its_links_not_on_every_criterion_its_type_
     **Mutation**: drop the linked-leaf branch → red (each leaf scope also names
     ``criterion-report``)."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
-    spec = _content_only_spec(world.mission.id)
+    mission_id, plan, plan_ref = _compiled_network()
+    spec = _content_only_spec(mission_id)
     leaves = {str(item.task_id) for item in plan.occurrences if item.form is TaskForm.PRIMITIVE}
     declaring = dataclasses.replace(
         plan,
@@ -576,8 +572,8 @@ def test_a_linked_leaf_does_not_take_an_effect_its_type_declares_for_every_step(
     **Mutation**: drop the linked-leaf condition on ``effect_linked`` → red
     (``OP_COMPLETION_SCOPE_UNRESOLVED … carries an effect criterion``)."""
 
-    world, plan, plan_ref = _committed_network(tmp_path)
-    spec = _spec(world.mission.id)
+    mission_id, plan, plan_ref = _compiled_network()
+    spec = _spec(mission_id)
     leaves = {str(item.task_id) for item in plan.occurrences if item.form is TaskForm.PRIMITIVE}
     declaring = dataclasses.replace(
         plan,

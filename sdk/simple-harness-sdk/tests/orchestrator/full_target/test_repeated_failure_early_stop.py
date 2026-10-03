@@ -24,12 +24,14 @@ Two repairs, no new config, no 20th ``_new_mode`` site:
 * N identical verification failures on one occurrence (same layer + same
   problems hash) escalate to ``PlanningRejected{repeated_verification_failure}``
   instead of burning the attempts wall.
+
+2026-10-03（HTN 补齐阶段 A′）：主循环那半（第 2 节起的脚本化执行者与旧代码领域搭建）早已没有
+用例，随旧构造器删掉；这里只留指纹与 diff 应用的七条纯函数用例。
 """
+
 
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,10 +40,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_htn_deployment_wiring import _task_of  # noqa: E402
-from test_read_only_rewrite_bound import (  # noqa: E402
-    _accepting_reviewer,
-)
 from test_verify_workspace_inputs import (  # noqa: E402
     NOT_RECORDED,
     PATCH_DIFF,
@@ -50,7 +48,6 @@ from test_verify_workspace_inputs import (  # noqa: E402
     REPORT,
     SEED_WINDOW,
     WINDOW,
-    _write_and_envelope,
 )
 
 from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
@@ -58,23 +55,9 @@ from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
     decode_unified_diff_text,
     files_patched_by_unified_diff,
 )
-from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    mission_account,
-)
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
     verification_failure_fingerprint,
 )
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
-    envelope_step,
-    package_of,
-)
-
-NO_CLAIMS = "no claims were submitted"
-
 
 # ======================================================================================
 # 1. Constants and the fingerprint
@@ -218,223 +201,3 @@ def test_a_binary_diff_document_is_rejected_as_not_utf8() -> None:
         decode_unified_diff_text(b"\xff\xfe--- a/x\n", path="patch.diff")
     assert caught.value.path == "patch.diff"
     assert caught.value.reason == "not_utf8"
-
-
-# ======================================================================================
-# 2. Scripted workers
-# ======================================================================================
-
-
-class _SwitchWorker:
-    """facts / reproduce / apply / verify.  ``apply`` writes the patched source
-    (same bytes every time, matching the retired leaf after a method switch) and
-    lists it.  ``verify`` claims the upstream path the way M2-r1's envelope did."""
-
-    def __init__(self, *, apply_mode: str = "write-source") -> None:
-        self.apply_mode = apply_mode
-        self.apply_attempts = 0
-        self._queues: dict[str, list[Any]] = {}
-
-    def __call__(self, request: Any) -> Any:
-        package = package_of(request)
-        attempt_id = str((package.get("attempt") or {}).get("attempt_id") or "")
-        if attempt_id not in self._queues:
-            self._queues[attempt_id] = self._script(package)
-        queue = self._queues[attempt_id]
-        if not queue:
-            raise AssertionError(f"worker script exhausted for {attempt_id}")
-        step = queue.pop(0)
-        if callable(step) and not isinstance(step, (str, tuple)):
-            return step(request)
-        return step
-
-    def _script(self, package: dict[str, Any]) -> list[Any]:
-        goal = str((package.get("task_contract") or {}).get("goal") or "")
-        if "read the repository" in goal:
-            return _write_and_envelope(
-                [("FACTS.md", '{"tests": ["tests/test_public_window.py"]}\n')],
-                ["FACTS.md"],
-                {"facts": "FACTS.md"},
-            )
-        if "reproduce" in goal:
-            return _write_and_envelope(
-                [("diagnosis.md", "# diagnosis\nwindow_sum drops the last sample\n")],
-                ["diagnosis.md"],
-                {"diagnosis": "diagnosis.md"},
-            )
-        if "apply a patch" in goal:
-            self.apply_attempts += 1
-            if self.apply_mode == "diff-only":
-                return _write_and_envelope(
-                    [
-                        (PATCH_DIFF, PATCH_TEXT),
-                        (REPORT, "# patch\nwindow_sum now covers the exclusive end\n"),
-                    ],
-                    [PATCH_DIFF, REPORT],
-                    {"patch": PATCH_DIFF},
-                )
-            if self.apply_mode == "empty-claims":
-                steps = [
-                    ("workspace_write_file", {"path": PATCH_DIFF, "content": PATCH_TEXT}),
-                    ("workspace_write_file", {"path": REPORT, "content": "# patch\n"}),
-                    envelope_step(
-                        summary="scripted apply without claims",
-                        artifacts=[PATCH_DIFF, REPORT],
-                        claims=[],
-                        override=lambda body: {**body, "outputs": {"patch": PATCH_DIFF}},
-                    ),
-                ]
-                return steps
-            return _write_and_envelope(
-                [
-                    (WINDOW, PATCHED_WINDOW),
-                    (PATCH_DIFF, PATCH_TEXT),
-                    (REPORT, "# patch\nwindow_sum now covers the exclusive end\n"),
-                ],
-                [WINDOW, PATCH_DIFF, REPORT],
-                {"patch": PATCH_DIFF},
-            )
-        if "run the test suite" in goal:
-            return _write_and_envelope(
-                [(REPORT, "# verify\n2 passed\nwindow_sum covers the requested range\n")],
-                [WINDOW, REPORT],
-                {"report": REPORT},
-            )
-        raise AssertionError(f"unexpected leaf goal: {goal!r}")
-
-
-class _RejectThenAccept:
-    def __init__(self) -> None:
-        self.n = 0
-
-    def __call__(self, request: Any) -> str:
-        self.n += 1
-        if self.n == 1:
-            shown = json.loads(
-                next(
-                    m.content
-                    for m in reversed(request.messages)
-                    if str(m.role).endswith("user")
-                )
-            )
-            return (
-                "<critic_verdict>"
-                + json.dumps(
-                    {
-                        "verdict": "FAIL",
-                        "findings": [
-                            {
-                                "severity": "blocker",
-                                "detail": "c-change-explained is not met by the covering report",
-                            }
-                        ],
-                        "mission_criteria": [
-                            {
-                                "criterion": item["criterion_id"],
-                                "met": False,
-                                "reason": "scripted reject",
-                            }
-                            for item in shown["criteria"]
-                        ],
-                    }
-                )
-                + "</critic_verdict>"
-            )
-        return _accepting_reviewer(request)
-
-
-def _conservation(loop: Orchestrator, mission_id: str) -> dict[str, Any]:
-    report = loop.commit.ledger.costs_report(mission_id)
-    account = next(
-        item for item in report["accounts"] if item["account_id"] == mission_account(mission_id)
-    )
-    remaining = int(account["remaining_tokens"] or 0)
-    reserved = int(account["reserved_tokens"])
-    settled = int(account["settled_tokens"])
-    pool = int(account["limits"]["max_tokens"])
-    return {
-        "holds": remaining + reserved + settled == pool,
-        "remaining": remaining,
-        "reserved": reserved,
-        "settled": settled,
-        "pool": pool,
-        "held_reservations": list(report["held_reservations"]),
-        "attempts_created": int(account["attempts_created"]),
-    }
-
-
-def _run(
-    world: Any,
-    tmp_path: Any,
-    provider: RoleScriptedProvider,
-    *,
-    cycles: int = 500,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    evidence = Path(tmp_path) / "evidence"
-    world.store.close()
-
-    async def case() -> dict[str, Any]:
-        config = OrchestratorConfig(
-            evidence_root=evidence,
-            max_concurrency=1,
-            test_timeout_seconds=30,
-            max_planning_attempts=1,
-            **(extra or {}),
-        )
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.world.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.world)
-            await asyncio.wait_for(loop.run(max_cycles=cycles), timeout=45)
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            events = list(loop.store.list_events(mission.id))
-            apply_id = _task_of(
-                loop._hierarchical or world.dispatch, mission.id, "code.apply-patch"
-            )
-            verify_id = _task_of(
-                loop._hierarchical or world.dispatch, mission.id, "code.verify-tests"
-            )
-            apply_attempts = list(loop.store.list_attempts(apply_id))
-            verify_attempts = list(loop.store.list_attempts(verify_id))
-            intent_inputs: list[str] = []
-            if verify_attempts:
-                intent = loop.store.get_intent_for_subject(verify_attempts[0].id)
-                if intent is not None:
-                    intent_inputs = [
-                        item["path"] for item in (intent.config.get("inputs") or [])
-                    ]
-            apply_paths = sorted(
-                {
-                    artifact.path
-                    for attempt in apply_attempts
-                    for artifact in loop.store.list_artifacts(attempt.id)
-                }
-            )
-            return {
-                "status": mission.status,
-                "stop_reason": mission.stop_reason,
-                "report": dict(mission.final_report or {}),
-                "types": [item.type for item in events],
-                "events": events,
-                "conservation": _conservation(loop, mission.id),
-                "verify_inputs": intent_inputs,
-                "verify_attempts": len(verify_attempts),
-                "apply_id": apply_id,
-                "apply_attempts": len(apply_attempts),
-                "apply_paths": apply_paths,
-                "apply_statuses": [str(item.status) for item in apply_attempts],
-                "task_status": {
-                    task.id: (str(task.status), task.goal)
-                    for task in loop.store.list_tasks(mission.id)
-                },
-                "roles": dict(provider.by_role),
-                "progress": list(loop.progress_log),
-                "attempts": [
-                    (task.id, attempt.ordinal, str(attempt.status))
-                    for task in loop.store.list_tasks(mission.id)
-                    for attempt in loop.store.list_attempts(task.id)
-                ],
-            }
-
-    return asyncio.run(case())

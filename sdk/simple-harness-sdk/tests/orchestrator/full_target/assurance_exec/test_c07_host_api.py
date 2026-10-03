@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """C07 (SDK half): the fixed-caller Assurance read verbs over a real Orchestrator.
 
-Real ``Orchestrator`` + ``install_assurance`` (native root, fixed principal,
-factory, four consumers), real assured and legacy Missions, real facade. No
-model, no Host process: the Host route/UI half of C07 lives in the Host tests.
+The product's deployment (``product_world``: native root, fixed principal, factory,
+four consumers, TaskGraph), real assured Missions created the product way, real
+facade. No model is asked (the loop is never run), no Host process: the Host
+route/UI half of C07 lives in the Host tests.
+
+2026-10-03（HTN 补齐阶段 A′）：不再自拼"按任务键选不选保证通道"的部署。偏离：
+* 产品里每个任务都走保证通道，"没选保证通道的任务 → PROFILE_UNBOUND"这个探针建不出来，删掉；
+  PROFILE_UNBOUND 仍由"别的认证身份""别的租户"两条覆盖。"拿别的任务的游标"改用第二个保证通道
+  任务，按产品实际的拒绝码断言。
+* 移动事件头不再手插通知事件（产品自己才写的事件），改用产品真会发生的两步：部署代签内容
+  完成映射、开始规划（``begin_planning``）。
 """
 
 from __future__ import annotations
@@ -15,33 +23,21 @@ import pytest
 from agent_orchestrator.api.assurance import ITEM_KINDS, AssuranceReadError
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.assurance.contracts import ContractViolation, validate
-from agent_orchestrator.assurance.policy import AssurancePolicy
 from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.assurance_assembly import (
-    AssuranceDeploymentPorts,
-    install_assurance,
-)
-from agent_orchestrator.orchestrator.assurance_consumers import NOTIFICATION_EVENT
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import TENANT, product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-TENANT = "tenant-c07"
-PRINCIPAL = Principal("c07-current-user")
-HOST_FINGERPRINT = "ab" * 32
+HOST_FINGERPRINT = "ab" * 32  # product_world's deployment fingerprint
 
 
-def _spec(key: str, **extra):
-    return MissionSpec(
-        goal="assured " + key,
-        success_criteria=("the answer file is written", "it names the fixture"),
-        tenant_id=TENANT,
-        idempotency_key=key,
-        orchestration_semantics_version="hierarchical",
-        planning_protocol_version="planning-decision-v1",
-        **extra,
-    )
+def _create(world, key: str):  # type: ignore[no-untyped-def]
+    created = world.create({"goal": "assured " + key, "idempotency_key": key,
+                            "success_criteria": ["the answer file is written", "it names the fixture"]})
+    return world.store.get_mission(created["mission_id"])
+
+
+#: 拿别的任务的游标去读：产品实际给的拒绝码。
+OTHER_MISSION_CURSOR = "SNAPSHOT_CHANGED"
 
 
 def _snapshot_request(mission_id, **overrides):
@@ -64,40 +60,20 @@ def _refused(call, code):
 
 
 async def _deployment(root, checks):
-    cfg = OrchestratorConfig(evidence_root=root / "root")
-    sent = []
-
-    def root_setup(orch):
-        orch.commit.install_assurance_root(
-            principal=PRINCIPAL, tenant_id=TENANT, command_id="install"
-        )
-
-    def assembly(orch):
-        install_assurance(orch, AssuranceDeploymentPorts(
-            tenant_id=TENANT, principal=PRINCIPAL,
-            select_profile=lambda spec: AssurancePolicy() if spec.idempotency_key.startswith("assured") else None,
-            notify_transport=sent.append, host_fingerprint=HOST_FINGERPRINT,
-        ))
-
-    async with Orchestrator(cfg, RoleScriptedProvider({}), assurance_root_setup=root_setup,
-                            startup_assembly=assembly) as orch:
-        await checks(orch, sent)
+    async with product_world(root / "root", LayeredScriptedProvider()) as world:
+        await checks(world)
 
 
 def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
-    async def checks(orch, sent):
-        store, commit = orch.store, orch.commit
-        control = MissionControlV1(orch, tenant_id=TENANT, principal=PRINCIPAL)
-        assured, created = commit.create_mission(_spec("assured-1"))
-        # 删旧平面模式：没选保证通道的分层任务（完成要求 v1 通道）当"未绑定档案"的探针。
-        legacy, _ = commit.create_mission(MissionSpec(
-            goal="v1 unselected", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-1",
-            orchestration_semantics_version="hierarchical", planning_protocol_version="planning-decision-v1"))
-        assert created
+    async def checks(world):
+        orch, store = world.loop, world.store
+        control = world.control
+        principal = world.deployment.principal
+        assured = _create(world, "assured-1")
+        other_mission = _create(world, "assured-2")
 
         # --- ownership, lane and contract gates -------------------------------
         _refused(lambda: control.assurance_snapshot(_snapshot_request("no-such-mission")), "NOT_FOUND")
-        _refused(lambda: control.assurance_snapshot(_snapshot_request(legacy.id)), "PROFILE_UNBOUND")
         _refused(lambda: control.assurance_snapshot({**_snapshot_request(assured.id), "extra": 1}), "CONTRACT_INVALID")
         _refused(lambda: control.assurance_snapshot(_snapshot_request(assured.id, limit=0)), "CONTRACT_INVALID")
         _refused(lambda: control.assurance_snapshot(_snapshot_request(assured.id, at_event_seq=3)), "CONTRACT_INVALID")
@@ -105,7 +81,7 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         # Another authenticated identity has no installed read assembly: never a body-level override.
         other = MissionControlV1(orch, tenant_id=TENANT, principal=Principal("someone-else"))
         _refused(lambda: other.assurance_snapshot(_snapshot_request(assured.id)), "PROFILE_UNBOUND")
-        stranger = MissionControlV1(orch, tenant_id="other-tenant", principal=PRINCIPAL)
+        stranger = MissionControlV1(orch, tenant_id="other-tenant", principal=principal)
         _refused(lambda: stranger.assurance_snapshot(_snapshot_request(assured.id)), "PROFILE_UNBOUND")
 
         # --- CURRENT snapshot over the real activated Mission ----------------------
@@ -139,16 +115,16 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         assert first["items"] == page["items"][:1]
         second = control.assurance_snapshot(_snapshot_request(assured.id, limit=1, cursor=first["next_cursor"]))
         assert second["items"] == page["items"][1:2]
-        # A new event moves the head: the old cursor must not be spliced onto the new state.
-        final = [e for e in store.list_events(assured.id) if e.type == "MissionCreated"][0]
-        commit._emit(NOTIFICATION_EVENT, assured.id, key=final.id,
-                     payload={"final_event_id": final.id, "state_version": assured.version,
-                              "final_event_type": final.type})
+        # Cursor of another Mission is refused, not silently applied.
+        _refused(lambda: control.assurance_snapshot(_snapshot_request(other_mission.id, cursor=first["next_cursor"])),
+                 OTHER_MISSION_CURSOR)
+        # A new event moves the head (the deployment confirms the content completion mapping,
+        # as the product's auto mode does): the old cursor must not be spliced onto the new state.
+        head_before = store.last_event_seq(assured.id)
+        assert world.deployment.duties.auto_confirm_content_completion(auto=True) >= 1
+        assert store.last_event_seq(assured.id) > head_before
         _refused(lambda: control.assurance_snapshot(_snapshot_request(assured.id, limit=1, cursor=first["next_cursor"])),
                  "SNAPSHOT_CHANGED")
-        # Cursor of another Mission is refused the same way, not silently applied.
-        _refused(lambda: control.assurance_snapshot(_snapshot_request(legacy.id, cursor=first["next_cursor"])),
-                 "PROFILE_UNBOUND")
 
         # --- HISTORY view -----------------------------------------------------------
         events = store.list_events(assured.id)
@@ -166,10 +142,11 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         h_kinds = {(item["kind"], item["id"], item["history_state"]) for item in history["items"]}
         assert ("CRITERION", "c-user-1", "UNREVIEWED") in h_kinds
         assert ("CLOSEOUT", assured.id, "NOT_EVALUATED") in h_kinds
-        # History pages are pinned to their seq: a later head does not change them.
-        commit._emit(NOTIFICATION_EVENT, assured.id, key=final.id + ":again",
-                     payload={"final_event_id": final.id, "state_version": assured.version,
-                              "final_event_type": final.type})
+        # History pages are pinned to their seq: a later head does not change them (planning
+        # begins).
+        head_before = store.last_event_seq(assured.id)
+        orch.commit.begin_planning(assured.id)
+        assert store.last_event_seq(assured.id) > head_before
         again = control.assurance_snapshot(_snapshot_request(assured.id, view="HISTORY", at_event_seq=activation.seq))
         assert again["items"] == history["items"] and again["snapshot_seq"] == activation.seq
 
@@ -203,7 +180,7 @@ def test_snapshot_review_use_check_contracts_and_errors(tmp_path):
         _refused(lambda: control.assurance_use_check({**use_request, "subject_ref": {"kind": "bogus"}}),
                  "CONTRACT_INVALID")
         # The read verbs never touch the four consumers' queue.
-        assert not sent
+        assert not world.notices
 
     asyncio.run(_deployment(tmp_path, checks))
 
