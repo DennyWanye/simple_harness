@@ -86,6 +86,7 @@ from .grounding import (
     SlotPlan,
     child_task_bindings,
     data_flows,
+    pinned_flows,
     plan_slots,
 )
 from .registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog
@@ -682,6 +683,7 @@ def _compile_data(
     """TG decision 3: one ``DataRequirement`` per declared port-to-port link."""
 
     out: list[DataRequirement] = []
+    pinned = pinned_flows(method)
     for producer_step, output_port, consumer_step, input_port in data_flows(method):
         producer = by_slot.get(producer_step)
         consumer = by_slot.get(consumer_step)
@@ -733,7 +735,11 @@ def _compile_data(
                 schema_ref=declared_output.schema_ref,
                 assurance_policy_ref=DEFAULT_ASSURANCE_POLICY,
                 freshness_policy_ref=DEFAULT_FRESHNESS_POLICY,
-                source_revision_policy=SourceRevisionPolicy.PINNED,
+                # 默认跟随：每次新尝试用上游当前通过验收的那一版；做法声明了 pin 才钉住
+                source_revision_policy=(
+                    SourceRevisionPolicy.PINNED
+                    if (producer_step, output_port, consumer_step, input_port) in pinned
+                    else SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION),
             )
         )
     # No duplicate-port check here on purpose.  Within one method a consumer's input

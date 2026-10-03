@@ -601,9 +601,26 @@ def _select_by_revision(
         requirement.producer_occurrence, requirement.output_port
     )
     if requirement.source_revision_policy is SourceRevisionPolicy.PINNED:
-        target = pinned
+        # pinned to the revision this consumer first froze; before it has frozen any,
+        # the revision authorised now is the one it will pin
+        target = pinned if pinned is not None else authorized
     else:
-        target = authorized if authorized is not None else pinned
+        target = authorized
+        if target is None and candidates:
+            # 跟随的边读不到授权版本：报"来源不可用"，不在候选里任选、不取最新
+            return (
+                (),
+                None,
+                ResolutionProblem(
+                    kind=ResolutionProblemKind.REVISION_NOT_AVAILABLE,
+                    detail=(
+                        f"the authorised revision of {requirement.producer_occurrence}."
+                        f"{requirement.output_port} cannot be read"
+                    ),
+                    input_port=requirement.input_port,
+                    requirement_ids=(requirement.requirement_id,),
+                ),
+            )
     if target is None:
         # Nothing pins this input yet: every accepted revision is still a candidate,
         # and an ambiguity here is reported rather than resolved by recency.

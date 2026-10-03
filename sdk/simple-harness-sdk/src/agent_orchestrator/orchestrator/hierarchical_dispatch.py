@@ -1101,7 +1101,35 @@ class HierarchicalDispatch:
             policy,
             scope_epochs=self.scope_epochs(mission_id),
             now_ms=int(self.store.now * 1000) if now_ms is None else int(now_ms),
+            pinned_revisions=self._pinned_revisions(mission_id),
         )
+
+    def _pinned_revisions(self, mission_id: str) -> dict[str, str]:
+        """requirement id → the revision a *pinned* input stays on: the one its consumer
+        froze on its first Attempt (阶段 D).  Read from the immutable frozen input record;
+        an input whose consumer has not run yet has no entry."""
+        from ..contracts.htn import SourceRevisionPolicy
+
+        try:
+            network = self.network(mission_id)
+        except (GraphIntegrityError, ContractError, StoreError):
+            return {}
+        wanted = {(str(item.consumer_occurrence), item.input_port): item.requirement_id
+                  for item in network.data_requirements
+                  if item.source_revision_policy is SourceRevisionPolicy.PINNED}
+        if not wanted:
+            return {}
+        pinned: dict[str, str] = {}
+        for occurrence, raw in self.store.connection.execute(
+                "SELECT b.occurrence_id, m.manifest_json FROM taskgraph_attempt_inputs b"
+                " JOIN input_manifests m ON m.manifest_hash=b.manifest_hash"
+                " JOIN attempts a ON a.attempt_id=b.attempt_id"
+                " WHERE b.mission_id=? ORDER BY a.created_at, a.ordinal", (mission_id,)):
+            for binding in json.loads(raw).get("bindings", ()):
+                requirement = wanted.get((str(occurrence), str(binding.get("input_port"))))
+                if requirement is not None and binding.get("source_revision") is not None:
+                    pinned.setdefault(requirement, str(binding["source_revision"]))
+        return pinned
 
     #: The purpose a witness must carry to license *binding an accepted output* as an
     #: input.  ``START`` because that is what the use is: starting this consumer's
@@ -1598,9 +1626,15 @@ class HierarchicalDispatch:
         # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
         done = frozenset(key for key, value in statuses.items() if value.complete)
         delivered = self.goal_port_outputs(mission_id, network, scoped_outputs, complete=done)
+        # 授权版本（阶段 D）：一个生产者端口上"当前计数的那次验收"的产出版本。同一端口出现
+        # 两个计数中的版本就不填——跟随的输入会如实报"授权版本读不到"，不任选。
+        seen: dict[tuple[Any, str], set[str]] = {}
+        for output in (*scoped_outputs, *delivered):
+            seen.setdefault((output.producer_occurrence, output.output_port), set()).add(output.source_revision)
         return AcceptedOutputsIndex(
             outputs=(*scoped_outputs, *delivered),
             completed_producers=prepared | {item.producer_occurrence for item in delivered},
+            authorized_revisions={key: next(iter(found)) for key, found in seen.items() if len(found) == 1},
         )
 
     def goal_port_outputs(

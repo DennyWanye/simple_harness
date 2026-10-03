@@ -345,13 +345,18 @@ class ConstantValue:
 class OutputValue:
     step: str
     port: str
+    #: 阶段 D：这个输入固定用消费者第一次拿到的那一版；不写则每次新尝试跟随上游当前
+    #: 通过验收的那一版。
+    pin: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step", identifier(self.step, "value.output.step"))
         object.__setattr__(self, "port", identifier(self.port, "value.output.port"))
+        if type(self.pin) is not bool:
+            raise ContractError("value.output.pin must be a boolean")
 
     def to_json(self) -> dict[str, Any]:
-        return {"op": "output", "step": self.step, "port": self.port}
+        return {"op": "output", "step": self.step, "port": self.port, **({"pin": True} if self.pin else {})}
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,8 +409,8 @@ def parse_value(value: object, name: str, budget: StructureBudget) -> ValueExpr:
         data = fields_of(value, name, required=("op", "value"))
         return ConstantValue(value=data["value"])
     if op == "output":
-        data = fields_of(value, name, required=("op", "step", "port"))
-        return OutputValue(step=data["step"], port=data["port"])
+        data = fields_of(value, name, required=("op", "step", "port"), optional=("pin",))
+        return OutputValue(step=data["step"], port=data["port"], pin=data.get("pin", False))
     if op == "object":
         data = fields_of(value, name, required=("op", "fields"))
         raw = data["fields"]
