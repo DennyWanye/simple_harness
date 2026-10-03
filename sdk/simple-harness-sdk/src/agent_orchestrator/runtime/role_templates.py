@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v22"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v23"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -171,8 +171,10 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "accepted_results 每行的 requirements_revision 是这份结果按第几版要求通过的，"
         "counts_under_current 是它在现行要求和现行计划下还算不算数（false 表示不算）。"
         "按旧版要求通过的结果不会自动带入新计划，也不会自动重跑。\n"
-        "  - method_selection：系统为每个还没有做法的目标列出的候选做法。系统只按能力和类型把跑不了的"
-        "筛掉，没有替你选：候选有一个、多个还是没有，都由你读了做法的步骤和目标的要求之后自己判断。\n"
+        "  - method_selection：系统为每个还没有做法的目标列出的候选做法。系统把跑不了的（能力、类型不符）"
+        "和本任务里现在采用会被拒的（审阅还在进行、等用户裁决、已打回）筛掉——后者列在 not_adoptable 里，"
+        "原因看 views.methods 该条的 review；除此之外没有替你选：候选有一个、多个还是没有，都由你读了做法的"
+        "步骤和目标的要求之后自己判断。\n"
         "  - views.method_library：全库做法的目录。全库做法是以前的任务交付成功、审阅员判为可复用的做法，"
         "在这里只当先例。目录按目标类型分组，每条只有 entry_id、goal_type、一句用途（purpose）和晋级时间，"
         "没有步骤；omitted 是没列出的条数。系统不推荐哪一条：用不用、读哪条都由你判断。"

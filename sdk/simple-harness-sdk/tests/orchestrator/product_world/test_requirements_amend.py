@@ -363,6 +363,45 @@ def test_a_result_that_lands_while_requirements_are_unconfirmed_is_not_reviewed_
     asyncio.run(case())
 
 
+def test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_aside(tmp_path, monkeypatch):
+    """改要求恰好落在一步的检查跑完、正要入账的那一刻（随机序列 F1-6 发现主循环在这里崩）：这次验证
+    放下不提交，主循环不报故障；新计划把旧尝试归档，任务按第 2 版完成。
+
+    **改坏检验**：验证处不认"要求已改" → 检查入账读不到旧版完成范围的错误冲出主循环 → 变红。"""
+    from agent_orchestrator.orchestrator import assurance_local_checks
+
+    seen: dict[str, Any] = {}
+    race: dict[str, Any] = {"world": None, "mission_id": None, "fired": False}
+    original = assurance_local_checks.LocalCheckImporter.import_executor
+
+    def amended_mid_check(self, recorded, document):  # type: ignore[no-untyped-def]
+        if not race["fired"] and race["mission_id"] is not None:
+            race["fired"] = True
+            amend(race["world"], race["mission_id"], [{"op": "add", "statement": "file:extra.md"}])
+        return original(self, recorded, document)
+
+    monkeypatch.setattr(assurance_local_checks.LocalCheckImporter, "import_executor", amended_mid_check)
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=replanning_planner(seen))) as world:
+            race["world"] = world
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-mid-check",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            race["mission_id"] = mission_id
+            try:
+                mission = await world.run_until_settled(mission_id, rounds=40)
+            except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
+                raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
+            events = list(world.store.list_events(mission_id))
+            assert race["fired"]
+            assert not [e for e in events if e.type in {"MissionRoundFault", "MissionFailed"}]
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:extra.md"]
+
+    asyncio.run(case())
+
+
 def test_kept_old_step_is_reported_not_rerun(tmp_path):
     """改要求后规划器只换掉了没做完的那一步，已按旧版通过的那一步原样留在计划里：系统不自动重跑它，
     派发处如实报"按旧版通过、现在不算数"；计划停住后规划器在请求里看得到这条，换掉这一步，任务按新版完成。

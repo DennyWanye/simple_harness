@@ -435,10 +435,12 @@ def test_a_failing_promotion_never_fails_completion(tmp_path, monkeypatch):
 
 
 def test_a_method_not_passed_here_is_refused_at_the_plan_commit(tmp_path):
-    """采用闸门：本任务的做法审阅没通过，规划器硬要采用它 → 计划提交按 ``METHOD_NOT_AUTHORIZED``
-    退回（不在别处被挡下）；之后提一个新做法、审阅通过再采用，任务照常完成（HTN 补齐 F1）。
+    """本任务的做法审阅没通过：候选清单不再列它（另列 ``not_adoptable``，审阅结论仍在 views.methods）；
+    规划器硬要采用它 → 计划提交按 ``METHOD_NOT_AUTHORIZED`` 退回；之后另提一个做法、审阅通过再采用，
+    任务照常完成（HTN 补齐 F1，偏差单 2）。
 
-    **改坏检验**：闸门放行没审过的做法 → 这次采用被提交 → 变红。"""
+    **改坏检验**：闸门放行没审过的做法 → 这次采用被提交 → 变红；候选不按闸门判据过滤 → 打回的做法
+    仍在候选里 → 变红。"""
     tried: dict[str, Any] = {}
 
     def reviewer(request: Any):
@@ -460,16 +462,10 @@ def test_a_method_not_passed_here_is_refused_at_the_plan_commit(tmp_path):
             return decision(goal["subject_key"], "REFINE", {"method_ref": dict(rejected[0]["method_ref"]),
                                                            "bindings": dict(goal["params"])},
                             "不管审阅意见，直接用这个做法。")
-        # 被拒之后：候选里仍列着那个没通过的做法（见 F1 偏差单 2），脚本照审阅结论另提一个
-        refused = {str(item["method_ref"]["id"]) for item in rejected}
-        selection = (package.get("method_selection") or [{}])[0]
-        usable = [item for item in selection.get("applicable") or () if str(item["method_id"]) not in refused]
-        contexts = package.get("method_proposal_contexts") or []
-        if tried.get("forced") and contexts and not usable:
-            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
-                            {"method_proposal": {"method": one_step_method(contexts[0]), "rationale": "按审阅意见重提。"}},
-                            "重提一个做法。")
-        return planner_reply(request)
+        if rejected and "after_rejection" not in tried:
+            tried["after_rejection"] = {"selection": (package.get("method_selection") or [{}])[0],
+                                        "rejected": rejected[0]}
+        return planner_reply(request)  # 候选里已没有打回的做法，它自然另提一个
 
     async def run():
         async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
@@ -478,6 +474,13 @@ def test_a_method_not_passed_here_is_refused_at_the_plan_commit(tmp_path):
             refused = [event.payload for event in _events(world, mission.id, "PlanningDecisionEvaluated")
                        if event.payload.get("decision_type") == "REFINE" and event.payload.get("status") != "COMMITTED"]
             assert refused and refused[0]["rejection_codes"] == ["METHOD_NOT_AUTHORIZED"], refused
+            # 候选与闸门同一判据（F1 偏差单 2）：打回的做法不在候选里、在 not_adoptable 里，审阅结论仍在 views.methods
+            seen = tried["after_rejection"]
+            ref = seen["rejected"]["method_ref"]
+            assert all(item["method_id"] != ref["id"] for item in seen["selection"].get("applicable") or ())
+            assert {"method_id": ref["id"], "method_version": int(ref["semantic_revision"]),
+                    "review": "REJECTED"} in seen["selection"]["not_adoptable"]
+            assert seen["rejected"]["review"]["outcome"] == "REJECTED"
 
     asyncio.run(run())
 

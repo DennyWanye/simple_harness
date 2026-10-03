@@ -91,6 +91,30 @@ def findings_of(record: Any) -> list[dict[str, Any]]:
     ][:16]
 
 
+def adoption_refusal(store: Any, mission_id: str, reference: Any,
+                     seeded: set[tuple[str, int, str]]) -> dict[str, Any] | None:
+    """Whether adopting this one method now would be refused: ``None`` when it would not, else
+    the refusal row.  The one rule the plan-commit gate and the planner's candidate list share
+    (HTN 补齐 F1 偏差单 2): a seed of the deployment, or a method this Mission's own method
+    review passed (or the person passed), is adoptable; anything else is not."""
+
+    if (reference.method_id, int(reference.version), reference.content_hash) in seeded:
+        return None
+    review = review_of(store, mission_id, reference)
+    if review.passed:
+        return None
+    row: dict[str, Any] = {"method_ref": reference.to_json(), "review": review.state}
+    if review.record is not None:
+        row["findings"] = findings_of(review.record)
+    if review.ruling is not None:
+        row["human_ruling"] = {"decision": review.ruling.get("decision")}
+    return row
+
+
+def seed_keys(seeds: Iterable[Any]) -> set[tuple[str, int, str]]:
+    return {(item.method_id, int(item.version), item.content_hash) for item in seeds}
+
+
 def unreviewed_adopted_methods(store: Any, mission_id: str, drafts: Iterable[Any],
                                seeds: Iterable[Any] = ()) -> list[dict[str, Any]]:
     """Of the method instances a plan commit adopts: the ones the gate refuses.
@@ -103,22 +127,9 @@ def unreviewed_adopted_methods(store: Any, mission_id: str, drafts: Iterable[Any
     here and is refused with ``review: NONE``.
     """
 
-    seeded = {(item.method_id, int(item.version), item.content_hash) for item in seeds}
-    refused: list[dict[str, Any]] = []
-    for draft in drafts:
-        reference = draft.method_ref
-        if (reference.method_id, int(reference.version), reference.content_hash) in seeded:
-            continue
-        review = review_of(store, mission_id, reference)
-        if review.passed:
-            continue
-        row: dict[str, Any] = {"method_ref": reference.to_json(), "review": review.state}
-        if review.record is not None:
-            row["findings"] = findings_of(review.record)
-        if review.ruling is not None:
-            row["human_ruling"] = {"decision": review.ruling.get("decision")}
-        refused.append(row)
-    return refused
+    seeded = seed_keys(seeds)
+    return [row for draft in drafts
+            if (row := adoption_refusal(store, mission_id, draft.method_ref, seeded)) is not None]
 
 
 def _proposals(store: Any, mission_id: str) -> tuple[list[Any], dict[str, Any]]:
@@ -286,5 +297,7 @@ __all__ = (
     "open_proposals",
     "review_of",
     "reviews_by_method",
+    "adoption_refusal",
+    "seed_keys",
     "unreviewed_adopted_methods",
 )

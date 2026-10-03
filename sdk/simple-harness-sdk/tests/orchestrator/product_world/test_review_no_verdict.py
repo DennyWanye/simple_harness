@@ -200,8 +200,8 @@ def test_composition_ruling_survives_epoch_change(tmp_path):
 
 def test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner(tmp_path):
     """最终审查两位都判不下来、正在问人；用户中途改了要求，这道题就过期了，不再等人；旧的最终审查
-    随旧要求作废，规划器收到"要求已更新"按新要求重排（阶段 E 欠的断言，HTN 补齐 F1；与裁决原写的
-    "交'没有结论'修复请求"不同，见 F1 偏差单 1）。
+    随旧要求作废，规划器收到"要求已更新"（带改了哪几条），不另收针对旧审查的"没有结论"（阶段 E 欠的
+    断言，HTN 补齐 F1；与裁决原写的"交'没有结论'修复请求"不同，见 F1 偏差单 1）。
 
     **改坏检验**：改要求时不让等人的题目过期 → 题目仍"在等" → 变红。"""
     from agent_orchestrator.testing.scripted_replies import planner_reply
@@ -239,5 +239,9 @@ def test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner(t
             # 旧的最终审查随旧要求作废，规划器收到的是"要求已更新"（带改了哪几条），不再单独报这道题
             updates = [item for item in seen if item.get("trigger_source") == "REQUIREMENTS_UPDATE"]
             assert updates and updates[0]["context"]["changes"]["added"] == ["c-user-2"]
+            # 一条路：旧终审随旧要求作废，不再为旧记录发"没有结论"
+            record_id = row["request"]["repair_context"]["record_id"]
+            assert not [e for e in world.store.list_events(mission_id) if e.type == "PlanningRepairRequested"
+                        and e.payload.get("source_key") == "root-review:" + record_id]
 
     asyncio.run(case())

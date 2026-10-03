@@ -191,7 +191,8 @@
    "from": "阶段 B",
    "method": "函数级抛错",
    "injection": [
-    "（函数级）"
+    "CommitService.heal_mission（函数级）",
+    "Orchestrator._bind_startup_intent（函数级）"
    ],
    "tests": [
     "tests/orchestrator/product_world/test_round_faults.py::test_a_fault_while_recovering_one_mission_does_not_stop_the_others",
@@ -206,7 +207,7 @@
    "from": "阶段 B",
    "method": "函数级抛错",
    "injection": [
-    "（函数级）"
+    "Orchestrator._collect_after_stop（函数级）"
    ],
    "tests": [
     "tests/orchestrator/product_world/test_round_faults.py::test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled"
@@ -220,7 +221,8 @@
    "from": "阶段 C 第 0′ 条",
    "method": "函数级抛错",
    "injection": [
-    "（函数级）"
+    "TaskGraphNotifications._consume_one（函数级）",
+    "AssuranceTick._ingest_one（函数级）"
    ],
    "tests": [
     "tests/orchestrator/product_world/test_round_faults.py::test_a_fault_in_a_global_scan_is_one_missions_round_fault"
@@ -234,7 +236,7 @@
    "from": "阶段 C3",
    "method": "函数级抛错",
    "injection": [
-    "（函数级）"
+    "method_library.promote_methods（函数级）"
    ],
    "tests": [
     "tests/orchestrator/product_world/test_method_library.py::test_a_failing_promotion_never_fails_completion"
@@ -248,7 +250,7 @@
    "from": "阶段 E",
    "method": "写事件时抛错",
    "injection": [
-    "（函数级）"
+    "hierarchical_dispatch.append_hierarchical_event（函数级，改要求事件那一次）"
    ],
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_writes_everything_in_one_transaction"

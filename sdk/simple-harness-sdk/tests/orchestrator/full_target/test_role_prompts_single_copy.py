@@ -43,8 +43,8 @@ def test_each_hierarchical_role_registers_exactly_one_prompt() -> None:
     worker = {version for version in templates.TEMPLATE_VERSIONS["worker"]
               if version.startswith("worker-hierarchical-")}
     assert worker == {templates.WORKER_HIERARCHICAL.prompt_version}
-    assert set(templates.TEMPLATE_VERSIONS["root_reviewer"]) == {
-        templates.ROOT_REVIEWER.prompt_version}
+    # 终审不再有角色模板：只走保证通道（A′ 第 4 步删旧审阅路径）
+    assert "root_reviewer" not in templates.TEMPLATE_VERSIONS
 
 
 def test_no_historical_prompt_names_are_left() -> None:
@@ -71,7 +71,7 @@ def test_the_hierarchical_workers_of_other_domains_still_register() -> None:
     """领域自己的分层执行者（AppWorld、无人机模拟）不在这次收口范围里，照常登记。"""
     assert templates.HIERARCHICAL_WORKER_VERSIONS == frozenset({
         templates.WORKER_HIERARCHICAL.prompt_version,
-        "worker-appworld-hierarchical-v2", "worker-drone-sim-hierarchical-v2"})
+        "worker-appworld-hierarchical-v3", "worker-drone-sim-hierarchical-v3"})
 
 
 def test_a_proposed_method_is_admitted_from_the_decoded_proposal() -> None:

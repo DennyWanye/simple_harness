@@ -14,7 +14,7 @@ from ..contracts.operation_completion import OccurrenceCompletionScopeV1
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
 from .completion_inputs import load_completion_result_inputs
-from .operation_completion import OperationCompletionReader
+from .operation_completion import OperationCompletionError, OperationCompletionReader
 
 if TYPE_CHECKING:
     from .assurance_local_checks import AssuranceLocalChecks
@@ -61,10 +61,13 @@ def read_local_check_binding_locked(
     scope = OccurrenceCompletionScopeV1.from_json(
         decode(reader.read_exact_metadata(completion_scope).body_json)
     )
-    if (
-        OperationCompletionReader(store).read_scope(mission_id, scope.plan_ref, scope.occurrence_id)
-        != scope
-    ):
+    try:
+        current = OperationCompletionReader(store).read_scope(mission_id, scope.plan_ref, scope.occurrence_id)
+    except OperationCompletionError as error:
+        # 检查在跑的时候用户改了要求（阶段 E）：这一步的完成范围按旧版要求定，已不能读——与范围
+        # 变了同一个结论，不让它冲出主循环（HTN 补齐 F1 随机序列发现）
+        raise AssuranceError("CHECK_SCOPE_CHANGED") from error
+    if current != scope:
         raise AssuranceError("CHECK_SCOPE_CHANGED")
     event = decode(reader.read_exact_metadata(execution_ref).body_json)
     payload = fields(

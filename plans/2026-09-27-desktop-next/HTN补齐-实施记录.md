@@ -562,3 +562,52 @@
 3. **R26 多个执行池共用一个物理模型时并发是否合计不超**：是。每个执行池各有一个准入对象，但占用名额按同一个编排库里"仍在途的授予"合计（`runtime/provider_budget_guard.py` 物理名额 `max_slots` 与各池名额 `profile_slots` 都按共享库里的行数算，注释写明"各池不能各拿一份"）。台账 R26 改"已接入"，不写代码。
 4. 随机驱动的两个前提（脚本化规划器按请求现场生成回复、同一目录关库重开续跑）在 F1-6 写驱动时核。
 5. 来源表其余各行的生产方在 F1-4 逐行核。
+
+### F1-1　欠账功能用例（施工清单 1.3 判给 F1-1 的各条）
+- **第 1 条** 收尾一直出错按上限结清：`T/product_world/test_round_faults.py` 加断言——有一条 `ReservationCountedAtUpperBound` 事件且计入量大于 0。
+- **第 4、5、16 条** 修复后知识过时 / 带"编号@版本"引用 / 摘要换新：新文件 `T/product_world/test_repair_staleness.py`，同一个"换做法"剧本：旧知识变 STALE 并退出目录；第二步执行者引用的是 `编号@1`，相关条目给的是同一版；现行摘要 2 条、过时任务 2 个。
+- **第 6 条** 纪元动了交接被拒 → 见证重发 → 交接成功：`T/product_world/test_validity_handoff.py::test_handoff_goes_through_once_the_witness_is_reissued`（审批前把 mission 作用域纪元加 1；断言纪元 1 的见证为 USABLE、交接只发一次、只发布了一个文件）。
+- **第 13 条** 改要求在"收尾中""已结束"两种情形被拒：`T/product_world/test_requirements_amend.py::test_amend_refused_while_closing_out_and_after_the_end`。
+- **第 14 条** 裁决题随改要求过期：`T/product_world/test_review_no_verdict.py::test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner`——题目 STALE、规划器收到"要求已更新"（带新增的 c-user-2），**且没有**针对旧审查记录的"没有结论"修复请求（偏差单 1）。
+- **第 15 条** 改要求窗口：派发处不开工原因含"要求已改"，新计划里执行者拿到第 2 版要求原文（`test_amend_holds_dispatch_then_replans_and_delivers` 加断言）。
+- **第 17～20 条** 全库做法：`T/product_world/test_method_library.py` 四条——闸门真拒没通过审阅的做法（`METHOD_NOT_AUTHORIZED`），且候选清单不再列它、另列 `not_adoptable`（偏差单 2）；登记了资料的任务不晋级；命令行列出与 `clear --yes` 清空；规划器换做法写明"有错"的归因。
+
+### F1-2　崩溃切点清单与新增注入点
+- 清单 `T/acceptance_assets/crash_points.json`（schema `crash-points-v1`，K01～K18，每行：切点、恢复要求、来源、方式、注入点、已有用例、在哪执行）。G 与 F2 都读这一份。
+- 新增三个注入点（`orchestrator/event_handler.py` `FAULT_POINTS`）：`before_goal_resolution`（目标结论提交前，`resolution_commits.commit_goal_resolution`，K06）、`after_handoff_before_call`（对外操作交接已记、调用前，`runtime/actions.py`，K08）、`after_external_effect`（外部已生效、本地记录前，K09）。触发用例 `T/product_world/test_fault_points.py`（只证明点位会触发；恢复行为在 F2 / G 跑）。
+
+### F1-3　"提出新做法"给保证通道的开销（数字交 G）
+脚本 `scripts/acceptance/measure_method_barrier.py`。先跑完 N 个已结束任务，再登记一个新做法：
+
+| 已绑定任务数 | 多出的证据变更事件 | 全局纪元 | 这次写入耗时 |
+|---|---|---|---|
+| 1 | 1 | +1 | 0.50 ms |
+| 10 | 10 | +1 | 1.05 ms |
+| 50 | 50 | +1 | 2.86 ms |
+
+事件条数随"曾绑定过的任务"（含已结束）线性增长，写入耗时也大致线性但量级很小。是否改成只给未结束任务写，交 G 定。
+
+### F1-4　来源表（接缝表）与守护
+- 现行接缝表 `T/acceptance_assets/seams_current.json`（24 行 P01～P24，由只读子代理按现行代码逐行核对：原计划来源 / 现行生产方 / 关联键 / 读不到时的行为 / 对应用例 / 差别与出处 / 结论）。**缺口 0 条。**
+- 两处记下、不在 F1 改：**P14** 有一处语义上不确定的差别（默认写入目标策略），留 TaskGraph 补全时核；`TaskGraphStore.read_active_consumers` 生产代码已不调用，是删除候选，进 TaskGraph 补全重写的输入清单。
+- 守护用例 `T/acceptance_assets/test_acceptance_assets.py`：接缝表每个生产方能导入；断点表每个注入点名字在代码里出现；改坏清单有文件的条目原文恰好出现一次；所有绑定用例的文件与函数存在；没文件的条目不许挂用例。只核对清单与代码对得上，不跑被绑定的用例。
+
+### F1-5　改坏清单与执行器
+- 清单 `T/acceptance_assets/mutations.json`（schema `mutations-v1`）：阶段 D 欠的 5 条（D-01～D-05）、F1 各条（F1-01～F1-18，缺号是没有独立改坏的条目）、TaskGraph 原计划 §15 的 12 条（M01～M12，文件留空，F2 按补全后的代码补写，执行器记 SKIPPED）。
+- 执行器 `scripts/acceptance/run_mutations.py`：备份 → 改 → 重生成部署清单、清字节码 → 只跑绑定用例（junit）→ 从备份恢复、核对哈希 → 再重生成。**只认断言失败为"抓到"**；导入/收集/其它异常记"无效"。结果写 `.local-test-evidence/<日期>/mutations/results.json`（不进仓库）。
+
+### F1-6　随机动作序列驱动
+- `T/product_world/random_sequences.py` + `test_random_sequences.py`：动作 new / refine / accept / withdraw（撤一条要求）/ cancel / replace / restart；每步后查不变量（结束后不再建尝试、一个尝试只冻结一份输入、结清不超预留、每个验收都有正式审查记录、离线重建每个修订的清单哈希与在线一致、关库重开快照不变）；主循环崩溃同样算反例；失败时缩小反例并留档。默认 1 个种子 50 步，联测用环境变量放大。
+- **它抓到一个真缺陷**：检查在跑、正要入账时用户改了要求——入账读完成范围时按旧版要求读不到，错误冲出主循环（整个编排停）。修法与收集时已有的规则同一条：
+  - `orchestrator/event_handler.py`：要求已改、新计划还没提交时，不开始验证按旧版要求做的结果；验证途中撞上改要求，这次验证放下不提交（新计划关掉旧尝试时结果随之归档）；别的保证通道错误照旧冲出（不吞）。
+  - `orchestrator/assurance_check_import.py`：读不到完成范围映射成 `CHECK_SCOPE_CHANGED`（与"范围变了"同一个结论）。
+  - 确定性回归用例：`test_requirements_amend.py::test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_aside`（在第一次检查入账时改要求；断言主循环不崩、任务按第 2 版完成）。改坏 F1-17。
+- 随机驱动本身的改坏 F1-16（离线重建取最新修订的清单哈希）。
+
+### F1 偏差单（裁决见 `HTN补齐-阶段F1-偏差裁决.md`）
+1. **裁决题随改要求过期**：实际是旧终审整份作废、规划器只收"要求已更新"，不另发"没有结论"——按实际改计划（第 3.19 版），用例补反向断言。
+2. **候选清单列着闸门会拒的做法**（脚本化规划器因此反复选同一个被拒做法）——按计划本意改代码：`method_plan_reviews.adoption_refusal` 是闸门与候选清单共用的唯一判据；`planning_selection.candidate_context` 只列能采用的，另列 `not_adoptable`（编号、版本、审阅结论）；规划器提示词改一句、升 `planner-hierarchical-v23`。改坏 F1-18。
+
+### F1 其他
+- 台账 R23、R29、R48 记有意偏离（排先后交规划器；知识不加"适用条件"；能力不预先探测），R26 F1-0 核实为已接入（施工清单偏差单 F-8）。
+- 顺手修的旧用例：`test_role_prompts_single_copy.py` 仍钉着已删的终审角色模板和旧的领域执行者版本号（阶段 A′、C3 遗留），改成现行。

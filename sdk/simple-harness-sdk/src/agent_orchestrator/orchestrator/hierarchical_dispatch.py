@@ -1937,6 +1937,13 @@ class HierarchicalDispatch:
         order = [*sorted(ordered, key=str), *sorted(unprojected, key=str)]
         return tuple(view.views[occurrence] for occurrence in order)
 
+    def seed_method_keys(self) -> set[tuple[str, int, str]]:
+        """The deployment's own seed methods, as the adoption rule keys them (the plan-commit gate
+        and the planner's candidate list read this one set)."""
+        from .method_plan_reviews import seed_keys
+
+        return seed_keys(getattr(self.require_planning_world(), "seed_methods", ()))
+
     def ready_occurrences(self, mission_id: str) -> tuple[OccurrenceId, ...]:
         """The ExecutionFrontier — not a ``TaskStatus.READY`` scan (TG §8.1)."""
 
@@ -3550,7 +3557,7 @@ class HierarchicalDispatch:
             issued_by=principal.principal_id,
             scope_id=principal.scope_id,
             budget_requirement=compilation.budget_requirement,
-            seed_methods=tuple(getattr(self.require_planning_world(), "seed_methods", ())),
+            seed_methods=tuple(getattr(self.require_planning_world(), "seed_methods", ())),  # see seed_method_keys
             source={
                 **dict(source or {}),
                 "proposal_id": proposal.proposal_id,

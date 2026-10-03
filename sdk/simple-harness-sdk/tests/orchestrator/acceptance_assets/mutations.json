@@ -42,7 +42,7 @@
    "original": "                changed.append({\"channel\": \"OBJECT\", \"key\": key, \"reason\": error.code})\n    return changed",
    "replacement": "                changed.append({\"channel\": \"OBJECT\", \"key\": key, \"reason\": error.code})\n        else:\n            changed.append({\"channel\": channel, \"key\": key, \"reason\": \"QUERY_SET\"})\n    return changed",
    "tests": [
-    "tests/orchestrator/product_world/test_observation_closeout.py::test_observation_after_acceptance_does_not_stale_closeout"
+    "tests/orchestrator/product_world/test_desktop_preconditions.py::test_file_change_flips_observation_and_moves_epoch"
    ],
    "note": "收尾复查加回比查询集"
   },
@@ -138,12 +138,12 @@
    "id": "F1-10",
    "source": "F1 新用例 10",
    "file": "src/agent_orchestrator/orchestrator/method_plan_reviews.py",
-   "original": "        if review.passed:\n            continue",
-   "replacement": "        if review.passed or review.state == \"REJECTED\":\n            continue",
+   "original": "    if review.passed:\n        return None",
+   "replacement": "    if review.passed or review.state == \"REJECTED\":\n        return None",
    "tests": [
     "tests/orchestrator/product_world/test_method_library.py::test_a_method_not_passed_here_is_refused_at_the_plan_commit"
    ],
-   "note": "闸门放行审阅没通过的做法"
+   "note": "闸门（与候选清单同一判据）放行审阅没通过的做法"
   },
   {
    "id": "F1-11",
@@ -188,6 +188,39 @@
     "tests/orchestrator/product_world/test_fault_points.py::test_goal_conclusion_point_fires"
    ],
    "note": "删掉新注入点"
+  },
+  {
+   "id": "F1-16",
+   "source": "F1-6 随机序列",
+   "file": "src/agent_orchestrator/observability/taskgraph_replay.py",
+   "original": "                mission_id, revision, record.source_kind, record.manifest_hash,",
+   "replacement": "                mission_id, revision, record.source_kind, verified[-1].record.manifest_hash,",
+   "tests": [
+    "tests/orchestrator/product_world/test_random_sequences.py"
+   ],
+   "note": "离线重建每个修订都取最新修订的清单哈希"
+  },
+  {
+   "id": "F1-17",
+   "source": "F1-6 随机序列发现的缺陷",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            if error.code != \"CHECK_SCOPE_CHANGED\" or plan is None or not plan.requirements_changed(mission.id):\n                raise",
+   "replacement": "            if True:\n                raise",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_aside"
+   ],
+   "note": "验证处不认要求已改，检查入账的错误冲出主循环"
+  },
+  {
+   "id": "F1-18",
+   "source": "F1 偏差单 2",
+   "file": "src/agent_orchestrator/orchestrator/planning_selection.py",
+   "original": "            if refusal is None:\n                usable.append(item)",
+   "replacement": "            if True:\n                usable.append(item)",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_a_method_not_passed_here_is_refused_at_the_plan_commit"
+   ],
+   "note": "候选清单不按采用闸门的判据过滤"
   },
   {
    "id": "M01",

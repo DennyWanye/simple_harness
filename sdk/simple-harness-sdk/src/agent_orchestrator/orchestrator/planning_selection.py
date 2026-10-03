@@ -22,15 +22,37 @@ SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
 
 
 def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict[str, Any]]:
-    """Per open goal, the candidates that can run.  Read only."""
+    """Per open goal, the candidates that can run and may be adopted now.  Read only.
+
+    A method the plan-commit gate would refuse (this Mission's review of it is pending, awaits
+    the person, or sent it back) is not offered as a candidate: it is listed under
+    ``not_adoptable`` with its review state — the gate's own rule, one function (HTN 补齐 F1
+    偏差单 2).  The reviewer's words stay in ``views.methods``."""
+    from ..contracts.htn import MethodRef
+    from .method_plan_reviews import adoption_refusal
+
     candidates = dispatch.method_candidates(mission_id, reports=reports)
     network = dispatch.network(mission_id)
-    return [{"occurrence_id": occurrence,
-             "applicable": [item.to_json() for item in result.applicable[:12]],
-             "applicable_count": len(result.applicable),
-             "omitted_count": max(0, len(result.applicable) - 12),
-             "bindings": dict(network.binding_for_occurrence(occurrence).typed_parameters)}
-            for occurrence, result in sorted(candidates.items())]
+    seeded = dispatch.seed_method_keys()
+    rows = []
+    for occurrence, result in sorted(candidates.items()):
+        usable, held = [], []
+        for item in result.applicable:
+            refusal = adoption_refusal(dispatch.store, mission_id, MethodRef(
+                method_id=item.method_id, version=int(item.method_version),
+                content_hash=item.method_content_hash), seeded)
+            if refusal is None:
+                usable.append(item)
+            else:
+                held.append({"method_id": item.method_id, "method_version": int(item.method_version),
+                             "review": refusal["review"]})
+        rows.append({"occurrence_id": occurrence,
+                     "applicable": [item.to_json() for item in usable[:12]],
+                     "applicable_count": len(usable),
+                     "omitted_count": max(0, len(usable) - 12),
+                     "not_adoptable": held[:12],
+                     "bindings": dict(network.binding_for_occurrence(occurrence).typed_parameters)})
+    return rows
 
 
 # 2026-09-28 用户决定：不是模型自己做错的失败（格式没写对、服务出错、执行或审阅被打断）

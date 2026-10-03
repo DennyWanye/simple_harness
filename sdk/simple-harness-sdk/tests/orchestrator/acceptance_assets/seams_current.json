@@ -1,0 +1,488 @@
+{
+ "schema": "seams-current-v1",
+ "source": "原表：/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/TaskGraph/v1/simpleharness-taskgraph-code-plan-kit.zip 内 simpleharness-taskgraph-code-plan-kit/implementation/seams.json（spec TG-EXEC-2.0，24 行 P01～P24，即裁决里的 KIT/implementation/seams.json）；按 simple_harness-a4 分支 htn-f1（0ade6b70）现行代码逐行核对",
+ "rows": [
+  {
+   "id": "P01",
+   "fact": "谁在调：调用方身份与任务归属（租户隔离）",
+   "original_source": "api/facade.py::MissionControlV1._mission（固定 Principal + 任务租户守卫）",
+   "current_producer": [
+    "agent_orchestrator.api.facade:MissionControlV1._mission",
+    "agent_orchestrator.api.taskgraph:TaskGraphReadApi._mission"
+   ],
+   "key": "mission_id + tenant_id（调用方归属）",
+   "when_unreadable": "任务不存在或属于别的租户一律按'找不到'拒绝、不透露对方数据：api/facade.py:MissionControlV1._mission 抛 FacadeError('not_found')；执行图只读接口 api/taskgraph.py:TaskGraphReadApi._mission 同样按找不到拒绝",
+   "tests": [
+    "tests/orchestrator/host_support/test_facade.py::test_a_foreign_tenant_sees_nothing",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects",
+    "tests/orchestrator/p33/test_p33_sources.py::test_two_tenants_cannot_register_or_decide_each_others_sources"
+   ],
+   "difference": "生产方与原计划同名同位置；执行图只读接口另有一份同口径的归属检查",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P02",
+   "fact": "规划请求原件：当初持久化的请求、可见引用、规划对象（不是现渲染的规划包）",
+   "original_source": "storage/planning_decision_store.py::get_request",
+   "current_producer": [
+    "agent_orchestrator.storage.planning_decision_store:PlanningDecisionStore.get_planning_request",
+    "agent_orchestrator.orchestrator.taskgraph_plan_sources:TaskGraphPlanSourceReader.__call__"
+   ],
+   "key": "request_id（并核对规划包哈希 package_hash、基准版本 base_plan_revision、要求版本 requirements_revision）",
+   "when_unreadable": "get_planning_request 找不到返回 None；来源汇总 orchestrator/taskgraph_plan_sources.py:TaskGraphPlanSourceReader.__call__ 按名抛 SourceUnavailable（taskgraph_plan_request_missing / taskgraph_plan_package_changed / taskgraph_plan_base_stale / taskgraph_plan_requirements_stale），预览采集 orchestrator/taskgraph_preview.py:TaskGraphPreviewService.capture 再核一遍、变了抛 StoreConflict。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_planning_decision_request_binding.py::test_the_whole_binding_survives_the_record",
+    "tests/orchestrator/full_target/test_planning_decision_request_binding.py::test_r1_base_plan_revision_persists_verbatim",
+    "tests/orchestrator/full_target/test_h1i_production_entry.py::test_the_planning_request_is_the_package_and_nothing_appended",
+    "tests/orchestrator/full_target/test_h1h_wiring.py::test_only_a_codec_refusal_reuses_the_request_and_an_unbound_round_fails_closed"
+   ],
+   "difference": "函数改名 get_request → get_planning_request（同一个存储类）；现在由执行图来源汇总 TaskGraphPlanSourceReader 的 request 通道统一读取。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P03",
+   "fact": "规划授权：本次计划提交是否有有效授权",
+   "original_source": "governance/planning_authorization.py::build_planning_authorization（H1H 授权 + 请求的授权侧绑定；启用执行图前须先有授权）",
+   "current_producer": [
+    "agent_orchestrator.governance.planning_authorization:build_planning_authorization",
+    "agent_orchestrator.orchestrator.planning_admission_commits:_check_planning_commit",
+    "agent_orchestrator.orchestrator.taskgraph_policy_sources:StoreTaskGraphPolicyAuthority.require_enable"
+   ],
+   "key": "request_id → 授权链 + 精确版本/哈希 + 当前有效期；执行图启用按建任务时的启用回执（enabling_command_id）",
+   "when_unreadable": "build_planning_authorization 读不到时返回 SourceUnavailable 值（不是抛异常）；提交前复查 _check_planning_commit 把它映射为 SOURCE_UNAVAILABLE / REQUEST_BINDING_STALE / AUTHORIZATION_REQUIRED，授权在预览后变化报 REQUEST_BINDING_STALE；提交前复查在 orchestrator/planning_admission_commits.py:_check_planning_commit 里抛 PlanCommitRejected，由 event_handler.py:Orchestrator._collect_plan_decision 记成 COMMIT_REJECTED、整次提交一行不写，并按 proposal_not_grounded 退回规划器。预览阶段由 orchestrator/taskgraph_plan_sources.py:TaskGraphPlanSourceReader.__call__ 抛 SourceUnavailable('taskgraph_plan_authority_unavailable')",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_planning_authorization.py::test_issue_bind_snapshot_revoke_and_renew_are_authoritative",
+    "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes",
+    "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound",
+    "tests/orchestrator/full_target/taskgraph_exec/test_production_seed.py::test_the_creation_binds_the_graph_and_the_seed_plan_is_its_first_revision",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_repeated_enable_reads_the_creation_receipt_without_renewing_permission"
+   ],
+   "difference": "按用户决定改了含义：执行图在建任务时直接绑定，不再要求先有规划授权再启用；规划授权仍卡住每一次计划提交。出处：HTN补齐计划 第二节'阶段 A′ 新增的偏离'，开工裁决 1.6",
+   "verdict": "按决定改",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P04",
+   "fact": "计划结构：某个版本的执行图（修订记录 + 成员/做法钉）",
+   "original_source": "storage/taskgraph_store.py::read_revision",
+   "current_producer": [
+    "agent_orchestrator.storage.taskgraph_store:TaskGraphStore.read_revision",
+    "agent_orchestrator.orchestrator.taskgraph_sources:TaskGraphSources.read_structure"
+   ],
+   "key": "mission_id + revision（+ occurrence_id），逐级核对祖先哈希链",
+   "when_unreadable": "storage/taskgraph_store.py:TaskGraphStore._read_revision_verified 校验不过抛 GraphIntegrityError('TASKGRAPH_HISTORY_INTEGRITY: …')；orchestrator/taskgraph_sources.py:TaskGraphSources.read_structure 缺策略绑定/启用回执/唯一现行版本时抛 SourceUnavailable。轮边界把历史完整性错误判为损坏，直接停该任务（failure_classes.py:classify_round_fault 的 ROUND_CORRUPT）",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_historical_structure_is_nonexecutable_and_offline_projection_has_no_work",
+    "tests/orchestrator/full_target/taskgraph_exec/test_revision_read_cache.py::test_a_verified_revision_is_reused_only_while_nothing_changed",
+    "tests/orchestrator/full_target/taskgraph_exec/test_production_seed.py::test_the_creation_binds_the_graph_and_the_seed_plan_is_its_first_revision",
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_damaged_plan_history_stops_only_its_own_mission"
+   ],
+   "difference": "与原计划同名同位置；10-03 加了按行指纹复用校验结果（只为性能，不改语义）",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P05",
+   "fact": "做法定义及其当前登记",
+   "original_source": "storage/htn_store.py::get_method",
+   "current_producer": [
+    "agent_orchestrator.storage.htn_store:HtnStore.get_method",
+    "agent_orchestrator.storage.htn_store:HtnStore.list_methods",
+    "agent_orchestrator.orchestrator.taskgraph_plan_sources:TaskGraphPlanSourceReader.__call__"
+   ],
+   "key": "method_id + version + content_hash",
+   "when_unreadable": "HtnStore.get_method 没存过抛 StoreConflict；本地来源 orchestrator/taskgraph_execution_sources.py:TaskGraphLocalExecutionReader.read 发现采用的做法不在登记里抛 SourceUnavailable('taskgraph_method_registry_incomplete')，计划来源汇总缺定义/登记抛 SourceUnavailable('taskgraph_plan_method_source_incomplete')。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_store.py::test_a_method_definition_round_trips_with_its_registration",
+    "tests/orchestrator/full_target/test_htn_store.py::test_promoting_a_method_that_was_never_stored_is_a_conflict",
+    "tests/orchestrator/full_target/test_htn_store.py::test_the_registry_may_promote_a_stored_method",
+    "tests/orchestrator/product_world/test_method_library.py::test_adopted_method_needs_review_here"
+   ],
+   "difference": "生产方同名同位置；阶段 C3 加了跨任务做法库（method_library_store），进规划时仍走做法登记，不改这一行的来源",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P06",
+   "fact": "证据：有效性见证、开工见证、作用域纪元",
+   "original_source": "orchestrator/hierarchical_dispatch.py::witnesses/input_witness_index/start_witness_index",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.witnesses",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.input_witness_index",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.start_witness_index",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.scope_epochs"
+   ],
+   "key": "见证的使用方 + 用途 + 作用域/支撑版本；作用域纪元",
+   "when_unreadable": "见证未知/冲突/过期走等待或重查（交接被拒、重发见证后放行）；本地来源 orchestrator/taskgraph_execution_sources.py:TaskGraphLocalExecutionReader.read 发现纪元与结构读取时不同抛 SourceUnavailable('taskgraph_epoch_source_changed')。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_end_to_end.py::test_the_first_plan_revision_on_the_product_deployment",
+    "tests/orchestrator/product_world/test_validity_handoff.py::test_handoff_refused_when_scope_epoch_moved",
+    "tests/orchestrator/product_world/test_validity_handoff.py::test_handoff_goes_through_once_the_witness_is_reissued",
+    "tests/orchestrator/product_world/test_epoch_and_read_set.py::test_stale_reply_after_epoch_moved_is_not_charged",
+    "tests/orchestrator/full_target/test_aer_contract_codecs.py::test_a_usable_witness_may_not_rest_on_unreadable_support"
+   ],
+   "difference": "与原计划同名同位置",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P07",
+   "fact": "能力：部署声明的能力记录",
+   "original_source": "planning/htn/world.py::DeploymentPlanningWorld.capabilities",
+   "current_producer": [
+    "agent_orchestrator.planning.htn.world:DeploymentPlanningWorld.capabilities"
+   ],
+   "key": "capability_id + 实际部署版本/哈希",
+   "when_unreadable": "能力明确不可用：规划决定准入按 CAPABILITY_MISSING 拒；本地来源 orchestrator/taskgraph_execution_sources.py:TaskGraphLocalExecutionReader.read 拿不到能力快照（不是 CapabilitySnapshot）抛 SourceUnavailable('taskgraph_capabilities_source_invalid')。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_planning_decision_admission.py::test_a_missing_capability_is_refused",
+    "tests/orchestrator/full_target/test_htn_deployment_wiring.py::test_the_fixture_env_is_filled_by_the_real_assembly",
+    "tests/orchestrator/full_target/test_htn_deployment_wiring.py::test_mutant_a_snapshot_cached_at_assembly_time"
+   ],
+   "difference": "与原计划同名同位置",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P08",
+   "fact": "外部动作：操作与动作/回执的对应（含已退役的工作）",
+   "original_source": "runtime/planning_operations.py::build_operation_snapshot",
+   "current_producer": [
+    "agent_orchestrator.runtime.planning_operations:build_operation_snapshot",
+    "agent_orchestrator.runtime.taskgraph_operation_sources:read_operation_producers"
+   ],
+   "key": "operation_id / request_hash ↔ action_key / version",
+   "when_unreadable": "build_operation_snapshot 读不全抛 SourceUnavailable（不当成空快照）；提交前复查 orchestrator/planning_admission_commits.py:_check_planning_commit 把 operation_mapping_incomplete 映射为 OPERATION_SNAPSHOT_STALE、其余为 SOURCE_UNAVAILABLE，在途/未知结果报 OPERATION_UNRESOLVED；提交前复查在 orchestrator/planning_admission_commits.py:_check_planning_commit 里抛 PlanCommitRejected，由 event_handler.py:Orchestrator._collect_plan_decision 记成 COMMIT_REJECTED、整次提交一行不写，并按 proposal_not_grounded 退回规划器",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_missing_bridge_is_source_unavailable_instead_of_latest_join",
+    "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_incomplete_reader_is_not_an_empty_snapshot",
+    "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_lease_expiry_does_not_prove_not_applied",
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision",
+    "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_handoff_changes_the_operation_snapshot_a_plan_preview_read"
+   ],
+   "difference": "与原计划同名同位置；操作到生产步骤的链接另由 runtime/taskgraph_operation_sources.py:read_operation_producers 读取",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P09",
+   "fact": "正在跑的工作：实际尝试、派发意图、租约、导入的执行回执",
+   "original_source": "runtime/planning_operations.py::read_running_work",
+   "current_producer": [
+    "agent_orchestrator.runtime.planning_operations:read_running_work",
+    "agent_orchestrator.runtime.taskgraph_local_work:read_local_work"
+   ],
+   "key": "做法实例 → 出现 → Task → Attempt",
+   "when_unreadable": "read_running_work 读不到抛 SourceUnavailable；预览阶段在 orchestrator/event_handler.py:Orchestrator._collect_plan_decision 转成 ContractError('SOURCE_UNAVAILABLE: …') 交轮边界；提交前复查 _check_planning_commit 报 SOURCE_UNAVAILABLE，预览后变化报 RUNTIME_WORK_STALE；租约过期不算结清",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_preview_read_set_identity_mismatch_refuses_before_writes",
+    "tests/orchestrator/full_target/test_h1h_commit_interleaving.py::test_i06_a_concurrent_publish_approval_makes_the_plan_commit_stale",
+    "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_preview_reuses_runtime_work_snapshot_type"
+   ],
+   "difference": "与原计划同名同位置；本地在途工作另由 runtime/taskgraph_local_work.py:read_local_work 读",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P10",
+   "fact": "已验收的产出：正式验收记录与真实产物",
+   "original_source": "orchestrator/hierarchical_dispatch.py::accepted_outputs",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.accepted_outputs"
+   ],
+   "key": "结果/验收/产物/输出端口/精确哈希",
+   "when_unreadable": "生产者没完成：输入解析报 WAITING_DATA；完成但缺必需端口：DATA_UNBOUND（graph/eligibility.py:_data_gate）。本地来源 orchestrator/taskgraph_execution_sources.py:TaskGraphLocalExecutionReader.read 拿不到索引抛 SourceUnavailable('taskgraph_accepted_outputs_missing')",
+   "tests": [
+    "tests/orchestrator/product_world/test_input_revisions.py::test_retry_follows_authorized_upstream_revision",
+    "tests/orchestrator/full_target/assurance_exec/test_subgoal_outputs.py::test_a_step_after_the_sub_goal_is_fed_by_the_sub_goals_finalizer_once_the_goal_is_complete",
+    "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_content_acceptance_is_preparation_only_until_the_publish_completes",
+    "tests/orchestrator/full_target/test_progress_acceptance_2b.py::test_c_waiting_for_data_does_not_hold_back_the_independent_d"
+   ],
+   "difference": "与原计划同名同位置；阶段 D 在这里补了'已授权版本'（同一端口两个计数中的版本就不填）",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P11",
+   "fact": "前置步骤的结局：ORDER 放行依据（不能只看终态字符串）",
+   "original_source": "orchestrator/taskgraph_sources.py::settlement_facts",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.occurrence_outcomes",
+    "agent_orchestrator.orchestrator.taskgraph_outcomes:read_taskgraph_outcomes",
+    "agent_orchestrator.orchestrator.taskgraph_settlement:TaskGraphSettlementReader.__call__"
+   ],
+   "key": "出现的合同（occurrence contract）+ 来源结局（验收/结清记录）",
+   "when_unreadable": "结局未知或未真正结清：graph/eligibility.py:_order_gate 报 WAITING_ORDER（order_outcome_unknown）；读不到要求版本/任务/结清意图时 read_taskgraph_outcomes 与 TaskGraphSettlementReader.__call__ 抛 SourceUnavailable（taskgraph_outcome_requirements_missing、taskgraph_settlement_outcome_missing 等），HierarchicalDispatch.read 缺结清读取器抛 SourceUnavailable('taskgraph_settlement_reader_unavailable')。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_running_predecessor_leaves_the_consumer_waiting_on_order",
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_failed_predecessor_does_not_satisfy_an_accepted_release_condition",
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_failed_predecessor_satisfies_settled_terminal_when_the_contract_allows_it",
+    "tests/orchestrator/full_target/test_htn_end_to_end.py::test_the_first_plan_revision_on_the_product_deployment"
+   ],
+   "difference": "原计划的 taskgraph_sources.py::settlement_facts 不存在；结局由 taskgraph_outcomes.py 读、结清由 taskgraph_settlement.py 读，经 HierarchicalDispatch.read 汇总。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P12",
+   "fact": "格式兼容：只认已安装的格式兼容声明，不隐式转换",
+   "original_source": "orchestrator/taskgraph_sources.py::read_schema_policy",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.taskgraph_policy_sources:StoreTaskGraphPolicyAuthority.installed_policy",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.resolution_policy_for",
+    "agent_orchestrator.artifacts.input_bindings:_check_schema"
+   ],
+   "key": "产出的格式引用 + 要求的格式引用 + 声明编号；已安装策略的内容哈希（schema_policy_ref）",
+   "when_unreadable": "没有声明的转换：artifacts/input_bindings.py:_check_schema 报 SCHEMA_MISMATCH（不推断兼容）；策略来源缺失或与首次读取不同：orchestrator/taskgraph_policy_sources.py:StoreTaskGraphPolicyAuthority.installed_policy 抛 SourceUnavailable('taskgraph_installed_policy_source_missing' / 'taskgraph_installed_policy_changed')",
+   "tests": [
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_newer_schema_version_without_a_declaration_is_a_mismatch",
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_registered_compatibility_declaration_binds_and_records_the_converter",
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_declaration_in_the_other_direction_does_not_bind",
+    "tests/orchestrator/product_world/test_sub_goal.py::test_goal_port_schema_mismatch_is_unbound"
+   ],
+   "difference": "原计划的 taskgraph_sources.py::read_schema_policy 不存在；格式登记表随执行图策略在 taskgraph_policy_sources.py 冻结（schema_policy_ref），解析时由 input_bindings.py 比对。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P13",
+   "fact": "输入解析：每条数据要求绑定到确切不可变产出",
+   "original_source": "artifacts/input_bindings.py::resolve_declared_inputs",
+   "current_producer": [
+    "agent_orchestrator.artifacts.input_bindings:resolve_declared_inputs",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.resolution_policy_for"
+   ],
+   "key": "requirement_id → 确切的不可变产出（产物 + 版本 + 哈希）",
+   "when_unreadable": "返回带标签的结果，不合并：生产者未完成 / 输入无效 / 来源读不到各自成类（ResolutionProblemKind）；跟随授权版本的边读不到授权版本报 REVISION_NOT_AVAILABLE，不任选、不取最新（artifacts/input_bindings.py 版本收窄）",
+   "tests": [
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_consumer_occurrence_is_a_required_argument",
+    "tests/orchestrator/full_target/test_versioning_v2_manifest.py::test_a_requirement_aimed_at_another_consumer_is_not_absorbed",
+    "tests/orchestrator/product_world/test_input_revisions.py::test_retry_follows_authorized_upstream_revision"
+   ],
+   "difference": "与原计划同名同位置；阶段 D 补了'钉住'值来源（消费者第一次冻结的输入记录，HierarchicalDispatch._pinned_revisions）与'已授权版本'来源",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P14",
+   "fact": "写入目标：命名空间、规范化路径、模式",
+   "original_source": "orchestrator/taskgraph_sources.py::read_target_policy",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.target_rules_for",
+    "agent_orchestrator.orchestrator.hierarchical_dispatch:HierarchicalDispatch.target_rules_policy",
+    "agent_orchestrator.orchestrator.taskgraph_dispatch:TaskGraphDispatchBinding.prepare"
+   ],
+   "key": "命名空间 + 规范化路径 + 模式 + 声明的期望对象版本；已安装策略内容哈希（target_policy_ref）",
+   "when_unreadable": "部署没注入固定规则时用'每个 Task 一个工作区'（TASK_WORKSPACE_V1，HierarchicalDispatch.target_rules_policy）并冻结进执行图策略；派发/物化时拿不到规则：orchestrator/taskgraph_dispatch.py:TaskGraphDispatchBinding.prepare 与 orchestrator/taskgraph_materialization.py:TaskGraphExecutionGuard.__call__ 抛 StoreError('TARGET_RULES_UNAVAILABLE')",
+   "tests": [
+    "tests/orchestrator/product_world/test_write_targets.py::test_parallel_steps_declaring_same_file_refused",
+    "tests/orchestrator/product_world/test_write_targets.py::test_runtime_same_path_becomes_write_conflict",
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_preserving_the_source_namespace_separates_the_two_attempts",
+    "tests/orchestrator/full_target/operation_completion/test_completion_data_dispatch.py::test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_only"
+   ],
+   "difference": "原计划的 taskgraph_sources.py::read_target_policy 不存在；规则在 hierarchical_dispatch.py 的 target_rules_for / target_rules_policy。另：原计划写'无显式规则即 TARGET_RULES_UNAVAILABLE'，现行在无固定规则时用每 Task 工作区这一声明过的默认策略（冻结在策略里），只有读不到规则对象才报 TARGET_RULES_UNAVAILABLE。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P15",
+   "fact": "需求方：谁还要这个产出（做法钉 + 子槽 + 独立义务）",
+   "original_source": "storage/taskgraph_store.py::read_active_consumers",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.taskgraph_execution_sources:TaskGraphLocalExecutionReader.read",
+    "agent_orchestrator.orchestrator.taskgraph_demands:read_independent_demands",
+    "agent_orchestrator.graph.convergence:compute_convergence_impact"
+   ],
+   "key": "mission + revision + 做法实例 + 槽 + 生产者出现（修订钉里的 demand_refs）",
+   "when_unreadable": "独立义务读不全/历史不一致：orchestrator/taskgraph_demands.py:read_independent_demands 抛 SourceUnavailable（taskgraph_demand_account_set_incomplete 等）；结构读不到见 P04。完整的空需求方仍先查独立义务与外部动作再决定取消（graph/convergence.py:compute_convergence_impact 只把被退役实例需要的生产者列为受影响）。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/product_world/test_repair_replace_method.py::test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs",
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_a_shared_sub_goal_has_two_consumers"
+   ],
+   "difference": "原计划的 TaskGraphStore.read_active_consumers 仍在，但生产代码不调用；现行由本地来源读修订钉里的 demand_refs、独立义务另由 taskgraph_demands.py 读，换计划时由 graph/convergence.py 计算受影响生产者",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P16",
+   "fact": "预算：账户层级、预留、导入用量",
+   "original_source": "governance/budgets.py::BudgetLedger.account（原账户层级 + 预留 + 导入用量 + 受保护尾部；金额从不猜）",
+   "current_producer": [
+    "agent_orchestrator.governance.budgets:BudgetLedger.account",
+    "agent_orchestrator.storage.obligation_store:ObligationStore.account"
+   ],
+   "key": "task_account(task_id) / budget:<mission_id>，subject_id",
+   "when_unreadable": "账户不存在：BudgetLedger.account 抛 BudgetError（从不当成零花费）；本地来源 orchestrator/taskgraph_execution_sources.py:TaskGraphLocalExecutionReader.read 缺任务或步骤账户抛 SourceUnavailable('taskgraph_budget_source_incomplete')；额度不够仍是 BudgetExhausted",
+   "tests": [
+    "tests/orchestrator/step02/test_store_and_budgets.py::test_budget_chain_reserve_settle_and_import_usage",
+    "tests/orchestrator/full_target/test_obligation_conservation.py::test_the_ledger_refuses_to_read_an_unregistered_duty",
+    "tests/orchestrator/product_world/test_obligation_accounts.py::test_budget_by_duty_and_unrefined_goals"
+   ],
+   "difference": "按用户决定改了含义：金额计价已删，只记用量（HTN补齐计划表一第 25 条，阶段 C 第 0 条执行）；义务账另由 ObligationStore.account 读",
+   "verdict": "按决定改",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P17",
+   "fact": "计划预览：纯编译与实际变更报告",
+   "original_source": "planning/plan_preview.py::preview_candidate",
+   "current_producer": [
+    "agent_orchestrator.planning.plan_preview:preview_candidate",
+    "agent_orchestrator.orchestrator.taskgraph_preview:TaskGraphPreviewService.capture"
+   ],
+   "key": "决定/快照/变更/检查哈希",
+   "when_unreadable": "preview_candidate 输入不全或没有校验器返回 PreviewUnavailable('SOURCE_UNAVAILABLE')，快照对不上返回 proposal_snapshot_mismatch / source_snapshot_mismatch；形状无效是具名拒绝；TaskGraphPreviewService.capture 发现来源在采集中变了抛 StoreConflict（TASKGRAPH_PLAN_*_CHANGED）。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_plan_preview.py::test_preview_rejects_a_candidate_not_bound_to_the_frozen_input",
+    "tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p04_absent_validator_returns_source_unavailable",
+    "tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p02_p03_real_compiler_refusal_keeps_typed_reason",
+    "tests/orchestrator/full_target/test_h1h_plan_preview.py::test_refine_is_pre_admitted_then_becomes_a_typed_candidate"
+   ],
+   "difference": "与原计划同名同位置；执行图来源采集与冻结在 taskgraph_preview.py",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P18",
+   "fact": "输入冻结：尝试开始时冻结的输入清单",
+   "original_source": "storage/taskgraph_store.py::insert_attempt_inputs",
+   "current_producer": [
+    "agent_orchestrator.storage.taskgraph_attempt_inputs:TaskGraphAttemptInputStore.insert_attempt_inputs",
+    "agent_orchestrator.orchestrator.taskgraph_dispatch:TaskGraphDispatchBinding.record"
+   ],
+   "key": "attempt_id + intent_id + creation_key + input_id + input_hash（+ manifest_hash）",
+   "when_unreadable": "派发意图/成员/语义绑定/冻结清单任一对不上：storage/taskgraph_attempt_inputs.py:_fail 抛 AttemptInputIntegrityError('TASKGRAPH_ATTEMPT_INPUT_INTEGRITY: …')，在派发事务里整体回滚；库层守卫触发器拒绝迁入来源（迁移 34）",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_at_attempt_boundary_preserves_original_accounting",
+    "tests/orchestrator/product_world/test_input_revisions.py::test_retry_follows_authorized_upstream_revision",
+    "tests/orchestrator/full_target/taskgraph_exec/test_captured_baseline_removed.py::test_the_store_refuses_a_captured_baseline_history_row"
+   ],
+   "difference": "从 taskgraph_store.py 挪到独立模块 storage/taskgraph_attempt_inputs.py 的 TaskGraphAttemptInputStore。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P19",
+   "fact": "提交守卫：授权、外部动作、在跑工作、读集与预算的提交前复查",
+   "original_source": "orchestrator/planning_admission_commits.py::commit_admitted_plan",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.planning_admission_commits:PlanningAdmissionCommitsMixin.commit_planning_revision",
+    "agent_orchestrator.orchestrator.planning_admission_commits:_check_planning_commit"
+   ],
+   "key": "现有命令号 command_id + 精确意图哈希与候选",
+   "when_unreadable": "缺准入抛 PlanCommitRejected('SOURCE_UNAVAILABLE')；复查各来源读不到或变了按名拒（SOURCE_UNAVAILABLE / PREVIEW_IDENTITY_STALE / REQUEST_BINDING_STALE / OPERATION_SNAPSHOT_STALE / OPERATION_UNRESOLVED / RUNTIME_WORK_STALE）；提交前复查在 orchestrator/planning_admission_commits.py:_check_planning_commit 里抛 PlanCommitRejected，由 event_handler.py:Orchestrator._collect_plan_decision 记成 COMMIT_REJECTED、整次提交一行不写，并按 proposal_not_grounded 退回规划器",
+   "tests": [
+    "tests/orchestrator/full_target/test_plan_commits.py::test_the_plan_commit_has_one_way_in_and_it_carries_the_preview",
+    "tests/orchestrator/full_target/test_h1h_plan_preview.py::test_preview_commit_passes_the_same_compilation_without_recompiling",
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale",
+    "tests/orchestrator/full_target/taskgraph_exec/test_commit_atomicity.py::test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt"
+   ],
+   "difference": "函数改名 commit_admitted_plan → commit_planning_revision（同一模块的 PlanningAdmissionCommitsMixin），复查逻辑在同模块 _check_planning_commit。出处：开工裁决 1.6 改名表",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P20",
+   "fact": "换计划收敛：取消/对账旧工作直到可以提交",
+   "original_source": "orchestrator/taskgraph_convergence.py::advance_convergence",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.taskgraph_convergence:TaskGraphConvergence.advance_convergence",
+    "agent_orchestrator.orchestrator.taskgraph_operator:TaskGraphOperatorService.abandon_convergence"
+   ],
+   "key": "job_id + 目标原始代号（expected_generation）+ 行版本；不按租约过期推断",
+   "when_unreadable": "观察结果对不上抛 StoreError（TASKGRAPH_CONVERGENCE_SOURCE_INCOMPLETE / _ACTION_INVALID / _LOCAL_WORK_UNSETTLED），行版本变了抛 StoreConflict；这些错误发生在通知处理里，由 orchestrator/taskgraph_followups.py:TaskGraphFollowupPump.pump_once 记错误码重试，连败 5 次转'被挡'（见 P24），等人点'放弃这次改计划'（TaskGraphOperatorService.abandon_convergence，带期望版本号）或'重新发送'",
+   "tests": [
+    "tests/orchestrator/product_world/test_stuck_plan_change_exits.py::test_a_plan_change_stuck_behind_a_blocked_notification_has_two_exits",
+    "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_a_waiting_job_of_a_live_mission_is_woken",
+    "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_a_waiting_job_of_a_cancelled_mission_is_not_woken_and_keeps_its_fence",
+    "tests/orchestrator/product_world/test_repair_replace_method.py::test_a_refused_method_change_lifts_its_fence"
+   ],
+   "difference": "生产方同名同位置（TaskGraphConvergence 的方法）；阶段 B 加了人工出口'放弃这次改计划'",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P21",
+   "fact": "组合验收：父目标按子验收与审阅记录整体判定",
+   "original_source": "orchestrator/resolution_commits.py::commit_goal_resolution",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.resolution_commits:ResolutionCommitsMixin.commit_goal_resolution",
+    "agent_orchestrator.orchestrator.composition_review:CompositionAcceptanceAssembly._commit_assured_composition"
+   ],
+   "key": "审阅包 / 结果 / 要求 / 做法哈希",
+   "when_unreadable": "审阅判打回/没结论/拒绝：不产生父验收，不当来源错误；读集过期或缺失、子结局未知等按名抛 ResolutionCommitRejected（READ_SET_STALE、READ_SET_UNRESOLVED、CHILD_RESOLUTION_UNKNOWN、OP_OUTCOME_SOURCE_UNAVAILABLE 等），整次一行不写",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_end_to_end.py::test_the_accept_side_refuses_a_plan_principal",
+    "tests/orchestrator/full_target/test_resolution_commits.py::test_every_channel_a_read_set_can_carry_is_re_checked",
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_composition_not_all_children",
+    "tests/orchestrator/product_world/test_sub_goal.py::test_a_sub_goal_is_planned_reviewed_and_completed_on_the_product_deployment"
+   ],
+   "difference": "与原计划同名同位置",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P22",
+   "fact": "公共只读视图：一次读事务里的执行图快照",
+   "original_source": "api/taskgraph.py::TaskGraphReadApi.snapshot",
+   "current_producer": [
+    "agent_orchestrator.api.taskgraph:TaskGraphReadApi.snapshot",
+    "agent_orchestrator.api.taskgraph:TaskGraphReadApi.execution_snapshot",
+    "agent_orchestrator.api.taskgraph:TaskGraphReadApi.why_not_ready",
+    "agent_orchestrator.api.taskgraph:TaskGraphReadApi.convergence"
+   ],
+   "key": "revision + 事件 through_seq + 有效性纪元（read_token，含 snapshot_hash）",
+   "when_unreadable": "api/taskgraph.py:TaskGraphReadApi._snapshot 读不到抛 TaskGraphReadError（SOURCE_UNAVAILABLE 带 retry=REQUERY；GRAPH_INTEGRITY 带 OPERATOR_REPAIR；超界 BOUND_REACHED；未启用 NOT_ENABLED）；前端读失败保留上次画面并标'已过期'（阶段 B）",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_execution_view.py::test_execution_view_shares_the_graph_token_links_instances_and_reads_turns",
+    "tests/orchestrator/full_target/taskgraph_exec/test_production_seed.py::test_the_creation_binds_the_graph_and_the_seed_plan_is_its_first_revision",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_authenticated_read_cannot_cross_tenant_and_has_no_side_effects",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_not_enabled.py::test_reads_of_a_mission_without_taskgraph_say_not_enabled"
+   ],
+   "difference": "生产方同名同位置。补全方案第 1 节怀疑'前端只用执行快照'：核对后 execution_snapshot 与 why_not_ready 都在同一读事务里调 _snapshot，前端执行图/为什么不开工/改计划进度面板（convergence）都读这一处；Host 也开放了 taskgraph.snapshot。不是缺口",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P23",
+   "fact": "图重建：从不可变修订记录离线重建执行图结构",
+   "original_source": "observability/taskgraph_replay.py::rebuild_projection（权威来源含'显式捕获的基线'）",
+   "current_producer": [
+    "agent_orchestrator.observability.taskgraph_replay:replay_taskgraph",
+    "agent_orchestrator.storage.taskgraph_store:TaskGraphStore.read_revision"
+   ],
+   "key": "父清单哈希链（每版 manifest_hash）；不猜、不修现表",
+   "when_unreadable": "observability/taskgraph_replay.py:replay_taskgraph 版本缺口、不以种子开头、目标即源库、重建投影哈希不一致都抛 ContractError('TASKGRAPH_REPLAY_INVALID: …')，并删除半成品目标库；祖先链校验失败抛 GraphIntegrityError。Host 诊断导出在临时副本上调它，只放重建报告",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_historical_structure_is_nonexecutable_and_offline_projection_has_no_work",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_seed_certificate_uses_original_applied_check_and_receipt"
+   ],
+   "difference": "函数改名 rebuild_projection → replay_taskgraph；'捕获基线'在阶段 A 随老任务迁入一起删除，起点只剩首份计划（SEED_COMMIT）。补全方案第 1 节怀疑'只有测试在调'：阶段 B 已接进 Host 诊断导出（backend/deskpet/orchestration/diagnostics.py），不是缺口。出处：开工裁决 1.6 改名表、实施记录阶段 A 与阶段 B",
+   "verdict": "改名或挪位",
+   "gap_for_taskgraph": null
+  },
+  {
+   "id": "P24",
+   "fact": "后续通知消费：重评估/收敛/请求组合三类通知送到原有消费方并留持久回执",
+   "original_source": "orchestrator/taskgraph_followups.py::pump_taskgraph_followups",
+   "current_producer": [
+    "agent_orchestrator.orchestrator.taskgraph_followups:TaskGraphFollowupPump.pump_taskgraph_followups",
+    "agent_orchestrator.orchestrator.taskgraph_followups:TaskGraphFollowupPump.pump_once",
+    "agent_orchestrator.orchestrator.taskgraph_notifications:TaskGraphNotifications.tick",
+    "agent_orchestrator.orchestrator.taskgraph_operator:TaskGraphOperatorService.retry_notification"
+   ],
+   "key": "message_id / dedupe_key + 接收方现有幂等命令（command_key）",
+   "when_unreadable": "消费方报错：TaskGraphFollowupPump.pump_once 记命名错误码（非具名的记 FOLLOWUP_HANDLER_FAILED）并按退避重排，连败 5 次转 BLOCKED（storage/taskgraph_followups.py:TaskGraphFollowupStore.retry_followup），之后不自动重试；被挡通知出现在只读接口 TaskGraphReadApi.convergence 的 blocked_notifications（阶段 B），由人点'重新发送'（TaskGraphOperatorService.retry_notification，带行版本）。来源事件读不到时 TaskGraphNotifications 在本任务的轮边界内计数（见 P02 的轮边界规则）",
+   "tests": [
+    "tests/orchestrator/product_world/test_stuck_plan_change_exits.py::test_a_plan_change_stuck_behind_a_blocked_notification_has_two_exits",
+    "tests/orchestrator/full_target/taskgraph_exec/test_convergence_advanced_event.py::test_auxiliary_events_never_trigger_a_recheck",
+    "tests/orchestrator/full_target/taskgraph_exec/test_read_history_protocol.py::test_first_epoch_invalidation_and_notification_share_rollback_boundary"
+   ],
+   "difference": "生产方同名同位置（TaskGraphFollowupPump 的方法），由 TaskGraphNotifications.tick 每轮调用。补全方案第 1 节说'零直接测试'：确实没有直接调 pump 的单测，但产品同形用例走过投递、被挡、重发全程（10-03 收尾裁决定以产品同形用例为准）；阶段 B 补了被挡通知读接口与重发出口。代码上不是缺口",
+   "verdict": "一致",
+   "gap_for_taskgraph": null
+  }
+ ]
+}
