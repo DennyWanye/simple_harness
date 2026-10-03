@@ -25,13 +25,13 @@ def _quick(monkeypatch):
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _run(tmp_path, reviewer) -> tuple[str, list[Any], int]:
+def _run(tmp_path, reviewer, purpose: str = "TASK_CONTENT") -> tuple[str, list[Any], int]:
     async def case():
         calls = {"content": 0}
 
         def counted(request: Any) -> Any:
             data = review_input(request)
-            if data is not None and str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT":
+            if data is not None and str((data.get("package") or {}).get("purpose")) == purpose:
                 calls["content"] += 1
                 return reviewer(data, calls["content"])
             return None if data is None else review_reply(data)
@@ -62,3 +62,22 @@ def test_text_around_json_still_rejected(tmp_path):
 
     status, events, calls = _run(tmp_path, reviewer)
     assert status == "COMPLETED" and calls == 2  # the second call is the format repair
+
+
+@pytest.mark.parametrize(("purpose", "field"), [("TASK_CONTENT", "methods"), ("METHOD_PLAN", "summary")])
+def test_a_section_the_package_does_not_have_is_a_scope_error(tmp_path, purpose, field):
+    """回复第 4 版的两节只对有对应一节的审查包：步骤内容审阅写了做法表态、做法审阅写了摘要核对，
+    都按"范围错误"在同一次尝试里让它改（阶段 C3）。"""
+
+    def reviewer(data: Any, call: int) -> str:
+        body = json.loads(review_reply(data))
+        if call == 1:
+            body[field] = ([{"method_ref": "m@1", "reusable": False, "purpose": "", "at_fault": False, "reason": "r"}]
+                           if field == "methods" else {"faithful": True, "reason": "r"})
+        return json.dumps(body, ensure_ascii=False)
+
+    status, events, calls = _run(tmp_path, reviewer, purpose)
+    assert status == "COMPLETED" and calls == 2
+    rejected = [event for event in events if event.type == "AssuranceReviewInterpretationRejected"]
+    expected = "METHOD_SCOPE" if field == "methods" else "SUMMARY_SCOPE"
+    assert rejected and expected in json.dumps([event.payload for event in rejected])

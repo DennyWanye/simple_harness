@@ -1,5 +1,5 @@
 {
-  "deployment_id": "b7e4e37fa9d582898a39e7888bde6a77b9b578a29470cccbc8e635776b20898f",
+  "deployment_id": "bd3dad7ec830e4482102641f244f52d30156cf67472bc8bad16c4809b1216af6",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -78,10 +78,10 @@
     "agent_orchestrator/contracts/operation_intents.py": "60cc3c8831aa8d4406b05ff11ba692c5678648dde0366647090ea0f5a96b5c9e",
     "agent_orchestrator/contracts/operation_payloads.py": "2dcd96ba2a6e3070f534738cf3b8af22fc934a760e6d46421c669fa5eec4b65a",
     "agent_orchestrator/contracts/operation_reconciliation.py": "9391c67060a7c7a7a0b08508aa01fa53e914cc2d0c13a15daf5d5fd61de5cc12",
-    "agent_orchestrator/contracts/planning_decisions.py": "2a1bcbe92584180589557968a50c54501bd6e8d09b472a2bd8deaf2209518572",
+    "agent_orchestrator/contracts/planning_decisions.py": "671eb1db48ad888473e7de033eec714ea66fbf771d500201fd1d78e4558ccd7b",
     "agent_orchestrator/contracts/resolution.py": "a60ecee02682eae8b9badeda3a469ae0e8e4d4ff23f28398c17111195ae0be52",
     "agent_orchestrator/contracts/schemas/__init__.py": "d16ad1044e9763611dce59345a52a3c82e6195371aa96896b5f35691107a0155",
-    "agent_orchestrator/contracts/schemas/planning-decision-v1.schema.json": "835199e36b6ddb54eb1801b2d7c2052905f14efbee5d6c674e30534485f32b47",
+    "agent_orchestrator/contracts/schemas/planning-decision-v1.schema.json": "d10625b0fe9de593e45baa5aa0ab1671d71980fd0558f1c226f477d4b7987b44",
     "agent_orchestrator/contracts/semantic_base.py": "9e544b8eb34a7a0f8c49763731a7d0c1e7a38b69452888fdecd96043f74c9dd8",
     "agent_orchestrator/contracts/state_machines.py": "d924e87e5de0030f17ba95d033f3acfd830fd70acf1e1d9fdfe857238aaba16c",
     "agent_orchestrator/deployment/__init__.py": "65b22949daeaf41aee6b7c663e5b1138f48257c1d14cb25266cacb91d7dfb430",
@@ -200,7 +200,7 @@
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "3983e4101b24e634d1767231c1acf20dcab494b70d447bdf9146c64acc27fb67",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "17c44e54cda955438a18f00151ee464e84509a6388c72fdc59369abfec772b4c",
-    "agent_orchestrator/orchestrator/method_library.py": "5eef7ca2bba87794730142194029e320aeb48b886a06e59fbfedc2a0a3297da8",
+    "agent_orchestrator/orchestrator/method_library.py": "659de6e1109435b9ef5cbc32920b1ef51238713d32c6186434219b77405ae94d",
     "agent_orchestrator/orchestrator/method_plan_reviews.py": "f82716e53999fe42a75cc855043cfbc951fa846afb11aaea3d584fed1bef3fd9",
     "agent_orchestrator/orchestrator/obligation_accounts.py": "7e547221bab2a8779dd926ad9ecbd486d8b0a00a5fe9982470d85ea7127abb3d",
     "agent_orchestrator/orchestrator/obligation_commits.py": "4af7dbec693e32558921f56f0d577b8a73ebbd214997c801650da667328b362a",

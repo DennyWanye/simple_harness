@@ -41,7 +41,6 @@ from production_fixture import chain_planner, enabled_world  # noqa: E402
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
-from agent_orchestrator.memory.summaries import build_summaries  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.verification.conflicts import mission_disputes  # noqa: E402
@@ -177,10 +176,9 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
 
         observations = {m: observed(m) for m in (None, "hash", "result", "attempt", "receipt", "unrecorded")}
 
-        summaries_before = {s["subject_id"]: s for s in store.list_summaries(mission_id)}
         statuses_before = {c.id: c.status for c in claims}
-        rebuilt = build_summaries(store, mission_id)
-        rebuilt_again = build_summaries(store, mission_id)
+        listed_once = read_knowledge_tool(store, mission_id, "knowledge_list", {})
+        listed_twice = read_knowledge_tool(store, mission_id, "knowledge_list", {})
         statuses_after = {c.id: c.status for c in store.list_mission_claims(mission_id)}
         knowledge_id = knowledge[0].id if knowledge else ""
         facts = {
@@ -194,7 +192,7 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "domain": commit.domain_for(mission_id),
             "events": [e.type for e in store.list_events(mission_id)],
             "disputes": mission_disputes(store, mission_id),
-            "summaries": summaries_before, "rebuilt": rebuilt, "rebuilt_again": rebuilt_again,
+            "listed_once": listed_once, "listed_twice": listed_twice,
             "statuses_before": statuses_before, "statuses_after": statuses_after,
             "listing": read_knowledge_tool(store, mission_id, "knowledge_list", {}),
             "reading": read_knowledge_tool(store, mission_id, "knowledge_read", {"id": knowledge_id}),
@@ -306,8 +304,8 @@ def test_the_downstream_worker_sees_upstream_verified_knowledge_with_its_source(
     assert view["source_task"] == world["write_task"] and view["evidence"] == ["pytest:" + PROBE]
     assert view["status"] == "VERIFIED" and package["knowledge_retrieval"]["status"] == "ok"
     assert "candidate_claims" not in package and "rejected_claims" not in package
-    # 摘要只带知识编号与状态，不带正文
-    assert record.content not in json.dumps(package["branch_summary"], ensure_ascii=False)
+    # 摘要层只有审阅员核对过的各步摘要（阶段 C3）；这里的脚本审阅员不核对，所以没有
+    assert package["step_summaries"] == []
     # 输出合同：版本化的示例里是本次派发的真实编号和要交的文件
     match = re.search(r"<result_envelope>(.*?)</result_envelope>", package["output_contract"], re.S)
     assert match is not None
@@ -352,9 +350,6 @@ def test_contradicting_claims_are_disputed_and_never_enter_knowledge(world):
     assert set(disputes) == {first.id, affirms.id, affirms_again.id, against_knowledge.id, record.claim_id}
     assert disputes[record.claim_id]["in_knowledge"] is True
     assert not any(d["in_knowledge"] for key, d in disputes.items() if key != record.claim_id)
-    summary = world["rebuilt"][f"mission:{world['mission'].id}"]
-    assert {first.id, affirms.id, affirms_again.id, against_knowledge.id} <= set(summary["disputed"])
-    assert "open_conflicts" not in summary
 
 
 def test_a_model_cannot_supersede_verified_knowledge(world):
@@ -378,21 +373,11 @@ def test_artifact_versions_survive_a_redelivered_turn(world):
     assert world["duplicate_row"].startswith("IntegrityError")
 
 
-def test_blackboard_and_summaries_are_read_only_projections(world):
-    """摘要按分支、确定、不改声明状态。（黑板的三层读取见 product_world/test_blackboard_tools.py。）"""
+def test_blackboard_is_a_read_only_projection(world):
+    """读黑板确定、不改声明状态。（四层读取见 product_world/test_blackboard_tools.py。）"""
 
-    (record,) = world["knowledge"]
-    persisted, rebuilt = world["summaries"], world["rebuilt"]
-    mission_id = world["mission"].id
-    assert set(persisted) == set(world["tasks"]) | {mission_id}
-    assert set(rebuilt) == set(world["tasks"]) | {f"mission:{mission_id}"}
-    assert rebuilt == world["rebuilt_again"]  # 确定
+    assert world["listed_once"] == world["listed_twice"]  # 确定
     assert world["statuses_after"] == world["statuses_before"]  # 不改声明状态
-    branch = rebuilt[world["write_task"]]
-    assert [item["id"] for item in branch["knowledge"]] == [record.id]
-    assert set(branch["knowledge"][0]) == {"id", "status", "key", "stance"}
-    assert world["write_result"] in branch["sources"]["results"]
-    assert "不是验证" in branch["uncertainty"]["note"]
 
 
 def test_blackboard_layers_versioned_citation_and_review_package_sections(world):

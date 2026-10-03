@@ -6,7 +6,7 @@
 package under the visibility templates (pure functions).
 
 HTN 补齐阶段 A′：摘要那条（按分支确定、不改声明状态）并入
-``test_claims_knowledge_main_loop.py::test_blackboard_and_summaries_are_read_only_projections``；
+``test_claims_knowledge_main_loop.py::test_blackboard_is_a_read_only_projection``；
 核验员模板那条随旧 critic 包（``build_critic_package``）删除。"""
 
 from __future__ import annotations
@@ -237,8 +237,7 @@ def _knowledge_context():
         disputed=disputed,
         candidates=candidates,
         rejected=rejected,
-        branch_summary={"scope": "branch", "version": "sum-1"},
-        global_summary={"scope": "mission", "version": "sum-2"},
+        step_summaries=({"layer": "summary", "id": "sum:r-1", "summary": "写了 a.py"},),
     )
 
 
@@ -262,7 +261,7 @@ def test_worker_package_has_all_eleven_items_and_shows_only_verified_as_fact():
     assert body["context_builder_version"] == CONTEXT_BUILDER_VERSION
     assert body["mission_root_goal"] and body["task_contract"]["task_id"] == task.id  # 1, 2
     assert body["dependencies"][0]["task_id"] == "m:task-1"  # 3
-    assert body["branch_summary"]["version"] == "sum-1"  # 4
+    assert body["step_summaries"][0]["id"] == "sum:r-1"  # 4（阶段 C3：核对过的各步摘要）
     assert (
         body["verified_knowledge"][0]["id"] == "K-1"
         and body["verified_knowledge"][0]["version"] == 1
@@ -303,7 +302,7 @@ def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_
     assert "不代表没有相关知识" in package.text and "没有证据" not in body["knowledge_retrieval"][
         "note"
     ].replace("不要把'未检索到'当成'没有证据'", "")
-    assert body["verified_knowledge"] == [] and body["branch_summary"]["status"] == "unavailable"
+    assert body["verified_knowledge"] == [] and body["step_summaries"] == []
     disabled = build_worker_package(
         _mission(),
         task,

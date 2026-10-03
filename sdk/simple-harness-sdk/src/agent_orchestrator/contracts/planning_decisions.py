@@ -2029,6 +2029,8 @@ __all__ = (
     "ENVELOPE_FIELDS",
     "EvidenceQuestionV1",
     "HumanOptionV1",
+    "MAX_LIBRARY_READ_ENTRIES",
+    "MAX_METHOD_AT_FAULT_CHARS",
     "MAX_PD_ALTERNATIVES",
     "MAX_PD_ARGUMENTS",
     "MAX_PD_ASSUMPTIONS",

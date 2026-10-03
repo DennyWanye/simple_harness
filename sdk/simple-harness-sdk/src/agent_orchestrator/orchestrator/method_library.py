@@ -51,13 +51,14 @@ def library_owner(store: Any, mission: Any) -> str:
 
 
 def mission_untrusted_input(store: Any, mission: Any) -> bool:
-    """Whether the Mission took in material nobody vouches for: it registered a source, or
-    declared untrusted path prefixes.  A Mission that did promotes nothing — where a method's
-    words came from is not traced text by text."""
+    """Whether the Mission took in material nobody vouches for: the user registered source
+    material for it (a ``SourceRegistered`` event — the system's own rows in the sources table,
+    such as raw reviewer output, are not material handed in), or it declared untrusted path
+    prefixes.  A Mission that did promotes nothing — where a method's words came from is not
+    traced text by text."""
     if (mission.final_report or {}).get("untrusted_sources"):
         return True
-    return store.connection.execute(
-        "SELECT 1 FROM sources WHERE mission_id=? LIMIT 1", (mission.id,)).fetchone() is not None
+    return store.count_events(mission.id, "SourceRegistered") > 0
 
 
 def proposals(store: Any, mission_id: str) -> dict[str, dict[str, Any]]:
@@ -133,14 +134,16 @@ def promote_methods(store: Any, mission_id: str, resolution: Any) -> list[str]:
     whether it is reusable is the reviewer's word in the record the resolution rests on."""
     htn = HtnStore(store)
     mission = store.get_mission(mission_id)
+    if mission_untrusted_input(store, mission):
+        own = [row["method_ref"] for row in adopted_methods(store, mission_id)]
+        if own:
+            _emit(store, PROMOTION_SKIPPED, mission_id, f"{mission_id}:untrusted-input",
+                  {"reason": "untrusted_input", "methods": own})
+        return []
     record = htn.get_review_record(str(resolution.review_receipt_id)).record
     judged = {row["method_ref"]: row for row in review_manifest(store, record).get("methods") or ()
               if row.get("reusable") and row.get("purpose")}
     if not judged:
-        return []
-    if mission_untrusted_input(store, mission):
-        _emit(store, PROMOTION_SKIPPED, mission_id, f"{mission_id}:untrusted-input",
-              {"reason": "untrusted_input", "methods": sorted(judged)})
         return []
     library, owner, promoted = MethodLibraryStore(store), library_owner(store, mission), []
     for row in adopted_methods(store, mission_id):

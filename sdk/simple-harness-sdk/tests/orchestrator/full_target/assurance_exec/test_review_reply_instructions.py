@@ -34,11 +34,13 @@ def test_the_example_in_the_instructions_is_a_reply_the_decoder_accepts() -> Non
 
 def test_the_example_shows_every_field_and_nothing_else() -> None:
     example = _example()
-    assert set(example) == {"schema_version", "verdict", "assessments", "findings"}
+    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "claims", "methods", "summary"}
+    assert set(example["methods"][0]) == {"method_ref", "reusable", "purpose", "at_fault", "reason"}
+    assert set(example["summary"]) == {"faithful", "reason"}
     assert set(example["assessments"][0]) == {
         "criterion_id", "verdict", "evidence_ids", "reason", "limitations"
     }
-    # 多写一个字段（哪怕值是空的）解码器就拒收——示例不能教它多写。
+    # 严格解码器不收任何多写的字段——示例不能教它多写。
     with pytest.raises(AssuranceError):
         ReviewReply.from_json({**example, "notes": ""})
 
@@ -46,7 +48,8 @@ def test_the_example_shows_every_field_and_nothing_else() -> None:
 @pytest.mark.parametrize("word", (
     # 字段
     "schema_version", "verdict", "assessments", "findings", "criterion_id", "evidence_ids",
-    "reason", "limitations", "severity",
+    "reason", "limitations", "severity", "claims", "methods", "summary", "reusable", "purpose",
+    "at_fault", "faithful",
     # 取值
     "ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED", "PASS", "FAIL", "UNKNOWN",
     "BLOCKER", "WARNING", "INFO",
@@ -58,7 +61,7 @@ def test_every_field_and_every_allowed_value_is_named_and_explained(word: str) -
         or f"{word}（" in REVIEW_INSTRUCTIONS, word
 
 
-@pytest.mark.parametrize("rule", ("代码围栏", "前后不要写", "不要添加"))
+@pytest.mark.parametrize("rule", ("代码围栏", "JSON 前后写任何说明文字", "多余字段带了值"))
 def test_the_three_refusals_seen_on_real_runs_are_said_up_front(rule: str) -> None:
     assert rule in REVIEW_INSTRUCTIONS
 
