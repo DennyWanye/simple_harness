@@ -304,6 +304,7 @@ def _approval_summary(value: Any) -> dict[str, Any]:
 
     if isinstance(value, Mapping) and value.get("connector") and value.get("operation"):
         params = value.get("params") if isinstance(value.get("params"), Mapping) else {}
+        previous = value.get("previous_attempt") if isinstance(value.get("previous_attempt"), Mapping) else None
         return {
             "connector": _short(value.get("connector"), 80),
             "operation": _short(value.get("operation"), 80),
@@ -311,6 +312,11 @@ def _approval_summary(value: Any) -> dict[str, Any]:
             "params": {"artifact_path": _short(params.get("artifact_path"), PARAMS_LIMIT)},
             "reason": _short(value.get("reason"), 600),
             "reason_source": "system" if value.get("reason_source") == "system" else "model",
+            # 2026-10-03 真机：系统重交的卡片要写明上次为何没生效（阶段 B 裁决第 1、3 类）；结局与原因
+            # 都是系统登记的固定码，不是模型写的话。
+            **({"previous_attempt": {"attempt": previous.get("attempt"),
+                                     "outcome": _short(previous.get("outcome"), 80),
+                                     "reason": _short(previous.get("reason"), 300)}} if previous else {}),
         }
     if isinstance(value, Mapping) and isinstance(value.get("layers"), Sequence):
         parts = []
