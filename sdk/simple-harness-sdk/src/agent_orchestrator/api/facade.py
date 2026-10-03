@@ -406,6 +406,37 @@ class MissionControlV1:
         return receipt.to_json()
 
     @_native_root
+    def amend_requirements(self, command: Mapping[str, Any]) -> dict[str, Any]:
+        """Amend a running Mission's requirements (add / rewrite / remove entries) using this
+        facade's fixed caller.  One transaction; the same command id replays its receipt."""
+        from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
+
+        fields = {"mission_id", "command_id", "expected_requirements_ref", "changes", "reason", "source"}
+        if not isinstance(command, Mapping) or set(command) != fields:
+            raise FacadeError("invalid_request", "amend_requirements takes exactly " + ", ".join(sorted(fields)))
+        if (not all(isinstance(command[key], str) and command[key] for key in ("mission_id", "command_id"))
+                or not isinstance(command["reason"], str)
+                or not isinstance(command["expected_requirements_ref"], Mapping)
+                or not isinstance(command["source"], Mapping)
+                or not isinstance(command["changes"], (list, tuple))
+                or not all(isinstance(item, Mapping) for item in command["changes"])):
+            raise FacadeError("invalid_request", "amend_requirements fields have the wrong shape")
+        self._clean(command["reason"], *(str(item.get("statement") or "") for item in command["changes"]))
+        try:
+            return amend_requirements(
+                self._orchestrator, mission_id=command["mission_id"], tenant_id=self._tenant,
+                command_id=command["command_id"],
+                expected_requirements_ref=command["expected_requirements_ref"],
+                changes=command["changes"], reason=command["reason"], source=command["source"],
+                principal=self._principal)
+        except RequirementsAmendmentError as error:
+            raise FacadeError(error.code, str(error)) from error
+        except ContractError as error:
+            raise FacadeError("invalid_request", str(error)) from error
+        except StoreError as error:
+            raise FacadeError("conflict", str(error)) from error
+
+    @_native_root
     def create(self, command: Mapping[str, Any]) -> dict[str, Any]:
         request = self._strict(command)
         self._clean(*self._texts(request))

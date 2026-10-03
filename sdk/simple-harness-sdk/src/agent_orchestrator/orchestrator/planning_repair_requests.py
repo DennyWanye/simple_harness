@@ -497,12 +497,20 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
                     trigger_refs=(dirty.subject_id,), source_key=source_key, detail=asdict(dirty))
     # Internal leaf/composition requirements snapshots are not user amendments.
     # Only a persisted revision carrying its amendment credential opens this trigger.
-    for revision in htn.list_requirements_revisions(mission.id):
+    revisions = {int(item.revision): item for item in htn.list_requirements_revisions(mission.id)}
+    for number in sorted(revisions):
+        revision = revisions[number]
         source_key = "requirements:" + str(revision.revision_id)
         if revision.amendment_credential_ref and source_key not in seen:
+            from .requirements_amendment import compare_revisions
+
+            # what changed is a comparison of the two revisions by id — a fact, not a judgment
+            previous = revisions.get(number - 1)
             produced |= record_request(dispatch, mission.id, event_type="RequirementsUpdated",
                 trigger_refs=(mission.id,), source_key=source_key,
-                detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json())})
+                detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json()),
+                        "previous_revision": None if previous is None else int(previous.revision),
+                        "changes": {} if previous is None else compare_revisions(previous, revision)})
     for task in store.list_tasks(mission.id):
         if task.id not in active_tasks:
             continue

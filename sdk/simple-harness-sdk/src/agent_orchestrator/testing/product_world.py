@@ -45,18 +45,22 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store),
                                  predicates=workspace_predicates(),
                                  observers=workspace_observers(loop.store, mission.id))
-    criteria = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
+    from ..deployment.root import current_criteria
+
+    requirements = current_criteria(loop.store, mission)  # 现行要求（最新要求修订），不读章程
+    criteria = tuple(name for name, _ in requirements)
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("user.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
     world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
     world.schemas.register(ObjectSchema(outputs))
-    content = tuple(key for key, statement in zip(criteria, mission.success_criteria, strict=True)
-                    if not statement.startswith("action:"))
+    content = tuple(name for name, statement in requirements if not statement.startswith("action:"))
     signature = GoalSignature("user-goal", 1, params, outputs, mission.goal, content or criteria)
-    step = GoalSignature("prepare-delivery", 1, params, outputs, mission.goal, content)
+    # 步骤类型不带本任务的要求（阶段 E）：一步负责哪些要求只来自上级做法的链接，所以改要求之后
+    # 类型不变，旧步骤还能被新做法沿用。
+    step = GoalSignature("prepare-delivery", 1, params, outputs, mission.goal, ())
     continuation = GoalSignature("continue-delivery", 1, params, outputs,
-                                 "Continue from an accepted upstream delivery: " + mission.goal, content)
+                                 "Continue from an accepted upstream delivery: " + mission.goal, ())
     ports = (PortSpec("delivery", outputs),)
     levels = {"user-goal": 0, "sub-goal-1": 1, "sub-goal-2": 2}
     for name, form in (("user-goal", TaskForm.COMPOUND), ("sub-goal-1", TaskForm.COMPOUND),

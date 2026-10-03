@@ -166,7 +166,7 @@ def test_runtime_same_path_becomes_write_conflict(tmp_path):
                 if state["asked"]:
                     break
             events = list(world.store.list_events(mission_id))
-            assert state["asked"], [e.type for e in events if e.type.startswith("Planning")][-8:]
+            assert state["asked"], [e.payload for e in events if e.type == "PlanningRejected"][-1:]
             requests = [e.payload for e in events if e.type == "PlanningRepairRequested"
                         and e.payload["request"]["trigger_source"] == "WRITE_CONFLICT"]
             assert len(requests) == 1
