@@ -2348,7 +2348,8 @@ class Orchestrator:
         """What a plan proposal reads that the plan-revision gate does not cover, as it
         stands when the preview inputs are frozen (阶段 D): the scope epochs — the
         Assurance lane's own ``assurance:`` scopes are not plan facts — and every duty of
-        the Mission, each read with the commit checker's own formula."""
+        the Mission and the newest observation of every recorded proposition, each read with
+        the commit checker's own formula."""
         from ..contracts.htn import ReadItemKind
         from ..storage.htn_store import HtnStore
         from ..storage.obligation_store import ObligationStore
@@ -2364,6 +2365,11 @@ class Orchestrator:
                 if not scope.startswith("assurance:"))),
             "obligation_items": tuple(
                 (str(duty), checker.read_item(ReadItemKind.OBLIGATION, str(duty))) for duty in sorted(map(str, duties))),
+            "observation_items": tuple(
+                (key, checker.read_item(ReadItemKind.FACT, str(record.observation_id)))
+                for key, record in sorted({
+                    str(item.proposition_key): item
+                    for item in HtnStore(self.store).list_observations(mission_id)}.items())),
             # ``c-user-<n>`` names the Mission's n-th criterion; a ``file:X`` one names a file
             "criterion_files": tuple(
                 (f"c-user-{number}", statement[len("file:"):].strip())

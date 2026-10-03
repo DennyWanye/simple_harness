@@ -204,6 +204,7 @@ def compile_refinement(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
     criterion_files: Mapping[str, str] | None = None,
 ) -> ProposedPlanDelta:
     """§18.3: emit the partial order, the data bindings, the coverage and the read-set.
@@ -232,6 +233,7 @@ def compile_refinement(
         compiled_from_proposal_id=compiled_from_proposal_id,
         scope_epochs=scope_epochs,
         obligation_items=obligation_items,
+        observation_items=observation_items,
         criterion_files=criterion_files,
     ).delta
 
@@ -255,6 +257,7 @@ def compile_refinement_bundle(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
     criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """The ten steps of implementation design §5.2, in order."""
@@ -444,6 +447,7 @@ def compile_refinement_bundle(
         requirements_revision=requirements_revision,
         scope_epochs=scope_epochs,
         obligation_items=obligation_items,
+        observation_items=observation_items,
     )
     identifier_ = delta_id or _derive_delta_id(draft, current.plan_revision)
     delta = ProposedPlanDelta(
@@ -499,6 +503,7 @@ def compile_candidate_from_snapshot(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
     criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """Pure candidate kernel used by H1H preview.
@@ -522,6 +527,7 @@ def compile_candidate_from_snapshot(
         compiled_from_proposal_id=compiled_from_proposal_id,
         scope_epochs=scope_epochs,
         obligation_items=obligation_items,
+        observation_items=observation_items,
         criterion_files=criterion_files,
     )
 
@@ -1354,6 +1360,7 @@ def build_read_set(
     requirements_revision: int = 0,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
 ) -> SemanticReadSet:
     """ADR-13: what this compilation read that the plan-revision gate does not cover.
 
@@ -1407,6 +1414,9 @@ def build_read_set(
         for witness in draft.precondition_witnesses
         if witness.witness_ref is not None
     ]
+    # 阶段 D：前提所依据的观察（调用方按命题给出、用核对器同一公式读出的条目）。之后同一命题
+    # 有了新观察（真值翻了才会写），这份提案就过期。
+    observation_reads.extend(item for item in observation_items if item not in observation_reads)
     acceptance_reads = [
         ReadItem(
             kind=ReadItemKind.ACCEPTANCE,

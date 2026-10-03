@@ -3080,6 +3080,72 @@ class HierarchicalDispatch:
         )
 
     def run_evidence_round(self, mission_id: str, *, now_ms: int | None = None) -> Any:
+        """One evidence round: re-read what the world may have changed, then look at the
+        UNKNOWN preconditions (阶段 D)."""
+        from ..planning.htn.evidence_round import EvidenceRoundResult
+
+        reread = self._reread_recorded(mission_id, now_ms=now_ms)
+        looked = self._unknown_precondition_round(mission_id, now_ms=now_ms)
+        return EvidenceRoundResult(outcomes=(*reread, *looked.outcomes), unobservable=looked.unobservable)
+
+    def _reread_recorded(self, mission_id: str, *, now_ms: int | None) -> tuple[Any, ...]:
+        """Read the recorded propositions again when the world has moved.
+
+        A desktop Mission's world is its accepted artifacts and its reference material: a
+        step is accepted, a source is replaced, and a proposition recorded earlier may no
+        longer hold — while the start gate only reads what is recorded.  So once per
+        *world mark* (the set of acceptances plus the state of the sources table) every
+        recorded proposition an installed observer can read is asked again, from the
+        question stored on its row; only a changed truth is written (which raises the
+        scope epoch, see ``insert_observation``).  One ``EvidenceReread`` event per mark
+        says what was read and what changed.  An unchanged world is not read again: a
+        seed domain's observer may be expensive, and writing an unchanged reading would
+        stale every planning round in flight."""
+        from ..contracts.evidence_state import truth_change
+        from ..contracts.semantic_base import VersionedRef
+        from ..planning.htn.observation_pipeline import observe_predicate, record_observation
+
+        index = getattr(self._world(), "observer_index", None)
+        if index is None:
+            return ()
+        semantics = self.semantics()
+        mark = content_hash_of({
+            "acceptances": sorted(str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)),
+            "sources": [list(row) for row in self.store.connection.execute(
+                "SELECT path, revision, version_hash, superseded_by, revoked FROM sources"
+                " WHERE mission_id=? ORDER BY path, revision, version_hash", (mission_id,))],
+        })
+        done = f"EvidenceReread:{mission_id}:{mark}"
+        if self.store.connection.execute(
+                "SELECT 1 FROM events WHERE idempotency_key=?", (done,)).fetchone() is not None:
+            return ()
+        questions = semantics.observation_questions(mission_id)
+        moment = int(self.store.now * 1000) if now_ms is None else int(now_ms)
+        written: list[Any] = []
+        read: list[str] = []
+        for question in questions:
+            reference = VersionedRef.from_json(question["predicate_ref"])
+            if index.observer_for(str(reference.id)) is None:
+                continue
+            outcome = observe_predicate(index, reference, question["arguments"], now_ms=moment)
+            read.append(question["proposition_key"])
+            if outcome.record is None:
+                continue  # could not look: nothing is written, the recorded reading stands
+            before, after = truth_change(
+                semantics.list_observations(mission_id, proposition_key=question["proposition_key"]),
+                outcome.record)
+            if after is before:
+                continue
+            written.append(record_observation(semantics, mission_id, outcome, scope_id=question["scope_id"]))
+        if not questions:
+            return ()  # nothing was ever recorded: nothing to read again, and nothing to say
+        append_hierarchical_event(
+            self.store, "EvidenceReread", mission_id, key=f"{mission_id}:{mark}",
+            payload={"mark": mark, "read": read,
+                     "changed": [str(item.record.proposition_key) for item in written]})
+        return tuple(written)
+
+    def _unknown_precondition_round(self, mission_id: str, *, now_ms: int | None = None) -> Any:
         """Look at the UNKNOWN preconditions of every still-open goal, once.
 
         P2.3c part 2c.  Part 2b built the round (``planning.htn.evidence_round``) and

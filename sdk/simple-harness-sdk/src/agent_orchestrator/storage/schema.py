@@ -756,6 +756,7 @@ CREATE TRIGGER assurance_source_obligations_update AFTER UPDATE ON obligations W
 # 恒零列（失败次数、已花 token、已花尝试——改为读时由尝试与结算推出）。义务表更新触发器先删再删列，
 # 然后照迁移 38 原文重建，只去掉引用这三列的子句（与迁移 37、38 的做法一样）。
 DDL_V39 = """
+ALTER TABLE observations ADD COLUMN question_json TEXT NOT NULL DEFAULT '';
 DROP TRIGGER assurance_source_support_members_insert;
 DROP TRIGGER assurance_source_support_members_update;
 DROP TRIGGER assurance_source_support_members_delete;

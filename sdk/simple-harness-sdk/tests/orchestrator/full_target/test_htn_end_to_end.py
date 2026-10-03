@@ -667,6 +667,9 @@ def _register(registry: PredicateRegistry, predicate_id: str):
     return signature
 
 
+from agent_orchestrator.knowledge.predicates import proposition_key as _proposition_key  # noqa: E402
+
+
 @dataclass
 class _FakeObserver:
     """A scripted observer: answers TRUE, answers nothing, or blows up."""
@@ -684,7 +687,6 @@ class _FakeObserver:
         return tuple(self._predicates)
 
     def observe(self, signature, arguments, *, now_ms: int) -> Observation:
-        del arguments
         if self.boom:
             raise RuntimeError("the reader fell over")
         predicate = str(signature.predicate_ref.id)
@@ -692,7 +694,7 @@ class _FakeObserver:
             return unavailable(self._observer_id, predicate, "service unreachable")
         record = ObservationRecord(
             observation_id=f"obs-{predicate}-{now_ms}",
-            proposition_key=content_hash_of({"predicate": predicate}),
+            proposition_key=_proposition_key(signature, arguments),
             polarity=self.answer,
             source_ref=TypedRef(
                 kind=TypedRefKind.OBSERVATION, id=self._observer_id, revision=1, content_hash=HEX_A
@@ -1181,7 +1183,10 @@ def _sub_goal_planner(request: Any) -> Any:
                  step("sub", "sub-goal-1", {"goal": {"op": "constant", "value": "写出 NOTES.md"}})]
         links = [("write", criteria[0]), ("sub", criteria[1])]
         finalizer = "write"
+        ordering: list[dict[str, str]] = []
     else:
+        # 阶段 D：两步负责同一个 ``file:`` 要求就得有先后，否则编译期按写入冲突退回
+        ordering = [{"before": "work-a", "after": "work-b"}]
         steps = [step("work-a", "prepare-delivery", {}), step("work-b", "prepare-delivery", {})]
         links = [("work-a", criteria[0]), ("work-b", criteria[0])]
         finalizer = "work-b"
@@ -1190,7 +1195,7 @@ def _sub_goal_planner(request: Any) -> Any:
         "goal_type_ref": request_body["goal_type_ref"],
         "parameter_schema_ref": request_body["goal_signature"]["parameter_schema_ref"],
         "output_schema_ref": request_body["goal_signature"]["output_schema_ref"],
-        "applicable_when": [], "exploration_assumptions": [], "steps": steps, "ordering": [],
+        "applicable_when": [], "exploration_assumptions": [], "steps": steps, "ordering": ordering,
         "required_capabilities": [], "expected_effects": [],
         "composition": {"criterion_links": [
             {"parent_criterion_id": criterion, "child_step": local, "child_criterion_id": criterion,

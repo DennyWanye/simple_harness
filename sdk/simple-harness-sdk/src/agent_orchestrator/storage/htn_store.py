@@ -33,7 +33,7 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.evidence_state import ObservationRecord, ValidityWitness
+from ..contracts.evidence_state import ObservationRecord, TruthValue, ValidityWitness, truth_change
 from ..contracts.htn import (
     BoundInput,
     ChildBinding,
@@ -180,6 +180,22 @@ class DirtyEntry:
     reason: str
     state: str
 
+
+
+def _observation_question(question: Mapping[str, Any] | None, proposition: str) -> str:
+    """Canonical ``question_json`` of an observation, checked against its proposition key."""
+    from ..contracts.semantic_base import VersionedRef
+
+    if (not isinstance(question, Mapping) or set(question) != {"predicate_ref", "arguments"}
+            or not isinstance(question["arguments"], Mapping)):
+        raise StoreConflict("an observation is stored with the question it answers (predicate_ref, arguments)")
+    predicate = VersionedRef.from_json(question["predicate_ref"]).to_json()
+    arguments = {key: question["arguments"][key] for key in sorted(question["arguments"])}
+    digest = content_hash_of({"predicate": predicate, "arguments": arguments})
+    expected = f"{predicate['id']}@{predicate['version']}#{digest[:32]}"
+    if expected != proposition:
+        raise StoreConflict("the question does not compute back to the observation's proposition key")
+    return canonical_json({"predicate_ref": predicate, "arguments": arguments})
 
 class HtnStore:
     """Insert / get / list for the full-target tables, in contract objects."""
@@ -1342,17 +1358,32 @@ class HtnStore:
         return tuple(ValidityWitness.from_json(json.loads(row[0])) for row in rows)
 
     def insert_observation(
-        self, mission_id: str, observation: ObservationRecord, *, scope_id: str = "mission"
+        self, mission_id: str, observation: ObservationRecord, *, question: Mapping[str, Any] | None,
+        scope_id: str = "mission",
     ) -> ObservationRecord:
+        """The one write entry for an observation.
+
+        ``question`` is what was asked — ``{"predicate_ref", "arguments"}`` — stored on
+        the row so the proposition can be read again; it must compute back to the
+        record's proposition key (an order check, not a judgement).
+
+        The scope's validity epoch is raised here, in the same transaction, when this
+        observation changes a truth that was already known (TRUE/FALSE before, something
+        else after): every witness taken under the old epoch stops being usable.  A
+        first look (UNKNOWN before) and a look at a conflicted proposition raise nothing —
+        no usable witness was ever issued on those."""
         if not isinstance(observation, ObservationRecord):
             raise StoreConflict("insert_observation expects an ObservationRecord")
         mission = identifier(mission_id, "mission_id")
+        asked = _observation_question(question, observation.proposition_key)
         with self._store.transaction():
+            before, after = truth_change(
+                self.list_observations(mission, proposition_key=observation.proposition_key), observation)
             self._insert(
                 "INSERT INTO observations(observation_id,mission_id,proposition_key,polarity,scope_id,"
                 "source_kind,source_id,coverage,observer_id,observed_at_ms,recorded_at_ms,"
-                "query_watermark_ms,valid_until_ms,observation_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "query_watermark_ms,valid_until_ms,observation_json,created_at,question_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     observation.observation_id,
                     mission,
@@ -1369,14 +1400,31 @@ class HtnStore:
                     observation.valid_until_ms,
                     canonical_json(observation.to_json()),
                     self._store.now,
+                    asked,
                 ),
                 f"observation {observation.observation_id} already stored",
             )
+            if before in (TruthValue.TRUE, TruthValue.FALSE) and after is not before:
+                self.bump_epoch(mission, identifier(scope_id, "scope_id"),
+                                bumped_by=f"observation:{observation.observation_id}")
             from .taskgraph_source_events import record_source_change
             from ..contracts.models import sha256_hex
             record_source_change(self._store, mission, kind="observation",
                 source_id=observation.observation_id, revision=1, content_hash=sha256_hex(observation.to_json()))
         return observation
+
+    def observation_questions(self, mission_id: str) -> tuple[dict[str, Any], ...]:
+        """One row per recorded proposition: what was asked and in which scope (the latest
+        observation's), for the re-read."""
+        rows = self._store.connection.execute(
+            "SELECT proposition_key, scope_id, question_json FROM observations WHERE mission_id=?"
+            " ORDER BY observed_at_ms, observation_id", (identifier(mission_id, "mission_id"),)).fetchall()
+        found: dict[str, dict[str, Any]] = {}
+        for key, scope, raw in rows:
+            if not raw:
+                raise StoreConflict(f"observation of {key} records no question; it cannot be read again")
+            found[str(key)] = {"proposition_key": str(key), "scope_id": str(scope), **json.loads(raw)}
+        return tuple(found[key] for key in sorted(found))
 
     def get_observation(self, observation_id: str) -> ObservationRecord:
         row = self._one(

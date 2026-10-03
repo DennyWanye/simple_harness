@@ -63,7 +63,7 @@
     {
       "component": "evidence",
       "source_path": "agent_orchestrator/contracts/evidence_state.py",
-      "source_sha256": "d251feb15bd77a1c58c5b983b3a30bd78eb5c2228e3f29b8333e6d9304ee24de"
+      "source_sha256": "c8e77432dddcbaa8dda7b6b05b0e30944d597ea18125ac01df03c71598cb4f59"
     },
     {
       "component": "models",

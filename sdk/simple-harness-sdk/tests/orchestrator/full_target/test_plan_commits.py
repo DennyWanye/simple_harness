@@ -611,10 +611,16 @@ def _criterion(identifier: str = "c-1") -> Criterion:
 
 
 def _observe(semantics: HtnStore, mission_id: str, name: str, key: str, at: int) -> None:
+    """``key`` names the file asked about; the proposition is ``desktop.file-present(path=key)``."""
+    from agent_orchestrator.knowledge.predicates import proposition_key
+    from agent_orchestrator.planning.htn.observers.workspace import workspace_predicates
+
+    signature = workspace_predicates()[0]
     semantics.insert_observation(mission_id, ObservationRecord(
-        observation_id=name, proposition_key=key, polarity=True,
+        observation_id=name, proposition_key=proposition_key(signature, {"path": key}), polarity=True,
         source_ref=TypedRef(kind=TypedRefKind.OBSERVATION, id=name, revision=1, content_hash="a" * 64),
-        observed_at_ms=at, recorded_at_ms=at))
+        observed_at_ms=at, recorded_at_ms=at),
+        question={"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": key}})
 
 
 def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot_be_fooled_by_a_ghost(tmp_path):

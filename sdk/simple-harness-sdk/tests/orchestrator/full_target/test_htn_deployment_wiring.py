@@ -274,14 +274,18 @@ def test_the_evidence_snapshot_is_read_from_the_store_every_time(product_mission
     assert after.snapshot_id != before.snapshot_id
 
 
-def test_a_counter_observation_is_not_outvoted_in_the_snapshot(product_mission) -> None:
+def test_the_latest_reading_of_one_observer_is_what_the_snapshot_says(product_mission) -> None:
+    """阶段 D（偏差裁决《观察重读》）：同一个观察器先说成立、后说不成立，快照按它最新的一次读
+    ——不成立；两条记录都留在库里。不同观察器一正一反仍是冲突（见
+    ``product_world/test_desktop_preconditions.py`` 的函数级用例）。"""
     store, mission = product_mission.loop.store, product_mission.mission
     semantics = HtnStore(store)
     world = build_planning_world(mission.id, domains=("code",), semantics=semantics)
     _observe(world, semantics, mission.id, polarity=True)
     _observe(world, semantics, mission.id, polarity=False, at=2)
     entry = world.snapshot().entries[0]
-    assert entry.truth() is TruthValue.CONFLICT
+    assert entry.truth() is TruthValue.FALSE
+    assert len(semantics.list_observations(mission.id)) == 2
 
 
 def test_the_fixture_env_is_filled_by_the_real_assembly() -> None:

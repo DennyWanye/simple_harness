@@ -379,11 +379,22 @@ class EvidenceEntry:
         availability: Availability = Availability.READABLE,
         not_after_ms: int | None = None,
     ) -> EvidenceEntry:
-        support = NO_SUPPORT
-        authoritative_negative = False
-        for observation in observations:
+        # 同一个观察器对同一命题只取它最新的那条（阶段 D）：再看一次就是"重算，不沿用旧结论"。
+        # 不同观察器之间照旧合并——反面观察不被票数压倒。没有观察器编号的记录各算一个来源。
+        # 旧行不删不改，这里只是不再把一个来源的旧读数和它自己的新读数算成两票。
+        latest: dict[str, ObservationRecord] = {}
+        for position, observation in enumerate(observations):
             if observation.proposition_key != proposition_key:
                 raise ContractError("observation belongs to a different proposition")
+            source = observation.observer_id or f"\x00anonymous:{position}"
+            held = latest.get(source)
+            if held is None or (observation.observed_at_ms, observation.observation_id) >= (
+                    held.observed_at_ms, held.observation_id):
+                latest[source] = observation
+        used = tuple(sorted(latest.values(), key=lambda item: (item.observed_at_ms, item.observation_id)))
+        support = NO_SUPPORT
+        authoritative_negative = False
+        for observation in used:
             support = support.merge(observation.support)
             authoritative_negative = authoritative_negative or observation.is_authoritative_negative
         return cls(
@@ -391,7 +402,7 @@ class EvidenceEntry:
             support=support,
             validity=validity,
             availability=availability,
-            observation_refs=tuple(observation.source_ref for observation in observations),
+            observation_refs=tuple(observation.source_ref for observation in used),
             authoritative_negative=authoritative_negative,
             not_after_ms=not_after_ms,
         )
@@ -445,6 +456,17 @@ class EvidenceEntry:
             authoritative_negative=data.get("authoritative_negative", False),
             not_after_ms=data.get("not_after_ms"),
         )
+
+
+def truth_change(
+    existing: tuple[ObservationRecord, ...], new: ObservationRecord
+) -> tuple[TruthValue, TruthValue]:
+    """A proposition's truth before and after one more observation, by the one rule
+    (:meth:`EvidenceEntry.from_observations`).  The epoch writer and the re-read share it."""
+
+    key = new.proposition_key
+    before = EvidenceEntry.from_observations(key, tuple(existing)).truth() if existing else TruthValue.UNKNOWN
+    return before, EvidenceEntry.from_observations(key, (*existing, new)).truth()
 
 
 @dataclass(frozen=True, slots=True)
@@ -801,6 +823,7 @@ def limitation_text(value: object, name: str) -> str:
 
 
 __all__ = (
+    "truth_change",
     "DEFAULT_PRECONDITION_PHASE",
     "NEGATIVE_SUPPORT",
     "NO_SUPPORT",

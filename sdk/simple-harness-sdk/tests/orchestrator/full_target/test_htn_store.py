@@ -1760,13 +1760,29 @@ def test_the_index_key_still_separates_two_different_acceptances(htn: HtnStore) 
 
 
 def test_an_observation_round_trips(htn: HtnStore) -> None:
-    record = observation()
-    htn.insert_observation(MISSION, record, scope_id="mission-1")
+    """An observation is stored with the question it answers; one without, or whose question
+    does not compute back to its proposition key, is refused (阶段 D)."""
+    from dataclasses import replace
+
+    from agent_orchestrator.knowledge.predicates import proposition_key
+    from agent_orchestrator.planning.htn.observers.workspace import workspace_predicates
+
+    signature = workspace_predicates()[0]
+    question = {"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": "alpha.md"}}
+    key = proposition_key(signature, question["arguments"])
+    record = replace(observation(), proposition_key=key)
+    with pytest.raises(StoreConflict, match="question"):
+        htn.insert_observation(MISSION, record, question=None)
+    with pytest.raises(StoreConflict, match="compute back"):
+        htn.insert_observation(MISSION, observation(), question=question)
+    htn.insert_observation(MISSION, record, scope_id="mission-1", question=question)
     assert htn.get_observation("observation-1") == record
-    assert htn.list_observations(MISSION, proposition_key="source-readable(alpha)") == (record,)
+    assert htn.list_observations(MISSION, proposition_key=key) == (record,)
     assert htn.list_observations(MISSION, proposition_key="other") == ()
+    assert htn.observation_questions(MISSION) == (
+        {"proposition_key": key, "scope_id": "mission-1", **question},)
     with pytest.raises(StoreConflict, match="already stored"):
-        htn.insert_observation(MISSION, record)
+        htn.insert_observation(MISSION, record, question=question)
 
 
 def test_epochs_advance_and_dirty_subjects_queue_up(htn: HtnStore) -> None:
