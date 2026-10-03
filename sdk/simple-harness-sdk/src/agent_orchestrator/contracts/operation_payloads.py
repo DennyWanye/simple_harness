@@ -60,6 +60,10 @@ class NonapplicationProofKind(StrEnum):
     SERVER_CANCELLED_BEFORE_APPLY = "SERVER_CANCELLED_BEFORE_APPLY"
     SERVER_DEADLINE_FENCED = "SERVER_DEADLINE_FENCED"
     EXECUTOR_NO_SEND_FINAL = "EXECUTOR_NO_SEND_FINAL"
+    #: 阶段 B 裁决第 1、3 类：连接器自己的台账证明这次链接从未发生（没有意图行，或最后一行是"已放弃"）。
+    CONNECTOR_LEDGER_NOT_LINKED = "CONNECTOR_LEDGER_NOT_LINKED"
+    #: 阶段 B 裁决第 3 类：人裁定这次对外动作没有生效——人的裁定本身就是结论，不是连接器的能力。
+    HUMAN_RULED_NOT_APPLIED = "HUMAN_RULED_NOT_APPLIED"
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -872,6 +876,9 @@ class ConnectorOperationProfileV1(_Payload):
             raise ContractError(
                 "connector_profile.nonapplication_proofs must not contain duplicates"
             )
+        if NonapplicationProofKind.HUMAN_RULED_NOT_APPLIED in proofs:
+            # A person's ruling is never a connector capability (阶段 B 裁决第 3 类).
+            raise ContractError("connector_profile cannot claim a human ruling as its proof")
         object.__setattr__(self, "nonapplication_proofs", proofs)
         if not isinstance(self.authority_source_ref, TypedRef):
             raise ContractError("connector_profile.authority_source_ref must be a TypedRef")

@@ -289,7 +289,25 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
             status = orch.commit.operation_intent_status(
                 head["intent_id"], tenant_id=authority["tenant_id"], principal=principal)
             if status.get("materialization") is not None:
-                continue  # 已进入执行链，由批准卡片和执行流程接手
+                # 已进入执行链，由批准卡片和执行流程接手——除非这一版的动作已经证实没生效、
+                # 且不是人拒绝的（阶段 B 裁决第 1 类）：按原内容重交一张新卡，有上限。
+                action = _materialized_action(store, head["intent_id"])
+                if action is None or not _proven_not_applied(store, action):
+                    continue
+                if len(mine) > SYSTEM_RESUBMIT_CAP:
+                    from ..runtime.operation_reconciliation import nonapplication_outcome
+
+                    attempts = [nonapplication_outcome(store, item) for item in
+                                (_materialized_action(store, intent["intent_id"]) for intent in mine)
+                                if item is not None and item["state"] == "FAILED"]
+                    plans.append({"effect_key": effect.effect_key, "stop_failed": {
+                        "reason": "publish_not_applied", "effect_key": effect.effect_key,
+                        "target": operation[2], "attempts": attempts}})
+                    continue
+                supersedes = head["intent_id"]
+                plans.append(_resubmit_plan(effect, operation, supersedes, mission_id, spec_hash,
+                                            row, acceptance, artifact, len(mine), authority))
+                continue
             state = str(status.get("state"))
             if head["candidate_artifact_id"] == artifact.id:
                 if state in _REFUSED_VERDICTS:
@@ -305,13 +323,33 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
                         "explanation": f"发布申请的审阅已 {len(mine)} 次没能完成"}})
                     continue
             supersedes = head["intent_id"]  # 内容换了新版本，或审阅没做成：替代重交
-        plans.append({
+        plans.append(_resubmit_plan(effect, operation, supersedes, mission_id, spec_hash,
+                                    row, acceptance, artifact, len(mine), authority))
+    return plans
+
+
+def _materialized_action(store: Any, intent_id: str) -> Any:
+    receipt = store.get_receipt("materialize:" + intent_id)
+    return None if receipt is None else store.get_action(str(receipt.get("action_key") or ""))
+
+
+def _proven_not_applied(store: Any, action: Any) -> bool:
+    """FAILED after leaving our hands, with a stored proof it never happened."""
+    from ..runtime.operation_reconciliation import stored_negative_proof
+
+    return (action["state"] == "FAILED" and int(action.get("handoffs") or 0) >= 1
+            and stored_negative_proof(store, action))
+
+
+def _resubmit_plan(effect: Any, operation: Any, supersedes: Any, mission_id: str, spec_hash: str,
+                   row: Any, acceptance: Any, artifact: Any, ordinal: int, authority: Any) -> dict[str, Any]:
+    return {
             "effect_key": effect.effect_key, "target": operation[2], "supersedes": supersedes,
             "command": SubmitOperationIntentV2(
                 schema_version=2, mission_id=mission_id,
                 idempotency_key=derive_id("system-operation", mission_id, spec_hash,
                                           effect.effect_key, str(acceptance.acceptance_id),
-                                          artifact.id, str(len(mine))),
+                                          artifact.id, str(ordinal)),
                 intent_source=OperationIntentSourceV2(
                     OperationIntentSourceKind.AUTHORIZED_SLOT,
                     origin_receipt_id=str(row["approval_receipt_id"]), slot_key=effect.effect_key),
@@ -323,8 +361,7 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
                 supersedes_intent_id=supersedes,
                 completion_slot=CompletionSlotV2(spec_hash, effect.effect_key)),
             "tenant_id": authority["tenant_id"], "principal_id": authority["issuer_id"],
-        })
-    return plans
+        }
 
 
 def prepare_system_operations(orch: Any, mission_id: str) -> bool:
@@ -334,6 +371,13 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
     for plan in pending_system_operations(orch, mission_id):
         if "stop" in plan:
             return _stop(orch, mission_id, plan["stop"])
+        if "stop_failed" in plan:
+            # 阶段 B 裁决第 1 类：同一效果按原内容重交到上限仍没生效——具名停，列出每次的结局
+            from ..contracts.state_machines import MissionStopReason
+
+            orch._commit_fail_mission(mission_id, stop_reason=MissionStopReason.ACTION_FAILED,
+                                      detail=dict(plan["stop_failed"]))
+            return True
         if plan.get("ask"):
             mission = orch.store.get_mission(mission_id)
             if _ask_planner_for_source(orch, mission, HtnStore(orch.store), plan["effect_key"],

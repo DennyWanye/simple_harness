@@ -349,10 +349,21 @@ class ActionCommitsMixin:
             live = [v for v in versions if v["state"] != "REFUSED"]
             latest = live[-1] if live else None
             phash = params_hash(cand["params"])
+            from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
+
+            # 阶段 B 裁决第 1 类: a failed version that left our hands is offered again only
+            # once it is proven not to have happened; same content is then a new version,
+            # never "the same candidate delivered again".
+            handed_failure = (latest is not None and latest["state"] == "FAILED"
+                              and int(latest.get("handoffs") or 0) >= 1)
+            proven_failure = handed_failure and stored_negative_proof(self._store, latest)
+            unproven_failure = handed_failure and not proven_failure
             if (
                 latest is not None
                 and latest["params_hash"] == phash
                 and latest["artifact_hash"] == artifact_hash
+                and not proven_failure
+                and not unproven_failure
             ):
                 if planning_origin is not None:
                     marker = {
@@ -369,7 +380,9 @@ class ActionCommitsMixin:
             refused: str | None = None
             after: str | None = None
             if latest is not None:
-                if latest["state"] in IN_FLIGHT_ACTION_STATES:
+                if unproven_failure:
+                    refused = "action_outcome_unproven"  # it may have happened: never send again
+                elif latest["state"] in IN_FLIGHT_ACTION_STATES:
                     refused = "action_in_flight"  # never race a handed-off version
                 elif latest["state"] == "SUCCEEDED":
                     refused = "action_already_executed"  # reality moved; a new Mission asks again
@@ -403,6 +416,9 @@ class ActionCommitsMixin:
                 "history": [],
                 "created_at": self._store.now,
             }
+            if proven_failure:
+                # The facts the next card carries: how the last attempt did not happen.
+                record["previous_attempt"] = nonapplication_outcome(self._store, latest)
             if refused is not None:
                 blocked_by = "" if latest is None else str(latest["action_key"])
                 record.update(state="REFUSED", refused=refused, blocked_by=blocked_by)
@@ -556,6 +572,8 @@ class ActionCommitsMixin:
                         "reason": record["reason"],
                         # 2026-09-29：系统按已批准效果写的申请单理由不是模型写的，卡片不该标"未核实"
                         "reason_source": record.get("reason_source", "model (untrusted)"),
+                        **({"previous_attempt": record["previous_attempt"]}
+                           if record.get("previous_attempt") else {}),
                     },
                     "comments": [],
                     "created_at": self._store.now,
@@ -1247,10 +1265,22 @@ class ActionCommitsMixin:
             raise ActionCommitError(f"a ruling is succeeded or failed, not {outcome!r}")
         if not basis.strip() or not evidence:
             raise ActionCommitError("a ruling on an UNKNOWN action needs a basis and evidence")
+        from ..storage.planning_admission_store import PlanningAdmissionStore
+        from ..runtime.operation_reconciliation import stored_negative_proof
+
         with self._store.transaction():
             action = self._store.get_action(action_key)
-            if action is None or action["state"] != "UNKNOWN":
+            linked = action is not None and PlanningAdmissionStore(
+                self._store).get_operation_action_link_for_action(action_key) is not None
+            # 阶段 B 裁决第 3 类: a failed action that left our hands without a proof that it
+            # did not happen keeps the operation gate shut; a person may rule it not applied.
+            unproven_failure = (action is not None and action["state"] == "FAILED" and linked
+                                and int(action.get("handoffs") or 0) >= 1
+                                and not stored_negative_proof(self._store, action))
+            if action is None or not (action["state"] == "UNKNOWN" or unproven_failure):
                 raise ActionCommitError(f"only an UNKNOWN action takes a ruling ({action_key})")
+            if unproven_failure and outcome != "failed":
+                raise ActionCommitError("a failed action can only be ruled not applied")
             override_id = f"override:{action_key}:h{int(action.get('handoffs') or 0)}"
             actor = {"actor_type": "user", "actor_id": principal.principal_id}
             record = {
@@ -1274,13 +1304,20 @@ class ActionCommitsMixin:
                 payload=record,
                 **actor,
             )
-            return self._resolve_action(
-                action,
-                "SUCCEEDED" if outcome == "succeeded" else "FAILED",
-                error="" if outcome == "succeeded" else "human_ruled_failed",
-                extra={"resolved_by": principal.principal_id, "override_id": override_id},
-                actor=actor,
-            )
+            if action["state"] == "UNKNOWN":
+                action = self._resolve_action(
+                    action,
+                    "SUCCEEDED" if outcome == "succeeded" else "FAILED",
+                    error="" if outcome == "succeeded" else "human_ruled_failed",
+                    extra={"resolved_by": principal.principal_id, "override_id": override_id},
+                    actor=actor,
+                )
+            if outcome == "failed" and linked:
+                # The ruling is the proof, in this same transaction: the operation gate
+                # opens and the effect can be offered again (阶段 B 裁决第 3 类).
+                action = self.record_human_nonapplication(
+                    action_key, override=record, principal_id=principal.principal_id)
+            return action
 
     # ------------------------------------------------------------ closure (D7-2'' / D7-7')
     def record_criteria_judgment(

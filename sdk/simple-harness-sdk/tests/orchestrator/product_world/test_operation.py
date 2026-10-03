@@ -229,3 +229,80 @@ def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_
             assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
 
     asyncio.run(case())
+
+
+def _pending_cards(world: Any, mission_id: str) -> list[dict[str, Any]]:
+    return [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+
+
+async def _until_card(world: Any, mission_id: str, seen: int) -> dict[str, Any]:
+    for _ in range(30):
+        await world.drain()
+        cards = _pending_cards(world, mission_id)
+        if cards and len(world.store.list_actions(mission_id)) > seen:
+            return cards[0]
+    raise AssertionError("no new approval card")
+
+
+def _block_with_someone_elses_file(published: Any, mission_id: str, world: Any) -> None:
+    """Someone else's file already sits at the exact name the pending version would publish to."""
+    from pathlib import PurePosixPath
+
+    from agent_orchestrator.runtime.connectors_publish import _name_for
+
+    [action] = [a for a in world.store.list_actions(mission_id) if a["state"] == "AWAITING_APPROVAL"]
+    name = _name_for(action["idempotency_key"], PurePosixPath(TARGET))
+    (published / "reports").mkdir(parents=True, exist_ok=True)
+    (published / "reports" / name).write_text("别人放的", encoding="utf-8")
+
+
+@pytest.mark.parametrize("refusals", [1, 3])
+def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp_path, refusals):
+    """阶段 B 裁决第 1 类：发布服务明确拒绝（目标处已有别人放的同名文件）。此前动作停在"未了结"，
+    闸门关着，规划器和人都收不到。现在发布台账证明它从未落地，系统按原内容出新卡（卡上写着服务
+    原文理由与第几次）；人再批准就发布。同一效果按原内容最多重交 2 次（共 3 张卡），仍没生效以
+    "动作失败"具名停，详情列出每次的结局。别人的文件从来不被覆盖。
+
+    **改坏检验**：档案里不登记对账适配器 → 动作停在未了结、没有新卡 → 变红。
+    """
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": f"refused-{refusals}"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            card = await _until_card(world, mission_id, 0)
+            for attempt in range(1, refusals + 1):
+                _block_with_someone_elses_file(published, mission_id, world)
+                world.control.decide(card["request_id"], "approve")
+                if attempt == 3:
+                    break
+                card = await _until_card(world, mission_id, attempt)
+                [latest] = [a for a in world.store.list_actions(mission_id) if a["state"] == "AWAITING_APPROVAL"]
+                assert latest["previous_attempt"]["outcome"] == "service_refused"
+                assert "already exists" in latest["previous_attempt"]["reason"]
+                assert card["summary"]["previous_attempt"] == latest["previous_attempt"]
+            if refusals == 3:
+                mission = await world.run_until_settled(mission_id, rounds=20)
+                assert str(mission.status.value) == "FAILED" and mission.stop_reason == "action_failed"
+                detail = mission.final_report["detail"]
+                assert detail["reason"] == "publish_not_applied"
+                assert [item["outcome"] for item in detail["attempts"]] == ["service_refused"] * 3
+                assert len(world.store.list_actions(mission_id)) == 3  # never a fourth card
+            else:
+                world.control.decide(card["request_id"], "approve")
+                mission = await world.run_until_settled(mission_id, rounds=20)
+                assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+                ours = [p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") != "别人放的"]
+                assert len(ours) == 1
+            others = [p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") == "别人放的"]
+            assert len(others) == refusals  # someone else's files are never overwritten
+
+    asyncio.run(case())

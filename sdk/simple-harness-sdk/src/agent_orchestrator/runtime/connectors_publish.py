@@ -43,6 +43,8 @@ from .connectors import (
 
 PUBLISH_NAME = "file_publish"
 LEDGER_FILE = "ledger.jsonl"
+LOCK_FILE = "ledger.lock"
+LEDGER_PROTOCOL = "file-publish-ledger-v1"
 
 
 def _hash(data: bytes) -> str:
@@ -214,6 +216,29 @@ class FilePublishConnector:
         data = _read_nofollow(Path(str(params["storage_uri"])))
         if _hash(data) != content_hash:
             raise ConnectorRejected("artifact_bytes_mismatch")
+        # One publish at a time holds the ledger lock from the duplicate check to its last
+        # line, so a reconciler that gets the lock sees a finished history (阶段 B 裁决第 1 类).
+        with self._exclusive():
+            return self._execute_locked(target, relative, params, data, content_hash,
+                                        idempotency_key=idempotency_key)
+
+    def _exclusive(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def held() -> Any:
+            self._ledger_dir.mkdir(parents=True, exist_ok=True)
+            with (self._ledger_dir / LOCK_FILE).open("a") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+        return held()
+
+    def _execute_locked(self, target: str, relative: PurePosixPath, params: Mapping[str, Any],
+                        data: bytes, content_hash: str, *, idempotency_key: str) -> Receipt:
         done = self._entries(idempotency_key)
         if done and done[-1].get("state") != "ABORTED":  # this key already reached the link
             return self._published(done[-1])
@@ -286,6 +311,34 @@ class FilePublishConnector:
             return handle.read()
 
     # ---------------------------------------------------------------- reconciliation
+    def ledger_record(self, idempotency_key: str) -> dict[str, Any]:
+        """The ledger's whole history for one key, read under the ledger lock.
+
+        The raw protocol document a reconciliation proof rests on (阶段 B 裁决第 1、3 类).
+        A publish in flight holds the lock, so this never answers mid-publish: it raises
+        as if the service could not be reached, and the reconciler asks again later."""
+
+        self._ledger_dir.mkdir(parents=True, exist_ok=True)
+        with (self._ledger_dir / LOCK_FILE).open("a") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise ConnectorTransportError("file_publish: a publish is in progress") from error
+            try:
+                lines = 0
+                if self.ledger_path.is_file():
+                    lines = sum(1 for line in self.ledger_path.read_text(encoding="utf-8").splitlines()
+                                if line.strip())
+                return {
+                    "protocol": LEDGER_PROTOCOL,
+                    "ledger": _hash(str(self.ledger_path).encode("utf-8")),
+                    "key": idempotency_key,
+                    "entries": self._entries(idempotency_key),
+                    "line_count": lines,
+                }
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def lookup(self, idempotency_key: str) -> Receipt | None:
         entries = self._entries(idempotency_key)
         if not entries:
