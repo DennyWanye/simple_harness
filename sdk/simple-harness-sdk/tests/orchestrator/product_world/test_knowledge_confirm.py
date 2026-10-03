@@ -92,9 +92,7 @@ def test_confirmed_claim_becomes_verified_knowledge(tmp_path):
             assert support["acceptance_id"].startswith("acc-") and support["knowledge"] == []
             [artifact] = support["artifacts"]
             assert set(artifact) == {"id", "version", "content_hash"}
-            # 依据记在知识记录里，不写保证通道读的支持集合表——否则本任务所有验收证书一起过期
-            assert store.connection.execute(
-                "SELECT COUNT(*) FROM justification_sets WHERE mission_id=?", (mission_id,)).fetchone()[0] == 0
+            # 依据记在知识记录里；写知识不让本任务的验收证书"依据已变"
             events = list(store.list_events(mission_id))
             assert not [e for e in events if e.type == "AssuranceCloseoutEvaluated"
                         and "EVIDENCE_STALE" in e.payload.get("reasons", ())]

@@ -50,8 +50,6 @@ def read_repair_impact_indexes(
         methods[key].update(str(child.occurrence_id) for child in instance.child_bindings)
         for child in instance.child_bindings:
             support[str(child.goal_occurrence_id or child.occurrence_id)].add(str(instance.effective_goal_occurrence_id))
-    for member_id, subject_id in htn.support_dependency_edges(mission_id):
-        support[member_id].add(subject_id)
     for acceptance in htn.list_acceptances(mission_id):
         key = str(acceptance.acceptance_id)
         accepts[key].add(str(acceptance.task_id))

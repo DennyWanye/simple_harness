@@ -38,20 +38,16 @@ from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.root_gate import CurrentReadPermission
 from ..contracts import Artifact
-from ..contracts.evidence_state import ObservationRecord, TruthValue
+from ..contracts.evidence_state import TruthValue
 from ..contracts.resolution import ReviewRecord
-from ..contracts.semantic_base import TypedRef, content_hash_of
+from ..contracts.semantic_base import content_hash_of
 from ..knowledge.assurance_sources import (
-    AdmittedRule,
     CheckAnchorInput,
-    JustificationInput,
-    ObservationInput,
     ReviewAnchorInput,
     SupportEvaluation,
     evaluate_acceptance_support,
     support_fingerprint,
 )
-from ..knowledge.predicates import PredicateSignature
 from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
@@ -141,10 +137,8 @@ class AssuranceValidity:
     """Deployment-owned current use evaluator bound to one CommitService.
 
     Registered like the local-check adapter: a trusted deployment collaborator,
-    never a Host- or model-selectable object. ``resolve_signature`` and
-    ``admitted_rules`` come from the deployment's predicate registry and
-    approved rule set; when absent, only the fixed system predicates exist and
-    every stored deployment observation/rule is rejected as unregistered.
+    never a Host- or model-selectable object.  The acceptance support is decided
+    by the official review and the current check results alone.
     """
 
     def __init__(
@@ -156,8 +150,6 @@ class AssuranceValidity:
         cas: Any,
         check_adapter: Any,
         authority: CurrentAuthority,
-        resolve_signature: Callable[[str], PredicateSignature | None] | None = None,
-        admitted_rules: Mapping[str, AdmittedRule] | None = None,
         maximum_blob_bytes: int = 32 * 1024 * 1024,
     ) -> None:
         self.commit = commit
@@ -167,8 +159,6 @@ class AssuranceValidity:
         self.cas = cas
         self.check_adapter = check_adapter
         self.authority = authority
-        self.resolve_signature = resolve_signature
-        self.admitted_rules = dict(admitted_rules or {})
         self.maximum_blob_bytes = integer(maximum_blob_bytes, minimum=1)
         self._candidates: dict[tuple[str, str], CandidateUseCertificate] = {}
         # certificate_id -> Store transaction generation in which it was locked
@@ -505,7 +495,6 @@ class AssuranceValidity:
             ).fetchone()
             if policy_row is None:
                 raise AssuranceError("ASSURANCE_PROFILE_UNBOUND")
-        observations, justifications = _snapshot_sources(complete)
         anchors = []
         for ref, check in consumed_bindings.items():
             current = next((value for use_ref, value in check_grades if use_ref == ref), None)
@@ -525,10 +514,6 @@ class AssuranceValidity:
             subject_hash=target.pin.content_hash,
             review=ReviewAnchorInput(review_ref, acceptable, side_row["created_at_ms"]),
             checks=tuple(anchors),
-            observations=observations,
-            justification_sets=justifications,
-            resolve_signature=self.resolve_signature,
-            admitted_rules=self.admitted_rules,
         )
         reads = [item.read_item for item in metadata] + [item.read_item for item in complete]
         for _, permission in permissions:
@@ -825,44 +810,6 @@ def _identity_json(identity: UseIdentity) -> dict[str, str]:
         "purpose": identity.purpose,
         "root_incarnation_id": identity.root_incarnation_id,
     }
-
-
-def _snapshot_sources(
-    complete: tuple[CompleteRead, ...],
-) -> tuple[tuple[ObservationInput, ...], tuple[JustificationInput, ...]]:
-    """Decode the complete observation/justification query sets already read."""
-    by_kind = {}
-    for read in complete:
-        by_kind[decode(read.query_key)["query_kind"]] = read
-    for kind in ("observations", "justification_sets", "support_members"):
-        if kind not in by_kind:
-            raise AssuranceError("EVIDENCE_EVALUATION_INCOMPLETE", kind)
-    observations = []
-    for encoded in by_kind["observations"].rows:
-        row = decode(encoded)
-        record = ObservationRecord.from_json(decode(row["observation_json"]))
-        observations.append(
-            ObservationInput(record, row["scope_id"], content_hash_of(record.to_json()))
-        )
-    members: dict[str, list[tuple[TypedRef, bool]]] = {}
-    for encoded in by_kind["support_members"].rows:
-        row = decode(encoded)
-        members.setdefault(row["set_id"], []).append(
-            (TypedRef.from_json(decode(row["member_json"])), bool(row["polarity"]))
-        )
-    justifications = []
-    for encoded in by_kind["justification_sets"].rows:
-        row = decode(encoded)
-        justifications.append(
-            JustificationInput(
-                row["set_id"],
-                row["subject_kind"],
-                row["subject_id"],
-                row["rule_ref"],
-                tuple(members.get(row["set_id"], ())),
-            )
-        )
-    return tuple(observations), tuple(justifications)
 
 
 __all__ = (

@@ -51,7 +51,7 @@ def test_a_new_library_has_no_money_columns(tmp_path) -> None:
         assert not columns & set(_columns(path, table)), table
     sql = _trigger_sql(path)
     assert sql is not None and "spent_cost_micros" not in sql
-    assert "NEW.spent_tokens IS NOT OLD.spent_tokens" in sql
+    assert "NEW.fuel_used IS NOT OLD.fuel_used" in sql
 
 
 def test_published_migration_text_is_unchanged() -> None:
@@ -91,7 +91,10 @@ def test_a_version_37_library_opens_and_loses_exactly_those_columns(
     before = {table: _columns(path, table) for table in DROPPED}
     assert "spent_cost_micros" in (_trigger_sql(path) or "")
 
-    Store.open(path).close()
+    # Only migration 38 is under test here; 39 (stage D) has its own file.
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:38])
+        Store.open(path).close()
 
     for table, columns in DROPPED.items():
         assert columns <= set(before[table])

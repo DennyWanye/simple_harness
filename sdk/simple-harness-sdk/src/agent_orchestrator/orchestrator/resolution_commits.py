@@ -226,8 +226,7 @@ class AcceptReviewCommand:
 
     ``independence`` and ``posture`` carry no defaults on purpose — see the module
     docstring.  ``read_set`` is what the proposer read while deciding, re-checked
-    item by item inside the transaction (AER §7: the *support set* version, not only
-    the individual evidence rows).
+    item by item inside the transaction (AER §7).
     """
 
     command_id: str

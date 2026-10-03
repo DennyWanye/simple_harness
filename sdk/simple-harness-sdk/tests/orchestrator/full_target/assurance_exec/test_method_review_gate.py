@@ -181,12 +181,14 @@ def test_a_method_review_that_ends_without_a_verdict_is_reported_to_the_planner(
     asyncio.run(case())
 
 
-def test_a_ruling_question_that_went_stale_ends_the_wait_instead_of_holding_it_for_ever(tmp_path):
-    """独立核验发现：裁决题在用户回答前过期（计划、要求或作用域纪元变了），这份提案此前会
-    永远停在"在等"——既不出结论，也让停滞检测对这个任务失效。现在按"没有结论"上报。
+def test_a_ruling_question_is_not_retired_by_an_epoch_change(tmp_path):
+    """HTN 补齐阶段 D（偏差单 6）：问人题目只绑计划修订号与要求修订号，不绑作用域纪元。
 
-    纪元由它唯一的写入函数 ``bump_epoch`` 推进（裁决①c：产品写入方排在阶段 D/E），模拟的
-    是"等人回答期间别处一次合法的并发写"。"""
+    纪元管的是依据凭证还能不能用，不是这个问题该不该问；纪元一动就收回用户面前的裁决题，
+    等于把系统内部事实变成对用户的打扰。纪元由它唯一的写入函数 ``bump_epoch`` 推进。
+
+    原用例"裁决题过期（纪元变了）→ 按没有结论上报"的触发方式随之失效；过期上报这条路径
+    现在只能由计划或要求修订号变化触发，留待有真实写方后补。"""
 
     async def case():
         unsure = review("INCONCLUSIVE", limitation="cannot tell")
@@ -194,18 +196,10 @@ def test_a_ruling_question_that_went_stale_ends_the_wait_instead_of_holding_it_f
         async with assured_loop(tmp_path, scripted) as world:
             questions = PlanningHumanStore(world.store)
             assert await run_until(world, lambda w: questions.pending(w.mission.id))
-            # the world the question was asked in is superseded before the person answers
-            asked_at = world.htn.epoch(world.mission.id, "mission")
-            while world.htn.epoch(world.mission.id, "mission") == asked_at:
-                world.htn.bump_epoch(world.mission.id, "mission", bumped_by="fixture")
-            assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
-            [reviewed] = events_of(world, "PlanningMethodReviewed")
-            assert reviewed.payload["outcome"] == "NO_VERDICT"
-            assert reviewed.payload["verdict"] == "INCONCLUSIVE"
-            assert "stale" in reviewed.payload["reason"]
-            [question] = questions.list(world.mission.id)
-            assert question["state"] == "STALE"
+            world.htn.bump_epoch(world.mission.id, "mission", bumped_by="fixture")
             await spin(world, 10)
-            assert not world.loop._has_pending_planning_waits(world.mission.id)
+            [question] = questions.list(world.mission.id)
+            assert question["state"] == "PENDING"
+            assert events_of(world, "PlanningMethodReviewed") == []
             assert _versions(world) == []
     asyncio.run(case())

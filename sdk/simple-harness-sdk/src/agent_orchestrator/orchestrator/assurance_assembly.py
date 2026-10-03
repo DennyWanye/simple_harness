@@ -318,8 +318,6 @@ class AssuranceDeploymentPorts:
     # Unique final writer for a READY closeout (handoff item 7); None installs
     # ``assurance_final_writer.finalize_assured_mission`` bound to this commit.
     finalizer: Callable[[str, Mapping[str, Any]], AssuranceRef | None] | None = None
-    resolve_signature: Any | None = None
-    admitted_rules: Mapping[str, Any] | None = None
     read_ttl_ms: int = DEFAULT_READ_TTL_MS
     # SHA-256 identity of the Host build that reads through the S25 verbs; None
     # binds the constant "unbound" digest (isolated candidates, seams).
@@ -441,8 +439,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         cas=cas,
         check_adapter=local_checks,
         authority=authority,
-        resolve_signature=ports.resolve_signature,
-        admitted_rules=ports.admitted_rules,
     )
     from ..api.assurance import AssuranceApi
 

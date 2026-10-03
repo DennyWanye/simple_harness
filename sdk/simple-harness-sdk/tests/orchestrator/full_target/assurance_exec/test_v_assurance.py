@@ -11,6 +11,8 @@ event replay) live in ``test_v_assurance_store.py``.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import pytest
 
 from agent_orchestrator.assurance.checks import Grade
@@ -34,15 +36,10 @@ from agent_orchestrator.contracts.semantic_base import (
     content_hash_of,
 )
 from agent_orchestrator.knowledge.assurance_sources import (
-    ASSURANCE_OBSERVER,
-    AdmittedRule,
     CheckAnchorInput,
-    JustificationInput,
-    ObservationInput,
     ReviewAnchorInput,
     content_acceptable_key,
     evaluate_acceptance_support,
-    review_accepted_key,
 )
 from agent_orchestrator.knowledge.justifications import (
     Anchor,
@@ -84,6 +81,14 @@ def key_of(sig, subject="s"):
     return proposition_key(sig, {"subject_id": subject})
 
 
+class ObservationRow(NamedTuple):
+    """One observation as the selector tests feed it: the record, its scope, its hash."""
+
+    record: ObservationRecord
+    scope_id: str
+    content_hash: str
+
+
 def observation(observation_id, key, polarity, *, source="src-1", authoritative=False,
                 observer="observer-1", scope=SCOPE, observed_at=NOW - 10, valid_until=None):
     record = ObservationRecord(
@@ -95,7 +100,7 @@ def observation(observation_id, key, polarity, *, source="src-1", authoritative=
         query_watermark_ms=observed_at if authoritative else None,
         valid_until_ms=valid_until, observer_id=observer,
     )
-    return ObservationInput(record, scope, fingerprint(record.to_json()))
+    return ObservationRow(record, scope, fingerprint(record.to_json()))
 
 
 def candidate(row, **overrides):
@@ -169,19 +174,14 @@ def test_anchors_and_explicit_negation():
     assert selection.reason_for("obs-stranger") is AnchorRejection.OBSERVER_NOT_AUTHORITATIVE
     assert selection.admitted_ids() == {"obs-auditor"}
 
-    # At the acceptance evaluator: stored rows never stand in for the system anchors.
-    impersonating = observation("obs-fake-review", review_accepted_key(MISSION, "rec-1"), True)
-    as_system = observation("obs-as-system", P, True, observer=ASSURANCE_OBSERVER)
-    result = evaluate(review=review_input(acceptable=False), observations=(impersonating, as_system, denial),
-                      resolve_signature=signatures.get)
+    # At the acceptance evaluator the review and the checks are the only anchors
+    # (stage D): an unacceptable review is not usable, whatever else is stored.
+    result = evaluate(review=review_input(acceptable=False))
     assert result.truth is not TruthValue.TRUE and not result.usable
-    assert ("obs-fake-review", "SYSTEM_PREDICATE_IMPERSONATION") in result.rejected_anchors
-    assert ("obs-as-system", "SYSTEM_PREDICATE_IMPERSONATION") in result.rejected_anchors
-    assert "obs-denial" in result.admitted_anchor_ids
     assert result.conclusion_key == content_acceptable_key(MISSION, SCOPE, HASH)
-    # The same rows with an acceptable review and a PASS check: usable, and the
-    # clean support names exactly the review and the check.
-    result = evaluate(observations=(denial,), resolve_signature=signatures.get)
+    # An acceptable review and a PASS check: usable, and the clean support names
+    # exactly the review and the check.
+    result = evaluate()
     assert result.truth is TruthValue.TRUE and result.usable
     assert {ref.kind for ref in result.clean_support_refs} == {"review", "check_binding"}
     assert result.earliest_expiry_ms is None
@@ -193,31 +193,6 @@ def test_rule_admission_required():
     A, K = key_of(a), key_of(k)
     anchor = observation("obs-a", A, True)
     signatures = {A: a, K: k}
-    stored = JustificationInput("set-1", "subject", "s", None, ((anchor.record.source_ref, True),))
-    # Members are typed observation refs; the rule shape is the deployment's.
-    member = TypedRef(kind=TypedRefKind.OBSERVATION, id="obs-a", revision=1, content_hash=anchor.content_hash)
-    proposed = JustificationInput("set-llm", "subject", "s", "rule-llm", ((member, True),))
-    same_rule = JustificationInput("set-approved", "subject", "s", "rule-k", ((member, True),))
-    admitted = {"rule-k": AdmittedRule("rule-k", "rule-k-v1", "subject", k)}
-
-    result = evaluate(observations=(anchor,), justification_sets=(stored, proposed, same_rule),
-                      resolve_signature=signatures.get, admitted_rules=admitted)
-    assert ("set-1", "RULE_NOT_ADMITTED") in result.rejected_rules
-    assert ("set-llm", "RULE_NOT_ADMITTED") in result.rejected_rules  # the LLM-proposed A→K
-    assert not any(set_id == "set-approved" for set_id, _ in result.rejected_rules)
-    assert "rules:2" in result.reasons  # the fixed acceptance rule + the admitted one
-    wrong_kind = JustificationInput("set-kind", "artifact", "s", "rule-k", ((member, True),))
-    stale_member = JustificationInput("set-stale", "subject", "s", "rule-k",
-                                      ((TypedRef(kind=TypedRefKind.OBSERVATION, id="obs-a", revision=1,
-                                                 content_hash="b" * 64), True),))
-    negative_ref = JustificationInput("set-neg", "subject", "s", "rule-k",
-                                      ((TypedRef(kind=TypedRefKind.ARTIFACT, id="art", revision=1,
-                                                 content_hash=HASH), False),))
-    result = evaluate(observations=(anchor,), justification_sets=(wrong_kind, stale_member, negative_ref),
-                      resolve_signature=signatures.get, admitted_rules=admitted)
-    assert set(result.rejected_rules) == {("set-kind", "RULE_SUBJECT_KIND_MISMATCH"),
-                                          ("set-stale", "MEMBER_OBSERVATION_UNAVAILABLE"),
-                                          ("set-neg", "NEGATIVE_MEMBER_UNSUPPORTED")}
     # An unadmitted rule never fires: K stays UNKNOWN without it, TRUE with it.
     selection = select([candidate(anchor)], signatures)
     assert not compute_grounded_support(SupportGraph(()), selection).supported.reached(Atom(K))
@@ -225,6 +200,8 @@ def test_rule_admission_required():
     assert support.usable(K)
     witnesses = support.clean.witnesses_for(Atom(K))
     assert [w.kind for w in witnesses] == [WitnessKind.DERIVED]  # traceable to the admitted rule
+    # The acceptance evaluator has exactly one rule: the fixed acceptance rule.
+    assert "rules:1" in evaluate().reasons
 
 
 # --------------------------------------------------------------------------- V03
@@ -359,9 +336,6 @@ def test_bounded_restartable_evaluation():
     with pytest.raises(AssuranceError) as raised:
         evaluate(checks=tuple(check_input(f"cb-{i}") for i in range(257)))
     assert raised.value.code == "CHECK_ANCHOR_INVALID"
-    with pytest.raises(AssuranceError) as raised:
-        evaluate(observations=tuple(observation(f"obs-{i}", keys[0], True) for i in range(10_001)))
-    assert raised.value.code == "EVIDENCE_EVALUATION_INCOMPLETE"
     # Expired / not-yet-valid anchors are rejected for ACCEPT and only readable
     # as history for CONTEXT; a check with a deadline bounds the certificate.
     stale = observation("obs-stale", keys[0], True, valid_until=NOW - 1)
@@ -401,10 +375,7 @@ from agent_orchestrator.assurance.certificates import (  # noqa: E402
 from agent_orchestrator.assurance.evidence import ReadItem  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import TemporalUse  # noqa: E402
 from agent_orchestrator.governance.permissions import Principal  # noqa: E402
-from agent_orchestrator.orchestrator.assurance_validity import (  # noqa: E402
-    AssuranceValidity,
-    _snapshot_sources,  # noqa: E402
-)
+from agent_orchestrator.orchestrator.assurance_validity import AssuranceValidity  # noqa: E402
 from agent_orchestrator.storage.assurance_reads import (  # noqa: E402
     AssuranceReader,
     read_complete_evidence_snapshot,
@@ -504,15 +475,14 @@ def test_complete_collection_not_topk(tmp_path):
         reader = AssuranceReader(world.store, tenant_id=TENANT, mission_id=assured.id)
         complete = read_complete_evidence_snapshot(reader, scope_id="scope-v")
         kinds = {json.loads(read.query_key)["query_kind"] for read in complete}
-        assert {"observations", "justification_sets", "support_members", "events", "sources"} <= kinds
+        assert {"observations", "events", "sources"} <= kinds
+        assert not {"justification_sets", "support_members"} & kinds
         for read in complete:
             item = read.read_item
             assert item.channel == "QUERY_SET" and item.coverage == "COMPLETE"
             assert json.loads(read.query_key)["selection"] == "MISSION_SUPERSET"
             # The witness carries counts/digests of the set, never the private rows.
             assert not any(row in item.fingerprint for row in read.rows)
-        observations, justifications = _snapshot_sources(complete)
-        assert observations == () and justifications == ()
         # A bounded read refuses to call itself complete; it never returns a top-K subset as COMPLETE.
         _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=1),
                  "EVIDENCE_EVALUATION_INCOMPLETE")
@@ -520,9 +490,6 @@ def test_complete_collection_not_topk(tmp_path):
                  "EVIDENCE_EVALUATION_INCOMPLETE")
         _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=100_000),
                  "INTEGER_INVALID")  # the reader's own cap cannot be raised by a caller
-        # A snapshot missing one of the three source sets is not evaluable.
-        partial = tuple(read for read in complete if json.loads(read.query_key)["query_kind"] != "support_members")
-        _refused(lambda: _snapshot_sources(partial), "EVIDENCE_EVALUATION_INCOMPLETE")
         # Another writer's real change moves the mission epoch and the snapshot's witness.
         _confirm_on_another_connection(world, assured.id)
         again = read_complete_evidence_snapshot(reader, scope_id="scope-v")

@@ -225,7 +225,12 @@ MIGRATION_18_CHECKSUM = "a24b4ef345f3ef46ec4b43ee3d68da5f6cc3372aae7968dcc0b7b7a
 #: Every table the full-target migrations own.  The raw-SQL leak guard and the
 #: "storage is the only writer" checks iterate this, so a migration that adds a table
 #: without adding it here would ship an unguarded table.
-FULL_TARGET_TABLES: tuple[str, ...] = (*MIGRATION_16_TABLES, *MIGRATION_17_TABLES)
+#: Migration 39 (HTN 补齐阶段 D) dropped the two support-set tables that never had a
+#: production writer; migration 16's own list above stays as shipped.
+DROPPED_LATER: tuple[str, ...] = ("justification_sets", "support_members")
+FULL_TARGET_TABLES: tuple[str, ...] = tuple(
+    table for table in (*MIGRATION_16_TABLES, *MIGRATION_17_TABLES) if table not in DROPPED_LATER
+)
 
 #: The full-target tables are storage-owned.  Nothing outside ``storage/`` may name one
 #: in SQL of its own; the accessors on ``HtnStore`` / ``ObligationStore`` are the way in.
@@ -1762,44 +1767,6 @@ def test_an_observation_round_trips(htn: HtnStore) -> None:
     assert htn.list_observations(MISSION, proposition_key="other") == ()
     with pytest.raises(StoreConflict, match="already stored"):
         htn.insert_observation(MISSION, record)
-
-
-def test_a_justification_set_indexes_its_members_in_reverse(htn: HtnStore) -> None:
-    members = (
-        (tref(TypedRefKind.OBSERVATION, "observation-1"), True),
-        (tref(TypedRefKind.ACCEPTANCE, "acceptance-1"), False),
-    )
-    stored = htn.insert_justification_set(
-        MISSION,
-        "support-1",
-        subject_kind="resolution",
-        subject_id="resolution-1",
-        members=members,
-        member_revision=2,
-        rule_ref="rule-1",
-    )
-    assert htn.get_justification_set("support-1") == stored
-    assert htn.list_justification_sets(MISSION, "resolution", "resolution-1") == (stored,)
-    assert htn.consumers_of(MISSION, "observation", "observation-1") == (stored,)
-    assert htn.consumers_of(MISSION, "observation", "observation-9") == ()
-    assert len(stored.member_digest) == 64
-
-
-def test_a_justification_set_needs_members_and_rejects_a_repeated_one(htn: HtnStore) -> None:
-    reference = tref(TypedRefKind.OBSERVATION, "observation-1")
-    with pytest.raises(StoreConflict, match="at least one member"):
-        htn.insert_justification_set(
-            MISSION, "support-1", subject_kind="claim", subject_id="claim-1", members=()
-        )
-    with pytest.raises(StoreConflict, match="appears twice"):
-        htn.insert_justification_set(
-            MISSION,
-            "support-1",
-            subject_kind="claim",
-            subject_id="claim-1",
-            members=((reference, True), (reference, False)),
-        )
-    assert htn.list_justification_sets(MISSION, "claim", "claim-1") == ()
 
 
 def test_epochs_advance_and_dirty_subjects_queue_up(htn: HtnStore) -> None:
