@@ -80,3 +80,50 @@ def test_obligation_account_counts_failures_and_spend(tmp_path):
             assert not {"failure_count", "spent_tokens", "spent_attempts"} & columns
 
     asyncio.run(case())
+
+
+def test_budget_by_duty_and_unrefined_goals(tmp_path):
+    """对外快照里的"预算去向"与"还没细化的目标"（HTN 补齐阶段 E）：预算去向逐义务一行、根行叫
+    "整个任务"、数字与义务账是同一份；子目标还没有做法时出现在"还没细化"里，名字是它自己的目标。
+
+    **改坏检验**：快照的"还没细化"恒为空 → 变红。"""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("_sub_goal_script", Path(__file__).with_name("test_sub_goal.py"))
+    script = importlib.util.module_from_spec(spec)
+    sys.modules["_sub_goal_script"] = script
+    spec.loader.exec_module(script)
+    seen: list[list[dict[str, Any]]] = []
+
+    async def case():
+        holder: dict[str, Any] = {}
+
+        def planner(request: Any) -> Any:
+            world, mission_id = holder.get("world"), holder.get("mission_id")
+            if world is not None:
+                seen.append(world.control.snapshot(mission_id)["snapshot"]["unrefined_goals"])
+            return script.planner(request)
+
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "budget-by-duty",
+                                       "success_criteria": ["file:notes/a.md", "file:NOTES.md"]})["mission_id"]
+            holder.update(world=world, mission_id=mission_id)
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            assert str(mission.status.value) == "COMPLETED"
+            snapshot = world.control.snapshot(mission_id)["snapshot"]
+            rows, accounts = snapshot["budget_by_duty"], snapshot["obligation_accounts"]
+            assert rows[0]["label"] == "整个任务" and rows[0]["depth"] == 0
+            assert {row["obligation_id"] for row in rows} == set(accounts)
+            for row in rows:  # 同一份数字
+                assert {k: row[k] for k in accounts[row["obligation_id"]]} == accounts[row["obligation_id"]]
+            # 桌面做法的步骤都挂在上级义务下（细化关系），所以通常只有"整个任务"一行，它含全部下级
+            assert rows[0]["attempts"] == sum(len(world.store.list_attempts(task.id))
+                                             for task in world.store.list_tasks(mission_id)) > 0
+            assert all(row["depth"] == 0 or row["parent_obligation_id"] for row in rows)
+            assert snapshot["unrefined_goals"] == []
+            # 子目标还没有做法的那几轮里，它在"还没细化"里
+            assert any(any(goal["label"] == "写出 notes/a.md，列三条要点" for goal in goals) for goals in seen)
+
+    asyncio.run(case())

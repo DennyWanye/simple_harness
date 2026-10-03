@@ -2974,9 +2974,11 @@ class CommitService(ProtectedTailCommitsMixin,
                         task_id=task.id,
                         payload={"reason": "not_needed_paused"},
                     )
-            criteria = list(mission.success_criteria)
+            from ..deployment.root import current_statements
+
+            criteria = list(current_statements(self._store, mission))
             if [item.get("criterion") for item in judgments] != criteria:
-                raise CommitRejected("judgments must cover the Mission success criteria in order")
+                raise CommitRejected("judgments must cover the Mission's current requirements in order")
             met = all(bool(item.get("met")) for item in judgments)
             terminal = terminal_task(tasks)
             report = {

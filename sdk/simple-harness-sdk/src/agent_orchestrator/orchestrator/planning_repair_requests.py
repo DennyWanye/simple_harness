@@ -474,6 +474,10 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
             continue
         if event.task_id and event.task_id not in active_tasks:
             continue
+        if event.type == "ResultRejected" and event.payload.get("reason") == "superseded":
+            # 系统自己收回的尝试（换计划时取消、被另一份结果取代）晚到的结果：不是这一步做错了，
+            # 不发给规划器——否则换计划时取消在跑的尝试会反过来打断这次换计划（阶段 E）。
+            continue
         if (event.type in {"AttemptLost", "AttemptTimedOut"}
                 and event.payload.get("reason") in {"runtime_unavailable", "provider_outcome_unknown"}):
             # The authoritative failure row below produces the runtime request.
@@ -497,12 +501,26 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
                     trigger_refs=(dirty.subject_id,), source_key=source_key, detail=asdict(dirty))
     # Internal leaf/composition requirements snapshots are not user amendments.
     # Only a persisted revision carrying its amendment credential opens this trigger.
-    for revision in htn.list_requirements_revisions(mission.id):
+    revisions = {int(item.revision): item for item in htn.list_requirements_revisions(mission.id)}
+    # 只有"现行计划是按更早一版要求定的"才有东西要规划器改；任务还没有计划时改要求，
+    # 第一份计划本来就按最新版定，不另发请求（否则会与首次规划撞车）。
+    active = htn.active_plan_revision(mission.id)
+    planned_for = None if active is None else int(active.read_set.requirements_revision)
+    for number in sorted(revisions):
+        revision = revisions[number]
         source_key = "requirements:" + str(revision.revision_id)
+        if planned_for is None or number <= planned_for:
+            continue
         if revision.amendment_credential_ref and source_key not in seen:
+            from .requirements_amendment import compare_revisions
+
+            # what changed is a comparison of the two revisions by id — a fact, not a judgment
+            previous = revisions.get(number - 1)
             produced |= record_request(dispatch, mission.id, event_type="RequirementsUpdated",
                 trigger_refs=(mission.id,), source_key=source_key,
-                detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json())})
+                detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json()),
+                        "previous_revision": None if previous is None else int(previous.revision),
+                        "changes": {} if previous is None else compare_revisions(previous, revision)})
     for task in store.list_tasks(mission.id):
         if task.id not in active_tasks:
             continue

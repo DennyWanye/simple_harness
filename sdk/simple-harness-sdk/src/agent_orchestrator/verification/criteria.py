@@ -57,22 +57,16 @@ def task_contract_revision(contract: Mapping[str, Any]) -> str:
     return sha256_hex(_contract(contract))
 
 
-_USER_REQUIREMENT_ID = re.compile(r"c-user-([1-9][0-9]*)")
-
-
-def task_criterion_text(text: str, mission_texts: Sequence[str]) -> str:
+def task_criterion_text(text: str, requirement_texts: Mapping[str, str]) -> str:
     """The wording a Task criterion is shown by.
 
     A hierarchical occurrence carries requirement ids on ``Task.success_criteria``
-    (``c-user-<n>``: the factory's fixed name of the n-th original success criterion,
-    see ``deployment.root.user_requirements``); this maps one back to the user's own words.
+    (``c-user-<n>``, see ``deployment.root``); this maps one back to the user's own words
+    by id, from the Mission's current requirements (``deployment.root.current_criteria``).
     Other strings are kept exactly.
     """
 
-    match = _USER_REQUIREMENT_ID.fullmatch(text)
-    if match is not None and int(match[1]) <= len(mission_texts):
-        return mission_texts[int(match[1]) - 1]
-    return text
+    return requirement_texts.get(text, text)
 
 
 def mission_contract_revision(mission: Mission) -> str:

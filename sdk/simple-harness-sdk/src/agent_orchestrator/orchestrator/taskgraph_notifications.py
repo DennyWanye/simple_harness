@@ -32,7 +32,7 @@ _RECHECK_EVENTS = frozenset({
     "TaskPaused", "TaskResumed",
     "ApprovalRequested", "ApprovalGranted", "ApprovalRejected", "ApprovalRevoked",
     "ApprovalExpired", "ApprovalCancelled", "ApprovalSuperseded",
-    "TaskGraphSourceChanged",
+    "TaskGraphSourceChanged", "RequirementsAmended",
     "MissionCancelled", "MissionFailed", "MissionCompleted",
 })
 

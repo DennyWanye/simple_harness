@@ -7,9 +7,9 @@ STATEMENT = "summary.md 列出三条要点并注明来自哪个来源"
 
 
 def test_user_requirement_ids_resolve_to_the_original_statement():
-    texts = [STATEMENT, "第二条"]
+    texts = {"c-user-1": STATEMENT, "c-user-2": "第二条"}  # 现行要求：编号 → 原文（阶段 E 起按编号查）
     assert task_criterion_text("c-user-1", texts) == STATEMENT
     assert task_criterion_text("c-user-2", texts) == "第二条"
-    # Anything else is kept exactly: out of range, derived ids, prefixed criteria.
+    # Anything else is kept exactly: an id that is not a current requirement, derived ids, prefixed criteria.
     for kept in ("c-user-3", "c-user-0", "c-user-1-summary-written", "file:a.md", "cite:sources/a.md"):
         assert task_criterion_text(kept, texts) == kept

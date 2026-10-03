@@ -187,6 +187,7 @@ from .commit_service import (
     mission_account,
     task_account,
 )
+from ..deployment.root import current_criteria, current_statements
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
@@ -1287,6 +1288,11 @@ class Orchestrator:
         self._mission_dispatches.clear()
         self.install_hierarchical()
 
+    def forget_planning_world(self, mission_id: str) -> None:
+        """The Mission's requirements changed: its planning world is rebuilt on next use
+        (the root goal's coverage follows the requirements; 阶段 E)."""
+        self._mission_dispatches.pop(mission_id, None)
+
     def _dispatch_for(self, mission_id: str) -> HierarchicalDispatch | None:
         if self._planning_world_factory is None:
             return self._hierarchical
@@ -1939,10 +1945,17 @@ class Orchestrator:
                 raise MissionRequestError(
                     f"runtime profile {spec.runtime_profile_id!r} is not configured"
                 )
-        self._check_action_criteria(spec.success_criteria)
+        self.check_requirement_statements(spec.success_criteria)
         self._check_source_publish_roots(spec)
+
+    def check_requirement_statements(self, statements: Sequence[str]) -> None:
+        """What this deployment can do with these requirement statements: an ``action:`` one
+        must be well-formed and name an operation the deployment would run; a ``pytest:`` one
+        needs local code execution.  One door for creating a Mission and for amending its
+        requirements (阶段 E)."""
+        self._check_action_criteria(statements)
         if not self._config.deployment_policy.local_code_execution:
-            tests = [c for c in spec.success_criteria if c.startswith("pytest:")]
+            tests = [c for c in statements if c.startswith("pytest:")]
             if tests:
                 raise ContractError(
                     "pytest criteria need local code execution, which this deployment has "
@@ -2383,12 +2396,11 @@ class Orchestrator:
                 for key, record in sorted({
                     str(item.proposition_key): item
                     for item in HtnStore(self.store).list_observations(mission_id)}.items())),
-            # ``c-user-<n>`` names the Mission's n-th criterion; a ``file:X`` one names a file
+            # 现行要求里的 ``file:X``：要求编号 → 文件
             "criterion_files": tuple(
-                (f"c-user-{number}", statement[len("file:"):].strip())
-                for number, statement in enumerate(
-                    (str(item).strip() for item in (mission.success_criteria if mission is not None else ())), start=1)
-                if statement.startswith("file:") and statement[len("file:"):].strip()),
+                (name, statement.strip()[len("file:"):].strip())
+                for name, statement in (() if mission is None else current_criteria(self.store, mission))
+                if statement.strip().startswith("file:") and statement.strip()[len("file:"):].strip()),
         }
 
     def _handoff_ground_gone(self, action_key: str) -> bool:
@@ -2493,12 +2505,19 @@ class Orchestrator:
             return None
         rows = self.store.list_tasks(mission.id)
         actions = self.store.list_actions(mission.id)
+        # 一步被换掉之后（换做法、换后继），旧任务行留作历史，状态不再推进；只有现行计划里的步骤
+        # 才算"还在跑"——否则计划停住时它会让任务永远像在等一个不存在的执行者（阶段 E）。
+        try:
+            planned = {str(spec.task_id) for spec in new_mode.network(mission.id).occurrences}
+        except (GraphIntegrityError, ContractError, StoreError):
+            planned = {task.id for task in rows}
         waits = {
             "all_rows_terminal": bool(rows) and all(task.status in TERMINAL_TASK for task in rows),
             "closeout_pending": self.commit.assured_closeout_pending(mission.id),
             "root_resolved": self._root_resolved(mission, new_mode),
             "running_rows": any(
                 task.status is TaskStatus.ACTIVE
+                and task.id in planned
                 and not self._awaiting_retry_decision(mission.id, task)
                 for task in rows
             ),
@@ -2512,7 +2531,10 @@ class Orchestrator:
             "approvals_pending": any(a["state"] in OPEN_ACTION_STATES
                                      and not self._handoff_ground_gone(str(a["action_key"]))
                                      for a in actions)
-            or bool(self.store.list_approvals(mission.id, "PENDING")),
+            or bool(self.store.list_approvals(mission.id, "PENDING"))
+            # 阶段 E：现行要求在等人确认（用户刚改了要求）——规划器这时不被问、旧计划也不再开工，
+            # 这是在等人，不是停滞。
+            or self._requirements_unconfirmed(mission),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
             "planning_wait": self._has_pending_planning_waits(mission.id),
@@ -2963,6 +2985,8 @@ class Orchestrator:
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
             return False
+        if self._requirements_unconfirmed(mission):
+            return False
         with self.store.transaction():
             if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
                 return False
@@ -3282,6 +3306,8 @@ class Orchestrator:
                         continue
                     event = self._pending_planning_wait(mission.id)
                     if event is None or self._planner_intents_in_flight(mission.id):
+                        continue
+                    if self._requirements_unconfirmed(mission):
                         continue
                     dispatch = self._dispatch_for(mission.id)
                     if dispatch is None:
@@ -3766,12 +3792,22 @@ class Orchestrator:
             if mission is None or mission.status in TERMINAL_MISSION:
                 self._deferred_planning.pop(mission_id, None)
 
+    def _requirements_unconfirmed(self, mission: Mission) -> bool:
+        """The Mission's current requirements have no confirmed completion mapping yet (the
+        Mission was just created, or the user just amended them): the Planner is not asked —
+        a plan it made would be refused when its completion scopes are frozen.  The
+        confirmation page shows "waiting for the completion requirements to be confirmed".
+        Every path that opens a Planner round asks this one question (阶段 E)."""
+        return self._planning_start_gate is not None and not self._planning_start_gate(mission)
+
     async def _try_planner_intent(self, mission_id: str, *, ordinal: int) -> bool:
         """Create the Planner intent, or — review P0-1 — wait (bounded) while its pool is
         cooling down; a package that would carry a credential stops planning visibly."""
 
         mission = self.store.get_mission(mission_id)
         if mission is not None and self._assembly_missing(mission, at="planner_retry"):
+            return False
+        if mission is not None and self._requirements_unconfirmed(mission):
             return False
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
@@ -3929,7 +3965,7 @@ class Orchestrator:
         Host's event loop."""
         if self._assembly_missing(mission, at="start_planning"):
             return False
-        if self._planning_start_gate is not None and not self._planning_start_gate(mission):
+        if self._requirements_unconfirmed(mission):
             return False
         self.commit.begin_planning(mission.id)
         try:
@@ -7362,6 +7398,19 @@ class Orchestrator:
             self._note(f"attempt {attempt.id}: SDK turn failed → RETRY_WAIT")
             return
         text = "" if result.public_output is None else str(result.public_output.content)
+        stale_plan = self._dispatch_for(attempt.mission_id)
+        if stale_plan is not None and stale_plan.requirements_changed(attempt.mission_id):
+            # 阶段 E：用户改了要求、按新版的计划还没提交。这份结果是按旧版要求的计划做出来的：
+            # 归档为"被取代"，不当成执行者做错（不发修复请求、不为它切审查包）；
+            # 新计划要不要再做这一步由规划器定。
+            self.commit.reject_result(
+                attempt.id, turn_id=result.turn_id, reason="superseded",
+                detail={"error": "requirements_changed", "output_head": text[:400]})
+            self._settle_intent(intent, "FAILED")
+            self._settle_if_known(attempt)
+            await self._release_attempt(attempt.id, cancel=False)
+            self._note(f"attempt {attempt.id}: result set aside, the requirements were amended")
+            return
         try:
             envelope, client_result_id = self._parse_envelope(text, attempt, turn_id=result.turn_id)
             self.commit.check_result_evidence(attempt.mission_id, envelope)
@@ -8112,7 +8161,7 @@ class Orchestrator:
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
         targets = [
             c.removeprefix("pytest:").strip()
-            for c in (*task.success_criteria, *mission.success_criteria)
+            for c in (*task.success_criteria, *current_statements(self.store, mission))
             if c.startswith("pytest:")
         ]
         protected = {}
@@ -8136,7 +8185,7 @@ class Orchestrator:
         from ..runtime.action_schema import worker_action_contract
 
         return worker_action_contract(
-            mission_criteria=mission.success_criteria,
+            mission_criteria=dict(current_criteria(self.store, mission)),
             task_criteria=task.success_criteria,
             task_outputs=self._action_candidate_outputs(mission, task),
             connectors=self._connectors,
@@ -8736,7 +8785,7 @@ class Orchestrator:
                 # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
                 # it.  Nothing to re-judge and nothing to dispatch: idle, not stalled.
                 return False
-            if any(c.startswith(ACTION_PREFIX) for c in current.success_criteria):
+            if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
                 return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)
@@ -9836,6 +9885,7 @@ class Orchestrator:
                 mission,
                 task,
                 placeholder,
+                mission_requirements=current_statements(self.store, mission),
                 previous_attempts=attempts,
                 verifier_feedback=verifier_feedback,
                 workspace_files=previous_files,
@@ -10209,7 +10259,7 @@ class Orchestrator:
         stored = self.store.get_result(terminal.accepted_result_id or "")
         summary = "" if stored is None else stored.envelope.summary
         test_runs: dict[str, dict[str, Any]] = {}
-        for criterion in mission.success_criteria:
+        for criterion in current_statements(self.store, mission):
             if not criterion.startswith("pytest:"):
                 continue
             target = criterion.removeprefix("pytest:").strip() or None
@@ -10239,7 +10289,7 @@ class Orchestrator:
         # the certified grades (Host real model run 20, 2026-09-23).
         assured_grades = self._assured_root_grades(mission, new_mode)
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(mission.success_criteria):
+        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
             if criterion.startswith("pytest:"):
                 outcome = test_runs.get(criterion, {})
                 judgments.append(
@@ -10339,7 +10389,7 @@ class Orchestrator:
         self.commit.expire_approvals(mission.id)
         actions = {
             criterion: self.commit.action_for_criterion(mission.id, criterion, self._connectors)
-            for criterion in mission.success_criteria
+            for criterion in current_statements(self.store, mission)
             if criterion.startswith(ACTION_PREFIX)
         }
         for criterion, action in actions.items():
@@ -10422,7 +10472,7 @@ class Orchestrator:
     ) -> None:
         by_criterion = {str(item.get("criterion")): dict(item) for item in plain}
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(mission.success_criteria):
+        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
             if not criterion.startswith(ACTION_PREFIX):
                 judgments.append(by_criterion[criterion])
                 continue

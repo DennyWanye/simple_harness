@@ -32,8 +32,10 @@ def _service(*, mode="auto", criteria=("file:a.md", "file:b.md"), state="CONFIRM
             calls.append(("snapshot", (mission_id,)))
             return {"snapshot": {"operation_workspace": {
                 "state": state, "editable": True, "requirements_ref": REF,
-                "criteria": [{"id": "c-user-1", "required": True}, {"id": "c-user-2", "required": True},
-                             {"id": "c-note", "required": False}]}}}
+                # 阶段 E：有没有操作要求，看的是确认页上这一版要求的原文，不是建任务时的章程
+                "criteria": [*({"id": f"c-user-{n}", "required": True, "statement": text}
+                               for n, text in enumerate(criteria, start=1)),
+                             {"id": "c-note", "required": False, "statement": "备注"}]}}}
 
         def approve_operation_completion_spec(self, command):
             calls.append(("approve_operation_completion_spec", (command,)))

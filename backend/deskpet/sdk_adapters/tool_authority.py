@@ -159,6 +159,8 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         "mission_start",
         # 2026-09-29：主 Agent 读后台任务进度（只读，一个字段）。
         "mission_status",
+        # 阶段 E：改后台任务的要求——用户开口就要能用，四个字段。
+        "mission_amend",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose
@@ -1954,6 +1956,11 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return f"在任务编排里新建后台任务「{_clip(args.get('goal'), 60)}」"
     if tool_name == "mission_status":
         return "查看后台任务的进度"
+    if tool_name == "mission_amend":
+        changes = [c for c in args.get("changes") or () if isinstance(c, dict)]
+        count = {op: sum(1 for c in changes if c.get("op") == op) for op in ("add", "rewrite", "remove")}
+        return (f"修改后台任务的要求：新增 {count['add']} 条、改写 {count['rewrite']} 条、"
+                f"删除 {count['remove']} 条")
     if tool_name == "write_file":
         return f"写入文件：{_clip(args.get('path'))}"
     if tool_name == "edit_file":

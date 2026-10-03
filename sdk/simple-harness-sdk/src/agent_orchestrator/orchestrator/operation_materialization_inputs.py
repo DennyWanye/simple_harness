@@ -29,6 +29,7 @@ from ..runtime.operation_payloads import (
     payload_request_hash,
     require_connector_profile,
 )
+from ..deployment.root import current_statements
 from ..storage.store import Store
 from .action_commits import CandidateRejected, bind_artifact_params, check_candidate
 from .operation_intent_sources import PreparedOperationIntentSources
@@ -259,7 +260,7 @@ def build_operation_materialization_inputs(
     try:
         candidate, decision = check_candidate(
             raw,
-            criteria=mission.success_criteria,
+            criteria=current_statements(store, mission),
             connectors=connectors,
             deployment=deployment,
         )

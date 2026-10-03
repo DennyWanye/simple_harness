@@ -23,7 +23,6 @@ from typing import Any
 MISSION_FIELDS = (
     "id",
     "goal",
-    "success_criteria",
     "status",
     "stop_reason",
     "created_at",
@@ -144,7 +143,6 @@ def _mission(raw: Mapping[str, Any], state: str) -> dict[str, Any]:
     return {
         "id": raw.get("id"),
         "goal": _short(raw.get("goal"), MODEL_TEXT_LIMIT),  # a person's words
-        "success_criteria": list(raw.get("success_criteria") or ()),
         "status": raw.get("status"),
         "stop_reason": raw.get("stop_reason"),
         "created_at": raw.get("created_at"),
@@ -452,6 +450,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         "planning_questions": questions,
         "planning_authorization_requests": planning_authorizations,
         "operation_workspace": snapshot.get("operation_workspace"),
+        # 阶段 E：预算去向（逐义务，含下级与被换掉的做法）与还没细化的目标——SDK 读时推出，原样透传
+        "budget_by_duty": [dict(row) for row in snapshot.get("budget_by_duty") or ()],
+        "unrefined_goals": [dict(row) for row in snapshot.get("unrefined_goals") or ()],
         "waiting_on": waiting_on,
         "blocked": [dict(b) for b in blocked],
         "disputes": [dict(d) for d in snapshot.get("disputes") or ()],

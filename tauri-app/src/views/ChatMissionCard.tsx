@@ -137,6 +137,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
   const published = list(detail?.actions).map(record)
     .filter((a) => text(a.state) === "SUCCEEDED" && text(a.published_path));
   const workspace = record(detail?.operation_workspace);
+  const requirementsRevision = Number(record(workspace.requirements_ref).revision) || 0;
 
   return (
     <section aria-label="后台任务" style={box} data-testid={`chat-mission-${missionId}`}>
@@ -144,6 +145,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
         后台任务：{status ? STATUS_LABEL[status] ?? status : channel ? "读取中…" : "连接未就绪"}
       </div>
       {text(mission.goal) ? <div>{text(mission.goal)}</div> : null}
+      {requirementsRevision > 1 ? <div style={muted} data-testid="chat-mission-requirements-revision">要求第 {requirementsRevision} 版</div> : null}
       {work.length ? <div style={muted}>步骤：已完成 {done} / {work.length}</div> : null}
       {text(workspace.state) === "CONFIRMATION_REQUIRED" ? (
         <OperationWorkspace value={detail?.operation_workspace} channel={channel} onChanged={refresh} />

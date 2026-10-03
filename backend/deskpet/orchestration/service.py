@@ -981,25 +981,10 @@ class OrchestrationService:
             if find_secrets(text, extra=self._secret_values()):
                 raise OrchestrationRequestError("secret_rejected", "内容里有像密钥的文本，未接受")
 
-    def _door(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        """The Host's own checks before the facade (plan §3.3 门口检查)."""
-
-        body = dict(request)
-        goal = body.get("goal")
-        criteria = body.get("success_criteria")
-        if not isinstance(goal, str) or not goal.strip():
-            raise OrchestrationRequestError("invalid_request", "任务目标不能为空")
-        if (
-            not isinstance(criteria, list)
-            or not criteria
-            or not all(isinstance(c, str) and c.strip() for c in criteria)
-        ):
-            raise OrchestrationRequestError("invalid_request", "成功条件不能为空，每行一条")
-        # every string of the request — stop conditions and the workspace seed
-        # included, not only the goal and the criteria (review P1-3)
-        self._refuse_secrets(body)
-        # P3.2 (plan D9): both gates now ask what this deployment can really do, instead of
-        # the P3.1 answers ("never" / "only in the test scenario")
+    def _check_criteria(self, criteria: list[str]) -> None:
+        """What this deployment can really do with these requirements: ``pytest:`` needs the
+        isolated environment, ``action:`` needs its connector enabled.  One check for creating
+        a Mission and for amending its requirements (阶段 E)."""
         deployment = self._deployment
         if any(c.strip().startswith("pytest:") for c in criteria) and not (
             deployment is not None and deployment.code_execution == "sandboxed"
@@ -1025,6 +1010,25 @@ class OrchestrationService:
                     "action_criteria_disabled",
                     f"连接器 {connector} 未启用" + (f"：{reason}" if reason else ""),
                 )
+
+    def _door(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """The Host's own checks before the facade (plan §3.3 门口检查)."""
+
+        body = dict(request)
+        goal = body.get("goal")
+        criteria = body.get("success_criteria")
+        if not isinstance(goal, str) or not goal.strip():
+            raise OrchestrationRequestError("invalid_request", "任务目标不能为空")
+        if (
+            not isinstance(criteria, list)
+            or not criteria
+            or not all(isinstance(c, str) and c.strip() for c in criteria)
+        ):
+            raise OrchestrationRequestError("invalid_request", "成功条件不能为空，每行一条")
+        # every string of the request — stop conditions and the workspace seed
+        # included, not only the goal and the criteria (review P1-3)
+        self._refuse_secrets(body)
+        self._check_criteria(criteria)
         body["success_criteria"] = _with_publish_sources(criteria)
         # No Mission without bounds (native run 2026-09-12, adjudication C): with a null
         # budget a real Planner invents Task budgets far below one model turn and the
@@ -1109,6 +1113,37 @@ class OrchestrationService:
         self._require()
         self._refuse_secrets(request)
         receipt = self._call("answer_planning_question", dict(request))
+        self.wake()
+        return dict(receipt)
+
+    def amend_requirements(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """The user amends a running Mission's requirements (add / rewrite / remove entries).
+        The same door checks as creating a Mission; one transaction in the SDK facade."""
+        self._require()
+        if self._state == "degraded":
+            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受改要求")
+        self._refuse_secrets(request)
+        changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
+        statements = [str(item.get("statement") or "").strip() for item in changes if item.get("statement")]
+        self._check_criteria(statements)
+        # 新增"发布某文件"时，先得有一条"写出这个文件"的要求（与建任务同一条规矩）
+        detail = self._call("snapshot", str(request.get("mission_id") or ""))
+        workspace = (detail.get("snapshot") or {}).get("operation_workspace") or {}
+        current = {str(item.get("id")): str(item.get("statement") or "").strip()
+                   for item in workspace.get("criteria") or ()}
+        added: list[str] = []
+        for item in changes:  # 改完之后的要求清单
+            if item.get("op") == "add":
+                added.append(str(item.get("statement") or "").strip())
+            elif item.get("op") == "remove":
+                current.pop(str(item.get("criterion_id")), None)
+            elif str(item.get("criterion_id")) in current:
+                current[str(item.get("criterion_id"))] = str(item.get("statement") or "").strip()
+        resulting = [*current.values(), *added]
+        # 同一个函数：每个要发布的文件先得有一条"写出它"的要求；缺的补成新增条目
+        sources = [{"op": "add", "statement": source}
+                   for source in _with_publish_sources(resulting) if source not in resulting]
+        receipt = self._call("amend_requirements", {**dict(request), "changes": [*sources, *changes]})
         self.wake()
         return dict(receipt)
 

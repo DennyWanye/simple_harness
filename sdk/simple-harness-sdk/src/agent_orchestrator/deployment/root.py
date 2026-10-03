@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from ..contracts.htn import ContractRevision, ObligationId, TaskRef, TaskSemanticBindingV1
@@ -33,19 +33,98 @@ def criterion_ids(mission: Any) -> tuple[str, ...]:
     return tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
 
 
-def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
-    """Revision 1 of the user's explicit criteria: ``req-<mission>-1`` / ``c-user-<n>``,
-    every criterion required, combined with "all of" (also for a single criterion)."""
+def build_requirements(mission_id: str, revision: int, entries: Any, principal_id: str,
+                       credential: str | None = None) -> RequirementsRevision:
+    """The one rule for a user's requirements: ``req-<mission>-<n>``, each entry
+    ``(criterion id, entry revision, statement)`` a required outcome, combined with "all of"
+    (also for a single one).  Revision 1 and every amendment are built here."""
 
-    refs = criterion_ids(mission)
-    criteria = tuple(Criterion(identifier, 1, CriterionOrigin.USER_EXPLICIT, statement,
+    criteria = tuple(Criterion(identifier, int(entry_revision), CriterionOrigin.USER_EXPLICIT, statement,
         RequirementClass.REQUIRED_OUTCOME, EvaluationKind.SEMANTIC)
-        for identifier, statement in zip(refs, mission.success_criteria, strict=True))
+        for identifier, entry_revision, statement in entries)
     return RequirementsRevision(
-        revision_id=f"req-{mission.id}-1", mission_id=mission.id, revision=1, criteria=criteria,
+        revision_id=f"req-{mission_id}-{int(revision)}", mission_id=mission_id, revision=int(revision),
+        criteria=criteria,
         success_expression=AllExpr(tuple(CriterionExpr(c.criterion_id) for c in criteria)),
-        authority_subject=principal.principal_id,
+        authority_subject=principal_id, amendment_credential_ref=credential,
     )
+
+
+def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
+    """Revision 1 of the user's explicit criteria, from the charter: ``c-user-<n>`` by position."""
+
+    return build_requirements(
+        mission.id, 1,
+        tuple((identifier, 1, statement)
+              for identifier, statement in zip(criterion_ids(mission), mission.success_criteria, strict=True)),
+        principal.principal_id)
+
+
+def current_criteria(store: Any, mission: Any) -> tuple[tuple[str, str], ...]:
+    """``(criterion id, statement)`` of the Mission's requirements as they stand: the latest
+    requirements revision.  Before revision 1 is written (inside the create transaction) the
+    charter is the only input, numbered the way revision 1 will number it."""
+
+    latest = HtnStore(store).latest_requirements_revision(mission.id)
+    if latest is None:
+        return tuple(zip(criterion_ids(mission), mission.success_criteria, strict=True))
+    return tuple((str(item.criterion_id), str(item.statement)) for item in latest.criteria)
+
+
+def current_statements(store: Any, mission: Any) -> tuple[str, ...]:
+    """The statements of the Mission's requirements as they stand, in order."""
+    return tuple(statement for _, statement in current_criteria(store, mission))
+
+
+def apply_changes(previous: RequirementsRevision, changes: Any, *,
+                  highest_used: int) -> tuple[tuple[str, int, str], ...]:
+    """The entries of the next revision: untouched entries carried as they are, a rewrite
+    keeps its id and raises the entry revision, a removal drops the entry, an addition gets
+    ``c-user-<highest_used + 1>`` — ``highest_used`` is the highest number any revision of this
+    Mission ever used, so an id is never reused.  Raises ``ValueError``
+    naming what is wrong (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` / ``AMEND_DUPLICATE``)."""
+
+    if not changes:
+        raise ValueError("AMEND_EMPTY: no change was given")
+    entries = {str(item.criterion_id): (int(item.revision), str(item.statement)) for item in previous.criteria}
+    order = [str(item.criterion_id) for item in previous.criteria]
+    touched: set[str] = set()
+    highest = int(highest_used)
+    for change in changes:
+        if not isinstance(change, Mapping) or change.get("op") not in {"add", "rewrite", "remove"}:
+            raise ValueError("AMEND_EMPTY: each change is {op: add|rewrite|remove, ...}")
+        operation = change["op"]
+        statement = str(change.get("statement") or "").strip()
+        if operation == "add":
+            if set(change) != {"op", "statement"} or not statement:
+                raise ValueError("AMEND_EMPTY: an addition is {op, statement}")
+            highest += 1
+            name = f"c-user-{highest}"
+            entries[name] = (1, statement)
+            order.append(name)
+            continue
+        name = str(change.get("criterion_id") or "")
+        if name not in entries or name in touched:
+            raise ValueError(f"AMEND_UNKNOWN_CRITERION: {name!r} is not a current requirement"
+                             " (or is changed twice)")
+        touched.add(name)
+        if operation == "remove":
+            if set(change) != {"op", "criterion_id"}:
+                raise ValueError("AMEND_EMPTY: a removal is {op, criterion_id}")
+            del entries[name]
+            order.remove(name)
+        else:
+            if set(change) != {"op", "criterion_id", "statement"} or not statement:
+                raise ValueError("AMEND_EMPTY: a rewrite is {op, criterion_id, statement}")
+            if statement == entries[name][1]:
+                raise ValueError(f"AMEND_DUPLICATE: {name!r} already says exactly that")
+            entries[name] = (entries[name][0] + 1, statement)
+    if not order:
+        raise ValueError("AMEND_EMPTY: a Mission keeps at least one requirement")
+    statements = [entries[name][1] for name in order]
+    if len(set(statements)) != len(statements):
+        raise ValueError("AMEND_DUPLICATE: two requirements would say the same thing")
+    return tuple((name, entries[name][0], entries[name][1]) for name in order)
 
 
 def goal_parameters(mission: Any) -> dict[str, Any]:
@@ -125,4 +204,4 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
     loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "criterion_ids", "goal_parameters", "initialize_root", "install_planning", "user_requirements")
+__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "user_requirements")

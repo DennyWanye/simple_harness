@@ -585,6 +585,17 @@ def read_occurrence_completion(
             snapshot_hash=active.snapshot_hash,
         )
         reader = OperationCompletionReader(store)
+        # 阶段 E：用户改了要求、按新版的计划还没提交。这版计划的完成范围是按旧版要求冻结的，
+        # 验收按哪一版要求通过就只在那一版下算数——所以如实答"都还没完成"，不报错。
+        row = OperationCompletionStore(store).get_scope_exact(mission_id, plan_ref.revision, occurrence_id)
+        latest = htn.latest_requirements_revision(mission_id)
+        if (row is not None and latest is not None
+                and isinstance(row["document"], OccurrenceCompletionScopeV1)
+                and (int(row["document"].requirements_ref.revision) != int(latest.revision)
+                     or row["document"].requirements_ref.content_hash != latest.content_hash())):
+            return OccurrenceCompletionStatus(
+                scope=row["document"], content_ready=False, effects_ready=False, complete=False,
+                preparation_ready=False)
         scope = reader.read_scope(mission_id, plan_ref, occurrence_id)
         spec = reader.read_requirements(
             mission_id,

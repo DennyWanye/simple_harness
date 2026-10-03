@@ -70,11 +70,17 @@ class DeploymentDuties:
         store = self.orchestrator.store
         confirmed = 0
         rows = store.connection.execute(
-            "SELECT mission_id FROM missions WHERE status='CREATED' ORDER BY created_at LIMIT 50"
+            "SELECT mission_id FROM missions WHERE status NOT IN ("
+            + ",".join("?" for _ in TERMINAL) + ") ORDER BY created_at DESC LIMIT 50",
+            tuple(sorted(TERMINAL)),
         ).fetchall()
+        unconfirmed = getattr(self.orchestrator, "_requirements_unconfirmed", None)
         for (mission_id,) in rows:
             mission = store.get_mission(str(mission_id))
-            if mission is None or any(str(c).strip().startswith("action:") for c in mission.success_criteria):
+            if mission is None:
+                continue
+            # 只有现行要求还没确认的任务才去读确认页（每轮对每个进行中任务取整份快照太重）
+            if unconfirmed is not None and not unconfirmed(mission):
                 continue
             try:
                 workspace = (self.control.snapshot(mission.id)["snapshot"] or {}).get("operation_workspace")
@@ -86,6 +92,10 @@ class DeploymentDuties:
             ref = dict(workspace["requirements_ref"])
             key = f"{mission.id}:{ref.get('revision')}:{ref.get('content_hash')}"
             if key in self.completion_done:
+                continue
+            # 带操作要求（action:）的那一版等人点；看的是确认页上这一版要求，不是建任务时的章程
+            if any(str(c.get("statement") or "").strip().startswith("action:")
+                   for c in workspace.get("criteria") or ()):
                 continue
             content = [str(c["id"]) for c in workspace.get("criteria") or () if c.get("required") is True]
             if not content:

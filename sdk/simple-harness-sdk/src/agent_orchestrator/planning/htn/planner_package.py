@@ -875,6 +875,7 @@ def assemble_planner_package(
     extra_refs: Sequence[Mapping[str, Any]] = (),
     previous_feedback: Any = None,
     omitted: Mapping[str, int] | None = None,
+    requirements: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The whole package, as a plain mapping the context builder can seal.
 
@@ -906,7 +907,8 @@ def assemble_planner_package(
         "mission": {
             "mission_id": mission.id,
             "goal": mission.goal,
-            "success_criteria": list(mission.success_criteria),
+            # 现行要求：第几版、每条的编号、条目版本与原文（调用方从最新要求修订读出）
+            "requirements": dict(requirements or {"revision": 0, "criteria": []}),
             "allowed_tools": list(mission.allowed_tools),
             "budget": mission.budget.to_json(),
             "risk_level": mission.risk_level,

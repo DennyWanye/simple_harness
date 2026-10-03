@@ -309,6 +309,12 @@ def occurrence_criteria(
         # the goal signature's coverage criteria are the honest fallback — they are
         # what the *type* says this goal owes.
         criteria = [str(item) for item in binding.goal_signature.coverage_criteria]
+    if not criteria:
+        # 阶段 E：桌面步骤类型不带本任务的要求。做法没有把任何要求链接给它的一步，欠的只是
+        # "这一步的结果通过核验"——与叶子验收在同样情形下用的是同一条本地判据。
+        from .leaf_acceptance import LEAF_LOCAL_CRITERION
+
+        criteria = [LEAF_LOCAL_CRITERION]
     return tuple(criteria)
 
 

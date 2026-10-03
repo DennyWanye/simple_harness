@@ -851,7 +851,25 @@ class HierarchicalDispatch:
             # whatever the deployment had observed.
             scope_epochs=self.scope_epochs(mission_id),
             integrity_error=integrity,
+            **self.requirements_revisions(mission_id),
         )
+
+    def requirements_revisions(self, mission_id: str) -> dict[str, int]:
+        """Which requirements revision the active plan was made for, and which is current
+        (阶段 E).  Before any plan is committed there is nothing to compare."""
+        semantics = self.semantics()
+        active = semantics.active_plan_revision(mission_id)
+        latest = semantics.latest_requirements_revision(mission_id)
+        if active is None or latest is None:
+            return {}
+        return {"planned_requirements_revision": int(active.read_set.requirements_revision),
+                "current_requirements_revision": int(latest.revision)}
+
+    def requirements_changed(self, mission_id: str) -> bool:
+        """The user amended the requirements and no plan for the new revision is committed."""
+        found = self.requirements_revisions(mission_id)
+        return bool(found) and bool(found["planned_requirements_revision"]) and (
+            found["planned_requirements_revision"] != found["current_requirements_revision"])
 
     def scope_epochs(self, mission_id: str) -> dict[str, int]:
         """The live validity epoch of every scope this Mission's witnesses name.
@@ -2459,11 +2477,18 @@ class HierarchicalDispatch:
                 bindings[task_id] = task_view.binding
             task = self.store.get_task(task_id)
             if task is not None and task.accepted_result_id:
+                # 阶段 E：这一步已有通过的结果。结果在现行要求下算数 → 等完成，不再派执行者；
+                # 是按旧版要求通过的、现在不算数 → 如实报出来，系统不自动重跑，重做由规划器安排。
+                counts = self._accepted_result_counts(mission_id, str(spec.occurrence_id))
                 refusals.append(DispatchRefusal(
                     task_id=task_id, occurrence_id=str(spec.occurrence_id),
                     reason=ReadinessReason.NOT_SELECTED,
-                    detail_codes=("PREPARATION_ALREADY_ACCEPTED",),
-                    detail="accepted preparation is waiting for completion, not another Worker",
+                    detail_codes=("PREPARATION_ALREADY_ACCEPTED",) if counts
+                    else ("ACCEPTED_UNDER_OLD_REQUIREMENTS",),
+                    detail="accepted preparation is waiting for completion, not another Worker" if counts
+                    else ("this step's result was accepted under an earlier revision of the requirements; "
+                          "it does not count under the current ones and is not re-run automatically — "
+                          "replace the step (PROPOSE_SUCCESSOR) or its method to have it redone"),
                 ))
                 continue
             report = view.reports[spec.occurrence_id]
@@ -2513,6 +2538,16 @@ class HierarchicalDispatch:
             readiness=readiness,
             refusals=tuple(refusals),
         )
+
+    def _accepted_result_counts(self, mission_id: str, occurrence_id: str) -> bool:
+        """Whether this step's completion rests on an acceptance right now — the completion
+        reading's answer (the same one the Planner package's ``counts_under_current`` gives)."""
+        from .completion_status import read_occurrence_completion
+
+        try:
+            return bool(read_occurrence_completion(self.store, mission_id, occurrence_id).preparation_acceptance_ids)
+        except (ContractError, StoreError):
+            return True  # unreadable completion is reported by its own path, not as "old requirements"
 
     def record_withheld(self, mission_id: str, admissions: DispatchAdmissions) -> tuple[Event, ...]:
         """Record every structured refusal once per (occurrence, revision, reason).
@@ -3287,7 +3322,9 @@ class HierarchicalDispatch:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return []
-        criteria = [str(item).strip() for item in mission.success_criteria]
+        from ..deployment.root import current_statements
+
+        criteria = [str(item).strip() for item in current_statements(self.store, mission)]
         steps: dict[str, set[str]] = {}
         for link in getattr(method.composition, "criterion_links", ()) or ():
             if link.child_step is not None:

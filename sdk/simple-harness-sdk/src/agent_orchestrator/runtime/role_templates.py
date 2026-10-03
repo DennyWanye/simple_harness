@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v20"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v21"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -141,6 +141,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "grant_ref、provenance、authored_by、dispatch_generation、plan_revision、"
         "expected_plan_revision、operation_id、acceptance_id、approval_id、decision_id、request_id。\n"
         "\n请求包怎么读（都是系统读到的事实，不是给你的结论）：\n"
+        "  - mission.requirements：任务的现行要求——revision 是第几版，criteria 每条有编号 id、条目版本 revision、"
+        "原文 statement。用户可以中途改要求（增、改、删条目），这里永远是最新一版。\n"
         "  - planning_subjects：这次可以处理的目标与步骤，subject_key 从这里照抄。\n"
         "  - views：九类事实视图，每件事只在一处出现。truncated / omitted_counts 表示有内容被裁剪，"
         "不表示被裁掉的对象不存在。\n"
@@ -165,7 +167,10 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "已记录的观察、已接受的结果、这台机器的能力、剩余的规划次数与额度。"
         "obligations 里的 attempts、failures、budget.spent_tokens 是这件事的真实累计"
         "（含它下面各级、含换掉的做法做过的）。facts 每个命题一行，truth 是系统按已记录的观察得出的"
-        "真值（TRUE、FALSE、UNKNOWN、CONFLICT）。\n"
+        "真值（TRUE、FALSE、UNKNOWN、CONFLICT）。"
+        "accepted_results 每行的 requirements_revision 是这份结果按第几版要求通过的，"
+        "counts_under_current 是它在现行要求和现行计划下还算不算数（false 表示不算）。"
+        "按旧版要求通过的结果不会自动带入新计划，也不会自动重跑。\n"
         "  - method_selection：系统为每个还没有做法的目标列出的候选做法。系统只按能力和类型把跑不了的"
         "筛掉，没有替你选：候选有一个、多个还是没有，都由你读了做法的步骤和目标的要求之后自己判断。\n"
         "  - method_proposal_contexts：为每个还没有做法的目标、以及 under_repair 的目标，给出写新做法要用的"
@@ -189,6 +194,13 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "context.rejections 是这项效果已被拒几次、context.remaining 是还剩几次。系统不会把同一份内容再拿去问"
         "用户：要按理由改内容（重做或换写出它的步骤，产出变了系统会出一张新卡）、问用户，还是不改，由你判断；"
         "你回应之后内容没变，或被拒次数用完，任务就按「批准被拒」结束。"
+        "trigger_source 为 REQUIREMENTS_UPDATE 的请求说的是：用户改了要求。context.previous_revision 是原来第几版，"
+        "context.changes 列出新增（added）、改写（rewritten）、删除（removed）的要求编号，context.requirements 是新版全文。"
+        "现在的计划是按旧版定的，系统已停止按它开新工；按旧版通过的结果在新版下不算数，不会自动带进新计划，也不会自动重跑。"
+        "新计划里还需要的步骤就安排它重做：换掉装着它的做法，或用 PROPOSE_SUCCESSOR 换掉这一步；只改别处、把它原样"
+        "留在计划里，它会一直停在「按旧版通过」（停滞请求的 withheld 里原因代码是 ACCEPTED_UNDER_OLD_REQUIREMENTS），任务完成不了。"
+        "被改要求的目标的 criterion_evidence 已是新版：请让新版每一条要求都落到步骤上（通常是为根目标提一个新做法，"
+        "审阅通过后用 REPLACE_METHOD 换上去），删掉的要求不用再覆盖。改要求之前问用户的问题已作废，需要的话重新问。"
         "trigger_source 为 WRITE_CONFLICT 的请求说的是：两个没有先后的步骤各自通过验收的产出落在同一个文件上、"
         "内容不同（context.path 是文件，context.steps 是这两步，context.artifacts 是两份产出）。"
         "接在它们后面的步骤不会开工，系统不替你挑用哪一份：给两步加先后、重做其中一步、换做法，还是问用户，由你判断。"
@@ -236,8 +248,7 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "它暂停新工作、不改做法，环境恢复后重新规划。\n"
         "  - BIND_EXISTING_GOAL：让一个做法的步骤复用已有目标的成果；payload 为 mode、"
         "consumer_method_instance_ref、step、goal_ref、resolution_ref，从 sharing_candidates 照抄；"
-        "SHARE_ACTIVE 时 resolution_ref 写 null。会写文件的内容步骤也可以这样共用；"
-        "共用它的某一个分支之后换了做法，不影响这个被共用的步骤和别的分支。\n"
+        "SHARE_ACTIVE 时 resolution_ref 写 null。\n"
         "  - REQUEST_EVIDENCE：请求 1–8 个已注册谓词的只读取证；payload 只有 questions 数组，每项包含 "
         "predicate_key（evidence_predicates 里的 id@version）、arguments（参数名 → 具体的值）、purpose、blocking。"
         "系统看一眼并记下观察，下一轮你在 views.facts 里看到结果。\n"
@@ -416,7 +427,7 @@ register_template(PLANNER_HIERARCHICAL)
 #: is the single-layer package: nine views, a failure's details in one place.  Version
 #: 11 (删旧平面模式第三刀第 4 步): ``compensation_candidates`` and REQUEST_COMPENSATION
 #: are gone.
-PLANNING_DECISION_PACKAGE_VERSION = 11
+PLANNING_DECISION_PACKAGE_VERSION = 12
 
 #: The prompt written against that package.  One package, one prompt.
 PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_VERSION

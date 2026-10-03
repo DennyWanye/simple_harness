@@ -406,6 +406,37 @@ class MissionControlV1:
         return receipt.to_json()
 
     @_native_root
+    def amend_requirements(self, command: Mapping[str, Any]) -> dict[str, Any]:
+        """Amend a running Mission's requirements (add / rewrite / remove entries) using this
+        facade's fixed caller.  One transaction; the same command id replays its receipt."""
+        from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
+
+        fields = {"mission_id", "command_id", "expected_requirements_ref", "changes", "reason", "source"}
+        if not isinstance(command, Mapping) or set(command) != fields:
+            raise FacadeError("invalid_request", "amend_requirements takes exactly " + ", ".join(sorted(fields)))
+        if (not all(isinstance(command[key], str) and command[key] for key in ("mission_id", "command_id"))
+                or not isinstance(command["reason"], str)
+                or not isinstance(command["expected_requirements_ref"], Mapping)
+                or not isinstance(command["source"], Mapping)
+                or not isinstance(command["changes"], (list, tuple))
+                or not all(isinstance(item, Mapping) for item in command["changes"])):
+            raise FacadeError("invalid_request", "amend_requirements fields have the wrong shape")
+        self._clean(command["reason"], *(str(item.get("statement") or "") for item in command["changes"]))
+        try:
+            return amend_requirements(
+                self._orchestrator, mission_id=command["mission_id"], tenant_id=self._tenant,
+                command_id=command["command_id"],
+                expected_requirements_ref=command["expected_requirements_ref"],
+                changes=command["changes"], reason=command["reason"], source=command["source"],
+                principal=self._principal)
+        except RequirementsAmendmentError as error:
+            raise FacadeError(error.code, str(error)) from error
+        except ContractError as error:
+            raise FacadeError("invalid_request", str(error)) from error
+        except StoreError as error:
+            raise FacadeError("conflict", str(error)) from error
+
+    @_native_root
     def create(self, command: Mapping[str, Any]) -> dict[str, Any]:
         request = self._strict(command)
         self._clean(*self._texts(request))
@@ -695,6 +726,28 @@ class MissionControlV1:
                 for m in mine[: max(1, min(int(limit), 200))]
             ]
 
+    def _unrefined_goals(self, mission_id: str) -> list[dict[str, Any]]:
+        """Goals in the current plan that no method has refined yet — the planning frontier,
+        by the same function the execution-graph snapshot uses (阶段 E)."""
+        from ..planning.htn.refinement import planning_frontier
+
+        dispatch = self._orchestrator._dispatch_for(mission_id)
+        if dispatch is None:
+            return []
+        try:
+            network = dispatch.network(mission_id)
+            frontier = planning_frontier(network)
+        except (ContractError, StoreError):
+            return []
+        rows = []
+        for item in frontier:
+            binding = network.binding_for_occurrence(item.occurrence_id)
+            goal = dict(binding.typed_parameters).get("goal")
+            rows.append({"occurrence_id": str(item.occurrence_id), "task_id": str(binding.task_id),
+                         "label": str(goal).strip()[:60] if isinstance(goal, str) and goal.strip()
+                         else str(binding.goal_signature.signature_id)})
+        return rows
+
     def snapshot(self, mission_id: str) -> dict[str, Any]:
         store = self._store
         with store.read_view():  # the snapshot and its cursor come from one read
@@ -703,8 +756,10 @@ class MissionControlV1:
             from ..storage.planning_human_store import PlanningHumanStore
             snapshot["planning_questions"] = PlanningHumanStore(store).list(mission.id)
             # 这件事（含下级、含换过的做法）到现在花了多少：读时由尝试与结算推出
-            from ..orchestrator.obligation_accounts import obligation_accounts
+            from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
             snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
+            snapshot["budget_by_duty"] = obligation_rows(store, mission.id)
+            snapshot["unrefined_goals"] = self._unrefined_goals(mission.id)
             from ..orchestrator.planning_selection import awaits_authority
             from ..storage.planning_decision_store import PlanningDecisionStore
             planning = PlanningDecisionStore(store)

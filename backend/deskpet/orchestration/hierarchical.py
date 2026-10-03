@@ -23,23 +23,26 @@ def planning_world(loop: Any, mission: Any) -> Any:
 
     world = build_planning_world(mission.id, domains=(), semantics=htn, predicates=workspace_predicates(),
                                  observers=workspace_observers(loop.store, mission.id))
-    criteria = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
+    from agent_orchestrator.deployment.root import current_criteria
+
+    requirements = current_criteria(loop.store, mission)  # 现行要求（最新要求修订），不读章程
+    criteria = tuple(name for name, _ in requirements)
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("desktop.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("desktop.workspace-outputs", 1, content_hash_of({"fields": []}))
     world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
     world.schemas.register(ObjectSchema(outputs))
-    content_criteria = tuple(key for key, statement in zip(criteria, mission.success_criteria, strict=True)
-                             if not statement.startswith("action:"))
+    content_criteria = tuple(name for name, statement in requirements if not statement.startswith("action:"))
     # 2026-09-29（plans/2026-09-28-system-operations）：发布等操作由系统在任务层面准备，
     # 规划器只安排内容。根任务要求规划器覆盖的只有内容要求；根的完整要求清单
     # （initialize_root 的 requirement_refs）仍含全部要求，义务与已批准效果照旧挂接。
     signature = GoalSignature("desktop.user-goal", 1, params, outputs, mission.goal,
                               content_criteria or criteria)
-    preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs,
-        mission.goal, content_criteria)
+    # 步骤类型不带本任务的要求（阶段 E）：一步负责哪些要求只来自上级做法的链接，所以改要求之后
+    # 类型不变，旧步骤还能被新做法沿用。
+    preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs, mission.goal, ())
     continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
-        "Continue from an accepted upstream delivery: " + mission.goal, content_criteria)
+        "Continue from an accepted upstream delivery: " + mission.goal, ())
     ports = (PortSpec("delivery", outputs),)
     # 内容步骤不再有申请单端口：申请单由系统按已批准效果生成（2026-09-29）。
     preparation_ports = ports

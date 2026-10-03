@@ -23,7 +23,8 @@ ENABLED = DeploymentPolicy(enabled_connectors=("file_publish",))
 
 def _contract(tmp_path, task_criteria):
     return worker_action_contract(
-        mission_criteria=MISSION, task_criteria=task_criteria,
+        mission_criteria={f"c-user-{n}": text for n, text in enumerate(MISSION, start=1)},
+        task_criteria=task_criteria,
         task_outputs=[OPERATION_CANDIDATE_FILE],
         connectors={"file_publish": FilePublishConnector(tmp_path / "pub", tmp_path / "ledger")},
         deployment=ENABLED,

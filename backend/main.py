@@ -8719,6 +8719,46 @@ async def _build_product_sdk_runtime_stack(
             },
         ),
     )
+    # 阶段 E：主 Agent 替用户改后台任务的要求（与建任务同一条把关规矩）。
+    from deskpet.orchestration.chat_tool import (
+        MISSION_AMEND_DESCRIPTION,
+        MISSION_AMEND_SCHEMA,
+        MISSION_AMEND_TOOL_NAME,
+        amend_mission,
+    )
+
+    async def mission_amend_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = amend_mission(
+                lambda: service_context.get("orchestration"),
+                arguments,
+                run_id=str(_context.run_id),
+                call_id=str(_context.call_id or _context.request_id),
+                permission_mode=str(getattr(_context, "permission_mode", "") or ""),
+            )
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=MISSION_AMEND_TOOL_NAME,
+            description=MISSION_AMEND_DESCRIPTION,
+            input_schema=MISSION_AMEND_SCHEMA,
+            handler=mission_amend_handler,
+            dispatch_kind="async",
+            permission_category="mission_amend",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-mission-amend",
+                "version": "1",
+                "stable_handler_id": "core.mission_amend.v1",
+            },
+        ),
+    )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 
