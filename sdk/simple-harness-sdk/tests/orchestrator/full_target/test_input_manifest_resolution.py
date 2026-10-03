@@ -841,10 +841,31 @@ def test_the_revision_policy_is_recorded_on_the_binding() -> None:
         result = resolve(
             consumer_binding(port("report")),
             [requirement("req-1", producer="occ-a", revision_policy=policy_value)],
-            index_of(output(producer="occ-a", revision="r1")),
+            index_of(output(producer="occ-a", revision="r1"), authorized={("occ-a", "report"): "r1"}),
             policy=default_policy(pinned_revisions={"req-1": "r1"}),
         )
         assert only(result).source_revision_policy is policy_value
+
+
+def test_follow_without_a_readable_authorised_revision_is_reported_not_guessed() -> None:
+    """阶段 D：跟随的输入读不到授权版本（比如同一端口上有两个都在计数的验收）→ 如实报
+    "版本不可用"，不在候选里任选、不取最新；钉住的输入此时用它钉的那一版。"""
+
+    follow = resolve(
+        consumer_binding(port("report")),
+        [requirement("req-1", producer="occ-a",
+                     revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION)],
+        index_of(output(producer="occ-a", revision="r1")),
+    )
+    assert follow.manifest is None
+    assert ResolutionProblemKind.REVISION_NOT_AVAILABLE in follow.kinds
+    pinned = resolve(
+        consumer_binding(port("report")),
+        [requirement("req-1", producer="occ-a", revision_policy=SourceRevisionPolicy.PINNED)],
+        index_of(output(producer="occ-a", revision="r1")),
+        policy=default_policy(pinned_revisions={"req-1": "r1"}),
+    )
+    assert only(pinned).source_revision == "r1"
 
 
 def test_pinned_does_not_buy_a_way_past_revocation() -> None:

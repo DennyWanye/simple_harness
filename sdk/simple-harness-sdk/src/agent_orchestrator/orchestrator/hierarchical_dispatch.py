@@ -1134,11 +1134,12 @@ class HierarchicalDispatch:
                 "SELECT b.occurrence_id, m.manifest_json FROM taskgraph_attempt_inputs b"
                 " JOIN input_manifests m ON m.manifest_hash=b.manifest_hash"
                 " JOIN attempts a ON a.attempt_id=b.attempt_id"
-                " WHERE b.mission_id=? ORDER BY a.created_at, a.ordinal", (mission_id,)):
+                " WHERE b.mission_id=? ORDER BY a.ordinal", (mission_id,)):
             for binding in json.loads(raw).get("bindings", ()):
                 requirement = wanted.get((str(occurrence), str(binding.get("input_port"))))
-                if requirement is not None and binding.get("source_revision") is not None:
-                    pinned.setdefault(requirement, str(binding["source_revision"]))
+                revision = (binding.get("bound_input") or {}).get("source_revision")
+                if requirement is not None and revision is not None:
+                    pinned.setdefault(requirement, str(revision))
         return pinned
 
     #: The purpose a witness must carry to license *binding an accepted output* as an
