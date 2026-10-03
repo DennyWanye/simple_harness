@@ -111,7 +111,8 @@ MISSION_STATUS_TOOL_NAME = "mission_status"
 MISSION_STATUS_DESCRIPTION = (
     "Read the current state of a background task (Mission) started with mission_start: its status, "
     "what it is waiting for (for example the user confirming completion requirements or approving "
-    "a publish), how many steps are done, and which files were published. Read-only: you cannot "
+    "a publish), how many steps are done, which files were published, and its current requirements "
+    "(revision number and each entry's id — read them before mission_amend). Read-only: you cannot "
     "confirm or approve anything with it — the user does that themselves on the task card in this "
     "chat or on the task orchestration page."
 )
@@ -168,6 +169,11 @@ def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, An
         "status": status,
         "status_zh": _STATUS_ZH.get(status, status or "未知"),
         "goal": mission.get("goal"),
+        # 现行要求（改要求前先读这里：版本号与每条的编号）
+        "requirements": (None if not isinstance(workspace, Mapping) else {
+            "revision": (workspace.get("requirements_ref") or {}).get("revision"),
+            "criteria": [{"id": c.get("id"), "statement": c.get("statement")}
+                         for c in workspace.get("criteria") or ()]}),
         "waiting_for": waiting,
         "steps": {"total": len(work), "done": sum(1 for t in work if t.get("status") in _DONE_TASKS)},
         "published": published,
@@ -177,6 +183,85 @@ def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, An
     }
 
 
-__all__ = ("MISSION_START_DESCRIPTION", "MISSION_START_SCHEMA", "MISSION_START_TOOL_NAME",
+# ------------------------------------------------------------------ mission_amend
+# 阶段 E：用户中途改要求。和建任务同一条规矩——主 Agent 把用户的话整理成"增 / 改 / 删哪几条"，
+# 人的把关在"确认完成要求"那一步（手动模式人点；自动模式纯内容要求由系统代确认，带 action: 的等人点）。
+
+MISSION_AMEND_TOOL_NAME = "mission_amend"
+
+MISSION_AMEND_DESCRIPTION = (
+    "Amend the requirements of a running background task (Mission): add, rewrite or remove "
+    "requirement entries. Use it only when the user explicitly asks to change what a background task "
+    "must deliver. First call mission_status to read the current requirements (their revision number "
+    "and each entry's id), then pass expected_revision and the changes: "
+    "{op:'add', statement}, {op:'rewrite', criterion_id, statement} or {op:'remove', criterion_id}. "
+    "The task's goal itself cannot be changed (start a new task for that), and a task that is already "
+    "finishing cannot be amended. After the amendment the task re-plans for the new requirements; "
+    "steps already done under the old requirements may be redone. Requirements with 'action:' still "
+    "wait for the user's confirmation on the task card."
+)
+
+MISSION_AMEND_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "mission_id": {"type": "string"},
+        "expected_revision": {"type": "integer", "minimum": 1},
+        "changes": {"type": "array", "minItems": 1, "maxItems": MAX_CRITERIA, "items": {
+            "type": "object",
+            "properties": {"op": {"type": "string", "enum": ["add", "rewrite", "remove"]},
+                           "criterion_id": {"type": "string"}, "statement": {"type": "string"}},
+            "required": ["op"], "additionalProperties": False}},
+        "reason": {"type": "string"},
+    },
+    "required": ["mission_id", "expected_revision", "changes", "reason"],
+    "additionalProperties": False,
+}
+
+
+def amend_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any], *,
+                  run_id: str, call_id: str, permission_mode: str = "") -> dict[str, Any]:
+    fields = {"mission_id", "expected_revision", "changes", "reason"}
+    mission_id, expected = arguments.get("mission_id"), arguments.get("expected_revision")
+    changes, reason = arguments.get("changes"), arguments.get("reason")
+    if (set(arguments) != fields or not isinstance(mission_id, str) or not mission_id.strip()
+            or type(expected) is not int or not isinstance(reason, str) or len(reason) > MAX_TEXT
+            or not isinstance(changes, list) or not 1 <= len(changes) <= MAX_CRITERIA
+            or not all(isinstance(c, Mapping) and len(str(c.get("statement") or "")) <= MAX_TEXT for c in changes)):
+        raise MissionStartRefused(
+            "invalid_arguments", "需要 mission_id、expected_revision（整数）、changes（1～12 条）、reason")
+    service = service_getter()
+    if service is None:
+        raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
+    from .service import OrchestrationRequestError
+
+    try:
+        detail = service.mission_detail(mission_id.strip())
+        workspace = detail.get("operation_workspace")
+        reference = dict((workspace or {}).get("requirements_ref") or {}) if isinstance(workspace, Mapping) else {}
+        if int(reference.get("revision") or 0) != expected:
+            raise MissionStartRefused(
+                "AMEND_REQUIREMENTS_STALE",
+                f"要求现在是第 {reference.get('revision')} 版，不是第 {expected} 版；先用 mission_status 读最新的再改")
+        receipt = service.amend_requirements({
+            "mission_id": mission_id.strip(), "command_id": f"chat-amend:{run_id}:{call_id}",
+            "expected_requirements_ref": {k: reference[k] for k in ("id", "revision", "content_hash")},
+            "changes": [dict(item) for item in changes], "reason": reason.strip(),
+            "source": {"kind": "MAIN_AGENT", "run_id": run_id, "call_id": call_id,
+                       "permission_mode": permission_mode}})
+    except OrchestrationRequestError as error:
+        raise MissionStartRefused(str(error.code), str(error)) from error
+    changed = receipt.get("changes") or {}
+    return {
+        "mission_id": mission_id.strip(),
+        "requirements_revision": receipt.get("requirements_revision"),
+        "added": list(changed.get("added") or ()), "rewritten": list(changed.get("rewritten") or ()),
+        "removed": list(changed.get("removed") or ()),
+        "where": "任务编排页",
+        "note": "要求已改为新一版；任务会按新要求重新规划。带 action: 的要求需要用户在任务卡片上确认。",
+    }
+
+
+__all__ = ("MISSION_AMEND_DESCRIPTION", "MISSION_AMEND_SCHEMA", "MISSION_AMEND_TOOL_NAME", "amend_mission",
+           "MISSION_START_DESCRIPTION", "MISSION_START_SCHEMA", "MISSION_START_TOOL_NAME",
            "MISSION_STATUS_DESCRIPTION", "MISSION_STATUS_SCHEMA", "MISSION_STATUS_TOOL_NAME",
            "MissionStartRefused", "mission_status", "start_mission")
