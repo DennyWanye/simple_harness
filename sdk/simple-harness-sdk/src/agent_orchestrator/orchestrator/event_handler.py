@@ -294,6 +294,10 @@ FAULT_POINTS = (
     "after_accept_before_supersede",  # step 3 (inside the accept transaction → rolls back)
     "after_task_completed",  # step 3 (accept committed, release / next cycle not yet run)
     "retrieval_unavailable",  # step 4 (S4-07): the knowledge index cannot be read
+    # HTN 补齐 F1-2（崩溃切点 K06、K08、K09）
+    "before_goal_resolution",  # a goal's review is saved, its conclusion not committed yet
+    "after_handoff_before_call",  # an operation's hand-off is recorded, the external call not made
+    "after_external_effect",  # the external call returned, its outcome not recorded yet
 )
 MAX_CRITIC_ATTEMPTS = 2
 SYSTEM_CRITIC_MODEL_CALLS = 12

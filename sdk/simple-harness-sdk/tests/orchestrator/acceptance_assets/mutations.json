@@ -1,0 +1,301 @@
+{
+ "schema": "mutations-v1",
+ "note": "HTN 补齐 F1-5：改坏清单。执行器 scripts/acceptance/run_mutations.py 逐条备份→改→只跑绑定用例→判定→恢复→核哈希。只认行为断言失败（AssertionError）为抓到。",
+ "mutations": [
+  {
+   "id": "D-01",
+   "source": "阶段 D 欠账",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "        scope_epochs=tuple(\n            ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))\n            for scope, epoch in sorted((scope_epochs or {}).items())",
+   "replacement": "        scope_epochs=tuple(\n            ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))\n            for scope, epoch in sorted(({} or {}).items())",
+   "tests": [
+    "tests/orchestrator/product_world/test_epoch_and_read_set.py::test_stale_reply_after_epoch_moved_is_not_charged"
+   ],
+   "note": "读集不写作用域纪元"
+  },
+  {
+   "id": "D-02",
+   "source": "阶段 D 欠账",
+   "file": "src/agent_orchestrator/storage/planning_human_store.py",
+   "original": "        current = {\"plan_revision\": 0 if plan is None else int(plan.revision),",
+   "replacement": "        current = {\"scope_epoch\": htn.epoch(row[\"mission_id\"], \"mission\"), \"plan_revision\": 0 if plan is None else int(plan.revision),",
+   "tests": [
+    "tests/orchestrator/product_world/test_epoch_and_read_set.py::test_pending_question_survives_epoch_change"
+   ],
+   "note": "问人题目绑定里加回纪元"
+  },
+  {
+   "id": "D-03",
+   "source": "阶段 D 欠账",
+   "file": "src/agent_orchestrator/orchestrator/obligation_accounts.py",
+   "original": "                account[\"failed_attempts\"] += 1",
+   "replacement": "                account[\"failed_attempts\"] += 0",
+   "tests": [
+    "tests/orchestrator/product_world/test_obligation_accounts.py::test_obligation_account_counts_failures_and_spend"
+   ],
+   "note": "义务账失败次数读零"
+  },
+  {
+   "id": "D-04",
+   "source": "阶段 D 欠账",
+   "file": "src/agent_orchestrator/orchestrator/assurance_recheck.py",
+   "original": "                changed.append({\"channel\": \"OBJECT\", \"key\": key, \"reason\": error.code})\n    return changed",
+   "replacement": "                changed.append({\"channel\": \"OBJECT\", \"key\": key, \"reason\": error.code})\n        else:\n            changed.append({\"channel\": channel, \"key\": key, \"reason\": \"QUERY_SET\"})\n    return changed",
+   "tests": [
+    "tests/orchestrator/product_world/test_observation_closeout.py::test_observation_after_acceptance_does_not_stale_closeout"
+   ],
+   "note": "收尾复查加回比查询集"
+  },
+  {
+   "id": "D-05",
+   "source": "阶段 D 欠账",
+   "file": "src/agent_orchestrator/testing/product_world.py",
+   "original": "                                 observers=workspace_observers(loop.store, mission.id))",
+   "replacement": "                                 observers=())",
+   "tests": [
+    "tests/orchestrator/product_world/test_desktop_preconditions.py::test_precondition_needs_evidence_then_commits"
+   ],
+   "note": "不注册桌面观察器"
+  },
+  {
+   "id": "F1-01",
+   "source": "F1 新用例 1",
+   "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+   "original": "            orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key=\"upper-bound:\" + subject_id, payload={",
+   "replacement": "            (lambda *a, **k: None)(UPPER_BOUND_EVENT, mission_id, key=\"upper-bound:\" + subject_id, payload={",
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled"
+   ],
+   "note": "按上限结清不写事件"
+  },
+  {
+   "id": "F1-02",
+   "source": "F1 新用例 2",
+   "file": "src/agent_orchestrator/memory/knowledge_standing.py",
+   "original": "    current, reason = acceptance_is_current(store, record.mission_id, support[\"acceptance_id\"])\n    if not current:",
+   "replacement": "    current, reason = acceptance_is_current(store, record.mission_id, support[\"acceptance_id\"])\n    if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_repair_staleness.py::test_knowledge_and_summaries_follow_a_repair"
+   ],
+   "note": "知识当前性不看来源验收"
+  },
+  {
+   "id": "F1-04",
+   "source": "F1 新用例 4",
+   "file": "src/agent_orchestrator/context/knowledge_tools.py",
+   "original": "                or not acceptance_is_current(store, mission_id, acceptance_id_for(task.id, str(result_id)))[0]):",
+   "replacement": "                or False):",
+   "tests": [
+    "tests/orchestrator/product_world/test_repair_staleness.py::test_knowledge_and_summaries_follow_a_repair"
+   ],
+   "note": "摘要不看验收是否仍站着"
+  },
+  {
+   "id": "F1-05",
+   "source": "F1 新用例 5",
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "        semantics = self.semantics()\n        epoch = semantics.epoch(mission_id, scope_id)\n        issued: list[ValidityWitness] = []",
+   "replacement": "        semantics = self.semantics()\n        epoch = 0\n        issued: list[ValidityWitness] = []",
+   "tests": [
+    "tests/orchestrator/product_world/test_validity_handoff.py::test_handoff_goes_through_once_the_witness_is_reissued"
+   ],
+   "note": "输入见证不按新纪元重发"
+  },
+  {
+   "id": "F1-07",
+   "source": "F1 新用例 7",
+   "file": "src/agent_orchestrator/orchestrator/requirements_amendment.py",
+   "original": "        if (htn.adopted_goal_resolution(mission_id, str(root.obligation_id)) is not None",
+   "replacement": "        if (False",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_refused_while_closing_out_and_after_the_end"
+   ],
+   "note": "改要求不看收尾"
+  },
+  {
+   "id": "F1-08",
+   "source": "F1 新用例 8",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "                mission_requirements=current_statements(self.store, mission),",
+   "replacement": "                mission_requirements=mission.success_criteria,",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_holds_dispatch_then_replans_and_delivers"
+   ],
+   "note": "执行者上下文读回建任务时的要求"
+  },
+  {
+   "id": "F1-09",
+   "source": "F1 新用例 9",
+   "file": "src/agent_orchestrator/storage/planning_human_store.py",
+   "original": "        return row[\"request\"][\"binding\"] == current\n",
+   "replacement": "        return row[\"request\"][\"binding\"][\"plan_revision\"] == current[\"plan_revision\"]\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_review_no_verdict.py::test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner"
+   ],
+   "note": "改要求不让等人的题目过期"
+  },
+  {
+   "id": "F1-10",
+   "source": "F1 新用例 10",
+   "file": "src/agent_orchestrator/orchestrator/method_plan_reviews.py",
+   "original": "        if review.passed:\n            continue",
+   "replacement": "        if review.passed or review.state == \"REJECTED\":\n            continue",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_a_method_not_passed_here_is_refused_at_the_plan_commit"
+   ],
+   "note": "闸门放行审阅没通过的做法"
+  },
+  {
+   "id": "F1-11",
+   "source": "F1 新用例 11",
+   "file": "src/agent_orchestrator/orchestrator/method_library.py",
+   "original": "    return store.count_events(mission.id, \"SourceRegistered\") > 0",
+   "replacement": "    return False",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_a_mission_with_registered_sources_promotes_nothing"
+   ],
+   "note": "不看用户登记资料"
+  },
+  {
+   "id": "F1-12",
+   "source": "F1 新用例 12",
+   "file": "src/agent_orchestrator/storage/method_library_store.py",
+   "original": "            blamed = connection.execute(\"DELETE FROM method_library_attributions\").rowcount",
+   "replacement": "            blamed = 0",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_command_line_lists_and_clears_the_library"
+   ],
+   "note": "清空只清一张表"
+  },
+  {
+   "id": "F1-13",
+   "source": "F1 新用例 13",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "                    self._blame_replaced_method(mission.id, decision, decision_id)\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_planner_blame_when_replacing_a_derived_method"
+   ],
+   "note": "换做法时不记归因"
+  },
+  {
+   "id": "F1-15",
+   "source": "F1 新用例 15",
+   "file": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+   "original": "        self._store.fault(\"before_goal_resolution\", \"goal\")  # 崩溃切点 K06：审阅已存、结论未提交\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/product_world/test_fault_points.py::test_goal_conclusion_point_fires"
+   ],
+   "note": "删掉新注入点"
+  },
+  {
+   "id": "M01",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "取消 grant 复核；绑定场景 A03；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M02",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "操作读失败改空；绑定场景 R06；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M03",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "历史读取取最新；绑定场景 S01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M04",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "忽略 DATA 只用 ORDER；绑定场景 D01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M05",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "空 manifest 回退；绑定场景 D02；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M06",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "去掉 source 集合 digest；绑定场景 C02；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M07",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "按旧父批量取消；绑定场景 R01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M08",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "generation 不检查；绑定场景 R07；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M09",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "以 Task.CANCELLED 视为 settled；绑定场景 D04；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M10",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "NOT_CHECKED 改 PASS；绑定场景 S07；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M11",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "receipt 丢失创建新 command；绑定场景 C03；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "M12",
+   "source": "TaskGraph 代码级计划 §15",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "compound 派普通 Worker；绑定场景 S05；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  }
+ ]
+}

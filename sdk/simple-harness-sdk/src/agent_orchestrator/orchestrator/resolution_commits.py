@@ -980,6 +980,7 @@ class ResolutionCommitsMixin:
         _authorize(command.issued_by, command.scope_id, principal)
         intent = command.intent_hash()
         resolution = command.resolution
+        self._store.fault("before_goal_resolution", "goal")  # 崩溃切点 K06：审阅已存、结论未提交
         with self._store.transaction():
             mission = self._open_mission(command.mission_id)
             semantics = HtnStore(self._store)

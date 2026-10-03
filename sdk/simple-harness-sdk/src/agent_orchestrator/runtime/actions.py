@@ -155,6 +155,7 @@ class ActionExecutor:
             self.last_refusal[action_key] = _reason or ""
             return None
         connector = self._connectors[str(action["connector"])]
+        self._commit._store.fault("after_handoff_before_call", "action")  # 崩溃切点 K08
         self._inflight.add(action_key)
         call = asyncio.ensure_future(
             asyncio.to_thread(
@@ -182,6 +183,7 @@ class ActionExecutor:
                 error=f"{type(error).__name__}: {error}",
             )
         self._inflight.discard(action_key)
+        self._commit._store.fault("after_external_effect", "action")  # 崩溃切点 K09
         return self._commit.record_action_outcome(
             action_key,
             owner=self._owner,

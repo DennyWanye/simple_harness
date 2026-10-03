@@ -1,0 +1,259 @@
+{
+ "schema": "crash-points-v1",
+ "note": "HTN 补齐 F1-2：AER 九个与 TaskGraph 七个去重，加阶段 B～C3、E 记入的故障边界。G 与 F2 都读这一份。执行归属：已有 = 已有用例覆盖恢复；F2 = 联测逐点执行；G = 两库边界随全业务重放收尾执行。",
+ "points": [
+  {
+   "id": "K01",
+   "cut": "计划核对后、提交前；提交事务中途（事件/投影/预算写一半）",
+   "recovery": "没有正式图改变，一起回滚；同一命令可再提交",
+   "from": "AER①、TG①②",
+   "method": "进程强退 + 进程内抛错",
+   "injection": [
+    "inside_commit（crash_seed.py）",
+    "mid_commit"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_commit_atomicity.py::test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt",
+    "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K02",
+   "cut": "提交后、派发前",
+   "recovery": "恢复原派发意图，同一身份",
+   "from": "AER②、TG③",
+   "method": "进程强退",
+   "injection": [
+    "after_commit（crash_seed.py）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K03",
+   "cut": "执行侧已收到工作、编排没记回执",
+   "recovery": "按原身份找回原执行，不新建",
+   "from": "AER③、TG④",
+   "method": "进程内抛错",
+   "injection": [
+    "after_agent_created",
+    "after_submit"
+   ],
+   "tests": [],
+   "run_in": "F2"
+  },
+  {
+   "id": "K04",
+   "cut": "执行侧已存结果、编排没消费",
+   "recovery": "导入原回执，不重跑执行者",
+   "from": "AER⑥",
+   "method": "进程强退",
+   "injection": [
+    "after_turn_committed（crash_seed.py after_executor）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_at_attempt_boundary_preserves_original_accounting"
+   ],
+   "run_in": "G"
+  },
+  {
+   "id": "K05",
+   "cut": "产物已提交、审阅前",
+   "recovery": "只继续审阅",
+   "from": "TG⑤",
+   "method": "进程内抛错",
+   "injection": [
+    "after_result_submitted"
+   ],
+   "tests": [
+    "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_artifact_versions_survive_a_redelivered_turn"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K06",
+   "cut": "审阅已保存、验收（叶子）或目标结论（复合）未提交",
+   "recovery": "核对原读集后接纳原审阅或标过期，不重新问模型",
+   "from": "AER⑦、TG⑥",
+   "method": "进程内抛错",
+   "injection": [
+    "after_layer_pass",
+    "before_goal_resolution（F1-2 新增）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_review_cold_resume",
+    "tests/orchestrator/product_world/test_fault_points.py::test_goal_conclusion_point_fires"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K07",
+   "cut": "验收已提交、下一轮/界面没收到",
+   "recovery": "同一命令查原回执，不重复验收、不重复通知",
+   "from": "AER⑧",
+   "method": "进程内抛错",
+   "injection": [
+    "after_task_completed",
+    "after_accept_before_supersede"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_acceptance_atomic_faults"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K08",
+   "cut": "对外操作：交接已记、网络调用前",
+   "recovery": "保守记'结果未知'，经查询或去重恢复，不假定没发",
+   "from": "AER④",
+   "method": "进程内抛错",
+   "injection": [
+    "after_handoff_before_call（F1-2 新增）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K09",
+   "cut": "对外操作：外部已生效、本地没收到",
+   "recovery": "按原键查询，不新建操作",
+   "from": "AER⑤",
+   "method": "进程内抛错",
+   "injection": [
+    "after_external_effect（F1-2 新增）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K10",
+   "cut": "换做法时旧外部动作结果未知",
+   "recovery": "保留原动作身份与预留，替代动作不重复执行",
+   "from": "TG⑦",
+   "method": "构造场景",
+   "injection": [
+    "（复用 full_target/_unknown_outcome_world.py 的世界）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/test_after_handoff_unknown_bounded.py::test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent"
+   ],
+   "run_in": "F2"
+  },
+  {
+   "id": "K11",
+   "cut": "用量晚到、任务已终态",
+   "recovery": "原账户导入，不复活权限、不重跑内容",
+   "from": "AER⑨",
+   "method": "构造场景",
+   "injection": [
+    "（构造场景）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_late_accounting_quiet.py::test_ended_mission_holds_are_rechecked_every_five_minutes"
+   ],
+   "run_in": "G"
+  },
+  {
+   "id": "K12",
+   "cut": "迟到用量导入写库出错",
+   "recovery": "记一个任务的一轮故障，不冲出主循环",
+   "from": "阶段 C 评估 U1",
+   "method": "函数级抛错",
+   "injection": [
+    "accounting_recovery._import_hold（函数级）"
+   ],
+   "tests": [],
+   "run_in": "G"
+  },
+  {
+   "id": "K13",
+   "cut": "动作对账处出错",
+   "recovery": "记一个任务的一轮故障，不冲出主循环",
+   "from": "阶段 B 评估",
+   "method": "函数级抛错",
+   "injection": [
+    "Orchestrator._reconcile_actions（函数级）"
+   ],
+   "tests": [],
+   "run_in": "F2"
+  },
+  {
+   "id": "K14",
+   "cut": "重启恢复处出错；启动绑定拒绝一条意图",
+   "recovery": "只停这一个任务，其余照常",
+   "from": "阶段 B",
+   "method": "函数级抛错",
+   "injection": [
+    "（函数级）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_fault_while_recovering_one_mission_does_not_stop_the_others",
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission"
+   ],
+   "run_in": "已有"
+  },
+  {
+   "id": "K15",
+   "cut": "已结束任务的收尾一直出错",
+   "recovery": "到上限关掉调用、按上限结清并记'按上限计入'",
+   "from": "阶段 B",
+   "method": "函数级抛错",
+   "injection": [
+    "（函数级）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled"
+   ],
+   "run_in": "已有"
+  },
+  {
+   "id": "K16",
+   "cut": "主循环全局扫描出错（保证通道每轮工作、执行图通知）",
+   "recovery": "同一故障边界：记一个任务的一轮故障",
+   "from": "阶段 C 第 0′ 条",
+   "method": "函数级抛错",
+   "injection": [
+    "（函数级）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_fault_in_a_global_scan_is_one_missions_round_fault"
+   ],
+   "run_in": "已有"
+  },
+  {
+   "id": "K17",
+   "cut": "晋级出错",
+   "recovery": "只撤回晋级，任务照常完成",
+   "from": "阶段 C3",
+   "method": "函数级抛错",
+   "injection": [
+    "（函数级）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_a_failing_promotion_never_fails_completion"
+   ],
+   "run_in": "已有"
+  },
+  {
+   "id": "K18",
+   "cut": "改要求写到一半",
+   "recovery": "全部回滚",
+   "from": "阶段 E",
+   "method": "写事件时抛错",
+   "injection": [
+    "（函数级）"
+   ],
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_writes_everything_in_one_transaction"
+   ],
+   "run_in": "已有"
+  }
+ ]
+}

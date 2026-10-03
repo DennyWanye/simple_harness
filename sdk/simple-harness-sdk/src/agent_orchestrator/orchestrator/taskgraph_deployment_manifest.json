@@ -1,5 +1,5 @@
 {
-  "deployment_id": "b1cdf075825e1caf0d902b876a9a24e3f60546c289d9fbe5da8e8d857d72f401",
+  "deployment_id": "56e411db844efc553046ea2b06d38ede024542e70ddc672713b96a5bffb2c2b3",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -195,7 +195,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "0e5230f54979677b73caf6927da2f089d3b5414a8f5e099d023f3f734ff9b03c",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "38490961a2c1b146e2c89662d5fcacadf1f705051c0593b9d7a65ecac7add94f",
-    "agent_orchestrator/orchestrator/event_handler.py": "7fdcf988b0cfea85082901ed3595e6aa295e6779a1286bce56ba81c252396b02",
+    "agent_orchestrator/orchestrator/event_handler.py": "11f31a065d46ebff29b982927b7f45cd45f5a52b5dea749a264c9f3d86830815",
     "agent_orchestrator/orchestrator/failure_classes.py": "20d14198bbbc53279c38cc256c11583d38e0d9e685ba7cee2202017d21ab9922",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "3983e4101b24e634d1767231c1acf20dcab494b70d447bdf9146c64acc27fb67",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
@@ -232,7 +232,7 @@
     "agent_orchestrator/orchestrator/protected_tail_commits.py": "3009202f17e61047c600e10ae4e93d95f8990f1bf7d18307edb04da0a9ef39c6",
     "agent_orchestrator/orchestrator/repair_impact.py": "1a4903501739bb99717ef78f03ba478a0a290b10335e202e5833ef964c88a224",
     "agent_orchestrator/orchestrator/requirements_amendment.py": "f62e1b693433a34d13790bc9b462e4301a01ab021004a1621ecc9e91559f7ce0",
-    "agent_orchestrator/orchestrator/resolution_commits.py": "6613ecf61fe5304f4bc143eac679e7258ba0d016e89f3f6b2a3a07641addf7bb",
+    "agent_orchestrator/orchestrator/resolution_commits.py": "1538a8c78c3cf8635aaa23080f5fe95dd597c18d7c8ca17cd6aca3bef992ab7f",
     "agent_orchestrator/orchestrator/review_adjudication.py": "0ba606ca0854ad80d92cd29dca1d38543489a13cab00ff0410a327320c3efd02",
     "agent_orchestrator/orchestrator/root_review.py": "5fe8bb411e2272c8c1cbef12fca31ca34266c212cf475f29d4762f68b01dbb94",
     "agent_orchestrator/orchestrator/scoped_composition_review.py": "6bc8f0efb469a65425065fa14ccf0308392c611a96a821dee1e0faeb09c1e53f",
@@ -333,7 +333,7 @@
     "agent_orchestrator/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "agent_orchestrator/runtime/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/runtime/action_schema.py": "a70013451177cfc89ee7ce43b4af6ed7c590a038c34da3f44d415fa48dcfcfb4",
-    "agent_orchestrator/runtime/actions.py": "cf1fed1bb27c7a3862f291716b17cab57fa0188b1df038a9448aa74574d40880",
+    "agent_orchestrator/runtime/actions.py": "4a6dee393f69ec305e8a829981ea51efd9a978d1fea5408efadb415beac55333",
     "agent_orchestrator/runtime/agent_worker.py": "3f07f0883dc59566bcf2f3c5cd7975cc20e861fe3fae7afcb03a43e3c6534edb",
     "agent_orchestrator/runtime/appworld_templates.py": "b7356272e2677aa806adac12134b4e1237905492ec6b3fc2cb155e9b7e3f7d47",
     "agent_orchestrator/runtime/assembly.py": "7cf7f2cff6a9cec2a4729eec8bded2325eaf6113db86ce56cedf0e56f30df58e",
