@@ -124,3 +124,55 @@ def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
             assert hashlib.sha256(workspace_bytes).hexdigest() == action["receipt"]["after"]["content_hash"]
 
     asyncio.run(case())
+
+
+def test_a_fenced_publish_waits_instead_of_failing(tmp_path, monkeypatch):
+    """阶段 B 裁决第 5 类：发布交接时恰好撞上改做法的围栏，动作留在可交接状态、下一轮再试，
+    不以"动作失败"停任务；围栏结束后照常发布（暂时性只查错误码表那一列）。
+
+    围栏用一次性的"已被围"注入：人批准之后的头三次交接核对报"已被围"，之后放行。
+
+    **改坏检验**：错误码表里去掉"已被围"的暂时性 → 任务以"动作失败"停 → 变红。
+    """
+    from agent_orchestrator.orchestrator import taskgraph_dispatch
+    from agent_orchestrator.storage.store import StoreConflict
+
+    original = taskgraph_dispatch.require_taskgraph_unfenced
+    fenced: list[str] = []
+    approved = {"yes": False}
+
+    def fenced_three_times(store, mission_id, task_id):  # type: ignore[no-untyped-def]
+        if approved["yes"] and len(fenced) < 3:
+            fenced.append(task_id)
+            raise StoreConflict("TASKGRAPH_TARGET_FENCED")
+        return original(store, mission_id, task_id)
+
+    monkeypatch.setattr(taskgraph_dispatch, "require_taskgraph_unfenced", fenced_three_times)
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "fenced-publish"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            approvals: list[dict[str, Any]] = []
+            for _ in range(20):
+                await world.drain()
+                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                if approvals:
+                    break
+            approved["yes"] = True
+            world.control.decide(approvals[0]["request_id"], "approve")
+            mission = await world.run_until_settled(mission_id, rounds=30)
+            assert len(fenced) == 3
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            [action] = world.store.list_actions(mission_id)[-1:]
+            assert action["state"] == "SUCCEEDED" and action["handoffs"] == 1
+
+    asyncio.run(case())
