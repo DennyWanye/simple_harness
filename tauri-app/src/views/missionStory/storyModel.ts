@@ -206,7 +206,7 @@ export function reasonGood(v: string): boolean | null {
 const STOP_REASON: Record<string, string> = {
   verification_passed: "验证通过", verification_failed: "验证未通过", budget_exhausted: "预算用完", cancelled: "已取消",
   user_cancelled: "已取消", planning_failed: "规划失败", max_attempts: "尝试次数用完", timeout: "超时",
-  human_override: "人工接管后停止", no_dispatchable_work: "没有可继续执行的工作", insufficient_evidence: "证据不足",
+  human_override: "人工接管后停止", no_dispatchable_work: "没有可继续执行的工作", store_fault: "任务数据读写反复出错，已停止", insufficient_evidence: "证据不足",
   artifact_conflict: "产物冲突", turn_failed: "模型这一回合失败", upstream_artifact_missing: "上游文件缺失",
 };
 export const reasonLabel = (code: string | null | undefined): string => (code ? STOP_REASON[code] ?? code : "");
