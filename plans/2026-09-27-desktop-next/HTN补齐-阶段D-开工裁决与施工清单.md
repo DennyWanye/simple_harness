@@ -85,6 +85,8 @@
 
 ### 1.8 作用域纪元的写方：观察唯一写入口的同一事务里写；外加"每轮重读"
 
+> **2026-10-03 偏差裁决《观察重读》（`HTN补齐-阶段D-偏差裁决-观察重读.md`）**：本节结论、D7 第 2、3 条与用例 11、12 以该裁决第六节的替换文字为准——同一观察器取最新、不同来源合并；观察行记 `question_json`；未知或冲突→任意不加纪元；重读按"世界标记"触发，每个标记读一次并记 `EvidenceReread`。偏差单第 8 条。
+
 **结论：写方放在 `HtnStore.insert_observation`（`htn_store.py:1368-1403`）同一事务：插入前后各按 `EvidenceEntry.from_observations`（与 `world.snapshot()` 同一算法）算一次该命题真值；插入前是 TRUE/FALSE、插入后不同（含变冲突、变未知）→ `bump_epoch(mission, scope_id, bumped_by="observation:<编号>")`；插入前是未知的首次观察不加。E 的要求修订是第二个写方（E 做）。另在 `run_evidence_round` 加"重读"：对本任务已记录过、观察器能读的命题逐个重读，真值与当前快照不同才写新观察（随之加纪元），没变不写。**
 
 - `bump_epoch` 自带事务，嵌套安全（`SDK/storage/store.py:409-428`），同事务已记 `validity_epoch` 来源变更（`htn_store.py:1575-1579`），通知已认这一类，不另接。
