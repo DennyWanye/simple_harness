@@ -62,4 +62,48 @@ def account_of(accounts: dict[str, dict[str, int]], obligation_id: Any) -> dict[
                                               "unknown_usage_attempts": 0})
 
 
-__all__ = ("account_of", "obligation_accounts")
+def _labels(store: Store, mission_id: str) -> dict[str, str]:
+    """duty id → what the work under it is for, in the words its task was given."""
+    import json
+
+    labels: dict[str, str] = {}
+    for duty, raw in store.connection.execute(
+            "SELECT obligation_id, binding_json FROM task_semantics WHERE mission_id=?"
+            " ORDER BY task_id, binding_revision", (mission_id,)):
+        goal = (json.loads(raw).get("typed_parameters") or {}).get("goal")
+        if isinstance(goal, str) and goal.strip():
+            labels.setdefault(str(duty), goal.strip()[:60])
+    return labels
+
+
+def obligation_rows(store: Store, mission_id: str) -> list[dict[str, Any]]:
+    """Where the budget went, duty by duty (阶段 E): one row per duty, parents before
+    children, each with the totals of :func:`obligation_accounts` (the same reading — nothing
+    is computed twice).  A cancelled or replaced duty is still listed: what a dropped method
+    spent is part of where the budget went."""
+
+    duties = {str(duty.obligation_id): duty for duty in ObligationStore(store).list_obligations(mission_id)}
+    accounts = obligation_accounts(store, mission_id)
+    labels = _labels(store, mission_id)
+    children: dict[str | None, list[str]] = {}
+    for key, duty in duties.items():
+        parent = None if duty.parent_obligation_id is None else str(duty.parent_obligation_id)
+        children.setdefault(parent if parent in duties else None, []).append(key)
+    rows: list[dict[str, Any]] = []
+
+    def walk(key: str, depth: int) -> None:
+        duty = duties[key]
+        rows.append({
+            "obligation_id": key,
+            "parent_obligation_id": None if duty.parent_obligation_id is None else str(duty.parent_obligation_id),
+            "depth": depth, "label": "整个任务" if depth == 0 else labels.get(key, key),
+            "lifecycle": str(duty.lifecycle), **account_of(accounts, key)})
+        for child in sorted(children.get(key, ())):
+            walk(child, depth + 1)
+
+    for root in sorted(children.get(None, ())):
+        walk(root, 0)
+    return rows
+
+
+__all__ = ("account_of", "obligation_accounts", "obligation_rows")

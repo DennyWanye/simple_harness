@@ -1,5 +1,5 @@
 {
-  "deployment_id": "8dcbc5e8574522bea63e98258177df2ec25190eabf8f7b2fdc97ce674cde17db",
+  "deployment_id": "2704aeaa95d5702747c94cf63dfa2ccfa98703c5454623270d100a936b57c081",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -7,7 +7,7 @@
     "agent_orchestrator/api/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/api/approvals.py": "456359314d2ac0d2dd07000708cd2271d8b6f547346ac2c383f3ec1a19319798",
     "agent_orchestrator/api/assurance.py": "aa645b9c6d5945e673c372bbf33dd544c0eae291d3df201b9d09df321555dde2",
-    "agent_orchestrator/api/facade.py": "9e8b25e1887654ddb750ddbff9df9c4eb69f525cc88dbb9ed9938b7f62e856d8",
+    "agent_orchestrator/api/facade.py": "da51fc8ce19634ef4bf244e60c055a15bb62dcc019f6e9f1fe8d5af53c7a037b",
     "agent_orchestrator/api/missions.py": "1ad6d203e40239e61b6df27ffd999a93deeb1d5db6725d23d983a0be7d79a608",
     "agent_orchestrator/api/operation_completion.py": "a83f3902d2bf99a52b2526139370eaac192873457be936cc6432b9c6a462cf37",
     "agent_orchestrator/api/operation_intents.py": "b0566b5792b73b81c2c6251aa2480c373dfcb363de3dac02be25b75e2c5a91b1",
@@ -203,7 +203,7 @@
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "84b256b6f2c63f5f2aa7074621368b5cb2bf8d16d835e475799d890af1bb86c7",
     "agent_orchestrator/orchestrator/method_plan_reviews.py": "1312fcbf7aa48d74b5a9b1197fa128db3c2c545badf8f9816537debcfa3b3fc6",
-    "agent_orchestrator/orchestrator/obligation_accounts.py": "c9010008843b02c58520f4a84a7f894c204450a93e4391ed22c384090b1eb330",
+    "agent_orchestrator/orchestrator/obligation_accounts.py": "7e547221bab2a8779dd926ad9ecbd486d8b0a00a5fe9982470d85ea7127abb3d",
     "agent_orchestrator/orchestrator/obligation_commits.py": "4af7dbec693e32558921f56f0d577b8a73ebbd214997c801650da667328b362a",
     "agent_orchestrator/orchestrator/occurrence_tasks.py": "05424f859134dd9eccfd8ec0ab728fc4afce56eaf2bbc0411fc0e7dae75c4f1a",
     "agent_orchestrator/orchestrator/operation_completion.py": "49a144badf081cad2cf070553dff3e886a749d4a35c3f709436879443fc7b0a4",

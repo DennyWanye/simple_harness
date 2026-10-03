@@ -726,6 +726,28 @@ class MissionControlV1:
                 for m in mine[: max(1, min(int(limit), 200))]
             ]
 
+    def _unrefined_goals(self, mission_id: str) -> list[dict[str, Any]]:
+        """Goals in the current plan that no method has refined yet — the planning frontier,
+        by the same function the execution-graph snapshot uses (阶段 E)."""
+        from ..planning.htn.refinement import planning_frontier
+
+        dispatch = self._orchestrator._dispatch_for(mission_id)
+        if dispatch is None:
+            return []
+        try:
+            network = dispatch.network(mission_id)
+            frontier = planning_frontier(network)
+        except (ContractError, StoreError):
+            return []
+        rows = []
+        for item in frontier:
+            binding = network.binding_for_occurrence(item.occurrence_id)
+            goal = dict(binding.typed_parameters).get("goal")
+            rows.append({"occurrence_id": str(item.occurrence_id), "task_id": str(binding.task_id),
+                         "label": str(goal).strip()[:60] if isinstance(goal, str) and goal.strip()
+                         else str(binding.goal_signature.signature_id)})
+        return rows
+
     def snapshot(self, mission_id: str) -> dict[str, Any]:
         store = self._store
         with store.read_view():  # the snapshot and its cursor come from one read
@@ -734,8 +756,10 @@ class MissionControlV1:
             from ..storage.planning_human_store import PlanningHumanStore
             snapshot["planning_questions"] = PlanningHumanStore(store).list(mission.id)
             # 这件事（含下级、含换过的做法）到现在花了多少：读时由尝试与结算推出
-            from ..orchestrator.obligation_accounts import obligation_accounts
+            from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
             snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
+            snapshot["budget_by_duty"] = obligation_rows(store, mission.id)
+            snapshot["unrefined_goals"] = self._unrefined_goals(mission.id)
             from ..orchestrator.planning_selection import awaits_authority
             from ..storage.planning_decision_store import PlanningDecisionStore
             planning = PlanningDecisionStore(store)
