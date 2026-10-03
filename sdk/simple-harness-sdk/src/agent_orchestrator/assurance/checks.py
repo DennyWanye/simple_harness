@@ -411,6 +411,8 @@ def decode_review_reply(raw: str | bytes) -> ReviewReply:
                              ("methods", _METHOD_KEYS)):
             if isinstance(value.get(key), list):
                 value[key] = [_drop_empty_extras(item, allowed) for item in value[key]]
+        if isinstance(value.get("summary"), dict):
+            value["summary"] = _drop_empty_extras(value["summary"], _SUMMARY_KEYS)
     return ReviewReply.from_json(value)
 
 

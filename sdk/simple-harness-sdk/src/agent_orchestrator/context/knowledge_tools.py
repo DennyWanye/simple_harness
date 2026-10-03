@@ -215,6 +215,9 @@ def read_knowledge_tool(
         "notice": (
             "This is source data. Its verification is limited to the recorded scope."
             if row["layer"] == VERIFIED_LAYER
+            else "An accepted step's own summary, checked against its result by the reviewer: it tells "
+            "you what that step did; for a fact, go to the artifacts it names or to verified knowledge."
+            if row["layer"] == SUMMARY_LAYER
             else "This claim is not verified; it is a lead, not a fact."
         ),
     }

@@ -81,3 +81,13 @@ def test_a_section_the_package_does_not_have_is_a_scope_error(tmp_path, purpose,
     rejected = [event for event in events if event.type == "AssuranceReviewInterpretationRejected"]
     expected = "METHOD_SCOPE" if field == "methods" else "SUMMARY_SCOPE"
     assert rejected and expected in json.dumps([event.payload for event in rejected])
+
+
+def test_an_empty_extra_field_in_summary_is_ignored():
+    """格式口径（用户 2026-10-02）同样适用于第 4 版的 summary 对象：多写一个值为空的字段照收。"""
+    from agent_orchestrator.assurance.checks import decode_review_reply
+
+    reply = {"schema_version": 4, "verdict": "ACCEPT", "findings": [], "assessments": [
+        {"criterion_id": "c", "verdict": "PASS", "evidence_ids": [], "reason": "r", "limitations": []}],
+        "summary": {"faithful": True, "reason": "r", "note": ""}}
+    assert decode_review_reply(json.dumps(reply)).summary.faithful is True

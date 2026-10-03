@@ -239,20 +239,19 @@ def finalize_assured_mission(
 def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
     """The one road into the method library (阶段 C3): delivered, the root's final review passed,
     and that review called the method reusable.  Same transaction as ``MissionCompleted``; a
-    promotion that cannot be read through is undone and recorded — the Mission still completes."""
-    from ..contracts.models import ContractError
-    from ..storage.store import StoreError
+    promotion that fails for any reason is undone and recorded — the Mission still completes."""
     from .method_library import PROMOTION_SKIPPED, promote_methods
 
     store.connection.execute("SAVEPOINT method_promotion")
     try:
         promote_methods(store, mission_id, resolution)
-    except (StoreError, ContractError, KeyError, ValueError) as error:
+    except Exception as error:  # noqa: BLE001 - the library is a by-product; completion never fails on it
         store.connection.execute("ROLLBACK TO method_promotion")
         from .hierarchical_dispatch import append_hierarchical_event
 
         append_hierarchical_event(store, PROMOTION_SKIPPED, mission_id, key=f"{mission_id}:unreadable",
-                                  payload={"reason": "unreadable", "error": str(error)[:300]})
+                                  payload={"reason": "unreadable", "error_type": type(error).__name__,
+                                           "error": str(error)[:300]})
     store.connection.execute("RELEASE method_promotion")
 
 __all__ = (

@@ -6,6 +6,7 @@
   - SDK：`T/product_world/test_method_library.py` 全部 10 条、`T/full_target/test_c3_guards.py`、`T/product_world/test_blackboard_tools.py::test_checked_summary_layer`（3 支）——**14 条全过**（98 秒）；
   - Host：`backend/tests/orchestration/test_chat_method_library.py`（5 条）、`test_hierarchical_host_integration.py::test_desktop_world_is_mission_independent`——**6 条全过**（用主仓库 backend 虚拟环境，`PYTHONPATH` 指向本工作树的 backend 与 SDK 源码）；
   - 两个临时探针（只在我的临时目录，没进仓库）：①根终审打回并写 `at_fault`，归因是否真的经导入路径写进归因表——**通过**（写入一行 `ROOT_REVIEW`）；②回复解码对"值为空的多余字段"的容忍——**`summary` 对象里多一个空字段会被拒收**（见必须改第 2 项）。
+- **注意**：评估进行中，工作树里出现了 7 个不是我改的未提交改动（`review_input.py` 示例去掉 `summary`、`occurrence_tasks.py` 叶子原话改法、`planner_package.py`、部署清单与 3 个测试文件），应是另一会话在同时修补。本评估以已提交的 `bdbb0dc9` 为准，没有评这 7 处；上面跑的单测是在带着这些改动的工作树上跑的。两项必须改涉及的 `checks.py`、`assurance_final_writer.py` 都不在这 7 个文件里，结论不受影响。
 - 路径缩写同清单：`SDK/` = `sdk/simple-harness-sdk/src/agent_orchestrator/`；`T/` = `sdk/simple-harness-sdk/tests/orchestrator/`；`Host/` = `backend/deskpet/orchestration/`。行号是本分支现行代码的行号。
 
 ---

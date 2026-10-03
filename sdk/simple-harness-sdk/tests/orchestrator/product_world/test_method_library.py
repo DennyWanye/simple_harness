@@ -332,27 +332,103 @@ def test_manual_retire_and_clear(tmp_path):
 
 
 def test_library_writes_do_not_touch_the_barrier(tmp_path):
-    """晋级、归因、退役都不碰保证通道：任何纪元不变、不多一条证据变更事件。
+    """晋级、归因、退役都不碰保证通道：全局纪元、各作用域纪元都不变，不多一条证据变更事件。
 
-    **改坏检验**：晋级改成改做法定义表的状态 → 纪元变。"""
+    **改坏检验**：晋级改成改做法定义表的登记状态 → 全局纪元变。"""
+    from types import SimpleNamespace
 
-    def epochs(world: Any) -> list[Any]:
-        return world.store.connection.execute(
+    def epochs(world: Any) -> tuple[Any, ...]:
+        environment = world.store.connection.execute(
+            "SELECT epoch FROM assurance_environment_state WHERE singleton=1").fetchone()
+        scopes = world.store.connection.execute(
             "SELECT mission_id, scope_id, epoch FROM validity_epochs ORDER BY mission_id, scope_id").fetchall()
+        return (None if environment is None else environment[0], [tuple(row) for row in scopes])
 
     async def run():
         async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
             mission = await _deliver(world, "barrier")
             [entry] = _entries(world)
-            before = [tuple(row) for row in epochs(world)]
-            changes = world.store.count_events(mission.id, "AssuranceEvidenceChanged")
             store = MethodLibraryStore(world.store)
+            store.clear()  # promote again inside the observed window
+            before = epochs(world)
+            assert before[0] is not None
+            changes = world.store.count_events(mission.id, "AssuranceEvidenceChanged")
             with world.store.transaction():
-                store.add_attribution(entry["entry_id"], source_ref="x", source_kind="PLANNER", mission_id=mission.id,
+                [entry_id] = library.promote_methods(
+                    world.store, mission.id, SimpleNamespace(review_receipt_id=entry["root_review_record_id"]))
+                store.add_attribution(entry_id, source_ref="x", source_kind="PLANNER", mission_id=mission.id,
                                       method_id=entry["method_id"], method_version=entry["method_version"],
                                       method_hash=entry["method_hash"], reason="r")
-                library.retire_entry(world.store, entry["entry_id"], by="user", reason="r")
-            assert [tuple(row) for row in epochs(world)] == before
+                library.retire_entry(world.store, entry_id, by="user", reason="r")
+            assert epochs(world) == before
             assert world.store.count_events(mission.id, "AssuranceEvidenceChanged") == changes
+
+    asyncio.run(run())
+
+
+def test_root_review_blame_is_recorded_through_the_import(tmp_path):
+    """根终审打回时审阅员写明"做法本身有错"：照先例写的做法经正式记录导入记一条归因（来源是审阅记录）。"""
+    from agent_orchestrator.testing.scripted_replies import decision as planner_decision
+
+    blamed = {"done": False}
+    prefer: list[str] = []
+    reader = _reader_planner([], prefer)
+
+    def planner(request: Any):
+        package = package_of(request)
+        if package.get("repair_requests"):
+            subject = (package.get("planning_subjects") or [{}])[0]
+            return planner_decision(subject["subject_key"], "NO_CHANGE", {"reason": "等人看"}, "不改计划。")
+        return reader(request)
+
+    def reviewer(request: Any):
+        package = review_input(request)
+        if package is None:
+            return None
+        inner = package.get("package") or {}
+        rows = inner.get("methods_to_judge") or []
+        if inner.get("purpose") == "MISSION_FINAL" and any(row["based_on"] for row in rows) and not blamed["done"]:
+            blamed["done"] = True
+            return review_reply(package, verdict="REWORK", grade="FAIL", methods=lambda row: {
+                "method_ref": row["method_ref"], "reusable": False, "purpose": "", "at_fault": True,
+                "reason": "照先例的拆法漏了一步"})
+        return judging_reviewer()(request)
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+            await _deliver(world, "blame-root-a")
+            [entry] = _entries(world)
+            prefer.append(entry["entry_id"])
+            created = world.create({"goal": "写一份笔记", "idempotency_key": "blame-root-b",
+                                    "success_criteria": ["file:notes/a.md"]})
+            rows: list[Any] = []
+            for _ in range(30):
+                await world.drain(timeout=10)
+                rows = MethodLibraryStore(world.store).attributions(entry["entry_id"])
+                if rows:
+                    break
+            assert blamed["done"] and len(rows) == 1
+            assert rows[0]["source_kind"] == "ROOT_REVIEW" and rows[0]["mission_id"] == created["mission_id"]
+            assert rows[0]["reason"] == "照先例的拆法漏了一步"
+            assert MethodLibraryStore(world.store).get(entry["entry_id"])["state"] == "LISTED"
+
+    asyncio.run(run())
+
+
+def test_a_failing_promotion_never_fails_completion(tmp_path, monkeypatch):
+    """晋级出任何错只撤回晋级这一段并记一条"跳过"，任务照常完成。
+
+    **改坏检验**：只兜几类异常 → 这里的 TypeError 把完成一起打掉。"""
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise TypeError("promotion broke")
+
+    monkeypatch.setattr(library, "promote_methods", broken)
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+            mission = await _deliver(world, "promotion-broke")
+            [skipped] = _events(world, mission.id, "MethodPromotionSkipped")
+            assert skipped.payload["error_type"] == "TypeError" and _entries(world) == []
 
     asyncio.run(run())
