@@ -125,11 +125,12 @@ async def test_a_model_written_test_never_reaches_this_machine(
 
     import json
 
+    from agent_orchestrator.testing.fixtures import package_of
+
     from ._layered_lane import (
         LayeredScriptedProvider,
         layered_service,
         notes_mission,
-        package_of,
         quick_runtime,
         run_until_settled,
     )
