@@ -275,7 +275,10 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
 
 def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(tmp_path, monkeypatch):
     """任务已结束、它那次回合的收尾一直出错：到上限后把这条调用关为失败（记明原因），``run()`` 能回到
-    空闲；它的额度预留随后能按上限结清（宁可多算、不冻结）。此前这条调用永远开着。"""
+    空闲；它的额度预留随后能按上限结清（宁可多算、不冻结），并记一条"按上限计入"的用量事件。此前这条
+    调用永远开着。
+
+    **改坏检验**：结清时不写那条事件 → 变红。"""
     import sqlite3
 
     import agent_orchestrator.orchestrator.accounting_recovery as accounting
@@ -313,6 +316,9 @@ def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(t
             assert len(closed) == 1 and closed[0]["reason"] == "round_fault_after_mission_end", _faults(store, a)
             assert store.get_intent(closed[0]["closed_intent"]).state == "FAILED"
             accounting._settle_expired_ended_holds(loop)
+            # 按上限结清的那条用量事实如实记下（阶段 B 欠的断言，HTN 补齐 F1）
+            [counted] = [event for event in store.list_events(a) if event.type == "ReservationCountedAtUpperBound"]
+            assert counted.payload["counted_tokens"] > 0
             assert not store.connection.execute(
                 "SELECT 1 FROM budget_reservations r JOIN dispatch_intents i ON i.subject_id=r.subject_id "
                 "WHERE i.mission_id=? AND r.state='RESERVED'", (a,)).fetchall()

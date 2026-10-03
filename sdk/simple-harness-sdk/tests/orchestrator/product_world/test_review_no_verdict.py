@@ -196,3 +196,48 @@ def test_composition_ruling_survives_epoch_change(tmp_path):
                         and e.payload.get("source_key") == "composition-review:" + record_id]
 
     asyncio.run(case())
+
+
+def test_a_root_ruling_question_made_stale_by_an_amendment_goes_to_the_planner(tmp_path):
+    """最终审查两位都判不下来、正在问人；用户中途改了要求，这道题就过期了，不再等人；旧的最终审查
+    随旧要求作废，规划器收到"要求已更新"按新要求重排（阶段 E 欠的断言，HTN 补齐 F1；与裁决原写的
+    "交'没有结论'修复请求"不同，见 F1 偏差单 1）。
+
+    **改坏检验**：改要求时不让等人的题目过期 → 题目仍"在等" → 变红。"""
+    from agent_orchestrator.testing.scripted_replies import planner_reply
+
+    seen: list[dict[str, Any]] = []
+
+    def planner(request: Any) -> Any:
+        from agent_orchestrator.testing.fixtures import package_of
+
+        package = package_of(request)
+        seen.extend(entry["request"] for entry in package.get("repair_requests") or ())
+        return planner_reply(request)
+
+    async def case():
+        calls: dict[str, int] = {}
+        provider = LayeredScriptedProvider(
+            planner=planner, reviewer=_unusable("MISSION_FINAL", lambda data: "我看过了，没有问题。", calls))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "final-stale-ruling"})["mission_id"]
+            await world.run_until_settled(mission_id, rounds=8)
+            [row] = _questions(world, mission_id, "adjudicate-root:")
+            assert row["state"] == "PENDING"
+            latest = HtnStore(world.store).latest_requirements_revision(mission_id)
+            world.control.amend_requirements({
+                "mission_id": mission_id, "command_id": "amend-stale-ruling",
+                "expected_requirements_ref": {"id": str(latest.revision_id), "revision": int(latest.revision),
+                                              "content_hash": latest.content_hash()},
+                "changes": [{"op": "add", "statement": "file:MORE.md"}], "reason": "用户补充",
+                "source": {"kind": "MAIN_AGENT", "run_id": "r", "call_id": "c", "permission_mode": "auto"}})
+            for _ in range(8):
+                await world.drain()
+            [row] = _questions(world, mission_id, "adjudicate-root:")
+            assert row["state"] == "STALE"  # 不再等人
+            # 旧的最终审查随旧要求作废，规划器收到的是"要求已更新"（带改了哪几条），不再单独报这道题
+            updates = [item for item in seen if item.get("trigger_source") == "REQUIREMENTS_UPDATE"]
+            assert updates and updates[0]["context"]["changes"]["added"] == ["c-user-2"]
+
+    asyncio.run(case())

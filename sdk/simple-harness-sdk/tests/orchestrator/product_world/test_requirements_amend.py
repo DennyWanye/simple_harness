@@ -198,15 +198,18 @@ def replanning_planner(seen: dict[str, Any]):
 
 
 class SlowSecondStep(LayeredScriptedProvider):
-    """写 b.md 的那一步一直在跑，直到测试放行。"""
+    """写 b.md 的那一步一直在跑，直到测试放行；记下每个执行者包。"""
 
     def __init__(self, **roles: Any) -> None:
         super().__init__(**roles)
         self.go = asyncio.Event()
+        self.worker_packages: list[dict[str, Any]] = []
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         from agent_orchestrator.testing.fixtures import role_of
 
+        if role_of(request) == "worker":
+            self.worker_packages.append(package_of(request))
         if role_of(request) == "worker" and package_of(request).get("task_contract", {}).get("outputs") == ["b.md"]:
             await self.go.wait()
         return await super().invoke(request, cancel=cancel)
@@ -230,6 +233,11 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
             assert htn.list_acceptances(mission_id), "a.md 那一步没有通过验收"
             amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
             mark = max(e.seq for e in world.store.list_events(mission_id))
+            # 窗口里：这版计划不再开新工（计划按第 1 版、现行第 2 版）
+            dispatch = world.loop._dispatch_for(mission_id)
+            assert dispatch.requirements_changed(mission_id)
+            assert dispatch.requirements_revisions(mission_id) == {
+                "planned_requirements_revision": 1, "current_requirements_revision": 2}
             provider.go.set()
             mission = await world.run_until_settled(mission_id, rounds=40)
             events = list(world.store.list_events(mission_id))
@@ -266,6 +274,10 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:extra.md"]
             assert judged["met"] is True
+            # 新计划里的执行者拿到的是第 2 版要求原文（阶段 E 欠的断言，HTN 补齐 F1）
+            extra = [p for p in provider.worker_packages if "extra.md" in json.dumps(
+                p.get("task_contract", {}).get("outputs") or [])]
+            assert extra and extra[-1]["mission_success_criteria"] == ["file:a.md", "file:b.md", "file:extra.md"]
 
     asyncio.run(case())
 
@@ -630,5 +642,53 @@ def test_amend_that_adds_a_publish_is_judged_as_an_operation_mission(tmp_path):
             assert not [e.payload for e in events if e.type == "MissionRoundFault"]
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:" + operation.TARGET, operation.PUBLISH]
+
+    asyncio.run(case())
+
+
+def test_amend_refused_while_closing_out_and_after_the_end(tmp_path, monkeypatch):
+    """任务已在收尾（根结论已采纳、还没写完成）→ ``AMEND_AFTER_CLOSEOUT``；任务已结束 →
+    ``AMEND_MISSION_TERMINAL``；两种都一样不写（阶段 E 欠的断言，HTN 补齐 F1）。
+
+    **改坏检验**：去掉收尾判断 → 收尾中的任务被改了要求 → 变红。"""
+    import agent_orchestrator.orchestrator.assurance_assembly as assembly
+    import agent_orchestrator.orchestrator.assurance_final_writer as final_writer
+
+    real = final_writer.finalize_assured_mission
+    held = {"on": True}
+
+    def finalize(*args: Any, **kwargs: Any) -> Any:
+        if held["on"]:
+            raise final_writer.AssuranceError("RECHECK_REQUIRED", "held by the test")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(final_writer, "finalize_assured_mission", finalize)
+    monkeypatch.setattr(assembly, "finalize_assured_mission", finalize)
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner_reply)) as world:
+            mission_id = world.create({"goal": "写一份笔记", "idempotency_key": "amend-closing",
+                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.adopted_goal_resolution(mission_id, f"user-duty-{mission_id}") is not None:
+                    break
+            assert htn.adopted_goal_resolution(mission_id, f"user-duty-{mission_id}") is not None
+            assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"
+            before = written(world.store, mission_id)
+            with pytest.raises(FacadeError) as refused:
+                amend(world, mission_id, [{"op": "add", "statement": "file:more.md"}], command_id="closing")
+            assert refused.value.code == "AMEND_AFTER_CLOSEOUT"
+            assert written(world.store, mission_id) == before
+
+            held["on"] = False
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            assert str(mission.status.value) == "COMPLETED"
+            before = written(world.store, mission_id)
+            with pytest.raises(FacadeError) as refused:
+                amend(world, mission_id, [{"op": "add", "statement": "file:more.md"}], command_id="ended")
+            assert refused.value.code == "AMEND_MISSION_TERMINAL"
+            assert written(world.store, mission_id) == before
 
     asyncio.run(case())
