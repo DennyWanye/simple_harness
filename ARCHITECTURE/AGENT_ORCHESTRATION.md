@@ -1,3 +1,16 @@
+最后更新：2026-10-03 CST（HTN 补齐阶段 A′ 完成，SDK opt.137）。
+
+**一条路**：
+- `CommitService.create_mission` 在建任务事务里调部署装上的 `_mission_completer`（`UserMissionDeployment._complete`：初始化根 + `enable_taskgraph_contract`）。没装部署报 `MISSION_DEPLOYMENT_UNBOUND`，没装保证通道工厂报 `ASSURANCE_FACTORY_UNBOUND`。
+- 执行图未绑定一律具名报 `TASKGRAPH_NOT_BOUND`；只有全局扫描仍跳过未绑定的任务。
+- 换做法遇到在跑的工作，走执行图收敛：先取消尝试，等在途那次模型调用结束（取消信号不打断在途模型调用，避免"用量未知"），再提交新版本。旧的"延后决定、冷启动续上"整套已删。
+
+**审阅冷却**：审阅模型因服务商连续报错进入冷却期时，打开审阅转成 `REVIEW_ROUTE_UNAVAILABLE`。终审下一轮再开；做法审阅只计服务故障宽限，不算规划器答错。
+
+**性能**：`TaskGraphStore.read_revision` 以版本链依据行的指纹为缓存键；`validate_sources` 只比本地计划来源。
+
+**原生执行池**：不再创建旧检索器和旧索引泵，后台泵只驱动 ARP 自己的索引与召回。
+
 最后更新：2026-10-03 CST（HTN 补齐阶段 A′ 第 1 步，SDK opt.136）。**部署组装只留 SDK 一份。** 新增 `agent_orchestrator/deployment/`：`native_pools.py`（原生执行池拼装与按尺寸档注册，原 Host `native_plane.py`/`runtime_profile.py`）、`duties.py`（自动确认内容完成、自动授权规划、保证通道检查策略投影，原 Host `service.py`/`assurance.py`）、`root.py`（唯一一份要求书 `user_requirements`、根初始化、开工条件，原 Host `hierarchical.py`；SDK 默认要求书改用它）。Host 只保留桌面规划世界、本机资源（DeepSeek 计数器、BGE-M3、沙箱脚本执行器）和"是否自动模式"。执行池身份由 Host `test_pool_identity_bytes.py` 对搬迁前基准逐字节钉死，数据目录副本启动检查通过。记录见 `plans/2026-09-27-desktop-next/HTN补齐-实施记录.md`。
 
 最后更新：2026-10-03 CST（HTN 补齐阶段 A，SDK opt.135）。**清残留 + 立规矩。** 删老任务迁入执行图（`CAPTURED_BASELINE`，执行图在第一份计划之前绑定，已有计划的任务启用直接拒绝；迁移 34 重写两个守卫触发器、库层拒写迁入来源）；补原 TaskGraph 计划 §10.1 两种辅助事件 `TaskGraphDispatchBound`（派发事务内）与 `TaskGraphConvergenceAdvanced`（收敛状态真正变化时），都不进重查事件集；新增错误码表 `contracts/error_table.py`（§12 九类先后、跨边界码全集登记、未知码拒绝，规划器反馈按类别排序）；删只有定义没人用的：对外操作三种状态与就绪判断"等待未知操作"门、`ReconciliationResult`、`ExecutionFeedbackV1`、`leaf_decision`、`achieve_outcome`、`refine()` 的语义判断部分（保留 `planning_frontier`/`unknown_predicates`/`evidence_requests`）、调度解锁价值打分项、`RecordVersion`/`ValidityRevision`、支持/假设/监督三类边；编码清单重写一次（开发库旧任务执行图历史读不出）。全业务重放 v3 骨架：`observability/business_replay.py` + 覆盖清单（109 张表五类归类、86 张业务表逐表写入口与事件，完全覆盖 55 / 部分 22 / 不发事件 9），守护测试钉住新表新字段，Host 诊断导出新增 `business_replay` 一节。记录见 `plans/2026-09-27-desktop-next/HTN补齐-实施记录.md`。
