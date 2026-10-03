@@ -261,6 +261,7 @@ class FilePublishConnector:
                 # whatever it holds — the key's own file is returned by the fast path above
                 raise ConnectorRejected(f"conflict: {final_path} already exists")
             self._append(entry)  # the intent is on disk before the only commit point
+            linked = False
             try:
                 if self.fail_after == "intent":
                     raise ConnectorTransportError("file_publish: lost after writing the intent")
@@ -277,6 +278,7 @@ class FilePublishConnector:
                         handle.flush()
                         os.fsync(handle.fileno())
                     os.link(temporary, final_name, src_dir_fd=fd, dst_dir_fd=fd)
+                    linked = True
                 finally:
                     try:
                         os.unlink(temporary, dir_fd=fd)
@@ -284,8 +286,11 @@ class FilePublishConnector:
                         pass
             except BaseException:
                 # this process knows the link did not happen: say so, so the action can be
-                # handed off again instead of waiting for a person (the ledger is ours)
-                self._append({**entry, "state": "ABORTED"})
+                # handed off again instead of waiting for a person (the ledger is ours).
+                # Once the link returned, the publish happened: no ABORTED, the intent stays
+                # open and a person rules (核验 2026-10-03).
+                if not linked:
+                    self._append({**entry, "state": "ABORTED"})
                 raise
             os.fsync(fd)
             if self.fail_after == "link":

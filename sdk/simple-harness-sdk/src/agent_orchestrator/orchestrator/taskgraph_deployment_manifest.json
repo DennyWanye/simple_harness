@@ -1,5 +1,5 @@
 {
-  "deployment_id": "c6398b2e61a545f490da7a0eaff04266667b8eb3f1b350309d9cd325cb6b622c",
+  "deployment_id": "a9cf5c2db74d73f5b003b0777b2cc3ae764d069a396ccdc00c48e09f9a5accb4",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -339,7 +339,7 @@
     "agent_orchestrator/runtime/assembly.py": "23c80488f1c524331c0c040333d3d391f6299842b27a36ffa8111ab0c9b440eb",
     "agent_orchestrator/runtime/assurance_turn_sources.py": "5500b5d69b35e3107c1efa903dffd8fa23515a05ef788c691c58692d36d7bfea",
     "agent_orchestrator/runtime/connectors.py": "bdba7cf6ff6e302796cc09a2590d9643d8cebc260341bdefe9c4a97d88e4f6fa",
-    "agent_orchestrator/runtime/connectors_publish.py": "3eb17e2ce9de4c5f75ade181cc303ab6619a200d933f787297aa040df3e618ba",
+    "agent_orchestrator/runtime/connectors_publish.py": "5c305b99a41ab9856e1ef82356d18390f17ca54fcceaeb6be56b2df6f3478a2d",
     "agent_orchestrator/runtime/deepseek_meter.py": "7ba7deb4d34e999cf3fff83fddf6f2ddca58c41d00326b899b391102b042d763",
     "agent_orchestrator/runtime/deepseek_tokens.py": "6cc72ac2e99cbf33491e2701736bfea01a6a6e437fffda3619d0c2d388ce1588",
     "agent_orchestrator/runtime/dispatch_history.py": "00cdcfe496ed956edf7da3394ad171d6121c3b9342cd961baaa036c2c12073f0",

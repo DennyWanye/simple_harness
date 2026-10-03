@@ -389,3 +389,4 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
             await asyncio.wait_for(world.loop.run(), timeout=10)  # returns: nothing to do is idle
 
     asyncio.run(case())
+
