@@ -176,7 +176,6 @@
    ],
    "writers": [
     "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage",
-    "agent_orchestrator/storage/store.py:Store.update_artifact_storage",
     "agent_orchestrator/storage/store.py:Store.update_artifact_verification",
     "agent_orchestrator/storage/store.py:Store.upsert_artifact"
    ],
@@ -190,8 +189,7 @@
     "VerificationPassed"
    ],
    "gaps": [
-    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage: 迁移时改写，不发事件",
-    "agent_orchestrator/storage/store.py:Store.update_artifact_storage: 启动时（Orchestrator.__aenter__）改存放位置，不发事件"
+    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage: 迁移时改写，不发事件"
    ]
   },
   "assurance_blob_pins": {

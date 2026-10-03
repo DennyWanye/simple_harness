@@ -47,7 +47,7 @@ from ..artifacts.bound_workspace import (
     decode_unified_diff_text,
     files_patched_by_unified_diff,
 )
-from ..artifacts.store import ArtifactStoreError, backfill, read_nofollow, read_verified
+from ..artifacts.store import ArtifactStoreError, read_nofollow, read_verified
 from ..artifacts.versioning import (
     ArtifactConflict,
     UpstreamInput,
@@ -780,9 +780,6 @@ class Orchestrator:
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
-            changes = backfill(self._store.list_all_artifacts(), workspaces.artifact_store)
-            if changes:
-                self._store.update_artifact_storage(changes)
             self._bind_startup_tools()
             try:
                 await self._assembled.__aenter__()
@@ -793,8 +790,7 @@ class Orchestrator:
                     # has failed; do not pretend that failed runtime has started.
                     import_late_accounting(self)
                 raise
-            # P3.2 D3: artifacts recorded before 0.10 move into the content-addressed store
-            # (or are marked unavailable); execution copies a crash left behind are removed
+            # execution copies a crash left behind are removed
             workspaces = self._assembled.workspaces
             self.cleanup_workspaces()  # P3.2 D4: finished Missions past their retention
             self._bridge = self._assembled.pool(self._default_profile).bridge
