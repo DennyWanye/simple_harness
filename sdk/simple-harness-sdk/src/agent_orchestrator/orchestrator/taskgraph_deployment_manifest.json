@@ -1,5 +1,5 @@
 {
-  "deployment_id": "30ce919bab435ac7f03ed183a26c3a62daa40403339337cbfb46c5bd622aa717",
+  "deployment_id": "70087a2b73cdf430c1374424c8562c9846456e8dc5de646a70d01b970a477086",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -198,7 +198,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "e022dc12a00dd0f59eb400394d99dcc6a370def290a7c894b3027e6d9b135452",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "81722fdaa708a09054ae7d223210e9b99d5702f49c9afb419794d011c2dc8203",
-    "agent_orchestrator/orchestrator/event_handler.py": "bfe0996382af718bc47e4b71f5589bf8b3345419d4d8d5aa29b83b8edefb23f7",
+    "agent_orchestrator/orchestrator/event_handler.py": "e1cf671d9c6cec5481164b4cd74fe873d17993e90cd3eb4f43b3e5fdccc8fe50",
     "agent_orchestrator/orchestrator/failure_classes.py": "35f9707e5c76b6597c8dfa4a15521174ce0283cad867133ddef27e1fdc4cb578",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "592a3f9e14613d28e443f59494071a3f22d8658559feee6697b4821cb3c4ace2",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
@@ -223,7 +223,7 @@
     "agent_orchestrator/orchestrator/planning_graph_repairs.py": "88ffc0ececbd2c565679826e7405196fc3c2c89627dc9d8ddbfd0be05170238f",
     "agent_orchestrator/orchestrator/planning_method_proposal.py": "0680816bb18eaf34baf84e75479431382393a775688aec99b207cbfcb3c8ffdd",
     "agent_orchestrator/orchestrator/planning_protocol_binding.py": "af56aa6abeb00490461a1005411822a41225f8fce78d641dd8e038850247c746",
-    "agent_orchestrator/orchestrator/planning_repair_requests.py": "46383f1900f08630354405289f1d38ea13206adcc6b85ebfb046909584360c7e",
+    "agent_orchestrator/orchestrator/planning_repair_requests.py": "b2aa589dd538721b0812306eec58c05eb299e9d7745b72e18931e98b670b882a",
     "agent_orchestrator/orchestrator/planning_retry.py": "1adb463213c21db133c1ba6b437212e82833a85801a8c8c7b0a0b683be696e25",
     "agent_orchestrator/orchestrator/planning_runtime_block.py": "f3d5289af118c9fedb54ebcf95c212c0bd583bce7d848979253106ab7f995a80",
     "agent_orchestrator/orchestrator/planning_selection.py": "be23debe428fff23fbc32c9633ad4b909a85b54b2c7ffc605ae4e37e9dd8612d",

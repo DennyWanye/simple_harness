@@ -2666,8 +2666,12 @@ class Orchestrator:
             from . import planning_repair_requests as repair_requests
 
             withheld = [item.to_json() for item in admissions.refusals]
+            # 表二 20（2026-10-03 收尾裁决）：规划器改了计划却没派出任何新尝试、又停在原地——每个新
+            # 计划版本都能再问一次，等于不限。只数次数：自上次有新尝试以来问满上限就不再问。
+            stall_cap = int(self._config.max_planning_attempts)
+            stall_asks = repair_requests.stall_asks_since_new_work(self.store, mission.id)
             try:
-                asked = repair_requests.request_planner_for_stall(
+                asked = stall_asks < stall_cap and repair_requests.request_planner_for_stall(
                     new_mode, mission, plan_revision=int(admissions.plan_revision),
                     detail={"withheld": withheld[:32], "withheld_count": len(withheld),
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
@@ -2693,6 +2697,8 @@ class Orchestrator:
                     # 这一版计划问过规划器（请求编号、它那一轮有没有开出来）之后仍停在原地。
                     "planner_asked": repair_requests.stall_request_asked(
                         self.store, mission.id, int(admissions.plan_revision)),
+                    "stall_asks_without_new_work": stall_asks,
+                    "stall_asks_cap": stall_cap,
                     # §6.4: the report names the structure that was expanded and the
                     # duties still outstanding.  Every refusal, not a sample — an
                     # operator must not have to re-derive which gate held what.
@@ -9029,7 +9035,10 @@ class Orchestrator:
         active = new_mode.semantics().active_plan_revision(mission.id)
         return {
             "root_review": {
-                "reason": "root_review_rejected",
+                # 如实写是哪一种：被打回，还是这一版要求的切包次数用完（含审阅调用一直被打断）。
+                "reason": ("root_review_cut_budget_spent"
+                           if state.status is RootReviewStatus.CUT_BUDGET_SPENT else "root_review_rejected"),
+                "stale_reasons": [str(item) for item in getattr(state, "stale_reasons", ()) or ()],
                 "status": str(state.status),
                 "package_id": "" if package is None else str(package.package_id),
                 "plan_revision": 0 if active is None else int(active.revision),

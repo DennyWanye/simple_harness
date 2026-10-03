@@ -509,3 +509,38 @@ def test_a_request_that_cannot_be_recorded_does_not_escape_the_loop(tmp_path, mo
     assert mission.status is MissionStatus.FAILED
     assert mission.final_report["stop_reason"] == "no_dispatchable_work"
     assert mission.final_report["detail"]["planner_asked"] is None
+
+
+# ======================================================================================
+# 表二 20（2026-10-03 收尾裁决）：改了计划却不派新尝试、又停在原地——问规划器有上限
+# ======================================================================================
+def test_stall_asks_are_counted_since_the_last_new_attempt() -> None:
+    from types import SimpleNamespace as E
+
+    def asked(revision: int) -> Any:
+        return E(type=requests.REQUESTED, payload={"source_key": requests.stalled_key("m", revision)})
+
+    other = E(type=requests.REQUESTED, payload={"source_key": "event:x"})
+    events = [asked(1), E(type="AttemptCreated", payload={}), asked(2), other, asked(3)]
+    store = E(iter_events=lambda mission_id: iter(events))
+    assert requests.stall_asks_since_new_work(store, "m") == 2  # the new attempt reset the count
+
+
+def test_a_stall_asked_about_too_often_without_new_work_stops_without_asking_again(tmp_path, monkeypatch) -> None:
+    """计数到上限时：不再记请求、不再问规划器，按"没有可派发的工作"停，详情写明次数与上限。
+    （整条"规划器反复提交不派新步骤的改动"的循环在产品同形世界里造价高，这里只证明接线；
+    计数本身由上一条证明。）"""
+    monkeypatch.setattr(requests, "stall_asks_since_new_work", lambda store, mission_id: 3)
+
+    async def case():
+        async with stalled(tmp_path, key="stall-cap") as world:
+            loop = world.loop
+            await loop._record_hierarchical_stall()
+            carried = await loop._confirm_and_stop_stalled()
+            return carried, world.mission(), world.events()
+
+    carried, mission, events = asyncio.run(case())
+    assert carried is False and not _stall_requests(events)
+    assert mission.final_report["stop_reason"] == "no_dispatchable_work"
+    detail = mission.final_report["detail"]
+    assert (detail["stall_asks_without_new_work"], detail["stall_asks_cap"]) == (3, 3)
