@@ -1193,6 +1193,10 @@ class OrchestrationService:
     def ack_notice(self, body: Mapping[str, Any]) -> dict[str, Any]:
         """Only the person's click on the card in the main conversation reaches here."""
 
+        if body.get("all") is True:
+            acked = self._notices.ack_all()
+            self.wake()
+            return {"acked": acked}
         notice_id = body.get("notice_id")
         if not isinstance(notice_id, str) or not notice_id:
             from .notices import NoticeNotFound

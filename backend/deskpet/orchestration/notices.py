@@ -90,6 +90,18 @@ class MissionNotices:
             rows = [dict(row) for row in self._rows.values() if row["acked_at"] is None]
         return sorted(rows, key=lambda row: (row["notified_at"], row["notice_id"]))
 
+    def ack_all(self) -> int:
+        """The person's one click on "全部已收到" (a library with many old notices)."""
+
+        with self._lock:
+            now = float(self._clock())
+            pending = [row for row in self._rows.values() if row["acked_at"] is None]
+            for row in pending:
+                row["acked_at"] = now
+            if pending:
+                self._save()
+            return len(pending)
+
     def ack(self, notice_id: str) -> dict[str, Any]:
         with self._lock:
             row = self._rows.get(str(notice_id))

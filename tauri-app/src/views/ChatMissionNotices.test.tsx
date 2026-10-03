@@ -65,4 +65,24 @@ describe("主对话里的后台任务结束通知", () => {
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe("没有这条通知");
   });
+
+  it("通知多时只摆最新三条，人点“全部已收到”一次清空", () => {
+    const fake = fakeChannel();
+    render(
+      <MissionsChannelContext.Provider value={fake.channel as never}>
+        <ChatMissionNotices />
+      </MissionsChannelContext.Provider>,
+    );
+    const many = Array.from({ length: 5 }, (_, i) => ({ ...NOTICES[0], notice_id: `ev-${i}`, goal: `任务 ${i}` }));
+    const first = fake.sent.find((m) => m.type === "mission_notices")!;
+    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: many } });
+    expect(screen.queryByText("后台任务已完成：任务 0")).toBeNull();
+    expect(screen.getByText("后台任务已完成：任务 4")).toBeTruthy();
+    expect(screen.getByText("还有 2 条较早的通知")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "全部已收到" }));
+    const ack = fake.sent.find((m) => m.type === "mission_notice_ack")!;
+    expect(ack.payload).toEqual({ all: true });
+    fake.push({ type: "mission_notice_ack_response", payload: { ok: true, request_id: ack.request_id, data: { acked: 5 } } });
+    expect(screen.queryByText("后台任务已完成：任务 4")).toBeNull();
+  });
 });

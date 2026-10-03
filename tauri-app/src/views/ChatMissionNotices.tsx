@@ -35,6 +35,9 @@ const button: React.CSSProperties = {
   flexShrink: 0,
 };
 const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
+/** 只摆最新几条；旧库里攒下的一批通知由人点一次"全部已收到"清掉。 */
+const SHOWN = 3;
+const ALL = "__all__";
 
 function asNotice(value: unknown): Notice | null {
   const row = record(value);
@@ -88,7 +91,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         acks.current.delete(text(payload.request_id));
         setBusy((state) => ({ ...state, [noticeId]: false }));
         if (payload.ok === true) {
-          setNotices((items) => items.filter((item) => item.notice_id !== noticeId));
+          setNotices((items) => (noticeId === ALL ? [] : items.filter((item) => item.notice_id !== noticeId)));
           setError("");
         } else {
           setError(text(payload.error) || "没有记上，请重试");
@@ -104,7 +107,8 @@ export function ChatMissionNotices(): React.JSX.Element | null {
     const requestId = newRequestKey();
     acks.current.set(requestId, noticeId);
     setBusy((state) => ({ ...state, [noticeId]: true }));
-    if (!channel.send({ type: "mission_notice_ack", request_id: requestId, payload: { notice_id: noticeId } })) {
+    const payload = noticeId === ALL ? { all: true } : { notice_id: noticeId };
+    if (!channel.send({ type: "mission_notice_ack", request_id: requestId, payload })) {
       acks.current.delete(requestId);
       setBusy((state) => ({ ...state, [noticeId]: false }));
       setError("连接不可用，请稍后重试");
@@ -114,7 +118,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
   if (!notices.length && !error) return null;
   return (
     <div aria-label="后台任务通知" style={{ display: "grid", gap: tokens.space.xs, margin: `${tokens.space.xs}px 0` }}>
-      {notices.map((notice) => (
+      {notices.slice(-SHOWN).map((notice) => (
         <div key={notice.notice_id} style={box} data-testid={`chat-notice-${notice.notice_id}`}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
@@ -124,6 +128,13 @@ export function ChatMissionNotices(): React.JSX.Element | null {
             onClick={() => acknowledge(notice.notice_id)}>已收到</button>
         </div>
       ))}
+      {notices.length > SHOWN ? (
+        <div style={{ display: "flex", alignItems: "center", gap: tokens.space.sm }}>
+          <span style={muted}>还有 {notices.length - SHOWN} 条较早的通知</span>
+          <button type="button" style={button} disabled={busy[ALL] === true}
+            onClick={() => acknowledge(ALL)}>全部已收到</button>
+        </div>
+      ) : null}
       {error ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div> : null}
     </div>
   );

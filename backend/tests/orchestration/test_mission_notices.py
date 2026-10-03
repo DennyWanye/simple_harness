@@ -66,11 +66,14 @@ async def test_a_finished_mission_reaches_the_main_conversation_until_the_person
     finally:
         await service.close()
 
-    # Host 记录丢了：从 SDK 的持久回执补回（没收到过，所以重新待确认）
+    # Host 记录丢了：从 SDK 的持久回执补回（没收到过，所以重新待确认）；人点"全部已收到"一次清空
     (orchestration_root / NOTICES_FILE).unlink()
     service = layered_service(orchestration_root, principal, LayeredScriptedProvider())
     await service.start()
     try:
         assert [row["mission_id"] for row in service.pending_notices()] == [mission_id]
+        everything = await handle(service, "mission_notice_ack", {"all": True})
+        assert everything["payload"]["data"] == {"acked": 1}
+        assert service.pending_notices() == []
     finally:
         await service.close()
