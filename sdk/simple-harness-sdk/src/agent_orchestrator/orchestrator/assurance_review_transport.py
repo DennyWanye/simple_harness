@@ -790,9 +790,18 @@ def _require_format_repair(
     ):
         raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
     classification = str(body["classification"])
-    turn_ref = AssuranceRef.from_json(body.get("turn_ref"), kinds={"agent_turn_receipt"})
-    turn = decode(reader.read_exact_metadata(turn_ref).body_json)["payload"]
-    if (
+    from .failure_classes import REVIEW_CALL_ABANDONED
+
+    if body.get("error_code") == REVIEW_CALL_ABANDONED:
+        # A call that never came back has no turn to cite (阶段 B 裁决第 6 类); it must
+        # be a failed classification backed by its interruption record instead.
+        if classification != "TURN_FAILED" or body.get("turn_ref") is not None or commit.store.get_receipt(
+                "assurance-review-interrupted:" + intent.intent_id) is None:
+            raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
+    else:
+        turn_ref = AssuranceRef.from_json(body.get("turn_ref"), kinds={"agent_turn_receipt"})
+        turn = decode(reader.read_exact_metadata(turn_ref).body_json)["payload"]
+    if body.get("error_code") != REVIEW_CALL_ABANDONED and (
         turn.get("intent_id") != intent.intent_id
         or turn.get("turn_id") != intent.expected_turn_id
         or turn.get("agent_id") != intent.agent_id

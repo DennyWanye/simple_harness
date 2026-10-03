@@ -171,6 +171,13 @@ def _no_verdict_reason(orch: Any, mission_id: str, review_key: str) -> str | Non
 
     for item in orch._exhausted_reviews(mission_id, "assurance-method-plan:"):
         if item["review_key"] == review_key:
+            if item["interrupted"]:
+                # 阶段 B 裁决第 6 类：如实说出审阅调用没回来，不说成审阅员判不了
+                calls = orch.store.connection.execute(
+                    "SELECT COUNT(*) FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",
+                    (mission_id, review_key)).fetchone()[0]
+                return (f"the review call got no reply {int(calls)} time(s) (interrupted by a restart, "
+                        "or it never came back before its deadline); no verdict was given")
             return item["reason"] or "the review's retries ran out without a readable verdict"
     rows = orch.store.connection.execute(
         "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=? AND review_key=?",

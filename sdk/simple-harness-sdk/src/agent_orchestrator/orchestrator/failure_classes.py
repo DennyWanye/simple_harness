@@ -20,6 +20,8 @@ NON_MODEL = frozenset({FORMAT, INFRA, INTERRUPTED})
 NON_MODEL_FAILURE_CAP = 6
 
 INTERRUPTED_REVIEW = "Assurance review awaits original-call reconciliation"
+#: 一次审阅调用过了期限还没回来，按"被打断"收口（阶段 B 裁决第 6 类）。
+REVIEW_CALL_ABANDONED = "REVIEW_CALL_ABANDONED"
 
 # 模型原地打转、调了不存在的工具、工具参数不合规定：模型自己的错（审阅 2026-09-29）。
 _MODEL_TURN_CODES = frozenset({

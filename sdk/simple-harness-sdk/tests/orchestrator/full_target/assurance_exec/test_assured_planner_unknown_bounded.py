@@ -79,7 +79,10 @@ def test_only_assured_planning_rounds_end_after_the_bound(tmp_path, monkeypatch,
             monkeypatch.setattr(orch, "_give_up_blocked_plan_intent", door)
             intent = _intent(mission.id, kind=kind, role=role, review=review)
 
-            assert await orch._resolve_provider_blocked_service(intent, BLOCKED) == "give_up"
+            # Still inside the bound: a Planner round is waiting (None — not progress,
+            # 阶段 B 裁决第 6 类); a review is handed back to its own runner at once.
+            first = await orch._resolve_provider_blocked_service(intent, BLOCKED)
+            assert first == ("give_up" if review else None)
             assert doors == []  # the bound has not passed yet
             await asyncio.sleep(0.08)
             assert await orch._resolve_provider_blocked_service(intent, BLOCKED) == "give_up"

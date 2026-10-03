@@ -216,6 +216,63 @@ async def collect_assurance_review(orchestrator: Any, intent: Any) -> None:
                 error_code=str((result.error or {}).get("error_code", "")))
 
 
+async def abandon_assurance_review(orchestrator: Any, intent: Any, *, detail: dict[str, Any]) -> None:
+    """End a review call that never came back, as an interrupted call (阶段 B 裁决第 6 类).
+
+    A model call held open has no turn result to import (the turn's cancel reaches
+    tools, not the call in flight), so the ordinary collector can never classify it.
+    After its deadline the call is written exactly as an interrupted turn would be —
+    a ``TURN_FAILED`` classification with the ``REVIEW_CALL_ABANDONED`` code and an
+    interruption record — and everything after that is the existing path: the second
+    invocation in a fresh session, then the purpose's own "no verdict" exit (a method
+    review's NO_VERDICT, the root review's re-cut).  The intent closes FAILED, so a late
+    reply is never imported as a conclusion; its usage is still imported by the
+    accounting scan and an unknown charge keeps the reservation (never undercount).
+    """
+    from .failure_classes import REVIEW_CALL_ABANDONED
+
+    store, commit = orchestrator.store, orchestrator.commit
+    mission = store.get_mission(intent.mission_id)
+    reader = AssuranceReader(store, tenant_id=mission.tenant_id, mission_id=mission.id)
+    await orchestrator._cancel_turn(intent)
+    if intent.agent_id is not None:
+        orchestrator.assembled.gateway.unbind(intent.agent_id)
+    orchestrator._import_usage(intent)
+    with store.read_view():
+        invocation, binding = read_review_invocation_locked(commit, reader, intent.intent_id)
+    bound, value = binding.to_json(), invocation.to_json()
+    orchestrator._settle_intent(intent, "FAILED")
+    orchestrator._settle_service_if_known(intent.subject_id, mission.id)
+    with atomic(store):
+        result_body = {
+            "mission_id": mission.id,
+            "review_key": bound["review_key"],
+            "invocation_ordinal": value["ordinal"],
+            "intent_id": intent.intent_id,
+            "turn_ref": None,
+            "classification": "TURN_FAILED",
+            "error_code": REVIEW_CALL_ABANDONED,
+            "raw_output_hash": None,
+        }
+        receipt_id = "assurance-review-classified:" + fingerprint(
+            {"intent": intent.intent_id, "turn": intent.expected_turn_id}
+        )
+        if store.get_receipt(receipt_id) is None:
+            store.insert_receipt(commit_id=receipt_id, kind="AssuranceReviewClassified",
+                                 subject_id=intent.intent_id, base_version=0,
+                                 proposal_hash=fingerprint(result_body), receipt=result_body)
+            commit._emit("AssuranceReviewClassified", mission.id, key=receipt_id, payload={
+                **result_body,
+                "classification_receipt_ref": AssuranceRef(
+                    "commit_receipt", Pin(receipt_id, 0, fingerprint(result_body))).to_json(),
+                "parsed_verdict": None,
+                "abandoned": dict(detail),
+            })
+        record_review_interruption(store, mission_id=mission.id, review_key=bound["review_key"],
+                                   ordinal=int(value["ordinal"]), intent_id=intent.intent_id,
+                                   error_code=REVIEW_CALL_ABANDONED)
+
+
 def _import_initial_exposure(
     commit: Any,
     reader: AssuranceReader,

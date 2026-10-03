@@ -549,6 +549,8 @@ class Orchestrator:
         self.progress_log: list[str] = []
         #: intent id → the refusal last noted for its collection, so a refusal that
         #: repeats every round is noted once per distinct reason (NEXT-TG-1.0 §5.1).
+        # 审阅调用的等待（阶段 B 裁决第 6 类）：意图 → (等待的形态, 这一形态开始的库时钟)
+        self._review_call_marks: dict[str, tuple[Any, float]] = {}
         # 一轮故障（阶段 B 裁决第 9 类）：(任务, 出事地点) → (连续次数, 第一次的库时钟)
         self._round_faults: dict[tuple[str, str], tuple[int, float]] = {}
         #: planning intents already noted as waiting for their TaskGraph binding.
@@ -5224,6 +5226,19 @@ class Orchestrator:
                 if key not in self._released:
                     self._released.add(key)
                     await self._cancel_turn(intent)
+                # 阶段 B 裁决第 6 类: a service turn of a stopped Mission that never comes
+                # back (its model call ignores the cancel) is closed after the service
+                # bound — nothing more can be decided for it; a late usage record is
+                # still imported by the accounting scan and an unknown charge keeps its
+                # reservation.  Without this the loop waited on it for ever.
+                since = self._service_blocked_since.setdefault(key, self.store.now)
+                if self.store.now - since >= self._service_blocker_limit:
+                    self._service_blocked_since.pop(key, None)
+                    self._import_usage(intent)
+                    self._settle_intent(intent, "FAILED")
+                    self._settle_service_if_known(intent.subject_id, intent.mission_id)
+                    self._note(f"{intent.subject_id}: closed after the Mission stopped (turn never came back)")
+                    return True
             return False
         if result is None:
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
@@ -5280,6 +5295,11 @@ class Orchestrator:
         liveness: Liveness = await self.bridge_for(intent).liveness(
             agent_id=intent.agent_id, turn_id=intent.expected_turn_id
         )
+        if intent.kind == "plan" and self._assured_review_intent(intent):
+            # A review call (method review, root final review, …) is timed like an
+            # Attempt and ended as an interrupted call when it never comes back
+            # (阶段 B 裁决第 6 类); a review turn is never a Planner round.
+            return await self._end_overdue_review_call(intent, liveness)
         if intent.kind == "plan":
             if liveness.exists:
                 # P2.3f: an existing turn is still "ours to wait for" — unless it is
@@ -5358,6 +5378,55 @@ class Orchestrator:
             self._note(f"attempt {attempt.id} LOST: turn missing")
             return True
         return False
+
+    def _review_call_overdue(self, intent: DispatchIntent, liveness: Liveness) -> dict[str, Any] | None:
+        """How long this review call has waited past its bound, or None while it may wait.
+
+        A turn gone from this process (a restart) is overdue at once; one blocked on a
+        provider hand-off nobody can resolve waits ``_service_blocker_limit``; a running
+        turn that reports no provider progress waits ``stall_seconds`` (the Attempt
+        rule); a queued one is not timed.  The first look in a process counts from the
+        intent's submission, so a restart does not reset the clock."""
+
+        if liveness.exists and liveness.settled:
+            return None  # the ordinary collector imports it next round
+        now = self.store.now
+        if not liveness.exists:
+            shape: Any = ("missing",)
+            limit: float | None = 0.0
+        elif self._provider_blocked(liveness) or self._definite_auth_failure(liveness.blocker):
+            shape, limit = ("blocked",), float(self._service_blocker_limit)
+        elif liveness.state == str(AgentTurnState.RUNNING) and not liveness.blocked:
+            shape, limit = ("running", liveness.progress), float(self._config.stall_seconds)
+        else:
+            shape, limit = ("untimed",), None
+        mark = self._review_call_marks.get(intent.intent_id)
+        if mark is None:
+            row = self.store.connection.execute(
+                "SELECT created_at FROM events WHERE idempotency_key=?",
+                ("InputSubmitted:" + self.commit._intent_event_key(intent),)).fetchone()
+            since = now if row is None else float(row[0])
+        else:
+            since = mark[1] if mark[0] == shape else now
+        self._review_call_marks[intent.intent_id] = (shape, since)
+        if limit is None or now - since < limit:
+            return None
+        return {"waited_seconds": round(now - since, 3), "limit_seconds": limit, "shape": shape[0],
+                "blocker": dict(liveness.blocker or {})}
+
+    async def _end_overdue_review_call(self, intent: DispatchIntent, liveness: Liveness) -> bool:
+        """True only when the overdue call was ended (a durable write); waiting is not progress."""
+
+        overdue = self._review_call_overdue(intent, liveness)
+        if overdue is None:
+            return False
+        from .assurance_review_collect import abandon_assurance_review
+
+        await abandon_assurance_review(self, intent, detail=overdue)
+        self._review_call_marks.pop(intent.intent_id, None)
+        self._note(f"{intent.subject_id}: review call ended as interrupted after "
+                   f"{overdue['waited_seconds']}s ({overdue['shape']})")
+        return True
 
     async def _cancel_turn(self, intent: DispatchIntent) -> None:
         """Best-effort cooperative cancel of a superseded SDK turn (never a kernel cancel)."""
@@ -8084,7 +8153,10 @@ class Orchestrator:
             return "give_up"
         new_mode = self._new_mode(mission) if planning else None
         if new_mode is None:
-            return "give_up"  # reviews keep their original executor (§6.2)
+            # Reviews keep their original executor (§6.2): a review awaited inline is
+            # handed back to its runner's own "did not answer" door; a plan-kind review
+            # collected by the loop never reaches here (``_end_overdue_review_call``).
+            return "give_up"
         # A Planner round is not a review: after the same bound as
         # P2.3f it ends through its own failure door instead of waiting for the wall
         # clock (host-final-arp10, 2026-09-24: ~17 minutes frozen).  On this lane that
@@ -8092,7 +8164,7 @@ class Orchestrator:
         since = self._service_blocked_since.setdefault(key, self.store.now)
         waited = self.store.now - since
         if waited < self._service_blocker_limit:
-            return "give_up"
+            return None  # still waiting: not progress (阶段 B 裁决第 6 类)
         self._service_blocked_since.pop(key, None)
         await self._give_up_blocked_plan_intent(
             intent,
