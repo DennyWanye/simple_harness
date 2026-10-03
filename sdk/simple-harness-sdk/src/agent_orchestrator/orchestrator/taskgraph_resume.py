@@ -27,8 +27,9 @@ async def resume_converged_plan(orchestrator: Any, job: ConvergenceJob) -> None:
                 or decision is None or decision["request_id"] != job.request_id):
             raise StoreError("TASKGRAPH_RESUME_ORIGINAL_DECISION_MISSING")
         if decision["status"] != "COMPILED":
-            # A refused/stale decision does not release fences or silently ask the
-            # model again. The persistent notification reports the refusal for repair.
+            # A decision refused at commit has already ended its fence in the refusal's
+            # own path (阶段 B 裁决第 5 类), so a live job never reaches here for one; this
+            # stays as the guard that resuming never re-asks the model.
             raise StoreConflict("TASKGRAPH_RESUME_ORIGINAL_DECISION_NOT_COMPILED")
         preview = PreviewBindingV1.from_json(decision.get("detail", {}).get("taskgraph_preview"))
         if (preview.required_convergence_ids != (job.job_id,) or preview.decision_id != job.decision_id

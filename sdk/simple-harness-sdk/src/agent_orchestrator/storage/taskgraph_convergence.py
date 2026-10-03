@@ -126,6 +126,14 @@ class TaskGraphConvergenceStore:
                 self.authority.validate_begin(self.store, caller, preview, before, candidate)
                 return self.get_job(impact.mission_id, job_id)
             self.authority.validate_begin(self.store, caller, preview, before, candidate)
+            # One live convergence per Mission: an older live fence ends here, replaced by
+            # the new decision's (阶段 B 裁决第 5 类) — never two fences stacked.
+            for stale in db.execute(
+                    "SELECT job_id FROM taskgraph_convergence_jobs WHERE mission_id=? AND decision_id<>? "
+                    "AND state IN ('FENCED','WAITING','READY')",
+                    (impact.mission_id, preview.decision_id)).fetchall():
+                self._transition(self.get_job(impact.mission_id, str(stale[0])), "ABANDONED", now_ms,
+                                 reason="superseded_by_new_decision")
             active = db.execute(
                 "SELECT revision FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'",
                 (impact.mission_id,),
@@ -293,7 +301,27 @@ class TaskGraphConvergenceStore:
             raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
         return job
 
-    def _transition(self, job: ConvergenceJob, state: str, now_ms: int) -> None:
+    def release_for_decision(self, mission_id: str, decision_id: str, *, reason: str, now_ms: int) -> bool:
+        """End the live fence of one decision that will never be applied (阶段 B 裁决第 5 类).
+
+        A fence belongs to one decision.  When that decision is finally refused (its
+        commit rejected) the fence ends with it — lifecycle order, in the caller's
+        transaction, with the transition event naming why.  Pins and demands were never
+        removed by the fence, so ending it only restores the old plan's eligibility;
+        the original dispatch path still admits every new Attempt.  The refusal itself
+        still reaches the Planner through the planning ladder, unchanged."""
+
+        if not self.store.connection.in_transaction:
+            raise StoreError("TASKGRAPH_CONVERGENCE_RELEASE_TRANSACTION_REQUIRED")
+        row = self.store.connection.execute(
+            "SELECT job_id FROM taskgraph_convergence_jobs WHERE mission_id=? AND decision_id=? "
+            "AND state IN ('FENCED','WAITING','READY')", (mission_id, decision_id)).fetchone()
+        if row is None:
+            return False
+        self._transition(self.get_job(mission_id, str(row[0])), "ABANDONED", now_ms, reason=reason)
+        return True
+
+    def _transition(self, job: ConvergenceJob, state: str, now_ms: int, *, reason: str | None = None) -> None:
         from ..graph.notification_contracts import _integer
 
         _integer(now_ms, "now_ms")
@@ -315,5 +343,6 @@ class TaskGraphConvergenceStore:
             mission_id=job.mission_id, task_id=None, attempt_id=None, actor_type="system",
             actor_id="taskgraph-convergence",
             payload={"schema_version": 1, "job_id": job.job_id, "decision_id": job.decision_id,
-                     "from_state": job.state, "to_state": state, "row_version": version},
+                     "from_state": job.state, "to_state": state, "row_version": version,
+                     **({"reason": reason} if reason is not None else {})},
             idempotency_key=identity, created_at=now_ms / 1000))

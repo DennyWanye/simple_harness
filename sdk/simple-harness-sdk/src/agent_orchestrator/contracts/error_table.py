@@ -115,6 +115,19 @@ _TASKGRAPH: dict[T, ErrorEntry] = {
     T.HISTORICAL_STRUCTURE_UNAVAILABLE: _e(C.SOURCE_UNAVAILABLE),
 }
 
+# 交接拒绝原因（2026-10-03 阶段 B 裁决第 5 类）：只登记"暂时性"这一列——暂时的拒绝让动作
+# 留在可交接状态、下一轮再试；没登记的一律不是暂时的，交接被拒就按"动作失败"停任务。
+_HANDOFF_TRANSIENT: frozenset[str] = frozenset({
+    "taskgraph_target_fenced",  # 改做法的围栏还没解除：随围栏的决定提交或被拒而结束
+})
+
+
+def handoff_refusal_transient(reason: object) -> bool:
+    """A handoff refusal that ends by itself (the caller waits instead of stopping)."""
+
+    return isinstance(reason, str) and reason in _HANDOFF_TRANSIENT
+
+
 PLANNING_ERRORS: Mapping[P, ErrorEntry] = MappingProxyType(_PLANNING)
 TASKGRAPH_ERRORS: Mapping[T, ErrorEntry] = MappingProxyType(_TASKGRAPH)
 
@@ -142,5 +155,6 @@ __all__ = (
     "ErrorEntry",
     "TaskGraphBoundaryCode",
     "classify",
+    "handoff_refusal_transient",
     "ordered",
 )

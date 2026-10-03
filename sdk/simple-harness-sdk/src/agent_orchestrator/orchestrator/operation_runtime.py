@@ -198,6 +198,9 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
         await orchestrator.actions.hand_off(key)
         after = orchestrator.store.get_action(key)
         if after is not None and after["state"] in HANDOFF_READY_STATES:
+            from ..contracts.error_table import handoff_refusal_transient
+            if handoff_refusal_transient(orchestrator.actions.last_refusal.get(key, "")):
+                return False  # stays handoff-ready; tried again next round
             orchestrator._commit_fail_mission(mission_id, stop_reason=MissionStopReason.ACTION_FAILED,
                 detail={"action_key": key, "reason": "handoff_refused:"
                         + orchestrator.actions.last_refusal.get(key, "")})

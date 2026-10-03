@@ -6860,6 +6860,7 @@ class Orchestrator:
                 rejection_codes=[refusal_code],
                 detail=str(error)[:300],
             )
+            self._release_refused_fence(mission.id, decision_id)
             self._settle_intent(intent, "FAILED")
             self._settle_service_if_known(intent.subject_id, mission.id)
             await reject_planning(
@@ -6892,6 +6893,7 @@ class Orchestrator:
             rejection_codes=[refusal_code],
             detail={"refusals": refusals},
         )
+        self._release_refused_fence(mission.id, decision_id)
         self._settle_intent(intent, "FAILED")
         self._settle_service_if_known(intent.subject_id, mission.id)
         await reject_planning(
@@ -6899,6 +6901,16 @@ class Orchestrator:
             reason="proposal_not_grounded",
             detail={"refusals": refusals},
         )
+
+    def _release_refused_fence(self, mission_id: str, decision_id: str) -> None:
+        """A decision whose commit was rejected never applies: its fence ends with it
+        (阶段 B 裁决第 5 类), so the old plan's fenced steps can run and publish again."""
+
+        if self._taskgraph_notifications is None:
+            return  # no convergence service installed: no fence was ever raised
+        with self.store.transaction():
+            self._taskgraph_notifications.convergence.jobs.release_for_decision(
+                mission_id, decision_id, reason="decision_refused", now_ms=int(self.store.now * 1000))
 
     async def _collect_attempt(self, intent: DispatchIntent, result) -> None:  # type: ignore[no-untyped-def]
         attempt = self.store.get_attempt(intent.subject_id)
@@ -10023,6 +10035,9 @@ class Orchestrator:
             done = await self.actions.hand_off(key_)
             after = self.store.get_action(key_) if done is None else done
             if after is not None and after["state"] in HANDOFF_READY_STATES:
+                from ..contracts.error_table import handoff_refusal_transient
+                if handoff_refusal_transient(self.actions.last_refusal.get(key_, "")):
+                    continue  # stays handoff-ready; tried again next round (阶段 B 裁决第 5 类)
                 # the deployment will not run it (cap, budget, switched off): it cannot happen
                 self._commit_fail_mission(
                     mission.id,

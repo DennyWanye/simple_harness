@@ -188,3 +188,72 @@ def test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs
             assert addressed["decision_type"] == "REPAIR" and addressed["status"] == "COMMITTED"
 
     asyncio.run(case())
+
+
+def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
+    """阶段 B 裁决第 5 类：换做法的计划提交被拒（提交时撞上冲突），它立的围栏随决定一起结束。
+
+    此前被拒只记"提交被拒"、走规划阶梯，收敛作业一直"已立围栏"，被围的步骤永远不派发、不交接。
+    现在：作业以"决定被拒"结束；被拒照旧交给规划器；规划器再提一次替换，这次提交成功，任务完成。
+
+    冲突用一次性的提交拒绝注入（真实路径上的版本冲突就是这个异常），只在第一次替换提交时出现。
+
+    **改坏检验**：被拒分支里不解围栏 → 第二次替换的围栏叠在旧围栏上、旧作业一直活着 → 变红。
+    """
+    from agent_orchestrator.orchestrator import hierarchical_dispatch
+    from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
+
+    original = hierarchical_dispatch.HierarchicalDispatch.commit_preview_plan_proposal
+    refused: list[str] = []
+
+    def commit_once_refused(self, mission_id, proposal, **kwargs):  # type: ignore[no-untyped-def]
+        if not refused and int(kwargs["preview"].base_revision) >= 1:
+            refused.append(mission_id)
+            raise PlanCommitRejected("TEST_COMMIT_CONFLICT: the plan moved under this commit")
+        return original(self, mission_id, proposal, **kwargs)
+
+    monkeypatch.setattr(hierarchical_dispatch.HierarchicalDispatch, "commit_preview_plan_proposal",
+                        commit_once_refused)
+
+    async def case():
+        provider = _Provider()
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "整理事实并写笔记", "idempotency_key": "refused-replace",
+                                       "success_criteria": list(CRITERIA)})["mission_id"]
+            store = world.loop.store
+            stop = asyncio.Event()
+
+            async def drive() -> None:
+                while not stop.is_set():
+                    await world.loop.run()
+                    await world.deployment.between_cycles(auto=True)
+                    await asyncio.sleep(0.05)
+
+            runner = asyncio.create_task(drive())
+            try:
+                for _ in range(900):
+                    if str(store.get_mission(mission_id).status.value) in {"COMPLETED", "FAILED", "CANCELLED"}:
+                        break
+                    if not provider.late.is_set() and any(
+                            event.type == "AttemptCancelled"
+                            and str(event.payload.get("reason", "")).startswith("taskgraph_convergence:")
+                            for event in store.list_events(mission_id)):
+                        provider.late.set()
+                    await asyncio.sleep(0.1)
+            finally:
+                stop.set()
+                provider.late.set()
+                await asyncio.wait_for(runner, 30)
+            events = list(store.list_events(mission_id))
+            assert refused == [mission_id]
+            assert str(store.get_mission(mission_id).status.value) == "COMPLETED", [e.type for e in events][-20:]
+            ended = [event.payload for event in events if event.type == "TaskGraphConvergenceAdvanced"
+                     and event.payload["to_state"] == "ABANDONED"]
+            assert [item["reason"] for item in ended] == ["decision_refused"]
+            jobs = dict(store.connection.execute(
+                "SELECT job_id, state FROM taskgraph_convergence_jobs WHERE mission_id=?", (mission_id,)).fetchall())
+            assert sorted(jobs.values()) == ["ABANDONED", "APPLIED"], jobs
+            assert any(event.type == "PlanningDecisionEvaluated" and event.payload["status"] == "COMMIT_REJECTED"
+                       for event in events)
+
+    asyncio.run(case())
