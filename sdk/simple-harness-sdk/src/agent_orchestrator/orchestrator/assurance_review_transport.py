@@ -741,21 +741,27 @@ _FORMAT_FEEDBACK = {
     ),
     "DUPLICATE_SET_MEMBER": "evidence_ids or limitations repeats the same value; list each once.",
     "OBJECT_FIELDS_MISSING": (
-        "a required field is missing. The reply has exactly schema_version, verdict, "
-        "assessments and findings; each assessment has criterion_id, verdict, evidence_ids, "
-        "reason and limitations; each finding has criterion_id, severity and reason."
+        "a required field is missing. The reply has schema_version, verdict, assessments and "
+        "findings (and claims when the request lists claims to confirm); each assessment has "
+        "criterion_id, verdict, evidence_ids, reason and limitations; each finding has "
+        "criterion_id, severity and reason; each claim has claim_id, confirmed, evidence_ids "
+        "and reason."
     ),
-    "OBJECT_FIELDS_UNKNOWN": "a field outside the ReviewReply v2 shape is present; remove it.",
+    "OBJECT_FIELDS_UNKNOWN": (
+        "a field outside the reply's shape carries a value; remove it (an extra field whose "
+        "value is empty is ignored, one with a value is refused)."
+    ),
+    "DUPLICATE_CLAIM": "claims names the same claim_id twice; write each claim once.",
     "ENUM_INVALID": (
         "an enumerated value is not allowed: verdict is ACCEPT, REWORK, INCONCLUSIVE or "
         "REJECTED; severity is BLOCKER, WARNING or INFO; an assessment verdict is one of "
         "the grades named in the request."
     ),
-    "REVIEW_SCHEMA_VERSION": "schema_version must be the integer 2.",
+    "REVIEW_SCHEMA_VERSION": "schema_version must be the integer 3.",
     "JSON_INVALID": (
         "the reply is not one JSON object. Answer with the JSON object only: the first "
-        "character is { and the last is }, no code fence around it and no text before or "
-        "after it."
+        "character is { and the last is }, and no text before or after it (one code fence "
+        "around the whole object is tolerated; anything else outside the object is not)."
     ),
     "JSON_DUPLICATE_KEY": "an object repeats a key; give each key once.",
 }

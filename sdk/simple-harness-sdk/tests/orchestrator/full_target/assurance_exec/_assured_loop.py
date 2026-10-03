@@ -192,7 +192,7 @@ def review(verdict: str = "ACCEPT", *, limitation: str = "") -> Reply:
         package = review_input(request)
         if package is None:
             return None
-        return json.dumps({"schema_version": 2, "verdict": verdict, "assessments": [
+        return json.dumps({"schema_version": 3, "verdict": verdict, "assessments": [
             {"criterion_id": criterion, "verdict": grade, "evidence_ids": [],
              "reason": limitation or "fixture method review", "limitations": [limitation] if limitation else []}
             for criterion in package["criterion_ids"]], "findings": []})

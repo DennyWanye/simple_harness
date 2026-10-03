@@ -9,7 +9,7 @@ from typing import Any
 from simple_harness.agents import AgentTurnResult
 from simple_harness.contracts import canonical_json
 
-from ..assurance.checks import ReviewReply
+from ..assurance.checks import decode_review_reply
 from ..assurance.codec import MAX_RECORD_BYTES, AssuranceError, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.review_input import read_initial_materials
@@ -158,7 +158,7 @@ async def collect_assurance_review(orchestrator: Any, intent: Any) -> None:
         classification = "EXPOSURE_UNAVAILABLE"
     else:
         try:
-            reply = ReviewReply.from_json(decode(raw))
+            reply = decode_review_reply(raw)
         except AssuranceError as error:
             classification, error_code = "FORMAT_INVALID", error.code
     # Costs and unknown holds stay owned by the original runtime/ledger.

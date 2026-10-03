@@ -63,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _review_world import ReviewScript, reviewed_mission  # noqa: E402
 
 HASH = "a" * 64
-ACCEPT_REPLY = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
+ACCEPT_REPLY = {"schema_version": 3, "verdict": "ACCEPT", "assessments": [
     {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture", "limitations": []}],
     "findings": []}
 
@@ -97,7 +97,7 @@ def result(name, grade=Grade.PASS, *, state="SUCCEEDED", valid=True, receipt=Non
 
 
 def reply(**grades):
-    return ReviewReply.from_json({"schema_version": 2, "verdict": "ACCEPT", "findings": [], "assessments": [
+    return ReviewReply.from_json({"schema_version": 3, "verdict": "ACCEPT", "findings": [], "assessments": [
         {"criterion_id": name, "verdict": str(grade.value if hasattr(grade, "value") else grade), "evidence_ids": [],
          "reason": "r", "limitations": []} for name, grade in grades.items()]})
 
@@ -141,7 +141,7 @@ def test_strict_boundary():
             "record_ref": {"id": "r", "revision": 1, "content_hash": HASH}, "reviewer_agent_id": "reviewer",
             "reviewer_turn_ref": {"kind": "agent_turn_receipt", "pin": {"id": "t", "revision": 0, "content_hash": HASH}},
             "raw_output_ref": {"kind": "artifact", "pin": {"id": "raw", "revision": 1, "content_hash": HASH}},
-            "raw_output_hash": "b" * 64, "codec_version": "assurance-review-reply-v2", "consumed_check_refs": [],
+            "raw_output_hash": "b" * 64, "codec_version": "assurance-review-reply-v3", "consumed_check_refs": [],
             "exposed_evidence_refs": [], "evidence_manifest_hash": HASH,
             "binding_read_set": [{"channel": "OBJECT", "key": "o", "fingerprint": HASH, "coverage": "COMPLETE"}],
             "disclosure_refs": [], "invocation_ordinal": 1}
@@ -329,7 +329,7 @@ def test_any_branch_not_mandatory():
     decision = decide_review(reply(a=Grade.PASS, b=Grade.PASS, privacy=Grade.PASS), formula, ("privacy",), policies, both)
     assert decision.success_witness == {"a", "privacy"} and decision.consumed_receipts == (receipt_ref("rcpt-a-check"),)
     # A BLOCKER finding on the chosen branch forces its grade to FAIL.
-    blocked = ReviewReply.from_json({"schema_version": 2, "verdict": "ACCEPT", "assessments": [
+    blocked = ReviewReply.from_json({"schema_version": 3, "verdict": "ACCEPT", "assessments": [
         {"criterion_id": n, "verdict": "PASS", "evidence_ids": [], "reason": "r", "limitations": []}
         for n in ("a", "b", "privacy")],
         "findings": [{"criterion_id": "b", "severity": "BLOCKER", "reason": "leak"}]})

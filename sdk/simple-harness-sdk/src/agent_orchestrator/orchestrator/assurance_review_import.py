@@ -19,7 +19,7 @@ from ..assurance.checks import (
     CriterionPolicy,
     Formula,
     Grade,
-    ReviewReply,
+    decode_review_reply,
     decide_review,
     evaluate_check_gate,
 )
@@ -276,7 +276,7 @@ def _interpret(
 ) -> tuple[ReviewRecord, dict]:
     bound = imported.binding.to_json()
     turn = decode(imported.turn.body_json)["payload"]
-    reply = ReviewReply.from_json(decode(raw))
+    reply = decode_review_reply(raw)
     policies = {
         row["criterion_id"]: CriterionPolicy.from_json(row) for row in bound["check_requirements"]
     }

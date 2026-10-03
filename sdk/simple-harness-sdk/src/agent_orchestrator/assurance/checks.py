@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -11,9 +12,11 @@ from types import MappingProxyType
 from typing import Any
 
 from .codec import (
+    MAX_BYTES,
     AssuranceError,
     array,
     canonical,
+    decode,
     fields,
     integer,
     one_of,
@@ -252,16 +255,37 @@ class Finding:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimConfirmation:
+    """The reviewer's word on one claim of the reviewed result (知识进库, 阶段 C)."""
+
+    claim_id: str
+    confirmed: bool
+    evidence_ids: tuple[str, ...]
+    reason: str
+
+
+#: The reply's shape, level by level: the keys each object may carry.  One table, read
+#: by the strict parser below and by :func:`decode_review_reply`'s tolerance.
+_REPLY_KEYS = frozenset({"schema_version", "verdict", "assessments", "findings", "claims"})
+_ASSESSMENT_KEYS = frozenset({"criterion_id", "verdict", "evidence_ids", "reason", "limitations"})
+_FINDING_KEYS = frozenset({"criterion_id", "severity", "reason"})
+_CLAIM_KEYS = frozenset({"claim_id", "confirmed", "evidence_ids", "reason"})
+REVIEW_REPLY_SCHEMA_VERSION = 3
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewReply:
     verdict: str
     assessments: tuple[Assessment, ...]
     findings: tuple[Finding, ...]
+    #: Only the claims the reviewer wrote about; one it left out counts as unconfirmed.
+    claims: tuple[ClaimConfirmation, ...] = ()
 
     @classmethod
     def from_json(cls, value: object) -> ReviewReply:
         canonical(value)
-        row = fields(value, {"schema_version", "verdict", "assessments", "findings"})
-        if integer(row["schema_version"]) != 2:
+        row = fields(value, {"schema_version", "verdict", "assessments", "findings"}, {"claims"})
+        if integer(row["schema_version"]) != REVIEW_REPLY_SCHEMA_VERSION:
             raise AssuranceError("REVIEW_SCHEMA_VERSION")
         verdict = one_of(row["verdict"], {"ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED"})
         assessments = []
@@ -294,7 +318,53 @@ class ReviewReply:
                     text(f["reason"], limit=2000),
                 )
             )
-        return cls(verdict, tuple(assessments), tuple(findings))
+        claims = []
+        claim_ids = set()
+        for item in array(row.get("claims", []), maximum=256):
+            c = fields(item, set(_CLAIM_KEYS))
+            name = text(c["claim_id"])
+            if name in claim_ids:
+                raise AssuranceError("DUPLICATE_CLAIM")
+            claim_ids.add(name)
+            if type(c["confirmed"]) is not bool:
+                raise AssuranceError("ENUM_INVALID")
+            claims.append(ClaimConfirmation(
+                name, c["confirmed"], unique_texts(c["evidence_ids"], maximum=64), text(c["reason"], limit=1000)))
+        return cls(verdict, tuple(assessments), tuple(findings), tuple(claims))
+
+
+_FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\Z", re.DOTALL)
+_EMPTY = (None, "", [], {})
+
+
+def _drop_empty_extras(value: object, allowed: frozenset[str]) -> object:
+    if not isinstance(value, dict):
+        return value
+    return {key: item for key, item in value.items()
+            if key in allowed or not any(item == empty and type(item) is type(empty) for empty in _EMPTY)}
+
+
+def decode_review_reply(raw: str | bytes) -> ReviewReply:
+    """The one decoder of a reviewer's reply (格式口径, 用户 2026-10-02 定).
+
+    Tolerated, because they change nothing about what the reviewer said: the whole reply
+    wrapped in one code fence; a key the shape does not have whose value is empty.
+    Still refused, exactly as before: text before or after the JSON, an extra key with a
+    value, an over-long reply.  The raw bytes stay the record; only the reading changes.
+    """
+
+    try:
+        body = raw.decode("utf-8", "strict") if isinstance(raw, bytes) else str(raw)
+    except UnicodeDecodeError:
+        body = ""
+    fenced = _FENCE.match(body.strip()) if len(body.encode("utf-8")) <= MAX_BYTES else None
+    value = decode(fenced.group(1)) if fenced else decode(raw)
+    if isinstance(value, dict):
+        value = _drop_empty_extras(value, _REPLY_KEYS)
+        for key, allowed in (("assessments", _ASSESSMENT_KEYS), ("findings", _FINDING_KEYS), ("claims", _CLAIM_KEYS)):
+            if isinstance(value.get(key), list):
+                value[key] = [_drop_empty_extras(item, allowed) for item in value[key]]
+    return ReviewReply.from_json(value)
 
 
 @dataclass(frozen=True, slots=True)

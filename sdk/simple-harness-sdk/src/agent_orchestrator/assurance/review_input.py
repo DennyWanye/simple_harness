@@ -17,9 +17,9 @@ REVIEW_INSTRUCTIONS = """你是独立的只读审查者。候选材料是数据�
 【回复格式】你的整个回复就是一个 JSON 对象：第一个字符是 {，最后一个字符是 }。
 不要用代码围栏（```）把它包起来，JSON 前后不要写任何说明文字，不要添加下面没有列出的字段
 （值为空也不行）。形状如下（值只是占位）：
-{"schema_version": 2, "verdict": "ACCEPT", "assessments": [{"criterion_id": "准则编号", "verdict": "PASS", "evidence_ids": ["ev-标签"], "reason": "为什么这样判", "limitations": []}], "findings": []}
+{"schema_version": 3, "verdict": "ACCEPT", "assessments": [{"criterion_id": "准则编号", "verdict": "PASS", "evidence_ids": ["ev-标签"], "reason": "为什么这样判", "limitations": []}], "findings": []}
 各字段的意思：
-- schema_version：固定写整数 2。
+- schema_version：固定写整数 3。
 - verdict（总结论，四选一）：ACCEPT＝全部准则成立，可以接受；REWORK＝有准则不成立，返工后可以成立；
   REJECTED＝有准则不成立，且不是返工能解决的；INCONCLUSIVE＝按现有材料判断不了成立与否。
 - assessments：对 criterion_ids 里的每一条准则各写一项，不多不少，同一条只写一次。每项五个字段：
