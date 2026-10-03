@@ -53,7 +53,9 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
       ) : null}
       {previousOutcome ? (
         <div data-testid="previous-attempt">
-          上次没有生效：{previousOutcome}{text(previous.reason) ? `（${text(previous.reason)}）` : ""}，这是重新提交的申请。
+          {/* 只有服务拒绝时附上服务自己的原话；另外两种结局的 reason 是内部登记码，不给人看（2026-10-03 真机） */}
+          上次没有生效：{previousOutcome}{text(previous.outcome) === "service_refused" && text(previous.reason)
+            ? `（${text(previous.reason)}）` : ""}，这是重新提交的申请。
         </div>
       ) : null}
     </>
