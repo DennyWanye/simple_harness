@@ -336,7 +336,6 @@ SOURCE_COLUMNS = {
         "budget_lineage_ref",
         "failure_count",
         "spent_tokens",
-        "spent_cost_micros",
         "spent_attempts",
         "fuel_limit",
         "fuel_used",
