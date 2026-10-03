@@ -1,12 +1,12 @@
 {
-  "deployment_id": "48ef1bf2a9daa37603b1ed84336465c08f989ad332ca9a2bf043de6909720999",
+  "deployment_id": "b1e77540232b5aa825ad6c3a51ce19caf772883d6e5ce530f2e08025adae253f",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
     "agent_orchestrator/__main__.py": "41fd71664c8a57ff8740663148cd34e0a88af2c0c0d33a9dd7b890d8eda98e05",
     "agent_orchestrator/api/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/api/approvals.py": "456359314d2ac0d2dd07000708cd2271d8b6f547346ac2c383f3ec1a19319798",
-    "agent_orchestrator/api/assurance.py": "fcbabee2654a11d4563571eff694c985334d50b9e669d4e276ee1e8a2c503d82",
+    "agent_orchestrator/api/assurance.py": "aa645b9c6d5945e673c372bbf33dd544c0eae291d3df201b9d09df321555dde2",
     "agent_orchestrator/api/facade.py": "7894f6f7c78bfd86aecb1932363ebc1bf10c0a487fab8b6ba8c251efc982e836",
     "agent_orchestrator/api/missions.py": "1ad6d203e40239e61b6df27ffd999a93deeb1d5db6725d23d983a0be7d79a608",
     "agent_orchestrator/api/operation_completion.py": "a83f3902d2bf99a52b2526139370eaac192873457be936cc6432b9c6a462cf37",
@@ -33,7 +33,7 @@
     "agent_orchestrator/assurance/codec.py": "b7ea501a619d59cae1a06fa76c9435894d54d208e865b9a1fe555e7b9863e092",
     "agent_orchestrator/assurance/contracts/__init__.py": "5889f27375ca6a83e4b305736c3907d4848c21d43bdc7949179356d7ef3d3b7d",
     "agent_orchestrator/assurance/contracts/common.schema.json": "aef103042c68c8cde4c499240c62a0c0694290ac8dad5dff1b055c7d0e64399b",
-    "agent_orchestrator/assurance/contracts/host-error-v1.schema.json": "81bfb1bc2e536d36f981b0934f35434fc727862387358921fc393292fc83a737",
+    "agent_orchestrator/assurance/contracts/host-error-v1.schema.json": "d1e9bd13f93f4f90f9922aafcd6bd37a5a40a20d6fe7ca2e0fd887d80e3e12c0",
     "agent_orchestrator/assurance/contracts/host-response-v1.schema.json": "63d3e8b725c9953bca911ae6ab96901b845fec522edcd233518946553af1174f",
     "agent_orchestrator/assurance/contracts/host-review-request-v1.schema.json": "faa54259970abbaa12e78ea7faafb325d7fc18b93bad947e053bf015c131cd22",
     "agent_orchestrator/assurance/contracts/host-review-response-v1.schema.json": "ef03102521bd6f6d817eef7ff70fef068babb4c3e17b56f8e0949e4f5088fe01",

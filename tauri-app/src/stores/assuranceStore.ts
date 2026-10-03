@@ -36,7 +36,7 @@ const ITEM_KINDS = ["CRITERION", "REVIEW", "EFFECT", "CLOSEOUT", "CONTRIBUTION"]
 const ITEM_USE = ["USABLE", "STALE", "BLOCKED", "UNAVAILABLE", "NOT_APPLICABLE"] as const;
 const REVIEW_USE = ["USABLE", "STALE", "BLOCKED", "UNAVAILABLE"] as const;
 const GRADES = ["PASS", "FAIL", "UNKNOWN"] as const;
-const ERROR_CODES = ["NOT_FOUND", "PROFILE_UNBOUND", "RESTORE_QUARANTINED", "SNAPSHOT_CHANGED",
+const ERROR_CODES = ["NOT_FOUND", "PROFILE_UNBOUND", "ROOT_QUARANTINED", "SNAPSHOT_CHANGED",
   "SOURCE_UNAVAILABLE", "LIMIT_REACHED", "CONTRACT_INVALID"];
 
 function invalid(): never { throw new Error("Assurance 返回的数据不完整或格式不符"); }
@@ -154,7 +154,7 @@ export function parseError(value: unknown): AssuranceError {
 
 const ERROR_TEXT: Record<string, string> = {
   NOT_FOUND: "当前身份下没有这个对象", PROFILE_UNBOUND: "该任务不在 Assurance 通道上",
-  RESTORE_QUARANTINED: "恢复的根尚未重新授权，只能等待当前授权", SNAPSHOT_CHANGED: "状态已变化，请从第一页重新读取",
+  ROOT_QUARANTINED: "保证通道根状态异常，已隔离，只开放管理读取", SNAPSHOT_CHANGED: "状态已变化，请从第一页重新读取",
   SOURCE_UNAVAILABLE: "来源暂不可读（历史视图可能没有覆盖）", LIMIT_REACHED: "超过读取上限，请缩小范围", CONTRACT_INVALID: "请求不符合合同",
 };
 export function errorMessage(error: AssuranceError): string {

@@ -40,7 +40,7 @@ ERROR_CODES = frozenset(
     {
         "NOT_FOUND",
         "PROFILE_UNBOUND",
-        "RESTORE_QUARANTINED",
+        "ROOT_QUARANTINED",
         "SNAPSHOT_CHANGED",
         "SOURCE_UNAVAILABLE",
         "LIMIT_REACHED",
@@ -195,7 +195,7 @@ class AssuranceApi:
             return gate.require_execution().root_incarnation_id
         except AssuranceError as error:
             if error.code in _QUARANTINE_CODES:
-                _fail("RESTORE_QUARANTINED", "restored root requires current re-authorization")
+                _fail("ROOT_QUARANTINED", "assurance root is quarantined; only management reads are open")
             _fail("PROFILE_UNBOUND", f"assurance root unavailable: {error.code}")
 
     def _mission_locked(self, mission_id: str) -> Any:
@@ -783,7 +783,7 @@ class AssuranceApi:
             except AssuranceError as error:
                 reasons.append(str(error.code))
                 if error.code in _QUARANTINE_CODES:
-                    _fail("RESTORE_QUARANTINED", "restored root requires current re-authorization")
+                    _fail("ROOT_QUARANTINED", "assurance root is quarantined; only management reads are open")
             finally:
                 if candidate is not None:
                     try:
