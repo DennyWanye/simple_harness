@@ -194,6 +194,43 @@ class TaskGraphNotifications:
             message.mission_id, OccurrenceId(message.subject_key))
         return self._record(message, key, result)
 
+    def _consume_one(self, mission_id: str) -> int:
+        consumed = 0
+        fault_key = derive_id("tg-source-fault", mission_id)
+        try:
+            consumed += self.events.consume(mission_id, now_ms=int(self.store.now * 1000))
+            consumed += self.wakeups.schedule(mission_id, now_ms=int(self.store.now * 1000))
+        except (StoreError, ContractError, SourceUnavailable):
+            # Isolate an unreadable Mission. Do not advance its cursor, invent
+            # an empty graph, expose a raw exception or block other Missions.
+            with self.store.transaction():
+                self.store.put_scheduler_state(fault_key, {"mission_id": mission_id,
+                    "blocked": True, "code": "TASKGRAPH_EVENT_SOURCE_UNAVAILABLE"})
+                cursor_key = derive_id("taskgraph-exec-v2-event-cursor", self.events.consumer_id, mission_id)
+                try:
+                    cursor = self.store.get_scheduler_state(cursor_key)
+                except (ValueError, TypeError):
+                    cursor = {}
+                sequence = 0 if cursor is None else cursor.get("through_seq")
+                if type(sequence) is not int or not 0 <= sequence <= 2**53 - 1:
+                    # Unknown is not a zero checkpoint. Preserve the damaged
+                    # cursor for repair and record a diagnostic without using
+                    # it as an index or advancing any source event.
+                    sequence = None
+                identity = derive_id("tg-source-fault-event", mission_id, str(sequence))
+                self.store.append_event(Event(id=identity, type="TaskGraphSourceUnavailable",
+                    trace_id=identity, mission_id=mission_id, task_id=None, attempt_id=None,
+                    actor_type="system", actor_id="taskgraph-exec-v2",
+                    payload={"code": "TASKGRAPH_EVENT_SOURCE_UNAVAILABLE", "through_seq": sequence},
+                    idempotency_key=identity, created_at=self.store.now))
+        else:
+            if self.store.get_scheduler_state(fault_key) is not None:
+                with self.store.transaction():
+                    self.store.put_scheduler_state(fault_key, {"mission_id": mission_id,
+                        "blocked": False, "code": None})
+
+        return consumed
+
     async def tick(self) -> bool:
         self.orchestrator._require_assurance_execution_root()
         rows = self.store.connection.execute(
@@ -201,38 +238,12 @@ class TaskGraphNotifications:
         consumed = 0
         for row in rows:
             mission_id = str(row[0])
-            fault_key = derive_id("tg-source-fault", mission_id)
-            try:
-                consumed += self.events.consume(mission_id, now_ms=int(self.store.now * 1000))
-                consumed += self.wakeups.schedule(mission_id, now_ms=int(self.store.now * 1000))
-            except (StoreError, ContractError, SourceUnavailable):
-                # Isolate an unreadable Mission. Do not advance its cursor, invent
-                # an empty graph, expose a raw exception or block other Missions.
-                with self.store.transaction():
-                    self.store.put_scheduler_state(fault_key, {"mission_id": mission_id,
-                        "blocked": True, "code": "TASKGRAPH_EVENT_SOURCE_UNAVAILABLE"})
-                    cursor_key = derive_id("taskgraph-exec-v2-event-cursor", self.events.consumer_id, mission_id)
-                    try:
-                        cursor = self.store.get_scheduler_state(cursor_key)
-                    except (ValueError, TypeError):
-                        cursor = {}
-                    sequence = 0 if cursor is None else cursor.get("through_seq")
-                    if type(sequence) is not int or not 0 <= sequence <= 2**53 - 1:
-                        # Unknown is not a zero checkpoint. Preserve the damaged
-                        # cursor for repair and record a diagnostic without using
-                        # it as an index or advancing any source event.
-                        sequence = None
-                    identity = derive_id("tg-source-fault-event", mission_id, str(sequence))
-                    self.store.append_event(Event(id=identity, type="TaskGraphSourceUnavailable",
-                        trace_id=identity, mission_id=mission_id, task_id=None, attempt_id=None,
-                        actor_type="system", actor_id="taskgraph-exec-v2",
-                        payload={"code": "TASKGRAPH_EVENT_SOURCE_UNAVAILABLE", "through_seq": sequence},
-                        idempotency_key=identity, created_at=self.store.now))
-            else:
-                if self.store.get_scheduler_state(fault_key) is not None:
-                    with self.store.transaction():
-                        self.store.put_scheduler_state(fault_key, {"mission_id": mission_id,
-                            "blocked": False, "code": None})
+            if mission_id in self.orchestrator._unrecovered:
+                continue
+            # 这个任务的这一份在"一个任务一轮"的边界里：下面只接得住来源读不了，别的错
+            # （库读写故障等）由边界接住、按同一张表计数，不冲出主循环（阶段 C 第 0′ 条）
+            with self.orchestrator._round_boundary(mission_id, "taskgraph_notifications"):
+                consumed += self._consume_one(mission_id)
         delivered = await self.pump.pump_taskgraph_followups(limit=16)
         return bool(consumed or delivered)
 

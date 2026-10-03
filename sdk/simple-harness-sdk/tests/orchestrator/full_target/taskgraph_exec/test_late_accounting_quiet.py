@@ -1,6 +1,7 @@
 """2026-09-28 真机：几十个"用量未知、按上限预留"的旧调用每轮都被完整重读（约三成 CPU）。
 编排库与各执行池库都没有写入时跳过重读；任何一边有写入，下一次照常重读。"""
 
+import contextlib
 import asyncio
 
 from production_fixture import enabled_world
@@ -52,7 +53,8 @@ def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
     pool = SimpleNamespace(bridge=SimpleNamespace(runtime=SimpleNamespace(
         ports=SimpleNamespace(provider_admission=guard), uow=None)))
     orch = SimpleNamespace(store=SimpleNamespace(has_table=lambda name: True),
-                           assembled=SimpleNamespace(pools={"p": pool}), _note=lambda text: None)
+                           assembled=SimpleNamespace(pools={"p": pool}), _note=lambda text: None,
+                           _round_boundary=lambda mission_id, where: contextlib.nullcontext())
     monkeypatch.setattr(accounting_recovery.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(accounting_recovery, "_holds_generation", lambda orch: (generation[0],))
     monkeypatch.setattr(accounting_recovery, "_open_holds",

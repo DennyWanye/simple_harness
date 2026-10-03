@@ -38,6 +38,7 @@ from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import Store, StoreError
 from .completion_status import _owner_scope
 from .operation_completion import OperationCompletionReader
+from .review_adjudication import accepted_or_adjudicated
 
 
 class OperationOutcomeError(ContractError):
@@ -575,7 +576,7 @@ def _assured_outcome_use(commit: Any, mission_id: str, binding_id: str) -> Any:
         None if row is None else HtnStore(store).official_review_record(row["review_package_id"])
     )
     validity = getattr(commit, "_assurance_validity", None)
-    if record is None or record.verdict is not ReviewVerdict.ACCEPT or validity is None:
+    if record is None or not accepted_or_adjudicated(store, record) or validity is None:
         raise OperationOutcomeError("OP_REVIEW_NOT_OFFICIAL", "no licensable outcome review")
     return validity.prepare_outcome_use(record, acceptance_id="acc-" + binding_id)
 
@@ -600,7 +601,7 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
         owner, _, requirements = _effect_owner(store, mission_id, binding.effect_key)
         package = htn.get_review_package(row["review_package_id"])
         record = htn.official_review_record(str(package.package_id))
-        if record is None or record.verdict is not ReviewVerdict.ACCEPT:
+        if record is None or not accepted_or_adjudicated(store, record):
             raise OperationOutcomeError("OP_REVIEW_NOT_OFFICIAL", "no accepted outcome review")
         semantics = htn.task_semantics_of(mission_id, owner.task_ref.id)
         task = store.get_task(owner.task_ref.id)

@@ -182,7 +182,7 @@ def review_reply(
     labels = [item["label"] for item in package.get("evidence", ())][:64]
     return json.dumps(
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "verdict": verdict,
             "assessments": [
                 {

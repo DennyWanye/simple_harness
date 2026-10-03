@@ -55,7 +55,7 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
             layer["status"] != "PASS" or "not applicable" in layer["summary"]["text"]
             for layer in layers if layer["layer"] == "code_test"
         )
-        assert detail["usage"]["amount_micros"] is None  # unpriced, not zero
+        assert "amount_micros" not in detail["usage"]  # tokens only, no money
         assert detail["usage"]["reserved_tokens"] == 0
         assert detail["usage"]["settled_tokens"] is not None
         assert detail["usage"]["ledger_version"] is not None
@@ -78,7 +78,7 @@ def test_budget_projection_keeps_actual_held_reservation_even_after_terminal(sta
     usage = project_detail(view)["usage"]
     assert usage["reserved_tokens"] == 700  # UNKNOWN can outlive a cancelled Mission
     assert usage["settled_tokens"] == 123
-    assert usage["amount_micros"] is None
+    assert "amount_micros" not in usage
 
 
 def test_old_snapshot_does_not_invent_zero_budget_usage():

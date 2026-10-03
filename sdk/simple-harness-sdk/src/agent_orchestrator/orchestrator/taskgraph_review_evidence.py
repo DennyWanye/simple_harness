@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..assurance.codec import fingerprint
 from ..contracts.models import VERIFICATION_LAYERS
 from ..contracts.resolution import ReviewVerdict
 from ..contracts.semantic_base import content_hash_of
@@ -36,7 +37,7 @@ def accepted_verification_evidence(store: Any, semantics: Any, mission_id: str,
     for ref in package.candidate_refs:
         result = store.get_result(str(ref.id))
         if result is not None:
-            if ref.content_hash != content_hash_of(str(result.envelope.id)):
+            if ref.content_hash != fingerprint(result.envelope.to_json()):
                 raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_MISMATCH")
             if (str(package.purpose) != "TASK_CONTENT"
                     or result.verification_state != "DONE" or result.verdict != "PASS"):

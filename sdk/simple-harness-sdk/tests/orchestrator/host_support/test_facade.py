@@ -108,6 +108,7 @@ def test_a_string_is_not_a_list_of_strings(tmp_path, name):
         ({"allowed_tools": list(TOOLS3)}, "allowed_tools"),
         ({"risk_level": "production"}, "risk_level"),
         ({"task_kind": "research"}, "task_kind"),
+        # money is not a budget dimension: an unknown budget field, refused by name
         ({"budget": {"max_tokens": 1000, "max_cost_micros": 5}}, "budget.max_cost_micros"),
     ],
 )

@@ -138,7 +138,6 @@ class _Budget:
     def to_json(self) -> dict[str, Any]:
         return {
             "max_tokens": 1000,
-            "max_cost_micros": None,
             "max_attempts": 3,
             "max_runtime_seconds": None,
             "max_concurrency": None,

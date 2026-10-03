@@ -109,7 +109,6 @@ def test_a_fresh_account_starts_at_zero(ledger: ObligationStore) -> None:
     ledger.register(_duty(), recursion_fuel=3)
     view = ledger.account(MISSION, ObligationId("obligation-1"))
     assert view.failure_count == 0
-    assert view.consumed_cost_micros == 0
     assert view.consumed_attempts == 0
     assert view.remaining_fuel == 3
     assert view.lifecycle is ObligationLifecycle.UNSATISFIED
@@ -137,10 +136,9 @@ def test_failures_accrue_across_shape_changes(ledger: ObligationStore) -> None:
 def test_spend_accumulates_on_the_duty_not_the_task(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty())
-    ledger.record_spend(MISSION, target, cost_micros=1200, attempts=1, tokens=340)
+    ledger.record_spend(MISSION, target, attempts=1, tokens=340)
     ledger.note_shape_change(MISSION, target, ShapeChange.AGENT_REASSIGNED, detail="agent-2")
-    view = ledger.record_spend(MISSION, target, cost_micros=800, attempts=2, tokens=60)
-    assert view.consumed_cost_micros == 2000
+    view = ledger.record_spend(MISSION, target, attempts=2, tokens=60)
     assert view.consumed_attempts == 3
     assert ledger.spent_tokens(MISSION, target) == 400
 
@@ -148,11 +146,10 @@ def test_spend_accumulates_on_the_duty_not_the_task(ledger: ObligationStore) -> 
 def test_a_refused_spend_leaves_the_row_untouched(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty())
-    ledger.record_spend(MISSION, target, cost_micros=500, attempts=1, tokens=10)
+    ledger.record_spend(MISSION, target, attempts=1, tokens=10)
     with pytest.raises(ContractError):
-        ledger.record_spend(MISSION, target, cost_micros=100, attempts=-1)
+        ledger.record_spend(MISSION, target, tokens=100, attempts=-1)
     view = ledger.account(MISSION, target)
-    assert view.consumed_cost_micros == 500
     assert view.consumed_attempts == 1
     assert ledger.spent_tokens(MISSION, target) == 10
 
@@ -170,12 +167,12 @@ def test_shape_changes_are_history_not_an_allowance(ledger: ObligationStore) -> 
     target = ObligationId("obligation-1")
     ledger.register(_duty())
     ledger.record_failure(MISSION, target, count=2)
-    ledger.record_spend(MISSION, target, cost_micros=999)
+    ledger.record_spend(MISSION, target, tokens=999)
     for change in ShapeChange:
         ledger.note_shape_change(MISSION, target, change, detail=f"{change!s} happened")
     view = ledger.account(MISSION, target)
     assert view.failure_count == 2
-    assert view.consumed_cost_micros == 999
+    assert view.consumed_tokens == 999
     assert [entry[0] for entry in ledger.shape_changes(MISSION, target)] == list(ShapeChange)
 
 
@@ -311,7 +308,7 @@ def test_load_ledger_reproduces_every_counter(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty(), recursion_fuel=2)
     ledger.record_failure(MISSION, target, count=2)
-    ledger.record_spend(MISSION, target, cost_micros=700, attempts=2)
+    ledger.record_spend(MISSION, target, tokens=700, attempts=2)
     ledger.consume_fuel(
         MISSION, target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
     )
@@ -331,7 +328,7 @@ def test_load_ledger_reproduces_every_counter(ledger: ObligationStore) -> None:
 def test_persist_writes_a_memory_ledger_back_unchanged(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty(), recursion_fuel=3)
-    ledger.record_spend(MISSION, target, cost_micros=100, attempts=1, tokens=42)
+    ledger.record_spend(MISSION, target, attempts=1, tokens=42)
     memory = ledger.load_ledger(MISSION)
     memory.record_failure(target, count=4)
     memory.consume_fuel(target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1"))
@@ -339,7 +336,7 @@ def test_persist_writes_a_memory_ledger_back_unchanged(ledger: ObligationStore) 
     assert ledger.persist(memory) == (target,)
     view = ledger.account(MISSION, target)
     assert view.failure_count == 4
-    assert view.consumed_cost_micros == 100
+    assert view.consumed_tokens == 42
     assert view.remaining_fuel == 2
     assert ledger.shape_changes(MISSION, target) == (
         (ShapeChange.PARAMETERS_REBOUND, "subject=beta"),
@@ -351,7 +348,7 @@ def test_the_token_axis_round_trips_through_the_ledger(ledger: ObligationStore) 
 
     target = ObligationId("obligation-1")
     ledger.register(_duty())
-    ledger.record_spend(MISSION, target, cost_micros=50, attempts=1, tokens=1234)
+    ledger.record_spend(MISSION, target, attempts=1, tokens=1234)
     memory = ledger.load_ledger(MISSION)
     assert memory.account(target).consumed_tokens == 1234
     memory.record_spend(target, tokens=66)
@@ -359,13 +356,13 @@ def test_the_token_axis_round_trips_through_the_ledger(ledger: ObligationStore) 
     view = ledger.account(MISSION, target)
     assert view.consumed_tokens == 1300
     assert ledger.spent_tokens(MISSION, target) == 1300
-    assert view.consumed_cost_micros == 50
+    assert view.consumed_attempts == 1
 
 
 def test_persisting_an_untouched_ledger_leaves_every_axis_alone(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty())
-    ledger.record_spend(MISSION, target, cost_micros=7, attempts=2, tokens=1234)
+    ledger.record_spend(MISSION, target, attempts=2, tokens=1234)
     before = ledger.account(MISSION, target)
     ledger.persist(ledger.load_ledger(MISSION))
     assert ledger.account(MISSION, target) == before
@@ -502,10 +499,10 @@ def test_a_concurrent_spend_is_not_lost(
         tmp_path,
         monkeypatch,
         store,
-        lambda rival: rival.record_spend(MISSION, target, cost_micros=500, tokens=7),
+        lambda rival: rival.record_spend(MISSION, target, attempts=5, tokens=7),
     )
-    view = ledger.record_spend(MISSION, target, cost_micros=100, tokens=3)
-    assert view.consumed_cost_micros == 600
+    view = ledger.record_spend(MISSION, target, attempts=1, tokens=3)
+    assert view.consumed_attempts == 6
     assert view.consumed_tokens == 10
 
 
@@ -518,10 +515,10 @@ def test_a_failed_transaction_rolls_back_every_obligation_write(
     with pytest.raises(RuntimeError, match="deliberate"):
         with store.transaction():
             ledger.record_failure(MISSION, target, count=5)
-            ledger.record_spend(MISSION, target, cost_micros=999)
+            ledger.record_spend(MISSION, target, tokens=999)
             ledger.register(_duty("obligation-2"))
             raise RuntimeError("deliberate")
     view = ledger.account(MISSION, target)
     assert view.failure_count == 1
-    assert view.consumed_cost_micros == 0
+    assert view.consumed_tokens == 0
     assert ledger.obligation_ids(MISSION) == (target,)

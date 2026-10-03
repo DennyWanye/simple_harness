@@ -153,6 +153,50 @@ class AssuranceTick:
             pass  # expired/superseded ownership is not repaired by moving time
         return None
 
+    def _ingest_one(self, mission_id: str, now_ms: int, coordination_ms: int) -> bool:
+        progressed = False
+        if AssuranceStore(self.store).lane(mission_id) != "ASSURANCE_1_1":
+            raise AssuranceError("ASSURANCE_CREATION_LANE_MISMATCH")
+        progressed = (
+            bool(
+                self.expiry.emit_due(
+                    mission_id,
+                    root_incarnation_id=self.root_incarnation_id,
+                    now_ms=now_ms,
+                )
+            )
+            or progressed
+        )
+        for consumer in sorted(CONSUMERS):
+            cursor = self.store.connection.execute(
+                "SELECT * FROM assurance_event_cursors WHERE mission_id=? AND consumer=?",
+                (mission_id, consumer),
+            ).fetchone()
+            if cursor is None:
+                # Recovery from a lost cursor replays original durable Events.
+                # It never guesses a latest seq or resets pending budgets.
+                self.work.initialize_cursor(
+                    mission_id, consumer, activation_seq=0, now_ms=coordination_ms
+                )
+                cursor = self.store.connection.execute(
+                    "SELECT * FROM assurance_event_cursors WHERE mission_id=? AND consumer=?",
+                    (mission_id, consumer),
+                ).fetchone()
+            adapter = self.consumers[consumer]
+            try:
+                seq = self.work.ingest(
+                    mission_id,
+                    consumer,
+                    expected_version=cursor["row_version"],
+                    classify=lambda event, _consumer, a=adapter: a.classify(event),
+                    now_ms=coordination_ms,
+                )
+            except StoreConflict:
+                continue
+            progressed = seq != cursor["last_event_seq"] or progressed
+
+        return progressed
+
     async def tick(self) -> bool:
         self.require_execution_root()
         if self.store.connection.in_transaction:
@@ -167,45 +211,10 @@ class AssuranceTick:
         # Ingest every consumer before expensive preparation. One budget-blocked
         # review cannot prevent later revocation from entering the durable inbox.
         for mission_id in missions:
-            if AssuranceStore(self.store).lane(mission_id) != "ASSURANCE_1_1":
-                raise AssuranceError("ASSURANCE_CREATION_LANE_MISMATCH")
-            progressed = (
-                bool(
-                    self.expiry.emit_due(
-                        mission_id,
-                        root_incarnation_id=self.root_incarnation_id,
-                        now_ms=now_ms,
-                    )
-                )
-                or progressed
-            )
-            for consumer in sorted(CONSUMERS):
-                cursor = self.store.connection.execute(
-                    "SELECT * FROM assurance_event_cursors WHERE mission_id=? AND consumer=?",
-                    (mission_id, consumer),
-                ).fetchone()
-                if cursor is None:
-                    # Recovery from a lost cursor replays original durable Events.
-                    # It never guesses a latest seq or resets pending budgets.
-                    self.work.initialize_cursor(
-                        mission_id, consumer, activation_seq=0, now_ms=coordination_ms
-                    )
-                    cursor = self.store.connection.execute(
-                        "SELECT * FROM assurance_event_cursors WHERE mission_id=? AND consumer=?",
-                        (mission_id, consumer),
-                    ).fetchone()
-                adapter = self.consumers[consumer]
-                try:
-                    seq = self.work.ingest(
-                        mission_id,
-                        consumer,
-                        expected_version=cursor["row_version"],
-                        classify=lambda event, _consumer, a=adapter: a.classify(event),
-                        now_ms=coordination_ms,
-                    )
-                except StoreConflict:
-                    continue
-                progressed = seq != cursor["last_event_seq"] or progressed
+            # 一个任务的这一份在"一个任务一轮"的边界里（阶段 C 第 0′ 条）：通道不符、库读写
+            # 故障都只是这个任务这一轮的故障，别的任务照常
+            with self.orchestrator._round_boundary(mission_id, "assurance_ingest"):
+                progressed = self._ingest_one(mission_id, now_ms, coordination_ms) or progressed
         if clock.state != "STABLE":
             # Raw/accounting stays on the original collectors. Ingest new facts
             # without acquiring use claims against a rolled-back clock.
@@ -224,14 +233,16 @@ class AssuranceTick:
                     != "STABLE"
                 ):
                     return progressed
-                claims = self.work.claim_due(
-                    mission_id,
-                    consumer,
-                    owner=self.owner,
-                    now_ms=claim_now,
-                    lease_ms=self.prepare_lease_ms,
-                    limit=1,
-                )
+                claims = ()
+                with self.orchestrator._round_boundary(mission_id, "assurance_claim"):
+                    claims = self.work.claim_due(
+                        mission_id,
+                        consumer,
+                        owner=self.owner,
+                        now_ms=claim_now,
+                        lease_ms=self.prepare_lease_ms,
+                        limit=1,
+                    )
                 for claim in claims:
                     remaining -= 1
                     try:

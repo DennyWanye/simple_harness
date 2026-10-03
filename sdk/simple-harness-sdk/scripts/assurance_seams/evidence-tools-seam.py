@@ -16,6 +16,7 @@
 from _product_seam import StepReviewer, cite, count, quick, reviewed_mission, source_sha256, tool_values, write_report
 
 import asyncio
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -100,8 +101,10 @@ async def partial_read(root, report) -> None:  # type: ignore[no-untyped-def]
         lambda request, data: cite(data, [seen["label"]]),
     ]})
     async with reviewed_mission(root, provider, sources=(EXTRA, SECOND)) as case:
-        await case.run_until(provider.repair_asked.is_set, timeout=60)
         store = case.store
+        # 第 1 次引用没读全的那页 → 要求重写；第 2 次仍引用 → 按"没有可采用的回复"记成判不下来、
+        # 交人复核（阶段 C）。从头到尾没有验收。
+        await case.run_until(lambda: bool(store.list_approvals(case.mission_id, "PENDING")), timeout=60)
         review_key = review_key_of(store, case.mission_id, "TASK_CONTENT")
         chain = batches(store, review_key)
         # 那一页从来没有被披露（每次调用的初始材料各成一批，但页面标签不在任何一批里）。
@@ -115,10 +118,13 @@ async def partial_read(root, report) -> None:  # type: ignore[no-untyped-def]
         ordinals = [r[0] for r in store.connection.execute(
             "SELECT ordinal FROM assurance_review_invocations WHERE review_key=? ORDER BY ordinal", (review_key,))]
         assert ordinals == [1, 2], ordinals
-        reason = store.connection.execute(
-            "SELECT json_extract(receipt_json,'$.reason') FROM commit_receipts WHERE kind="
-            "'AssuranceReviewImportRejected' AND subject_id=?", (review_key,)).fetchone()
-        assert reason is not None and reason[0] == "UNEXPOSED_EVIDENCE", reason
+        limitations = [limitation
+                       for (raw,) in store.connection.execute(
+                           "SELECT record_json FROM review_records WHERE mission_id=?", (case.mission_id,))
+                       for record in [json.loads(raw)] if record["verdict"] == "INCONCLUSIVE"
+                       for criterion in record["criteria"] for limitation in criterion["limitations"]]
+        assert limitations and set(limitations) == {"REVIEW_NO_USABLE_REPLY:UNEXPOSED_EVIDENCE"}, limitations
+        reason = (limitations[0].partition(":")[2],)
         assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", case.mission_id) == 0
         report["task_content_partial_read"] = {"review_key": review_key, "partial_label_disclosed": disclosed,
                                                "batches": [b["batch_no"] for b in chain], "rejection": reason[0],

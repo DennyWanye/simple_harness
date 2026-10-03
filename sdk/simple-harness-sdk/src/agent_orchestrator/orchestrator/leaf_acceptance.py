@@ -550,10 +550,11 @@ class LeafAcceptanceAssembly:
         projection: Any,
         persist: bool = True,
     ) -> ReviewPackage:
+        package_id = f"pkg-{content_hash_of({'r': result_id, 'rev': revision.revision})[:32]}"
+        claims_to_confirm, related_entries = self._claim_sections(
+            mission_id, str(binding.task_id), result_id, package_id)
         package = ReviewPackage(
-            package_id=ReviewPackageId(
-                f"pkg-{content_hash_of({'r': result_id, 'rev': revision.revision})[:32]}"
-            ),
+            package_id=ReviewPackageId(package_id),
             purpose=ReviewPurpose.TASK_CONTENT,
             binding=ReviewBinding(
                 mission_id=mission_id,
@@ -584,19 +585,87 @@ class LeafAcceptanceAssembly:
                     kind=TypedRefKind.ARTIFACT,
                     id=str(result_id),
                     revision=1,
-                    content_hash=content_hash_of(str(result_id)),
+                    # the hash the reviewer sees on the review target: the result envelope's
+                    content_hash=self._result_fingerprint(result_id),
                     produced_by=Provenance.TOOL,
                 ),
             ),
             producer_agent_ids=tuple(producer_agent_ids),
             reviewer_workspace_access=REVIEWER_ACCESS,
             requirements_content_hash=revision.content_hash(),
+            claims_to_confirm=claims_to_confirm,
+            related_entries=related_entries,
         )
         if not persist:
             # Assurance freezes the same original package before the reserve/
             # intent transaction. Its transport owns the atomic insertion.
             return package
         return self._stored_package(package)
+
+    def _result_fingerprint(self, result_id: str) -> str:
+        from ..assurance.codec import fingerprint
+
+        stored = self.store.get_result(result_id)
+        if stored is None:
+            raise StoreError(f"result {result_id} is not recorded")
+        return fingerprint(stored.envelope.to_json())
+
+    def _claim_sections(
+        self, mission_id: str, task_id: str, result_id: str, package_id: str
+    ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
+        """The package's two claim sections (阶段 C): what this result claims, and what
+        elsewhere in the Mission bears on it.
+
+        Frozen at the first cut: once the package is stored, its sections are read back
+        rather than recomputed — the Mission's other claims move on while a review is
+        out, and the anchor a review is bound to must not.
+
+        Selection is structural only — another step's claim the contradiction rule
+        pairs with one of this result's (same subject key and another stance, or named
+        in ``contradicts``), and the knowledge this result declares it used.  Nothing of
+        the reviewed step itself (any attempt) is ever listed as related.
+        """
+        import hashlib
+
+        from ..memory.verified_knowledge import parse_knowledge_ref
+        from ..verification.conflicts import contradictions
+
+        try:
+            stored = self.semantics.get_review_package(package_id)
+        except StoreError:
+            stored = None
+        if stored is not None:
+            return stored.claims_to_confirm, stored.related_entries
+
+        def digest(text: str) -> str:
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        claims = self.store.list_claims(result_id)
+        to_confirm = tuple(
+            {"claim_id": claim.id, "content": claim.content, "content_sha256": digest(claim.content),
+             "evidence": list(claim.evidence)}
+            for claim in claims
+        )
+        related: dict[tuple[str, str], dict[str, Any]] = {}
+        others = [item for item in self.store.list_mission_claims(mission_id) if item.source_task != task_id]
+        for claim in claims:
+            for found in contradictions(claim, others):
+                other = found.other
+                related[("dispute", other.id)] = {
+                    "kind": "dispute", "id": other.id, "version": int(other.version),
+                    "content_sha256": digest(other.content), "content": other.content,
+                    "status": str(other.status), "source_task": other.source_task}
+        result = self.store.get_result(result_id)
+        for reference in (() if result is None else result.envelope.used_knowledge):
+            knowledge_id, _ = parse_knowledge_ref(reference)
+            record = self.store.get_knowledge(knowledge_id)
+            if record is None or record.mission_id != mission_id or record.source_task == task_id:
+                continue  # an unknown or foreign id is the acceptance check's to refuse
+            related[("used_knowledge", record.id)] = {
+                "kind": "used_knowledge", "id": record.id, "version": int(record.version),
+                "content_sha256": digest(record.content), "content": record.content,
+                "status": str(record.status), "source_task": record.source_task}
+        return to_confirm, tuple(related[key] for key in sorted(related))
 
     def _stored_package(self, package: ReviewPackage) -> ReviewPackage:
         try:

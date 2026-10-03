@@ -53,13 +53,12 @@ ESCALATION_REASONS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class RuntimeProfile:
-    """profile → actual provider / model / price / output caps (ORCH §8.2 model_router row)."""
+    """profile → actual provider / model / output caps (ORCH §8.2 model_router row)."""
 
     profile_id: str
     provider: Any
     model: str
     tier: int = 0  # higher = stronger; the escalation ladder only climbs
-    price_table: Any | None = None  # runtime.assembly.PriceTable; None = unpriced
     default_max_output_tokens: int | None = None
     max_output_tokens_ceiling: int | None = None
     provider_kind: str = "fixtures"
@@ -129,17 +128,12 @@ class RuntimeProfile:
             raise ValueError("context identity changed: tokenizer fingerprint")
         return snapshot
 
-    @property
-    def unpriced(self) -> bool:
-        return self.price_table is None
-
     def to_json(self) -> dict[str, Any]:  # never the provider object (no credentials leak)
         result: dict[str, Any] = {
             "profile_id": self.profile_id,
             "model": self.model,
             "tier": self.tier,
             "provider_kind": self.provider_kind,
-            "priced": self.price_table is not None,
             "default_max_output_tokens": self.default_max_output_tokens,
             "max_output_tokens_ceiling": self.max_output_tokens_ceiling,
         }

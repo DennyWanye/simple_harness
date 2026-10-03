@@ -54,7 +54,7 @@ def _probe_retry_attempt(loop: Any, task_id: str, retry_of: str) -> CommitReject
     with pytest.raises(CommitRejected) as refused:
         loop.commit.create_attempt(task_id, role="worker", model="fixture-worker",
             prompt_version="fixture-worker-v1", context_version="h4-runtime-v1",
-            reservation=Reservation(tokens=1000, cost_micros=0),
+            reservation=Reservation(tokens=1000),
             intent_config={"message": "an unauthorised retry"},
             input_hash="e" * 64, inputs=(), retry_of=retry_of)
     assert loop.store.connection.total_changes == before

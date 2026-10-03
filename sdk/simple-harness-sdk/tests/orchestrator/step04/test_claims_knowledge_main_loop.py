@@ -40,7 +40,6 @@ from production_fixture import chain_planner, enabled_world  # noqa: E402
 
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
-from agent_orchestrator.memory.blackboard import Blackboard  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
 from agent_orchestrator.memory.summaries import build_summaries  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
@@ -102,7 +101,8 @@ class _Worker:
                 {"content": "新的观测取代旧的", "confidence": 0.8, "key": "probe.result", "supersedes": known,
                  "evidence": [NOTES]},
             ]
-            used = [known]
+            # 引用写成"编号@版本"（上下文里每条已核实知识自带 ref）
+            used = [(package.get("verified_knowledge") or [{}])[0].get("ref", "unknown")]
         envelope = {
             "task_id": contract.get("task_id", ""), "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
             "outcome": "candidate", "summary": f"{step} 完成", "claims": claims, "evidence": files,
@@ -182,7 +182,6 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
         rebuilt = build_summaries(store, mission_id)
         rebuilt_again = build_summaries(store, mission_id)
         statuses_after = {c.id: c.status for c in store.list_mission_claims(mission_id)}
-        board = Blackboard(store)
         knowledge_id = knowledge[0].id if knowledge else ""
         facts = {
             "mission": mission, "crashes": crashes, "fired": list(store.fired), "tasks": tasks,
@@ -197,9 +196,6 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "disputes": mission_disputes(store, mission_id),
             "summaries": summaries_before, "rebuilt": rebuilt, "rebuilt_again": rebuilt_again,
             "statuses_before": statuses_before, "statuses_after": statuses_after,
-            "board_verified": [k.id for k in board.verified_knowledge(mission_id)],
-            "board_candidates": {c.id for c in board.candidate_claims(mission_id)},
-            "board_writes": [n for n in ("upsert_knowledge", "write", "upsert_claim") if hasattr(board, n)],
             "listing": read_knowledge_tool(store, mission_id, "knowledge_list", {}),
             "reading": read_knowledge_tool(store, mission_id, "knowledge_read", {"id": knowledge_id}),
             "foreign_read": _refusal(lambda: read_knowledge_tool(
@@ -207,8 +203,45 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "unknown_read": _refusal(lambda: read_knowledge_tool(
                 store, mission_id, "knowledge_read", {"id": "observation:unknown"})),
             "packages": worker.packages,
+            **_stage_c_facts(store, mission_id, knowledge, results),
         }
     return facts
+
+
+def _stage_c_facts(store: Any, mission_id: str, knowledge: list[Any], results: dict[str, str]) -> dict[str, Any]:
+    """阶段 C：黑板三层目录、引用带版本、是否当前读时判定、步骤审查包的两节。"""
+    from dataclasses import replace
+
+    from agent_orchestrator.contracts.resolution import ReviewPackage
+    from agent_orchestrator.memory.knowledge_standing import knowledge_standing
+    from agent_orchestrator.memory.verified_knowledge import KnowledgeIndex
+
+    catalogue: list[dict[str, Any]] = []
+    offset: int | None = 0
+    digest = None
+    while offset is not None:
+        page = read_knowledge_tool(store, mission_id, "knowledge_list", {
+            "offset": offset, "limit": 5, **({"expected_sha256": digest} if offset else {})})
+        catalogue += page["items"]
+        offset, digest = page["next_offset"], page["sha256"]
+    record = knowledge[0]
+    index = KnowledgeIndex.load(store, mission_id)
+    packages = [ReviewPackage.from_json(json.loads(row[0])) for row in store.connection.execute(
+        "SELECT package_json FROM review_packages WHERE mission_id=?", (mission_id,))]
+    return {
+        "catalogue": catalogue,
+        "raw_read": read_knowledge_tool(store, mission_id, "knowledge_read",
+                                        {"id": next(i["id"] for i in catalogue if i["layer"] == "raw_ref")}),
+        "check_ok": index.check([f"{record.id}@{record.version}"]),
+        "check_wrong_version": index.check([f"{record.id}@{record.version + 1}"]),
+        "check_no_version": index.check([record.id]),
+        "standing": knowledge_standing(store, record),
+        "standing_no_support": knowledge_standing(store, replace(record, support={})),
+        "standing_lost_acceptance": knowledge_standing(
+            store, replace(record, support={**dict(record.support), "acceptance_id": "acc-gone"})),
+        "content_packages": [pkg for pkg in packages if str(pkg.purpose) == "TASK_CONTENT"],
+        "result_tasks": results,
+    }
 
 
 @pytest.fixture(scope="module")
@@ -346,13 +379,9 @@ def test_artifact_versions_survive_a_redelivered_turn(world):
 
 
 def test_blackboard_and_summaries_are_read_only_projections(world):
-    """黑板只读、已核实与候选两层分开；摘要按分支、确定、不改声明状态。"""
+    """摘要按分支、确定、不改声明状态。（黑板的三层读取见 product_world/test_blackboard_tools.py。）"""
 
     (record,) = world["knowledge"]
-    assert world["board_verified"] == [record.id]
-    assert world["board_candidates"] == {
-        c.id for c in world["claims"].values() if c.status is not ClaimStatus.VERIFIED}
-    assert world["board_writes"] == []
     persisted, rebuilt = world["summaries"], world["rebuilt"]
     mission_id = world["mission"].id
     assert set(persisted) == set(world["tasks"]) | {mission_id}
@@ -364,3 +393,45 @@ def test_blackboard_and_summaries_are_read_only_projections(world):
     assert set(branch["knowledge"][0]) == {"id", "status", "key", "stance"}
     assert world["write_result"] in branch["sources"]["results"]
     assert "不是验证" in branch["uncertainty"]["note"]
+
+
+def test_blackboard_layers_versioned_citation_and_review_package_sections(world):
+    """阶段 C：执行者读到的黑板分三层；引用知识要写"编号@版本"；知识是否当前读时判定；
+    步骤审查包带"本步待确认结论"和"相关条目"，相关条目里没有被审步骤自己的东西。
+
+    **改坏检验**：读工具不再过滤过时知识 / 核对不比版本 → 对应断言变红。"""
+
+    (record,) = world["knowledge"]
+    layers = {item["layer"] for item in world["catalogue"]}
+    assert layers == {"verified", "candidate", "raw_ref"}
+    [verified] = [item for item in world["catalogue"] if item["layer"] == "verified"]
+    assert verified["ref"] == f"{record.id}@{record.version}" and verified["basis"] == "test_observation"
+    candidates = [item for item in world["catalogue"] if item["layer"] == "candidate"]
+    assert candidates and all(item["marker"] in {"未验证", "有争议，不是事实"} for item in candidates)
+    assert any(item["marker"] == "有争议，不是事实" for item in candidates)
+    raw = [item for item in world["catalogue"] if item["layer"] == "raw_ref"]
+    assert raw and all(set(item) == {"layer", "id", "source_task", "artifacts"} for item in raw)
+    assert "content" not in world["raw_read"]  # 原始记录引用层不带任何文件内容
+    # 引用带版本：对的通过；版本不符、不写版本都报问题
+    assert world["check_ok"] == []
+    assert "not the current version" in world["check_wrong_version"][0]
+    assert "names no version" in world["check_no_version"][0]
+    # 是否当前读时判定：知识行没变，依据没了或来源验收不在了就是过时
+    assert world["standing"] == "CURRENT" and record.support["acceptance_id"].startswith("acc-")
+    assert world["standing_no_support"] == "STALE:no_support"
+    assert world["standing_lost_acceptance"] == "STALE:acceptance_missing"
+    # 步骤审查包两节
+    by_task = {}
+    for package in world["content_packages"]:
+        by_task[str(package.binding.subject_ref.id)] = package
+    downstream = next(pkg for task, pkg in by_task.items() if task != world["write_task"])
+    own_task = str(downstream.binding.subject_ref.id)
+    own_claims = {c.id for c in world["claims"].values() if c.source_task == own_task}
+    assert {row["claim_id"] for row in downstream.claims_to_confirm} <= own_claims
+    assert downstream.claims_to_confirm, "the reviewed result's claims are listed for confirmation"
+    kinds = {row["kind"] for row in downstream.related_entries}
+    assert kinds == {"dispute", "used_knowledge"}
+    assert all(row["source_task"] != own_task for row in downstream.related_entries)
+    used = next(row for row in downstream.related_entries if row["kind"] == "used_knowledge")
+    assert (used["id"], used["version"]) == (record.id, record.version) and used["content"] == record.content
+

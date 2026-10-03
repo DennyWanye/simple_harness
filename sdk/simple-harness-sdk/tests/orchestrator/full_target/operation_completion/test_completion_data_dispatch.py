@@ -71,7 +71,7 @@ def _upstream_worker(extra: str | None):  # type: ignore[no-untyped-def]
 def _forged_attempt(loop, task_id, inputs):  # type: ignore[no-untyped-def]
     return loop.commit.create_attempt(
         task_id, role="worker", model="fixture-worker", prompt_version="fixture-worker-v1",
-        context_version="oc2-data-consumer-v1", reservation=Reservation(tokens=1_000, cost_micros=0),
+        context_version="oc2-data-consumer-v1", reservation=Reservation(tokens=1_000),
         intent_config={"message": "consume the delivery"}, input_hash=sha256_hex("oc2-data-consumer"),
         inputs=inputs)
 

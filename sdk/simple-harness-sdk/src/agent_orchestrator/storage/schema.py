@@ -712,6 +712,46 @@ CREATE TRIGGER assurance_source_artifacts_update AFTER UPDATE ON artifacts WHEN 
  END;
 """
 
+# 2026-10-03 HTN 补齐阶段 C：编排只记 token，删掉 5 张表的 13 个金额列。触发器先删再删列，
+# 然后照迁移 26 原文重建，只去掉引用 spent_cost_micros 的那一个子句（与迁移 37 的做法一样）。
+DDL_V38 = """
+ALTER TABLE budget_accounts DROP COLUMN reserved_cost_micros;
+ALTER TABLE budget_accounts DROP COLUMN settled_cost_micros;
+ALTER TABLE budget_accounts DROP COLUMN unpriced_settlements;
+ALTER TABLE budget_reservations DROP COLUMN reserved_cost_micros;
+ALTER TABLE budget_reservations DROP COLUMN settled_cost_micros;
+ALTER TABLE budget_reservations DROP COLUMN unpriced;
+ALTER TABLE imported_usage DROP COLUMN cost_micros;
+ALTER TABLE imported_usage DROP COLUMN unpriced;
+ALTER TABLE provider_token_grants DROP COLUMN price_json;
+ALTER TABLE provider_token_grants DROP COLUMN price_digest;
+ALTER TABLE provider_token_grants DROP COLUMN cost_upper_micros;
+ALTER TABLE provider_token_grants DROP COLUMN actual_cost_micros;
+DROP TRIGGER assurance_source_obligations_update;
+ALTER TABLE obligations DROP COLUMN spent_cost_micros;
+CREATE TRIGGER assurance_source_obligations_update AFTER UPDATE ON obligations WHEN (NEW.mission_id IS NOT OLD.mission_id OR NEW.obligation_id IS NOT OLD.obligation_id OR NEW.goal_signature_id IS NOT OLD.goal_signature_id OR NEW.scope IS NOT OLD.scope OR NEW.requiredness IS NOT OLD.requiredness OR NEW.lifecycle IS NOT OLD.lifecycle OR NEW.resolution_ref IS NOT OLD.resolution_ref OR NEW.parent_obligation_id IS NOT OLD.parent_obligation_id OR NEW.budget_lineage_ref IS NOT OLD.budget_lineage_ref OR NEW.failure_count IS NOT OLD.failure_count OR NEW.spent_tokens IS NOT OLD.spent_tokens OR NEW.spent_attempts IS NOT OLD.spent_attempts OR NEW.fuel_limit IS NOT OLD.fuel_limit OR NEW.fuel_used IS NOT OLD.fuel_used OR NEW.fuel_remaining IS NOT OLD.fuel_remaining OR NEW.demand_admitted IS NOT OLD.demand_admitted OR NEW.obligation_json IS NOT OLD.obligation_json OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id,OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:obligations',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id,OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','obligations'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id,OLD.mission_id);
+ END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -750,6 +790,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(35, "orchestrator-drop-taskgraph-requirements", DDL_V35),
     Migration(36, "orchestrator-drop-planning-repair-continuations", DDL_V36),
     Migration(37, "orchestrator-artifacts-barrier-without-offline-relocation", DDL_V37),
+    Migration(38, "orchestrator-drop-money-dimension", DDL_V38),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

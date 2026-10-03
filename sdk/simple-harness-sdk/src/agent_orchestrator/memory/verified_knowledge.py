@@ -45,13 +45,17 @@ class KnowledgeRecord:
     source_result: str
     evidence: tuple[str, ...]
     verifier: Mapping[str, Any]
-    dependencies: tuple[str, ...]
     created_at: float
     used_by: tuple[str, ...] = ()
     supersedes: str | None = None
     superseded_by: str | None = None
     disputed_by: tuple[str, ...] = ()
     evidence_trust: tuple[str, ...] = ()
+    #: What this knowledge rests on (阶段 C), written with the row and never changed:
+    #: ``{"acceptance_id", "artifacts": [{id, version, content_hash}], "knowledge": [...]}``.
+    #: Whether the knowledge is still current is read from this and nothing else
+    #: (``knowledge_standing``); empty means nothing vouches for it.
+    support: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for name in (
@@ -79,12 +83,12 @@ class KnowledgeRecord:
         object.__setattr__(self, "verifier", _object(self.verifier, "knowledge.verifier"))
         for name in (
             "evidence",
-            "dependencies",
             "used_by",
             "disputed_by",
             "evidence_trust",
         ):
             object.__setattr__(self, name, _texts(getattr(self, name), f"knowledge.{name}"))
+        object.__setattr__(self, "support", _support(self.support))
 
     def to_json(self) -> dict[str, Any]:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
@@ -104,6 +108,45 @@ class KnowledgeRecord:
                 raw = data[f.name]
                 kwargs[f.name] = tuple(raw) if isinstance(raw, list) else raw
         return cls(**kwargs)
+
+
+_SUPPORT_KEYS = ("acceptance_id", "artifacts", "knowledge")
+_SUPPORT_MEMBER_KEYS = ("content_hash", "id", "version")
+
+
+def _support(value: object) -> dict[str, Any]:
+    """``KnowledgeRecord.support``: empty, or exactly the three keys with pinned members."""
+    if not isinstance(value, Mapping):
+        raise ContractError("knowledge.support must be an object")
+    if not value:
+        return {}
+    if tuple(sorted(value)) != _SUPPORT_KEYS:
+        raise ContractError(f"knowledge.support must carry exactly {list(_SUPPORT_KEYS)}")
+    out: dict[str, Any] = {"acceptance_id": _text(value["acceptance_id"], "knowledge.support.acceptance_id", limit=512)}
+    for name in ("artifacts", "knowledge"):
+        rows = value[name]
+        if not isinstance(rows, (list, tuple)) or any(
+                not isinstance(row, Mapping) or tuple(sorted(row)) != _SUPPORT_MEMBER_KEYS
+                or type(row["version"]) is not int for row in rows):
+            raise ContractError(f"knowledge.support.{name} rows must carry exactly {list(_SUPPORT_MEMBER_KEYS)}")
+        out[name] = sorted(({"id": str(row["id"]), "version": row["version"],
+                             "content_hash": str(row["content_hash"])} for row in rows),
+                           key=lambda row: row["id"])
+    return out
+
+
+def knowledge_ref(knowledge_id: str, version: int) -> str:
+    """How a result names knowledge it used: ``<id>@<version>`` (阶段 C)."""
+    return f"{knowledge_id}@{int(version)}"
+
+
+def parse_knowledge_ref(reference: str) -> tuple[str, int | None]:
+    """``<id>@<version>`` → (id, version); the version is None when it is not written
+    (the acceptance check refuses that — this only reads what was written)."""
+    head, mark, tail = str(reference).rpartition("@")
+    if mark and head and tail.isdigit():
+        return head, int(tail)
+    return str(reference), None
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,15 +172,21 @@ class KnowledgeIndex:
         return [r for r in self.records.values() if r.status == "VERIFIED"]
 
     def check(self, used_knowledge: Sequence[str]) -> list[str]:
-        """Problems with ``used_knowledge`` references (empty list = all usable)."""
+        """Problems with ``used_knowledge`` references (empty list = all usable).
+
+        A reference is ``<id>@<version>``: the version the worker read is the version it
+        is held to.  No version, another version, or knowledge that is no longer current
+        (:func:`knowledge_standing`) are all problems."""
+        from .knowledge_standing import CURRENT, knowledge_standing
 
         problems: list[str] = []
         for reference in used_knowledge:
-            record = self.records.get(reference)
+            knowledge_id, version = parse_knowledge_ref(reference)
+            record = self.records.get(knowledge_id)
             if record is None:
-                status = self.claim_status.get(reference)
+                status = self.claim_status.get(knowledge_id)
                 if status is None:
-                    if ":claim-" in reference:  # shaped like a claim id → another Mission's
+                    if ":claim-" in knowledge_id:  # shaped like a claim id → another Mission's
                         problems.append(
                             f"used_knowledge {reference!r} is not in this Mission's "
                             "Verified Knowledge"
@@ -150,12 +199,27 @@ class KnowledgeIndex:
                         "not VERIFIED knowledge"
                     )
                 continue
-            if record.status == "SUPERSEDED":
+            if version is None:
+                problems.append(
+                    f"used_knowledge {reference!r} names no version; write it as "
+                    f"{knowledge_ref(record.id, record.version)!r}"
+                )
+                continue
+            if version != record.version:
+                problems.append(
+                    f"used_knowledge {reference!r} is not the current version "
+                    f"({knowledge_ref(record.id, record.version)!r})"
+                )
+                continue
+            standing = CURRENT if self._store is None else knowledge_standing(self._store, record)
+            if standing == "SUPERSEDED":
                 problems.append(
                     f"used_knowledge {reference!r} is SUPERSEDED; "
                     f"the current version is {record.superseded_by!r}"
                 )
+            elif standing != CURRENT:
+                problems.append(f"used_knowledge {reference!r} is out of date ({standing})")
         return problems
 
 
-__all__ = ("KNOWLEDGE_STATES", "KnowledgeIndex", "KnowledgeRecord")
+__all__ = ("KNOWLEDGE_STATES", "KnowledgeIndex", "KnowledgeRecord", "knowledge_ref", "parse_knowledge_ref")

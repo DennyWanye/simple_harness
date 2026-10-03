@@ -44,20 +44,18 @@ def test_migration_26_text_still_puts_its_barrier_on_the_table() -> None:
     assert f"ON {TABLE}" in m26.ddl
 
 
-def test_a_version_32_library_opens_and_loses_exactly_that_table(tmp_path) -> None:
+def test_a_version_32_library_opens_and_loses_exactly_that_table(tmp_path, monkeypatch) -> None:
+    # A real version-32 library: migrations 1..32 only (a later migration such as 38's
+    # DROP COLUMN cannot be replayed on a library that already ran it).
     path = tmp_path / "orchestrator.db"
-    Store.open(path).close()
-    v10 = next(m for m in schema.MIGRATIONS if m.version == 10).ddl
-    create = v10[v10.index(f"CREATE TABLE {TABLE}") :]
-    connection = sqlite3.connect(path)
-    connection.executescript(create)  # migration 10's own text: the table and its index
-    connection.execute("DELETE FROM orch_schema_migrations WHERE version >= 33")
-    connection.commit()
-    connection.close()
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:32])
+        Store.open(path).close()
     before = _objects(path, "table")
     assert TABLE in before
 
     Store.open(path).close()
 
-    assert _objects(path, "table") == before - {TABLE}
+    assert _objects(path, "table") - {TABLE} <= before
+    assert TABLE not in _objects(path, "table")
     assert schema.SCHEMA_VERSION >= 33

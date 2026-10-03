@@ -15,11 +15,13 @@ from typing import Any
 
 from ..assurance.certificates import UseIdentity
 from ..assurance.checks import (
+    Assessment,
     CheckResult,
     CriterionPolicy,
     Formula,
     Grade,
     ReviewReply,
+    decode_review_reply,
     decide_review,
     evaluate_check_gate,
 )
@@ -160,13 +162,20 @@ def read_imported_review_locked(
     intent_id = source.get("intent_id")
     invocation, binding = read_review_invocation_locked(commit, reader, intent_id)
     value, bound = invocation.to_json(), binding.to_json()
+    # Two shapes are importable (阶段 C 第 3 条): a reply that decoded, and the *second*
+    # call's reply that still could not be decoded — that one is imported as "no usable
+    # reply" (an INCONCLUSIVE record, see ``_interpret``), never as the reviewer's verdict.
+    readable = (meta["kind"] == "AssuranceReviewClassified"
+                and source.get("classification") == "READY_FOR_CURRENT_REVIEW"
+                and source.get("error_code") is None)
+    unusable = (meta["kind"] == "AssuranceReviewFormatRejected"
+                and source.get("classification") == "FORMAT_INVALID"
+                and isinstance(source.get("error_code"), str) and value["ordinal"] == 2)
     if (
-        meta["kind"] != "AssuranceReviewClassified"
+        not (readable or unusable)
         or meta["subject_id"] != intent_id
         or meta["base_version"] != 0
         or meta["proposal_hash"] != fingerprint(source)
-        or source.get("classification") != "READY_FOR_CURRENT_REVIEW"
-        or source.get("error_code") is not None
         or source.get("mission_id") != reader.mission_id
         or source.get("review_key") != bound["review_key"]
         or source.get("invocation_ordinal") != value["ordinal"]
@@ -271,12 +280,59 @@ def read_imported_review_locked(
     )
 
 
+#: A reply the reviewer committed that decodes but cannot be imported as given —
+#: its own mistake, not a missing source.  POLICY_CATALOGUE_MISMATCH is the
+#: package's, not the reply's, and stays final.
+REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
+    {"UNEXPOSED_EVIDENCE", "DUPLICATE_CRITERION", "FINDING_SCOPE", "MANDATORY_CRITERIA_INVALID",
+     "DUPLICATE_CLAIM", "CLAIM_SCOPE"}
+)
+NO_USABLE_REPLY = "NO_USABLE_REPLY"
+
+
+def _no_usable_reply(bound: Mapping[str, Any], code: str) -> ReviewReply:
+    """What the record says when the reviewer's last reply could not be used: nothing was
+    judged.  Every criterion is UNKNOWN with the reason named; the overall word is
+    INCONCLUSIVE — the same exit as a reviewer that says it cannot tell (a person rules)."""
+    marker = "REVIEW_NO_USABLE_REPLY:" + code
+    return ReviewReply(
+        "INCONCLUSIVE",
+        tuple(Assessment(row["criterion_id"], Grade.UNKNOWN, (), marker, (marker,))
+              for row in sorted(bound["check_requirements"], key=lambda row: row["criterion_id"])),
+        (),
+    )
+
+
 def _interpret(
     imported: ImportedReview, raw: bytes, checks: Mapping[AssuranceRef, CheckResult]
 ) -> tuple[ReviewRecord, dict]:
+    """The official reading of one committed review turn.
+
+    Deterministic in its inputs, so every reader (the importer, its final-lock recheck,
+    a UseCertificate) reads the same record.  The reviewer's first unusable reply is
+    asked again in a fresh session by the caller; its *second* one is read here as "no
+    usable reply": the reply could not be decoded (classified FORMAT_INVALID), or it
+    decoded but cannot be imported as given (a repairable interpretation error)."""
+    bound = imported.binding.to_json()
+    source = decode(imported.classification.body_json)
+    if source.get("classification") == "FORMAT_INVALID":
+        code = str(source["error_code"])
+        return _interpret_reply(imported, _no_usable_reply(bound, code), checks, code)
+    try:
+        return _interpret_reply(imported, decode_review_reply(raw), checks, None)
+    except AssuranceError as error:
+        if (error.code not in REPAIRABLE_INTERPRETATION_ERRORS
+                or imported.invocation.to_json()["ordinal"] != 2):
+            raise
+        return _interpret_reply(imported, _no_usable_reply(bound, error.code), checks, error.code)
+
+
+def _interpret_reply(
+    imported: ImportedReview, reply: ReviewReply, checks: Mapping[AssuranceRef, CheckResult],
+    no_usable_reply: str | None,
+) -> tuple[ReviewRecord, dict]:
     bound = imported.binding.to_json()
     turn = decode(imported.turn.body_json)["payload"]
-    reply = ReviewReply.from_json(decode(raw))
     policies = {
         row["criterion_id"]: CriterionPolicy.from_json(row) for row in bound["check_requirements"]
     }
@@ -345,6 +401,27 @@ def _interpret(
                 "limitations": list(assessment.limitations),
             }
         )
+    # Package's original binding remains authoritative; no expanded TypedRef V1.
+    from ..contracts.resolution import ReviewPackage
+
+    package = ReviewPackage.from_json(decode(raw_package(imported)))
+    # 逐条确认（阶段 C）：只能确认审查包"本步待确认结论"里的编号；证据照准则那样解析，
+    # 没披露给它的标签一样拒。漏写的编号就是没确认，不拒收。
+    listed = {row["claim_id"]: row for row in package.claims_to_confirm}
+    confirmations = []
+    for item in sorted(reply.claims, key=lambda item: item.claim_id):
+        if item.claim_id not in listed:
+            raise AssuranceError("CLAIM_SCOPE")
+        refs = resolve_evidence_ids(
+            bound["review_key"], item.evidence_ids, imported.catalogue, imported.exposed
+        )
+        confirmations.append({
+            "claim_id": item.claim_id,
+            "content_sha256": listed[item.claim_id]["content_sha256"],
+            "confirmed": bool(item.confirmed),
+            "evidence_refs": [ref.to_json() for ref in refs],
+            "reason": item.reason,
+        })
     verdict = reply.verdict
     if verdict == "ACCEPT" and not decision.acceptable:
         verdict = "REWORK" if Grade.FAIL in decision.effective_grades.values() else "INCONCLUSIVE"
@@ -362,6 +439,7 @@ def _interpret(
             {"criterion_id": item.criterion_id, "severity": item.severity, "reason": item.reason}
             for item in reply.findings
         ],
+        "claims": confirmations,
         "success_witness": sorted(decision.success_witness),
         "consumed_receipts": [ref.to_json() for ref in decision.consumed_receipts],
         "exposed_evidence_refs": [
@@ -369,11 +447,9 @@ def _interpret(
         ],
         "provider_manifest_ref": imported.provider_manifest.ref.to_json(),
         "disclosure_refs": [batch.delivery_receipt_ref.to_json() for batch in imported.disclosures],
+        **({} if no_usable_reply is None
+           else {"interpretation": NO_USABLE_REPLY, "error_code": no_usable_reply}),
     }
-    # Package's original binding remains authoritative; no expanded TypedRef V1.
-    from ..contracts.resolution import ReviewPackage
-
-    package = ReviewPackage.from_json(decode(raw_package(imported)))
     record = ReviewRecord(
         "assurance-review:"
         + fingerprint({"review_key": bound["review_key"], "turn_ref": imported.turn.ref.to_json()}),

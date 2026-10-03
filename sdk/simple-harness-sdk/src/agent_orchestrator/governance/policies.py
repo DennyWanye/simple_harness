@@ -284,8 +284,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "default_max_output_tokens",
             "max_output_tokens_ceiling",
             "empty_response_retries",
-            "price_table",
-            "hard_cap_micros",
             "planner_reserve_tokens",
             "critic_reserve_tokens",
             "attempt_reserve_tokens",

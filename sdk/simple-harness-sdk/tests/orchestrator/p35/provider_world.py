@@ -54,7 +54,7 @@ async def product_world_as(root: Path, provider: Any, *, owner: str, auto: bool 
 
     principal = Principal("product-world-user")
     counter = FixtureWordCounter()
-    cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", price_table=None, **config)
+    cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", **config)
     native = NativePools(tenant_id=TENANT, principal_id=principal.principal_id, allowed_tools=DEFAULT_TOOLS,
                          meter_factory=counter.meter_factory)
     options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")

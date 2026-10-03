@@ -167,7 +167,11 @@ def reviews_by_method(store: Any, mission_id: str) -> dict[tuple[str, int, str],
 
 
 def _no_verdict_reason(orch: Any, mission_id: str, review_key: str) -> str | None:
-    """Why no official record will come for this review, or None while one still may."""
+    """Why no official record will come for this review, or None while one still may.
+
+    Only the review *call* not coming back ends here (阶段 C 第 3 条): a reply that came
+    back and could not be used is on record as inconclusive after its one repair, and
+    goes to the person like any other inconclusive review."""
 
     for item in orch._exhausted_reviews(mission_id, "assurance-method-plan:"):
         if item["review_key"] == review_key:

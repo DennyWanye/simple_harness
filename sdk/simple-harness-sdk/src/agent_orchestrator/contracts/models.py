@@ -156,10 +156,9 @@ def sha256_hex(payload: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """§18.1: a budget is more than money.  ``None`` means "not limited at this level"."""
+    """§18.1: a budget is more than tokens.  ``None`` means "not limited at this level"."""
 
     max_tokens: int | None = None
-    max_cost_micros: int | None = None
     max_attempts: int | None = None
     max_runtime_seconds: int | None = None
     max_concurrency: int | None = None

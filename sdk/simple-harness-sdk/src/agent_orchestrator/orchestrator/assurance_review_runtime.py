@@ -245,7 +245,7 @@ class AssuranceReviewRuntime:
                 ),
             ).to_json(),
         }
-        reservation = orch._reservation(orch._config.critic_reserve_tokens, decision.profile_id)
+        reservation = orch._reservation(orch._config.critic_reserve_tokens)
         return decision, config, reservation
 
     def _ensure_purpose(
@@ -543,20 +543,18 @@ def protected_critic_budget(orch: Any, decision: Any, task_id: str, attempt_id: 
         actual = orch._first_critic_budget(decision)
         if not isinstance(actual, FirstRequestBudget):
             raise ContractError("FIRST Critic budget unavailable")
-        reservation = orch._first_critic_reservation(actual, decision.profile_id)
+        reservation = orch._first_critic_reservation(actual)
         if (
             actual.provider_input_cap != cap
             or frozen.get("output_ceiling") != actual.output_ceiling
             or frozen.get("minimum_tokens") != actual.minimum_tokens
-            or frozen.get("cost_micros") != reservation.cost_micros
         ):
             raise ContractError("FIRST Critic route or cap differs from protected tail")
         return {
             "provider_input_cap": cap.to_json(),
             "provider_output_ceiling": actual.output_ceiling,
-            "provider_first_cost_micros": reservation.cost_micros,
         }, reservation
-    reservation = orch._reservation(orch._config.critic_reserve_tokens, decision.profile_id)
+    reservation = orch._reservation(orch._config.critic_reserve_tokens)
     return {
         "first_critic_budget_unknown": worker.config.get(
             "first_critic_budget_unknown", "original_intent_has_no_first_cap"

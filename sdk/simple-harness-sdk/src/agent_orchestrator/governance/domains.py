@@ -172,8 +172,8 @@ DRONE_SIM_PROFILE = DomainProfileV1(
 #: entry naming a version this build does not register is refused
 #: (:func:`~..runtime.role_templates.hierarchical_worker_for_domain`).
 HIERARCHICAL_WORKER_TEMPLATES: Mapping[str, str] = MappingProxyType({
-    DRONE_SIM_DOMAIN: "worker-drone-sim-hierarchical-v1",
-    APPWORLD_DOMAIN: "worker-appworld-hierarchical-v1",
+    DRONE_SIM_DOMAIN: "worker-drone-sim-hierarchical-v2",
+    APPWORLD_DOMAIN: "worker-appworld-hierarchical-v2",
 })
 
 DOMAINS: Mapping[str, DomainProfileV1] = MappingProxyType({

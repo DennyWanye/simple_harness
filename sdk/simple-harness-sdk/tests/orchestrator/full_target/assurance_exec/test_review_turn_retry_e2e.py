@@ -122,7 +122,7 @@ def test_provider_server_error_first_turn_is_retried_once_and_imported(tmp_path)
             # 同一批用量事实迟到 / 重复导入：一条都不重记；离线补账扫描也不复活任何东西。
             for usage_ref, subject, tokens_in, tokens_out, unknown in usage:
                 assert commit.import_usage(subject, case.mission_id, (
-                    UsageFact(usage_ref, tokens_in, tokens_out, None if unknown else 0, unknown=bool(unknown)),)) == 0
+                    UsageFact(usage_ref, tokens_in, tokens_out, unknown=bool(unknown)),)) == 0
             for _ in range(2):
                 import_late_accounting(case.world.loop)
             assert [tuple(r) for r in store.connection.execute(

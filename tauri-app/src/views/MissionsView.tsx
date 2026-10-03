@@ -15,7 +15,7 @@
  * 后再补拉。时间线只渲染最近 50 条。
  *
  * 模型写的文字一律标注「模型生成，未核实」；验证层按记录原样显示（NOT_REQUIRED 用中性色，
- * 不画成通过）；金额没有价目时显示「未计价」。可访问名称是原生 AX 验收的定位点，改名要同步
+ * 不画成通过）。可访问名称是原生 AX 验收的定位点，改名要同步
  * 改验收脚本。
  */
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1010,7 +1010,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
               </div>
               <div style={muted}>
-                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"} · 金额 未计价
+                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"}
               </div>
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}

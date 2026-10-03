@@ -67,7 +67,7 @@ def test_budget_fits_within_parent():
     assert Budget(max_tokens=500, max_attempts=3).fits_within(parent)
     assert not Budget(max_tokens=None, max_attempts=3).fits_within(parent)  # unlimited child
     assert not Budget(max_tokens=1001, max_attempts=3).fits_within(parent)
-    assert Budget(max_tokens=10, max_attempts=1, max_cost_micros=5).fits_within(parent)
+    assert Budget(max_tokens=10, max_attempts=1, max_tool_calls=5).fits_within(parent)
 
 
 def test_task_requires_success_criteria_and_known_layers():

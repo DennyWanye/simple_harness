@@ -431,7 +431,8 @@ def _effect_ready(
             or policy.content_hash != effect.evidence_policy_ref.content_hash
             or official is None
             or official.purpose is not ReviewPurpose.OPERATION_OUTCOME
-            or official.verdict is not ReviewVerdict.ACCEPT
+            # 判不下来而人已裁决通过的结果审查同样算数（阶段 C 第 3 条；证书同一口径）
+            or not accepted_or_adjudicated(store, official)
             or official.package_id != package.package_id
             or receipt is None
             or receipt.get("mission_id") != mission_id

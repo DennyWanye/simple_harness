@@ -38,7 +38,7 @@ def test_the_hierarchical_worker_pointer_is_beside_the_profile_not_inside_it():
     assert set(APPWORLD_PROFILE.role_templates) <= set(ROLES), (
         "every key of role_templates names a role; a non-role key breaks both readers"
     )
-    assert HIERARCHICAL_WORKER_TEMPLATES["appworld-v1"] == "worker-appworld-hierarchical-v1"
+    assert HIERARCHICAL_WORKER_TEMPLATES["appworld-v1"] == "worker-appworld-hierarchical-v2"
     chosen = hierarchical_worker_for_domain(APPWORLD_PROFILE)
-    assert chosen.prompt_version == "worker-appworld-hierarchical-v1"
+    assert chosen.prompt_version == "worker-appworld-hierarchical-v2"
     assert "appworld_execute" in chosen.tool_names

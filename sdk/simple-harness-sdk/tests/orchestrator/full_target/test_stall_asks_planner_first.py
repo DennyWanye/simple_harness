@@ -14,7 +14,8 @@
 
 2026-10-03 A′：停滞由产品自己造出（原来靠手搭世界里"需求没准入"造 NOT_SELECTED，产品会自动
 准入需求，造不出来）。产品同形部署上的一个任务：唯一一步做完、被验收，最终审查的审阅员两次回复
-都不能用（格式修补用完）——片 C 真机第 1 局正是这样停在原地的。这时没有一步可派发、也没有在等
+的调用一直没回来（重切次数用完）。2026-10-03 阶段 C：回复回来了但不能用，改为记成判不下来并问人，
+不再是停滞。这时没有一步可派发、也没有在等
 任何东西。规划器被问到时答 NO_CHANGE（"不改"）。原 ``test_htn_end_to_end.py`` §18 停滞组并入本文件。
 
 删除（偏离分诊表，记录在案）：
@@ -45,6 +46,7 @@ from agent_orchestrator.planning.htn.repair_adapter import RepairEventAdapter
 from agent_orchestrator.planning.htn.repair_decision import RepairTriggerSource
 from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL
 from agent_orchestrator.storage.obligation_store import ObligationStore
+from agent_orchestrator.orchestrator.root_review import ROOT_REVIEW_CUT_BUDGET_SPENT
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
 from agent_orchestrator.testing.scripted_replies import (
@@ -68,15 +70,27 @@ def _quick(monkeypatch):
 # ======================================================================================
 
 
-def final_review_unusable(request: Any) -> Any:
-    """The reviewer: every review passes, except the Mission's final review, whose replies
-    can never be used (not JSON) — so it ends without a verdict."""
+def final_review_never_answers(request: Any) -> Any:
+    """The reviewer: every review passes, except the Mission's final review, whose every call
+    comes back too late (see ``_FinalReviewLate``) — so it ends without a verdict, and re-cutting it runs out too.
+    (A reply that comes back unusable is no longer a stall: it is on record as inconclusive
+    and the person rules — 阶段 C 第 3 条, tests/orchestrator/product_world/test_review_no_verdict.py.)"""
     data = review_input(request)
     if data is None:
         return None
-    if str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL":
-        return "这一次审查我给不出结论。"
     return review_reply(data)
+
+
+class _FinalReviewLate(LayeredScriptedProvider):
+    """Every call of the Mission's final review comes back after its turn deadline (a late
+    reply is never used).  Late rather than held: a held call would keep the scripted
+    model's slot and the Planner's stall turn could not be sent."""
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        data = review_input(request)
+        if data is not None and str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL":
+            await asyncio.sleep(TURN_DEADLINE * 2)
+        return await super().invoke(request, cancel=cancel)
 
 
 def stall_request(request: Any) -> dict[str, Any] | None:
@@ -100,6 +114,13 @@ def no_change(request: Any, asked: dict[str, Any]) -> str:
     return decision(root, "NO_CHANGE", {"reason": "这一版计划没有可改的地方。"}, "不改计划。")
 
 
+TURN_DEADLINE = 1.0
+
+
+def _cut_budget_spent(loop: Any, mission_id: str) -> bool:
+    return any(event.type == ROOT_REVIEW_CUT_BUDGET_SPENT for event in loop.store.list_events(mission_id))
+
+
 class Stalled(NamedTuple):
     world: ProductWorld
     loop: Any
@@ -121,15 +142,15 @@ async def stalled(tmp_path: Any, *, key: str,
     loop is stepped (deployment duties + one cycle, as the product runs a round) up to that
     point and handed over idle: nothing in flight, the stall not yet recorded."""
 
-    provider = LayeredScriptedProvider(planner=planner_answering(on_stall), reviewer=final_review_unusable)
+    provider = _FinalReviewLate(planner=planner_answering(on_stall), reviewer=final_review_never_answers)
     try:
-        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+        async with product_world(tmp_path / "root", provider, turn_deadline_seconds=TURN_DEADLINE, **CONFIG) as world:
             loop = world.loop
             mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点。", "success_criteria": ["file:NOTES.md"],
                                        "idempotency_key": key})["mission_id"]
             await loop.recover()
             async with asyncio.timeout(60):
-                while not (loop._final_review_unreadable_detail(mission_id) and not loop._has_inflight()):
+                while not (_cut_budget_spent(loop, mission_id) and not loop._has_inflight()):
                     await world.deployment.between_cycles(auto=True)
                     await loop._cycle()
                     await asyncio.sleep(0.01)
@@ -203,14 +224,15 @@ def test_a_review_whose_second_reply_was_refused_counts_as_ended_without_a_verdi
                            [(seq, kind, json.dumps(payload)) for seq, kind, payload in rows])
     fake = SimpleNamespace(store=SimpleNamespace(connection=connection, get_receipt=lambda receipt_id: None))
     fake._exhausted_reviews = lambda mission_id, prefix: Orchestrator._exhausted_reviews(fake, mission_id, prefix)
+    fake._inconclusive_reviews = lambda mission_id: []
     assert Orchestrator._exhausted_reviews(fake, "m1", "assurance-mission-final:") == [
         {"reason": "UNEXPOSED_EVIDENCE", "review_key": "assurance-mission-final:k1", "interrupted": False}]
-    assert Orchestrator._final_review_unreadable_detail(fake, "m1") == {"final_review": {
+    assert Orchestrator._reviews_without_verdict_detail(fake, "m1") == {"final_review": {
         "reason": "UNEXPOSED_EVIDENCE", "review_key": "assurance-mission-final:k1", "interrupted": False}}
     # 片 C 真机第 2 局：中间目标的组合审查两次回复都按格式错误拒收，同样没有结论，同样要说。
     connection.execute("INSERT INTO events VALUES ('m2', 9, 'AssuranceReviewFormatExhausted', ?)",
                        (json.dumps({"review_key": "assurance-composition:k3", "reason": "OBJECT_FIELDS_UNKNOWN"}),))
-    assert Orchestrator._final_review_unreadable_detail(fake, "m2") == {"composition_review": {
+    assert Orchestrator._reviews_without_verdict_detail(fake, "m2") == {"composition_review": {
         "reason": "OBJECT_FIELDS_UNKNOWN", "review_key": "assurance-composition:k3", "interrupted": False}}
 
 
@@ -295,10 +317,8 @@ def test_a_confirmed_stall_asks_the_planner_instead_of_failing(tmp_path) -> None
     assert all(item["reason"] for item in context["withheld"])
     assert context["outstanding_obligations"]
     assert "admitted_not_dispatched" in context
-    # 片 C 真机第 1 局：最终审查没给出结论这件事，写进交给规划器的请求里
-    final = context["final_review"]
-    assert final["review_key"].startswith("assurance-mission-final:") and final["interrupted"] is False
-    assert final["reason"]
+    # 最终审查没给出结论这件事（调用一直没回来、重切次数用完），写进交给规划器的请求里
+    assert context["root_review"]["reason"] == "root_review_cut_budget_spent"
     # the request is about the whole plan: a change on any step answers it
     assert tasks <= set(asked.payload["trigger_scope"])
     assert "MissionFailed" not in [event.type for event in events]
@@ -445,7 +465,7 @@ def test_run_itself_comes_back_round_after_a_carry_on(tmp_path) -> None:
 
             loop._cycle = counted_cycle  # type: ignore[method-assign]
             loop._confirm_and_stop_stalled = watched_confirm  # type: ignore[method-assign]
-            await loop.run(max_cycles=8)
+            await loop.run(max_cycles=40)
             return timeline
 
     timeline = asyncio.run(case())

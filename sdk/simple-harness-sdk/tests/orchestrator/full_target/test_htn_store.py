@@ -852,7 +852,7 @@ def test_a_legacy_run_writes_nothing_into_the_new_tables(tmp_path) -> None:
     spec.loader.exec_module(module)
     module.test_store_opens_validates_and_reopens(tmp_path)
     module.test_cas_and_idempotent_events(tmp_path)
-    module.test_budget_chain_reserve_settle_and_unpriced(tmp_path)
+    module.test_budget_chain_reserve_settle_and_import_usage(tmp_path)
 
     legacy = Store.open(tmp_path / "o.db")
     try:

@@ -124,7 +124,7 @@ def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> d
     native = build_native_pools(tenant_id=TENANT, principal_id=PRINCIPAL, allowed_tools=TOOLS,
                                 models_dir=fake_models_dir(tmp) if models else None,
                                 meter_factory=stub_meter_factory, clock_ms=lambda: 1)
-    config = OrchestratorConfig(evidence_root=tmp / "root", model=MODEL, price_table=None)
+    config = OrchestratorConfig(evidence_root=tmp / "root", model=MODEL)
     original = rp.deepseek_counter_for
     rp.deepseek_counter_for = lambda snap, settings=None, **kw: counter_factory() if snap is not None else None
     try:

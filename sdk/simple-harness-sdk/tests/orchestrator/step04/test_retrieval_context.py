@@ -82,7 +82,6 @@ def _record(
         source_result="r",
         evidence=("pytest:tests/x.py",),
         verifier={"layer": "code_test"},
-        dependencies=(),
         created_at=created,
         used_by=tuple(used_by),
         superseded_by=superseded_by,

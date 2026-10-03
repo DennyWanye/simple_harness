@@ -29,21 +29,21 @@ class Channel {
 }
 const report = (mission_id = "m1") => ({
   mission_id, replay: { events: 12, comparison: { consistent: true, not_covered: ["execution"], mismatches: [] }, failure_timeline: [] },
-  attribution: { mission_status: "FAILED", attempts: [{ attempt_id: "a1", task_id: "t1", role: "worker", model: "deepseek-flash", status: "FAILED", on_success_path: false, work: { tokens: 50 }, verification: { tokens: 30 } }], cost: { total: { tokens: 80, cost_micros: null } } },
+  attribution: { mission_status: "FAILED", attempts: [{ attempt_id: "a1", task_id: "t1", role: "worker", model: "deepseek-flash", status: "FAILED", on_success_path: false, work: { tokens: 50 }, verification: { tokens: 30 } }], cost: { total: { tokens: 80 } } },
 });
 const read = () => fireEvent.click(screen.getByRole("button", { name: "查看回放与贡献" }));
 const exportReport = () => fireEvent.click(screen.getByRole("button", { name: "生成脱敏支持报告" }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("P36 selected Mission diagnostics", () => {
-  it("reads only on demand, retains failed/unpriced/coverage facts, and exports no caller destination", () => {
+  it("reads only on demand, retains failed/coverage facts, and exports no caller destination", () => {
     const channel = new Channel(); render(<MissionDiagnostics missionId="m1" channel={channel} />);
     expect(channel.sent).toEqual([]); read();
     expect(channel.last().payload).toEqual({ mission_id: "m1" });
     channel.reply(channel.last(), report());
     expect(screen.getByText(/任务状态：FAILED/)).toBeTruthy();
     expect(screen.getByText(/未覆盖字段 1 项/)).toBeTruthy();
-    expect(screen.getByText(/金额：未计价/)).toBeTruthy();
+    expect(screen.getByText(/记录用量：80 tokens/)).toBeTruthy();
     expect(screen.getByText(/记录不完整/)).toBeTruthy();
     expect(screen.getByText(/未知用量记录（已入账）：未知/)).toBeTruthy();
     expect(screen.getByText(/探索或未采用/)).toBeTruthy();

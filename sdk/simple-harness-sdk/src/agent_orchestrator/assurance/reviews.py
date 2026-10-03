@@ -35,7 +35,7 @@ REVIEW_PURPOSES = frozenset(
     }
 )
 
-REVIEW_CODEC_VERSION = "assurance-review-reply-v2"
+REVIEW_CODEC_VERSION = "assurance-review-reply-v3"
 
 
 #: Why the only permitted second review invocation exists: a malformed reply

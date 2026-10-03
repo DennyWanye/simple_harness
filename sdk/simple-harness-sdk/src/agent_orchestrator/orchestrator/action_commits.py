@@ -15,6 +15,7 @@ SUPERSEDED."""
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -917,6 +918,8 @@ class ActionCommitsMixin:
                     require_taskgraph_unfenced(self._store, str(action["mission_id"]), str(action["task_id"]))
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
+            if reason is None and action.get("task_id"):
+                reason = self._validity_refusal(action)
             # Every action is linked to the operation it was materialised from (2026-10-02:
             # the flat mode, whose actions carried no link, was removed).
             if reason is None:
@@ -992,7 +995,6 @@ class ActionCommitsMixin:
                         account_id=mission_account(str(action["mission_id"])),
                         subject_id=subject,
                         tokens=0,
-                        cost_micros=int(spec.cost_micros_ceiling or 0),
                         counts_attempt=False,
                         tool_calls=1,
                         mission_id=str(action["mission_id"]),
@@ -1102,6 +1104,65 @@ class ActionCommitsMixin:
             )
             if started >= int(deployment.max_action_handoffs_per_mission):
                 return "handoff_cap_reached"
+        return None
+
+    def _validity_refusal(self, action: Mapping[str, Any]) -> str | None:
+        """Before anything leaves the system, the step this operation belongs to must still
+        stand on current ground (阶段 C 第 5 条).
+
+        The step's validity witnesses are read back, the latest one per thing it was taken
+        over.  For the Acceptances the step currently rests on, the latest witness must be
+        usable and fresh at the scope's current epoch (the contract's own
+        ``is_fresh_for``).  A witness over an Acceptance that is no longer current is
+        history when the same producer has a current Acceptance this step holds a good
+        witness for (the upstream was redone and re-read); otherwise the ground is gone
+        and the hand-off is refused.
+
+        The refusal changes nothing and costs nothing: the action stays ready and is tried
+        again next round.  It is not a wait on a person — the idle verdict does not count
+        it as one, so ground that does not come back ends in the stall record, with the
+        refusal named, and the Planner decides."""
+        from ..contracts.evidence_state import ValidityWitness, WitnessDecision
+        from ..contracts.semantic_base import TypedRefKind
+        from ..memory.knowledge_standing import acceptance_is_current
+        from ..storage.htn_store import HtnStore
+        from ..storage.store import StoreError
+
+        mission_id, task_id = str(action["mission_id"]), str(action["task_id"])
+        htn = HtnStore(self._store)
+        now_ms = int(self._store.now * 1000)
+        latest: dict[tuple[str, str], ValidityWitness] = {}
+        for digest, raw in self._store.connection.execute(
+                "SELECT subject_digest, witness_json FROM validity_witnesses WHERE mission_id=?"
+                " AND consumer_kind='task' AND consumer_id=? ORDER BY as_of_ms, witness_id",
+                (mission_id, task_id)):
+            witness = ValidityWitness.from_json(json.loads(raw))
+            latest[(str(digest), str(witness.purpose))] = witness
+
+        def producer_of(acceptance_id: str) -> str | None:
+            try:
+                return str(htn.get_acceptance(acceptance_id).task_id)
+            except StoreError:
+                return None
+
+        covered: set[str] = set()  # producers whose current Acceptance this step reads
+        history: list[tuple[str, str]] = []  # (acceptance no longer current, why)
+        for witness in latest.values():
+            supports = [str(ref.id) for ref in witness.support_refs if ref.kind is TypedRefKind.ACCEPTANCE]
+            stale = [(item, why) for item in supports
+                     for ok, why in [acceptance_is_current(self._store, mission_id, item)] if not ok]
+            if stale:
+                history.extend(stale)
+                continue
+            if witness.decision is not WitnessDecision.USABLE:
+                return f"validity_stale:witness_{str(witness.decision).lower()}:{witness.witness_id}"
+            current = htn.epoch(mission_id, witness.scope_id)
+            if not witness.is_fresh_for(now_ms=now_ms, current_scope_epoch=current):
+                return f"validity_stale:scope_epoch:{witness.scope_id}:{witness.scope_epoch}->{current}"
+            covered.update(filter(None, map(producer_of, supports)))
+        for acceptance_id, why in history:
+            if producer_of(acceptance_id) not in covered:
+                return f"validity_stale:{why}:{acceptance_id}"
         return None
 
     def _planning_rehandoff_proven(self, action: Mapping[str, Any], bridge: Mapping[str, Any]) -> bool:

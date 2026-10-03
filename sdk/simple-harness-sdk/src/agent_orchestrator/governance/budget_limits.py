@@ -17,7 +17,6 @@ def inherit_limits(budget: Budget, parent: Budget) -> Budget:
     changes: dict[str, Any] = {}
     for name in (
         "max_tokens",
-        "max_cost_micros",
         "max_attempts",
         "max_concurrency",
         "max_runtime_seconds",

@@ -28,7 +28,7 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -102,6 +102,7 @@ from ..governance.policies import action_decision, deployed_layers, effective_to
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
+from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE, knowledge_standing
 from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..graph.terminal import terminal_task
@@ -211,6 +212,13 @@ OBSERVATION_EVENTS = frozenset({
 })
 HOLLOW_CYCLES_NOTED = 100
 WAIT_BACKOFF_MAX = 1.0
+#: 裁决题在回答前过期：这份审查不会再有结论，如实交给规划器（同 method_plan_reviews 的口径）。
+_RULING_STALE = {"outcome": "NO_VERDICT",
+                 "reason": "the question asking the person to rule on this review went stale before "
+                           "it was answered (the plan, the requirements or the management epoch "
+                           "changed); no ruling was given"}
+
+
 class DeferredPlanning(dict):
     """mission id → (since, ordinal) of a Planner round waiting for its pool.
 
@@ -556,6 +564,8 @@ class Orchestrator:
         #: Missions whose restart recovery faulted: each round retries the recovery first,
         #: inside the boundary, and skips the rest of that Mission's round until it holds.
         self._unrecovered: set[str] = set()
+        #: faults caught by ``_round_boundary`` inside a global scan, settled right after it
+        self._parked_faults: list[tuple[str, str, Exception]] = []
         #: Faults caught while binding frozen tool authority at startup, handed to the
         #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
         self._startup_faults: list[tuple[str, str, Exception]] = []
@@ -644,14 +654,6 @@ class Orchestrator:
                         )
                         else None
                     ),
-                    price_tables={
-                        key: (
-                            profile.price_table.estimator()
-                            if profile.price_table is not None
-                            else None
-                        )
-                        for key, profile in self._profiles.items()
-                    },
                 )
             if self._provider_token_estimators is not None:
                 from ..runtime.provider_budget_guard import ProviderBudgetGuard
@@ -671,20 +673,12 @@ class Orchestrator:
                     else None
                 )
                 def guard_for(key: str, estimator: Any) -> Any:
-                    profile = self._profiles[key]
                     return ProviderBudgetGuard(
                         self._commit,
                         owner=self._owner,
                         estimator=estimator,
                         max_slots=self._config.max_concurrent_model_calls,
                         profile_slots=slots,
-                        price_tables={
-                            key: (
-                                profile.price_table.estimator()
-                                if profile.price_table is not None
-                                else None
-                            )
-                        },
                     )
 
                 def admission_for(key: str) -> Any:
@@ -2342,15 +2336,40 @@ class Orchestrator:
             return False
         return row is not None
 
+    def _handoff_ground_gone(self, action_key: str) -> bool:
+        from ..contracts.error_table import HANDOFF_VALIDITY_STALE
+
+        actions = getattr(self, "_actions", None)
+        return actions is not None and str(actions.last_refusal.get(action_key, "")).startswith(
+            HANDOFF_VALIDITY_STALE)
+
+    def _handoff_refusals(self, mission_id: str) -> dict[str, Any]:
+        """For the stall record: the operations whose hand-off is refused because the step
+        they belong to no longer stands on current ground, with the refusal as given."""
+        actions = getattr(self, "_actions", None)
+        rows = [{"action_key": str(a["action_key"]), "task_id": a.get("task_id"),
+                 "reason": actions.last_refusal.get(str(a["action_key"]), "")}
+                for a in (self.store.list_actions(mission_id) if actions is not None else ())
+                if self._handoff_ground_gone(str(a["action_key"]))]
+        return {"handoff_refused": rows} if rows else {}
+
     def _has_pending_operation_completion(self, mission: Mission) -> bool:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
         from .operation_outcomes import outcome_exhaustion_is_final
 
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
                for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")):
-            # 2026-09-29 真机第七局：一份发布的结果审阅两次都没做成，这项效果永远核不完；
+            # 2026-09-29 真机第七局：一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
             # 再把它当合法等待，任务就一直挂着。交给卡死检测明确停下。被重启打断而用完的
             # 还有一次重审（outcome_retake_due），重审没用完前仍是合法等待。
+            return False
+        if self._handoff_refusals(mission.id):
+            # 这项效果的交接因为所属步骤的地基没了而一直被拒：同样不会自己好，不当合法等待。
+            return False
+        if any(item["kind"] == "outcome" and item["ruling"] in {"stale", "fail"}
+               for item in self._inconclusive_reviews(mission.id)):
+            # 阶段 C 第 3 条：结果审查判不下来，人打回了或裁决题在回答前过期——不会再有放行，
+            # 同样交给卡死确认（如实告诉规划器），不当合法等待。裁决题待答仍是合法等待。
             return False
         from ..storage.htn_store import HtnStore
         from .completion_status import read_occurrence_completion
@@ -2433,7 +2452,11 @@ class Orchestrator:
             # review / arbitration / source-change request still open (2026-09-30 real
             # run: a result suspended for a review was failed "no dispatchable work" in
             # the same cycle its review request was made).
-            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES for a in actions)
+            # An action whose hand-off was refused because its step's ground is gone is not
+            # waiting on a person: left counted here it would hang for ever (阶段 C 核验).
+            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES
+                                     and not self._handoff_ground_gone(str(a["action_key"]))
+                                     for a in actions)
             or bool(self.store.list_approvals(mission.id, "PENDING")),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
@@ -2716,6 +2739,7 @@ class Orchestrator:
                         "withheld": [item.to_json() for item in admissions.refusals],
                         "admitted_not_dispatched": [],
                         "outstanding_obligations": outstanding,
+                        **self._handoff_refusals(mission.id),
                         "fingerprint": after,
                         "confirmed_after_one_more_cycle": True,
                         **self._root_review_stop_detail(mission, new_mode),
@@ -2742,6 +2766,7 @@ class Orchestrator:
                     detail={"withheld": withheld[:32], "withheld_count": len(withheld),
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
                             "outstanding_obligations": outstanding,
+                            **self._handoff_refusals(mission.id),
                             # 最终审查没给出结论（回复用完仍无法采用）或被打回，是事实，一并交给规划器。
                             **self._root_review_stop_detail(mission, new_mode)})
             except (GraphIntegrityError, ContractError, StoreError, SourceUnavailable) as error:
@@ -2771,6 +2796,7 @@ class Orchestrator:
                     "withheld": withheld,
                     "admitted_not_dispatched": sorted(admissions.readiness),
                     "outstanding_obligations": outstanding,
+                    **self._handoff_refusals(mission.id),
                     "fingerprint": after,
                     "confirmed_after_one_more_cycle": True,
                     # P2.3j: a Mission that idles *because* its root review rejected the
@@ -3181,6 +3207,15 @@ class Orchestrator:
 
         progressed = False
         for listed in self._active_missions():
+            if listed.id in self._unrecovered:
+                continue
+            with self._round_boundary(listed.id, "planning_wait"):
+                progressed = self._wake_planning_wait(listed) or progressed
+        return progressed
+
+    def _wake_planning_wait(self, listed: Mission) -> bool:
+        progressed = False
+        for _ in (0,):  # one Mission; ``continue`` below ends its share
             if self.store.count_events(listed.id, "PlanningWaitRegistered") == 0:
                 continue
             try:
@@ -3322,15 +3357,37 @@ class Orchestrator:
 
         if mission_id in self._unrecovered and not where.startswith(("recover", "startup_bind")):
             return False  # its restart recovery has not held yet; retried first next round
-        try:
+        progressed = False
+        with self._round_boundary(mission_id, where):
             progressed = bool(await step())
+        return await self._settle_parked_faults() or progressed
+
+    @contextlib.contextmanager
+    def _round_boundary(self, mission_id: str, where: str) -> Iterator[None]:
+        """The boundary itself — the one place a Mission's fault is caught.
+
+        ``_mission_round`` is this plus settling the fault at once.  The round's global
+        scans (late accounting, the Assurance tick, TaskGraph notifications, planning
+        waits and blocks) walk every Mission inside one synchronous or interleaved pass,
+        so each wraps one Mission's share in this boundary directly: the fault is parked,
+        the scan carries on with the next Mission, and ``_settle_parked_faults`` applies
+        the same table and the same cap right after the scan."""
+        try:
+            yield
         except (StoreBusy, InjectedCrash):
             raise
         except Exception as error:  # noqa: BLE001 - the boundary: never the loop's end
             if self.store.connection.in_transaction:
                 self.store.connection.rollback()
-            return await self._round_fault(mission_id, where, error)
-        self._round_faults.pop((mission_id, where), None)
+            self._parked_faults.append((mission_id, where, error))
+        else:
+            self._round_faults.pop((mission_id, where), None)
+
+    async def _settle_parked_faults(self) -> bool:
+        progressed = False
+        while self._parked_faults:
+            mission_id, where, error = self._parked_faults.pop(0)
+            progressed = await self._round_fault(mission_id, where, error) or progressed
         return progressed
 
     async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
@@ -3471,8 +3528,9 @@ class Orchestrator:
         # a dropped planning contract) is stopped by name, never left to make every
         # later step of the round refuse — ``_cycle`` skips a whole round on a refusal.
         for mission in self._active_missions():
-            if self._refuse_unsupported_contract(mission):
-                progressed = True
+            with self._round_boundary(mission.id, "contract_check"):
+                if self._refuse_unsupported_contract(mission):
+                    progressed = True
         await self._close_finished_agents()
         progressed = import_late_accounting(self) or progressed
         if self._assurance_tick is not None and await self._assurance_tick.tick():
@@ -3482,6 +3540,9 @@ class Orchestrator:
         if self._taskgraph_notifications is not None and await self._taskgraph_notifications.tick():
             progressed = True
         if await self._wake_planning_waits():
+            progressed = True
+        # 上面几处全局扫描里各任务的那一份都在同一个边界里；出了错的在这里按同一张表结清
+        if await self._settle_parked_faults():
             progressed = True
         for mission in self._active_missions():
             if mission.id in self._unrecovered:
@@ -4605,7 +4666,7 @@ class Orchestrator:
                 **source_binding,
                 **self._service_config(decision),
             },
-            reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens, decision.profile_id),
+            reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens),
         )
         self._bind_hierarchical_planning_request(
             intent=intent,
@@ -4618,24 +4679,11 @@ class Orchestrator:
         return intent
 
     # -------------------------------------------------------------- dispatch
-    def _reservation(self, tokens: int, profile_id: str | None = None) -> Reservation:
-        profile = self._profiles.get(profile_id or self._default_profile)
-        table = profile.price_table if profile is not None else self._config.price_table
-        if table is None:
-            return Reservation(tokens=tokens, cost_micros=0)
-        rate = max(table.input_micros_per_million_tokens, table.output_micros_per_million_tokens)
-        return Reservation(tokens=tokens, cost_micros=(tokens * rate + 999_999) // 1_000_000)
+    def _reservation(self, tokens: int) -> Reservation:
+        return Reservation(tokens=tokens)
 
-    def _first_critic_reservation(self, budget: FirstRequestBudget, profile_id: str) -> Reservation:
-        table = self._profiles[profile_id].price_table
-        if table is None:
-            return Reservation(budget.minimum_tokens, 0)
-        input_tokens = budget.provider_input_cap.max_input_tokens
-        output_tokens = budget.output_ceiling
-        cost = (input_tokens * table.input_micros_per_million_tokens + 999_999) // 1_000_000 + (
-            output_tokens * table.output_micros_per_million_tokens + 999_999
-        ) // 1_000_000
-        return Reservation(budget.minimum_tokens, cost)
+    def _first_critic_reservation(self, budget: FirstRequestBudget) -> Reservation:
+        return Reservation(tokens=budget.minimum_tokens)
 
     async def _dispatch(self, intent: DispatchIntent) -> bool:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""
@@ -5216,7 +5264,10 @@ class Orchestrator:
         except InjectedCrash as error:
             raise RetrievalUnavailable(str(error)) from error
         try:
-            records = self.store.list_knowledge(mission.id)
+            # 过时的知识不推给任何人：是否当前只在 knowledge_standing 一处判定（已取代的
+            # 照旧交给排序，它会列进"已被取代"名单）
+            records = [record for record in self.store.list_knowledge(mission.id)
+                       if not knowledge_standing(self.store, record).startswith(KNOWLEDGE_STALE)]
             claims = self.store.list_mission_claims(mission.id)
             summaries = build_summaries(self.store, mission.id)
             disputes = disputed_claims(claims, mission_id=mission.id)
@@ -8802,7 +8853,7 @@ class Orchestrator:
 
         return CompositionAcceptanceAssembly(
             self.store, self.commit, dispatch=dispatch, issued_by=self._owner,
-            ask_person=partial(self._ask_person_to_adjudicate_compound, mission),
+            ask_person=partial(self._ask_person_to_adjudicate_compound, mission, dispatch),
             on_rejected=partial(self._request_composition_repair, mission, dispatch),
             on_deferred=partial(self._composition_deferred, mission),
         )
@@ -8848,18 +8899,23 @@ class Orchestrator:
         return row, {"question_id": decision_id, "state": row["state"]}
 
     def _ask_person_to_adjudicate_compound(
-        self, mission: Mission, record: Any, task_id: str, occurrence_id: str
+        self, mission: Mission, dispatch: Any, record: Any, task_id: str, occurrence_id: str
     ) -> bool:
         """2026-10-01（第 3 项）：中间目标的组合审阅复审后仍判不下来 → 同根终审，问人裁决。"""
+        decision_id = "adjudicate-compound:" + str(record.record_id)
+        if self._ruling_question_stale(decision_id):
+            return self._request_composition_repair(
+                mission, dispatch, record, None, task_id, occurrence_id, ruling_stale=True)
         return self._ask_person_to_adjudicate(
             mission, record, target_id=str(task_id), subject_key=str(task_id),
-            decision_id="adjudicate-compound:" + str(record.record_id),
+            decision_id=decision_id,
             intro="中间目标「" + str(occurrence_id) + "」的组合审查两位审阅员都判不下来，"
                   "需要你裁决这一部分拼起来是否合格。",
             extra={"package_id": str(record.package_id), "occurrence_id": str(occurrence_id)})
 
     def _request_composition_repair(
-        self, mission: Mission, dispatch: Any, record: Any, package: Any, task_id: str, occurrence_id: str
+        self, mission: Mission, dispatch: Any, record: Any, package: Any, task_id: str,
+        occurrence_id: str, *, ruling_stale: bool = False,
     ) -> bool:
         """2026-10-01（第 3 项）：组合审阅打回 / 拒绝（或人裁决打回）→ 一条修复请求交规划器。
 
@@ -8874,8 +8930,9 @@ class Orchestrator:
             dispatch, mission.id, event_type="VerifierAcceptanceRejected",
             trigger_refs=(str(task_id),), source_key="composition-review:" + str(record.record_id),
             detail={"source": "composition_review", "record_id": str(record.record_id),
-                    "package_id": str(package.package_id), "occurrence_id": str(occurrence_id),
+                    "package_id": str(record.package_id), "occurrence_id": str(occurrence_id),
                     "verdict": str(record.verdict), "findings": self._review_record_findings(record),
+                    **(_RULING_STALE if ruling_stale else {}),
                     **({"human_ruling": ruling} if ruling is not None else {})})
         if produced:
             self._note(f"mission {mission.id}: composition review of {occurrence_id} concluded "
@@ -8898,11 +8955,35 @@ class Orchestrator:
         record, package = state.record, state.package
         if record is None or package is None:
             return False
+        decision_id = "adjudicate-root:" + str(record.record_id)
+        if self._ruling_question_stale(decision_id):
+            return self._request_root_review_repair(mission, new_mode, state, ruling_stale=True)
         return self._ask_person_to_adjudicate(
             mission, record, target_id=str(state.task_id), subject_key=str(state.task_id),
-            decision_id="adjudicate-root:" + str(record.record_id),
+            decision_id=decision_id,
             intro="最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。",
             extra={"package_id": str(package.package_id)})
+
+    def _ask_person_to_adjudicate_outcome(self, mission: Mission, record: Any, binding: Any) -> bool:
+        """阶段 C 第 3 条：发布结果的审查判不下来（含审阅员两次回复都无法采用）→ 问人裁决。
+
+        裁决"通过"后按已有的使用证书路径验收这次发布；"打回"或题目过期则这项效果核不完，
+        由卡死确认如实交给规划器。"""
+        return self._ask_person_to_adjudicate(
+            mission, record, target_id=str(binding.operation_occurrence_id),
+            subject_key=str(binding.operation_occurrence_id),
+            decision_id="adjudicate-outcome:" + str(record.record_id),
+            intro="一次对外操作的结果审查两位审阅员都判不下来，需要你裁决这次操作的结果是否合格。",
+            extra={"package_id": str(record.package_id), "effect_key": str(binding.effect_key)})
+
+    def _ruling_question_stale(self, decision_id: str) -> bool:
+        """The person was asked to rule and the question was retired unanswered (the plan,
+        the requirements or the management epoch changed).  No ruling will come: reported
+        to the Planner as "no verdict", once per record, never re-asked by this loop."""
+        from ..storage.planning_human_store import PlanningHumanStore
+
+        row = PlanningHumanStore(self.store).get(decision_id)
+        return row is not None and row["state"] == "STALE"
 
     def _ask_person_to_adjudicate(
         self, mission: Mission, record: Any, *, target_id: str, subject_key: str,
@@ -8960,7 +9041,8 @@ class Orchestrator:
         return True
 
     def _request_root_review_repair(
-        self, mission: Mission, new_mode: HierarchicalDispatch, state: Any
+        self, mission: Mission, new_mode: HierarchicalDispatch, state: Any, *,
+        ruling_stale: bool = False,
     ) -> bool:
         """最终审查打回（或人裁决打回）→ 一条通用修复请求交规划器（片 0 第 2 步，2026-10-01）。
 
@@ -9009,6 +9091,7 @@ class Orchestrator:
                     "package_id": str(package.package_id), "verdict": str(record.verdict),
                     "findings": self._review_record_findings(record),
                     "repair_round": len(requested) + 1, "max_repairs": limit,
+                    **(_RULING_STALE if ruling_stale else {}),
                     **({"human_ruling": ruling} if ruling is not None else {})})
         if produced:
             self._note(f"mission {mission.id}: the final review concluded {record.verdict!s}; "
@@ -9057,12 +9140,13 @@ class Orchestrator:
 
         return len(self._root_review_request_keys(mission_id))
 
-    def _final_review_unreadable_detail(self, mission_id: str) -> dict[str, Any]:
-        """The final review ended without a verdict: its reply failed decoding twice.
+    def _reviews_without_verdict_detail(self, mission_id: str) -> dict[str, Any]:
+        """Why reviews of this Mission ended without a verdict, for the stop report.
 
-        Real run 2026-09-28 (mission-655daf8071519553): the stop said only
-        ``no_dispatchable_work``; the cause was the final reviewer's reply, still
-        undecodable after its one format repair. Say so in the report.
+        Two honest causes, never merged: the review *call* never came back and its
+        retries ran out (an infrastructure matter); or the review is on record as
+        inconclusive — the reviewers could not tell, or the reviewer's last reply could
+        not be used — and the person's ruling is pending, went stale, or was "fail".
         """
 
         detail: dict[str, Any] = {}
@@ -9075,15 +9159,19 @@ class Orchestrator:
                 found = [item for item in found if not item["interrupted"]]
             if found:
                 detail[name] = found[0]
+        inconclusive = self._inconclusive_reviews(mission_id)
+        if inconclusive:
+            detail["inconclusive_reviews"] = inconclusive[:16]
         return detail
 
     def _exhausted_reviews(self, mission_id: str, prefix: str) -> list[dict[str, str]]:
-        """Reviews under ``prefix`` whose retries ran out (no verdict will come).
+        """Reviews under ``prefix`` that will never have an official record.
 
-        Two endings: the reply never decoded (``AssuranceReviewFormatExhausted``), or the
-        second reply decoded and still could not be imported as given — it cited
-        evidence it was never shown, say (``AssuranceReviewImportRejected``; 片 C 真机
-        第 1 局, 2026-10-02: that ending was not reported at all).
+        The review call did not come back and its retries ran out
+        (``AssuranceReviewFormatExhausted``), or the reply could not be imported for a
+        reason that is not the reviewer's to repair (``AssuranceReviewImportRejected``).
+        A reply that came back and could not be *used* is not here: after its one
+        repair it is on record as inconclusive (see ``_inconclusive_reviews``).
         """
 
         rows = self.store.connection.execute(
@@ -9100,6 +9188,27 @@ class Orchestrator:
             if key.startswith(prefix):
                 found.append({"reason": str(payload.get("reason", "")), "review_key": key,
                               "interrupted": review_exhausted_by_interruption(self.store, key)})
+        return found
+
+    def _inconclusive_reviews(self, mission_id: str) -> list[dict[str, str]]:
+        """Inconclusive official records the person was asked to rule on and has not passed:
+        ``ruling`` is ``pending`` / ``stale`` / ``fail``.  Read from the questions this loop
+        registered (one per record), so every kind of review is reported the same way."""
+        from ..storage.planning_human_store import PlanningHumanStore
+        from .review_adjudication import adjudication_of
+
+        found = []
+        for row in PlanningHumanStore(self.store).list(mission_id):
+            decision_id = str(row["decision_id"])
+            if not decision_id.startswith("adjudicate-"):
+                continue
+            kind, _, record_id = decision_id[len("adjudicate-"):].partition(":")
+            ruling = adjudication_of(self.store, record_id)
+            if ruling is not None and ruling.get("decision") == "pass":
+                continue
+            found.append({"kind": kind, "record_id": record_id,
+                          "ruling": "fail" if ruling is not None
+                          else "stale" if row["state"] == "STALE" else "pending"})
         return found
 
     def _root_review_stop_detail(
@@ -9123,7 +9232,7 @@ class Orchestrator:
             RootReviewStatus.REVIEW_REJECTED,
             RootReviewStatus.CUT_BUDGET_SPENT,
         }:
-            return self._final_review_unreadable_detail(mission.id)
+            return self._reviews_without_verdict_detail(mission.id)
         package = getattr(state, "package", None)
         record = getattr(state, "record", None)
         active = new_mode.semantics().active_plan_revision(mission.id)
@@ -9828,23 +9937,18 @@ class Orchestrator:
                 return await self._defer_for_profile(mission, task, unavailable)
             first = self._first_critic_budget(critic_decision)
             if isinstance(first, FirstRequestBudget):
-                first_reservation = self._first_critic_reservation(
-                    first, critic_decision.profile_id
-                )
+                first_reservation = self._first_critic_reservation(first)
                 first_critic_binding = {
                     "first_critic_budget": {
                         "provider_input_cap": first.provider_input_cap.to_json(),
                         "output_ceiling": first.output_ceiling,
                         "minimum_tokens": first.minimum_tokens,
-                        "cost_micros": first_reservation.cost_micros,
                     }
                 }
                 critic_tail = first_reservation
             else:
                 first_critic_binding = {"first_critic_budget_unknown": first.reason}
-                critic_tail = self._reservation(
-                    self._config.critic_reserve_tokens, critic_decision.profile_id
-                )
+                critic_tail = self._reservation(self._config.critic_reserve_tokens)
         self._deferred.pop(task.id, None)
         if self._pressure.is_raised:  # §18.5 "缩小每个 Attempt 预算" (D6-3 ④)
             tokens = max(4_000, int(tokens * self._config.reduced_reserve_ratio))
@@ -9874,7 +9978,7 @@ class Orchestrator:
                 prompt_version=role.prompt_version,
                 context_version=package.context_version,
                 reservation=replace(
-                    self._reservation(tokens, decision.profile_id),
+                    self._reservation(tokens),
                     tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
                 ),
                 runtime_profile_id=decision.profile_id,

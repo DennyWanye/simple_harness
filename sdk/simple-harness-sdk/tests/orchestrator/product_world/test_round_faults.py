@@ -331,3 +331,52 @@ def test_a_mission_still_waiting_for_recovery_is_never_a_stall():
 
     fake = SimpleNamespace(_unrecovered={"m1"})
     assert Orchestrator._idle_facts(fake, SimpleNamespace(id="m1")) is None
+
+
+@pytest.mark.parametrize("place", ["taskgraph_notifications", "assurance_ingest"])
+def test_a_fault_in_a_global_scan_is_one_missions_round_fault(tmp_path, monkeypatch, place):
+    """阶段 C 第 0′ 条：主循环每轮的全局扫描（保证通道每轮工作、执行图通知、迟到用量导入……）
+    里，一个任务那一份出了库错误，只记成这个任务这一轮的故障（地点写清），``run()`` 不抛，
+    别的任务照常完成。迟到用量导入用的是同一个边界（要先造出"用量未知"的预留才走得到，不单
+    独造）。
+
+    **改坏检验**：扫描里去掉边界 → 异常冲出 ``run()`` → 变红。"""
+    import sqlite3
+
+    broken: dict[str, Any] = {"mission": None, "hits": 0}
+
+    def breaking(original):  # type: ignore[no-untyped-def]
+        def share(self, mission_id, *args):  # type: ignore[no-untyped-def]
+            if mission_id == broken["mission"]:
+                broken["hits"] += 1
+                raise sqlite3.OperationalError("disk I/O error")
+            return original(self, mission_id, *args)
+
+        return share
+
+    if place == "taskgraph_notifications":
+        from agent_orchestrator.orchestrator.taskgraph_notifications import TaskGraphNotifications as Scan
+
+        monkeypatch.setattr(Scan, "_consume_one", breaking(Scan._consume_one))
+    else:
+        from agent_orchestrator.orchestrator.assurance_tick import AssuranceTick as Scan
+
+        monkeypatch.setattr(Scan, "_ingest_one", breaking(Scan._ingest_one))
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
+            bad = world.create({"goal": "写一份 A.md", "success_criteria": ["file:A.md"],
+                                "idempotency_key": "scan-bad-" + place})["mission_id"]
+            good = world.create({"goal": "写一份 B.md", "success_criteria": ["file:B.md"],
+                                 "idempotency_key": "scan-good-" + place})["mission_id"]
+            broken["mission"] = bad
+            for _ in range(20):
+                await world.drain(timeout=20)  # run() must not raise
+                if str(world.store.get_mission(good).status.value) == "COMPLETED" and broken["hits"]:
+                    break
+            assert str(world.store.get_mission(good).status.value) == "COMPLETED"
+            assert broken["hits"] >= 1
+            faults = [e.payload for e in world.store.list_events(bad) if e.type == "MissionRoundFault"]
+            assert place in {fault["where"] for fault in faults}, faults
+
+    asyncio.run(case())
