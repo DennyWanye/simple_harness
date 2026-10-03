@@ -135,6 +135,7 @@ async def product_world(
     world_factory: Callable[[Any, Any], Any] = user_goal_world, names: RootNames = USER_GOAL_NAMES,
     allowed_tools: tuple[str, ...] = DEFAULT_TOOLS, connectors: Mapping[str, Any] | None = None,
     root_parameters: Callable[[Any], dict[str, Any]] | None = None,
+    model: str = "agent-model",
     **config: Any,
 ):
     """A started Orchestrator on the product's deployment, with scripted model replies.
@@ -151,7 +152,7 @@ async def product_world(
 
     principal = principal or Principal("product-world-user")
     counter = FixtureWordCounter()
-    cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", price_table=None, **config)
+    cfg = OrchestratorConfig(evidence_root=Path(root), model=model, price_table=None, **config)
     native = NativePools(tenant_id=tenant_id, principal_id=principal.principal_id, allowed_tools=allowed_tools,
                          meter_factory=counter.meter_factory)
     options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")

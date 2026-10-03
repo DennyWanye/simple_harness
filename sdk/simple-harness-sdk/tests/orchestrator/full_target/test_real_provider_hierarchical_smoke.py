@@ -100,10 +100,12 @@ def _root_parameters(_mission: Any) -> dict[str, Any]:
     return {"repository": "kvlib", "failing_test": FAILING_TEST}
 
 
-async def smoke(tmp_path: Path, provider: Any, *, timeout: float = 1800.0) -> tuple[dict[str, Any], Any]:
+async def smoke(tmp_path: Path, provider: Any, *, model: str = "agent-model",
+                timeout: float = 1800.0) -> tuple[dict[str, Any], Any]:
     """Run one code Mission on the product deployment with ``provider`` and report."""
 
-    async with code_world(tmp_path, provider, root_parameters=_root_parameters, default_max_output_tokens=4096,
+    async with code_world(tmp_path, provider, root_parameters=_root_parameters, model=model,
+                          default_max_output_tokens=4096,
                           test_timeout_seconds=120, turn_deadline_seconds=600) as world:
         store = world.store
         mission_id = world.create({
@@ -159,7 +161,7 @@ def test_real_hierarchical_planner_round(tmp_path):
     if config is None:
         pytest.skip("no real provider configured (SH_BASEURL/SH_APIKEY or Host .env)")
     provider = build_real_provider(config, timeout=240.0)
-    report, final = asyncio.run(smoke(tmp_path, provider))
+    report, final = asyncio.run(smoke(tmp_path, provider, model=config.model))
     report["model"] = config.model
     EVIDENCE_ROOT.mkdir(parents=True, exist_ok=True)
     (EVIDENCE_ROOT / "report.json").write_text(
