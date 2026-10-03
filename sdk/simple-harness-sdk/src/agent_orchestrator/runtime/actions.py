@@ -338,7 +338,9 @@ class ActionExecutor:
                         updated = await self._rehandoff_scoped(key, runtime)
                     return updated
         if failed:
-            return action  # no operation runtime here: nothing can be proven this round
+            # No operation runtime here: nothing can be proven this round, and nothing moved
+            # — not reported as settled, so an idle loop stays idle (核验 2026-10-03).
+            return None
         with store.transaction():
             require_current()
             updated = self._commit.record_reconciliation(key, verdict=verdict, receipt=receipt)

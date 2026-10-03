@@ -329,15 +329,31 @@ class FilePublishConnector:
                 if self.ledger_path.is_file():
                     lines = sum(1 for line in self.ledger_path.read_text(encoding="utf-8").splitlines()
                                 if line.strip())
+                entries = self._entries(idempotency_key)
                 return {
                     "protocol": LEDGER_PROTOCOL,
                     "ledger": _hash(str(self.ledger_path).encode("utf-8")),
                     "key": idempotency_key,
-                    "entries": self._entries(idempotency_key),
+                    "entries": entries,
                     "line_count": lines,
+                    # An ABORTED line is written for any error after the intent, including
+                    # one raised after a link that did succeed (核验 2026-10-03): whether the
+                    # key's own file sits at its final path, with its bytes, is part of the record.
+                    "final_file_present": self._final_file_present(entries),
                 }
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _final_file_present(self, entries: list[dict[str, Any]]) -> bool:
+        intents = [entry for entry in entries if entry.get("final_path")]
+        if not intents:
+            return False
+        last = intents[-1]
+        try:
+            data = _read_nofollow(self._root / str(last["final_path"]))
+        except ConnectorRejected:
+            return False
+        return _hash(data) == str(last.get("content_hash"))
 
     def lookup(self, idempotency_key: str) -> Receipt | None:
         entries = self._entries(idempotency_key)

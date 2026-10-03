@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import hashlib
 import json
 from typing import Any
@@ -304,5 +305,87 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
                 assert len(ours) == 1
             others = [p for p in published.rglob("*.md") if p.read_text(encoding="utf-8") == "别人放的"]
             assert len(others) == refusals  # someone else's files are never overwritten
+
+    asyncio.run(case())
+
+
+def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_path, monkeypatch):
+    """核验阻断项（2026-10-03）：链接其实成功了，之后才报错（网络卷回复丢失、删临时文件失败），
+    连接器照样在台账写"已放弃"。台账不能单独当证明：这个键自己的文件在、字节对，就不出"没落地"
+    证明——不重交、不出新卡，同一份内容只发布一次，等人裁定。"""
+    import agent_orchestrator.runtime.connectors_publish as connectors_publish
+
+    real_link = os.link
+    linked = {"n": 0}
+
+    def link(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        real_link(src, dst, **kwargs)
+        if "dst_dir_fd" in kwargs and str(dst).startswith("weekly."):
+            linked["n"] += 1
+            if linked["n"] == 1:
+                raise OSError(5, "Input/output error (the link applied, its reply was lost)")
+
+    monkeypatch.setattr(connectors_publish.os, "link", link)
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "linked-then-error"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            card = await _until_card(world, mission_id, 0)
+            world.control.decide(card["request_id"], "approve")
+            for _ in range(10):
+                await world.drain(timeout=5)
+            actions = world.store.list_actions(mission_id)
+            assert len(actions) == 1 and not _pending_cards(world, mission_id), actions  # no second card
+            assert not [e for e in world.store.list_events(mission_id) if e.type == "ActionScopedReconciled"
+                        and e.payload["outcome"] == "NOT_APPLIED_FINAL"]
+            assert len(list(published.rglob("*.md"))) == 1  # published exactly once
+
+    asyncio.run(case())
+
+
+def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_path):
+    """核验阻断项（2026-10-03）：失败而没查清的发布，发布器已不在（目录撤销授权、重启后没接）时，
+    对账这一轮什么也做不了——不许把它算作"有进展"让 ``run()`` 一直空转。"""
+    from agent_orchestrator.runtime.connectors_publish import ConnectorTransportError
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+
+        def down(key):  # type: ignore[no-untyped-def]
+            raise ConnectorTransportError("down")
+
+        connector.ledger_record = down  # type: ignore[method-assign]
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "no-publisher"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            card = await _until_card(world, mission_id, 0)
+            _block_with_someone_elses_file(published, mission_id, world)
+            world.control.decide(card["request_id"], "approve")
+            for _ in range(10):
+                await world.drain(timeout=5)
+                if any(a["state"] == "FAILED" for a in world.store.list_actions(mission_id)):
+                    break
+            [action] = [a for a in world.store.list_actions(mission_id) if a["state"] == "FAILED"]
+            action["reconcile_unavailable"], action["needs_human"] = 0, False
+            world.store.put_action(action)
+            world.loop._connectors = {}
+            world.loop.commit._operation_materialization_runtime = None
+            await asyncio.wait_for(world.loop.run(), timeout=10)  # returns: nothing to do is idle
 
     asyncio.run(case())

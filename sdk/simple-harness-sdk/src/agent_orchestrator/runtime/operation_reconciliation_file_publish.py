@@ -9,7 +9,9 @@ the ledger lock (no publish in flight):
 
 * no line for the key → the link never happened (``NO_INTENT``) — this also covers a
   service refusal, which is always raised before the intent is written;
-* the last line is ``ABORTED`` → the link never happened (``ABORTED``).
+* the last line is ``ABORTED`` and the key's file is not at its final path with its
+  bytes → the link never happened (``ABORTED``).  An ``ABORTED`` line is also written
+  when something after a successful link failed, so the file is checked too.
 
 Either is a final, authoritative non-application proof
 (``CONNECTOR_LEDGER_NOT_LINKED``).  Anything else (an intent with no outcome, a commit
@@ -37,8 +39,10 @@ def _ledger_state(raw: Mapping[str, Any]) -> str:
     entries = list(raw.get("entries") or ())
     if not entries:
         return "NO_INTENT"
-    if entries[-1].get("state") == "ABORTED":
+    if entries[-1].get("state") == "ABORTED" and raw.get("final_file_present") is False:
         return "ABORTED"
+    # An intent that may have linked — or an ABORTED line whose file is there with its
+    # bytes (the link succeeded and something after it failed): never a proof.
     raise ReconciliationProofError("the ledger shows an intent that may have linked")
 
 
