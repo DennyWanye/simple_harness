@@ -432,3 +432,167 @@ def test_a_failing_promotion_never_fails_completion(tmp_path, monkeypatch):
             assert skipped.payload["error_type"] == "TypeError" and _entries(world) == []
 
     asyncio.run(run())
+
+
+def test_a_method_not_passed_here_is_refused_at_the_plan_commit(tmp_path):
+    """采用闸门：本任务的做法审阅没通过，规划器硬要采用它 → 计划提交按 ``METHOD_NOT_AUTHORIZED``
+    退回（不在别处被挡下）；之后提一个新做法、审阅通过再采用，任务照常完成（HTN 补齐 F1）。
+
+    **改坏检验**：闸门放行没审过的做法 → 这次采用被提交 → 变红。"""
+    tried: dict[str, Any] = {}
+
+    def reviewer(request: Any):
+        package = review_input(request)
+        if package is None:
+            return None
+        if (package.get("package") or {}).get("purpose") == "METHOD_PLAN" and not tried.get("rejected"):
+            tried["rejected"] = True
+            return review_reply(package, verdict="REWORK", grade="FAIL")
+        return review_reply(package)
+
+    def planner(request: Any):
+        package = package_of(request)
+        rejected = [item for item in (package.get("views") or {}).get("methods") or ()
+                    if (item.get("review") or {}).get("outcome") == "REJECTED"]
+        goal = next((item for item in package["views"]["goals"] if item.get("open")), None)
+        if rejected and goal is not None and not tried.get("forced"):
+            tried["forced"] = True
+            return decision(goal["subject_key"], "REFINE", {"method_ref": dict(rejected[0]["method_ref"]),
+                                                           "bindings": dict(goal["params"])},
+                            "不管审阅意见，直接用这个做法。")
+        # 被拒之后：候选里仍列着那个没通过的做法（见 F1 偏差单 2），脚本照审阅结论另提一个
+        refused = {str(item["method_ref"]["id"]) for item in rejected}
+        selection = (package.get("method_selection") or [{}])[0]
+        usable = [item for item in selection.get("applicable") or () if str(item["method_id"]) not in refused]
+        contexts = package.get("method_proposal_contexts") or []
+        if tried.get("forced") and contexts and not usable:
+            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
+                            {"method_proposal": {"method": one_step_method(contexts[0]), "rationale": "按审阅意见重提。"}},
+                            "重提一个做法。")
+        return planner_reply(request)
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+            mission = await _deliver(world, "gate-refuses")
+            assert tried.get("forced")
+            refused = [event.payload for event in _events(world, mission.id, "PlanningDecisionEvaluated")
+                       if event.payload.get("decision_type") == "REFINE" and event.payload.get("status") != "COMMITTED"]
+            assert refused and refused[0]["rejection_codes"] == ["METHOD_NOT_AUTHORIZED"], refused
+
+    asyncio.run(run())
+
+
+def test_a_mission_with_registered_sources_promotes_nothing(tmp_path):
+    """用户经资料命令给任务登记了资料（不是声明不可信路径）→ 这个任务的做法不进全库，如实记一条
+    "跳过：任务带不可信资料"（HTN 补齐 F1，阶段 C3 已登记偏差 2 的那一支）。
+
+    **改坏检验**：判定不看"用户登记资料"事件 → 进了全库。"""
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+            created = world.create({"goal": "写一份笔记", "idempotency_key": "with-sources",
+                                    "success_criteria": ["file:notes/a.md"]})
+            world.control.register_source({"mission_id": created["mission_id"], "path": "sources/ref.md",
+                                           "idempotency_key": "ref-1", "content": "参考：三条要点。",
+                                           "kind": "markdown"})
+            mission = await world.run_until_settled(created["mission_id"], rounds=20)
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
+            assert _events(world, mission.id, "SourceRegistered")
+            [skipped] = _events(world, mission.id, "MethodPromotionSkipped")
+            assert skipped.payload["reason"] == "untrusted_input" and _entries(world) == []
+
+    asyncio.run(run())
+
+
+def test_command_line_lists_and_clears_the_library(tmp_path, capsys):
+    """命令行 ``method-library list`` / ``clear --yes`` 的正常路径：列出全库，清空后两张全库表都空，
+    做法定义不动（HTN 补齐 F1，阶段 C3 已登记偏差 5）。
+
+    **改坏检验**：清空只清一张表 → 归因表还有行 → 变红。"""
+    import json as _json
+    import sqlite3
+
+    from agent_orchestrator.__main__ import main
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(reviewer=judging_reviewer())) as world:
+            mission = await _deliver(world, "cli-clear")
+            [entry] = _entries(world)
+            MethodLibraryStore(world.store).add_attribution(
+                entry["entry_id"], source_ref="x", source_kind="PLANNER", mission_id=mission.id,
+                method_id=entry["method_id"], method_version=entry["method_version"],
+                method_hash=entry["method_hash"], reason="r")
+
+    asyncio.run(run())
+    database = tmp_path / "root" / "orchestrator.db"
+    methods = sqlite3.connect(database).execute("SELECT count(*) FROM method_contracts").fetchone()[0]
+    capsys.readouterr()
+    assert main(["method-library", "list", "--evidence-dir", str(tmp_path / "root")]) == 0
+    listed = _json.loads(capsys.readouterr().out)["entries"]
+    assert [item["purpose"] for item in listed] == [PURPOSE] and listed[0]["blamed_by_missions"]
+    assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root")]) == 2  # needs --yes
+    assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root"), "--yes"]) == 0
+    capsys.readouterr()
+    connection = sqlite3.connect(database)
+    assert connection.execute("SELECT count(*) FROM method_library").fetchone()[0] == 0
+    assert connection.execute("SELECT count(*) FROM method_library_attributions").fetchone()[0] == 0
+    assert connection.execute("SELECT count(*) FROM method_contracts").fetchone()[0] == methods
+
+
+def test_planner_blame_when_replacing_a_derived_method(tmp_path):
+    """规划器换做法时写明"换下的做法本身有错"（``method_at_fault``）：换下的做法是照全库先例写的，
+    换做法的计划提交成功时记一条来源为规划器的归因（HTN 补齐 F1，阶段 C3 已登记偏差 3 的条件）。
+
+    **改坏检验**：换做法提交时不记归因 → 归因表为空 → 变红。"""
+    prefer: list[str] = []
+    reader = _reader_planner([], prefer)
+    state: dict[str, Any] = {"proposed": []}
+
+    def planner(request: Any):
+        package = package_of(request)
+        if not package.get("repair_requests"):
+            return reader(request)
+        goal = next(item for item in package["views"]["goals"]
+                    if item["form"] == "compound" and item.get("adopted_method"))
+        current = goal["adopted_method"]["method_ref"]
+        fresh = [item["method_ref"] for item in package["views"]["methods"]
+                 if item["method_ref"] != current and (item.get("review") or {}).get("outcome") == "PASSED"
+                 and item["method_ref"]["id"] in state["proposed"]]
+        if not fresh:
+            [context] = [item for item in package.get("method_proposal_contexts") or ()
+                         if item["subject_key"] == goal["subject_key"]]
+            method = one_step_method(context)
+            state["proposed"].append(method["method_id"])
+            return decision(goal["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": method, "rationale": "换一个本任务自己的拆法。"}}, "先提替换的做法。")
+        instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
+                        and item["id"] == goal["adopted_method"]["method_instance_id"])
+        state["replaced"] = True
+        return decision(goal["subject_key"], "REPAIR", {
+            "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+            "replacement_method_ref": dict(fresh[-1]), "bindings": goal["params"],
+            "method_at_fault": "照先例的拆法本身漏了一步"}, "换掉照先例写的做法。")
+
+    def reviewer(request: Any):
+        package = review_input(request)
+        if package is None:
+            return None
+        inner = package.get("package") or {}
+        rows = inner.get("methods_to_judge") or []
+        if inner.get("purpose") == "MISSION_FINAL" and any(row["based_on"] for row in rows) and not state.get("rework"):
+            state["rework"] = True
+            return review_reply(package, verdict="REWORK", grade="FAIL")
+        return judging_reviewer()(request)
+
+    async def run():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+            await _deliver(world, "planner-blame-a")
+            [entry] = _entries(world)
+            prefer.append(entry["entry_id"])
+            second = await _deliver(world, "planner-blame-b")
+            assert state.get("rework") and state.get("replaced")
+            [row] = MethodLibraryStore(world.store).attributions(entry["entry_id"])
+            assert row["source_kind"] == "PLANNER" and row["mission_id"] == second.id
+            assert row["reason"] == "照先例的拆法本身漏了一步"
+
+    asyncio.run(run())
