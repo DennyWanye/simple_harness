@@ -246,7 +246,7 @@ def test_a_mission_with_no_token_ceiling_conserves_vacuously() -> None:
 
 
 def test_migration_seventeen_is_additive_and_eighteen_is_still_present() -> None:
-    assert schema.SCHEMA_VERSION == 37  # 迁移 25～37 已追加在后
+    assert schema.SCHEMA_VERSION == 38  # 迁移 25～38 已追加在后
     assert schema.MIGRATIONS[16].ddl is acceptance_receipt_schema.DDL
     assert "ALTER TABLE" not in acceptance_receipt_schema.DDL.upper()
     assert schema.MIGRATIONS[17].version == 18
