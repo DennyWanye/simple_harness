@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from ..assurance.codec import fingerprint
 from ..artifacts.paths import normalise_workspace_path
 from ..contracts.htn import OccurrenceId, TaskForm, TaskRef
 from ..contracts.models import ContractError
@@ -388,7 +389,7 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         or candidates[0].kind is not TypedRefKind.ARTIFACT
         or candidates[0].id != result_id
         or candidates[0].revision != 1
-        or candidates[0].content_hash != content_hash_of(result_id)
+        or candidates[0].content_hash != fingerprint(result.envelope.to_json())
         or actual_refs != expected_refs
         or len(command.artifact_refs) != len(expected_refs)
         or any(ref.produced_by is not Provenance.TOOL for ref in command.artifact_refs)

@@ -205,12 +205,23 @@ class ReviewerEvidenceTools:
             ref = AssuranceRef("source", Pin(row["path"], row["revision"], row["version_hash"]))
             label = evidence_label(review_key, ref)
             rows.setdefault(label, {"label": label, "ref": ref, "initial": False})
+            rows[label]["path"] = row["path"]
+        # Which version of a path is the one in force: the reviewer otherwise cannot tell a
+        # replaced file from the current one (they differ only in an opaque id).
+        newest: dict[str, Any] = {}
+        for row in artifacts:
+            if row["path"] not in newest or row["version"] > newest[row["path"]]["version"]:
+                newest[row["path"]] = row
         for row in artifacts:
             ref = AssuranceRef(
                 "artifact", Pin(row["artifact_id"], row["version"], row["content_hash"])
             )
             label = evidence_label(review_key, ref)
             rows.setdefault(label, {"label": label, "ref": ref, "initial": False})
+            rows[label]["path"] = row["path"]
+            latest = newest[row["path"]]
+            if latest["artifact_id"] != row["artifact_id"] or latest["version"] != row["version"]:
+                rows[label]["superseded_by"] = {"id": latest["artifact_id"], "version": latest["version"]}
         return [rows[label] for label in sorted(rows)]
 
     def _context(self, run_id: str, mission_id: str):  # type: ignore[no-untyped-def]
@@ -286,6 +297,7 @@ class ReviewerEvidenceTools:
                 row
                 for row in universe
                 if needle in row["ref"].kind.casefold() or needle in row["ref"].pin.id.casefold()
+                or needle in str(row.get("path") or "").casefold()
             ]
         page = universe[offset : offset + limit]
         entries, hidden = [], 0
@@ -305,6 +317,12 @@ class ReviewerEvidenceTools:
                     "id": ref.pin.id,
                     "revision": ref.pin.revision,
                     "in_initial_catalogue": row["initial"],
+                    **({"path": row["path"]} if row.get("path") else {}),
+                    "current": "superseded_by" not in row,
+                    **({"superseded_by": row["superseded_by"]} if "superseded_by" in row else {}),
+                    # in the initial evidence it can be cited as it is; anything else only
+                    # after it was read in full (complete=true) in this review
+                    "citable_now": bool(row["initial"]),
                 }
             )
         next_offset = offset + limit if offset + limit < len(universe) else None
@@ -317,6 +335,8 @@ class ReviewerEvidenceTools:
             "total": len(universe),
             "denied_hidden": hidden,
             "disclosure": "LISTING_NOT_EXPOSURE",
+            "cite_rule": "an entry with citable_now=false must be read in full "
+                         "(assurance_read_evidence, complete=true) before its label is cited",
         }
 
     def _read(self, reader, binding, identity, authorize, arguments) -> dict:  # type: ignore[no-untyped-def]

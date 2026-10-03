@@ -585,7 +585,8 @@ class LeafAcceptanceAssembly:
                     kind=TypedRefKind.ARTIFACT,
                     id=str(result_id),
                     revision=1,
-                    content_hash=content_hash_of(str(result_id)),
+                    # the hash the reviewer sees on the review target: the result envelope's
+                    content_hash=self._result_fingerprint(result_id),
                     produced_by=Provenance.TOOL,
                 ),
             ),
@@ -600,6 +601,14 @@ class LeafAcceptanceAssembly:
             # intent transaction. Its transport owns the atomic insertion.
             return package
         return self._stored_package(package)
+
+    def _result_fingerprint(self, result_id: str) -> str:
+        from ..assurance.codec import fingerprint
+
+        stored = self.store.get_result(result_id)
+        if stored is None:
+            raise StoreError(f"result {result_id} is not recorded")
+        return fingerprint(stored.envelope.to_json())
 
     def _claim_sections(
         self, mission_id: str, task_id: str, result_id: str, package_id: str
