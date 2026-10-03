@@ -1,5 +1,5 @@
 {
-  "deployment_id": "bdd50bbf9854b35d17483a5907ce18d95750464c37ddef1edeedce90724cdf56",
+  "deployment_id": "3040fa8636973c9c274081aa796d50d9d7ccf2468000923abc5bf3eacfea3142",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -108,7 +108,7 @@
     "agent_orchestrator/governance/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/governance/budget_limits.py": "9db41e25e4ebce1ecc39daa71f60abc8eb154c49eea87f60988258bc7a738c19",
     "agent_orchestrator/governance/budget_tail_schema.py": "22f44deea809683b1b351f9e8bdc454ad15eb298fef14a26dea8aaae7efb5ffd",
-    "agent_orchestrator/governance/budgets.py": "ce20f22887495996df501cd33b29b2f7d9c994a960c6cde9e740ee280c450933",
+    "agent_orchestrator/governance/budgets.py": "f30045ba77cbf1fa35a9947848b55a13fbc56bd796cc4f46455e56b843dac1d1",
     "agent_orchestrator/governance/domains.py": "f965b26c87e10f0ed4f544a016859b5de6fd51a7118c3b7a4c97b07e1b5735e8",
     "agent_orchestrator/governance/mission_system_tail_schema.py": "dd3bacc7519a8ba05dd852b4dc0cab3aa239ffda74e7d25740396f241bd88060",
     "agent_orchestrator/governance/permissions.py": "c19b39be295b2788f876e6c9f2f8b25b00b42cc36a43eee4f912f01958a594c8",
@@ -154,7 +154,7 @@
     "agent_orchestrator/memory/verified_knowledge.py": "8304836ae9ab189ec75f5acade082d7cf82d8b91d53083a72d4a272a96cb0da8",
     "agent_orchestrator/observability/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/observability/business_replay.py": "e347b75a01f49c2b272d0857250574fa5c93f654e5e6a112db035cc0029ed6d1",
-    "agent_orchestrator/observability/business_replay_inventory.json": "99c20eff20d637bc2f286d58b94f68fee50dcb140deafabab19e329bf915f948",
+    "agent_orchestrator/observability/business_replay_inventory.json": "660f0f47cf16d3b0b05e167c744cda5e5d6b623ca20c60d07c529402516938be",
     "agent_orchestrator/observability/lineage.py": "58e99b7b72b2ec486a79a004d18c1a3b94ed954482cce08f4b39a427a4c09dfd",
     "agent_orchestrator/observability/metrics.py": "f14af02fdef1fb14eadcdd4499e2c77d605a6d94bb7964d6181c2cea874fe064",
     "agent_orchestrator/observability/replay.py": "74f13766bb537b505461ee301ab42ce3d660dd23b58c5650f2ffa06cedb6b7b6",
@@ -396,7 +396,7 @@
     "agent_orchestrator/storage/planning_decision_schema.py": "15cda5e5bd3f510bb9b7ef9d5444a743fb8d75b6214a7f954f6438ce1bad6219",
     "agent_orchestrator/storage/planning_decision_store.py": "25e795c0ca35709a819b932efba647d0151b4e6ce078b5cfcc1ece841924b4ee",
     "agent_orchestrator/storage/planning_human_store.py": "3f7dc2f3f84a086d15ae541ba1791240e96ea7a995420746e6af5be1e39f5965",
-    "agent_orchestrator/storage/schema.py": "d4162bdb6fb5f08a712221d2740ac8070ceba8840555cb5279962c817952683c",
+    "agent_orchestrator/storage/schema.py": "6a537fd6ad7b79c7a534499949607f722226b81e9a4cb0d412e596662d930ba2",
     "agent_orchestrator/storage/store.py": "dc6a294a37328289e4c1e35cdc3d435933fee440653199e988c70c8d105040e7",
     "agent_orchestrator/storage/taskgraph_attempt_inputs.py": "5ee19c6ee64beb3da2b12ad2b68503123ead4d0440896d45c198487eb24b6532",
     "agent_orchestrator/storage/taskgraph_convergence.py": "4454f41c4718b9dd6111333c5af9d88ea531dd3c70539f0892391a7b4e456c25",

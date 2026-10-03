@@ -235,9 +235,8 @@ class BudgetLedger:
             )
         self._store.connection.execute(
             "INSERT INTO budget_reservations(reservation_id,account_id,mission_id,subject_id,state,"
-            # STEP3-INTERIM: the NOT NULL money column until migration 38 drops it
-            "reserved_tokens,reserved_cost_micros,reserved_tool_calls,created_at,updated_at)"
-            " VALUES (?,?,?,?,?,?,0,?,?,?)",
+            "reserved_tokens,reserved_tool_calls,created_at,updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 reservation_id,
                 account_id,
@@ -307,8 +306,7 @@ class BudgetLedger:
         for fact in facts:
             cursor = self._store.connection.execute(
                 "INSERT INTO imported_usage(usage_ref,subject_id,mission_id,input_tokens,output_tokens,"
-                # STEP3-INTERIM: the NOT NULL money flag until migration 38 drops it
-                "unpriced,unknown,imported_at) VALUES (?,?,?,?,?,0,?,?)"
+                "unknown,imported_at) VALUES (?,?,?,?,?,?,?)"
                 " ON CONFLICT(usage_ref) DO UPDATE SET"
                 " input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,"
                 " unknown=excluded.unknown, imported_at=excluded.imported_at"
