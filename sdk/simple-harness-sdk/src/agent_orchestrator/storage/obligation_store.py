@@ -138,9 +138,6 @@ class ObligationStore:
         row = self._row(mission_id, target)
         return ObligationAccountView(
             obligation_id=ObligationId(row["obligation_id"]),
-            failure_count=0,
-            consumed_attempts=0,
-            consumed_tokens=0,
             has_admitted_demand=bool(row["demand_admitted"]),
             fuel_limit=int(row["fuel_limit"]),
             fuel_used=int(row["fuel_used"]),

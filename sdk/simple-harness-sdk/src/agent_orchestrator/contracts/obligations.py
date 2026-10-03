@@ -304,15 +304,11 @@ class ExpansionRecord:
 class ObligationAccountView:
     """An immutable read of one obligation's standing and remaining fuel.
 
-    ``failure_count`` / ``consumed_attempts`` / ``consumed_tokens`` are not stored on
-    the duty: nothing records them per obligation, so every reader fills them with 0
-    until they are derived at read time from the attempts and settlements.
+    What the duty has cost so far (attempts, failures, tokens) is not here: it is read
+    from the attempts and settlements by ``orchestrator.obligation_accounts``.
     """
 
     obligation_id: ObligationId
-    failure_count: int
-    consumed_attempts: int
-    consumed_tokens: int = 0
     #: Whether a demand for this duty is currently admitted (TG decision 9).  An
     #: active share needs a live demand; withdrawing the last one releases the
     #: sharing, it does not cancel the duty.
@@ -331,9 +327,6 @@ class ObligationAccountView:
     def to_json(self) -> dict[str, Any]:
         return {
             "obligation_id": str(self.obligation_id),
-            "failure_count": self.failure_count,
-            "consumed_attempts": self.consumed_attempts,
-            "consumed_tokens": self.consumed_tokens,
             "has_admitted_demand": self.has_admitted_demand,
             "fuel_limit": self.fuel_limit,
             "fuel_used": self.fuel_used,
@@ -507,9 +500,6 @@ class ObligationLedger:
         account = self._require(target)
         return ObligationAccountView(
             obligation_id=account.obligation.obligation_id,
-            failure_count=0,
-            consumed_attempts=0,
-            consumed_tokens=0,
             has_admitted_demand=account.demand_admitted,
             fuel_limit=account.fuel_limit,
             fuel_used=account.fuel_used,

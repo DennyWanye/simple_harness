@@ -107,9 +107,6 @@ def test_registering_the_same_id_twice_is_refused(ledger: ObligationStore) -> No
 def test_a_fresh_account_starts_at_zero(ledger: ObligationStore) -> None:
     ledger.register(_duty(), recursion_fuel=3)
     view = ledger.account(MISSION, ObligationId("obligation-1"))
-    assert view.failure_count == 0
-    assert view.consumed_attempts == 0
-    assert view.consumed_tokens == 0
     assert view.remaining_fuel == 3
     assert view.lifecycle is ObligationLifecycle.UNSATISFIED
 

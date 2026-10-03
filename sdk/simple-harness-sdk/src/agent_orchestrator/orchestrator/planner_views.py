@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .obligation_accounts import account_of, obligation_accounts
 from ..contracts.htn import TaskForm
 from ..contracts.semantic_base import content_hash_of
 from ..planning.htn.planner_package import (
@@ -108,8 +109,10 @@ def read_planner_package(
     # obligations --------------------------------------------------------------------
     obligations = []
     duty_refs = []
+    spent = obligation_accounts(store, mission.id)  # read-time totals, the duty and all under it
     for duty in duties.list_obligations(mission.id):
         account = duties.account(mission.id, duty.obligation_id)
+        totals = account_of(spent, duty.obligation_id)
         relations = duties.list_relations(mission.id, child=duty.obligation_id)
         obligations.append({
             "parent": None if duty.parent_obligation_id is None else str(duty.parent_obligation_id),
@@ -118,9 +121,9 @@ def read_planner_package(
                        "lifecycle": str(account.lifecycle), "requiredness": str(duty.requiredness)},
             "fuel": {"limit": account.fuel_limit, "used": account.fuel_used,
                      "remaining": account.remaining_fuel},
-            "failures": [{"count": account.failure_count}],
-            "attempts": account.consumed_attempts,
-            "budget": {"lineage_ref": duty.budget_lineage_ref, "spent_tokens": account.consumed_tokens},
+            "failures": [{"count": totals["failed_attempts"]}],
+            "attempts": totals["attempts"],
+            "budget": {"lineage_ref": duty.budget_lineage_ref, "spent_tokens": totals["settled_tokens"]},
         })
         duty_refs.append({"kind": "obligation", "id": str(duty.obligation_id), "semantic_revision": 1,
                           "content_hash": content_hash_of(duty.to_json())})

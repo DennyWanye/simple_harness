@@ -702,6 +702,9 @@ class MissionControlV1:
             snapshot = store.snapshot(mission.id)
             from ..storage.planning_human_store import PlanningHumanStore
             snapshot["planning_questions"] = PlanningHumanStore(store).list(mission.id)
+            # 这件事（含下级、含换过的做法）到现在花了多少：读时由尝试与结算推出
+            from ..orchestrator.obligation_accounts import obligation_accounts
+            snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
             from ..orchestrator.planning_selection import awaits_authority
             from ..storage.planning_decision_store import PlanningDecisionStore
             planning = PlanningDecisionStore(store)
