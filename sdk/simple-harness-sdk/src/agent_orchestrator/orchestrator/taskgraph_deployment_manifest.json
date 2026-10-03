@@ -1,5 +1,5 @@
 {
-  "deployment_id": "364c756caea27f9d9958ad8c2f0436a6bc2cea7d5fd3e479238af98a9b4d33fd",
+  "deployment_id": "70156914f239851e4b739080eb6135fcfbfb35564208bec9cddf24279964d3ae",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -197,9 +197,9 @@
     "agent_orchestrator/orchestrator/completion_status.py": "0e5230f54979677b73caf6927da2f089d3b5414a8f5e099d023f3f734ff9b03c",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "38490961a2c1b146e2c89662d5fcacadf1f705051c0593b9d7a65ecac7add94f",
-    "agent_orchestrator/orchestrator/event_handler.py": "598bbca6765bf7aa5d656eb1a993b877f9fef999a1ccf650857473eef45495f9",
+    "agent_orchestrator/orchestrator/event_handler.py": "7b2e05c4ead3b8a7fe0cf990dcbf526f4c061fe4c3787b6739763395ad4b6c1d",
     "agent_orchestrator/orchestrator/failure_classes.py": "20d14198bbbc53279c38cc256c11583d38e0d9e685ba7cee2202017d21ab9922",
-    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "10e542956c373e1bb8255a6109830f5fc9d658e87d2d033593d53c57496d27aa",
+    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "c9175368aba200c3e850991cb50504220cbb7ab6286f86a78bb586dcd69ce263",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "84b256b6f2c63f5f2aa7074621368b5cb2bf8d16d835e475799d890af1bb86c7",
     "agent_orchestrator/orchestrator/method_plan_reviews.py": "1312fcbf7aa48d74b5a9b1197fa128db3c2c545badf8f9816537debcfa3b3fc6",
@@ -361,7 +361,7 @@
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
     "agent_orchestrator/runtime/provider_budget_guard.py": "a89aa33e2226d6d7a66cd5c5cfceec253db56fbfcac95f7493a3cf265be2d2aa",
-    "agent_orchestrator/runtime/role_templates.py": "c57f512ad1c31b6383945dc060b2516767977d1f7d8e6a814c3ba93c762689a3",
+    "agent_orchestrator/runtime/role_templates.py": "7d7869095cb46c4ab2db4504f0d5755c45914de3f46d84cf55e09d47c830d653",
     "agent_orchestrator/runtime/sandbox.py": "9a257d133a5b54da66649e23cbbe6af11d91027126e0c9cecb8200d97bd87f89",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",

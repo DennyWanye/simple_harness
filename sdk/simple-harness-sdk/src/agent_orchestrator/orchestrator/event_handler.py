@@ -2498,12 +2498,19 @@ class Orchestrator:
             return None
         rows = self.store.list_tasks(mission.id)
         actions = self.store.list_actions(mission.id)
+        # 一步被换掉之后（换做法、换后继），旧任务行留作历史，状态不再推进；只有现行计划里的步骤
+        # 才算"还在跑"——否则计划停住时它会让任务永远像在等一个不存在的执行者（阶段 E）。
+        try:
+            planned = {str(spec.task_id) for spec in new_mode.network(mission.id).occurrences}
+        except (GraphIntegrityError, ContractError, StoreError):
+            planned = {task.id for task in rows}
         waits = {
             "all_rows_terminal": bool(rows) and all(task.status in TERMINAL_TASK for task in rows),
             "closeout_pending": self.commit.assured_closeout_pending(mission.id),
             "root_resolved": self._root_resolved(mission, new_mode),
             "running_rows": any(
                 task.status is TaskStatus.ACTIVE
+                and task.id in planned
                 and not self._awaiting_retry_decision(mission.id, task)
                 for task in rows
             ),

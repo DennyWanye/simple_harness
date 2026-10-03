@@ -345,3 +345,78 @@ def test_a_result_that_lands_while_requirements_are_unconfirmed_is_not_reviewed_
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
 
     asyncio.run(case())
+
+
+def test_kept_old_step_is_reported_not_rerun(tmp_path):
+    """改要求后规划器只换掉了没做完的那一步，已按旧版通过的那一步原样留在计划里：系统不自动重跑它，
+    派发处如实报"按旧版通过、现在不算数"；计划停住后规划器在请求里看得到这条，换掉这一步，任务按新版完成。
+
+    **改坏检验**：细分原因改回"已通过、等完成" → 规划器看不到这条 → 变红。"""
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    seen: dict[str, Any] = {"packages": []}
+    state = {"second": False, "first": False}
+
+    def successor(package: dict[str, Any], step: dict[str, Any], why: str) -> Any:
+        subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
+
+        def visible(kind: str, identity: str) -> Any:
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+        [task_type] = [row for row in package["successor_types"]
+                       if row["statement"] == step["statement"] and row["form"] == "primitive"]
+        return decision(subject["subject_key"], "REPAIR", {
+            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", step["task_id"]),
+            "obligation_ref": visible("obligation", step["obligation_id"]),
+            "goal_type_ref": task_type["task_type_ref"], "bindings": dict(step["params"])}, why)
+
+    base = replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source"): entry["request"]
+                   for entry in package.get("repair_requests") or ()}
+        steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
+        done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
+        if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
+            state["second"] = True
+            [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
+            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步。")
+        if "NO_DISPATCHABLE_WORK" in sources and not state["first"]:
+            withheld = sources["NO_DISPATCHABLE_WORK"]["context"]["withheld"]
+            seen["withheld"] = withheld
+            old = [row for row in withheld if "ACCEPTED_UNDER_OLD_REQUIREMENTS" in (row.get("detail_codes") or ())]
+            if old:
+                state["first"] = True
+                step = next(item for item in steps if item["task_id"] == old[0]["task_id"])
+                return successor(package, step, "这一步是按旧版要求通过的，换掉重做。")
+        return base(request)
+
+    async def case():
+        provider = SlowSecondStep(planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-kept",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            [first] = htn.list_acceptances(mission_id)
+            amend(world, mission_id, [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            provider.go.set()
+            mission = await world.run_until_settled(mission_id, rounds=60)
+            events = list(world.store.list_events(mission_id))
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status, mission.final_report, state,
+                [(e.type, json.dumps(e.payload, ensure_ascii=False)[:300]) for e in events
+                 if e.type in {"PlanningRejected", "MissionStalled", "HierarchicalMissionStalled"}][-4:])
+            assert state == {"second": True, "first": True}
+            # 旧的那一步没有被系统自动重跑：它只有当初那一次尝试
+            assert len(world.store.list_attempts(str(first.task_id))) == 1
+            [row] = [row for row in seen["withheld"] if row["task_id"] == str(first.task_id)]
+            assert row["detail_codes"] == ["ACCEPTED_UNDER_OLD_REQUIREMENTS"]
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
+
+    asyncio.run(case())
