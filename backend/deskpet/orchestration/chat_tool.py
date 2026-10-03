@@ -261,7 +261,71 @@ def amend_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
     }
 
 
+# ------------------------------------------------------------------ method_library
+# 阶段 C3：全库做法（以前的任务交付成功、审阅员判为可复用的做法，给以后的任务当先例）。
+# 主 Agent 可以替用户列出来、按用户的话退役一条；确认规矩与建任务、改要求相同。
+
+METHOD_LIBRARY_TOOL_NAME = "method_library"
+
+METHOD_LIBRARY_DESCRIPTION = (
+    "The library of reusable methods: ways of breaking a goal into steps that earlier background "
+    "tasks delivered with and the reviewer judged reusable; later tasks' planners see them as "
+    "precedents. action='list' shows every entry (id, one line of purpose, state, how many tasks "
+    "blamed it). action='retire' takes one entry out of the list so new tasks no longer see it — "
+    "use it only when the user explicitly asks to retire that method; pass entry_id and the user's "
+    "reason. Tasks already running are not affected. Read-only otherwise: entries are added only by "
+    "the system when a task is delivered."
+)
+
+METHOD_LIBRARY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["list", "retire"]},
+        "entry_id": {"type": "string"},
+        "reason": {"type": "string"},
+    },
+    "required": ["action"],
+    "additionalProperties": False,
+}
+
+
+def method_library(service_getter: Callable[[], Any], arguments: Mapping[str, Any], *,
+                   run_id: str, call_id: str) -> dict[str, Any]:
+    action = arguments.get("action")
+    entry_id, reason = arguments.get("entry_id"), arguments.get("reason")
+    if (action not in {"list", "retire"} or not set(arguments) <= {"action", "entry_id", "reason"}
+            or (action == "list" and set(arguments) != {"action"})
+            or (action == "retire" and (not isinstance(entry_id, str) or not entry_id.strip()
+                                        or not isinstance(reason, str) or not reason.strip()
+                                        or len(reason) > MAX_TEXT))):
+        raise MissionStartRefused(
+            "invalid_arguments", "action 为 list（不带别的参数）或 retire（带 entry_id 与 reason）")
+    service = service_getter()
+    if service is None:
+        raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
+    from .service import OrchestrationRequestError
+
+    try:
+        if action == "list":
+            entries = service.method_library()["entries"]
+            return {"entries": [
+                {"entry_id": item["entry_id"], "purpose": item["purpose"], "goal_type": item["goal_type_id"],
+                 "state": item["state"], "source_mission_id": item["source_mission_id"],
+                 "blamed_by_tasks": len(item["blamed_by_missions"]),
+                 "retired_by": item["retired_by"], "retired_reason": item["retired_reason"]}
+                for item in entries],
+                "note": "LISTED 的条目会列给新任务的规划器当先例；RETIRED 的不再列出。"}
+        receipt = service.retire_library_entry({
+            "entry_id": entry_id.strip(), "command_id": f"chat-method-retire:{run_id}:{call_id}",
+            "reason": reason.strip()})
+    except OrchestrationRequestError as error:
+        raise MissionStartRefused(str(error.code), str(error)) from error
+    return {"entry_id": receipt["entry_id"], "purpose": receipt["purpose"], "state": "RETIRED",
+            "note": "这条全库做法已退役，之后不再列给新任务；已经在跑的任务不受影响。"}
+
+
 __all__ = ("MISSION_AMEND_DESCRIPTION", "MISSION_AMEND_SCHEMA", "MISSION_AMEND_TOOL_NAME", "amend_mission",
+           "METHOD_LIBRARY_DESCRIPTION", "METHOD_LIBRARY_SCHEMA", "METHOD_LIBRARY_TOOL_NAME", "method_library",
            "MISSION_START_DESCRIPTION", "MISSION_START_SCHEMA", "MISSION_START_TOOL_NAME",
            "MISSION_STATUS_DESCRIPTION", "MISSION_STATUS_SCHEMA", "MISSION_STATUS_TOOL_NAME",
            "MissionStartRefused", "mission_status", "start_mission")

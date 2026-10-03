@@ -593,6 +593,7 @@ class LeafAcceptanceAssembly:
             requirements_content_hash=revision.content_hash(),
             claims_to_confirm=claims_to_confirm,
             related_entries=related_entries,
+            summary_to_confirm=self._summary_section(result_id, package_id),
         )
         if not persist:
             # Assurance freezes the same original package before the reserve/
@@ -607,6 +608,23 @@ class LeafAcceptanceAssembly:
         if stored is None:
             raise StoreError(f"result {result_id} is not recorded")
         return fingerprint(stored.envelope.to_json())
+
+    def _summary_section(self, result_id: str, package_id: str) -> dict[str, Any] | None:
+        """The package's summary section (阶段 C3): the Worker's ``summary`` of the reviewed
+        result, bound to the result's fingerprint.  Frozen at the first cut like the claim
+        sections."""
+        import hashlib
+
+        try:
+            return self.semantics.get_review_package(package_id).summary_to_confirm
+        except StoreError:
+            pass
+        stored = self.store.get_result(result_id)
+        summary = "" if stored is None else str(stored.envelope.summary or "").strip()
+        if not summary:
+            return None
+        return {"result_ref": self._result_fingerprint(result_id), "summary": summary,
+                "summary_sha256": hashlib.sha256(summary.encode("utf-8")).hexdigest()}
 
     def _claim_sections(
         self, mission_id: str, task_id: str, result_id: str, package_id: str

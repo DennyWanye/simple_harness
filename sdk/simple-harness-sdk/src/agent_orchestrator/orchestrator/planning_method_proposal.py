@@ -129,8 +129,7 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
             f"METHOD_PROPOSALS_EXHAUSTED: {MAX_METHOD_PROPOSALS_PER_GOAL} methods were already "
             "proposed for this goal in this Mission; choose among the methods in the library or "
             "ask the user",), code="PLANNING_BOUND_REACHED")
-    proposal = decode_dropping_unknown(  # planner-authored (user decision 2026-09-26)
-        MethodProposal.from_json, dict(payload.method_proposal), root_names=("method_proposal",))
+    proposal = decode_proposal(payload)
     binding = dispatch.network(mission_id).binding_for_task(TaskRef(subject["task_id"]))
     goal_type = world.catalog.resolve(proposal.method.goal_type_ref)
     if goal_type is None or _goal_identity(goal_type.goal_signature) != _goal_identity(binding.goal_signature):
@@ -146,6 +145,11 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
                  "链接到一个步骤（写出这个文件的那一步），发布本身由系统完成"
                  for item in dispatch._publish_source_steps(mission_id, proposal.method, share)]
     problems += _coverage_problems(dispatch, mission_id, binding, proposal.method)
+    if proposal.based_on is not None and proposal_origin(dispatch, mission_id, proposal)["based_on"] is None:
+        problems.append(
+            f"LIBRARY_ENTRY_UNAVAILABLE: based_on {proposal.based_on!r} is not a library entry listed "
+            "to this Mission for this goal type; cite an entry_id from views.method_library, or leave "
+            "based_on out")
     if problems:
         raise MethodProposalRefused(tuple(problems))
     # Candidate admission mutates only an isolated registry. Persist/install the
@@ -156,6 +160,51 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
     if not receipt.admitted or receipt.method_ref is None:
         raise MethodProposalRefused(rejection_problems(receipt) or (f"REJECTED: {receipt.verdict!s}",))
     return receipt, candidate.definition(receipt.method_ref), candidate.registration(receipt.method_ref)
+
+
+def read_library(dispatch: Any, mission: Any, payload: Any) -> dict[str, Any]:
+    """A READ_METHOD_LIBRARY decision: order only — within the Mission's read allowance, and
+    every entry is one the Mission is listed for the goals it is planning.  Nothing changes;
+    the event this returns the detail of is what the next package's ``library_reads`` reads."""
+    from ..planning.htn.planner_package import method_signatures
+    from ..planning.htn.world import catalog_digest
+    from .method_library import MAX_LIBRARY_READS, reads_used, visible_entry
+    from .planning_repair_requests import repair_goal_occurrences
+
+    store = dispatch.store
+    if reads_used(store, mission.id) >= MAX_LIBRARY_READS:
+        raise MethodProposalRefused((
+            f"LIBRARY_READS_EXHAUSTED: this Mission already read the method library {MAX_LIBRARY_READS} "
+            "times; work from views.library_reads, write your own method, or ask the user",),
+            code="PLANNING_BOUND_REACHED")
+    network = dispatch.network(mission.id)
+    goal_types = method_signatures(network, repair_goal_occurrences(store, network))
+    digest = catalog_digest(dispatch.require_planning_world())
+    missing = [entry for entry in payload.entries
+               if visible_entry(store, mission, digest, goal_types, entry) is None]
+    if missing:
+        raise MethodProposalRefused(tuple(
+            f"LIBRARY_ENTRY_UNAVAILABLE: {entry!r} is not an entry of views.method_library"
+            for entry in missing))
+    return {"entries": list(payload.entries)}
+
+
+def proposal_origin(dispatch: Any, mission_id: str, proposal: Any) -> dict[str, Any]:
+    """What a proposal's event records about where it came from: the type catalogue it was
+    written against, and the library entry it cites when this Mission may see that entry."""
+    from ..planning.htn.world import catalog_digest
+    from .method_library import visible_entry
+
+    digest = catalog_digest(dispatch.require_planning_world())
+    entry = None if proposal.based_on is None else visible_entry(
+        dispatch.store, dispatch.store.get_mission(mission_id), digest,
+        (proposal.method.goal_type_ref.id,), proposal.based_on)
+    return {"catalog_digest": digest, "based_on": None if entry is None else entry["entry_id"]}
+
+
+def decode_proposal(payload: Any) -> Any:
+    return decode_dropping_unknown(  # planner-authored (user decision 2026-09-26)
+        MethodProposal.from_json, dict(payload.method_proposal), root_names=("method_proposal",))
 
 
 def persist_method(dispatch: Any, receipt: Any, contract: Any, registration: Any) -> dict[str, Any]:

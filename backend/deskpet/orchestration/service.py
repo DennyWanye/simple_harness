@@ -1147,6 +1147,17 @@ class OrchestrationService:
         self.wake()
         return dict(receipt)
 
+    def method_library(self) -> dict[str, Any]:
+        """The library of reusable methods (precedents promoted from delivered Missions)."""
+        self._require()
+        return dict(self._call("list_method_library"))
+
+    def retire_library_entry(self, request: Mapping[str, Any]) -> dict[str, Any]:
+        """Retire one library entry on the user's word; one transaction in the SDK facade."""
+        self._require()
+        self._refuse_secrets(request)
+        return dict(self._call("retire_library_entry", dict(request)))
+
     def approve_operation_completion_spec(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Confirm requirements through the existing authenticated SDK facade."""
         self._require()

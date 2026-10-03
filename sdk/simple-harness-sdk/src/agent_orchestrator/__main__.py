@@ -241,6 +241,31 @@ def cmd_approval(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_method_library(args: argparse.Namespace) -> int:
+    """``method-library list / clear``: the library of method precedents (阶段 C3).  ``clear``
+    is a development diagnostic: it empties the two library tables (the method definitions are
+    not touched) and needs ``--yes``."""
+    from .orchestrator.method_library import library_listing
+    from .storage.method_library_store import MethodLibraryStore
+
+    library = Path(args.evidence_dir).resolve() / "orchestrator.db"
+    if not library.is_file():
+        _print({"error": f"no orchestrator library at {library}"})
+        return EXIT_USAGE
+    store = _open_store(args)
+    try:
+        if args.action == "list":
+            _print({"entries": library_listing(store)})
+            return 0
+        if not args.yes:
+            _print({"error": "clear empties the method library; pass --yes to do it"})
+            return EXIT_USAGE
+        _print({"cleared": MethodLibraryStore(store).clear()})
+        return 0
+    finally:
+        store.close()
+
+
 def cmd_policy(args: argparse.Namespace) -> int:
     """``policy list / show / status`` (ORCH-BUILD §11.4): read the policy library.  The
     library is opened as a read-only copy; nothing here writes.  Exit 0 done, 1 refused,
@@ -388,6 +413,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = policy_sub.add_parser("show")
     common(p)
     p.add_argument("identifier")
+    library = sub.add_parser("method-library")
+    library_sub = library.add_subparsers(dest="action", required=True)
+    common(library_sub.add_parser("list"))
+    p = library_sub.add_parser("clear")
+    common(p)
+    p.add_argument("--yes", action="store_true", help="really empty the method library")
 
     return parser
 
@@ -406,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_replay(args)
     if args.command == "policy":
         return cmd_policy(args)
+    if args.command == "method-library":
+        return cmd_method_library(args)
     return EXIT_USAGE
 
 

@@ -83,6 +83,7 @@ from ..contracts.semantic_base import (
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from .accepted_outputs import CarriedCriterion, carried_criteria_in_revision
+from .method_library import methods_to_judge
 from .hierarchical_dispatch import (
     ROOT_REVIEW_CUT,
     ROOT_REVIEW_SUPERSEDED,
@@ -903,9 +904,11 @@ class RootReviewCoordinator:
             producer_agent_ids=producers,
             reviewer_workspace_access=WorkspaceAccess.READ_ONLY,
             requirements_content_hash=requirements.content_hash(),
+            # 本任务采用的做法（阶段 C3）：终审顺带判可不可复用、是不是做法本身的错
+            methods_to_judge=methods_to_judge(self.store, self.store.get_mission(mission_id)),
         )
-        try:
-            semantics.get_review_package(str(package.package_id))
+        try:  # a package is frozen at its first cut
+            package = semantics.get_review_package(str(package.package_id))
         except StoreError:
             semantics.insert_review_package(package)
         append_hierarchical_event(

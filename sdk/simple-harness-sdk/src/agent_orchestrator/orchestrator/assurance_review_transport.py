@@ -720,6 +720,13 @@ _INTERPRETATION_FEEDBACK = {
         "claims named a claim_id that is not in package.claims_to_confirm; confirm only the "
         "claims listed there (leave claims out when the list is empty)."
     ),
+    "METHOD_SCOPE": (
+        "methods names a method_ref that is not in package.methods_to_judge; write only about "
+        "the methods listed there (leave methods out when the package has no such section)."
+    ),
+    "SUMMARY_SCOPE": (
+        "summary was given but the package has no summary_to_confirm; leave summary out."
+    ),
 }
 
 
@@ -744,7 +751,8 @@ _FORMAT_FEEDBACK = {
         "findings (and claims when the request lists claims to confirm); each assessment has "
         "criterion_id, verdict, evidence_ids, reason and limitations; each finding has "
         "criterion_id, severity and reason; each claim has claim_id, confirmed, evidence_ids "
-        "and reason."
+        "and reason; each method has method_ref, reusable, purpose, at_fault and reason; summary "
+        "has faithful and reason."
     ),
     "OBJECT_FIELDS_UNKNOWN": (
         "a field outside the reply's shape carries a value; remove it (an extra field whose "
@@ -756,7 +764,8 @@ _FORMAT_FEEDBACK = {
         "REJECTED; severity is BLOCKER, WARNING or INFO; an assessment verdict is one of "
         "the grades named in the request."
     ),
-    "REVIEW_SCHEMA_VERSION": "schema_version must be the integer 3.",
+    "REVIEW_SCHEMA_VERSION": "schema_version must be the integer 4.",
+    "DUPLICATE_METHOD": "methods names the same method_ref twice; write each method once.",
     "JSON_INVALID": (
         "the reply is not one JSON object. Answer with the JSON object only: the first "
         "character is { and the last is }, and no text before or after it (one code fence "

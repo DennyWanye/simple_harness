@@ -177,12 +177,27 @@ def review_input(request: Any) -> dict[str, Any] | None:
 
 
 def review_reply(
-    package: dict[str, Any], *, verdict: str = "ACCEPT", grade: str = "PASS", reason: str = "脚本化审阅：材料满足这条要求。"
+    package: dict[str, Any], *, verdict: str = "ACCEPT", grade: str = "PASS", reason: str = "脚本化审阅：材料满足这条要求。",
+    methods: Any = None, summary: Any = None,
 ) -> str:
+    """``methods`` / ``summary`` (回复第 4 版)：给了就写进回复；``methods`` 可以是一个函数，拿审查包里
+    ``methods_to_judge`` 的每一行、回一项（或 None 不写）。"""
     labels = [item["label"] for item in package.get("evidence", ())][:64]
+    inner = package.get("package") or {}
+    extra: dict[str, Any] = {}
+    if callable(methods):
+        judged = [methods(row) for row in inner.get("methods_to_judge") or ()]
+        extra["methods"] = [item for item in judged if item is not None]
+    elif methods is not None:
+        extra["methods"] = list(methods)
+    if callable(summary):
+        summary = summary(inner.get("summary_to_confirm")) if inner.get("summary_to_confirm") else None
+    if summary is not None:
+        extra["summary"] = dict(summary)
     return json.dumps(
         {
-            "schema_version": 3,
+            **extra,
+            "schema_version": 4,
             "verdict": verdict,
             "assessments": [
                 {

@@ -436,6 +436,33 @@ class MissionControlV1:
         except StoreError as error:
             raise FacadeError("conflict", str(error)) from error
 
+    def list_method_library(self) -> dict[str, Any]:
+        """Every entry of the method library (precedents promoted from delivered Missions):
+        id, one line of purpose, state, where it came from and which Missions blamed it."""
+        from ..orchestrator.method_library import library_listing
+
+        return {"entries": library_listing(self._store)}
+
+    def retire_library_entry(self, command: Mapping[str, Any]) -> dict[str, Any]:
+        """Retire one library entry on the person's word, using this facade's fixed caller.
+        One transaction; the same command id replays its receipt."""
+        from ..orchestrator.method_library import LibraryCommandError, retire_by_command
+
+        fields = {"entry_id", "command_id", "reason"}
+        if (not isinstance(command, Mapping) or set(command) != fields
+                or not all(isinstance(command[key], str) and command[key] for key in ("entry_id", "command_id"))
+                or not isinstance(command["reason"], str)):
+            raise FacadeError("invalid_request", "retire_library_entry takes exactly entry_id, command_id, reason")
+        self._clean(command["reason"])
+        try:
+            return retire_by_command(
+                self._store, command_id=command["command_id"], entry_id=command["entry_id"],
+                reason=command["reason"], principal=str(self._principal.principal_id))
+        except LibraryCommandError as error:
+            raise FacadeError(error.code, str(error)) from error
+        except StoreError as error:
+            raise FacadeError("conflict", str(error)) from error
+
     @_native_root
     def create(self, command: Mapping[str, Any]) -> dict[str, Any]:
         request = self._strict(command)

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from ..contracts import Claim, ClaimStatus, Task
@@ -307,17 +307,13 @@ class KnowledgeContext:
     disputed: tuple[Mapping[str, Any], ...] = ()
     candidates: tuple[Mapping[str, Any], ...] = ()
     rejected: tuple[Mapping[str, Any], ...] = ()
-    branch_summary: Mapping[str, Any] | None = None
-    global_summary: Mapping[str, Any] | None = None
-    summary_status: Mapping[str, Any] = field(default_factory=lambda: {"status": "ok"})
+    #: accepted steps' summaries the reviewer confirmed faithful (the blackboard's summary layer)
+    step_summaries: tuple[Mapping[str, Any], ...] = ()
     raw_refs: Mapping[str, Any] | None = None  # §11 layer 1: references only (P2-11)
 
     @classmethod
     def unavailable(cls, reason: str, *, status: str = "unavailable") -> KnowledgeContext:
-        return cls(
-            retrieval=RetrievalResult.unavailable(reason, status=status),
-            summary_status={"status": status, "reason": reason},
-        )
+        return cls(retrieval=RetrievalResult.unavailable(reason, status=status))
 
     @property
     def frozen_ids(self) -> list[dict[str, Any]]:

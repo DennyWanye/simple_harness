@@ -5,7 +5,7 @@
 规划器为目标提出的做法在登记的同一事务里开一份独立的新做法审阅（METHOD_PLAN）。
 这个模块只回答秩序问题，不判断做法好不好：
 
-* :func:`unreviewed_proposed_methods` —— 计划提交事务里的闸门：这次要采用的做法里，哪些是
+* :func:`unreviewed_adopted_methods` —— 计划提交事务里的闸门：这次要采用的做法里，哪些是
   规划器在本任务里提出、却还没有通过（或人裁决通过）的正式审阅记录。
 * :func:`advance` —— 每轮循环调用：提案的审阅有了结论（通过 / 打回 / 人已裁决 / 给不出
   结论）就记一条 ``PlanningMethodReviewed`` 事件，那条事件才叫醒规划器，事件里是审阅员的
@@ -91,25 +91,26 @@ def findings_of(record: Any) -> list[dict[str, Any]]:
     ][:16]
 
 
-def unreviewed_proposed_methods(store: Any, mission_id: str, drafts: Iterable[Any]) -> list[dict[str, Any]]:
+def unreviewed_adopted_methods(store: Any, mission_id: str, drafts: Iterable[Any],
+                               seeds: Iterable[Any] = ()) -> list[dict[str, Any]]:
     """Of the method instances a plan commit adopts: the ones the gate refuses.
 
-    A method the Planner proposed in this Mission is adopted only on a passed (or
-    person-passed) official METHOD_PLAN record.  "Proposed in this Mission" is read off
-    the review tables, not off the registry: the registry marks *every* admitted method
-    — the deployment's own library included — as on trial in the Mission it was
-    admitted for, so that mark cannot tell the two apart.  A proposed method is
-    registered and sent to review in one transaction, so "this Mission opened a
-    METHOD_PLAN review for exactly this method" is the durable fact that it was
-    proposed here.  A method with no such review is the deployment's and is not this
-    gate's business.
+    A method is adopted in a Mission only on a passed (or person-passed) official
+    METHOD_PLAN record **of this Mission** — whoever wrote it and wherever it came from
+    (阶段 C3：复用也要审).  The only methods let through without one are the deployment's
+    own seed methods, which the planning world installed and names in ``seeds``; a method
+    of another Mission, or one that reached the registry any other way, has no review
+    here and is refused with ``review: NONE``.
     """
 
+    seeded = {(item.method_id, int(item.version), item.content_hash) for item in seeds}
     refused: list[dict[str, Any]] = []
     for draft in drafts:
         reference = draft.method_ref
+        if (reference.method_id, int(reference.version), reference.content_hash) in seeded:
+            continue
         review = review_of(store, mission_id, reference)
-        if review.state == "NONE" or review.passed:
+        if review.passed:
             continue
         row: dict[str, Any] = {"method_ref": reference.to_json(), "review": review.state}
         if review.record is not None:
@@ -285,5 +286,5 @@ __all__ = (
     "open_proposals",
     "review_of",
     "reviews_by_method",
-    "unreviewed_proposed_methods",
+    "unreviewed_adopted_methods",
 )

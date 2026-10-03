@@ -1021,45 +1021,6 @@ class Store:
             ).fetchall()
         return [KnowledgeRecord.from_json(_loads(row[0])) for row in rows]
 
-    # --------------------------------------------------------------- summaries
-    def upsert_summary(
-        self,
-        mission_id: str,
-        *,
-        scope: str,
-        subject_id: str,
-        version: str,
-        summary: Mapping[str, Any],
-    ) -> None:
-        with self.transaction() as connection:
-            connection.execute(
-                "INSERT INTO summaries(summary_id,mission_id,scope,subject_id,version,json,created_at)"
-                " VALUES (?,?,?,?,?,?,?) ON CONFLICT(mission_id, scope, subject_id) DO UPDATE SET"
-                " version = excluded.version, json = excluded.json, created_at = excluded.created_at",
-                (
-                    f"{mission_id}:{scope}:{subject_id}",
-                    mission_id,
-                    scope,
-                    subject_id,
-                    version,
-                    canonical_json(dict(summary)),
-                    self.now,
-                ),
-            )
-
-    def list_summaries(self, mission_id: str, *, scope: str | None = None) -> list[dict[str, Any]]:
-        if scope is None:
-            rows = self._connection.execute(
-                "SELECT json FROM summaries WHERE mission_id = ? ORDER BY scope, subject_id",
-                (mission_id,),
-            ).fetchall()
-        else:
-            rows = self._connection.execute(
-                "SELECT json FROM summaries WHERE mission_id = ? AND scope = ? ORDER BY subject_id",
-                (mission_id, scope),
-            ).fetchall()
-        return [_loads(row[0]) for row in rows]
-
     # ----------------------------------------------------------- graph changes
     # --------------------------------------------------------------- actions (step 7)
     def put_action(self, record: Mapping[str, Any]) -> None:
@@ -1722,7 +1683,6 @@ class Store:
             ],
             "claims": [claim.to_json() for claim in self.list_mission_claims(mission_id)],
             "knowledge": [record.to_json() for record in self.list_knowledge(mission_id)],
-            "summaries": self.list_summaries(mission_id),
             "artifacts": [
                 artifact.to_json()
                 for attempt in attempts

@@ -31,6 +31,9 @@ from .retrieval import knowledge_view
 VERIFIED_LAYER = "verified"
 CANDIDATE_LAYER = "candidate"
 RAW_REF_LAYER = "raw_ref"
+SUMMARY_LAYER = "summary"
+#: how many checked step summaries are pushed into a Worker's context (newest first)
+MAX_PUSHED_SUMMARIES = 8
 _CANDIDATE_MARKERS = {
     ClaimStatus.PROPOSED: "未验证",
     ClaimStatus.UNDER_REVIEW: "未验证",
@@ -58,8 +61,56 @@ def current_knowledge(store: Store, mission_id: str) -> list[Any]:
     )
 
 
+def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
+    """The summary layer (阶段 C3): one row per accepted step whose summary the reviewer
+    confirmed faithful — newest acceptance first.  The summary is the Worker's own ``summary``
+    of the accepted result; nothing is truncated or composed by the system.  A row is listed
+    only while both hold: the step's acceptance still stands in the active plan (the one
+    judgement knowledge uses), and the official content review that acceptance rests on says
+    ``faithful`` for exactly this text of exactly this result."""
+    from ..assurance.codec import fingerprint
+    from ..contracts.resolution import ReviewPurpose
+    from ..memory.knowledge_standing import acceptance_is_current
+    from ..orchestrator.assurance_validity import acceptance_id_for
+    from ..orchestrator.method_library import review_manifest
+    from ..orchestrator.review_adjudication import accepted_or_adjudicated
+    from ..storage.htn_store import HtnStore
+
+    htn = HtnStore(store)
+    packages: dict[str, Any] = {}
+    for package in htn.list_review_packages(mission_id, purpose=ReviewPurpose.TASK_CONTENT):
+        if package.summary_to_confirm is not None and package.candidate_refs:
+            packages[str(package.candidate_refs[0].id)] = package  # the latest cut for a result
+    rows: list[tuple[float, dict[str, Any]]] = []
+    for task in store.list_tasks(mission_id):
+        result_id = task.accepted_result_id
+        package = packages.get(str(result_id)) if result_id else None
+        stored = store.get_result(str(result_id)) if package is not None else None
+        if stored is None:
+            continue
+        record = htn.official_review_record(str(package.package_id))
+        if record is None or not accepted_or_adjudicated(store, record):
+            continue
+        checked = review_manifest(store, record).get("summary") or {}
+        summary = str(stored.envelope.summary or "").strip()
+        digest = _digest(summary)
+        if (not checked.get("faithful") or checked.get("summary_sha256") != digest
+                or checked.get("result_ref") != fingerprint(stored.envelope.to_json())
+                or not acceptance_is_current(store, mission_id, acceptance_id_for(task.id, str(result_id)))[0]):
+            continue
+        artifacts = [store.get_artifact(artifact_id) for artifact_id in task.accepted_artifacts]
+        rows.append((float(stored.received_at), {
+            "layer": SUMMARY_LAYER, "id": f"sum:{result_id}", "source_task": task.id, "summary": summary,
+            "summary_sha256": digest, "result_ref": checked["result_ref"],
+            "artifacts": [{"path": a.path, "version": a.version, "content_hash": a.content_hash}
+                          for a in artifacts if a is not None],
+            "checked_by": str(record.record_id),
+        }))
+    return [row for _, row in sorted(rows, key=lambda item: (-item[0], item[1]["id"]))]
+
+
 def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
-    """The three layers as one ordered list; every row carries ``_text`` (the original
+    """The four layers as one ordered list; every row carries ``_text`` (the original
     statement, None for a raw reference) and ``_stamp`` (what the catalogue digest reads)."""
     rows: list[dict[str, Any]] = []
     verified_ids = set()
@@ -83,6 +134,8 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
             "evidence": list(claim.evidence),
             "_text": claim.content, "_stamp": f"{claim.id}:{claim.status}:{_digest(claim.content)}",
         })
+    for row in step_summaries(store, mission_id):
+        rows.append({**row, "_text": row["summary"], "_stamp": f"{row['id']}:{row['summary_sha256']}"})
     for task in store.list_tasks(mission_id):
         if not task.accepted_result_id:
             continue
@@ -124,7 +177,10 @@ def read_knowledge_tool(
             "next_offset": offset + len(page) if offset + len(page) < len(rows) else None,
             "notice": (
                 "Only layer=verified may be used as fact (cite its ref in used_knowledge). "
-                "layer=candidate is a lead, not a fact. layer=raw_ref is a reference to original "
+                "layer=candidate is a lead, not a fact. layer=summary is an accepted step's own "
+                "summary that the reviewer checked against its result: it tells you what that step "
+                "did; for a fact, go to the artifacts it names or to verified knowledge. "
+                "layer=raw_ref is a reference to original "
                 "records. Previews are incomplete; read the original before using conditions."
             ),
         }
@@ -148,7 +204,7 @@ def read_knowledge_tool(
         {**knowledge_view(row["_record"], None), "layer": VERIFIED_LAYER, "ref": row["ref"],
          "basis": row["basis"]}
         if row["layer"] == VERIFIED_LAYER
-        else {key: value for key, value in _public(row).items() if key != "preview"}
+        else {key: value for key, value in _public(row).items() if key not in {"preview", "summary"}}
     )
     return {
         **head,

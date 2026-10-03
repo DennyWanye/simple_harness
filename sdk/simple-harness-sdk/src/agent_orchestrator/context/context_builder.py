@@ -40,7 +40,7 @@ from ..governance.domains import (
 from ..observability.secrets import environment_secrets, find_secrets
 from .retrieval import KnowledgeContext
 
-CONTEXT_BUILDER_VERSION = "context-builder-v5"  # host support 0.9.8: deployed_verification_layers
+CONTEXT_BUILDER_VERSION = "context-builder-v6"  # 阶段 C3：step_summaries 取代规则截断的两个摘要键
 VISIBILITY_TEMPLATES = ("worker", "verifier")
 ENABLED_TEMPLATES = ("worker", "verifier")
 
@@ -118,14 +118,8 @@ def _knowledge_section(
         "disputed_claims": [dict(item) for item in knowledge.disputed],  # §10 item 7 (marked)
     }
     if visibility == "worker":
-        section["branch_summary"] = (  # §10 item 4
-            dict(knowledge.branch_summary)
-            if knowledge.branch_summary is not None
-            else {
-                "status": knowledge.summary_status.get("status", "unavailable"),
-                "reason": knowledge.summary_status.get("reason"),
-            }
-        )
+        # §10 item 4：已验收步骤的摘要，只列审阅员核对过忠实于原结果的（黑板摘要层的同一份）
+        section["step_summaries"] = [dict(item) for item in knowledge.step_summaries]
     if visibility == "verifier":  # D4-10': the independent layer gets references, not prose
         section["disputed_claims"] = [
             {k: v for k, v in item.items() if k != "content"} for item in section["disputed_claims"]

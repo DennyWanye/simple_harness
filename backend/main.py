@@ -8759,6 +8759,45 @@ async def _build_product_sdk_runtime_stack(
             },
         ),
     )
+    # 阶段 C3：主 Agent 替用户查看全库做法、按用户的话退役一条。
+    from deskpet.orchestration.chat_tool import (
+        METHOD_LIBRARY_DESCRIPTION,
+        METHOD_LIBRARY_SCHEMA,
+        METHOD_LIBRARY_TOOL_NAME,
+        method_library,
+    )
+
+    async def method_library_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = method_library(
+                lambda: service_context.get("orchestration"),
+                arguments,
+                run_id=str(_context.run_id),
+                call_id=str(_context.call_id or _context.request_id),
+            )
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=METHOD_LIBRARY_TOOL_NAME,
+            description=METHOD_LIBRARY_DESCRIPTION,
+            input_schema=METHOD_LIBRARY_SCHEMA,
+            handler=method_library_handler,
+            dispatch_kind="async",
+            permission_category="method_library",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-method-library",
+                "version": "1",
+                "stable_handler_id": "core.method_library.v1",
+            },
+        ),
+    )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 

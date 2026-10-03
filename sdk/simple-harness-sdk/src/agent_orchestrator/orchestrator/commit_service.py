@@ -65,7 +65,6 @@ from ..governance.domains import (
 )
 from ..governance.policies import DeploymentPolicy
 from ..memory.claims import grade_claim
-from ..memory.summaries import refresh_summaries
 from ..memory.knowledge_standing import CURRENT as KNOWLEDGE_CURRENT
 from .review_adjudication import accepted_or_adjudicated, adjudication_of
 from ..memory.knowledge_standing import knowledge_standing
@@ -2898,7 +2897,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 if other.id != attempt.id and other.status in OPEN_ATTEMPT_STATES:
                     self._close_attempt(other, AttemptStatus.SUPERSEDED, reason="sibling_accepted")
                     superseded.append(other.id)
-            refresh_summaries(self._store, mission.id)  # D4-13: Summaries layer, same transaction
             self._emit(
                 "TaskCompleted" if completed.status is TaskStatus.COMPLETED else "PreparationAccepted",
                 mission.id,

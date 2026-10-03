@@ -285,7 +285,7 @@ def read_imported_review_locked(
 #: package's, not the reply's, and stays final.
 REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
     {"UNEXPOSED_EVIDENCE", "DUPLICATE_CRITERION", "FINDING_SCOPE", "MANDATORY_CRITERIA_INVALID",
-     "DUPLICATE_CLAIM", "CLAIM_SCOPE"}
+     "DUPLICATE_CLAIM", "CLAIM_SCOPE", "DUPLICATE_METHOD", "METHOD_SCOPE", "SUMMARY_SCOPE"}
 )
 NO_USABLE_REPLY = "NO_USABLE_REPLY"
 
@@ -422,6 +422,26 @@ def _interpret_reply(
             "evidence_refs": [ref.to_json() for ref in refs],
             "reason": item.reason,
         })
+    # 做法与摘要（阶段 C3）：与逐条确认同一个规矩——只能说审查包里列出的；漏写就是没表态。
+    judged = {row["method_ref"]: row for row in package.methods_to_judge}
+    methods = []
+    for item in sorted(reply.methods, key=lambda item: item.method_ref):
+        if item.method_ref not in judged:
+            raise AssuranceError("METHOD_SCOPE")
+        methods.append({
+            "method_ref": item.method_ref, "based_on": judged[item.method_ref]["based_on"],
+            "reusable": bool(item.reusable), "purpose": item.purpose,
+            "at_fault": bool(item.at_fault), "reason": item.reason,
+        })
+    summary = None
+    if reply.summary is not None:
+        if package.summary_to_confirm is None:
+            raise AssuranceError("SUMMARY_SCOPE")
+        summary = {
+            "result_ref": package.summary_to_confirm["result_ref"],
+            "summary_sha256": package.summary_to_confirm["summary_sha256"],
+            "faithful": bool(reply.summary.faithful), "reason": reply.summary.reason,
+        }
     verdict = reply.verdict
     if verdict == "ACCEPT" and not decision.acceptable:
         verdict = "REWORK" if Grade.FAIL in decision.effective_grades.values() else "INCONCLUSIVE"
@@ -440,6 +460,8 @@ def _interpret_reply(
             for item in reply.findings
         ],
         "claims": confirmations,
+        "methods": methods,
+        "summary": summary,
         "success_witness": sorted(decision.success_witness),
         "consumed_receipts": [ref.to_json() for ref in decision.consumed_receipts],
         "exposed_evidence_refs": [
@@ -504,6 +526,19 @@ class PreparedOfficialReview:
     not_after_ms: int
     record: ReviewRecord
     manifest_json: str
+
+    def _record_method_blame(self, store: Any) -> None:
+        """根终审打回时审阅员写明"是做法本身的错"（阶段 C3）：对照全库先例写的做法，记一条归因。
+        程序只记审阅员明确写出的；同一任务只算一次、两个任务即退役，在 method_library 里数。"""
+        if str(self.record.purpose) != "MISSION_FINAL" or str(self.record.verdict) not in {"REWORK", "REJECTED"}:
+            return
+        from .method_library import record_attribution
+
+        for row in decode(self.manifest_json).get("methods") or ():
+            if row["at_fault"] and row["based_on"]:
+                record_attribution(
+                    store, mission_id=self.identity.mission_id, method_ref=row["method_ref"],
+                    source_ref=str(self.record.record_id), source_kind="ROOT_REVIEW", reason=row["reason"])
 
     def require_locked(self, store: Any, record: ReviewRecord) -> None:
         if (
@@ -586,6 +621,7 @@ class PreparedOfficialReview:
             )
             if manifest_hash != self.record.evidence_manifest_hash:
                 raise AssuranceError("REVIEW_EVIDENCE_MANIFEST_MISMATCH")
+            self._record_method_blame(store)
             consumed = {
                 AssuranceRef.from_json(ref)
                 for ref in decode(self.manifest_json)["consumed_receipts"]

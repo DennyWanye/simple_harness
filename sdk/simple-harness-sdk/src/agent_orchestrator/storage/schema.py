@@ -28,7 +28,6 @@ from .planning_decision_schema import DDL as DDL_V19
 from .operation_seams_schema import DDL as DDL_V21
 from .operation_completion_schema import DDL as DDL_V22
 from .validity_subject_schema import DDL as DDL_V18
-from .method_evaluation_schema import DDL as DDL_V23
 from .taskgraph_schema import DDL as DDL_V25
 
 
@@ -755,6 +754,24 @@ CREATE TRIGGER assurance_source_obligations_update AFTER UPDATE ON obligations W
 # 2026-10-03 HTN 补齐阶段 D：删从没有生产写方的两张支持集合表（先删它们的屏障触发器）与义务表三个
 # 恒零列（失败次数、已花 token、已花尝试——改为读时由尝试与结算推出）。义务表更新触发器先删再删列，
 # 然后照迁移 38 原文重建，只去掉引用这三列的子句（与迁移 37、38 的做法一样）。
+# 评测晋级表（H6）：迁移 23 的文字原样保留，迁移 40 删表（阶段 C3）
+DDL_V23 = """
+CREATE TABLE method_evaluations (
+ method_id TEXT NOT NULL,
+ method_version INTEGER NOT NULL,
+ method_hash TEXT NOT NULL CHECK(length(method_hash)=64),
+ set_hash TEXT NOT NULL CHECK(length(set_hash)=64),
+ frozen_json TEXT NOT NULL CHECK(json_valid(frozen_json)),
+ evidence_hash TEXT,
+ evaluation_json TEXT CHECK(evaluation_json IS NULL OR json_valid(evaluation_json)),
+ state TEXT NOT NULL CHECK(state IN ('FROZEN','EVALUATED','REJECTED','ADMITTED')),
+ created_at REAL NOT NULL,
+ updated_at REAL NOT NULL,
+ PRIMARY KEY(method_id,method_version),
+ FOREIGN KEY(method_id,method_version) REFERENCES method_contracts(method_id,method_version)
+) STRICT;
+"""
+
 DDL_V39 = """
 ALTER TABLE observations ADD COLUMN question_json TEXT NOT NULL DEFAULT '';
 DROP TRIGGER assurance_source_support_members_insert;
@@ -793,6 +810,47 @@ CREATE TRIGGER assurance_source_obligations_update AFTER UPDATE ON obligations W
  WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id,OLD.mission_id);
  END;
 """
+
+# 阶段 C3：全库做法（先例库）与归因记录。两张表不是保证通道源表——它们只决定给规划器看哪些先例，
+# 没有任何证书读它们，晋级、归因、退役都不触发屏障。同批删评测晋级表与规则截断摘要表。
+DDL_V40 = """
+DROP TABLE method_evaluations;
+DROP TABLE summaries;
+CREATE TABLE method_library (
+ entry_id TEXT PRIMARY KEY,
+ owner TEXT NOT NULL,
+ goal_type_id TEXT NOT NULL,
+ catalog_digest TEXT NOT NULL CHECK(length(catalog_digest)=64),
+ method_id TEXT NOT NULL,
+ method_version INTEGER NOT NULL,
+ method_hash TEXT NOT NULL CHECK(length(method_hash)=64),
+ purpose TEXT NOT NULL,
+ source_mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+ root_review_record_id TEXT NOT NULL,
+ based_on TEXT REFERENCES method_library(entry_id),
+ state TEXT NOT NULL CHECK(state IN ('LISTED','RETIRED')),
+ retired_by TEXT,
+ retired_reason TEXT,
+ retired_at REAL,
+ promoted_at REAL NOT NULL,
+ UNIQUE(owner, method_id, method_version),
+ FOREIGN KEY(method_id, method_version) REFERENCES method_contracts(method_id, method_version)
+) STRICT;
+CREATE INDEX method_library_listing ON method_library(owner, goal_type_id, catalog_digest, state, promoted_at);
+CREATE TABLE method_library_attributions (
+ entry_id TEXT NOT NULL REFERENCES method_library(entry_id),
+ source_ref TEXT NOT NULL,
+ source_kind TEXT NOT NULL CHECK(source_kind IN ('PLANNER','ROOT_REVIEW')),
+ mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+ method_id TEXT NOT NULL,
+ method_version INTEGER NOT NULL,
+ method_hash TEXT NOT NULL,
+ reason TEXT NOT NULL,
+ recorded_at REAL NOT NULL,
+ PRIMARY KEY(entry_id, source_ref)
+) STRICT;
+"""
+
 
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
@@ -834,6 +892,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(37, "orchestrator-artifacts-barrier-without-offline-relocation", DDL_V37),
     Migration(38, "orchestrator-drop-money-dimension", DDL_V38),
     Migration(39, "orchestrator-drop-support-sets-and-duty-spend", DDL_V39),
+    Migration(40, "orchestrator-method-library-and-drop-rule-summaries", DDL_V40),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

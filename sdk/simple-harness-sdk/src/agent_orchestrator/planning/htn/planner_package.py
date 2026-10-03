@@ -66,10 +66,12 @@ from ...contracts.planning_decisions import (
 from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
 
-#: The nine views, in the order the package lists them.
+#: The views, in the order the package lists them.  ``method_library`` is the directory of
+#: library precedents (id and one line of purpose, never the method); ``library_reads`` the
+#: entries this Mission's Planner read, with the method as written for its source Mission.
 VIEW_NAMES = (
     "goals", "obligations", "plans", "methods", "facts", "accepted_results",
-    "failures", "capabilities", "planning_budgets",
+    "failures", "capabilities", "planning_budgets", "method_library", "library_reads",
 )
 
 #: The whole provider envelope is bounded, not just the views: the package is a prompt.
@@ -81,7 +83,7 @@ MAX_FAILURES = 16
 
 #: The views size pressure may shorten, in the order it does so.  Goals, the plan and
 #: the budgets are mandatory and are never dropped.
-_SHRINKABLE = ("accepted_results", "failures", "facts", "methods")
+_SHRINKABLE = ("accepted_results", "failures", "facts", "methods", "library_reads")
 
 
 class PlannerPackageError(ContractError):

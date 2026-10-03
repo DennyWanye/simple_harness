@@ -84,7 +84,8 @@
         "BIND_EXISTING_GOAL",
         "REQUEST_HUMAN",
         "WAIT",
-        "NO_CHANGE"
+        "NO_CHANGE",
+        "READ_METHOD_LIBRARY"
       ]
     },
     "planningRefKind": {
@@ -396,6 +397,11 @@
         "bindings": {
           "type": "object",
           "maxProperties": 64
+        },
+        "method_at_fault": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
         }
       }
     },
@@ -903,6 +909,25 @@
           }
         }
       }
+    },
+    "readMethodLibraryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -1052,6 +1077,22 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/noChangePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision_type": {
+            "const": "READ_METHOD_LIBRARY"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/readMethodLibraryPayload"
           }
         }
       }
