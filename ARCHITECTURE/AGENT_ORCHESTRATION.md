@@ -1,3 +1,5 @@
+最后更新：2026-10-03 CST（HTN 补齐阶段 A″，SDK opt.138）。**删离线备份与受管恢复。** 删 `storage/offline_backup.py` 与受管恢复整套协议：根闸门 `assurance/root_gate.py` 只认原生安装回执（`AssuranceRootInstalled`，恢复清单哈希恒空），删恢复后身份、恢复完整性检查、`reauthorize_restored_read` 提交与门面/提交层两个入口、保证通道变更记录的离线搬迁上下文；迁移 37 重建 `assurance_source_artifacts_update` 触发器去掉离线搬迁例外（旧迁移文本不改）。隔离错误码改名 `ROOT_QUARANTINED`。接缝脚本 `root-gate-seam.py` 与验收 V13 改为三项：缺根状态主循环调模型前拒绝、只读隔离无当前授权一律拒读、原生根读取查租户与到期。记录见 `plans/2026-09-27-desktop-next/HTN补齐-实施记录.md`。
+
 最后更新：2026-10-03 CST（HTN 补齐阶段 A′ 完成，SDK opt.137）。
 
 **一条路**：
