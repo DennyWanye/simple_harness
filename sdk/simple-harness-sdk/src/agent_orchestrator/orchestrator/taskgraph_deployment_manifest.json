@@ -1,5 +1,5 @@
 {
-  "deployment_id": "7776d1b03e3460a2b57d3352dcdd7acfa98d0d15ca21355d6c769c3c75e30f0c",
+  "deployment_id": "279a7e555ef6b340023437ef861988e736d1b7edb84108d1086cfd85ed901b02",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -74,7 +74,7 @@
     "agent_orchestrator/contracts/htn.py": "f4b5f3ac9018ee56ecfc1cd7c40a847f8519ef31a83509513c0ed06a6c06216a",
     "agent_orchestrator/contracts/ids.py": "5b048365c5cd02a64e41776e09880585757183d174ee81a2ff29ed556064b358",
     "agent_orchestrator/contracts/models.py": "9a9382601cc3927c1e5e0fb2b7bc78af68964fe3b7de54b079127f3a87b9ba31",
-    "agent_orchestrator/contracts/obligations.py": "ce2acaaf753f335cfb68a64ee595605b8b1eeab95a167f02aa65852324e32308",
+    "agent_orchestrator/contracts/obligations.py": "1e6c9e8707b1cfb1dd6fcf7d997750818095a7c4c080c1f4a0eaf4bd35b69594",
     "agent_orchestrator/contracts/operation_completion.py": "e3a42845ddc15782522febeb9533d8ec7bb11ebb7705f3285762e99012611287",
     "agent_orchestrator/contracts/operation_intents.py": "60cc3c8831aa8d4406b05ff11ba692c5678648dde0366647090ea0f5a96b5c9e",
     "agent_orchestrator/contracts/operation_payloads.py": "2dcd96ba2a6e3070f534738cf3b8af22fc934a760e6d46421c669fa5eec4b65a",
@@ -154,7 +154,7 @@
     "agent_orchestrator/memory/verified_knowledge.py": "7106a3f7229058a47bf698ef0eb81fc9fda097d23c3f73f1e37ee48c776ed600",
     "agent_orchestrator/observability/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/observability/business_replay.py": "e347b75a01f49c2b272d0857250574fa5c93f654e5e6a112db035cc0029ed6d1",
-    "agent_orchestrator/observability/business_replay_inventory.json": "660f0f47cf16d3b0b05e167c744cda5e5d6b623ca20c60d07c529402516938be",
+    "agent_orchestrator/observability/business_replay_inventory.json": "10de653cf4f47f0cea2e5b127499a5dbbfa42c7046bbdc30742b462a97c85307",
     "agent_orchestrator/observability/lineage.py": "58e99b7b72b2ec486a79a004d18c1a3b94ed954482cce08f4b39a427a4c09dfd",
     "agent_orchestrator/observability/metrics.py": "f14af02fdef1fb14eadcdd4499e2c77d605a6d94bb7964d6181c2cea874fe064",
     "agent_orchestrator/observability/replay.py": "74f13766bb537b505461ee301ab42ce3d660dd23b58c5650f2ffa06cedb6b7b6",
@@ -386,7 +386,7 @@
     "agent_orchestrator/storage/htn_store.py": "211ec15e774517280327155901da9b957bf3a2878228141c5fd59a26bf66a94a",
     "agent_orchestrator/storage/method_evaluation_schema.py": "086bd0cc6df81c8f03ab3fa8f6071cc9ca5816b5a1e3b2bed1b6a51f67983e94",
     "agent_orchestrator/storage/method_evaluation_store.py": "bc32ab5f48b65c1af313bed5bcf9c6df15c493f7d0b8305645581d39f14f624c",
-    "agent_orchestrator/storage/obligation_store.py": "1e5a5b6757e4ff378f1f963a7453a29d44231456216968af311a7e65dcd66b48",
+    "agent_orchestrator/storage/obligation_store.py": "84f47e72aafe0e7d4a20db04f318e89e66627b455d88c830ff3d4408806083d8",
     "agent_orchestrator/storage/operation_completion_schema.py": "bd6d6cd0aeeca77c8ce1246c9b0018bf70e919da2854cf6e7b196aa03455e0e8",
     "agent_orchestrator/storage/operation_completion_store.py": "b043e77f1baac15748884aeb55ba8096e06920d6dc4ed6c0c4a71b0b77b25ae8",
     "agent_orchestrator/storage/operation_intent_store.py": "01dc65b4177302995d2c5040f2687e8d4b56837972f984d4e9307f72b672ffc9",

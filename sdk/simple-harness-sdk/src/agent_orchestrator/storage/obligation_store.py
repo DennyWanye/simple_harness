@@ -3,8 +3,8 @@
 
 """The durable twin of :class:`~agent_orchestrator.contracts.obligations.ObligationLedger`.
 
-The in-memory ledger fixes the *arithmetic* of a duty (§6.1, §6.4): failures,
-spend and recursion fuel are keyed on ``obligation_id`` alone, and the operations
+The in-memory ledger fixes the *arithmetic* of a duty (§6.1, §6.4): demand and
+recursion fuel are keyed on ``obligation_id`` alone, and the operations
 that change the shape of the work — renaming a task, swapping a method, handing
 it to another agent — are recorded as history without moving a counter.  This
 module writes exactly the same arithmetic to ``orchestrator.db``.
@@ -16,8 +16,7 @@ Two rules are load-bearing here and are tested:
   the row byte-for-byte as it was.  A caller that retries after a rejected call
   must not find half of it applied.
 * **Nothing resets a counter.**  Only an explicitly new ``obligation_id`` starts a
-  fresh allowance; :meth:`ObligationStore.persist` never lowers a stored counter
-  that the ledger does not track (``spent_tokens``).
+  fresh allowance.
 
 The store owns no connection: it composes an existing :class:`Store` and runs
 inside that store's ``transaction()``, so an obligation write and the plan write
@@ -87,9 +86,8 @@ class ObligationStore:
                 connection.execute(
                     "INSERT INTO obligations(mission_id,obligation_id,goal_signature_id,scope,"
                     "requiredness,lifecycle,resolution_ref,parent_obligation_id,budget_lineage_ref,"
-                    "failure_count,spent_tokens,spent_attempts,fuel_limit,"
-                    "fuel_used,fuel_remaining,obligation_json,created_at,updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,0,0,0,?,0,?,?,?,?)",
+                    "fuel_limit,fuel_used,fuel_remaining,obligation_json,created_at,updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)",
                     (
                         obligation.mission_id,
                         str(obligation.obligation_id),
@@ -140,9 +138,9 @@ class ObligationStore:
         row = self._row(mission_id, target)
         return ObligationAccountView(
             obligation_id=ObligationId(row["obligation_id"]),
-            failure_count=int(row["failure_count"]),
-            consumed_attempts=int(row["spent_attempts"]),
-            consumed_tokens=int(row["spent_tokens"]),
+            failure_count=0,
+            consumed_attempts=0,
+            consumed_tokens=0,
             has_admitted_demand=bool(row["demand_admitted"]),
             fuel_limit=int(row["fuel_limit"]),
             fuel_used=int(row["fuel_used"]),
@@ -165,60 +163,6 @@ class ObligationStore:
             (identifier(mission_id, "mission_id"), str(_obligation_id(target, "obligation_id"))),
         ).fetchone()
         return row is not None
-
-    def spent_tokens(self, mission_id: str, target: ObligationId) -> int:
-        """The token axis, read on its own.  Same value as ``account().consumed_tokens``."""
-
-        return int(self._row(mission_id, target)["spent_tokens"])
-
-    # ------------------------------------------------------------------ accumulation
-    def record_failure(self, mission_id: str, target: ObligationId, *, count: int = 1) -> int:
-        """§6.1: failures accrue against the duty, not against a task name."""
-
-        steps = index(count, "count", minimum=1)
-        mission = identifier(mission_id, "mission_id")
-        duty = str(_obligation_id(target, "obligation_id"))
-        # Relative, inside the write transaction: reading the count first and writing
-        # the sum back would lose a concurrent writer's failure — exactly the kind of
-        # "the retry allowance looks fresh" bug §6.1 exists to prevent.
-        with self._store.transaction() as connection:
-            cursor = connection.execute(
-                "UPDATE obligations SET failure_count = failure_count + ?, updated_at = ?"
-                " WHERE mission_id = ? AND obligation_id = ?",
-                (steps, self._store.now, mission, duty),
-            )
-            if cursor.rowcount == 0:
-                raise StoreConflict(f"obligation {duty} is not registered in mission {mission}")
-            row = connection.execute(
-                "SELECT failure_count FROM obligations WHERE mission_id = ? AND obligation_id = ?",
-                (mission, duty),
-            ).fetchone()
-        return int(row[0])
-
-    def record_spend(
-        self,
-        mission_id: str,
-        target: ObligationId,
-        *,
-        attempts: int = 0,
-        tokens: int = 0,
-    ) -> ObligationAccountView:
-        """Accumulate spend.  Every argument is validated before the row is touched."""
-
-        tries = index(attempts, "attempts")
-        used_tokens = index(tokens, "tokens")
-        mission = identifier(mission_id, "mission_id")
-        duty = str(_obligation_id(target, "obligation_id"))
-        with self._store.transaction() as connection:
-            cursor = connection.execute(
-                "UPDATE obligations SET"
-                " spent_attempts = spent_attempts + ?, spent_tokens = spent_tokens + ?,"
-                " updated_at = ? WHERE mission_id = ? AND obligation_id = ?",
-                (tries, used_tokens, self._store.now, mission, duty),
-            )
-            if cursor.rowcount == 0:
-                raise StoreConflict(f"obligation {duty} is not registered in mission {mission}")
-            return self.account(mission, target)
 
     def note_shape_change(
         self, mission_id: str, target: ObligationId, change: ShapeChange, *, detail: str
@@ -507,8 +451,8 @@ class ObligationStore:
         mission = identifier(mission_id, "mission_id")
         ledger = ObligationLedger()
         rows = self._store.connection.execute(
-            "SELECT obligation_id, obligation_json, fuel_limit, failure_count,"
-            " spent_attempts, spent_tokens, demand_admitted, lifecycle, resolution_ref"
+            "SELECT obligation_id, obligation_json, fuel_limit,"
+            " demand_admitted, lifecycle, resolution_ref"
             " FROM obligations WHERE mission_id = ? ORDER BY created_at, obligation_id",
             (mission,),
         ).fetchall()
@@ -516,13 +460,6 @@ class ObligationStore:
             duty = Obligation.from_json(json.loads(row["obligation_json"]))
             ledger.register(duty, recursion_fuel=int(row["fuel_limit"]))
             target = duty.obligation_id
-            if int(row["failure_count"]):
-                ledger.record_failure(target, count=int(row["failure_count"]))
-            ledger.record_spend(
-                target,
-                attempts=int(row["spent_attempts"]),
-                tokens=int(row["spent_tokens"]),
-            )
             for expansion in self.expansions(mission, target):
                 ledger.consume_fuel(target, expansion=expansion)
             for change, detail in self.shape_changes(mission, target):
@@ -536,12 +473,7 @@ class ObligationStore:
         return ledger
 
     def persist(self, ledger: ObligationLedger) -> tuple[ObligationId, ...]:
-        """Write a ledger back.  Unknown duties are inserted, known ones take its counters.
-
-        Both spend axes round-trip, ``spent_tokens`` included: the ledger now
-        carries tokens, so writing back what :meth:`load_ledger` produced restores
-        exactly what was read, and a caller that never touched tokens cannot zero them.
-        """
+        """Write a ledger back.  Unknown duties are inserted, known ones take its counters."""
 
         if not isinstance(ledger, ObligationLedger):
             raise StoreConflict("persist expects an ObligationLedger")
@@ -554,15 +486,11 @@ class ObligationStore:
                 connection.execute(
                     "INSERT INTO obligations(mission_id,obligation_id,goal_signature_id,scope,"
                     "requiredness,lifecycle,resolution_ref,parent_obligation_id,"
-                    "budget_lineage_ref,failure_count,spent_tokens,"
-                    "spent_attempts,fuel_limit,fuel_used,fuel_remaining,demand_admitted,"
+                    "budget_lineage_ref,fuel_limit,fuel_used,fuel_remaining,demand_admitted,"
                     "obligation_json,created_at,updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT(mission_id,obligation_id) DO UPDATE SET"
                     " lifecycle = excluded.lifecycle, resolution_ref = excluded.resolution_ref,"
-                    " failure_count = excluded.failure_count,"
-                    " spent_tokens = excluded.spent_tokens,"
-                    " spent_attempts = excluded.spent_attempts,"
                     " fuel_limit = excluded.fuel_limit, fuel_used = excluded.fuel_used,"
                     " fuel_remaining = excluded.fuel_remaining,"
                     " demand_admitted = excluded.demand_admitted,"
@@ -581,9 +509,6 @@ class ObligationStore:
                             else str(duty.parent_obligation_id)
                         ),
                         duty.budget_lineage_ref,
-                        view.failure_count,
-                        view.consumed_tokens,
-                        view.consumed_attempts,
                         view.fuel_limit,
                         view.fuel_used,
                         view.remaining_fuel,

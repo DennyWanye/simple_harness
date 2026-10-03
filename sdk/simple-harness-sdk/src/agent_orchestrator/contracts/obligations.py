@@ -6,9 +6,10 @@
 An :class:`Obligation` is the duty that survives re-planning.  Splitting a task,
 swapping a method, renaming a goal or handing the work to a different agent are
 all changes of *how* the duty is discharged; none of them mints a fresh retry
-allowance.  The ledger therefore keys failure counts, spend and recursion fuel on
+allowance.  The ledger therefore keys recursion fuel and demand on
 ``obligation_id`` alone, and every "the work changed shape" operation is recorded
-as history that leaves the counters where they were.
+as history that leaves the counters where they were.  Failures and spend are not
+kept on the duty: they are recorded on the attempts and settlements themselves.
 
 Recursion fuel follows the same rule (§6.4 v1.2): it is counted per obligation,
 not per ``goal signature + parameters``, and running out is ``BOUND_REACHED`` —
@@ -301,13 +302,16 @@ class ExpansionRecord:
 
 @dataclass(frozen=True, slots=True)
 class ObligationAccountView:
-    """An immutable read of one obligation's accumulated cost and remaining fuel."""
+    """An immutable read of one obligation's standing and remaining fuel.
+
+    ``failure_count`` / ``consumed_attempts`` / ``consumed_tokens`` are not stored on
+    the duty: nothing records them per obligation, so every reader fills them with 0
+    until they are derived at read time from the attempts and settlements.
+    """
 
     obligation_id: ObligationId
     failure_count: int
     consumed_attempts: int
-    #: Tokens spent against this duty.  Attempts and tokens are separate axes.
-    #: ``storage.obligation_store`` persists this as ``spent_tokens``.
     consumed_tokens: int = 0
     #: Whether a demand for this duty is currently admitted (TG decision 9).  An
     #: active share needs a live demand; withdrawing the last one releases the
@@ -356,11 +360,8 @@ class _Account:
     """Mutable ledger row.  Only :class:`ObligationLedger` touches it."""
 
     __slots__ = (
-        "consumed_attempts",
-        "consumed_tokens",
         "demand_admitted",
         "expansion_keys",
-        "failure_count",
         "fuel_limit",
         "fuel_used",
         "lifecycle",
@@ -373,9 +374,6 @@ class _Account:
         self.obligation = obligation
         self.fuel_limit = fuel_limit
         self.fuel_used = 0
-        self.failure_count = 0
-        self.consumed_attempts = 0
-        self.consumed_tokens = 0
         self.demand_admitted = False
         self.expansion_keys: list[tuple[str, str]] = []
         self.shape_changes: list[tuple[ShapeChange, str]] = []
@@ -384,7 +382,7 @@ class _Account:
 
 
 class ObligationLedger:
-    """A pure in-memory ledger of duties, their accumulated cost and their fuel.
+    """A pure in-memory ledger of duties, their demand and their recursion fuel.
 
     There is no store here and no transaction: P1.2 persists the same counters.
     What this class fixes is the *arithmetic* — in particular that nothing except
@@ -509,9 +507,9 @@ class ObligationLedger:
         account = self._require(target)
         return ObligationAccountView(
             obligation_id=account.obligation.obligation_id,
-            failure_count=account.failure_count,
-            consumed_attempts=account.consumed_attempts,
-            consumed_tokens=account.consumed_tokens,
+            failure_count=0,
+            consumed_attempts=0,
+            consumed_tokens=0,
             has_admitted_demand=account.demand_admitted,
             fuel_limit=account.fuel_limit,
             fuel_used=account.fuel_used,
@@ -524,36 +522,7 @@ class ObligationLedger:
     def obligation_ids(self) -> tuple[ObligationId, ...]:
         return tuple(self._accounts)
 
-    # -- accumulation ---------------------------------------------------------------
-
-    def record_failure(self, target: ObligationId, *, count: int = 1) -> int:
-        """§6.1: failures accrue against the duty, not against a task name."""
-
-        account = self._require(target)
-        account.failure_count += index(count, "count", minimum=1)
-        return account.failure_count
-
-    def record_spend(
-        self,
-        target: ObligationId,
-        *,
-        attempts: int = 0,
-        tokens: int = 0,
-    ) -> ObligationAccountView:
-        """Accrue spend against the duty on both axes at once.
-
-        Attempts and tokens are separate ceilings and are reported separately.
-        """
-
-        account = self._require(target)
-        # Validate every argument before touching the row: a rejected call must
-        # leave the ledger exactly as it was, or a caller that retries after a
-        # validation error would double-count the half that did land.
-        tries = index(attempts, "attempts")
-        spent_tokens = index(tokens, "tokens")
-        account.consumed_attempts += tries
-        account.consumed_tokens += spent_tokens
-        return self.account(target)
+    # -- demand ---------------------------------------------------------------------
 
     def admit_demand(self, target: ObligationId) -> ObligationAccountView:
         """TG decision 9: record that a live consumer is sharing this duty's work.

@@ -1303,8 +1303,6 @@
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.admit_demand",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.register",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.set_lifecycle",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.withdraw_demand"
@@ -1316,9 +1314,7 @@
     "PlanRevisionCommitted"
    ],
    "gaps": [
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
    ]
   },
   "observations": {
