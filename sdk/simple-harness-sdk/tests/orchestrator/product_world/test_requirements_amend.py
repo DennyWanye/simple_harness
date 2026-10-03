@@ -131,6 +131,10 @@ def test_amend_writes_everything_in_one_transaction(tmp_path):
             again = amend(world, mission_id, [{"op": "remove", "criterion_id": "c-user-4"},
                                               {"op": "add", "statement": "file:e.md"}], command_id="amend-2")
             assert again["changes"]["added"] == ["c-user-5"]
+            # 删掉最后一条、下一次再加：编号按"历来用过的最大号"往上走，不回头用 c-user-5
+            amend(world, mission_id, [{"op": "remove", "criterion_id": "c-user-5"}], command_id="amend-3")
+            later = amend(world, mission_id, [{"op": "add", "statement": "file:f.md"}], command_id="amend-4")
+            assert later["changes"]["added"] == ["c-user-6"]
 
     asyncio.run(case())
 
@@ -418,5 +422,115 @@ def test_kept_old_step_is_reported_not_rerun(tmp_path):
             assert row["detail_codes"] == ["ACCEPTED_UNDER_OLD_REQUIREMENTS"]
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
+
+    asyncio.run(case())
+
+
+def test_inflight_reply_and_pending_question_after_amend(tmp_path):
+    """①规划器作答期间用户改了要求：那份回复按"请求过期"退回，不算它答错。
+    ②根终审判不下来、裁决卡等用户时改要求：题目作废（它问的是旧版要求下的事），任务按新版重排后完成。"""
+    from agent_orchestrator.contracts.error_table import refusal_charges_planner
+    from agent_orchestrator.orchestrator.event_handler import _refusal_codes
+    from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
+    from agent_orchestrator.testing.scripted_replies import decision, review_input, review_reply
+
+    holder: dict[str, Any] = {}
+    seen: dict[str, Any] = {}
+    replan = replanning_planner(seen)
+    state = {"amended_inflight": False, "final_reviews": 0}
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        if not state["amended_inflight"]:
+            state["amended_inflight"] = True  # ① 作答期间改要求
+            amend(holder["world"], holder["mission_id"], [{"op": "add", "statement": "file:b.md"}],
+                  command_id="amend-inflight")
+        if any(entry["request"].get("trigger_source") == "REQUIREMENTS_UPDATE"
+               for entry in package.get("repair_requests") or ()) and any(
+                   item["form"] == "compound" and item.get("adopted_method") for item in package["views"]["goals"]):
+            return replan(request)
+        contexts = package.get("method_proposal_contexts") or []
+        selection = (package.get("method_selection") or [{}])[0]
+        if selection.get("applicable"):
+            chosen = selection["applicable"][0]
+            goal = next(item for item in package["views"]["goals"] if item["open"])
+            return decision(goal["subject_key"], "REFINE", {
+                "method_ref": {"kind": "method", "id": chosen["method_id"],
+                               "semantic_revision": chosen["method_version"],
+                               "content_hash": chosen["method_content_hash"]},
+                "bindings": dict(selection.get("bindings") or goal["params"])}, "采用通过审阅的做法。")
+        return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+            "method": parallel_method(contexts[0]), "rationale": "每条要求一步。"}}, "每条要求一步。")
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        if str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL":
+            state["final_reviews"] += 1
+            if state["final_reviews"] <= 2:
+                return "我看过了，没有问题。"  # 回复回来了但不能用：两次之后记"判不下来"并问人
+        return review_reply(data)
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
+            mission_id = world.create({"goal": "写 a.md", "idempotency_key": "amend-inflight-question",
+                                       "success_criteria": ["file:a.md"]})["mission_id"]
+            holder.update(world=world, mission_id=mission_id)
+            humans = PlanningHumanStore(world.store)
+            for _ in range(30):
+                await world.drain(timeout=20)
+                if any(row["state"] == "PENDING" for row in humans.list(mission_id)):
+                    break
+            events = list(world.store.list_events(mission_id))
+            stale = [e for e in events if e.type == "PlanningRejected" and "REQUEST_BINDING_STALE" in _refusal_codes(e)]
+            assert len(stale) == 1 and not refusal_charges_planner(_refusal_codes(stale[0]))  # ①
+            [question] = [row for row in humans.list(mission_id) if row["state"] == "PENDING"]
+            assert str(question["decision_id"]).startswith("adjudicate-root:")
+            amend(world, mission_id, [{"op": "add", "statement": "file:c.md"}], command_id="amend-question")  # ②
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert humans.get(question["decision_id"])["state"] == "STALE"
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            [judged] = [e.payload for e in world.store.list_events(mission_id) if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:c.md"]
+
+    asyncio.run(case())
+
+
+def test_knowledge_goes_stale_when_requirements_are_amended(tmp_path):
+    """第 1 步的结论被审阅员确认入库。用户改要求的那一刻它就读成"已过时"（它的依据是按旧版通过的验收）；
+    新计划提交、任务完成后仍是过时。判定只有一处：完成度读取。"""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    from agent_orchestrator.memory.knowledge_standing import knowledge_standing
+
+    spec = importlib.util.spec_from_file_location(
+        "_knowledge_script", Path(__file__).with_name("test_knowledge_confirm.py"))
+    script = importlib.util.module_from_spec(spec)
+    sys.modules["_knowledge_script"] = script
+    spec.loader.exec_module(script)
+    seen: dict[str, Any] = {}
+
+    async def case():
+        provider = SlowSecondStep(planner=replanning_planner(seen), worker=script.two_claims,
+                                  reviewer=script.confirming(script.first_claim_by_artifact))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-knowledge",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            store = world.store
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if store.list_knowledge(mission_id):
+                    break
+            [record] = store.list_knowledge(mission_id)
+            assert knowledge_standing(store, record) == "CURRENT"
+            amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            assert knowledge_standing(store, record) == "STALE:step_no_longer_rests_on_this_acceptance"
+            provider.go.set()
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            assert knowledge_standing(store, store.get_knowledge(record.id)).startswith("STALE:")
 
     asyncio.run(case())
