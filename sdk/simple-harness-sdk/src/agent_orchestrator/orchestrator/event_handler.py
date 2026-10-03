@@ -1491,6 +1491,22 @@ class Orchestrator:
             )
             self._note(f"mission {mission.id}: {error} → stopped")
             return True
+        from ..storage.taskgraph_store import taskgraph_enabled
+        from .assurance_final_writer import is_assured
+        if not taskgraph_enabled(self.store, mission.id) or not is_assured(self.store, mission.id):
+            # 2026-10-03 (A′ release review): a Mission of a development library created
+            # before every Mission was TaskGraph-bound and assured at creation is ended
+            # here, by name, never served nor allowed to stop the loop for the others.
+            if mission.status is MissionStatus.CREATED:
+                self.commit.begin_planning(mission.id)
+            self._stop_planning_round(
+                mission.id,
+                reason="unsupported_unbound_mission",
+                detail={"error": "created before every Mission was TaskGraph-bound and assured"},
+                stop_reason=MissionStopReason.PLANNING_FAILED,
+            )
+            self._note(f"mission {mission.id}: not TaskGraph-bound/assured at creation → stopped")
+            return True
         from .planning_backend_runtime import frozen_deployment_conflict
         from .planning_protocol_binding import current_planning_protocol
 
@@ -1619,8 +1635,15 @@ class Orchestrator:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return
-        from ..storage.taskgraph_store import require_bound
-        require_bound(self.store, mission_id)
+        from ..storage.taskgraph_store import taskgraph_enabled
+        if not taskgraph_enabled(self.store, mission_id):
+            # An unbound Mission of an older development library (stopped by name by the
+            # contract gate): its runtime history is not read through the TaskGraph, so
+            # its reservations stay held — never settled as known zero usage.
+            for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"):
+                if intent.mission_id == mission_id:
+                    self._settle_intent(intent, "FAILED")
+            return
         from .taskgraph_runtime_imports import TaskGraphRuntimeImports
         from ..runtime.planning_operations import SourceUnavailable
         reader = TaskGraphRuntimeImports(self)
@@ -1954,17 +1977,22 @@ class Orchestrator:
                 raise ContractError(f"action criterion {criterion!r} refused: {decision.refused}")
 
     def _domain_unreadable(self, mission_id: str) -> bool:
-        """A Mission whose frozen domain this build cannot read (another profile schema).
+        """A Mission this build does not serve: a frozen domain it cannot read (another
+        profile schema), or one created before every Mission was TaskGraph-bound and
+        assured at creation (A′ release review 2026-10-03).
 
-        Startup binding and recovery read the frozen domain; such a Mission is left
-        unbound here and stopped by name by the loop's contract gate in its first round,
-        instead of taking ``__aenter__`` / ``recover`` down for every Mission.
+        Startup binding and recovery read the frozen domain and the TaskGraph; such a
+        Mission is left unbound here and stopped by name by the loop's contract gate in
+        its first round, instead of taking ``__aenter__`` / ``recover`` down for every
+        Mission.
         """
+        from ..storage.taskgraph_store import taskgraph_enabled
+        from .assurance_final_writer import is_assured
         try:
             self.commit.domain_for(mission_id)
         except CommitRejected:
             return True
-        return False
+        return not taskgraph_enabled(self.store, mission_id) or not is_assured(self.store, mission_id)
 
     def _bind_startup_tools(self) -> None:
         """Reconstruct frozen tool authority before SDK automatic recovery starts."""

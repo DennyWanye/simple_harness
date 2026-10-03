@@ -228,8 +228,11 @@ class DeploymentDuties:
                 if mission is None or str(getattr(mission.status, "value", mission.status)) in TERMINAL:
                     unassured.add(mid)  # a finished Mission needs no new policy
                     continue
+                from ..storage.taskgraph_store import taskgraph_enabled
                 try:
-                    if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
+                    # A global scan skips an older unbound Mission of a development library;
+                    # the loop's contract gate stops it by name (2026-10-03).
+                    if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1" or not taskgraph_enabled(store, mid):
                         unassured.add(mid)
                         continue
                 except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
