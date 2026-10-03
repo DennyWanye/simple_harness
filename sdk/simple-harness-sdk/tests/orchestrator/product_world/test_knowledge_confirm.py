@@ -104,3 +104,81 @@ def test_confirmed_claim_becomes_verified_knowledge(tmp_path):
             await context.__aexit__(None, None, None)
 
     asyncio.run(case())
+
+
+def test_confirmation_without_independent_evidence_not_upgraded(tmp_path):
+    """确认只引审查对象自己（结果信封）→ 不入库：结果不能当自己结论的证明。"""
+
+    def only_the_result(data: dict[str, Any]) -> list[dict[str, Any]]:
+        listed = data["package"]["claims_to_confirm"]
+        return [{"claim_id": listed[0]["claim_id"], "confirmed": True,
+                 "evidence_ids": labels(data, "result")[:1], "reason": "执行者自己是这么说的。"}]
+
+    async def case():
+        context, mission_id, (world, mission) = await _run(tmp_path, confirming(only_the_result), "kn-self")
+        try:
+            assert mission.status.value == "COMPLETED", mission.final_report
+            assert world.store.list_knowledge(mission_id) == []
+        finally:
+            await context.__aexit__(None, None, None)
+
+    asyncio.run(case())
+
+
+def test_confirmation_in_a_review_that_did_not_pass_is_not_knowledge(tmp_path):
+    """整体结论是"返工"的那次审阅里确认的结论不入库。"""
+    calls = {"n": 0}
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        if str((data.get("package") or {}).get("purpose")) != "TASK_CONTENT":
+            return review_reply(data)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            body = json.loads(review_reply(data, verdict="REWORK", grade="FAIL", reason="内容不够"))
+            body["claims"] = first_claim_by_artifact(data)
+            return json.dumps(body, ensure_ascii=False)
+        return review_reply(data)
+
+    async def case():
+        context, mission_id, (world, mission) = await _run(tmp_path, reviewer, "kn-rework")
+        try:
+            # 返工之后怎么走不是这条用例的事（脚本规划器不接修复轮）；只看那次确认没有入库
+            assert calls["n"] >= 1 and world.store.list_knowledge(mission_id) == []
+            assert not [claim for claim in world.store.list_mission_claims(mission_id)
+                        if str(claim.status) == "VERIFIED"]
+        finally:
+            await context.__aexit__(None, None, None)
+
+    asyncio.run(case())
+
+
+def test_person_pass_on_inconclusive_upgrades_confirmed_claims(tmp_path):
+    """两位审阅员都判不下来、但逐条确认了第 1 条；用户复核"通过" → 这条才入库，并记着人的裁决。"""
+
+    async def case():
+        reviewer = confirming(first_claim_by_artifact, verdict="INCONCLUSIVE", grade="UNKNOWN")
+        context = product_world(tmp_path / "root", LayeredScriptedProvider(worker=two_claims, reviewer=reviewer))
+        world = await context.__aenter__()
+        try:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "kn-person"})["mission_id"]
+            pending: list[dict[str, Any]] = []
+            for _ in range(20):
+                await world.drain()
+                pending = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                if pending:
+                    break
+            assert len(pending) == 1 and world.store.list_knowledge(mission_id) == []
+            world.control.decide(pending[0]["request_id"], "review_pass", note="我看过，合格")
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            assert mission.status.value == "COMPLETED", mission.final_report
+            [record] = world.store.list_knowledge(mission_id)
+            assert record.verifier["basis"] == "review_confirmed"
+            assert record.verifier["adjudication"]["decision"] == "pass"
+        finally:
+            await context.__aexit__(None, None, None)
+
+    asyncio.run(case())
