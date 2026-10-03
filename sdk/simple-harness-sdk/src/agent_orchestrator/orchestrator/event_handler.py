@@ -2421,6 +2421,11 @@ class Orchestrator:
         whether a named wait holds.
         """
 
+        if mission.id in self._unrecovered:
+            # Its recovery is still being retried and the rest of its round is skipped, so
+            # it cannot dispatch: that is a wait with its own bound (the round-fault cap),
+            # never a stall to confirm, ask the Planner about, or stop on.
+            return None
         new_mode = self._new_mode(mission)
         if new_mode is None:
             return None

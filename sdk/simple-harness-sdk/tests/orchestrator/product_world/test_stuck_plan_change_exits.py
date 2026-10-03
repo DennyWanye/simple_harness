@@ -86,6 +86,18 @@ def test_a_plan_change_stuck_behind_a_blocked_notification_has_two_exits(tmp_pat
                 view = None
                 for _ in range(900):
                     if not provider.late.is_set() and cancelled_by_convergence():
+                        if exit_ == "abandon":
+                            # 旧尝试的那次调用还没停下就点"放弃"：按名拒收，库里一行不多
+                            [early] = [item for item in reads.convergence(mission_id)["jobs"]
+                                       if item["state"] not in {"APPLIED", "ABANDONED"}]
+                            with pytest.raises(StoreError) as too_early:
+                                operator.abandon_convergence(
+                                    mission_id, early["job_id"], expected_version=early["row_version"],
+                                    command_id="click-too-early", reason="还没停下就点了")
+                            assert str(too_early.value) == "TASKGRAPH_CONVERGENCE_NOT_QUIESCENT"
+                            assert store.get_receipt("click-too-early") is None
+                            assert not [event for event in store.list_events(mission_id)
+                                        if event.trace_id == "click-too-early"]
                         provider.late.set()
                     view = reads.convergence(mission_id)
                     if view["blocked_notifications"]:

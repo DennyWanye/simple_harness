@@ -318,3 +318,16 @@ def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(t
                 "WHERE i.mission_id=? AND r.state='RESERVED'", (a,)).fetchall()
 
     asyncio.run(case())
+
+
+def test_a_mission_still_waiting_for_recovery_is_never_a_stall():
+    """核验阻断项：恢复还在重试的任务这一轮其余工作都被跳过，派不出步骤是在等恢复，不是停滞；
+    停滞的记录与确认共用 ``_idle_facts``，对它返回"不适用"，不问规划器、不判停。
+
+    **改坏检验**：去掉这条判断 → 走到读计划（替身上没有）→ 变红。"""
+    from types import SimpleNamespace
+
+    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+
+    fake = SimpleNamespace(_unrecovered={"m1"})
+    assert Orchestrator._idle_facts(fake, SimpleNamespace(id="m1")) is None

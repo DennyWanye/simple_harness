@@ -78,7 +78,7 @@
   - `SDK/orchestrator/planning_repair_requests.py`：加 `stall_asks_since_new_work(store, mission_id)`，数 `stalled:` 开头的修复请求里、序号在最后一条 `AttemptCreated` 事件之后的条数；`request_planner_for_stall` 加 `cap` 参数，到上限返回"不问"。
   - `SDK/orchestrator/event_handler.py:2672-2705`：传入 `self._config.max_planning_attempts`；判停时详情加 `stall_asks_without_new_work`、`cap`。
 - **上限**：3（`max_planning_attempts`）。
-- **用例（1 条）**：`T/full_target/test_stall_asks_planner_first.py::test_a_planner_that_keeps_reshaping_a_stalled_plan_stops_by_name`
+- **用例（2 条，2026-10-03 阶段评估改）**：`T/full_target/test_stall_asks_planner_first.py::test_stall_asks_are_counted_since_the_last_new_attempt`（计数只算最后一次新尝试之后的停滞请求）；`::test_a_stall_asked_about_too_often_without_new_work_stops_without_asking_again`（计数到 3 不再问，按"没有可派发的工作"停，详情带次数与上限）。改坏检验：去掉上限 → 第二条变红。整条循环在产品同形世界里造价高，不另写。
   - 造停滞：照本文件现有的办法，让最终审查的审阅员两次回复都不能用。
   - 脚本化规划器对每次停滞请求，都提交一个不派新尝试的改动。
   - 断言：规划器只被问 3 次；第 4 次停滞直接以"没有可派发的工作"停，详情次数为 3。
@@ -207,7 +207,7 @@
    - 之后额度预留按现有"结束 15 分钟后按上限结清"走完，`run()` 也能跑到空闲。
    - 如果连关意图都写不进去（库写不了），就继续等。
 
-**不在本次范围**：主循环每轮的全库扫描里，还有逐条导入迟到用量（`accounting_recovery.py:218-219` 调 `_import_hold`），它接的异常不含库错误。形状相同，但不在偏差单里，记入阶段 F 的故障切点清单一起核，本次不改。
+**不在本次范围**：主循环每轮的全库扫描里，还有逐条导入迟到用量（`accounting_recovery.py:218-219` 调 `_import_hold`），它接的异常不含库错误。形状相同，但不在偏差单里，改为阶段 C 第 0′ 条的代码项（2026-10-03 阶段 B 评估裁决：已知代码缺口不推给测试阶段）。
 
 ### 计划文字怎么改
 
@@ -224,7 +224,7 @@
   - `SDK/runtime/actions.py:216-230`：删 `reconcile`，`reconcile_one` 不动。
   - `SDK/orchestrator/failure_classes.py:158-161`：加 `SERVICE_TURN_IDENTITY_MISMATCH`。
 - **上限**：沿用 `NON_MODEL_FAILURE_CAP = 6`，加 `ROUND_FAULT_MIN_SECONDS`（120 秒）。不新造数字。
-- **用例（2 条，都放 `T/product_world/test_round_faults.py`）**
+- **用例（3 条，都在 `T/product_world/test_round_faults.py`，2026-10-03 阶段评估改）**：`test_a_fault_while_recovering_one_mission_does_not_stop_the_others`（恢复处注入库错误：`run()` 不抛、B 完成、A 记地点 `recover`、恢复前跳过其余工作、排除后完成）；`test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission`（启动绑定注入身份不符：服务照常起来，只停这一个任务，带码）；`test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled`（收尾一直出错到上限关调用、`run()` 回到空闲、预留按上限结清）。对账处与恢复共用同一个边界函数，不单独写用例，列入阶段 F 崩溃切点清单。注入用函数级替身模拟真实库错误与身份不符，不用两段式重开加触发器。（下面原两条用例描述作废。）
   1. `test_a_fault_while_restarting_one_mission_does_not_stop_the_others`，按出事地点参数化：恢复、对账、启动绑定。
      - 两个任务 A、B 都有在途工作，两段式重开同一个库。
      - 用触发器只挡 A 的那一种写入，手法同 `T/full_target/taskgraph_exec/test_commit_atomicity.py:51-58`。

@@ -188,52 +188,72 @@ def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_do
     outcome = asyncio.run(case())
     assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
     assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
-    # the lost review kept its one executor and its one call; a new round reviewed the redo
-    assert outcome["reviews"][0] == ("SUBMITTED", ["unknown"]), outcome["reviews"]
+    # the lost review kept its one call and was closed as interrupted once past the service
+    # bound (卡住裁决第 6 类); a new round reviewed the redo
+    assert outcome["reviews"][0] == ("FAILED", ["unknown"]), outcome["reviews"]
     assert ("SETTLED", ["succeeded"]) in outcome["reviews"][1:], outcome["reviews"]
     assert "VerificationFailed" in outcome["types"] and outcome["types"].count("AttemptCreated") == 2
 
 
-def test_a_method_review_on_an_unknown_outcome_keeps_its_original_call(tmp_path) -> None:
-    """The first review call (the proposed method's independent review) is lost after
-    hand-off.  Assurance §6.2: the review keeps its original executor — nothing is
-    re-sent — the wait is recorded once as "original call awaits reconciliation", and
-    its reservation stays held and counted.  (Whether such a wait should ever end on its
-    own is the open question reported with this migration.)"""
+def _method_reviews(world: Any, mission_id: str) -> list[Any]:
+    return [item for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
+            if item.mission_id == mission_id and ":assurance-method-plan:" in item.subject_id]
+
+
+def test_a_method_review_on_an_unknown_outcome_is_reopened_in_a_new_session(tmp_path) -> None:
+    """卡住裁决第 6 类：做法审阅的第一次调用交接后丢了（结果不明）。等过服务时限，原意图按
+    "被打断"收口（不扣次数、不重发原调用），新会话重开第二次，拿到结论，任务继续到完成。
+
+    **改坏检验**（收尾裁决）：审阅那一支改回"保留原调用一直等" → 任务停在规划中 → 变红。"""
 
     async def case() -> dict[str, Any]:
         provider = FaultyProvider({REVIEWER: [transport_loss]})
         async with product_world(tmp_path / "root", provider, **CONFIG) as world:
             mission_id = create(world, "p23f-method-review")
-            reconciliation = "AssuranceProviderReconciliationRequired"
-            assert await settle(world, mission_id, seconds=10,
-                                done=lambda: bool(events(world, mission_id, reconciliation)))
-            await settle(world, mission_id, seconds=10 * LIMIT)  # well past the bound
-            [review] = [item for item in world.store.list_intents("SUBMITTED")
-                        if item.mission_id == mission_id and ":assurance-method-plan:" in item.subject_id]
+            assert await settle(world, mission_id, seconds=40)
             return {
                 "status": status(world, mission_id),
                 "types": [item.type for item in events(world, mission_id)],
-                "waits": [dict(item.payload) for item in events(world, mission_id, reconciliation)],
-                "review": review,
-                "calls": invocations(world, review),
-                "reviewer_calls": provider.role_calls[REVIEWER],
-                "grant": [row["state"] for row in grants(world) if row["subject_id"] == review.subject_id],
-                "held": [item["subject_id"] for item in
-                         world.loop.commit.ledger.costs_report(mission_id)["held_reservations"]],
+                "reviews": [(item.state, [call["state"] for call in invocations(world, item)])
+                            for item in _method_reviews(world, mission_id)],
+                "reviewed": [dict(item.payload) for item in events(world, mission_id, "PlanningMethodReviewed")],
             }
 
     outcome = asyncio.run(case())
-    assert outcome["status"] == "PLANNING", outcome["types"][-10:]
-    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
-    assert outcome["reviewer_calls"] == 1, "a review is never re-sent"
-    assert [item["state"] for item in outcome["calls"]] == ["unknown"]
-    [wait] = outcome["waits"]
-    assert wait["reason"] == "ORIGINAL_PROVIDER_RECONCILIATION_REQUIRED"
-    assert wait["intent_id"] == outcome["review"].intent_id and wait["agent_id"] == outcome["review"].agent_id
-    assert outcome["grant"] == ["UNKNOWN"]
-    assert outcome["held"] == [outcome["review"].subject_id]
-    assert "PlanningMethodReviewed" not in outcome["types"] and "MissionFailed" not in outcome["types"]
+    assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
+    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"], "the lost call itself is never re-sent"
+    first, second = outcome["reviews"][:2]
+    assert first == ("FAILED", ["unknown"]), outcome["reviews"]
+    assert second == ("SETTLED", ["succeeded"]), outcome["reviews"]
+    assert [item["outcome"] for item in outcome["reviewed"]] == ["PASSED"], outcome["reviewed"]
+
+
+def test_a_method_review_that_never_answers_is_reported_as_no_verdict(tmp_path) -> None:
+    """做法审阅的两次调用都没回来：记"没有结论"，原因如实写"审阅调用没拿到回复"，交给规划器
+    （不说成审阅员判不了）。"""
+    from agent_orchestrator.testing.scripted_replies import review_input
+
+    class MethodReviewLost(FaultyProvider):
+        async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+            data = review_input(request)
+            if data is not None and str((data.get("package") or {}).get("purpose")) == "METHOD_PLAN":
+                self.faults.setdefault(REVIEWER, []).insert(0, transport_loss)
+            return await super().invoke(request, cancel=cancel)
+
+    async def case() -> dict[str, Any]:
+        async with product_world(tmp_path / "root", MethodReviewLost(), **CONFIG) as world:
+            mission_id = create(world, "p23f-method-review-never")
+            reviewed = lambda: events(world, mission_id, "PlanningMethodReviewed")  # noqa: E731
+            assert await settle(world, mission_id, seconds=40, done=lambda: bool(reviewed()))
+            return {"reviewed": [dict(item.payload) for item in reviewed()],
+                    "reviews": [(item.state, [call["state"] for call in invocations(world, item)])
+                                for item in _method_reviews(world, mission_id)]}
+
+    outcome = asyncio.run(case())
+    first = outcome["reviewed"][0]
+    assert first["outcome"] == "NO_VERDICT" and first["record_id"] is None, first
+    assert "got no reply 2 time(s)" in first["reason"], first
+    assert outcome["reviews"][:2] == [("FAILED", ["unknown"]), ("FAILED", ["unknown"])], outcome["reviews"]
 
 
 # ======================================================================================
