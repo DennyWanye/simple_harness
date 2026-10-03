@@ -46,6 +46,8 @@ MESSAGE_TYPES = (
     "mission_approval_decide",
     "mission_takeover",
     "mission_comment",
+    "mission_notices",
+    "mission_notice_ack",
     "mission_artifact_read",
     "mission_diagnostics",
     "mission_support_export",
@@ -264,6 +266,9 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_approval_decide": _decide,
     "mission_takeover": _takeover,
     "mission_comment": _comment,
+    # HTN 补齐阶段 B 第 1 条：主对话里的任务结束通知卡片；"已收到"只由人点
+    "mission_notices": lambda service, body: service.pending_notices(body),
+    "mission_notice_ack": lambda service, body: service.ack_notice(body),
     "mission_artifact_read": _artifact,
     "mission_diagnostics": _diagnostics,
     "mission_support_export": _support_export,

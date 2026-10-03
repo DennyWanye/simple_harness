@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ChatMissionCard } from "./ChatMissionCard";
+import { ChatMissionNotices } from "./ChatMissionNotices";
 import { missionIdFromToolResult } from "./chatMission";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
@@ -132,6 +133,10 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       </div>
     </div>
 
+    {/* HTN 补齐阶段 B 第 1 条：后台任务结束通知，人点"已收到"才算收到。 */}
+    {active && <div style={{ ...column, padding: `0 ${tokens.space.xl}px`, maxHeight: "25%", overflowY: "auto", flexShrink: 0 }}>
+      <ChatMissionNotices />
+    </div>}
     {/* 2026-09-25 UI 全量点击：授权卡以前不限高，多张时把消息区挤没、压在消息上。 */}
     {active && snapshot.primaryRef && <div style={{ ...column, padding: `0 ${tokens.space.xl}px`, maxHeight: "30%", overflowY: "auto", flexShrink: 0 }}>
       <PrimaryWorkspaceBindings port={primaryPort} primaryRef={snapshot.primaryRef}

@@ -19,7 +19,6 @@ be taken over).
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 import json
 import logging
 import os
@@ -178,9 +177,12 @@ class OrchestrationService:
         self._authorization_mode: str | None = None
         self.on_write: Callable[[], None] | None = None  # the change pump's poke
         # Assurance 1.1 (plan §13): the SDK deployment installed on the current
-        # Orchestrator lifetime, and the NOTIFY payloads it delivered (bounded).
+        # Orchestrator lifetime.
         self._assurance: Any = None
-        self._assurance_notices: deque[dict[str, Any]] = deque(maxlen=256)
+        # HTN 补齐阶段 B 第 1 条：任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
+        from .notices import MissionNotices
+
+        self._notices = MissionNotices(self.root)
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
         self._permission_mode_reader = permission_mode_reader
@@ -192,9 +194,10 @@ class OrchestrationService:
         from .hierarchical import ROOT_DUTY_PREFIX, ROOT_TASK_PREFIX, ROOT_TYPE, planning_world
 
         def notify(payload: Mapping[str, Any]) -> None:
-            # At-least-once local status transport: the change pump re-reads the Mission and
-            # pushes ``mission_changed``; the payload is retained for the status surface.
-            self._assurance_notices.append(dict(payload))
+            # At-least-once local status transport: the notice is kept (de-duplicated by
+            # event id) until the person acknowledges it in the main conversation; the
+            # change pump pushes ``mission_changed`` so the cards re-read.
+            self._notices.record(payload)
             self.wake()
 
         self._user_missions = UserMissionDeployment(
@@ -326,6 +329,7 @@ class OrchestrationService:
         )
         await self._orchestrator.__aenter__()
         self._bind_host_duties(self._orchestrator)
+        self._notices.backfill(self._orchestrator.store)
         self._taskgraph = self._user_missions.taskgraph
         self._assurance = self._user_missions.assurance
         self._control = MissionControlV1(
@@ -804,6 +808,7 @@ class OrchestrationService:
         # candidate leaves no runnable object; the existing driver retries rebuild.
         self._orchestrator = candidate
         self._bind_host_duties(candidate)
+        self._notices.backfill(candidate.store)
         self._control = control
         self._user_missions.bind(candidate, control)
         self._diagnostics_available = self._detect_diagnostics()
@@ -914,7 +919,6 @@ class OrchestrationService:
             "publish": dict(self._publish),
             "diagnostics_available": self._diagnostics_available,
             "assurance_available": self._assurance is not None,
-            "assurance_notices": len(self._assurance_notices),
             "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),
             "native_plane": (
@@ -1163,6 +1167,60 @@ class OrchestrationService:
         result = self._call("comment", target_id, text)
         self.wake()
         return result
+
+    # ------------------------------------------------------------ mission notices
+    def pending_notices(self, _body: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Notices the person has not acknowledged yet, newest last, with the Mission's
+        current status (a notice names the final event; the status is read now)."""
+
+        from .chat_tool import _STATUS_ZH
+
+        rows = []
+        for notice in self._notices.pending():
+            mission = self._orchestrator.store.get_mission(notice["mission_id"])
+            if mission is None:
+                continue
+            status = str(getattr(mission.status, "value", mission.status))
+            rows.append({
+                **notice,
+                "status": status,
+                "status_zh": _STATUS_ZH.get(status, status),
+                "goal": str(mission.goal or "")[:200],
+                "stop_reason": None if mission.stop_reason is None else str(mission.stop_reason),
+            })
+        return rows
+
+    def ack_notice(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """Only the person's click on the card in the main conversation reaches here."""
+
+        notice_id = body.get("notice_id")
+        if not isinstance(notice_id, str) or not notice_id:
+            from .notices import NoticeNotFound
+
+            raise NoticeNotFound("notice_id is required")
+        row = self._notices.ack(notice_id)
+        self.wake()
+        return row
+
+    def notice_context_text(self, *, limit: int = 3) -> str:
+        """A few lines for the main Agent's next turn: background tasks that ended and
+        that the person has not acknowledged yet.  Empty when there are none."""
+
+        try:
+            pending = self.pending_notices()
+        except Exception:  # noqa: BLE001 - the chat must never fail on a notice read
+            return ""
+        if not pending:
+            return ""
+        lines = [
+            f"- mission_id={row['mission_id']} status={row['status']} goal={row['goal'][:80]!r}"
+            + (f" stop_reason={row['stop_reason']}" if row["stop_reason"] else "")
+            for row in pending[-limit:]
+        ]
+        more = len(pending) - len(lines)
+        return ("\nHost task notices (background tasks that ended; the user has not acknowledged them "
+                "in this chat yet; use mission_status for details and tell the user when relevant):\n"
+                + "\n".join(lines) + (f"\n- …and {more} more" if more > 0 else ""))
 
     # ------------------------------------------------------------ reads
     def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:

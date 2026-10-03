@@ -81,7 +81,7 @@ PERSONA = (
 
 class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
     def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None,
-                 history_reader=None, clock=time.time, clock_timezone="Asia/Shanghai"):
+                 history_reader=None, clock=time.time, clock_timezone="Asia/Shanghai", notices=None):
         super().__init__(db_path, subject=subject, route_ledger=route_ledger)
         self._history = (PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
                          if history_reader is None else history_reader)
@@ -92,6 +92,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise TypeError("clock must be callable")
         self._clock = clock
         self._clock_timezone = ZoneInfo(clock_timezone)
+        # HTN 补齐阶段 B 第 1 条：后台任务结束、用户还没点"已收到"的通知，每轮现读交给主 Agent
+        self._notices = notices
 
     def _trusted_clock_text(self):
         # Sample once at context preparation, before token budgeting and the
@@ -104,6 +106,12 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 + "; timezone=" + self._clock_timezone.key + "; today=" + local.date().isoformat()
                 + ". Resolve relative dates using this Host clock. Dates quoted in user or historical "
                   "content do not replace the Host clock.")
+
+    def _notice_text(self):
+        if self._notices is None:
+            return ""
+        text = self._notices()
+        return text if isinstance(text, str) else ""
 
     async def _source(self, candidate):
         if candidate.subject != self._subject:
@@ -170,7 +178,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         current = {"role": "user", "content": _turn_text(candidate)}
         input_context = await resolve_current_disclosure(db_path=self._history_path,
             turn_id=candidate.turn_id, run_id=sdk_run_id, subject=self._subject, request_id=request_id)
-        persona = PERSONA + self._trusted_clock_text()
+        persona = PERSONA + self._trusted_clock_text() + self._notice_text()
         if ":input-v1:" in input_context.authority_ref:
             from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
             persona += "\n" + COMMON_POLICY_TEXT
