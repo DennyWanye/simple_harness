@@ -66,7 +66,6 @@ from agent_orchestrator.contracts.htn import (
     ScopeEpochRead,
     SemanticReadSet,
     SourceRevisionPolicy,
-    SupportSetRead,
     TaskForm,
     admit_method,
 )
@@ -282,11 +281,6 @@ def read_set(*, requirements_revision: int = 1) -> SemanticReadSet:
         ),
         observation_revisions=(),
         acceptance_revisions=(),
-        manager_epoch=2,
-        budget_grant_revision=3,
-        support_sets=(
-            SupportSetRead(support_set_id="support-1", revision=1, member_digest=HASH_C),
-        ),
         scope_epochs=(ScopeEpochRead(scope_id="mission-1", validity_epoch=4),),
         absences=(
             AbsenceRead(predicate="has-active-writer", scope_id="mission-1", range_revision=1),
@@ -1880,8 +1874,7 @@ def test_a_read_set_round_trips_and_indexes_every_subject(htn: HtnStore) -> None
     assert htn.get_read_set(MISSION, "proposal-1") == read_set()
     items = htn.list_read_set_items(MISSION, "proposal-1")
     kinds = {item["subject_type"] for item in items}
-    assert {"task", "method", "support_set", "scope_epoch", "absence"} <= kinds
-    assert {"requirements", "manager_epoch", "budget_grant_revision"} <= kinds
+    assert {"requirements", "task", "method", "scope_epoch", "absence"} <= kinds
     assert htn.read_set_consumers(MISSION, "task", "task-1") == ("proposal-1",)
 
 

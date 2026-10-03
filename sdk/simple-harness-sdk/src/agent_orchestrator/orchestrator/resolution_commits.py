@@ -181,7 +181,6 @@ class ResolutionPrincipal:
 
     principal_id: str
     scope_id: str = "mission"
-    manager_epoch: int = 0
 
     def __post_init__(self) -> None:
         if not str(self.principal_id).strip():
@@ -666,7 +665,7 @@ class ResolutionCommitsMixin:
                     f"{int(command.package.binding.requirements_revision)} and the command "
                     f"presents revision {int(command.requirements.revision)}",
                 )
-            self._check_reads(semantics, command.mission_id, command.read_set, principal)
+            self._check_reads(semantics, command.mission_id, command.read_set)
             from ..storage.assurance_store import AssuranceStore
 
             AssuranceStore(self._store).require_assured(command.mission_id)
@@ -1081,7 +1080,7 @@ class ResolutionCommitsMixin:
                     }
                 ),
             )
-            self._check_reads(semantics, command.mission_id, command.read_set, principal)
+            self._check_reads(semantics, command.mission_id, command.read_set)
             witness = None
             duties = ObligationStore(self._store)
             account = self._require_open_duty(duties, command.mission_id, resolution.obligation_id)
@@ -1778,40 +1777,21 @@ class ResolutionCommitsMixin:
         semantics: HtnStore,
         mission_id: str,
         read_set: SemanticReadSet,
-        principal: ResolutionPrincipal,
     ) -> None:
-        """AER §7: the manager epoch, then every channel of the read-set.
+        """AER §7: every channel of the read-set.
 
         The channel-by-channel work is :class:`~._read_set.SemanticReadSetChecker` —
         the same implementation ``plan_commits`` uses.  The P2.3c review found this
         method with a hand-written five-channel copy, which let three real changes
         through: a *refuted* observation (the FACT channel), a **revoked** authority
         (AUTHORITY) and a re-planned duty (OBLIGATION) all left the rows the copy
-        happened to look at byte-identical.  There is now one implementation and
-        eleven channels, and ``allow_task_control_channels`` is on here because an
-        accept command's read-set is the one
-        :func:`~..graph.eligibility.build_read_set` built, whose TASK lane namespaces
-        the two dispatch-control values.
-
-        The support-set entry is the reason this is not simply "re-read each evidence
-        row": adding a counter-observation leaves every positive support byte-identical
-        and only moves the set's member digest, so a commit that compared rows alone
-        would accept a review that never saw the refutation (AER scenario I02).
+        happened to look at byte-identical.  There is now one implementation, and
+        ``allow_task_control_channels`` is on here because an accept command's read-set
+        is the one :func:`~..graph.eligibility.build_read_set` built, whose TASK lane
+        namespaces the two dispatch-control values.  The validity epoch of each scope
+        the command read is one of those channels (``scope_epochs``).
         """
 
-        current_epoch = semantics.epoch(mission_id, principal.scope_id)
-        if int(read_set.manager_epoch) != current_epoch:
-            raise ResolutionCommitRejected(
-                "MANAGER_EPOCH_STALE",
-                f"scope {principal.scope_id!r} is at epoch {current_epoch}; the command was "
-                f"built at epoch {int(read_set.manager_epoch)}",
-            )
-        if int(principal.manager_epoch) != current_epoch:
-            raise ResolutionCommitRejected(
-                "MANAGER_EPOCH_STALE",
-                f"scope {principal.scope_id!r} is at epoch {current_epoch}; the principal "
-                f"holds epoch {int(principal.manager_epoch)}",
-            )
         checker = SemanticReadSetChecker(
             self._store,
             semantics,

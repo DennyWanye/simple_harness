@@ -407,7 +407,6 @@ class LeafAcceptanceAssembly:
                 "commit_goal_resolution out of its children's acceptances, never by a review "
                 "of its own (§6.3)"
             )
-        semantics = self.semantics
         from .scoped_content_review import read_task_content_projection
 
         # What is judged — criteria, layers, producer — is read back from the stored
@@ -513,7 +512,6 @@ class LeafAcceptanceAssembly:
         principal = ResolutionPrincipal(
             principal_id=self.reviewer_agent_id,
             scope_id=self.scope_id,
-            manager_epoch=semantics.epoch(mission_id, self.scope_id),
         )
         return self.commit.accept_review(command, principal)
 
@@ -715,7 +713,6 @@ class LeafAcceptanceAssembly:
         epoch = self.semantics.epoch(mission_id, self.scope_id)
         return SemanticReadSet(
             requirements_revision=int(revision.revision),
-            manager_epoch=epoch,
             scope_epochs=(ScopeEpochRead(scope_id=self.scope_id, validity_epoch=epoch),),
             goal_revisions=(
                 ReadItem(

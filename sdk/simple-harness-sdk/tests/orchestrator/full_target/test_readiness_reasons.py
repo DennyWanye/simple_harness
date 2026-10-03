@@ -84,7 +84,6 @@ from agent_orchestrator.contracts.htn import (
     ScopeEpochRead,
     SemanticReadSet,
     SourceRevisionPolicy,
-    SupportSetRead,
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
@@ -332,8 +331,6 @@ def plan_of(snapshot: TaskNetworkSnapshot | None = None, **overrides: object) ->
     fields: dict[str, object] = {
         "snapshot": snapshot if snapshot is not None else snapshot_of(),
         "requirements_revision": 11,
-        "manager_epoch": 2,
-        "budget_grant_revision": 3,
         "scope_epochs": {SCOPE: 9},
         "dispatch_generations": {OCC_B: 7, OCC_A: 0, OCC_ROOT: 0},
         "input_binding_revisions": {T_B: 4, T_A: 0, T_ROOT: 0},
@@ -379,7 +376,6 @@ def evidence_of(**overrides: object) -> EvidenceView:
     fields: dict[str, object] = {
         "witnesses": {DIGEST_START: witness()},
         "observer_available": True,
-        "support_sets": (SupportSetRead(support_set_id="ss-1", revision=4, member_digest=HASH_C),),
         "operation_range_revision": 6,
     }
     fields.update(overrides)
@@ -1103,8 +1099,6 @@ def test_the_report_carries_the_plan_it_judged_against() -> None:
 def test_the_report_read_set_records_what_was_actually_read() -> None:
     read_set = ready_report().read_set
     assert read_set.requirements_revision == 11
-    assert read_set.manager_epoch == 2
-    assert read_set.budget_grant_revision == 3
     assert any(item.id == str(T_B) for item in read_set.goal_revisions)
     assert any(item.id == str(MI_1) for item in read_set.method_revisions)
     assert any(item.id == "w-start" for item in read_set.observation_revisions)
@@ -1323,14 +1317,6 @@ def test_a_changed_requirements_revision_invalidates_a_cached_readiness() -> Non
     assert stale_after(ready_report(), replace(observed_now(), requirements_revision=12)) is True
 
 
-def test_a_changed_manager_epoch_invalidates_a_cached_readiness() -> None:
-    assert stale_after(ready_report(), replace(observed_now(), manager_epoch=3)) is True
-
-
-def test_a_changed_budget_grant_revision_invalidates_a_cached_readiness() -> None:
-    assert stale_after(ready_report(), replace(observed_now(), budget_grant_revision=4)) is True
-
-
 def test_a_changed_task_contract_revision_invalidates_a_cached_readiness() -> None:
     before = observed_now()
     current = replace(
@@ -1372,24 +1358,6 @@ def test_a_changed_acceptance_revision_invalidates_a_cached_readiness() -> None:
         acceptance_revisions=tuple(
             replace(item, content_hash=HASH_B) for item in before.acceptance_revisions
         ),
-    )
-    assert stale_after(ready_report(), current) is True
-
-
-def test_a_changed_support_set_digest_invalidates_a_cached_readiness() -> None:
-    current = replace(
-        observed_now(),
-        support_sets=(SupportSetRead(support_set_id="ss-1", revision=4, member_digest=HASH_D),),
-    )
-    assert stale_after(ready_report(), current) is True
-
-
-def test_a_changed_support_set_revision_alone_invalidates_a_cached_readiness() -> None:
-    """The members can be identical and the set still have been re-derived."""
-
-    current = replace(
-        observed_now(),
-        support_sets=(SupportSetRead(support_set_id="ss-1", revision=5, member_digest=HASH_C),),
     )
     assert stale_after(ready_report(), current) is True
 

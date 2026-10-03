@@ -4248,7 +4248,6 @@ class Orchestrator:
                     # closed as a different planner principal after a worker handoff.
                     principal_id=bound_planner,
                     scope_id="mission",
-                    manager_epoch=new_mode.semantics().epoch(mission.id, "mission"),
                 ),
                 policy=planning_policy_for_mission(self.store, mission.id),
                 now_ms=int(self.store.now * 1000),
@@ -6802,7 +6801,7 @@ class Orchestrator:
                     raise ContractError("SOURCE_UNAVAILABLE: TaskGraph preview assembly is missing")
                 source_principal = PlanPrincipal(
                     principal_id=context.authorization.planning_snapshot.planner_principal_id,
-                    scope_id="mission", manager_epoch=new_mode.semantics().epoch(mission.id, "mission"))
+                    scope_id="mission")
                 taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
                 from .repair_impact import read_repair_impact_indexes
                 from .planning_graph_repairs import graph_repair_sources
@@ -6989,7 +6988,6 @@ class Orchestrator:
                     else (intent.agent_id or self._owner)
                 ),
                 scope_id="mission",
-                manager_epoch=new_mode.semantics().epoch(mission.id, "mission"),
             )
             if preview_candidate is None:
                 # This branch is retained for durable-only/legacy adapters.  New
@@ -8884,8 +8882,7 @@ class Orchestrator:
         from ..storage.planning_human_store import PlanningHumanStore
 
         questions = PlanningHumanStore(self.store)
-        binding = {"plan_revision": current.plan_revision, "requirements_revision": current.requirements_revision,
-                   "manager_epoch": new_mode.semantics().epoch(mission.id, "mission")}
+        binding = {"plan_revision": current.plan_revision, "requirements_revision": current.requirements_revision}
         previous = None if repair_context is not None else questions.find_answered(
             mission.id, subject_key, payload.to_json().get("question"))
         if previous is not None:
@@ -9015,8 +9012,7 @@ class Orchestrator:
                     decision_id=decision_id, mission_id=mission.id, subject_key=subject_key,
                     payload=question,
                     request_binding={"plan_revision": 0 if plan is None else int(plan.revision),
-                                     "requirements_revision": 0 if requirements is None else int(requirements.revision),
-                                     "manager_epoch": htn.epoch(mission.id, "mission")},
+                                     "requirements_revision": 0 if requirements is None else int(requirements.revision)},
                     next_ordinal=self._next_planning_ordinal(mission.id),
                     repair_context={"kind": "review_adjudication", "record_id": str(record.record_id),
                                     "target_id": target_id, **dict(extra)})
@@ -9435,7 +9431,6 @@ class Orchestrator:
             principal=PlanPrincipal(
                 principal_id=self._owner,
                 scope_id="mission",
-                manager_epoch=semantics.epoch(mission.id, "mission"),
             ),
             command_id=f"{mission.id}:root-resolution",
             required_delivery_stage=required_stage,

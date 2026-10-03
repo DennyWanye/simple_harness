@@ -78,7 +78,6 @@ from ..contracts.htn import (
     ReleaseCondition,
     ScopeEpochRead,
     SemanticReadSet,
-    SupportSetRead,
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
@@ -278,8 +277,6 @@ class ActivePlanView:
     snapshot: TaskNetworkSnapshot
     mission_admits_work: bool = True
     requirements_revision: int = 0
-    manager_epoch: int = 0
-    budget_grant_revision: int = 0
     scope_epochs: Mapping[str, int] = field(default_factory=dict)
     dispatch_generations: Mapping[OccurrenceId, int] = field(default_factory=dict)
     input_binding_revisions: Mapping[TaskRef, int] = field(default_factory=dict)
@@ -298,8 +295,11 @@ class ActivePlanView:
         object.__setattr__(
             self, "mission_admits_work", flag(self.mission_admits_work, "plan.mission_admits_work")
         )
-        for name in ("requirements_revision", "manager_epoch", "budget_grant_revision"):
-            object.__setattr__(self, name, index(getattr(self, name), f"plan.{name}"))
+        object.__setattr__(
+            self,
+            "requirements_revision",
+            index(self.requirements_revision, "plan.requirements_revision"),
+        )
         object.__setattr__(
             self, "_projected", self.snapshot.execution_projection().projected_occurrences
         )
@@ -324,7 +324,7 @@ class ActivePlanView:
 
 @dataclass(frozen=True, slots=True)
 class EvidenceView:
-    """The facts side of the judgement: witnesses, observability, support sets.
+    """The facts side of the judgement: witnesses and observability.
 
     ``witnesses`` is keyed by ``PreconditionRef.condition_digest`` so a witness
     cannot be attached to a precondition it was not computed for.
@@ -334,7 +334,6 @@ class EvidenceView:
     #: False when the observation service could not be reached at all.  It is a
     #: separate answer from "the fact is unknown" (AER §8.2).
     observer_available: bool = True
-    support_sets: tuple[SupportSetRead, ...] = ()
     #: TG §11.2: "there is no conflicting writer" is itself a read, over a range
     #: that has a version.  Recorded in the report's read-set as an ``AbsenceRead``.
     operation_range_revision: int = 0
@@ -350,7 +349,6 @@ class EvidenceView:
             "operation_range_revision",
             index(self.operation_range_revision, "evidence.operation_range_revision"),
         )
-        object.__setattr__(self, "support_sets", tuple(self.support_sets))
 
 
 # --------------------------------------------------------------------------------------
@@ -1190,9 +1188,6 @@ def build_read_set(
         ),
         obligation_revisions=obligation_revisions,
         authority_revisions=authority_revisions,
-        manager_epoch=plan.manager_epoch,
-        budget_grant_revision=plan.budget_grant_revision,
-        support_sets=evidence.support_sets,
         scope_epochs=tuple(
             ScopeEpochRead(scope_id=scope, validity_epoch=plan.scope_epochs[scope])
             for scope in sorted(scope_ids)
@@ -1294,10 +1289,6 @@ def stale_after(report: ReadinessReport, current_versions: SemanticReadSet) -> b
     recorded = report.read_set
     if recorded.requirements_revision != current_versions.requirements_revision:
         return True
-    if recorded.manager_epoch != current_versions.manager_epoch:
-        return True
-    if recorded.budget_grant_revision != current_versions.budget_grant_revision:
-        return True
     for left, right in (
         (recorded.goal_revisions, current_versions.goal_revisions),
         (recorded.method_revisions, current_versions.method_revisions),
@@ -1307,16 +1298,6 @@ def stale_after(report: ReadinessReport, current_versions: SemanticReadSet) -> b
         (recorded.authority_revisions, current_versions.authority_revisions),
     ):
         if _items_changed(left, right):
-            return True
-    supports = {item.support_set_id: item for item in current_versions.support_sets}
-    for support in recorded.support_sets:
-        observed = supports.get(support.support_set_id)
-        if observed is None:
-            return True
-        if (observed.revision, observed.member_digest) != (
-            support.revision,
-            support.member_digest,
-        ):
             return True
     epochs = {item.scope_id: item.validity_epoch for item in current_versions.scope_epochs}
     for scope in recorded.scope_epochs:
@@ -1456,13 +1437,11 @@ def _same_origin(report: ReadinessReport, plan: ActivePlanView) -> None:
     if int(report.plan_revision) != int(plan.plan_revision):
         mismatches.append(f"plan revision {int(report.plan_revision)} vs {int(plan.plan_revision)}")
     read_set = report.read_set
-    for label, recorded, current in (
-        ("requirements_revision", read_set.requirements_revision, plan.requirements_revision),
-        ("manager_epoch", read_set.manager_epoch, plan.manager_epoch),
-        ("budget_grant_revision", read_set.budget_grant_revision, plan.budget_grant_revision),
-    ):
-        if recorded != current:
-            mismatches.append(f"{label} {recorded} vs {current}")
+    if read_set.requirements_revision != plan.requirements_revision:
+        mismatches.append(
+            f"requirements_revision {read_set.requirements_revision} "
+            f"vs {plan.requirements_revision}"
+        )
     for scope in read_set.scope_epochs:
         current_epoch = plan.scope_epochs.get(scope.scope_id)
         if current_epoch != scope.validity_epoch:

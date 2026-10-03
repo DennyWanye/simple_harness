@@ -653,7 +653,7 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
             source={"outcome_binding_id": binding_id},
         )
         receipt = commit.accept_review(
-            command, ResolutionPrincipal(issuer, manager_epoch=htn.epoch(mission_id, "mission"))
+            command, ResolutionPrincipal(issuer)
         )
         completion = read_occurrence_completion(store, mission_id, owner.occurrence_id)
         if (

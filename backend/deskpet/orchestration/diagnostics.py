@@ -418,7 +418,6 @@ def build_diagnostics(
             "mission_id": mission_id,
             "through_seq": snapshot_view.get("through_seq"),
             "state_version": snapshot_view.get("state_version"),
-            "graph_version": snapshot_view.get("graph_version"),
             "not_covered": {
                 "replay": comparison["not_covered"],
                 "excluded": [

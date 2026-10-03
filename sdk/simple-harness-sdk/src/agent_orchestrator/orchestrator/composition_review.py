@@ -317,7 +317,6 @@ class CompositionAcceptanceAssembly:
         principal = ResolutionPrincipal(
             principal_id=self.issued_by,
             scope_id=self.scope_id,
-            manager_epoch=self.semantics.epoch(mission_id, self.scope_id),
         )
         return self.commit.commit_goal_resolution(command, principal)
 
@@ -410,7 +409,6 @@ class CompositionAcceptanceAssembly:
         epoch = self.semantics.epoch(mission_id, self.scope_id)
         return SemanticReadSet(
             requirements_revision=int(revision.revision),
-            manager_epoch=epoch,
             scope_epochs=(ScopeEpochRead(scope_id=self.scope_id, validity_epoch=epoch),),
             goal_revisions=(
                 ReadItem(

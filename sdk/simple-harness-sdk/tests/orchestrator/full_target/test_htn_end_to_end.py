@@ -828,7 +828,7 @@ def test_the_accept_side_refuses_a_plan_principal(tmp_path) -> None:
 
     service = CommitService(Store.open(Path(tmp_path) / "accept.db"))
     with pytest.raises(ResolutionCommitRejected) as caught:
-        service.commit_goal_resolution(_root_command_with(), PlanPrincipal("manager-1", "mission", 0))
+        service.commit_goal_resolution(_root_command_with(), PlanPrincipal("manager-1", "mission"))
     assert caught.value.reason == "BAD_PRINCIPAL"
 
 
@@ -1335,7 +1335,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             semantics = HtnStore(store)
             steps = _steps(world)
             follow_task = str(steps["continue"].task_id)
-            principal = PlanPrincipal("manager-1", "mission", semantics.epoch(mission_id, "mission"))
+            principal = PlanPrincipal("manager-1", "mission")
 
             # R5: before the children are accepted
             assert dispatch.root_review_ready(mission_id) is False

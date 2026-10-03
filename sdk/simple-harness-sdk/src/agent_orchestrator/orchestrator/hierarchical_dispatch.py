@@ -829,7 +829,6 @@ class HierarchicalDispatch:
             # actually be dispatched is the dispatch transaction's decision (TG §8.1
             # layer 3), which this view deliberately does not make.
             mission_admits_work=mission.status not in TERMINAL_MISSION,
-            manager_epoch=self.semantics().epoch(mission_id, "mission"),
             # TG decision 9: an active share needs a live demand, and the duty's
             # account is where that is recorded.  Read, never invented: a duty with
             # no account is "no admitted demand", which is the selection gate's
@@ -2342,7 +2341,6 @@ class HierarchicalDispatch:
         return SemanticReadSet(
             requirements_revision=int(inputs.requirements.revision),
             goal_revisions=goal_reads,
-            manager_epoch=semantics.epoch(mission_id, "mission"),
             scope_epochs=(
                 ScopeEpochRead(
                     scope_id="mission", validity_epoch=semantics.epoch(mission_id, "mission")
@@ -3366,7 +3364,6 @@ class HierarchicalDispatch:
         revokes the retired work's execution rights in its own transaction.
         """
 
-        mission = self.mission(mission_id)
         policy: dict[str, Any] = {}
         from ..contracts.htn import GraphStructureBudget
         from .taskgraph_policy import read_installed_graph_policy
@@ -3383,12 +3380,6 @@ class HierarchicalDispatch:
             network=compilation.network,
             task_bindings=compilation.task_bindings,
             **policy,
-            # P2.3a: in the hierarchical mode the serialisation point is the *plan
-            # revision*, and committing one does not advance ``graph_version``.  The
-            # integer is passed because ADR-13 keeps it as the coarse gate every
-            # Mission agrees on; nothing in this module treats it as a concurrency
-            # token or expects it to move.
-            base_graph_version=int((mission.final_report or {}).get("graph_version") or 1),
             issued_by=principal.principal_id,
             scope_id=principal.scope_id,
             budget_requirement=compilation.budget_requirement,

@@ -716,11 +716,9 @@ class MissionControlV1:
             from ..verification.conflicts import mission_disputes
             snapshot["disputes"] = mission_disputes(store, mission.id)  # read from the claims
             through = store.last_event_seq(mission.id)
-        report = dict(mission.final_report or {})
         return {
             "mission_id": mission.id,
             "through_seq": through,
-            "graph_version": int(report.get("graph_version") or 0),
             "state_version": mission.version,
             "snapshot": snapshot,
             "facade": FACADE_VERSION,

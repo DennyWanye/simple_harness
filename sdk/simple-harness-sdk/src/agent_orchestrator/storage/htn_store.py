@@ -1810,20 +1810,6 @@ class HtnStore:
                 None,
                 canonical_json({"requirements_revision": read_set.requirements_revision}),
             ),
-            (
-                "manager_epoch",
-                mission,
-                read_set.manager_epoch,
-                None,
-                canonical_json({"manager_epoch": read_set.manager_epoch}),
-            ),
-            (
-                "budget_grant_revision",
-                mission,
-                read_set.budget_grant_revision,
-                None,
-                canonical_json({"budget_grant_revision": read_set.budget_grant_revision}),
-            ),
         ]
         for group in (
             read_set.goal_revisions,
@@ -1841,16 +1827,6 @@ class HtnStore:
                         canonical_json(item.to_json()),
                     )
                 )
-        for support in read_set.support_sets:
-            rows.append(
-                (
-                    "support_set",
-                    support.support_set_id,
-                    support.revision,
-                    support.member_digest,
-                    canonical_json(support.to_json()),
-                )
-            )
         for scope in read_set.scope_epochs:
             rows.append(
                 (

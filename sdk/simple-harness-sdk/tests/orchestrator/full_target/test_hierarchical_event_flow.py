@@ -227,8 +227,6 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
             assert int(network.plan_revision) == 1
             assert len(network.occurrences) == 3 and len(network.adopted_instance_ids) == 1
             assert list(network.root_occurrence_ids) == [root.occurrence_id]
-            mission = store.get_mission(mission_id)
-            assert int((mission.final_report or {}).get("graph_version") or 1) == 1
 
             # the compound gate
             intercepted = dispatch.intercept_worker_dispatch(mission_id, root_task)
