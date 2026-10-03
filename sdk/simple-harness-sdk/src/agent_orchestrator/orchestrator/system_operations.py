@@ -194,8 +194,13 @@ def _ask_planner_once(orch: Any, mission: Any, *, key: str, event_type: str, det
     events = tuple(store.iter_events(mission.id))
     asked = next((e for e in events if e.type == REQUESTED and e.payload.get("source_key") == key), None)
     if asked is not None:
+        # "不改""等待"被接受时状态是"无状态变化"，同样是回应（核验 2026-10-03：只认"已提交"时
+        # 规划器回"不改"任务就永远挂着）；先提做法等中间一步不算。
         answered = any(e.type == "PlanningDecisionEvaluated" and e.seq > asked.seq
-                       and e.payload.get("status") == "COMMITTED" for e in events)
+                       and (e.payload.get("status") == "COMMITTED"
+                            or (e.payload.get("status") == "NO_STATE_CHANGE"
+                                and e.payload.get("decision_type") in ("NO_CHANGE", "WAIT")))
+                       for e in events)
         if answered and not PlanningHumanStore(store).pending(mission.id):
             return stop("；规划器已回应但仍未解决")
         return False
