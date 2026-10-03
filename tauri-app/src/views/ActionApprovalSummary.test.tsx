@@ -35,6 +35,15 @@ describe("ActionApprovalSummary", () => {
       "上次没有生效：发布服务拒绝了（conflict: reports/README.v1.md already exists），这是重新提交的申请。");
   });
 
+  it("人裁定没生效后重交：只写结局，不把内部登记码给人看（2026-10-03 真机）", () => {
+    const summary = { connector: "file_publish", operation: "publish", target: "minutes.md",
+      params: { artifact_path: "minutes.md" }, reason: "系统准备的申请", reason_source: "system",
+      previous_attempt: { outcome: "human_ruled_not_applied", reason: "human_ruled_failed", attempt: 1 } };
+    render(<ActionApprovalSummary summary={summary} action={{}} />);
+    expect(screen.getByTestId("previous-attempt").textContent).toBe(
+      "上次没有生效：你裁定它没有生效，这是重新提交的申请。");
+  });
+
   it("其他连接器写成 连接器.操作 → 目标", () => {
     expect(actionHeadline({ connector: "mail", operation: "send", target: "a@b" }, {})).toBe("mail.send → a@b");
   });
