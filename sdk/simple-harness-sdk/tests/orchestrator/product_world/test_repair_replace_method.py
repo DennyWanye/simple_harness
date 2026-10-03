@@ -190,7 +190,8 @@ def test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs
     asyncio.run(case())
 
 
-def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
+@pytest.mark.parametrize("crash_between", [False, True])
+def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch, crash_between):
     """阶段 B 裁决第 5 类：换做法的计划提交被拒（提交时撞上冲突），它立的围栏随决定一起结束。
 
     此前被拒只记"提交被拒"、走规划阶梯，收敛作业一直"已立围栏"，被围的步骤永远不派发、不交接。
@@ -198,7 +199,8 @@ def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
 
     冲突用一次性的提交拒绝注入（真实路径上的版本冲突就是这个异常），只在第一次替换提交时出现。
 
-    **改坏检验**：被拒分支里不解围栏 → 第二次替换的围栏叠在旧围栏上、旧作业一直活着 → 变红。
+    **改坏检验**：被拒分支里不解围栏 → 旧作业改由下一次替换以"被新决定替代"结束，原因对不上
+    → 变红（任务本身仍会完成）；收敛跟进里不补解围栏 → 崩溃那一参数变红。
     """
     from agent_orchestrator.orchestrator import hierarchical_dispatch
     from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
@@ -216,6 +218,12 @@ def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
 
     monkeypatch.setattr(hierarchical_dispatch.HierarchicalDispatch, "commit_preview_plan_proposal",
                         commit_once_refused)
+    if crash_between:
+        # 核验阻断项：记下"提交被拒"之后、解围栏之前进程退出——解围栏这一步必须能重放
+        # （收敛跟进再次唤醒时，发现决定已被拒就解围栏，不再续提交）。
+        from agent_orchestrator.orchestrator.event_handler import Orchestrator
+
+        monkeypatch.setattr(Orchestrator, "_release_refused_fence", lambda self, mission_id, decision_id: None)
 
     async def case():
         provider = _Provider()

@@ -13,12 +13,32 @@ from ..storage.store import StoreConflict, StoreError
 from ..storage.taskgraph_convergence import ConvergenceJob
 
 
+def _ended_by_refusal(orchestrator: Any, job: ConvergenceJob) -> bool:
+    """A decision refused at commit ends its fence (阶段 B 裁决第 5 类).
+
+    The refusal's own path ends it right after recording the refusal, in separate
+    transactions; a crash between the two leaves the job READY.  Ending it here too
+    makes that step replayable (核验阻断项) — a refused decision is never resumed."""
+
+    store = orchestrator.store
+    with store.read_view():
+        decision = PlanningDecisionStore(store).get_planning_decision(job.decision_id)
+    if decision is None or decision["status"] != "COMMIT_REJECTED":
+        return False
+    with store.transaction():
+        orchestrator._taskgraph_notifications.convergence.jobs.release_for_decision(
+            job.mission_id, job.decision_id, reason="decision_refused", now_ms=int(store.now * 1000))
+    return True
+
+
 async def resume_converged_plan(orchestrator: Any, job: ConvergenceJob) -> None:
     store = orchestrator.store
     if store.connection.in_transaction:
         raise StoreError("TASKGRAPH_RESUME_OUTSIDE_TRANSACTION_REQUIRED")
     if job.state != "READY":
         raise StoreConflict("TASKGRAPH_RESUME_NOT_READY")
+    if _ended_by_refusal(orchestrator, job):
+        return
     with store.read_view():
         decisions = PlanningDecisionStore(store)
         request = decisions.get_planning_request(job.request_id)
@@ -59,5 +79,8 @@ async def resume_converged_plan(orchestrator: Any, job: ConvergenceJob) -> None:
     await orchestrator._collect_plan_decision(intent, None, mission, raw.decode("utf-8"), hierarchy)
     with store.read_view():
         decision = decisions.get_planning_decision(job.decision_id)
+    if _ended_by_refusal(orchestrator, job):
+        return  # refused at commit: the refusal went to the Planner and the fence ended with it
+    with store.read_view():
         if decision is None or decision["status"] != "COMMITTED":
             raise StoreConflict("TASKGRAPH_RESUME_PLAN_NOT_COMMITTED")
