@@ -1,5 +1,5 @@
 {
-  "deployment_id": "ce379ee4b1c5508ea8f82abb97b65991b464590342fe7d038c2c2f9dda83e604",
+  "deployment_id": "6ff5fb6daef0649e9747600070335946cb0ea3f6dc4855ee8ad036204e9367bd",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -185,7 +185,7 @@
     "agent_orchestrator/orchestrator/assurance_review_handoff.py": "bfa05052b0f74a45611e3d00f90a19cc2d7c03e67de1f9f9019f037da6027c06",
     "agent_orchestrator/orchestrator/assurance_review_import.py": "4dc685b51c47721a8314b9a6421eda27ef2cc274e07b744bea643b42bd09277c",
     "agent_orchestrator/orchestrator/assurance_review_pins.py": "4498cfdca5bfa38f71701f2a3f067ae5326429381ff038c9eeec7aa08d263bf1",
-    "agent_orchestrator/orchestrator/assurance_review_runtime.py": "f2b7073cc46d1f16e88e6a5e551a02a0a77b5a5e098e08b31411a11b79b5ee03",
+    "agent_orchestrator/orchestrator/assurance_review_runtime.py": "4b56de683d1152f7d2a068768e85b4fcd9a2b150969756ec4007c4abb9ff87d0",
     "agent_orchestrator/orchestrator/assurance_review_transport.py": "69012e9ab67dab8704c471e44e9fca8669ba19afeac93f680443fca53c545a01",
     "agent_orchestrator/orchestrator/assurance_review_wait.py": "59682ddfb2f12a5de79000f7aa4220d842cbfa7a384798724ae36d7ce06b73b3",
     "agent_orchestrator/orchestrator/assurance_root_commits.py": "707a635e2029cbfded40bb65db98acec87268264bd451679434cdeac80eef49e",
@@ -198,7 +198,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "e022dc12a00dd0f59eb400394d99dcc6a370def290a7c894b3027e6d9b135452",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "81722fdaa708a09054ae7d223210e9b99d5702f49c9afb419794d011c2dc8203",
-    "agent_orchestrator/orchestrator/event_handler.py": "dd34ec955139b118bb4f93cebc7d67bd39b6568fe97f900db042dbc793030a7a",
+    "agent_orchestrator/orchestrator/event_handler.py": "892d107d01837200a40be410fb92c404b90acacca0ba4b62e97be44ee041e2c9",
     "agent_orchestrator/orchestrator/failure_classes.py": "031f14b05f30f0cf4d5cb22e100525fcf743d11ef5ed41f8debedb6dd79d40f9",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "592a3f9e14613d28e443f59494071a3f22d8658559feee6697b4821cb3c4ace2",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",

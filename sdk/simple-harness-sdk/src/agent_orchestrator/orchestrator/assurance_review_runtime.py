@@ -39,6 +39,8 @@ from .assurance_review_import import read_official_review_binding_locked
 from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
 
 REVIEW_MODEL_CALLS = 10
+#: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
+REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
 #: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
 #: 结论。循环上限比查看工具上限多留一轮的余量：工具先拒绝并提示"马上作答"，模型还能作答。
 REVIEW_ANSWER_MARGIN = 8
@@ -218,7 +220,14 @@ class AssuranceReviewRuntime:
         orch = self.orchestrator
         if mission.tenant_id != self.consumer.tenant_id:
             raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
-        decision = orch._route_service("critic", mission.id)
+        from ..runtime.model_router import RoutingUnavailable
+        try:
+            decision = orch._route_service("critic", mission.id)
+        except RoutingUnavailable as unavailable:
+            # 2026-10-03: the reviewing model is cooling down after provider failures. The
+            # review cannot be opened *now*; every opener already treats this the same way
+            # as any other "review unavailable" (retry later), never as a loop error.
+            raise AssuranceError(REVIEW_ROUTE_UNAVAILABLE, unavailable.profile_id) from unavailable
         config = {
             **orch._service_config(decision),
             "prompt_version": REVIEW_CODEC_VERSION,

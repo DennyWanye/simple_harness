@@ -6287,6 +6287,11 @@ class Orchestrator:
                     code, reason = "AUTHORIZATION_REQUIRED", "assurance_review_unavailable"
                     error_detail = {"error": str(error), "assurance_purpose": error.purpose,
                                     "assurance_error": error.code}
+                    from .assurance_review_runtime import REVIEW_ROUTE_UNAVAILABLE
+                    if error.code == REVIEW_ROUTE_UNAVAILABLE:
+                        # A provider outage, not a wrong answer: it uses the service-failure
+                        # grace, never the Planner's answer budget (user 2026-09-28).
+                        error_detail["turn_failed"] = True
                 with self.store.transaction():
                     record_decision(request_id=request_id, attempt_ordinal=attempt_ordinal,
                         raw_output_hash=raw_hash, raw_artifact_ref=raw_artifact_ref,
