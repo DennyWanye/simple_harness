@@ -64,6 +64,9 @@ class ObservationOutcomeRecord:
     recorded: bool = False
     record: ObservationRecord | None = None
     reason: ReadinessReason | None = None
+    #: What was asked (the predicate reference and its arguments), kept with a recorded
+    #: observation so the same proposition can be read again when the world moves.
+    question: Mapping[str, Any] | None = None
 
     @property
     def available(self) -> bool:
@@ -178,7 +181,9 @@ def observe_predicate(
         return ObservationOutcomeRecord(
             observation=observation, reason=ReadinessReason.OBSERVER_UNAVAILABLE
         )
-    return ObservationOutcomeRecord(observation=observation, record=observation.record)
+    return ObservationOutcomeRecord(
+        observation=observation, record=observation.record,
+        question={"predicate_ref": reference.to_json(), "arguments": dict(arguments)})
 
 
 def record_observation(
@@ -197,12 +202,13 @@ def record_observation(
 
     if outcome.record is None:
         return outcome
-    store.insert_observation(mission_id, outcome.record, scope_id=scope_id)
+    store.insert_observation(mission_id, outcome.record, scope_id=scope_id, question=outcome.question)
     return ObservationOutcomeRecord(
         observation=outcome.observation,
         recorded=True,
         record=outcome.record,
         reason=None,
+        question=outcome.question,
     )
 
 

@@ -59,6 +59,7 @@ from ...contracts.htn import (
     PortCardinality,
     ProposedPlanDelta,
     ReadItem,
+    ScopeEpochRead,
     ReadItemKind,
     ReleaseCondition,
     ReusePolicy,
@@ -85,6 +86,7 @@ from .grounding import (
     SlotPlan,
     child_task_bindings,
     data_flows,
+    pinned_flows,
     plan_slots,
 )
 from .registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog
@@ -200,6 +202,10 @@ def compile_refinement(
     requirements_revision: int = 0,
     delta_id: str | None = None,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
+    criterion_files: Mapping[str, str] | None = None,
 ) -> ProposedPlanDelta:
     """§18.3: emit the partial order, the data bindings, the coverage and the read-set.
 
@@ -225,6 +231,10 @@ def compile_refinement(
         requirements_revision=requirements_revision,
         delta_id=delta_id,
         compiled_from_proposal_id=compiled_from_proposal_id,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
+        observation_items=observation_items,
+        criterion_files=criterion_files,
     ).delta
 
 
@@ -245,6 +255,10 @@ def compile_refinement_bundle(
     requirements_revision: int = 0,
     delta_id: str | None = None,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
+    criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """The ten steps of implementation design §5.2, in order."""
 
@@ -304,6 +318,7 @@ def compile_refinement_bundle(
         schemas=schemas,
         sharing=sharing,
         reuse_acceptances=dict(reuse_acceptances or {}),
+        write_targets=_write_targets(method, criterion_files or {}),
     )
     binding_by_task = {binding.task_id: binding for binding in new_bindings}
     occurrences: list[OccurrenceSpec] = []
@@ -430,6 +445,9 @@ def compile_refinement_bundle(
         parent_binding=parent_binding,
         plans=plans,
         requirements_revision=requirements_revision,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
+        observation_items=observation_items,
     )
     identifier_ = delta_id or _derive_delta_id(draft, current.plan_revision)
     delta = ProposedPlanDelta(
@@ -483,6 +501,10 @@ def compile_candidate_from_snapshot(
     budget: GraphStructureBudget = DEFAULT_PROJECTION_BUDGET,
     requirements_revision: int = 0,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
+    criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """Pure candidate kernel used by H1H preview.
 
@@ -503,6 +525,10 @@ def compile_candidate_from_snapshot(
         budget=budget,
         requirements_revision=requirements_revision,
         compiled_from_proposal_id=compiled_from_proposal_id,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
+        observation_items=observation_items,
+        criterion_files=criterion_files,
     )
 
 
@@ -663,6 +689,7 @@ def _compile_data(
     """TG decision 3: one ``DataRequirement`` per declared port-to-port link."""
 
     out: list[DataRequirement] = []
+    pinned = pinned_flows(method)
     for producer_step, output_port, consumer_step, input_port in data_flows(method):
         producer = by_slot.get(producer_step)
         consumer = by_slot.get(consumer_step)
@@ -714,7 +741,11 @@ def _compile_data(
                 schema_ref=declared_output.schema_ref,
                 assurance_policy_ref=DEFAULT_ASSURANCE_POLICY,
                 freshness_policy_ref=DEFAULT_FRESHNESS_POLICY,
-                source_revision_policy=SourceRevisionPolicy.PINNED,
+                # 默认跟随：每次新尝试用上游当前通过验收的那一版；做法声明了 pin 才钉住
+                source_revision_policy=(
+                    SourceRevisionPolicy.PINNED
+                    if (producer_step, output_port, consumer_step, input_port) in pinned
+                    else SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION),
             )
         )
     # No duplicate-port check here on purpose.  Within one method a consumer's input
@@ -1327,8 +1358,15 @@ def build_read_set(
     parent_binding: TaskSemanticBindingV1,
     plans: Sequence[SlotPlan],
     requirements_revision: int = 0,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
+    observation_items: Sequence[ReadItem] = (),
 ) -> SemanticReadSet:
-    """ADR-13: what this compilation actually read, beside the integer gate.
+    """ADR-13: what this compilation read that the plan-revision gate does not cover.
+
+    阶段 D：两样在提案与提交之间会变、计划修订号管不到的东西也记下——作用域纪元
+    （``scope_epochs``，调用方在冻结预览输入时读的那一份）和被细化目标、被共用目标的义务
+    （``obligation_items``：义务编号 → 调用方用核对器同一公式读出的条目）。
 
     A precondition witness is listed as an observation read **only when it names a
     stored :class:`~...contracts.evidence_state.ValidityWitness`**, and an acceptance a
@@ -1376,6 +1414,9 @@ def build_read_set(
         for witness in draft.precondition_witnesses
         if witness.witness_ref is not None
     ]
+    # 阶段 D：前提所依据的观察（调用方按命题给出、用核对器同一公式读出的条目）。之后同一命题
+    # 有了新观察（真值翻了才会写），这份提案就过期。
+    observation_reads.extend(item for item in observation_items if item not in observation_reads)
     acceptance_reads = [
         ReadItem(
             kind=ReadItemKind.ACCEPTANCE,
@@ -1386,11 +1427,13 @@ def build_read_set(
         for plan in plans
         if plan.acceptance_ref is not None
     ]
+    duties = [str(parent_binding.obligation_id)]
     for plan in plans:
         if not plan.shared:
             continue
         spec = current.occurrence(plan.bound_occurrence_id)
         binding = current.binding_for_task(spec.task_id)
+        duties.append(str(binding.obligation_id))
         goal_reads.append(
             ReadItem(
                 kind=ReadItemKind.TASK,
@@ -1405,7 +1448,29 @@ def build_read_set(
         method_revisions=tuple(method_reads),
         observation_revisions=tuple(observation_reads),
         acceptance_revisions=tuple(acceptance_reads),
+        obligation_revisions=tuple(
+            (obligation_items or {})[duty] for duty in dict.fromkeys(duties)
+            if duty in (obligation_items or {})
+        ),
+        scope_epochs=tuple(
+            ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
+            for scope, epoch in sorted((scope_epochs or {}).items())
+        ),
     )
+
+
+def _write_targets(method: MethodContract, criterion_files: Mapping[str, str]) -> dict[str, list[str]]:
+    """Step name → the files the method makes that step answer for: every ``file:X``
+    requirement its ``criterion_links`` hang on the step (the finalizer when no step is
+    named).  A structural fact read off the method — not a guess about what a step writes."""
+
+    targets: dict[str, list[str]] = {}
+    for link in method.composition.criterion_links:
+        slot = link.child_step or method.composition.finalizer_step
+        path = criterion_files.get(str(link.parent_criterion_id))
+        if slot and path and path not in targets.setdefault(str(slot), []):
+            targets[str(slot)].append(path)
+    return targets
 
 
 def _derive_delta_id(draft: MethodInstanceDraft, base: PlanRevision) -> str:

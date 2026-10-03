@@ -1,38 +1,35 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Typed Assurance propositions, fresh anchor selection and admitted rules.
+"""Typed Assurance propositions, fresh anchor selection and the acceptance rule.
 
-Pure evaluation over rows the orchestrator validity service has already read
-from one consistent snapshot and source-checked. Nothing here reads a Store,
-grants access, or accepts a prior closure/witness as a seed: every call
-re-selects anchors from the supplied observations and current check results
-and recomputes the bounded grounded and clean closures (AER §9.2, plan §8.3).
+Pure evaluation over the official review and the current check results the
+orchestrator validity service has already read from one consistent snapshot.
+Nothing here reads a Store, grants access, or accepts a prior closure/witness as
+a seed: every call re-selects anchors and recomputes the bounded grounded and
+clean closures (AER §9.2, plan §8.3).
 
 The conclusion of an ACCEPT use is a registered system predicate whose only
-admitted rule is the fixed acceptance rule below: the official review must be
-acceptable under the *current* typed check results and every check it consumed
-must currently PASS. Deployment observations and stored justification sets
-take part only through registered signatures and explicitly admitted rules; an
-unregistered predicate or an unadmitted rule is recorded as rejected and never
-fires (plan cases V01–V05).
+rule is the fixed acceptance rule below: the official review must be acceptable
+under the *current* typed check results and every check it consumed must
+currently PASS.  The review and the checks are the only anchors; stored
+observations and stored justification sets do not take part (stage D).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from ..assurance.checks import Grade
 from ..assurance.codec import AssuranceError, fingerprint, integer, text
 from ..assurance.grounding import GroundedSupport, compute_grounded_support
-from ..assurance.refs import AssuranceRef, Pin
+from ..assurance.refs import AssuranceRef
 from ..contracts.evidence_state import (
     ObservationRecord,
     QueryCompleteness,
     TruthValue,
     WitnessPurpose,
 )
-from ..contracts.models import ContractError
 from ..contracts.semantic_base import (
     EvidenceRef,
     EvidenceRefKind,
@@ -48,9 +45,7 @@ from .justifications import (
     AnchorSelection,
     AnchorSelector,
     Atom,
-    EvidencePremise,
     JustificationSet,
-    Polarity,
     PropositionPremise,
     RejectedAnchor,
     SupportGraph,
@@ -134,30 +129,6 @@ def content_acceptable_key(mission_id: str, scope_id: str, subject_hash: str) ->
 
 
 @dataclass(frozen=True, slots=True)
-class AdmittedRule:
-    """A deployment-approved rule shape for stored justification sets.
-
-    ``subject_kind`` is the stored set's subject kind; the set's subject id is
-    the single typed argument of ``conclusion``. Admission is an explicit
-    deployment/approval fact, never inferred from a stored ``rule_ref`` alone.
-    """
-
-    rule_id: str
-    rule_version: str
-    subject_kind: str
-    conclusion: PredicateSignature
-
-    def __post_init__(self) -> None:
-        text(self.rule_id)
-        text(self.rule_version)
-        text(self.subject_kind)
-        if not isinstance(self.conclusion, PredicateSignature) or [
-            parameter.name for parameter in self.conclusion.parameters
-        ] != ["subject_id"]:
-            raise AssuranceError("RULE_ADMISSION_INVALID", self.rule_id)
-
-
-@dataclass(frozen=True, slots=True)
 class ReviewAnchorInput:
     """The authenticated official review, re-decided under current checks."""
 
@@ -189,26 +160,6 @@ class CheckAnchorInput:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationInput:
-    """One stored observation row: the decoded record, its scope and exact hash."""
-
-    record: ObservationRecord
-    scope_id: str
-    content_hash: str
-
-
-@dataclass(frozen=True, slots=True)
-class JustificationInput:
-    """One stored justification set row with its members (subject → members)."""
-
-    set_id: str
-    subject_kind: str
-    subject_id: str
-    rule_ref: str | None
-    members: tuple[tuple[TypedRef, bool], ...]
-
-
-@dataclass(frozen=True, slots=True)
 class SupportEvaluation:
     conclusion_key: str
     truth: TruthValue
@@ -216,7 +167,6 @@ class SupportEvaluation:
     clean_support_refs: tuple[AssuranceRef, ...]
     admitted_anchor_ids: tuple[str, ...]
     rejected_anchors: tuple[tuple[str, str], ...]
-    rejected_rules: tuple[tuple[str, str], ...]
     earliest_expiry_ms: int | None
     reasons: tuple[str, ...]
 
@@ -302,23 +252,6 @@ def _check_candidate(
     )
 
 
-def _observation_candidate(row: ObservationInput) -> AnchorCandidate:
-    record = row.record
-    return AnchorCandidate(
-        observation=record,
-        scope_id=row.scope_id,
-        source_group=f"{record.source_ref.kind!s}:{record.source_ref.id}",
-        origin=AnchorOrigin.OBSERVATION,
-        evidence_ref=EvidenceRef(
-            kind=EvidenceRefKind.OBSERVATION,
-            id=record.observation_id,
-            revision=1,
-            content_hash=row.content_hash,
-        ),
-        observer_id=record.observer_id,
-    )
-
-
 def _select(
     candidates: Sequence[AnchorCandidate],
     *,
@@ -339,74 +272,6 @@ def _select(
         anchors.extend(selection.anchors)
         rejected.extend(selection.rejected)
     return AnchorSelection(anchors=tuple(anchors), rejected=tuple(rejected))
-
-
-def _admit_stored_rules(
-    stored: Sequence[JustificationInput],
-    *,
-    observations: Mapping[str, ObservationInput],
-    admitted_rules: Mapping[str, AdmittedRule],
-) -> tuple[list[JustificationSet], list[tuple[str, str]]]:
-    rules: list[JustificationSet] = []
-    rejected: list[tuple[str, str]] = []
-    for row in stored:
-        rule = None if row.rule_ref is None else admitted_rules.get(row.rule_ref)
-        if rule is None:
-            rejected.append((row.set_id, "RULE_NOT_ADMITTED"))
-            continue
-        if rule.subject_kind != row.subject_kind:
-            rejected.append((row.set_id, "RULE_SUBJECT_KIND_MISMATCH"))
-            continue
-        premises: list[PropositionPremise | EvidencePremise] = []
-        reason = None
-        for reference, polarity in row.members:
-            if reference.kind is TypedRefKind.OBSERVATION:
-                observation = observations.get(reference.id)
-                if observation is None or observation.content_hash != reference.content_hash:
-                    reason = "MEMBER_OBSERVATION_UNAVAILABLE"
-                    break
-                premises.append(
-                    PropositionPremise(
-                        Atom(
-                            key=observation.record.proposition_key,
-                            polarity=Polarity.POSITIVE if polarity else Polarity.NEGATIVE,
-                        )
-                    )
-                )
-                continue
-            if not polarity:
-                # A negative non-observation member has no admitted denial source.
-                reason = "NEGATIVE_MEMBER_UNSUPPORTED"
-                break
-            try:
-                premises.append(
-                    EvidencePremise(
-                        EvidenceRef(
-                            kind=EvidenceRefKind(str(reference.kind)),
-                            id=reference.id,
-                            revision=reference.revision,
-                            content_hash=reference.content_hash,
-                        )
-                    )
-                )
-            except (ValueError, ContractError):
-                reason = "MEMBER_KIND_UNSUPPORTED"
-                break
-        if reason is not None:
-            rejected.append((row.set_id, reason))
-            continue
-        try:
-            rules.append(
-                JustificationSet(
-                    conclusion=proposition_key(rule.conclusion, {"subject_id": row.subject_id}),
-                    premises=tuple(premises),
-                    rule_version=rule.rule_version,
-                    source_group=None,
-                )
-            )
-        except ContractError:
-            rejected.append((row.set_id, "RULE_SHAPE_INVALID"))
-    return rules, rejected
 
 
 def _anchor_refs(
@@ -451,12 +316,8 @@ def evaluate_acceptance_support(
     subject_hash: str,
     review: ReviewAnchorInput,
     checks: Sequence[CheckAnchorInput],
-    observations: Sequence[ObservationInput] = (),
-    justification_sets: Sequence[JustificationInput] = (),
-    resolve_signature: Callable[[str], PredicateSignature | None] | None = None,
-    admitted_rules: Mapping[str, AdmittedRule] | None = None,
 ) -> SupportEvaluation:
-    """Fresh anchors + admitted rules → bounded supported/clean closure → conclusion.
+    """Fresh anchors + the acceptance rule → bounded supported/clean closure → conclusion.
 
     ``checks`` must be exactly the bindings the official record consumed; each one
     is a premise of the fixed acceptance rule, so a binding that no longer
@@ -470,16 +331,8 @@ def evaluate_acceptance_support(
     witness_purpose = _purpose(purpose)
     if len({check.binding_ref for check in checks}) != len(checks) or len(checks) > 256:
         raise AssuranceError("CHECK_ANCHOR_INVALID")
-    if len(observations) > 10_000 or len(justification_sets) > 20_000:
-        raise AssuranceError("EVIDENCE_EVALUATION_INCOMPLETE")
-    by_observation: dict[str, ObservationInput] = {}
-    for row in observations:
-        if by_observation.setdefault(row.record.observation_id, row) != row:
-            raise AssuranceError("EVIDENCE_EVALUATION_INCOMPLETE", "duplicate observation")
 
-    # Signatures: the fixed system predicates plus whatever the deployment
-    # registry resolves for the stored observation keys. Unresolved keys are
-    # rejected by the selector as UNREGISTERED_PREDICATE.
+    # Signatures: the fixed system predicates only.
     signatures: dict[str, PredicateSignature] = {}
     candidates: list[AnchorCandidate] = []
     refs_by_anchor: dict[str, AssuranceRef] = {}
@@ -495,33 +348,6 @@ def evaluate_acceptance_support(
             signatures[check_passed_key(mission_id, check.binding_ref.pin.id)] = CHECK_PASSED
             candidates.append(candidate)
             refs_by_anchor[candidate.observation.observation_id] = check.binding_ref
-    impersonated: list[tuple[str, str]] = []
-    for row in observations:
-        key = row.record.proposition_key
-        # System predicates are only ever anchored by this evaluator's own
-        # review/check candidates. A stored observation naming one of them, or
-        # claiming the system observer, cannot license anything.
-        if _is_system_key(key) or row.record.observer_id == ASSURANCE_OBSERVER:
-            impersonated.append((row.record.observation_id, "SYSTEM_PREDICATE_IMPERSONATION"))
-            continue
-        if key not in signatures and resolve_signature is not None:
-            resolved = resolve_signature(key)
-            if resolved is not None:
-                if not isinstance(resolved, PredicateSignature):
-                    raise AssuranceError("PREDICATE_REGISTRY_INVALID")
-                if resolved.predicate_ref.id in SYSTEM_PREDICATES or ASSURANCE_OBSERVER in (
-                    resolved.observer_ids
-                ):
-                    impersonated.append(
-                        (row.record.observation_id, "SYSTEM_PREDICATE_IMPERSONATION")
-                    )
-                    continue
-                signatures[key] = resolved
-        candidate = _observation_candidate(row)
-        candidates.append(candidate)
-        refs_by_anchor[row.record.observation_id] = AssuranceRef(
-            "observation", Pin(row.record.observation_id, 0, row.content_hash)
-        )
     selection = _select(candidates, purpose=witness_purpose, now_ms=now_ms, signatures=signatures)
 
     conclusion_key = content_acceptable_key(mission_id, scope_id, subject_hash)
@@ -538,10 +364,7 @@ def evaluate_acceptance_support(
         rule_version=ACCEPT_RULE_VERSION,
         source_group=None,
     )
-    stored_rules, rejected_rules = _admit_stored_rules(
-        justification_sets, observations=by_observation, admitted_rules=admitted_rules or {}
-    )
-    graph = SupportGraph((accept_rule, *stored_rules))
+    graph = SupportGraph((accept_rule,))
     support = compute_grounded_support(graph, selection)
 
     conclusion = Atom(key=conclusion_key)
@@ -565,11 +388,8 @@ def evaluate_acceptance_support(
             deadlines.append(observation.valid_until_ms)
     rejected_anchors = tuple(
         sorted(
-            [
-                (entry.candidate.observation.observation_id, str(entry.reason))
-                for entry in selection.rejected
-            ]
-            + impersonated
+            (entry.candidate.observation.observation_id, str(entry.reason))
+            for entry in selection.rejected
         )
     )
     reasons = [
@@ -580,18 +400,16 @@ def evaluate_acceptance_support(
         f"anchors:{len(admitted_ids)}",
         f"rejected_anchors:{len(rejected_anchors)}",
         f"rules:{len(graph)}",
-        f"rejected_rules:{len(rejected_rules)}",
     ]
     return SupportEvaluation(
-        conclusion_key,
-        truth,
-        usable,
-        tuple(clean_refs),
-        admitted_ids,
-        rejected_anchors,
-        tuple(sorted(rejected_rules)),
-        min(deadlines) if deadlines else None,
-        tuple(reasons),
+        conclusion_key=conclusion_key,
+        truth=truth,
+        usable=usable,
+        clean_support_refs=tuple(clean_refs),
+        admitted_anchor_ids=admitted_ids,
+        rejected_anchors=rejected_anchors,
+        earliest_expiry_ms=min(deadlines) if deadlines else None,
+        reasons=tuple(reasons),
     )
 
 
@@ -605,7 +423,6 @@ def support_fingerprint(evaluation: SupportEvaluation) -> str:
             "clean_support": [ref.to_json() for ref in evaluation.clean_support_refs],
             "anchors": list(evaluation.admitted_anchor_ids),
             "rejected_anchors": [list(item) for item in evaluation.rejected_anchors],
-            "rejected_rules": [list(item) for item in evaluation.rejected_rules],
         }
     )
 
@@ -618,10 +435,7 @@ __all__ = (
     "CONTENT_ACCEPTABLE",
     "REVIEW_ACCEPTED",
     "SYSTEM_PREDICATES",
-    "AdmittedRule",
     "CheckAnchorInput",
-    "JustificationInput",
-    "ObservationInput",
     "ReviewAnchorInput",
     "SupportEvaluation",
     "check_passed_key",

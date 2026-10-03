@@ -66,7 +66,7 @@ TERMINAL_STATUSES: frozenset[MethodRegistryStatus] = frozenset(
 #: §18.5 / §7.3: what a model may *never* write into a proposal, because each of
 #: these is the system's own answer to "may this happen at all".  They are refused
 #: at the boundary rather than overwritten, because silently replacing a claimed
-#: ``manager_epoch`` with the real one would let a model probe the gate for free and
+#: ``registry_status`` with the real one would let a model probe the gate for free and
 #: would leave no record that it tried.
 SYSTEM_BOUND_FIELDS = frozenset(
     {
@@ -75,9 +75,7 @@ SYSTEM_BOUND_FIELDS = frozenset(
         "principal_id",
         "scope",
         "scope_id",
-        "manager_epoch",
         "budget_account",
-        "budget_grant_revision",
         "registry_status",
         "opened_by",
         "authorization_ref",

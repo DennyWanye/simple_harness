@@ -27,13 +27,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.evidence_state import ObservationRecord, ValidityWitness
+from ..contracts.evidence_state import ObservationRecord, TruthValue, ValidityWitness, truth_change
 from ..contracts.htn import (
     BoundInput,
     ChildBinding,
@@ -58,7 +58,7 @@ from ..contracts.resolution import (
     ReviewRecord,
     account_for_purpose,
 )
-from ..contracts.semantic_base import TypedRef, content_hash_of, enum_of, identifier, index
+from ..contracts.semantic_base import content_hash_of, enum_of, identifier, index
 from ..knowledge.validity import witness_subject
 from .assurance_changes import original_source_mutation
 from .store import Store, StoreConflict
@@ -139,21 +139,6 @@ class StoredReviewRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class StoredJustificationSet:
-    """One support set of a subject, with its members and their polarity."""
-
-    set_id: str
-    mission_id: str
-    subject_kind: str
-    subject_id: str
-    member_revision: int
-    member_digest: str
-    rule_ref: str | None
-    members: tuple[tuple[TypedRef, bool], ...]
-    detail: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
 class PlanCommitReceipt:
     """What one plan commit command produced: the intent, what it read, what it made."""
 
@@ -195,6 +180,22 @@ class DirtyEntry:
     reason: str
     state: str
 
+
+
+def _observation_question(question: Mapping[str, Any] | None, proposition: str) -> str:
+    """Canonical ``question_json`` of an observation, checked against its proposition key."""
+    from ..contracts.semantic_base import VersionedRef
+
+    if (not isinstance(question, Mapping) or set(question) != {"predicate_ref", "arguments"}
+            or not isinstance(question["arguments"], Mapping)):
+        raise StoreConflict("an observation is stored with the question it answers (predicate_ref, arguments)")
+    predicate = VersionedRef.from_json(question["predicate_ref"]).to_json()
+    arguments = {key: question["arguments"][key] for key in sorted(question["arguments"])}
+    from ..knowledge.predicates import proposition_key_of
+
+    if proposition_key_of(predicate, arguments) != proposition:
+        raise StoreConflict("the question does not compute back to the observation's proposition key")
+    return canonical_json({"predicate_ref": predicate, "arguments": arguments})
 
 class HtnStore:
     """Insert / get / list for the full-target tables, in contract objects."""
@@ -933,15 +934,6 @@ class HtnStore:
         ).fetchall()
         return tuple(RequirementsRevision.from_json(json.loads(row[0])) for row in rows)
 
-    def support_dependency_edges(self, mission_id: str) -> tuple[tuple[str, str], ...]:
-        mission = identifier(mission_id, "mission_id")
-        rows = self._store.connection.execute(
-            "SELECT s.member_id, j.subject_id FROM support_members s JOIN justification_sets j "
-            "ON s.set_id=j.set_id WHERE s.mission_id=? AND j.mission_id=? "
-            "ORDER BY s.member_id, j.subject_id", (mission, mission),
-        ).fetchall()
-        return tuple((str(row[0]), str(row[1])) for row in rows)
-
     # ================================================================== review
     def insert_review_package(self, package: ReviewPackage) -> str:
         if not isinstance(package, ReviewPackage):
@@ -1366,17 +1358,32 @@ class HtnStore:
         return tuple(ValidityWitness.from_json(json.loads(row[0])) for row in rows)
 
     def insert_observation(
-        self, mission_id: str, observation: ObservationRecord, *, scope_id: str = "mission"
+        self, mission_id: str, observation: ObservationRecord, *, question: Mapping[str, Any] | None,
+        scope_id: str = "mission",
     ) -> ObservationRecord:
+        """The one write entry for an observation.
+
+        ``question`` is what was asked — ``{"predicate_ref", "arguments"}`` — stored on
+        the row so the proposition can be read again; it must compute back to the
+        record's proposition key (an order check, not a judgement).
+
+        The scope's validity epoch is raised here, in the same transaction, when this
+        observation changes a truth that was already known (TRUE/FALSE before, something
+        else after): every witness taken under the old epoch stops being usable.  A
+        first look (UNKNOWN before) and a look at a conflicted proposition raise nothing —
+        no usable witness was ever issued on those."""
         if not isinstance(observation, ObservationRecord):
             raise StoreConflict("insert_observation expects an ObservationRecord")
         mission = identifier(mission_id, "mission_id")
+        asked = _observation_question(question, observation.proposition_key)
         with self._store.transaction():
+            before, after = truth_change(
+                self.list_observations(mission, proposition_key=observation.proposition_key), observation)
             self._insert(
                 "INSERT INTO observations(observation_id,mission_id,proposition_key,polarity,scope_id,"
                 "source_kind,source_id,coverage,observer_id,observed_at_ms,recorded_at_ms,"
-                "query_watermark_ms,valid_until_ms,observation_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "query_watermark_ms,valid_until_ms,observation_json,created_at,question_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     observation.observation_id,
                     mission,
@@ -1393,14 +1400,31 @@ class HtnStore:
                     observation.valid_until_ms,
                     canonical_json(observation.to_json()),
                     self._store.now,
+                    asked,
                 ),
                 f"observation {observation.observation_id} already stored",
             )
+            if before in (TruthValue.TRUE, TruthValue.FALSE) and after is not before:
+                self.bump_epoch(mission, identifier(scope_id, "scope_id"),
+                                bumped_by=f"observation:{observation.observation_id}")
             from .taskgraph_source_events import record_source_change
             from ..contracts.models import sha256_hex
             record_source_change(self._store, mission, kind="observation",
                 source_id=observation.observation_id, revision=1, content_hash=sha256_hex(observation.to_json()))
         return observation
+
+    def observation_questions(self, mission_id: str) -> tuple[dict[str, Any], ...]:
+        """One row per recorded proposition: what was asked and in which scope (the latest
+        observation's), for the re-read."""
+        rows = self._store.connection.execute(
+            "SELECT proposition_key, scope_id, question_json FROM observations WHERE mission_id=?"
+            " ORDER BY observed_at_ms, observation_id", (identifier(mission_id, "mission_id"),)).fetchall()
+        found: dict[str, dict[str, Any]] = {}
+        for key, scope, raw in rows:
+            if not raw:
+                raise StoreConflict(f"observation of {key} records no question; it cannot be read again")
+            found[str(key)] = {"proposition_key": str(key), "scope_id": str(scope), **json.loads(raw)}
+        return tuple(found[key] for key in sorted(found))
 
     def get_observation(self, observation_id: str) -> ObservationRecord:
         row = self._one(
@@ -1424,130 +1448,6 @@ class HtnStore:
             tuple(values),
         ).fetchall()
         return tuple(ObservationRecord.from_json(json.loads(row[0])) for row in rows)
-
-    def insert_justification_set(
-        self,
-        mission_id: str,
-        set_id: str,
-        *,
-        subject_kind: str,
-        subject_id: str,
-        members: Sequence[tuple[TypedRef, bool]],
-        member_revision: int = 0,
-        rule_ref: str | None = None,
-        detail: Mapping[str, Any] | None = None,
-    ) -> StoredJustificationSet:
-        """Store one support set and its members, with the reverse index (AER §10.1)."""
-
-        mission = identifier(mission_id, "mission_id")
-        identity = identifier(set_id, "set_id")
-        kind = identifier(subject_kind, "subject_kind")
-        subject = identifier(subject_id, "subject_id")
-        revision = index(member_revision, "member_revision")
-        entries = tuple(members)
-        if not entries:
-            raise StoreConflict("a justification set needs at least one member (AER §9.1)")
-        for reference, polarity in entries:
-            if not isinstance(reference, TypedRef):
-                raise StoreConflict("justification members must be TypedRefs")
-            if not isinstance(polarity, bool):
-                raise StoreConflict("a justification member carries an explicit polarity")
-        # A support set is a set: its digest and its read order must not depend on
-        # the order the caller happened to list the members in.
-        entries = tuple(sorted(entries, key=lambda item: (str(item[0].kind), item[0].id)))
-        digest = content_hash_of(
-            [[reference.to_json(), polarity] for reference, polarity in entries]
-        )
-        payload = dict(detail or {})
-        now = self._store.now
-        with self._store.transaction() as connection:
-            self._execute(
-                connection,
-                "INSERT INTO justification_sets(set_id,mission_id,subject_kind,subject_id,"
-                "member_revision,member_digest,rule_ref,detail_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    identity,
-                    mission,
-                    kind,
-                    subject,
-                    revision,
-                    digest,
-                    rule_ref,
-                    canonical_json(payload),
-                    now,
-                ),
-                f"justification set {identity} conflicts with one already stored for"
-                f" {kind}/{subject}",
-            )
-            for reference, polarity in entries:
-                self._execute(
-                    connection,
-                    "INSERT INTO support_members(set_id,member_kind,member_id,mission_id,polarity,"
-                    "member_revision,member_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (
-                        identity,
-                        str(reference.kind),
-                        reference.id,
-                        mission,
-                        1 if polarity else 0,
-                        reference.revision,
-                        canonical_json(reference.to_json()),
-                        now,
-                    ),
-                    f"member {reference.kind!s}/{reference.id} appears twice in {identity}",
-                )
-        return StoredJustificationSet(
-            set_id=identity,
-            mission_id=mission,
-            subject_kind=kind,
-            subject_id=subject,
-            member_revision=revision,
-            member_digest=digest,
-            rule_ref=rule_ref,
-            members=entries,
-            detail=payload,
-        )
-
-    def get_justification_set(self, set_id: str) -> StoredJustificationSet:
-        row = self._one(
-            "SELECT * FROM justification_sets WHERE set_id = ?",
-            (identifier(set_id, "set_id"),),
-            f"no justification set {set_id}",
-        )
-        return self._justification_set(row)
-
-    def list_justification_sets(
-        self, mission_id: str, subject_kind: str, subject_id: str
-    ) -> tuple[StoredJustificationSet, ...]:
-        rows = self._store.connection.execute(
-            "SELECT * FROM justification_sets WHERE mission_id = ? AND subject_kind = ?"
-            " AND subject_id = ? ORDER BY member_revision, set_id",
-            (
-                identifier(mission_id, "mission_id"),
-                identifier(subject_kind, "subject_kind"),
-                identifier(subject_id, "subject_id"),
-            ),
-        ).fetchall()
-        return tuple(self._justification_set(row) for row in rows)
-
-    def consumers_of(
-        self, mission_id: str, member_kind: str, member_id: str
-    ) -> tuple[StoredJustificationSet, ...]:
-        """The reverse support index: every set that rests on this member."""
-
-        rows = self._store.connection.execute(
-            "SELECT justification_sets.* FROM support_members JOIN justification_sets"
-            " ON justification_sets.set_id = support_members.set_id"
-            " WHERE support_members.mission_id = ? AND support_members.member_kind = ?"
-            " AND support_members.member_id = ? ORDER BY justification_sets.set_id",
-            (
-                identifier(mission_id, "mission_id"),
-                identifier(member_kind, "member_kind"),
-                identifier(member_id, "member_id"),
-            ),
-        ).fetchall()
-        return tuple(self._justification_set(row) for row in rows)
 
     def bump_epoch(self, mission_id: str, scope_id: str, *, bumped_by: str) -> int:
         """Raise a scope's validity epoch.  Readers behind it must fail closed."""
@@ -1810,26 +1710,13 @@ class HtnStore:
                 None,
                 canonical_json({"requirements_revision": read_set.requirements_revision}),
             ),
-            (
-                "manager_epoch",
-                mission,
-                read_set.manager_epoch,
-                None,
-                canonical_json({"manager_epoch": read_set.manager_epoch}),
-            ),
-            (
-                "budget_grant_revision",
-                mission,
-                read_set.budget_grant_revision,
-                None,
-                canonical_json({"budget_grant_revision": read_set.budget_grant_revision}),
-            ),
         ]
         for group in (
             read_set.goal_revisions,
             read_set.method_revisions,
             read_set.observation_revisions,
             read_set.acceptance_revisions,
+            read_set.obligation_revisions,
         ):
             for item in group:
                 rows.append(
@@ -1841,16 +1728,6 @@ class HtnStore:
                         canonical_json(item.to_json()),
                     )
                 )
-        for support in read_set.support_sets:
-            rows.append(
-                (
-                    "support_set",
-                    support.support_set_id,
-                    support.revision,
-                    support.member_digest,
-                    canonical_json(support.to_json()),
-                )
-            )
         for scope in read_set.scope_epochs:
             rows.append(
                 (
@@ -2368,26 +2245,6 @@ class HtnStore:
             read_set=SemanticReadSet.from_json(json.loads(row["read_set_json"])),
         )
 
-    def _justification_set(self, row: sqlite3.Row) -> StoredJustificationSet:
-        members = self._store.connection.execute(
-            "SELECT member_json, polarity FROM support_members WHERE set_id = ?"
-            " ORDER BY member_kind, member_id",
-            (row["set_id"],),
-        ).fetchall()
-        return StoredJustificationSet(
-            set_id=str(row["set_id"]),
-            mission_id=str(row["mission_id"]),
-            subject_kind=str(row["subject_kind"]),
-            subject_id=str(row["subject_id"]),
-            member_revision=int(row["member_revision"]),
-            member_digest=str(row["member_digest"]),
-            rule_ref=row["rule_ref"],
-            members=tuple(
-                (TypedRef.from_json(json.loads(item[0])), bool(item[1])) for item in members
-            ),
-            detail=json.loads(row["detail_json"]),
-        )
-
     @staticmethod
     def _commit_receipt(row: sqlite3.Row) -> PlanCommitReceipt:
         return PlanCommitReceipt(
@@ -2439,7 +2296,6 @@ __all__ = (
     "DirtyEntry",
     "HtnStore",
     "PlanCommitReceipt",
-    "StoredJustificationSet",
     "StoredMethod",
     "StoredPlanRevision",
     "StoredReviewRecord",

@@ -4,19 +4,22 @@
 """P2.3a: one plan revision is committed atomically, or not at all (§9.4, TG §7.4).
 
 This is the ninth Commit Service mixin and the single writing entry point of the
-hierarchical mode.  Everything it does is arranged around one sentence of ADR-13:
+hierarchical mode.  Everything it does is arranged around two checks:
 
-    the integer ``base_graph_version`` stays the coarse concurrency gate for every
-    Mission; a hierarchical proposal carries a *semantic* read-set beside it, which
-    is checked item by item afterwards, and any stale item refuses the commit — with
-    no automatic rebase.
+    the plan revision is the structural concurrency gate — a delta is accepted only
+    if it was built on the Mission's current plan revision, so of two concurrent
+    proposals at most one commits; and the proposal's *semantic* read-set is
+    checked item by item, so a fact, duty, acceptance or epoch the proposal read
+    that has since moved refuses the commit — with no automatic rebase.
 
-So the order below is not cosmetic.  The integer gate runs first because it is the
-cheap answer that every Mission already agrees on; the read-set runs second because
-it is the expensive one and only hierarchical Missions have it; and there is
-deliberately no automatic replay of a stale proposal (C19): a proposal whose read went stale is handed back to
-its author to recompile against the new snapshot, because replaying it would mean
-deciding, on the author's behalf, that a fact it read did not matter.
+There is deliberately no automatic replay of a stale proposal (C19): a proposal
+whose read went stale is handed back to its author to recompile against the new
+snapshot, because replaying it would mean deciding, on the author's behalf, that a
+fact it read did not matter.  Budget and planning authority are not read-set items;
+they are re-read inside this transaction (gate 9 and the admission check).  Gate
+numbers 3 and 4 are unused: the manager-epoch gate and the integer graph-version
+gate were removed in stage D, and the remaining numbers are kept so references to
+them stay valid.
 
 Three further boundaries the plan states and this module keeps:
 
@@ -164,7 +167,6 @@ class PlanPrincipal:
 
     principal_id: str
     scope_id: str = "mission"
-    manager_epoch: int = 0
 
     def __post_init__(self) -> None:
         if not str(self.principal_id).strip():
@@ -186,7 +188,6 @@ class CommitPlanCommand:
     delta: ProposedPlanDelta
     network: TaskNetworkSnapshot
     task_bindings: tuple[TaskSemanticBindingV1, ...] = ()
-    base_graph_version: int = 1
     issued_by: str = ""
     scope_id: str = "mission"
     running_work_policy: RunningWorkPolicy = RunningWorkPolicy.RETAIN_IF_BINDINGS_UNCHANGED
@@ -226,7 +227,6 @@ class CommitPlanCommand:
                 "mission_id": self.mission_id,
                 "delta": self.delta.to_json(),
                 "task_bindings": [binding.to_json() for binding in self.task_bindings],
-                "base_graph_version": self.base_graph_version,
                 "scope_id": self.scope_id,
                 "issued_by": self.issued_by,
                 "running_work_policy": str(self.running_work_policy),
@@ -349,8 +349,6 @@ class PlanCommitsMixin:
                     f"mission {mission.id} is {mission.status!s} and accepts no new plan",
                 )
             read_set = command.read_set
-            self._check_manager_epoch(semantics, command, principal, read_set)
-            self._check_integer_gate(mission, command)
             self._check_read_set(semantics, command, read_set)
             base, new_revision = self._check_plan_revision(semantics, command)
             self._check_structure(semantics, command)
@@ -616,47 +614,6 @@ class PlanCommitsMixin:
                 f"and this delivery asks for {intent}",
             )
         return stored
-
-    # ------------------------------------------------------------- gate 3: manager epoch
-    @staticmethod
-    def _check_manager_epoch(
-        semantics: HtnStore,
-        command: CommitPlanCommand,
-        principal: PlanPrincipal,
-        read_set: SemanticReadSet,
-    ) -> None:
-        current = semantics.epoch(command.mission_id, command.scope_id)
-        if int(read_set.manager_epoch) != current:
-            raise PlanCommitRejected(
-                "MANAGER_EPOCH_STALE",
-                f"scope {command.scope_id!r} is at epoch {current}; the proposal was built "
-                f"at epoch {int(read_set.manager_epoch)}",
-            )
-        if int(principal.manager_epoch) != current:
-            raise PlanCommitRejected(
-                "MANAGER_EPOCH_STALE",
-                f"scope {command.scope_id!r} is at epoch {current}; the principal holds "
-                f"epoch {int(principal.manager_epoch)}",
-            )
-
-    # -------------------------------------------------------- gate 4: the integer gate
-    @staticmethod
-    def _check_integer_gate(mission: Mission, command: CommitPlanCommand) -> None:
-        """ADR-13 clause 1, unchanged for both modes — and clause C19 on top of it.
-
-        There is deliberately no ``allow_rebase`` here: a stale proposal is never
-        replayed, because the thing that went stale might be a *fact it read*, which
-        no overlap test on task ids can see.
-        """
-
-        current = int((mission.final_report or {}).get("graph_version") or 1)
-        if int(command.base_graph_version) != current:
-            raise PlanCommitRejected(
-                "GRAPH_VERSION_STALE",
-                f"the proposal is based on graph version {int(command.base_graph_version)}, "
-                f"current is {current}; recompile against the new snapshot "
-                "(a hierarchical proposal is never rebased automatically, ADR-13/C19)",
-            )
 
     # ----------------------------------------------------------- gate 5: the read-set
     def _check_read_set(
@@ -1285,7 +1242,6 @@ class PlanCommitsMixin:
             "proposal_id": proposal_id,
             "base_plan_revision": base,
             "plan_revision": new_revision,
-            "base_graph_version": int(command.base_graph_version),
             "scope_id": command.scope_id,
             "intent_hash": intent,
             "read_set_hash": content_hash_of(delta.read_set.to_json()),
@@ -1338,7 +1294,6 @@ class PlanCommitsMixin:
                 "pending_dispatch": pending,
             },
             detail={
-                "base_graph_version": int(command.base_graph_version),
                 "mission_version": mission.version,
                 "scope_id": command.scope_id,
                 "principal_scope_epoch": semantics.epoch(command.mission_id, command.scope_id),

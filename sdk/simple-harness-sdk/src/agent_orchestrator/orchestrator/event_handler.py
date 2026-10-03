@@ -68,6 +68,7 @@ from ..context.retrieval import (
     knowledge_view,
     rank_knowledge,
 )
+from ..contracts.error_table import refusal_charges_planner
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -189,6 +190,7 @@ from .commit_service import (
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
+    WriteConflictPending,
     append_hierarchical_event,
     is_hierarchical,
     record_assembly_missing,
@@ -405,6 +407,25 @@ def planning_failure_detail(error: Exception, detail: dict[str, Any]) -> dict[st
 def _turn_failed(event: Any) -> bool:
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
     return isinstance(detail, Mapping) and detail.get("turn_failed") is True
+
+
+def _refusal_codes(event: Any) -> list[str]:
+    """The problem codes a ``PlanningRejected`` event names."""
+    detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
+    problems = detail.get("problems") if isinstance(detail, Mapping) else None
+    preview = detail.get("preview") if isinstance(detail, Mapping) else None
+    mapped = preview.get("mapped_problems") if isinstance(preview, Mapping) else None
+    return [*(str(item.get("code")) for item in problems or () if isinstance(item, Mapping)),
+            *(str(item) for item in mapped or ())]
+
+
+def _stale_commit_problems(reason: object) -> dict[str, Any]:
+    """A commit refused because the world moved between preview and commit (the read set or
+    the plan revision went stale) is the same fact as a stale request: named so on the
+    refusal, it is not counted as the Planner answering wrongly (阶段 D)."""
+    if str(reason) in {"READ_SET_STALE", "PLAN_REVISION_STALE"}:
+        return {"problems": [{"code": "REQUEST_BINDING_STALE", "detail": str(reason)}]}
+    return {}
 
 
 def _task_ref_hashes(semantics: Any) -> frozenset[str]:
@@ -2336,6 +2357,40 @@ class Orchestrator:
             return False
         return row is not None
 
+    def _preview_read_facts(self, mission_id: str) -> dict[str, Any]:
+        """What a plan proposal reads that the plan-revision gate does not cover, as it
+        stands when the preview inputs are frozen (阶段 D): the scope epochs — the
+        Assurance lane's own ``assurance:`` scopes are not plan facts — and every duty of
+        the Mission and the newest observation of every recorded proposition, each read with
+        the commit checker's own formula."""
+        from ..contracts.htn import ReadItemKind
+        from ..storage.htn_store import HtnStore
+        from ..storage.obligation_store import ObligationStore
+        from ._read_set import SemanticReadSetChecker
+        from .taskgraph_epochs import current_scope_epochs
+
+        checker = SemanticReadSetChecker(self.store, HtnStore(self.store), mission_id=mission_id)
+        duties = ObligationStore(self.store).obligation_ids(mission_id)
+        mission = self.store.get_mission(mission_id)
+        return {
+            "scope_epochs": tuple(sorted(
+                (scope, int(epoch)) for scope, epoch in current_scope_epochs(self.store, mission_id).items()
+                if not scope.startswith("assurance:"))),
+            "obligation_items": tuple(
+                (str(duty), checker.read_item(ReadItemKind.OBLIGATION, str(duty))) for duty in sorted(map(str, duties))),
+            "observation_items": tuple(
+                (key, checker.read_item(ReadItemKind.FACT, str(record.observation_id)))
+                for key, record in sorted({
+                    str(item.proposition_key): item
+                    for item in HtnStore(self.store).list_observations(mission_id)}.items())),
+            # ``c-user-<n>`` names the Mission's n-th criterion; a ``file:X`` one names a file
+            "criterion_files": tuple(
+                (f"c-user-{number}", statement[len("file:"):].strip())
+                for number, statement in enumerate(
+                    (str(item).strip() for item in (mission.success_criteria if mission is not None else ())), start=1)
+                if statement.startswith("file:") and statement[len("file:"):].strip()),
+        }
+
     def _handoff_ground_gone(self, action_key: str) -> bool:
         from ..contracts.error_table import HANDOFF_VALIDITY_STALE
 
@@ -4248,7 +4303,6 @@ class Orchestrator:
                     # closed as a different planner principal after a worker handoff.
                     principal_id=bound_planner,
                     scope_id="mission",
-                    manager_epoch=new_mode.semantics().epoch(mission.id, "mission"),
                 ),
                 policy=planning_policy_for_mission(self.store, mission.id),
                 now_ms=int(self.store.now * 1000),
@@ -6006,6 +6060,8 @@ class Orchestrator:
                 if _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:
                     forgiven += 1
                     continue
+                if not refusal_charges_planner(_refusal_codes(event)):
+                    continue  # 请求过期：规划器作答期间世界变了，不算它答错（错误码表那一列）
                 count += 1
             elif event.type == "PlanningDecisionEvaluated" and event.payload.get("status") == "COMMITTED":
                 count = 0
@@ -6802,7 +6858,7 @@ class Orchestrator:
                     raise ContractError("SOURCE_UNAVAILABLE: TaskGraph preview assembly is missing")
                 source_principal = PlanPrincipal(
                     principal_id=context.authorization.planning_snapshot.planner_principal_id,
-                    scope_id="mission", manager_epoch=new_mode.semantics().epoch(mission.id, "mission"))
+                    scope_id="mission")
                 taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
                 from .repair_impact import read_repair_impact_indexes
                 from .planning_graph_repairs import graph_repair_sources
@@ -6832,6 +6888,7 @@ class Orchestrator:
                         runtime_work=runtime_work,
                         repair_impact=read_repair_impact_indexes(self.store, network, mission.id) if graph_mutation else None,
                         goal_reuse_sources=graph_repair_sources(self.store, network) if graph_mutation else (),
+                        **self._preview_read_facts(mission.id),
                 )
             preview = new_mode.preview_plan_proposal(proposal, inputs=frozen_inputs)
             if isinstance(preview, PreviewUnavailable):
@@ -6989,7 +7046,6 @@ class Orchestrator:
                     else (intent.agent_id or self._owner)
                 ),
                 scope_id="mission",
-                manager_epoch=new_mode.semantics().epoch(mission.id, "mission"),
             )
             if preview_candidate is None:
                 # This branch is retained for durable-only/legacy adapters.  New
@@ -7098,7 +7154,8 @@ class Orchestrator:
             await reject_planning(
                 intent,
                 reason="proposal_not_grounded",
-                detail={"error": str(error)[:300]},
+                detail={"error": str(error)[:300],
+                        **_stale_commit_problems(getattr(error, "reason", ""))},
             )
             return
 
@@ -7131,7 +7188,8 @@ class Orchestrator:
         await reject_planning(
             intent,
             reason="proposal_not_grounded",
-            detail={"refusals": refusals},
+            detail={"refusals": refusals,
+                    **_stale_commit_problems(plan_outcome.refusals[-1].reason if plan_outcome.refusals else "")},
         )
 
     def _release_refused_fence(self, mission_id: str, decision_id: str) -> None:
@@ -8884,8 +8942,7 @@ class Orchestrator:
         from ..storage.planning_human_store import PlanningHumanStore
 
         questions = PlanningHumanStore(self.store)
-        binding = {"plan_revision": current.plan_revision, "requirements_revision": current.requirements_revision,
-                   "manager_epoch": new_mode.semantics().epoch(mission.id, "mission")}
+        binding = {"plan_revision": current.plan_revision, "requirements_revision": current.requirements_revision}
         previous = None if repair_context is not None else questions.find_answered(
             mission.id, subject_key, payload.to_json().get("question"))
         if previous is not None:
@@ -9015,8 +9072,7 @@ class Orchestrator:
                     decision_id=decision_id, mission_id=mission.id, subject_key=subject_key,
                     payload=question,
                     request_binding={"plan_revision": 0 if plan is None else int(plan.revision),
-                                     "requirements_revision": 0 if requirements is None else int(requirements.revision),
-                                     "manager_epoch": htn.epoch(mission.id, "mission")},
+                                     "requirements_revision": 0 if requirements is None else int(requirements.revision)},
                     next_ordinal=self._next_planning_ordinal(mission.id),
                     repair_context={"kind": "review_adjudication", "record_id": str(record.record_id),
                                     "target_id": target_id, **dict(extra)})
@@ -9435,7 +9491,6 @@ class Orchestrator:
             principal=PlanPrincipal(
                 principal_id=self._owner,
                 scope_id="mission",
-                manager_epoch=semantics.epoch(mission.id, "mission"),
             ),
             command_id=f"{mission.id}:root-resolution",
             required_delivery_stage=required_stage,
@@ -9682,6 +9737,10 @@ class Orchestrator:
             # nothing — overlay only reads producers the manifest already named.
             if inputs:
                 inputs = new_mode.overlay_attempt_inputs(mission.id, inputs)
+        except WriteConflictPending as error:
+            # 阶段 D：上游两步把同一个文件写成了两样；这一步不开工，等规划器处理写入冲突修复请求
+            self._note(f"task {task.id} not dispatched: {error}")
+            return False
         except ArtifactConflict as error:
             self._commit_stop_task(
                 task.id,

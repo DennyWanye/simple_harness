@@ -57,8 +57,7 @@ class PlanningHumanStore:
         plan = htn.active_plan_revision(row["mission_id"])
         requirements = htn.latest_requirements_revision(row["mission_id"])
         current = {"plan_revision": 0 if plan is None else int(plan.revision),
-                   "requirements_revision": 0 if requirements is None else int(requirements.revision),
-                   "manager_epoch": htn.epoch(row["mission_id"], "mission")}
+                   "requirements_revision": 0 if requirements is None else int(requirements.revision)}
         return row["request"]["binding"] == current
 
     def retire_stale(self, mission_id: str) -> None:

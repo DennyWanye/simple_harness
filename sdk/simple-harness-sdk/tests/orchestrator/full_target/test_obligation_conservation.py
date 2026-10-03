@@ -1,12 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P1.1 red tests: failure counts and spend accrue to the duty (§6.1; T025 / T069).
+"""P1.1: the duty's own arithmetic — recursion fuel, demand, lifecycle (§6.1, §6.4).
 
-The in-memory half of T025 and T069: a successor task, a swapped method, a
-different agent or a renamed goal inherits the accumulated failure count and the
-consumed allowance.  Persisting the same counters is P1.2; wiring them into
-``mission_tail_commits`` is P1.3.
+Failures and spend are no longer kept on the duty (stage D): they are recorded on
+the attempts and settlements and derived at read time, so this file only covers
+what the ledger itself still counts.
 """
 
 from __future__ import annotations
@@ -55,58 +54,21 @@ def duty(
     )
 
 
-def test_failure_count_and_spend_survive_every_change_of_shape() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=5)
-    target = duty().obligation_id
-
-    ledger.record_failure(target)
-    ledger.record_spend(target, tokens=1_200, attempts=1)
-    ledger.record_failure(target)
-    ledger.record_spend(target, tokens=800, attempts=1)
-
-    # The work is renamed, re-planned onto another method, handed to another agent
-    # and finally re-issued as a successor task.
-    ledger.note_shape_change(target, ShapeChange.TASK_RENAMED, detail="task-1 -> task-7")
-    ledger.note_shape_change(target, ShapeChange.METHOD_SWITCHED, detail="method-b")
-    ledger.note_shape_change(target, ShapeChange.AGENT_REASSIGNED, detail="worker-3")
-    ledger.note_shape_change(target, ShapeChange.SUCCESSOR_TASK, detail="task-8")
-
-    account = ledger.account(target)
-    assert account.failure_count == 2
-    assert account.consumed_tokens == 2_000
-    assert account.consumed_attempts == 2
-
-
-def test_a_successor_under_the_same_duty_keeps_spending_the_same_allowance() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=5)
-    target = duty().obligation_id
-    ledger.record_failure(target)
-    ledger.record_spend(target, tokens=5_000, attempts=2)
-
-    ledger.note_shape_change(target, ShapeChange.SUCCESSOR_TASK, detail="task-9")
-    ledger.record_failure(target)
-    ledger.record_spend(target, tokens=1_000, attempts=1)
-
-    account = ledger.account(target)
-    assert account.failure_count == 2
-    assert account.consumed_tokens == 6_000
-    assert account.consumed_attempts == 3
-
-
 def test_a_genuinely_new_duty_needs_a_new_obligation_id() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
-    ledger.record_failure(duty().obligation_id, count=3)
+    ledger.consume_fuel(
+        duty().obligation_id,
+        expansion=ExpansionRecord(method_id="method-a", parameters_digest="a" * 64),
+    )
 
     with pytest.raises(ContractError, match="new obligation_id"):
         ledger.register(duty())
 
     child = duty("obligation-2")
     ledger.register(child, recursion_fuel=2)
-    assert ledger.account(child.obligation_id).failure_count == 0
-    assert ledger.account(duty().obligation_id).failure_count == 3
+    assert ledger.account(child.obligation_id).fuel_used == 0
+    assert ledger.account(duty().obligation_id).fuel_used == 1
 
 
 def test_expansion_history_is_kept_across_method_changes() -> None:
@@ -249,35 +211,6 @@ def test_a_refused_lifecycle_value_changes_nothing() -> None:
     assert ledger.account(target) == before
 
 
-def test_a_refused_record_spend_does_not_leave_half_of_itself_behind() -> None:
-    """Every argument is validated before any lands, so a bad attempt count cannot
-    land the tokens anyway and a retry cannot double-count them."""
-
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=2)
-    target = duty().obligation_id
-    ledger.record_spend(target, tokens=1_000, attempts=1)
-    before = ledger.account(target)
-
-    with pytest.raises(ContractError, match="attempts"):
-        ledger.record_spend(target, tokens=500, attempts=-1)
-
-    assert ledger.account(target) == before
-    assert ledger.account(target).consumed_tokens == 1_000
-
-
-def test_a_refused_record_failure_does_not_increment_the_counter() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=2)
-    target = duty().obligation_id
-    ledger.record_failure(target)
-
-    with pytest.raises(ContractError, match="count"):
-        ledger.record_failure(target, count=0)
-
-    assert ledger.account(target).failure_count == 1
-
-
 def test_a_refused_shape_change_is_not_recorded() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
@@ -291,47 +224,8 @@ def test_a_refused_shape_change_is_not_recorded() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Contract round 4: the token axis and admitted demand (P1.2)
+# Contract round 4: admitted demand (P1.2)
 # --------------------------------------------------------------------------------------
-
-
-def test_tokens_accrue_beside_attempts() -> None:
-    """Two ceilings, two counters, reported separately."""
-
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=3)
-    target = duty().obligation_id
-
-    ledger.record_spend(target, attempts=1, tokens=4_000)
-    account = ledger.record_spend(target, attempts=1, tokens=1_500)
-
-    assert account.consumed_attempts == 2
-    assert account.consumed_tokens == 5_500
-    assert account.to_json()["consumed_tokens"] == 5_500
-
-
-def test_tokens_survive_a_change_of_shape_like_every_other_counter() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=3)
-    target = duty().obligation_id
-    ledger.record_spend(target, tokens=9_000)
-
-    ledger.note_shape_change(target, ShapeChange.METHOD_SWITCHED, detail="method-b")
-
-    assert ledger.account(target).consumed_tokens == 9_000
-
-
-def test_a_refused_token_amount_leaves_every_counter_alone() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=3)
-    target = duty().obligation_id
-    ledger.record_spend(target, attempts=1, tokens=2_000)
-    before = ledger.account(target)
-
-    with pytest.raises(ContractError, match="tokens"):
-        ledger.record_spend(target, attempts=1, tokens=-1)
-
-    assert ledger.account(target) == before
 
 
 def test_a_demand_can_be_admitted_and_withdrawn() -> None:
@@ -485,7 +379,7 @@ def test_opening_a_refinement_moves_fuel_out_of_the_parent() -> None:
     assert child.fuel_limit == 2
     assert ledger.remaining_fuel(parent) == 3
     assert ledger.obligation(child.obligation_id).parent_obligation_id == parent
-    assert ledger.account(child.obligation_id).failure_count == 0
+    assert ledger.account(child.obligation_id).fuel_used == 0
 
 
 def test_a_parent_cannot_hand_over_fuel_it_no_longer_has() -> None:
@@ -549,7 +443,7 @@ def test_opening_against_a_stale_parent_view_is_refused() -> None:
     ledger.register(duty(), recursion_fuel=5)
     parent = duty().obligation_id
     stale = ledger.account(parent)
-    ledger.record_failure(parent)
+    ledger.note_shape_change(parent, ShapeChange.METHOD_SWITCHED, detail="method-b")
 
     with pytest.raises(ContractError, match="has changed since"):
         ledger.open_from(_opening(), stale)

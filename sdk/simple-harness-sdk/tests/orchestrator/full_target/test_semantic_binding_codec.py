@@ -80,7 +80,6 @@ from agent_orchestrator.contracts.htn import (
     SemanticReadSet,
     SideEffectKind,
     StructureBudget,
-    SupportSetRead,
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
@@ -126,11 +125,6 @@ def read_set() -> SemanticReadSet:
                 semantic_revision=1,
                 content_hash=HASH_A,
             ),
-        ),
-        manager_epoch=4,
-        budget_grant_revision=2,
-        support_sets=(
-            SupportSetRead(support_set_id="support-1", revision=5, member_digest=HASH_B),
         ),
         scope_epochs=(ScopeEpochRead(scope_id="mission-1", validity_epoch=9),),
     )
@@ -252,11 +246,11 @@ def test_method_instance_draft_round_trips() -> None:
     assert restored.parameters_digest() == draft.parameters_digest()
 
 
-def test_semantic_read_set_round_trips_with_its_support_member_digest() -> None:
+def test_semantic_read_set_round_trips_with_its_scope_epochs() -> None:
     original = read_set()
     restored = SemanticReadSet.from_json(original.to_json())
     assert restored == original
-    assert restored.support_sets[0].member_digest == HASH_B
+    assert restored.scope_epochs[0].validity_epoch == 9
 
 
 def test_goal_signature_round_trips() -> None:

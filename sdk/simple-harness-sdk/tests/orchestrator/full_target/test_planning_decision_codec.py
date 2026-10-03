@@ -74,9 +74,7 @@ SECTION_32_SYSTEM_FIELDS = (
     "principal_id",
     "scope",
     "scope_id",
-    "manager_epoch",
     "budget_account",
-    "budget_grant_revision",
     "registry_status",
     "opened_by",
     "authorization_ref",
@@ -304,7 +302,7 @@ def test_the_system_field_keys_are_exactly_section_32() -> None:
     # §32's 23 keys, pinned as a literal so deleting one (e.g. `request_id`) is red
     # rather than a set that quietly shrinks to 22.
     assert set(SYSTEM_FIELD_KEYS) == set(SECTION_32_SYSTEM_FIELDS)
-    assert len(SYSTEM_FIELD_KEYS) == 23
+    assert len(SYSTEM_FIELD_KEYS) == 21
 
 
 @pytest.mark.parametrize("key", SECTION_32_SYSTEM_FIELDS)

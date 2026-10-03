@@ -24,7 +24,6 @@ from ..verification.evidence_resolver import _safe_path
 # Known graph bookkeeping cannot change permission or the meaning of a criterion.
 _BOOKKEEPING = frozenset(
     {
-        "graph_version",
         "change_id",
         "proposed_by_attempt",
         "supersedes_task",

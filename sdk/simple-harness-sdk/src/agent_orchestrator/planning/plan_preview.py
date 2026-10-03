@@ -16,6 +16,8 @@ from typing import Any
 
 from ..contracts.evidence_state import EvidenceSnapshot
 from ..contracts.htn import (
+    ReadItem,
+    ScopeEpochRead,
     GraphStructureBudget,
     MethodInstanceId,
     MethodRef,
@@ -32,9 +34,9 @@ from ..contracts.htn import (
 )
 from ..contracts.models import ContractError, sha256_hex
 from ..graph.task_network import TaskNetworkSnapshot
-from ..knowledge.predicates import PredicateRegistry
+from ..knowledge.predicates import PredicateRegistry, proposition_key
 from ..runtime.planning_operations import RuntimeWorkSnapshot
-from .htn.applicability import ApplicabilityStatus, CapabilitySnapshot, assess_method
+from .htn.applicability import ApplicabilityStatus, CapabilitySnapshot, assess_method, ground_value
 from .htn.compiler import (
     CompilationRefused,
     RefinementCompilation,
@@ -43,7 +45,7 @@ from .htn.compiler import (
     compile_candidate_from_snapshot as compile_refinement_candidate,
 )
 from .htn.grounding import ParameterBindingsError, SharedGoalEntry, SharedGoalIndex, ground_method
-from .htn.registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog
+from .htn.registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog, iter_predicates
 from .htn.validation import DeltaProblemKind, DeltaReport, validate_delta
 
 
@@ -75,6 +77,40 @@ class PreviewInputs:
     goal_reuse_sources: tuple[Mapping[str, Any], ...] = ()
     taskgraph_contract: bool = False
     sharing_entries: tuple[SharedGoalEntry, ...] | None = None
+    #: 阶段 D：冻结预览输入时读到的作用域纪元（范围 → 纪元）与本任务各义务的读集条目
+    #: （义务编号 → 条目，用提交核对器的同一公式读出）。编译出的读集带上它们，提交时逐项重核。
+    scope_epochs: tuple[tuple[str, int], ...] = ()
+    obligation_items: tuple[tuple[str, ReadItem], ...] = ()
+    #: 命题键 → 该命题最新一条观察的读集条目（同一公式）。做法前提用到哪条命题，读集就带哪条。
+    observation_items: tuple[tuple[str, ReadItem], ...] = ()
+    #: 要求编号 → 文件路径（``file:X`` 要求），做法把它链接到哪一步，哪一步就以它为写入目标。
+    criterion_files: tuple[tuple[str, str], ...] = ()
+
+    def scope_epoch_reads(self) -> tuple[ScopeEpochRead, ...]:
+        return tuple(ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
+                     for scope, epoch in sorted(self.scope_epochs))
+
+    def obligation_reads(self, obligation_ids: Sequence[object]) -> tuple[ReadItem, ...]:
+        known = dict(self.obligation_items)
+        return tuple(known[key] for key in dict.fromkeys(str(item) for item in obligation_ids) if key in known)
+
+    def precondition_reads(self, conditions: Sequence[Any], parameters: Mapping[str, Any]) -> tuple[ReadItem, ...]:
+        """The recorded observations these preconditions were judged on, atom by atom."""
+        known = dict(self.observation_items)
+        reads: list[ReadItem] = []
+        for atom in iter_predicates(conditions):
+            signature = self.predicates.resolve(atom.predicate_ref)
+            if signature is None:
+                continue
+            errors: list[str] = []
+            arguments = {name: ground_value(item, parameters, path=f"precondition.{name}", errors=errors)
+                         for name, item in atom.arguments.items()}
+            if errors:
+                continue
+            item = known.get(proposition_key(signature, arguments))
+            if item is not None and item not in reads:
+                reads.append(item)
+        return tuple(reads)
 
     def __post_init__(self) -> None:
         if type(self.taskgraph_contract) is not bool:
@@ -328,6 +364,11 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         budget=inputs.budget,
         requirements_revision=inputs.requirements_revision,
         compiled_from_proposal_id=proposal.proposal_id,
+        scope_epochs=dict(inputs.scope_epochs),
+        obligation_items=dict(inputs.obligation_items),
+        observation_items=inputs.precondition_reads(
+            method.applicable_when, {item.name: item.value for item in draft.grounded_parameters}),
+        criterion_files=dict(inputs.criterion_files),
     )
 
 

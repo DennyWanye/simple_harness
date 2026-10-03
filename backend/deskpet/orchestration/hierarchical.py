@@ -18,7 +18,11 @@ def planning_world(loop: Any, mission: Any) -> Any:
     from agent_orchestrator.storage.htn_store import HtnStore
 
     htn = HtnStore(loop.store)
-    world = build_planning_world(mission.id, domains=(), semantics=htn, observers=())
+    # 桌面的三样只读观察（文件在不在、文件内容哈希、资料是否当前版本）：实现在 SDK 一份，这里注册
+    from agent_orchestrator.planning.htn.observers.workspace import workspace_observers, workspace_predicates
+
+    world = build_planning_world(mission.id, domains=(), semantics=htn, predicates=workspace_predicates(),
+                                 observers=workspace_observers(loop.store, mission.id))
     criteria = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("desktop.goal-parameters", 1, content_hash_of(params_body))
@@ -73,6 +77,11 @@ def planning_world(loop: Any, mission: Any) -> Any:
             body["input_ports"] = [p.to_json() for p in input_ports]
         if level:
             body["refinement_level"] = level
+        # 内容步骤只写本次尝试自己的隔离工作区，对外发布由系统步骤负责：效果身份固定，
+        # 所以同一个内容步骤可以被几个分支共用（阶段 D，补全方案 2.4）。类型仍是"本地写"。
+        effect_identity = "desktop.attempt-workspace" if form is TaskForm.PRIMITIVE else None
+        if effect_identity:
+            body["effect_identity"] = effect_identity
         ref = VersionedRef(name, 1, content_hash_of(body))
         world.catalog.register(TaskTypeSpec(
             task_type_ref=ref, form=form, goal_signature=goal_signature,
@@ -83,7 +92,7 @@ def planning_world(loop: Any, mission: Any) -> Any:
                 if form is TaskForm.PRIMITIVE else None),
             required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
             side_effect_kind=SideEffectKind.LOCAL_WRITE if form is TaskForm.PRIMITIVE else SideEffectKind.NONE,
-            reversible=True, domain="desktop", refinement_level=level,
+            reversible=True, domain="desktop", refinement_level=level, effect_identity=effect_identity,
         ))
     offered = set(mission.allowed_tools)
     world.records = capability_records(world.catalog, capability_layers={"workspace.prepare": None},

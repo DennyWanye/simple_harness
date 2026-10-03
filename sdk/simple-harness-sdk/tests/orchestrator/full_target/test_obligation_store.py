@@ -4,9 +4,9 @@
 """P1.2 red tests: the durable obligation ledger (§6.1, §6.4, ADR-08).
 
 The arithmetic under test is the one thing re-planning must not be able to reset:
-a duty's failure count, its consumed budget and its recursion fuel belong to the
-``obligation_id``, so renaming the task, swapping the method or handing the work
-to another agent leave every counter exactly where it was.  These tests drive the
+a duty's recursion fuel and demand belong to the ``obligation_id``, so renaming the
+task, swapping the method or handing the work to another agent leave every counter
+exactly where it was.  Failures and spend are not stored on the duty (stage D).  These tests drive the
 persistent store, not the in-memory ledger, and additionally pin that a *refused*
 call writes nothing at all.
 """
@@ -17,7 +17,6 @@ import pytest
 
 from agent_orchestrator.contracts import (
     Budget,
-    ContractError,
     Mission,
     MissionStatus,
 )
@@ -108,11 +107,8 @@ def test_registering_the_same_id_twice_is_refused(ledger: ObligationStore) -> No
 def test_a_fresh_account_starts_at_zero(ledger: ObligationStore) -> None:
     ledger.register(_duty(), recursion_fuel=3)
     view = ledger.account(MISSION, ObligationId("obligation-1"))
-    assert view.failure_count == 0
-    assert view.consumed_attempts == 0
     assert view.remaining_fuel == 3
     assert view.lifecycle is ObligationLifecycle.UNSATISFIED
-    assert ledger.spent_tokens(MISSION, ObligationId("obligation-1")) == 0
 
 
 def test_an_unknown_obligation_is_a_conflict(ledger: ObligationStore) -> None:
@@ -120,59 +116,16 @@ def test_an_unknown_obligation_is_a_conflict(ledger: ObligationStore) -> None:
         ledger.account(MISSION, ObligationId("obligation-missing"))
 
 
-# ------------------------------------------------------------------ accumulation
-def test_failures_accrue_across_shape_changes(ledger: ObligationStore) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    assert ledger.record_failure(MISSION, target) == 1
-    ledger.note_shape_change(MISSION, target, ShapeChange.TASK_RENAMED, detail="renamed to B")
-    ledger.note_shape_change(MISSION, target, ShapeChange.METHOD_SWITCHED, detail="method B")
-    assert ledger.record_failure(MISSION, target) == 2
-    view = ledger.account(MISSION, target)
-    assert view.failure_count == 2
-    assert view.shape_changes == 2
-
-
-def test_spend_accumulates_on_the_duty_not_the_task(ledger: ObligationStore) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_spend(MISSION, target, attempts=1, tokens=340)
-    ledger.note_shape_change(MISSION, target, ShapeChange.AGENT_REASSIGNED, detail="agent-2")
-    view = ledger.record_spend(MISSION, target, attempts=2, tokens=60)
-    assert view.consumed_attempts == 3
-    assert ledger.spent_tokens(MISSION, target) == 400
-
-
-def test_a_refused_spend_leaves_the_row_untouched(ledger: ObligationStore) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_spend(MISSION, target, attempts=1, tokens=10)
-    with pytest.raises(ContractError):
-        ledger.record_spend(MISSION, target, tokens=100, attempts=-1)
-    view = ledger.account(MISSION, target)
-    assert view.consumed_attempts == 1
-    assert ledger.spent_tokens(MISSION, target) == 10
-
-
-def test_a_refused_failure_count_leaves_the_row_untouched(ledger: ObligationStore) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_failure(MISSION, target)
-    with pytest.raises(ContractError):
-        ledger.record_failure(MISSION, target, count=0)
-    assert ledger.account(MISSION, target).failure_count == 1
-
-
 def test_shape_changes_are_history_not_an_allowance(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_failure(MISSION, target, count=2)
-    ledger.record_spend(MISSION, target, tokens=999)
+    ledger.register(_duty(), recursion_fuel=2)
+    ledger.consume_fuel(
+        MISSION, target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
+    )
     for change in ShapeChange:
         ledger.note_shape_change(MISSION, target, change, detail=f"{change!s} happened")
     view = ledger.account(MISSION, target)
-    assert view.failure_count == 2
-    assert view.consumed_tokens == 999
+    assert view.fuel_used == 1
     assert [entry[0] for entry in ledger.shape_changes(MISSION, target)] == list(ShapeChange)
 
 
@@ -257,15 +210,12 @@ def test_bound_reached_is_persisted_and_survives_reopening(store: Store, tmp_pat
 def test_a_genuinely_new_duty_gets_its_own_allowance(ledger: ObligationStore) -> None:
     first = ObligationId("obligation-1")
     ledger.register(_duty(), recursion_fuel=1)
-    ledger.record_failure(MISSION, first, count=3)
     ledger.consume_fuel(
         MISSION, first, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
     )
     second = ObligationId("obligation-2")
     ledger.register(_duty("obligation-2", parent="obligation-1"), recursion_fuel=1)
     assert ledger.remaining_fuel(MISSION, second) == 1
-    assert ledger.account(MISSION, second).failure_count == 0
-    assert ledger.account(MISSION, first).failure_count == 3
     assert ledger.remaining_fuel(MISSION, first) == 0
 
 
@@ -307,8 +257,6 @@ def test_a_relation_to_an_unregistered_duty_is_refused(ledger: ObligationStore) 
 def test_load_ledger_reproduces_every_counter(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty(), recursion_fuel=2)
-    ledger.record_failure(MISSION, target, count=2)
-    ledger.record_spend(MISSION, target, tokens=700, attempts=2)
     ledger.consume_fuel(
         MISSION, target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
     )
@@ -328,41 +276,23 @@ def test_load_ledger_reproduces_every_counter(ledger: ObligationStore) -> None:
 def test_persist_writes_a_memory_ledger_back_unchanged(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
     ledger.register(_duty(), recursion_fuel=3)
-    ledger.record_spend(MISSION, target, attempts=1, tokens=42)
     memory = ledger.load_ledger(MISSION)
-    memory.record_failure(target, count=4)
     memory.consume_fuel(target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1"))
     memory.note_shape_change(target, ShapeChange.PARAMETERS_REBOUND, detail="subject=beta")
     assert ledger.persist(memory) == (target,)
     view = ledger.account(MISSION, target)
-    assert view.failure_count == 4
-    assert view.consumed_tokens == 42
     assert view.remaining_fuel == 2
     assert ledger.shape_changes(MISSION, target) == (
         (ShapeChange.PARAMETERS_REBOUND, "subject=beta"),
     )
 
 
-def test_the_token_axis_round_trips_through_the_ledger(ledger: ObligationStore) -> None:
-    """The ledger carries tokens now, so a load → persist cycle must preserve them."""
-
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_spend(MISSION, target, attempts=1, tokens=1234)
-    memory = ledger.load_ledger(MISSION)
-    assert memory.account(target).consumed_tokens == 1234
-    memory.record_spend(target, tokens=66)
-    ledger.persist(memory)
-    view = ledger.account(MISSION, target)
-    assert view.consumed_tokens == 1300
-    assert ledger.spent_tokens(MISSION, target) == 1300
-    assert view.consumed_attempts == 1
-
-
 def test_persisting_an_untouched_ledger_leaves_every_axis_alone(ledger: ObligationStore) -> None:
     target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_spend(MISSION, target, attempts=2, tokens=1234)
+    ledger.register(_duty(), recursion_fuel=2)
+    ledger.consume_fuel(
+        MISSION, target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
+    )
     before = ledger.account(MISSION, target)
     ledger.persist(ledger.load_ledger(MISSION))
     assert ledger.account(MISSION, target) == before
@@ -408,9 +338,8 @@ def test_the_store_knows_which_duties_a_mission_carries(ledger: ObligationStore)
 def test_persist_inserts_duties_the_store_has_never_seen(ledger: ObligationStore) -> None:
     memory = ledger.load_ledger(MISSION)
     memory.register(_duty("obligation-9"), recursion_fuel=2)
-    memory.record_failure(ObligationId("obligation-9"), count=5)
     ledger.persist(memory)
-    assert ledger.account(MISSION, ObligationId("obligation-9")).failure_count == 5
+    assert ledger.exists(MISSION, ObligationId("obligation-9")) is True
     assert ledger.remaining_fuel(MISSION, ObligationId("obligation-9")) == 2
 
 
@@ -435,18 +364,6 @@ def _rival(tmp_path, monkeypatch: pytest.MonkeyPatch, store: Store, action) -> N
         return original(self)
 
     monkeypatch.setattr(Store, "transaction", racing)
-
-
-def test_a_concurrent_failure_is_not_lost(
-    store: Store, ledger: ObligationStore, tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    _rival(
-        tmp_path, monkeypatch, store, lambda rival: rival.record_failure(MISSION, target, count=3)
-    )
-    assert ledger.record_failure(MISSION, target, count=1) == 4
-    assert ledger.account(MISSION, target).failure_count == 4
 
 
 def test_a_concurrent_expansion_does_not_double_spend_the_last_fuel(
@@ -490,35 +407,20 @@ def test_a_concurrent_shape_change_keeps_both_histories(
     )
 
 
-def test_a_concurrent_spend_is_not_lost(
-    store: Store, ledger: ObligationStore, tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    _rival(
-        tmp_path,
-        monkeypatch,
-        store,
-        lambda rival: rival.record_spend(MISSION, target, attempts=5, tokens=7),
-    )
-    view = ledger.record_spend(MISSION, target, attempts=1, tokens=3)
-    assert view.consumed_attempts == 6
-    assert view.consumed_tokens == 10
-
-
 def test_a_failed_transaction_rolls_back_every_obligation_write(
     store: Store, ledger: ObligationStore
 ) -> None:
     target = ObligationId("obligation-1")
-    ledger.register(_duty())
-    ledger.record_failure(MISSION, target, count=1)
+    ledger.register(_duty(), recursion_fuel=2)
     with pytest.raises(RuntimeError, match="deliberate"):
         with store.transaction():
-            ledger.record_failure(MISSION, target, count=5)
-            ledger.record_spend(MISSION, target, tokens=999)
+            ledger.consume_fuel(
+                MISSION, target, expansion=ExpansionRecord(method_id="m-a", parameters_digest="d1")
+            )
+            ledger.note_shape_change(MISSION, target, ShapeChange.METHOD_SWITCHED, detail="x")
             ledger.register(_duty("obligation-2"))
             raise RuntimeError("deliberate")
     view = ledger.account(MISSION, target)
-    assert view.failure_count == 1
-    assert view.consumed_tokens == 0
+    assert view.fuel_used == 0
+    assert view.shape_changes == 0
     assert ledger.obligation_ids(MISSION) == (target,)

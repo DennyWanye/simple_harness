@@ -205,9 +205,10 @@ class TaskGraphPlanSourceReader:
             # channel, which is rechecked on continuation, and retain all demand,
             # lifecycle, failure/fuel and shape facts in the immutable demand lane.
             obligation_accounts = [item.to_json() for item in local.obligation_accounts.value]
-            demand_accounts = [{key: value for key, value in account.items()
-                if key not in {"consumed_tokens", "consumed_attempts"}}
-                for account in obligation_accounts]
+            # What a duty has cost so far is read from attempts and settlements
+            # (``obligation_accounts``), never part of the account view, so a settlement
+            # cannot stale a planning round in flight.
+            demand_accounts = [dict(account) for account in obligation_accounts]
             bodies = {
                 "request": {"request": request.to_json(), "decision": decision_body,
                     "visible_refs": [ref.to_json() for ref in visible],

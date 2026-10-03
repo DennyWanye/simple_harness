@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from ..contracts.evidence_state import EvidenceSnapshot, ValidityWitness
-from ..contracts.htn import MethodContract, OccurrenceId, ReleaseCondition, SourceRevisionPolicy
+from ..contracts.htn import MethodContract, OccurrenceId, ReleaseCondition
 from ..contracts.models import ContractError
 from ..knowledge.predicates import PredicateRegistry, PredicateSignature
 from ..planning.htn.applicability import authorization_gate, evaluate_condition
@@ -115,9 +115,10 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
         # The original compiler emits these exact policies for a method DATA
         # flow. An old edge with stronger/different terms cannot silently stand
         # in for the prospective slot's declaration, even when merge retains it.
+        # (The revision policy — follow or pinned — is the declaring method's own choice per
+        # input since 阶段 D; either is what the compiler emits, so it is not compared here.)
         if any(item.assurance_policy_ref != DEFAULT_ASSURANCE_POLICY
-               or item.freshness_policy_ref != DEFAULT_FRESHNESS_POLICY
-               or item.source_revision_policy is not SourceRevisionPolicy.PINNED for item in actual_inputs):
+               or item.freshness_policy_ref != DEFAULT_FRESHNESS_POLICY for item in actual_inputs):
             raise ContractError("TASKGRAPH_SHARED_DATA_POLICY_DIFFERS")
         if demand.mode == "reuse_accepted":
             if (entry.acceptance_ref is None or child.acceptance_ref != entry.acceptance_ref

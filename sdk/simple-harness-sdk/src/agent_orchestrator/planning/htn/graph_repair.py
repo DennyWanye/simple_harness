@@ -110,7 +110,10 @@ def compile_rebind(inputs: PreviewInputs, operation: RebindInputOperation) -> Re
         task_bindings=tuple(changed.get(binding.task_id, binding) for binding in current.task_bindings))
     read_set = SemanticReadSet(requirements_revision=inputs.requirements_revision,
         goal_revisions=tuple(ReadItem(ReadItemKind.TASK, str(binding.task_id),
-            int(binding.contract_revision), binding.contract_hash) for binding in current.task_bindings))
+            int(binding.contract_revision), binding.contract_hash) for binding in current.task_bindings),
+        obligation_revisions=inputs.obligation_reads(binding.obligation_id for binding in current.task_bindings
+                                                     if binding.task_id in affected_tasks),
+        scope_epochs=inputs.scope_epoch_reads())
     delta = ProposedPlanDelta(delta_id="delta-rebind-" + content_hash_of(operation.to_json()),
         mission_id=current.mission_id, base_plan_revision=current.plan_revision, read_set=read_set,
         data_requirements=(replacement,), referenced_occurrences=tuple(spec.occurrence_id for spec in current.occurrences),
@@ -265,7 +268,9 @@ def replace_membership(
             goal_revisions=tuple(ReadItem(ReadItemKind.TASK, str(binding.task_id), int(binding.contract_revision), binding.contract_hash)
                 for binding in current.task_bindings),
             method_revisions=(ReadItem(ReadItemKind.METHOD, str(original.method_ref.method_id),
-                original.method_ref.version, original.method_ref.content_hash),)),
+                original.method_ref.version, original.method_ref.content_hash),),
+            obligation_revisions=inputs.obligation_reads((parent.obligation_id,)),
+            scope_epochs=inputs.scope_epoch_reads()),
         method_instances=(draft,), retired_instance_ids=tuple(sorted(retired, key=str)),
         occurrences=new_occurrences,
         referenced_occurrences=tuple(spec.occurrence_id for spec in specs),

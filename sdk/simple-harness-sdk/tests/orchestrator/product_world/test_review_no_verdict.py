@@ -164,9 +164,12 @@ def test_outcome_review_ruled_fail_is_not_accepted_and_is_named_in_the_stop(tmp_
     asyncio.run(case())
 
 
-def test_composition_ruling_stale_reported_as_no_verdict(tmp_path):
-    """中间目标的组合审查两次回复都无法采用 → 裁决题；题目在回答前过期（管理纪元变了）→
-    如实交规划器一条修复请求，明细写"没有结论"，同一记录只一条，不重发裁决题。"""
+def test_composition_ruling_survives_epoch_change(tmp_path):
+    """中间目标的组合审查两次回复都无法采用 → 裁决题；作用域纪元在回答前变了 → 题目仍待回答，
+    不收回、不上报"没有结论"（HTN 补齐阶段 D 偏差单 6：题目只绑计划修订号与要求修订号）。
+
+    原用例靠纪元变化让题目过期、再断言"没有结论"修复请求；那条过期上报路径现在只能由计划或
+    要求修订号变化触发，留待有真实写方后补。"""
     from test_sub_goal import planner
 
     async def case():
@@ -182,18 +185,14 @@ def test_composition_ruling_stale_reported_as_no_verdict(tmp_path):
                     break
             [row] = _questions(world, mission_id, "adjudicate-compound:")
             assert calls["COMPOSITION"] == 2 and row["state"] == "PENDING"
-            # 管理纪元变了（真实会发生：任务被接管）；题目绑定的是旧纪元，下一轮被系统作废
-            HtnStore(world.store).bump_epoch(mission_id, "mission", bumped_by="test-takeover")
+            HtnStore(world.store).bump_epoch(mission_id, "mission", bumped_by="test-epoch")
             for _ in range(4):
                 await world.drain(timeout=10)
             [row] = _questions(world, mission_id, "adjudicate-compound:")
-            assert row["state"] == "STALE"
+            assert row["state"] == "PENDING"
             record_id = row["request"]["repair_context"]["record_id"]
-            reported = [e.payload for e in world.store.list_events(mission_id)
+            assert not [e for e in world.store.list_events(mission_id)
                         if e.type == "PlanningRepairRequested"
                         and e.payload.get("source_key") == "composition-review:" + record_id]
-            assert len(reported) == 1
-            detail = reported[0]["request"]["context"]
-            assert detail["outcome"] == "NO_VERDICT" and detail["record_id"] == record_id
 
     asyncio.run(case())

@@ -63,7 +63,6 @@ from agent_orchestrator.contracts.htn import (
     ReadItemKind,
     ScopeEpochRead,
     SemanticReadSet,
-    SupportSetRead,
 )
 from agent_orchestrator.contracts.obligations import ObligationLifecycle
 from agent_orchestrator.contracts.resolution import (
@@ -193,13 +192,11 @@ def test_the_accept_path_and_the_plan_path_share_one_checker() -> None:
 def test_every_channel_a_read_set_can_carry_is_re_checked() -> None:
     fields = {item.name for item in dataclasses.fields(SemanticReadSet)}
     source = inspect.getsource(SemanticReadSetChecker)
-    # ``manager_epoch`` is each caller's own earlier gate; every other field is here.
-    for name in fields - {"manager_epoch"}:
+    for name in fields:
         assert name in source, name
     verified = inspect.getsource(SemanticReadSetChecker.verify)
-    for name in ("method", "observation", "obligation", "authority", "absences"):
+    for name in ("method", "observation", "obligation", "authority", "scope_epochs", "absences"):
         assert name in verified, name
-    assert "_check_budget_grant" in verified
 
 
 # ======================================================================================
@@ -534,15 +531,6 @@ READ_SET_CASES: dict[str, tuple[Callable[[Any], dict[str, Any]], str | None, str
         "READ_SET_STALE",
         "READ_SET_STALE",
     ),
-    "support-set-unknown": (
-        lambda s: {
-            "support_sets": (
-                SupportSetRead(support_set_id="ss-1", revision=1, member_digest=HASH_C),
-            )
-        },
-        "READ_SET_UNRESOLVED",
-        "READ_SET_UNRESOLVED",
-    ),
     "acceptance-gone": (
         lambda s: {
             "acceptance_revisions": (
@@ -628,11 +616,6 @@ READ_SET_CASES: dict[str, tuple[Callable[[Any], dict[str, Any]], str | None, str
         "READ_SET_UNRESOLVED",
         "READ_SET_UNRESOLVED",
     ),
-    "budget-grant-unconfirmable": (
-        lambda s: {"budget_grant_revision": 7},
-        "READ_SET_UNRESOLVED",
-        "READ_SET_UNRESOLVED",
-    ),
     "dispatch-control-current": (
         lambda s: {"goal_revisions": (_control(s, "dispatch_generation", 0),)},
         None,
@@ -657,7 +640,6 @@ def test_one_read_set_checker_answers_both_commit_paths(planning_world: Any, cas
     epoch = semantics.epoch(mission_id, SCOPE)
     base = SemanticReadSet(
         requirements_revision=int(semantics.latest_requirements_revision(mission_id).revision),
-        manager_epoch=epoch,
         scope_epochs=(ScopeEpochRead(scope_id=SCOPE, validity_epoch=epoch),),
         goal_revisions=(_current(seed, ReadItemKind.TASK, root_task(mission_id)),),
         obligation_revisions=(_current(seed, ReadItemKind.OBLIGATION, root_duty(mission_id)),),
@@ -667,9 +649,7 @@ def test_one_read_set_checker_answers_both_commit_paths(planning_world: Any, cas
     before = store.connection.total_changes
 
     try:
-        service._check_reads(
-            semantics, mission_id, read_set, ResolutionPrincipal("reviewer", SCOPE, epoch)
-        )
+        service._check_reads(semantics, mission_id, read_set)
         accept_seen = None
     except ResolutionCommitRejected as refused:
         accept_seen = refused.reason
@@ -1294,7 +1274,7 @@ def test_the_ledger_and_replays_of_both_commands(
             lambda: call(service, _replace(command, acceptance_id="acc-other"), principal)
         )
         facts["accept-forged-presenter"] = _refusal(
-            lambda: call(service, command, ResolutionPrincipal("attacker", SCOPE, 0))
+            lambda: call(service, command, ResolutionPrincipal("attacker", SCOPE))
         )
         facts["accept-written-nothing-more"] = table_counts(store) == before
 
@@ -1447,7 +1427,6 @@ def test_a_change_while_the_content_review_runs_is_what_the_acceptance_reads(
                 await run_until(world, lambda: bool(accept.deliveries))
                 command, principal, receipt = accept.first
                 assert type(receipt).__name__ == "AcceptanceReceipt", receipt
-                assert command.read_set.manager_epoch == principal.manager_epoch == epoch
                 assert command.read_set.scope_epochs == (
                     ScopeEpochRead(scope_id=SCOPE, validity_epoch=epoch),
                 )

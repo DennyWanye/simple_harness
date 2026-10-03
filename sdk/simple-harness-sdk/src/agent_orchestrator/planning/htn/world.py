@@ -55,7 +55,7 @@ from typing import Any
 from ...contracts.evidence_state import EvidenceEntry, EvidenceSnapshot
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef, content_hash_of
-from ...knowledge.predicates import PredicateRegistry
+from ...knowledge.predicates import PredicateRegistry, PredicateSignature
 from .applicability import CapabilityRecord, CapabilitySnapshot
 from .domain_package import DomainPackageInstaller
 from .observation_pipeline import ObserverIndex, build_index
@@ -297,11 +297,13 @@ class DeploymentPlanningWorld:
     def snapshot(self) -> EvidenceSnapshot:
         """The evidence this Mission has recorded, as a planning snapshot.
 
-        Built from the ``observations`` table, one entry per proposition key, with
-        the support counts merged by :meth:`EvidenceEntry.from_observations` — so a
-        counter-observation is not outvoted and an authoritative negative keeps its
-        flag.  A proposition with no observation is simply absent, which the
-        snapshot's own contract reads as UNKNOWN.
+        Built from the ``observations`` table, one entry per proposition key, by
+        :meth:`EvidenceEntry.from_observations`: one observer's latest reading of a
+        proposition replaces its own earlier ones (looking again is "recompute, do not
+        reuse the old answer"; the earlier rows stay stored), and different observers are
+        still merged — so a counter-observation from another source is not outvoted and an
+        authoritative negative keeps its flag.  A proposition with no observation is
+        simply absent, which the snapshot's own contract reads as UNKNOWN.
 
         ``support_revision`` is the number of observations behind the snapshot.  It
         moves exactly when the evidence moves, which is what a read-set needs from
@@ -413,6 +415,7 @@ def build_planning_world(
     unhealthy: Iterable[str] = (),
     unauthorized: Iterable[str] = (),
     observers: Sequence[PredicateObserver] | None = None,
+    predicates: Sequence[PredicateSignature] = (),
     scope_id: str = DEFAULT_SCOPE,
     capability_layers: Mapping[str, str | None] = CAPABILITY_LAYERS,
 ) -> DeploymentPlanningWorld:
@@ -439,7 +442,10 @@ def build_planning_world(
             f"{sorted(known)}"
         )
     schemas = SchemaCatalog()
+    declared = tuple(predicates)  # the deployment's own declarations, beside the seed domains'
     predicates = PredicateRegistry()
+    for signature in declared:
+        predicates.register(signature)
     catalog = TaskTypeCatalog()
     registry = MethodRegistry()
     package_installer = DomainPackageInstaller()
@@ -485,7 +491,7 @@ def build_planning_world(
         if observers is None
         else tuple(observers)
     )
-    world.observers = build_index(predicates, assign_readers(chosen_observers))
+    world.observers = build_index(world.predicates, assign_readers(chosen_observers))
     policy = world.policy()
     for domain in installed:
         admit_domain(domain, registry=registry, policy=policy)

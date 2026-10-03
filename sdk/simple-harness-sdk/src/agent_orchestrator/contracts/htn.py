@@ -345,13 +345,18 @@ class ConstantValue:
 class OutputValue:
     step: str
     port: str
+    #: 阶段 D：这个输入固定用消费者第一次拿到的那一版；不写则每次新尝试跟随上游当前
+    #: 通过验收的那一版。
+    pin: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step", identifier(self.step, "value.output.step"))
         object.__setattr__(self, "port", identifier(self.port, "value.output.port"))
+        if type(self.pin) is not bool:
+            raise ContractError("value.output.pin must be a boolean")
 
     def to_json(self) -> dict[str, Any]:
-        return {"op": "output", "step": self.step, "port": self.port}
+        return {"op": "output", "step": self.step, "port": self.port, **({"pin": True} if self.pin else {})}
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,8 +409,8 @@ def parse_value(value: object, name: str, budget: StructureBudget) -> ValueExpr:
         data = fields_of(value, name, required=("op", "value"))
         return ConstantValue(value=data["value"])
     if op == "output":
-        data = fields_of(value, name, required=("op", "step", "port"))
-        return OutputValue(step=data["step"], port=data["port"])
+        data = fields_of(value, name, required=("op", "step", "port"), optional=("pin",))
+        return OutputValue(step=data["step"], port=data["port"], pin=data.get("pin", False))
     if op == "object":
         data = fields_of(value, name, required=("op", "fields"))
         raw = data["fields"]
@@ -2247,45 +2252,6 @@ class ReadItem:
 
 
 @dataclass(frozen=True, slots=True)
-class SupportSetRead:
-    """ADR-13 C29: the *set* of supports read, with a digest over its members.
-
-    Without the member digest, adding a counter-observation while leaving the
-    positive supports untouched would leave the recorded revision unchanged and an
-    old review would pass the gate (AER scenario I02).
-    """
-
-    support_set_id: str
-    revision: int
-    member_digest: str
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "support_set_id", identifier(self.support_set_id, "support_set.support_set_id")
-        )
-        object.__setattr__(self, "revision", index(self.revision, "support_set.revision"))
-        object.__setattr__(
-            self, "member_digest", hash_hex(self.member_digest, "support_set.member_digest")
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "support_set_id": self.support_set_id,
-            "revision": self.revision,
-            "member_digest": self.member_digest,
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "support_set_read") -> SupportSetRead:
-        data = fields_of(value, name, required=("support_set_id", "revision", "member_digest"))
-        return cls(
-            support_set_id=data["support_set_id"],
-            revision=data["revision"],
-            member_digest=data["member_digest"],
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class ScopeEpochRead:
     scope_id: str
     validity_epoch: int
@@ -2339,10 +2305,10 @@ class AbsenceRead:
 
 @dataclass(frozen=True, slots=True)
 class SemanticReadSet:
-    """ADR-13: the semantic read-set carried beside the integer graph version.
+    """ADR-13: the semantic read-set a plan proposal was built against.
 
-    It never replaces the integer optimistic gate; a commit passes the integer
-    gate first and is then checked item by item, with no automatic rebase.
+    The plan revision is the structural concurrency gate; a commit that passes it
+    is then checked here item by item, with no automatic rebase.
     """
 
     requirements_revision: int
@@ -2355,9 +2321,6 @@ class SemanticReadSet:
     #: authority fail the commit for different reasons and are re-read differently.
     obligation_revisions: tuple[ReadItem, ...] = ()
     authority_revisions: tuple[ReadItem, ...] = ()
-    manager_epoch: int = 0
-    budget_grant_revision: int = 0
-    support_sets: tuple[SupportSetRead, ...] = ()
     scope_epochs: tuple[ScopeEpochRead, ...] = ()
     absences: tuple[AbsenceRead, ...] = ()
 
@@ -2366,14 +2329,6 @@ class SemanticReadSet:
             self,
             "requirements_revision",
             index(self.requirements_revision, "read_set.requirements_revision"),
-        )
-        object.__setattr__(
-            self, "manager_epoch", index(self.manager_epoch, "read_set.manager_epoch")
-        )
-        object.__setattr__(
-            self,
-            "budget_grant_revision",
-            index(self.budget_grant_revision, "read_set.budget_grant_revision"),
         )
         for label, expected in (
             ("goal_revisions", ReadItemKind.TASK),
@@ -2394,9 +2349,6 @@ class SemanticReadSet:
             "method_revisions": [item.to_json() for item in self.method_revisions],
             "observation_revisions": [item.to_json() for item in self.observation_revisions],
             "acceptance_revisions": [item.to_json() for item in self.acceptance_revisions],
-            "manager_epoch": self.manager_epoch,
-            "budget_grant_revision": self.budget_grant_revision,
-            "support_sets": [item.to_json() for item in self.support_sets],
             "scope_epochs": [item.to_json() for item in self.scope_epochs],
             "absences": [item.to_json() for item in self.absences],
         }
@@ -2421,9 +2373,6 @@ class SemanticReadSet:
                 "acceptance_revisions",
                 "obligation_revisions",
                 "authority_revisions",
-                "manager_epoch",
-                "budget_grant_revision",
-                "support_sets",
                 "scope_epochs",
                 "absences",
             ),
@@ -2449,13 +2398,6 @@ class SemanticReadSet:
             ),
             authority_revisions=read_items(
                 data.get("authority_revisions", ()), f"{name}.authority_revisions"
-            ),
-            manager_epoch=data.get("manager_epoch", 0),
-            budget_grant_revision=data.get("budget_grant_revision", 0),
-            support_sets=sequence_of(
-                data.get("support_sets", ()),
-                f"{name}.support_sets",
-                lambda item, where: SupportSetRead.from_json(item, where),
             ),
             scope_epochs=sequence_of(
                 data.get("scope_epochs", ()),
@@ -3555,7 +3497,6 @@ __all__ = (
     "SemanticReadSet",
     "SideEffectKind",
     "SourceRevisionPolicy",
-    "SupportSetRead",
     "TaskForm",
     "TaskRef",
     "TaskSemanticBindingV1",

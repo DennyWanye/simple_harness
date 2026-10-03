@@ -246,6 +246,16 @@ def is_hierarchical(mission: Mission) -> bool:
     return semantics_of(mission) == HIERARCHICAL_SEMANTICS
 
 
+class WriteConflictPending(ContractError):
+    """A step's inputs come from unordered producers that wrote one file differently; it
+    waits for the Planner's answer to the write-conflict repair request (阶段 D)."""
+
+    def __init__(self, conflicts: Sequence[Mapping[str, Any]]) -> None:
+        self.conflicts = tuple(dict(item) for item in conflicts)
+        super().__init__("WRITE_CONFLICT: " + "; ".join(
+            f"{item['path']} written by {item['steps'][0]} and {item['steps'][1]}" for item in self.conflicts))
+
+
 class PlanIntegrityError(GraphIntegrityError):
     """Corruption that is *not* a cycle: the plan's meaning is incomplete (§18.5).
 
@@ -829,7 +839,6 @@ class HierarchicalDispatch:
             # actually be dispatched is the dispatch transaction's decision (TG §8.1
             # layer 3), which this view deliberately does not make.
             mission_admits_work=mission.status not in TERMINAL_MISSION,
-            manager_epoch=self.semantics().epoch(mission_id, "mission"),
             # TG decision 9: an active share needs a live demand, and the duty's
             # account is where that is recorded.  Read, never invented: a duty with
             # no account is "no admitted demand", which is the selection gate's
@@ -1102,7 +1111,36 @@ class HierarchicalDispatch:
             policy,
             scope_epochs=self.scope_epochs(mission_id),
             now_ms=int(self.store.now * 1000) if now_ms is None else int(now_ms),
+            pinned_revisions=self._pinned_revisions(mission_id),
         )
+
+    def _pinned_revisions(self, mission_id: str) -> dict[str, str]:
+        """requirement id → the revision a *pinned* input stays on: the one its consumer
+        froze on its first Attempt (阶段 D).  Read from the immutable frozen input record;
+        an input whose consumer has not run yet has no entry."""
+        from ..contracts.htn import SourceRevisionPolicy
+
+        try:
+            network = self.network(mission_id)
+        except (GraphIntegrityError, ContractError, StoreError):
+            return {}
+        wanted = {(str(item.consumer_occurrence), item.input_port): item.requirement_id
+                  for item in network.data_requirements
+                  if item.source_revision_policy is SourceRevisionPolicy.PINNED}
+        if not wanted:
+            return {}
+        pinned: dict[str, str] = {}
+        for occurrence, raw in self.store.connection.execute(
+                "SELECT b.occurrence_id, m.manifest_json FROM taskgraph_attempt_inputs b"
+                " JOIN input_manifests m ON m.manifest_hash=b.manifest_hash"
+                " JOIN attempts a ON a.attempt_id=b.attempt_id"
+                " WHERE b.mission_id=? ORDER BY a.ordinal", (mission_id,)):
+            for binding in json.loads(raw).get("bindings", ()):
+                requirement = wanted.get((str(occurrence), str(binding.get("input_port"))))
+                revision = (binding.get("bound_input") or {}).get("source_revision")
+                if requirement is not None and revision is not None:
+                    pinned.setdefault(requirement, str(revision))
+        return pinned
 
     #: The purpose a witness must carry to license *binding an accepted output* as an
     #: input.  ``START`` because that is what the use is: starting this consumer's
@@ -1599,9 +1637,15 @@ class HierarchicalDispatch:
         # 片 B：完成的中间目标的端口对到它收尾步骤的产出；它也就成了"已完成的生产者"。
         done = frozenset(key for key, value in statuses.items() if value.complete)
         delivered = self.goal_port_outputs(mission_id, network, scoped_outputs, complete=done)
+        # 授权版本（阶段 D）：一个生产者端口上"当前计数的那次验收"的产出版本。同一端口出现
+        # 两个计数中的版本就不填——跟随的输入会如实报"授权版本读不到"，不任选。
+        seen: dict[tuple[Any, str], set[str]] = {}
+        for output in (*scoped_outputs, *delivered):
+            seen.setdefault((output.producer_occurrence, output.output_port), set()).add(output.source_revision)
         return AcceptedOutputsIndex(
             outputs=(*scoped_outputs, *delivered),
             completed_producers=prepared | {item.producer_occurrence for item in delivered},
+            authorized_revisions={key: next(iter(found)) for key, found in seen.items() if len(found) == 1},
         )
 
     def goal_port_outputs(
@@ -1617,6 +1661,9 @@ class HierarchicalDispatch:
 
         返回的是别名：原产出记录原样，只把"生产者"换成这个目标，接它的数据依赖于是按原规则
         解析、发见证、冻结输入，文件归属仍是真正写出它的那一步。
+
+        阶段 D（补全方案 2.2）：目标端口与收尾步骤同名端口声明的格式不同就不出别名——接它的步骤
+        拿不到数据（数据未绑定），并记一条 ``GoalPortSchemaMismatch`` 说明是哪个目标哪个端口。
         """
 
         from dataclasses import replace
@@ -1633,8 +1680,8 @@ class HierarchicalDispatch:
                     or spec.occurrence_id not in complete):
                 continue
             adopted = network.adopted_instance_for(spec.occurrence_id)
-            ports = tuple(str(port.port_key)
-                          for port in network.binding_for_occurrence(spec.occurrence_id).output_ports)
+            ports = {str(port.port_key): port.schema_ref
+                     for port in network.binding_for_occurrence(spec.occurrence_id).output_ports}
             if adopted is None or not ports:
                 continue
             try:
@@ -1651,8 +1698,22 @@ class HierarchicalDispatch:
         while moved:  # a finalizer that is itself a sub-goal resolves one level per pass
             moved = False
             for goal, finalizer, ports in goals:
-                for port in ports:
+                for port, schema in ports.items():
                     if (str(goal), port) in by_place or (finalizer, port) not in by_place:
+                        continue
+                    delivered = {str(item.port_key): item.schema_ref for item in
+                                 network.binding_for_occurrence(OccurrenceId(finalizer)).output_ports}
+                    if delivered.get(port) != schema:
+                        try:
+                            append_hierarchical_event(
+                                self.store, "GoalPortSchemaMismatch", mission_id,
+                                key=f"{mission_id}:{goal}:{port}:{int(network.plan_revision)}",
+                                payload={"goal_occurrence": str(goal), "port": port,
+                                         "finalizer_occurrence": finalizer,
+                                         "detail": "the goal's port and its finalizer step's port declare "
+                                                   "different formats; the goal delivers nothing on it"})
+                        except StoreError:
+                            pass  # read from a read-only view: the note is written by the next writable read
                         continue
                     named = [replace(item, producer_occurrence=goal) for item in by_place[(finalizer, port)]]
                     by_place[(str(goal), port)] = named
@@ -2342,7 +2403,6 @@ class HierarchicalDispatch:
         return SemanticReadSet(
             requirements_revision=int(inputs.requirements.revision),
             goal_revisions=goal_reads,
-            manager_epoch=semantics.epoch(mission_id, "mission"),
             scope_epochs=(
                 ScopeEpochRead(
                     scope_id="mission", validity_epoch=semantics.epoch(mission_id, "mission")
@@ -3048,6 +3108,74 @@ class HierarchicalDispatch:
         )
 
     def run_evidence_round(self, mission_id: str, *, now_ms: int | None = None) -> Any:
+        """One evidence round: re-read what the world may have changed, then look at the
+        UNKNOWN preconditions (阶段 D)."""
+        from ..planning.htn.evidence_round import EvidenceRoundResult
+
+        reread, read = self._reread_recorded(mission_id, now_ms=now_ms)
+        # a proposition read again just now is not asked a second time in the same round
+        looked = self._unknown_precondition_round(mission_id, now_ms=now_ms, skip=read)
+        return EvidenceRoundResult(outcomes=(*reread, *looked.outcomes), unobservable=looked.unobservable)
+
+    def _reread_recorded(self, mission_id: str, *, now_ms: int | None) -> tuple[tuple[Any, ...], frozenset[str]]:
+        """Read the recorded propositions again when the world has moved.
+
+        A desktop Mission's world is its accepted artifacts and its reference material: a
+        step is accepted, a source is replaced, and a proposition recorded earlier may no
+        longer hold — while the start gate only reads what is recorded.  So once per
+        *world mark* (the set of acceptances plus the state of the sources table) every
+        recorded proposition an installed observer can read is asked again, from the
+        question stored on its row; only a changed truth is written (which raises the
+        scope epoch, see ``insert_observation``).  One ``EvidenceReread`` event per mark
+        says what was read and what changed.  An unchanged world is not read again: a
+        seed domain's observer may be expensive, and writing an unchanged reading would
+        stale every planning round in flight."""
+        from ..contracts.evidence_state import truth_change
+        from ..contracts.semantic_base import VersionedRef
+        from ..planning.htn.observation_pipeline import observe_predicate, record_observation
+
+        index = getattr(self._world(), "observer_index", None)
+        if index is None:
+            return (), frozenset()
+        semantics = self.semantics()
+        mark = content_hash_of({
+            "acceptances": sorted(str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)),
+            "sources": [list(row) for row in self.store.connection.execute(
+                "SELECT path, revision, version_hash, superseded_by, revoked FROM sources"
+                " WHERE mission_id=? ORDER BY path, revision, version_hash", (mission_id,))],
+        })
+        done = f"EvidenceReread:{mission_id}:{mark}"
+        if self.store.connection.execute(
+                "SELECT 1 FROM events WHERE idempotency_key=?", (done,)).fetchone() is not None:
+            return (), frozenset()
+        questions = semantics.observation_questions(mission_id)
+        moment = int(self.store.now * 1000) if now_ms is None else int(now_ms)
+        written: list[Any] = []
+        read: list[str] = []
+        for question in questions:
+            reference = VersionedRef.from_json(question["predicate_ref"])
+            if index.observer_for(str(reference.id)) is None:
+                continue
+            outcome = observe_predicate(index, reference, question["arguments"], now_ms=moment)
+            read.append(question["proposition_key"])
+            if outcome.record is None:
+                continue  # could not look: nothing is written, the recorded reading stands
+            before, after = truth_change(
+                semantics.list_observations(mission_id, proposition_key=question["proposition_key"]),
+                outcome.record)
+            if after is before:
+                continue
+            written.append(record_observation(semantics, mission_id, outcome, scope_id=question["scope_id"]))
+        if not questions:
+            return (), frozenset()  # nothing was ever recorded: nothing to read again, and nothing to say
+        append_hierarchical_event(
+            self.store, "EvidenceReread", mission_id, key=f"{mission_id}:{mark}",
+            payload={"mark": mark, "read": read,
+                     "changed": [str(item.record.proposition_key) for item in written]})
+        return tuple(written), frozenset(read)
+
+    def _unknown_precondition_round(self, mission_id: str, *, now_ms: int | None = None,
+                                    skip: Collection[str] = ()) -> Any:
         """Look at the UNKNOWN preconditions of every still-open goal, once.
 
         P2.3c part 2c.  Part 2b built the round (``planning.htn.evidence_round``) and
@@ -3131,7 +3259,7 @@ class HierarchicalDispatch:
                     now_ms=moment,
                 )
                 for ask in asks_for_requests(requests, candidates):
-                    if ask.proposition_key in looked_at:
+                    if ask.proposition_key in looked_at or ask.proposition_key in skip:
                         continue
                     asks.setdefault(ask.proposition_key, ask)
         if not asks:
@@ -3366,7 +3494,6 @@ class HierarchicalDispatch:
         revokes the retired work's execution rights in its own transaction.
         """
 
-        mission = self.mission(mission_id)
         policy: dict[str, Any] = {}
         from ..contracts.htn import GraphStructureBudget
         from .taskgraph_policy import read_installed_graph_policy
@@ -3383,12 +3510,6 @@ class HierarchicalDispatch:
             network=compilation.network,
             task_bindings=compilation.task_bindings,
             **policy,
-            # P2.3a: in the hierarchical mode the serialisation point is the *plan
-            # revision*, and committing one does not advance ``graph_version``.  The
-            # integer is passed because ADR-13 keeps it as the coarse gate every
-            # Mission agrees on; nothing in this module treats it as a concurrency
-            # token or expects it to move.
-            base_graph_version=int((mission.final_report or {}).get("graph_version") or 1),
             issued_by=principal.principal_id,
             scope_id=principal.scope_id,
             budget_requirement=compilation.budget_requirement,
@@ -3423,6 +3544,50 @@ class HierarchicalDispatch:
         rules = self.target_rules_for(task_id)
         return manifest_upstream_inputs(result.manifest, rules, network=network)
 
+    def write_conflicts(self, mission_id: str, *, touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
+        """Steps with no order between them whose accepted outputs land on one file (阶段 D).
+
+        Two steps the plan lets run at the same time each delivered a file at the same
+        path, with different content: which one a later step should start from is not
+        something the plan says, and picking one ("first come") would be the Harness
+        deciding it.  Each such pair is reported once — path, the two steps, the two
+        outputs — for the Planner to settle.  A relay (one step delivers the next version
+        of an upstream file) is ordered by its data edge and is not a conflict; identical
+        content is not one either.  ``touching`` keeps only the conflicts one of those producer
+        tasks is a party to.
+        """
+        from ..graph.projection_validation import ordering_of
+
+        network = self.network(mission_id)
+        occurrences: dict[str, list[Any]] = {}
+        for spec in network.occurrences:
+            if spec.form is TaskForm.PRIMITIVE:
+                occurrences.setdefault(str(spec.task_id), []).append(spec.occurrence_id)
+        holders: dict[str, list[tuple[str, Any]]] = {}
+        for task_id in sorted(occurrences):
+            producer = self.store.get_task(task_id)
+            for artifact_id in (() if producer is None else producer.accepted_artifacts):
+                artifact = self.store.get_artifact(artifact_id)
+                if artifact is None or artifact.path.startswith(("actions/", ".")):
+                    continue
+                holders.setdefault(artifact.path, []).append((task_id, artifact))
+        ordered = None
+        found: list[dict[str, Any]] = []
+        for path in sorted(holders):
+            entries = holders[path]
+            for seat, (left, left_file) in enumerate(entries):
+                for right, right_file in entries[seat + 1:]:
+                    if left == right or left_file.content_hash == right_file.content_hash:
+                        continue
+                    if touching is not None and not {left, right} & set(touching):
+                        continue
+                    ordered = ordered or ordering_of(network)
+                    if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
+                        continue
+                    found.append({"path": path, "steps": [left, right],
+                                  "artifacts": [left_file.id, right_file.id]})
+        return found
+
     def overlay_attempt_inputs(
         self, mission_id: str, inputs: Sequence[UpstreamInput]
     ) -> list[UpstreamInput]:
@@ -3430,7 +3595,14 @@ class HierarchicalDispatch:
 
         Dispatch and its writer-transaction check share this projection.  The
         Attempt freezes the resulting exact artifact identities and hashes.
+
+        阶段 D：这一步的某个上游与另一个没有先后的步骤把同一个文件写成了两样，该从哪一份开工
+        计划没有说，不在这里"先到先占"——拒绝（``WriteConflictPending``），这一步等规划器处理
+        写入冲突修复请求。
         """
+        clashes = self.write_conflicts(mission_id, touching=tuple(dict.fromkeys(item.task_id for item in inputs)))
+        if clashes:
+            raise WriteConflictPending(clashes)
         from ..artifacts.bound_workspace import overlay_bound_producer_files
         from .occurrence_tasks import read_only_leaf
 

@@ -50,10 +50,8 @@ def require_current_manifest_use(manifest: InputManifest, network: TaskNetworkSn
         candidate = candidates[0]
         if candidate.provisional and frozen.input_port not in policy.provisional_ports:
             raise ContractError("TASKGRAPH_FROZEN_PROVISIONAL_INPUT_NOT_AUTHORIZED")
-        if requirement.source_revision_policy is not SourceRevisionPolicy.PINNED:
-            authorized = accepted.authorized_revision(frozen.producer_occurrence, frozen.output_port)
-            if authorized is not None and authorized != frozen.source_revision:
-                raise ContractError("TASKGRAPH_FROZEN_INPUT_REACCEPTANCE_REQUIRED")
+        # An Attempt's inputs are frozen: "follow" is about the *next* Attempt, so a frozen
+        # input is never re-compared with the revision authorised now (TG §5.5).
         converter, schema_problem = _check_schema(requirement, ports[frozen.input_port], candidate, policy)
         if schema_problem is not None or converter != frozen.converter_ref:
             raise ContractError("TASKGRAPH_FROZEN_INPUT_SCHEMA_PERMISSION_CHANGED")

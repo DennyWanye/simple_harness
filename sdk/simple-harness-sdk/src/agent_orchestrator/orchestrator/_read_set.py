@@ -11,7 +11,7 @@ that, a second copy in ``resolution_commits`` that re-checked five of the eleven
 channels and silently let a refuted observation, a revoked authority and a re-planned
 duty through.
 
-So the eleven channels live here, once:
+So the nine channels live here, once:
 
 ===========================  =================================================
 ``requirements_revision``    the Mission's latest requirements revision
@@ -25,17 +25,14 @@ So the eleven channels live here, once:
 ``obligation_revisions``     OBLIGATION — shape-change count plus lifecycle and
                              ``resolution_ref``
 ``authority_revisions``      AUTHORITY — the approval record's version and hash
-``support_sets``             the *set* of supports: member revision **and** digest
 ``scope_epochs``             the §11.5 epoch barrier
 ``absences``                 "there is no such thing" is a read, and it goes stale
                              by becoming false
-``budget_grant_revision``    the allowance a proposal was built against
 ===========================  =================================================
 
-``manager_epoch`` is the twelfth value a :class:`SemanticReadSet` carries and is
-deliberately *not* here: both callers check it in a gate of their own, before this
-one, because a stale manager epoch is a scope-authority answer
-(``MANAGER_EPOCH_STALE``) rather than one of a list of stale items.
+The plan revision is the structural concurrency gate of a plan commit and is checked
+by ``plan_commits`` before this module runs; budget and planning authority are re-read
+inside the commit transaction itself.  Neither is a read-set channel.
 
 Three design points worth stating, because each is a property the suites rely on:
 
@@ -48,9 +45,8 @@ Three design points worth stating, because each is a property the suites rely on
   cannot re-check is ``unresolved``; one that moved is ``stale``.  Reporting the
   first as the second sends a proposer off to recompile something that was never the
   problem.
-* **Fail closed.**  A value with no store-side authority — ``budget_grant_revision``
-  when no resolver is injected — is *unresolved* when it is claimed and ignored when
-  it is zero.  A claim nobody can re-check is never quietly accepted.
+* **Fail closed.**  A subject this store cannot re-check is *unresolved*, never
+  quietly accepted.
 """
 
 from __future__ import annotations
@@ -168,11 +164,6 @@ class SemanticReadSetChecker:
     ``<task>#dispatch_generation`` and ``<task>#input_binding_revision``.  With the
     flag off those ids resolve to nothing and are reported unresolved — exactly the
     behaviour ``plan_commits`` had before this module existed.
-
-    ``budget_grant_resolver`` is injected for the same reason: P2 has no store-side
-    budget-grant authority, so a claimed non-zero allowance revision is *unresolved*
-    until one exists.  Passing a resolver is how a later slice turns it into a real
-    check without touching either caller.
     """
 
     def __init__(
@@ -182,14 +173,12 @@ class SemanticReadSetChecker:
         *,
         mission_id: str,
         allow_task_control_channels: bool = False,
-        budget_grant_resolver: Callable[[str], int] | None = None,
         resolvers: Mapping[str, Resolver] | None = None,
     ) -> None:
         self._store = store
         self._semantics = semantics
         self._mission_id = mission_id
         self._allow_task_channels = bool(allow_task_control_channels)
-        self._budget_grant = budget_grant_resolver
         #: A caller may substitute one channel's resolver — which is how a Commit
         #: path keeps a seam its own mutation tests can reach, and how a test proves
         #: that weakening a single channel is caught.  Everything not overridden is
@@ -206,7 +195,6 @@ class SemanticReadSetChecker:
         stale: list[StaleRead] = []
         unresolved: list[str] = []
         self._check_requirements(read_set, stale)
-        self._check_budget_grant(read_set, stale, unresolved)
         for channel, items, default in (
             ("goal", read_set.goal_revisions, self.goal_state),
             ("method", read_set.method_revisions, self.method_state),
@@ -218,7 +206,6 @@ class SemanticReadSetChecker:
             resolve = self._resolver(channel, default)
             for item in items:
                 self._probe(item, channel, resolve, stale, unresolved)
-        self._check_support_sets(read_set, stale, unresolved)
         self._check_scope_epochs(read_set, stale)
         self._check_absences(read_set, stale)
         return ReadSetVerdict(stale=tuple(stale), unresolved=tuple(unresolved))
@@ -277,25 +264,6 @@ class SemanticReadSetChecker:
                     str(current),
                 )
             )
-
-    def _check_budget_grant(
-        self, read_set: SemanticReadSet, stale: list[StaleRead], unresolved: list[str]
-    ) -> None:
-        """The allowance revision a proposal was built against (§21.5, ADR-13).
-
-        P2 has no store-side authority for it.  Zero is "nothing claimed"; a claimed
-        revision with nobody to confirm it is ``unresolved`` rather than accepted —
-        a budget the commit cannot re-read is not a budget it may spend against.
-        """
-
-        claimed = int(read_set.budget_grant_revision)
-        if self._budget_grant is None:
-            if claimed:
-                unresolved.append(f"budget_grant_revision {claimed!r}")
-            return
-        current = int(self._budget_grant(self._mission_id))
-        if claimed != current:
-            stale.append(StaleRead("budget_grant", self._mission_id, str(claimed), str(current)))
 
     # ------------------------------------------------------------------ item channels
     def _probe(
@@ -435,31 +403,6 @@ class SemanticReadSetChecker:
         return int(record.get("version", 0)), content_hash_of(dict(record))
 
     # ------------------------------------------------------------------ set channels
-    def _check_support_sets(
-        self, read_set: SemanticReadSet, stale: list[StaleRead], unresolved: list[str]
-    ) -> None:
-        # C29: the *set* of supports, not only its members.  Adding a
-        # counter-observation leaves every positive support untouched, so without
-        # the member digest the read would still look current (AER scenario I02).
-        for support in read_set.support_sets:
-            try:
-                stored = self._semantics.get_justification_set(support.support_set_id)
-            except StoreError:
-                unresolved.append(f"support_set {support.support_set_id!r}")
-                continue
-            if (stored.member_revision, stored.member_digest) != (
-                int(support.revision),
-                support.member_digest,
-            ):
-                stale.append(
-                    StaleRead(
-                        "support_set",
-                        support.support_set_id,
-                        f"revision {int(support.revision)} digest {support.member_digest[:12]}",
-                        f"revision {stored.member_revision} digest {stored.member_digest[:12]}",
-                    )
-                )
-
     def _check_scope_epochs(self, read_set: SemanticReadSet, stale: list[StaleRead]) -> None:
         # C29: the epoch barrier.  Evidence is invalidated by raising the scope's
         # epoch, which never edits the record the proposal read.
@@ -547,13 +490,10 @@ def channel_names(read_set: SemanticReadSet) -> tuple[str, ...]:
         ("acceptance", read_set.acceptance_revisions),
         ("obligation", read_set.obligation_revisions),
         ("authority", read_set.authority_revisions),
-        ("support_set", read_set.support_sets),
         ("validity_epoch", read_set.scope_epochs),
         ("absence", read_set.absences),
     )
     named.extend(name for name, items in groups if items)
-    if int(read_set.budget_grant_revision):
-        named.append("budget_grant")
     return tuple(named)
 
 

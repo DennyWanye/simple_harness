@@ -30,7 +30,6 @@ MISSION_FIELDS = (
     "version",
     "budget",
     "allowed_tools",
-    "graph_version",
     "untrusted_sources",
     "ui_state",
 )
@@ -140,7 +139,7 @@ def ui_state(
     return "queued"
 
 
-def _mission(raw: Mapping[str, Any], graph_version: int, state: str) -> dict[str, Any]:
+def _mission(raw: Mapping[str, Any], state: str) -> dict[str, Any]:
     report = dict(raw.get("final_report") or {})
     return {
         "id": raw.get("id"),
@@ -152,7 +151,6 @@ def _mission(raw: Mapping[str, Any], graph_version: int, state: str) -> dict[str
         "version": raw.get("version"),
         "budget": dict(raw.get("budget") or {}),
         "allowed_tools": list(raw.get("allowed_tools") or ()),
-        "graph_version": graph_version,
         "untrusted_sources": list(report.get("untrusted_sources") or ()),
         "ui_state": state,
     }
@@ -443,7 +441,7 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         blocked=bool(blocked),
     )
     return {
-        "mission": _mission(raw_mission, int(view.get("graph_version") or 0), state),
+        "mission": _mission(raw_mission, state),
         "tasks": [_task(t) for t in snapshot.get("tasks") or ()],
         "attempts": attempts,
         "results": [_result(r, attempts_by_id.get((r.get("envelope") or {}).get("attempt_id"), {}))

@@ -10,7 +10,7 @@
   预览身份闸挡下一切篡改过的编译产物（裁决①冗余原则的金丝雀）；预览与提交之间人取消了任务 →
   提交被拒、一字未写；第一次提交留下的账（回执、读集索引、一条事件、不派发）以及任务结束后
   原样重放；修复时"同做法同参数再落地"按名拒绝（09-27 真机缺陷）且下一轮能恢复。
-* **直接测函数（E）**：主体/范围核对、意图哈希与重放冲突、整数图版本闸（待定③，暂留）、
+* **直接测函数（E）**：主体/范围核对、意图哈希与重放冲突（整数图版本闸已随阶段 D 删）、
   读集检查器按渠道、任务网络快照与义务开口合同、扫源码"提交路径之外没人准入需求"。
 * 旧的裸 ``CommitService`` 构造器（原「暂留，供他人导入」一节）已随导入方迁走删掉（2026-10-03）。
 
@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import inspect
 import json
 import sys
 from pathlib import Path
@@ -69,7 +68,6 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     ReleaseCondition,
     ScopeEpochRead,
     SemanticReadSet,
-    SupportSetRead,
     TaskForm,
 )
 from agent_orchestrator.contracts.obligations import Obligation, ShapeChange  # noqa: E402
@@ -328,16 +326,15 @@ def test_the_first_commit_leaves_one_receipt_one_event_an_indexed_read_set_and_n
             assert receipt.read_set_hash == payload["read_set_hash"] == content_hash_of(receipt.read_set.to_json())
             assert receipt.output_identity["plan_revision"] == 1
             assert receipt.output_identity["pending_dispatch"] == payload["pending_dispatch"]
-            assert receipt.detail["base_graph_version"] == 1
 
             proposal = payload["proposal_id"]
             stored = semantics.get_read_set(mission.id, proposal)
             assert stored.to_json() == receipt.read_set.to_json()
             kinds = {item["subject_type"] for item in semantics.list_read_set_items(mission.id, proposal)}
-            assert {"requirements", "manager_epoch", "task", "method"} <= kinds
+            assert {"requirements", "task", "method"} <= kinds
 
             assert payload["plan_revision"] == 1 and payload["base_plan_revision"] == 0
-            assert payload["base_graph_version"] == 1 and payload["delta_id"] == receipt.delta_id
+            assert payload["delta_id"] == receipt.delta_id
             assert payload["added_occurrences"] == sorted(payload["added_occurrences"])
             assert payload["pending_dispatch"] == payload["added_occurrences"]
             assert payload["revoked_dispatch_generations"] == {}
@@ -542,7 +539,7 @@ def _pure_bundle() -> tuple[Any, Any, Any]:
 def _pure_command(**changes: Any) -> CommitPlanCommand:
     _env_, _binding, bundle = _pure_bundle()
     command = CommitPlanCommand(command_id="cmd-1", mission_id="mission-e", delta=bundle.delta, network=bundle.network,
-                                task_bindings=bundle.task_bindings, base_graph_version=1, issued_by="manager-1",
+                                task_bindings=bundle.task_bindings, issued_by="manager-1",
                                 scope_id="mission", source={"intent_id": "plan-1"})
     return dataclasses.replace(command, **changes)
 
@@ -565,11 +562,11 @@ def test_an_unknown_semantics_version_is_refused_by_the_spec_itself():
 @pytest.mark.parametrize(
     ("issued_by", "scope_id", "presenter", "reason"),
     (
-        ("manager-1", "mission", PlanPrincipal("manager-2", "mission", 0), "PRINCIPAL_MISMATCH"),
-        ("manager-1", "team-b", PlanPrincipal("manager-1", "mission", 0), "SCOPE_NOT_AUTHORIZED"),
-        ("", "mission", PlanPrincipal("manager-1", "mission", 0), "PRINCIPAL_MISMATCH"),
-        ("", "mission", PlanPrincipal("manager-2", "mission", 0), "PRINCIPAL_MISMATCH"),
-        ("   ", "mission", PlanPrincipal("manager-1", "mission", 0), "PRINCIPAL_MISMATCH"),
+        ("manager-1", "mission", PlanPrincipal("manager-2", "mission"), "PRINCIPAL_MISMATCH"),
+        ("manager-1", "team-b", PlanPrincipal("manager-1", "mission"), "SCOPE_NOT_AUTHORIZED"),
+        ("", "mission", PlanPrincipal("manager-1", "mission"), "PRINCIPAL_MISMATCH"),
+        ("", "mission", PlanPrincipal("manager-2", "mission"), "PRINCIPAL_MISMATCH"),
+        ("   ", "mission", PlanPrincipal("manager-1", "mission"), "PRINCIPAL_MISMATCH"),
     ),
     ids=("forged-presenter", "another-scope", "unsigned", "unsigned-any-presenter", "whitespace-issuer"),
 )
@@ -607,34 +604,6 @@ def test_a_replay_answers_the_same_intent_and_refuses_another_intent_under_the_s
     assert caught.value.reason == "COMMAND_PAYLOAD_CONFLICT"
 
 
-@pytest.mark.parametrize(
-    ("current", "base", "passes"),
-    ((1, 1, True), (1, 7, False), (5, 1, False), (5, 4, False), (5, 2, False), (5, 9, False), (5, 5, True)),
-)
-def test_the_integer_graph_version_gate_is_equality_and_never_rebases(current, base, passes):
-    """整数图版本闸（待定③：真正写上还是由计划修订号取代，D 前定；src 里只读不写，先改 E 暂留）。
-
-    等号闸：落后、超前都拒，拒绝写明两个版本号；不存在"差不多就重放"的自动变基
-    （原自动变基变异）。"""
-
-    mission = SimpleNamespace(final_report={"graph_version": current})
-    command = _pure_command(base_graph_version=base)
-    if passes:
-        assert CommitService._check_integer_gate(mission, command) is None
-        return
-    with pytest.raises(PlanCommitRejected) as caught:
-        CommitService._check_integer_gate(mission, command)
-    assert caught.value.reason == "GRAPH_VERSION_STALE"
-    assert f"version {base}" in str(caught.value) and f"current is {current}" in str(caught.value)
-
-
-def test_the_integer_gate_decides_before_the_read_set():
-    """两道闸都过期时，便宜的那道先答（读源码：提交的检查顺序）。"""
-
-    source = inspect.getsource(CommitService.commit_plan_revision)
-    assert source.index("self._check_integer_gate(") < source.index("self._check_read_set(")
-
-
 def _criterion(identifier: str = "c-1") -> Criterion:
     return Criterion(criterion_id=identifier, revision=1, origin=CriterionOrigin.USER_EXPLICIT,
                      statement=f"criterion {identifier} is satisfied",
@@ -642,10 +611,16 @@ def _criterion(identifier: str = "c-1") -> Criterion:
 
 
 def _observe(semantics: HtnStore, mission_id: str, name: str, key: str, at: int) -> None:
+    """``key`` names the file asked about; the proposition is ``desktop.file-present(path=key)``."""
+    from agent_orchestrator.knowledge.predicates import proposition_key
+    from agent_orchestrator.planning.htn.observers.workspace import workspace_predicates
+
+    signature = workspace_predicates()[0]
     semantics.insert_observation(mission_id, ObservationRecord(
-        observation_id=name, proposition_key=key, polarity=True,
+        observation_id=name, proposition_key=proposition_key(signature, {"path": key}), polarity=True,
         source_ref=TypedRef(kind=TypedRefKind.OBSERVATION, id=name, revision=1, content_hash="a" * 64),
-        observed_at_ms=at, recorded_at_ms=at))
+        observed_at_ms=at, recorded_at_ms=at),
+        question={"predicate_ref": signature.predicate_ref.to_json(), "arguments": {"path": key}})
 
 
 def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot_be_fooled_by_a_ghost(tmp_path):
@@ -743,23 +718,6 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             store.put_approval({"request_id": "auth-1", "kind": "plan", "mission_id": mission_id,
                                 "subject_key": root_task(mission_id), "state": "revoked", "version": 2})
             assert stale(authority_revisions=(authority,)) == {"authority"}
-
-            # 支持集：成员变了，即便正面成员一个没动（C29）；库里没有的支持集查不了
-            positive = (TypedRef(kind=TypedRefKind.OBSERVATION, id="obs-1", revision=1, content_hash="a" * 64), True)
-            support = semantics.insert_justification_set(mission_id, "support-1", subject_kind="task",
-                                                         subject_id=root_task(mission_id), members=[positive],
-                                                         member_revision=1)
-            support_read = SupportSetRead(support_set_id="support-1", revision=1, member_digest=support.member_digest)
-            assert stale(support_sets=(support_read,)) == set()
-            # 读的时候集合里还多一条反记录（成员摘要不同），正面成员一样
-            counter = (TypedRef(kind=TypedRefKind.OBSERVATION, id="obs-2", revision=1, content_hash="c" * 64), False)
-            other = semantics.insert_justification_set(mission_id, "support-2", subject_kind="task",
-                                                       subject_id=root_task(mission_id), members=[positive, counter],
-                                                       member_revision=1)
-            assert stale(support_sets=(dataclasses.replace(support_read, member_digest=other.member_digest),)) \
-                == {"support_set"}
-            assert unresolved(support_sets=(SupportSetRead(support_set_id="support-ghost", revision=1,
-                                                           member_digest="a" * 64),))
 
             # 有效性纪元：抬了即过期
             epoch = ScopeEpochRead(scope_id="evidence", validity_epoch=semantics.epoch(mission_id, "evidence"))

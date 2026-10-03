@@ -1005,27 +1005,6 @@
     "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 AssuranceLocalChecks.prepare 时只有首次登记检查规格才发 AssuranceCheckSpecRegistered，之后不发事件"
    ]
   },
-  "justification_sets": {
-   "class": "business",
-   "fields": [
-    "set_id",
-    "mission_id",
-    "subject_kind",
-    "subject_id",
-    "member_revision",
-    "member_digest",
-    "rule_ref",
-    "detail_json",
-    "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set"
-   ],
-   "events": [],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
-   ]
-  },
   "knowledge": {
    "class": "business",
    "fields": [
@@ -1288,9 +1267,6 @@
     "resolution_ref",
     "parent_obligation_id",
     "budget_lineage_ref",
-    "failure_count",
-    "spent_tokens",
-    "spent_attempts",
     "fuel_limit",
     "fuel_used",
     "fuel_remaining",
@@ -1303,8 +1279,6 @@
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.admit_demand",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.register",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.set_lifecycle",
     "agent_orchestrator/storage/obligation_store.py:ObligationStore.withdraw_demand"
@@ -1316,9 +1290,7 @@
     "PlanRevisionCommitted"
    ],
    "gaps": [
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_failure: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.record_spend: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
+    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
    ]
   },
   "observations": {
@@ -1338,7 +1310,8 @@
     "query_watermark_ms",
     "valid_until_ms",
     "observation_json",
-    "created_at"
+    "created_at",
+    "question_json"
    ],
    "writers": [
     "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation"
@@ -2115,26 +2088,6 @@
    ],
    "note": "由知识原文按规则生成"
   },
-  "support_members": {
-   "class": "business",
-   "fields": [
-    "set_id",
-    "member_kind",
-    "member_id",
-    "mission_id",
-    "polarity",
-    "member_revision",
-    "member_json",
-    "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set"
-   ],
-   "events": [],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_justification_set: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
-   ]
-  },
   "task_semantics": {
    "class": "business",
    "fields": [
@@ -2476,9 +2429,6 @@
     "trigger:assurance_source_input_manifests_delete",
     "trigger:assurance_source_input_manifests_insert",
     "trigger:assurance_source_input_manifests_update",
-    "trigger:assurance_source_justification_sets_delete",
-    "trigger:assurance_source_justification_sets_insert",
-    "trigger:assurance_source_justification_sets_update",
     "trigger:assurance_source_method_child_occurrences_delete",
     "trigger:assurance_source_method_child_occurrences_insert",
     "trigger:assurance_source_method_child_occurrences_update",
@@ -2554,9 +2504,6 @@
     "trigger:assurance_source_sources_delete",
     "trigger:assurance_source_sources_insert",
     "trigger:assurance_source_sources_update",
-    "trigger:assurance_source_support_members_delete",
-    "trigger:assurance_source_support_members_insert",
-    "trigger:assurance_source_support_members_update",
     "trigger:assurance_source_task_semantics_delete",
     "trigger:assurance_source_task_semantics_insert",
     "trigger:assurance_source_task_semantics_update",

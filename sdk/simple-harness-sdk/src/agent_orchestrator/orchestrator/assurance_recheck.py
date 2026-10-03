@@ -7,8 +7,8 @@ QUERY_SET（整任务全表的超集）、权限 ACCESS、策略 POLICY。此前
 任务里任何一件事都让证书"来源已变"，所以这个观察从没接到任何决定上。这里逐项重读**真正的依据**：
 
 * OBJECT：按原样重读（同一条读取器），正文指纹不同或读不到才算变；
-* QUERY_SET：只比验收公式真正消费的三张表（观察 / 依据集 / 依据成员），指纹不含时钟；
-  其它表是超集噪音（事件、验收本身……），不比；
+* QUERY_SET：不比。验收公式只由审阅与检查两类锚点决定（阶段 D 删了存储规则与部署观察输入），
+  整任务全表的查询集对结论没有影响，任务进行中写观察也不让证书"依据已变"；
 * ACCESS / POLICY：没有权限评估器，不比——权威变化由 ROOT_CHANGED 覆盖。
 
 红线（用户 2026-10-01）：结果只用来判"仍有效 / 已过期"和拦住收尾，从不写 ``goal_resolutions.validity``。
@@ -19,10 +19,8 @@ from typing import Any
 
 from ..assurance.codec import AssuranceError, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
-from ..storage.assurance_reads import AssuranceReader, read_complete_evidence_snapshot
+from ..storage.assurance_reads import AssuranceReader
 
-#: 验收公式（``assurance_validity._snapshot_sources``）真正消费的查询集。
-EVIDENCE_QUERY_KINDS = frozenset({"observations", "justification_sets", "support_members"})
 #: 收尾前要复查的证书用途：根结论、中间目标结论、每条贡献验收。
 CLOSEOUT_CONSUMER_KINDS = ("ACCEPTANCE", "ROOT_RESOLUTION", "COMPOUND_RESOLUTION")
 EVIDENCE_STALE = "EVIDENCE_STALE"
@@ -43,11 +41,10 @@ def live_usable_certificates(connection: Any, mission_id: str, *, limit: int) ->
 
 
 def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) -> list[dict[str, str]]:
-    """证书读集里真正变了的项；空列表 = 依据仍成立。须在一致读或写事务里调用。"""
+    """证书读集里真正变了的项（只比钉住对象）；空列表 = 依据仍成立。须在一致读或写事务里调用。"""
     mission_id = str(certificate["mission_id"])
     reader = AssuranceReader(store, tenant_id=tenant_id, mission_id=mission_id)
     changed: list[dict[str, str]] = []
-    wanted: dict[str, str] = {}
     for item in certificate["read_set"]:
         channel, key = str(item["channel"]), str(item["key"])
         if channel == "OBJECT":
@@ -57,23 +54,6 @@ def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) ->
                 reader.read_exact_metadata(ref)
             except AssuranceError as error:
                 changed.append({"channel": "OBJECT", "key": key, "reason": error.code})
-        elif channel == "QUERY_SET" and decode(key).get("query_kind") in EVIDENCE_QUERY_KINDS:
-            wanted[key] = str(item["fingerprint"])
-    if wanted:
-        try:
-            current = {read.query_key: read.read_item.fingerprint
-                       for read in read_complete_evidence_snapshot(reader, scope_id=str(certificate["scope_id"]))}
-        except AssuranceError as error:
-            current, unavailable = {}, error.code
-        else:
-            unavailable = "QUERY_UNAVAILABLE"
-        for key, expected in sorted(wanted.items()):
-            now = current.get(key)
-            if now != expected:
-                # 记下现在的指纹：同一张表再变一次是新的一处变化，不被"只记一次"盖住。
-                changed.append({"channel": "QUERY_SET", "key": str(decode(key)["query_kind"]),
-                                "reason": "SET_CHANGED" if now is not None else unavailable,
-                                "current": "" if now is None else now[:16]})
     return changed
 
 
@@ -138,5 +118,5 @@ def closeout_stale_findings(store: Any, mission_id: str) -> list[dict[str, Any]]
     return [dict(item) for item in body.get("stale_certificates") or ()]
 
 
-__all__ = ("closeout_stale_findings", "CLOSEOUT_CONSUMER_KINDS", "EVIDENCE_QUERY_KINDS", "EVIDENCE_STALE", "changed_items",
+__all__ = ("closeout_stale_findings", "CLOSEOUT_CONSUMER_KINDS", "EVIDENCE_STALE", "changed_items",
            "live_usable_certificates", "stale_certificates", "stale_source_key")

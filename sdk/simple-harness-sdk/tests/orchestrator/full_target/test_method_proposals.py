@@ -248,7 +248,7 @@ def test_the_request_tells_the_model_which_fields_are_forbidden() -> None:
     request = context(env)
     assert set(request.forbidden_fields) == SYSTEM_BOUND_FIELDS
     assert "registry_status" in request.forbidden_fields
-    assert "manager_epoch" in request.forbidden_fields
+    assert "manager_epoch" not in request.forbidden_fields  # 阶段 D：已删的字段不再点名
 
 
 def test_a_request_that_carried_an_authority_field_is_refused_at_construction() -> None:

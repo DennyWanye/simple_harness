@@ -63,6 +63,8 @@ class RepairTriggerSource(StrEnum):
     NO_DISPATCHABLE_WORK = "NO_DISPATCHABLE_WORK"
     #: 阶段 B 裁决第 2 类：对外操作没生效——人拒绝了已批准效果的发布卡。
     OPERATION_NOT_APPLIED = "OPERATION_NOT_APPLIED"
+    #: 阶段 D：两个没有先后的步骤，通过验收的产出落在同一个文件上。
+    WRITE_CONFLICT = "WRITE_CONFLICT"
 
     # Readable aliases used by callers that name the producer rather than the
     # protocol row.  They are aliases, so the wire vocabulary remains closed.

@@ -50,10 +50,29 @@ class TaskGraphBoundaryCode(StrEnum):
 @dataclass(frozen=True, slots=True)
 class ErrorEntry:
     category: ErrorCategory
+    #: 这条拒绝算不算规划器"答错"一次（计入同一问题的答错上限）。请求过期类不算：
+    #: 规划器答的是一份在它作答期间变了的世界（纪元动了、计划换了版本），重问即可，
+    #: 上限由任务总额度兜着（阶段 D 裁决 1.9）。
+    charges_planner: bool = True
 
 
 def _e(category: ErrorCategory) -> ErrorEntry:
-    return ErrorEntry(category)
+    return ErrorEntry(category, charges_planner=category is not ErrorCategory.REQUEST_STALE)
+
+
+def refusal_charges_planner(codes: object) -> bool:
+    """Whether a planning refusal with these problem codes counts against the Planner.
+    Only a refusal made *entirely* of registered request-stale codes does not."""
+
+    names = [str(code) for code in codes or ()] if isinstance(codes, (list, tuple, set, frozenset)) else []
+    if not names:
+        return True
+    for name in names:
+        if name not in P.__members__:
+            return True
+        if _PLANNING[P(name)].charges_planner:
+            return True
+    return False
 
 
 C = ErrorCategory

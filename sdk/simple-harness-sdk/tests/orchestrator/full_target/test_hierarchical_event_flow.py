@@ -149,10 +149,10 @@ def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary() -> Non
         proposal_id="prop-1", expected_plan_revision=0, read_set=[],
         operations=[{"op": "refine", "goal_id": "task-root", "obligation_id": "obl-root",
                      "method_ref": {"id": "m", "version": 1, "content_hash": "a" * 64}, "bindings": {}}],
-        extras={"manager_epoch": 3})
+        extras={"registry_status": "ADMITTED"})
     with pytest.raises(ContractError) as caught:
         scripted_plan_proposal(text, mission_id="mission-stub")
-    assert "manager_epoch" in str(caught.value)
+    assert "registry_status" in str(caught.value)
 
 
 def test_every_phase_has_a_display_status() -> None:
@@ -227,8 +227,6 @@ def test_the_committed_plan_is_the_read_and_the_display_row_is_not(tmp_path) -> 
             assert int(network.plan_revision) == 1
             assert len(network.occurrences) == 3 and len(network.adopted_instance_ids) == 1
             assert list(network.root_occurrence_ids) == [root.occurrence_id]
-            mission = store.get_mission(mission_id)
-            assert int((mission.final_report or {}).get("graph_version") or 1) == 1
 
             # the compound gate
             intercepted = dispatch.intercept_worker_dispatch(mission_id, root_task)

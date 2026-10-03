@@ -924,7 +924,6 @@ class RootReviewCoordinator:
                 "producer_agent_ids": list(producers),
                 "input_manifest_hash": manifest,
                 "scope_epoch": int(semantics.epoch(mission_id, self.scope_id)),
-                "manager_epoch": int(semantics.epoch(mission_id, self.scope_id)),
                 "source_versions_hash": self._source_versions_hash(mission_id),
                 "superseded": None if previous is None else str(previous.package_id),
                 "recut_reasons": list(state.stale_reasons),
