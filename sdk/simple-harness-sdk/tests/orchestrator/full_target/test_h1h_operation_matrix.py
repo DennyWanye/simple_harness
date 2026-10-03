@@ -32,6 +32,7 @@ from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 #: The planning principal the operation rows name (as the plan-commit principal did).
 PRINCIPAL = SimpleNamespace(principal_id="manager-1", scope_id="mission")
@@ -176,6 +177,7 @@ def test_o04_store_identity_or_link_fault_is_source_unavailable(
                 else:
                     broken_link = {**link, "params_hash": _digest("wrong-params")}
                 broken_link["link_json"] = canonical_json(broken_link)
+                lift_immutable_guards(connection, "planning_operation_action_links")
                 connection.execute(
                     "UPDATE planning_operation_action_links SET link_json=? WHERE operation_id=?",
                     (broken_link["link_json"], link["operation_id"]),

@@ -70,7 +70,7 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     SemanticReadSet,
     TaskForm,
 )
-from agent_orchestrator.contracts.obligations import Obligation, ShapeChange  # noqa: E402
+from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
 from agent_orchestrator.contracts.resolution import (  # noqa: E402
     AllExpr,
     Criterion,
@@ -703,11 +703,11 @@ def test_the_read_set_checker_refuses_a_stale_item_channel_by_channel_and_cannot
             assert unresolved(acceptance_revisions=(ReadItem(kind=ReadItemKind.ACCEPTANCE, id="acc-ghost",
                                                              semantic_revision=1, content_hash=HEX_OTHER),))
 
-            # 义务：改了形就过期
+            # 义务：内容改了就过期（它答应的要求换了）
             duty = checker.read_item(ReadItemKind.OBLIGATION, root_duty(mission_id))
             assert stale(obligation_revisions=(duty,)) == set()
-            ObligationStore(store).note_shape_change(mission_id, root_duty(mission_id),  # type: ignore[arg-type]
-                                                     ShapeChange.METHOD_SWITCHED, detail="another manager switched")
+            ObligationStore(store).revise_requirement_refs(mission_id, root_duty(mission_id),  # type: ignore[arg-type]
+                                                           ["c-user-1", "c-user-9"])
             assert stale(obligation_revisions=(duty,)) == {"obligation"}
 
             # 授权记录：改版即过期

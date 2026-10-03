@@ -227,7 +227,10 @@ MIGRATION_18_CHECKSUM = "a24b4ef345f3ef46ec4b43ee3d68da5f6cc3372aae7968dcc0b7b7a
 #: without adding it here would ship an unguarded table.
 #: Migration 39 (HTN 补齐阶段 D) dropped the two support-set tables that never had a
 #: production writer; migration 16's own list above stays as shipped.
-DROPPED_LATER: tuple[str, ...] = ("justification_sets", "support_members")
+DROPPED_LATER: tuple[str, ...] = ("justification_sets", "support_members",
+                                  # migration 41 (阶段 G): no production writer, or always empty
+                                  "bound_inputs", "obligation_relations", "obligation_expansions",
+                                  "obligation_shape_changes")
 FULL_TARGET_TABLES: tuple[str, ...] = tuple(
     table for table in (*MIGRATION_16_TABLES, *MIGRATION_17_TABLES) if table not in DROPPED_LATER
 )
@@ -1496,23 +1499,6 @@ def test_data_requirements_round_trip_and_filter_by_port(planned: HtnStore) -> N
         planned.insert_data_requirement(MISSION, 1, requirement)
 
 
-def test_a_bound_input_needs_the_requirement_it_resolves(planned: HtnStore) -> None:
-    with pytest.raises(StoreConflict):
-        planned.insert_bound_input(MISSION, 1, bound_input())
-    planned.insert_data_requirement(MISSION, 1, data_requirement())
-    stored = planned.insert_bound_input(MISSION, 1, bound_input())
-    assert planned.list_bound_inputs(MISSION, 1) == (stored,)
-
-
-def test_a_requirement_may_be_rebound_under_a_new_binding_revision(planned: HtnStore) -> None:
-    planned.insert_data_requirement(MISSION, 1, data_requirement())
-    planned.insert_bound_input(MISSION, 1, bound_input(), input_binding_revision=0)
-    planned.insert_bound_input(MISSION, 1, bound_input(), input_binding_revision=1)
-    assert len(planned.list_bound_inputs(MISSION, 1, requirement_id="requirement-1")) == 2
-    with pytest.raises(StoreConflict, match="already stored"):
-        planned.insert_bound_input(MISSION, 1, bound_input(), input_binding_revision=1)
-
-
 def test_an_input_manifest_is_addressed_by_its_own_hash_and_is_idempotent(htn: HtnStore) -> None:
     document = {"inputs": [{"port": "source", "artifact_id": "artifact-1"}]}
     digest = htn.insert_input_manifest(MISSION, "task-1", document, request_id="request-1")
@@ -1642,18 +1628,6 @@ def test_one_review_record_backs_at_most_one_acceptance(htn: HtnStore) -> None:
 def test_an_acceptance_needs_the_review_record_it_quotes(htn: HtnStore) -> None:
     with pytest.raises(StoreConflict):
         htn.insert_acceptance(acceptance())
-
-
-def test_at_most_one_goal_resolution_is_adopted_per_obligation(htn: HtnStore) -> None:
-    htn.insert_goal_resolution(goal_resolution())
-    htn.insert_goal_resolution(goal_resolution(resolution_id="resolution-2"))
-    assert htn.adopted_goal_resolution(MISSION, "obligation-1") is None
-    htn.adopt_goal_resolution(MISSION, "resolution-1")
-    assert htn.adopted_goal_resolution(MISSION, "obligation-1").resolution_id == "resolution-1"
-    htn.adopt_goal_resolution(MISSION, "resolution-2")
-    adopted = htn.adopted_goal_resolution(MISSION, "obligation-1")
-    assert adopted.resolution_id == "resolution-2"
-    assert len(htn.list_goal_resolutions(MISSION, obligation_id="obligation-1")) == 2
 
 
 def test_a_goal_resolution_round_trips_and_is_unique(htn: HtnStore) -> None:

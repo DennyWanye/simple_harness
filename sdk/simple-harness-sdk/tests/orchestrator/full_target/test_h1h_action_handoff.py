@@ -36,6 +36,7 @@ from helpers_step07 import (
 )
 
 from agent_orchestrator.runtime.actions import ActionExecutor
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 @pytest.fixture(autouse=True)
@@ -99,6 +100,7 @@ def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path) -> None:
             for path, value in (("$.mission_id", "foreign-mission"), ("$.action_id", "wrong-action-id"),
                                 ("$.envelope_hash", "f" * 64)):
                 with world.store.transaction() as connection:  # the stored bridge bytes are altered (①b1)
+                    lift_immutable_guards(connection, "planning_operation_action_links")
                     connection.execute(
                         "UPDATE planning_operation_action_links SET link_json = json_set(link_json, ?, ?) "
                         "WHERE action_key = ?", (path, value, key))
@@ -107,6 +109,7 @@ def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path) -> None:
                 assert reason in {"operation_link_missing", "operation_link_mismatch"}, (path, reason)
                 _assert_not_handed_off(world, key, "APPROVED")
                 with world.store.transaction() as connection:
+                    lift_immutable_guards(connection, "planning_operation_action_links")
                     connection.execute(
                         "UPDATE planning_operation_action_links SET link_json = ? WHERE action_key = ?",
                         (original, key))

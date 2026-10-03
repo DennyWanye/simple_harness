@@ -300,6 +300,61 @@
    "note": "完成范围过期时只放下、不归档（结果一直停在验证中，被反复重验）"
   },
   {
+   "id": "G-01",
+   "source": "阶段 G 第 1 批",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "    content = {column[1]: _value(row[column[1]]) for column in columns}",
+   "replacement": "    content = {column[1]: None for column in columns}",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_completed_mission_rebuilds_its_source_tables"
+   ],
+   "note": "点名与比对不看内容（哈希不含列值）：改过内容的源记录行不报"
+  },
+  {
+   "id": "G-02",
+   "source": "阶段 G 第 1 批",
+   "file": "src/agent_orchestrator/storage/schema.py",
+   "original": "CREATE TRIGGER assurance_source_method_contracts_insert AFTER INSERT ON method_contracts WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN \n SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)\n THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;\n SELECT CASE WHEN assurance_change_receipt() IS NULL\n THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;\n UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,\n  change_receipt_id=assurance_change_receipt() WHERE singleton=1;\n INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,\n  actor_type,actor_id,payload_json,created_at,schema_version)\n SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,\n  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',\n  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,\n  'system','assurance-source-v1',\n  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),\n  CAST(strftime('%s','now') AS REAL),1\n FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id\n CROSS JOIN assurance_environment_state e\n WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');",
+   "replacement": "CREATE TRIGGER assurance_source_method_contracts_insert AFTER INSERT ON method_contracts WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN \n SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)\n THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;\n SELECT CASE WHEN assurance_change_receipt() IS NULL\n THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;\n UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,\n  change_receipt_id=assurance_change_receipt() WHERE singleton=1;\n INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,\n  actor_type,actor_id,payload_json,created_at,schema_version)\n SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,\n  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',\n  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,\n  'system','assurance-source-v1',\n  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),\n  CAST(strftime('%s','now') AS REAL),1\n FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id\n CROSS JOIN assurance_environment_state e\n WHERE e.singleton=1;",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_global_change_wakes_only_unfinished_missions"
+   ],
+   "note": "迁移 41 的全局触发器去掉\"没结束\"条件：已结束的任务也被唤醒"
+  },
+  {
+   "id": "G-03",
+   "source": "阶段 G 第 1 批",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "                    \"replay_scope\": replay_scope_digest(),\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_mission_born_under_another_inventory_is_out_of_scope"
+   ],
+   "note": "建任务不写重放口径摘要：当前口径下的任务也报范围外"
+  },
+  {
+   "id": "G-04",
+   "source": "阶段 G 第 1 批",
+   "file": "src/agent_orchestrator/observability/business_replay.py",
+   "original": "    if folder is None or entry.get(\"gaps\"):",
+   "replacement": "    if folder is None:",
+   "tests": [
+    "tests/orchestrator/full_target/test_business_replay_inventory.py::test_a_folded_table_with_gaps_is_not_covered"
+   ],
+   "note": "有 gaps 的折叠表也算覆盖"
+  },
+  {
+   "id": "G-17",
+   "source": "阶段 G 第 1 批",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "        if entry.get(\"rebuild\") == \"immutable_source\" or entry.get(\"named\") is True",
+   "replacement": "        if entry.get(\"rebuild\") == \"immutable_source\"",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_every_immutable_row_and_receipt_is_named_in_its_own_transaction"
+   ],
+   "note": "自动点名漏掉回执账"
+  },
+  {
    "id": "M01",
    "source": "TaskGraph 代码级计划 §15",
    "file": null,

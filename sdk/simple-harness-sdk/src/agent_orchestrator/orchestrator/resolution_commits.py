@@ -99,7 +99,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 ACCEPTANCE_COMMITTED = "AcceptanceCommitted"
 GOAL_RESOLUTION_COMMITTED = "GoalResolutionCommitted"
 #: P2.3c part 2: the library recorded how far one accepted output travelled (AER §6.1).
-DELIVERY_RECEIPT_RECORDED = "DeliveryReceiptRecorded"
 
 #: AER §6.1: "only the delivery stage the goal asked for completes the goal".  The
 #: order is how far the output actually travelled; ``FAILED`` is not a lesser stage
@@ -393,8 +392,8 @@ class CommitGoalResolutionCommand:
             if isinstance(item, DeliveryReceipt):
                 raise ContractError(
                     "command.delivery_receipts carries receipt *ids*, not DeliveryReceipt "
-                    "objects: record the receipt with CommitService.record_delivery_receipt "
-                    "first, then name it here (AER §6.1 — a receipt is a claim until the "
+                    "objects: a receipt is recorded when its operation outcome is accepted, "
+                    "then named here (AER §6.1 — a receipt is a claim until the "
                     "library holds it)"
                 )
             receipts.append(str(item))
@@ -1270,107 +1269,6 @@ class ResolutionCommitsMixin:
             return GoalResolutionReceipt(
                 resolution=resolution, commit=commit, account=satisfied, decision=decision
             )
-
-    # =============================================== record_delivery_receipt (AER §6.1)
-    def record_delivery_receipt(
-        self,
-        mission_id: str,
-        receipt: DeliveryReceipt,
-        *,
-        command_id: str,
-        source: Mapping[str, Any] | None = None,
-    ) -> DeliveryReceipt:
-        """Record how far one accepted output actually travelled.
-
-        This is the *only* way a :class:`DeliveryReceipt` becomes something a root
-        resolution may quote.  Before P2.3c part 2 the receipt rode in on the
-        ``commit_goal_resolution`` command, which meant the evidence that a Mission
-        really delivered was supplied by the same caller that wanted the Mission
-        declared complete.  AER §6.1 wants a record; migration 17 gives it a table;
-        this writes it.
-
-        The receipt is checked against the store before it is held: it names this
-        Mission, and the ``Acceptance`` it quotes has to exist (the foreign key says
-        so too) and belong to this Mission.  Whether that acceptance is still
-        **CURRENT** is deliberately *not* checked here and is re-checked where the
-        receipt is quoted (:meth:`_check_delivery` → :func:`require_valid_receipt`):
-        an acceptance that is current when the delivery happens can be superseded
-        afterwards, so the question that decides a Mission is "is it current *now,* at
-        the moment this root resolution is being formed", not "was it current when
-        somebody filed the paperwork".
-
-        Idempotent per ``command_id`` under the same §17.4 rule as the commit
-        receipts; the same id with a different receipt is a conflict, not a second
-        write.
-        """
-
-        if not isinstance(receipt, DeliveryReceipt):
-            raise ResolutionCommitRejected(
-                "BAD_COMMAND", "record_delivery_receipt expects a DeliveryReceipt"
-            )
-        intent = content_hash_of(receipt.to_json())
-        with self._store.transaction():
-            self._open_mission(mission_id)
-            semantics = HtnStore(self._store)
-            if receipt.mission_id != mission_id:
-                raise ResolutionCommitRejected(
-                    "DELIVERY_RECEIPT_INVALID",
-                    f"delivery receipt {receipt.receipt_id!r} belongs to mission "
-                    f"{receipt.mission_id!r}, not {mission_id!r}",
-                )
-            try:
-                acceptance = semantics.get_acceptance(str(receipt.acceptance_id))
-            except StoreError as error:
-                raise ResolutionCommitRejected(
-                    "DELIVERY_RECEIPT_INVALID",
-                    f"delivery receipt {receipt.receipt_id!r} quotes acceptance "
-                    f"{receipt.acceptance_id!s}, which is not stored ({error})",
-                ) from error
-            if acceptance.mission_id != mission_id:
-                raise ResolutionCommitRejected(
-                    "DELIVERY_RECEIPT_INVALID",
-                    f"delivery receipt {receipt.receipt_id!r} quotes an acceptance of mission "
-                    f"{acceptance.mission_id!r}",
-                )
-            if receipt.operation_id is not None:
-                from ..storage.operation_completion_store import OperationCompletionStore
-
-                contribution = OperationCompletionStore(self._store).get_acceptance_scope_exact(
-                    mission_id, str(receipt.acceptance_id)
-                )
-                pin = None if contribution is None else contribution["document"].delivery_receipt_ref
-                if (contribution is None or str(contribution["document"].kind) != "OPERATION_EFFECT"
-                    or pin is None or pin.id != receipt.receipt_id
-                    or pin.content_hash != content_hash_of(receipt.to_json())):
-                    raise ResolutionCommitRejected(
-                        "OP_OUTCOME_SOURCE_UNAVAILABLE", "delivery must be produced by effect acceptance"
-                    )
-            try:
-                stored = semantics.record_delivery_receipt(
-                    mission_id, receipt, command_id=command_id, intent_hash=intent
-                )
-            except StoreError as error:
-                raise ResolutionCommitRejected(
-                    "COMMAND_PAYLOAD_CONFLICT",
-                    f"delivery receipt {receipt.receipt_id!r} conflicts with a stored "
-                    f"record ({error})",
-                ) from error
-            self._emit(
-                DELIVERY_RECEIPT_RECORDED,
-                mission_id,
-                key=f"{mission_id}:{DELIVERY_RECEIPT_RECORDED}:{command_id}",
-                payload={
-                    "command_id": command_id,
-                    "receipt_id": stored.receipt_id,
-                    "acceptance_id": str(stored.acceptance_id),
-                    "stage": str(stored.stage),
-                    "observed_at_ms": int(stored.observed_at_ms),
-                    "operation_id": stored.operation_id,
-                    "intent_hash": intent,
-                    "source": dict(source or {}),
-                },
-            )
-            return stored
 
     # ---------------------------------------------------------------- shared gates
     def _open_mission(self, mission_id: str) -> Mission:
@@ -2261,7 +2159,6 @@ __all__ = (
     "USABLE_ACCEPTANCE_VALIDITY",
     "AcceptReviewCommand",
     "AcceptanceReceipt",
-    "DELIVERY_RECEIPT_RECORDED",
     "CommandReceipt",
     "CommitGoalResolutionCommand",
     "GoalResolutionReceipt",

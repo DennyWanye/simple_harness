@@ -394,37 +394,6 @@ class BudgetLedger:
         assert settled is not None
         return settled
 
-    def settle_known(self, *, subject_id: str, tool_calls: int = 0) -> dict[str, Any]:
-        """Release the reservation crediting only known facts; unknown rows stay.
-
-        P2.3l P1-1: a service-intent give-up / re-hand-off must not write an
-        UNKNOWN call as 0 tokens, and must not keep the 50k reservation occupied
-        after the grant was released.
-        """
-
-        reservation = self.reservation(subject_id)
-        if reservation is None:
-            raise BudgetError(f"no reservation for {subject_id}")
-        if reservation["state"] == "SETTLED":
-            return reservation
-        tokens = self.known_usage_for(subject_id)
-        for snapshot in self._chain(reservation["account_id"]):
-            self._apply(
-                snapshot.account_id,
-                reserved_tokens=-int(reservation["reserved_tokens"]),
-                reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
-                settled_tokens=tokens,
-                settled_tool_calls=int(tool_calls),
-            )
-        self._store.connection.execute(
-            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
-            " settled_tool_calls = ?, updated_at = ? WHERE subject_id = ?",
-            (tokens, int(tool_calls), self._store.now, subject_id),
-        )
-        settled = self.reservation(subject_id)
-        assert settled is not None
-        return settled
-
     def settle_at_upper_bound(self, *, subject_id: str) -> dict[str, Any]:
         """Count a reservation an UNKNOWN charge holds at its upper bound (user, 2026-09-26).
 

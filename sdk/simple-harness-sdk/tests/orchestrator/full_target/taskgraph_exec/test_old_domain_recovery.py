@@ -19,6 +19,7 @@ from production_fixture import product_loop, root_of
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
@@ -35,6 +36,7 @@ def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
         body.update(schema=1, planner_floor=[], synthesis_default_policy=[],
                     conflict_template={'policy': [], 'decides_with': 'code_test', 'probe': None})
         with store.transaction():
+            lift_immutable_guards(store.connection, "mission_domains")
             store.connection.execute('UPDATE mission_domains SET json=? WHERE mission_id=?',
                                      (json.dumps(body, sort_keys=True), source['mission_id']))
         assert store.connection.execute(

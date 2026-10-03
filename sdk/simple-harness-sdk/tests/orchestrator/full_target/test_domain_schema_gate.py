@@ -31,6 +31,7 @@ from agent_orchestrator.governance.domains import (
 from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 def _create(world, key: str) -> str:
@@ -52,6 +53,7 @@ def _freeze_old_schema(loop, mission_id: str) -> None:
     body.update(schema=1, planner_floor=[], synthesis_default_policy=[],
                 conflict_template={"policy": [], "decides_with": "code_test", "probe": None})
     with loop.store.transaction():
+        lift_immutable_guards(loop.store.connection, "mission_domains")
         loop.store.connection.execute(
             "UPDATE mission_domains SET json=? WHERE mission_id=?",
             (json.dumps(body, ensure_ascii=False, sort_keys=True), mission_id))

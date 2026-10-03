@@ -35,7 +35,6 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.evidence_state import ObservationRecord, TruthValue, ValidityWitness, truth_change
 from ..contracts.htn import (
-    BoundInput,
     ChildBinding,
     DataRequirement,
     MethodContract,
@@ -752,59 +751,6 @@ class HtnStore:
         ).fetchall()
         return tuple(DataRequirement.from_json(json.loads(row[0])) for row in rows)
 
-    def insert_bound_input(
-        self,
-        mission_id: str,
-        plan_revision: int,
-        bound: BoundInput,
-        *,
-        input_binding_revision: int = 0,
-    ) -> BoundInput:
-        if not isinstance(bound, BoundInput):
-            raise StoreConflict("insert_bound_input expects a BoundInput")
-        mission = identifier(mission_id, "mission_id")
-        number = index(plan_revision, "plan_revision")
-        binding_revision = index(input_binding_revision, "input_binding_revision")
-        self._insert(
-            "INSERT INTO bound_inputs(mission_id,plan_revision,requirement_id,"
-            "input_binding_revision,producer_result_id,acceptance_id,artifact_id,content_hash,"
-            "source_revision,binding_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                mission,
-                number,
-                bound.requirement_id,
-                binding_revision,
-                bound.producer_result_id,
-                bound.acceptance_id,
-                bound.artifact_id,
-                bound.content_hash,
-                bound.source_revision,
-                canonical_json(bound.to_json()),
-                self._store.now,
-            ),
-            f"bound input {bound.requirement_id}@{binding_revision} already stored"
-            f" in {mission}@{number}",
-        )
-        return bound
-
-    def list_bound_inputs(
-        self, mission_id: str, plan_revision: int, *, requirement_id: str | None = None
-    ) -> tuple[BoundInput, ...]:
-        clauses = ["mission_id = ?", "plan_revision = ?"]
-        values: list[Any] = [
-            identifier(mission_id, "mission_id"),
-            index(plan_revision, "plan_revision"),
-        ]
-        if requirement_id is not None:
-            clauses.append("requirement_id = ?")
-            values.append(identifier(requirement_id, "requirement_id"))
-        rows = self._store.connection.execute(
-            f"SELECT binding_json FROM bound_inputs WHERE {' AND '.join(clauses)}"
-            " ORDER BY requirement_id, input_binding_revision",
-            tuple(values),
-        ).fetchall()
-        return tuple(BoundInput.from_json(json.loads(row[0])) for row in rows)
-
     def insert_input_manifest(
         self,
         mission_id: str,
@@ -1215,32 +1161,6 @@ class HtnStore:
             f" for obligation {resolution.obligation_id}",
         )
         return digest
-
-    def adopt_goal_resolution(self, mission_id: str, resolution_id: str) -> GoalResolution:
-        """Make one resolution the currently adopted one for its obligation."""
-
-        mission = identifier(mission_id, "mission_id")
-        target = identifier(resolution_id, "resolution_id")
-        row = self._one(
-            "SELECT obligation_id FROM goal_resolutions WHERE mission_id = ? AND resolution_id = ?",
-            (mission, target),
-            f"no goal resolution {resolution_id} in {mission_id}",
-        )
-        now = self._store.now
-        with self._store.transaction() as connection:
-            connection.execute(
-                "UPDATE goal_resolutions SET adopted = 0, updated_at = ? WHERE mission_id = ?"
-                " AND obligation_id = ? AND resolution_id <> ?",
-                (now, mission, row[0], target),
-            )
-            self._execute(
-                connection,
-                "UPDATE goal_resolutions SET adopted = 1, updated_at = ?"
-                " WHERE mission_id = ? AND resolution_id = ?",
-                (now, mission, target),
-                f"goal resolution {resolution_id} could not be adopted",
-            )
-        return self.get_goal_resolution(target)
 
     def get_goal_resolution(self, resolution_id: str) -> GoalResolution:
         row = self._one(

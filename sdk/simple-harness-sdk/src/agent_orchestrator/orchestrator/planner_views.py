@@ -115,10 +115,8 @@ def read_planner_package(
     for duty in duties.list_obligations(mission.id):
         account = duties.account(mission.id, duty.obligation_id)
         totals = account_of(spent, duty.obligation_id)
-        relations = duties.list_relations(mission.id, child=duty.obligation_id)
         obligations.append({
             "parent": None if duty.parent_obligation_id is None else str(duty.parent_obligation_id),
-            "relation": ",".join(sorted({str(row.kind) for row in relations})) or "ROOT",
             "demand": {"obligation_id": str(duty.obligation_id), "admitted": account.has_admitted_demand,
                        "lifecycle": str(account.lifecycle), "requiredness": str(duty.requiredness)},
             "fuel": {"limit": account.fuel_limit, "used": account.fuel_used,

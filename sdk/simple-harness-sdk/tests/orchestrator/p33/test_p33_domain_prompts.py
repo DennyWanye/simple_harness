@@ -23,6 +23,7 @@ from p33_world import opened, request
 from agent_orchestrator.governance import domains
 from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 @pytest.mark.parametrize(
@@ -41,6 +42,7 @@ def test_invalid_bound_snapshot_cannot_fall_back_to_registry(tmp_path, damage):
         else:
             body.pop(damage)
         with world.store.transaction():
+            lift_immutable_guards(world.store.connection, "mission_domains")
             world.store.connection.execute(
                 "UPDATE mission_domains SET json=? WHERE mission_id=?", (json.dumps(body), mission_id))
         with pytest.raises(CommitRejected, match="invalid frozen domain"):

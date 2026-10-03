@@ -23,6 +23,7 @@ from agent_orchestrator.contracts.planning_decisions import (
 )
 from agent_orchestrator.runtime import role_templates
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 def test_exposed_values_are_legal_and_slash_free() -> None:
@@ -80,6 +81,7 @@ def test_mission_bound_to_a_historical_package_fails_loudly(tmp_path: Path) -> N
             # A library written by an older build: its durable binding names package 7.
             store = PlanningDecisionStore(loop.store)
             with loop.store.transaction() as connection:  # rewrite the durable binding to package 7
+                lift_immutable_guards(connection, "mission_planning_protocols")
                 connection.execute(
                     "UPDATE mission_planning_protocols SET package_version=7, prompt_version='planner-hierarchical-v10'"
                     " WHERE mission_id=?", (mission.id,))

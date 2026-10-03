@@ -36,16 +36,12 @@ from simple_harness.contracts import canonical_json
 from ..contracts.htn import ObligationId, ObligationRelation
 from ..contracts.htn import obligation_id as _obligation_id
 from ..contracts.obligations import (
-    ExpansionRecord,
-    FuelDecision,
-    FuelStatus,
     Obligation,
     ObligationAccountView,
     ObligationLedger,
     ObligationLifecycle,
-    ShapeChange,
 )
-from ..contracts.semantic_base import enum_of, identifier, index, optional_identifier, text
+from ..contracts.semantic_base import enum_of, identifier, index, optional_identifier
 from .store import Store, StoreConflict
 
 DEFAULT_RECURSION_FUEL = 3
@@ -142,12 +138,6 @@ class ObligationStore:
             has_admitted_demand=bool(row["demand_admitted"]),
             fuel_limit=int(row["fuel_limit"]),
             fuel_used=int(row["fuel_used"]),
-            expansions=self._count(
-                "obligation_expansions", row["mission_id"], row["obligation_id"]
-            ),
-            shape_changes=self._count(
-                "obligation_shape_changes", row["mission_id"], row["obligation_id"]
-            ),
             lifecycle=ObligationLifecycle(row["lifecycle"]),
             resolution_ref=row["resolution_ref"],
         )
@@ -161,41 +151,6 @@ class ObligationStore:
             (identifier(mission_id, "mission_id"), str(_obligation_id(target, "obligation_id"))),
         ).fetchone()
         return row is not None
-
-    def note_shape_change(
-        self, mission_id: str, target: ObligationId, change: ShapeChange, *, detail: str
-    ) -> ObligationAccountView:
-        """Record that the work changed shape.  Counters are deliberately untouched."""
-
-        kind = enum_of(ShapeChange, change, "shape_change")
-        note = text(detail, "detail", limit=512)
-        mission = identifier(mission_id, "mission_id")
-        duty = str(_obligation_id(target, "obligation_id"))
-        # The ordinal is read *inside* the write transaction: taking it outside would
-        # hand two concurrent writers the same number and lose one of the histories.
-        with self._store.transaction() as connection:
-            self._require_row(connection, mission, duty)
-            ordinal = self._next_ordinal(connection, "obligation_shape_changes", mission, duty)
-            try:
-                connection.execute(
-                    "INSERT INTO obligation_shape_changes(mission_id,obligation_id,ordinal,change,"
-                    "detail,created_at) VALUES (?,?,?,?,?,?)",
-                    (mission, duty, ordinal, str(kind), note, self._store.now),
-                )
-            except sqlite3.IntegrityError as error:
-                raise StoreConflict(f"shape change for {duty} was rejected: {error}") from error
-            return self.account(mission, target)
-
-    def shape_changes(
-        self, mission_id: str, target: ObligationId
-    ) -> tuple[tuple[ShapeChange, str], ...]:
-        row = self._row(mission_id, target)
-        rows = self._store.connection.execute(
-            "SELECT change, detail FROM obligation_shape_changes"
-            " WHERE mission_id = ? AND obligation_id = ? ORDER BY ordinal",
-            (row["mission_id"], row["obligation_id"]),
-        ).fetchall()
-        return tuple((ShapeChange(item[0]), str(item[1])) for item in rows)
 
     def set_lifecycle(
         self,
@@ -285,181 +240,15 @@ class ObligationStore:
             )
             return self.account(mission, target)
 
-    # ------------------------------------------------------------------ recursion fuel
-    def consume_fuel(
-        self, mission_id: str, target: ObligationId, *, expansion: ExpansionRecord
-    ) -> FuelDecision:
-        """Spend one unit of the duty's fuel.  Exhaustion is ``BOUND_REACHED`` (ADR-08)."""
-
-        if not isinstance(expansion, ExpansionRecord):
-            raise StoreConflict("consume_fuel expects an ExpansionRecord")
-        mission = identifier(mission_id, "mission_id")
-        duty = str(_obligation_id(target, "obligation_id"))
-        # Fuel level, repeat check and ordinal are all read inside the write
-        # transaction: reading them outside would let two expansions share the last
-        # unit of fuel, which is precisely the bound ADR-08 says must hold.
-        with self._store.transaction() as connection:
-            row = self._require_row(connection, mission, duty)
-            remaining = int(row["fuel_remaining"])
-            seen = connection.execute(
-                "SELECT 1 FROM obligation_expansions WHERE mission_id = ? AND obligation_id = ?"
-                " AND method_id = ? AND parameters_digest = ?",
-                (mission, duty, expansion.method_id, expansion.parameters_digest),
-            ).fetchone()
-            if seen is not None:
-                return FuelDecision(
-                    FuelStatus.REPEATED_EXPANSION,
-                    remaining,
-                    "this obligation was already expanded with the same method and parameters",
-                )
-            if remaining <= 0:
-                return FuelDecision(
-                    FuelStatus.BOUND_REACHED, 0, "recursion fuel for this obligation is exhausted"
-                )
-            ordinal = self._next_ordinal(connection, "obligation_expansions", mission, duty)
-            now = self._store.now
-            try:
-                connection.execute(
-                    "INSERT INTO obligation_expansions(mission_id,obligation_id,method_id,"
-                    "parameters_digest,ordinal,task_id,created_at) VALUES (?,?,?,?,?,?,?)",
-                    (
-                        mission,
-                        duty,
-                        expansion.method_id,
-                        expansion.parameters_digest,
-                        ordinal,
-                        expansion.task_id,
-                        now,
-                    ),
-                )
-                connection.execute(
-                    "UPDATE obligations SET fuel_used = fuel_used + 1,"
-                    " fuel_remaining = fuel_remaining - 1, updated_at = ?"
-                    " WHERE mission_id = ? AND obligation_id = ?",
-                    (now, mission, duty),
-                )
-            except sqlite3.IntegrityError as error:
-                raise StoreConflict(f"expansion of {duty} was rejected: {error}") from error
-        return FuelDecision(FuelStatus.GRANTED, remaining - 1, "expansion admitted")
-
     def remaining_fuel(self, mission_id: str, target: ObligationId) -> int:
         return int(self._row(mission_id, target)["fuel_remaining"])
-
-    def expansion_keys(self, mission_id: str, target: ObligationId) -> tuple[tuple[str, str], ...]:
-        row = self._row(mission_id, target)
-        rows = self._store.connection.execute(
-            "SELECT method_id, parameters_digest FROM obligation_expansions"
-            " WHERE mission_id = ? AND obligation_id = ? ORDER BY ordinal",
-            (row["mission_id"], row["obligation_id"]),
-        ).fetchall()
-        return tuple((str(item[0]), str(item[1])) for item in rows)
-
-    def expansions(self, mission_id: str, target: ObligationId) -> tuple[ExpansionRecord, ...]:
-        row = self._row(mission_id, target)
-        rows = self._store.connection.execute(
-            "SELECT method_id, parameters_digest, task_id FROM obligation_expansions"
-            " WHERE mission_id = ? AND obligation_id = ? ORDER BY ordinal",
-            (row["mission_id"], row["obligation_id"]),
-        ).fetchall()
-        # Through the contract codec, not by re-deriving the type here: a hand-edited
-        # or migrated row is rejected by the same validators the wire form uses.
-        return tuple(
-            ExpansionRecord.from_json(
-                {
-                    "method_id": item[0],
-                    "parameters_digest": item[1],
-                    "task_id": item[2],
-                }
-            )
-            for item in rows
-        )
-
-    # ------------------------------------------------------------------ relations
-    def add_relation(
-        self,
-        mission_id: str,
-        *,
-        parent: ObligationId,
-        child: ObligationId,
-        kind: ObligationRelation,
-        active_revision: int = 0,
-        detail: dict[str, Any] | None = None,
-    ) -> ObligationRelationRow:
-        mission = identifier(mission_id, "mission_id")
-        parent_id = _obligation_id(parent, "parent")
-        child_id = _obligation_id(child, "child")
-        relation = enum_of(ObligationRelation, kind, "kind")
-        revision = index(active_revision, "active_revision")
-        if parent_id == child_id:
-            raise StoreConflict("an obligation may not refine itself")
-        payload = dict(detail or {})
-        with self._store.transaction() as connection:
-            try:
-                connection.execute(
-                    "INSERT INTO obligation_relations(mission_id,parent_obligation_id,"
-                    "child_obligation_id,kind,active_revision,detail_json,created_at)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (
-                        mission,
-                        str(parent_id),
-                        str(child_id),
-                        str(relation),
-                        revision,
-                        canonical_json(payload),
-                        self._store.now,
-                    ),
-                )
-            except sqlite3.IntegrityError as error:
-                raise StoreConflict(f"obligation relation rejected: {error}") from error
-        return ObligationRelationRow(
-            mission_id=mission,
-            parent_obligation_id=parent_id,
-            child_obligation_id=child_id,
-            kind=relation,
-            active_revision=revision,
-            detail=payload,
-        )
-
-    def list_relations(
-        self,
-        mission_id: str,
-        *,
-        parent: ObligationId | None = None,
-        child: ObligationId | None = None,
-    ) -> tuple[ObligationRelationRow, ...]:
-        clauses = ["mission_id = ?"]
-        values: list[Any] = [identifier(mission_id, "mission_id")]
-        if parent is not None:
-            clauses.append("parent_obligation_id = ?")
-            values.append(str(_obligation_id(parent, "parent")))
-        if child is not None:
-            clauses.append("child_obligation_id = ?")
-            values.append(str(_obligation_id(child, "child")))
-        rows = self._store.connection.execute(
-            "SELECT mission_id,parent_obligation_id,child_obligation_id,kind,active_revision,"
-            f"detail_json FROM obligation_relations WHERE {' AND '.join(clauses)}"
-            " ORDER BY created_at, parent_obligation_id, child_obligation_id",
-            tuple(values),
-        ).fetchall()
-        return tuple(
-            ObligationRelationRow(
-                mission_id=str(row[0]),
-                parent_obligation_id=ObligationId(row[1]),
-                child_obligation_id=ObligationId(row[2]),
-                kind=ObligationRelation(row[3]),
-                active_revision=int(row[4]),
-                detail=json.loads(row[5]),
-            )
-            for row in rows
-        )
 
     # ------------------------------------------------------------------ ledger bridge
     def load_ledger(self, mission_id: str) -> ObligationLedger:
         """Rebuild the in-memory ledger of one Mission, counters and all.
 
-        The replay is exact: a stored expansion was admitted when it was written,
-        so replaying them in ordinal order reproduces ``fuel_used`` without ever
-        handing out an allowance the duty did not have.
+        Expansions and shape changes are not stored (HTN 补齐阶段 G：按义务扣燃料与形状变化的
+        两张表没有生产写方，已删）；a ledger that carries them is refused by :meth:`persist`.
         """
 
         mission = identifier(mission_id, "mission_id")
@@ -474,10 +263,6 @@ class ObligationStore:
             duty = Obligation.from_json(json.loads(row["obligation_json"]))
             ledger.register(duty, recursion_fuel=int(row["fuel_limit"]))
             target = duty.obligation_id
-            for expansion in self.expansions(mission, target):
-                ledger.consume_fuel(target, expansion=expansion)
-            for change, detail in self.shape_changes(mission, target):
-                ledger.note_shape_change(target, change, detail=detail)
             # Before the lifecycle: a demand may only be admitted while the duty is open.
             if bool(row["demand_admitted"]):
                 ledger.admit_demand(target)
@@ -492,6 +277,10 @@ class ObligationStore:
         if not isinstance(ledger, ObligationLedger):
             raise StoreConflict("persist expects an ObligationLedger")
         written: list[ObligationId] = []
+        for target in ledger.obligation_ids():
+            if ledger.expansion_keys(target) or ledger.shape_changes(target):
+                raise StoreConflict(
+                    f"obligation {target!s}: expansions and shape changes are not stored")
         with self._store.transaction() as connection:
             for target in ledger.obligation_ids():
                 duty = ledger.obligation(target)
@@ -538,24 +327,6 @@ class ObligationStore:
                         now,
                     ),
                 )
-                for ordinal, key in enumerate(ledger.expansion_keys(target), start=1):
-                    connection.execute(
-                        "INSERT INTO obligation_expansions(mission_id,obligation_id,method_id,"
-                        "parameters_digest,ordinal,task_id,created_at) VALUES (?,?,?,?,?,NULL,?)"
-                        " ON CONFLICT DO NOTHING",
-                        (duty.mission_id, str(target), key[0], key[1], ordinal, now),
-                    )
-                connection.execute(
-                    "DELETE FROM obligation_shape_changes WHERE mission_id = ?"
-                    " AND obligation_id = ?",
-                    (duty.mission_id, str(target)),
-                )
-                for ordinal, (change, detail) in enumerate(ledger.shape_changes(target), start=1):
-                    connection.execute(
-                        "INSERT INTO obligation_shape_changes(mission_id,obligation_id,ordinal,"
-                        "change,detail,created_at) VALUES (?,?,?,?,?,?)",
-                        (duty.mission_id, str(target), ordinal, str(change), detail, now),
-                    )
                 written.append(target)
         return tuple(written)
 
@@ -572,17 +343,6 @@ class ObligationStore:
             raise StoreConflict(f"obligation {duty} is not registered in mission {mission_id}")
         return row
 
-    @staticmethod
-    def _next_ordinal(
-        connection: sqlite3.Connection, table: str, mission_id: str, duty: str
-    ) -> int:
-        row = connection.execute(
-            f"SELECT coalesce(max(ordinal), 0) FROM {table}"  # noqa: S608
-            " WHERE mission_id = ? AND obligation_id = ?",
-            (mission_id, duty),
-        ).fetchone()
-        return int(row[0]) + 1
-
     def _row(self, mission_id: str, target: ObligationId) -> sqlite3.Row:
         mission = identifier(mission_id, "mission_id")
         duty = _obligation_id(target, "obligation_id")
@@ -593,13 +353,3 @@ class ObligationStore:
         if row is None:
             raise StoreConflict(f"obligation {duty!s} is not registered in mission {mission}")
         return row
-
-    def _count(self, table: str, mission_id: str, target: str) -> int:
-        row = self._store.connection.execute(
-            f"SELECT count(*) FROM {table} WHERE mission_id = ? AND obligation_id = ?",  # noqa: S608
-            (mission_id, target),
-        ).fetchone()
-        return int(row[0])
-
-
-__all__ = ("DEFAULT_RECURSION_FUEL", "ObligationRelationRow", "ObligationStore")

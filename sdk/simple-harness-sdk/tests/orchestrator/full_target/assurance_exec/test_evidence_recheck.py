@@ -25,6 +25,7 @@ from agent_orchestrator.orchestrator.assurance_recheck import changed_items
 from agent_orchestrator.testing.fixtures import package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "taskgraph_exec"))
 from production_fixture import CHAIN_CRITERIA, chain_planner  # noqa: E402
@@ -92,6 +93,7 @@ def test_a_tampered_accepted_review_is_named_stale_and_reaches_the_planner(tmp_p
                 review_key = next(item["key"] for item in certificate["read_set"]
                                   if item["channel"] == "OBJECT" and decode(item["key"])["kind"] == "review")
                 with store.transaction():
+                    lift_immutable_guards(store.connection, "review_records")
                     store.connection.execute(
                         "UPDATE review_records SET record_json=json_set(record_json,'$.reviewer_turn_id',"
                         "'tampered-on-disk') WHERE record_id=?", (decode(review_key)["id"],))

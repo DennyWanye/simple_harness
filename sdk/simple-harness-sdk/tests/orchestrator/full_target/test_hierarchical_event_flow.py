@@ -71,6 +71,7 @@ from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 @pytest.fixture(autouse=True)
@@ -116,9 +117,11 @@ def _damage_binding(store: Any, mission_id: str, task_id: str, *, to_mission: st
     connection = store.connection
     connection.execute("PRAGMA foreign_keys=OFF")
     if to_mission is None:
+        lift_immutable_guards(connection, "task_semantics")
         connection.execute("UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id=?",
                            (task_id + "-damaged", mission_id, task_id))
     else:
+        lift_immutable_guards(connection, "task_semantics")
         connection.execute("UPDATE task_semantics SET mission_id=? WHERE mission_id=? AND task_id=?",
                            (to_mission, mission_id, task_id))
     connection.commit()

@@ -24,9 +24,7 @@ MISSION_TABLES = (
     "method_child_occurrences",
     "order_constraints",
     "data_requirements",
-    "bound_inputs",
     "obligations",
-    "obligation_relations",
     "operation_identities",
     "operation_bindings",
     "operation_completion_specs",
@@ -51,7 +49,7 @@ MISSION_TABLES = (
     "claims",
 )
 
-GLOBAL_TABLES = ("method_contracts", "policy_versions", "policy_proposals", "policy_activations")
+GLOBAL_TABLES = ("method_contracts", "policy_versions", "policy_activations")
 
 SOURCE_COLUMNS = {
     "events": (
@@ -176,19 +174,6 @@ SOURCE_COLUMNS = {
         "import_receipt_id",
         "created_at_ms",
     ),
-    "bound_inputs": (
-        "mission_id",
-        "plan_revision",
-        "requirement_id",
-        "input_binding_revision",
-        "producer_result_id",
-        "acceptance_id",
-        "artifact_id",
-        "content_hash",
-        "source_revision",
-        "binding_json",
-        "created_at",
-    ),
     "claims": (
         "claim_id",
         "mission_id",
@@ -302,15 +287,6 @@ SOURCE_COLUMNS = {
         "updated_at",
     ),
     "mission_policies": ("mission_id", "version_id", "source", "provider_kind", "json", "bound_at"),
-    "obligation_relations": (
-        "mission_id",
-        "parent_obligation_id",
-        "child_obligation_id",
-        "kind",
-        "active_revision",
-        "detail_json",
-        "created_at",
-    ),
     "obligations": (
         "mission_id",
         "obligation_id",
@@ -564,7 +540,6 @@ SOURCE_COLUMNS = {
         "binding_json",
     ),
     "policy_activations": ("seq", "version_id", "action", "json", "created_at"),
-    "policy_proposals": ("proposal_id", "version_id", "state", "json", "created_at", "updated_at"),
     "policy_versions": (
         "version_id",
         "params_hash",
@@ -676,7 +651,6 @@ SOURCE_PRIMARY_KEYS = {
     "assurance_check_bindings": ("check_binding_id",),
     "assurance_criterion_policies": ("policy_id",),
     "assurance_review_record_bindings": ("record_id",),
-    "bound_inputs": ("mission_id", "plan_revision", "requirement_id", "input_binding_revision"),
     "claims": ("claim_id",),
     "criterion_evaluations": ("review_id", "criterion_id"),
     "data_requirements": ("mission_id", "plan_revision", "requirement_id"),
@@ -688,7 +662,6 @@ SOURCE_PRIMARY_KEYS = {
     "method_contracts": ("method_id", "method_version"),
     "method_instances": ("mission_id", "instance_id"),
     "mission_policies": ("mission_id",),
-    "obligation_relations": ("mission_id", "parent_obligation_id", "child_obligation_id", "kind"),
     "obligations": ("mission_id", "obligation_id"),
     "observations": ("observation_id",),
     "operation_acceptance_scopes": ("acceptance_id",),
@@ -706,7 +679,6 @@ SOURCE_PRIMARY_KEYS = {
     "planning_operation_action_links": ("operation_id",),
     "planning_request_authority_bindings": ("request_id",),
     "policy_activations": ("seq",),
-    "policy_proposals": ("proposal_id",),
     "policy_versions": ("version_id",),
     "requirements_revisions": ("mission_id", "revision"),
     "results": ("result_id",),

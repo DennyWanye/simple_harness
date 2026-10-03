@@ -81,6 +81,7 @@ from ..scheduling.backpressure import (
     Transition,
     evaluate,
 )
+from ..storage.source_records import replay_scope_digest
 from ..storage.store import DispatchIntent, Store, StoredResult, StoreError
 from ..verification.conflicts import (
     Contradiction,
@@ -791,6 +792,8 @@ class CommitService(ProtectedTailCommitsMixin,
                     "spec_hash": spec_hash,
                     "policy_version_id": binding["version_id"],
                     "domain_id": domain.id,
+                    # 按哪套重放口径建的（覆盖清单 + 编码清单），重放只核口径相同的任务
+                    "replay_scope": replay_scope_digest(),
                 },
                 actor_type="user",
                 actor_id=spec.tenant_id,
@@ -2194,25 +2197,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 subject_id, mission_id, task_id=task_id, tool_calls=tool_calls
             )
 
-    def settle_subject_known(
-        self,
-        subject_id: str,
-        mission_id: str,
-        *,
-        task_id: str | None = None,
-        tool_calls: int | None = None,
-    ) -> Mapping[str, Any]:
-        """Release the reservation using known facts only (P2.3l P1-1)."""
-
-        with self._store.transaction():
-            return self._settle_subject(
-                subject_id,
-                mission_id,
-                task_id=task_id,
-                tool_calls=tool_calls,
-                known_only=True,
-            )
-
     def _settle_subject(
         self,
         subject_id: str,
@@ -2220,11 +2204,9 @@ class CommitService(ProtectedTailCommitsMixin,
         *,
         task_id: str | None,
         tool_calls: int | None = None,
-        known_only: bool = False,
     ) -> Mapping[str, Any]:
-        # A terminal business state cannot downgrade UNKNOWN to known-only
-        # zero. Keep the original ledger's strict settlement check in force.
-        known_only = False
+        # A terminal business state cannot downgrade UNKNOWN to known-only zero: the
+        # ledger's strict settlement check is the only one.
         if self._assurance_settlement is None:
             raise BudgetError("Assurance physical settlement reader is not installed; reservation held")
         self._assurance_settlement.require_settled_locked(subject_id, mission_id)
@@ -2235,11 +2217,7 @@ class CommitService(ProtectedTailCommitsMixin,
         self._taskgraph_dispatch.recheck_settlement(self._store, subject_id, mission_id)
         if tool_calls is None:
             tool_calls = 0 if self.tool_calls_for is None else int(self.tool_calls_for(subject_id))
-        settled = (
-            self._ledger.settle_known(subject_id=subject_id, tool_calls=tool_calls)
-            if known_only
-            else self._ledger.settle(subject_id=subject_id, tool_calls=tool_calls)
-        )
+        settled = self._ledger.settle(subject_id=subject_id, tool_calls=tool_calls)
         self.release_terminal_tail_holds(mission_id=mission_id, task_id=task_id)
         self._emit(
             "BudgetReleased",

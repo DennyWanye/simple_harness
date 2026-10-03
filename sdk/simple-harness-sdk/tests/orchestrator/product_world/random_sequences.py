@@ -13,7 +13,7 @@
 关库重开   退出产品同形世界，同一数据目录重开
 ========  ==========================================================
 
-对照物：①执行图历史在临时副本上离线重建（``replay_taskgraph``）通过，且每个修订号的清单哈希与在线
+对照物：⓪全业务重放 v3 没有不一致的表、只增表与回执账每行恰好被点名一次；①执行图历史在临时副本上离线重建（``replay_taskgraph``）通过，且每个修订号的清单哈希与在线
 一致；②关库重开前后，每个任务的快照与每一步"为什么还不开工"逐字节一致；③不变式（见
 :func:`check_invariants`）。动作只走产品入口（门面的取消、改要求）。
 
@@ -33,6 +33,7 @@ from typing import Any
 
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts.state_machines import TERMINAL_ATTEMPT
+from agent_orchestrator.observability.business_replay import verify_library, verify_mission
 from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
@@ -156,6 +157,16 @@ def _mission_ids(store: Any) -> list[str]:
 
 def check_invariants(store: Any, scratch: Path, step: int) -> None:
     htn = HtnStore(store)
+    library = verify_library(store)  # 全业务重放 v3：只增表与回执账的每一行恰好被点名一次
+    if library["status"] != "CONSISTENT":
+        raise InvariantBroken(f"step {step}: replay v3 library check: {library['unnamed_rows'][:3]}"
+                              f" {library['named_twice'][:3]}")
+    for mission_id in _mission_ids(store):
+        report = verify_mission(store, mission_id)
+        broken = {name: item["problems"][:2] for name, item in report["tables"].items()
+                  if item["status"] == "INCONSISTENT"}
+        if broken:
+            raise InvariantBroken(f"{mission_id}: replay v3 finds inconsistent tables: {broken}")
     for mission_id in _mission_ids(store):
         events = list(store.list_events(mission_id))
         seqs = [event.seq for event in events]

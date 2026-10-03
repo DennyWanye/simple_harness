@@ -180,6 +180,7 @@ class Store:
         # in a UoW proves it commits in that same UoW by this number.
         self._transaction_generation = 0
         self._reading = False  # host support S2 review P1-B: a read view writes nothing
+        self._source_naming = False  # set by open(): see storage/source_records.py
         self._armed: set[str] = set()
         self._skips: dict[str, int] = {}
         self._times: dict[str, int] = {}
@@ -207,6 +208,10 @@ class Store:
         connection.execute("PRAGMA synchronous = FULL")
         store = cls(connection, resolved, clock)
         store._initialize_or_validate()
+        from . import source_records  # 只增业务表与回执账的自动点名（HTN 补齐阶段 G）
+
+        source_records.install(connection)
+        store._source_naming = True
         return store
 
     @classmethod
@@ -442,6 +447,10 @@ class Store:
                 raise
             else:
                 try:
+                    if self._source_naming:
+                        from .source_records import name_written_rows
+
+                        name_written_rows(self, self._connection)
                     self._connection.execute("COMMIT")
                 except BaseException:
                     # A deferred FK can fail at COMMIT, leaving SQLite's

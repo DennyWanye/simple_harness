@@ -54,6 +54,7 @@ from agent_orchestrator.runtime.role_templates import (
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 REMOVED_NAME = "legacy-plan-proposal-v1"
 
@@ -281,6 +282,7 @@ def test_a_replay_against_a_tampered_binding_is_a_conflict(tmp_path) -> None:
     async def case() -> None:
         async with _world(tmp_path) as world:
             mission = _create(world, "tampered")
+            lift_immutable_guards(world.store.connection, "mission_planning_protocols")
             world.store.connection.execute(  # ①b1: the stored binding bytes are damaged
                 "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (mission.id,))
             with pytest.raises(FacadeError) as refused:
@@ -329,11 +331,13 @@ def test_a_missing_or_stale_binding_is_named_unsupported(tmp_path) -> None:
         async with _world(tmp_path) as world:
             store = world.store
             unbound = _create(world, "unbound")
+            lift_immutable_guards(store.connection, "mission_planning_protocols")
             store.connection.execute(  # ①b1
                 "DELETE FROM mission_planning_protocols WHERE mission_id = ?", (unbound.id,))
             with pytest.raises(UnsupportedPlanningPackage, match="removed"):
                 current_planning_protocol(store, unbound.id)
             stale = _create(world, "stale")
+            lift_immutable_guards(store.connection, "mission_planning_protocols")
             store.connection.execute(  # ①b1
                 "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (stale.id,))
             with pytest.raises(UnsupportedPlanningPackage, match="package 7"):
@@ -379,8 +383,10 @@ def test_the_loop_stops_an_old_contract_mission_and_leaves_the_others_alone(
             if old_id is None:
                 old_id = _create(world, "old-contract").id
             if damage == "unbound":
+                lift_immutable_guards(store.connection, "mission_planning_protocols")
                 store.connection.execute("DELETE FROM mission_planning_protocols WHERE mission_id = ?", (old_id,))
             elif damage == "stale_package":
+                lift_immutable_guards(store.connection, "mission_planning_protocols")
                 store.connection.execute(
                     "UPDATE mission_planning_protocols SET package_version = 7 WHERE mission_id = ?", (old_id,))
             healthy = _create(world, "healthy")

@@ -35,6 +35,18 @@ class UnknownAfterHandoff(RuntimeError):
     """Raised by a script step to leave the provider invocation UNKNOWN."""
 
 
+def lift_immutable_guards(connection: Any, *tables: str) -> None:
+    """A test that damages rows "on disk" first lifts the library's no-update / no-delete
+    guards on those tables (migration 41, HTN 补齐阶段 G).  Only for a test's own library."""
+
+    for table in tables:
+        for (name,) in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?"
+                " AND (upper(sql) LIKE '%BEFORE UPDATE%' OR upper(sql) LIKE '%BEFORE DELETE%')"
+                " AND upper(sql) LIKE '%RAISE(%'", (table,)).fetchall():
+            connection.execute(f"DROP TRIGGER {name}")
+
+
 def role_of(request: ProviderRequest) -> str:
     for message in request.messages:
         content = message.content if isinstance(message.content, str) else str(message.content)

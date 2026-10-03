@@ -32,7 +32,7 @@ def test_a_new_library_has_none_of_the_dropped_tables(tmp_path) -> None:
     store.close()
     tables = _tables(tmp_path / "orchestrator.db")
     assert not tables & DROPPED
-    assert {"missions", "tasks", "claims", "policy_proposals"} <= tables  # kept
+    assert {"missions", "tasks", "claims", "policy_versions"} <= tables  # kept
 
 
 def test_a_version_30_library_opens_and_loses_exactly_those_tables(tmp_path) -> None:

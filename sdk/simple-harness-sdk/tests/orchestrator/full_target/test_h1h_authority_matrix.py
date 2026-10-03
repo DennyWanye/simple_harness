@@ -31,6 +31,7 @@ from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 def _caller(binding: dict[str, Any]) -> PlanPrincipal:
@@ -61,6 +62,7 @@ def test_a02_malformed_authority_json_is_typed_source_unavailable_without_writes
             binding = _binding(loop, intent)
             identity = intent.intent_id if where_column == "request_id" else binding["grant_id"]
             # The table/column names come only from the closed parametrization above.
+            lift_immutable_guards(loop.store.connection, table)
             loop.store.connection.execute(
                 f"UPDATE {table} SET {column} = ? WHERE {where_column} = ?",  # noqa: S608
                 ("{not-json", identity),
@@ -109,6 +111,7 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
             binding = _binding(loop, opener)
             renamed = False
             if fault == "missing_binding":
+                lift_immutable_guards(loop.store.connection, "planning_request_authority_bindings")
                 loop.store.connection.execute(
                     "DELETE FROM planning_request_authority_bindings WHERE request_id = ?",
                     (opener.intent_id,),
@@ -116,6 +119,7 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
             elif fault == "dangling_grant":
                 loop.store.connection.execute("PRAGMA foreign_keys = OFF")
                 try:
+                    lift_immutable_guards(loop.store.connection, "planning_lane_grants")
                     loop.store.connection.execute(
                         "DELETE FROM planning_lane_grants WHERE grant_id = ?",
                         (binding["grant_id"],),
@@ -123,6 +127,7 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
                 finally:
                     loop.store.connection.execute("PRAGMA foreign_keys = ON")
             elif fault == "malformed_binding_json":
+                lift_immutable_guards(loop.store.connection, "planning_request_authority_bindings")
                 loop.store.connection.execute(
                     "UPDATE planning_request_authority_bindings SET binding_json = ? "
                     "WHERE request_id = ?",
@@ -130,6 +135,7 @@ def test_a02_real_collector_records_authority_failures_as_closed_rejections(
                 )
             elif fault.startswith("malformed_"):
                 column = fault.removeprefix("malformed_")
+                lift_immutable_guards(loop.store.connection, "planning_lane_grants")
                 loop.store.connection.execute(
                     f"UPDATE planning_lane_grants SET {column} = ? WHERE grant_id = ?",  # noqa: S608
                     ("{not-json", binding["grant_id"]),

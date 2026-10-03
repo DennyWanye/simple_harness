@@ -852,6 +852,334 @@ CREATE TABLE method_library_attributions (
 """
 
 
+DDL_V41 = """
+-- HTN 补齐阶段 G（全业务事件重放收尾）。①没有生产写方或生产始终为空的表删掉；
+-- ②保证通道全局触发器只唤醒没结束的任务（全局纪元照旧加 1）；③只增的业务表与命令回执账不许改删。
+DROP TABLE bound_inputs;
+DROP TABLE obligation_relations;
+DROP TABLE obligation_expansions;
+DROP TABLE obligation_shape_changes;
+DROP TABLE policy_evaluations;
+DROP TABLE policy_decisions;
+DROP TABLE policy_proposals;
+DROP TRIGGER assurance_source_method_contracts_insert;
+CREATE TRIGGER assurance_source_method_contracts_insert AFTER INSERT ON method_contracts WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_method_contracts_update;
+CREATE TRIGGER assurance_source_method_contracts_update AFTER UPDATE ON method_contracts WHEN (NEW.method_id IS NOT OLD.method_id OR NEW.method_version IS NOT OLD.method_version OR NEW.content_hash IS NOT OLD.content_hash OR NEW.registry_status IS NOT OLD.registry_status OR NEW.author IS NOT OLD.author OR NEW.trial_scope_mission IS NOT OLD.trial_scope_mission OR NEW.registration_json IS NOT OLD.registration_json OR NEW.contract_json IS NOT OLD.contract_json OR NEW.created_at IS NOT OLD.created_at) AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_method_contracts_delete;
+CREATE TRIGGER assurance_source_method_contracts_delete AFTER DELETE ON method_contracts WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_versions_insert;
+CREATE TRIGGER assurance_source_policy_versions_insert AFTER INSERT ON policy_versions WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_versions_update;
+CREATE TRIGGER assurance_source_policy_versions_update AFTER UPDATE ON policy_versions WHEN (NEW.version_id IS NOT OLD.version_id OR NEW.params_hash IS NOT OLD.params_hash OR NEW.source IS NOT OLD.source OR NEW.status IS NOT OLD.status OR NEW.json IS NOT OLD.json OR NEW.created_at IS NOT OLD.created_at) AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_versions_delete;
+CREATE TRIGGER assurance_source_policy_versions_delete AFTER DELETE ON policy_versions WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_activations_insert;
+CREATE TRIGGER assurance_source_policy_activations_insert AFTER INSERT ON policy_activations WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_activations_update;
+CREATE TRIGGER assurance_source_policy_activations_update AFTER UPDATE ON policy_activations WHEN (NEW.seq IS NOT OLD.seq OR NEW.version_id IS NOT OLD.version_id OR NEW.action IS NOT OLD.action OR NEW.json IS NOT OLD.json OR NEW.created_at IS NOT OLD.created_at) AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+DROP TRIGGER assurance_source_policy_activations_delete;
+CREATE TRIGGER assurance_source_policy_activations_delete AFTER DELETE ON policy_activations WHEN 1 AND EXISTS(SELECT 1 FROM assurance_mission_bindings) BEGIN 
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM assurance_environment_state WHERE singleton=1)
+ THEN RAISE(ABORT,'ASSURANCE_ENVIRONMENT_UNINITIALIZED') END;
+ SELECT CASE WHEN assurance_change_receipt() IS NULL
+ THEN RAISE(ABORT,'SOURCE_CHANGE_RECEIPT_REQUIRED') END;
+ UPDATE assurance_environment_state SET epoch=epoch+1,row_version=row_version+1,
+  change_receipt_id=assurance_change_receipt() WHERE singleton=1;
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-environment-epoch:'||b.mission_id||':'||e.epoch,b.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','GLOBAL','epoch',e.epoch,'source_receipt_id',e.change_receipt_id),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM assurance_mission_bindings b JOIN missions m ON m.mission_id=b.mission_id
+ CROSS JOIN assurance_environment_state e
+ WHERE e.singleton=1 AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED');
+ END;
+CREATE TRIGGER acceptance_commit_receipts_immutable_update BEFORE UPDATE ON acceptance_commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptance_commit_receipts'); END;
+CREATE TRIGGER acceptance_commit_receipts_immutable_delete BEFORE DELETE ON acceptance_commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptance_commit_receipts'); END;
+CREATE TRIGGER acceptance_outputs_immutable_update BEFORE UPDATE ON acceptance_outputs
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptance_outputs'); END;
+CREATE TRIGGER acceptance_outputs_immutable_delete BEFORE DELETE ON acceptance_outputs
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptance_outputs'); END;
+CREATE TRIGGER acceptances_immutable_update BEFORE UPDATE ON acceptances
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptances'); END;
+CREATE TRIGGER acceptances_immutable_delete BEFORE DELETE ON acceptances
+ BEGIN SELECT RAISE(ABORT,'immutable source record: acceptances'); END;
+CREATE TRIGGER approval_decisions_immutable_update BEFORE UPDATE ON approval_decisions
+ BEGIN SELECT RAISE(ABORT,'immutable source record: approval_decisions'); END;
+CREATE TRIGGER approval_decisions_immutable_delete BEFORE DELETE ON approval_decisions
+ BEGIN SELECT RAISE(ABORT,'immutable source record: approval_decisions'); END;
+CREATE TRIGGER budget_tail_transfers_immutable_update BEFORE UPDATE ON budget_tail_transfers
+ BEGIN SELECT RAISE(ABORT,'immutable source record: budget_tail_transfers'); END;
+CREATE TRIGGER budget_tail_transfers_immutable_delete BEFORE DELETE ON budget_tail_transfers
+ BEGIN SELECT RAISE(ABORT,'immutable source record: budget_tail_transfers'); END;
+CREATE TRIGGER commit_receipts_immutable_update BEFORE UPDATE ON commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: commit_receipts'); END;
+CREATE TRIGGER commit_receipts_immutable_delete BEFORE DELETE ON commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: commit_receipts'); END;
+CREATE TRIGGER criterion_evaluations_immutable_update BEFORE UPDATE ON criterion_evaluations
+ BEGIN SELECT RAISE(ABORT,'immutable source record: criterion_evaluations'); END;
+CREATE TRIGGER criterion_evaluations_immutable_delete BEFORE DELETE ON criterion_evaluations
+ BEGIN SELECT RAISE(ABORT,'immutable source record: criterion_evaluations'); END;
+CREATE TRIGGER data_requirements_immutable_update BEFORE UPDATE ON data_requirements
+ BEGIN SELECT RAISE(ABORT,'immutable source record: data_requirements'); END;
+CREATE TRIGGER data_requirements_immutable_delete BEFORE DELETE ON data_requirements
+ BEGIN SELECT RAISE(ABORT,'immutable source record: data_requirements'); END;
+CREATE TRIGGER delivery_receipts_immutable_update BEFORE UPDATE ON delivery_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: delivery_receipts'); END;
+CREATE TRIGGER delivery_receipts_immutable_delete BEFORE DELETE ON delivery_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: delivery_receipts'); END;
+CREATE TRIGGER human_overrides_immutable_update BEFORE UPDATE ON human_overrides
+ BEGIN SELECT RAISE(ABORT,'immutable source record: human_overrides'); END;
+CREATE TRIGGER human_overrides_immutable_delete BEFORE DELETE ON human_overrides
+ BEGIN SELECT RAISE(ABORT,'immutable source record: human_overrides'); END;
+CREATE TRIGGER input_manifest_bindings_immutable_update BEFORE UPDATE ON input_manifest_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifest_bindings'); END;
+CREATE TRIGGER input_manifest_bindings_immutable_delete BEFORE DELETE ON input_manifest_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifest_bindings'); END;
+CREATE TRIGGER input_manifests_immutable_update BEFORE UPDATE ON input_manifests
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifests'); END;
+CREATE TRIGGER input_manifests_immutable_delete BEFORE DELETE ON input_manifests
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifests'); END;
+CREATE TRIGGER method_child_occurrences_immutable_update BEFORE UPDATE ON method_child_occurrences
+ BEGIN SELECT RAISE(ABORT,'immutable source record: method_child_occurrences'); END;
+CREATE TRIGGER method_child_occurrences_immutable_delete BEFORE DELETE ON method_child_occurrences
+ BEGIN SELECT RAISE(ABORT,'immutable source record: method_child_occurrences'); END;
+CREATE TRIGGER mission_domains_immutable_update BEFORE UPDATE ON mission_domains
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_domains'); END;
+CREATE TRIGGER mission_domains_immutable_delete BEFORE DELETE ON mission_domains
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_domains'); END;
+CREATE TRIGGER mission_planning_protocols_immutable_update BEFORE UPDATE ON mission_planning_protocols
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_planning_protocols'); END;
+CREATE TRIGGER mission_planning_protocols_immutable_delete BEFORE DELETE ON mission_planning_protocols
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_planning_protocols'); END;
+CREATE TRIGGER mission_policies_immutable_update BEFORE UPDATE ON mission_policies
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_policies'); END;
+CREATE TRIGGER mission_policies_immutable_delete BEFORE DELETE ON mission_policies
+ BEGIN SELECT RAISE(ABORT,'immutable source record: mission_policies'); END;
+CREATE TRIGGER observations_immutable_update BEFORE UPDATE ON observations
+ BEGIN SELECT RAISE(ABORT,'immutable source record: observations'); END;
+CREATE TRIGGER observations_immutable_delete BEFORE DELETE ON observations
+ BEGIN SELECT RAISE(ABORT,'immutable source record: observations'); END;
+CREATE TRIGGER operation_bindings_immutable_update BEFORE UPDATE ON operation_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_bindings'); END;
+CREATE TRIGGER operation_bindings_immutable_delete BEFORE DELETE ON operation_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_bindings'); END;
+CREATE TRIGGER operation_identities_immutable_update BEFORE UPDATE ON operation_identities
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_identities'); END;
+CREATE TRIGGER operation_identities_immutable_delete BEFORE DELETE ON operation_identities
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_identities'); END;
+CREATE TRIGGER operation_intent_bindings_immutable_update BEFORE UPDATE ON operation_intent_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_intent_bindings'); END;
+CREATE TRIGGER operation_intent_bindings_immutable_delete BEFORE DELETE ON operation_intent_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_intent_bindings'); END;
+CREATE TRIGGER operation_payload_objects_immutable_update BEFORE UPDATE ON operation_payload_objects
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_payload_objects'); END;
+CREATE TRIGGER operation_payload_objects_immutable_delete BEFORE DELETE ON operation_payload_objects
+ BEGIN SELECT RAISE(ABORT,'immutable source record: operation_payload_objects'); END;
+CREATE TRIGGER order_constraints_immutable_update BEFORE UPDATE ON order_constraints
+ BEGIN SELECT RAISE(ABORT,'immutable source record: order_constraints'); END;
+CREATE TRIGGER order_constraints_immutable_delete BEFORE DELETE ON order_constraints
+ BEGIN SELECT RAISE(ABORT,'immutable source record: order_constraints'); END;
+CREATE TRIGGER plan_commit_receipts_immutable_update BEFORE UPDATE ON plan_commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: plan_commit_receipts'); END;
+CREATE TRIGGER plan_commit_receipts_immutable_delete BEFORE DELETE ON plan_commit_receipts
+ BEGIN SELECT RAISE(ABORT,'immutable source record: plan_commit_receipts'); END;
+CREATE TRIGGER plan_read_sets_immutable_update BEFORE UPDATE ON plan_read_sets
+ BEGIN SELECT RAISE(ABORT,'immutable source record: plan_read_sets'); END;
+CREATE TRIGGER plan_read_sets_immutable_delete BEFORE DELETE ON plan_read_sets
+ BEGIN SELECT RAISE(ABORT,'immutable source record: plan_read_sets'); END;
+CREATE TRIGGER planning_admission_checks_immutable_update BEFORE UPDATE ON planning_admission_checks
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_admission_checks'); END;
+CREATE TRIGGER planning_admission_checks_immutable_delete BEFORE DELETE ON planning_admission_checks
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_admission_checks'); END;
+CREATE TRIGGER planning_lane_grants_immutable_update BEFORE UPDATE ON planning_lane_grants
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_lane_grants'); END;
+CREATE TRIGGER planning_lane_grants_immutable_delete BEFORE DELETE ON planning_lane_grants
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_lane_grants'); END;
+CREATE TRIGGER planning_operation_action_links_immutable_update BEFORE UPDATE ON planning_operation_action_links
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_operation_action_links'); END;
+CREATE TRIGGER planning_operation_action_links_immutable_delete BEFORE DELETE ON planning_operation_action_links
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_operation_action_links'); END;
+CREATE TRIGGER planning_request_authority_bindings_immutable_update BEFORE UPDATE ON planning_request_authority_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_request_authority_bindings'); END;
+CREATE TRIGGER planning_request_authority_bindings_immutable_delete BEFORE DELETE ON planning_request_authority_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: planning_request_authority_bindings'); END;
+CREATE TRIGGER requirements_revisions_immutable_update BEFORE UPDATE ON requirements_revisions
+ BEGIN SELECT RAISE(ABORT,'immutable source record: requirements_revisions'); END;
+CREATE TRIGGER requirements_revisions_immutable_delete BEFORE DELETE ON requirements_revisions
+ BEGIN SELECT RAISE(ABORT,'immutable source record: requirements_revisions'); END;
+CREATE TRIGGER review_packages_immutable_update BEFORE UPDATE ON review_packages
+ BEGIN SELECT RAISE(ABORT,'immutable source record: review_packages'); END;
+CREATE TRIGGER review_packages_immutable_delete BEFORE DELETE ON review_packages
+ BEGIN SELECT RAISE(ABORT,'immutable source record: review_packages'); END;
+CREATE TRIGGER review_records_immutable_update BEFORE UPDATE ON review_records
+ BEGIN SELECT RAISE(ABORT,'immutable source record: review_records'); END;
+CREATE TRIGGER review_records_immutable_delete BEFORE DELETE ON review_records
+ BEGIN SELECT RAISE(ABORT,'immutable source record: review_records'); END;
+CREATE TRIGGER task_semantics_immutable_update BEFORE UPDATE ON task_semantics
+ BEGIN SELECT RAISE(ABORT,'immutable source record: task_semantics'); END;
+CREATE TRIGGER task_semantics_immutable_delete BEFORE DELETE ON task_semantics
+ BEGIN SELECT RAISE(ABORT,'immutable source record: task_semantics'); END;
+CREATE TRIGGER tool_calls_immutable_update BEFORE UPDATE ON tool_calls
+ BEGIN SELECT RAISE(ABORT,'immutable source record: tool_calls'); END;
+CREATE TRIGGER tool_calls_immutable_delete BEFORE DELETE ON tool_calls
+ BEGIN SELECT RAISE(ABORT,'immutable source record: tool_calls'); END;
+CREATE TRIGGER validity_witnesses_immutable_update BEFORE UPDATE ON validity_witnesses
+ BEGIN SELECT RAISE(ABORT,'immutable source record: validity_witnesses'); END;
+CREATE TRIGGER validity_witnesses_immutable_delete BEFORE DELETE ON validity_witnesses
+ BEGIN SELECT RAISE(ABORT,'immutable source record: validity_witnesses'); END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -893,6 +1221,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(38, "orchestrator-drop-money-dimension", DDL_V38),
     Migration(39, "orchestrator-drop-support-sets-and-duty-spend", DDL_V39),
     Migration(40, "orchestrator-method-library-and-drop-rule-summaries", DDL_V40),
+    Migration(41, "orchestrator-g-replay-v3", DDL_V41),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

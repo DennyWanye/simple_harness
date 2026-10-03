@@ -86,7 +86,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         }
         assert report["mission_id"] == selected["mission_id"]
         assert report["business_replay"]["version"] == "business-replay-v3"
-        assert report["business_replay"]["mission_rows"]["missions"] == 1
+        assert report["business_replay"]["tables"]["missions"]["rows"] == 1
         assert report["metrics"]["version"] == "metrics-v1"
         assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix"}
         assert set(report["metrics"]["cost"]) == {"tokens_by_role", "tokens_by_profile"}

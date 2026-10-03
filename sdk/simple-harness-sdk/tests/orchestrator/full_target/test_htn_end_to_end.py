@@ -246,7 +246,7 @@ def test_a_mission_with_no_token_ceiling_conserves_vacuously() -> None:
 
 
 def test_migration_seventeen_is_additive_and_eighteen_is_still_present() -> None:
-    assert schema.SCHEMA_VERSION == 40  # 迁移 25～40 已追加在后
+    assert schema.SCHEMA_VERSION == 41  # 迁移 25～41 已追加在后
     assert schema.MIGRATIONS[16].ddl is acceptance_receipt_schema.DDL
     assert "ALTER TABLE" not in acceptance_receipt_schema.DDL.upper()
     assert schema.MIGRATIONS[17].version == 18
@@ -668,6 +668,7 @@ def _register(registry: PredicateRegistry, predicate_id: str):
 
 
 from agent_orchestrator.knowledge.predicates import proposition_key as _proposition_key  # noqa: E402
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 @dataclass
@@ -819,7 +820,7 @@ def test_a_delivery_receipt_is_a_library_record_not_a_command_argument() -> None
                               stage=DeliveryStage.CONFIRMED, observed_at_ms=1, operation_id="op-1")
     with pytest.raises(ContractError) as caught:
         _root_command_with(delivery_receipts=(receipt,))
-    assert "record_delivery_receipt" in str(caught.value)
+    assert "a receipt is recorded when its operation outcome is accepted" in str(caught.value)
 
 
 def test_the_accept_side_refuses_a_plan_principal(tmp_path) -> None:
@@ -1313,6 +1314,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             # the plan then names a task that has no meaning — it does not read back
             # (a damaged disk does not honour foreign keys either, so they are off for the write)
             connection.execute("PRAGMA foreign_keys=OFF")
+            lift_immutable_guards(connection, "task_semantics")
             connection.execute("UPDATE task_semantics SET task_id='task-orphan' WHERE mission_id=? AND task_id=?",
                                (mission_id, row["task_id"]))
             connection.commit()
@@ -1321,6 +1323,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
                     real_judge(self, mission_id, judgments=judgments, summary=summary)
                 judged.append(str(refused.value))
             finally:
+                lift_immutable_guards(connection, "task_semantics")
                 connection.execute("UPDATE task_semantics SET task_id=? WHERE mission_id=? AND task_id='task-orphan'",
                                    (row["task_id"], mission_id))
                 connection.commit()

@@ -1616,10 +1616,9 @@ class HierarchicalDispatch:
     ) -> AcceptedOutputsIndex:
         """What the resolver may choose from.
 
-        P2.3b reads the *completed producers* from the outcome projection and takes
-        the accepted outputs a deployment recorded through ``bound_inputs``; a
-        deployment that has not wired its acceptance index yet therefore gets
-        ``WAITING_DATA`` rather than a silent all-ancestors sweep.
+        P2.3b reads the *completed producers* from the completion scopes; a producer
+        without an accepted output therefore gives ``WAITING_DATA`` rather than a
+        silent all-ancestors sweep.
         """
 
         del outcomes  # the completion scopes below are the reading, not the projection

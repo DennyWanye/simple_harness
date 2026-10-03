@@ -24,6 +24,7 @@ from agent_orchestrator.runtime.planning_operations import (
     build_operation_snapshot,
 )
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from simple_harness.contracts import canonical_json
 
 
@@ -123,6 +124,7 @@ def test_o04_cross_mission_link_json_is_source_unavailable_and_reader_writes_not
         corrupted = {**link_a, "mission_id": mission_b.id}
         corrupted["link_json"] = canonical_json(corrupted)
         with world.store.transaction() as connection:
+            lift_immutable_guards(connection, "planning_operation_action_links")
             connection.execute(
                 "UPDATE planning_operation_action_links SET link_json=? WHERE operation_id=?",
                 (corrupted["link_json"], link_a["operation_id"]),

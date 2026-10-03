@@ -110,7 +110,12 @@ def original_source_mutation(store: Store, *, writer: str) -> Iterator[None]:
                     (first_seq, receipt_id),
                 )
             ]
-            if not wake_event_ids:
+            # 全局变动只唤醒没结束的任务（迁移 41，HTN 补齐阶段 G）：没有没结束的绑定任务时，
+            # 唤醒列表为空是正常的；有却没唤醒事件才是错
+            if not wake_event_ids and connection.execute(
+                "SELECT 1 FROM assurance_mission_bindings b JOIN missions m USING(mission_id) "
+                "WHERE m.status NOT IN ('COMPLETED','FAILED','CANCELLED') LIMIT 1"
+            ).fetchone() is not None:
                 raise AssuranceError("SOURCE_MUTATION_EVENT_MISSING")
             body = {
                 "schema_version": 1,
