@@ -8123,9 +8123,10 @@ class Orchestrator:
         executor (:data:`MAX_SERVICE_REHANDOFFS`, recorded as
         ``ServiceIntentRehandedOff``); if that one is unknown too, the round ends
         through the role's own failure door — a Planner round is rejected with
-        ``provider_outcome_unknown`` and the ladder decides, a root review is
-        recorded unreadable, and a Critic turn is handed back to its runner's own
-        "did not answer" path.  The abandoned turn's charge stays unknown in the
+        ``provider_outcome_unknown`` and the ladder decides, an assured review call
+        (method review, root review) is closed as interrupted (``REVIEW_CALL_ABANDONED``)
+        and reopened once in a fresh session before its package is recut, and a Critic
+        turn is handed back to its runner's own "did not answer" path.  The abandoned turn's charge stays unknown in the
         runtime ledger and keeps the reservation held, which is the honest count.
 
         Returns ``None`` (keep waiting), ``"rehandoff"`` (a new executor is about to
