@@ -237,12 +237,12 @@
    "id": "F1-17",
    "source": "F1-6 随机序列发现的缺陷",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "            if error.code != \"CHECK_SCOPE_CHANGED\" or plan is None or not plan.requirements_changed(mission.id):\n                raise",
+   "original": "            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise",
    "replacement": "            if True:\n                raise",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_aside"
    ],
-   "note": "验证处不认要求已改，检查入账的错误冲出主循环"
+   "note": "验证处不认\"完成范围已过期\"，错误冲出主循环"
   },
   {
    "id": "F1-18",
@@ -287,6 +287,17 @@
     "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_holds_dispatch_then_replans_and_delivers"
    ],
    "note": "派发处不报\"要求已改\""
+  },
+  {
+   "id": "F1-22",
+   "source": "F1 阻断核验 B1",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            return await self._set_aside_stale(result_id)",
+   "replacement": "            return False",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check"
+   ],
+   "note": "完成范围过期时只放下、不归档（结果一直停在验证中，被反复重验）"
   },
   {
    "id": "M01",

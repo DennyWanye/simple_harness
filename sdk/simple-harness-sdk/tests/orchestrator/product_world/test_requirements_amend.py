@@ -408,6 +408,90 @@ def test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_a
     asyncio.run(case())
 
 
+def test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check(tmp_path, monkeypatch):
+    """改要求落在第一步的检查正要入账时，规划器只换掉另一步、把这一步原样留在新计划里（阻断核验 B1）：
+    这一步的结果按"被取代"归档、尝试回到重试等待，新计划提交后由规划器定原样重做、通过；主循环不崩，任务按新版完成。
+
+    **改坏检验**：验证处只"跳过等新计划"、不归档 → 新计划不关这一步的旧尝试 → 重新验证时按旧版读完成
+    范围出错冲出主循环 → 变红。"""
+    from agent_orchestrator.orchestrator import assurance_local_checks
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    seen: dict[str, Any] = {}
+    race: dict[str, Any] = {"world": None, "mission_id": None, "task_id": None}
+    original = assurance_local_checks.LocalCheckImporter.import_executor
+
+    def amended_mid_check(self, recorded, document):  # type: ignore[no-untyped-def]
+        if race["task_id"] is None and race["mission_id"] is not None:
+            world = race["world"]
+            [running] = world.store.list_results_by_verification("RUNNING")
+            race["task_id"] = str(running.envelope.task_id)
+            amend(world, race["mission_id"], [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            world.provider.go.set()
+        return original(self, recorded, document)
+
+    monkeypatch.setattr(assurance_local_checks.LocalCheckImporter, "import_executor", amended_mid_check)
+    base = replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        updates = [entry for entry in package.get("repair_requests") or ()
+                   if entry["request"].get("trigger_source") == "REQUIREMENTS_UPDATE"]
+        if updates and "replaced" not in seen:
+            seen["replaced"] = True
+            [other] = [item for item in package["views"]["goals"]
+                       if item["form"] == "primitive" and item["task_id"] != race["task_id"]]
+            subject = next(row for row in package["planning_subjects"] if row["task_id"] == other["task_id"])
+            visible = {(row["kind"], row["id"]): row for row in package["visible_refs"]}
+            [task_type] = [row for row in package["successor_types"]
+                           if row["statement"] == other["statement"] and row["form"] == "primitive"]
+            return decision(subject["subject_key"], "REPAIR", {
+                "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible[("task", other["task_id"])],
+                "obligation_ref": visible[("obligation", other["obligation_id"])],
+                "goal_type_ref": task_type["task_type_ref"], "bindings": dict(other["params"])},
+                "要求改了：只换掉另一步。")
+        stuck = [entry["request"]["context"] for entry in package.get("repair_requests") or ()
+                 if entry["request"].get("trigger_source") == "NO_DISPATCHABLE_WORK"]
+        if stuck and race["task_id"] in (stuck[0].get("admitted_not_dispatched") or ()) and "retried" not in seen:
+            # 留下的那一步上次结果被归档、在等规划器定：原样重做
+            seen["retried"] = True
+            attempts = race["world"].store.list_attempts(race["task_id"])
+            latest = max(attempts, key=lambda attempt: attempt.ordinal)
+            subject = next(row for row in package["planning_subjects"] if row["task_id"] == race["task_id"])
+            goal = next(item for item in package["views"]["goals"]
+                        if item["form"] == "compound" and item.get("adopted_method"))
+            instance = next(row for row in package["visible_refs"] if row["kind"] == "method_instance"
+                            and row["id"] == goal["adopted_method"]["method_instance_id"])
+            return decision(subject["subject_key"], "REPAIR", {
+                "repair_kind": "RETRY_SAME_METHOD", "failed_attempt_id": latest.id,
+                "method_instance_ref": instance}, "这一步按旧版要求做的结果被归档，原样重做。")
+        return base(request)
+
+    async def case():
+        provider = SlowSecondStep(planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            world.provider = provider
+            race["world"] = world
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-kept-mid-check",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            race["mission_id"] = mission_id
+            try:
+                mission = await world.run_until_settled(mission_id, rounds=60)
+            except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
+                raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
+            events = list(world.store.list_events(mission_id))
+            assert race["task_id"] and seen.get("replaced") and seen.get("retried")
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            set_aside = [e.payload for e in events if e.type == "ResultRejected"
+                         and e.payload.get("reason") == "superseded" and e.task_id == race["task_id"]]
+            assert set_aside and set_aside[0]["detail"]["error"] == "completion_scope_stale", set_aside
+            assert len(world.store.list_attempts(race["task_id"])) >= 2  # 留下的那一步在新计划下重做
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
+
+    asyncio.run(case())
+
+
 def test_kept_old_step_is_reported_not_rerun(tmp_path):
     """改要求后规划器只换掉了没做完的那一步，已按旧版通过的那一步原样留在计划里：系统不自动重跑它，
     派发处如实报"按旧版通过、现在不算数"；计划停住后规划器在请求里看得到这条，换掉这一步，任务按新版完成。

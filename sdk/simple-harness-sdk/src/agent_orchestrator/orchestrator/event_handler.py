@@ -3733,9 +3733,6 @@ class Orchestrator:
                 continue
             if len(self._verifying) >= self._config.verifier_workers:
                 break
-            plan = self._dispatch_for(stored.envelope.mission_id)
-            if plan is not None and plan.requirements_changed(stored.envelope.mission_id):
-                continue  # 阶段 E：按旧版要求做的结果不验，等新计划（关掉旧尝试时它随之归档）
             task = asyncio.create_task(self._verify(stored.envelope.id))
             self._verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
@@ -5836,6 +5833,18 @@ class Orchestrator:
         self._note(f"result {result_id}: acceptance refused {count}x ({error}) -> FAIL")
         return True
 
+    async def _set_aside_stale(self, result_id: str) -> bool:
+        """Archive a result whose completion scope went stale under it (see
+        :meth:`CommitService.set_aside_result`) and free its executor."""
+
+        updated = self.commit.set_aside_result(result_id, detail={"error": "completion_scope_stale"})
+        if updated is None:
+            return False
+        self._settle_if_known(updated)
+        await self._release_attempt(updated.id, cancel=False)
+        self._note(f"result {result_id}: set aside, its completion scope is no longer current")
+        return True
+
     def _settle_if_known(self, attempt: Attempt) -> None:
         """Settle the Attempt's reservation unless an UNKNOWN charge keeps it occupied (ORCH §12.2)."""
 
@@ -7914,6 +7923,7 @@ class Orchestrator:
         human, reuse, escalation_left = self._human_inputs(result_id, task)
         domain = self.commit.domain_for(mission.id)
         from ..assurance.codec import AssuranceError
+        from .operation_completion import OperationCompletionError
 
         try:
             local_check_factory = None
@@ -7941,14 +7951,13 @@ class Orchestrator:
         except _AcceptedSiblingSupersededVerification:
             self._note(f"result {result_id}: obsolete verifier after sibling acceptance")
             return True
-        except AssuranceError as error:
-            # 检查跑着的时候用户改了要求：这次验证的依据已不是现行要求，放下不提交，等新计划
-            # （与收集时"按旧版要求做的结果归档"同一条规则；HTN 补齐 F1 随机序列发现）
-            plan = self._dispatch_for(mission.id)
-            if error.code != "CHECK_SCOPE_CHANGED" or plan is None or not plan.requirements_changed(mission.id):
+        except (AssuranceError, OperationCompletionError) as error:
+            # 这次验证依据的完成范围已经过期（用户改了要求，或计划换了一版）：结果归档为"被取代"，
+            # 这一步要不要重做由规划器定（与收集处"按旧版要求做的结果归档"同一条规则）。验证开头
+            # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）
+            if error.code not in {"CHECK_SCOPE_CHANGED", "OP_EFFECT_SCOPE_STALE"}:
                 raise
-            self._note(f"result {result_id}: verification set aside, the requirements were amended")
-            return False
+            return await self._set_aside_stale(result_id)
         if critic_admission_failure is not None:
             admission_detail_error = critic_admission_failure.error
             admission = admission_detail_error["detail"]

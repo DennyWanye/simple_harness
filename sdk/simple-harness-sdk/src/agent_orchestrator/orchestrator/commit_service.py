@@ -948,17 +948,7 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             if stored.verification_state == "SUSPENDED":  # D7-8': the review goes with it
                 self._cancel_review_request(stored.envelope.id, reason=reason)
-            for claim in self._store.list_claims(stored.envelope.id):
-                if claim.status in {ClaimStatus.PROPOSED, ClaimStatus.UNDER_REVIEW}:
-                    target_claim = (
-                        ClaimStatus.UNDER_REVIEW
-                        if claim.status is ClaimStatus.PROPOSED
-                        else claim.status
-                    )
-                    moved = (
-                        claim if target_claim is claim.status else next_claim(claim, target_claim)
-                    )
-                    self._store.upsert_claim(next_claim(moved, ClaimStatus.REJECTED))
+            self._reject_open_claims(stored.envelope.id)
         intent = self._store.get_intent_for_subject(attempt.id)
         if intent is not None and intent.state in {"PENDING", "CLAIMED", "AGENT_CREATED"}:
             self._settle_intent(intent, "FAILED")
@@ -974,6 +964,55 @@ class CommitService(ProtectedTailCommitsMixin,
             payload={"reason": reason, "from": str(attempt.status)},
         )
         return updated
+
+    def _reject_open_claims(self, result_id: str) -> None:
+        for claim in self._store.list_claims(result_id):
+            if claim.status in {ClaimStatus.PROPOSED, ClaimStatus.UNDER_REVIEW}:
+                target_claim = (
+                    ClaimStatus.UNDER_REVIEW
+                    if claim.status is ClaimStatus.PROPOSED
+                    else claim.status
+                )
+                moved = claim if target_claim is claim.status else next_claim(claim, target_claim)
+                self._store.upsert_claim(next_claim(moved, ClaimStatus.REJECTED))
+
+    def set_aside_result(self, result_id: str, *, detail: Mapping[str, Any]) -> Attempt | None:
+        """A stored result whose completion scope went stale before it was verified (the user
+        amended the requirements, or a new plan revision was adopted): archived as superseded —
+        not the worker's fault, no repair request, no review package — and its Attempt goes to
+        RETRY_WAIT, exactly as a result collected while the requirements are amended is (阶段 E).
+        Whether the step is done again is the planner's call.  ``None`` when the result or
+        Attempt has already moved on."""
+
+        detail = {**jsonable(detail), "result_id": result_id}
+        with self._store.transaction():
+            stored = self._store.get_result(result_id)
+            if stored is None or stored.verification_state not in {"PENDING", "RUNNING"}:
+                return None
+            attempt = self._require_attempt(stored.envelope.attempt_id)
+            if attempt.status not in {AttemptStatus.RUNNING, AttemptStatus.SUBMITTED, AttemptStatus.VERIFYING}:
+                return None
+            task = self._require_task(stored.envelope.task_id)
+            self._store.set_result_verification(result_id, state="REJECTED", verdict="superseded")
+            self._reject_open_claims(result_id)
+            self._store.update_attempt(
+                next_attempt(attempt, AttemptStatus.RETRY_WAIT, failure={"reason": "superseded", **detail}),
+                expected_version=attempt.version,
+            )
+            others_submitted = any(other.id != attempt.id and other.status in SUBMITTED_STATES
+                                   for other in self._store.list_attempts(task.id))
+            if task.status is TaskStatus.VERIFYING and not others_submitted:
+                self._store.update_task(next_task(task, TaskStatus.ACTIVE), expected_version=task.version)
+            self._release_attempt_charge(self._require_attempt(attempt.id))
+            self._emit(
+                "ResultRejected",
+                attempt.mission_id,
+                key=f"{attempt.id}:{stored.turn_id}",
+                task_id=task.id,
+                attempt_id=attempt.id,
+                payload={"reason": "superseded", "detail": detail, "turn_id": stored.turn_id},
+            )
+            return self._require_attempt(attempt.id)
 
     # ---------------------------------------------------------- knowledge (step 4)
     def _grade_and_project(
