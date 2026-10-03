@@ -25,7 +25,7 @@ dependencies = [
     # Headless Shell revision 1228 / browser 149.0.7827.55; the build
     # acquisition gate verifies the locked archive and executable hashes and
     # bundles the browser, so production never downloads it on first run.
-    "playwright==1.61.0",
+    "playwright==1.63.0",
     "mss>=9.0",
     "pyautogui>=0.9.54",
     "aiosqlite>=0.22.1",
