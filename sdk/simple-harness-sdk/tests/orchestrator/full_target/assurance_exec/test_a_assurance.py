@@ -2,13 +2,15 @@
 """A group (reviews / acceptance / completion readers): plan cases A01–A18.
 
 Pure cases (A01, A02, A04, A05, A09) drive the production codec, formula,
-check gate and review decision directly. Runtime cases use the assured fixture
-runtime (real Store/Commit/Scope/HtnStore, an actual AgentRuntime with a
-scripted reviewer, the original critic entry / collector / official importer /
-acceptance writer) and the original completion readers on the MIXED world.
-Seam-backed cases (A04 executor, A10 evidence tools, A12 format repair) run the
-item 4/5 seams as child processes and assert on their reports. No real model,
-no Host.
+check gate and review decision directly. 2026-10-03（HTN 补齐阶段 A′）：运行时用例改在产品同形
+世界里跑（产品那一份部署组装，模型回复是脚本，见 :mod:`_review_world`）；接缝用例（A04 执行器、
+A10 取证工具、A12 格式修复）跑迁到产品同形世界的接缝脚本并断言它们的报告。
+
+分诊表的处置：A13 / A14 / A17（内容验收只是"准备好了"、数据可读顺序不放、根要求的效果目录）并入
+``operation_completion/test_publish_variants.py`` 第一条；A16（效果待办时不空转）同上；A18（直接
+写终审绕过有效性闸）删：原用例要把产品的有效性服务关掉、替换准备函数才碰得到下游检查（裁决①
+不许）；A03 / A11 里"要求书第 2 版"的两半删：第 2 版在产品上没有写入方；A07 里"伪造的作者集合"
+那一半删：靠替换产品读函数造状态。
 """
 
 from __future__ import annotations
@@ -16,10 +18,10 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -33,6 +35,7 @@ from agent_orchestrator.assurance.checks import (
     evaluate_check_gate,
 )
 from agent_orchestrator.assurance.codec import AssuranceError, canonical, decode, fingerprint
+from agent_orchestrator.assurance.executor_checks import executor_run_facts
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
 from agent_orchestrator.assurance.reviews import AssuranceReviewBinding, ReviewRecordBinding
 from agent_orchestrator.contracts.models import ContractError
@@ -40,7 +43,6 @@ from agent_orchestrator.contracts.resolution import (
     AllExpr,
     AnyExpr,
     CriterionExpr,
-    RequirementClass,
     criteria_only_under_any,
     hard_constraints_not_independent,
     parse_success_expression,
@@ -51,15 +53,15 @@ from agent_orchestrator.orchestrator.assurance_purpose_reviews import (
     purpose_review_key,
 )
 from agent_orchestrator.orchestrator.assurance_review_import import review_subject_stopped
-from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion
-from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
-from agent_orchestrator.storage.assurance_store import AssuranceStore
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import StoreConflict
 
 SDK_ROOT = Path(__file__).resolve().parents[4]
 SEAMS = SDK_ROOT / "scripts/assurance_seams"
 sys.path.insert(0, str(SEAMS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _review_world import ReviewScript, reviewed_mission  # noqa: E402
+
 HASH = "a" * 64
 ACCEPT_REPLY = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
     {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture", "limitations": []}],
@@ -73,17 +75,13 @@ def _refused(call, *codes):
     return raised.value.code
 
 
-def _seam(name, *, json_summary=True):
+def _seam(name):
     completed = subprocess.run([sys.executable, str(SEAMS / name)], capture_output=True, text=True, timeout=900,
                                cwd=str(SDK_ROOT))
     assert completed.returncode == 0, (name, completed.stderr[-4000:])
-    last = completed.stdout.strip().splitlines()[-1]
-    if json_summary:
-        summary = json.loads(last)
-        assert summary["status"] == "PASS", summary
-        return json.loads(Path(summary["evidence"]).read_text())
-    assert last.startswith("PASS ")
-    return json.loads(Path(last[5:].strip()).read_text())
+    summary = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert summary["status"] == "PASS", summary
+    return json.loads(Path(summary["evidence"]).read_text())
 
 
 def spec_ref(name):
@@ -106,23 +104,6 @@ def reply(**grades):
 
 def count(store, sql, *params):
     return store.connection.execute(sql, params).fetchone()[0]
-
-
-def _readers(rt):
-    dispatch = HierarchicalDispatch(rt.store, rt.commit)
-    network = dispatch.network(rt.mission.id)
-    return dispatch, network, network.root_occurrence_ids[0]
-
-
-async def _accepted(rt):
-    """Official TASK_CONTENT review + the router's layer + the production acceptance writer."""
-    verdict, record = await rt.run_critic()
-    assert verdict.passed
-    rt.record_critic_layer(record)
-    rt.settle_fixture_worker()
-    completed = rt.accept_now()
-    assert completed.accepted_result_id == rt.stored.envelope.id
-    return record
 
 
 # --------------------------------------------------------------------------- A01
@@ -227,40 +208,49 @@ def test_formula_truth_tables():
     assert unknown_expression_criteria(expression, ()) == ("a", "b")
 
 
+
+async def _completed(tmp_path, provider=None):
+    provider = provider or ReviewScript()
+    async with reviewed_mission(tmp_path, provider) as case:
+        mission = await case.settle()
+        assert str(mission.status.value) == "COMPLETED", mission.final_report
+        yield case, provider
+
+
+def _content_binding(store, mission_id):
+    row = store.connection.execute(
+        "SELECT * FROM assurance_review_bindings WHERE mission_id=? AND review_key LIKE 'assurance-content:%'",
+        (mission_id,)).fetchone()
+    assert row is not None
+    return row
+
+
 # --------------------------------------------------------------------------- A03
 def test_requirement_authority(tmp_path):
-    from _assured_fixture import build_world
+    """要求书第 1 版由部署在建任务时写下；规划器一侧想改写同一版（删一条要求）被拒，字节不变。"""
 
-    world, task, stored, artifact, scope_ref = build_world(tmp_path)
-    store, mission_id = world.store, world.mission.id
-    htn = HtnStore(store)
-    original = htn.get_requirements_revision(mission_id, 1)
-    row_sql = ("SELECT revision_json,content_hash,authority_subject FROM requirements_revisions "
-               "WHERE mission_id=? AND revision=1")
-    original_row = tuple(store.connection.execute(row_sql, (mission_id,)).fetchone())
-    # A planner-side rewrite of the same revision (dropping a criterion) is refused; bytes stay.
-    reduced = dataclasses.replace(original, criteria=original.criteria[:1],
-                                  success_expression=CriterionExpr(original.criteria[0].criterion_id),
-                                  authority_subject="planner")
-    with pytest.raises(StoreConflict):
-        htn.insert_requirements_revision(reduced)
-    assert tuple(store.connection.execute(row_sql, (mission_id,)).fetchone()) == original_row
-    # A re-confirmation lands as a new revision with its own digest; the old bytes remain.
-    confirmed = dataclasses.replace(original, revision=2, revision_id="completion-requirements-2")
-    digest = htn.insert_requirements_revision(confirmed)
-    assert [r.revision for r in htn.list_requirements_revisions(mission_id)] == [1, 2]
-    assert htn.latest_requirements_revision(mission_id).revision == 2
-    assert htn.get_requirements_revision(mission_id, 1).to_json() == original.to_json()
-    assert digest == confirmed.content_hash() != original.content_hash()
-    # Hard constraints can never be moved under an ANY, and an expression may only
-    # name catalogued criteria.
-    hard = [c for c in original.criteria if c.requirement_class is RequirementClass.HARD_CONSTRAINT]
-    if hard:
-        bad = AnyExpr(tuple(CriterionExpr(c.criterion_id) for c in original.criteria))
-        assert hard_constraints_not_independent(bad, original.criteria)
-    assert hard_constraints_not_independent(original.success_expression, original.criteria) == ()
-    assert unknown_expression_criteria(original.success_expression, original.criteria) == ()
-    assert unknown_expression_criteria(AllExpr((CriterionExpr("ghost"),)), original.criteria) == ("ghost",)
+    async def body():
+        async with reviewed_mission(tmp_path, ReviewScript()) as case:
+            store, mission_id = case.store, case.mission_id
+            htn = HtnStore(store)
+            original = htn.get_requirements_revision(mission_id, 1)
+            row_sql = ("SELECT revision_json,content_hash,authority_subject FROM requirements_revisions "
+                       "WHERE mission_id=? AND revision=1")
+            original_row = tuple(store.connection.execute(row_sql, (mission_id,)).fetchone())
+            reduced = dataclasses.replace(original, criteria=original.criteria[:0] or original.criteria[:1],
+                                          success_expression=CriterionExpr(original.criteria[0].criterion_id),
+                                          authority_subject="planner")
+            with pytest.raises(StoreConflict):
+                htn.insert_requirements_revision(reduced)
+            assert tuple(store.connection.execute(row_sql, (mission_id,)).fetchone()) == original_row
+            assert [r.revision for r in htn.list_requirements_revisions(mission_id)] == [1]
+            # Hard constraints can never be moved under an ANY, and an expression may only name
+            # catalogued criteria.
+            assert hard_constraints_not_independent(original.success_expression, original.criteria) == ()
+            assert unknown_expression_criteria(original.success_expression, original.criteria) == ()
+            assert unknown_expression_criteria(AllExpr((CriterionExpr("ghost"),)), original.criteria) == ("ghost",)
+
+    asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- A04
@@ -292,15 +282,28 @@ def test_check_receipt_scope():
     _refused(lambda: CriterionPolicy("c", "SEMANTIC", ((spec_ref("x"),),)), "SEMANTIC_HAS_CHECKS")
     _refused(lambda: CriterionPolicy("c", "CHECKED", ()), "CHECKED_GROUPS_REQUIRED")
     _refused(lambda: CriterionPolicy("c", "CHECKED", ((spec_ref("x"),), (spec_ref("x"),))), "DUPLICATE_CHECK_GROUP")
-    # The real executor seam: code_test through the sandbox, receipts imported, never re-run.
+    # 执行器从没给出的事实不能当成一次运行：没有执行器回执的目标是 ERROR / UNKNOWN；退出码 0 但
+    # 一个通过的用例编号都没有是 UNKNOWN（纯函数：部署里唯一的执行器总会给回执，产品路径够不到）。
+    clean = {"execution_id": "synthetic", "kind": "process_only", "isolated": False, "environment_digest": "e" * 64,
+             "effective_limits": {}, "exit_code": 0, "truncated": False, "timed_out": False,
+             "limit_exceeded": None, "tree_killed": True, "residual_pids": [], "status": "ok"}
+    run = {"target": "tests", "returncode": 0, "timed_out": False, "command": [], "passed": True,
+           "stdout": "PASSED tests/test_fixture.py::test_report_ok"}
+    scope = {"result_id": "result-x", "artifact_hashes": {}}
+    state, grade, _ = executor_run_facts({"layer": "code_test", "detail": {"runs": [run], "observation_scope": scope}},
+                                         layer="code_test")
+    assert (state, grade) == ("ERROR", Grade.UNKNOWN)
+    silent = dict(run, stdout="2 passed in 0.01s", receipt=clean)
+    state, grade, _ = executor_run_facts({"layer": "code_test", "detail": {"runs": [silent], "observation_scope": scope}},
+                                         layer="code_test")
+    assert (state, grade) == ("SUCCEEDED", Grade.UNKNOWN)
+    # 产品路径上的真实执行器接缝：code_test 经部署的执行器真起 pytest，回执只导入一次、验收不重跑。
     report = _seam("executor-check-seam.py")
-    assert report["passing"]["binding_verdict"] == "PASS" and report["replay_idempotent"] is True
-    assert report["failing"]["binding_verdict"] == "FAIL"
+    assert report["passing"]["binding_verdict"] == "PASS" and report["passing"]["imported_once"] is True
+    assert report["passing"]["mission"] == "COMPLETED"
+    assert report["failing"]["binding_verdict"] == "FAIL" and report["failing"]["mission"] != "COMPLETED"
     assert report["workspace_mutated"]["binding_verdict"] != "PASS"
     assert report["timeout"]["binding_verdict"] == "UNKNOWN" and report["timeout"]["state"] == "CANCELLED"
-    assert report["no_executor_receipt"]["binding_verdict"] != "PASS"
-    assert report["exit0_without_nodeids"]["binding_verdict"] == "UNKNOWN"
-    assert report["events"]["AssuranceExecutionImported"] == report["bindings_total"]
 
 
 # --------------------------------------------------------------------------- A05
@@ -341,117 +344,81 @@ def test_any_branch_not_mandatory():
 
 # --------------------------------------------------------------------------- A06
 def test_review_dispatch_atomic(tmp_path):
-    from _assured_fixture import AssuredRuntime
+    """内容审阅的准备是一个事务：钉住审阅材料那一步写失败（数据库写入故障），包、绑定、调用、钉、
+    派发意图、预留一起回滚，模型一次没调；故障排除后只派一次、只调一次。"""
+
+    provider = ReviewScript()
 
     async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            tables = ("review_packages", "assurance_review_bindings", "assurance_review_invocations",
-                      "assurance_blob_pins", "dispatch_intents", "budget_reservations")
+        async with reviewed_mission(tmp_path, provider) as case:
+            connection = case.store.connection
 
             def counts():
-                return {t: count(store, f"SELECT COUNT(*) FROM {t} WHERE mission_id=?", mission_id) for t in tables}
+                return {
+                    "review_packages": connection.execute(
+                        "SELECT count(*) FROM review_packages WHERE mission_id=? AND purpose='TASK_CONTENT'",
+                        (case.mission_id,)).fetchone()[0],
+                    **{table: connection.execute(f"SELECT count(*) FROM {table} WHERE review_key LIKE "  # noqa: S608
+                                                 "'assurance-content:%'").fetchone()[0]
+                       for table in ("assurance_review_bindings", "assurance_review_invocations", "assurance_blob_pins")},
+                    "dispatch_intents": connection.execute(
+                        "SELECT count(*) FROM dispatch_intents WHERE kind='critic' AND subject_id LIKE "
+                        "'%assurance-content%'").fetchone()[0],
+                    "budget_reservations": connection.execute(
+                        "SELECT count(*) FROM budget_reservations WHERE subject_id LIKE '%assurance-content%'").fetchone()[0],
+                }
 
-            before = counts()
-            # The preparation UoW dies at the CAS pin: package/binding/invocation/intent/
-            # reservation all roll back together.
-            with patch.object(AssuranceStore, "acquire_pin", side_effect=OSError("cut: pin")):
-                with pytest.raises(Exception):
-                    await rt.run_critic()
-            assert counts() == before and not store.connection.in_transaction
-            assert rt.provider.calls == 0  # no dispatch happened
-            # Then one real dispatch: one logical slot, one invocation, one model call.
-            verdict, record = await rt.run_critic()
-            assert verdict.passed and record is not None
+            connection.execute("CREATE TRIGGER cut_a06 BEFORE INSERT ON assurance_blob_pins WHEN NEW.review_key "
+                               "LIKE 'assurance-content:%' BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+            with pytest.raises(sqlite3.IntegrityError):  # 现状：写失败逃出本轮主循环（迁移裁决 B4）
+                await case.run_until(lambda: case.status() == "COMPLETED", timeout=30)
+            assert set(counts().values()) == {0} and not connection.in_transaction
+            assert "TASK_CONTENT" not in provider.review_calls
+            connection.execute("DROP TRIGGER cut_a06")
+            mission = await case.settle()
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
             after = counts()
-            assert after["assurance_review_invocations"] == before["assurance_review_invocations"] + 1
-            assert after["review_packages"] == before["review_packages"] + 1
-            assert rt.provider.calls == 1
-            # Re-sending the same logical review does not create a second package/invocation or call.
-            verdict_again, record_again = await rt.run_critic()
-            assert record_again.record_id == record.record_id and counts() == after and rt.provider.calls == 1
+            assert after["review_packages"] == after["assurance_review_invocations"] == 1
+            assert after["dispatch_intents"] == 1 and provider.review_calls["TASK_CONTENT"] == 1
 
     asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- A07
 def test_reviewer_independence(tmp_path):
-    from _assured_fixture import AssuredRuntime
+    """审阅绑定写明作者是谁；正式记录里的审阅员不在作者之列，就是派发那次审阅调用的那个会话。"""
 
-    def producers(store, mission_id):
-        row = store.connection.execute(
-            "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=? LIMIT 1", (mission_id,)).fetchone()
-        return [] if row is None else decode(row["binding_json"])["producer_agent_ids"]
+    async def body():
+        async for case, _provider in _completed(tmp_path):
+            store, mission_id = case.store, case.mission_id
+            row = _content_binding(store, mission_id)
+            producers = decode(row["binding_json"])["producer_agent_ids"]
+            assert producers  # the author is named
+            record_binding = decode(store.connection.execute(
+                "SELECT b.binding_json FROM assurance_review_record_bindings b JOIN review_records r "
+                "ON r.record_id=b.record_id WHERE r.mission_id=? AND r.package_id=? AND r.official=1",
+                (mission_id, row["package_id"])).fetchone()[0])
+            assert record_binding["reviewer_agent_id"] not in producers
+            reviewer = store.connection.execute(
+                "SELECT agent_id FROM dispatch_intents i JOIN assurance_review_invocations v "
+                "ON v.dispatch_intent_id=i.intent_id WHERE v.review_key=? AND v.ordinal=1",
+                (row["review_key"],)).fetchone()[0]
+            assert reviewer == record_binding["reviewer_agent_id"]
 
-    async def independent():
-        async with AssuredRuntime(tmp_path / "independent", [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            verdict, record = await rt.run_critic()
-            assert verdict.passed
-            bound = producers(store, mission_id)
-            assert bound  # the author is named
-            binding = decode(count(store, "SELECT binding_json FROM assurance_review_record_bindings WHERE record_id=?",
-                                   str(record.record_id)))
-            assert binding["reviewer_agent_id"] not in bound
-            reviewer = count(store, "SELECT agent_id FROM dispatch_intents i JOIN assurance_review_invocations v "
-                             "ON v.dispatch_intent_id=i.intent_id WHERE v.mission_id=? AND v.ordinal=1", mission_id)
-            assert reviewer == binding["reviewer_agent_id"]
-
-    async def forged():
-        from agent_orchestrator.orchestrator import assurance_review_import as importer
-
-        async with AssuredRuntime(tmp_path / "forged", [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            original = importer.read_review_invocation_locked
-
-            class ClaimsAuthor:
-                """The binding exactly as stored, except that the frozen producer set
-                (as the official importer reads it) names the reviewer agent."""
-
-                def __init__(self, binding, reviewer):
-                    self._binding, self._reviewer = binding, reviewer
-
-                def __getattr__(self, name):
-                    return getattr(self._binding, name)
-
-                def to_json(self):
-                    body = self._binding.to_json()
-                    body["producer_agent_ids"] = sorted(set(body["producer_agent_ids"]) | {self._reviewer})
-                    return body
-
-            def forged_read(commit, reader, intent_id):
-                invocation, binding = original(commit, reader, intent_id)
-                intent = store.get_intent(intent_id)
-                if intent is not None and intent.agent_id is not None:
-                    return invocation, ClaimsAuthor(binding, intent.agent_id)
-                return invocation, binding
-
-            with patch.object(importer, "read_review_invocation_locked", forged_read):
-                with pytest.raises(Exception) as raised:
-                    await rt.run_critic()
-            assert "REVIEW_INDEPENDENCE_REQUIRED" in str(raised.value), str(raised.value)
-            packages = [row[0] for row in store.connection.execute(
-                "SELECT package_id FROM review_packages WHERE mission_id=?", (mission_id,))]
-            assert packages and all(HtnStore(store).official_review_record(p) is None for p in packages)
-            assert count(store, "SELECT COUNT(*) FROM review_records WHERE mission_id=?", mission_id) == 0
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 0
-            with store.read_view():
-                assert rt.runner.task_record(mission_id, rt.stored.envelope.attempt_id) is None
-
-    asyncio.run(independent())
-    asyncio.run(forged())
+    asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- A08
 def test_review_source_binding(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
     async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            verdict, record = await rt.run_critic()
-            binding = decode(count(store, "SELECT binding_json FROM assurance_review_record_bindings WHERE record_id=?",
-                                   str(record.record_id)))
+        async for case, provider in _completed(tmp_path):
+            store, mission_id = case.store, case.mission_id
+            row = _content_binding(store, mission_id)
+            record_id = store.connection.execute(
+                "SELECT record_id FROM review_records WHERE mission_id=? AND package_id=? AND official=1",
+                (mission_id, row["package_id"])).fetchone()[0]
+            binding = decode(store.connection.execute(
+                "SELECT binding_json FROM assurance_review_record_bindings WHERE record_id=?", (record_id,)).fetchone()[0])
             assert binding["mission_id"] == mission_id and binding["invocation_ordinal"] == 1
             # Every source is pinned: mission, turn receipt, raw output hash, package, ordinal, codec.
             base = ReviewRecordBinding.from_json(binding).content_hash
@@ -463,17 +430,13 @@ def test_review_source_binding(tmp_path):
                 assert ReviewRecordBinding.from_json({**binding, **change}).content_hash != base
             _refused(lambda: ReviewRecordBinding.from_json({**binding, "raw_output_hash": "b" * 64}),
                      "REVIEW_RAW_HASH_MISMATCH")
-            # The same source replayed: one official record per package, one invocation, one call.
-            packages = [row[0] for row in store.connection.execute(
-                "SELECT package_id FROM review_packages WHERE mission_id=?", (mission_id,))]
-            assert len(packages) == 1
-            assert HtnStore(store).official_review_record(packages[0]).record_id == record.record_id
-            assert count(store, "SELECT COUNT(*) FROM assurance_review_invocations WHERE mission_id=?", mission_id) == 1
-            assert count(store, "SELECT COUNT(*) FROM commit_receipts WHERE kind='AssuranceReviewTurnImported'") == 1
-            assert rt.provider.calls == 1
-            again = await rt.run_critic()
-            assert again[1].record_id == record.record_id and rt.provider.calls == 1
-            assert count(store, "SELECT COUNT(*) FROM review_records WHERE mission_id=? AND official=1", mission_id) == 1
+            # One package, one official record, one invocation, one imported turn, one model call.
+            assert HtnStore(store).official_review_record(row["package_id"]).record_id == record_id
+            assert count(store, "SELECT COUNT(*) FROM assurance_review_invocations WHERE review_key=?",
+                         row["review_key"]) == 1
+            assert count(store, "SELECT COUNT(*) FROM review_records WHERE package_id=? AND official=1",
+                         row["package_id"]) == 1
+            assert provider.review_calls["TASK_CONTENT"] == 1
 
     asyncio.run(body())
 
@@ -494,64 +457,30 @@ def test_review_new_round_identity():
 
 # --------------------------------------------------------------------------- A10
 def test_extra_evidence_exposure():
-    report = _seam("evidence-tools-seam.py", json_summary=False)
+    report = _seam("evidence-tools-seam.py")
     complete = report["task_content_complete_read"]
     assert complete["record_id"] and complete["appended_label"] and complete["replay_added_batch"] is False
     assert len(complete["batches"]) >= 2 and complete["verdict"].endswith("ACCEPT")
     partial = report["task_content_partial_read"]
-    assert partial["rejection"] == "UNEXPOSED_EVIDENCE" and partial["batches"] == [0]
+    # 只读了半页的那份资料从不进入任何披露批次，引用它被按名拒绝。
+    assert partial["rejection"] == "UNEXPOSED_EVIDENCE" and partial["partial_label_disclosed"] is False
     assert report["mission_final_no_attempt"]["record_id"]
 
 
 # --------------------------------------------------------------------------- A11
 def test_scope_pinned_not_latest(tmp_path):
-    from _assured_fixture import AssuredRuntime
+    """被审的那一次尝试结束以后，审阅主体就停了：晚到的回答不能再审它一遍。"""
 
-    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
-
-    async def moved_requirements():
-        async with AssuredRuntime(tmp_path / "moved", [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            verdict, record = await rt.run_critic()
-            row = store.connection.execute(
-                "SELECT * FROM assurance_review_bindings WHERE mission_id=? LIMIT 1", (mission_id,)).fetchone()
+    async def body():
+        async for case, _provider in _completed(tmp_path):
+            row = _content_binding(case.store, case.mission_id)
             bound = AssuranceReviewBinding(row["binding_json"])
-            assert row["requirements_revision"] == 1  # frozen v1
-            assert not review_subject_stopped(store, bound)
-            # A later requirements revision does not move the frozen review: the v1
-            # record stays bound to v1, nothing re-reviews under v2, and the
-            # acceptance writer refuses to use a v1 scope against moved requirements.
-            original = HtnStore(store).get_requirements_revision(mission_id, 1)
-            HtnStore(store).insert_requirements_revision(dataclasses.replace(original, revision=2, revision_id="req-2"))
-            assert HtnStore(store).official_review_record(row["package_id"]).record_id == record.record_id
-            assert count(store, "SELECT requirements_revision FROM assurance_review_bindings WHERE review_key=?",
-                         row["review_key"]) == 1
-            assert count(store, "SELECT requirements_revision FROM review_packages WHERE package_id=?",
-                         row["package_id"]) == 1
-            assert count(store, "SELECT COUNT(*) FROM assurance_review_bindings WHERE mission_id=?", mission_id) == 1
-            rt.record_critic_layer(record)
-            rt.settle_fixture_worker()
-            with pytest.raises(OperationCompletionError) as raised:
-                rt.accept_now()
-            assert raised.value.code == "OP_EFFECT_SCOPE_STALE"
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 0
-            assert rt.provider.calls == 1
+            assert row["requirements_revision"] == 1
+            assert count(case.store, "SELECT requirements_revision FROM acceptances WHERE mission_id=?",
+                         case.mission_id) == 1
+            assert review_subject_stopped(case.store, bound)
 
-    async def terminal_subject():
-        async with AssuredRuntime(tmp_path / "terminal", [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            record = await _accepted(rt)
-            row = store.connection.execute(
-                "SELECT * FROM assurance_review_bindings WHERE mission_id=? LIMIT 1", (mission_id,)).fetchone()
-            bound = AssuranceReviewBinding(row["binding_json"])
-            assert count(store, "SELECT requirements_revision FROM acceptances WHERE mission_id=?", mission_id) == 1
-            assert HtnStore(store).official_review_record(row["package_id"]).record_id == record.record_id
-            # Once the reviewed Attempt is terminal the subject is stopped: a late
-            # answer cannot re-review it.
-            assert review_subject_stopped(store, bound)
-
-    asyncio.run(moved_requirements())
-    asyncio.run(terminal_subject())
+    asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- A12
@@ -562,167 +491,24 @@ def test_check_budget_and_format_bounds():
     assert counts["official_records"] == 1 and counts["provider_calls"] == 2  # exactly one funded repair
 
 
-# --------------------------------------------------------------------------- A13
-def test_preparation_does_not_complete(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
-    async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            await _accepted(rt)
-            dispatch, network, occurrence = _readers(rt)
-            status = read_occurrence_completion(store, mission_id, str(occurrence))
-            assert status.preparation_ready and status.content_ready
-            assert not status.effects_ready and not status.complete
-            assert not dispatch.terminal(mission_id) and not dispatch.root_review_ready(mission_id)
-            assert store.get_mission(mission_id).status.value == "ACTIVE"
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 1
-            assert count(store, "SELECT COUNT(*) FROM goal_resolutions WHERE mission_id=?", mission_id) == 0
-
-    asyncio.run(body())
-
-
-# --------------------------------------------------------------------------- A14
-def test_preparation_data_not_order(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
-    async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            await _accepted(rt)
-            dispatch, network, occurrence = _readers(rt)
-            index = dispatch.accepted_outputs(mission_id, network)
-            # DATA: the accepted artifact is readable by purpose from the preparation.
-            assert occurrence in index.completed_producers
-            assert [item.artifact_id for item in index.outputs] == [rt.artifact.id]
-            # ORDER: the occurrence is not complete, so nothing downstream is released.
-            status = read_occurrence_completion(store, mission_id, str(occurrence))
-            assert status.preparation_acceptance_ids and not status.complete
-            assert not dispatch.terminal(mission_id)
-            with pytest.raises(Exception):
-                read_occurrence_completion(store, mission_id, "occurrence-without-scope")
-
-    asyncio.run(body())
-
-
 # --------------------------------------------------------------------------- A15
 def test_composition_not_all_children(tmp_path):
-    from _assured_fixture import AssuredRuntime
+    """叶子都验收了，根（复合目标）也不因此就绪：组合审阅要根自己冻结的范围和采用的做法实例，
+    叶子的审查包顶替不了。"""
 
     async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            record = await _accepted(rt)
-            dispatch, network, occurrence = _readers(rt)
-            # Every child (here: the single leaf) accepted, yet the root is not ready:
-            # readiness is not all(children.completed).
-            assert occurrence in dispatch.accepted_outputs(mission_id, network).completed_producers
-            assert not dispatch.root_review_ready(mission_id) and not dispatch.terminal(mission_id)
-            package = HtnStore(store).get_review_package(str(record.package_id))
-            # A COMPOSITION subject needs the compound's own frozen scope and adopted
-            # method instance; a leaf package cannot stand in for it.
+        async with reviewed_mission(tmp_path, ReviewScript(hold="MISSION_FINAL")) as case:
+            await case.run_until(lambda: bool(case.events("AcceptanceCommitted")))
+            store, mission_id = case.store, case.mission_id
+            dispatch = case.world.loop._dispatch_for(mission_id)
+            network = dispatch.network(mission_id)
+            root = str(network.root_occurrence_ids[0])
+            leaves = [str(o.occurrence_id) for o in network.occurrences if str(o.occurrence_id) != root]
+            assert set(leaves) <= set(map(str, dispatch.accepted_outputs(mission_id, network).completed_producers))
+            assert not dispatch.terminal(mission_id)
+            row = _content_binding(store, mission_id)
+            package = HtnStore(store).get_review_package(str(row["package_id"]))
             _refused(lambda: composition_subject(store, mission_id=mission_id, package=package,
-                                                 occurrence_id=str(occurrence), accepted={}), "SOURCE_UNAVAILABLE")
-
-    asyncio.run(body())
-
-
-# --------------------------------------------------------------------------- A16
-def test_pending_effect_no_worker_loop(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
-    async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            await _accepted(rt)
-            dispatch, network, occurrence = _readers(rt)
-            attempts = count(store, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id)
-            results = count(store, "SELECT COUNT(*) FROM results WHERE mission_id=?", mission_id)
-            for _ in range(5):  # repeated durable ticks: the wait stays visible, nothing regenerates
-                for _ in range(3):
-                    await rt.pump.tick()
-                status = read_occurrence_completion(store, mission_id, str(occurrence))
-                assert status.preparation_ready and not status.complete
-                assert not dispatch.terminal(mission_id)
-            assert count(store, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id) == attempts
-            assert count(store, "SELECT COUNT(*) FROM results WHERE mission_id=?", mission_id) == results
-            mission = store.get_mission(mission_id)
-            assert mission.status.value == "ACTIVE" and mission.stop_reason is None
-            assert rt.provider.calls == 1 and not rt.pump.rejections
-
-    asyncio.run(body())
-
-
-# --------------------------------------------------------------------------- A17
-def test_root_requirement_effect_catalogue(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
-    async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            dispatch, network, occurrence = _readers(rt)
-            requirements = HtnStore(store).get_requirements_revision(mission_id, 1)
-            assert [c.criterion_id for c in requirements.criteria] == ["criterion-report", "criterion-delivered"]
-            # The frozen scope catalogues one owed effect; no intent/action exists yet.
-            status = read_occurrence_completion(store, mission_id, str(occurrence))
-            assert status.scope.content_criterion_ids == ("criterion-report",)
-            assert len(status.scope.required_effect_keys) == 1
-            assert not status.effects_ready and not status.complete
-            assert not dispatch.root_review_ready(mission_id)
-            # Content accepted does not settle the effect either.
-            await _accepted(rt)
-            status = read_occurrence_completion(store, mission_id, str(occurrence))
-            assert status.content_ready and not status.effects_ready and not status.complete
-            assert not dispatch.root_review_ready(mission_id)
-
-    asyncio.run(body())
-
-
-# --------------------------------------------------------------------------- A18
-def test_direct_final_commit_guard(tmp_path):
-    from _assured_fixture import AssuredRuntime
-
-    async def body():
-        async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            verdict, record = await rt.run_critic()
-            rt.record_critic_layer(record)
-            rt.settle_fixture_worker()
-            # Without the deployment's validity evaluator (a "ready" cache is not one)
-            # the writer refuses; nothing is written.
-            rt.commit._assurance_validity = None
-            with pytest.raises(Exception) as raised:
-                rt.accept_now()
-            assert "USE_CERTIFICATE_REQUIRED" in str(raised.value)
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 0
-            assert count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", mission_id) == 0
-            rt.commit._assurance_validity = rt.validity
-            # A prepared candidate for another consumer identity is refused inside the UoW.
-            real_prepare = rt.validity.prepare_accept_use_for_result
-
-            def other_consumer(mission, result_id):
-                candidate = real_prepare(mission, result_id)
-                swapped = dataclasses.replace(candidate, identity=dataclasses.replace(candidate.identity,
-                                                                                     consumer_id="other"))
-                rt.validity._remember(swapped)
-                return swapped
-
-            with patch.object(rt.validity, "prepare_accept_use_for_result", other_consumer):
-                with pytest.raises(Exception) as raised:
-                    rt.accept_now()
-            assert "USE_CERTIFICATE_IDENTITY" in str(raised.value)
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 0
-            assert count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", mission_id) == 0
-            rt.validity.forget(mission_id, str(record.record_id))
-            # No MISSION_FINAL certificate: no direct final commit, the Mission stays ACTIVE.
-            dispatch, network, occurrence = _readers(rt)
-            assert not dispatch.root_review_ready(mission_id) and not dispatch.terminal(mission_id)
-            assert store.get_mission(mission_id).status.value == "ACTIVE"
-            # The real path still works afterwards, exactly once.
-            completed = rt.accept_now()
-            assert completed.accepted_result_id == rt.stored.envelope.id
-            assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id) == 1
-            assert count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=? AND purpose='ACCEPT'",
-                         mission_id) == 1
+                                                 occurrence_id=root, accepted={}), "SOURCE_UNAVAILABLE")
 
     asyncio.run(body())

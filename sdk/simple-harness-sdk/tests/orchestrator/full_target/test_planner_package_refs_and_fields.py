@@ -15,10 +15,17 @@ cannot state its reference correctly is skipped rather than invented.
 
 The helpers below build the views from the row shapes each section of this file
 exercises (a goal row, a method row, a fact row, an accepted result).
+
+HTN 补齐阶段 A′：要真实任务行与存储列的用例，任务都经产品那一份部署组装建出
+（:func:`_on_product_mission`，建任务即初始化根、绑定执行图、走保证通道），然后直接组包；
+同一性质的几条合并成一条。"已提交计划后主题键仍唯一"一条删除，由
+``product_world/test_sub_goal.py`` 覆盖（第二轮按 subject_key 点名子目标）；只用纯构造网络
+就能说清的两条（坏权威行不崩、封包不渲染权威表）和"用组好的包测哈希辅助"改为纯函数用例。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from collections.abc import Mapping, Sequence
@@ -29,7 +36,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import test_htn_end_to_end as e2e  # noqa: E402
 
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
@@ -112,6 +118,20 @@ DECISION_ONLY_FIELDS = frozenset(
         "decision_limits",
     }
 )
+
+
+def _on_product_mission(tmp_path: Any, build: Any) -> Any:
+    """Create a user Mission through the product's deployment assembly (root initialised,
+    TaskGraph bound, Assurance on, planning begun) and call ``build(seed)`` on it while
+    its store is open; returns what ``build`` returned."""
+
+    from h1i_seed import seeded
+
+    async def case() -> Any:
+        async with seeded(Path(tmp_path), key="planner-package-refs") as seed:
+            return build(seed)
+
+    return asyncio.run(case())
 
 
 class _Budget:
@@ -407,59 +427,28 @@ def test_previous_feedback_is_validated_through_the_contract() -> None:
 # ======================================================================================
 
 
-def test_subject_keys_are_unique_and_stable_across_two_builds(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    build = lambda: hierarchical_planner_package(  # noqa: E731 - two calls, one shape
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )["planning_subjects"]
-    first, second = build(), build()
+def test_planning_subjects_are_unique_stable_and_cover_every_occurrence(tmp_path: Any) -> None:
+    """§19 on a Mission the product assembly created: two builds give the same subjects,
+    every key is unique, each subject carries exactly the §19 keys, and every occurrence
+    on the board is named.  (The "after a committed plan" variant is the sub-goal product
+    case, whose second round names the sub-goal by its subject_key.)"""
+
+    def build(seed: Any) -> tuple[Any, Any, set[str]]:
+        network = seed.dispatch.network(seed.mission.id)
+        first = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
+        second = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
+        return first["planning_subjects"], second["planning_subjects"], {
+            str(item.occurrence_id) for item in network.occurrences}
+
+    first, second, occurrences = _on_product_mission(tmp_path, build)
     assert first == second, "same request, same subjects"
     keys = [item["subject_key"] for item in first]
     assert keys and len(keys) == len(set(keys)), "every subject_key is unique"
     assert all(item["subject_key"].startswith("subject-") for item in first)
-
-
-def test_every_subject_carries_exactly_the_section_19_keys(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    subjects = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )["planning_subjects"]
-    for item in subjects:
-        assert set(item) == {
-            "subject_key",
-            "occurrence_id",
-            "task_id",
-            "obligation_id",
-            "contract_revision",
-        }
-        assert isinstance(item["contract_revision"], int)
-        assert not isinstance(item["contract_revision"], bool)
-
-
-def test_subject_keys_cover_every_occurrence_on_the_board(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )
-    subjects = {item["occurrence_id"] for item in package["planning_subjects"]}
-    assert subjects == {str(item.occurrence_id) for item in world.network().occurrences}
-
-
-def test_a_committed_plan_still_yields_unique_subject_keys(tmp_path: Any) -> None:
-    world = e2e.committed(tmp_path, key="p23c-decided-committed")
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )
-    keys = [item["subject_key"] for item in package["planning_subjects"]]
-    assert len(keys) == len(set(keys)) == len(world.network().occurrences)
+    for item in first:
+        assert set(item) == {"subject_key", "occurrence_id", "task_id", "obligation_id", "contract_revision"}
+        assert isinstance(item["contract_revision"], int) and not isinstance(item["contract_revision"], bool)
+    assert {item["occurrence_id"] for item in first} == occurrences
 
 
 # ======================================================================================
@@ -925,7 +914,7 @@ def test_a_malformed_authority_row_is_ignored_without_raising() -> None:
     assert [item["id"] for item in refs] == ["task-1"]
 
 
-def test_a_malformed_authority_row_does_not_crash_the_builder(tmp_path: Any) -> None:
+def test_a_malformed_authority_row_does_not_crash_the_builder() -> None:
     """P2-10: a junk row at the *builder* boundary (where the sort runs) must not raise.
 
     The collector never requires a well-formed row — ``_authority_index`` skips one —
@@ -933,21 +922,17 @@ def test_a_malformed_authority_row_does_not_crash_the_builder(tmp_path: Any) -> 
     beside its real rows gets the real refs, not a ``TypeError`` mid-package.
     """
 
-    world = e2e.build_world(tmp_path, key="p23c-decided")
+    network = _WideNetwork(2)
     authorities = [
         "not-a-row",
         None,
         {"kind": "task"},  # no id
-        {"id": "task-root"},  # no kind
-        *task_authorities(world.network()),
+        {"id": "task-000"},  # no kind
+        *task_authorities(network),
     ]
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
-    assert "task" in {item["kind"] for item in package["visible_refs"]}
+    package = hierarchical_planner_package(_Mission(), network, registry=None, authoritative_refs=authorities)
+    assert {("task", "task-000"), ("task", "task-001")} <= {
+        (item["kind"], item["id"]) for item in package["visible_refs"]}
 
 
 def test_a_malformed_source_ref_is_skipped_rather_than_invented() -> None:
@@ -969,15 +954,34 @@ def test_a_malformed_source_ref_is_skipped_rather_than_invented() -> None:
     ]
 
 
-def test_every_collected_ref_is_a_valid_planning_ref(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )
-    for item in package["visible_refs"]:
-        PlanningRefV1.from_json(item)
+def test_every_built_ref_is_a_plain_valid_quadruple_and_nothing_is_guessed(tmp_path: Any) -> None:
+    """On a Mission the product assembly created: every visible ref is a valid §17
+    quadruple with exactly the four keys; with no obligation ledger digest handed in, no
+    obligation ref is emitted (never a guess); the caller's own authority rows are the
+    same plain quadruples as the refs they resolve to."""
+
+    def build(seed: Any) -> tuple[Any, Any, Any]:
+        network = seed.dispatch.network(seed.mission.id)
+        authorities = task_authorities(network)
+        bare = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry)
+        with_rows = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
+                                                 authoritative_refs=authorities)
+        return bare, with_rows, authorities
+
+    bare, with_rows, authorities = _on_product_mission(tmp_path, build)
+    for package in (bare, with_rows):
+        assert package["visible_refs"]
+        for item in package["visible_refs"]:
+            assert set(item) == {"kind", "id", "semantic_revision", "content_hash"}
+            PlanningRefV1.from_json(item)
+    assert "obligation" not in {item["kind"] for item in bare["visible_refs"]}
+    assert "task" in {item["kind"] for item in bare["visible_refs"]}
+    for row in authorities:
+        assert set(row) == {"kind", "id", "semantic_revision", "content_hash"}
+        PlanningRefV1.from_json(row)
+    assert {row["kind"] for row in authorities} == {"task"}
+    assert by_key(with_rows, authorities)[("task", authorities[0]["id"])]["content_hash"] == (
+        authorities[0]["content_hash"])
 
 
 def test_the_same_package_twice_yields_the_same_refs_in_the_same_order() -> None:
@@ -1031,54 +1035,68 @@ def test_a_ref_shown_by_two_rows_is_one_ref() -> None:
     assert len(refs_of(empty_package(methods=[*entries, dict(entries[0])]))) == 2
 
 
-def test_the_built_decision_package_exposes_the_collector_output(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    authorities = [
-        *task_authorities(world.network()),
-        authority("obligation", "obl-root", 1, "b" * 64),
-    ]
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
+def test_a_supplied_obligation_ledger_digest_reaches_the_built_package(tmp_path: Any) -> None:
+    """The root duty's ledger digest, handed in by the caller, becomes the obligation
+    ref; the package's ``visible_refs`` is exactly the collector's output over the same
+    rows, nothing truncated.  (The product world registers no library method before
+    the first planning round, so the kinds are task and obligation.)"""
+
+    from agent_orchestrator.storage.obligation_store import ObligationStore
+    from h1i_seed import root_duty
+
+    def build(seed: Any) -> tuple[Any, Any, str, str]:
+        network = seed.dispatch.network(seed.mission.id)
+        duty_id = root_duty(seed.mission.id)
+        duty = ObligationStore(seed.loop.store).obligation(seed.mission.id, duty_id)
+        digest = content_hash_of(duty.to_json())
+        authorities = [*task_authorities(network), authority("obligation", duty_id, 1, digest)]
+        package = hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
+                                               authoritative_refs=authorities)
+        return package, authorities, duty_id, digest
+
+    package, authorities, duty_id, digest = _on_product_mission(tmp_path, build)
     assert package["truncated"] is False and package["omitted_counts"] == {}
     assert package["visible_refs"] == list(refs_of(package, authorities))
-    kinds = {item["kind"] for item in package["visible_refs"]}
-    assert kinds == {"method", "task", "obligation"}
+    assert {item["kind"] for item in package["visible_refs"]} == {"task", "obligation"}
+    assert by_key(package, authorities)[("obligation", duty_id)] == {
+        "kind": "obligation", "id": duty_id, "semantic_revision": 1, "content_hash": digest}
 
 
-def test_the_production_path_task_hash_is_the_bindings_own_digest(tmp_path: Any) -> None:
-    """P1-4: without any caller ``authoritative_refs`` the builder's own rows must win.
+def test_a_task_ref_is_the_bindings_own_stored_digest_whoever_calls(tmp_path: Any) -> None:
+    """P1-4 / §5.1 on a Mission the product assembly created: a task ref's hash is the
+    binding's own ``content_hash`` — the very ``task_semantics.content_hash`` column —
+    and its revision the binding's ``contract_revision``; never a derived digest.  That
+    holds with no caller rows (the production caller passes none), with the caller's
+    rows, and when a caller row names the same task with a bogus digest (it cannot
+    override the builder's own row)."""
 
-    The real caller (``event_handler``) passes no authority rows, so the only thing
-    that decides a task ref's hash is ``_network_authorities``.  This asserts that
-    path directly: the emitted hash must equal ``binding.content_hash()`` (the
-    ``task_semantics.content_hash`` column) and must **not** be a derived digest.
-    """
+    def build(seed: Any) -> tuple[Any, ...]:
+        network = seed.dispatch.network(seed.mission.id)
+        bindings = {str(spec.task_id): network.binding_for_occurrence(spec.occurrence_id)
+                    for spec in network.occurrences}
+        stored = {str(row[0]): str(row[1]) for row in seed.loop.store.connection.execute(
+            "SELECT task_id, content_hash FROM task_semantics WHERE mission_id = ?", (seed.mission.id,))}
+        authorities = task_authorities(network)
+        some = next(iter(bindings))
+        bogus = authority("task", some, 99, "f" * 64)
+        packages = [hierarchical_planner_package(seed.mission, network, registry=seed.world.registry,
+                                                 authoritative_refs=rows)
+                    for rows in ((), authorities, [bogus])]
+        return bindings, stored, authorities, packages, bogus
 
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    network = world.network()
-    package = hierarchical_planner_package(
-        world.mission,
-        network,
-        registry=world.env.registry,
-    )
-    emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
-    for spec in network.occurrences:
-        binding = network.binding_for_occurrence(spec.occurrence_id)
-        ref = emitted[("task", str(spec.task_id))]
-        assert ref["content_hash"] == binding.content_hash()
-        assert ref["content_hash"] == content_hash_of(binding.to_json())
-        derived = content_hash_of(
-            {
-                "kind": "task",
-                "id": str(spec.task_id),
-                "semantic_revision": int(binding.contract_revision),
-            }
-        )
-        assert ref["content_hash"] != derived
+    bindings, stored, authorities, packages, bogus = _on_product_mission(tmp_path, build)
+    assert bindings
+    for package in packages:
+        emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
+        for task_id, binding in bindings.items():
+            ref = emitted[("task", task_id)]
+            assert ref["content_hash"] == binding.content_hash() == content_hash_of(binding.to_json())
+            assert ref["content_hash"] == stored[task_id]
+            assert ref["semantic_revision"] == int(binding.contract_revision)
+            assert ref["content_hash"] != content_hash_of(
+                {"kind": "task", "id": task_id, "semantic_revision": int(binding.contract_revision)})
+            assert ref["content_hash"] != bogus["content_hash"]
+    assert packages[1]["visible_refs"] == packages[0]["visible_refs"] == packages[2]["visible_refs"]
 
 
 def test_a_task_ref_revision_is_the_binding_not_the_plan_revision() -> None:
@@ -1130,67 +1148,6 @@ def test_a_task_ref_revision_comes_from_the_binding_even_past_one(tmp_path: Any)
     assert ref["semantic_revision"] != 1
 
 
-def test_the_built_task_ref_carries_the_bindings_authoritative_hash(tmp_path: Any) -> None:
-    """§5.1: ``task`` hash is ``task_semantics.content_hash`` — i.e. the binding's own."""
-
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    network = world.network()
-    package = hierarchical_planner_package(
-        world.mission,
-        network,
-        registry=world.env.registry,
-    )
-    emitted = by_key(package, task_authorities(network))
-    for spec in network.occurrences:
-        binding = network.binding_for_occurrence(spec.occurrence_id)
-        ref = emitted[("task", str(spec.task_id))]
-        assert ref["content_hash"] == binding.content_hash()
-        # Not merely ``len == 64``: the exact canonical-JSON digest the store keeps.
-        assert ref["content_hash"] == content_hash_of(binding.to_json())
-        assert ref["semantic_revision"] == int(binding.contract_revision)
-
-
-def test_the_built_package_omits_a_ref_it_cannot_attest(tmp_path: Any) -> None:
-    """No obligation ledger was handed in, so no obligation ref is emitted — never a guess."""
-
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )
-    # The package body has no obligation digest, so the string cannot be resolved and
-    # the caller was handed no authority row for it either.
-    assert "obligation" not in {item["kind"] for item in package["visible_refs"]}
-    assert "task" in {item["kind"] for item in package["visible_refs"]}
-
-
-def test_a_supplied_obligation_authority_reaches_visible_refs(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    from agent_orchestrator.storage.obligation_store import ObligationStore
-
-    duty = ObligationStore(world.store).obligation(world.mission.id, "obl-root")
-    authoritative = content_hash_of(duty.to_json())
-    authorities = [
-        *task_authorities(world.network()),
-        authority("obligation", "obl-root", 1, authoritative),
-    ]
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
-    assert by_key(package, authorities)[("obligation", "obl-root")] == {
-        "kind": "obligation",
-        "id": "obl-root",
-        "semantic_revision": 1,
-        "content_hash": authoritative,
-    }
-    # The ledger's own canonical-JSON digest is the one §5.1 names, not any other.
-    assert authoritative == content_hash_of(duty.to_json())
-
-
 def test_the_package_body_never_carries_a_sixth_field() -> None:
     """Ruling 2026-09-19 06:30: authorities travel as an argument, not as a key.
 
@@ -1213,120 +1170,45 @@ def test_the_package_body_never_carries_a_sixth_field() -> None:
     assert "visible_refs_omitted" not in body
 
 
-def test_the_legacy_and_decision_packages_share_a_task_hash_source(tmp_path: Any) -> None:
-    """The only task digest the module may emit is the binding's own ``content_hash``.
+def test_the_caller_authority_rows_are_an_input_set_not_a_sequence(tmp_path: Any) -> None:
+    """P2-6 / P1-6 on a Mission the product assembly created: the order of the caller's
+    rows never moves the package bytes (the request binding hashes the whole package),
+    and two rows for one ``(kind, id)`` resolve to the smallest quadruple whatever the
+    order — same revision with differing hashes, and differing revision *and* hash."""
 
-    A derived ``sha256({kind, id, revision})`` would describe the ref instead of the
-    task; this pins the value to the store's authoritative column, not to a length.
-    """
+    from h1i_seed import root_duty
 
-    import sqlite3
+    def build(seed: Any) -> dict[str, Any]:
+        network = seed.dispatch.network(seed.mission.id)
+        duty = root_duty(seed.mission.id)
 
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    authorities = task_authorities(world.network())
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
-    stored = sqlite3.connect(world.path).execute(
-        "SELECT content_hash FROM task_semantics WHERE task_id = 'task-root'"
-    ).fetchone()[0]
-    assert by_key(package, authorities)[("task", "task-root")]["content_hash"] == stored
+        def both(rows: list[Any]) -> tuple[Any, Any]:
+            make = lambda refs: hierarchical_planner_package(  # noqa: E731
+                seed.mission, network, registry=seed.world.registry, authoritative_refs=refs)
+            return make(rows), make(list(reversed(rows)))
 
+        return {
+            "duty": duty,
+            "distinct": both([authority("obligation", duty, 1, "b" * 64),
+                              authority("obligation", "obl-second", 1, "c" * 64)]),
+            "same_rev": both([authority("obligation", duty, 1, "b" * 64),
+                              authority("obligation", duty, 1, "a" * 64)]),
+            "crossed": both([authority("obligation", duty, 2, "a" * 64),
+                             authority("obligation", duty, 1, "f" * 64)]),
+        }
 
-def test_the_caller_authority_order_does_not_move_the_package(tmp_path: Any) -> None:
-    """P2-6: the authority list is an input *set*; its order must not change the bytes.
+    built = _on_product_mission(tmp_path, build)
+    for name in ("distinct", "same_rev", "crossed"):
+        forward, backward = built[name]
+        assert forward["visible_refs"] == backward["visible_refs"], name
+        assert forward == backward, name
 
-    The request binding hashes the whole package, so two builds that differ only in
-    the order of the rows they were handed must be byte-identical.
-    """
+    def winner(package: dict[str, Any]) -> dict[str, Any]:
+        return {(item["kind"], item["id"]): item for item in package["visible_refs"]}[("obligation", built["duty"])]
 
-    rows = [
-        authority("obligation", "obl-root", 1, "b" * 64),
-        authority("obligation", "obl-second", 1, "c" * 64),
-    ]
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    build = lambda refs: hierarchical_planner_package(  # noqa: E731
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=refs,
-    )
-    forward, backward = build(rows), build(list(reversed(rows)))
-    assert forward["visible_refs"] == backward["visible_refs"]
-    assert forward == backward
-
-
-def test_duplicate_authority_keys_are_order_independent(tmp_path: Any) -> None:
-    """P1-6: two caller rows for one ``(kind, id)`` must not let input order leak.
-
-    Obligations are the kind the builder cannot attest, so the caller's rows decide
-    the ref and their duplicate must resolve deterministically.  A *complete* sort
-    key gives a fixed winner; drop any component (kind/id/revision/hash) and the order
-    the caller happened to use leaks into the emitted digest.
-    """
-
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    network = world.network()
-    build = lambda refs: hierarchical_planner_package(  # noqa: E731
-        world.mission,
-        network,
-        registry=world.env.registry,
-        authoritative_refs=refs,
-    )
-    # Same (kind,id), same revision, differing hash: only a hash-aware key is stable,
-    # and the smallest key wins (rows are sorted ascending, first occurrence kept).
-    same_rev = [
-        authority("obligation", "obl-root", 1, "b" * 64),
-        authority("obligation", "obl-root", 1, "a" * 64),
-    ]
-    forward = build(same_rev)
-    assert forward == build(list(reversed(same_rev)))
-    winner = {(item["kind"], item["id"]): item for item in forward["visible_refs"]}[(
-        "obligation",
-        "obl-root",
-    )]
-    assert winner["content_hash"] == "a" * 64
-    # Same (kind,id), differing revision *and* hash: the smallest quadruple wins too,
-    # so the caller's order still cannot change the package.
-    crossed = [
-        authority("obligation", "obl-root", 2, "a" * 64),
-        authority("obligation", "obl-root", 1, "f" * 64),
-    ]
-    forward = build(crossed)
-    assert forward == build(list(reversed(crossed)))
-    winner = {(item["kind"], item["id"]): item for item in forward["visible_refs"]}[(
-        "obligation",
-        "obl-root",
-    )]
-    assert winner["semantic_revision"] == 1
-    assert winner["content_hash"] == "f" * 64
-
-
-def test_a_caller_row_cannot_override_the_builders_task_digest(tmp_path: Any) -> None:
-    """P1-4 (stronger fix): the builder's binding-derived task row is authoritative.
-
-    §5.1 fixes a task's hash to ``task_semantics.content_hash``, which the builder
-    reads off the network itself.  A caller row naming the same task cannot replace
-    it — later rows may only *fill gaps* (obligations), never overwrite — so a bogus
-    caller digest for an existing task must not reach ``visible_refs``.
-    """
-
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    network = world.network()
-    binding = network.binding_for_occurrence("task-root")
-    bogus = authority("task", str(binding.task_id), 99, "f" * 64)
-    package = hierarchical_planner_package(
-        world.mission,
-        network,
-        registry=world.env.registry,
-        authoritative_refs=[bogus],
-    )
-    emitted = {(item["kind"], item["id"]): dict(item) for item in package["visible_refs"]}
-    assert emitted[("task", str(binding.task_id))]["content_hash"] == binding.content_hash()
-    assert emitted[("task", str(binding.task_id))]["content_hash"] != bogus["content_hash"]
+    assert winner(built["same_rev"][0])["content_hash"] == "a" * 64
+    crossed = winner(built["crossed"][0])
+    assert (crossed["semantic_revision"], crossed["content_hash"]) == (1, "f" * 64)
 
 
 def test_caller_authority_revisions_sort_numerically_not_as_strings() -> None:
@@ -1358,56 +1240,12 @@ def test_caller_authority_revisions_sort_numerically_not_as_strings() -> None:
     assert emitted[("obligation", shared)]["semantic_revision"] == 2
 
 
-def test_the_caller_authority_rows_are_plain_quadruples(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    authorities = task_authorities(world.network())
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
-    # The caller's rows are the same §17 shape as the refs they resolve to.
-    for row in authorities:
-        assert set(row) == {"kind", "id", "semantic_revision", "content_hash"}
-        PlanningRefV1.from_json(row)
-    assert {row["kind"] for row in authorities} == {"task"}
-    assert by_key(package, authorities)[("task", "task-root")]["content_hash"] == (
-        authorities[0]["content_hash"]
-    )
-
-
-def test_the_builder_reads_task_authority_from_the_network_not_the_entry(tmp_path: Any) -> None:
-    """A plan entry's own ``contract_revision`` never substitutes for the binding's."""
-
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    network = world.network()
-    authorities = task_authorities(network)
-    package = hierarchical_planner_package(
-        world.mission,
-        network,
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
-    binding = network.binding_for_occurrence("task-root")
-    ref = by_key(package, authorities)[("task", "task-root")]
-    assert ref["semantic_revision"] == int(binding.contract_revision)
-    assert ref["content_hash"] == binding.content_hash()
-
-
-def test_the_sealed_text_never_renders_the_authority_list(tmp_path: Any) -> None:
+def test_the_sealed_text_never_renders_the_authority_list() -> None:
     """Ruling: the authority digests are a call argument, never a model-visible key."""
 
     from agent_orchestrator.context.context_builder import _seal
 
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    authorities = task_authorities(world.network())
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
+    package, _authorities = wide_world(3)
     sealed = _seal(package)
     assert "## authoritative_refs" not in sealed.text
     assert "authoritative_refs" not in sealed.text
@@ -1497,15 +1335,8 @@ def test_the_helpers_are_independent_of_each_other() -> None:
     assert len({visible_refs_digest(refs), subject_bindings_hash(subjects), package_hash({})}) == 3
 
 
-def test_the_helpers_hash_the_built_package_sections(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    authorities = task_authorities(world.network())
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-        authoritative_refs=authorities,
-    )
+def test_the_helpers_hash_the_built_package_sections() -> None:
+    package, authorities = wide_world(3)
     assert package_hash(package) == package_hash(json.loads(json.dumps(package)))
     assert visible_refs_digest(package["visible_refs"]) == visible_refs_digest(
         refs_of(package, authorities)
@@ -1522,17 +1353,6 @@ def test_the_helpers_hash_the_built_package_sections(tmp_path: Any) -> None:
 
 def test_no_new_top_level_field_is_a_system_bound_field() -> None:
     assert not (set(decision_package()) & SYSTEM_BOUND_FIELDS)
-
-
-def test_visible_refs_are_only_kind_id_revision_and_hash(tmp_path: Any) -> None:
-    world = e2e.build_world(tmp_path, key="p23c-decided")
-    package = hierarchical_planner_package(
-        world.mission,
-        world.network(),
-        registry=world.env.registry,
-    )
-    for item in package["visible_refs"]:
-        assert set(item) == {"kind", "id", "semantic_revision", "content_hash"}
 
 
 def test_planning_protocol_carries_only_the_name_and_the_enabled_types() -> None:

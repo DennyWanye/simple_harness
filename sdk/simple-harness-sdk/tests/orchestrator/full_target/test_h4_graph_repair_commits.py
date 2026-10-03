@@ -1,356 +1,282 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Focused H4 graph-repair checks through the original Plan Commit service."""
+"""H4 结构修复：规划器发修复决定，经真实收集器预览、准入、提交（HTN 补齐阶段 A′ 迁移，2026-10-03）。
+
+产品同形部署（``taskgraph_exec/production_fixture.enabled_world``）上主循环先真跑出第 1 版计划；
+修复决定由脚本化规划器经主循环自己的入口（开规划回合 → 收集器）递交，不再直接调编译器或
+裸 ``CommitService``。
+
+迁移时删掉的原用例：
+* "后继步骤提交出同义务、同预算的新步骤" → taskgraph_exec/test_successor_with_taskgraph::
+  test_a_successor_for_a_leaf_commits_a_second_plan_revision_with_the_taskgraph_on；
+* "两个做法消费者共享同一个在跑目标"（SHARE_ACTIVE）→ 产品"用户目标"世界没有可共享的任务类型，
+  按分诊裁决⑥等阶段 D 带共享的 world_factory（记偏离）；
+* "取消可选分支只放它自己的需求" → 可选分支要独立授权的步骤，产品编译从不带槽位授权
+  （``slot_authorizations`` 无调用方），造不出来（记偏离）。
+"""
 
 from __future__ import annotations
 
-from dataclasses import replace
+import asyncio
+import json
+import sys
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-from test_plan_commits import _world
+_FULL = Path(__file__).resolve().parent
+for _extra in (_FULL, _FULL / "taskgraph_exec"):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
 
-from agent_orchestrator.contracts.htn import (
-    CancelBranchOperation,
-    PlanProposal,
-    ProposeSuccessorOperation,
-    ReadItem,
-    ReadItemKind,
-    RebindInputOperation,
-    RunningWorkPolicy,
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
+
+from agent_orchestrator.contracts import TaskStatus  # noqa: E402
+from agent_orchestrator.contracts.models import sha256_hex  # noqa: E402
+from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
+from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+    review_input,
 )
-from agent_orchestrator.contracts.models import ContractError, sha256_hex
-from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
-from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
-from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
-from agent_orchestrator.orchestrator.repair_impact import read_repair_impact_indexes
-from agent_orchestrator.planning.htn.graph_repair import (
-    compile_cancel,
-    compile_rebind,
-    compile_successor,
-)
-from agent_orchestrator.planning.plan_preview import PreviewInputs
-from agent_orchestrator.runtime.planning_operations import StoreOperationReader, read_running_work
-from agent_orchestrator.storage.htn_store import HtnStore
 
 
-def _committed(tmp_path):
-    return _commit_world(_world(tmp_path, key="h4-graph-repair"))
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _commit_world(world):
-    world.commit()
-    return world, HierarchicalDispatch(world.store, world.service)
+def _repair(subject: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {"schema_version": 1, "decision_type": "REPAIR", "subject_key": subject,
+            "rationale": "修复已提交的计划。", "reason_refs": [], "assumptions": [], "uncertainties": [],
+            "alternatives": [], "replan_triggers": [], "payload": payload}
 
 
-def _proposal(world, network, operation, suffix: str) -> PlanProposal:
-    root = network.binding_for_task(network.occurrences[0].task_id)
-    return PlanProposal(
-        proposal_id=f"h4-{suffix}",
-        mission_id=network.mission_id,
-        expected_plan_revision=network.plan_revision,
-        trigger_refs=(),
-        read_set=(
-            ReadItem(
-                ReadItemKind.TASK,
-                str(root.task_id),
-                int(root.contract_revision),
-                root.contract_hash,
-            ),
-        ),
-        operations=(operation,),
-        rationale="repair the committed graph",
-        running_work_policy=RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE,
-    )
+class _Round:
+    """一次规划回合的包：按任务号取主题键与可见引用。"""
+
+    def __init__(self, intent: Any) -> None:
+        self.intent = intent
+        self.package = intent.config["planning_package"]
+
+    def subject(self, task_id: Any) -> str:
+        return next(row["subject_key"] for row in self.package["planning_subjects"] if row["task_id"] == str(task_id))
+
+    def visible(self, kind: str, identity: Any) -> dict[str, Any]:
+        return next(row for row in self.package["visible_refs"] if row["kind"] == kind and row["id"] == str(identity))
 
 
-def _inputs(world, dispatch, operation, suffix: str) -> PreviewInputs:
-    network = dispatch.network(world.mission.id)
-    proposal = _proposal(world, network, operation, suffix)
-    requirements = HtnStore(world.store).latest_requirements_revision(world.mission.id)
-    assert requirements is not None
-    return PreviewInputs(
-        decision_id=f"decision-{suffix}",
-        decision_hash=sha256_hex(proposal.to_json()),
-        request_id=f"request-{suffix}",
-        source_plan_revision=int(network.plan_revision),
-        source_network_hash=sha256_hex({
-            "mission_id": str(network.mission_id),
-            "plan_revision": int(network.plan_revision),
-            "occurrences": [item.to_json() for item in network.occurrences],
-        }),
-        proposal=proposal,
-        network=network,
-        registry=world.env.registry,
-        catalog=world.env.catalog,
-        schemas=world.env.schemas,
-        evidence=world.env.snapshot(),
-        predicates=world.env.predicates,
-        requirements_revision=int(requirements.revision),
-        budget=DEFAULT_PROJECTION_BUDGET,
-        system_identity_seed="manager-1",
-        now_ms=int(world.store.now * 1000),
-        capabilities=world.env.capabilities(),
-        runtime_work=read_running_work(
-            world.mission.id, (), reader=StoreOperationReader(world.store)
-        ),
-        repair_impact=read_repair_impact_indexes(world.store, network, world.mission.id),
-    )
+def _chain(network: Any) -> tuple[Any, Any, Any]:
+    """两步链：第一步（无输入）、第二步（读第一步的交付）、采用的做法实例。"""
 
-
-def _leaf_and_review(network):
-    leaves = [item for item in network.task_bindings if str(item.goal_signature.signature_id) == "plan.leaf"]
-    reviews = [item for item in network.task_bindings if str(item.goal_signature.signature_id) == "plan.review"]
-    assert len(leaves) == len(reviews) == 1
-    return leaves[0], reviews[0]
-
-
-def test_propose_successor_commits_a_fresh_task_with_the_same_obligation_and_budget(tmp_path):
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
-    leaf, _ = _leaf_and_review(network)
-    leaf_type = next(
-        item for item in world.env.catalog.task_types()
-        if item.goal_signature == leaf.goal_signature
-    )
-    operation = ProposeSuccessorOperation(
-        str(leaf.task_id), str(leaf.obligation_id), leaf_type.task_type_ref, leaf.typed_parameters
-    )
-    inputs = _inputs(world, dispatch, operation, "successor")
-    compilation = compile_successor(inputs, operation)
-    before = world.duties.account(world.mission.id, leaf.obligation_id)
-
-    command = dispatch.build_command(
-        world.mission.id,
-        inputs.proposal,
-        compilation,
-        principal=world.principal,
-        command_id="commit-h4-successor",
-    )
-    receipt = world.service.commit_plan_revision(command, world.principal)
-
-    assert receipt.new_plan_revision == int(network.plan_revision) + 1
-    reopened = HierarchicalDispatch(world.store, world.service).network(world.mission.id)
-    replacements = [item for item in reopened.task_bindings if item.task_id != leaf.task_id
-                    and item.obligation_id == leaf.obligation_id
-                    and item.goal_signature == leaf.goal_signature]
-    assert len(replacements) == 1
-    after = world.duties.account(world.mission.id, leaf.obligation_id)
-    assert after.fuel_limit == before.fuel_limit
-    assert after.consumed_cost_micros == before.consumed_cost_micros
-    assert after.consumed_attempts == before.consumed_attempts
-
-
-def test_propose_successor_cannot_transfer_the_original_obligation(tmp_path):
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
-    leaf, _ = _leaf_and_review(network)
-    leaf_type = next(item for item in world.env.catalog.task_types()
-                     if item.goal_signature == leaf.goal_signature)
-    operation = ProposeSuccessorOperation(
-        str(leaf.task_id), "obl-other", leaf_type.task_type_ref, leaf.typed_parameters
-    )
-    with pytest.raises(ContractError, match="exact original Obligation"):
-        compile_successor(_inputs(world, dispatch, operation, "wrong-duty"), operation)
-    assert int(dispatch.network(world.mission.id).plan_revision) == int(network.plan_revision)
-
-
-def test_rebind_input_rejects_a_stale_requirement_hash_without_a_plan_write(tmp_path):
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
-    leaf, review = _leaf_and_review(network)
-    review_occurrence = next(
-        item.occurrence_id for item in network.occurrences if item.task_id == review.task_id
-    )
-    requirement = next(item for item in network.data_requirements
-                       if item.consumer_occurrence == review_occurrence)
-    operation = RebindInputOperation(
-        str(review.task_id), requirement.requirement_id, "0" * 64,
-        str(leaf.task_id), requirement.output_port,
-    )
-    with pytest.raises(ContractError, match="stale or belongs to another consumer"):
-        compile_rebind(_inputs(world, dispatch, operation, "stale-data"), operation)
-    assert int(dispatch.network(world.mission.id).plan_revision) == int(network.plan_revision)
-
-
-def test_cancel_branch_rejects_a_required_child_without_retiring_the_method(tmp_path):
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
+    write = next(b for b in network.task_bindings if str(b.form) == "primitive" and not b.input_ports)
+    follow = next(b for b in network.task_bindings if str(b.form) == "primitive" and b.input_ports)
     instance = next(item for item in network.method_instances if network.is_adopted(item.instance_id))
-    required = next(item for item in instance.child_bindings if str(item.requiredness) == "required")
-    operation = CancelBranchOperation(str(instance.instance_id), required.slot_key)
-    with pytest.raises(ContractError, match="cannot withdraw a required slot"):
-        compile_cancel(_inputs(world, dispatch, operation, "required-cancel"), operation)
-    cold = dispatch.network(world.mission.id)
-    assert cold.is_adopted(instance.instance_id)
-    assert int(cold.plan_revision) == int(network.plan_revision)
+    return write, follow, instance
 
 
-def test_commit_rejects_rewriting_a_downstream_task_after_it_has_an_accepted_result(tmp_path):
-    """CommitService, rather than the pure compiler, owns this immutable-history gate."""
+async def _settled(world: Any, intent: Any) -> dict[str, Any]:
+    """执行图开着时提交在后面几轮才落定；等决定离开 COMPILED。"""
 
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
-    leaf, review = _leaf_and_review(network)
-    leaf_type = next(item for item in world.env.catalog.task_types()
-                     if item.goal_signature == leaf.goal_signature)
-    operation = ProposeSuccessorOperation(
-        str(leaf.task_id), str(leaf.obligation_id), leaf_type.task_type_ref, leaf.typed_parameters
-    )
-    inputs = _inputs(world, dispatch, operation, "accepted-dependent")
-    compilation = compile_successor(inputs, operation)
-    changed = next(item.binding for item in compilation.delta.binding_rewrites
-                   if item.binding.task_id == review.task_id)
-    task = world.store.get_task(str(changed.task_id))
-    assert task is not None
-    world.store.update_task(
-        replace(task, accepted_result_id="accepted-review-result", version=task.version + 1),
-        expected_version=task.version,
-    )
-    command = dispatch.build_command(
-        world.mission.id, inputs.proposal, compilation,
-        principal=world.principal, command_id="commit-h4-accepted-dependent",
-    )
-    with pytest.raises(PlanCommitRejected, match="accepted or missing dependent"):
-        world.service.commit_plan_revision(command, world.principal)
-    assert int(dispatch.network(world.mission.id).plan_revision) == int(network.plan_revision)
+    decisions = PlanningDecisionStore(world.store)
+    row = await world.until(lambda: (lambda r: r if r is not None and r["status"] != "COMPILED" else None)(
+        decisions.get_planning_decision_by_attempt(intent.intent_id, 0)))
+    return row
 
 
-def test_rebind_input_commits_a_different_declared_producer_and_cold_reads_it(tmp_path, monkeypatch):
-    import test_plan_commits as fixtures
-    original = fixtures._outer()
-    spare = replace(original.steps[0], local_id="spare")
-    monkeypatch.setattr(fixtures, "_outer", lambda: replace(original, steps=(*original.steps, spare)))
-    world, dispatch = _committed(tmp_path)
-    network = dispatch.network(world.mission.id)
-    instance = next(item for item in network.method_instances if network.is_adopted(item.instance_id))
-    spare_occ = next(child.occurrence_id for child in instance.child_bindings if child.slot_key == "spare")
-    spare_binding = network.binding_for_occurrence(spare_occ)
-    old = network.data_requirements[0]
-    consumer = network.binding_for_occurrence(old.consumer_occurrence)
-    operation = RebindInputOperation(str(consumer.task_id), old.requirement_id,
-        sha256_hex(old.to_json()), str(spare_binding.task_id), "result")
-    inputs = _inputs(world, dispatch, operation, "valid-rebind")
-    compilation = compile_rebind(inputs, operation)
-    command = dispatch.build_command(world.mission.id, inputs.proposal, compilation,
-        principal=world.principal, command_id="commit-valid-rebind")
-    receipt = world.service.commit_plan_revision(command, world.principal)
-    cold = HierarchicalDispatch(world.store, world.service).network(world.mission.id)
-    assert receipt.new_plan_revision == 2
-    actual = next(edge for edge in cold.data_requirements if edge.consumer_occurrence == old.consumer_occurrence)
-    assert actual.producer_occurrence == spare_occ
-    assert actual.schema_ref == old.schema_ref
-    rewritten = cold.binding_for_task(consumer.task_id)
-    assert rewritten.input_binding_revision == consumer.input_binding_revision + 1
-    assert rewritten.dispatch_generation == consumer.dispatch_generation + 1
-    assert world.semantics.get_task_semantics(str(consumer.task_id), int(consumer.contract_revision)) == consumer
-    assert cold.binding_for_task(spare_binding.task_id) == spare_binding
-    assert world.service.commit_plan_revision(command, world.principal) == receipt
+def _successor_of(round_: _Round, world: Any, old: Any, *, obligation: dict[str, Any] | None = None) -> dict[str, Any]:
+    task_type = next(spec for spec in world.dispatch.require_planning_world().catalog.task_types()
+                     if spec.goal_signature == old.goal_signature)
+    return _repair(round_.subject(old.task_id), {
+        "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": round_.visible("task", old.task_id),
+        "obligation_ref": obligation or round_.visible("obligation", old.obligation_id),
+        "goal_type_ref": task_type.task_type_ref.to_json(), "bindings": {"goal": "按当前资料重做这一步。"}})
 
 
-def test_share_active_preserves_target_between_two_method_consumers(tmp_path, monkeypatch):
-    import test_plan_commits as fixtures
-    from htn_world import step, param, ref
-    from agent_orchestrator.contracts.htn import BindSharedGoalOperation, ReusePolicy, TaskForm, RefineOperation
-    from agent_orchestrator.orchestrator.planning_graph_repairs import graph_repair_sources
-    from agent_orchestrator.planning.htn.graph_repair import compile_bind_existing
-    from agent_orchestrator.planning.htn.registry import TaskTypeCatalog
-    from agent_orchestrator.planning.htn.applicability import assess_method
-    from agent_orchestrator.planning.htn.grounding import ground_method
-    from agent_orchestrator.planning.htn.compiler import compile_refinement_bundle
-    original = fixtures._outer()
-    monkeypatch.setattr(fixtures, "_outer", lambda: replace(original, steps=(*original.steps,
-        step("branch", "plan.branch", TaskForm.COMPOUND, {"subject": param("subject")}, capabilities=("plan.read",)))))
-    make_env = fixtures._env
-    def sharing_env(mission):
-        env = make_env(mission)
-        env.register_type("plan.branch", form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
-                          criteria=("c-root",), domain="plan")
-        catalog = TaskTypeCatalog()
-        for spec in env.catalog.task_types():
-            catalog.register(replace(spec, reuse_policy=ReusePolicy.SHARE_ACTIVE)
-                if spec.goal_signature.signature_id == "plan.leaf" else spec)
-        env.catalog = catalog
-        return env
-    monkeypatch.setattr(fixtures, "_env", sharing_env)
-    world, dispatch = _committed(tmp_path)
-    fixtures._admit_root_demand(world)
-    network = dispatch.network(world.mission.id)
-    outer = next(item for item in network.method_instances if network.is_adopted(item.instance_id))
-    target = network.binding_for_occurrence(next(child.occurrence_id for child in outer.child_bindings if child.slot_key == "leaf"))
-    branch = network.binding_for_occurrence(next(child.occurrence_id for child in outer.child_bindings if child.slot_key == "branch"))
-    contract = replace(original, method_id="plan.branch.method", goal_type_ref=ref("plan.branch"),
-                       parameter_schema_ref=ref("plan.branch.params"), output_schema_ref=ref("plan.branch.outputs"))
-    assert world.env.admit(contract).admitted
-    world.semantics.register_method(contract, world.env.registry.registration(contract.method_ref()))
-    report = assess_method(branch, contract, world.env.snapshot(), world.env.capabilities(), registry=world.env.predicates)
-    draft = ground_method(branch, contract, {}, report, catalog=world.env.catalog, schemas=world.env.schemas,
-        plan_revision=network.plan_revision, goal_occurrence_id=next(spec.occurrence_id for spec in network.occurrences if spec.task_id == branch.task_id))
-    bundle = compile_refinement_bundle(draft, network, method=contract, catalog=world.env.catalog,
-        schemas=world.env.schemas, registry=world.env.registry, requirements_revision=1)
-    proposal = _proposal(world, network, RefineOperation(str(branch.task_id), str(branch.obligation_id), contract.method_ref(), {}), "branch")
-    world.service.commit_plan_revision(dispatch.build_command(world.mission.id, proposal, bundle,
-        principal=world.principal, command_id="commit-branch"), world.principal)
-    network = dispatch.network(world.mission.id)
-    consumer = network.adopted_instance_for(next(spec.occurrence_id for spec in network.occurrences if spec.task_id == branch.task_id))
-    operation = BindSharedGoalOperation(str(consumer.instance_id), "leaf", str(target.task_id), None)
-    inputs = replace(_inputs(world, dispatch, operation, "share-active"),
-        goal_reuse_sources=graph_repair_sources(world.store, network))
-    compilation = compile_bind_existing(inputs, operation)
-    command = dispatch.build_command(world.mission.id, inputs.proposal, compilation,
-        principal=world.principal, command_id="commit-share-active")
-    world.service.commit_plan_revision(command, world.principal)
-    cold = HierarchicalDispatch(world.store, world.service).network(world.mission.id)
-    assert cold.binding_for_task(target.task_id) == target
-    holders = [item for item in cold.method_instances if cold.is_adopted(item.instance_id)
-               and any(cold.binding_for_occurrence(child.occurrence_id).task_id == target.task_id for child in item.child_bindings)]
-    assert len(holders) == 2
-    assert not cold.is_adopted(consumer.instance_id)
+@pytest.mark.parametrize("wrong", ("successor_takes_another_duty", "rebind_names_a_stale_requirement",
+                                   "cancel_withdraws_a_required_step"))
+def test_a_malformed_graph_repair_is_refused_by_name_and_the_plan_stays_as_it_was(tmp_path, wrong):
+    """规划器写错的三种修复：后继步骤要转走原义务、改接输入时写错原绑定的哈希、取消必需的步骤。
+    都在提交前按名拒绝，计划仍是第 1 版、原做法实例仍被采用。
+
+    （原用例直接调编译器，断言编译器的拒绝；产品上：转走义务时规划器只能写包里没给的引用，
+    在准入就以 ``REF_OUTSIDE_CONTEXT`` 拒——产品计划里只有根义务一个；另两种在预览编译拒，记偏离。）"""
+
+    async def case() -> None:
+        async with enabled_world(tmp_path, key=f"h4-{wrong}", planner=chain_planner, criteria=CHAIN_CRITERIA,
+                                 hold_worker=True) as world:
+            await world.commit_seed()
+            network = world.dispatch.network(world.mission.id)
+            write, follow, instance = _chain(network)
+            round_ = _Round(await world.open_planner_round())
+            if wrong == "successor_takes_another_duty":
+                other = {**round_.visible("obligation", write.obligation_id), "id": "obl-other"}
+                body, expected = _successor_of(round_, world, write, obligation=other), "/payload/obligation_ref"
+            elif wrong == "rebind_names_a_stale_requirement":
+                edge = network.data_requirements[0]
+                body = _repair(round_.subject(follow.task_id), {
+                    "repair_kind": "REBIND_INPUT", "consumer_task_ref": round_.visible("task", follow.task_id),
+                    "producer_task_ref": round_.visible("task", write.task_id), "requirement_id": edge.requirement_id,
+                    "expected_requirement_hash": "0" * 64, "output_port": edge.output_port})
+                expected = "rebind DATA requirement is stale or belongs to another consumer"
+            else:
+                root = next(row["subject_key"] for row in round_.package["planning_subjects"]
+                            if row["task_id"].startswith("user-root-"))
+                body = _repair(root, {"repair_kind": "CANCEL_BRANCH", "step": "write",
+                                      "method_instance_ref": round_.visible("method_instance", instance.instance_id)})
+                expected = "cannot withdraw a required slot"
+            await world.answer(round_.intent, body)
+            row = PlanningDecisionStore(world.store).get_planning_decision_by_attempt(round_.intent.intent_id, 0)
+            assert row is not None and row["status"] == "REJECTED", row
+            assert expected in json.dumps(row["detail"], ensure_ascii=False), row
+            if wrong == "successor_takes_another_duty":
+                assert row["rejection_codes"] == ["REF_OUTSIDE_CONTEXT"]
+            cold = world.dispatch.network(world.mission.id)
+            assert int(cold.plan_revision) == 1 and cold.is_adopted(instance.instance_id)
+
+    asyncio.run(case())
 
 
-def test_cancel_optional_branch_preserves_required_work_and_releases_only_its_demand(tmp_path):
-    import test_plan_commits as fixtures
-    from htn_world import root_network
-    from agent_orchestrator.contracts.htn import ObligationRelation
-    from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
-    from agent_orchestrator.graph.eligibility import ActivePlanView, _method_read
-    from agent_orchestrator.planning.htn.applicability import assess_method
-    from agent_orchestrator.planning.htn.grounding import ground_method
-    from agent_orchestrator.planning.htn.compiler import compile_refinement_bundle
-    world = _world(tmp_path, key="h4-optional")
-    fixtures._approval(world, 1)
-    fixtures._admit_root_demand(world)
-    authority = world.service.read_item_for(world.mission.id, ReadItemKind.AUTHORITY, "auth-1")
-    contract = replace(world.contract, method_id="plan.optional", steps=(*world.contract.steps,
-        replace(world.contract.steps[0], local_id="optional", obligation_relation=ObligationRelation.INDEPENDENT_AUTHORIZED)))
-    assert world.env.admit(contract).admitted
-    world.semantics.register_method(contract, world.env.registry.registration(contract.method_ref()))
-    report = assess_method(world.binding, contract, world.env.snapshot(), world.env.capabilities(), registry=world.env.predicates)
-    draft = ground_method(world.binding, contract, {}, report, catalog=world.env.catalog, schemas=world.env.schemas)
-    bundle = compile_refinement_bundle(draft, root_network(world.env, world.binding), method=contract,
-        catalog=world.env.catalog, schemas=world.env.schemas, registry=world.env.registry,
-        requirements_revision=world.command.delta.read_set.requirements_revision,
-        slot_authorizations={"optional": TypedRef(TypedRefKind.SOURCE, authority.id,
-            authority.semantic_revision, authority.content_hash)})
-    world.command = replace(world.command, delta=replace(bundle.delta,
-        read_set=replace(bundle.delta.read_set, authority_revisions=(authority,))),
-        network=bundle.network, task_bindings=bundle.task_bindings)
-    world, dispatch = _commit_world(world)
-    network = dispatch.network(world.mission.id)
-    instance = next(item for item in network.method_instances if network.is_adopted(item.instance_id))
-    optional = next(child for child in instance.child_bindings if child.slot_key == "optional")
-    retained = network.binding_for_occurrence(next(child.occurrence_id for child in instance.child_bindings if child.slot_key == "leaf"))
-    assert world.duties.account(world.mission.id, optional.obligation_id).has_admitted_demand
-    operation = CancelBranchOperation(str(instance.instance_id), "optional")
-    inputs = _inputs(world, dispatch, operation, "cancel-optional")
-    compiled = compile_cancel(inputs, operation)
-    world.service.commit_plan_revision(dispatch.build_command(world.mission.id, inputs.proposal, compiled,
-        principal=world.principal, command_id="commit-cancel-optional"), world.principal)
-    cold = HierarchicalDispatch(world.store, world.service).network(world.mission.id)
-    assert optional.occurrence_id not in {item.occurrence_id for item in cold.occurrences}
-    assert cold.binding_for_task(retained.task_id) == retained
-    assert not world.duties.account(world.mission.id, optional.obligation_id).has_admitted_demand
-    assert world.duties.account(world.mission.id, retained.obligation_id).has_admitted_demand
-    reads = _method_read(ActivePlanView(cold), retained)
-    assert len(reads) == 1 and cold.is_adopted(reads[0].id)
-    assert reads[0].id != str(instance.instance_id)
+class _HoldMissionFinal(LayeredScriptedProvider):
+    """根终审的那次审阅调用停在半路（一次很慢的模型调用），别的照常。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.final_asked = asyncio.Event()
+        self.final_release = asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        data = review_input(request) if role_of(request) == "unknown" else None
+        if data is not None and str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL":
+            self.final_asked.set()
+            await self.final_release.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def test_a_successor_that_would_rewrite_an_accepted_downstream_step_is_refused(tmp_path):
+    """两步都做完、都已验收，根终审还在路上；规划器给第一步提后继步骤，这会改写第二步的输入。
+    已验收的工作是不可改写的历史：提交以 ``REPAIR_NOT_ALLOWED`` 拒（要改就给它也提后继），
+    计划仍是第 1 版。"""
+
+    async def case() -> None:
+        provider = _HoldMissionFinal(planner=chain_planner)
+        async with enabled_world(tmp_path, key="h4-accepted-downstream", criteria=CHAIN_CRITERIA,
+                                 provider=provider) as world:
+            await world.commit_seed()
+            await world.until(provider.final_asked.is_set, timeout=60)
+            try:
+                write, follow, _instance = _chain(world.dispatch.network(world.mission.id))
+                assert {world.store.get_task(str(item.task_id)).status for item in (write, follow)} == {
+                    TaskStatus.COMPLETED}
+                round_ = _Round(await world.open_planner_round())
+                await world.answer(round_.intent, _successor_of(round_, world, write))
+                row = await _settled(world, round_.intent)
+                assert row["status"] == "COMMIT_REJECTED" and row["rejection_codes"] == ["REPAIR_NOT_ALLOWED"], row
+                assert "accepted or missing dependent requires an explicit successor" in json.dumps(row["detail"])
+                assert int(world.dispatch.network(world.mission.id).plan_revision) == 1
+            finally:
+                provider.final_release.set()
+
+    asyncio.run(case())
+
+
+def _with_a_spare_producer(context: dict[str, Any]) -> dict[str, Any]:
+    """三步：write、spare 都"准备交付"（各管一条要求），continue 读 write 的交付。"""
+
+    request = context["request"]
+
+    def operator(suffix: str) -> dict[str, Any]:
+        return next(item for item in request["operators"] if str(item["task_type_ref"]["id"]).endswith(suffix))
+
+    def step(local_id: str, kind: dict[str, Any], arguments: dict[str, Any]) -> dict[str, Any]:
+        return {"local_id": local_id, "task_type_ref": kind["task_type_ref"], "form": "primitive",
+                "arguments": arguments, "required_capabilities": list(kind["required_capabilities"]),
+                "obligation_relation": "refines_parent"}
+
+    first, second, third = [item["id"] for item in request["criterion_evidence"]]
+    identity = request["new_method_identity"]
+    return {
+        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "goal_type_ref": request["goal_type_ref"],
+        "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
+        "output_schema_ref": request["goal_signature"]["output_schema_ref"],
+        "applicable_when": [], "exploration_assumptions": [],
+        "steps": [step("write", operator("prepare-delivery"), {}), step("spare", operator("prepare-delivery"), {}),
+                  step("continue", operator("continue-delivery"),
+                       {"delivery": {"op": "output", "step": "write", "port": "delivery"}})],
+        "ordering": [{"before": "write", "after": "continue"}, {"before": "spare", "after": "continue"}],
+        "required_capabilities": [], "expected_effects": [],
+        "composition": {
+            "criterion_links": [
+                {"parent_criterion_id": first, "child_step": "write", "child_criterion_id": first,
+                 "evidence_requirement": "write 写出第一份文件"},
+                {"parent_criterion_id": second, "child_step": "spare", "child_criterion_id": second,
+                 "evidence_requirement": "spare 写出第二份文件"},
+                {"parent_criterion_id": third, "child_step": "continue", "child_criterion_id": third,
+                 "evidence_requirement": "continue 读上游交付，写出第三份文件"},
+            ],
+            "outputs": {}, "finalizer_step": "continue", "independent_review_required": True,
+        },
+        "basis_refs": [],
+    }
+
+
+def _spare_planner(request: Any) -> Any:
+    package = package_of(request)
+    contexts = package.get("method_proposal_contexts") or []
+    if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
+        return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
+                        {"method_proposal": {"method": _with_a_spare_producer(contexts[0]),
+                                             "rationale": "两份先写，第三份读第一份。"}}, "三步。")
+    return planner_reply(request)
+
+
+def test_rebinding_an_input_to_another_declared_producer_commits_and_reads_back_cold(tmp_path):
+    """规划器把 continue 的输入从 write 改接到 spare（同一输出端口）：提交第 2 版；冷读的网络里
+    这条数据边的生产者换成 spare、结构不变；continue 换代（输入绑定修订、派发代各 +1），旧那一代
+    按修订号仍读得到；spare 一字未动。同一轮回复再送一次：一字不写。"""
+
+    async def case() -> None:
+        async with enabled_world(tmp_path, key="h4-valid-rebind", planner=_spare_planner, hold_worker=True,
+                                 criteria=("file:a.md", "file:b.md", "file:NOTES.md")) as world:
+            await world.commit_seed()
+            network = world.dispatch.network(world.mission.id)
+            instance = next(item for item in network.method_instances if network.is_adopted(item.instance_id))
+            occurrence = {child.slot_key: child.occurrence_id for child in instance.child_bindings}
+            spare = network.binding_for_occurrence(occurrence["spare"])
+            consumer = network.binding_for_occurrence(occurrence["continue"])
+            [old] = network.data_requirements
+            round_ = _Round(await world.open_planner_round())
+            body = _repair(round_.subject(consumer.task_id), {
+                "repair_kind": "REBIND_INPUT", "consumer_task_ref": round_.visible("task", consumer.task_id),
+                "producer_task_ref": round_.visible("task", spare.task_id), "requirement_id": old.requirement_id,
+                "expected_requirement_hash": sha256_hex(old.to_json()), "output_port": old.output_port})
+            await world.answer(round_.intent, body)
+            row = await _settled(world, round_.intent)
+            assert row["status"] == "COMMITTED", row
+
+            cold = world.dispatch.network(world.mission.id)
+            assert int(cold.plan_revision) == 2
+            [edge] = cold.data_requirements
+            assert edge.consumer_occurrence == old.consumer_occurrence
+            assert edge.producer_occurrence == occurrence["spare"] and edge.schema_ref == old.schema_ref
+            rewritten = cold.binding_for_task(consumer.task_id)
+            assert rewritten.input_binding_revision == consumer.input_binding_revision + 1
+            assert rewritten.dispatch_generation == consumer.dispatch_generation + 1
+            semantics = world.dispatch.semantics()
+            assert semantics.get_task_semantics(str(consumer.task_id), int(consumer.contract_revision)) == consumer
+            assert cold.binding_for_task(spare.task_id) == spare
+
+            before = (row, world.store.connection.total_changes)
+            await world.answer(round_.intent, body)
+            after = (PlanningDecisionStore(world.store).get_planning_decision_by_attempt(round_.intent.intent_id, 0),
+                     world.store.connection.total_changes)
+            assert after == before
+            assert int(world.dispatch.network(world.mission.id).plan_revision) == 2
+
+    asyncio.run(case())

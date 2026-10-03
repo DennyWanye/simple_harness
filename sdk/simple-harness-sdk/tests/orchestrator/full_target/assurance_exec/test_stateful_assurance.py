@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Stateful (seeded random operation sequences) over the assured review/acceptance path.
+"""随机序列下保证通道审阅 / 验收的不变式（小号版；2026-10-03 迁到产品同形世界）。
 
-No hypothesis in this venv (the plan forbids installing runtime deps for
-acceptance), so the sequences come from ``random.Random(seed)``. Each step is
-one production entry (durable tick, critic entry, router layer, usage import,
-acceptance writer, fixed-caller snapshot) applied in a random order, including
-out-of-order and repeated calls; after every step the invariants below are
-re-read from the Store. Six seeds × 14 steps.
+这个环境没有 hypothesis（计划不许为验收装运行时依赖），序列取自 ``random.Random(seed)``。每个种子
+随机给出外界的事：内容审阅与终审每次调用的结论（通过 / 判不下 / 空答复），以及主循环跑一小段
+之后人做什么（看一眼快照、在审阅卡上判通过 / 不通过、回答终审裁决问题）。每一小段之后从库里
+重读不变式：
+
+* 每份审阅（同一个审阅键）至多两次调用（初次 + 一次重发或复审），序号只有 1、2；
+* 每份审阅至多一条正式记录；没有正式通过的审阅（或人的通过裁决），就没有验收；
+* 每个任务至多一份有效验收、一张验收许可证；
+* 读快照不写任何东西；保证通道的有效性纪元只增不减；
+* 终审没通过（也没有人判通过）就没有根结论，任务不会完成。
+
+六个种子，每个种子至多 8 小段。
 """
 
 from __future__ import annotations
@@ -18,17 +24,18 @@ from pathlib import Path
 
 import pytest
 
-from agent_orchestrator.contracts.state_machines import MissionStatus
-from agent_orchestrator.governance.budgets import BudgetError
-from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitRejected
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SDK_ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(SDK_ROOT / "scripts/assurance_seams"))
+from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
 
-ACCEPT_REPLY = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
-    {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture", "limitations": []}],
-    "findings": []}
-OPS = ("tick", "critic", "layer", "usage", "accept", "snapshot")
+from agent_orchestrator.storage.planning_human_store import PlanningHumanStore  # noqa: E402
+
+VERDICTS = ("ACCEPT", "INCONCLUSIVE", "EMPTY")
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    quick_waits(monkeypatch)
 
 
 def _count(store, sql, *params):
@@ -37,105 +44,84 @@ def _count(store, sql, *params):
 
 def _epoch(store, mission_id):
     row = store.connection.execute(
-        "SELECT epoch FROM validity_epochs WHERE mission_id=? AND scope_id=?", (mission_id, "assurance:mission")).fetchone()
+        "SELECT epoch FROM validity_epochs WHERE mission_id=? AND scope_id=?",
+        (mission_id, "assurance:mission")).fetchone()
     return 0 if row is None else int(row[0])
 
 
-class Model:
-    """What the sequence has legitimately established so far."""
-
-    def __init__(self):
-        self.record = None
-        self.layer = False
-        self.usage = False
-        self.accepted = False
+def _invariants(case, provider, trace):
+    store, mission_id = case.store, case.mission_id
+    per_key = store.connection.execute(
+        "SELECT review_key, count(*), max(ordinal), min(ordinal) FROM assurance_review_invocations "
+        "WHERE mission_id=? GROUP BY review_key", (mission_id,)).fetchall()
+    for key, count, high, low in per_key:
+        assert count <= 2 and low == 1 and high <= 2, (key, count, trace)
+    official = store.connection.execute(
+        "SELECT package_id, count(*) FROM review_records WHERE mission_id=? AND official=1 GROUP BY package_id",
+        (mission_id,)).fetchall()
+    assert all(n == 1 for _, n in official), trace
+    accepted = store.connection.execute(
+        "SELECT task_id, count(*) FROM acceptances WHERE mission_id=? AND validity='CURRENT' GROUP BY task_id",
+        (mission_id,)).fetchall()
+    assert all(n == 1 for _, n in accepted), trace
+    certificates = _count(store, "SELECT count(*) FROM assurance_use_certificates WHERE mission_id=? "
+                                 "AND consumer_kind='ACCEPTANCE'", mission_id)
+    assert certificates <= len(accepted), trace
+    if accepted:
+        # 每份验收都有审阅（模型的正式通过，或者人的通过裁决）在先
+        assert official or case.events("AssuranceReviewAdjudicated"), trace
+    final_passed = any(e.type == "GoalResolutionCommitted" for e in case.events())
+    if case.status() == "COMPLETED":
+        assert final_passed, trace
+    assert sum(provider.review_calls.values()) <= 2 * max(1, len(per_key)), trace
 
 
 async def _sequence(tmp_path, seed):
-    from _assured_fixture import AssuredRuntime
-
     rng = random.Random(seed)
-    async with AssuredRuntime(tmp_path, [ACCEPT_REPLY]) as rt:
-        store, mission_id = rt.store, rt.mission.id
-        model = Model()
+    provider = ReviewScript(verdicts={
+        "TASK_CONTENT": [rng.choice(VERDICTS) for _ in range(2)],
+        "MISSION_FINAL": [rng.choice(("ACCEPT", "INCONCLUSIVE")) for _ in range(2)],
+    })
+    trace: list[str] = [f"script={provider.verdicts}"]
+    async with reviewed_mission(tmp_path, provider, key=f"stateful-{seed}") as case:
+        store, mission_id = case.store, case.mission_id
         last_epoch = _epoch(store, mission_id)
-        trace = []
-        for step in range(14):
-            op = rng.choice(OPS)
-            trace.append(op)
-            before = {
-                "acceptances": _count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id),
-                "certificates": _count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", mission_id),
-                "records": _count(store, "SELECT COUNT(*) FROM review_records WHERE mission_id=? AND official=1", mission_id),
-                "invocations": _count(store, "SELECT COUNT(*) FROM assurance_review_invocations WHERE mission_id=?", mission_id),
-                "attempts": _count(store, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id),
-            }
-            if op == "tick":
-                for _ in range(rng.randint(1, 3)):
-                    await rt.pump.tick()
-            elif op == "critic":
-                verdict, record = await rt.run_critic()
-                assert verdict.passed
-                if model.record is not None:
-                    assert record.record_id == model.record.record_id  # replay, same official record
-                model.record = record
-            elif op == "layer":
-                if model.record is None:
-                    continue
-                rt.record_critic_layer(model.record)
-                model.layer = True
-            elif op == "usage":
-                rt.settle_fixture_worker()  # first time imports, later times dedupe
-                model.usage = True
-            elif op == "accept":
-                # The writer needs the official record and a closed original executor
-                # (usage imported); the router's layer annotation is not a licence.
-                if model.record is not None and model.usage:
-                    completed = rt.accept_now()
-                    assert completed.accepted_result_id == rt.stored.envelope.id
-                    model.accepted = True
-                elif model.record is None:
-                    with pytest.raises(ResolutionCommitRejected) as refused:
-                        rt.accept_now()
-                    assert refused.value.reason == "REVIEW_NOT_OFFICIAL", trace
-                else:
-                    with pytest.raises(BudgetError):
-                        rt.accept_now()
-            elif op == "snapshot":
-                from agent_orchestrator.api.assurance import AssuranceApi  # fixed caller, read only
-                from agent_orchestrator.governance.permissions import Principal
-                api = AssuranceApi(rt.commit, tenant_id=rt.mission.tenant_id, principal=Principal("exec-current-user"),
-                                   validity=rt.validity, host_fingerprint="ab" * 32)
-                try:
-                    api.snapshot({"schema_version": 1, "request_id": f"r-{seed}-{step}", "mission_id": mission_id})
-                except Exception:  # noqa: BLE001 - a read never changes state; refusal shape is C07's job
-                    pass
-            after = {
-                "acceptances": _count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id),
-                "certificates": _count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", mission_id),
-                "records": _count(store, "SELECT COUNT(*) FROM review_records WHERE mission_id=? AND official=1", mission_id),
-                "invocations": _count(store, "SELECT COUNT(*) FROM assurance_review_invocations WHERE mission_id=?", mission_id),
-                "attempts": _count(store, "SELECT COUNT(*) FROM attempts WHERE mission_id=?", mission_id),
-            }
-            # Invariants, re-read from the Store after every step.
-            assert not store.connection.in_transaction, trace
-            assert rt.provider.calls == (1 if model.record is not None else 0), trace
-            assert after["records"] == (1 if model.record is not None else 0), trace
-            assert after["invocations"] == (1 if model.record is not None else 0), trace
-            assert after["acceptances"] == (1 if model.accepted else 0), trace
-            assert after["certificates"] <= 1 and after["certificates"] == (1 if model.accepted else 0), trace
-            assert after["attempts"] == before["attempts"], trace  # no worker ever reopened
-            if op in ("tick", "snapshot"):
-                assert after == before, trace  # reads and idle ticks write no acceptance/record rows
+        for _ in range(8):
+            try:
+                await case.run_until(lambda: provider.repair_asked.is_set() or case.status() in {
+                    "COMPLETED", "FAILED"}, timeout=rng.choice((0.5, 1.0, 2.0)))
+            except TimeoutError:
+                pass
+            action = rng.choice(("snapshot", "decide", "answer", "wait"))
+            trace.append(action)
+            if action == "snapshot":
+                before = store.connection.total_changes
+                case.world.control.snapshot(mission_id)
+                assert store.connection.total_changes == before, trace
+            elif action == "decide":
+                for card in case.pending_approvals():
+                    if card["kind"] == "review":
+                        verdict = rng.choice(("review_pass", "review_fail"))
+                        trace.append(verdict)
+                        case.world.control.decide(card["request_id"], verdict, note="随机序列里的人")
+            elif action == "answer":
+                for question in PlanningHumanStore(store).list(mission_id):
+                    if question["state"] == "PENDING":
+                        ruling = rng.choice(("pass", "fail"))
+                        trace.append("final-" + ruling)
+                        case.world.control.answer_planning_question({
+                            "decision_id": question["decision_id"], "answer": ruling,
+                            "expected_version": question["version"], "nonce": f"n-{seed}-{len(trace)}"})
+            _invariants(case, provider, trace)
             epoch = _epoch(store, mission_id)
             assert epoch >= last_epoch, trace
             last_epoch = epoch
-            assert store.get_mission(mission_id).status is MissionStatus.ACTIVE, trace
-            assert not rt.pump.rejections, trace
-        return trace, model
+            if provider.repair_asked.is_set() or case.status() in {"COMPLETED", "FAILED"}:
+                break
+        return trace
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
 def test_random_sequences_keep_invariants(tmp_path, seed):
-    trace, model = asyncio.run(_sequence(tmp_path, seed))
-    assert len(trace) == 14
+    trace = asyncio.run(_sequence(tmp_path, seed))
+    assert trace

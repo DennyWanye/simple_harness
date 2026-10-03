@@ -1,10 +1,17 @@
+"""H4 修复事件适配器：触发来源分派与准入规则（纯函数），以及主循环钩子把运行时故障落成修复请求。
+
+删除（2026-10-03 A′）：``hierarchical_dispatch_exposes_the_h4_event_boundary`` —— 同一边界由
+``test_h4_retry_runtime_entry.py::test_runtime_wakes_fence_stale_planner_and_repeated_source_transitions``
+在产品同形世界里经真实入口入库覆盖。
+"""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
-from test_htn_end_to_end import build_world
+from h1i_seed import committed, events
 
 from agent_orchestrator.contracts.models import ContractError
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.planning.htn.repair_adapter import RepairEventAdapter
 from agent_orchestrator.planning.htn.repair_decision import (
     HumanRequestV1,
@@ -109,41 +116,22 @@ def test_named_dispatch_helpers_cover_core_repair_paths() -> None:
     assert blocked.decision.actions[0].action_type is RepairActionType.DECLARE_RUNTIME_BLOCKED
 
 
-def test_hierarchical_dispatch_exposes_the_h4_event_boundary(tmp_path) -> None:
-    world = build_world(tmp_path, key="h4-dispatch-entry")
-    result = world.dispatch.dispatch_repair_event(
-        world.mission.id,
-        {"type": "WorkerRejected", "trigger_refs": ["task-a"]},
-        actions=(RepairAction(RepairActionType.RETRY_SAME_METHOD),),
-    )
-    assert result.request.mission_id == world.mission.id
-    assert result.decision.actions[0].action_type is RepairActionType.RETRY_SAME_METHOD
-
-
 def test_event_handler_runtime_trigger_persists_h4_audit(tmp_path) -> None:
-    from agent_orchestrator.contracts.planning_decisions import PLANNING_DECISION_V1
-    from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
+    """运行时报告一次"提供方结果未知"：主循环的钩子开出一条修复请求、不替模型选动作；
+    同一回调再来一次（传输层重放）不另开请求。世界是产品同形部署上真跑出来的第一版计划。"""
 
-    world = build_world(tmp_path, key="h4-event-handler-runtime")
-    bind_planning_protocol(world.store, world.mission.id, PLANNING_DECISION_V1)
-    orchestrator = object.__new__(Orchestrator)
-    orchestrator._store = world.store
-    orchestrator._new_mode = lambda mission: world.dispatch
-    orchestrator._note = lambda message: None
-    orchestrator._dispatch_h4_repair_trigger(
-        world.mission,
-        event_type="RuntimeUnavailable",
-        trigger_ref=world.mission.id,
-        detail={"reason": "provider_outcome_unknown"},
-    )
-    rows = world.events("PlanningRepairRequested")
-    assert len(rows) == 1
-    assert rows[0].payload["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"
-    assert "decision" not in rows[0].payload
-    assert not world.events("RepairDecisionDispatched")
-    # Replayed transport callbacks cannot create another request or choose an action.
-    orchestrator._dispatch_h4_repair_trigger(
-        world.mission, event_type="RuntimeUnavailable", trigger_ref=world.mission.id,
-        detail={"reason": "provider_outcome_unknown"},
-    )
-    assert len(world.events("PlanningRepairRequested")) == 1
+    async def case() -> None:
+        async with committed(tmp_path, key="h4-event-handler-runtime") as seed:
+            loop, mission = seed.loop, seed.mission
+            for _ in range(2):
+                loop._dispatch_h4_repair_trigger(
+                    mission, event_type="RuntimeUnavailable", trigger_ref=mission.id,
+                    detail={"reason": "provider_outcome_unknown"},
+                )
+            rows = events(loop, mission.id, "PlanningRepairRequested")
+            runtime = [row for row in rows if row.payload["request"]["trigger_source"] == "RUNTIME_UNAVAILABLE"]
+            assert len(runtime) == 1, [row.payload for row in rows]
+            assert "decision" not in runtime[0].payload
+            assert not events(loop, mission.id, "RepairDecisionDispatched")
+
+    asyncio.run(case())

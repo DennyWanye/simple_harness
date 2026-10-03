@@ -8,9 +8,12 @@
   收集触发、反复 tick、冷重开都不重复产生请求或规划轮。世界是产品同形部署
   （``taskgraph_exec.production_fixture``）：执行者真交了没写结论的结果，修复请求与规划轮由
   主循环真开出来；规划器的那次调用被扣住（一次很慢的模型调用），轮次停在"已开出"。
-* 第 6 条：动作结果未知只核对不重发；把一笔未知费用按上限结清，不改变该动作 / 效果
-  状态，也不触发重发。世界复用 ``assurance_exec/_operation_world.OperationWorld``
-  （分诊表：随对外操作族并入代表用例 3 的变体，那一批改写）。
+* 第 6 条（动作结果未知只核对不重发）：2026-10-03 并入代表用例 3 的变体
+  ``operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent``
+  （服务端已发布、回执丢了、核对又连不上：动作一直"结果未知"，只核对、不重发，服务恢复后核对成
+  成功，始终一次发布，``budget_conserved`` 为真）。原用例里"手工给一个 ``charge:`` 记账科目预留、
+  导入未知用量、按上限结清"那一段是手造产品自己才会写的账本行（裁决①b2），删；按上限结清本身的
+  性质由供方记账族的产品同形用例守。
 """
 
 from __future__ import annotations
@@ -19,28 +22,25 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 _HERE = Path(__file__).resolve().parent
-for _path in (_HERE, _HERE / "assurance_exec", _HERE / "operation_completion", _HERE / "taskgraph_exec"):
+for _path in (_HERE, _HERE / "taskgraph_exec"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from _operation_world import OperationWorld  # noqa: E402
-from production_fixture import OUTPUT, enabled_world, product_loop, result_envelope, scripted_worker  # noqa: E402
-from test_completion_contract import _effect_state  # noqa: E402
-
-from agent_orchestrator.governance.budgets import UsageFact  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
-from agent_orchestrator.orchestrator.completion_status import (  # noqa: E402
-    read_occurrence_completion,
+from production_fixture import (  # noqa: E402
+    OUTPUT,
+    enabled_world,
+    product_loop,
+    result_envelope,
+    scripted_worker,
 )
+
 from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
     REQUESTED,
     collect_triggers,
     pending_requests,
 )
-from agent_orchestrator.runtime.connectors_publish import FilePublishConnector  # noqa: E402
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
 
 OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
@@ -147,65 +147,3 @@ def test_a_cold_reopen_does_not_ask_the_planner_again_for_the_same_gap(tmp_path)
 
     asyncio.run(first())
     asyncio.run(second())
-
-
-# ======================================================================================
-# §7.3 第 6 条：结果未知只核对；费用按上限结清不改变效果状态
-# ======================================================================================
-
-
-def _unknown_publish(tmp_path) -> tuple[OperationWorld, dict]:
-    """服务端已发布但回执丢失：动作 UNKNOWN，效果待核对。"""
-
-    w = OperationWorld(tmp_path)
-    w.produce_and_accept()
-    w.submit("deliver-report")
-    w.materialize("deliver-report")
-    real_execute = FilePublishConnector.execute
-
-    def applied_but_lost(self, *args, **kwargs):
-        real_execute(self, *args, **kwargs)
-        raise RuntimeError("reply lost after the service applied it")
-
-    with patch.object(FilePublishConnector, "execute", applied_but_lost):
-        assert w.dispatch()
-    action = w.store.get_action(w.actions["deliver-report"]["action_key"])
-    assert action["state"] == "UNKNOWN" and not action.get("receipt")
-    assert _effect_state(w) == "RECONCILIATION_REQUIRED"
-    return w, action
-
-
-def test_settling_an_unknown_charge_at_its_upper_bound_leaves_the_unknown_action_alone(tmp_path) -> None:
-    """§7.3-6：未知费用按上限结清后，UNKNOWN 动作 / 待核对效果不变、不重发，之后仍只靠核对收敛。"""
-
-    w, action = _unknown_publish(tmp_path)
-    ledger = w.commit.ledger
-    subject = "charge:" + str(action["action_key"])
-    with w.store.transaction():
-        ledger.reserve(account_id=mission_account(w.mission_id), subject_id=subject,
-                       tokens=4_000, cost_micros=0, counts_attempt=False)
-        ledger.import_usage(subject_id=subject, mission_id=w.mission_id, facts=[
-            UsageFact("call-known", 1_000, 200, 0), UsageFact("call-lost", 0, 0, 0, unknown=True)])
-    before = dict(w.store.get_action(action["action_key"]))
-    with w.store.transaction():
-        settled = ledger.settle_at_upper_bound(subject_id=subject)
-    assert settled["state"] == "SETTLED" and settled["settled_tokens"] == 4_000
-    assert ledger.usage_flags(w.mission_id)["usage_fully_known"] is False  # 费用事实仍是未知
-    after = dict(w.store.get_action(action["action_key"]))
-    assert after["state"] == "UNKNOWN" and not after.get("receipt")
-    assert {k: after[k] for k in ("state", "receipt", "idempotency_key")} == {
-        k: before[k] for k in ("state", "receipt", "idempotency_key")}
-    assert _effect_state(w) == "RECONCILIATION_REQUIRED"
-    assert not read_occurrence_completion(w.store, w.mission_id, w.occurrence).complete
-    # 结清不是"已完成"也不是"未发生"：不重发，服务端只有那一次发布。
-    assert not w.dispatch() and len(w.published_files()) == 1
-    account = ledger.account(mission_account(w.mission_id))
-    booked = (account.settled_tokens, account.reserved_tokens)
-    # 之后唯一的收敛路径仍是核对：读到服务端事实后记为成功，且依旧没有第二次发送。
-    assert asyncio.run(w.executor.reconcile(w.mission_id))
-    assert w.store.get_action(action["action_key"])["state"] == "SUCCEEDED"
-    assert len(w.published_files()) == 1
-    # 核对成功也不回头改写已结清的费用（不退、不重复计）。
-    account = ledger.account(mission_account(w.mission_id))
-    assert (account.settled_tokens, account.reserved_tokens) == booked
-    assert ledger.usage_flags(w.mission_id)["budget_conserved"] is True

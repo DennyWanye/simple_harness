@@ -9,6 +9,10 @@
   开头被停掉，原因 ``unsupported_orchestration_semantics``；同一个库里的分层任务不受
   这道门影响；停掉的任务门面照样能读。
 
+HTN 补齐阶段 A′：两个入口与遗留任务都在产品同形部署上（:func:`product_world`）；"遗留的平面任务行"
+是把一条经产品建出的任务的已存字节改写成旧模式（裁决①b1：库里的旧数据/字节变化），另一条分层任务
+照常开始规划（规划器调用被扣住）。
+
 **改坏检验**：
 * 去掉主循环里那道门（``_cycle_inner`` 开头的 ``_refuse_unsupported_contract`` 循环）
   → 第二条失败（平面任务不被停）；
@@ -22,16 +26,13 @@ import dataclasses
 import json
 
 import pytest
+from h1i_seed import run_until
 
-from agent_orchestrator.api.facade import FacadeError, MissionControlV1
+from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts import ContractError, MissionStatus
-from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.orchestrator.commit_service import CommitRejected, MissionSpec
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-
-TENANT = "tenant-flat-removed"
+from agent_orchestrator.testing.product_world import TENANT, product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
 def _spec(key: str, **extra) -> MissionSpec:
@@ -50,14 +51,14 @@ def test_flat_mode_is_refused_at_every_door_and_nothing_is_written(tmp_path) -> 
         _spec("flat-spec", orchestration_semantics_version="legacy")
 
     async def case():
-        async with Orchestrator(OrchestratorConfig(evidence_root=tmp_path), RoleScriptedProvider({})) as loop:
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
+            loop, control = world.loop, world.control
             before = _missions(loop)
             # A spec that skipped ``__post_init__`` is refused again before any write.
             sneaked = _spec("flat-sneaked")
             object.__setattr__(sneaked, "orchestration_semantics_version", "legacy")
             with pytest.raises(CommitRejected, match="flat orchestration mode was removed"):
                 loop.commit.create_mission(sneaked)
-            control = MissionControlV1(loop, tenant_id=TENANT, principal=Principal("person"))
             with pytest.raises(FacadeError) as refused:
                 control.create({
                     "goal": "写一份说明", "success_criteria": ["说明写清楚"],
@@ -90,37 +91,43 @@ def _make_flat(loop, mission_id: str) -> None:
 
 def test_a_flat_mission_left_in_the_library_is_stopped_by_name(tmp_path) -> None:
     async def case():
-        provider = RoleScriptedProvider({})
-        async with Orchestrator(OrchestratorConfig(evidence_root=tmp_path), provider) as loop:
-            flat, _ = loop.commit.create_mission(_spec("left-over"))
-            layered, _ = loop.commit.create_mission(_spec("layered"))
-            _make_flat(loop, flat.id)
-            assert loop.store.get_mission(flat.id).final_report["orchestration_semantics_version"] == "legacy"
+        provider = LayeredScriptedProvider()
+        provider.held.add("planner")
+        try:
+            async with product_world(tmp_path / "root", provider) as world:
+                loop, control = world.loop, world.control
+                request = {"goal": "写一份说明", "success_criteria": ["file:NOTES.md"]}
+                flat = world.create({**request, "idempotency_key": "left-over"})["mission_id"]
+                layered = world.create({**request, "idempotency_key": "layered"})["mission_id"]
+                _make_flat(loop, flat)
+                assert loop.store.get_mission(flat).final_report["orchestration_semantics_version"] == "legacy"
 
-            await loop._cycle()
+                await world.deployment.between_cycles(auto=True)
+                await loop._cycle()
 
-            stopped = loop.store.get_mission(flat.id)
-            assert stopped.status is MissionStatus.FAILED
-            failed = [e for e in loop.store.list_events(flat.id) if e.type == "MissionFailed"]
-            assert len(failed) == 1
-            assert "unsupported_orchestration_semantics" in json.dumps(failed[0].payload)
-            # The layered Mission is not touched by the gate (no assembly is installed
-            # here, so it waits for one — visibly — and is not failed).
-            other = loop.store.get_mission(layered.id)
-            assert other.status is not MissionStatus.FAILED
-            assert not [e for e in loop.store.list_events(layered.id) if e.type == "MissionFailed"]
-            assert provider.calls == 0
+                stopped = loop.store.get_mission(flat)
+                assert stopped.status is MissionStatus.FAILED
+                failed = [e for e in loop.store.list_events(flat) if e.type == "MissionFailed"]
+                assert len(failed) == 1
+                assert "unsupported_orchestration_semantics" in json.dumps(failed[0].payload)
+                # The layered Mission is not touched by the gate: it plans on.
+                await run_until(world, provider.entered.is_set)
+                other = loop.store.get_mission(layered)
+                assert other.status is not MissionStatus.FAILED
+                assert not [e for e in loop.store.list_events(layered) if e.type == "MissionFailed"]
+                assert "planner" in provider.asked
 
-            # A second round does not stop it twice.
-            await loop._cycle()
-            assert len([e for e in loop.store.list_events(flat.id) if e.type == "MissionFailed"]) == 1
+                # A second round does not stop it twice.
+                await loop._cycle()
+                assert len([e for e in loop.store.list_events(flat) if e.type == "MissionFailed"]) == 1
 
-            control = MissionControlV1(loop, tenant_id=TENANT, principal=Principal("person"))
-            listed = {item["mission_id"]: item for item in control.missions()}
-            assert listed[flat.id]["status"] == "FAILED"
-            snapshot = control.snapshot(flat.id)
-            assert snapshot["mission_id"] == flat.id
-            assert "FAILED" in json.dumps(snapshot["snapshot"])
+                listed = {item["mission_id"]: item for item in control.missions()}
+                assert listed[flat]["status"] == "FAILED"
+                snapshot = control.snapshot(flat)
+                assert snapshot["mission_id"] == flat
+                assert "FAILED" in json.dumps(snapshot["snapshot"])
+        finally:
+            provider.release.set()
 
     asyncio.run(case())
 

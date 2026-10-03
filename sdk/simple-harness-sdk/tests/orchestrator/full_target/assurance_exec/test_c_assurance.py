@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """C group (consistency / concurrency / recovery / migration): plan cases C01–C06.
 
-C01 and C02 run in-process over the real Store/Commit (C01 on the assured
-fixture runtime with a scripted reviewer: original critic entry, official
-record, current ACCEPT certificate, original acceptance writer). C03–C05 run the
-item 6/7/8 seams (real Orchestrator + install_assurance, real AssuranceTick) as
-child processes and assert on their reports; C04 adds the cursor atomicity
-counter-case in-process. C06 migrates a real pre-Assurance library. No model, no
-Host (C07 is the Host/UI half, see test_c07_host_api.py).
+2026-10-03（HTN 补齐阶段 A′）迁到产品同形世界：任务经产品那一份部署组装建出（保证通道、执行图
+建任务时绑定、原生执行池），模型回复是脚本。C01 在主循环真跑到内容验收时注入外界的写入故障
+（数据库写失败、进程在验收事务里崩溃）；C02 / C04 在一个刚建好的任务上直接读写库，"另一个写入方"
+是同一个库的另一条连接，推动任务事件头的是真实的产品事件（人在任务上留言）。C03–C05 跑迁到产品
+同形世界的第 6/7/8 项接缝脚本并断言它们的报告。C06 迁移一个真实的旧库。不用 Host（C07 见
+test_c07_host_api.py）。
 """
 
 from __future__ import annotations
@@ -26,20 +25,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from _deploy import PRINCIPAL, deployment, emit_notification, spec
+from _review_world import ReviewScript, reviewed_mission
 
 from agent_orchestrator.assurance.certificates import UseCertificate
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.evidence import ReadItem
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
-from agent_orchestrator.contracts.evidence_state import ObservationRecord, QueryCompleteness
 from agent_orchestrator.contracts.models import Budget, Event, Mission, MissionStatus
-from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
+from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.storage import schema
-from agent_orchestrator.storage.assurance_reads import read_epochs_locked, require_epochs_locked
+from agent_orchestrator.storage.assurance_reads import read_epochs_locked
 from agent_orchestrator.storage.assurance_store import AssuranceStore
 from agent_orchestrator.storage.assurance_work import AssuranceWorkStore, WorkTarget
-from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import (
     InjectedCrash,
     SchemaIncompatible,
@@ -47,9 +44,12 @@ from agent_orchestrator.storage.store import (
     StoreConflict,
     StoreError,
 )
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import product_world
 
 SDK_ROOT = Path(__file__).resolve().parents[4]
 SEAMS = SDK_ROOT / "scripts/assurance_seams"
+PRINCIPAL = Principal("exec-current-user")
 HASH = "a" * 64
 NOW = 1_700_000_000_000
 
@@ -68,90 +68,58 @@ def _seam(name):
 
 
 # --------------------------------------------------------------------------- C01
-def test_acceptance_atomic_faults(tmp_path):
-    sys.path.insert(0, str(SEAMS))
-    from _assured_fixture import AssuredRuntime, count  # noqa: E402  (real fixture runtime)
+@pytest.mark.parametrize("fault", ("certificate", "event", "crash"))
+def test_acceptance_atomic_faults(tmp_path, fault):
+    """内容验收那一次写入里，许可证写失败 / "已验收"事件写失败 / 进程在验收事务里崩溃：验收、
+    贡献、许可证、回执、事件一个都不留（现状是错误逃出本轮主循环，见迁移裁决 B4）；故障排除后照常
+    验收一次，不再调审阅模型。"""
 
-    accept_reply = {"schema_version": 2, "verdict": "ACCEPT", "assessments": [
-        {"criterion_id": "criterion-report", "verdict": "PASS", "evidence_ids": [], "reason": "fixture", "limitations": []}],
-        "findings": []}
+    provider = ReviewScript()
 
     async def body():
-        async with AssuredRuntime(tmp_path, [accept_reply]) as rt:
-            store, mission_id = rt.store, rt.mission.id
-            verdict, record = await rt.run_critic()
-            assert verdict.passed
-            rt.record_critic_layer(record)
-            rt.settle_fixture_worker()
-            certificates = "SELECT COUNT(*) FROM assurance_use_certificates"
-            acceptances = "SELECT COUNT(*) FROM acceptances WHERE mission_id=?"
-            receipts = "SELECT COUNT(*) FROM commit_receipts WHERE kind='AssuranceUseCertified'"
-            usage_rows = "SELECT COUNT(*) FROM imported_usage"
-            usage_before = count(store, usage_rows) if store.has_table("imported_usage") else None
+        async with reviewed_mission(tmp_path, provider) as case:
+            store, mission_id = case.store, case.mission_id
+            connection = store.connection
 
-            def untouched():
-                assert count(store, certificates) == 0 and count(store, acceptances, mission_id) == 0
-                assert count(store, receipts) == 0
-                assert store.count_events(mission_id, "AssuranceUseCertified") == 0
-                assert store.count_events(mission_id, "AcceptanceCommitted") == 0
-                assert count(store, "SELECT COUNT(*) FROM operation_acceptance_scopes WHERE mission_id=?", mission_id) == 0
-                assert not store.connection.in_transaction
+            def counts():
+                return (_count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", mission_id),
+                        _count(store, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=? "
+                                      "AND consumer_kind='ACCEPTANCE'", mission_id),
+                        _count(store, "SELECT COUNT(*) FROM operation_acceptance_scopes WHERE mission_id=?", mission_id),
+                        len(case.events("AcceptanceCommitted")))
 
-            # Cut 1: the certificate write itself fails inside the acceptance UoW.
-            with patch.object(AssuranceStore, "record_certificate", side_effect=OSError("cut: certificate")):
-                with pytest.raises(OSError):
-                    rt.accept_now()
-            untouched()
-            # Cut 2: the receipt insert fails after the certificate row was written.
-            with patch.object(Store, "insert_receipt", side_effect=OSError("cut: receipt")):
-                with pytest.raises(OSError):
-                    rt.accept_now()
-            untouched()
-            # Cut 3: the original event emit for the acceptance fails.
-            original_emit = rt.commit._emit
-
-            def failing_emit(kind, *args, **kwargs):
-                if kind == "AcceptanceCommitted":
-                    raise OSError("cut: event")
-                return original_emit(kind, *args, **kwargs)
-
-            with patch.object(rt.commit, "_emit", failing_emit):
-                with pytest.raises(OSError):
-                    rt.accept_now()
-            untouched()
-            # Cut 4: the process "dies" at the original accept fault point (inside the accept transaction).
-            store.arm("after_accept_before_supersede")
-            with pytest.raises(InjectedCrash):
-                rt.accept_now()
-            assert store.fired == ["after_accept_before_supersede"]
-            untouched()
-            # The real path commits Acceptance + Contribution + certificate + receipt + event together.
-            completed = rt.accept_now()
-            assert completed.accepted_result_id == rt.stored.envelope.id
-            assert count(store, certificates) == 1 and count(store, acceptances, mission_id) == 1
-            assert count(store, receipts) == 1 and store.count_events(mission_id, "AssuranceUseCertified") == 1
-            assert store.count_events(mission_id, "AcceptanceCommitted") == 1
-            # Replay of the same command: the same receipt, no second certificate, event or charge.
-            replay = rt.accept_now()
-            assert getattr(replay, "replayed", True) and replay.accepted_result_id == completed.accepted_result_id
-            assert count(store, certificates) == 1 and count(store, receipts) == 1
-            assert store.count_events(mission_id, "AssuranceUseCertified") == 1
-            assert store.count_events(mission_id, "AcceptanceCommitted") == 1
-            rt.settle_fixture_worker()  # the same usage fact again is not a second charge
-            if usage_before is not None:
-                assert count(store, usage_rows) == usage_before
-            assert rt.provider.calls == 1
+            if fault == "certificate":
+                connection.execute("CREATE TRIGGER cut_c01 BEFORE INSERT ON assurance_use_certificates "
+                                   "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+                expected = sqlite3.IntegrityError
+            elif fault == "event":
+                connection.execute("CREATE TRIGGER cut_c01 BEFORE INSERT ON events WHEN NEW.type='AcceptanceCommitted' "
+                                   "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
+                expected = sqlite3.IntegrityError
+            else:
+                store.arm("after_accept_before_supersede")
+                expected = InjectedCrash
+            with pytest.raises(expected):
+                await case.run_until(lambda: case.status() == "COMPLETED", timeout=30)
+            assert counts() == (0, 0, 0, 0) and not connection.in_transaction
+            if fault == "crash":
+                assert store.fired == ["after_accept_before_supersede"]
+            else:
+                connection.execute("DROP TRIGGER cut_c01")
+            mission = await case.settle()
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
+            assert counts() == (1, 1, 1, 1)
+            assert provider.review_calls["TASK_CONTENT"] == 1  # 重做验收不重新审阅
 
     asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- C02
 def test_two_connection_concurrency(tmp_path):
-    async def checks(world, assured):
-        first = world.store
+    async def checks(product, assured):
+        first = product.store
         second = Store.open(first.path)  # an independent connection to the same library
         try:
-            epochs = read_epochs_locked(second.connection, assured.id) if second.connection.in_transaction else None
             with second.read_view() as connection:
                 epochs = read_epochs_locked(connection, assured.id)
             cert = UseCertificate(
@@ -173,7 +141,7 @@ def test_two_connection_concurrency(tmp_path):
             assert raised.value.code == "IMMUTABLE_IDENTITY_CONFLICT"
             assert _count(first, "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", assured.id) == 1
             # Two consumers ingesting the same page: the cursor CAS admits one.
-            emit_notification(world, assured)
+            product.control.comment(assured.id, "看一下进度")
             version = first.connection.execute(
                 "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='REVIEW'",
                 (assured.id,)).fetchone()["row_version"]
@@ -186,19 +154,6 @@ def test_two_connection_concurrency(tmp_path):
                                                   classify=lambda e, c: (target,), now_ms=now)
             assert _count(second, "SELECT COUNT(*) FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'",
                           assured.id) == 1
-            # Revocation racing an acceptance: the counter-source lands on the other
-            # connection while the accept holds its captured epochs -> latest-source guard.
-            with first.read_view() as connection:
-                captured = read_epochs_locked(connection, assured.id)
-                HtnStore(second).insert_observation(assured.id, ObservationRecord(
-                    observation_id="obs-c02-revoke", proposition_key="fixture.revoked#1", polarity=False,
-                    source_ref=TypedRef(kind=TypedRefKind.SOURCE, id="src-c02", revision=1, content_hash=HASH),
-                    observed_at_ms=now, recorded_at_ms=now, coverage=QueryCompleteness.AUTHORITATIVE_WITH_SCOPE,
-                    coverage_scope="scope-c02", query_watermark_ms=now, observer_id="observer-c02"))
-            with first.read_view() as connection:
-                with pytest.raises(AssuranceError) as raised:
-                    require_epochs_locked(connection, assured.id, captured, now_ms=now)
-                assert raised.value.code == "RECHECK_REQUIRED"
             # A held write lock on one connection makes the other wait, then both writes land (no lost update).
             second.connection.execute("BEGIN IMMEDIATE")
             second.connection.execute("INSERT INTO assurance_pending_work(mission_id,consumer,work_key,trigger_event_id,"
@@ -207,11 +162,14 @@ def test_two_connection_concurrency(tmp_path):
                                       "target_fingerprint,'PENDING',1,0,not_before_ms FROM assurance_pending_work "
                                       "WHERE mission_id=? AND consumer='REVIEW'", (assured.id,))
             outcome = {}
+            validity_version = first.connection.execute(
+                "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='VALIDITY'",
+                (assured.id,)).fetchone()["row_version"]
 
             def contended():
                 started = time.monotonic()
                 try:
-                    AssuranceWorkStore(first).ingest(assured.id, "VALIDITY", expected_version=1,
+                    AssuranceWorkStore(first).ingest(assured.id, "VALIDITY", expected_version=validity_version,
                                                      classify=lambda e, c: (target,), now_ms=now)
                     outcome["result"] = "ok"
                 except (StoreError, sqlite3.OperationalError) as error:
@@ -226,50 +184,55 @@ def test_two_connection_concurrency(tmp_path):
             worker.join(timeout=10)
             assert outcome["result"] == "ok" and outcome["waited"] >= 0.25
             rows = second.connection.execute(
-                "SELECT consumer,work_key FROM assurance_pending_work WHERE mission_id=? ORDER BY consumer",
-                (assured.id,)).fetchall()
-            assert [tuple(r) for r in rows] == [("CLOSEOUT", "lock-c02"), ("REVIEW", "review-c02"), ("VALIDITY", "review-c02")]
-            assert world.sent == []  # no side effect left the process
+                "SELECT consumer,work_key FROM assurance_pending_work WHERE mission_id=? AND work_key IN "
+                "('lock-c02','review-c02') ORDER BY consumer", (assured.id,)).fetchall()
+            assert [tuple(r) for r in rows] == [("CLOSEOUT", "lock-c02"), ("REVIEW", "review-c02"),
+                                               ("VALIDITY", "review-c02")]
+            assert product.notices == []  # no side effect left the process
         finally:
             second.close()
 
     async def body():
-        async with deployment(tmp_path) as world:
-            assured, _ = world.commit.create_mission(spec("assured-c02"))
-            await checks(world, assured)
+        async with product_world(tmp_path / "root", RoleScriptedProvider({}), auto=False) as product:
+            created = product.create({"goal": "assured c02", "success_criteria": ["file:NOTES.md"],
+                                      "idempotency_key": "assured-c02"})
+            await checks(product, product.store.get_mission(created["mission_id"]))
 
     asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- C03
 def test_review_cold_resume():
+    """产品同形恢复接缝：内容审阅那一层记下后进程被杀，重启沿用原来那次审阅调用、不再问模型；
+    重启遇到时钟回拨（持久化的高水位比墙钟晚），回拨期间工作入库不认领，追上后恢复且通知只发一次；
+    无业务事件的证书到期在重启时补发、不重复补发。"""
     report = _seam("recovery-seam.py")
-    lease = report["lease_recovery"]
-    assert lease["dead_claim"]["state"] == "RUNNING" and lease["dead_claim"]["owner"] == "crashed-runner"
-    assert lease["after_lease_elapsed"]["state"] == "DONE" and lease["after_lease_elapsed"]["owner"] is None
-    assert lease["after_lease_elapsed"]["tries"] >= lease["dead_claim"]["tries"]
-    assert lease["ordinals"] == [1]  # the committed invocation is reused; no second model call
-    assert report["new_pin"]["provider_calls"] <= lease["provider_calls"] == report["provider_calls"]  # no call after recovery
-    orphan = report["orphan_pin"]
-    assert orphan["before"][0]["state"] == "PREPARING" and orphan["blob_still_present"] is True
-    assert orphan["rolled_back_startup"]["clock_state"] == "ROLLBACK" and orphan["rolled_back_startup"]["pins_released"] == []
-    assert orphan["rolled_back_startup"]["pins_release_deferred"] == [orphan["before"][0]["pin_id"]]
-    assert orphan["startup"]["pins_released"] == [orphan["before"][0]["pin_id"]]
-    states = [pin["state"] for pin in report["new_pin"]["pins"]]
-    assert states[:2] == ["RELEASED", "BOUND"] and set(states[2:]) <= {"BOUND"}  # the orphan, its new identity, later reviews
-    assert report["restart_rollback"]["run2_startup"]["clock_state"] == "ROLLBACK"
-    assert report["restart_rollback"]["work_during_rollback"] and report["clock_rollback"]["after"]["clock_state"] == "STABLE"
+    cold = report["cold_resume"]
+    assert cold["fault"] == "after_layer_pass:attempt" and cold["mission"] == "COMPLETED"
+    assert cold["review_calls_before_crash"]["TASK_CONTENT"] == 1
+    assert cold["review_calls_after_restart"].get("TASK_CONTENT", 0) == 0  # 原来那次调用被沿用
+    assert cold["ordinals_after"] == [1] and cold["official_records"]["TASK_CONTENT"] == 1
+    rollback = report["restart_rollback"]
+    assert rollback["startup"]["clock_state"] == "ROLLBACK"
+    assert rollback["startup"]["clock_generation"] == rollback["first_environment"]["clock_generation"] + 1
+    assert rollback["discontinuity"]["clock_state"] == "ROLLBACK"
+    assert rollback["work_during_rollback"] and all(w["state"] != "RUNNING" for w in rollback["work_during_rollback"])
+    assert rollback["environment_after"]["clock_state"] == "STABLE" and rollback["sent"] == 1
+    expiry = report["eventless_expiry"]
+    assert expiry["startup_emitted"] >= 1 and expiry["expired_observations"] >= 1 and expiry["second_restart_emitted"] == 0
 
 
 # --------------------------------------------------------------------------- C04
 def test_event_cursor_atomicity(tmp_path):
     async def body():
-        async with deployment(tmp_path) as world:
-            assured, _ = world.commit.create_mission(spec("assured-c04"))
-            store = world.store
+        async with product_world(tmp_path / "root", RoleScriptedProvider({}), auto=False) as product:
+            created = product.create({"goal": "assured c04", "success_criteria": ["file:NOTES.md"],
+                                      "idempotency_key": "assured-c04"})
+            assured = product.store.get_mission(created["mission_id"])
+            store = product.store
             work = AssuranceWorkStore(store)
-            emit_notification(world, assured)
-            emit_notification(world, assured)
+            product.control.comment(assured.id, "第一条留言")
+            product.control.comment(assured.id, "第二条留言")
             cursor = store.connection.execute(
                 "SELECT last_event_seq,row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='CLOSEOUT'",
                 (assured.id,)).fetchone()
@@ -296,30 +259,35 @@ def test_event_cursor_atomicity(tmp_path):
                                                  classify=lambda e, c: (), now_ms=int(store.now * 1000))
             assert raised.value.code == "CURSOR_UNINITIALIZED"
     asyncio.run(body())
+    # 产品部署上的四个消费者：启动安装、一个任务跑完、证书到期、通知游标丢了重启后重建且不重发。
     report = _seam("four-consumer-seam.py")
     install = report["production_install"]
-    assert install["idle_rounds"] == 0  # no self-triggering when nothing changed
-    assert install["cursor_rebuild"]["missions"] == 1
-    assert len(install["sent"]) == 1 and report["notify"]["receipt"] is True
+    assert install["idle_rounds"] == 0  # 什么都没变时不自己触发
+    assert install["second_install"] == "ASSURANCE_ALREADY_INSTALLED"
     assert set(install["cursor_seq"]) == {"REVIEW", "VALIDITY", "CLOSEOUT", "NOTIFY"}
-    assert install["lanes"] == {"assured": "ASSURANCE_1_1", "v1_unselected": "COMPLETION_V1"}
+    assert report["run"]["closeout_row"] == "FINALIZED" and report["run"]["notices"] == 1
+    assert report["run"]["method_plan_official"] >= 1 and report["run"]["method_plan_scope"] is None
+    assert report["expiry"]["due_events"] >= 1 and report["expiry"]["expired_observations"] >= report["expiry"]["due_events"]
+    assert report["restart"]["cursor_rebuild"]["missions"] == 1 and len(report["restart"]["cursor_rebuild"]["cursors_rebuilt"]) == 1
+    assert report["restart"]["notices_after_restart"] == 0
 
 
 # --------------------------------------------------------------------------- C05
 def test_closeout_and_notification():
+    """产品主循环真推出 READY：根结论凭当前终审使用证书写下 → 收尾 READY → 唯一定稿写入 → 通知一次；
+    用户取消的那次写入同时请求通知，不走定稿写入。"""
     report = _seam("final-writer-seam.py")
-    assert report["judged"]["mission_status"] == "ACTIVE"  # judge records, never finalizes
-    assert report["judged"]["closeout"]["state"] == "DRAINING"
-    assert {"OPEN_INTENTS", "OPEN_RESERVATIONS"} <= set(report["judged"]["closeout"]["reasons"])
-    assert report["draining"]["open"]["settle_refusal"]
-    contract = report["final_writer_contract"]
-    assert contract["row"]["state"] == "FINALIZED" and contract["mission_status"] == "COMPLETED"
-    assert contract["receipt"]["final_event_type"] == "MissionCompleted"
-    assert contract["refusals"] and contract["post_final"]
-    assert len(contract["sent"]) == 1 and len(contract["notification_requests"]) >= 1
-    install = report["production_install"]
-    assert install["finalizer"] == "assurance_final_writer.finalize_assured_mission"
-    assert len(install["sent"]) == 1 and install["cancel_notice"][0]["final_event_type"] == "MissionCancelled"
+    assert report["root_resolution"]["witness_is_mission_final_use"] is True
+    states = report["closeout"]["states"]
+    assert "ROOT_RESOLUTION_MISSING" in report["closeout"]["not_ready_reasons"]
+    assert states[-2:] == ["READY", "FINALIZED"] and report["closeout"]["row"]["state"] == "FINALIZED"
+    final = report["final_writer"]
+    assert final["mission_status"] == "COMPLETED" and final["sent"] == 1
+    assert [r["final_event_type"] for r in final["notification_requests"]] == ["MissionCompleted"]
+    assert final["refusal_after_finalized"] == "CLOSEOUT_NOT_READY"
+    cancel = report["cancel"]
+    assert cancel["sent"] == 1 and cancel["closeout_row"] is None
+    assert [r["final_event_type"] for r in cancel["notification_requests"]] == ["MissionCancelled"]
 
 
 # --------------------------------------------------------------------------- C06
@@ -378,9 +346,11 @@ def test_real_migration_and_legacy(tmp_path):
     # Migrations 31, 32 and 33 (2026-10-02) drop the candidate-comparison, fragment,
     # conflict, graph-change, system-pool and criterion-assessment tables;
     # every other legacy table keeps its DDL.
+    # Migrations 35 / 36 (2026-10-03) drop the TaskGraph waiting table and the deferred-repair
+    # continuation table with the mechanisms they served.
     dropped = {"selection_candidates", "selection_rounds", "search_bindings", "fragment_validations",
                "conflicts", "graph_changes", "mission_system_tail_pools", "mission_system_tail_tasks",
-               "criterion_assessments"}
+               "criterion_assessments", "taskgraph_requirements", "planning_repair_continuations"}
     for name, ddl in ddl_before.items():
         current = upgraded.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
         if name in dropped:

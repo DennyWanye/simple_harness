@@ -381,21 +381,17 @@ def test_bounded_restartable_evaluation():
 
 
 # =========================================================================== Store-level cases
-# Real Orchestrator + install_assurance (see _deploy.py); no model, no Host.
+# 2026-10-03（HTN 补齐阶段 A′）：任务经产品那一份部署组装建出（保证通道、执行图建任务时绑定），
+# 不跑主循环（确认页没点，任务停在 CREATED），直接读写这一个任务的库；"另一个写入方"是真实的产品
+# 写入（另一个连接上，人在确认页确认完成映射）。原来的对照任务（没选保证通道的分层任务）随
+# "选不选保证通道"删除；手插观察记录的几段（观察表在桌面产品上没有写入方，裁决①b2）并入"前提 /
+# 观测"那条主循环用例，等带观察器的测试世界。
 import asyncio  # noqa: E402
 import json  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
-
-from _deploy import (  # noqa: E402
-    PRINCIPAL,
-    TENANT,
-    deployment,
-    emit_notification,
-    second_connection,
-    spec,
-)
+from types import SimpleNamespace  # noqa: E402
 
 from agent_orchestrator.assurance.certificates import (  # noqa: E402
     UseCertificate,
@@ -404,11 +400,11 @@ from agent_orchestrator.assurance.certificates import (  # noqa: E402
 )
 from agent_orchestrator.assurance.evidence import ReadItem  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import TemporalUse  # noqa: E402
+from agent_orchestrator.governance.permissions import Principal  # noqa: E402
 from agent_orchestrator.orchestrator.assurance_validity import (  # noqa: E402
     AssuranceValidity,
     _snapshot_sources,  # noqa: E402
 )
-from agent_orchestrator.orchestrator.commit_service import MissionSpec  # noqa: E402
 from agent_orchestrator.storage.assurance_reads import (  # noqa: E402
     AssuranceReader,
     read_complete_evidence_snapshot,
@@ -417,22 +413,25 @@ from agent_orchestrator.storage.assurance_reads import (  # noqa: E402
 )
 from agent_orchestrator.storage.assurance_store import AssuranceStore  # noqa: E402
 from agent_orchestrator.storage.assurance_work import AssuranceWorkStore, WorkTarget  # noqa: E402
-from agent_orchestrator.storage.store import StoreConflict  # noqa: E402
+from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
+from agent_orchestrator.storage.store import Store, StoreConflict  # noqa: E402
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
+from agent_orchestrator.testing.product_world import TENANT, product_world  # noqa: E402
 
 SDK_ROOT = Path(__file__).resolve().parents[4]
+PRINCIPAL = Principal("exec-current-user")
 
 
 def _run(root, checks):
     async def body():
-        async with deployment(root) as world:
-            assured, _ = world.commit.create_mission(spec("assured-v"))
-            # 删旧平面模式：没选保证通道的分层任务（完成要求 v1 通道）当"不走保证通道"的对照。
-            legacy, _ = world.commit.create_mission(MissionSpec(
-                goal="v1 unselected", success_criteria=("c",), tenant_id=TENANT, idempotency_key="legacy-v",
-                orchestration_semantics_version="hierarchical", planning_protocol_version="planning-decision-v1"))
-            assert AssuranceStore(world.store).lane(assured.id) == "ASSURANCE_1_1"
-            assert AssuranceStore(world.store).lane(legacy.id) != "ASSURANCE_1_1"
-            await checks(world, assured, legacy)
+        async with product_world(root / "root", RoleScriptedProvider({}), auto=False) as product:
+            created = product.create({"goal": "assured v", "success_criteria": ["file:NOTES.md"],
+                                      "idempotency_key": "assured-v"})
+            assured = product.store.get_mission(created["mission_id"])
+            assert AssuranceStore(product.store).lane(assured.id) == "ASSURANCE_1_1"
+            world = SimpleNamespace(store=product.store, commit=product.loop.commit, installed=product.deployment.assurance,
+                                    control=product.control, product=product)
+            await checks(world, assured)
     asyncio.run(body())
 
 
@@ -441,17 +440,27 @@ def _epochs(world, mission_id):
         return read_epochs_locked(connection, mission_id)
 
 
-def _insert_observation(connection, mission_id, observation_id, *, polarity=0, scope="scope-v"):
-    record = observation(observation_id, key_of(signature("pred.external")), bool(polarity),
-                         authoritative=True, source="src-external", scope=scope).record
-    connection.execute(
-        "INSERT INTO observations(observation_id,mission_id,proposition_key,polarity,scope_id,source_kind,"
-        "source_id,coverage,observer_id,observed_at_ms,recorded_at_ms,query_watermark_ms,valid_until_ms,"
-        "observation_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (observation_id, mission_id, record.proposition_key, int(polarity), scope, str(record.source_ref.kind),
-         record.source_ref.id, str(record.coverage), record.observer_id, record.observed_at_ms,
-         record.recorded_at_ms, record.query_watermark_ms, record.valid_until_ms,
-         json.dumps(record.to_json(), sort_keys=True, separators=(",", ":")), 1.0))
+def _confirm_on_another_connection(world, mission_id):
+    """另一个写入方：同一个库的另一条连接上，人在确认页确认了完成映射（真实的产品写入，碰到
+    保证通道的有效性屏障）。"""
+
+    from agent_orchestrator.api.operation_completion import OperationCompletionApi
+    from agent_orchestrator.orchestrator.commit_service import CommitService
+
+    page = world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
+    ref = page["requirements_ref"]
+    command = {"mission_id": mission_id, "command_id": "confirm-on-another-connection",
+               "expected_requirements_ref": ref,
+               "proposal": {"schema_version": 1, "mission_id": mission_id,
+                            "requirements_ref": {key: ref[key] for key in ("id", "revision", "content_hash")},
+                            "mode": "CONTENT_ONLY", "content_criterion_ids": [c["id"] for c in page["criteria"]],
+                            "effects": []}}
+    other = Store.open(world.store.path)
+    try:
+        OperationCompletionApi(CommitService(other), tenant_id=TENANT,
+                               principal=world.product.deployment.principal).approve(command)
+    finally:
+        other.close()
 
 
 def _certificate(epochs, **overrides):
@@ -491,7 +500,7 @@ def _refused(call, code):
 
 # --------------------------------------------------------------------------- V06
 def test_complete_collection_not_topk(tmp_path):
-    async def checks(world, assured, legacy):
+    async def checks(world, assured):
         reader = AssuranceReader(world.store, tenant_id=TENANT, mission_id=assured.id)
         complete = read_complete_evidence_snapshot(reader, scope_id="scope-v")
         kinds = {json.loads(read.query_key)["query_kind"] for read in complete}
@@ -504,8 +513,7 @@ def test_complete_collection_not_topk(tmp_path):
             assert not any(row in item.fingerprint for row in read.rows)
         observations, justifications = _snapshot_sources(complete)
         assert observations == () and justifications == ()
-        # Hidden controlled rows on a later page: a bounded read refuses to call
-        # itself complete; it never returns a top-K subset as COMPLETE.
+        # A bounded read refuses to call itself complete; it never returns a top-K subset as COMPLETE.
         _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_rows=1),
                  "EVIDENCE_EVALUATION_INCOMPLETE")
         _refused(lambda: read_complete_evidence_snapshot(reader, scope_id="scope-v", maximum_bytes=64),
@@ -515,15 +523,10 @@ def test_complete_collection_not_topk(tmp_path):
         # A snapshot missing one of the three source sets is not evaluable.
         partial = tuple(read for read in complete if json.loads(read.query_key)["query_kind"] != "support_members")
         _refused(lambda: _snapshot_sources(partial), "EVIDENCE_EVALUATION_INCOMPLETE")
-        # A receipt import that never completed (UNKNOWN grade) contributes no anchor: V14 covers the evaluator side.
-        with second_connection(world.store) as other:
-            _insert_observation(other, assured.id, "obs-later-page")
+        # Another writer's real change moves the mission epoch and the snapshot's witness.
+        _confirm_on_another_connection(world, assured.id)
         again = read_complete_evidence_snapshot(reader, scope_id="scope-v")
-        observations, _ = _snapshot_sources(again)
-        assert [row.record.observation_id for row in observations] == ["obs-later-page"]
         assert again[0].epochs.mission == complete[0].epochs.mission + 1
-        assert next(r for r in again if json.loads(r.query_key)["query_kind"] == "observations").read_item != \
-            next(r for r in complete if json.loads(r.query_key)["query_kind"] == "observations").read_item
 
     _run(tmp_path, checks)
 
@@ -536,14 +539,16 @@ def test_snapshot_reads_a_whole_request_manifest_row_over_256kb(tmp_path):
 
     from agent_orchestrator.assurance.codec import MAX_BYTES, canonical, fingerprint
 
-    async def checks(world, assured, legacy):
+    async def checks(world, assured):
         body = {"messages": [{"role": "tool", "name": f"t{i}", "content": f"line {i}"} for i in range(4200)]}
         row = {"manifest_hash": fingerprint(body), "origin_mission_id": assured.id,
                "manifest_json": canonical(body), "created_at": 1.0}
         assert len(canonical(row, limit=8 * 1024 * 1024).encode()) > MAX_BYTES  # over the old cap as a row
-        world.store.connection.execute(
-            "INSERT INTO input_manifests(manifest_hash, origin_mission_id, manifest_json, created_at) VALUES (?,?,?,?)",
-            (row["manifest_hash"], row["origin_mission_id"], row["manifest_json"], row["created_at"]))
+        # 产品写入口记下这份很大的输入清单（任务的根任务名下）。
+        from agent_orchestrator.testing.product_world import USER_GOAL_NAMES
+
+        row["manifest_hash"] = HtnStore(world.store).insert_input_manifest(
+            assured.id, USER_GOAL_NAMES.task_prefix + assured.id, body)
         reader = AssuranceReader(world.store, tenant_id=TENANT, mission_id=assured.id)
         complete = read_complete_evidence_snapshot(reader, scope_id="scope-v")
         manifests = next(r for r in complete if json.loads(r.query_key)["query_kind"] == "input_manifests")
@@ -557,43 +562,26 @@ def test_snapshot_reads_a_whole_request_manifest_row_over_256kb(tmp_path):
 
 
 # --------------------------------------------------------------------------- V07
-def test_insert_counterevidence_barrier(tmp_path):
-    async def checks(world, assured, legacy):
+def test_a_concurrent_source_change_is_an_insert_barrier(tmp_path):
+    """另一个连接上的真实产品写入（确认完成映射）挪动保证通道纪元、记一条证据变化事件；按旧纪元
+    拿到的证明在最后一道锁里被拒，按新纪元的照常通过。原来"反证观察"的那一半等带观察器的测试世界。"""
+
+    async def checks(world, assured):
         captured = _epochs(world, assured.id)
         events_before = [e.type for e in world.store.list_events(assured.id)]
-        legacy_events = len(world.store.list_events(legacy.id))
-        with second_connection(world.store) as other:
-            # Another writer inserts a negative observation for the assured Mission.
-            other.execute("BEGIN IMMEDIATE")
-            _insert_observation(other, assured.id, "obs-counter")
-            other.execute("COMMIT")
-            # …and, on an unassured Mission, the same insert moves no Assurance epoch.
-            other.execute("BEGIN IMMEDIATE")
-            other.execute("INSERT INTO validity_epochs(scope_id,mission_id,epoch,bumped_by,updated_at) "
-                          "SELECT 'assurance:mission',?,1,'fixture',1.0 WHERE NOT EXISTS("
-                          "SELECT 1 FROM validity_epochs WHERE mission_id=? AND scope_id='assurance:mission')",
-                          (legacy.id, legacy.id))
-            _insert_observation(other, legacy.id, "obs-legacy")
-            other.execute("COMMIT")
+        _confirm_on_another_connection(world, assured.id)
         current = _epochs(world, assured.id)
         assert current.mission == captured.mission + 1 and current.environment == captured.environment
         changed = [e for e in world.store.list_events(assured.id) if e.type == "AssuranceEvidenceChanged"]
         assert changed and changed[-1].payload["scope"] == "MISSION" and changed[-1].payload["epoch"] == current.mission
-        assert changed[-1].payload["source_table"] == "observations"
-        assert len(events_before) + 1 == len(world.store.list_events(assured.id))
-        assert len(world.store.list_events(legacy.id)) == legacy_events  # barrier is lane-scoped
-        # The old proof (captured epochs) is refused at the final lock, whatever ref it pinned.
+        assert changed[-1].payload["source_table"] == "operation_completion_specs"
+        assert len(world.store.list_events(assured.id)) > len(events_before)
         with world.store.read_view() as connection:
             _refused(lambda: require_epochs_locked(connection, assured.id, captured, now_ms=NOW), "RECHECK_REQUIRED")
             require_epochs_locked(connection, assured.id, current, now_ms=int(world.store.now * 1000) + 1)
         old = _certificate((captured.mission, captured.environment, captured.clock_generation))
         _refused(lambda: _bind(old, epochs=(current.mission, current.environment, current.clock_generation)),
                  "RECHECK_REQUIRED")
-        # The guard reads the *current* complete set, which now contains the counter-observation.
-        reader = AssuranceReader(world.store, tenant_id=TENANT, mission_id=assured.id)
-        observations, _ = _snapshot_sources(read_complete_evidence_snapshot(reader, scope_id="scope-v"))
-        assert [(row.record.observation_id, row.record.polarity) for row in observations] == [("obs-counter", False)]
-        assert observations[0].record.is_authoritative_negative
 
     _run(tmp_path, checks)
 
@@ -638,28 +626,24 @@ def test_authority_and_expiry():
 
 # --------------------------------------------------------------------------- V09
 def test_all_consumers_share_validity(tmp_path):
-    async def checks(world, assured, legacy):
+    async def checks(world, assured):
         installed = world.installed
         validity = installed.validity
         # One validity authority per deployment: consumers, factory-side acceptance,
         # root resolution and the read API all resolve the same instance.
         assert world.commit._assurance_validity is validity
-        assert installed.consumers["VALIDITY"].validity is validity if hasattr(installed.consumers["VALIDITY"], "validity") \
-            else True
         assert installed.api._validity is validity
         assert getattr(installed.review, "validity", validity) is validity
         _refused(lambda: AssuranceValidity(world.commit, tenant_id=TENANT, principal_id=PRINCIPAL.principal_id,
                                            cas=validity.cas, check_adapter=None, authority=validity.authority),
                  "ASSURANCE_VALIDITY_ALREADY_BOUND")
         # A stored summary cannot stand in for the current use: the read verb reports
-        # NOT_APPLICABLE/UNAVAILABLE for criteria without a certificate, and the use
-        # check is diagnostic only.
+        # NOT_APPLICABLE for criteria without a certificate.
         page = installed.api.snapshot({"schema_version": 1, "request_id": "v09", "mission_id": assured.id,
                                        "view": "CURRENT", "at_event_seq": None, "cursor": None, "limit": 100})
         assert {item["current_use"] for item in page["items"] if item["kind"] == "CRITERION"} == {"NOT_APPLICABLE"}
         assert world.store.connection.execute(
             "SELECT COUNT(*) FROM assurance_use_certificates WHERE mission_id=?", (assured.id,)).fetchone()[0] == 0
-        # No consumer can lock a use outside a Store transaction or for another lane.
         _refused(lambda: validity.require_current_locked(None, now_ms=NOW), "READ_TRANSACTION_REQUIRED")
         assert validity.candidate_for(assured.id, "no-such-record") is None
 
@@ -688,13 +672,10 @@ def test_read_certificate_context():
 
 # --------------------------------------------------------------------------- V11
 def test_invalidation_racing_cache(tmp_path):
-    async def checks(world, assured, legacy):
+    async def checks(world, assured):
         seven = _epochs(world, assured.id)
         stale_projection = _certificate((seven.mission, seven.environment, seven.clock_generation))
-        with second_connection(world.store) as other:  # epoch 8 lands while "epoch 7" is being computed
-            other.execute("BEGIN IMMEDIATE")
-            _insert_observation(other, assured.id, "obs-race")
-            other.execute("COMMIT")
+        _confirm_on_another_connection(world, assured.id)  # epoch 8 lands while "epoch 7" is being computed
         eight = _epochs(world, assured.id)
         assert eight.mission == seven.mission + 1
         with world.store.read_view() as connection:
@@ -709,7 +690,7 @@ def test_invalidation_racing_cache(tmp_path):
         cursors = world.store.connection.execute(
             "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (assured.id,)).fetchall()
         assert cursors and all(row["last_event_seq"] < change.seq for row in cursors)
-        # The historical diagnostic (epoch 7 snapshot) is still readable as history through the read verb.
+        # The historical diagnostic (before the change) is still readable as history through the read verb.
         history = world.installed.api.snapshot({"schema_version": 1, "request_id": "v11", "mission_id": assured.id,
                                                 "view": "HISTORY", "at_event_seq": change.seq - 1, "cursor": None,
                                                 "limit": 100})
@@ -720,31 +701,32 @@ def test_invalidation_racing_cache(tmp_path):
 
 # --------------------------------------------------------------------------- V13
 def test_restore_quarantine_and_current_reauthorization():
-    """The root-gate seam: managed backup/restore to a new quarantine root, current
-    re-authorization through the fixed Principal entry, exact read-only objects,
-    ACL/policy/expiry/clock-rollback refusals, partial database refusal."""
+    """根闸门接缝（产品同形）：根状态文件丢失时主循环不派发；真的离线备份 / 恢复得到新身份、没有活授权；
+    产品部署在恢复目录上起不来（现状）；没有当前读权限时隔离管理面拒绝一切读取；闸门层契约下，
+    别的调用者 / 策略变化 / 过期 / 时钟回拨 / 恢复库缺文件各自按名拒绝。"""
     seam = SDK_ROOT / "scripts/assurance_seams/root-gate-seam.py"
     completed = subprocess.run([sys.executable, str(seam)], capture_output=True, text=True, timeout=600,
                                cwd=str(SDK_ROOT))
     assert completed.returncode == 0, completed.stderr[-4000:]
-    evidence = Path(completed.stdout.strip().splitlines()[-1])
-    report = json.loads(evidence.read_text())
+    summary = json.loads(completed.stdout.strip().splitlines()[-1])
+    report = json.loads(Path(summary["evidence"]).read_text())
     assert report["provider_calls"] == 0
     assert set(report["results"]) == {
-        "worker_connector_and_post_claim_consumer_gate_fixture_callbacks",
+        "missing_root_state_refuses_the_main_loop_before_any_model_call",
         "managed_backup_restore_new_identity_no_live_grant",
-        "original_startup_quarantine_and_receipt_then_file_repair",
-        "exact_artifact_read_without_execution_resume",
-        "fixed_caller_tenant_and_partial_database_refuse",
-        "current_acl_policy_expiry_and_persisted_clock_rollback_refuse",
+        "product_deployment_refuses_to_start_on_a_restored_root",
+        "quarantine_without_current_authority_refuses_every_read",
+        "exact_grant_replay_and_read_without_execution_resume",
+        "other_caller_policy_expiry_and_clock_rollback_refuse",
+        "partial_restored_database_refuses",
     } and all(report["results"].values())
 
 
 # --------------------------------------------------------------------------- V14 (replay half)
 def test_bounded_restartable_replay(tmp_path):
-    async def checks(world, assured, legacy):
+    async def checks(world, assured):
         work = AssuranceWorkStore(world.store)
-        emit_notification(world, assured)
+        world.control.comment(assured.id, "看一下进度")  # a real durable event on the Mission moves its head
         target = WorkTarget("work-v14", HASH)
         cursor = world.store.connection.execute(
             "SELECT row_version FROM assurance_event_cursors WHERE mission_id=? AND consumer='VALIDITY'",
@@ -756,7 +738,8 @@ def test_bounded_restartable_replay(tmp_path):
             "SELECT work_key,target_epoch,row_version,state FROM assurance_pending_work "
             "WHERE mission_id=? AND consumer='VALIDITY'", (assured.id,)).fetchall()
         first = [tuple(row) for row in pending()]
-        assert first == [("work-v14", head, 1, "PENDING")]
+        [(key, epoch, version, state)] = first  # one job however many change events the page carried
+        assert (key, epoch, state) == ("work-v14", head, "PENDING")
         # Replaying the same change events with the stale cursor version is a conflict, not a second job.
         with pytest.raises(StoreConflict):
             work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"],
@@ -765,9 +748,10 @@ def test_bounded_restartable_replay(tmp_path):
                            classify=lambda event, consumer: (target,), now_ms=now) == head
         assert [tuple(row) for row in pending()] == first
         # A later event with the same target fingerprint moves the job, never duplicates it.
-        emit_notification(world, assured)
+        world.control.comment(assured.id, "再看一下")
         later = work.ingest(assured.id, "VALIDITY", expected_version=cursor["row_version"] + 1,
                             classify=lambda event, consumer: (target,), now_ms=now)
-        assert later > head and [tuple(row) for row in pending()] == [("work-v14", later, 2, "PENDING")]
+        assert later > head
+        assert [tuple(row) for row in pending()] == [("work-v14", later, version + 1, "PENDING")]
 
     _run(tmp_path, checks)

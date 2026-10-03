@@ -1,29 +1,48 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P2.3c part 3a: the root ``MISSION_FINAL`` review, cut and re-cut.
+"""根 ``MISSION_FINAL`` 终审：切包、重切、上限与修复请求，在产品同形世界里（HTN 补齐阶段 A′）。
 
-Part 2d's real-model smoke ended on ``ROOT_REVIEW_PACKAGE_MISSING`` — the root
-resolution trigger *reads* three anchors and nothing in ``src`` produced them, so a
-hierarchical Mission could never reach ``COMPLETED``.  This file is the coordinator
-that produces them, and every test here is about one of two properties:
+终审要守的两件事没有变：
 
-* **the system never writes the verdict** (AER I05, §21.5 "wrongly declared complete
-  = 0").  A cut writes no record at all; a record only ever carries what a reviewer
-  said; a reviewer who says ``FAIL`` produces a refused Mission, not a retried one;
-* **a cut is a promise about a world, and worlds move**.  A leaf accepted or revoked
-  after the cut makes the package stale, the old package is superseded *with a
-  record* and a new one is cut — a bounded number of times, after which the Mission
-  takes part 2d's idle-stall path instead of spending a model call every cycle.
+* **系统从不替审阅员写结论**（AER I05）：切包不是下结论；只有审阅员说通过，根结论才形成；
+  审阅员打回，任务不完成，只把一条修复请求交给规划器，不再拿同一个包问第二遍；
+* **包是对当时世界的承诺，世界会动**：包切下之后资料变了、终审调用被打断用完、管理范围被
+  重新打开，旧包都要带记录作废、重切一个新包；同一版要求重切有上限，用完就停下并记一次。
 
-The reviewer is a fixture here: every reply is scripted, so what is under test is the
-coordinator and never a model's wording.  The real model runs in
-``test_real_provider_hierarchical_smoke.py``.
+每条用例都是产品那一份部署组装上的真实主循环（建任务即绑定执行图、保证通道、原生执行池），
+种子见 :mod:`root_review_world`：两条要求、两步并行做法。替身只有模型回复、终审调用挂住或以
+服务商协议错误结束、以及在终审挂着的窗口里外界做的事（用户经门面登记一份资料；范围纪元由它
+唯一的写入函数 ``bump_epoch`` 抬一次——分诊裁决①c，桌面观察与要求修订是它排定的写入方）。
+
+**原 75 条的去向**（分诊表第三节第 7 小节；分诊裁决⑧-3）：
+
+* 旧根审阅员一整套（``request()`` / ``record_review`` / ``record_unreadable`` / ``_child_review`` /
+  旧模板 / ``_ask_root_reviewer`` 非保证段 / ``_collect_root_review``）26 条随删（F）。
+* 第 10 节解析器负向 5 条随 ``parse_critic_verdict`` 删除（裁决⑧-3）。
+* 切包前缺包、绑当时要求版本、贡献集、终审许可、锚点形成结论、逐准则复述、义务终结 7 条
+  删除，由【整圈】``product_world/test_full_circle.py`` 覆盖；其中可观察的部分（要求版本、贡献集、
+  逐准则复述、结论取自终审记录）一并写进下面的 RA/RB 用例。
+* 自证 3 条、生产者自审不能通过、切包后叶子不能再验收、READY 说明文字 3 条删除（前者由
+  ``test_acceptance_rules.py`` 钉住，后两者主循环到不了）。
+* 根准则 3 条（原"改 E"）删除：``root_criteria`` 已随旧根审阅员删掉，产品终审包的准则就是用户
+  逐条写的成功条件（RB 断言了编号与原文）。
+* 包规则 2/3（手插第二个包与切包事件）属裁决①b2"手写产品造不出的合法状态"，删除；自然路径上
+  "重切后旧包作废、新包是活的"由 RC 断言。"要求变了"这条重切通道产品上没有写入方（用户改要求
+  在阶段 E），删除；"没人判的准则记 NOT_RUN / 判过的记 SUCCEEDED"两条钉的是旧
+  ``record_review``，保证通道把逐条判定放在评估表里，终审记录本身每条都是
+  ``ASSURANCE_SEMANTIC_GRADE_IN_BOUND_MANIFEST``，删除（偏离，均无目录覆盖）。
+* "切包时发许可 / 重切在新纪元取新许可"：保证通道不经验收许可见证，根结论由
+  ``AssuranceUseCertified`` 准入；改为断言新包记下的是新纪元（RC）。
+* 修复请求了结范围两条并成 RE；"系统在叶子重新验收后自己了结"那半条产品上要带引用的资料
+  换版本才触发，本轮不写（偏离，建议并进 ``taskgraph_exec/test_source_change_replan.py``）。
+* 保留 E 2 条：默认切包上限、只有被打断的错误码算打断。
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
+import dataclasses
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,753 +51,355 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_htn_end_to_end import (  # noqa: E402
-    ROOT_DUTY,
-    ROOT_TASK,
-    World,
-    _accept_every_child,
-    _accept_leaf,
-    _Artifact,
-    _review_task,
-    _revoke,
-    committed,
+from h1i_seed import root_duty, root_task, run_until  # noqa: E402
+from root_review_world import (  # noqa: E402
+    CRITERIA,
+    GOAL,
+    FinalReviewProvider,
+    events,
+    open_repairs,
+    run_for,
 )
 
-from agent_orchestrator.contracts.evidence_state import Validity, WitnessPurpose  # noqa: E402
-from agent_orchestrator.contracts.models import ContractError  # noqa: E402
+from agent_orchestrator.contracts.evidence_state import Validity  # noqa: E402
 from agent_orchestrator.contracts.resolution import (  # noqa: E402
     CriterionVerdict,
     ReviewAccount,
     ReviewPurpose,
     ReviewVerdict,
 )
-from agent_orchestrator.contracts.semantic_base import TypedRefKind  # noqa: E402
+from agent_orchestrator.contracts.semantic_base import Provenance, TypedRef, TypedRefKind  # noqa: E402
+from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests  # noqa: E402
 from agent_orchestrator.orchestrator.root_review import (  # noqa: E402
     DEFAULT_MAX_CUTS_PER_REVISION,
     ROOT_REVIEW_CUT,
     ROOT_REVIEW_CUT_BUDGET_SPENT,
     ROOT_REVIEW_POLICY,
-    ROOT_REVIEW_REJECTED,
     ROOT_REVIEW_SUPERSEDED,
-    ROOT_REVIEW_UNREADABLE,
-    RootReviewCoordinator,
-    RootReviewStatus,
-    root_criteria,
 )
-from agent_orchestrator.runtime.output_blocks import PortClaim  # noqa: E402
+from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
+from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
+from agent_orchestrator.testing.product_world import product_world  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import retry_same_method  # noqa: E402
 
-NOW_MS = 2_000_000
-#: The root goal type of the shared fixture declares exactly this coverage criterion.
-ROOT_CRITERION = "c-root"
-REVIEWER = "agent-final-reviewer"
-
-
-def coordinator(world: World, **kwargs: Any) -> RootReviewCoordinator:
-    return RootReviewCoordinator(world.store, world.service, world.dispatch, **kwargs)
+DONE = {"COMPLETED", "FAILED", "CANCELLED"}
 
 
-def _seeded(tmp_path, *, key: str) -> World:
-    """A committed plan whose every gating child has been accepted for real."""
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-    world = committed(tmp_path, key=key, demand=True)
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    _accept_every_child(world)
-    return world
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-@pytest.fixture
-def ready(tmp_path) -> World:
-    return _seeded(tmp_path, key="p23c-root-review")
+def _create(world: Any, key: str) -> str:
+    return world.create({"goal": GOAL, "idempotency_key": key, "success_criteria": list(CRITERIA)})["mission_id"]
 
 
-@pytest.fixture
-def cut(ready: World) -> World:
-    coordinator(ready).cut(ready.mission.id, now_ms=NOW_MS)
-    return ready
+def _status(world: Any, mission_id: str) -> str:
+    return str(world.store.get_mission(mission_id).status.value)
 
 
-def review(
-    world: World,
-    *,
-    verdict: ReviewVerdict = ReviewVerdict.ACCEPT,
-    verdicts: dict[str, CriterionVerdict] | None = None,
-    reviewer: str = REVIEWER,
-    turn: str = "turn-final-1",
-    findings: tuple[dict[str, Any], ...] = (),
-):
-    """The scripted reviewer's conclusion, handed in the way the collector hands it."""
-
-    coordination = coordinator(world)
-    package = coordination.live_package(world.mission.id)
-    assert package is not None
-    return coordination.record_review(
-        world.mission.id,
-        package,
-        verdict=verdict,
-        criterion_verdicts=(
-            verdicts if verdicts is not None else {ROOT_CRITERION: CriterionVerdict.PASS}
-        ),
-        reviewer_agent_id=reviewer,
-        reviewer_turn_id=turn,
-        findings=findings,
-    )
+def _coordinator(world: Any, mission_id: str) -> Any:
+    """The deployment's own root-review coordinator for this Mission (reads only here)."""
+    mission = world.loop.store.get_mission(mission_id)
+    return world.loop._root_review(mission, world.loop._new_mode(mission))
 
 
-def offer_root(world: World, **kwargs: Any):
-    from agent_orchestrator.orchestrator.plan_commits import PlanPrincipal
-
-    return world.dispatch.attempt_root_resolution(
-        world.mission.id,
-        principal=PlanPrincipal(
-            "manager-1", "mission", world.semantics.epoch(world.mission.id, "mission")
-        ),
-        command_id=f"{world.mission.id}:root-resolution",
-        **kwargs,
-    )
+def _current_acceptances(semantics: HtnStore, mission_id: str) -> set[str]:
+    return {str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)
+            if item.validity is Validity.CURRENT}
 
 
-def events(world: World, kind: str) -> list[Any]:
-    return [item for item in world.store.list_events(world.mission.id) if item.type == kind]
+def _task_of_output(provider: FinalReviewProvider, path: str) -> str:
+    return str(provider.worker_packages[path]["task_contract"]["task_id"])
 
 
 # ======================================================================================
-# 1. Before the cut: the blocker part 2d's smoke stopped on
+# RA + RB：终审时序、只有审阅员的通过才形成根结论；完成后包的形状
 # ======================================================================================
 
 
-def test_the_root_resolution_has_no_package_to_read_before_the_cut(ready: World) -> None:
-    """The exact refusal the real-model smoke ended three rounds on."""
-
-    inputs = ready.dispatch.root_resolution_inputs(ready.mission.id)
-    assert inputs.reason == "ROOT_REVIEW_PACKAGE_MISSING"
-    assert coordinator(ready).state(ready.mission.id).status is RootReviewStatus.CUT_REQUIRED
-
-
-def test_no_review_is_cut_while_a_gating_child_is_unaccepted(tmp_path) -> None:
-    world = committed(tmp_path, key="p23c-root-early", demand=True)
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    _accept_leaf(world)  # one of the two gating children only
-    state = coordinator(world).state(world.mission.id)
-    assert state.status is RootReviewStatus.NOT_READY
-    with pytest.raises(ContractError, match="NOT_READY"):
-        coordinator(world).cut(world.mission.id, now_ms=NOW_MS)
-    assert (
-        world.semantics.list_review_packages(world.mission.id, purpose=ReviewPurpose.MISSION_FINAL)
-        == ()
-    )
-
-
-def test_the_criteria_of_a_root_review_are_the_root_goals_own(ready: World) -> None:
-    binding = ready.semantics.task_semantics_of(ready.mission.id, ROOT_TASK)
-    assert binding is not None
-    criteria = root_criteria(binding)
-    assert [item.criterion_id for item in criteria] == [ROOT_CRITERION]
-
-
-def test_a_root_criterion_is_judged_and_never_re_executed(ready: World) -> None:
-    """A composition review is a judgement; naming a check id would be a forged receipt."""
-
-    from agent_orchestrator.contracts.resolution import EvaluationKind
-
-    binding = ready.semantics.task_semantics_of(ready.mission.id, ROOT_TASK)
-    assert binding is not None
-    for item in root_criteria(binding):
-        assert item.evaluation_kind is EvaluationKind.SEMANTIC
-        assert item.required_evidence_policy.required_check_ids == ()
-        assert item.required_evidence_policy.independence_required is True
-
-
-def test_a_root_that_owes_nothing_refuses_to_be_reviewed(ready: World) -> None:
-    import dataclasses
-
-    binding = ready.semantics.task_semantics_of(ready.mission.id, ROOT_TASK)
-    assert binding is not None
-    empty = dataclasses.replace(
-        binding,
-        goal_signature=dataclasses.replace(binding.goal_signature, coverage_criteria=()),
-        requirement_refs=(),
-    )
-    with pytest.raises(ContractError, match="nothing for a final review to judge"):
-        root_criteria(empty)
-
-
-# ======================================================================================
-# 2. The cut: an anchor, a licence, and deliberately no conclusion
-# ======================================================================================
-
-
-def test_the_cut_stores_a_mission_final_package_bound_to_the_root(cut: World) -> None:
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    assert package.purpose is ReviewPurpose.MISSION_FINAL
-    assert str(package.binding.subject_ref.id) == ROOT_TASK
-    assert str(package.binding.obligation_id) == ROOT_DUTY
-    assert str(package.binding.policy_ref.id) == ROOT_REVIEW_POLICY
-    assert cut.semantics.get_review_package(str(package.package_id)) == package
-
-
-def test_the_cut_binds_the_requirements_revision_it_published(cut: World) -> None:
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    latest = cut.semantics.latest_requirements_revision(cut.mission.id)
-    assert latest is not None
-    assert int(package.binding.requirements_revision) == int(latest.revision)
-    assert package.requirements_content_hash == latest.content_hash()
-
-
-def test_the_cut_names_every_contributing_acceptance(cut: World) -> None:
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    stored = {
-        str(item.acceptance_id)
-        for item in cut.semantics.list_acceptances(cut.mission.id)
-        if item.validity is Validity.CURRENT
-    }
-    named = {str(item.id) for item in package.child_acceptance_refs}
-    assert named == stored
-    assert named == {str(item.id) for item in package.candidate_refs}
-    assert all(item.kind is TypedRefKind.ACCEPTANCE for item in package.candidate_refs)
-
-
-def test_the_cut_records_the_producers_the_leaves_own_packages_named(cut: World) -> None:
-    """Authorship is read off the frozen leaf anchors, never re-derived here."""
-
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    assert package.producer_agent_ids == ("agent-worker",)
-
-
-def test_the_cut_issues_the_accept_licence_the_root_commit_consumes(cut: World) -> None:
-    witnesses = [
-        item
-        for item in cut.semantics.list_validity_witnesses(cut.mission.id)
-        if item.purpose is WitnessPurpose.ACCEPT
-        and item.consumer_ref.kind is TypedRefKind.TASK
-        and item.consumer_ref.id == ROOT_TASK
-    ]
-    assert len(witnesses) == 1
-    assert witnesses[0].support_revision == len(cut.semantics.list_acceptances(cut.mission.id))
-
-
-def test_the_cut_writes_no_review_record(cut: World) -> None:
-    """The property this whole module exists for: cutting is not concluding (AER I05)."""
-
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    assert cut.semantics.official_review_record(str(package.package_id)) is None
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.AWAITING_REVIEW
-    outcome = offer_root(cut)
-    assert not outcome.committed
-    assert outcome.reason == "ROOT_REVIEW_RECORD_MISSING"
-
-
-def test_the_cut_event_names_everything_it_was_made_over(cut: World) -> None:
-    recorded = events(cut, ROOT_REVIEW_CUT)
-    assert len(recorded) == 1
-    payload = recorded[0].payload
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    assert payload["package_id"] == str(package.package_id)
-    assert payload["review_account"] == str(ReviewAccount.MISSION)
-    assert payload["requirements_revision"] == int(package.binding.requirements_revision)
-    assert sorted(payload["contributions"]) == sorted(
-        str(item.id) for item in package.child_acceptance_refs
-    )
-    assert payload["superseded"] is None
-    assert payload["recut_reasons"] == []
-
-
-def test_the_review_account_is_the_mission_and_never_a_task(cut: World) -> None:
-    """§13 v1.4: a MISSION_FINAL review's cost is the Mission's, not the last leaf's."""
-
-    assert coordinator(cut).account is ReviewAccount.MISSION
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    row = cut.store.connection.execute(
-        "SELECT review_account FROM review_packages WHERE package_id = ?",
-        (str(package.package_id),),
-    ).fetchone()
-    assert row[0] == str(ReviewAccount.MISSION)
-
-
-def test_a_second_cut_over_a_live_and_fresh_package_is_refused(cut: World) -> None:
-    with pytest.raises(ContractError, match="AWAITING_REVIEW"):
-        coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS)
-    assert len(events(cut, ROOT_REVIEW_CUT)) == 1
-
-
-def test_the_reviewer_is_shown_the_criteria_and_the_contributions(cut: World) -> None:
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    assert package is not None
-    request = coordination.request(cut.mission.id, package)
-    assert request.criterion_ids == (ROOT_CRITERION,)
-    assert {item["acceptance_id"] for item in request.contributions} == {
-        str(item.id) for item in package.child_acceptance_refs
-    }
-    payload = request.to_json()
-    assert payload["budget_account"] == str(ReviewAccount.MISSION)
-    # Nothing the reply could steer the system with travels in the context.
-    assert not {"mission_id", "principal", "principal_id", "scope_id", "manager_epoch"} & set(
-        payload
-    )
-
-
-def test_the_reviewer_is_shown_what_each_contribution_delivered(cut: World) -> None:
-    """Part 3a round-3 smoke: every contribution arrived as "no evidence at all".
-
-    The request showed ``acceptance.artifact_refs``, which the accept path does not
-    populate — it records the artifact against the **output port** the plan declared,
-    in ``acceptance_outputs``.  So a correct reviewer answered FAIL on four accepted
-    leaves that had in fact delivered four artifacts.  What a contribution delivered,
-    the goal it was delivered against, and the judgement it was accepted under all
-    travel now, each read off a stored anchor.
-    """
-
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    contributions = coordination.request(cut.mission.id, package).contributions
-    assert contributions
-    delivered = [item for item in contributions if item["accepted_outputs"]]
-    assert delivered, "a leaf that produced an output at a declared port shows it"
-    for item in delivered:
-        for output in item["accepted_outputs"]:
-            assert output["port"] and output["artifact_id"]
-    # Review round 4, P1-2: "at least one" was the half that let the defect survive.
-    # On this very fixture one of the two contributions arrived with *no* evidence at
-    # all, and a correct reviewer can only answer met=false to that — an error
-    # declared the wrong way, at exactly the place §21.5 scores.  **Every**
-    # contribution now either carries evidence or says in so many words that it has
-    # none, and why.
-    for item in contributions:
-        assert item["evidence"]["kind"] in {"accepted_outputs", "artifacts", "none"}
-        if item["accepted_outputs"] or item["artifacts"]:
-            assert item["evidence"]["count"] >= 1
-        else:
-            assert item["evidence"]["kind"] == "none"
-            assert item["evidence"]["reason"], "a blank field is what the reviewer guessed at"
-            assert item["goal_statement"] or item["review"], (
-                "with no delivered artifact there must still be something to judge on"
-            )
-    judged = [item for item in contributions if item["review"]]
-    assert judged, "and the judgement it was accepted under"
-    for item in judged:
-        assert item["review"]["verdict"]
-        assert item["review"]["review_record_id"]
-
-
-def test_the_prompt_names_the_fields_the_request_actually_carries(cut: World) -> None:
-    """P1-2: the third round fixed the payload and left the prompt pointing at ``artifacts``.
-
-    ``artifacts`` reads ``acceptance.artifact_refs``, which the accept path does not
-    populate — so the reviewer was being told to look at the one field that is always
-    empty.  A prompt that names a field the request does not deliver is the same
-    defect as a request that does not deliver the field.
-    """
-
-    from agent_orchestrator.runtime.role_templates import ROOT_REVIEWER
-
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    contributions = coordination.request(cut.mission.id, package).contributions
-    assert contributions
-    for field in ("goal_statement", "accepted_outputs", "review", "evidence"):
-        assert field in contributions[0], field
-        assert field in ROOT_REVIEWER.instructions, field
-    assert "artifacts）" not in ROOT_REVIEWER.instructions, (
-        "the prompt no longer sends the reviewer to the field the accept path leaves empty"
-    )
-
-
-def test_a_judgement_the_library_cannot_produce_is_an_empty_field(cut: World) -> None:
-    """Best effort on the *decoration*: a missing record leaves the field empty.
-
-    The anchors — the package, the acceptances, the criteria — are read strictly; a
-    contribution's quoted judgement is context, and an unreadable one must not make
-    the whole request unbuildable.
-    """
-
-    coordination = coordinator(cut)
-    assert coordination._child_review("") == {}
-    assert coordination._child_review("review-nobody-wrote") == {}
-
-
-# ======================================================================================
-# 3. The conclusion: the reviewer's, and only the reviewer's
-# ======================================================================================
-
-
-def test_a_pass_becomes_an_accept_record_and_makes_the_root_ready(cut: World) -> None:
-    record = review(cut)
-    assert record.verdict is ReviewVerdict.ACCEPT
-    assert cut.semantics.official_review_record(str(record.package_id)) == record
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.READY
-
-
-def test_a_fail_is_recorded_announced_and_resolves_nothing(cut: World) -> None:
-    record = review(
-        cut,
-        verdict=ReviewVerdict.REJECTED,
-        verdicts={ROOT_CRITERION: CriterionVerdict.FAIL},
-        findings=({"severity": "blocker", "detail": "the report never ran the suite"},),
-    )
-    assert record.verdict is ReviewVerdict.REJECTED
-    state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.REVIEW_REJECTED
-    announced = events(cut, ROOT_REVIEW_REJECTED)
-    assert len(announced) == 1
-    assert announced[0].payload["code"] == "root_review_not_accepted"
-    assert announced[0].payload["verdict"] == str(ReviewVerdict.REJECTED)
-    assert announced[0].payload["criteria"] == {ROOT_CRITERION: str(CriterionVerdict.FAIL)}
-    outcome = offer_root(cut)
-    assert not outcome.committed
-    assert cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY) is None
-
-
-def test_a_criterion_the_reviewer_did_not_judge_is_unknown(cut: World) -> None:
-    record = review(cut, verdicts={})
-    assert [item.verdict for item in record.criteria] == [CriterionVerdict.UNKNOWN]
-    # And UNKNOWN does not pass: the success formula answers, not this side.
-    outcome = offer_root(cut)
-    assert not outcome.committed
-    assert outcome.reason == "NOT_ACCEPTABLE"
-
-
-def test_a_second_conclusion_on_one_anchor_is_refused(cut: World) -> None:
-    review(cut)
-    with pytest.raises(ContractError, match="already carries official record"):
-        review(cut, verdict=ReviewVerdict.REJECTED, turn="turn-final-2")
-
-
-def test_replaying_the_same_conclusion_is_not_a_second_one(cut: World) -> None:
-    first = review(cut)
-    again = review(cut)
-    assert again == first
-    assert len(cut.semantics.list_review_records(str(first.package_id))) == 1
-
-
-def test_an_unreadable_reply_writes_no_record_and_says_so(cut: World) -> None:
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    assert package is not None
-    coordination.record_unreadable(
-        cut.mission.id, package, detail="critic verdict unreadable", reviewer_turn_id="turn-x"
-    )
-    assert cut.semantics.official_review_record(str(package.package_id)) is None
-    recorded = events(cut, ROOT_REVIEW_UNREADABLE)
-    assert len(recorded) == 1
-    assert recorded[0].payload["code"] == "root_review_unreadable"
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.AWAITING_REVIEW
-
-
-def test_the_reviewer_named_on_the_record_is_the_one_that_answered(cut: World) -> None:
-    record = review(cut, reviewer="agent-some-other-critic")
-    assert record.reviewer_agent_id == "agent-some-other-critic"
-
-
-def test_a_reviewer_that_produced_the_work_cannot_pass_it(cut: World) -> None:
-    """AER §5.3: the independence floor, enforced by the formula and not by hope."""
-
-    review(cut, reviewer="agent-worker")
-    outcome = offer_root(cut)
-    assert not outcome.committed
-    assert outcome.reason == "NOT_ACCEPTABLE"
-    assert "INDEPENDENT_REVIEW_MISSING" in outcome.detail
-
-
-# ======================================================================================
-# 4. The root resolution, formed from a real cut and a real review
-# ======================================================================================
-
-
-def test_the_root_resolution_is_formed_from_the_coordinators_anchors(cut: World) -> None:
-    """End to end for the blocker: cut → review → ``commit_goal_resolution``."""
-
-    record = review(cut)
-    outcome = offer_root(cut)
-    assert outcome.committed, f"{outcome.reason}: {outcome.detail}"
-    stored = cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY)
-    assert stored is not None
-    assert str(stored.review_receipt_id) == str(record.record_id)
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    assert int(stored.requirements_version) == int(package.binding.requirements_revision)
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.ALREADY_RESOLVED
-
-
-def test_the_resolution_restates_the_reviewers_verdict_criterion_by_criterion(
-    cut: World,
+@pytest.mark.parametrize("verdict", ["ACCEPT", "REJECTED"])
+def test_the_final_review_is_cut_over_every_contribution_and_only_its_pass_resolves_the_root(
+    tmp_path, verdict: str
 ) -> None:
-    review(cut)
-    assert offer_root(cut).committed
-    stored = cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY)
-    assert stored is not None
-    assert {str(item.criterion_id): item.verdict for item in stored.criteria} == {
-        ROOT_CRITERION: CriterionVerdict.PASS
-    }
+    async def case() -> None:
+        provider = FinalReviewProvider(final_verdict=verdict)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = _create(world, f"final-review-{verdict.lower()}")
+            store, semantics = world.store, HtnStore(world.store)
+            try:
+                if verdict == "ACCEPT":
+                    await run_until(world, lambda: _status(world, mission_id) in DONE, timeout=40)
+                else:
+                    await run_until(world, provider.repair_asked.is_set, timeout=40)
+                    await run_for(world, 1.0)  # the reviewer that answered is never asked again
+            finally:
+                provider.close()
 
+            [package] = semantics.list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)
+            [cut] = events(store, mission_id, ROOT_REVIEW_CUT)
+            accepted = events(store, mission_id, "AcceptanceCommitted")
+            record = semantics.official_review_record(str(package.package_id))
+            resolved = events(store, mission_id, "GoalResolutionCommitted")
+            # RA：两步都验收之后才切包；终审只问了一次；结论是审阅员说的那个。
+            assert len(accepted) == 2 and max(item.seq for item in accepted) < cut.seq
+            assert provider.final_calls == 1
+            assert record is not None and record.verdict is ReviewVerdict(verdict)
+            [imported] = [item for item in events(store, mission_id, "AssuranceReviewImported")
+                          if item.payload.get("record_id") == str(record.record_id)]
+            assert cut.seq < imported.seq
 
-def test_the_mission_duty_is_terminal_once_the_root_is_resolved(cut: World) -> None:
-    review(cut)
-    assert offer_root(cut).committed
-    assert cut.dispatch.terminal(cut.mission.id) is True
+            if verdict == "REJECTED":
+                assert _status(world, mission_id) not in DONE
+                assert resolved == [] and semantics.adopted_goal_resolution(mission_id, root_duty(mission_id)) is None
+                # 打回只交给规划器一条修复请求（不替规划器改做法、不重问审阅员）。
+                requested = [item for item in events(store, mission_id, "PlanningRepairRequested")
+                             if str(item.payload["source_key"]).startswith("root-review:")]
+                assert [item.payload["source_key"] for item in requested] == ["root-review:" + str(record.record_id)]
+                assert [row["request_id"] for row in pending_requests(store, mission_id)] == [
+                    requested[0].payload["request_id"]]
+                [asked] = provider.repair_packages
+                assert [entry["request_id"] for entry in open_repairs(asked)] == [requested[0].payload["request_id"]]
+                assert len(events(store, mission_id, ROOT_REVIEW_CUT)) == 1
+                return
 
+            # RA：切包 → 终审记录导入 → 根结论 → 任务完成；根结论取自这份终审记录、逐条复述。
+            [completed] = events(store, mission_id, "MissionCompleted")
+            assert imported.seq < resolved[0].seq < completed.seq
+            resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
+            assert resolution is not None and resolution.verdict is ReviewVerdict.ACCEPT
+            assert str(resolution.review_receipt_id) == str(record.record_id)
+            assert int(resolution.requirements_version) == int(package.binding.requirements_revision)
+            assert {str(item.criterion_id): item.verdict for item in resolution.criteria} == {
+                "c-user-1": CriterionVerdict.PASS, "c-user-2": CriterionVerdict.PASS}
 
-# ======================================================================================
-# 5. Re-cutting: a cut is a promise about a world, and worlds move
-# ======================================================================================
+            # RB：包绑在根上，准则是用户逐条写的成功条件，要求版本是当时在用的那一版。
+            assert package.purpose is ReviewPurpose.MISSION_FINAL
+            assert str(package.binding.subject_ref.id) == root_task(mission_id)
+            assert str(package.binding.obligation_id) == root_duty(mission_id)
+            assert str(package.binding.policy_ref.id) == ROOT_REVIEW_POLICY
+            assert [(str(item.criterion_id), str(item.statement)) for item in package.criteria] == [
+                ("c-user-1", CRITERIA[0]), ("c-user-2", CRITERIA[1])]
+            latest = semantics.latest_requirements_revision(mission_id)
+            assert latest is not None
+            assert int(package.binding.requirements_revision) == int(latest.revision)
+            assert package.requirements_content_hash == latest.content_hash()
+            # 贡献集 = 当前有效的验收；作者 = 真正干活的执行者，终审员不在其中。
+            current = _current_acceptances(semantics, mission_id)
+            assert {str(item.id) for item in package.child_acceptance_refs} == current
+            assert {str(item.id) for item in package.candidate_refs} == current
+            assert all(item.kind is TypedRefKind.ACCEPTANCE for item in package.candidate_refs)
+            workers = {str(attempt.agent_id) for task in store.list_tasks(mission_id)
+                       for attempt in store.list_attempts(task.id) if attempt.agent_id}
+            assert set(package.producer_agent_ids) == workers and len(workers) == 2
+            assert str(record.reviewer_agent_id) not in workers
+            # 费用记在任务账上，不记在哪一步的账上。
+            row = store.connection.execute("SELECT review_account FROM review_packages WHERE package_id = ?",
+                                           (str(package.package_id),)).fetchone()
+            assert row[0] == str(ReviewAccount.MISSION)
+            # 切包事件写明它是对着什么切的；只切了一次（包是活的，没人重切）。
+            assert cut.payload["package_id"] == str(package.package_id)
+            assert cut.payload["review_account"] == str(ReviewAccount.MISSION)
+            assert cut.payload["requirements_revision"] == int(package.binding.requirements_revision)
+            assert sorted(cut.payload["contributions"]) == sorted(current)
+            assert cut.payload["superseded"] is None and cut.payload["recut_reasons"] == []
+            # 贡献集变动是一条单独的重切通道（只读：对着改过的包问"过期了吗"）。
+            coordinator = _coordinator(world, mission_id)
+            assert coordinator.stale_reasons(mission_id, package) == ()
+            later = TypedRef(kind=TypedRefKind.ACCEPTANCE, id="acc-from-later", revision=0,
+                             content_hash="a" * 64, produced_by=Provenance.TOOL)
+            moved = dataclasses.replace(package, child_acceptance_refs=(*package.child_acceptance_refs, later))
+            assert coordinator.stale_reasons(mission_id, moved) == ("CONTRIBUTIONS_MOVED",)
+            # 叶子的审阅包只带这一步自己承接的准则，不带根的全部准则。
+            for path, criterion in (("facts.md", "c-user-1"), ("NOTES.md", "c-user-2")):
+                task_id = _task_of_output(provider, path)
+                [acceptance] = [item for item in semantics.list_acceptances(mission_id) if str(item.task_id) == task_id]
+                leaf_record = semantics.get_review_record(str(acceptance.review_record_id)).record
+                leaf_package = semantics.get_review_package(str(leaf_record.package_id))
+                assert {str(item.criterion_id) for item in leaf_package.criteria} == {criterion}
+                assert {str(item.criterion_id) for item in leaf_record.criteria} == {criterion}
 
-
-# 带协议绑定的世界（生产唯一会出现的世界）里，旧世界用来"让世界在切包之后动起来"的那一招
-# ——对已经验收过的叶子再验收一次，且每次叶子验收都另发一版要求——两半都不存在了：已经有
-# 验收结果的步骤不会再开新的尝试，要求在建任务时就确认、只有用户改它才会变。所以下面这组
-# 重切测试改用带绑定世界里真实会让切包过期的事：管理范围被重新打开（``_churn``，见第 6 节）、
-# 终审两次调用被重启打断用完（``_exhaust_final_review``），以及用户改了要求。
-
-
-def test_a_leaf_cannot_be_accepted_again_after_the_cut_so_the_package_stays_live(
-    cut: World,
-) -> None:
-    """原名 ``test_a_leaf_accepted_after_the_cut_makes_the_package_stale``。
-
-    旧世界里切包之后还能对复查叶子再验收一次，于是贡献集和要求版本都动了，包过期。带协议
-    绑定的世界里这件事在第一步就被拒：这一步已经有验收结果，不会再开新的尝试——结果都
-    记录不上，更到不了验收；切包时的世界没有动，包仍然是活的、没有任何过期理由。
-    """
-
-    from agent_orchestrator.orchestrator.commit_service import CommitRejected
-
-    before = coordinator(cut).live_package(cut.mission.id)
-    assert before is not None
-    with pytest.raises(CommitRejected, match="accepted preparation waits for completion"):
-        _accept_leaf(
-            cut,
-            task_id=_review_task(cut),
-            result_id="result-review-2",
-            artifacts=(_Artifact("artifact-review-2", "out/verdict.json"),),
-            now_ms=NOW_MS + 100_000,
-            port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
-        )
-    assert cut.store.get_result("result-review-2") is None
-    state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.AWAITING_REVIEW
-    assert state.stale_reasons == ()
-    assert coordinator(cut).live_package(cut.mission.id) == before
-
-
-def test_the_stale_package_is_exactly_what_the_root_commit_would_refuse(cut: World) -> None:
-    """The re-cut rule is not a second opinion: it is the commit's own refusal, earlier.
-
-    带协议绑定的世界里，要求一变（只有用户改它才会变），协调器读状态和根结论提交读到的是
-    同一道拒绝、同一句话："要求已经变了"——两边都不会对着旧要求下结论，也什么都不写。
-    """
-
-    from test_htn_end_to_end import _final_criterion
-
-    from agent_orchestrator.contracts.resolution import (
-        CriterionExpr,
-        RequirementsRevision,
-        RequirementsRevisionId,
-    )
-    from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
-
-    review(cut)
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    cut.semantics.insert_requirements_revision(
-        RequirementsRevision(
-            revision_id=RequirementsRevisionId("req-amended"),
-            mission_id=cut.mission.id,
-            revision=int(package.binding.requirements_revision) + 1,
-            criteria=(_final_criterion("c-amended"),),
-            success_expression=CriterionExpr("c-amended"),
-        )
-    )
-    with pytest.raises(OperationCompletionError, match="requirements have changed") as by_state:
-        coordinator(cut).state(cut.mission.id)
-    with pytest.raises(OperationCompletionError, match="requirements have changed") as by_commit:
-        offer_root(cut)
-    assert by_state.value.code == by_commit.value.code
-    assert cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY) is None
-
-
-def test_a_recut_supersedes_the_old_package_with_a_record(cut: World) -> None:
-    first = coordinator(cut).live_package(cut.mission.id)
-    assert first is not None
-    _churn(cut)
-    second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    assert str(second.package_id) != str(first.package_id)
-    retired = events(cut, ROOT_REVIEW_SUPERSEDED)
-    assert [item.payload["package_id"] for item in retired] == [str(first.package_id)]
-    assert "SCOPE_EPOCH_MOVED" in retired[0].payload["reasons"]
-    # The retired anchor is still *stored* — an anchor is never rewritten — it is
-    # simply no longer the one this Mission resolves from.
-    assert cut.semantics.get_review_package(str(first.package_id)) == first
-    assert coordinator(cut).live_package(cut.mission.id) == second
-
-
-def test_the_recut_binds_the_revision_and_the_contributions_in_force(cut: World) -> None:
-    """原名 ``test_the_recut_binds_the_new_revision_and_the_new_contributions``。
-
-    重切绑的是**当时在用的**要求版本和贡献集。旧世界里叶子验收会另发一版要求，所以这里
-    曾断言"版本变大"；带协议绑定的世界里要求只在用户修改时才变，重切绑的就是建任务时确认
-    的那一版（与上一个包同一版），贡献集是当前有效的验收。
-    """
-
-    first = coordinator(cut).live_package(cut.mission.id)
-    assert first is not None
-    _churn(cut)
-    second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    latest = cut.semantics.latest_requirements_revision(cut.mission.id)
-    assert latest is not None
-    assert int(second.binding.requirements_revision) == int(latest.revision)
-    assert int(second.binding.requirements_revision) == int(first.binding.requirements_revision)
-    assert second.requirements_content_hash == latest.content_hash()
-    assert {str(item.id) for item in second.child_acceptance_refs} == {
-        str(item.acceptance_id)
-        for item in cut.semantics.list_acceptances(cut.mission.id)
-        if item.validity is Validity.CURRENT
-    }
-    assert events(cut, ROOT_REVIEW_CUT)[-1].payload["superseded"] == str(first.package_id)
-
-
-def test_the_root_resolves_after_a_recut_and_a_second_review(cut: World) -> None:
-    """The whole repair path, end to end: stale → re-cut → review again → resolved.
-
-    带协议绑定的世界里用的过期原因是"终审两次调用被重启打断用完"（2026-09-29 真机第七局
-    一类）：旧包没有结论，根结论拒绝；重切、再审一次，根结论就从新包形成。
-    """
-
-    first = coordinator(cut).live_package(cut.mission.id)
-    assert first is not None
-    _exhaust_final_review(cut, first, interrupted=True)
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.RECUT_REQUIRED
-    assert offer_root(cut).reason == "ROOT_REVIEW_RECORD_MISSING"
-    coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    review(cut, turn="turn-final-2")
-    outcome = offer_root(cut)
-    assert outcome.committed, f"{outcome.reason}: {outcome.detail}"
-    second = coordinator(cut).live_package(cut.mission.id)
-    assert second is not None
-    assert str(second.package_id) != str(first.package_id)
-    stored = cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY)
-    assert stored is not None
-    assert int(stored.requirements_version) == int(second.binding.requirements_revision)
-    assert str(stored.review_receipt_id) == str(
-        cut.semantics.official_review_record(str(second.package_id)).record_id
-    )
-
-
-def test_a_recut_takes_a_new_licence_in_the_new_epoch(cut: World) -> None:
-    """原名 ``test_a_recut_carries_the_licence_over_the_new_support``。
-
-    许可是对着一份支撑、在一个管理范围周期里取的（§11.5, I19）。带协议绑定的世界里切包
-    之后支撑（验收集）不会再长，旧世界那条"支撑变多 → 新许可"到不了；真实会发生的是范围
-    被重新打开——旧周期的许可全部作废，重切必须在新周期里取一张新的，而不是沿用旧的。
-    """
-
-    before = {
-        item.witness_id
-        for item in cut.semantics.list_validity_witnesses(cut.mission.id)
-        if item.purpose is WitnessPurpose.ACCEPT and item.consumer_ref.id == ROOT_TASK
-    }
-    _churn(cut)
-    coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    licences = [
-        item
-        for item in cut.semantics.list_validity_witnesses(cut.mission.id)
-        if item.purpose is WitnessPurpose.ACCEPT and item.consumer_ref.id == ROOT_TASK
-    ]
-    after = {item.witness_id for item in licences}
-    assert after > before, (
-        "a licence is taken in one scope epoch; a re-opened scope is a new licence, not a "
-        "reuse of the old TRUE (§11.5, I19)"
-    )
-    current = cut.semantics.epoch(cut.mission.id, "mission")
-    assert [int(item.scope_epoch) for item in licences if item.witness_id not in before] == [
-        current
-    ]
+    asyncio.run(case())
 
 
 # ======================================================================================
-# 6. The bound: re-cutting is not free and does not go on for ever
+# RC：世界在切包之后动了 → 旧包带记录作废、重切；新包绑当时在用的要求与贡献
 # ======================================================================================
 
 
-def _churn(world: World) -> None:
-    """Make the live package stale **without** moving the requirements revision.
-
-    Re-opening the mission scope is the case the per-revision bound exists for: the
-    Mission's requirements are exactly where they were, so the next cut re-uses the
-    same revision (``_requirements`` re-publishes only when the content changes) and
-    its budget is the one that runs out.  It is also a real refusal and not a
-    contrivance — every witness taken in the old epoch is spent (§11.5, I19), so a
-    review cut before the bump is a review whose licence no longer holds.
-    """
-
-    before = world.semantics.epoch(world.mission.id, "mission")
-    while world.semantics.epoch(world.mission.id, "mission") == before:
-        # The first bump of a scope that has no row yet writes epoch 0, which is the
-        # value it already had; the loop is what makes this helper actually move it.
-        world.semantics.bump_epoch(world.mission.id, "mission", bumped_by="test-churn")
+CHANNELS = {
+    # 终审挂着时，用户经门面登记了一份资料（终审要看现行资料版本集）。
+    "SOURCES_MOVED": {"hold_final_first": True},
+    # 终审两次调用都以服务商协议错误结束：审阅员没说上话，这不是结论（2026-09-29 真机第七局一类）。
+    "REVIEW_INTERRUPTED": {"interrupt_final": 2},
+    # 终审挂着时，管理范围被重新打开（纪元抬一次）：旧纪元里取的一切作废。
+    "SCOPE_EPOCH_MOVED": {"hold_final_first": True},
+}
 
 
-def test_a_revoked_contribution_takes_the_root_review_back_to_not_ready(cut: World) -> None:
-    """A child nobody accepts any more is not a review to re-cut — it is unfinished work.
+@pytest.mark.parametrize("reason", list(CHANNELS))
+def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_recuts(tmp_path, reason: str) -> None:
+    async def case() -> None:
+        provider = FinalReviewProvider(**CHANNELS[reason])
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = _create(world, f"recut-{reason.lower()}")
+            store, semantics = world.store, HtnStore(world.store)
+            try:
+                if provider.hold_final_first:
+                    await run_until(world, provider.final_held.is_set, timeout=40)
+                    if reason == "SOURCES_MOVED":
+                        world.control.register_source({"mission_id": mission_id, "path": "sources/late.md",
+                                                       "content": "后来补的资料", "kind": "markdown",
+                                                       "idempotency_key": "late-source-1"})
+                    else:
+                        semantics.bump_epoch(mission_id, "mission", bumped_by="test-scope-reopened")
+                    provider.final_release.set()
+                if reason == "SCOPE_EPOCH_MOVED":
+                    # 新纪元里旧验收的效力要重新确立，任务不在这里完成；看到重切即可。
+                    await run_until(world, lambda: len(events(store, mission_id, ROOT_REVIEW_CUT)) >= 2, timeout=40)
+                else:
+                    await run_until(world, lambda: _status(world, mission_id) in DONE, timeout=40)
+            finally:
+                provider.close()
 
-    Worth pinning because the tempting answer is "re-cut over the smaller set": the
-    root review may only run once every gating child has an accepted outcome, so a
-    revoked contribution is a Mission with work left, not a Mission with a stale
-    review.  ``root_review_ready`` answers that, and the coordinator quotes it.
-    """
+            first, second = events(store, mission_id, ROOT_REVIEW_CUT)
+            [superseded] = events(store, mission_id, ROOT_REVIEW_SUPERSEDED)
+            first_id, second_id = first.payload["package_id"], second.payload["package_id"]
+            assert first_id != second_id
+            assert superseded.payload["package_id"] == first_id and superseded.payload["reasons"] == [reason]
+            assert first.seq < superseded.seq < second.seq
+            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == [reason]
+            # 重切绑的是当时在用的要求版本（没人改要求，与旧包同一版）和当前有效的贡献集。
+            assert second.payload["requirements_revision"] == first.payload["requirements_revision"]
+            assert sorted(second.payload["contributions"]) == sorted(_current_acceptances(semantics, mission_id))
+            # 旧包仍存着（锚点从不改写），只是不再是这个任务据以下结论的那个。
+            coordinator = _coordinator(world, mission_id)
+            assert semantics.get_review_package(first_id) is not None
+            assert str(coordinator.live_package(mission_id).package_id) == second_id
+            assert coordinator.superseded_package_ids(mission_id) == frozenset({first_id})
+            if reason == "SCOPE_EPOCH_MOVED":
+                assert (first.payload["scope_epoch"], second.payload["scope_epoch"]) == (
+                    0, semantics.epoch(mission_id, "mission"))
+                assert second.payload["scope_epoch"] > 0
+                return
+            assert _status(world, mission_id) == "COMPLETED"
+            # 根结论从新包的终审记录形成。
+            resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
+            record = semantics.official_review_record(second_id)
+            assert resolution is not None and record is not None
+            assert str(resolution.review_receipt_id) == str(record.record_id)
+            if reason == "REVIEW_INTERRUPTED":
+                assert provider.final_calls == 3  # two interrupted calls on the old package, one on the new
+                assert semantics.official_review_record(first_id) is None
+                interrupted = store.connection.execute(
+                    "SELECT COUNT(*) FROM commit_receipts WHERE kind = 'AssuranceReviewTurnInterrupted'").fetchone()[0]
+                assert interrupted == 2
 
-    current = [
-        item
-        for item in cut.semantics.list_acceptances(cut.mission.id)
-        if item.validity is Validity.CURRENT
-    ]
-    _revoke(cut, str(current[-1].acceptance_id))
-    assert coordinator(cut).state(cut.mission.id).status is RootReviewStatus.NOT_READY
-    assert not offer_root(cut).committed
-
-
-def test_a_reopened_scope_asks_for_a_recut_at_the_same_revision(cut: World) -> None:
-    before = coordinator(cut).live_package(cut.mission.id)
-    assert before is not None
-    _churn(cut)
-    state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.RECUT_REQUIRED
-    assert state.stale_reasons == ("SCOPE_EPOCH_MOVED",)
-    after = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 100_000)
-    assert int(after.binding.requirements_revision) == int(before.binding.requirements_revision), (
-        "nothing published a requirements revision, so the re-cut binds the same one"
-    )
-
-
-def test_one_revision_may_not_be_cut_more_than_the_bound(cut: World) -> None:
-    coordination = coordinator(cut, max_cuts_per_revision=2)
-    _churn(cut)
-    coordination.cut(cut.mission.id, now_ms=NOW_MS + 100_000)
-    _churn(cut)
-    state = coordination.state(cut.mission.id)
-    assert state.status is RootReviewStatus.CUT_BUDGET_SPENT
-    assert state.cuts_used == 2
-    with pytest.raises(ContractError, match="CUT_BUDGET_SPENT"):
-        coordination.cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    assert len(events(cut, ROOT_REVIEW_CUT)) == 2
+    asyncio.run(case())
 
 
-def test_the_spent_budget_is_recorded_once_per_revision(cut: World) -> None:
-    coordination = coordinator(cut, max_cuts_per_revision=1)
-    _churn(cut)
-    state = coordination.state(cut.mission.id)
-    assert state.status is RootReviewStatus.CUT_BUDGET_SPENT
-    coordination.record_cut_budget_spent(cut.mission.id, state)
-    coordination.record_cut_budget_spent(cut.mission.id, coordination.state(cut.mission.id))
-    recorded = events(cut, ROOT_REVIEW_CUT_BUDGET_SPENT)
-    assert len(recorded) == 1
-    assert recorded[0].payload["bound"] == 1
-    assert recorded[0].payload["stale_reasons"] == ["SCOPE_EPOCH_MOVED"]
+# ======================================================================================
+# RD：同一版要求重切有上限；用完停下，只记一次，不形成根结论
+# ======================================================================================
+
+
+def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_path) -> None:
+    async def case() -> None:
+        provider = FinalReviewProvider(hold_final_first=True)
+        async with product_world(tmp_path / "root", provider, max_root_review_cuts=1) as world:
+            mission_id = _create(world, "recut-budget")
+            store, semantics = world.store, HtnStore(world.store)
+            try:
+                await run_until(world, provider.final_held.is_set, timeout=40)
+                semantics.bump_epoch(mission_id, "mission", bumped_by="test-scope-reopened")
+                provider.final_release.set()
+                await run_until(world, lambda: bool(events(store, mission_id, ROOT_REVIEW_CUT_BUDGET_SPENT)),
+                                timeout=40)
+                await run_for(world, 1.0)  # later cycles do not record it again
+            finally:
+                provider.close()
+
+            [cut] = events(store, mission_id, ROOT_REVIEW_CUT)
+            [spent] = events(store, mission_id, ROOT_REVIEW_CUT_BUDGET_SPENT)
+            assert spent.payload["bound"] == 1 and spent.payload["cuts_used"] == 1
+            assert spent.payload["stale_reasons"] == ["SCOPE_EPOCH_MOVED"]
+            assert spent.payload["package_id"] == cut.payload["package_id"]
+            assert spent.payload["requirements_revision"] == cut.payload["requirements_revision"]
+            assert events(store, mission_id, ROOT_REVIEW_SUPERSEDED) == []
+            assert provider.final_calls == 1
+            assert events(store, mission_id, "GoalResolutionCommitted") == []
+            assert semantics.adopted_goal_resolution(mission_id, root_duty(mission_id)) is None
+            assert _status(world, mission_id) != "COMPLETED"
+
+    asyncio.run(case())
+
+
+# ======================================================================================
+# RE：一条修复决定只了结它所处理那一步的修复请求
+# ======================================================================================
+
+
+def test_a_repair_decision_addresses_only_the_request_about_its_own_step(tmp_path) -> None:
+    """2026-09-30 真机（结构修复第 2 局）：规划器只重做了一步，系统把两条请求都记成已处理，
+    另一步从没重做。两步的内容都被打回、各开一条修复请求；规划器第一轮只对其中一步答
+    "同一做法再试一次"——了结的只有那一步的请求，另一条仍挂着。"""
+
+    class OrderedRepairs(FinalReviewProvider):
+        """修复轮的规划器调用先等两步的打回都记下（两条审阅调用谁先回来是并发的，固定这个次序
+        用例才确定）；答过第一轮之后，后面的规划器调用一律扣住，另一条请求就一直挂着。"""
+
+        def __init__(self) -> None:
+            super().__init__(reject_content=("facts.md", "NOTES.md"), repair=retry_same_method)
+            self.both_recorded = asyncio.Event()
+            self.answered = 0
+
+        async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+            if role_of(request) == "planner" and open_repairs(package_of(request)):
+                if self.answered:
+                    await self._forever.wait()
+                await self.both_recorded.wait()
+                self.answered += 1
+            return await super().invoke(request, cancel=cancel)
+
+    async def case() -> None:
+        provider = OrderedRepairs()
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = _create(world, "repair-scope")
+            store = world.store
+
+            def recorded() -> bool:
+                rejections = [item for item in events(store, mission_id, "PlanningRepairRequested")
+                              if str(item.payload["source_key"]).startswith("event:")]
+                if len(rejections) >= 2:
+                    provider.both_recorded.set()
+                return bool(events(store, mission_id, "PlanningRepairAddressed"))
+
+            try:
+                await run_until(world, recorded, timeout=60)
+            finally:
+                provider.close()
+
+            [addressed] = events(store, mission_id, "PlanningRepairAddressed")
+            requested = [item for item in events(store, mission_id, "PlanningRepairRequested")
+                         if item.seq < addressed.seq and str(item.payload["source_key"]).startswith("event:")]
+            assert len(requested) == 2, "both steps' rejections were on record when the Planner answered"
+            [decided] = [item for item in events(store, mission_id, "PlanningDecisionEvaluated")
+                         if item.payload.get("decision_id") == addressed.payload["decision_id"]]
+            task_id = str(decided.payload["detail"]["failed_attempt_id"]).rpartition(":attempt-")[0]
+            mine = [item.payload["request_id"] for item in requested if task_id in item.payload["trigger_scope"]]
+            others = [item.payload["request_id"] for item in requested if task_id not in item.payload["trigger_scope"]]
+            assert len(mine) == 1 and len(others) == 1
+            assert addressed.payload["repair_request_ids"] == mine
+            assert others[0] in {row["request_id"] for row in pending_requests(store, mission_id)}
+
+    asyncio.run(case())
+
+
+# ======================================================================================
+# E：纯函数
+# ======================================================================================
 
 
 def test_the_default_bound_is_the_configured_one() -> None:
@@ -791,1001 +412,6 @@ def test_the_default_bound_is_the_configured_one() -> None:
     )
     with pytest.raises(ValueError, match="max_root_review_cuts"):
         OrchestratorConfig(evidence_root=Path("/tmp/unused"), max_root_review_cuts=0)
-
-
-def test_a_spent_budget_leaves_no_fresh_package_to_resolve_from(cut: World) -> None:
-    """The stuck end is visible, not silent: nothing resolves and the reason is stored."""
-
-    review(cut)
-    coordination = coordinator(cut, max_cuts_per_revision=1)
-    _churn(cut)
-    state = coordination.state(cut.mission.id)
-    coordination.record_cut_budget_spent(cut.mission.id, state)
-    assert cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY) is None
-    assert events(cut, ROOT_REVIEW_CUT_BUDGET_SPENT)[0].payload["requirements_revision"] == int(
-        state.requirements_revision
-    )
-
-
-# ======================================================================================
-# 7. Mutation self-checks: each one is a way this could have been written wrongly
-# ======================================================================================
-
-
-def test_mutant_a_coordinator_that_fills_in_pass_would_declare_a_failed_mission_complete(
-    cut: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mutation 1 — the system writes the verdict.
-
-    The guard is
-    ``test_a_fail_is_recorded_announced_and_resolves_nothing``: with the mutant in
-    place a reviewer that said FAIL produces an ACCEPT record, the Mission resolves,
-    and §21.5's "wrongly declared complete = 0" is violated.  The mutant has to be
-    *seen* to succeed, not merely to be refused — otherwise the guard would be
-    passing for the wrong reason.
-    """
-
-    from agent_orchestrator.orchestrator import root_review as module
-
-    real = module.RootReviewCoordinator.record_review
-
-    def always_accepts(self, mission_id, package, **kwargs):  # type: ignore[no-untyped-def]
-        kwargs["verdict"] = ReviewVerdict.ACCEPT
-        kwargs["criterion_verdicts"] = {ROOT_CRITERION: CriterionVerdict.PASS}
-        return real(self, mission_id, package, **kwargs)
-
-    monkeypatch.setattr(module.RootReviewCoordinator, "record_review", always_accepts)
-    record = review(
-        cut,
-        verdict=ReviewVerdict.REJECTED,
-        verdicts={ROOT_CRITERION: CriterionVerdict.FAIL},
-        findings=({"severity": "blocker", "detail": "nothing was actually run"},),
-    )
-    assert record.verdict is ReviewVerdict.ACCEPT, "the mutant is in place"
-    assert events(cut, ROOT_REVIEW_REJECTED) == [], "the mutant silences the refusal"
-    assert offer_root(cut).committed, (
-        "the mutant declares a Mission whose reviewer said FAIL complete — which is "
-        "exactly what the guard test asserts cannot happen"
-    )
-
-
-def test_mutant_a_recut_that_leaves_the_old_package_live_resolves_from_the_wrong_review(
-    cut: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mutation 2 — re-cut without superseding.
-
-    The guard is ``test_a_recut_supersedes_the_old_package_with_a_record``.  Without
-    the supersede record both packages stay live, and ``live_package`` — and with it
-    the resolution — can answer with the anchor the world has already moved past.
-    """
-
-    from agent_orchestrator.orchestrator import root_review as module
-
-    first = coordinator(cut).live_package(cut.mission.id)
-    assert first is not None
-    monkeypatch.setattr(
-        module.RootReviewCoordinator,
-        "_supersede",
-        lambda self, mission_id, package, *, reasons: None,
-    )
-    _churn(cut)
-    second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    assert events(cut, ROOT_REVIEW_SUPERSEDED) == [], "the mutant is in place"
-    stored = cut.semantics.list_review_packages(cut.mission.id, purpose=ReviewPurpose.MISSION_FINAL)
-    assert {str(item.package_id) for item in stored} == {
-        str(first.package_id),
-        str(second.package_id),
-    }
-    assert coordinator(cut).superseded_package_ids(cut.mission.id) == frozenset(), (
-        "two live MISSION_FINAL anchors for one root: which review the Mission is "
-        "resolved from is now a matter of row order rather than of judgement"
-    )
-
-
-def test_mutant_an_unbounded_recut_never_stops_asking(
-    cut: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mutation 3 — the cut budget is not counted.
-
-    The guard is ``test_one_revision_may_not_be_cut_more_than_the_bound``.  With the
-    counter stuck at zero the same requirements revision is cut again every time the
-    contributions move, and each cut asks a model on the Mission account — the loop
-    part 2d's stall path exists to make visible instead.
-    """
-
-    from agent_orchestrator.orchestrator import root_review as module
-
-    monkeypatch.setattr(
-        module.RootReviewCoordinator,
-        "cuts_for_revision",
-        lambda self, mission_id, revision: 0,
-    )
-    coordination = coordinator(cut, max_cuts_per_revision=1)
-    for index in range(3):
-        _churn(cut)
-        state = coordination.state(cut.mission.id)
-        assert state.needs_cut, f"the mutant never runs out of cuts (round {index})"
-        assert state.status is not RootReviewStatus.CUT_BUDGET_SPENT
-        coordination.cut(cut.mission.id, now_ms=NOW_MS + 100_000 * (index + 1))
-    assert events(cut, ROOT_REVIEW_CUT_BUDGET_SPENT) == [], (
-        "the bound never bites, so the world can keep moving and the coordinator keeps "
-        "asking a model about it on the Mission account"
-    )
-
-
-def test_mutant_a_cut_that_forgets_the_producers_passes_a_self_review(
-    ready: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mutation 4 — the cut does not record who produced the work.
-
-    The guard is ``test_a_reviewer_that_produced_the_work_cannot_pass_it``.  The
-    independence rule reads authorship off the package, so a package that names
-    nobody is a package that says "nobody produced this" — and a reviewer who in fact
-    wrote every contribution then passes its own work with nothing to object to.
-
-    Note which half of the rule this mutant reaches.  Leaving the *facts* empty while
-    the package still names the producers is already caught, by
-    ``FACTS_CONTRADICT_PACKAGE``: the two sides disagree and the formula refuses
-    rather than picking one.  Only a mutant that empties **both** — which is what
-    forgetting at the cut does, since part 3a reads the facts off the package — turns
-    a self-review into an acceptance.
-    """
-
-    from agent_orchestrator.orchestrator import root_review as module
-
-    monkeypatch.setattr(
-        module.RootReviewCoordinator,
-        "producer_agent_ids",
-        lambda self, mission_id, acceptances: (),
-    )
-    coordinator(ready).cut(ready.mission.id, now_ms=NOW_MS)
-    package = coordinator(ready).live_package(ready.mission.id)
-    assert package is not None
-    assert package.producer_agent_ids == (), "the mutant is in place"
-    review(ready, reviewer="agent-worker")
-    outcome = offer_root(ready)
-    assert outcome.committed, (
-        "with authorship forgotten at the cut, the producers reviewed their own work "
-        "and the Mission was declared complete"
-    )
-
-
-# ======================================================================================
-# 8. The loop's own wiring: asking the reviewer, and reading the answer back
-# ======================================================================================
-#
-# Everything above drives the coordinator directly.  ``_ask_root_reviewer`` and
-# ``_collect_root_review`` are the two places where the coordinator meets the
-# Orchestrator, and they had no test at all — which the part-3a smoke found the hard
-# way: ``AgentLimits(max_tool_calls_per_turn=0)`` raised ``ValueError`` on the way to
-# creating the intent, so the first Mission that ever reached its own review died
-# there.  These tests run that wiring.
-
-
-def _orchestrator(tmp_path):
-    """An Orchestrator over the *same* library file the fixture World is built in."""
-
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-    from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-
-    config = OrchestratorConfig(
-        evidence_root=Path(tmp_path), max_concurrency=1, test_timeout_seconds=5
-    )
-    return Orchestrator(config, RoleScriptedProvider({"planner": []}))
-
-
-def _asked(world: World, tmp_path):
-    """Ask the root reviewer through the loop, and return the intent that was created."""
-
-    import asyncio
-
-    async def case():
-        async with _orchestrator(tmp_path) as loop:
-            loop.install_hierarchical(planning=world.env)
-            mission = loop.store.get_mission(world.mission.id)
-            coordination = loop._root_review(mission, loop._new_mode(mission))
-            package = coordination.live_package(mission.id)
-            assert package is not None
-            created = await loop._ask_root_reviewer(mission, coordination, package)
-            twice = await loop._ask_root_reviewer(mission, coordination, package)
-            subject = f"{mission.id}:root-review:{package.package_id}:1"
-            return (
-                created,
-                twice,
-                loop.store.get_intent_for_subject(subject),
-                str(package.package_id),
-            )
-
-    return asyncio.run(case())
-
-
-def test_the_loop_really_can_ask_the_root_reviewer(cut: World, tmp_path) -> None:
-    """The smoke's ``ValueError``: the limits were rejected before an intent existed."""
-
-    created, _twice, intent, package_id = _asked(cut, tmp_path)
-    assert created is True
-    assert intent is not None
-    assert intent.config["role"] == "root_reviewer"
-    assert intent.config["review_package_id"] == package_id
-
-
-def test_the_reviewer_is_asked_once_per_package(cut: World, tmp_path) -> None:
-    created, twice, _intent, _package_id = _asked(cut, tmp_path)
-    assert (created, twice) == (True, False), "the creation key is the package id"
-
-
-def test_the_reviewer_carries_no_tools_and_a_legal_bound(cut: World, tmp_path) -> None:
-    """``tool_names=()`` is the gate; the limit is a bound and must be a legal one."""
-
-    _created, _twice, intent, _package_id = _asked(cut, tmp_path)
-    limits = intent.config["agent_config"]["limits"]
-    assert intent.config["agent_config"]["tool_names"] == []
-    assert int(limits["max_tool_calls_per_turn"]) >= 1
-
-
-def test_the_review_is_charged_to_the_mission_review_account(cut: World, tmp_path) -> None:
-    """§13 v1.4: a MISSION_FINAL review is never charged to a Task budget."""
-
-    _created, _twice, intent, _package_id = _asked(cut, tmp_path)
-    assert intent.config["budget_account"] == str(ReviewAccount.MISSION)
-    # A ``plan`` intent is not bound to an Attempt, so there is no Task budget for it
-    # to land on in the first place — which is the structural half of the same rule.
-    assert intent.kind == "plan"
-    assert intent.subject_id.startswith(f"{cut.mission.id}:root-review:")
-
-
-def test_mutant_a_reviewer_intent_with_an_illegal_bound_never_reaches_the_store(
-    cut: World, tmp_path, monkeypatch
-) -> None:
-    """The mutation the smoke found: a non-positive tool bound kills the Mission."""
-
-    import asyncio
-
-    from agent_orchestrator.orchestrator import event_handler as module
-
-    real = module.AgentLimits
-
-    def zero(**kwargs: Any):
-        return real(**{**kwargs, "max_tool_calls_per_turn": 0})
-
-    monkeypatch.setattr(module, "AgentLimits", zero)
-
-    async def case():
-        async with _orchestrator(tmp_path) as loop:
-            loop.install_hierarchical(planning=cut.env)
-            mission = loop.store.get_mission(cut.mission.id)
-            coordination = loop._root_review(mission, loop._new_mode(mission))
-            package = coordination.live_package(mission.id)
-            with pytest.raises(ValueError):
-                await loop._ask_root_reviewer(mission, coordination, package)
-            subject = f"{mission.id}:root-review:{package.package_id}"
-            return loop.store.get_intent_for_subject(subject)
-
-    assert asyncio.run(case()) is None
-
-
-def _ask_again(world: World, tmp_path, *, rounds: int):
-    """Ask, record an unreadable reply, and ask again — ``rounds`` times."""
-
-    import asyncio
-
-    async def case():
-        async with _orchestrator(tmp_path) as loop:
-            loop.install_hierarchical(planning=world.env)
-            mission = loop.store.get_mission(world.mission.id)
-            coordination = loop._root_review(mission, loop._new_mode(mission))
-            package = coordination.live_package(mission.id)
-            outcomes = []
-            for index in range(rounds):
-                outcomes.append(await loop._ask_root_reviewer(mission, coordination, package))
-                coordination.record_unreadable(
-                    mission.id,
-                    package,
-                    detail="block_missing: no <critic_verdict> block in the output",
-                    reviewer_turn_id=f"turn-{index}",
-                )
-            subjects = [
-                loop.store.get_intent_for_subject(
-                    f"{mission.id}:root-review:{package.package_id}:{index + 1}"
-                )
-                for index in range(rounds + 1)
-            ]
-            return outcomes, subjects
-
-    return asyncio.run(case())
-
-
-def test_an_unreadable_reply_may_be_put_to_the_reviewer_once_more(cut: World, tmp_path) -> None:
-    """The smoke's round-2 ending: the model answered, but not in the frozen shape.
-
-    An unreadable reply is not an answer, so this is the same question put once
-    more — with the parse error attached, exactly as the Task Critic's own schema
-    retry does.  A reply that *was* read is never re-asked.
-    """
-
-    outcomes, subjects = _ask_again(cut, tmp_path, rounds=2)
-    assert outcomes == [True, True]
-    assert subjects[0] is not None and subjects[1] is not None
-    first = json.loads(subjects[0].config["message"]["content"])
-    second = json.loads(subjects[1].config["message"]["content"])
-    assert "schema_feedback" not in first
-    assert "critic_verdict" in second["schema_feedback"]
-    assert second["review_package_id"] == first["review_package_id"], "the same anchor"
-
-
-def test_the_second_unreadable_reply_ends_the_asking(cut: World, tmp_path) -> None:
-    """Bounded: a model that cannot produce the block twice is a deployment problem."""
-
-    outcomes, subjects = _ask_again(cut, tmp_path, rounds=3)
-    assert outcomes == [True, True, False]
-    assert subjects[2] is None, "no third intent was ever created"
-
-
-def test_a_reviewer_that_answered_is_never_asked_again(cut: World, tmp_path) -> None:
-    """A FAIL goes to §9.1's decision table; it does not come back here."""
-
-    review(cut, verdict=ReviewVerdict.REJECTED, verdicts={ROOT_CRITERION: CriterionVerdict.FAIL})
-    import asyncio
-
-    async def case():
-        from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests
-
-        async with _orchestrator(tmp_path) as loop:
-            loop.install_hierarchical(planning=cut.env)
-            mission = loop.store.get_mission(cut.mission.id)
-            reviewers_before = [
-                item.intent_id for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                if str(item.config.get("role", "")) == "root_reviewer"
-            ]
-            first = await loop._advance_root_review(mission, loop._new_mode(mission))
-            second = await loop._advance_root_review(mission, loop._new_mode(mission))
-            reviewers_after = [
-                item.intent_id for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-                if str(item.config.get("role", "")) == "root_reviewer"
-            ]
-            return first, second, reviewers_before == reviewers_after, [
-                row["source_key"] for row in pending_requests(loop.store, mission.id)]
-
-    first, second, nobody_asked_again, requests = asyncio.run(case())
-    # 2026-10-01: the rejection goes to the Planner as one ordinary repair request
-    # (whatever the findings were); the reviewer itself is not put the question again.
-    assert first is True and second is False
-    assert nobody_asked_again
-    assert len(requests) == 1 and requests[0].startswith("root-review:")
-    assert events(cut, ROOT_REVIEW_REJECTED), "the refusal is the record, not a retry"
-
-
-# ======================================================================================
-# 9. Reading the reply back: the one line between "the reviewer said FAIL" and COMPLETED
-# ======================================================================================
-#
-# Review round 4, P0-3.  ``_collect_root_review`` had no test at all, and neither did
-# the combination a composition review most naturally produces: **FAIL with a blocker
-# while every individual criterion is met** — each accepted part satisfies its own
-# criterion, and the parts still do not add up to the root goal.  On that shape the
-# AER §6.2 success expression *passes* (every criterion is PASS), so
-# ``event_handler.py``'s ``ReviewVerdict.ACCEPT if verdict.passed else REJECTED`` is
-# the only thing left standing between a FAIL and a Mission declared complete.  The
-# review mutated that one line and the whole 2582-test suite stayed green.
-
-
-def _verdict_block(criteria: list[str], *, verdict: str, met: dict[str, bool] | None = None):
-    met = met or {}
-    findings = (
-        [{"severity": "blocker", "detail": "the parts do not compose into the root goal"}]
-        if verdict == "FAIL"
-        else []
-    )
-    return (
-        "<critic_verdict>"
-        + json.dumps(
-            {
-                "verdict": verdict,
-                "findings": findings,
-                "mission_criteria": [
-                    {"criterion": item, "met": met.get(item, True), "reason": "scripted"}
-                    for item in criteria
-                ],
-            }
-        )
-        + "</critic_verdict>"
-    )
-
-
-class _Committed:
-    """The shape ``_collect_root_review`` reads a dispatched turn through."""
-
-    def __init__(self, state: Any, turn_id: str = "turn-root-1") -> None:
-        self.state = state
-        self.turn_id = turn_id
-        self.error: dict[str, Any] | None = None
-
-
-def _collect(world: World, tmp_path, *, verdict: str, met: dict[str, bool] | None = None):
-    """Ask the reviewer through the loop, then hand the loop a real reply."""
-
-    import asyncio
-
-    from simple_harness.agents import AgentTurnState
-
-    async def case():
-        async with _orchestrator(tmp_path) as loop:
-            loop.install_hierarchical(planning=world.env)
-            mission = loop.store.get_mission(world.mission.id)
-            coordination = loop._root_review(mission, loop._new_mode(mission))
-            package = coordination.live_package(mission.id)
-            assert package is not None
-            await loop._ask_root_reviewer(mission, coordination, package)
-            subject = f"{mission.id}:root-review:{package.package_id}:1"
-            intent = loop.store.get_intent_for_subject(subject)
-            assert intent is not None
-            criteria = [str(item) for item in intent.config["review_criteria"]]
-            await loop._collect_root_review(
-                intent,
-                _Committed(AgentTurnState.COMMITTED),
-                mission,
-                _verdict_block(criteria, verdict=verdict, met=met),
-            )
-            return (
-                criteria,
-                coordination.semantics.official_review_record(str(package.package_id)),
-                [item for item in loop.store.list_events(mission.id) if "RootReview" in item.type],
-            )
-
-    return asyncio.run(case())
-
-
-def test_a_reviewer_that_said_fail_resolves_nothing_even_with_every_criterion_met(
-    cut: World, tmp_path
-) -> None:
-    """P0-3: the shape a composition review exists to produce, end to end.
-
-    Every criterion ``met: true`` and a blocker on the whole, so the §6.2 success
-    expression is satisfied on every axis it evaluates.  The record's own verdict is
-    the only remaining defence, and this is the test that stands on it: mutate
-    ``event_handler``'s ``ACCEPT if verdict.passed else REJECTED`` to a bare ``ACCEPT``
-    and the root ``GoalResolution`` commits.
-    """
-
-    criteria, record, _events = _collect(cut, tmp_path, verdict="FAIL")
-    assert criteria == [ROOT_CRITERION]
-    assert record is not None
-    assert record.verdict is ReviewVerdict.REJECTED
-    # The criteria axis really is all-PASS: this test is not passing for the wrong reason.
-    assert [item.verdict for item in record.criteria] == [CriterionVerdict.PASS]
-    outcome = offer_root(cut)
-    assert outcome.committed is False
-    assert cut.semantics.adopted_goal_resolution(cut.mission.id, ROOT_DUTY) is None
-
-
-def test_a_reviewer_that_said_pass_is_recorded_as_an_accept(cut: World, tmp_path) -> None:
-    """The control for the test above: the same wiring, the opposite conclusion."""
-
-    _criteria, record, _events = _collect(cut, tmp_path, verdict="PASS")
-    assert record is not None
-    assert record.verdict is ReviewVerdict.ACCEPT
-    assert [item.verdict for item in record.criteria] == [CriterionVerdict.PASS]
-
-
-def test_a_pass_that_names_an_unmet_criterion_is_not_a_conclusion(cut: World, tmp_path) -> None:
-    """The symmetric half of P0-3: two judgements that contradict each other.
-
-    ``parse_critic_verdict`` allows it — it only checks ``FAIL ⟺ blocker`` — and the
-    legacy Task Critic's §22 contract genuinely permits a PASS that names an unmet
-    criterion, so the refusal lives in the root-review coordinator instead of in the
-    shared parser.  No official record is written and the package keeps its one slot.
-    """
-
-    _criteria, record, recorded = _collect(
-        cut, tmp_path, verdict="PASS", met={ROOT_CRITERION: False}
-    )
-    assert record is None
-    assert [item.type for item in recorded if item.type == ROOT_REVIEW_REJECTED] == []
-    outcome = offer_root(cut)
-    assert outcome.committed is False
-
-
-def test_the_coordinator_refuses_a_self_contradicting_accept_directly(cut: World) -> None:
-    """And at the coordinator's own door, not only through the loop."""
-
-    from agent_orchestrator.orchestrator.root_review import refuse_self_contradicting_accept
-
-    with pytest.raises(ContractError, match="may not also report a criterion it judged FAIL"):
-        review(cut, verdict=ReviewVerdict.ACCEPT, verdicts={ROOT_CRITERION: CriterionVerdict.FAIL})
-    # …while the legal asymmetric shape is left alone.
-    refuse_self_contradicting_accept(
-        ReviewVerdict.REJECTED, {ROOT_CRITERION: CriterionVerdict.PASS}
-    )
-    refuse_self_contradicting_accept(
-        ReviewVerdict.ACCEPT, {ROOT_CRITERION: CriterionVerdict.UNKNOWN}
-    )
-
-
-def test_mutant_ignoring_the_reviewers_conclusion_declares_the_mission_complete(
-    cut: World, tmp_path, monkeypatch
-) -> None:
-    """Mutation self-proof for P0-3 (the review's M20), run end to end.
-
-    ``ReviewVerdict.ACCEPT if verdict.passed else REJECTED`` is replaced by a bare
-    ACCEPT — the single-line regression the review demonstrated — and the same FAIL
-    reply now produces a committed root ``GoalResolution``.  The guard above is the
-    only automated evidence that this line is load bearing.
-    """
-
-    from agent_orchestrator.orchestrator import root_review as module
-
-    real = module.RootReviewCoordinator.record_review
-
-    def always_accept(self, mission_id, package, **kwargs: Any):
-        return real(self, mission_id, package, **{**kwargs, "verdict": ReviewVerdict.ACCEPT})
-
-    monkeypatch.setattr(module.RootReviewCoordinator, "record_review", always_accept)
-    _criteria, record, _events = _collect(cut, tmp_path, verdict="FAIL")
-    assert record is not None
-    assert record.verdict is ReviewVerdict.ACCEPT, "the mutant is in place"
-    outcome = offer_root(cut)
-    assert outcome.committed is True, (
-        "with the reviewer's conclusion ignored the root goal resolves and the Mission "
-        "is declared complete on a reply that said FAIL"
-    )
-
-
-# ======================================================================================
-# 10. The one parser: a malformed verdict is an error, never a PASS (P1-7)
-# ======================================================================================
-#
-# ``critics.py`` is not touched by this slice, but part 3a made the root MISSION_FINAL
-# review depend on it — deliberately, so that there is exactly one place a reply can
-# become a PASS (``role_templates.py``: "a second parser is a second place a bad reply
-# becomes a PASS").  The review then found that the *whole repository* had no test for
-# the negative direction: replacing ``raise ContractError`` with ``verdict = "PASS"``
-# left all 2582 tests green.  These are that test.
-
-
-def _block(payload: dict[str, Any]) -> str:
-    return "<critic_verdict>" + json.dumps(payload) + "</critic_verdict>"
-
-
-@pytest.mark.parametrize(
-    ("name", "verdict"),
-    [
-        ("lower case", "pass"),
-        ("a synonym", "ok"),
-        ("null", None),
-        ("a number", 1),
-        ("a list", ["PASS"]),
-        ("empty", ""),
-    ],
-)
-def test_a_verdict_that_is_not_pass_or_fail_is_a_contract_error(name: str, verdict: Any) -> None:
-    from agent_orchestrator.verification.critics import parse_critic_verdict
-
-    with pytest.raises(ContractError, match="must be PASS or FAIL"):
-        parse_critic_verdict(
-            _block(
-                {
-                    "verdict": verdict,
-                    "findings": [],
-                    "mission_criteria": [{"criterion": "c-1", "met": True}],
-                }
-            ),
-            expected_criteria=["c-1"],
-        )
-
-
-def test_a_reply_with_no_verdict_field_at_all_is_a_contract_error() -> None:
-    from agent_orchestrator.verification.critics import parse_critic_verdict
-
-    with pytest.raises(ContractError, match="must be PASS or FAIL"):
-        parse_critic_verdict(
-            _block({"findings": [], "mission_criteria": [{"criterion": "c-1", "met": True}]}),
-            expected_criteria=["c-1"],
-        )
-
-
-def test_a_reply_with_no_block_is_a_contract_error() -> None:
-    from agent_orchestrator.verification.critics import parse_critic_verdict
-
-    with pytest.raises(ContractError, match="unreadable"):
-        parse_critic_verdict("PASS, everything looks fine", expected_criteria=["c-1"])
-
-
-@pytest.mark.parametrize(
-    ("name", "payload", "match"),
-    [
-        (
-            "a met that is not a bool",
-            {
-                "verdict": "PASS",
-                "findings": [],
-                "mission_criteria": [{"criterion": "c-1", "met": "yes"}],
-            },
-            "met must be boolean",
-        ),
-        (
-            "a FAIL with no blocker",
-            {
-                "verdict": "FAIL",
-                "findings": [{"severity": "minor", "detail": "nit"}],
-                "mission_criteria": [{"criterion": "c-1", "met": True}],
-            },
-            "FAIL iff a blocker",
-        ),
-        (
-            "a PASS with a blocker",
-            {
-                "verdict": "PASS",
-                "findings": [{"severity": "blocker", "detail": "no"}],
-                "mission_criteria": [{"criterion": "c-1", "met": True}],
-            },
-            "FAIL iff a blocker",
-        ),
-        (
-            "criteria in the wrong order",
-            {
-                "verdict": "PASS",
-                "findings": [],
-                "mission_criteria": [{"criterion": "c-2", "met": True}],
-            },
-            "cover the Mission criteria in order",
-        ),
-    ],
-)
-def test_every_other_malformed_verdict_is_refused_too(
-    name: str, payload: dict[str, Any], match: str
-) -> None:
-    from agent_orchestrator.verification.critics import parse_critic_verdict
-
-    with pytest.raises(ContractError, match=match):
-        parse_critic_verdict(_block(payload), expected_criteria=["c-1"])
-
-
-def test_mutant_a_parser_that_defaults_to_pass_would_pass_every_malformed_reply() -> None:
-    """Mutation self-proof for P1-7 (the review's M03): the guard above is the only one.
-
-    With ``verdict not in {"PASS","FAIL"}`` answering PASS instead of raising, a reply
-    saying ``"ok"`` becomes a passing verdict — and since part 3a the root review reads
-    its conclusion through this same parser.
-    """
-
-    from agent_orchestrator.verification.critics import CriticVerdict
-
-    assert CriticVerdict(verdict="ok", findings=(), mission_criteria=(), raw={}).passed is False, (
-        "only the exact word PASS passes"
-    )
-    assert CriticVerdict(verdict="PASS", findings=(), mission_criteria=(), raw={}).passed is True
-
-
-# ======================================================================================
-# 11. Review round 4, P2: channels and rules that were only ever covered by accident
-# ======================================================================================
-
-
-def test_source_versions_moving_is_its_own_recut_channel(cut: World) -> None:
-    """架构方案 B 前置 1（2026-09-30）：终审此前不看资料版本——带资料的通用任务用旧资料会
-    静默完成。切包时记下现行资料版本集；之后登记 / 换版本 / 撤销任何一份，包就过时。"""
-
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    assert package is not None
-    assert coordination.stale_reasons(cut.mission.id, package) == ()
-    recorded = next(e for e in coordination._cut_events(cut.mission.id)
-                    if e.payload["package_id"] == str(package.package_id))
-    assert recorded.payload["source_versions_hash"]  # a domain with source roots records the set
-    from agent_orchestrator.governance.permissions import Principal as _Principal
-
-    principal = cut.principal if isinstance(cut.principal, _Principal) else _Principal(str(cut.principal))
-    cut.service.register_source(mission_id=cut.mission.id, tenant_id=cut.mission.tenant_id,
-                                principal=principal, path="sources/late.md", content="late",
-                                kind="markdown", idempotency_key="late-source-1")
-    assert coordination.stale_reasons(cut.mission.id, package) == ("SOURCES_MOVED",)
-
-
-def test_the_system_settles_a_repair_request_once_every_affected_leaf_is_reaccepted(tmp_path) -> None:
-    """架构方案 B 前置 2（用户 2026-09-29 决定）：修复请求此前只有计划改动能消费；规划器判断
-    旧贡献不用重做时，请求永远挂着，逼着开新轮直到次数用完。影响范围里没有新增工作、每个受
-    影响的叶子步骤都在请求之后重新验收通过时，系统自己记"已处理"。"""
-
-    from types import SimpleNamespace
-
-    from test_htn_end_to_end import _leaf_task
-
-    from agent_orchestrator.orchestrator.planning_repair_requests import (
-        ADDRESSED,
-        pending_requests,
-        record_request,
-        settle_addressed_requests,
-    )
-
-    world = committed(tmp_path, key="p23c-system-settle", demand=True)
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    handler = SimpleNamespace(store=world.store)
-    leaf = _leaf_task(world)
-    assert record_request(world.dispatch, world.mission.id, event_type="EvidenceInvalidated",
-                          trigger_refs=(leaf,), source_key="source:test-1",
-                          detail={"reason": "source_superseded", "path": "sources/data.csv"})
-    [request] = pending_requests(world.store, world.mission.id)
-    assert leaf in request["impact"]["revalidate"] and not request["impact"]["new_work"]
-    # 还没有重新验收：不消费
-    assert settle_addressed_requests(handler, world.dispatch, world.mission) is False
-    assert pending_requests(world.store, world.mission.id)
-
-    _accept_every_child(world)  # 叶子与评审步骤都在请求之后真实验收通过
-    completed = {e.task_id for e in world.store.list_events(world.mission.id) if e.type == "AcceptanceCommitted"}
-    assert leaf in completed
-
-    assert settle_addressed_requests(handler, world.dispatch, world.mission) is True
-    [addressed] = [e for e in world.store.list_events(world.mission.id) if e.type == ADDRESSED]
-    assert addressed.payload["decision_type"] == "SYSTEM_REVALIDATED"
-    assert addressed.payload["repair_request_ids"] == [request["request_id"]]
-    assert leaf in addressed.payload["settled_by"]
-    assert pending_requests(world.store, world.mission.id) == []
-    # 幂等：再判一次不再写
-    assert settle_addressed_requests(handler, world.dispatch, world.mission) is False
-
-    # 影响范围里有新增工作的请求，只有计划改动能了结
-    assert record_request(world.dispatch, world.mission.id, event_type="EvidenceInvalidated",
-                          trigger_refs=(leaf,), source_key="source:test-2", detail={"reason": "source_revoked"})
-    [again] = pending_requests(world.store, world.mission.id)
-    if not again["impact"]["new_work"]:
-        # 请求晚于验收：叶子没有在它之后再次通过，不能消费
-        assert settle_addressed_requests(handler, world.dispatch, world.mission) is False
-        assert pending_requests(world.store, world.mission.id)
-
-
-def test_a_repair_on_a_downstream_step_does_not_address_a_request_opened_upstream(tmp_path) -> None:
-    """2026-09-30 真机（结构修复第 2 局）：资料换版本后，"第一步引用了旧版"那条请求的影响范围
-    含下游第二步；规划器只重做了第二步，系统把两条请求都记成已处理，第一步从没重做，终审判
-    返工失败。一条请求只有处理到**直接出问题的那一步**（或它的上级）才算处理了。"""
-
-    from test_htn_end_to_end import _leaf_task
-
-    from agent_orchestrator.orchestrator.planning_repair_requests import (
-        ADDRESSED,
-        address_requests,
-        pending_requests,
-        record_request,
-    )
-    from agent_orchestrator.planning.htn.planner_package import planning_subjects
-
-    world = committed(tmp_path, key="p23c-address-scope", demand=True)
-    leaf, review = _leaf_task(world), _review_task(world)
-    assert record_request(world.dispatch, world.mission.id, event_type="EvidenceInvalidated",
-                          trigger_refs=(leaf,), source_key="source:scope-1",
-                          detail={"reason": "source_superseded"})
-    [request] = pending_requests(world.store, world.mission.id)
-    assert review in request["impact"]["revalidate"], "precondition: the downstream step is in the impact"
-
-    def decide_on(task_id: str, decision_id: str) -> None:
-        subjects = planning_subjects(world.network())
-        subject = next(s for s in subjects if s["task_id"] == task_id)
-        package = {"planning_subjects": subjects, "repair_requests": pending_requests(world.store, world.mission.id)}
-        address_requests(world.store, world.mission.id, package=package, decision_id=decision_id,
-                         decision_type="REPAIR", status="COMMITTED", subject_key=subject["subject_key"])
-
-    decide_on(review, "pd-downstream")
-    assert [r["request_id"] for r in pending_requests(world.store, world.mission.id)] == [request["request_id"]]
-    assert not [e for e in world.store.list_events(world.mission.id) if e.type == ADDRESSED]
-    decide_on(leaf, "pd-upstream")
-    assert pending_requests(world.store, world.mission.id) == []
-
-
-def test_contributions_moving_is_its_own_recut_channel(cut: World) -> None:
-    """P2-3: ``CONTRIBUTIONS_MOVED`` had no test — ``REQUIREMENTS_MOVED`` hid it.
-
-    Every leaf acceptance publishes a new Mission-level ``RequirementsRevision``, so
-    in the natural fixture both codes fire together and the existing test asserts the
-    other one.  Turning the channel off survived the whole suite.  Here the package
-    is made to disagree about its *contributions* only, with the requirements
-    revision left exactly where the live package found it.
-    """
-
-    import dataclasses
-
-    from agent_orchestrator.contracts.semantic_base import Provenance, TypedRef
-
-    coordination = coordinator(cut)
-    package = coordination.live_package(cut.mission.id)
-    assert package is not None
-    assert coordination.stale_reasons(cut.mission.id, package) == ()
-    moved = dataclasses.replace(
-        package,
-        child_acceptance_refs=(*package.child_acceptance_refs, TypedRef(kind=TypedRefKind.ACCEPTANCE, id="acc-from-later", revision=0, content_hash="a" * 64, produced_by=Provenance.TOOL)),
-    )
-    reasons = coordination.stale_reasons(cut.mission.id, moved)
-    assert reasons == ("CONTRIBUTIONS_MOVED",), "only this channel, and it really fires"
-    assert int(moved.binding.requirements_revision) == int(package.binding.requirements_revision), (
-        "the requirements did not move, so the other channel cannot be what answered"
-    )
-
-
-def test_the_live_package_skips_a_superseded_one_even_when_it_is_the_last(cut: World) -> None:
-    """P2-4, rule 2 on its own: the newest package is not automatically the live one.
-
-    Rules 2 (skip superseded) and 3 (take the last recorded cut) are redundant on the
-    natural path — a re-cut both supersedes the old package *and* appends a later cut
-    event — so the review's mutations of each one separately both survived.  Here the
-    **last** recorded cut is the superseded one, which only rule 2 can answer.
-    """
-
-    import dataclasses
-
-    from agent_orchestrator.contracts.resolution import ReviewPackageId
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
-    from agent_orchestrator.orchestrator.root_review import ROOT_REVIEW_SUPERSEDED
-
-    coordination = coordinator(cut)
-    first = coordination.live_package(cut.mission.id)
-    assert first is not None
-    second = dataclasses.replace(first, package_id=ReviewPackageId(str(first.package_id) + "-b"))
-    cut.semantics.insert_review_package(second)
-    append_hierarchical_event(
-        cut.store,
-        ROOT_REVIEW_CUT,
-        cut.mission.id,
-        key=f"{cut.mission.id}:{second.package_id}",
-        task_id=str(second.binding.subject_ref.id),
-        payload={
-            "package_id": str(second.package_id),
-            "requirements_revision": int(second.binding.requirements_revision),
-            "scope_epoch": 0,
-        },
-    )
-    assert str(coordinator(cut).live_package(cut.mission.id).package_id) == str(
-        second.package_id
-    ), "rule 3 alone would pick the later cut"
-    append_hierarchical_event(
-        cut.store,
-        ROOT_REVIEW_SUPERSEDED,
-        cut.mission.id,
-        key=f"{cut.mission.id}:{second.package_id}",
-        task_id=str(second.binding.subject_ref.id),
-        payload={"package_id": str(second.package_id), "reasons": ["TEST"]},
-    )
-    live = coordinator(cut).live_package(cut.mission.id)
-    assert live is not None
-    assert str(live.package_id) == str(first.package_id), (
-        "a retired anchor is never the live one, however recently it was cut"
-    )
-
-
-def test_the_live_package_takes_the_last_cut_of_two_that_are_both_live(cut: World) -> None:
-    """P2-4, rule 3 on its own: two packages, neither superseded."""
-
-    import dataclasses
-
-    from agent_orchestrator.contracts.resolution import ReviewPackageId
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
-
-    coordination = coordinator(cut)
-    first = coordination.live_package(cut.mission.id)
-    assert first is not None
-    second = dataclasses.replace(first, package_id=ReviewPackageId(str(first.package_id) + "-c"))
-    cut.semantics.insert_review_package(second)
-    append_hierarchical_event(
-        cut.store,
-        ROOT_REVIEW_CUT,
-        cut.mission.id,
-        key=f"{cut.mission.id}:{second.package_id}",
-        task_id=str(second.binding.subject_ref.id),
-        payload={
-            "package_id": str(second.package_id),
-            "requirements_revision": int(second.binding.requirements_revision),
-            "scope_epoch": 0,
-        },
-    )
-    live = coordinator(cut).live_package(cut.mission.id)
-    assert live is not None
-    assert str(live.package_id) == str(second.package_id), (
-        "with nothing superseded, the answer is the last cut this deployment recorded"
-    )
-
-
-def test_a_criterion_nobody_judged_is_recorded_as_never_having_been_run(cut: World) -> None:
-    """P2-5 / I07: the *execution* axis, which no test read.
-
-    ``project_verdict`` flattens a non-conclusive execution to UNKNOWN anyway, so the
-    acceptance answer does not change — but the stored record is what a replay reads,
-    and "judged FAIL" and "nobody looked" are different facts about the same
-    criterion.  Turning ``NOT_RUN`` into ``SUCCEEDED`` survived the whole suite.
-    """
-
-    from agent_orchestrator.contracts.resolution import CheckExecution
-
-    unjudged = review(cut, verdicts={})
-    assert [item.check_execution for item in unjudged.criteria] == [CheckExecution.NOT_RUN]
-    assert [item.verdict for item in unjudged.criteria] == [CriterionVerdict.UNKNOWN]
-
-
-@pytest.mark.parametrize(
-    ("verdict", "criterion"),
-    [
-        (ReviewVerdict.REJECTED, CriterionVerdict.FAIL),
-        (ReviewVerdict.ACCEPT, CriterionVerdict.PASS),
-    ],
-)
-def test_a_criterion_the_reviewer_did_judge_carries_a_finished_execution(
-    cut: World, verdict: ReviewVerdict, criterion: CriterionVerdict
-) -> None:
-    """Either way round: a judgement that happened is an execution that succeeded."""
-
-    from agent_orchestrator.contracts.resolution import CheckExecution
-
-    record = review(cut, verdict=verdict, verdicts={ROOT_CRITERION: criterion})
-    assert [item.check_execution for item in record.criteria] == [CheckExecution.SUCCEEDED]
-
-
-def test_ready_says_which_half_of_the_question_is_ready(cut: World) -> None:
-    """P2-6: ``READY`` is this module's answer, not the Mission's.
-
-    A reviewer that accepts while reporting an unmet criterion leaves the state here
-    at READY for ever while ``commit_goal_resolution`` refuses it every cycle, and an
-    operator reading a bare "READY" has nothing to go on.
-    """
-
-    review(cut)
-    state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.READY
-    assert "success expression" in state.detail
-    assert "commit_goal_resolution" in state.detail
-
-
-def _exhaust_final_review(world: World, package: Any, *, interrupted: bool) -> str:
-    """The final review's two calls ran out; the second was interrupted, or answered badly."""
-    from agent_orchestrator.orchestrator.assurance_purpose_reviews import purpose_review_key
-    from agent_orchestrator.orchestrator.failure_classes import record_review_interruption
-
-    key = purpose_review_key(str(package.purpose), world.mission.id, str(package.package_id))
-    body = {"mission_id": world.mission.id, "review_key": key, "classification_ref": {},
-            "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
-    world.store.insert_receipt(commit_id="assurance-review-format-exhausted:" + key,
-                               kind="AssuranceReviewFormatExhausted", subject_id=key,
-                               base_version=0, proposal_hash="0" * 64, receipt=body)
-    if interrupted:
-        for _ in range(2):  # a replayed collection writes nothing new
-            record_review_interruption(world.store, mission_id=world.mission.id, review_key=key,
-                                       ordinal=2, intent_id="intent-final-2",
-                                       error_code="base_agent_driver_exception")
-    return key
-
-
-def test_a_final_review_interrupted_out_of_its_calls_is_cut_again(cut: World) -> None:
-    """2026-09-29 真机第七局一类：审阅每个包只准调用 2 次，第 2 次被重启打断后审阅就
-    用完了，整局只能停下。被打断不是审阅员的结论：重切一个新包（新审阅、新的 2 次机会），
-    仍受每版切包上限约束；审阅员答坏两次的照旧不重切。
-
-    **Mutation**: drop the ``REVIEW_INTERRUPTED`` reason → the first assertion goes red;
-    count a badly answered review as interrupted → the last one does."""
-    import inspect
-
-    from agent_orchestrator.orchestrator import assurance_review_collect
-
-    first = coordinator(cut).live_package(cut.mission.id)
-    assert first is not None
-    key = _exhaust_final_review(cut, first, interrupted=True)
-    state = coordinator(cut).state(cut.mission.id)
-    assert state.status is RootReviewStatus.RECUT_REQUIRED
-    assert state.stale_reasons == ("REVIEW_INTERRUPTED",)
-    assert len([r for r in cut.store.connection.execute(
-        "SELECT 1 FROM commit_receipts WHERE kind='AssuranceReviewTurnInterrupted'").fetchall()]) == 1
-    second = coordinator(cut).cut(cut.mission.id, now_ms=NOW_MS + 200_000)
-    assert str(second.package_id) != str(first.package_id)
-    assert coordinator(cut).state(cut.mission.id).stale_reasons == ()
-    assert "REVIEW_INTERRUPTED" in events(cut, ROOT_REVIEW_SUPERSEDED)[-1].payload["reasons"]
-    assert key.startswith("assurance-mission-final:")
-    # the collector records the interruption from the turn's own error code
-    assert "record_review_interruption(" in inspect.getsource(
-        assurance_review_collect.collect_assurance_review)
-
-
-def test_a_final_review_answered_badly_twice_is_not_cut_again(cut: World) -> None:
-    package = coordinator(cut).live_package(cut.mission.id)
-    assert package is not None
-    _exhaust_final_review(cut, package, interrupted=False)
-    assert coordinator(cut).state(cut.mission.id).stale_reasons == ()
 
 
 def test_only_an_interrupted_turn_code_counts_as_interrupted() -> None:

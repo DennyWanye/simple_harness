@@ -3,21 +3,26 @@
 
 """P2.3p: consecutive after-handoff 0-token UNKNOWNs are bounded.
 
-Grok H-L3-C2-r0/r1 (third batch): planner:1 and the synthesizer succeeded, then
-every later planner invoke settled ``unknown`` / ``provider_error_after_handoff``
-with 0 tokens.  P2.3f waited 300 s, re-handed off, the next invoke UNKNOWN'd in
-milliseconds, ``PlanningRejected{provider_outcome_unknown}`` opened a **new**
-planner ordinal, and the loop ran until the wall clock.  r0 stopped in PLANNING
-with ``stop_reason=null`` and a hanging 50 k reservation; r1's Worker leaf sat
-``blocked=true`` until 1800 s / ``budget_exhausted``.
+Grok H-L3-C2-r0/r1 (third batch): planner:1 and the synthesizer succeeded, then every
+later planner invoke settled ``unknown`` / ``provider_error_after_handoff`` with 0 tokens,
+and the loop ran until the wall clock — r0 stopped in PLANNING with ``stop_reason=null``,
+r1's Worker leaf sat ``blocked=true`` until 1800 s.
 
-P2.3l's ``runtime_unavailable`` only fires when the planning ladder is spent
-*and* the Mission is still PLANNING.  Remaining rungs (or an ACTIVE Worker)
-kept the hang unbounded.  This slice counts consecutive after-handoff 0-token
-UNKNOWNs on the Mission and, at N = ``MAX_SERVICE_REHANDOFFS + 1`` (P2.3f's
-per-subject retry width), stops as ``runtime_unavailable``, writes
-``MissionFailed``, and releases UNKNOWN grants.  One such UNKNOWN, or an
-UNKNOWN that carries tokens, still takes the P2.3f ladder.  Legacy is untouched.
+HTN 补齐阶段 A′（2026-10-03）换芯到产品同形世界，只有模型回复是脚本。产品上界限的来源
+与此前不同（偏离已记入迁移报告）：
+
+* 规划回合：每一轮"结果不明"等满界限后按 ``provider_outcome_unknown`` 被拒，计入规划次数；
+  次数用完（``max_planning_attempts``）以 ``runtime_unavailable`` 具名停止，不再开新一轮。
+  原来那个"连续 N=2 次就停"的独立计数在产品路径上已没有计数方（只被清零），由规划次数兜住。
+* 执行者尝试：从不再交接；等满界限按丢失处理，交给重做；同一步"非模型原因失败"到上限
+  （2026-09-28 用户定，按每步设上限）以 ``runtime_unavailable`` 具名停止。
+* 每一次结果不明的调用都留在账上：授权 UNKNOWN、预留按上限挂着计数，诊断里只有错误类名
+  与 HTTP 状态（包装异常拆到底层），不带回复正文与密钥。
+
+一条 UNKNOWN 之后照常走完（P2.3p 的 N-1 档）由
+``test_service_intent_provider_blocker.py::test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next_round_answers``
+覆盖；原"常量核对"一条删除——``MAX_SERVICE_REHANDOFFS`` / ``MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS``
+在产品路径上已是孤儿。
 """
 
 from __future__ import annotations
@@ -27,343 +32,139 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import test_service_intent_provider_blocker as blocker  # noqa: E402
-from decision_loop import auto_grant, content_critic_step  # noqa: E402
-from test_htn_end_to_end import ROOT_DUTY  # noqa: E402
-from test_provider_grant_rehandoff import (  # noqa: E402
-    HELD,
-    _conservation,
-    _grants,
-    _open_loop,
+from _unknown_outcome_world import (  # noqa: E402
+    CONFIG,
+    OPEN,
+    FaultyProvider,
+    assert_terminal_ledger,
+    create,
+    events,
+    http_loss,
+    invocations,
+    plan_intents,
+    settle,
+    status,
+    transport_loss,
+    unclassified,
 )
 
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.contracts.state_machines import MissionStopReason  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS,
-    MAX_SERVICE_REHANDOFFS,
-    Orchestrator,
-)
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
-    UnknownAfterHandoff,
-    critic_step,
-    envelope_step,
-)
-from simple_harness.contracts import RunId, thaw_json  # noqa: E402
+from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from simple_harness.providers.errors import ProviderTransportError  # noqa: E402
 
-OPEN = blocker.OPEN
-LIMIT = blocker.LIMIT
+
+class _ProviderAdapterError(RuntimeError):
+    """A provider adapter's own wrapper around the transport error it caught."""
 
 
-def _admit_root(loop: Orchestrator, mission_id: str) -> None:
-    """Mission submitter admits the root duty (TG decision 9).  The Orchestrator does not."""
+def _wrapped(status_code: int):
+    def fault(request: Any) -> None:
+        del request
+        try:
+            raise ProviderTransportError(public_message="scripted transport loss after handoff",
+                                         status_code=status_code)
+        except ProviderTransportError as error:
+            raise _ProviderAdapterError("physical call failed; usage unknown") from error
 
-    loop.commit.admit_obligation_demand(
-        mission_id,
-        ROOT_DUTY,
-        principal="mission-submitter",
-        requester={"kind": "mission_root"},
-        evidence={"mission_id": mission_id},
-    )
-
-
-def _unclassified(request: Any) -> str:
-    """Handoff-after exception that is *not* in ``_DEFINITE_PROVIDER_FAILURES``."""
-
-    del request
-    raise UnknownAfterHandoff("scripted unclassified exception after handoff")
+    return fault
 
 
-def _http_unclassified(request: Any) -> str:
-    """Same path, but the exception carries an HTTP status the ledger should keep."""
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-    del request
-    raise ProviderTransportError(
-        public_message="scripted transport loss after handoff",
-        status_code=418,
-    )
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def test_the_consecutive_bound_is_the_p23f_retry_width() -> None:
-    """N is not a new config item: original hand-off + ``MAX_SERVICE_REHANDOFFS``."""
-
-    assert MAX_SERVICE_REHANDOFFS == 1
-    assert MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS == MAX_SERVICE_REHANDOFFS + 1 == 2
-
-
-def test_consecutive_after_handoff_unknowns_stop_even_when_the_ladder_has_rungs(
-    tmp_path,
-) -> None:
-    """N unclassified after-handoff UNKNOWNs (0 tokens) stop the Mission.
-
-    ``max_planning_attempts=3`` is the C2 shape: remaining rungs used to open
-    planner:2 / :3 / :4.  After the fix the Mission is FAILED /
-    ``runtime_unavailable`` with ``MissionFailed``, reservations released, and
-    conservation holding.  It must not sit in PLANNING with ``stop_reason=null``.
-    """
-
-    world, _adopt, evidence = blocker._plain_world(tmp_path, key="p23p-ladder-stop")
-    n = MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS
-    provider = RoleScriptedProvider({"planner": [_unclassified] * (n + 2)})
+def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_path) -> None:
+    """Three planner rounds in a row end on an unknown outcome (three different kinds of
+    after-handoff failure).  ``max_planning_attempts=3``: the Mission is FAILED /
+    ``runtime_unavailable`` with ``MissionFailed``, no fourth round is opened, nothing is
+    left in flight, and every lost call is on the books — never in PLANNING with
+    ``stop_reason=null``.  N11: the diagnostics unwrap a wrapper to the transport class and
+    HTTP status, and never carry the reply text."""
 
     async def case() -> dict[str, Any]:
-        async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await blocker._run_until_done_or(loop, seconds=10.0)
-            final = loop.store.get_mission(mission_id)
-            intent = loop.store.get_intent_for_subject(f"{mission_id}:planner:1")
-            diagnostics = _invocation_diagnostics(loop, intent)
+        provider = FaultyProvider({"planner": [unclassified, http_loss(418), _wrapped(503), transport_loss]})
+        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 3}) as world:
+            mission_id = create(world, "p23p-ladder-stop")
+            assert await settle(world, mission_id, seconds=15)
+            final = world.store.get_mission(mission_id)
+            rounds = sorted(plan_intents(world, mission_id), key=lambda item: item.created_at)
             return {
-                "returned": returned,
-                "types": [item.type for item in blocker._events(loop, mission_id)],
-                "planner_subjects": sorted(
-                    {
-                        item.subject_id
-                        for item in loop.store.list_intents(
-                            "PENDING",
-                            "CLAIMED",
-                            "AGENT_CREATED",
-                            "SUBMITTED",
-                            "SETTLED",
-                            "FAILED",
-                        )
-                        if item.mission_id == mission_id and ":planner:" in item.subject_id
-                    }
-                ),
-                "planner_calls": provider.by_role.get("planner", 0),
-                "status": final.status,
+                "status": status(world, mission_id),
                 "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
-                "open": [
-                    item.subject_id
-                    for item in loop.store.list_intents(*OPEN)
-                    if item.mission_id == mission_id
-                ],
-                "grants": _grants(loop),
-                "conservation": _conservation(loop, mission_id),
-                "diagnostics": diagnostics,
+                "types": [item.type for item in events(world, mission_id)],
+                "rejected": [item.payload["reason"] for item in events(world, mission_id, "PlanningRejected")],
+                "rounds": [item.subject_id.rpartition(":")[2] for item in rounds],
+                "diagnostics": [invocations(world, item) for item in rounds],
+                "planner_calls": provider.role_calls["planner"],
+                "open": [item.subject_id for item in world.store.list_intents(*OPEN) if item.mission_id == mission_id],
+                "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
     outcome = asyncio.run(case())
-    assert outcome["returned"] is True, outcome["types"]
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["stop_reason"] == str(MissionStopReason.RUNTIME_UNAVAILABLE), (
-        f"stop_reason={outcome['stop_reason']!r} report={outcome['report']}"
-    )
-    assert "MissionFailed" in outcome["types"], outcome["types"]
-    assert outcome["open"] == [], outcome["open"]
-    assert outcome["planner_calls"] == n, (
-        "a remaining ladder rung must not open another planner ordinal: "
-        f"calls={outcome['planner_calls']} subjects={outcome['planner_subjects']}"
-    )
-    assert all(":planner:2" not in subject for subject in outcome["planner_subjects"]), (
-        outcome["planner_subjects"]
-    )
-    assert all(row["state"] not in HELD for row in outcome["grants"]), outcome["grants"]
-    assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-    assert outcome["conservation"]["reserved"] == 0, outcome["conservation"]
-    assert outcome["conservation"]["held_reservations"] == [], outcome["conservation"]
-    classes = {item.get("error_class") for item in outcome["diagnostics"]}
-    assert "UnknownAfterHandoff" in classes, outcome["diagnostics"]
+    assert outcome["status"] == "FAILED", outcome["types"]
+    assert outcome["stop_reason"] == "runtime_unavailable", outcome["report"]
+    assert outcome["report"]["planning_failure"]["reason"] == "provider_outcome_unknown"
+    assert "MissionFailed" in outcome["types"]
+    assert outcome["rejected"] == ["provider_outcome_unknown"] * 3
+    assert outcome["planner_calls"] == 3 and outcome["rounds"] == ["1", "2", "3"], outcome["rounds"]
+    assert outcome["open"] == []
+    assert len(outcome["ledger"]["held_reservations"]) == 3
+    # the runtime_unavailable report: usage is not fully known, the budget is conserved
+    assert outcome["report"]["usage_fully_known"] is False and outcome["report"]["budget_conserved"] is True
+
+    seen = []
+    for calls in outcome["diagnostics"]:
+        [call] = calls
+        assert call["state"] == "unknown" and call["error_code"] == "provider_error_after_handoff", call
+        usage = call["usage"]
+        seen.append((usage.get("error_class"), usage.get("http_status"), usage.get("wrapper_class")))
+        dumped = str(usage)
+        assert "scripted transport loss" not in dumped and "scripted unclassified" not in dumped
+        assert "Authorization" not in dumped and "api_key" not in dumped
+    assert seen == [("UnknownAfterHandoff", None, None), ("ProviderTransportError", 418, None),
+                    ("ProviderTransportError", 503, "_ProviderAdapterError")], seen
 
 
-def test_n_minus_one_after_handoff_unknown_then_recovery_completes(tmp_path) -> None:
-    """N-1 unclassified after-handoff UNKNOWNs still take the P2.3f ladder to COMPLETED."""
-
-    from test_nested_compound_composition import _accepting_reviewer
-
-    world, adopt, evidence = blocker._plain_world(tmp_path, key="p23p-recover")
-    passing_test = "def test_ok():\n    assert True\n"
-    leaf = [
-        ("workspace_write_file", {"path": "out/result.json", "content": "ok\n"}),
-        ("workspace_write_file", {"path": "tests/test_ok.py", "content": passing_test}),
-        ("workspace_write_file", {"path": "a.md", "content": "done\n"}),
-        _leaf_envelope("result", "out/result.json"),
-    ]
-    review = [
-        ("workspace_write_file", {"path": "out/verdict.json", "content": "PASS\n"}),
-        ("workspace_write_file", {"path": "tests/test_ok.py", "content": passing_test}),
-        ("workspace_write_file", {"path": "a.md", "content": "done\n"}),
-        _leaf_envelope("verdict", "out/verdict.json"),
-    ]
-    provider = RoleScriptedProvider(
-        {
-            "planner": [_unclassified, adopt],
-            "worker": (leaf + review) * 4,
-            "critic": [content_critic_step()] * 8,
-            "root_reviewer": [_accepting_reviewer] * 3,
-        }
-    )
+def test_a_worker_step_whose_calls_keep_ending_unknown_stops_as_runtime_unavailable(tmp_path) -> None:
+    """Worker attempts are never re-handed off.  They also must not sit until 1800 s: each
+    attempt blocked on an unknown outcome ends LOST after the bound, the step is done
+    again, and when the step's non-model failures reach their cap the Mission stops as
+    ``runtime_unavailable`` — every lost attempt's reservation held and counted."""
 
     async def case() -> dict[str, Any]:
-        async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            _admit_root(loop, mission_id)
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await blocker._run_until_done_or(loop, seconds=15.0)
-            final = loop.store.get_mission(mission_id)
+        provider = FaultyProvider({"worker": [transport_loss] * 12})
+        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+            mission_id = create(world, "p23p-worker")
+            assert await settle(world, mission_id, seconds=30)
+            final = world.store.get_mission(mission_id)
+            attempts = [item for item in world.store.list_intents("SETTLED", "FAILED", *OPEN)
+                        if item.mission_id == mission_id and item.kind == "attempt"]
             return {
-                "returned": returned,
-                "types": [item.type for item in blocker._events(loop, mission_id)],
-                "status": final.status,
-                "stop_reason": final.stop_reason,
-                "planner_calls": provider.by_role.get("planner", 0),
-                "conservation": _conservation(loop, mission_id),
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["returned"] is True, outcome["types"]
-    assert outcome["status"] is MissionStatus.COMPLETED, (
-        f"{outcome['status']} / {outcome['stop_reason']}: {outcome['types']}"
-    )
-    assert outcome["planner_calls"] == 2, outcome["planner_calls"]
-    assert "MissionFailed" not in outcome["types"]
-    assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-
-
-def test_a_worker_leaf_consecutive_after_handoff_unknowns_stop_as_runtime_unavailable(
-    tmp_path,
-) -> None:
-    """Worker attempts do not re-hand-off (P2.3f).  They also must not sit until 1800 s.
-
-    After a committed plan, N consecutive after-handoff 0-token UNKNOWNs on the
-    Worker leaf fail the Mission as ``runtime_unavailable`` and release the grant.
-    """
-
-    world, adopt, evidence = blocker._plain_world(tmp_path, key="p23p-worker")
-    n = MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS
-    provider = RoleScriptedProvider(
-        {
-            "planner": [adopt],
-            "worker": [_unclassified] * (n + 2),
-            "critic": [critic_step(verdict="PASS", criteria_met=True)] * 4,
-        }
-    )
-
-    async def case() -> dict[str, Any]:
-        async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            _admit_root(loop, mission_id)
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await blocker._run_until_done_or(loop, seconds=15.0)
-            final = loop.store.get_mission(mission_id)
-            return {
-                "returned": returned,
-                "types": [item.type for item in blocker._events(loop, mission_id)],
-                "status": final.status,
+                "status": status(world, mission_id),
                 "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
-                "worker_calls": provider.by_role.get("worker", 0),
-                "open": [
-                    item.subject_id
-                    for item in loop.store.list_intents(*OPEN)
-                    if item.mission_id == mission_id
-                ],
-                "grants": _grants(loop),
-                "conservation": _conservation(loop, mission_id),
+                "types": [item.type for item in events(world, mission_id)],
+                "lost": [item.payload.get("reason") for item in events(world, mission_id, "AttemptLost")],
+                "attempts": [(item.state, [call["state"] for call in invocations(world, item)]) for item in attempts],
+                "worker_calls": provider.role_calls["worker"],
+                "open": [item.subject_id for item in world.store.list_intents(*OPEN) if item.mission_id == mission_id],
+                "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
     outcome = asyncio.run(case())
-    assert outcome["returned"] is True, outcome["types"]
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
-    assert outcome["stop_reason"] == str(MissionStopReason.RUNTIME_UNAVAILABLE), (
-        f"stop_reason={outcome['stop_reason']!r} report={outcome['report']}"
-    )
-    assert "MissionFailed" in outcome["types"], outcome["types"]
-    assert outcome["worker_calls"] >= n, outcome
-    assert outcome["open"] == [], outcome["open"]
-    assert all(row["state"] not in HELD for row in outcome["grants"]), outcome["grants"]
-    assert outcome["conservation"]["holds"] is True, outcome["conservation"]
-    assert outcome["conservation"]["reserved"] == 0, outcome["conservation"]
-
-
-def test_after_handoff_unknown_keeps_error_class_and_http_status_on_the_ledger(
-    tmp_path,
-) -> None:
-    """Diagnosability: short class name + HTTP status land in usage_json, never the body."""
-
-    world, _adopt, evidence = blocker._plain_world(tmp_path, key="p23p-diag")
-    provider = RoleScriptedProvider({"planner": [_http_unclassified, _http_unclassified]})
-
-    async def case() -> dict[str, Any]:
-        async with _open_loop(evidence, provider, max_planning_attempts=3) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await blocker._run_until_done_or(loop, seconds=10.0)
-            intent = loop.store.get_intent_for_subject(f"{mission_id}:planner:1")
-            return {
-                "returned": returned,
-                "diagnostics": _invocation_diagnostics(loop, intent),
-                "status": loop.store.get_mission(mission_id).status,
-            }
-
-    outcome = asyncio.run(case())
-    assert outcome["returned"] is True
-    assert outcome["diagnostics"], "expected at least one after-handoff UNKNOWN"
-    for item in outcome["diagnostics"]:
-        assert item["error_code"] == "provider_error_after_handoff"
-        assert item["error_class"] == "ProviderTransportError", item
-        assert item["http_status"] == 418, item
-        dumped = str(item["usage"])
-        assert "scripted transport loss" not in dumped
-        assert "Authorization" not in dumped
-        assert "api_key" not in dumped
-
-
-def _leaf_envelope(port: str, path: str):
-    def step(request: Any) -> str:
-        return envelope_step(
-            summary=port,
-            artifacts=[path],
-            claims=[f"produced {port}"],
-            override=lambda env: {**env, "outputs": {port: path}},
-        )(request)
-
-    return step
-
-
-def _invocation_diagnostics(loop: Orchestrator, intent: Any) -> list[dict[str, Any]]:
-    if intent is None or intent.agent_id is None:
-        return []
-    runtime = loop.bridge_for(intent).runtime
-    agents = {intent.agent_id}
-    for item in blocker._rehandoffs(loop, intent.mission_id):
-        previous = item.get("previous_agent_id")
-        if previous:
-            agents.add(previous)
-    rows: list[dict[str, Any]] = []
-    for agent_id in agents:
-        for record in runtime.uow.list_provider_invocations(RunId(str(agent_id))):
-            if str(record.state) != "unknown":
-                continue
-            usage = record.usage_json
-            payload = thaw_json(usage) if usage is not None else {}
-            if not isinstance(payload, dict):
-                payload = {}
-            rows.append(
-                {
-                    "error_code": record.error_code,
-                    "error_class": payload.get("error_class"),
-                    "http_status": payload.get("http_status"),
-                    "usage": payload,
-                }
-            )
-    return rows
+    assert outcome["status"] == "FAILED", outcome["types"][-15:]
+    assert outcome["stop_reason"] == "runtime_unavailable", outcome["report"]
+    cap = outcome["report"]["detail"]["cap"]
+    assert outcome["report"]["detail"]["reason"] == "non_model_failures_exhausted"
+    assert "MissionFailed" in outcome["types"]
+    assert outcome["lost"] == ["provider_outcome_unknown"] * cap, outcome["lost"]
+    assert outcome["worker_calls"] == cap and outcome["attempts"] == [("FAILED", ["unknown"])] * cap
+    assert outcome["open"] == []
+    assert len(outcome["ledger"]["held_reservations"]) == cap

@@ -11,9 +11,21 @@ count was hashed into every frozen intent.
 
 from __future__ import annotations
 
-from test_provider_budget_guard import Counter
-
 from agent_orchestrator.runtime.provider_budget_guard import ProviderBudgetGuard
+
+
+class Counter:
+    """一个固定的测试计数器（原从已删的 ``test_provider_budget_guard`` 导入，2026-10-03 搬进来）。"""
+
+    fingerprint = "fixture-text-count-v1"
+    bound_protocol = "fixture-text-only-v1"
+    requires_prior_output_reserve = True
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def estimate_input_tokens(self, request):
+        return self.tokens
 
 
 def test_the_slot_count_is_capacity_not_the_frozen_request_identity():

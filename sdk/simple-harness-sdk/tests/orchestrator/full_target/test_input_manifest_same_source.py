@@ -8,131 +8,134 @@ the inputs a second time (without the read's clock) and, when that second answer
 had no manifest, substituted an empty one.  Now the admission takes the very
 resolution the report was computed from, the report carries the hash of the
 manifest it checked, and ``admit_for_dispatch`` refuses any other manifest.  A
-consumer that declares no input still gets its explicit empty manifest; a required
-port the plan drew no edge for does not.
+required port the plan drew no edge for is not an empty success.
+
+2026-10-03 A′：世界换成产品同形部署上的两步链（``write`` 交付 → ``continue`` 消费它），计划由
+规划器提出并经独立审阅、执行与验收都是主循环真跑（不再手工验收）。"只认读到的那份清单"用裁决①a
+的包装写：消费者真被放行的那一刻，先把篡改过的清单（空的替身、别的消费者的）递给同一个
+``admit_for_dispatch``，确认被拒，再放行真的那份。
+
+删除（记偏离）：
+* ``a_consumer_with_no_input_is_admitted_with_the_empty_manifest``：整圈用例的唯一叶子没有输入，
+  准入不了就到不了完成（``product_world/test_full_circle.py``）。
+* ``a_ready_report_without_its_resolution_is_refused``：只能靠替换产品的 ``read()`` 结果造出
+  （就绪报告与它的解析出自同一次读），产品走不到；按裁决①不再替换产品读函数。
+* ``a_revoked_producer_after_readiness_leaves_no_admission``：撤销验收在产品里没有命令（分诊裁决⑥）。
 """
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import sys
+from pathlib import Path
+from typing import Any
 
 import pytest
-from test_htn_end_to_end import (
-    World,
-    _accept_leaf,
-    _leaf_task,
-    _review_task,
-    _revoke,
-    committed,
-)
 
-from agent_orchestrator.artifacts.input_bindings import InputManifest, ResolutionProblemKind
-from agent_orchestrator.graph.eligibility import NotEligible, ReadinessReason, admit_for_dispatch
+_TASKGRAPH = Path(__file__).resolve().parent / "taskgraph_exec"
+if str(_TASKGRAPH) not in sys.path:
+    sys.path.insert(0, str(_TASKGRAPH))
 
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
-@pytest.fixture
-def live(tmp_path) -> World:
-    return committed(tmp_path, demand=True)
+from agent_orchestrator.artifacts.input_bindings import InputManifest, ResolutionProblemKind  # noqa: E402
+from agent_orchestrator.graph import eligibility  # noqa: E402
+from agent_orchestrator.graph.eligibility import NotEligible  # noqa: E402
+from agent_orchestrator.orchestrator import hierarchical_dispatch, taskgraph_dispatch  # noqa: E402
+from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch  # noqa: E402
 
 
-def _occurrence(world: World, task_id: str):
-    return next(spec for spec in world.network().occurrences if str(spec.task_id) == task_id)
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _review_ready(world: World) -> None:
-    _accept_leaf(world)
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
+def _step_tasks(world: Any) -> dict[str, str]:
+    network = world.dispatch.network(world.mission.id)
+    found: dict[str, str] = {}
+    for instance in network.method_instances:
+        for child in instance.child_bindings:
+            found[str(child.slot_key)] = str(network.occurrence(child.occurrence_id).task_id)
+    return found
 
 
-def test_a_consumer_with_no_input_is_admitted_with_the_empty_manifest_readiness_checked(live: World) -> None:
-    leaf = _leaf_task(live)
-    view = live.dispatch.read(live.mission.id)
-    occurrence = _occurrence(live, leaf).occurrence_id
-    report = view.reports[occurrence]
-    assert report.ready
-    checked = view.resolutions[occurrence].manifest
-    assert checked is not None and checked.bindings == () and checked.is_frozen
-    assert report.input_manifest_hash == checked.manifest_hash()
-    admitted = live.dispatch.admissions(live.mission.id).readiness[leaf]
-    assert admitted.input_manifest_hash == report.input_manifest_hash
+def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(tmp_path, monkeypatch) -> None:
+    """消费者被放行时：放行用的就是就绪检查读到的那份清单（报告里记着它的哈希）；空的替身清单、
+    别的消费者的清单都被拒；一次准入里每个出现只解析一次输入（不再解析第二次）。"""
+
+    refusals: list[str] = []
+    checked: list[str] = []
+    real_admit = eligibility.admit_for_dispatch
+
+    def guarded(report: Any, task_view: Any, plan: Any, manifest: Any, **kwargs: Any) -> Any:
+        if manifest is not None and manifest.bindings and not checked:
+            checked.append(str(manifest.consumer_task_ref))
+            assert report.input_manifest_hash == manifest.manifest_hash()
+            producer = str(manifest.bindings[0].producer_task_ref)
+            for variant in (InputManifest(consumer_task_ref=manifest.consumer_task_ref),
+                            InputManifest(consumer_task_ref=producer)):
+                with pytest.raises(NotEligible) as refused:
+                    real_admit(report, task_view, plan, variant, **kwargs)
+                refusals.append(str(refused.value))
+        return real_admit(report, task_view, plan, manifest, **kwargs)
+
+    monkeypatch.setattr(hierarchical_dispatch, "admit_for_dispatch", guarded)
+    monkeypatch.setattr(taskgraph_dispatch, "admit_for_dispatch", guarded)
+
+    resolved: list[list[str]] = []
+    real_admissions = HierarchicalDispatch.admissions
+    real_resolved = HierarchicalDispatch.resolved_inputs
+    inside: list[list[str]] = []
+
+    def counted_admissions(self, mission_id, *args, **kwargs):  # type: ignore[no-untyped-def]
+        inside.append([])
+        try:
+            return real_admissions(self, mission_id, *args, **kwargs)
+        finally:
+            resolved.append(inside.pop())
+
+    def counted_resolved(self, mission_id, network, spec, **kwargs):  # type: ignore[no-untyped-def]
+        if inside:
+            inside[-1].append(str(spec.occurrence_id))
+        return real_resolved(self, mission_id, network, spec, **kwargs)
+
+    monkeypatch.setattr(HierarchicalDispatch, "admissions", counted_admissions)
+    monkeypatch.setattr(HierarchicalDispatch, "resolved_inputs", counted_resolved)
+
+    async def case() -> Any:
+        async with enabled_world(tmp_path, key="manifest-same-source", planner=chain_planner,
+                                 criteria=CHAIN_CRITERIA) as world:
+            return await world.product.run_until_settled(world.mission.id, rounds=20), _step_tasks(world)
+
+    mission, tasks = asyncio.run(case())
+    assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+    assert checked == [tasks["continue"]], "the consumer was admitted, with its own manifest"
+    assert len(refusals) == 2 and all(refusals)
+    assert "not the manifest readiness checked" in refusals[0]
+    # inside any one admission pass, no occurrence's inputs were resolved twice
+    assert resolved and all(len(calls) == len(set(calls)) for calls in resolved)
 
 
-def test_the_admission_does_not_resolve_the_inputs_a_second_time(live: World) -> None:
-    _review_ready(live)
-    calls: list[str] = []
-    original = type(live.dispatch).resolved_inputs
+def test_a_required_port_the_plan_drew_no_edge_for_is_not_an_empty_success(tmp_path) -> None:
+    """计划第 1 版刚提交（执行者被扣住）：消费者的必需输入端口要是没有边，解析给不出清单，
+    原因是 UNBOUND_REQUIRED_PORT，而不是一份空的"成功"清单。"""
 
-    def counting(self, mission_id, network, spec, **kwargs):  # type: ignore[no-untyped-def]
-        calls.append(str(spec.task_id))
-        return original(self, mission_id, network, spec, **kwargs)
+    async def case() -> Any:
+        async with enabled_world(tmp_path, key="manifest-unbound", planner=chain_planner,
+                                 criteria=CHAIN_CRITERIA, hold_worker=True) as world:
+            await world.commit_seed()
+            consumer = _step_tasks(world)["continue"]
+            network = world.dispatch.network(world.mission.id)
+            spec = next(item for item in network.occurrences if str(item.task_id) == consumer)
+            assert any(port.required for port in network.binding_for_occurrence(spec.occurrence_id).input_ports)
+            with_edge = world.dispatch.resolved_inputs(world.mission.id, network, spec)
+            cut = dataclasses.replace(network, data_requirements=())
+            return with_edge, world.dispatch.resolved_inputs(world.mission.id, cut, spec)
 
-    type(live.dispatch).resolved_inputs = counting  # type: ignore[method-assign]
-    try:
-        admissions = live.dispatch.admissions(live.mission.id)
-    finally:
-        type(live.dispatch).resolved_inputs = original  # type: ignore[method-assign]
-    assert _review_task(live) in admissions.readiness
-    # once per occurrence, inside read() — never again for the admitted ones
-    assert sorted(calls) == sorted(str(spec.task_id) for spec in live.network().occurrences)
-
-
-def test_a_manifest_other_than_the_checked_one_is_refused(live: World) -> None:
-    _review_ready(live)
-    review = _review_task(live)
-    view = live.dispatch.read(live.mission.id)
-    occurrence = _occurrence(live, review).occurrence_id
-    report, task_view = view.reports[occurrence], view.views[occurrence]
-    checked = view.resolutions[occurrence].manifest
-    assert report.ready and checked is not None and checked.bindings
-    # the checked manifest itself is admissible ...
-    admit_for_dispatch(report, task_view, view.plan, checked, now_ms=1_000_000)
-    # ... an empty stand-in for the same consumer is not
-    with pytest.raises(NotEligible, match="not the manifest readiness checked"):
-        admit_for_dispatch(
-            report, task_view, view.plan, InputManifest(consumer_task_ref=checked.consumer_task_ref),
-            now_ms=1_000_000,
-        )
-    # ... and neither is another consumer's manifest
-    other = view.resolutions[_occurrence(live, _leaf_task(live)).occurrence_id].manifest
-    with pytest.raises(NotEligible):
-        admit_for_dispatch(report, task_view, view.plan, other, now_ms=1_000_000)
-
-
-def test_a_ready_report_without_its_resolution_is_refused_not_filled_with_an_empty_manifest(
-    live: World,
-) -> None:
-    _review_ready(live)
-    real = type(live.dispatch).read
-
-    def without_resolutions(self, mission_id, **kwargs):  # type: ignore[no-untyped-def]
-        return dataclasses.replace(real(self, mission_id, **kwargs), resolutions={})
-
-    type(live.dispatch).read = without_resolutions  # type: ignore[method-assign]
-    try:
-        admissions = live.dispatch.admissions(live.mission.id)
-    finally:
-        type(live.dispatch).read = real  # type: ignore[method-assign]
-    assert admissions.readiness == {}
-    refusal = admissions.refusal_for(_review_task(live))
-    assert refusal is not None and "input_resolution_absent" in refusal.detail_codes
-
-
-def test_a_required_port_the_plan_drew_no_edge_for_is_not_an_empty_success(live: World) -> None:
-    review = _review_task(live)
-    network = live.network()
-    spec = _occurrence(live, review)
-    assert any(port.required for port in network.binding_for_occurrence(spec.occurrence_id).input_ports)
-    cut = dataclasses.replace(network, data_requirements=())
-    result = live.dispatch.resolved_inputs(live.mission.id, cut, spec)
+    with_edge, result = asyncio.run(case())
+    assert ResolutionProblemKind.UNBOUND_REQUIRED_PORT not in with_edge.kinds
     assert result.manifest is None
     assert ResolutionProblemKind.UNBOUND_REQUIRED_PORT in result.kinds
-
-
-def test_a_revoked_producer_after_readiness_leaves_no_admission(live: World) -> None:
-    receipt = _accept_leaf(live)
-    live.dispatch.issue_input_witnesses(live.mission.id, live.network(), now_ms=1_000_000)
-    assert _review_task(live) in live.dispatch.admissions(live.mission.id).readiness
-    _revoke(live, str(receipt.acceptance_id))
-    live.dispatch.issue_input_witnesses(live.mission.id, live.network(), now_ms=1_100_000)
-    refusal = live.dispatch.admissions(live.mission.id).refusal_for(_review_task(live))
-    assert refusal is not None and refusal.reason is not ReadinessReason.READY_CANDIDATE

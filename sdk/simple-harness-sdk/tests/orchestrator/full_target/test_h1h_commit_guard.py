@@ -1,51 +1,150 @@
-"""H1-H commit guards.
+"""H1-H commit guards on the product's deployment (HTN 补齐阶段 A′ 迁移，2026-10-03).
 
-The O08 / O03 cases below still build their state on the retiring ``test_plan_commits``
-world: a new or unresolved operation action needs the external-operation product world
-(rewritten together with representative case 3).  The A05 / I06 grant-change cases moved
-into ``test_h1h_authority_matrix.py::test_a04_*`` (main loop); A08 replay-after-revoke is
-``test_h1i_decision_replay.py::test_committed_refine_replays_after_grant_revocation_*``.
+* 预览读集身份不符 → 预览身份闸按名拒绝、一字未写，真命令照常提交（裁决①a）；
+* O08：规划器的计划改动在收集器里、预览之后提交之前，人批准了等着的发布申请单：提交在它自己的
+  事务里把操作来源整套重读，判过期、不提交；
+* O03：发布服务调用中掉线、结果未知（UNKNOWN）：碰到这个操作的计划改动只能等操作对账，
+  不提交、不出新版本。
+
+两条操作用例跑在 ``publishing_round``（产品同形代表用例三走到"申请单等人批准"，再让规划器给
+写文件那一步提后继步骤）。偏离分诊表：产品上这两种情形分别由执行图参与方的来源重读
+（``TASKGRAPH_PLAN_SOURCE_CHANGED``）和执行图收敛"先对账未决操作"挡下，走不到 H1-H 自己的
+``OPERATION_SNAPSHOT_STALE`` / ``OPERATION_UNRESOLVED``。原 A05 / I06（授权变更）在
+test_h1h_authority_matrix::test_a04_*，A08（撤销后重放）在
+test_h1i_decision_replay::test_committed_refine_replays_after_grant_revocation_*（偏离：删 2）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import dataclasses
-import hashlib
+import json
 
 import pytest
 from h1i_seed import plan_reply, refuse_tampered_first, reviewed
-from test_htn_store import envelope
-from test_plan_commits import _world
+from publishing_round import publishing_round, run_rounds
 
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.contracts.planning_decisions import (
+from agent_orchestrator.storage.htn_store import HtnStore
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+
+
+def _committed_revisions(loop, mission_id: str) -> list[int]:
+    return [event.payload["plan_revision"] for event in loop.store.list_events(mission_id)
+            if event.type == "PlanRevisionCommitted"]
+
+
+def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale(tmp_path) -> None:
+    async def case() -> None:
+        async with publishing_round(tmp_path, key="h1h-o08") as round_:
+            dispatch, approved = round_.dispatch, {}
+            original = dispatch.preview_plan_proposal
+
+            def preview_then_approve(proposal, *, inputs):  # type: ignore[no-untyped-def]
+                result = original(proposal, inputs=inputs)
+                if not approved:
+                    approved.update(round_.world.control.decide(round_.approval_id, "approve"))
+                return result
+
+            dispatch.preview_plan_proposal = preview_then_approve  # type: ignore[method-assign]
+            try:
+                row = await run_rounds(round_)
+            finally:
+                dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
+            assert approved["request_state"] == "GRANTED", approved
+            assert row["status"] == "COMMIT_REJECTED", row
+            assert "TASKGRAPH_PLAN_SOURCE_CHANGED" in json.dumps(row["detail"]), row
+            assert round_.plan_revision() == 1
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]
+
+    asyncio.run(case())
+
+
+def test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision(tmp_path) -> None:
+    """Mission-wide UNKNOWN stays authoritative: the plan change waits for the operation to be
+    reconciled and never commits on its own."""
+
+    async def case() -> None:
+        async with publishing_round(tmp_path, key="h1h-o03", unknown_outcome=True) as round_:
+            row = await run_rounds(round_, rounds=10)
+            assert row["status"] == "COMPILED", row
+            assert round_.plan_revision() == 1
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]
+            assert round_.action_states() == ["UNKNOWN"]
+            events = round_.loop.store.list_events(round_.mission_id)
+            assert [event.payload["kind"] for event in events
+                    if event.type == "TaskGraphConvergenceCommandRequested"] == ["RECONCILE_OPERATION"]
+            assert [event.payload["to_state"] for event in events
+                    if event.type == "TaskGraphConvergenceAdvanced"][-1] == "WAITING"
+
+    asyncio.run(case())
+
+
+def test_preview_read_set_identity_mismatch_refuses_before_writes(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delivery whose admission names another preview read set than the command's is
+    refused by the preview identity gate before anything is written; the real delivery
+    of the same round then commits (adjudication ①a)."""
+
+    refusals = refuse_tampered_first(
+        monkeypatch,
+        lambda command, principal, kwargs: (
+            command,
+            principal,
+            {**kwargs, "admission": dataclasses.replace(
+                kwargs["admission"], preview_read_set_hash="0" * 64)},
+        ),
+        "PREVIEW_IDENTITY_STALE",
+    )
+
+    async def case() -> None:
+        async with reviewed(tmp_path, key="h1h-preview-read-set") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
+            await loop._collect_plan_decision(
+                opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
+            )
+            assert len(refusals) == 1
+            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == 1
+
+    asyncio.run(case())
+
+
+# =====================================================================================
+# 暂留，供他人导入（2026-10-03）：旧的手搭准入快照，本文件已不再使用；
+# test_h1h_operation_current_gates 还在导入 ``_setup``，它迁完后整节删除。
+# =====================================================================================
+import hashlib  # noqa: E402
+
+from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi  # noqa: E402
+from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
     PLANNING_DECISION_V1,
     PlanningRequestBinding,
 )
-from agent_orchestrator.contracts.semantic_base import content_hash_of
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.governance.planning_authorization import (
+from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
+from agent_orchestrator.governance.permissions import Principal  # noqa: E402
+from agent_orchestrator.governance.planning_authorization import (  # noqa: E402
     PlanningAuthorizationSnapshot,
-    planning_policy_for_mission,
     StorePlanningAuthorityReader,
     build_planning_authorization,
+    planning_policy_for_mission,
 )
-from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected
-from agent_orchestrator.orchestrator.planning_admission_commits import (
+from agent_orchestrator.orchestrator.planning_admission_commits import (  # noqa: E402
     PlanningCommitAdmission,
 )
-from agent_orchestrator.planning.plan_preview import _source_snapshot_payload
-from agent_orchestrator.runtime.planning_operations import (
-    OperationEffect,
+from agent_orchestrator.planning.plan_preview import _source_snapshot_payload  # noqa: E402
+from agent_orchestrator.runtime.planning_operations import (  # noqa: E402
     StoreOperationReader,
     build_operation_snapshot,
     read_running_work,
 )
-from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from simple_harness.contracts import canonical_json
+from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore  # noqa: E402
+from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
+from simple_harness.contracts import canonical_json  # noqa: E402
 
 
 def _setup(world, *, command=None):
@@ -122,137 +221,3 @@ def _setup(world, *, command=None):
 
 def _plan_revision_count(world) -> int:
     return len(HtnStore(world.store).list_plan_revisions(world.mission.id))
-
-
-def test_o08_new_action_after_preview_is_detected_by_complete_set_reread(tmp_path) -> None:
-    world = _world(tmp_path, key="h1h-o08")
-    _, _, admission = _setup(world)
-    world.store.put_action(
-        {
-            "mission_id": world.mission.id,
-            "action_key": "late-action:v1",
-            "action_id": "late-action",
-            "version": 1,
-            "params_hash": hashlib.sha256(b"{}").hexdigest(),
-            "idempotency_key": "late-action:v1",
-            "state": "PROPOSED",
-            "handoffs": 0,
-            "history": [],
-            "receipt": None,
-        }
-    )
-
-    with pytest.raises(PlanCommitRejected, match="OPERATION_SNAPSHOT"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _plan_revision_count(world) == 0
-
-
-def test_o03_retired_unknown_action_blocks_official_commit_without_revision_or_outbox(
-    tmp_path,
-) -> None:
-    """Mission-wide UNKNOWN remains authoritative outside candidate membership."""
-
-    world = _world(tmp_path, key="h1h-o03-commit")
-    # This operation is deliberately absent from the candidate network: it
-    # represents a producer occurrence retired by an earlier plan.  H1-H's
-    # Store reader is Mission-wide, so retirement cannot hide an unresolved
-    # handoff from the official commit gate.
-    action = {
-            "mission_id": world.mission.id,
-            "action_key": "retired-action:v1",
-            "action_id": "retired-action",
-            "version": 1,
-            "params_hash": hashlib.sha256(b"{}").hexdigest(),
-            "idempotency_key": "retired-action:v1",
-            "state": "UNKNOWN",
-            "handoffs": 1,
-            "history": [],
-            "receipt": None,
-    }
-    world.store.put_action(action)
-    origin = dataclasses.replace(
-        envelope(operation_id="retired-action", occurrence="retired-occurrence"),
-        mission_id=world.mission.id,
-        scope_id=world.principal.scope_id,
-    )
-    HtnStore(world.store).bind_operation(origin, principal_id=world.principal.principal_id)
-    operation_store = PlanningAdmissionStore(world.store)
-    binding = operation_store.get_operation_binding(str(origin.operation_occurrence_id))
-    assert binding is not None
-    link = {
-        "operation_id": binding["operation_id"],
-        "request_hash": binding["request_hash"],
-        "operation_occurrence_id": binding["operation_occurrence_id"],
-        "mission_id": binding["mission_id"],
-        "envelope_hash": binding["envelope_hash"],
-        "principal_id": binding["principal_id"],
-        "scope_id": binding["scope_id"],
-        "obligation_id": binding["obligation_id"],
-        "producer_task_id": "retired-task",
-        "producer_htn_occurrence_id": "retired-occurrence",
-        "producer_contract_revision": 1,
-        "producer_plan_revision": 1,
-        "action_key": action["action_key"],
-        "action_id": action["action_id"],
-        "action_version": action["version"],
-        "params_hash": action["params_hash"],
-        "idempotency_key": action["idempotency_key"],
-        "provenance_receipt_id": "retired-receipt",
-        "link_hash": hashlib.sha256(b"retired-link").hexdigest(),
-        "link_json": "{}",
-    }
-    link["link_json"] = canonical_json(link)
-    operation_store.put_operation_action_link(link)
-    _, _, admission = _setup(world)
-    assert admission.operations.effects == (
-        ("retired-action", OperationEffect.UNRESOLVED),
-    )
-    before_events = tuple(world.store.list_events(world.mission.id))
-    before_changes = world.store.connection.total_changes
-
-    with pytest.raises(PlanCommitRejected, match="OPERATION_UNRESOLVED"):
-        world.service.commit_planning_revision(
-            world.command,
-            world.principal,
-            admission=admission,
-        )
-
-    assert _plan_revision_count(world) == 0
-    # Events are the durable dispatch/outbox boundary for a plan commit.  A
-    # rejected commit must emit neither PLAN_REVISION_COMMITTED nor task work.
-    assert tuple(world.store.list_events(world.mission.id)) == before_events
-    assert world.store.connection.total_changes == before_changes
-
-
-def test_preview_read_set_identity_mismatch_refuses_before_writes(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A delivery whose admission names another preview read set than the command's is
-    refused by the preview identity gate before anything is written; the real delivery
-    of the same round then commits (adjudication ①a)."""
-
-    refusals = refuse_tampered_first(
-        monkeypatch,
-        lambda command, principal, kwargs: (
-            command,
-            principal,
-            {**kwargs, "admission": dataclasses.replace(
-                kwargs["admission"], preview_read_set_hash="0" * 64)},
-        ),
-        "PREVIEW_IDENTITY_STALE",
-    )
-
-    async def case() -> None:
-        async with reviewed(tmp_path, key="h1h-preview-read-set") as ((loop, mission, _world, _root, dispatch, _product), opener, _provider):
-            await loop._collect_plan_decision(
-                opener, object(), mission, plan_reply(opener.config["planning_package"]), dispatch
-            )
-            assert len(refusals) == 1
-            assert len(HtnStore(loop.store).list_plan_revisions(mission.id)) == 1
-
-    asyncio.run(case())

@@ -183,7 +183,6 @@ def test_the_worker_template_never_asks_the_model_for_a_system_bound_field() -> 
 FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     # name: (prompt_version, sha256 of instructions)
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
-    "CRITIC": ("critic-v3", "427fb096fc0c4cf6acc67358cd631d3f3c4c39ce2fea60b768a529f6290b7120"),
     # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
     "WORKER_HIERARCHICAL": (
         "worker-hierarchical-v5",
@@ -239,7 +238,8 @@ def test_the_frozen_digests_cover_the_prompts_this_slice_depends_on() -> None:
     """The hierarchical worker is in the table; so are the DAG-mode templates it must
     not have touched."""
 
-    assert {"WORKER", "WORKER_HIERARCHICAL", "CRITIC"} <= set(FROZEN_PROMPT_DIGESTS)
+    # CRITIC（旧独立裁判模板）随旧审阅路径删除（删除批三），不再冻结。
+    assert {"WORKER", "WORKER_HIERARCHICAL"} <= set(FROZEN_PROMPT_DIGESTS)
     assert FROZEN_PROMPT_DIGESTS["WORKER_HIERARCHICAL"][0] == WORKER_HIERARCHICAL_VERSION
     assert WORKER.prompt_version == "worker-v3"
 
@@ -309,85 +309,35 @@ import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_htn_end_to_end import (  # noqa: E402
-    HIERARCHICAL_SEMANTICS,
-    build_world,
-    committed,
-)
-
-from agent_orchestrator.orchestrator.accepted_outputs import (  # noqa: E402
-    declared_ports_in_revision,
-)
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
+from h1i_seed import committed  # noqa: E402
 
 
-def _leaf_intent(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, pin: str | None = None):
-    """Drive one real ``_decide`` and return the worker intent it created.
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-    The intent is *created* by ``_decide`` and only dispatched by a later phase of
-    the cycle, so nothing here needs a model to answer — which is what makes this a
-    test of the wiring rather than of a reply.
-    """
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-    from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = (
-        committed(evidence, key=f"p23c-ports-{mode}-{pin}", mode=mode, demand=True)
-        if mode == HIERARCHICAL_SEMANTICS
-        else build_world(evidence, key=f"p23c-ports-{mode}-{pin}", mode=mode)
-    )
-    world.store.close()
-    config = OrchestratorConfig(evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5)
+def _leaf_intent(tmp_path, *, check=None):
+    """产品同形部署：主循环真跑到第一版计划提交、叶子派发出去（执行者那次调用被扣住，模型不必
+    回答——测的是接线而不是回复）。返回叶子的执行者意图、它的出现所声明的端口；``check(loop,
+    mission)`` 在同一个世界里另做检查。"""
 
     async def case():
-        async with Orchestrator(config, RoleScriptedProvider({"worker": []})) as loop:
-            if mode == HIERARCHICAL_SEMANTICS:
-                world.env.semantics = HtnStore(loop.store)
-                loop.install_hierarchical(planning=world.env)
-            else:
-                loop.install_hierarchical(planning=None)
-            if pin is not None:
-                # The deployment's frozen ``prompt_versions``, injected where the loop
-                # reads it.  A pin is a real deployment fact (§26.3), and the question
-                # this test asks is what the hierarchical branch does with one.
-                version = loop.policy_version_of(world.mission.id)
-                policy = dict(loop.policy_for(world.mission.id))
-                policy["prompt_versions"] = {
-                    **dict(policy.get("prompt_versions") or {}),
-                    "worker": pin,
-                }
-                loop._policies[version] = policy
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            await loop._decide(mission)
+        async with committed(tmp_path, key="p23c-ports") as seed:
+            loop, mission = seed.loop, seed.mission
             intents = [
                 item
-                for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
-                )
-                if item.mission_id == world.mission.id and item.kind == "attempt"
+                for item in loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
+                if item.mission_id == mission.id and item.kind == "attempt"
             ]
-            ports = {}
-            if mode == HIERARCHICAL_SEMANTICS:
-                semantics = HtnStore(loop.store)
-                active = semantics.active_plan_revision(world.mission.id)
-                assert active is not None
-                task_id = None if not intents else intents[0].config.get("task_id")
-                occurrence = next(
-                    str(item.occurrence_id)
-                    for item in semantics.list_plan_memberships(
-                        world.mission.id, int(active.revision)
-                    )
-                    if task_id is None or str(item.task_id) == str(task_id)
-                )
-                ports = declared_ports_in_revision(
-                    semantics.list_data_requirements(world.mission.id, int(active.revision)),
-                    occurrence,
-                )
+            assert intents
+            # the plan's own answer to "which ports exist" (the accept side checks the same set)
+            ports = {item["port"] for item in seed.dispatch.declared_output_ports_for(
+                mission.id, str(loop.store.get_attempt(intents[0].subject_id).task_id))}
+            if check is not None:
+                check(loop, mission)
             return intents, ports
 
     return asyncio.run(case())
@@ -424,7 +374,9 @@ def test_the_leaf_is_told_which_output_ports_its_occurrence_declares(tmp_path) -
     Without it the model is never told a port name exists, so every honest envelope
     omits ``outputs`` and ``accept_review`` refuses the leaf with
     ``OUTPUT_PORT_UNCLAIMED``.  The set is the **plan's**, so it is compared against
-    ``declared_ports_in_revision`` rather than against a literal.
+    the dispatch's ``declared_output_ports_for`` (the same ``output_ports_in_revision``
+    the accept side checks) rather than against a literal.  2026-10-03 A′：产品同形世界的
+    一步做法里，收尾步的端口没有下游边、由准则链接声明（缺陷 D3 那一类）。
     """
 
     intents, ports = _leaf_intent(tmp_path)
@@ -443,11 +395,23 @@ def test_a_dag_mode_pin_does_not_reach_a_hierarchical_leaf(tmp_path) -> None:
     ``worker-v3`` never asks the model which port its files belong to.  A deployment
     that pins it is pinning the *other mode's* prompt, and honouring that pin here is
     the same round-9 blocker by another route.
+
+    2026-10-03 A′：产品同形世界里叶子拿到的是分层执行者；部署钉的 DAG 模式执行者（``WORKER``，
+    worker-v3）交给主循环选模板的那一步，换回本领域的分层执行者（不再往策略缓存里注入钉版）。
     """
 
-    intents, _ = _leaf_intent(tmp_path, pin="worker-v3")
+    from agent_orchestrator.runtime import role_templates
+
+    chosen: dict[str, str] = {}
+
+    def check(loop, mission) -> None:
+        chosen["pinned"] = loop._hierarchical_worker_template(role_templates.WORKER, mission.id).prompt_version
+
+    intents, _ = _leaf_intent(tmp_path, check=check)
     assert intents
     assert intents[0].config["prompt_version"] == WORKER_HIERARCHICAL_VERSION
+    assert role_templates.WORKER.prompt_version == "worker-v3"
+    assert chosen["pinned"] == WORKER_HIERARCHICAL_VERSION
 
 
 # ======================================================================================

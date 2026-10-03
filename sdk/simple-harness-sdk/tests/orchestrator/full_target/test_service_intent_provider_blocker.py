@@ -3,27 +3,22 @@
 
 """P2.3f: a service turn waiting on an unknown Provider outcome does not wait for ever.
 
-Found by the P2.3e probe episode (H-L3-C1 on the Grok lane).  Planner round 2 was
-handed off and the transport failed 0.2 s later.  The runtime did the right thing:
-``ProviderTransportError`` is not a *definite* failure — the request may have reached
-the model — so the invocation was settled ``UNKNOWN``, the run went to ``waiting``
-with a ``provider`` wait blocker, and nothing was charged.  Then nothing happened.
-``_observe_liveness`` looks only at ``liveness.exists`` for a ``plan`` intent, no
-reconciliation port exists on that lane, and the intent stayed SUBMITTED — the
-Mission at PLANNING, ``run()`` correctly still polling — until the runner's 1800 s
-deadline.
+Found by the P2.3e probe episode (H-L3-C1 on the Grok lane): a Planner round was handed
+off, the transport failed 0.2 s later, the invocation was — correctly — settled
+``UNKNOWN`` (the request may have reached the model), and then nothing happened until
+the runner's 1800 s deadline.
 
-This file pins the bounded answer:
+HTN 补齐阶段 A′（2026-10-03）换芯到产品同形世界（产品部署组装、执行图建任务时绑定、
+保证通道、原生执行池、提供方用量守卫；部署职责在两轮之间代签授权），只有模型回复是脚本。
+保证通道上的答案与此前非保证通道不同（偏离已记入迁移报告）：
 
-* after ``min(stall_seconds, 30)`` seconds on the same blocker the request is handed
-  off **once more** to a new executor (``ServiceIntentRehandedOff``; same subject,
-  same reservation);
-* a second unknown outcome ends the round through the role's own door — Planner:
-  ``PlanningRejected{provider_outcome_unknown}`` and the ladder decides; Critic: the
-  runner's own "did not answer" path;
-* the abandoned turn's charge stays unknown in the runtime ledger and only the
-  executor that answered is imported;
-* a legacy Mission is not touched.
+* **规划回合**：不再"换一个执行者再问一次"（``ServiceIntentRehandedOff`` 在产品上没有写入
+  方）——重发会对同一个问题第二次计费。等满 ``min(stall_seconds, 30)`` 后这一轮按
+  ``provider_outcome_unknown`` 被拒，交给规划次数决定：还有次数就开下一轮，没有就以
+  ``runtime_unavailable`` 具名停止（从没听到规划器，不算"规划失败"）。
+* **审阅**：保留原执行者，不重发；记一张"原调用待对账"的回执。内容审阅那一轮由验收的
+  "没答上来"出口收掉（验收失败 → 重做），任务照常走完。
+* 被放弃的调用在运行时账本里是 UNKNOWN，从不按 0 记账；它的预留留着、按上限计数。
 """
 
 from __future__ import annotations
@@ -31,377 +26,228 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-_HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
-if str(_HTN_FIXTURES) not in sys.path:
-    sys.path.insert(0, str(_HTN_FIXTURES))
-
-import test_htn_end_to_end as e2e  # noqa: E402
-from decision_loop import auto_grant, refine_step  # noqa: E402
-
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    SERVICE_INTENT_REHANDED_OFF,
-    mission_account,
+from _unknown_outcome_world import (  # noqa: E402
+    CONFIG,
+    LIMIT,
+    OPEN,
+    FaultyProvider,
+    assert_terminal_ledger,
+    create,
+    events,
+    grants,
+    http_loss,
+    invocations,
+    plan_intents,
+    settle,
+    status,
+    transport_loss,
 )
+
+from agent_orchestrator.orchestrator.commit_service import SERVICE_INTENT_REHANDED_OFF  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
     MAX_SERVICE_BLOCKER_SECONDS,
-    MAX_SERVICE_REHANDOFFS,
     Orchestrator,
 )
-from agent_orchestrator.runtime.agent_worker import user_message_json  # noqa: E402
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
-)
-from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState  # noqa: E402
-from simple_harness.contracts import RunId  # noqa: E402
-from simple_harness.providers.errors import ProviderTransportError  # noqa: E402
-
-OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
-LIMIT = 0.3  # seconds; ``stall_seconds`` below the 30 s ceiling, so it is the bound
+from agent_orchestrator.testing.product_world import product_world  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import REVIEWER  # noqa: E402
 
 
-def _transport_loss(request: Any) -> str:
-    """A script step that fails the way the Grok lane failed: after the hand-off."""
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-    raise ProviderTransportError(public_message="scripted transport loss after handoff")
-
-
-def _config(evidence: Path, **overrides: Any) -> OrchestratorConfig:
-    values: dict[str, Any] = {
-        "evidence_root": evidence,
-        "max_concurrency": 3,
-        "test_timeout_seconds": 60,
-        "max_planning_attempts": 2,
-        "stall_seconds": LIMIT,
-    }
-    values.update(overrides)
-    return OrchestratorConfig(**values)
-
-
-def _plain_world(tmp_path, *, key: str):
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key=key)
-    adopt = refine_step()
-    world.store.close()
-    return world, adopt, evidence
-
-
-def _events(loop: Orchestrator, mission_id: str) -> list[Any]:
-    return list(loop.store.list_events(mission_id))
-
-
-def _rehandoffs(loop: Orchestrator, mission_id: str) -> list[dict[str, Any]]:
-    return [
-        dict(item.payload)
-        for item in _events(loop, mission_id)
-        if item.type == SERVICE_INTENT_REHANDED_OFF
-    ]
-
-
-def _invocation_states(loop: Orchestrator, intent) -> dict[str, list[str]]:  # type: ignore[no-untyped-def]
-    """Provider invocation states per executor the subject ever had, from the runtime."""
-
-    runtime = loop.bridge_for(intent).runtime
-    agents = {intent.agent_id} | {
-        item["previous_agent_id"] for item in _rehandoffs(loop, intent.mission_id)
-        if item["subject_id"] == intent.subject_id
-    }
-    return {
-        str(agent_id): [
-            str(record.state)
-            for record in runtime.uow.list_provider_invocations(RunId(str(agent_id)))
-        ]
-        for agent_id in sorted(a for a in agents if a)
-    }
-
-
-async def _run_until_done_or(loop: Orchestrator, seconds: float) -> bool:
-    """``run()`` in a task; True when it returned within ``seconds``."""
-
-    running = asyncio.create_task(loop.run(max_cycles=400))
-    done, _pending = await asyncio.wait({running}, timeout=seconds)
-    if running in done:
-        running.result()
-        return True
-    running.cancel()
-    try:
-        await running
-    except asyncio.CancelledError:
-        pass
-    return False
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
 # ======================================================================================
-# 1. the Planner: one re-hand-off, then the answer
+# 1. the Planner: the round ends after the bound, the ladder asks again
 # ======================================================================================
 
 
-def test_a_planner_turn_blocked_on_an_unknown_outcome_is_rehanded_off_once_and_answers(
-    tmp_path,
-) -> None:
-    """The red test for the wait.  Before P2.3f ``run()`` never returns here."""
+def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next_round_answers(tmp_path) -> None:
+    """The red test for the wait.  Before P2.3f the round stayed SUBMITTED for ever.
 
-    world, adopt, evidence = _plain_world(tmp_path, key="p23f-planner-rehandoff")
-    provider = RoleScriptedProvider({"planner": [_transport_loss, adopt]})
+    Also the P2.3l / N5 property (an UNKNOWN grant must not lock the next hand-off): the
+    next round's executor is admitted by the Provider budget guard and answers, and the
+    Mission completes (P2.3p: one such UNKNOWN still takes the ordinary road)."""
 
     async def case() -> dict[str, Any]:
-        async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await _run_until_done_or(loop, seconds=10.0)
-            intent = loop.store.get_intent_for_subject(f"{mission_id}:planner:1")
-            assert intent is not None
-            # 片 D（opt.122）起，任务判停前会再问一次规划器（``planner:2``）；那是另一轮、
-            # 另一个问题。这条测的是 ``planner:1`` 这一轮，计数只算它自己的执行者。
-            executors = set(_invocation_states(loop, intent))
+        provider = FaultyProvider({"planner": [http_loss(418)]})
+        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+            mission_id = create(world, "p23f-planner-unknown")
+            assert await settle(world, mission_id, seconds=20)
+            rounds = {item.subject_id.rpartition(":")[2]: item for item in plan_intents(world, mission_id)}
             return {
-                "returned": returned,
-                "types": [item.type for item in _events(loop, mission_id)],
-                "rehandoffs": [
-                    item for item in _rehandoffs(loop, mission_id)
-                    if item["subject_id"] == f"{mission_id}:planner:1"
-                ],
-                "intent_state": intent.state,
-                "creation_key": intent.creation_key,
-                "invocations": _invocation_states(loop, intent),
-                "unknown_on_old_executor": any(
-                    loop.bridge_for(intent).has_unknown_charge(agent_id=agent)
-                    for agent in _invocation_states(loop, intent)
-                    if agent != intent.agent_id
-                ),
-                "released": [
-                    dict(item.payload)
-                    for item in _events(loop, mission_id)
-                    if item.type == "BudgetReleased"
-                    and item.payload.get("subject_id") == f"{mission_id}:planner:1"
-                ],
-                "status": loop.store.get_mission(mission_id).status,
-                "planner_calls": sum(
-                    len(states) for states in _invocation_states(loop, intent).values()
-                ),
-                "agents_created": sum(
-                    1 for item in _events(loop, mission_id)
-                    if item.type == "AgentCreated" and item.payload.get("agent_id") in executors
-                ),
+                "status": status(world, mission_id),
+                "types": [item.type for item in events(world, mission_id)],
+                "rejected": [dict(item.payload) for item in events(world, mission_id, "PlanningRejected")],
+                "first": rounds["1"].state,
+                "first_calls": invocations(world, rounds["1"]),
+                "second_calls": invocations(world, rounds["2"]),
+                "grants": {row["subject_id"].rpartition(":")[2]: row["state"] for row in grants(world)
+                           if ":planner:" in row["subject_id"]},
+                "planner_calls": provider.role_calls["planner"],
+                "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
     outcome = asyncio.run(case())
-    assert outcome["returned"] is True, (
-        "the Planner intent stayed SUBMITTED on an unknown Provider outcome: "
-        f"{outcome['types']} rehandoffs={outcome['rehandoffs']}"
-    )
-    assert len(outcome["rehandoffs"]) == 1, outcome["rehandoffs"]
-    record = outcome["rehandoffs"][0]
-    assert record["reason"] == "provider_outcome_unknown"
-    assert record["rehandoff"] == 1 and record["kind"] == "plan" and record["role"] is None
-    assert record["previous_agent_id"] and record["previous_turn_id"]
-    assert record["detail"]["waited_seconds"] >= LIMIT
-    assert record["detail"]["blocker"]["kind"] == "provider"
-    assert outcome["planner_calls"] == 2, "the same question, asked of a second executor"
-    assert outcome["creation_key"].endswith(":rehandoff:1")
-    # The second executor's creation is on the record, not swallowed by the first's key.
-    assert outcome["agents_created"] == 2, outcome["types"]
-    assert "PlanRevisionCommitted" in outcome["types"], outcome["types"]
-    assert outcome["intent_state"] == "SETTLED"
-    assert outcome["status"] is not MissionStatus.PLANNING
-    # Honest accounting: the abandoned executor's invocation is UNKNOWN in the runtime
-    # ledger and is never imported as a charge; only the executor that answered is.
-    states = outcome["invocations"]
-    assert sorted(v for values in states.values() for v in values) == ["succeeded", "unknown"]
-    assert outcome["unknown_on_old_executor"] is True
-    assert outcome["released"] and outcome["released"][0]["settled_tokens"] == 150, (
-        outcome["released"]
-    )
+    assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
+    # no second executor is ever asked the same question
+    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
+    [record] = outcome["rejected"]
+    assert record["reason"] == "provider_outcome_unknown" and record["ordinal"] == 1
+    detail = record["detail"]
+    assert detail["rehandoffs"] == 0 and detail["assurance_lane"] is True
+    assert detail["limit_seconds"] == LIMIT and detail["waited_seconds"] >= LIMIT
+    assert detail["blocker"]["kind"] == "provider"
+    assert outcome["first"] == "FAILED"
+    # honest accounting: the abandoned call is UNKNOWN in the runtime ledger …
+    assert [(item["state"], item["error_code"]) for item in outcome["first_calls"]] == [
+        ("unknown", "provider_error_after_handoff")]
+    assert [item["state"] for item in outcome["second_calls"]] == ["succeeded"]
+    # … and its grant stays UNKNOWN; the next round's grant was admitted and settled
+    assert outcome["grants"]["1"] == "UNKNOWN" and outcome["grants"]["2"] == "SETTLED"
+    # the failed call, the proposal, and the adoption after the method's review
+    assert outcome["planner_calls"] == 3
+    assert "PlanRevisionCommitted" in outcome["types"] and "MissionFailed" not in outcome["types"]
 
 
-def test_a_second_unknown_outcome_ends_the_planner_round_through_the_ladder(tmp_path) -> None:
-    """Two executors, two unknowns: the round is rejected honestly and the ladder decides.
+def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_path) -> None:
+    """``max_planning_attempts=1``: no next rung, so the Mission ends — named, decided.
 
-    With ``max_planning_attempts=1`` there is no next rung, so the Mission ends in
-    PLANNING with ``planning_failure.reason == provider_outcome_unknown`` — a decided
-    failure, not an idle one.
-    """
-
-    world, _adopt, evidence = _plain_world(tmp_path, key="p23f-planner-twice")
-    provider = RoleScriptedProvider({"planner": [_transport_loss, _transport_loss]})
+    P2.3l: ``planning_failed`` would be a lie (the Planner was never heard);
+    ``runtime_unavailable`` is the stop for a model service that did not answer.  The
+    call is asked exactly once; the books keep it as unknown, its reservation held."""
 
     async def case() -> dict[str, Any]:
-        config = _config(evidence, max_planning_attempts=1)
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            await loop._try_planner_intent(mission_id, ordinal=1)
-            returned = await _run_until_done_or(loop, seconds=10.0)
-            final = loop.store.get_mission(mission_id)
+        provider = FaultyProvider({"planner": [transport_loss]})
+        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}) as world:
+            mission_id = create(world, "p23f-planner-no-rung")
+            assert await settle(world, mission_id, seconds=10)
+            final = world.store.get_mission(mission_id)
+            subject = f"{mission_id}:planner:1"
             return {
-                "returned": returned,
-                "types": [item.type for item in _events(loop, mission_id)],
-                "rehandoffs": _rehandoffs(loop, mission_id),
-                "rejections": [
-                    dict(item.payload)
-                    for item in _events(loop, mission_id)
-                    if item.type == "PlanningRejected"
-                ],
-                "status": final.status,
+                "status": status(world, mission_id),
+                "stop_reason": final.stop_reason,
                 "report": dict(final.final_report or {}),
-                "planner_calls": provider.by_role.get("planner", 0),
-                "open": [
-                    item.subject_id
-                    for item in loop.store.list_intents(*OPEN)
-                    if item.mission_id == mission_id
-                ],
+                "types": [item.type for item in events(world, mission_id)],
+                "planner_calls": provider.role_calls.get("planner", 0),
+                "open": [item.subject_id for item in world.store.list_intents(*OPEN)
+                         if item.mission_id == mission_id],
+                "known": world.loop.commit.ledger.known_usage_for(subject)[0],
+                "unknown": world.loop.commit.ledger.has_unknown_usage(subject),
+                "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
     outcome = asyncio.run(case())
-    assert outcome["returned"] is True, outcome["types"]
-    assert len(outcome["rehandoffs"]) == MAX_SERVICE_REHANDOFFS == 1, outcome["rehandoffs"]
-    assert outcome["planner_calls"] == 2, "exactly one retry, never a loop"
-    assert outcome["rejections"] and outcome["rejections"][0]["reason"] == (
-        "provider_outcome_unknown"
-    ), outcome["rejections"]
-    assert outcome["rejections"][0]["detail"]["rehandoffs"] == 1
-    assert outcome["status"] is MissionStatus.FAILED, outcome["types"]
+    assert outcome["status"] == "FAILED", outcome["types"]
+    assert outcome["stop_reason"] == "runtime_unavailable", outcome["report"]
     assert outcome["report"]["planning_failure"]["reason"] == "provider_outcome_unknown"
-    assert outcome["open"] == [], outcome["open"]
+    assert "MissionFailed" in outcome["types"]
+    assert outcome["planner_calls"] == 1, "never re-sent"
+    assert outcome["open"] == []
+    # P1-1: giving up is not permission to write the call as 0 tokens
+    assert outcome["known"] == 0 and outcome["unknown"] is True
+    [held] = outcome["ledger"]["held_reservations"]
+    assert held["subject_id"].endswith(":planner:1") and int(held["reserved_tokens"]) > 0
 
 
 # ======================================================================================
-# 3. the Critic: the runner's own wait, with the same two steps in it
+# 2. the reviewer (the assured lane's review calls; scripted under the "unknown" role)
 # ======================================================================================
 
 
-async def _critic_intent(loop: Orchestrator, mission_id: str, *, subject: str):
-    """A Critic intent the way ``_run_critic`` writes one, without a workspace."""
-
-    decision = loop._route_service("critic", mission_id)
-    config = AgentConfig(
-        name="critic-1",
-        instructions="[role:critic]\nJudge the artefacts you are shown.",
-        model_profile_ref=decision.profile_id,
-        tool_names=(),
-        limits=AgentLimits(
-            max_model_calls_per_turn=2, max_tool_calls_per_turn=1, turn_deadline_seconds=60
-        ),
-    )
-    message = user_message_json("[role:critic] judge")
-    return loop.commit.create_service_intent(
-        kind="critic",
-        subject_id=subject,
-        mission_id=mission_id,
-        account_id=mission_account(mission_id),
-        creation_key=subject,
-        input_id="attempt-input",
-        input_hash="0" * 64,
-        config={
-            "agent_config": config.to_json(),
-            "message": message,
-            "attempt_id": "view-p23f",
-            "context_version": "ctx-p23f",
-            "prompt_version": "critic-test",
-            **loop._service_config(decision),
-        },
-        reservation=loop._reservation(1_000, decision.profile_id),
-    )
-
-
-def test_a_critic_turn_blocked_on_an_unknown_outcome_is_rehanded_off_and_answers(
-    tmp_path,
-) -> None:
-    world, _adopt, evidence = _plain_world(tmp_path, key="p23f-critic-rehandoff")
-    provider = RoleScriptedProvider({"critic": [_transport_loss, "PASS"]})
+def test_a_content_review_on_an_unknown_outcome_ends_through_the_verification_door(tmp_path) -> None:
+    """The second review call (the step's content review) is lost after hand-off.  The
+    call is not re-sent; the round is handed back to the acceptance's own "did not
+    answer" door (the verification fails, the step is done again), and the Mission
+    completes with the lost call kept as unknown and settled at its upper bound."""
 
     async def case() -> dict[str, Any]:
-        async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            subject = f"{mission_id}:critic-p23f:1"
-            intent = await _critic_intent(loop, mission_id, subject=subject)
-            started = loop.store.now
-            intent, result = await asyncio.wait_for(
-                loop._await_service_turn(intent, started + 10.0, attempt_id=None), timeout=15
-            )
+        provider = FaultyProvider({REVIEWER: [None, transport_loss]})
+        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+            mission_id = create(world, "p23f-content-review")
+            assert await settle(world, mission_id, seconds=25)
+            reviews = [item for item in world.store.list_intents("SUBMITTED", "SETTLED", "FAILED")
+                       if item.mission_id == mission_id and item.kind == "critic"]
             return {
-                "elapsed": loop.store.now - started,
-                "state": None if result is None else result.state,
-                "intent_state": intent.state,
-                "rehandoffs": _rehandoffs(loop, mission_id),
-                "critic_calls": provider.by_role.get("critic", 0),
-                "invocations": _invocation_states(loop, intent),
+                "status": status(world, mission_id),
+                "types": [item.type for item in events(world, mission_id)],
+                "reviews": [(item.state, [call["state"] for call in invocations(world, item)]) for item in reviews],
+                "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }
 
     outcome = asyncio.run(case())
-    assert outcome["state"] is AgentTurnState.COMMITTED, outcome
-    assert outcome["critic_calls"] == 2
-    assert [item["kind"] for item in outcome["rehandoffs"]] == ["critic"], outcome["rehandoffs"]
-    assert outcome["intent_state"] == "SUBMITTED", "the runner collects and settles it"
-    assert outcome["elapsed"] < 5.0, "the wait is the bound, not the window"
-    states = outcome["invocations"]
-    assert sorted(v for values in states.values() for v in values) == ["succeeded", "unknown"]
+    assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
+    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
+    # the lost review kept its one executor and its one call; a new round reviewed the redo
+    assert outcome["reviews"][0] == ("SUBMITTED", ["unknown"]), outcome["reviews"]
+    assert ("SETTLED", ["succeeded"]) in outcome["reviews"][1:], outcome["reviews"]
+    assert "VerificationFailed" in outcome["types"] and outcome["types"].count("AttemptCreated") == 2
 
 
-def test_a_critic_blocked_twice_is_handed_back_to_the_runners_did_not_answer_path(
-    tmp_path,
-) -> None:
-    """``result is None`` well before the window closes: the runner's existing door."""
-
-    world, _adopt, evidence = _plain_world(tmp_path, key="p23f-critic-twice")
-    provider = RoleScriptedProvider({"critic": [_transport_loss, _transport_loss]})
+def test_a_method_review_on_an_unknown_outcome_keeps_its_original_call(tmp_path) -> None:
+    """The first review call (the proposed method's independent review) is lost after
+    hand-off.  Assurance §6.2: the review keeps its original executor — nothing is
+    re-sent — the wait is recorded once as "original call awaits reconciliation", and
+    its reservation stays held and counted.  (Whether such a wait should ever end on its
+    own is the open question reported with this migration.)"""
 
     async def case() -> dict[str, Any]:
-        async with Orchestrator(_config(evidence), provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            subject = f"{mission_id}:critic-p23f:1"
-            intent = await _critic_intent(loop, mission_id, subject=subject)
-            started = loop.store.now
-            intent, result = await asyncio.wait_for(
-                loop._await_service_turn(intent, started + 30.0, attempt_id=None), timeout=15
-            )
+        provider = FaultyProvider({REVIEWER: [transport_loss]})
+        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+            mission_id = create(world, "p23f-method-review")
+            reconciliation = "AssuranceProviderReconciliationRequired"
+            assert await settle(world, mission_id, seconds=10,
+                                done=lambda: bool(events(world, mission_id, reconciliation)))
+            await settle(world, mission_id, seconds=10 * LIMIT)  # well past the bound
+            [review] = [item for item in world.store.list_intents("SUBMITTED")
+                        if item.mission_id == mission_id and ":assurance-method-plan:" in item.subject_id]
             return {
-                "elapsed": loop.store.now - started,
-                "result": result,
-                "intent_state": intent.state,
-                "rehandoffs": _rehandoffs(loop, mission_id),
-                "critic_calls": provider.by_role.get("critic", 0),
+                "status": status(world, mission_id),
+                "types": [item.type for item in events(world, mission_id)],
+                "waits": [dict(item.payload) for item in events(world, mission_id, reconciliation)],
+                "review": review,
+                "calls": invocations(world, review),
+                "reviewer_calls": provider.role_calls[REVIEWER],
+                "grant": [row["state"] for row in grants(world) if row["subject_id"] == review.subject_id],
+                "held": [item["subject_id"] for item in
+                         world.loop.commit.ledger.costs_report(mission_id)["held_reservations"]],
             }
 
     outcome = asyncio.run(case())
-    assert outcome["result"] is None
-    assert outcome["critic_calls"] == 2, "one retry, then the runner's door"
-    assert len(outcome["rehandoffs"]) == 1, outcome["rehandoffs"]
-    assert outcome["intent_state"] == "SUBMITTED", (
-        "the runner keeps SUBMITTED for after-stop collection, exactly as before"
-    )
-    assert outcome["elapsed"] < 5.0, "the 30 s window was not what ended the wait"
+    assert outcome["status"] == "PLANNING", outcome["types"][-10:]
+    assert SERVICE_INTENT_REHANDED_OFF not in outcome["types"]
+    assert outcome["reviewer_calls"] == 1, "a review is never re-sent"
+    assert [item["state"] for item in outcome["calls"]] == ["unknown"]
+    [wait] = outcome["waits"]
+    assert wait["reason"] == "ORIGINAL_PROVIDER_RECONCILIATION_REQUIRED"
+    assert wait["intent_id"] == outcome["review"].intent_id and wait["agent_id"] == outcome["review"].agent_id
+    assert outcome["grant"] == ["UNKNOWN"]
+    assert outcome["held"] == [outcome["review"].subject_id]
+    assert "PlanningMethodReviewed" not in outcome["types"] and "MissionFailed" not in outcome["types"]
 
 
 # ======================================================================================
-# 4. the bound, and the line that is not moved
+# 3. the bound
 # ======================================================================================
 
 
 def test_the_bound_is_the_smaller_of_stall_seconds_and_the_ceiling(tmp_path) -> None:
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
     # 用户 2026-10-02：上限 300 秒改 30 秒（重启打断一次调用后不再原地等三分钟）。
     assert MAX_SERVICE_BLOCKER_SECONDS == 30.0
-    small = Orchestrator(_config(evidence, stall_seconds=12.0), RoleScriptedProvider({}))
-    assert small._service_blocker_limit == 12.0
-    large = Orchestrator(_config(evidence, stall_seconds=180.0), RoleScriptedProvider({}))
-    assert large._service_blocker_limit == 30.0  # 产品默认的 180 秒不再是这里的界
+
+    def bound(stall: float) -> float:
+        config = OrchestratorConfig(evidence_root=Path(tmp_path), stall_seconds=stall)
+        return Orchestrator._service_blocker_limit.fget(SimpleNamespace(_config=config))
+
+    assert bound(12.0) == 12.0
+    assert bound(180.0) == 30.0  # 产品默认的 180 秒不再是这里的界

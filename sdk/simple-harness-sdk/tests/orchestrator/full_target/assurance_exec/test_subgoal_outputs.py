@@ -9,35 +9,62 @@
 * 解析时：中间目标完成（组合审阅通过、结论形成）之后，它的端口对到收尾步骤已验收的产出上；
   没完成之前，接它的步骤照常等数据。
 秩序（端口存在、先后、完成才放行），不判断内容。
+
+HTN 补齐阶段 A′：主循环那条跑在产品同形世界（:mod:`_assured_loop`、:mod:`_subgoal_world`：
+子目标 ``sub-goal-1`` 与步骤类型都声明 ``delivery`` 端口，``continue-delivery`` 接上游交付），
+做法由规划器提出、过独立审阅后采用；注册检查那条只组规划世界（不起主循环），照旧。
 """
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import replace
+from pathlib import Path
 
-from _assured_loop import assured_loop, run_until
-from _subgoal_world import STATEMENTS, USER, plan_revision
-from decision_loop import refine_step
-from htn_world import Env, method, param, step
+import pytest
+from _assured_loop import assured_loop, method_body, run_until
+from _subgoal_world import (
+    NEXT,
+    PART,
+    STATEMENTS,
+    USER,
+    WRITE,
+    by_goal_type,
+    output_of,
+    plan_revision,
+)
 
-from agent_orchestrator.artifacts.input_bindings import AcceptedOutput, ResourceIdentity
-from agent_orchestrator.contracts.htn import TaskForm
-from agent_orchestrator.contracts.semantic_base import VersionedRef
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "fixtures" / "htn"))
+from htn_world import Env, method, param, step  # noqa: E402
 
-ROOT, PART, WRITE, NEXT = "so.goal", "so.part", "so.write", "so.continue"
+from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
+    AcceptedOutput,
+    ResourceIdentity,
+)
+from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
+from agent_orchestrator.contracts.semantic_base import VersionedRef  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
+
+SO_ROOT, SO_PART, SO_WRITE, SO_NEXT = "so.goal", "so.part", "so.write", "so.continue"
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
 def _env(mission_id: str) -> Env:
     world = Env(mission=mission_id)
-    world.register_type(ROOT, form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
+    world.register_type(SO_ROOT, form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
                         criteria=USER, domain="so", level=0)
-    world.register_type(PART, form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
+    world.register_type(SO_PART, form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
                         outputs=(("delivery", "so.delivery"),), domain="so", level=1)
-    world.register_type(WRITE, parameters=(("subject", "string"),),
+    world.register_type(SO_WRITE, parameters=(("subject", "string"),),
                         outputs=(("delivery", "so.delivery"),), capabilities=("plan.read",),
                         criteria=USER, domain="so")
-    world.register_type(NEXT, parameters=(("subject", "string"),),
+    world.register_type(SO_NEXT, parameters=(("subject", "string"),),
                         inputs=(("delivery", "so.delivery", True),),
                         outputs=(("delivery", "so.delivery"),), capabilities=("plan.read",),
                         criteria=USER, domain="so")
@@ -51,25 +78,13 @@ def _out(step_name: str):
     return {"op": "output", "step": step_name, "port": "delivery"}
 
 
-def _outer():
-    """root → the sub-goal, then a step that consumes what the sub-goal delivered."""
-    return method(
-        "so.outer", ROOT, parameter_schema=f"{ROOT}.params",
-        steps=(step("part", PART, TaskForm.COMPOUND, {"subject": param("subject")}),
-               step("tail", NEXT, TaskForm.PRIMITIVE,
-                    {"subject": param("subject"), "delivery": _out("part")}, capabilities=("plan.read",))),
-        links=(("c-user-1", "part", "c-user-1"), ("c-user-2", "part", "c-user-2"),
-               ("c-user-3", "tail", None)),
-        finalizer="tail")
-
-
-def _inner(method_id: str = "so.inner", *, finalizer: str | None = "b", last: str = NEXT):
+def _inner(method_id: str = "so.inner", *, finalizer: str | None = "b", last: str = SO_NEXT):
     arguments = {"subject": param("subject")}
-    if last == NEXT:
+    if last == SO_NEXT:
         arguments["delivery"] = _out("a")
     return method(
-        method_id, PART, parameter_schema=f"{PART}.params",
-        steps=(step("a", WRITE, TaskForm.PRIMITIVE, {"subject": param("subject")}, capabilities=("plan.read",)),
+        method_id, SO_PART, parameter_schema=f"{SO_PART}.params",
+        steps=(step("a", SO_WRITE, TaskForm.PRIMITIVE, {"subject": param("subject")}, capabilities=("plan.read",)),
                step("b", last, TaskForm.PRIMITIVE, arguments, capabilities=("plan.read",))),
         ordering=(("a", "b"),),
         links=(("c-user-1", "a", None), ("c-user-2", "b", None)), finalizer=finalizer)
@@ -97,12 +112,25 @@ def _fabricated(occurrence, task_id: str, *, port: str = "delivery") -> Accepted
         source_identity=ResourceIdentity(namespace="attempt:b", path="check.md"))
 
 
+def _root_feeding_tail(context):
+    """root → the sub-goal, then a step that consumes what the sub-goal delivered."""
+    return method_body(context, steps=[("part", PART, {"goal": {"op": "constant", "value": "前两份笔记"}}),
+                                       ("tail", NEXT, output_of("part"))],
+                       links=[("c-user-1", "part"), ("c-user-2", "part"), ("c-user-3", "tail")], finalizer="tail")
+
+
+def _part_feeding_b(context):
+    """the sub-goal → a, then b consuming a's delivery; b is the finalizer."""
+    return method_body(context, steps=[("a", WRITE, {}), ("b", NEXT, output_of("a"))], ordering=[("a", "b")],
+                       links=[("c-user-1", "a"), ("c-user-2", "b")], finalizer="b")
+
+
 def test_a_step_after_the_sub_goal_is_fed_by_the_sub_goals_finalizer_once_the_goal_is_complete(tmp_path):
     async def case():
-        provider = RoleScriptedProvider({"planner": [
-            refine_step(method_id="so.outer"), refine_step(method_id="so.inner")]})
-        async with assured_loop(tmp_path, provider, library=(_outer(), _inner()), env_factory=_env,
-                                root_type=ROOT, success_criteria=STATEMENTS, host_policies=True) as world:
+        scripted = LayeredScriptedProvider(planner=by_goal_type({"user-goal": _root_feeding_tail,
+                                                                  PART: _part_feeding_b}))
+        scripted.held.add("worker")  # what the steps deliver is not what this case is about
+        async with assured_loop(tmp_path, scripted, success_criteria=STATEMENTS) as world:
             # a plan whose later step reads the sub-goal's port commits, before and after refinement
             assert await run_until(world, lambda w: plan_revision(w) == 2)
             dispatch = world.loop._new_mode(world.mission)
@@ -127,6 +155,7 @@ def test_a_step_after_the_sub_goal_is_fed_by_the_sub_goals_finalizer_once_the_go
             other = _fabricated(first, str(network.binding_for_occurrence(first).task_id))
             assert dispatch.goal_port_outputs(world.mission.id, network, (other,),
                                               complete=frozenset({part})) == ()
-            # nothing was accepted in this fixture, so the live index offers the consumer nothing yet
+            # nothing was accepted yet (the executor is held), so the live index offers the consumer nothing
             assert dispatch.accepted_outputs(world.mission.id, network).at(part, "delivery") == ()
+        scripted.release.set()
     asyncio.run(case())

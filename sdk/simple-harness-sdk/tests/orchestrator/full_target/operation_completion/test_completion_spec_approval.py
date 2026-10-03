@@ -1,763 +1,373 @@
-"""Approved Spec identity and rollback through the real CommitService Store.
+"""确认页"完成映射"的写入、身份与回滚（OCC-02；2026-10-03 迁到产品同形世界，HTN 补齐阶段 A′）。
 
-OCC-02 source: addendum §3.1–§3.2 and §11.  This file deliberately exercises
-the authenticated USER_CONFIRMED API, existing requirements/obligation rows,
-commit receipts, events, and the exact reader.  It does not claim coverage of
-T0 or T3: those seams have no production writer in this slice.
+任务经产品那一份部署组装建出：根义务、要求书第 1 版（``c-user-<n>``）、执行图都在建任务事务里
+由部署写好。本文件只做"人在确认页点确认"这一件事（真实的 ``OperationCompletionApi`` /
+门面命令），断言回执、完成映射行、事件与读侧的精确身份。确认之前主循环不开工，所以这里不跑
+主循环；要"已提交第一版计划"的那一条用产品主循环真跑到叶子派发。
+
+要求书第 2 版在产品上没有写入方（只有部署建任务时写第 1 版），"要求修订后旧映射过期"那条
+随删，等阶段 E 接上要求修订再写（分诊裁决①c）。
 """
 
 from __future__ import annotations
 
-import dataclasses
-import hashlib
+import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from agent_orchestrator.api.operation_completion import OperationCompletionApi
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.operation_completion import (
     OccurrenceCompletionScopeV1,
     OperationCompletionRequirementsV1,
 )
-from agent_orchestrator.contracts.resolution import (
-    AllExpr,
-    Criterion,
-    CriterionExpr,
-    CriterionOrigin,
-    EvaluationKind,
-    RequirementClass,
-    RequirementsRevision,
-)
-from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
+from agent_orchestrator.contracts.resolution import RequirementsRevision
+from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.governance.planning_authorization import (
-    StorePlanningAuthorityReader,
-    build_planning_authorization,
-)
 from agent_orchestrator.orchestrator.operation_completion import (
     OperationCompletionError,
     OperationCompletionReader,
 )
-from agent_orchestrator.orchestrator.planning_admission_commits import PlanningCommitAdmission
-from agent_orchestrator.planning.plan_preview import _source_snapshot_payload
-from agent_orchestrator.runtime.planning_operations import (
-    StoreOperationReader,
-    build_operation_snapshot,
-    read_running_work,
-)
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
-from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import InjectedCrash, StoreConflict
-from simple_harness.contracts import canonical_json
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-_FULL_TARGET = Path(__file__).resolve().parents[1]
-if str(_FULL_TARGET) not in sys.path:
-    sys.path.insert(0, str(_FULL_TARGET))
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
-from test_plan_commits import ROOT_DUTY, _world  # noqa: E402
+from publish_world import Publishing, publishing, workspace  # noqa: E402
 
-HASH_A = "a" * 64
-HASH_B = "b" * 64
-HASH_C = "c" * 64
 HASH_D = "d" * 64
+CONFIRMING = "product-world-user"  # 产品同形世界里登录的那个人
 
 
-def _criterion(identifier: str) -> Criterion:
-    return Criterion(
-        criterion_id=identifier,
-        revision=1,
-        origin=CriterionOrigin.USER_EXPLICIT,
-        statement=f"approved requirement {identifier}",
-        requirement_class=RequirementClass.REQUIRED_OUTCOME,
-        evaluation_kind=EvaluationKind.SEMANTIC,
-    )
-
-
-def _requirements(world) -> RequirementsRevision:
-    requirements = RequirementsRevision(
-        revision_id="completion-requirements-1",  # type: ignore[arg-type]
-        mission_id=world.mission.id,
-        revision=1,
-        criteria=(_criterion("criterion-report"), _criterion("criterion-delivered")),
-        success_expression=AllExpr(
-            (CriterionExpr("criterion-report"), CriterionExpr("criterion-delivered"))
-        ),
-        authority_subject="authenticated-user-confirmation",
-    )
-    HtnStore(world.store).insert_requirements_revision(requirements)
+def _requirements(case: Publishing) -> RequirementsRevision:
+    requirements = HtnStore(case.store).latest_requirements_revision(case.mission_id)
+    assert requirements is not None and requirements.revision == 1
     return requirements
 
 
 def _requirements_ref(requirements: RequirementsRevision) -> TypedRef:
-    return TypedRef(
-        kind=TypedRefKind.REQUIREMENTS,
-        id=str(requirements.revision_id),
-        revision=int(requirements.revision),
-        content_hash=requirements.content_hash(),
-    )
+    return TypedRef(kind=TypedRefKind.REQUIREMENTS, id=str(requirements.revision_id),
+                    revision=int(requirements.revision), content_hash=requirements.content_hash())
 
 
-def _proposal(
-    requirements: RequirementsRevision, *, milestone: str = "DELIVERED"
-) -> dict[str, object]:
+def _command(case: Publishing, *, command_id: str = "confirm-completion-1",
+             milestone: str = "CONTENT_HASH_VERIFIED", mode: str = "REQUIRED_EFFECTS",
+             **fields: Any) -> dict[str, Any]:
+    """确认页会发出的那条命令：内容要求照单确认，``action:`` 要求作为必须完成的效果挂在根义务上。"""
+
+    page = workspace(case.world, case.mission_id)
+    requirements = _requirements(case)
+    actions = [c["id"] for c in page["criteria"] if c["statement"].startswith("action:")]
+    content = [c["id"] for c in page["criteria"] if c["id"] not in actions]
+    [obligation] = page["obligations"]
+    policy = next(m for m in page["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    effects = [{
+        "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
+        "obligation_id": obligation["id"], "criterion_ids": actions, "required_milestone": milestone,
+        "milestone_policy_ref": policy["milestone_policy_ref"], "evidence_policy_ref": policy["evidence_policy_ref"],
+    }]
+    if mode == "CONTENT_ONLY":
+        content, effects = [c["id"] for c in page["criteria"]], []
     return {
-        "schema_version": 1,
-        "mission_id": requirements.mission_id,
-        "requirements_ref": {
-            "id": str(requirements.revision_id),
-            "revision": int(requirements.revision),
-            "content_hash": requirements.content_hash(),
-        },
-        "mode": "REQUIRED_EFFECTS",
-        "content_criterion_ids": ["criterion-report"],
-        "effects": [
-            {
-                "effect_key": "deliver-report",
-                "obligation_id": ROOT_DUTY,
-                "criterion_ids": ["criterion-delivered"],
-                "required_milestone": milestone,
-                "milestone_policy_ref": {
-                    "id": "approved-milestone-policy",
-                    "revision": 1,
-                    "content_hash": HASH_B,
-                },
-                "evidence_policy_ref": {
-                    "id": "approved-evidence-policy",
-                    "revision": 1,
-                    "content_hash": HASH_C,
-                },
-                "source_slot_key": "approved-delivery-slot",
-            }
-        ],
-    }
-
-
-def _command(
-    requirements: RequirementsRevision,
-    *,
-    command_id: str = "confirm-completion-1",
-    milestone: str = "DELIVERED",
-) -> dict[str, object]:
-    return {
-        "mission_id": requirements.mission_id,
-        "command_id": command_id,
+        "mission_id": case.mission_id, "command_id": command_id,
         "expected_requirements_ref": _requirements_ref(requirements).to_json(),
-        "proposal": _proposal(requirements, milestone=milestone),
+        "proposal": {
+            "schema_version": 1, "mission_id": case.mission_id,
+            "requirements_ref": {"id": str(requirements.revision_id), "revision": int(requirements.revision),
+                                 "content_hash": requirements.content_hash()},
+            "mode": mode, "content_criterion_ids": content, "effects": effects,
+        },
+        **fields,
     }
 
 
-def _api(world, principal_id: str = "human-confirming") -> OperationCompletionApi:
-    return OperationCompletionApi(
-        world.service,
-        tenant_id=world.mission.tenant_id,
-        principal=Principal(principal_id),
-    )
+def _api(case: Publishing, principal_id: str = CONFIRMING) -> OperationCompletionApi:
+    return OperationCompletionApi(case.world.loop.commit, tenant_id=case.world.deployment.tenant_id,
+                                  principal=Principal(principal_id))
 
 
-def _approval_world(tmp_path):
-    # 任务创建时就绑定了当前规划协议；完成要求由本文件自己发布并确认。
-    world = _world(tmp_path, key="completion-spec-approval", confirm_completion=False)
-    return world, _requirements(world)
+def _counts(case: Publishing) -> tuple[int, int, int]:
+    connection = case.store.connection
+    return (int(connection.execute("SELECT count(*) FROM commit_receipts").fetchone()[0]),
+            int(connection.execute("SELECT count(*) FROM operation_completion_specs").fetchone()[0]),
+            len(case.store.list_events(case.mission_id)))
 
 
-def _completion_counts(world) -> tuple[int, int, int]:
-    return (
-        int(world.store.connection.execute("SELECT count(*) FROM commit_receipts").fetchone()[0]),
-        int(
-            world.store.connection.execute(
-                "SELECT count(*) FROM operation_completion_specs"
-            ).fetchone()[0]
-        ),
-        len(world.store.list_events(world.mission.id)),
-    )
+def _confirming(tmp_path: Path, case_body, **options: Any) -> None:
+    async def run() -> None:
+        async with publishing(tmp_path, confirm=False, **options) as case:
+            await case_body(case)
+
+    asyncio.run(run())
 
 
 def test_occ02_user_confirmation_persists_exact_spec_and_source_identity(tmp_path) -> None:
-    """OCC-02 / approval writer + CompletionReader seam.
+    """确认命令本身是唯一的 USER_CONFIRMED 来源；回执、完成映射与事件都对得上要求书第 1 版。"""
 
-    The test creates real Mission, root Obligation, requirements revision, protocol
-    binding, receipt and event.  The confirmation command itself is the only
-    USER_CONFIRMED authority input; no test-only approved boolean is fabricated.
-    """
+    async def body(case: Publishing) -> None:
+        requirements = _requirements(case)
+        command = _command(case)
+        receipt = _api(case).approve(command)
+        assert receipt.mission_id == case.mission_id
+        assert receipt.requirements_ref == _requirements_ref(requirements)
+        assert receipt.authority.kind == "USER_CONFIRMED"
+        assert receipt.authority.issuer_id == CONFIRMING
+        assert receipt.authority.requirements_ref == _requirements_ref(requirements)
+        stored = OperationCompletionReader(case.store).read_requirements(
+            case.mission_id, _requirements_ref(requirements))
+        assert stored.to_json() == OperationCompletionRequirementsV1.from_json(command["proposal"]).to_json()
+        assert case.store.get_receipt(command["command_id"]) == receipt.to_json()
+        assert case.events()[-1].type == "OperationCompletionSpecApproved"
 
-    world, requirements = _approval_world(tmp_path)
-    command = _command(requirements)
-    receipt = _api(world).approve(command)
-
-    assert receipt.mission_id == world.mission.id
-    assert receipt.requirements_ref == _requirements_ref(requirements)
-    assert receipt.authority.kind == "USER_CONFIRMED"
-    assert receipt.authority.issuer_id == "human-confirming"
-    assert receipt.authority.requirements_ref == _requirements_ref(requirements)
-    stored = OperationCompletionReader(world.store).read_requirements(
-        world.mission.id, _requirements_ref(requirements)
-    )
-    assert (
-        stored.to_json()
-        == OperationCompletionRequirementsV1.from_json(command["proposal"]).to_json()
-    )
-    assert world.store.get_receipt(command["command_id"]) == receipt.to_json()
-    assert [event.type for event in world.store.list_events(world.mission.id)][-1] == (
-        "OperationCompletionSpecApproved"
-    )
+    _confirming(tmp_path, body)
 
 
 @pytest.mark.parametrize(
     "mutation,expected_code",
     (
-        (
-            lambda command: {
-                **command,
-                "expected_requirements_ref": {
-                    **command["expected_requirements_ref"],  # type: ignore[index]
-                    "kind": "task",
-                },
-            },
-            "OP_REF_KIND_UNSUPPORTED",
-        ),
-        (
-            lambda command: {
-                **command,
-                "expected_requirements_ref": {
-                    **command["expected_requirements_ref"],  # type: ignore[index]
-                    "content_hash": HASH_D,
-                },
-            },
-            "OP_PAYLOAD_HASH_MISMATCH",
-        ),
-        (
-            lambda command: {
-                **command,
-                "proposal": {**command["proposal"], "mission_id": "other-mission"},  # type: ignore[index]
-            },
-            "OP_EFFECT_SCOPE_STALE",
-        ),
-        (
-            lambda command: {
-                **command,
-                "proposal": {
-                    **command["proposal"],  # type: ignore[index]
-                    "effects": [
-                        {
-                            **command["proposal"]["effects"][0],  # type: ignore[index]
-                            "obligation_id": "unregistered-obligation",
-                        }
-                    ],
-                },
-            },
-            "OP_COMPLETION_SCOPE_UNRESOLVED",
-        ),
+        (lambda command: {**command, "expected_requirements_ref": {
+            **command["expected_requirements_ref"], "kind": "task"}}, "OP_REF_KIND_UNSUPPORTED"),
+        (lambda command: {**command, "expected_requirements_ref": {
+            **command["expected_requirements_ref"], "content_hash": HASH_D}}, "OP_PAYLOAD_HASH_MISMATCH"),
+        (lambda command: {**command, "proposal": {**command["proposal"], "mission_id": "other-mission"}},
+         "OP_EFFECT_SCOPE_STALE"),
+        (lambda command: {**command, "proposal": {**command["proposal"], "effects": [
+            {**command["proposal"]["effects"][0], "obligation_id": "unregistered-obligation"}]}},
+         "OP_COMPLETION_SCOPE_UNRESOLVED"),
     ),
 )
-def test_occ02_approval_rejects_wrong_reference_or_unapproved_scope(
-    tmp_path, mutation, expected_code: str
-) -> None:
-    """OCC-02 / API+Commit revalidation: identity/mapping errors make no side rows."""
+def test_occ02_approval_rejects_wrong_reference_or_unapproved_scope(tmp_path, mutation, expected_code) -> None:
+    """确认页递来的身份或映射不对（这是入口真会收到的输入）：按名拒绝，什么都不写。"""
 
-    world, requirements = _approval_world(tmp_path)
-    before = _completion_counts(world)
-    with pytest.raises(OperationCompletionError) as caught:
-        _api(world).approve(mutation(_command(requirements)))
+    async def body(case: Publishing) -> None:
+        before = _counts(case)
+        with pytest.raises(OperationCompletionError) as caught:
+            _api(case).approve(mutation(_command(case)))
+        assert caught.value.code == expected_code
+        assert _counts(case) == before
 
-    assert caught.value.code == expected_code
-    assert _completion_counts(world) == before
-
-
-def test_occ02_same_command_is_a_receipt_replay_but_changed_spec_or_issuer_conflicts(
-    tmp_path,
-) -> None:
-    """OCC-02 / receipt identity seam: no mutable approval or principal-only replay."""
-
-    world, requirements = _approval_world(tmp_path)
-    command = _command(requirements)
-    first = _api(world).approve(command)
-    before = _completion_counts(world)
-
-    assert _api(world).approve(command).to_json() == first.to_json()
-    assert _completion_counts(world) == before
-    with pytest.raises(OperationCompletionError, match="command identity or caller differs"):
-        _api(world).approve(_command(requirements, milestone="RECEIVED"))
-    with pytest.raises(OperationCompletionError, match="command identity or caller differs"):
-        _api(world, principal_id="another-authenticated-human").approve(command)
-    assert _completion_counts(world) == before
+    _confirming(tmp_path, body)
 
 
-@pytest.mark.parametrize(
-    "fault",
-    ("completion_spec_after_receipt", "completion_spec_after_spec", "completion_spec_after_event"),
-)
-def test_occ02_approval_faults_roll_back_receipt_spec_and_event_together(
-    tmp_path, fault: str
-) -> None:
-    """OCC-09 / approval transaction seam.
+def test_occ02_same_command_is_a_receipt_replay_but_changed_spec_or_issuer_conflicts(tmp_path) -> None:
+    async def body(case: Publishing) -> None:
+        command = _command(case)
+        first = _api(case).approve(command)
+        before = _counts(case)
+        assert _api(case).approve(command).to_json() == first.to_json()
+        assert _counts(case) == before
+        with pytest.raises(OperationCompletionError, match="command identity or caller differs"):
+            _api(case).approve(_command(case, milestone="FILE_PUBLISHED"))
+        with pytest.raises(OperationCompletionError, match="command identity or caller differs"):
+            _api(case, principal_id="another-authenticated-human").approve(command)
+        assert _counts(case) == before
 
-    This is the first-side-binding analogue of OCC-09: a crash between any
-    approval write leaves no consumable receipt, Spec row, or approval event.
-    Scope/acceptance/outcome atomicity remains future T0/T3 work.
-    """
+    _confirming(tmp_path, body)
 
-    world, requirements = _approval_world(tmp_path)
-    command = _command(requirements)
-    before = _completion_counts(world)
-    world.store.arm(f"{fault}:operation_completion")
 
-    with pytest.raises(InjectedCrash, match=fault):
-        _api(world).approve(command)
+@pytest.mark.parametrize("fault", ("completion_spec_after_receipt", "completion_spec_after_spec",
+                                   "completion_spec_after_event"))
+def test_occ02_approval_faults_roll_back_receipt_spec_and_event_together(tmp_path, fault: str) -> None:
+    """确认写到一半进程崩了（产品自带的崩溃点）：回执、映射行、事件一起回滚，读侧仍说"没确认"。"""
 
-    assert _completion_counts(world) == before
-    assert world.store.get_receipt(command["command_id"]) is None
-    with pytest.raises(OperationCompletionError) as missing:
-        OperationCompletionReader(world.store).read_requirements(
-            world.mission.id, _requirements_ref(requirements)
-        )
-    assert missing.value.code == "OP_REQUIREMENT_MAPPING_MISSING"
+    async def body(case: Publishing) -> None:
+        requirements = _requirements(case)
+        command = _command(case)
+        before = _counts(case)
+        case.store.arm(f"{fault}:operation_completion")
+        with pytest.raises(InjectedCrash, match=fault):
+            _api(case).approve(command)
+        assert _counts(case) == before
+        assert case.store.get_receipt(command["command_id"]) is None
+        with pytest.raises(OperationCompletionError) as missing:
+            OperationCompletionReader(case.store).read_requirements(case.mission_id, _requirements_ref(requirements))
+        assert missing.value.code == "OP_REQUIREMENT_MAPPING_MISSING"
+        # 崩溃之后同一条命令照常能确认（没有留下半截记录挡路）。
+        assert _api(case).approve(command).authority.kind == "USER_CONFIRMED"
+
+    _confirming(tmp_path, body)
 
 
 def test_occ02_cross_tenant_approval_cannot_read_or_create_a_spec(tmp_path) -> None:
-    """OCC-02 / authenticated API boundary: another tenant learns no receipt detail."""
+    async def body(case: Publishing) -> None:
+        before = _counts(case)
+        foreign = OperationCompletionApi(case.world.loop.commit, tenant_id="different-tenant",
+                                         principal=Principal(CONFIRMING))
+        with pytest.raises(OperationCompletionError) as caught:
+            foreign.approve(_command(case))
+        assert caught.value.code == "not_found"
+        assert _counts(case) == before
 
-    world, requirements = _approval_world(tmp_path)
-    before = _completion_counts(world)
-    foreign = OperationCompletionApi(
-        world.service, tenant_id="different-tenant", principal=Principal("human-confirming")
-    )
-
-    with pytest.raises(OperationCompletionError) as caught:
-        foreign.approve(_command(requirements))
-
-    assert caught.value.code == "not_found"
-    assert _completion_counts(world) == before
+    _confirming(tmp_path, body)
 
 
 @pytest.mark.parametrize("kind", ("model", "provider"))
 def test_user_confirmation_boundary_rejects_nonhuman_principal(tmp_path, kind: str) -> None:
     from agent_orchestrator.api.operation_completion import bind_requirement_authority
 
-    world, requirements = _approval_world(tmp_path)
-    ref = _requirements_ref(requirements)
-    proposal = OperationCompletionRequirementsV1.from_json(_proposal(requirements))
-    principal = Principal("human-confirming")
-    authority = bind_requirement_authority(
-        principal=principal,
-        tenant_id=world.mission.tenant_id,
-        command_id="confirm-malformed-caller",
-        mission_id=world.mission.id,
-        requirements_ref=ref,
-        normalized_spec=proposal,
-    )
-    # Normal Principal construction already rejects nonhuman kinds. Exercise
-    # the Commit trust boundary with an invalid internal instance as well.
-    malformed = object.__new__(Principal)
-    object.__setattr__(malformed, "principal_id", principal.principal_id)
-    object.__setattr__(malformed, "display", principal.display)
-    object.__setattr__(malformed, "kind", kind)
-    before = _completion_counts(world)
-    with pytest.raises(OperationCompletionError) as api_refusal:
-        OperationCompletionApi(
-            world.service, tenant_id=world.mission.tenant_id, principal=malformed
-        )
-    assert api_refusal.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
-    with pytest.raises(OperationCompletionError) as commit_refusal:
-        world.service.approve_operation_completion_spec(
-            mission_id=world.mission.id,
-            command_id="confirm-malformed-caller",
-            expected_requirements_ref=ref,
-            proposal=proposal,
-            requirement_authority=authority,
-            principal=malformed,
-        )
-    assert commit_refusal.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
-    assert _completion_counts(world) == before
+    async def body(case: Publishing) -> None:
+        requirements = _requirements(case)
+        ref = _requirements_ref(requirements)
+        proposal = OperationCompletionRequirementsV1.from_json(_command(case)["proposal"])
+        principal = Principal(CONFIRMING)
+        authority = bind_requirement_authority(
+            principal=principal, tenant_id=case.world.deployment.tenant_id, command_id="confirm-malformed-caller",
+            mission_id=case.mission_id, requirements_ref=ref, normalized_spec=proposal)
+        # 正常构造的 Principal 已经拒绝非人类型；这里再用一个非法的内部实例敲提交层的信任边界。
+        malformed = object.__new__(Principal)
+        object.__setattr__(malformed, "principal_id", principal.principal_id)
+        object.__setattr__(malformed, "display", principal.display)
+        object.__setattr__(malformed, "kind", kind)
+        before = _counts(case)
+        with pytest.raises(OperationCompletionError) as api_refusal:
+            OperationCompletionApi(case.world.loop.commit, tenant_id=case.world.deployment.tenant_id,
+                                   principal=malformed)
+        assert api_refusal.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
+        with pytest.raises(OperationCompletionError) as commit_refusal:
+            case.world.loop.commit.approve_operation_completion_spec(
+                mission_id=case.mission_id, command_id="confirm-malformed-caller", expected_requirements_ref=ref,
+                proposal=proposal, requirement_authority=authority, principal=malformed)
+        assert commit_refusal.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
+        assert _counts(case) == before
 
-
-def _requirements_r2(world) -> RequirementsRevision:
-    """A real amended RequirementsRevision, not a fake reader return value."""
-
-    requirements = RequirementsRevision(
-        revision_id="completion-requirements-2",  # type: ignore[arg-type]
-        mission_id=world.mission.id,
-        revision=2,
-        criteria=(_criterion("criterion-report"), _criterion("criterion-delivered")),
-        success_expression=AllExpr(
-            (CriterionExpr("criterion-report"), CriterionExpr("criterion-delivered"))
-        ),
-        authority_subject="authenticated-user-confirmation-amendment",
-    )
-    HtnStore(world.store).insert_requirements_revision(requirements)
-    return requirements
-
-
-def test_occ02_requirements_amendment_stales_old_reader_but_keeps_old_replay_receipt(
-    tmp_path,
-) -> None:
-    """OCC-05/OCC-02 / CompletionReader revalidation seam.
-
-    r1 approval remains historical and its exact command may replay, but it may
-    not satisfy completion after an actual r2 Requirements row supersedes it.
-    The new r2 reader must report the missing approved mapping rather than infer
-    CONTENT_ONLY from no intent/action/spec row.
-    """
-
-    world, r1 = _approval_world(tmp_path)
-    command = _command(r1)
-    first = _api(world).approve(command)
-    r2 = _requirements_r2(world)
-
-    with pytest.raises(OperationCompletionError) as stale:
-        OperationCompletionReader(world.store).read_requirements(
-            world.mission.id, _requirements_ref(r1)
-        )
-    assert stale.value.code == "OP_EFFECT_SCOPE_STALE"
-    with pytest.raises(OperationCompletionError) as missing:
-        OperationCompletionReader(world.store).read_requirements(
-            world.mission.id, _requirements_ref(r2)
-        )
-    assert missing.value.code == "OP_REQUIREMENT_MAPPING_MISSING"
-    assert _api(world).approve(command).to_json() == first.to_json()
-    with pytest.raises(OperationCompletionError) as still_stale:
-        OperationCompletionReader(world.store).read_requirements(
-            world.mission.id, _requirements_ref(r1)
-        )
-    assert still_stale.value.code == "OP_EFFECT_SCOPE_STALE"
+    _confirming(tmp_path, body)
 
 
 def test_occ02_different_command_cannot_replace_spec_for_same_requirements(tmp_path) -> None:
-    """OCC-02 / immutable `(mission, requirements_revision)` Spec identity.
+    """同一版要求书只有一份完成映射：换一条命令改里程碑被拒，原回执与映射逐字节不变。"""
 
-    A new command changing the milestone needs a new RequirementsRevision.  Its
-    failure leaves the original receipt, Spec row and approval event byte-for-byte
-    usable for the original requirements identity.
-    """
+    async def body(case: Publishing) -> None:
+        requirements = _requirements(case)
+        first_command = _command(case)
+        first = _api(case).approve(first_command)
+        before = _counts(case)
+        with pytest.raises((OperationCompletionError, StoreConflict)):
+            _api(case).approve(_command(case, command_id="confirm-completion-2", milestone="FILE_PUBLISHED"))
+        assert _counts(case) == before
+        assert case.store.get_receipt(first_command["command_id"]) == first.to_json()
+        assert OperationCompletionReader(case.store).read_requirements(
+            case.mission_id, _requirements_ref(requirements)).content_hash() == first.spec_hash
 
-    world, requirements = _approval_world(tmp_path)
-    first_command = _command(requirements)
-    first = _api(world).approve(first_command)
-    before = _completion_counts(world)
-
-    with pytest.raises((OperationCompletionError, StoreConflict)):
-        _api(world).approve(
-            _command(
-                requirements,
-                command_id="confirm-completion-2",
-                milestone="RECEIVED",
-            )
-        )
-
-    assert _completion_counts(world) == before
-    assert world.store.get_receipt(first_command["command_id"]) == first.to_json()
-    assert (
-        OperationCompletionReader(world.store)
-        .read_requirements(world.mission.id, _requirements_ref(requirements))
-        .content_hash()
-        == first.spec_hash
-    )
-
-
-def _single_completion_command(world, requirements_revision: int, *, outputs=()):
-    from test_plan_commits import root_network, task_binding
-
-    from agent_orchestrator.contracts.htn import ObligationCoverage
-
-    world.env.register_type(
-        "completion.single", criteria=("criterion-report",), domain="plan", outputs=outputs
-    )
-    binding = task_binding(
-        world.env, "completion.single", task_id="task-completion-root", obligation=ROOT_DUTY
-    )
-    network = dataclasses.replace(root_network(world.env, binding), plan_revision=1)
-    coverage = (
-        ObligationCoverage(
-            obligation_id=ROOT_DUTY,
-            criterion_ids=tuple(binding.goal_signature.coverage_criteria),
-            covered_by=network.root_occurrence_ids,
-        ),
-    )
-    network = dataclasses.replace(network, obligation_coverage=coverage)
-    delta = dataclasses.replace(
-        world.command.delta,
-        method_instances=(),
-        occurrences=network.occurrences,
-        order_constraints=(),
-        data_requirements=(),
-        obligation_coverage=coverage,
-        obligation_openings=(),
-        referenced_occurrences=(),
-        read_set=dataclasses.replace(
-            world.command.read_set, requirements_revision=requirements_revision
-        ),
-    )
-    return dataclasses.replace(
-        world.command, delta=delta, network=network, task_bindings=(binding,)
-    )
-
-
-def _root_scope_document(
-    world, requirements: RequirementsRevision, spec_hash: str
-) -> dict[str, object]:
-    """Build from an actual committed plan membership and semantic Task contract."""
-
-    # Requirements were approved after this fixture's initial planner capture.
-    # Re-capture the real semantic read-set at r1; the Commit guard still sees an
-    # ordinary command and verifies it rather than this test bypassing the guard.
-    refreshed = _single_completion_command(world, int(requirements.revision))
-    receipt = _commit_with_refreshed_admission(world, refreshed, int(requirements.revision))
-    assert receipt.command_id == world.command.command_id
-    htn = HtnStore(world.store)
-    plan = htn.active_plan_revision(world.mission.id)
-    assert plan is not None
-    root_occurrence = str(refreshed.network.root_occurrence_ids[0])
-    member = world.store.connection.execute(
-        "SELECT task_id, obligation_id FROM plan_memberships "
-        "WHERE mission_id=? AND revision=? AND occurrence_id=?",
-        (world.mission.id, plan.revision, root_occurrence),
-    ).fetchone()
-    assert member is not None
-    semantic = htn.task_semantics_of(world.mission.id, str(member["task_id"]))
-    assert semantic is not None
-    return {
-        "schema_version": 1,
-        "mission_id": world.mission.id,
-        "requirements_ref": {
-            "id": str(requirements.revision_id),
-            "revision": int(requirements.revision),
-            "content_hash": requirements.content_hash(),
-        },
-        "spec_hash": spec_hash,
-        "plan_ref": {"revision": plan.revision, "snapshot_hash": plan.snapshot_hash},
-        "occurrence_id": root_occurrence,
-        "task_ref": {
-            "id": str(semantic.task_id),
-            "revision": int(semantic.contract_revision),
-            "content_hash": semantic.contract_hash,
-        },
-        "obligation_id": str(member["obligation_id"]),
-        "role": "MIXED",
-        "content_criterion_ids": ["criterion-report"],
-        "required_effect_keys": ["deliver-report"],
-        "owned_effect_keys": ["deliver-report"],
-    }
-
-
-def _commit_with_refreshed_admission(world, command, requirements_revision: int):
-    """Open a fresh request/authority/preview admission for the fresh read-set."""
-
-    request_id = "completion-scope-request-r1"
-    from agent_orchestrator.contracts.planning_decisions import PlanningRequestBinding
-
-    binding = PlanningRequestBinding(
-        request_id=request_id,
-        mission_id=world.mission.id,
-        protocol_version="planning-decision-v1",
-        package_version=6,
-        package_hash=HASH_A,
-        base_plan_revision=0,
-        requirements_revision=requirements_revision,
-        scope_epoch_digest=HASH_B,
-        subject_bindings_hash=HASH_C,
-        visible_refs_digest=HASH_D,
-        prompt_version="planner-hierarchical-v9",
-        prompt_hash=HASH_A,
-        created_at=world.store.now,
-        intent_id="completion-scope-intent-r1",
-    )
-    decisions = PlanningDecisionStore(world.store)
-    decisions.insert_planning_request(binding)
-    grant = PlanningAuthorizationApi(
-        world.store,
-        tenant_id=world.mission.tenant_id,
-        principal=Principal(world.principal.principal_id),
-    ).issue(world.mission.id, command_id="completion-scope-grant-r1", request_id=request_id)
-    from agent_orchestrator.governance.planning_authorization import planning_policy_for_mission
-    authority = build_planning_authorization(
-        request_id,
-        read=StorePlanningAuthorityReader(PlanningAdmissionStore(world.store), world.store),
-        caller=world.principal,
-        policy=planning_policy_for_mission(world.store, world.mission.id),
-        now_ms=int(world.store.now * 1000),
-    )
-    from agent_orchestrator.governance.planning_authorization import PlanningAuthorizationSnapshot
-    assert isinstance(authority, PlanningAuthorizationSnapshot), authority
-    operations = build_operation_snapshot(
-        world.mission.id, reader=StoreOperationReader(world.store)
-    )
-    runtime_work = read_running_work(world.mission.id, (), reader=StoreOperationReader(world.store))
-    compilation_hash = hashlib.sha256(
-        canonical_json(
-            {"delta": command.delta.to_json(), "network": _source_snapshot_payload(command.network)}
-        ).encode("utf-8")
-    ).hexdigest()
-    admission = PlanningCommitAdmission(
-        request_id=request_id,
-        decision_hash=HASH_C,
-        decision_key="REFINE",
-        authority=authority,
-        operations=operations,
-        runtime_work=runtime_work,
-        preview_request_id=request_id,
-        preview_decision_hash=HASH_C,
-        preview_compilation_hash=compilation_hash,
-        preview_read_set_hash=content_hash_of(command.read_set.to_json()),
-    )
-    assert grant.grant_id
-    return world.service.commit_planning_revision(command, world.principal, admission=admission)
+    _confirming(tmp_path, body)
 
 
 def test_occ02_scope_store_revalidates_exact_spec_plan_task_and_unique_identity(tmp_path) -> None:
-    """OCC-02/OCC-10 / Plan Commit + OperationCompletionStore seam.
+    """第一版计划由产品主循环真提交（提做法 → 独立审阅 → 采用），根的完成范围随之冻结。
 
-    The test does not manufacture a parent table: the Scope points at an actual
-    plan receipt, plan membership and TaskSemanticBinding.  A Scope with a stale
-    Requirements pin must fail even when its spec hash happens to name a row;
-    otherwise a cross-Spec reader could silently reuse old completion proof.
-    """
+    范围表的写入口对产品写下的那一行做精确复核：要求书钉错、任务合同哈希填成整份语义绑定的哈希、
+    调用方自选范围编号，都按冲突拒绝；同一行原样重放不写任何东西。"""
 
-    world, requirements = _approval_world(tmp_path)
-    approved = _api(world).approve(_command(requirements))
-    document = _root_scope_document(world, requirements, approved.spec_hash)
-    scope = OccurrenceCompletionScopeV1.from_json(document)
-    completion = OperationCompletionStore(world.store)
+    provider = LayeredScriptedProvider()
+    provider.held.add("worker")
 
-    stale_requirements = dict(document)
-    stale_requirements["requirements_ref"] = {
-        "id": "requirements-after-amendment",
-        "revision": 2,
-        "content_hash": HASH_D,
-    }
-    stale_scope = OccurrenceCompletionScopeV1.from_json(stale_requirements)
-    with world.store.transaction(), pytest.raises(StoreConflict):
-        completion.insert_scope(
-            stale_scope.scope_id,
-            stale_scope,
-            plan_receipt_id=world.command.command_id,
-        )
+    async def run() -> None:
+        try:
+            async with publishing(tmp_path, provider=provider) as case:
+                await case.run_until(provider.entered.is_set)
+                completion = OperationCompletionStore(case.store)
+                # 产品上根是复合目标（AGGREGATE，承担发布效果），叶子只管内容（CONTENT）。
+                rows = case.store.connection.execute(
+                    "SELECT plan_revision, occurrence_id, plan_receipt_id FROM operation_completion_scopes "
+                    "WHERE mission_id=? AND json_extract(document_json,'$.role')='AGGREGATE'",
+                    (case.mission_id,)).fetchall()
+                assert len(rows) == 1
+                [row] = rows
+                stored = completion.get_scope_exact(case.mission_id, row["plan_revision"], row["occurrence_id"])
+                assert stored is not None
+                document = stored["document"]
+                assert isinstance(document, OccurrenceCompletionScopeV1)
+                receipt_id = row["plan_receipt_id"]
 
-    with world.store.transaction():
-        stored = completion.insert_scope(
-            scope.scope_id,
-            scope,
-            plan_receipt_id=world.command.command_id,
-        )
-    assert stored["scope_id"] == scope.scope_id
-    assert stored["document"].to_json() == scope.to_json()
+                stale = document.to_json()
+                stale["requirements_ref"] = {"id": "requirements-after-amendment", "revision": 2, "content_hash": HASH_D}
+                stale_scope = OccurrenceCompletionScopeV1.from_json(stale)
+                with case.store.transaction(), pytest.raises(StoreConflict):
+                    completion.insert_scope(stale_scope.scope_id, stale_scope, plan_receipt_id=receipt_id)
 
-    # Task contract hash is not the whole semantic binding hash. Input/dispatch
-    # generations may change the binding without creating a new Task contract.
-    binding = HtnStore(world.store).task_semantics_of(world.mission.id, scope.task_ref.id)
-    assert binding is not None and binding.content_hash() != binding.contract_hash
-    wrong_contract = scope.to_json()
-    wrong_contract["task_ref"]["content_hash"] = binding.content_hash()
-    wrong_scope = OccurrenceCompletionScopeV1.from_json(wrong_contract)
-    with world.store.transaction(), pytest.raises(StoreConflict):
-        completion.insert_scope(
-            wrong_scope.scope_id, wrong_scope, plan_receipt_id=world.command.command_id
-        )
+                binding = HtnStore(case.store).task_semantics_of(case.mission_id, document.task_ref.id)
+                assert binding is not None and binding.content_hash() != binding.contract_hash
+                wrong = document.to_json()
+                wrong["task_ref"]["content_hash"] = binding.content_hash()
+                wrong_scope = OccurrenceCompletionScopeV1.from_json(wrong)
+                with case.store.transaction(), pytest.raises(StoreConflict):
+                    completion.insert_scope(wrong_scope.scope_id, wrong_scope, plan_receipt_id=receipt_id)
 
-    before = world.store.connection.total_changes
-    with world.store.transaction():
-        replay = completion.insert_scope(
-            scope.scope_id,
-            scope,
-            plan_receipt_id=world.command.command_id,
-        )
-    assert replay == stored
-    assert world.store.connection.total_changes == before
+                before = case.store.connection.total_changes
+                with case.store.transaction():
+                    replay = completion.insert_scope(document.scope_id, document, plan_receipt_id=receipt_id)
+                assert replay == stored
+                assert case.store.connection.total_changes == before
+                with case.store.transaction(), pytest.raises(StoreConflict):
+                    completion.insert_scope("caller-selected-scope-id", document, plan_receipt_id=receipt_id)
+        finally:
+            provider.release.set()
 
-    # Scope id is derived from (mission, plan revision, occurrence); callers may
-    # not choose a second identity to evade the per-occurrence UNIQUE constraint.
-    with world.store.transaction(), pytest.raises(StoreConflict):
-        completion.insert_scope(
-            "caller-selected-scope-id",
-            scope,
-            plan_receipt_id=world.command.command_id,
-        )
+    asyncio.run(run())
 
 
-def test_occ02_real_migration_installs_completion_tables_and_immutability_triggers(
-    tmp_path,
-) -> None:
-    """OCC-09 / real Store migration seam, including trigger-body parsing.
+def test_occ02_real_migration_installs_completion_tables_and_immutability_triggers(tmp_path) -> None:
+    async def body(case: Publishing) -> None:
+        receipt = _api(case).approve(_command(case))
+        names = {row[0] for row in case.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"operation_completion_specs", "operation_completion_scopes", "operation_outcome_review_bindings",
+                "operation_acceptance_scopes"} <= names
+        assert case.store.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        sql = "SELECT document_json FROM operation_completion_specs WHERE spec_id=?"
+        original = case.store.connection.execute(sql, (receipt.spec_id,)).fetchone()[0]
+        with pytest.raises(Exception, match="immutable completion spec"):
+            case.store.connection.execute(
+                "UPDATE operation_completion_specs SET document_json='{}' WHERE spec_id=?", (receipt.spec_id,))
+        assert case.store.connection.execute(sql, (receipt.spec_id,)).fetchone()[0] == original
 
-    Opening a Store applies the production migration iterator (not an abbreviated
-    SQLite fixture).  Approval then creates a real immutable Spec row, whose
-    trigger rejects an attempted rewrite and preserves its canonical document.
-    """
-
-    world, requirements = _approval_world(tmp_path)
-    receipt = _api(world).approve(_command(requirements))
-    required_tables = {
-        "operation_completion_specs",
-        "operation_completion_scopes",
-        "operation_outcome_review_bindings",
-        "operation_acceptance_scopes",
-    }
-    names = {
-        row[0]
-        for row in world.store.connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-    }
-    assert required_tables <= names
-    assert world.store.connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    original = world.store.connection.execute(
-        "SELECT document_json FROM operation_completion_specs WHERE spec_id=?", (receipt.spec_id,)
-    ).fetchone()[0]
-
-    with pytest.raises(Exception, match="immutable completion spec"):
-        world.store.connection.execute(
-            "UPDATE operation_completion_specs SET document_json='{}' WHERE spec_id=?",
-            (receipt.spec_id,),
-        )
-    assert (
-        world.store.connection.execute(
-            "SELECT document_json FROM operation_completion_specs WHERE spec_id=?",
-            (receipt.spec_id,),
-        ).fetchone()[0]
-        == original
-    )
+    _confirming(tmp_path, body)
 
 
 # --------------------------------------------------------------------------------------
-# User decision 2026-09-26: in auto permission mode the Host confirms content-only
-# requirements itself.  The receipt is the same; the event says the Host did it.
+# 用户 2026-09-26 决定：自动模式下，纯内容的要求由部署代为确认；回执一样，事件写明是系统做的。
 # --------------------------------------------------------------------------------------
-
-
-def _content_only(requirements: RequirementsRevision, **fields: object) -> dict[str, object]:
-    command = _command(requirements, command_id="host-auto-completion-1")
-    proposal = dict(command["proposal"])  # type: ignore[arg-type]
-    proposal.update(mode="CONTENT_ONLY", effects=[],
-                    content_criterion_ids=["criterion-report", "criterion-delivered"])
-    return {**command, "proposal": proposal, **fields}
 
 
 def test_host_auto_confirmation_is_recorded_as_the_system(tmp_path) -> None:
-    world, requirements = _approval_world(tmp_path)
-    receipt = _api(world).approve(_content_only(requirements, approval_source="HOST_AUTO_PERMISSION"))
-    assert receipt.authority.kind == "USER_CONFIRMED"
-    event = world.store.list_events(world.mission.id)[-1]
-    assert event.type == "OperationCompletionSpecApproved"
-    assert event.actor_type == "system" and event.actor_id == "host:auto-permission-completion"
-    assert event.payload["approval_source"] == "HOST_AUTO_PERMISSION"
-    assert event.payload["on_behalf_of_principal_id"] == "human-confirming"
+    """产品自动模式：没有 action: 要求的任务，部署职责照确认页的样子代签，记为系统代办。"""
+
+    async def run() -> None:
+        async with publishing(tmp_path, confirm=False, criteria=("file:" + "NOTES.md",), key="auto-1") as case:
+            assert case.world.deployment.duties.auto_confirm_content_completion(auto=True) == 1
+            [event] = case.events("OperationCompletionSpecApproved")
+            assert event.actor_type == "system" and event.actor_id == "host:auto-permission-completion"
+            assert event.payload["approval_source"] == "HOST_AUTO_PERMISSION"
+            assert event.payload["on_behalf_of_principal_id"] == CONFIRMING
+
+    asyncio.run(run())
 
 
 def test_a_person_confirming_is_still_recorded_as_the_person(tmp_path) -> None:
-    world, requirements = _approval_world(tmp_path)
-    _api(world).approve(_content_only(requirements))
-    event = world.store.list_events(world.mission.id)[-1]
-    assert event.actor_type == "human" and event.actor_id == "human-confirming"
-    assert "approval_source" not in event.payload
+    async def run() -> None:
+        async with publishing(tmp_path, confirm=False, criteria=("file:" + "NOTES.md",), key="person-1") as case:
+            _api(case).approve(_command(case, mode="CONTENT_ONLY"))
+            [event] = case.events("OperationCompletionSpecApproved")
+            assert event.actor_type == "human" and event.actor_id == CONFIRMING
+            assert "approval_source" not in event.payload
+
+    asyncio.run(run())
 
 
 def test_the_host_never_confirms_an_operation_effect(tmp_path) -> None:
-    world, requirements = _approval_world(tmp_path)
-    with pytest.raises(OperationCompletionError) as refused:
-        _api(world).approve({**_command(requirements), "approval_source": "HOST_AUTO_PERMISSION"})
-    assert refused.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
-    with pytest.raises(OperationCompletionError) as unknown:
-        _api(world).approve(_content_only(requirements, approval_source="MODEL"))
-    assert unknown.value.code == "invalid_request"
+    async def body(case: Publishing) -> None:
+        # 部署职责本身就跳过带 action: 的任务。
+        assert case.world.deployment.duties.auto_confirm_content_completion(auto=True) == 0
+        with pytest.raises(OperationCompletionError) as refused:
+            _api(case).approve(_command(case, approval_source="HOST_AUTO_PERMISSION"))
+        assert refused.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
+        with pytest.raises(OperationCompletionError) as unknown:
+            _api(case).approve(_command(case, mode="CONTENT_ONLY", approval_source="MODEL"))
+        assert unknown.value.code == "invalid_request"
+        assert not case.events("OperationCompletionSpecApproved")
+
+    _confirming(tmp_path, body)

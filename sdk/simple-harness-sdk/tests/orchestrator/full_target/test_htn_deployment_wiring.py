@@ -21,6 +21,12 @@ real, and the last two sections are the scenarios that could not be written befo
 §6  a shared read-only subgoal is executed once.
 §7  the context the Planner writes a method from — typed, no authority vocabulary.
 §8  mutation self-check.
+
+HTN 补齐阶段 A′（2026-10-03）：只借任务号与存储的用例改用产品组装建出的任务
+（:func:`_open_product_mission`）；观察行经观察管线（读者是外界的替身）写入，不手插。
+写做法上下文的"描述目标与操作者""每个准则带原文"两条删除，由
+``assurance_exec/test_planner_chooses_and_proposes.py::test_the_context_for_writing_a_method_carries_the_requirement_text_and_a_fresh_identity``
+覆盖；其余四条改为读产品自己的 ``method_proposal_context``。第 6 节见那里的说明。
 """
 
 from __future__ import annotations
@@ -37,10 +43,9 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-from agent_orchestrator.contracts.evidence_state import TruthValue, WitnessPurpose  # noqa: E402
+from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.graph.eligibility import ReadinessReason  # noqa: E402
-from agent_orchestrator.knowledge.validity import witness_subject  # noqa: E402
 from agent_orchestrator.planning.htn.observation_pipeline import (  # noqa: E402
     build_index,
     observe_predicate,
@@ -82,6 +87,45 @@ def worktree(tmp_path) -> Path:
         check=True,
     )
     return root
+
+
+def _open_product_mission(tmp_path, *, key: str, criteria: tuple[str, ...] = ("file:NOTES.md",),
+                          wrap: Any = None, **world: Any):
+    """A user Mission created through the product's deployment assembly (HTN 补齐阶段 A′):
+    root initialised, TaskGraph bound, Assurance on, the completion mapping confirmed the
+    product's way and planning begun — then held open for synchronous test code.  Yields
+    an ``h1i_seed.Seed`` (or ``wrap(seed)``); ``world`` goes to ``product_world``."""
+
+    import asyncio
+
+    from h1i_seed import CONFIG, GOAL, Seed, root_task
+
+    from agent_orchestrator.testing.product_world import product_world
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
+    loop = asyncio.new_event_loop()
+    opened = product_world(Path(tmp_path) / "root", LayeredScriptedProvider(), auto=False, **{**CONFIG, **world})
+    product = loop.run_until_complete(opened.__aenter__())
+    try:
+        created = product.create({"goal": GOAL, "idempotency_key": key, "success_criteria": list(criteria)})
+        mission_id = created["mission_id"]
+        product.deployment.duties.auto_confirm_content_completion(auto=True)
+        product.loop.commit.begin_planning(mission_id)
+        dispatch = product.loop._dispatch_for(mission_id)
+        seed = Seed(product.loop, product.store.get_mission(mission_id), dispatch.planning,
+                    HtnStore(product.store).latest_task_semantics(root_task(mission_id)), dispatch, product)
+        yield seed if wrap is None else wrap(seed)
+    finally:
+        loop.run_until_complete(opened.__aexit__(None, None, None))
+        loop.close()
+
+
+@pytest.fixture
+def product_mission(tmp_path) -> Any:
+    """Only a Mission row and its store: the product-assembled Mission the D-class cases
+    borrow (they need a Mission id to write observations against, nothing more)."""
+
+    yield from _open_product_mission(tmp_path, key="wiring")
 
 
 # ======================================================================================
@@ -216,11 +260,10 @@ def test_an_unknown_domain_is_refused_rather_than_producing_an_empty_library() -
         build_planning_world("m-1", domains=("code", "not-a-domain"))
 
 
-def test_the_evidence_snapshot_is_read_from_the_store_every_time(tmp_path) -> None:
+def test_the_evidence_snapshot_is_read_from_the_store_every_time(product_mission) -> None:
     """A cached snapshot is the stale read ADR-13 refuses; a new observation shows."""
 
-    service, mission = _mission(tmp_path)
-    store = service.store
+    store, mission = product_mission.loop.store, product_mission.mission
     semantics = HtnStore(store)
     world = build_planning_world(mission.id, domains=("code",), semantics=semantics)
     before = world.snapshot()
@@ -230,19 +273,16 @@ def test_the_evidence_snapshot_is_read_from_the_store_every_time(tmp_path) -> No
     assert after.support_revision == 1
     assert after.entries[0].truth() is TruthValue.TRUE
     assert after.snapshot_id != before.snapshot_id
-    store.close()
 
 
-def test_a_counter_observation_is_not_outvoted_in_the_snapshot(tmp_path) -> None:
-    service, mission = _mission(tmp_path)
-    store = service.store
+def test_a_counter_observation_is_not_outvoted_in_the_snapshot(product_mission) -> None:
+    store, mission = product_mission.loop.store, product_mission.mission
     semantics = HtnStore(store)
     world = build_planning_world(mission.id, domains=("code",), semantics=semantics)
     _observe(world, semantics, mission.id, polarity=True)
     _observe(world, semantics, mission.id, polarity=False, at=2)
     entry = world.snapshot().entries[0]
     assert entry.truth() is TruthValue.CONFLICT
-    store.close()
 
 
 def test_the_fixture_env_is_filled_by_the_real_assembly() -> None:
@@ -259,6 +299,9 @@ def test_the_fixture_env_is_filled_by_the_real_assembly() -> None:
 
 
 def _mission(tmp_path, key: str = "k"):
+    """旧构造器（裸 ``CommitService`` 建任务；产品上已建不出来，调用即报
+    ``MISSION_DEPLOYMENT_UNBOUND`` 一类错误）。只为 ``test_inspect_leaf_patch_input.py``
+    等导入方暂留，这里的用例已改用 :func:`_open_product_mission`。"""
     from agent_orchestrator.contracts import Budget
     from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
 
@@ -278,28 +321,29 @@ def _mission(tmp_path, key: str = "k"):
 
 
 def _observe(world, semantics, mission_id: str, *, polarity: bool, at: int = 1) -> None:
+    """One reading of ``code.repo-checked-out`` recorded the way a deployment records it:
+    a reader (the test double for the outside world) answers, the observation pipeline
+    writes.  ``polarity=False`` is an authoritative denial."""
+
     from agent_orchestrator.planning.htn.observers import denial, observed
 
-    signature = world.predicates.require(ref("code.repo-checked-out"))
-    arguments = {"repository": "r1"}
-    observation = (
-        observed(
-            signature,
-            arguments,
-            polarity=True,
-            observer_id="code.repo-observer",
-            now_ms=at,
-        )
-        if polarity
-        else denial(
-            signature,
-            arguments,
-            observer_id="code.repo-observer",
-            now_ms=at,
-            coverage_scope="worktree:/tmp",
-        )
-    )
-    semantics.insert_observation(mission_id, observation.record)
+    class Reader:
+        observer_id = "code.repo-observer"
+
+        def predicate_ids(self) -> tuple[str, ...]:
+            return ("code.repo-checked-out",)
+
+        def observe(self, signature, arguments, *, now_ms: int) -> Observation:
+            if polarity:
+                return observed(signature, arguments, polarity=True, observer_id=self.observer_id, now_ms=now_ms)
+            return denial(signature, arguments, observer_id=self.observer_id, now_ms=now_ms,
+                          coverage_scope="worktree:/tmp")
+
+    index = build_index(world.predicates, (Reader(),))
+    outcome = record_observation(
+        semantics, mission_id,
+        observe_predicate(index, ref("code.repo-checked-out"), {"repository": "r1"}, now_ms=at))
+    assert outcome.recorded, outcome
 
 
 # ======================================================================================
@@ -387,12 +431,11 @@ def test_a_dirty_worktree_is_an_authoritative_negative(worktree) -> None:
     assert outcome.record.is_authoritative_negative
 
 
-def test_an_observer_that_is_down_writes_nothing(tmp_path, worktree) -> None:
+def test_an_observer_that_is_down_writes_nothing(product_mission, worktree) -> None:
     """The asymmetry ``record_observation`` exists for."""
 
-    service, mission = _mission(tmp_path)
-    semantics = HtnStore(service.store)
-    store = service.store
+    store, mission = product_mission.loop.store, product_mission.mission
+    semantics = HtnStore(store)
     world = build_planning_world(mission.id, domains=("code",), worktree=worktree)
 
     class Down:
@@ -413,7 +456,6 @@ def test_an_observer_that_is_down_writes_nothing(tmp_path, worktree) -> None:
     assert outcome.reason is ReadinessReason.OBSERVER_UNAVAILABLE
     assert outcome.recorded is False
     assert semantics.list_observations(mission.id) == ()
-    store.close()
 
 
 # ======================================================================================
@@ -652,8 +694,8 @@ class DemoWorld:
 
 
 @pytest.fixture
-def demo(tmp_path) -> DemoWorld:
-    service, mission = _mission(tmp_path, key="demo")
+def demo(product_mission) -> DemoWorld:
+    store, mission = product_mission.loop.store, product_mission.mission
     env = _demo_env()
     env.mission = mission.id
     env.admit(_alternative("demo.primary", PRIMARY, "a"))
@@ -667,7 +709,7 @@ def demo(tmp_path) -> DemoWorld:
         registry=env.registry,
         records=env.capabilities().records,
         observers=build_index(env.predicates, (observer,)),
-        semantics=HtnStore(service.store),
+        semantics=HtnStore(store),
     )
     binding = task_binding(
         env,
@@ -676,7 +718,7 @@ def demo(tmp_path) -> DemoWorld:
         obligation="obl-root",
         parameters={"subject": "alpha"},
     )
-    return DemoWorld(env=env, world=world, observer=observer, binding=binding, store=service.store)
+    return DemoWorld(env=env, world=world, observer=observer, binding=binding, store=store)
 
 
 def test_an_unknown_precondition_asks_for_evidence_rather_than_dispatching(demo: DemoWorld) -> None:
@@ -810,138 +852,56 @@ def _conditions():
 # synthesiser role, and the context carries nothing that addressed one (片 C).
 
 
-from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     HierarchicalDispatch,
 )
 from agent_orchestrator.planning.htn.method_proposals import (  # noqa: E402
     authority_claims,
 )
-from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 
 
 @dataclass
 class SynthWorld:
-    service: Any
-    mission: Any
-    env: Env
-    world: DeploymentPlanningWorld
-    dispatch: HierarchicalDispatch
+    """A user Mission the product assembly created (planning begun); the context is the
+    one the product's own dispatch builds for its root goal."""
+
+    seed: Any
+
+    @property
+    def mission(self) -> Any:
+        return self.seed.mission
+
+    @property
+    def dispatch(self) -> HierarchicalDispatch:
+        return self.seed.loop._new_mode(self.mission)
+
+    def context(self) -> dict[str, Any]:
+        from h1i_seed import root_task
+
+        return self.dispatch.method_proposal_context(self.mission.id, root_task(self.mission.id))
 
 
 @pytest.fixture
-def synth(tmp_path) -> SynthWorld:
-    service, mission = _mission(tmp_path, key="synth")
-    env = _demo_env()
-    env.mission = mission.id
-    world = DeploymentPlanningWorld(
-        mission_id=mission.id,
-        schemas=env.schemas,
-        predicates=env.predicates,
-        catalog=env.catalog,
-        registry=env.registry,
-        records=env.capabilities().records,
-        observers=build_index(env.predicates, ()),
-        semantics=HtnStore(service.store),
-    )
-    binding = task_binding(
-        env,
-        "demo.goal",
-        task_id="task-root",
-        obligation="obl-root",
-        parameters={"subject": "alpha"},
-    )
-    ObligationStore(service.store).register(
-        Obligation(
-            obligation_id="obl-root",  # type: ignore[arg-type]
-            mission_id=mission.id,
-            requirement_refs=("req-1",),
-            goal_signature_id="demo.goal",
-        ),
-        recursion_fuel=4,
-    )
-    HtnStore(service.store).put_task_semantics(mission.id, binding)
-    return SynthWorld(
-        service=service,
-        mission=mission,
-        env=env,
-        world=world,
-        dispatch=HierarchicalDispatch(service.store, service, planning=world),
-    )
-
-
-def test_the_method_context_describes_the_goal_and_the_real_operators(
-    synth: SynthWorld,
-) -> None:
-    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
-    assert request["goal_task_ref"] == "task-root"
-    assert request["duty_ref"] == "obl-root"
-    offered = {item["task_type_ref"]["id"] for item in request["operators"]}
-    assert "demo.shared-read" in offered
-    assert "demo.goal" not in offered  # a compound is not an operator
-    # nothing that addressed a separate synthesiser role (its tag, its prompt, its re-ask)
-    assert not {"output_tag", "role_prompt_version", "schema_feedback", "review_feedback"} & set(request)
+def synth(tmp_path) -> Any:
+    yield from _open_product_mission(tmp_path, key="synth", criteria=("file:wordfreq.py",), wrap=SynthWorld)
 
 
 def test_the_method_context_carries_no_authority_vocabulary(synth: SynthWorld) -> None:
     """§18.5: a model proposes the shape of the work, never its authority."""
 
-    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
+    request = synth.context()
     assert authority_claims(request) == ()
     assert "mission_id" not in request
     assert set(request["forbidden_fields"]) >= {"mission_id", "registry_status", "budget_account"}
-
-
-def test_each_criterion_id_is_shown_with_its_own_statement(synth: SynthWorld) -> None:
-    """2026-09-29 第十局：写做法的模型只看到 c-user-1…c-user-10 和同一句总目标，只能按目标
-    描述自己猜编号——把"写出 README.md"链接到了写模块的那一步。每个编号必须带上
-    任务要求里它自己的原文；要求里没有的编号保持原样。"""
-
-    from agent_orchestrator.contracts.resolution import (
-        AllExpr,
-        Criterion,
-        CriterionExpr,
-        CriterionOrigin,
-        EvaluationKind,
-        RequirementClass,
-        RequirementsRevision,
-    )
-
-    before = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
-    ids = [item["id"] for item in before["criterion_evidence"]]
-    assert ids, "the fixture's goal names coverage criteria"
-    known, unknown = ids[0], ids[1:]
-    HtnStore(synth.service.store).insert_requirements_revision(RequirementsRevision(
-        revision_id="requirements-1",  # type: ignore[arg-type]
-        mission_id=synth.mission.id,
-        revision=1,
-        criteria=(Criterion(
-            criterion_id=known,
-            revision=1,
-            origin=CriterionOrigin.USER_EXPLICIT,
-            statement="wordfreq.py 定义 top_words(text, n)",
-            requirement_class=RequirementClass.REQUIRED_OUTCOME,
-            evaluation_kind=EvaluationKind.SEMANTIC,
-        ),),
-        success_expression=AllExpr((CriterionExpr(known),)),
-    ))
-    after = {item["id"]: item["evidence_requirement"]
-             for item in synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"]}
-    assert after[known] == "wordfreq.py 定义 top_words(text, n)"
-    old = {item["id"]: item["evidence_requirement"] for item in before["criterion_evidence"]}
-    assert all(after[item] == old[item] for item in unknown)
 
 
 def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthWorld) -> None:
     """2026-09-29 第十三局：写做法的模型不知道发布由系统做（只在打回时才说），给写模块、写
     README 的步骤都写了"在发布目录中给出落点路径"，又自设了发布步骤；审阅员照这句判
     写模块那步不通过，连败两次后向人要发布目录。file:/action: 要求原文后面附上说明。
+    产品同形世界里要求书由建任务时写出，用户写的 ``file:wordfreq.py`` 原样带上说明。
 
     **Mutation**: drop either note, or stop applying it in ``method_proposal_context`` → red."""
-    from agent_orchestrator.contracts.resolution import (
-        AllExpr, Criterion, CriterionExpr, CriterionOrigin, EvaluationKind,
-        RequirementClass, RequirementsRevision,
-    )
     from agent_orchestrator.orchestrator.hierarchical_dispatch import criterion_statement
 
     file_note = criterion_statement("file:wordfreq.py")
@@ -951,37 +911,34 @@ def test_file_and_operation_criteria_say_publishing_is_the_systems(synth: SynthW
     assert "由系统执行" in action_note and "不要为它单独设步骤" in action_note
     assert criterion_statement("README 说明用法") == "README 说明用法"
 
-    key = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]["id"]
-    HtnStore(synth.service.store).insert_requirements_revision(RequirementsRevision(
-        revision_id="requirements-1",  # type: ignore[arg-type]
-        mission_id=synth.mission.id, revision=1,
-        criteria=(Criterion(
-            criterion_id=key, revision=1, origin=CriterionOrigin.USER_EXPLICIT,
-            statement="file:wordfreq.py", requirement_class=RequirementClass.REQUIRED_OUTCOME,
-            evaluation_kind=EvaluationKind.SEMANTIC),),
-        success_expression=AllExpr((CriterionExpr(key),)),
-    ))
-    shown = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")["criterion_evidence"][0]
+    [shown] = synth.context()["criterion_evidence"]
     assert shown["evidence_requirement"] == file_note
 
 
 def test_a_proposed_method_is_admitted_against_the_method_width_bound(synth: SynthWorld) -> None:
-    """The deployment's own policy allows a human-authored method up to 64 steps; a
-    method the Planner proposes is decided against eight."""
+    """The deployment world's own policy allows a human-authored method wider than the
+    bound; a method the Planner proposes is decided against eight."""
 
     from agent_orchestrator.planning.htn.method_proposals import MAX_PROPOSED_METHOD_STEPS
 
-    assert synth.env.policy().max_steps > MAX_PROPOSED_METHOD_STEPS
+    assert synth.seed.world.policy().max_steps > MAX_PROPOSED_METHOD_STEPS
     assert synth.dispatch._admission_policy(synth.mission.id).max_steps == MAX_PROPOSED_METHOD_STEPS
 
 
-def test_an_unusable_capability_is_reported_as_unavailable(synth: SynthWorld) -> None:
-    synth.world.records = capability_records(
-        synth.env.catalog, deployed_layers=(), unhealthy=("demo.read",)
-    )
-    request = synth.dispatch.method_proposal_context(synth.mission.id, "task-root")
-    assert "demo.read" in request["unavailable_capabilities"]
-    assert [item for item in request["operators"] if item["available"]] == []
+def test_an_unusable_capability_is_reported_as_unavailable(tmp_path) -> None:
+    """A deployment whose tool set does not cover the workspace step: its operator is
+    offered as unavailable and the capability is named (the deployment world computes
+    the capability table from the Mission's tools, no test edits it)."""
+
+    from agent_orchestrator.governance.policies import DeploymentPolicy
+
+    tools = ("workspace_read_file",)
+    for synth in _open_product_mission(tmp_path, key="unusable", wrap=SynthWorld, allowed_tools=tools,
+                                       deployment_policy=DeploymentPolicy(allowed_tools=tools)):
+        assert tuple(synth.mission.allowed_tools) == tools
+        request = synth.context()
+        assert "workspace.prepare" in request["unavailable_capabilities"]
+        assert request["operators"] and [item for item in request["operators"] if item["available"]] == []
 
 
 # ======================================================================================
@@ -1070,27 +1027,19 @@ def test_mutant_a_snapshot_cached_at_assembly_time(demo: DemoWorld) -> None:
 
 
 # ======================================================================================
-# 6. review P0-1, confirmed on the real deployment world
+# 6. 暂留给导入方的旧构造器（HTN 补齐阶段 A′）
 # ======================================================================================
 #
-# The reviewer's probe showed that a leaf with **both** START lanes — a DATA edge
-# whose producer has been accepted, and a gated method whose precondition was
-# observed — could never be licensed: the two witnesses shared one row of
-# ``validity_witnesses_consumer_idx`` (same Mission, consumer, ``purpose=START``,
-# scope, epoch and ``support_revision``), so whichever lane ran first took the key
-# and the other was refused as a duplicate.  ``_decide`` issues the DATA lane first,
-# so the precondition licence always lost and the consumer sat on
-# ``WAITING_EVIDENCE/witness_missing`` for ever.
-#
-# Part 2d, adjudication 1 gave the row a ``subject_digest``, so the two licences are
-# two different permissions about two different subjects and both can exist.  This
-# section confirms the repair **on the shipped code domain assembled by
-# ``build_planning_world``** — not on a fixture double — because the probe was run
-# on the double and the double is what hid the defect (review P2-16).
-#
-# ``code.fix-by-patch`` is the scenario in the shipped data: the method is gated on
-# ``code.repo-checked-out`` and ``code.test-is-failing``, and its ``reproduce`` step
-# consumes ``facts.facts`` over a DATA edge.
+# 这一节原来的两条用例（"两条开工通道同时许可""许可写在当时的范围周期"）钉的是前提 /
+# 观测通道，产品部署 ``observers=()`` 走不到。分诊裁决⑥要把它们并进"带观察器的测试
+# world_factory"上的参数化主循环用例，那个 world_factory 要写在 ``testing/`` 下、阶段 D 接
+# 桌面观察器时就是产品路径；本轮没有，两条先删（偏离：等阶段 D 的 world_factory）。
+# 下面的常量与构造器（``_both_lane_world`` / ``_say`` / ``_refine_text`` / ``_task_of`` /
+# ``_accept``）建在裸 ``CommitService`` 与脚本直接提交上，只为
+# ``test_inspect_leaf_patch_input`` / ``test_read_only_leaf_policy`` /
+# ``test_verify_workspace_inputs`` / ``test_criteria_driven_write_step`` /
+# ``test_read_only_leaf_write_guard`` / ``test_repeated_failure_early_stop`` /
+# ``test_root_review_user_goal`` 的导入暂留，导入方迁走后随删。
 
 
 ROOT_TASK = "task-root"
@@ -1287,75 +1236,3 @@ def _accept(service, dispatch, mission_id: str, task_id: str):
     )
 
 
-def test_a_consumer_with_both_start_lanes_is_licensed_on_the_real_world(tmp_path) -> None:
-    """Review P0-1, confirmed where it matters: the shipped domain, the real world.
-
-    ``reproduce`` is licensed by the DATA lane (``facts.facts`` is accepted) *and*
-    by the precondition lane (``code.fix-by-patch`` is gated).  Before adjudication 1
-    the second licence was refused as a duplicate key and the occurrence never left
-    ``WAITING_EVIDENCE``; it is now ``READY_CANDIDATE``.
-    """
-
-    service, mission, semantics, world, dispatch = _both_lane_world(tmp_path)
-    producer = _task_of(dispatch, mission.id, "code.read-repository-facts")
-    consumer = _task_of(dispatch, mission.id, "code.reproduce-failure")
-
-    _accept(service, dispatch, mission.id, producer)
-
-    # exactly the order ``_decide`` uses
-    dispatch.issue_input_witnesses(mission.id, dispatch.network(mission.id), now_ms=1_000_000)
-    dispatch.issue_start_witnesses(mission.id, now_ms=1_000_000)
-
-    # The precondition lane, looked up the way the readiness gate looks it up.
-    assert dispatch.start_witnesses(mission.id, consumer), "no precondition licence"
-    # Both lanes, in the library: two rows under one consumer and one purpose, which
-    # is exactly the pair the old unique key could not hold.
-    licences = [
-        item
-        for item in semantics.list_validity_witnesses(mission.id)
-        if str(item.consumer_ref.id) == consumer and str(item.purpose) == str(WitnessPurpose.START)
-    ]
-    subjects = {witness_subject(item) for item in licences}
-    assert len(subjects) == 2, f"both lanes, two subjects: {sorted(subjects)}"
-    assert any(item.startswith("acceptance:") for item in subjects)
-    assert any(item.startswith("conditions:") for item in subjects)
-    assert len({int(item.support_revision) for item in licences}) == 1, (
-        "the two lanes count the same observations, which is why they collided"
-    )
-
-    admissions = dispatch.admissions(mission.id)
-    refusal = admissions.refusal_for(consumer)
-    assert refusal is None, (refusal.reason, refusal.detail_codes) if refusal else None
-    assert admissions.admission_for(consumer) is not None
-
-
-def test_a_start_licence_is_written_at_the_scope_epoch_it_was_taken_in(tmp_path) -> None:
-    """Review P2-11 (mutation M12): the **write** side of the epoch barrier.
-
-    ``scope_epoch=self.semantics.epoch(...)`` is what makes a licence stop counting
-    once the scope is re-opened, and the read side is guarded by seven behaviour
-    tests — but writing a constant ``0`` instead survived the whole suite, because
-    every test world sat at epoch 0 and the constant happened to be right.  Here the
-    scope is bumped first, so a constant is visibly the wrong number.
-    """
-
-    service, mission, semantics, world, dispatch = _both_lane_world(tmp_path)
-    producer = _task_of(dispatch, mission.id, "code.read-repository-facts")
-    consumer = _task_of(dispatch, mission.id, "code.reproduce-failure")
-    _accept(service, dispatch, mission.id, producer)
-
-    # The first bump writes the row at 0; the second is the first real re-opening.
-    semantics.bump_epoch(mission.id, "mission", bumped_by="test-operator")
-    semantics.bump_epoch(mission.id, "mission", bumped_by="test-operator")
-    epoch = int(semantics.epoch(mission.id, "mission"))
-    assert epoch > 0, "the scope really was re-opened"
-
-    dispatch.issue_input_witnesses(mission.id, dispatch.network(mission.id), now_ms=1_000_000)
-    dispatch.issue_start_witnesses(mission.id, now_ms=1_000_000)
-    issued = [
-        item
-        for item in semantics.list_validity_witnesses(mission.id)
-        if str(item.consumer_ref.id) == consumer and str(item.purpose) == str(WitnessPurpose.START)
-    ]
-    assert issued, "the consumer was licensed at the new epoch"
-    assert {int(item.scope_epoch) for item in issued} == {epoch}

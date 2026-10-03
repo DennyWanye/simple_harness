@@ -5,475 +5,248 @@
 
 The Grok acceptance run (H arm, 2026-09-17) lost 10 of 40 episodes here, and every
 one of them looked like a success until the last step: the plan committed, all four
-leaves ran, ``code_test`` passed, each leaf was accepted — and then
-
-    AcceptanceCommitted{accepted_outputs: []}      ← the finalizer leaf
-    HierarchicalRootReviewRejected{c-test-passes: FAIL,
-        "no readable proof … evidence.kind=none: no artifact was delivered on a
-         declared output port"}
+leaves ran, ``code_test`` passed, each leaf was accepted — and then the root review
+rejected a criterion with "no artifact was delivered on a declared output port".
 
 Three readers shared one rule — "a port is declared when a ``DataRequirement``
-consumes it" — and the seed method ``code.fix-by-patch`` hangs the root criterion
-``c-test-passes`` on the ``verify`` step, whose ``report`` port nothing downstream
-consumes.  So the leaf was never told the port existed (no ``declared_output_ports``
-section in its context), never wrote ``outputs``, and the accept side had no
-declared port left unclaimed to refuse.  The defect surfaced two steps later, in the
-one place that cannot act on it.
+consumes it" — and the finalizer step's port, which nothing downstream consumes but
+the root's criterion reads, was declared by none of them.  This file is the invariant
+that keeps the readers together: a criterion link *is* a consumer, and under the
+completion protocol (the only world production runs) every step owes its own required
+ports.
 
-This file is the invariant that keeps the three readers together: a criterion link
-*is* a consumer, because the root's success criterion is what reads that artifact.
+2026-10-03 A′：计划由规划器在产品同形部署上提出、经独立审阅、采用后提交（执行者被扣住，这些
+断言只需要已提交的计划），几种做法形状参数化。规划世界在通用"用户目标"世界上多登记两个步骤类型
+（``probe-step`` 带一个可选端口、``review-step`` 读它）——规划世界本来就是测试替身。
+
+删除（覆盖在别处）：
+* ``finalizer_step_is_a_criterion_linked_occurrence`` / ``criterion_linked_finalizer_declares_the_port``
+  / ``finalizer_leaf_is_told_about_its_declared_output_port`` / ``finalizer_that_claims_its_port_is_accepted_and_indexed``：
+  ``product_world/test_full_circle.py``——脚本化执行者按请求里声明的端口认领，收尾步不声明或认领
+  不上就验收不了、到不了完成。
+* ``finalizer_that_claims_no_port_is_refused``：``test_unclaimed_port_is_a_rejected_result.py``。
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import asyncio
+import inspect
+from dataclasses import replace
+from typing import Any
 
 import pytest
+from h1i_seed import CONFIG, run_until
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-_HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
-if str(_HTN_FIXTURES) not in sys.path:
-    sys.path.insert(0, str(_HTN_FIXTURES))
-
-from htn_world import method, out, param, step  # noqa: E402
-from test_htn_end_to_end import (  # noqa: E402
-    World,
-    _accept_leaf,
-    _Artifact,
-    _leaf_task,
-    _review_task,
-    committed,
-)
-
-from agent_orchestrator.contracts.htn import OccurrenceId, TaskForm  # noqa: E402
-from agent_orchestrator.orchestrator.accepted_outputs import (  # noqa: E402
+from agent_orchestrator.contracts.htn import OccurrenceId
+from agent_orchestrator.orchestrator.accepted_outputs import (
     coverage_in_revision,
     criterion_linked_occurrences,
     declared_output_ports,
     output_ports_in_revision,
 )
-from agent_orchestrator.orchestrator.operation_completion import (  # noqa: E402
-    OperationCompletionError,
-)
-from agent_orchestrator.runtime.output_blocks import PortClaim  # noqa: E402
+from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.product_world import product_world, user_goal_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, planner_reply
 
 
-@pytest.fixture
-def live(tmp_path) -> World:
-    return committed(tmp_path, demand=True)
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-
-def _occurrence(world: World, task_id: str) -> OccurrenceId:
-    return OccurrenceId(world.occurrence_of(task_id))
-
-
-def _revision(world: World) -> int:
-    active = world.semantics.active_plan_revision(world.mission.id)
-    assert active is not None
-    return int(active.revision)
-
-
-def _rows_ports(world: World, task_id: str):
-    return output_ports_in_revision(
-        world.semantics,
-        world.mission.id,
-        _revision(world),
-        _occurrence(world, task_id),
-        task_id,
-    )
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
 # ======================================================================================
-# 1. the rule itself
+# The planning world: the user-goal world plus a probe step with an optional port
 # ======================================================================================
 
 
-def test_the_finalizer_step_is_a_criterion_linked_occurrence(live: World) -> None:
-    """``_outer`` links ``c-root`` to the ``review`` step, which is also the finalizer."""
+def probe_world(loop: Any, mission: Any) -> Any:
+    """``probe-step`` produces ``delivery`` (required), ``note`` (required) and ``aside``
+    (optional); ``review-step`` consumes a ``delivery`` and produces ``verdict``."""
+    from agent_orchestrator.contracts.htn import GoalSignature, PortSpec, SideEffectKind, TaskForm
+    from agent_orchestrator.contracts.semantic_base import VersionedRef, content_hash_of
+    from agent_orchestrator.planning.htn.registry import TaskTypeSpec
+    from agent_orchestrator.planning.htn.world import capability_records
 
-    covered = criterion_linked_occurrences(
-        coverage_in_revision(live.semantics, live.mission.id, _revision(live))
-    )
-    assert _occurrence(live, _review_task(live)) in covered
-    assert _occurrence(live, _leaf_task(live)) not in covered, (
-        "the producing leaf carries no parent criterion; only the finalizer does"
-    )
+    world = user_goal_world(loop, mission)
+    params = VersionedRef("user.goal-parameters", 1, content_hash_of(
+        {"fields": [{"name": "goal", "type": "string", "required": True}]}))
+    outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
+    content = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
+    operator = VersionedRef("user.workspace-worker", 1, content_hash_of({"tools": list(mission.allowed_tools)}))
+    shapes = {
+        "probe-step": ((), (PortSpec("delivery", outputs), PortSpec("note", outputs),
+                            PortSpec("aside", outputs, required=False))),
+        "review-step": ((PortSpec("delivery", outputs),), (PortSpec("verdict", outputs),)),
+    }
+    for name, (inputs, ports) in shapes.items():
+        signature = GoalSignature(name, 1, params, outputs, mission.goal, content)
+        body = {"name": name, "form": str(TaskForm.PRIMITIVE), "signature": signature.to_json(),
+                "ports": [p.to_json() for p in ports], "input_ports": [p.to_json() for p in inputs]}
+        world.catalog.register(TaskTypeSpec(
+            task_type_ref=VersionedRef(name, 1, content_hash_of(body)), form=TaskForm.PRIMITIVE,
+            goal_signature=signature, input_ports=inputs, output_ports=ports, parameter_schema_ref=params,
+            output_schema_ref=outputs, operator_ref=operator, required_capabilities=("workspace.prepare",),
+            side_effect_kind=SideEffectKind.LOCAL_WRITE, reversible=True, domain="user", refinement_level=None,
+        ))
+    world.records = capability_records(world.catalog, capability_layers={"workspace.prepare": None}, unauthorized=())
+    return world
 
 
-def test_a_criterion_linked_finalizer_declares_the_port_its_contract_names(
-    live: World,
-) -> None:
-    """Defect D3's core.  Nothing consumes ``verdict``; the root criterion reads it."""
+#: shape → (criteria, steps ``(local, type, arguments, linked criterion index or None)``, finalizer)
+SHAPES = {
+    # write → continue (DATA on delivery); each step owns one requirement; continue is the finalizer
+    "chain": (("file:a.md", "file:b.md"),
+              [("write", "prepare-delivery", {}, 0),
+               ("continue", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, 1)],
+              "continue"),
+    # the same, plus an audit step that reads write's delivery and that nothing reads or links
+    "unlinked": (("file:a.md", "file:b.md"),
+                 [("write", "prepare-delivery", {}, 0),
+                  ("continue", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, 1),
+                  ("audit", "continue-delivery", {"delivery": {"op": "output", "step": "write", "port": "delivery"}}, None)],
+                 "continue"),
+    # the criterion link points at probe, which is not the finalizer; review reads probe
+    "linked-nonfinal": (("file:a.md",),
+                        [("probe", "probe-step", {}, 0),
+                         ("review", "review-step", {"delivery": {"op": "output", "step": "probe", "port": "delivery"}}, None)],
+                        "review"),
+}
 
-    assert set(declared_output_ports(live.network(), _occurrence(live, _review_task(live)))) == {
-        "verdict"
+
+def _method(context: dict[str, Any], shape: str) -> dict[str, Any]:
+    request = context["request"]
+    kinds = {str(item["task_type_ref"]["id"]): item for item in request["operators"]}
+    criteria = [item["id"] for item in request["criterion_evidence"]]
+    identity = request["new_method_identity"]
+    _, steps, finalizer = SHAPES[shape]
+    return {
+        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "goal_type_ref": request["goal_type_ref"],
+        "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
+        "output_schema_ref": request["goal_signature"]["output_schema_ref"],
+        "applicable_when": [], "exploration_assumptions": [],
+        "steps": [{"local_id": local, "task_type_ref": kinds[kind]["task_type_ref"], "form": "primitive",
+                   "arguments": arguments, "required_capabilities": list(kinds[kind]["required_capabilities"]),
+                   "obligation_relation": "refines_parent"} for local, kind, arguments, _ in steps],
+        "ordering": [], "required_capabilities": [], "expected_effects": [],
+        "composition": {
+            "criterion_links": [
+                {"parent_criterion_id": criteria[link], "child_step": local, "child_criterion_id": criteria[link],
+                 "evidence_requirement": f"{local} 这一步完成 {criteria[link]}"}
+                for local, _, _, link in steps if link is not None],
+            "outputs": {}, "finalizer_step": finalizer, "independent_review_required": True,
+        },
+        "basis_refs": [],
     }
 
 
-def test_the_consumed_port_still_carries_the_edges_schema(live: World) -> None:
-    """A criterion link adds ports; it never relabels one a live edge already declares."""
+def _committed_plan(tmp_path, shape: str) -> dict[str, Any]:
+    """The plan the Planner proposed in ``shape`` is reviewed, adopted and committed by the
+    main loop; returns what the three readers say about every step."""
 
-    leaf = _occurrence(live, _leaf_task(live))
-    ports = declared_output_ports(live.network(), leaf)
-    edge = next(
-        item for item in live.network().data_requirements if item.producer_occurrence == leaf
-    )
-    assert ports["result"].to_json() == edge.schema_ref.to_json()
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        contexts = package.get("method_proposal_contexts") or []
+        if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
+            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD",
+                            {"method_proposal": {"method": _method(contexts[0], shape), "rationale": shape}}, shape)
+        return planner_reply(request)
+
+    provider = LayeredScriptedProvider(planner=planner)
+    provider.held.add("worker")
+    criteria = SHAPES[shape][0]
+
+    async def case() -> dict[str, Any]:
+        try:
+            async with product_world(tmp_path / "root", provider, world_factory=probe_world, **CONFIG) as world:
+                mission_id = world.create({"goal": "按步骤写出文件", "idempotency_key": f"d3-{shape}",
+                                           "success_criteria": list(criteria)})["mission_id"]
+                semantics = HtnStore(world.store)
+                await run_until(world, lambda: semantics.active_plan_revision(mission_id) is not None)
+                dispatch = world.loop._dispatch_for(mission_id)
+                network = dispatch.network(mission_id)
+                revision = int(semantics.active_plan_revision(mission_id).revision)
+                steps: dict[str, dict[str, Any]] = {}
+                for instance in network.method_instances:
+                    for child in instance.child_bindings:
+                        occurrence = OccurrenceId(str(child.occurrence_id))
+                        task = str(network.occurrence(occurrence).task_id)
+                        steps[str(child.slot_key)] = {
+                            "occurrence": occurrence,
+                            "bare": dict(declared_output_ports(network, occurrence)),
+                            "own": dict(declared_output_ports(network, occurrence, own_ports=True)),
+                            "rows": dict(output_ports_in_revision(semantics, mission_id, revision, occurrence, task)),
+                            "told": [(item["port"], item["required"])
+                                     for item in dispatch.declared_output_ports_for(mission_id, task)],
+                            "shuffled": dict(declared_output_ports(
+                                replace(network, task_bindings=tuple(reversed(network.task_bindings))), occurrence)),
+                            "inputs": {port.port_key: port for port in network.binding_for_occurrence(occurrence).input_ports},
+                        }
+                linked = criterion_linked_occurrences(coverage_in_revision(semantics, mission_id, revision))
+                edges = list(network.data_requirements)
+                return {"steps": steps, "linked": linked, "edges": edges}
+        finally:
+            provider.release.set()
+
+    return asyncio.run(case())
 
 
-def test_the_three_readers_give_the_same_answer(live: World) -> None:
-    """The network reader, the rows reader and the accept side are one function.
+@pytest.mark.parametrize("shape", sorted(SHAPES))
+def test_the_production_readers_give_the_same_answer(tmp_path, shape: str) -> None:
+    """The network reader (with the step's own ports, as the completion protocol reads it),
+    the rows reader and what the leaf is told are one answer, for every step of every shape;
+    and the network reader matches bindings by occurrence, not by position (review P2-7).
 
-    **Mutation**: teach any one of them the old "consumed only" rule and this goes
-    red — which is the shape of the defect, three readers agreeing with each other
-    and disagreeing with the root reviewer.
+    **Mutation**: teach any one of them the old "consumed only" rule, or zip bindings with
+    occurrences by position, and this goes red.
     """
 
-    for task_id in (_leaf_task(live), _review_task(live)):
-        network_answer = declared_output_ports(live.network(), _occurrence(live, task_id))
-        rows_answer = _rows_ports(live, task_id)
-        assert dict(network_answer) == dict(rows_answer), task_id
+    plan = _committed_plan(tmp_path, shape)
+    for local, step in plan["steps"].items():
+        assert step["rows"] == step["own"], (shape, local)
+        assert {port for port, _ in step["told"]} == set(step["rows"]), (shape, local)
+        assert all(required for _, required in step["told"]), "a told port is an owed port"
+        assert step["shuffled"] == step["bare"], (shape, local)
+    if shape == "chain":
+        write, final = plan["steps"]["write"], plan["steps"]["continue"]
+        # a criterion link adds ports; it never relabels one a live edge already declares
+        edge = next(item for item in plan["edges"] if item.producer_occurrence == write["occurrence"])
+        assert write["bare"]["delivery"].to_json() == edge.schema_ref.to_json()
+        # defect D3's core: nothing consumes the finalizer's port; the root criterion reads it
+        assert final["occurrence"] in plan["linked"]
+        assert set(final["bare"]) == {"delivery"}
 
 
-# ======================================================================================
-# 2. told: the leaf's own context package
-# ======================================================================================
-
-
-def test_the_finalizer_leaf_is_told_about_its_declared_output_port(live: World) -> None:
-    """The evidence pack's ``verify`` attempt intent had **no** ``declared_output_ports``
-    section at all, so the model had no port name to copy into ``outputs``."""
-
-    reported = live.dispatch.declared_output_ports_for(live.mission.id, _review_task(live))
-    assert [item["port"] for item in reported] == ["verdict"]
-    assert reported[0]["required"] is True
-
-
-# ======================================================================================
-# 3. enforced: an unclaimed finalizer port is refused, not left empty
-# ======================================================================================
-
-
-def test_a_finalizer_that_claims_no_port_is_refused(live: World) -> None:
-    """The refusal the ten lost episodes never got.
-
-    Refusing here routes the leaf down the ordinary retry path with a message the
-    Worker can act on.  Leaving it empty is what happened instead: the acceptance
-    passed silently with ``accepted_outputs: []`` and the root reviewer — correctly —
-    rejected a criterion with no readable proof.
-
-    带协议绑定的世界里这道拒绝更早：结果在**记录时**就因为要求的端口没人认领被拒，验收
-    根本到不了，复查步骤什么都不写。
-    """
-
-    _accept_leaf(live)  # 复查步骤读上一步的产出，上一步先验收
-    with pytest.raises(OperationCompletionError) as refused:
-        _accept_leaf(
-            live,
-            task_id=_review_task(live),
-            result_id="result-review",
-            artifacts=(_Artifact("artifact-2", "out/verdict.json"),),
-            port_claims=(),
-        )
-    assert refused.value.code == "OP_COMPLETION_PORT_CLAIMS_UNAVAILABLE"
-    assert "required output port is unclaimed" in str(refused.value)
-    assert live.store.get_result("result-review") is None
-    assert [
-        item for item in live.semantics.list_acceptances(live.mission.id)
-        if str(item.task_id) == _review_task(live)
-    ] == []
-    assert [
-        row for row in live.semantics.list_acceptance_outputs(live.mission.id)
-        if row["producer_task_ref"] == _review_task(live)
-    ] == []
-
-
-def test_a_finalizer_that_claims_its_port_is_accepted_and_indexed(live: World) -> None:
-    _accept_leaf(live)  # 复查步骤读上一步的产出，上一步先验收
-    receipt = _accept_leaf(
-        live,
-        task_id=_review_task(live),
-        result_id="result-review",
-        artifacts=(_Artifact("artifact-2", "out/verdict.json"),),
-        port_claims=(PortClaim(port_key="verdict", path="out/verdict.json"),),
-    )
-    rows = [
-        row for row in live.semantics.list_acceptance_outputs(live.mission.id)
-        if row["producer_task_ref"] == _review_task(live)
-    ]
-    assert [(row["output_port"], row["artifact_id"]) for row in rows] == [
-        ("verdict", "artifact-2")
-    ]
-    assert rows[0]["acceptance_id"] == receipt.acceptance_id
-
-
-# ======================================================================================
-# 4. the boundary: neither consumed nor criterion-linked is still "no port"
-# ======================================================================================
-
-
-def _unlinked_method():
-    """``leaf → review`` as in ``_outer``, plus an ``audit`` step nothing reads.
-
-    ``audit`` consumes the leaf's ``result`` and declares a ``finding`` port; no edge
-    consumes ``finding`` and no ``criterion_link`` names the step.  §24.1 decision 4
-    still holds for it — an index entry exists only where something reads it — so the
-    widening must not turn every declared port into an obligation.
-    """
-
-    return method(
-        "plan.outer",
-        "plan.goal",
-        parameter_schema="plan.goal.params",
-        steps=(
-            step(
-                "leaf",
-                "plan.leaf",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("plan.read",),
-            ),
-            step(
-                "review",
-                "plan.review",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject"), "result": out("leaf", "result")},
-                capabilities=("plan.read",),
-            ),
-            step(
-                "audit",
-                "plan.audit",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject"), "result": out("leaf", "result")},
-                capabilities=("plan.read",),
-            ),
-        ),
-        links=(("c-root", "review", "c-reviewed"),),
-        finalizer="review",
-    )
-
-
-@pytest.fixture
-def three_step(tmp_path) -> World:
-    import test_htn_end_to_end as e2e
-
-    original = e2e._outer
-    e2e._outer = lambda method_id="plan.outer": _unlinked_method()
-    try:
-        return committed(tmp_path, demand=True, key="p23d-audit")
-    finally:
-        e2e._outer = original
-
-
-def test_a_step_neither_consumed_nor_linked_still_declares_no_port(three_step: World) -> None:
-    """边界：既没被消费也没被链接的一步。
-
-    "消费或链接才算声明"这条规则本身（不带 ``own_ports`` 的网络读者）照旧不给它端口；
-    但带协议绑定的世界里（生产唯一会出现的世界），每一步都欠它**自己**声明的必需端口
-    （2026-09-29 真机第十二局定的规则，见下一条测试）——所以生产读者告诉这一步的端口，
-    恰好是它自己契约里的 ``finding``，不多不少，也不会把别人的端口算到它头上。
-    """
-
-    audit = next(
-        str(spec.task_id)
-        for spec in three_step.network().occurrences
-        if str(
-            three_step.network().binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
-        )
-        == "plan.audit"
-    )
-    assert declared_output_ports(three_step.network(), _occurrence(three_step, audit)) == {}
-    told = three_step.dispatch.declared_output_ports_for(three_step.mission.id, audit)
-    assert [(item["port"], item["required"]) for item in told] == [("finding", True)]
-    assert set(_rows_ports(three_step, audit)) == {"finding"}
-    assert dict(_rows_ports(three_step, audit)) == dict(
-        declared_output_ports(three_step.network(), _occurrence(three_step, audit), own_ports=True)
-    ), "生产的两个读者在协议世界里给同一个答案"
-
-
-def test_under_the_completion_protocol_a_step_declares_its_own_ports(three_step: World) -> None:
-    """2026-09-29 真机第十二局：最后一步既没被下游消费、也没被方法链接，核对侧
-    （``output_ports_in_revision``）在完成协议下照样算它自己的端口，接受侧的
-    ``read_review_origin`` 却用 ``declared_output_ports`` 算出 0 个端口——两边的输出
-    永远对不上，验收连拒四次、任务停在向人提问。两个读者必须用同一条规则。
-
-    **Mutation**: ignore ``own_ports`` → the first assertion goes red; drop
-    ``own_ports=True`` in ``read_review_origin`` → the second."""
-    import inspect
+def test_a_step_neither_consumed_nor_linked_still_declares_no_port_under_the_bare_rule(tmp_path) -> None:
+    """边界：既没被消费也没被链接的一步。"消费或链接才算声明"这条规则本身（不带 ``own_ports``
+    的网络读者）照旧不给它端口；但完成协议下（产品唯一的世界）每一步都欠它**自己**声明的必需端口
+    （2026-09-29 真机第十二局），所以生产读者告诉这一步的端口恰好是它自己契约里的那个，不多不少。
+    验收侧 ``read_review_origin`` 用的也是带自己端口的那一份（两边对不上会连拒四次）。"""
 
     from agent_orchestrator.orchestrator import taskgraph_review
 
-    network = three_step.network()
-    audit = next(
-        spec.occurrence_id for spec in network.occurrences
-        if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-        == "plan.audit"
-    )
-    own = declared_output_ports(network, audit, own_ports=True)
-    declared = {port.port_key for port in network.binding_for_occurrence(audit).output_ports}
-    assert declared and set(own) == declared
-    source = inspect.getsource(taskgraph_review.read_review_origin)
-    assert "own_ports=True" in source
+    audit = _committed_plan(tmp_path, "unlinked")["steps"]["audit"]
+    assert audit["bare"] == {}
+    assert audit["told"] == [("delivery", True)]
+    assert set(audit["rows"]) == {"delivery"} == set(audit["own"])
+    assert "own_ports=True" in inspect.getsource(taskgraph_review.read_review_origin)
 
 
-# ======================================================================================
-# 5. review P2-6 / P2-7 / P2-10: the edges of the widened rule
-# ======================================================================================
+def test_a_criterion_link_to_a_non_finalizer_step_declares_its_required_ports_only(tmp_path) -> None:
+    """The rule is "criterion-linked", not "is the finalizer" (review P2-10); and criterion
+    linkage contributes the producer's **required** ports only (review P2-6, mutation M05):
+    an optional port is neither told nor enforced."""
 
-
-def _linked_world(tmp_path, *, key: str) -> World:
-    """A plan whose criterion link points at a step that is **not** the finalizer.
-
-    ``coverage_from_slots`` resolves a link's ``child_step`` to that slot, so the rule
-    was never finalizer-specific — but every fixture in this file, in
-    ``test_evidence_saturation`` and in the seed method ``code.fix-by-patch`` happened
-    to link the finalizer, so "criterion-linked" and "is the finalizer" were the same
-    set and nothing could tell which one the code was reading (review P2-10).
-
-    The linked step is a new task type ``plan.probe`` with three output ports:
-    ``result`` (consumed by the review edge), ``note`` (required, consumed by nobody)
-    and ``aside`` (optional, consumed by nobody) — which is what P2-6 needs to say
-    which of the last two is owed.
-    """
-
-    import test_htn_end_to_end as e2e
-
-    original_env, original_outer = e2e._env, e2e._outer
-
-    def env_with_probe(mission: str):
-        env = original_env(mission)
-        env.register_type(
-            "plan.probe",
-            parameters=(("subject", "string"),),
-            outputs=(
-                ("result", "plan.result"),
-                ("note", "plan.note"),
-                ("aside", "plan.aside", False),
-            ),
-            capabilities=("plan.read",),
-            domain="plan",
-        )
-        return env
-
-    def outer_linked_to_probe(method_id: str = "plan.outer"):
-        return method(
-            method_id,
-            "plan.goal",
-            parameter_schema="plan.goal.params",
-            steps=(
-                step(
-                    "probe",
-                    "plan.probe",
-                    TaskForm.PRIMITIVE,
-                    {"subject": param("subject")},
-                    capabilities=("plan.read",),
-                ),
-                step(
-                    "review",
-                    "plan.review",
-                    TaskForm.PRIMITIVE,
-                    {"subject": param("subject"), "result": out("probe", "result")},
-                    capabilities=("plan.read",),
-                ),
-            ),
-            links=(("c-root", "probe", "c-done"),),
-            finalizer="review",
-        )
-
-    e2e._env, e2e._outer = env_with_probe, outer_linked_to_probe
-    try:
-        return committed(tmp_path, demand=True, key=key)
-    finally:
-        e2e._env, e2e._outer = original_env, original_outer
-
-
-def _probe_task(world: World) -> str:
-    from test_htn_end_to_end import _task_of
-
-    return _task_of(world, "plan.probe")
-
-
-@pytest.fixture
-def linked(tmp_path) -> World:
-    return _linked_world(tmp_path, key="p23d-linked-nonfinal")
-
-
-def test_a_criterion_link_to_a_non_finalizer_step_declares_that_steps_ports(
-    linked: World,
-) -> None:
-    """The rule is "criterion-linked", not "is the finalizer"."""
-
-    probe, review = _occurrence(linked, _probe_task(linked)), _occurrence(
-        linked, _review_task(linked)
-    )
-    covered = criterion_linked_occurrences(
-        coverage_in_revision(linked.semantics, linked.mission.id, _revision(linked))
-    )
-    assert probe in covered and review not in covered, "the link points at the probe step"
-    assert "note" in _rows_ports(linked, _probe_task(linked)), (
-        "the step owes its unconsumed required port because the root criterion reads it"
-    )
-    # The finalizer is not criterion-linked in this plan, so under the bare
-    # "consumed or linked" rule its own unconsumed port is exactly what it was before
-    # D3: nobody's.
-    network = linked.network()
-    assert "verdict" not in declared_output_ports(network, review)
-    assert "note" in declared_output_ports(network, probe), "linked: owed under the bare rule"
-    # 带协议绑定的世界里每一步都欠自己的必需端口，所以生产读者给复查步骤的是它自己的
-    # ``verdict``——不是因为它是收尾步骤（它没被链接），而是因为它自己的契约声明了它。
-    assert set(_rows_ports(linked, _review_task(linked))) == {"verdict"}
-
-
-def test_an_optional_port_of_a_criterion_linked_step_is_not_owed(linked: World) -> None:
-    """Review P2-6 (mutation M05 survived): which of the two readings this is.
-
-    "Declared" means "owed": ``declared_output_ports_for`` reports every port in the
-    set as ``required: True`` and ``OUTPUT_PORT_UNCLAIMED`` refuses a leaf that skipped
-    one.  An ``required=False`` port carried into that set would be reported to the
-    model as required and enforced as required, which is the opposite of what the
-    contract says about it — and carrying it in with ``required=False`` instead would
-    mean a port that is announced and never enforced, which is a longer way of saying
-    nothing.  So criterion linkage contributes the producer's **required** ports only.
-
-    A port an edge *consumes* is unaffected either way: the consumer's requirement is
-    what puts it in the set, and that has been true since before D3.
-    """
-
-    ports = _rows_ports(linked, _probe_task(linked))
-    assert "note" in ports, "required and criterion-linked: owed"
-    assert "aside" not in ports, "optional: the contract does not ask for it"
-    assert "result" in ports, "consumed by the review edge, as it always was"
-
-
-def test_the_network_reader_matches_the_binding_by_occurrence_not_by_position(
-    linked: World,
-) -> None:
-    """Review P2-7: ``zip(task_bindings, occurrences)`` assumed two orders agree.
-
-    ``HierarchicalDispatch.network()`` does build them side by side, but a snapshot
-    that came out of ``compile_proposal`` is "the old bindings then the new ones"
-    (``compiler.py``), which is not the occurrence order — and the *wrong* binding here
-    would declare another step's ports on this one.  ``binding_for_occurrence`` is the
-    lookup that cannot be off by a position.
-    """
-
-    import inspect
-
-    from agent_orchestrator.orchestrator import accepted_outputs as module
-
-    assert "zip(network.task_bindings" not in inspect.getsource(module.declared_output_ports)
-    network = linked.dispatch.network(linked.mission.id)
-    probe = _occurrence(linked, _probe_task(linked))
-    assert dict(declared_output_ports(network, probe)) == dict(
-        _rows_ports(linked, _probe_task(linked))
-    ), "the network reader and the row reader still give one answer"
-
-    # And the answer survives a snapshot whose two sequences are in different orders.
-    from dataclasses import replace
-
-    shuffled = replace(network, task_bindings=tuple(reversed(network.task_bindings)))
-    assert dict(declared_output_ports(shuffled, probe)) == dict(
-        declared_output_ports(network, probe)
-    )
+    plan = _committed_plan(tmp_path, "linked-nonfinal")
+    probe, review = plan["steps"]["probe"], plan["steps"]["review"]
+    assert probe["occurrence"] in plan["linked"] and review["occurrence"] not in plan["linked"]
+    # linked: the unconsumed required port is owed under the bare rule; the optional one is not
+    assert {"delivery", "note"} <= set(probe["bare"]) and "aside" not in probe["bare"]
+    assert set(probe["rows"]) == {"delivery", "note"}, "required and linked: owed; optional: not asked for"
+    # the finalizer is not criterion-linked here, so under the bare rule its own port is nobody's;
+    # under the completion protocol it still owes its own required port
+    assert "verdict" not in review["bare"]
+    assert set(review["rows"]) == {"verdict"}

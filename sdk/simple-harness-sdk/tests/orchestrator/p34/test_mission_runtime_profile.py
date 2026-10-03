@@ -1,31 +1,44 @@
-"""A Mission's explicit runtime pool survives policy-cache reuse and cold reopen."""
+"""任务选定的执行池：建任务时冻结，策略缓存复用与冷重开后照旧（HTN 补齐阶段 A′ 迁到产品同形部署）。
+
+任务一律经产品那一份部署组装建出（:func:`product_world`；建任务时初始化根、绑定执行图、走保证通道），
+执行池就是部署给的原生执行池（每个上下文尺寸一个池，可选另配思考池）。守的性质：
+
+* 公开建任务时选的执行池冻结在任务上，所有角色都走它；不选的任务不写这个字段（规格哈希不变），
+  走部署默认池；同一请求重放回原回执，换了选择是冲突；冷重开后各任务的路由照旧。
+* 选了部署里没有的池：建任务被拒、什么都不留；带资料的批量建任务与编排服务自己的 ``create_mission`` 两个入口
+  同样校验；提交层直接重放同一幂等键但换了池 → 冲突。
+* 任务选的池在重开后的部署里没有了（例如思考池被关掉）→ 路由失败关闭，不悄悄换池。
+
+偏离分诊表：原文件另有"选定的池与部署的按角色/按任务类型路由规则冲突"两段。产品部署（Host 与
+:class:`UserMissionDeployment`）没有路由规则，这条闸门只有手配 ``routing=`` 的测试世界能碰到，
+随旧搭法删去（闸门函数 ``Orchestrator._validate_mission_profile`` 的冲突分支在产品上走不到，列入孤儿核查）。
+"""
 
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
+from product_assembly import started
 
-from agent_orchestrator.api.facade import FacadeError, MissionControlV1
+from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.api.missions import MissionRequestError
 from agent_orchestrator.contracts import Budget, ContractError
-from agent_orchestrator.governance.permissions import Principal
+from agent_orchestrator.deployment.native_pools import native_profile_id
 from agent_orchestrator.orchestrator.commit_service import (
     CommitRejected,
     CommitService,
     MissionConflict,
     MissionSpec,
 )
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.runtime.model_router import RoutingRules, RuntimeProfile
 from agent_orchestrator.storage.store import Store
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from simple_harness.agents.context.budget import ContextPolicy
+from agent_orchestrator.testing.product_world import TENANT
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-LONG = "deepseek-context-256k-v1"
-LONG_512 = "deepseek-context-512k-v1"
-PERSON = Principal("profile-test")
+SMALL = native_profile_id(262_144)
+LARGE = native_profile_id(524_288)
+THINKING = native_profile_id(262_144, thinking=True)
 
 
 def _request(key: str, **extra):
@@ -38,175 +51,102 @@ def _request(key: str, **extra):
     }
 
 
-def _orchestrator(root, *, routing=None, include_long=True):
-    provider = RoleScriptedProvider({})
-    profiles = {
-        "default": RuntimeProfile("default", provider, "agent-model"),
-        LONG: RuntimeProfile(
-            LONG,
-            provider,
-            "agent-model",
-            context_policy=ContextPolicy(
-                max_input_tokens=262_144, max_tool_result_tokens=16_384, render_slack_tokens=0
-            ),
-            default_max_output_tokens=8_192,
-            max_output_tokens_ceiling=32_768,
-        ),
-        LONG_512: RuntimeProfile(
-            LONG_512,
-            provider,
-            "agent-model",
-            context_policy=ContextPolicy(
-                max_input_tokens=524_288, max_tool_result_tokens=16_384, render_slack_tokens=0
-            ),
-            default_max_output_tokens=8_192,
-            max_output_tokens_ceiling=32_768,
-        ),
-    }
-    if not include_long:
-        del profiles[LONG]
-        del profiles[LONG_512]
-    return Orchestrator(
-        OrchestratorConfig(evidence_root=root),
-        provider,
-        profiles=profiles,
-        routing=routing,
-    )
+def _world(root: Path, *, thinking: bool = False):
+    """产品同形部署；``thinking`` 时部署另配一组思考池（产品的"思考模式"设置，2026-09-24），
+    拼法见 ``tests/orchestrator/product_assembly.py``。"""
+
+    return started(root, LayeredScriptedProvider(),
+                   thinking_provider=LayeredScriptedProvider() if thinking else None)
 
 
-def _route(orch, mission_id: str, role: str, kind: str | None = None) -> str:
-    return orch._router_for(mission_id).route(role=role, task_kind=kind).profile_id
+def _route(loop, mission_id: str, role: str, kind: str | None = None) -> str:
+    return loop._router_for(mission_id).route(role=role, task_kind=kind).profile_id
 
 
 def test_public_create_freezes_profile_and_keeps_omitted_hash(tmp_path):
+    root = tmp_path / "root"
+
     async def run():
-        async with _orchestrator(tmp_path / "library") as orch:
-            control = MissionControlV1(orch, tenant_id="tenant", principal=PERSON)
+        async with _world(root) as world:
+            loop, control = world.loop, world.control
             old = control.create(_request("old"))
-            new = control.create(_request("new", runtime_profile_id=LONG))
-            larger = control.create(_request("larger", runtime_profile_id=LONG_512))
-            same = control.create(_request("new", runtime_profile_id=LONG))
+            new = control.create(_request("new", runtime_profile_id=LARGE))
+            same = control.create(_request("new", runtime_profile_id=LARGE))
             assert old["created"] and new["created"] and not same["created"]
             assert same["spec_hash"] == new["spec_hash"]
-            assert (
-                "runtime_profile_id" not in orch.store.get_mission(old["mission_id"]).final_report
-            )
-            assert (
-                orch.store.get_mission(new["mission_id"]).final_report["runtime_profile_id"] == LONG
-            )
-            assert _route(orch, old["mission_id"], "critic") == "default"
-            assert _route(orch, larger["mission_id"], "critic") == LONG_512
-            for role, kind in (
-                ("planner", None),
-                ("worker", "code"),
-                ("critic", None),
-            ):
-                assert _route(orch, new["mission_id"], role, kind) == LONG
-            # Both Missions have the same policy version; the router cache must differ.
-            assert orch.policy_version_of(old["mission_id"]) == orch.policy_version_of(
-                new["mission_id"]
-            )
-            assert orch.policy_version_of(new["mission_id"]) == orch.policy_version_of(
-                larger["mission_id"]
-            )
+            assert "runtime_profile_id" not in loop.store.get_mission(old["mission_id"]).final_report
+            assert loop.store.get_mission(new["mission_id"]).final_report["runtime_profile_id"] == LARGE
+            # 不选的任务走部署默认池；选了的任务所有角色都走它。
+            assert _route(loop, old["mission_id"], "planner") == SMALL
+            for role, kind in (("planner", None), ("worker", "code"), ("unknown", None)):
+                assert _route(loop, new["mission_id"], role, kind) == LARGE
+            # 两个任务同一个策略版本：路由缓存仍按所选的池分开。
+            assert loop.policy_version_of(old["mission_id"]) == loop.policy_version_of(new["mission_id"])
             with pytest.raises(FacadeError) as changed:
                 control.create(_request("new"))
             assert changed.value.code == "conflict"
             assert (
                 MissionSpec(goal="x", success_criteria=("file:x",), tenant_id="t", idempotency_key="k")
-                .to_json()
-                .get("runtime_profile_id")
-                is None
+                .to_json().get("runtime_profile_id") is None
             )
             return old["mission_id"], new["mission_id"]
 
     old_id, new_id = asyncio.run(run())
 
     async def reopen():
-        async with _orchestrator(tmp_path / "library") as orch:
-            assert _route(orch, old_id, "worker", "code") == "default"
-            assert _route(orch, new_id, "planner") == LONG
-            assert _route(orch, new_id, "critic") == LONG
+        async with _world(root) as world:
+            assert _route(world.loop, old_id, "worker", "code") == SMALL
+            assert _route(world.loop, new_id, "planner") == LARGE
 
     asyncio.run(reopen())
 
 
-def test_selected_mission_fails_closed_if_pool_or_route_changes_on_reopen(tmp_path):
+def test_selected_mission_fails_closed_if_its_pool_is_gone_on_reopen(tmp_path):
+    root = tmp_path / "root"
+
     async def create():
-        async with _orchestrator(tmp_path / "library") as orch:
-            mission, _ = orch.create_mission(
-                tenant_id="tenant", request=_request("selected", runtime_profile_id=LONG)
-            )
-            return mission.id
+        async with _world(root, thinking=True) as world:
+            created = world.control.create(_request("selected", runtime_profile_id=THINKING))
+            assert _route(world.loop, created["mission_id"], "planner") == THINKING
+            return created["mission_id"]
 
     mission_id = asyncio.run(create())
 
-    async def missing_pool():
-        async with _orchestrator(tmp_path / "library", include_long=False) as orch:
+    async def without_thinking():
+        async with _world(root) as world:
             with pytest.raises(ContractError, match="not configured"):
-                _route(orch, mission_id, "critic")
+                _route(world.loop, mission_id, "planner")
 
-    asyncio.run(missing_pool())
-
-    async def conflicting_route():
-        routing = RoutingRules(default="default", by_role={"critic": "default"})
-        async with _orchestrator(tmp_path / "library", routing=routing) as orch:
-            with pytest.raises(ContractError, match="policy route"):
-                _route(orch, mission_id, "critic")
-
-    asyncio.run(conflicting_route())
+    asyncio.run(without_thinking())
 
 
-def test_missing_profile_and_bound_policy_conflict_roll_back(tmp_path):
+def test_missing_profile_is_refused_and_rolls_back(tmp_path):
     async def run():
-        routing = RoutingRules(default="default", by_task_kind={"code": "default"})
-        async with _orchestrator(tmp_path / "library", routing=routing) as orch:
-            control = MissionControlV1(orch, tenant_id="tenant", principal=PERSON)
+        async with _world(tmp_path / "root") as world:
             with pytest.raises(FacadeError) as missing:
-                control.create(_request("missing", runtime_profile_id="no-such-pool"))
+                world.control.create(_request("missing", runtime_profile_id="no-such-pool"))
             assert missing.value.code == "invalid_request"
-            with pytest.raises(FacadeError) as conflict:
-                control.create(_request("conflicting", runtime_profile_id=LONG))
-            assert conflict.value.code == "invalid_request"
-            assert "policy route" in str(conflict.value)
-            assert orch.store.list_missions() == []
+            assert world.store.list_missions() == []
 
     asyncio.run(run())
 
 
-def test_source_and_submit_paths_validate_selection(tmp_path):
+def test_source_and_direct_paths_validate_selection(tmp_path):
     async def run():
-        async with _orchestrator(tmp_path / "library") as orch:
-            control = MissionControlV1(orch, tenant_id="tenant", principal=PERSON)
-            receipt = control.create_with_sources(
-                {
-                    "mission": _request("source", runtime_profile_id=LONG),
-                    "sources": [],
-                }
+        async with _world(tmp_path / "root") as world:
+            loop = world.loop
+            receipt = world.control.create_with_sources(
+                {"mission": _request("source", runtime_profile_id=LARGE), "sources": []}
             )
-            assert _route(orch, receipt["mission_id"], "critic") == LONG
+            assert _route(loop, receipt["mission_id"], "unknown") == LARGE
             with pytest.raises(MissionRequestError, match="not configured"):
-                await orch.submit_mission(
-                    MissionSpec(
-                        goal="Write NOTES.md",
-                        success_criteria=("file:NOTES.md",),
-                        tenant_id="tenant",
-                        idempotency_key="submit-missing",
-                        runtime_profile_id="missing",
-                    )
-                )
-            assert len(orch.store.list_missions()) == 1
+                loop.create_mission(tenant_id=TENANT, request=_request("direct-missing", runtime_profile_id="missing"))
+            assert len(loop.store.list_missions()) == 1
             with pytest.raises(MissionConflict):
-                orch.commit.create_mission(
-                    MissionSpec(
-                        goal="Write NOTES.md",
-                        success_criteria=("file:NOTES.md",),
-                        tenant_id="tenant",
-                        idempotency_key="source",
-                        allowed_tools=orch.config.deployment_policy.allowed_tools,
-                        budget=Budget(max_tokens=2_000_000, max_attempts=4),
-                        runtime_profile_id="default",
-                    )
+                loop.commit.create_mission(
+                    MissionSpec(goal="Write NOTES.md", success_criteria=("file:NOTES.md",), tenant_id=TENANT,
+                                idempotency_key="source", allowed_tools=loop.config.deployment_policy.allowed_tools,
+                                budget=Budget(max_tokens=2_000_000, max_attempts=4), runtime_profile_id=SMALL)
                 )
 
     asyncio.run(run())
@@ -218,13 +158,8 @@ def test_bare_commit_cannot_bypass_profile_binding(tmp_path):
         commit = CommitService(store)
         with pytest.raises(CommitRejected, match="requires an Orchestrator"):
             commit.create_mission(
-                MissionSpec(
-                    goal="Write NOTES.md",
-                    success_criteria=("file:NOTES.md",),
-                    tenant_id="tenant",
-                    idempotency_key="bare",
-                    runtime_profile_id=LONG,
-                )
+                MissionSpec(goal="Write NOTES.md", success_criteria=("file:NOTES.md",), tenant_id="tenant",
+                            idempotency_key="bare", runtime_profile_id=LARGE)
             )
         assert store.list_missions() == []
     finally:

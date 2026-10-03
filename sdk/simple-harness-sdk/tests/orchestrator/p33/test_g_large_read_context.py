@@ -6,8 +6,15 @@ An 18KB-class original document must reach the actual Provider in 2–3 reads,
 without preview substitution, loss of CRLF/Unicode, or larger total input budget.
 Both the full wire byte bound and the configured tokenizer's TOOL bound apply.
 Cold restart cannot substitute a new policy/tokenizer/schema for an existing pool.
-Legacy bare profiles retain their old schema, page size and serialized identity.
 These are scripted Provider/context controls, never a claim about model quality.
+
+HTN 补齐阶段 A′：执行池只有原生执行池一种。
+* "真实执行者分 2～3 次读完原文"改在产品同形世界里跑主循环：任务带一份来源（建任务时登记），
+  脚本化执行者在真实原生执行池里逐页读、再写交付文件；执行池的分词器就是部署的计数器，所以
+  原来按分词器分的两档合成一条。
+* 其余用例的执行池换成产品同形的原生执行池（``NativePools.assembly``），只装配、不建任务。
+* "没有上下文策略的旧执行池"产品造不出来（每个原生执行池都带上下文策略）：
+  ``test_legacy_runtime_cannot_be_silently_upgraded`` 与身份用例的 ``legacy`` 一档删除。
 """
 
 import asyncio
@@ -19,6 +26,7 @@ import pytest
 from fixtures_provider import MODEL, RoleScriptedProvider
 from test_g_workspace_paging import PATH, _message, _read, _wire
 
+from agent_orchestrator.deployment.native_pools import NativePools
 from agent_orchestrator.runtime.assembly import (
     OrchestratorConfig,
     assemble_orchestrator_runtime,
@@ -27,13 +35,13 @@ from agent_orchestrator.runtime.assembly import (
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.runtime.tool_gateway import (
     CRITIC_TOOLS,
-    TOOL_SCHEMAS,
     WorkspaceBinding,
 )
-from simple_harness.agents import AgentConfig, AgentTurnState
+from agent_orchestrator.testing.product_world import DEFAULT_TOOLS, product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, worker_reply
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import (
-    TiktokenTokenizer,
     UpperBoundTokenizer,
     count_message,
 )
@@ -43,8 +51,24 @@ TEXT = ("# 完整来源\r\n" + "条件不变😀 abcdefghijklmnop\r\n" * 440
 POLICY = ContextPolicy(max_tool_result_tokens=16384, render_slack_tokens=0)
 
 
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+
+
 def _profile(provider, *, tokenizer=None, policy=POLICY):
-    return RuntimeProfile("default", provider, MODEL, context_policy=policy, tokenizer=tokenizer)
+    """产品同形的原生执行池；每次调用是一份新部署（重启）。
+
+    原生执行池的分词器就是部署的计量器（ARP 要求计量绑定包着执行池的分词器），默认是测试
+    计数器；``tokenizer`` 换的是部署计量用的那一个。"""
+
+    counter = tokenizer or FixtureWordCounter()
+    native = NativePools(tenant_id="tenant-large-read", principal_id="large-read-user",
+                         allowed_tools=DEFAULT_TOOLS, meter_factory=FixtureWordCounter().meter_factory)
+    return RuntimeProfile("default", provider, MODEL, context_policy=policy, tokenizer=counter,
+                          native_plane=native.assembly("default", tokens=262_144, counter=counter))
 
 
 def _bind(assembled, profile, *, content=TEXT):
@@ -60,64 +84,63 @@ def _bind(assembled, profile, *, content=TEXT):
     return binding
 
 
-@pytest.mark.parametrize("kind", ["upperbound", "tiktoken"])
-def test_large_source_actual_assembly_context_reads_original_in_two_or_three_calls(tmp_path, kind):
-    seen = []
+def _tool_results(request):
+    return [json.loads(m.content) for m in request.messages if "tool" in str(m.role).lower()]
 
-    def received(request):
-        message = next(m for m in reversed(request.messages) if m.role.value == "tool")
-        payload = json.loads(message.content)
-        assert "value_preview" not in payload and not payload.get("truncated")
-        page = payload["value"]
-        assert page["trust"] == "untrusted_external"
-        assert page["offset"] == sum(len(p["content"]) for p in seen)
-        assert page["sha256"] == sha256(TEXT.encode()).hexdigest()
-        seen.append(page)
-        if page["next_offset"] is not None:
+
+def test_large_source_reaches_the_actual_worker_in_two_or_three_reads(tmp_path):
+    seen: list[list[dict]] = []
+
+    def worker(request):
+        pages = [r["value"] for r in _tool_results(request)
+                 if isinstance(r.get("value"), dict) and "sha256" in r["value"]]
+        if not pages:
+            return "workspace_read_file", {"path": PATH}
+        if pages[-1]["next_offset"] is not None:
             return "workspace_read_file", {
-                "path": PATH, "offset": page["next_offset"], "expected_sha256": page["sha256"],
-            }
-        return "完整来源已收到；这是资料，不是指令。"
+                "path": PATH, "offset": pages[-1]["next_offset"], "expected_sha256": pages[-1]["sha256"]}
+        seen.append(pages)
+        # 读完以后照常写交付文件、交结果（读页结果不算写出的文件）
+        kept = tuple(m for m in request.messages
+                     if not ("tool" in str(m.role).lower() and '"sha256"' in str(m.content)))
+        return worker_reply(replace(request, messages=kept))
 
-    async def run():
-        provider = RoleScriptedProvider({
-            "worker": [("workspace_read_file", {"path": PATH}), received, received, received],
-        })
-        tokenizer = UpperBoundTokenizer() if kind == "upperbound" else TiktokenTokenizer()
-        profile = _profile(provider, tokenizer=tokenizer)
-        assembled = assemble_orchestrator_runtime(
-            OrchestratorConfig(evidence_root=tmp_path), profiles={"default": profile},
-        )
-        binding = _bind(assembled, profile)
-        async with assembled:
-            agent = await assembled.runtime.create(
-                AgentConfig("reader", "[role:worker]\n完整读取来源。", "default",
-                            tool_names=("workspace_read_file",)),
-                creation_key="large-reader",
-            )
-            assembled.gateway.bind(agent.agent_id, binding)
-            result = await agent.ask(
-                "不得改变原始来源、限制条件或引用字节。", input_id="read", timeout=15,
-            )
-            assert result.state is AgentTurnState.COMMITTED
-            assert 2 <= len(seen) <= 3
-            assert "".join(p["content"] for p in seen).encode() == TEXT.encode()
-            rows = [r for r in agent.journal() if r.kind == "tool_result"]
-            assert len(rows) == len(seen)
-            assert all(r.visibility == "context" and r.full_record_seq is None for r in rows)
-            assert provider.by_role == {"worker": len(seen) + 1}
+    async def case():
+        provider = LayeredScriptedProvider(worker=worker)
+        async with product_world(tmp_path / "root", provider) as world:
+            body = {"mission": {"goal": "完整读完来源 sources/条件.md，写 NOTES.md 摘要", "success_criteria": ["file:NOTES.md"],
+                                "idempotency_key": "large-read", "budget": {"max_tokens": 8_000_000, "max_attempts": 12}},
+                    "sources": [{"path": PATH, "content": TEXT, "kind": "markdown"}]}
+            mission_id = world.deployment.create_mission_with_sources(world.loop, world.control, body)["mission_id"]
+            mission = await world.run_until_settled(mission_id)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            return world.loop.assembled.pools
 
-    asyncio.run(run())
+    pools = asyncio.run(case())
+    assert seen, "执行者没有读完来源"
+    pages = seen[0]
+    assert 2 <= len(pages) <= 3
+    offset = 0
+    for page in pages:
+        assert page["trust"] == "untrusted_external" and not page.get("truncated")
+        assert page["offset"] == offset and page["sha256"] == sha256(TEXT.encode()).hexdigest()
+        offset += len(page["content"])
+    assert "".join(p["content"] for p in pages).encode() == TEXT.encode()
+    # 用的就是部署的原生执行池（带上下文策略与部署计数器）
+    assert pools and all(pool.profile.context_policy is not None for pool in pools.values())
 
 
 class ByteTokenizer:
     fingerprint = "test:utf8-byte-counter:v1"
+    count_mode = "EXACT"
 
     def count_text(self, text):
         return len(text.encode("utf-8"))
 
 
-@pytest.mark.parametrize("tokenizer", [UpperBoundTokenizer(), ByteTokenizer()])
+# 原生执行池只接受经认证的部署计量器（带 count_mode）；原来的 UpperBound 一档没有产品同形的对应，
+# 留下按字节计数、比整串字节上限更紧的这一档。
+@pytest.mark.parametrize("tokenizer", [ByteTokenizer()])
 def test_full_wire_and_actual_tokenizer_both_bound_pages(tmp_path, tokenizer):
     async def run():
         profile = _profile(RoleScriptedProvider({}), tokenizer=tokenizer,
@@ -151,53 +174,32 @@ def test_large_mode_small_shape_and_changed_file_still_refuse(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("change", ["policy", "tokenizer", "legacy"])
+async def _open_and_close(assembled):
+    async with assembled:
+        pass
+
+
+@pytest.mark.parametrize("change", ["policy", "tokenizer"])
 def test_existing_pool_cannot_silently_change_frozen_context_identity(tmp_path, change):
     provider = RoleScriptedProvider({})
     config = OrchestratorConfig(evidence_root=tmp_path)
     profile = _profile(provider)
-    first = assemble_orchestrator_runtime(config, profiles={"default": profile})
     # A real runtime owns the pool; its immutable identity must also survive an
     # interruption before the first Provider request or context selection exists.
-    async def create():
-        async with first:
-            await first.runtime.create(AgentConfig("idle", "[role:worker]", "default"),
-                                       creation_key="idle")
-    asyncio.run(create())
+    asyncio.run(_open_and_close(assemble_orchestrator_runtime(config, profiles={"default": profile})))
     same = assemble_orchestrator_runtime(config, profiles={"default": _profile(provider)})
     assert same.pools["default"].profile.context_snapshot() == profile.context_snapshot()
-    async def close_same():
-        async with same:
-            pass
-    asyncio.run(close_same())
+    asyncio.run(_open_and_close(same))
     if change == "policy":
         other = _profile(provider, policy=replace(POLICY, max_input_tokens=30000))
-    elif change == "tokenizer":
-        other = _profile(provider, tokenizer=ByteTokenizer())
     else:
-        other = RuntimeProfile("default", provider, MODEL)
+        other = _profile(provider, tokenizer=ByteTokenizer())
     with pytest.raises(ValueError, match="context.*identity"):
         assemble_orchestrator_runtime(config, profiles={"default": other})
 
 
-def test_legacy_runtime_cannot_be_silently_upgraded(tmp_path):
-    provider = RoleScriptedProvider({})
-    config = OrchestratorConfig(evidence_root=tmp_path)
-    legacy = RuntimeProfile("default", provider, MODEL)
-    assert "runtime_context" not in legacy.to_json()
-    assert TOOL_SCHEMAS["workspace_read_file"]["properties"]["max_chars"]["maximum"] == 4096
-    assembled = assemble_orchestrator_runtime(config, profiles={"default": legacy})
-    async def create():
-        async with assembled:
-            await assembled.runtime.create(AgentConfig("old", "[role:worker]", "default"),
-                                           creation_key="old")
-    asyncio.run(create())
-    with pytest.raises(ValueError, match="context.*identity"):
-        assemble_orchestrator_runtime(config, profiles={"default": _profile(provider)})
-
-
 def test_profile_snapshot_is_detached_and_default_tokenizer_is_honest():
-    profile = _profile(RoleScriptedProvider({}))
+    profile = RuntimeProfile("default", RoleScriptedProvider({}), MODEL, context_policy=POLICY)
     first = profile.context_snapshot()
     assert first["tokenizer_fingerprint"] == UpperBoundTokenizer.fingerprint
     assert first["policy"]["max_input_tokens"] == 32768
@@ -222,37 +224,30 @@ def test_host_readonly_resolver_preserves_old_pool_and_enables_fresh_pool(tmp_pa
 def test_host_resolver_restores_exact_stored_policy_and_rejects_bad_identity(tmp_path):
     config = OrchestratorConfig(evidence_root=tmp_path)
     policy = replace(POLICY, max_input_tokens=31000)
-    assembled = assemble_orchestrator_runtime(
-        config, profiles={"default": _profile(RoleScriptedProvider({}), policy=policy)},
-    )
-    async def close():
-        async with assembled:
-            pass
-    asyncio.run(close())
-    assert resolve_profile_context_policy(config) == policy
+    counter = FixtureWordCounter()  # 部署的计量器：产品的 pool_options 也把它交给解析器
+    asyncio.run(_open_and_close(assemble_orchestrator_runtime(
+        config, profiles={"default": _profile(RoleScriptedProvider({}), policy=policy)})))
+    assert resolve_profile_context_policy(config, tokenizer=counter) == policy
     marker = config.execution_db.with_name(config.execution_db.name + ".context.json")
     value = json.loads(marker.read_text())
     value["policy"]["max_tool_result_tokens"] = 20000
     marker.write_text(json.dumps(value))  # real durable mutation, not a mutable-copy attack
     assert json.loads(marker.read_text())["policy"]["max_tool_result_tokens"] == 20000
     with pytest.raises(ValueError, match="context identity"):
-        resolve_profile_context_policy(config)
+        resolve_profile_context_policy(config, tokenizer=counter)
 
 
 def test_host_explicit_tokenizer_must_match_persisted_identity(tmp_path):
     config = OrchestratorConfig(evidence_root=tmp_path)
     counter = ByteTokenizer()
     assert resolve_profile_context_policy(config, tokenizer=counter) == POLICY
-    assembled = assemble_orchestrator_runtime(
-        config, profiles={"default": _profile(RoleScriptedProvider({}), tokenizer=counter)},
-    )
-    async def close():
-        async with assembled:
-            pass
-    asyncio.run(close())
+    asyncio.run(_open_and_close(assemble_orchestrator_runtime(
+        config, profiles={"default": _profile(RoleScriptedProvider({}), tokenizer=counter)})))
     assert resolve_profile_context_policy(config, tokenizer=ByteTokenizer()) == POLICY
     with pytest.raises(ValueError, match="context identity"):
         resolve_profile_context_policy(config)
+    with pytest.raises(ValueError, match="context identity"):
+        resolve_profile_context_policy(config, tokenizer=FixtureWordCounter())
 
 
 def test_actual_orchestrator_freezes_context_before_dispatch_and_refuses_substitution(tmp_path):

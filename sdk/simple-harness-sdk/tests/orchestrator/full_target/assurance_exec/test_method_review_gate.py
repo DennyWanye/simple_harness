@@ -11,109 +11,91 @@
   正式记录；否则提交被拒，原因是具名的 ``METHOD_NOT_AUTHORIZED``。
 * 两位审阅员都判不下来 → 问人裁决；人答"通过"按通过处理，答"打回"按打回处理。
 
-走真实循环（保证通道装配、真实存储 / 提交 / 审阅消费者 / 导入器），只有模型回复是脚本。
+HTN 补齐阶段 A′：跑在产品同形世界（:mod:`_assured_loop`：产品部署组装、执行图建任务即绑定、
+部署职责两轮之间代签授权与检查策略），只有模型回复是脚本。原"审阅还没结论就采用、提交核心
+自己拒"一条删除：产品上规划器在等审阅时不被叫醒，那道检查只能手搭命令直接调提交核心才碰得到；
+同一道闸由下面"被打回""没有结论"两条经真实回复碰到。
 """
 from __future__ import annotations
 
 import asyncio
 
 import pytest
-
 from _assured_loop import (
     CRITERION,
-    REVIEWER,
-    ROOT_DUTY,
-    ROOT_TASK,
-    HeldProvider,
+    adopt,
+    adopted_methods,
     assured_loop,
     events_of,
-    proposed_method,
-    propose_step,
-    refine_with_step,
-    review_reply,
+    propose,
+    provider,
+    review,
     run_until,
+    spin,
 )
-from admitted_plans import compile_scripted
-from scripted_plans import plan_revision_proposal_step, scripted_plan_proposal
 
 from agent_orchestrator.contracts import TERMINAL_MISSION
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.plan_commits import PlanCommitRejected, PlanPrincipal
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of
 
 
-def _ref_json(contract):
-    return contract.method_ref().to_json()
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _adopted_methods(world) -> list[str]:
-    network = world.loop._new_mode(world.mission).network(world.mission.id)
-    return sorted(str(draft.method_ref.method_id) + "@" + str(int(draft.method_ref.version))
-                  for draft in network.method_instances
-                  if draft.instance_id in network.adopted_instance_ids)
+def _versions(world) -> list[int]:
+    return [int(item.rpartition("@")[2]) for item in adopted_methods(world)]
 
 
-async def _spin(world, cycles: int = 25) -> None:
-    for _ in range(cycles):
-        await world.loop._cycle()
-        await asyncio.sleep(0.01)
+def _proposed_ref(world, version: int = 1) -> dict:
+    [event] = [item for item in events_of(world, "PlanningMethodProposed")
+               if item.payload["method_ref"]["version"] == version]
+    return event.payload["method_ref"]
 
 
 def test_a_proposed_method_waits_for_its_review_and_the_conclusion_wakes_the_planner(tmp_path):
-    contract = proposed_method()
-
     async def case():
-        provider = HeldProvider({"planner": [propose_step(contract), refine_with_step(contract)],
-                                 REVIEWER: [review_reply("ACCEPT")]}, held=(REVIEWER,))
-        async with assured_loop(tmp_path, provider) as world:
+        scripted = provider(planner=[propose(), adopt(1)])
+        scripted.held.add("unknown")  # the independent reviewer's call stays out
+        async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodProposed"))
             # the review is out and unanswered: the Planner is not woken, and the
             # Mission is waiting — not stalled, not stopped
-            await _spin(world)
-            assert provider.by_role.get("planner") == 1
+            await spin(world)
+            assert scripted.by_role.get("planner") == 1
             assert not events_of(world, "PlanningServiceResumed")
             assert not events_of(world, "PlanningMethodReviewed")
             assert world.loop._has_pending_planning_waits(world.mission.id)
             assert world.store.get_mission(world.mission.id).status not in TERMINAL_MISSION
 
-            provider.release.set()
+            scripted.held.clear()
+            scripted.release.set()
             assert await run_until(world, lambda w: events_of(w, "PlanRevisionCommitted"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
             assert reviewed.payload["outcome"] == "PASSED"
             assert reviewed.payload["verdict"] == "ACCEPT"
-            assert reviewed.payload["method_ref"] == _ref_json(contract)
+            assert reviewed.payload["method_ref"] == _proposed_ref(world)
             assert reviewed.payload["record_id"]
             [resumed] = events_of(world, "PlanningServiceResumed")
             assert resumed.payload["source_type"] == "PlanningMethodReviewed"
-            assert provider.by_role["planner"] == 2
-            assert _adopted_methods(world) == ["plan.proposed@1"]
+            assert scripted.by_role["planner"] == 2
+            assert _versions(world) == [1]
             assert not world.loop._has_pending_planning_waits(world.mission.id)
     asyncio.run(case())
 
 
 def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot_be_adopted(tmp_path):
-    first, second = proposed_method(), proposed_method(version=2)
     seen: list[dict] = []
-
     seen_last: list[dict] = []
 
-    def refine_the_rejected_one(request):
-        seen.append(package_of(request))
-        return refine_with_step(first)(request)
-
-    def refine_the_passed_one(request):
-        seen_last.append(package_of(request))
-        return refine_with_step(second)(request)
-
     async def case():
-        provider = RoleScriptedProvider({
-            "planner": [propose_step(first), refine_the_rejected_one, propose_step(second),
-                        refine_the_passed_one],
-            REVIEWER: [review_reply("REWORK", limitation="no step writes the report"),
-                       review_reply("ACCEPT")]})
-        async with assured_loop(tmp_path, provider) as world:
+        scripted = provider(
+            planner=[propose(), adopt(1, seen=seen), propose(), adopt(2, seen=seen_last)],
+            reviewer=[review("REWORK", limitation="no step writes the report"), review("ACCEPT"),
+                      *[review("ACCEPT")] * 4])
+        async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: events_of(w, "PlanRevisionCommitted"))
             rejected, passed = events_of(world, "PlanningMethodReviewed")
             assert rejected.payload["outcome"] == "REJECTED" and rejected.payload["verdict"] == "REWORK"
@@ -121,124 +103,78 @@ def test_a_rejected_method_reaches_the_planner_in_the_reviewers_words_and_cannot
             assert finding["criterion_id"] == CRITERION
             assert "no step writes the report" in " ".join(finding["limitations"])
             assert passed.payload["outcome"] == "PASSED"
-            assert passed.payload["method_ref"] == _ref_json(second)
+            assert passed.payload["method_ref"] == _proposed_ref(world, 2)
 
             # the round the rejection woke was shown the method, its review and the words
             [package] = seen
-            row = next(item for item in package["views"]["methods"]
-                       if (item["method_ref"]["id"], item["method_ref"]["semantic_revision"])
-                       == (first.method_id, first.method_version))
+            row = next(item for item in package["views"]["methods"] if item["method_ref"]["semantic_revision"] == 1)
             assert row["review"]["outcome"] == "REJECTED"
             assert "no step writes the report" in str(row["review"]["findings"])
 
             # adopting the rejected method was refused by the commit gate, by name
-            decisions = PlanningDecisionStore(world.store)
             refused = [event.payload for event in events_of(world, "PlanningDecisionEvaluated")
                        if event.payload.get("status") == "COMMIT_REJECTED"]
             assert [item["rejection_codes"] for item in refused] == [["METHOD_NOT_AUTHORIZED"]]
             assert "no step writes the report" in str(refused[0]["detail"])
-            assert decisions is not None
-            assert _adopted_methods(world) == ["plan.proposed@2"]
+            assert _versions(world) == [2]
 
-            # both versions stay visible as two rows, each with its own review
-            final = seen_last[-1]
-            rows = {item["method_ref"]["semantic_revision"]: item for item in final["views"]["methods"]
-                    if item["method_ref"]["id"] == "plan.proposed"}
-            assert rows[1]["review"]["outcome"] == "REJECTED"
-            assert rows[2]["review"]["outcome"] == "PASSED"
-    asyncio.run(case())
-
-
-def test_adopting_a_method_whose_review_is_still_out_is_refused_inside_the_plan_commit(tmp_path):
-    contract = proposed_method()
-
-    async def case():
-        provider = HeldProvider({"planner": [propose_step(contract)], REVIEWER: [review_reply("ACCEPT")]},
-                                held=(REVIEWER,))
-        async with assured_loop(tmp_path, provider) as world:
-            assert await run_until(world, lambda w: events_of(w, "PlanningMethodProposed"))
-            reference = contract.method_ref()
-            text = plan_revision_proposal_step(
-                expected_plan_revision=0,
-                read_set=[{"kind": "method", "id": reference.method_id,
-                           "semantic_revision": reference.version, "content_hash": reference.content_hash}],
-                operations=[{"op": "refine", "goal_id": ROOT_TASK, "obligation_id": ROOT_DUTY,
-                             "method_ref": {"id": reference.method_id, "version": reference.version,
-                                            "content_hash": reference.content_hash},
-                             "bindings": {"subject": "alpha"}}])
-            # 审阅员这一轮还挂着，带准入的入口会先看到"有工作没收敛"；这条测的是提交核心
-            # 自己的那道检查，所以把编译好的命令直接交给提交核心。
-            dispatch = world.loop._new_mode(world.mission)
-            principal = PlanPrincipal("manager-1", "mission", 0)
-            proposal = scripted_plan_proposal(text, mission_id=world.mission.id)
-            command = dispatch.build_command(
-                world.mission.id, proposal, compile_scripted(dispatch, world.mission.id, proposal),
-                principal=principal, command_id="cmd-unreviewed", source={})
-            with pytest.raises(PlanCommitRejected) as refused:
-                world.commit.commit_plan_revision(command, principal)
-            assert refused.value.reason == "METHOD_NOT_AUTHORIZED"
-            assert not events_of(world, "PlanRevisionCommitted")
-            provider.release.set()
-            await _spin(world, 5)
+            # only the newest version of a method is on offer (a method id is one method;
+            # 迁移裁决 C1): the rejected v1 is gone from the last round, v2 shows its review
+            rows = {item["method_ref"]["semantic_revision"]: item for item in seen_last[-1]["views"]["methods"]}
+            assert set(rows) == {2} and rows[2]["review"]["outcome"] == "PASSED"
     asyncio.run(case())
 
 
 @pytest.mark.parametrize(("answer", "outcome", "adopted"), [
-    ("pass", "PASSED", ["plan.proposed@1"]),
+    ("pass", "PASSED", [1]),
     ("fail", "REJECTED", []),
 ])
 def test_two_inconclusive_method_reviews_ask_the_person_and_the_ruling_decides(
         tmp_path, answer, outcome, adopted):
-    contract = proposed_method()
-
     async def case():
-        provider = RoleScriptedProvider({
-            "planner": [propose_step(contract), refine_with_step(contract)],
-            REVIEWER: [review_reply("INCONCLUSIVE", limitation="cannot tell whether one step is enough"),
-                       review_reply("INCONCLUSIVE", limitation="cannot tell whether one step is enough")]})
-        async with assured_loop(tmp_path, provider) as world:
+        unsure = review("INCONCLUSIVE", limitation="cannot tell whether one step is enough")
+        scripted = provider(planner=[propose(), adopt(1)], reviewer=[unsure, unsure, *[review()] * 4])
+        async with assured_loop(tmp_path, scripted) as world:
             questions = PlanningHumanStore(world.store)
             assert await run_until(world, lambda w: questions.pending(w.mission.id))
             [question] = [row for row in questions.list(world.mission.id) if row["state"] == "PENDING"]
             assert question["decision_id"].startswith("adjudicate-method:")
             assert "cannot tell whether one step is enough" in question["request"]["payload"]["question"]
-            await _spin(world, 10)
-            assert provider.by_role.get("planner") == 1  # nobody is woken while the person decides
+            await spin(world, 10)
+            assert scripted.by_role.get("planner") == 1  # nobody is woken while the person decides
             assert not events_of(world, "PlanningMethodReviewed")
 
-            questions.answer(decision_id=question["decision_id"], tenant_id=world.mission.tenant_id,
-                             principal=Principal("assured-loop-user"), answer=answer,
-                             expected_version=question["version"], nonce="n-1")
+            # the person answers on the page (the authenticated facade)
+            world.control.answer_planning_question({
+                "decision_id": question["decision_id"], "answer": answer,
+                "expected_version": question["version"], "nonce": "n-1"})
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
             assert reviewed.payload["outcome"] == outcome
             assert reviewed.payload["verdict"] == "INCONCLUSIVE"
             assert reviewed.payload["human_ruling"]["decision"] == answer
             # the ruling, not the answered question, is what wakes the Planner — once
-            assert await run_until(world, lambda w: provider.by_role.get("planner") == 2)
-            await _spin(world, 10)
+            assert await run_until(world, lambda w: w.provider.asked.count("planner") == 2)
+            await spin(world, 10)
             assert [e.payload["source_type"] for e in events_of(world, "PlanningServiceResumed")] == [
                 "PlanningMethodReviewed"]
-            assert _adopted_methods(world) == adopted
+            assert _versions(world) == adopted
     asyncio.run(case())
 
 
 def test_a_method_review_that_ends_without_a_verdict_is_reported_to_the_planner(tmp_path):
-    contract = proposed_method()
-
     async def case():
-        provider = RoleScriptedProvider({
-            "planner": [propose_step(contract), refine_with_step(contract)],
-            REVIEWER: ["this is not a verdict", "still not a verdict"]})
-        async with assured_loop(tmp_path, provider) as world:
+        scripted = provider(planner=[propose(), adopt(1)],
+                            reviewer=["this is not a verdict", "still not a verdict"])
+        async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
             assert reviewed.payload["outcome"] == "NO_VERDICT"
             assert reviewed.payload["record_id"] is None and reviewed.payload["reason"]
-            assert await run_until(world, lambda w: provider.by_role.get("planner") == 2)
-            await _spin(world, 10)
+            assert await run_until(world, lambda w: w.provider.asked.count("planner") == 2)
+            await spin(world, 10)
             # reported, and still not adoptable: no verdict is not a pass
-            assert _adopted_methods(world) == []
+            assert _versions(world) == []
             refused = [event.payload for event in events_of(world, "PlanningDecisionEvaluated")
                        if event.payload.get("status") == "COMMIT_REJECTED"]
             assert [item["rejection_codes"] for item in refused] == [["METHOD_NOT_AUTHORIZED"]]
@@ -246,16 +182,16 @@ def test_a_method_review_that_ends_without_a_verdict_is_reported_to_the_planner(
 
 
 def test_a_ruling_question_that_went_stale_ends_the_wait_instead_of_holding_it_for_ever(tmp_path):
-    """独立核验发现：裁决题在用户回答前过期（计划、要求或管理纪元变了），这份提案此前会
-    永远停在"在等"——既不出结论，也让停滞检测对这个任务失效。现在按"没有结论"上报。"""
-    contract = proposed_method()
+    """独立核验发现：裁决题在用户回答前过期（计划、要求或作用域纪元变了），这份提案此前会
+    永远停在"在等"——既不出结论，也让停滞检测对这个任务失效。现在按"没有结论"上报。
+
+    纪元由它唯一的写入函数 ``bump_epoch`` 推进（裁决①c：产品写入方排在阶段 D/E），模拟的
+    是"等人回答期间别处一次合法的并发写"。"""
 
     async def case():
-        provider = RoleScriptedProvider({
-            "planner": [propose_step(contract), refine_with_step(contract)],
-            REVIEWER: [review_reply("INCONCLUSIVE", limitation="cannot tell"),
-                       review_reply("INCONCLUSIVE", limitation="cannot tell")]})
-        async with assured_loop(tmp_path, provider) as world:
+        unsure = review("INCONCLUSIVE", limitation="cannot tell")
+        scripted = provider(planner=[propose(), adopt(1)], reviewer=[unsure, unsure])
+        async with assured_loop(tmp_path, scripted) as world:
             questions = PlanningHumanStore(world.store)
             assert await run_until(world, lambda w: questions.pending(w.mission.id))
             # the world the question was asked in is superseded before the person answers
@@ -269,7 +205,7 @@ def test_a_ruling_question_that_went_stale_ends_the_wait_instead_of_holding_it_f
             assert "stale" in reviewed.payload["reason"]
             [question] = questions.list(world.mission.id)
             assert question["state"] == "STALE"
-            await _spin(world, 10)
+            await spin(world, 10)
             assert not world.loop._has_pending_planning_waits(world.mission.id)
-            assert _adopted_methods(world) == []
+            assert _versions(world) == []
     asyncio.run(case())

@@ -1,11 +1,23 @@
-"""H1-H new-protocol actions may not bypass the operation-link handoff gate."""
-# ruff: noqa: E402 -- shared step07 fixture path is installed before imports.
+"""H1-H new-protocol actions may not bypass the operation-link handoff gate.
+
+HTN 补齐阶段 A′：全部跑在产品同形世界上（``step07/helpers_step07.py``）。
+
+* 没有操作链接的动作（标记缺失、被删、被伪造）：D′ 世界里经台账写入口递交一条候选、批准后走
+  交接入口，按 ``operation_link_missing`` 拒绝。原"标记删除 / 篡改"参数化用例并入第一条（同一个
+  世界里依次改坏已存字节，裁决①b1）。
+* 桥接身份错：代表用例 3 的变体。系统自己物化出带真实链接的发布动作、人已批准，改坏已存链接的
+  字节（①b1）后交接被拒、什么都不预留不发送；恢复原字节后主循环照常发布完成（正对照）。
+* O06：代表用例 3 的变体。发布服务写下意图后连接中断（外界事件），动作结果不明；对账只拿到空的
+  查询结果（弱证据），系统不再交接、预留不释放、闸门判"未了结"、等人裁决。原用例直接改写台账行
+  造出"已确认未开始 + 弱证明"的状态（违反①b2），产品上对带链接的动作从不由空查询记"已确认未开始"，
+  所以"弱证明再交接"那一支（``rehandoff_needs_authoritative_not_applied_proof``）在真实路径上走不到，
+  改为断言再交接在更早一道就被拒（``rehandoff_needs_confirmed_not_started``）且发布服务没被再调用。
+"""
+# ruff: noqa: E402, E501 -- shared step07 fixture path is installed before imports.
 
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-import hashlib
 import sys
 from pathlib import Path
 
@@ -15,254 +27,163 @@ _STEP07 = Path(__file__).resolve().parent.parent / "step07"
 if str(_STEP07) not in sys.path:
     sys.path.insert(0, str(_STEP07))
 
-from helpers_step07 import ENABLED, candidate, ledger_service
-from test_htn_store import envelope
-from operation_completion.operation_runtime_fixture import materialized_file_publish
+from helpers_step07 import (
+    ALICE,
+    ENABLED,
+    candidate,
+    ledger_world,
+    operation_world,
+    run_until,
+    until_pending,
+)
 
-from agent_orchestrator.contracts.planning_decisions import PLANNING_DECISION_V1
-from agent_orchestrator.orchestrator.commit_service import mission_account
-from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
 from agent_orchestrator.runtime.actions import ActionExecutor
-from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
-from simple_harness.contracts import canonical_json
+from agent_orchestrator.runtime.planning_operations import (
+    OperationEffect,
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+    operation_gate,
+)
 
 
-def _propose_read(service, mission, task, connectors):
-    return service.propose_action(
-        candidate(operation="read"),
-        mission_id=mission.id,
-        task_id=task.id,
-        result_id="result-h1h-handoff",
-        attempt_id=f"{task.id}:attempt-h1h-handoff",
-        artifact_id="artifact-h1h-handoff",
-        artifact_hash="a" * 64,
-        connectors=connectors,
-        deployment=ENABLED,
-    )
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _handoff(service, action, connectors):
-    return service.begin_handoff(
-        action["action_key"],
+def _handoff(world, action_key):
+    return world.service.begin_handoff(
+        action_key,
         owner="h1h-handoff-owner",
         lease_seconds=30.0,
-        connectors=connectors,
-        deployment=ENABLED,
+        connectors=world.connectors,
+        deployment=world.deployment,
     )
 
 
-def _assert_not_handed_off(service, mission_id: str, action_key: str) -> None:
-    stored = service.store.get_action(action_key)
+def _assert_not_handed_off(world, action_key: str, state: str) -> None:
+    stored = world.store.get_action(action_key)
     assert stored is not None
-    assert stored["state"] == "PROPOSED"
+    assert stored["state"] == state
     assert stored["handoffs"] == 0
-    assert service.ledger.reservation(f"action:{action_key}") is None
-    assert not [
-        event
-        for event in service.store.list_events(mission_id)
-        if event.type == "ActionHandedOff" and event.payload["action_key"] == action_key
-    ]
-
-
-def _store_link(service, mission, action, *, defect: str) -> None:
-    task = service.store.get_task(action["task_id"])
-    assert task is not None
-    frozen = dataclasses.replace(envelope(), mission_id=mission.id, scope_id="mission")
-    HtnStore(service.store).bind_operation(frozen, principal_id="origin-principal")
-    binding = PlanningAdmissionStore(service.store).get_operation_binding(
-        str(frozen.operation_occurrence_id)
-    )
-    assert binding is not None
-    link = {
-        "operation_id": binding["operation_id"],
-        "request_hash": binding["request_hash"],
-        "operation_occurrence_id": binding["operation_occurrence_id"],
-        "mission_id": binding["mission_id"],
-        "envelope_hash": binding["envelope_hash"],
-        "principal_id": binding["principal_id"],
-        "scope_id": binding["scope_id"],
-        "obligation_id": binding["obligation_id"],
-        "producer_task_id": task.id,
-        "producer_htn_occurrence_id": "occ-h1h-handoff",
-        "producer_contract_revision": 1,
-        "producer_plan_revision": 1,
-        "action_key": action["action_key"],
-        "action_id": action["action_id"],
-        "action_version": action["version"],
-        "params_hash": action["params_hash"],
-        "idempotency_key": action["idempotency_key"],
-        "provenance_receipt_id": "receipt-h1h-handoff",
-        "link_hash": hashlib.sha256(b"h1h-handoff-link").hexdigest(),
-        "link_json": "{}",
-    }
-    if defect == "action_id":
-        link["action_id"] = "wrong-action-id"
-    elif defect == "envelope_hash":
-        link["envelope_hash"] = "f" * 64
-    link["link_json"] = canonical_json(link)
-    admission = PlanningAdmissionStore(service.store)
-    admission.put_operation_action_link(link)
-    if defect == "mission":
-        # The real FK correctly forbids a foreign Mission in the typed column.
-        # Simulate legacy/corrupt JSON only, which is what the Store reader parses.
-        corrupted = {**link, "mission_id": "foreign-mission"}
-        corrupted["link_json"] = canonical_json(corrupted)
-        with service.store.transaction() as connection:
-            connection.execute(
-                "UPDATE planning_operation_action_links SET link_json=? WHERE operation_id=?",
-                (corrupted["link_json"], link["operation_id"]),
-            )
+    assert world.service.ledger.reservation(f"action:{action_key}") is None
+    assert not [e for e in world.events("ActionHandedOff") if e["action_key"] == action_key]
+    assert world.publish_ledger() == [] and world.published_files() == []
 
 
 def test_new_protocol_missing_marker_and_link_refuses_without_handoff_side_effect(tmp_path) -> None:
-    service, mission, tasks, config, connectors, _ = ledger_service(tmp_path)
-    bind_planning_protocol(service.store, mission.id, PLANNING_DECISION_V1)
-    action = _propose_read(service, mission, tasks["A"], connectors)
+    async def case() -> None:
+        async with ledger_world(tmp_path, key="h1h-no-link") as world:
+            action = world.propose(candidate())
+            world.service.decide_approval(action["approval_request_id"], principal=ALICE, decision="grant",
+                                          nonce="n-1", deployment=ENABLED)
+            key = action["action_key"]
+            assert "planning_origin" not in world.store.get_action(key)
+            for marker in (None, '{"operation_id": "forged"}'):  # no marker, then a forged one on disk
+                if marker is not None:
+                    with world.store.transaction() as connection:
+                        connection.execute(
+                            "UPDATE actions SET json = json_set(json, '$.planning_origin', json(?)) WHERE action_key = ?",
+                            (marker, key))
+                handed, reason = _handoff(world, key)
+                assert handed is None
+                assert reason == "operation_link_missing"
+                _assert_not_handed_off(world, key, "APPROVED")
 
-    handed, reason = _handoff(service, action, connectors)
-
-    assert handed is None
-    assert reason == "operation_link_missing"
-    assert config.state()["applied_count"] == 0
-    _assert_not_handed_off(service, mission.id, action["action_key"])
-
-
-@pytest.mark.parametrize("marker", (None, {"operation_id": "forged"}))
-def test_new_protocol_marker_deletion_or_tampering_cannot_bypass_link(tmp_path, marker) -> None:
-    service, mission, tasks, _config, connectors, _ = ledger_service(tmp_path)
-    bind_planning_protocol(service.store, mission.id, PLANNING_DECISION_V1)
-    action = _propose_read(service, mission, tasks["A"], connectors)
-    stored = service.store.get_action(action["action_key"])
-    assert stored is not None
-    stored.pop("planning_origin", None)
-    if marker is not None:
-        stored["planning_origin"] = marker
-    service.store.put_action(stored)
-
-    handed, reason = _handoff(service, action, connectors)
-
-    assert handed is None
-    assert reason == "operation_link_missing"
-    _assert_not_handed_off(service, mission.id, action["action_key"])
+    asyncio.run(case())
 
 
-@pytest.mark.parametrize("defect", ("mission", "action_id", "envelope_hash"))
-def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path, defect: str) -> None:
-    service, mission, tasks, _config, connectors, _ = ledger_service(tmp_path)
-    bind_planning_protocol(service.store, mission.id, PLANNING_DECISION_V1)
-    action = _propose_read(service, mission, tasks["A"], connectors)
-    _store_link(service, mission, action, defect=defect)
+def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path) -> None:
+    async def case() -> None:
+        async with operation_world(tmp_path, key="h1h-bad-bridge") as world:
+            action = await until_pending(world)
+            key = action["action_key"]
+            request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
+            assert world.control.decide(request["request_id"], "approve")["request_state"] == "GRANTED"
+            [original] = world.store.connection.execute(
+                "SELECT link_json FROM planning_operation_action_links WHERE action_key = ?", (key,)).fetchone()
+            for path, value in (("$.mission_id", "foreign-mission"), ("$.action_id", "wrong-action-id"),
+                                ("$.envelope_hash", "f" * 64)):
+                with world.store.transaction() as connection:  # the stored bridge bytes are altered (①b1)
+                    connection.execute(
+                        "UPDATE planning_operation_action_links SET link_json = json_set(link_json, ?, ?) "
+                        "WHERE action_key = ?", (path, value, key))
+                handed, reason = _handoff(world, key)
+                assert handed is None, path
+                assert reason in {"operation_link_missing", "operation_link_mismatch"}, (path, reason)
+                _assert_not_handed_off(world, key, "APPROVED")
+                with world.store.transaction() as connection:
+                    connection.execute(
+                        "UPDATE planning_operation_action_links SET link_json = ? WHERE action_key = ?",
+                        (original, key))
+            # with its exact bytes back, the same action goes out once through the main loop
+            await run_until(world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED")
+            assert world.publish_ledger().count("PREPARED") == 1 and len(world.published_files()) == 1
 
-    handed, reason = _handoff(service, action, connectors)
+    asyncio.run(case())
 
-    assert handed is None
-    assert reason in {"operation_link_missing", "operation_link_mismatch"}
-    _assert_not_handed_off(service, mission.id, action["action_key"])
+
+def _lose_after_intent(publish) -> None:
+    publish.fail_after = "intent"  # the connection drops once the service has written its intent
+
+
+async def _lost(world):
+    """Approve the system's publish action and run until the loop's own reconciliation has
+    looked once and found only an empty lookup."""
+    action = await until_pending(world)
+    key = action["action_key"]
+    request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
+    world.control.decide(request["request_id"], "approve")
+    await run_until(world.product, lambda: world.store.get_action(key).get("reconcile") == "STILL_UNKNOWN")
+    stored = world.store.get_action(key)
+    assert (stored["state"], stored["handoffs"]) == ("UNKNOWN", 1)
+    assert "reconciliation_proof" not in stored
+    # the service wrote its intent, then gave up before the only commit point: nothing published
+    assert world.publish_ledger() == ["PREPARED", "ABORTED"] and world.published_files() == []
+    reservation = world.service.ledger.reservation(f"action:{key}")
+    assert reservation is not None and reservation["state"] == "RESERVED"
+    return key, reservation
 
 
 def test_o06_executor_weak_reconcile_rehandoff_cannot_call_connector(tmp_path) -> None:
-    fixture = materialized_file_publish(tmp_path)
-    service, mission = fixture.world.service, fixture.world.mission
-    action, connectors = fixture.action, fixture.connectors
-    stored = service.store.get_action(action["action_key"])
-    assert stored is not None
-    stored.update(
-        state="UNKNOWN",
-        handoffs=1,
-        reconcile="CONFIRMED_NOT_STARTED",
-        reconciliation_proof={
-            "action_key": action["action_key"],
-            "idempotency_key": action["idempotency_key"],
-            "covered_handoffs": [1],
-            "authoritative_not_applied": False,
-            "all_handoffs_covered": False,
-            "no_late_apply_proven": False,
-        },
-    )
-    service.store.put_action(stored)
-    subject_id = f"action:{action['action_key']}"
-    with service.store.transaction():
-        service.ledger.reserve(
-            account_id=mission_account(mission.id),
-            subject_id=subject_id,
-            tokens=0,
-            cost_micros=int(connectors["file_publish"].operations["publish"].cost_micros_ceiling or 0),
-            tool_calls=1,
-            counts_attempt=False,
-            mission_id=mission.id,
-        )
-    before_reservation = service.ledger.reservation(subject_id)
-    assert before_reservation is not None and before_reservation["state"] == "RESERVED"
-    executor = ActionExecutor(service, connectors, fixture.deployment, owner="h1h-o06")
+    async def case() -> None:
+        async with operation_world(tmp_path, key="h1h-o06-weak", publish_setup=_lose_after_intent) as world:
+            key, reservation = await _lost(world)
+            executor = ActionExecutor(world.service, world.connectors, world.deployment, owner="h1h-o06",
+                                      source_storage_roots=(tmp_path / "root",))
+            assert await executor.hand_off(key, rehandoff=True) is None
+            assert executor.last_refusal[key] == "rehandoff_needs_confirmed_not_started"
+            reconciled = await executor.reconcile_one(key, allow_rehandoff=True)  # weak evidence again
+            assert reconciled is not None and reconciled["reconcile"] == "STILL_UNKNOWN"
+            after = world.store.get_action(key)
+            assert (after["state"], after["handoffs"]) == ("UNKNOWN", 1)
+            assert world.service.ledger.reservation(f"action:{key}") == reservation
+            assert world.publish_ledger() == ["PREPARED", "ABORTED"]  # the service was not called again
+            assert world.published_files() == []
 
-    assert asyncio.run(executor.hand_off(action["action_key"], rehandoff=True)) is None
-    assert (
-        executor.last_refusal[action["action_key"]]
-        == "rehandoff_needs_authoritative_not_applied_proof"
-    )
-    after = service.store.get_action(action["action_key"])
-    assert after is not None and after["handoffs"] == 1
-    assert after["state"] == "UNKNOWN"
-    after_reservation = service.ledger.reservation(subject_id)
-    assert after_reservation == before_reservation
-    assert after_reservation is not None and after_reservation["state"] == "RESERVED"
-    assert not fixture.publish.ledger_path.exists()
-    assert not list(fixture.publish.root.rglob("*"))
+    asyncio.run(case())
 
 
 def test_o06_executor_empty_lookup_rehandoff_keeps_new_protocol_hold(tmp_path) -> None:
-    fixture = materialized_file_publish(tmp_path)
-    service, mission = fixture.world.service, fixture.world.mission
-    action, connectors = fixture.action, fixture.connectors
-    stored = service.store.get_action(action["action_key"])
-    assert stored is not None
-    stored.update(state="UNKNOWN", handoffs=1)
-    stored.pop("reconcile", None)
-    stored.pop("reconciliation_proof", None)
-    service.store.put_action(stored)
+    async def case() -> None:
+        async with operation_world(tmp_path, key="h1h-o06-empty", publish_setup=_lose_after_intent) as world:
+            key, reservation = await _lost(world)
+            # more rounds of the product's own loop: still no hand-off, the hold is kept
+            for _ in range(3):
+                await world.product.drain(timeout=5.0)
+            after = world.store.get_action(key)
+            assert (after["state"], after["handoffs"], after["reconcile"]) == ("UNKNOWN", 1, "STILL_UNKNOWN")
+            assert "reconciliation_proof" not in after
+            assert world.service.ledger.reservation(f"action:{key}") == reservation
+            assert world.publish_ledger() == ["PREPARED", "ABORTED"] and world.published_files() == []
+            assert [(w["kind"], w["needs_human"]) for w in world.store.waiting_on(world.mission_id)] == [
+                ("reconciliation", True)]  # a person rules on it
+            snapshot = build_operation_snapshot(world.mission_id, reader=StoreOperationReader(world.store))
+            assert [effect for _operation, effect in snapshot.effects] == [OperationEffect.UNRESOLVED]
+            with pytest.raises(SourceUnavailable, match="operation_unresolved"):
+                operation_gate(snapshot)
 
-    subject_id = f"action:{action['action_key']}"
-    with service.store.transaction():
-        service.ledger.reserve(
-            account_id=mission_account(mission.id),
-            subject_id=subject_id,
-            tokens=0,
-            cost_micros=int(connectors["file_publish"].operations["publish"].cost_micros_ceiling or 0),
-            tool_calls=1,
-            counts_attempt=False,
-            mission_id=mission.id,
-        )
-    before_reservation = service.ledger.reservation(subject_id)
-    assert before_reservation is not None and before_reservation["state"] == "RESERVED"
-    assert not fixture.publish.ledger_path.exists()
-
-    executor = ActionExecutor(
-        service, connectors, fixture.deployment, owner="h1h-o06-empty"
-    )
-    reconciled = asyncio.run(executor.reconcile(mission.id))
-
-    assert [(item["state"], item["handoffs"]) for item in reconciled] == [("UNKNOWN", 1)]
-    after = service.store.get_action(action["action_key"])
-    assert after is not None
-    assert after["reconcile"] == "STILL_UNKNOWN"
-    assert "reconciliation_proof" not in after
-    assert action["action_key"] not in executor.last_refusal  # no attempted rehandoff
-
-    assert service.ledger.reservation(subject_id) == before_reservation
-    assert service.ledger.reservation(subject_id)["state"] == "RESERVED"
-    assert not fixture.publish.ledger_path.exists()
-    assert not list(fixture.publish.root.rglob("*"))
-
-    from agent_orchestrator.runtime.planning_operations import (
-        OperationEffect,
-        SourceUnavailable,
-        StoreOperationReader,
-        build_operation_snapshot,
-        operation_gate,
-    )
-
-    snapshot = build_operation_snapshot(mission.id, reader=StoreOperationReader(service.store))
-    assert snapshot.effects == ((fixture.action["planning_origin"]["operation_id"], OperationEffect.UNRESOLVED),)
-    with pytest.raises(SourceUnavailable, match="operation_unresolved"):
-        operation_gate(snapshot)
+    asyncio.run(case())

@@ -2,27 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: E501
 
-"""Step 4 · slice B (D4-9…D4-13, D4-19): deterministic retrieval, the eleven-item context
-package under the visibility templates and deterministic summaries."""
+"""Step 4 · slice B (D4-9…D4-13, D4-19): deterministic retrieval and the eleven-item context
+package under the visibility templates (pure functions).
+
+HTN 补齐阶段 A′：摘要那条（按分支确定、不改声明状态）并入
+``test_claims_knowledge_main_loop.py::test_blackboard_and_summaries_are_read_only_projections``；
+核验员模板那条随旧 critic 包（``build_critic_package``）删除。"""
 
 from __future__ import annotations
 
 import pytest
-from knowledge_helpers import (
-    claim,
-    drive_to_running,
-    envelope,
-    passed_layers,
-    submit,
-    two_leaf_service,
-    verify_claims_citing_pytest,
-)
 
-from agent_orchestrator.context.compression import GLOBAL_BRANCH, branch_of
 from agent_orchestrator.context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     assert_no_secrets,
-    build_critic_package,
     build_worker_package,
 )
 from agent_orchestrator.context.retrieval import (
@@ -38,7 +31,6 @@ from agent_orchestrator.contracts import (
     Task,
     TaskStatus,
 )
-from agent_orchestrator.memory.summaries import build_summaries
 from agent_orchestrator.memory.verified_knowledge import KnowledgeRecord
 
 
@@ -291,32 +283,6 @@ def test_worker_package_has_all_eleven_items_and_shows_only_verified_as_fact():
     assert package.context_version.startswith("ctx-")
 
 
-def test_the_verifier_template_withholds_the_submitter():
-    task = _task("m:task-2")
-    verifier = build_critic_package(
-        _mission(),
-        task,
-        attempt_id="a",
-        artifacts=({"path": "x.py", "content_hash": "0" * 64, "size_bytes": 1},),
-        test_output="1 passed",
-        workspace_files=("x.py",),
-        knowledge=_knowledge_context(),
-    ).package
-
-    def keys_of(value):
-        if isinstance(value, dict):
-            for key, item in value.items():
-                yield key
-                yield from keys_of(item)
-        elif isinstance(value, list):
-            for item in value:
-                yield from keys_of(item)
-
-    assert not {"summary", "confidence", "self_reported_confidence"} & set(keys_of(verifier))
-    assert verifier["visibility"].startswith("verifier") and "candidate_claims" not in verifier
-    assert verifier["disputed_claims"][0]["status"] == "DISPUTED"
-
-
 def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_package():
     task = _task("m:task-1")
     package = build_worker_package(
@@ -350,46 +316,3 @@ def test_retrieval_unavailable_is_rendered_explicitly_and_secrets_never_enter_a_
     with pytest.raises(ValueError):
         assert_no_secrets({"tools": {"api_key": "x"}})
     assert_no_secrets({"budget": {"max_tokens": 5}})  # not a credential
-
-
-# ------------------------------------------------------------------ D4-13'
-def test_summaries_are_deterministic_scoped_by_branch_and_never_change_claim_status(tmp_path, monkeypatch):
-    verify_claims_citing_pytest(monkeypatch)
-    service, mission, (task_a, task_b) = two_leaf_service(tmp_path)
-    tasks_by_id = {t.id: t for t in service.store.list_tasks(mission.id)}
-    assert branch_of(task_a, tasks_by_id) == task_a.id
-    join = Task.from_json(
-        {**task_a.to_json(), "id": "m:task-9", "dependency_ids": [task_a.id, task_b.id]}
-    )
-    assert branch_of(join, {**tasks_by_id, join.id: join}) == GLOBAL_BRANCH
-    attempt = drive_to_running(service, task_a)
-    stored = submit(
-        service,
-        attempt,
-        envelope(
-            attempt,
-            claims=[
-                claim("v", key="k", evidence=["pytest:tests/probe/test_impl_a.py"]),
-                claim("只有证据"),
-            ],
-        ),
-    )
-    service.accept_result(
-        stored.envelope.id, verifier_results=passed_layers("tests/probe/test_impl_a.py")
-    )
-    persisted = {s["subject_id"]: s for s in service.store.list_summaries(mission.id)}
-    # 分层任务里根目标（复合任务）也是一行任务，同样有自己的摘要
-    assert set(persisted) == {t.id for t in service.store.list_tasks(mission.id)} | {mission.id}
-    assert {task_a.id, task_b.id, mission.id} <= set(persisted)
-    branch = persisted[task_a.id]
-    assert branch["knowledge"] and branch["uncertainty"]["unverified_claims"] == 1
-    assert branch["sources"]["results"] == [stored.envelope.id]
-    assert "不是验证" in branch["uncertainty"]["note"]
-    assert persisted[task_b.id]["knowledge"] == []  # B's branch does not carry A's knowledge
-    rebuilt = build_summaries(service.store, mission.id)
-    assert rebuilt[task_a.id]["version"] == branch["version"]  # deterministic
-    statuses_before = {c.id: c.status for c in service.store.list_mission_claims(mission.id)}
-    build_summaries(service.store, mission.id)
-    assert {
-        c.id: c.status for c in service.store.list_mission_claims(mission.id)
-    } == statuses_before

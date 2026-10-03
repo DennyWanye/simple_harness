@@ -1,330 +1,167 @@
-"""Read-only reviewer evidence tools -> actual Provider input manifest -> labelled exposure batch.
+"""审阅员的两个只读取证工具 → 实际发给模型的输入 → 按标签记下的披露批次（产品同形世界）。
 
-One coding seam for BW06 (handoff §4 item 5). Real Store/Commit/Scope/HtnStore,
-actual AgentRuntime + scripted tool-calling Provider through the ORIGINAL
-WorkspaceToolGateway, the original collector, REVIEW WorkStore and official
-importer. Exercised: `_bind_critic` assured branch binds exactly the two evidence
-tools (no Attempt workspace, none fabricated for the root review); find/read go
-through the gateway's identity/permission/schema/budget/refusal/audit pipeline;
-current-authority permission, review-key pin and byte-exact read before content
-is returned; a complete UTF-8 read that the final actual Provider request really
-contained becomes disclosure batch 1 and its label is citable; a partial page,
-a listing, a binary refusal and an unknown label disclose nothing; replaying the
-collector adds no batch. Routing, ACL, lease and the single-consumer pump are
-fixtures; no real model, four-consumer deployment, Host or UI.
+2026-10-03（HTN 补齐阶段 A′）迁到产品同形世界：任务经产品那一份部署组装建出，用户给任务附了两份
+资料（真实的"附资料"写入口）；主循环真跑，审阅员（脚本化回复）在审查中调用
+``assurance_find_evidence`` / ``assurance_read_evidence``：
+
+* 内容审阅：列出资料，整段读两份（两条工具结果消息），引用这两个标签 → 披露批次 1 正好是这两份、
+  消息号按集合记下，正式记录通过；之后再跑几轮也不再多出批次；
+* 内容审阅：只读了一页（不完整），却引用它 → 第一次按 UNEXPOSED_EVIDENCE 打回、带意见重答一次，
+  第二次仍引用它 → 最终拒收，不披露任何东西；
+* 最终审查：没有任何执行尝试，同样经这两个工具整段读一份并引用，正式记录通过。
+
+（原 ``test_disclosure_batch_message_order`` 的"多条工具结果消息的批次按集合记、重放不拒"并入第一段。）
+不证明真实模型、Host 或界面。
 """
-from _assured_fixture import (EVIDENCE, SDK, TENANT, AssuredRuntime, KnownUsageProvider, count, requirements_ref,
-                              source_sha256)
+from _product_seam import StepReviewer, cite, count, quick, reviewed_mission, source_sha256, tool_values, write_report
+
 import asyncio
-import hashlib
-import json
-from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from simple_harness import MessageRole
-from agent_orchestrator.assurance.checks import CriterionPolicy
-from agent_orchestrator.assurance.codec import decode, fingerprint
-from agent_orchestrator.assurance.evidence import evidence_label
-from agent_orchestrator.assurance.refs import AssuranceRef, Pin
-from agent_orchestrator.contracts.resolution import ReviewVerdict
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.orchestrator.assurance_review_collect import collect_assurance_review
-from agent_orchestrator.orchestrator.assurance_review_import import read_imported_review_locked
-from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
-from agent_orchestrator.orchestrator.root_review import RootReviewCoordinator, RootReviewStatus
-from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
-from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.assurance.codec import decode
 
-EXTRA_PATH, EXTRA_BODY = 'notes/extra.md', b'# extra evidence\nfixture note not in the frozen catalogue\n'
-BINARY_PATH, BINARY_BODY = 'bin/blob.dat', b'\xff\xfe\x00\x01binary'
-UNKNOWN_LABEL = 'ev-' + '0' * 64
+EXTRA = ("sources/notes/extra.md", "# extra evidence\nnote the user attached to the task\n")
+SECOND = ("sources/notes/second.md", "# second note\nanother attached note\n")
 
 
-class ToolScriptProvider(KnownUsageProvider):
-    """Script steps may be callables of the actual request (to read tool results back)."""
-    async def invoke(self, request, *, cancel):
-        if self.script and callable(self.script[0]):
-            self.script[0] = self.script[0](request)
-        return await super().invoke(request, cancel=cancel)
+def find_label(request, path):  # type: ignore[no-untyped-def]
+    for listing in tool_values(request, "assurance_find_evidence"):
+        for entry in listing["entries"]:
+            if entry["id"] == path:
+                return entry["label"]
+    raise AssertionError(f"{path} not listed")
 
 
-def tool_values(request, name):
-    """Successful tool-result values of ``name`` in this actual request, in order."""
-    values = []
-    for message in request.messages:
-        if message.role is MessageRole.TOOL and message.name == name:
-            payload = json.loads(message.content)
-            if payload['outcome'] == 'succeeded':
-                values.append(payload['value'])
-    return values
+def read_labels(request):  # type: ignore[no-untyped-def]
+    return [value["label"] for value in tool_values(request, "assurance_read_evidence") if value.get("complete")]
 
 
-def find_label(request, ref_id):
-    for listing in tool_values(request, 'assurance_find_evidence'):
-        for entry in listing['entries']:
-            if entry['id'] == ref_id:
-                return entry['label']
-    raise AssertionError(f'{ref_id} not listed: ' + json.dumps(tool_values(request, "assurance_find_evidence")))
-
-
-def read_label(request):
-    reads = tool_values(request, 'assurance_read_evidence')
-    assert reads, 'no successful read in the request'
-    return reads[-1]['label']
-
-
-ACCEPT_NO_EVIDENCE = {'schema_version': 2, 'verdict': 'ACCEPT', 'assessments': [
-    {'criterion_id': 'criterion-report', 'verdict': 'PASS', 'evidence_ids': [], 'reason': 'initial materials',
-     'limitations': []}], 'findings': []}
-
-
-def reply(criteria, label):
-    return json.dumps({'schema_version': 2, 'verdict': 'ACCEPT', 'assessments': [
-        {'criterion_id': c, 'verdict': 'PASS', 'evidence_ids': [label], 'reason': 'cites appended evidence',
-         'limitations': []} for c in criteria], 'findings': []}, ensure_ascii=False)
-
-
-def register_sources(rt):
-    store = rt.store
-    refs = {}
-    for path, body in ((EXTRA_PATH, EXTRA_BODY), (BINARY_PATH, BINARY_BODY)):
-        digest = rt.cas.put_bytes(body)
-        assert digest == hashlib.sha256(body).hexdigest()
-        store.put_source({'mission_id': rt.mission.id, 'tenant_id': TENANT, 'path': path, 'version_hash': digest,
-                          'kind': 'note', 'trust': 'untrusted_external', 'registered_at': store.now,
-                          'superseded_by': None, 'revoked': False, 'revision': 1})
-        refs[path] = AssuranceRef('source', Pin(path, 1, digest))
-    return refs
-
-
-def review_key_of(rt, purpose):
-    row = rt.store.connection.execute(
-        "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? AND json_extract(binding_json,'$.subject.purpose')=?",
-        (rt.mission.id, purpose)).fetchone()
+def review_key_of(store, mission_id, purpose):  # type: ignore[no-untyped-def]
+    row = store.connection.execute(
+        "SELECT review_key FROM assurance_review_bindings WHERE mission_id=? "
+        "AND json_extract(binding_json,'$.subject.purpose')=?", (mission_id, purpose)).fetchone()
     assert row is not None, purpose
-    return row['review_key']
+    return row["review_key"]
 
 
-def batches(rt, review_key):
-    return [decode(r['batch_json']) for r in rt.store.connection.execute(
-        'SELECT batch_json FROM assurance_disclosure_batches WHERE review_key=? ORDER BY batch_no', (review_key,))]
+def batches(store, review_key):  # type: ignore[no-untyped-def]
+    return [decode(r["batch_json"]) for r in store.connection.execute(
+        "SELECT batch_json FROM assurance_disclosure_batches WHERE review_key=? ORDER BY batch_no", (review_key,))]
 
 
-def gateway_records(rt):
-    return [{'tool': r['tool'], 'outcome': r.get('outcome'), 'error_code': r.get('error_code'), 'view': r['view'],
-             'attempt_id': r['attempt_id'], 'review_key': r.get('review_key')} for r in rt.gateway.calls]
+async def complete_read(root, report) -> None:  # type: ignore[no-untyped-def]
+    provider = StepReviewer({"TASK_CONTENT": [
+        ("assurance_find_evidence", {"query": "sources/notes/"}),
+        lambda request, data: ("assurance_read_evidence", {"label": find_label(request, EXTRA[0])}),
+        lambda request, data: ("assurance_read_evidence", {"label": find_label(request, SECOND[0])}),
+        lambda request, data: cite(data, read_labels(request)),
+    ]})
+    async with reviewed_mission(root, provider, sources=(EXTRA, SECOND)) as case:
+        mission = await case.settle()
+        assert str(mission.status.value) == "COMPLETED", mission.final_report
+        store = case.store
+        review_key = review_key_of(store, case.mission_id, "TASK_CONTENT")
+        chain = batches(store, review_key)
+        assert [b["batch_no"] for b in chain] == [0, 1], chain
+        labels = [e["label"] for e in chain[1]["entries"]]
+        assert len(labels) == 2, chain[1]
+        visible = chain[1]["visible_message_ids"]
+        assert len(visible) == 2 and list(visible) == sorted(visible), visible  # a set, whatever the request order
+        record = store.connection.execute(
+            "SELECT record_id, verdict FROM review_records WHERE mission_id=? AND official=1 AND purpose='TASK_CONTENT'",
+            (case.mission_id,)).fetchone()
+        assert record is not None and str(record["verdict"]).endswith("ACCEPT"), record
+        before = len(chain)
+        for _ in range(2):
+            await case.world.drain(timeout=5)
+        report["task_content_complete_read"] = {
+            "review_key": review_key, "provider_calls": provider.review_calls["TASK_CONTENT"],
+            "batches": [{"batch_no": b["batch_no"], "labels": [e["label"] for e in b["entries"]],
+                         "visible_messages": len(b["visible_message_ids"])} for b in chain],
+            "appended_label": labels[0], "appended_labels": labels, "record_id": str(record["record_id"]),
+            "verdict": str(record["verdict"]), "replay_added_batch": len(batches(store, review_key)) != before}
 
 
-async def task_content_complete(root, report):
-    """find -> binary refused -> unknown label refused -> complete read -> verdict cites it."""
-    script = [('assurance_find_evidence', {'query': 'source'}),
-              lambda req: ('assurance_read_evidence', {'label': find_label(req, BINARY_PATH)}),
-              ('assurance_read_evidence', {'label': UNKNOWN_LABEL}),
-              lambda req: ('assurance_read_evidence', {'label': find_label(req, EXTRA_PATH)}),
-              lambda req: reply(['criterion-report'], read_label(req))]
-    async with AssuredRuntime(root, [], provider_class=ToolScriptProvider) as rt:
-        rt.provider.script[:] = script
-        refs = register_sources(rt)
-        store = rt.store
-        verdict, record = await rt.run_critic()
-        assert verdict.passed, verdict
-        assert rt.provider.calls == 5, rt.provider.calls
-        review_key = review_key_of(rt, 'TASK_CONTENT')
-        extra_label = evidence_label(review_key, refs[EXTRA_PATH])
-        # Gateway pipeline: bound to exactly the two tools, verify view, real Attempt id
-        # for audit attribution only, no workspace touched, refusals audited by code.
-        records = gateway_records(rt)
-        assert [r['tool'] for r in records] == ['assurance_find_evidence', 'assurance_read_evidence',
-                                                'assurance_read_evidence', 'assurance_read_evidence'], records
-        assert [r['outcome'] for r in records] == ['succeeded', 'rejected:evidence_refused',
-                                                   'rejected:evidence_refused', 'succeeded'], records
-        assert records[1]['error_code'] == 'REVIEW_MATERIAL_CODEC_UNSUPPORTED', records[1]
-        assert records[2]['error_code'] == 'EVIDENCE_LABEL_UNKNOWN', records[2]
-        assert all(r['view'] == 'verify' and r['review_key'] == review_key
-                   and r['attempt_id'] == rt.stored.envelope.attempt_id for r in records), records
-        assert not list((rt.root / 'seam-workspaces').glob('*')), 'no Attempt workspace may be created'
-        # Exposure chain: batch 0 = frozen initial materials, batch 1 = the complete read
-        # that the final actual Provider request contained (the listing and the two
-        # refusals disclose nothing).
-        chain = batches(rt, review_key)
-        assert [b['batch_no'] for b in chain] == [0, 1], chain
-        assert [e['label'] for e in chain[1]['entries']] == [extra_label], chain[1]
-        assert chain[1]['previous_batch_hash'] is not None and len(chain[1]['visible_message_ids']) == 1
-        assert chain[0]['provider_input_hash'] == chain[1]['provider_input_hash']
-        assert chain[1]['reviewer_agent_id'] == chain[0]['reviewer_agent_id']
-        # The pinned read left a live review-key pin for the appended blob.
-        pin = store.connection.execute('SELECT state FROM assurance_blob_pins WHERE review_key=? AND blob_hash=?',
-                                       (review_key, refs[EXTRA_PATH].pin.content_hash)).fetchone()
-        assert pin is not None and pin['state'] in {'PREPARING', 'BOUND'}, pin
-        # The official importer consumed the appended label: catalogue ∪ chain, exposed set.
-        intent = rt.invocation_intent(review_key)
-        with store.read_view():
-            record_row = store.connection.execute(
-                "SELECT commit_id, receipt_json FROM commit_receipts WHERE kind='AssuranceReviewClassified' AND json_extract(receipt_json,'$.review_key')=?",
-                (review_key,)).fetchone()
-            classification = decode(record_row['receipt_json'])
-            assert classification['classification'] == 'READY_FOR_CURRENT_REVIEW', classification
-            from agent_orchestrator.storage.assurance_reads import AssuranceReader
-            reader = AssuranceReader(store, tenant_id=TENANT, mission_id=rt.mission.id)
-            classification_ref = AssuranceRef('commit_receipt', Pin(record_row['commit_id'], 0, fingerprint(classification)))
-            imported = read_imported_review_locked(rt.commit, reader, classification_ref)
-            assert extra_label in imported.exposed, sorted(imported.exposed)
-            assert any(e.label == extra_label for e in imported.catalogue)
-            assert [b.batch_no for b in imported.disclosures] == [0, 1], imported.disclosures
-        assert record.verdict is ReviewVerdict.ACCEPT and not rt.pump.rejections, rt.pump.rejections
-        # Replaying the original collector on the same turn adds no batch.
-        await collect_assurance_review(rt.orch, intent)
-        assert [b['batch_no'] for b in batches(rt, review_key)] == [0, 1]
-        report['task_content_complete_read'] = {
-            'review_key': review_key, 'provider_calls': rt.provider.calls, 'gateway_calls': records,
-            'batches': [{'batch_no': b['batch_no'], 'labels': [e['label'] for e in b['entries']],
-                         'visible_messages': len(b['visible_message_ids'])} for b in chain],
-            'appended_label': extra_label, 'record_id': str(record.record_id), 'verdict': str(record.verdict),
-            'replay_added_batch': False}
-
-
-async def task_content_partial(root, report, *, second_reply_fixed=False):
-    """A partial page (complete=false) never discloses: citing it is UNEXPOSED_EVIDENCE.
-
-    2026-09-26: that is the reviewer's own mistake in its reply, so the first one gets
-    the single second invocation a malformed reply gets, told what was wrong.  A
-    second reply that cites it again is final; one that fixes it is imported.
-    """
+async def partial_read(root, report) -> None:  # type: ignore[no-untyped-def]
     seen = {}
 
-    def cite_partial(req):
-        seen['label'] = read_label(req)
-        return reply(['criterion-report'], seen['label'])
+    def cite_partial(request, data):  # type: ignore[no-untyped-def]
+        [page] = [value for value in tool_values(request, "assurance_read_evidence")]
+        assert page["complete"] is False and page["disclosure"] == "PARTIAL_NOT_CITABLE", page
+        seen["label"], seen["page"] = page["label"], page["content"]
+        return cite(data, [page["label"]])
 
-    script = [('assurance_find_evidence', {}),
-              lambda req: ('assurance_read_evidence', {'label': find_label(req, EXTRA_PATH), 'offset': 2, 'max_chars': 4}),
-              cite_partial,
-              (lambda req: json.dumps(ACCEPT_NO_EVIDENCE, ensure_ascii=False)) if second_reply_fixed
-              else (lambda req: reply(['criterion-report'], seen['label']))]
-    async with AssuredRuntime(root, [], provider_class=ToolScriptProvider) as rt:
-        rt.provider.script[:] = script
-        register_sources(rt)
-        store = rt.store
-        outcome = None
-        try:
-            verdict, record = await rt.run_critic()
-        except Exception as error:  # the runner reports the durable rejection
-            outcome = str(error)
-        review_key = review_key_of(rt, 'TASK_CONTENT')
-        reads = [json.loads(m.content)['value'] for request in rt.provider.requests for m in request.messages
-                 if m.role is MessageRole.TOOL and m.name == 'assurance_read_evidence']
-        assert reads and reads[0]['complete'] is False and reads[0]['disclosure'] == 'PARTIAL_NOT_CITABLE', reads
-        assert reads[0]['next_offset'] == 6 and reads[0]['content'] == EXTRA_BODY.decode()[2:6], reads
-        assert 'offset=0' in reads[0]['complete_read_hint'], reads
-        assert all(e['label'] != seen['label'] for b in batches(rt, review_key) for e in b['entries']), \
-            'partial read must not be disclosed'
+    provider = StepReviewer({"TASK_CONTENT": [
+        ("assurance_find_evidence", {}),
+        lambda request, data: ("assurance_read_evidence", {"label": find_label(request, EXTRA[0]), "offset": 2,
+                                                           "max_chars": 4}),
+        cite_partial,
+        lambda request, data: cite(data, [seen["label"]]),
+    ]})
+    async with reviewed_mission(root, provider, sources=(EXTRA, SECOND)) as case:
+        await case.run_until(provider.repair_asked.is_set, timeout=60)
+        store = case.store
+        review_key = review_key_of(store, case.mission_id, "TASK_CONTENT")
+        chain = batches(store, review_key)
+        # 那一页从来没有被披露（每次调用的初始材料各成一批，但页面标签不在任何一批里）。
+        disclosed = any(e["label"] == seen["label"] for b in chain for e in b["entries"])
+        assert not disclosed, chain
         repair = store.connection.execute(
-            "SELECT json_extract(receipt_json,'$.error_code') FROM commit_receipts "
-            "WHERE kind='AssuranceReviewInterpretationRejected' AND json_extract(receipt_json,'$.review_key')=?",
+            "SELECT json_extract(receipt_json,'$.error_code') FROM commit_receipts WHERE kind="
+            "'AssuranceReviewInterpretationRejected' AND json_extract(receipt_json,'$.review_key')=?",
             (review_key,)).fetchone()
-        assert repair is not None and repair[0] == 'UNEXPOSED_EVIDENCE', repair
+        assert repair is not None and repair[0] == "UNEXPOSED_EVIDENCE", repair
         ordinals = [r[0] for r in store.connection.execute(
-            'SELECT ordinal FROM assurance_review_invocations WHERE review_key=? ORDER BY ordinal', (review_key,))]
+            "SELECT ordinal FROM assurance_review_invocations WHERE review_key=? ORDER BY ordinal", (review_key,))]
         assert ordinals == [1, 2], ordinals
-        told = [m.content for request in rt.provider.requests for m in request.messages
-                if m.role is MessageRole.USER and 'format_feedback' in m.content]
-        assert told and 'UNEXPOSED_EVIDENCE' in told[-1] and 'complete=true' in told[-1], told
         reason = store.connection.execute(
-            "SELECT json_extract(receipt_json,'$.reason') FROM commit_receipts WHERE kind='AssuranceReviewImportRejected' AND subject_id=?",
-            (review_key,)).fetchone()
-        if second_reply_fixed:
-            assert outcome is None and reason is None, (outcome, reason)
-            assert verdict.passed and record.verdict is ReviewVerdict.ACCEPT, (verdict, record)
-            report['task_content_partial_then_fixed'] = {'review_key': review_key, 'invocations': ordinals,
-                                                         'verdict': str(record.verdict)}
-            return
-        assert reason is not None and reason[0] == 'UNEXPOSED_EVIDENCE', (reason, outcome)
-        assert outcome is not None and 'AssuranceReviewImportRejected' in outcome, outcome
-        with store.read_view():
-            assert rt.runner.task_record(rt.mission.id, rt.stored.envelope.attempt_id) is None
-        report['task_content_partial_read'] = {'review_key': review_key, 'batches': [0], 'rejection': reason[0],
-                                               'invocations': ordinals, 'runner_outcome': outcome,
-                                               'page': reads[0]['content']}
+            "SELECT json_extract(receipt_json,'$.reason') FROM commit_receipts WHERE kind="
+            "'AssuranceReviewImportRejected' AND subject_id=?", (review_key,)).fetchone()
+        assert reason is not None and reason[0] == "UNEXPOSED_EVIDENCE", reason
+        assert count(store, "SELECT COUNT(*) FROM acceptances WHERE mission_id=?", case.mission_id) == 0
+        report["task_content_partial_read"] = {"review_key": review_key, "partial_label_disclosed": disclosed,
+                                               "batches": [b["batch_no"] for b in chain], "rejection": reason[0],
+                                               "invocations": ordinals, "page": seen["page"]}
 
 
-async def mission_final_no_attempt(root, report):
-    """The root (MISSION_FINAL) reviewer reads through the same tools with no Attempt at all."""
-    script = [('assurance_find_evidence', {'query': 'notes/'}),
-              lambda req: ('assurance_read_evidence', {'label': find_label(req, EXTRA_PATH)}),
-              lambda req: reply(['criterion-report'], read_label(req))]
-    leaf_reply = json.dumps({'schema_version': 2, 'verdict': 'ACCEPT', 'assessments': [
-        {'criterion_id': 'criterion-report', 'verdict': 'PASS', 'evidence_ids': [], 'reason': 'leaf', 'limitations': []}],
-        'findings': []})
-    async with AssuredRuntime(root, [], content_only=True, provider_class=ToolScriptProvider) as rt:
-        # The root can only be cut once the leaf outcome is accepted (as in the
-        # purpose-builders seam); that leaf review uses no tools here.
-        rt.provider.script[:] = [leaf_reply]
-        verdict, record = await rt.run_critic()
-        assert verdict.passed
-        rt.record_critic_layer(record)
-        rt.settle_fixture_worker()
-        assert rt.accept_now().accepted_result_id == rt.stored.envelope.id
-        assert not rt.gateway.calls
-        rt.provider.script[:] = script
-        refs = register_sources(rt)
-        store, commit, mission = rt.store, rt.commit, rt.mission
-        req = HtnStore(store).get_requirements_revision(mission.id, 1)
-        commit.approve_assurance_check_policy(tenant_id=TENANT, mission_id=mission.id,
-            command_id='fixture-mission-final-policy', principal=Principal('fixture-authenticated-user'),
-            requirements_ref=requirements_ref(req), completion_scope=rt.scope_ref, purpose='MISSION_FINAL',
-            candidate_mapping=(CriterionPolicy('criterion-report', 'SEMANTIC', ()),))
-        dispatch = HierarchicalDispatch(store, commit)
-        coordinator = RootReviewCoordinator(store, commit, dispatch, scope_id='mission', issued_by='runner-fixture',
-                                            max_cuts_per_revision=2)
-        package = coordinator.cut(mission.id, now_ms=int(store.now * 1000))
-        asked = await rt.orch._ask_root_reviewer(mission, coordinator, package)
-        assert asked is True, rt.notes
-        review_key = review_key_of(rt, 'MISSION_FINAL')
-        await rt.drive_review(review_key)
-        assert rt.provider.calls == 4 and not rt.pump.rejections, (rt.provider.calls, rt.pump.rejections)
-        records = gateway_records(rt)
-        assert [r['outcome'] for r in records] == ['succeeded', 'succeeded'], records
-        assert all(r['attempt_id'] == '' and r['view'] == 'verify' and r['review_key'] == review_key for r in records), records
-        assert not list((rt.root / 'seam-workspaces').glob('*')), 'the root review must not fake an Attempt'
-        extra_label = evidence_label(review_key, refs[EXTRA_PATH])
-        chain = batches(rt, review_key)
-        assert [b['batch_no'] for b in chain] == [0, 1] and [e['label'] for e in chain[1]['entries']] == [extra_label], chain
-        with store.read_view():
-            record = HtnStore(store).official_review_record(str(package.package_id))
-            assert record is not None and record.verdict is ReviewVerdict.ACCEPT and str(record.purpose) == 'MISSION_FINAL', record
-        assert coordinator.state(mission.id).status is RootReviewStatus.READY
-        intent = rt.invocation_intent(review_key)
-        assert tuple(intent.config['agent_config']['tool_names']) == ASSURANCE_EVIDENCE_TOOLS
-        report['mission_final_no_attempt'] = {'review_key': review_key, 'gateway_calls': records,
-                                              'appended_label': extra_label, 'record_id': str(record.record_id),
-                                              'root_state': str(coordinator.state(mission.id).status)}
+async def mission_final(root, report) -> None:  # type: ignore[no-untyped-def]
+    provider = StepReviewer({"MISSION_FINAL": [
+        ("assurance_find_evidence", {"query": "sources/notes/"}),
+        lambda request, data: ("assurance_read_evidence", {"label": find_label(request, EXTRA[0])}),
+        lambda request, data: cite(data, read_labels(request)),
+    ]})
+    async with reviewed_mission(root, provider, sources=(EXTRA, SECOND)) as case:
+        mission = await case.settle()
+        assert str(mission.status.value) == "COMPLETED", mission.final_report
+        store = case.store
+        review_key = review_key_of(store, case.mission_id, "MISSION_FINAL")
+        chain = batches(store, review_key)
+        assert [b["batch_no"] for b in chain] == [0, 1], chain
+        record = store.connection.execute(
+            "SELECT record_id FROM review_records WHERE mission_id=? AND official=1 AND purpose='MISSION_FINAL'",
+            (case.mission_id,)).fetchone()
+        assert record is not None
+        report["mission_final_no_attempt"] = {"review_key": review_key, "record_id": str(record["record_id"]),
+                                              "appended_label": chain[1]["entries"][0]["label"]}
 
 
-async def main():
-    report = {'scope': 'BW06: assured reviewer template carries assurance_find_evidence/assurance_read_evidence; '
-                       '_bind_critic assured branch -> original WorkspaceToolGateway pipeline (no Attempt workspace, '
-                       'none fabricated for the root review) -> current authority + review-key pin + byte-exact read -> '
-                       'complete UTF-8 read in the final actual Provider request -> disclosure batch 1 -> official '
-                       'importer cites it; partial page/listing/binary refusal/unknown label disclose nothing; collector '
-                       'replay adds no batch. Fixture routing/ACL/lease/single-consumer pump; not a real model, '
-                       'four-consumer deployment, Host or UI.'}
-    with TemporaryDirectory(prefix='assurance-evidence-tools-') as temp:
-        root = Path(temp).resolve()
-        await task_content_complete(root / 'complete', report)
-        await task_content_partial(root / 'partial', report)
-        await task_content_partial(root / 'partial-fixed', report, second_reply_fixed=True)
-        await mission_final_no_attempt(root / 'final', report)
-    report['sources_sha256'] = source_sha256(['verification/reviewer_evidence_tools.py', 'runtime/tool_gateway.py',
-                                              'assurance/review_input.py', 'orchestrator/assurance_review_collect.py',
-                                              'orchestrator/assurance_review_runtime.py',
-                                              'orchestrator/assurance_review_handoff.py',
-                                              'orchestrator/event_handler.py'])
-    report['finished_at'] = datetime.now(timezone.utc).isoformat()
-    out = EVIDENCE / 'evidence-tools-seam.json'
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-    print('PASS', out)
+async def main() -> None:
+    quick()
+    report = {"status": "PASS",
+              "scope": "product deployment, real main loop, user-attached sources: reviewer evidence tools -> "
+                       "complete reads disclosed as batch 1 and citable; a partial page never disclosed "
+                       "(UNEXPOSED_EVIDENCE after one repair); the final review reads with no Attempt. Scripted "
+                       "model replies only; not a real model, Host or UI."}
+    with TemporaryDirectory(prefix="assurance-evidence-tools-") as temp:
+        root = Path(temp)
+        await complete_read(root / "complete", report)
+        await partial_read(root / "partial", report)
+        await mission_final(root / "final", report)
+    report["sources_sha256"] = source_sha256(["verification/reviewer_evidence_tools.py", "runtime/tool_gateway.py",
+                                              "assurance/review_input.py", "orchestrator/assurance_review_collect.py"])
+    write_report("evidence-tools-seam", report)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

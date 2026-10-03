@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -17,19 +18,17 @@ from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     ENABLED_DECISIONS,
     EvidenceQuestionV1,
-    PLANNING_DECISION_V1,
     RequestEvidenceDecision,
 )
 from agent_orchestrator.contracts.semantic_base import VersionedRef
 from agent_orchestrator.knowledge.predicates import PredicateRegistry, PredicateSignature
-from agent_orchestrator.orchestrator.planning_protocol_binding import bind_planning_protocol
 from agent_orchestrator.planning.htn.applicability import ApplicabilityStatus
 from agent_orchestrator.planning.htn.method_selection import (
     validate_evidence_request,
 )
 from agent_orchestrator.planning.htn.planner_package import MethodApplicability
 
-from test_htn_end_to_end import build_world  # noqa: E402
+from h1i_seed import seeded  # noqa: E402
 
 
 def test_request_evidence_is_an_enabled_decision() -> None:
@@ -124,32 +123,38 @@ def test_h3_real_hierarchical_dispatch_lists_zero_one_and_many_candidates(tmp_pa
     """The production dispatch adapter feeds one frozen report set into the filter.
 
     2026-10-01 HTN 精简片 A：程序不再代选做法（单候选直接选的路由已删），这里只钉
-    "派发层把报告集如实过滤、排序后交给规划器"。
+    "派发层把报告集如实过滤、排序后交给规划器"。任务是产品同形部署建出、刚开始规划的那个
+    （h1i_seed）；报告集由用例给出（零、一、多个候选）。
     """
 
-    world = build_world(tmp_path, key="h3-selection-dispatch")
-    bind_planning_protocol(world.store, world.mission.id, PLANNING_DECISION_V1)
-    occurrence_id = str(world.network().occurrences[0].occurrence_id)
-    method_a = MethodRef("h3.method-a", 1, "a" * 64)
-    method_b = MethodRef("h3.method-b", 1, "b" * 64)
+    async def case() -> None:
+        async with seeded(tmp_path, key="h3-selection-dispatch") as seed:
+            network = seed.dispatch.seed_network(seed.mission.id)
+            root = network.occurrences[0]
+            occurrence_id = str(root.occurrence_id)
+            signature = str(network.binding_for_occurrence(root.occurrence_id).goal_signature.signature_id)
+            method_a = MethodRef("h3.method-a", 1, "a" * 64)
+            method_b = MethodRef("h3.method-b", 1, "b" * 64)
 
-    def report(reference: MethodRef) -> MethodApplicability:
-        return MethodApplicability(
-            goal_occurrence_id=occurrence_id,
-            goal_signature_id="plan.goal",
-            method_ref=reference,
-            report=ApplicabilityStatus.APPLICABLE,
-        )
+            def report(reference: MethodRef) -> MethodApplicability:
+                return MethodApplicability(
+                    goal_occurrence_id=occurrence_id,
+                    goal_signature_id=signature,
+                    method_ref=reference,
+                    report=ApplicabilityStatus.APPLICABLE,
+                )
 
-    zero = world.dispatch.method_candidates(world.mission.id, reports=())
-    one = world.dispatch.method_candidates(world.mission.id, reports=(report(method_a),))
-    many = world.dispatch.method_candidates(
-        world.mission.id, reports=(report(method_b), report(method_a))
-    )
+            zero = seed.dispatch.method_candidates(seed.mission.id, reports=())
+            one = seed.dispatch.method_candidates(seed.mission.id, reports=(report(method_a),))
+            many = seed.dispatch.method_candidates(
+                seed.mission.id, reports=(report(method_b), report(method_a))
+            )
 
-    assert zero[occurrence_id].applicable == ()
-    assert [item.method_id for item in one[occurrence_id].applicable] == ["h3.method-a"]
-    assert [item.method_id for item in many[occurrence_id].applicable] == [
-        "h3.method-a",
-        "h3.method-b",
-    ]
+            assert zero[occurrence_id].applicable == ()
+            assert [item.method_id for item in one[occurrence_id].applicable] == ["h3.method-a"]
+            assert [item.method_id for item in many[occurrence_id].applicable] == [
+                "h3.method-a",
+                "h3.method-b",
+            ]
+
+    asyncio.run(case())

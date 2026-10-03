@@ -3,20 +3,17 @@
 # ruff: noqa: E501
 
 """Step 6 · code review round 1 dispositions (reports/code-review-round1.md): one
-decisive test per P0/P1 fix and for the P2 fixes that changed behaviour."""
+decisive test per P0/P1 fix and for the P2 fixes that changed behaviour.
+
+HTN 补齐阶段 A′（2026-10-03）：P1-6（未知用量占着的预留可见、上时间线）原用 ``leaf_world``
+手工建尝试、手写未知用量，改由产品同形主循环守：``p35/test_provider_accounting_loop.py``
+``test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout``（调用失败的几种
+情形里 ``ReservationHeld`` 恰好一条、预留数与收尾按上限计入的数一致）。"""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "full_target"))
-
-from leaf_world import drive_to_running, leaf_world  # noqa: E402
-
-from agent_orchestrator.governance.budgets import UsageFact
 from agent_orchestrator.runtime.model_router import (
     ModelRouter,
     RoutingRules,
@@ -24,29 +21,6 @@ from agent_orchestrator.runtime.model_router import (
     RuntimeProfile,
     classify_turn_error,
 )
-
-
-# ------------------------------------------------------------------ P1-6 held reservations
-def test_p1_6_a_reservation_held_by_an_unknown_charge_is_listed_and_on_the_timeline(tmp_path):
-    world = leaf_world(tmp_path, key="p1-6")
-    service, mission, t = world.service, world.mission, {"A": world.tasks["a"]}
-    attempt = drive_to_running(service, t["A"])
-    with service.store.transaction():
-        service.ledger.import_usage(
-            subject_id=attempt.id,
-            mission_id=mission.id,
-            facts=[UsageFact("u-1", 10, 5, None, unknown=True)],
-        )
-        report = service.ledger.costs_report(mission.id)
-    assert [r["subject_id"] for r in report["held_reservations"]] == [attempt.id]
-    first = service.record_reservation_held(
-        attempt.id, mission.id, task_id=t["A"].id, reason="unknown_usage"
-    )
-    again = service.record_reservation_held(
-        attempt.id, mission.id, task_id=t["A"].id, reason="unknown_usage"
-    )
-    assert first.id == again.id and service.store.count_events(mission.id, "ReservationHeld") == 1
-    assert first.payload["reserved_tokens"] == 4_000
 
 
 # ------------------------------------------------------------------ P2-1 / P2-3 routing details

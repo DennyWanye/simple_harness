@@ -87,100 +87,66 @@ def test_intent_schema_requires_exact_integer(schema):
 
 @pytest.mark.parametrize("mutation", [None, "tenant", "acceptance-hash", "dirty", "slot"])
 def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path, mutation):
-    from test_scoped_content_commit import _mixed_world
+    """2026-10-03 迁到产品同形世界：内容那一步由产品主循环真跑、真验收（准备好的 MIXED 范围数据），
+    跑到系统备好申请单、等人批准那一刻。来源解析认这份真实的准备验收；租户不对、验收哈希不对、
+    验收已被标脏（计划提交在依据变化时写的同一个标记）、完成槽位不是批准的那个，一律拒绝且不写。"""
 
-    from agent_orchestrator.artifacts.store import ArtifactStore
+    import asyncio
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from publish_world import TARGET, publishing
+
     from agent_orchestrator.contracts.semantic_base import content_hash_of
-    from agent_orchestrator.governance.permissions import Principal
     from agent_orchestrator.orchestrator.operation_intent_sources import (
         OperationIntentSourceError,
         prepare_operation_intent_sources,
     )
     from agent_orchestrator.storage.htn_store import HtnStore
 
-    world, _, approved, task, result, artifact = _mixed_world(tmp_path, with_output=True)
-    htn = HtnStore(world.store)
-    acceptance = htn.list_acceptances(world.mission.id)[0]
-    wire = _wire() | {
-        "mission_id": world.mission.id,
-        "candidate_artifact_ref": TypedRef(
-            TypedRefKind.ARTIFACT,
-            artifact.id,
-            artifact.version,
-            artifact.content_hash,
-            Provenance.TOOL,
-        ).to_json(),
-        "prepared_acceptance_refs": [
-            TypedRef(
-                TypedRefKind.ACCEPTANCE,
-                str(acceptance.acceptance_id),
-                1,
-                content_hash_of(acceptance.to_json()),
-                Provenance.TOOL,
-            ).to_json()
-        ],
-        "completion_slot": {"spec_hash": approved.spec_hash, "effect_key": "send-report"},
-    }
-    from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
+    async def run() -> None:
+        async with publishing(tmp_path) as case:
+            await case.until_approval()
+            store = case.store
+            htn = HtnStore(store)
+            [acceptance] = htn.list_acceptances(case.mission_id)
+            [artifact] = [a for a in store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
+            spec_hash = store.connection.execute(
+                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?", (case.mission_id,)).fetchone()[0]
+            wire = _wire() | {
+                "mission_id": case.mission_id,
+                "candidate_artifact_ref": TypedRef(TypedRefKind.ARTIFACT, artifact.id, artifact.version,
+                                                   artifact.content_hash, Provenance.TOOL).to_json(),
+                "prepared_acceptance_refs": [TypedRef(TypedRefKind.ACCEPTANCE, str(acceptance.acceptance_id), 1,
+                                                      content_hash_of(acceptance.to_json()), Provenance.TOOL).to_json()],
+                "completion_slot": {"spec_hash": spec_hash, "effect_key": "publish-weekly"},
+            }
+            command = SubmitOperationIntentV2.from_json(wire)
+            tenant = case.world.deployment.tenant_id
+            if mutation == "tenant":
+                tenant = "other-tenant"
+            elif mutation == "acceptance-hash":
+                command = dataclasses.replace(command, prepared_acceptance_refs=(dataclasses.replace(
+                    command.prepared_acceptance_refs[0], content_hash=HASH_A),))
+            elif mutation == "dirty":
+                htn.mark_dirty(case.mission_id, subject_kind="acceptance", subject_id=str(acceptance.acceptance_id),
+                               scope_id="mission", epoch=1, reason="actual support changed")
+            elif mutation == "slot":
+                command = dataclasses.replace(command, completion_slot=dataclasses.replace(
+                    command.completion_slot, effect_key="unapproved-effect"))
+            cas = case.world.loop.assembled.workspaces.artifact_store
+            principal = case.world.deployment.principal
+            before = store.connection.total_changes
+            if mutation is not None:
+                with pytest.raises(OperationIntentSourceError):
+                    prepare_operation_intent_sources(store, cas, command, tenant_id=tenant, principal=principal)
+            else:
+                sources = prepare_operation_intent_sources(store, cas, command, tenant_id=tenant, principal=principal)
+                [leaf] = [t for t in store.list_tasks(case.mission_id) if t.accepted_result_id]
+                assert sources.producer_result.envelope.id == leaf.accepted_result_id
+                assert sources.producer_scope.task_ref.id == leaf.id
+                assert sources.raw_candidate_bytes == cas.read(artifact.content_hash)
+            assert store.connection.total_changes == before
 
-    spec_row = OperationCompletionStore(world.store).get_spec_exact(
-        world.mission.id,
-        acceptance.requirements_revision,
-        htn.get_requirements_revision(
-            world.mission.id, acceptance.requirements_revision
-        ).content_hash(),
-    )
-    wire["completion_slot"]["effect_key"] = spec_row["document"].effects[0].effect_key
-    command = SubmitOperationIntentV2.from_json(wire)
-    tenant = world.mission.tenant_id
-    if mutation == "tenant":
-        tenant = "other-tenant"
-    elif mutation == "acceptance-hash":
-        command = dataclasses.replace(
-            command,
-            prepared_acceptance_refs=(
-                dataclasses.replace(
-                    command.prepared_acceptance_refs[0],
-                    content_hash=HASH_A,
-                ),
-            ),
-        )
-    elif mutation == "dirty":
-        htn.mark_dirty(
-            world.mission.id,
-            subject_kind="acceptance",
-            subject_id=str(acceptance.acceptance_id),
-            scope_id="mission",
-            epoch=1,
-            reason="actual support changed",
-        )
-    elif mutation == "slot":
-        command = dataclasses.replace(
-            command,
-            completion_slot=dataclasses.replace(
-                command.completion_slot,
-                effect_key="unapproved-effect",
-            ),
-        )
-    before = world.store.connection.total_changes
-    if mutation is not None:
-        with pytest.raises(OperationIntentSourceError):
-            prepare_operation_intent_sources(
-                world.store,
-                ArtifactStore(tmp_path / "scoped-cas"),
-                command,
-                tenant_id=tenant,
-                principal=Principal("user"),
-            )
-    else:
-        sources = prepare_operation_intent_sources(
-            world.store,
-            ArtifactStore(tmp_path / "scoped-cas"),
-            command,
-            tenant_id=tenant,
-            principal=Principal("user"),
-        )
-        assert sources.producer_result.envelope.id == result.envelope.id
-        assert sources.producer_scope.task_ref.id == task.id
-        assert sources.raw_candidate_bytes == b'{"report":"verified local preparation"}\n'
-    assert world.store.connection.total_changes == before
+    asyncio.run(run())

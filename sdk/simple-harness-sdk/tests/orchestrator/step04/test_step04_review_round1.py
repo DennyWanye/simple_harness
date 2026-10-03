@@ -4,33 +4,26 @@
 
 """Step 4 · code review round 1 dispositions (journal §3): P0-1 / P1-2 a child budget
 inherits every Mission-bounded dimension, P1-3 / P1-4 one canonical workspace path for the untrusted-source rule, P1-5 a v1 library
-with duplicate artifact lineage rows still upgrades, P2-13 supersession keeps the record's
-version, real-run finding: SDK error payloads with tuples enter the formal record."""
+with duplicate artifact lineage rows still upgrades, real-run finding: SDK error payloads with
+tuples become plain JSON.
+
+HTN 补齐阶段 A′：P2-13"取代保留记录版本"那半条删除——产品里执行者声明到不了 VERIFIED，模型的
+``supersedes`` 一律被拒，没有任何一条路把知识标成已取代（主循环里的实际行为钉在
+``test_claims_knowledge_main_loop.py::test_a_model_cannot_supersede_verified_knowledge``）；
+"拒收结果时错误详情里的元组入库"那半条原来手工建尝试再拒收，删除，只留 ``jsonable`` 本身。"""
 
 from __future__ import annotations
 
 import sqlite3
 
-from knowledge_helpers import (
-    claim,
-    drive_to_running,
-    envelope,
-    passed_layers,
-    submit,
-    two_leaf_service,
-    verify_claims_citing_pytest,
-)
-
-from agent_orchestrator.governance.domains import CODE_PROFILE
 from agent_orchestrator.artifacts.paths import normalise_workspace_path, under_prefix
 from agent_orchestrator.contracts import Budget, ClaimStatus, jsonable
-from agent_orchestrator.memory.claims import grade_claim
 from agent_orchestrator.governance.budget_limits import inherit_limits
+from agent_orchestrator.governance.domains import CODE_PROFILE
+from agent_orchestrator.memory.claims import grade_claim
 from agent_orchestrator.runtime.tool_gateway import is_untrusted
 from agent_orchestrator.storage import schema
 from agent_orchestrator.storage.store import Store
-
-KEY = "impl_a.empty_input"
 
 
 # ------------------------------------------------------------------ P0-1 / P1-2
@@ -157,30 +150,8 @@ def test_v1_library_with_duplicate_lineage_rows_upgrades_and_renumbers(tmp_path)
     store.close()
 
 
-# ------------------------------------------------------------------ P2-13 / real-run finding
-def test_supersession_keeps_the_record_version_and_sdk_errors_are_jsonable(tmp_path, monkeypatch):
-    verify_claims_citing_pytest(monkeypatch)
-    service, mission, (t1, t2) = two_leaf_service(tmp_path)
-    a1 = drive_to_running(service, t1)
-    s1 = submit(
-        service,
-        a1,
-        envelope(a1, claims=[claim("v1", key="k", evidence=["pytest:tests/probe/test_impl_a.py"])]),
-    )
-    service.accept_result(
-        s1.envelope.id, verifier_results=passed_layers("tests/probe/test_impl_a.py")
-    )
-    old = service.store.list_knowledge(mission.id)[0]
-    service._supersede_knowledge(old.id, by="result-x:claim-9")
-    assert service.store.get_knowledge(old.id).version == old.version == 1
+# ------------------------------------------------------------------ real-run finding
+def test_sdk_error_payloads_with_tuples_are_jsonable():
     assert jsonable({"error": {"output_cap_escalations": (1, 2), "kinds": {"b", "a"}}}) == {
         "error": {"output_cap_escalations": [1, 2], "kinds": ["a", "b"]}
     }
-    b1 = drive_to_running(service, t2, agent="agent-2", turn="turn-2")
-    rejected = service.reject_result(
-        b1.id,
-        turn_id="turn-2",
-        reason="turn_failed",
-        detail={"error": {"output_cap_escalations": (4096, 8192)}},
-    )
-    assert rejected.failure["error"]["output_cap_escalations"] == [4096, 8192]

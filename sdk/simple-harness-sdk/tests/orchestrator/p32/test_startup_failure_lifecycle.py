@@ -9,15 +9,16 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from leaf_world import drive_to_running, leaf_world
+from h1i_seed import run_until
+from product_assembly import unstarted
 
 from agent_orchestrator.artifacts.workspace import WorkspaceCleanupIncomplete, WorkspaceManager
-from agent_orchestrator.governance.budgets import BudgetLedger, UsageFact
+from agent_orchestrator.governance.budgets import BudgetLedger
 from agent_orchestrator.orchestrator import event_handler
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import AssembledOrchestratorRuntime, OrchestratorConfig
-from agent_orchestrator.runtime.model_router import RuntimeProfile
+from agent_orchestrator.runtime.assembly import AssembledOrchestratorRuntime
 from agent_orchestrator.storage.store import Store
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 from simple_harness.agents.runtime import AgentRuntime
 
 
@@ -26,31 +27,36 @@ class NeverProvider:
         raise AssertionError("startup cleanup must not call a provider")
 
 
+async def _a_running_attempt(root) -> tuple[str, dict]:
+    """产品同形部署上跑到执行者的模型调用进行中（被扣住），然后停机：留下一次在途尝试和它的预留。"""
+
+    provider = LayeredScriptedProvider()
+    provider.held.add("worker")
+    try:
+        async with product_world(root, provider) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "g-1"})["mission_id"]
+            await run_until(world, provider.entered.is_set)
+            [attempt] = [attempt for task in world.store.list_tasks(mission_id)
+                         for attempt in world.store.list_attempts(task.id)]
+            reservation = world.loop.commit.ledger.reservation(attempt.id)
+            assert reservation is not None and reservation["state"] == "RESERVED"
+            return attempt.id, reservation
+    finally:
+        provider.release.set()
+
+
 @pytest.mark.parametrize("close_raises", [False, True])
-def test_sweep_failure_closes_all_pools_preserves_unknown_and_original_error(
+def test_sweep_failure_closes_all_pools_preserves_the_reservation_and_original_error(
     tmp_path, monkeypatch, close_raises
 ):
-    # 一个分层任务里的一个步骤：这里只需要一次正在进行的尝试和它的预留。
-    world = leaf_world(tmp_path, key="g-1", tenant_id="tenant-5")
-    commit, mission, tasks = world.service, world.mission, {"A": world.tasks["a"]}
-    attempt = drive_to_running(commit, tasks["A"])
-    with commit.store.transaction():
-        commit.ledger.import_usage(
-            subject_id=attempt.id,
-            mission_id=mission.id,
-            facts=[UsageFact("old-unknown-charge", 0, 0, None, unknown=True)],
-        )
-    reservation = commit.ledger.reservation(attempt.id)
-    assert reservation is not None and reservation["state"] == "RESERVED"
-    assert reservation["reserved_tokens"] == 4000
-    commit.store.close()
-    provider = NeverProvider()
-    orch = Orchestrator(
-        OrchestratorConfig(evidence_root=tmp_path),
-        profiles={
-            key: RuntimeProfile(key, provider, "fixture-model") for key in ("default", "other")
-        },
-    )
+    """重启时清理执行副本失败（磁盘上的副本删不掉）：编排服务带着原错误起不来，运行时从没启动，
+    所有执行池与库都关掉；上一次停机时在途尝试的预留原样保留（HTN 补齐阶段 A′：在途尝试由产品
+    同形部署真跑出来，不再手工建尝试、手记未知用量）。"""
+
+    root = tmp_path / "root"
+    attempt_id, reservation = asyncio.run(_a_running_attempt(root))
+    orch = unstarted(root, NeverProvider()).orchestrator
     error = WorkspaceCleanupIncomplete([{"status": "unknown", "identity": "retained"}])
     captured = {}
     original_assemble = event_handler.assemble_orchestrator_runtime
@@ -93,22 +99,20 @@ def test_sweep_failure_closes_all_pools_preserves_unknown_and_original_error(
     with pytest.raises(sqlite3.ProgrammingError):
         captured["store"].connection.execute("SELECT 1")
     pools = captured["assembled"].pools
-    assert len(pools) == 2
+    assert len(pools) == 2  # 部署的两个原生执行池（两档上下文尺寸）
     for pool in pools.values():
         runtime = pool.runtime._assembled
         assert not runtime.database.is_open
         assert not runtime.runtime._leases and not runtime.runtime._fences
-    reopened = Store.open(tmp_path / "orchestrator.db")
+    reopened = Store.open(root / "orchestrator.db")
     try:
-        ledger = BudgetLedger(reopened)
-        assert ledger.reservation(attempt.id) == reservation
-        assert ledger.has_unknown_usage(attempt.id)
+        assert BudgetLedger(reopened).reservation(attempt_id) == reservation
     finally:
         reopened.close()
 
 
 def test_exit_closes_store_even_when_pool_close_fails_and_second_exit_is_noop(tmp_path):
-    orch = Orchestrator(OrchestratorConfig(evidence_root=tmp_path), NeverProvider())
+    orch = unstarted(tmp_path / "root", NeverProvider()).orchestrator
     store = Store.open(tmp_path / "orchestrator.db")
     error = RuntimeError("pool close failed")
     close = AsyncMock(side_effect=error)

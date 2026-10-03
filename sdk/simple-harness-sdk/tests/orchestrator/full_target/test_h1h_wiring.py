@@ -26,11 +26,9 @@ from test_h1i_production_entry import _open_planner_round
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import PLANNING_DECISION_V1
-from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.storage.store import Store
 
 # Every round below is the real Orchestrator's on the product's deployment (``h1i_seed``):
 # the Planner intent and its request binding come from ``_create_planner_intent``, the
@@ -186,43 +184,38 @@ def test_only_a_codec_refusal_reuses_the_request_and_an_unbound_round_fails_clos
 def test_the_http_field_reaches_the_mission_spec_and_its_binding(tmp_path) -> None:
     """§8.1: the charter's protocol field is real behaviour, not a source string.
 
-    Driven through the same ``spec_from_request`` the HTTP door uses, then committed, so
-    the assertion is about the stored row rather than about the text of a module.
+    Driven through the same ``spec_from_request`` the HTTP door uses, then created through
+    the product deployment's authenticated facade (HTN 补齐阶段 A′：不再裸建 ``CommitService``),
+    so the assertion is about the stored row rather than about the text of a module.
     """
 
     from agent_orchestrator.api.missions import MissionRequestError, spec_from_request
     from agent_orchestrator.orchestrator.planning_protocol_binding import (
         planning_protocol_for_mission,
     )
+    from agent_orchestrator.testing.product_world import product_world
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-    store = Store.open(tmp_path / "orchestrator.db")
-    service = CommitService(store)
+    request = {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-new",
+               "planning_protocol_version": PLANNING_DECISION_V1}
+    assert spec_from_request("tenant", request).planning_protocol_version == PLANNING_DECISION_V1
 
-    enabled = spec_from_request(
-        "tenant",
-        {
-            "goal": "goal",
-            "success_criteria": ["done"],
-            "idempotency_key": "http-new",
-            "planning_protocol_version": PLANNING_DECISION_V1,
-        },
-    )
-    assert enabled.planning_protocol_version == PLANNING_DECISION_V1
-    mission, created = service.create_mission(enabled)
-    assert created
-    assert planning_protocol_for_mission(store, mission.id)["protocol_version"] == (
-        PLANNING_DECISION_V1
-    )
+    async def case() -> None:
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
+            store = world.store
+            created = world.control.create(request)
+            assert created["created"]
+            assert planning_protocol_for_mission(store, created["mission_id"])["protocol_version"] == (
+                PLANNING_DECISION_V1
+            )
+            # An omitted key is the same default.
+            default = world.control.create(
+                {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"})
+            assert planning_protocol_for_mission(store, default["mission_id"])["protocol_version"] == (
+                PLANNING_DECISION_V1
+            )
 
-    # An omitted key is the same default.
-    default = spec_from_request(
-        "tenant",
-        {"goal": "goal", "success_criteria": ["done"], "idempotency_key": "http-default"},
-    )
-    default_mission, _ = service.create_mission(default)
-    assert planning_protocol_for_mission(store, default_mission.id)["protocol_version"] == (
-        PLANNING_DECISION_V1
-    )
+    asyncio.run(case())
 
     # A present-but-unknown value is refused at the door, as a real error.
     with pytest.raises(MissionRequestError):

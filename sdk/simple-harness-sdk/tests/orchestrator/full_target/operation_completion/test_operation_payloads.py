@@ -1,4 +1,7 @@
-"""D2 payload codecs and CAS metadata use only real Store receipts and bytes."""
+"""D2 payload codecs and CAS metadata use only real Store receipts and bytes.
+
+2026-10-03（HTN 补齐阶段 A′）：存储那一条改在产品同形世界里读系统真写下的申请单载荷（系统按已批准
+效果准备申请单时，经提交收据写进载荷表与内容寻址存储），不再手插收据。"""
 
 from __future__ import annotations
 
@@ -31,11 +34,11 @@ from agent_orchestrator.runtime.operation_payloads import (
 from agent_orchestrator.storage.operation_payload_store import OperationPayloadStore
 from agent_orchestrator.storage.store import StoreConflict
 
-_FULL_TARGET = Path(__file__).resolve().parents[1]
-if str(_FULL_TARGET) not in sys.path:
-    sys.path.insert(0, str(_FULL_TARGET))
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
-from test_completion_spec_approval import _approval_world  # noqa: E402
+from publish_world import publishing  # noqa: E402
 
 _H = "a" * 64
 _H2 = "b" * 64
@@ -159,49 +162,45 @@ def test_d2_payload_rejects_wrong_typed_ref_and_duplicate_semantic_array() -> No
 
 
 def test_d2_payload_store_requires_same_mission_receipt_and_rechecks_cas(tmp_path) -> None:
-    world, _ = _approval_world(tmp_path)
-    payload = _parameters()
-    cas = ArtifactStore(tmp_path / "payload-cas")
-    writer = OperationPayloadStore(world.store)
-    with pytest.raises(StoreConflict, match="transaction"):
-        writer.put_payload(
-            mission_id=world.mission.id,
-            object_id="parameters-1",
-            kind=PayloadKind.PARAMETERS,
-            payload=payload,
-            source_receipt_id="not-a-receipt",
-            cas=cas,
-        )
-    with world.store.transaction():
-        world.store.insert_receipt(
-            commit_id="payload-source",
-            kind="operation_intent_submitted",
-            subject_id="intent-1",
-            base_version=None,
-            proposal_hash=_H,
-            receipt={"mission_id": world.mission.id, "kind": "operation_intent_submitted"},
-        )
-        ref = writer.put_payload(
-            mission_id=world.mission.id,
-            object_id="parameters-1",
-            kind=PayloadKind.PARAMETERS,
-            payload=payload,
-            source_receipt_id="payload-source",
-            cas=cas,
-        )
-    assert ref.kind is TypedRefKind.ARTIFACT and ref.revision == 1
-    assert (
-        writer.get_payload(
-            mission_id=world.mission.id, ref=ref, expected_kind=PayloadKind.PARAMETERS, cas=cas
-        ).payload
-        == payload
-    )
-    cas.path_for(ref.content_hash).chmod(0o600)
-    cas.path_for(ref.content_hash).write_bytes(b"corrupt")
-    with pytest.raises(StoreConflict, match="bytes"):
-        writer.get_payload(
-            mission_id=world.mission.id, ref=ref, expected_kind=PayloadKind.PARAMETERS, cas=cas
-        )
+    """系统写下的参数载荷能按引用读回；写入口只在调用方的事务里、只认本任务的来源收据；
+    内容寻址存储里的字节被改坏（外界真会发生的磁盘损坏）时读侧按名拒绝。"""
+
+    import asyncio
+
+    async def run() -> None:
+        async with publishing(tmp_path) as case:
+            await case.until_approval()
+            row = case.store.connection.execute(
+                "SELECT object_id, content_hash, storage_uri, source_receipt_id FROM operation_payload_objects "
+                "WHERE mission_id=? AND object_kind=?", (case.mission_id, str(PayloadKind.PARAMETERS))).fetchone()
+            assert row is not None
+            assert case.store.get_receipt(row["source_receipt_id"])["kind"] == "operation_intent_submitted"
+            ref = TypedRef(TypedRefKind.ARTIFACT, row["object_id"], 1, row["content_hash"])
+            cas = ArtifactStore(Path(row["storage_uri"]).parent.parent)
+            reader = OperationPayloadStore(case.store)
+            stored = reader.get_payload(mission_id=case.mission_id, ref=ref, expected_kind=PayloadKind.PARAMETERS,
+                                        cas=cas)
+            assert stored.payload.content_hash() == row["content_hash"]
+
+            payload = _parameters()
+            with pytest.raises(StoreConflict, match="transaction"):
+                reader.put_payload(mission_id=case.mission_id, object_id="parameters-x", kind=PayloadKind.PARAMETERS,
+                                   payload=payload, source_receipt_id=row["source_receipt_id"], cas=cas)
+            before = case.store.connection.total_changes
+            with pytest.raises(StoreConflict, match="source receipt"):
+                with case.store.transaction():
+                    reader.put_payload(mission_id=case.mission_id, object_id="parameters-x",
+                                       kind=PayloadKind.PARAMETERS, payload=payload,
+                                       source_receipt_id="not-a-receipt", cas=cas)
+            assert case.store.connection.total_changes == before
+
+            path = cas.path_for(ref.content_hash)
+            path.chmod(0o600)
+            path.write_bytes(b"corrupt")
+            with pytest.raises(StoreConflict, match="byte"):
+                reader.get_payload(mission_id=case.mission_id, ref=ref, expected_kind=PayloadKind.PARAMETERS, cas=cas)
+
+    asyncio.run(run())
 
 
 class _Adapter:

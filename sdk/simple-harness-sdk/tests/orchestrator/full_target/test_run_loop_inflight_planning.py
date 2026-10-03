@@ -10,90 +10,69 @@ budget in milliseconds with the runtime's turn tasks starved the whole time, the
 with the turn submitted and nobody to collect it.  The Mission stayed at PLANNING with
 no settlement and no stop.
 
-Asserted here on the current planning protocol: ``run()`` stays until a submitted
-planning intent is collected — however long the model takes (a held gate stands in for
-a sixty-second model call) — and the budget bounds *work*, not waiting.
+Asserted here on the product's deployment (HTN 补齐阶段 A′：产品同形世界，建任务即绑定执行图、
+保证通道、部署职责在两轮之间代签授权；只有模型回复是脚本）: ``run()`` stays until a
+submitted planning intent is collected — however long the model takes (the Planner's
+call is held, standing in for a sixty-second model call) — and the budget bounds *work*,
+not waiting.
 """
 
 from __future__ import annotations
 
 import asyncio
-import sys
-from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pytest
 
-_HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
-if str(_HTN_FIXTURES) not in sys.path:
-    sys.path.insert(0, str(_HTN_FIXTURES))
-
-import test_htn_end_to_end as e2e  # noqa: E402
-from decision_loop import auto_grant, refine_step  # noqa: E402
-
-from agent_orchestrator.contracts.models import MissionStatus  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 OPEN_INTENT_STATES = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
 
 
-def _open_plan_intents(loop: Orchestrator, mission_id: str) -> list[str]:
-    return sorted(
-        item.subject_id
-        for item in loop.store.list_intents(*OPEN_INTENT_STATES)
-        if item.kind == "plan" and item.mission_id == mission_id
-    )
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(
-    tmp_path,
-) -> None:
-    """The provider holds the Planner's call at a gate, so the round is "a slow real
-    model turn" for as long as the test says.  ``max_cycles`` is small on purpose: on a
-    loop that counts waiting as progress the budget is spent in milliseconds and
-    ``run()`` returns with the intent still SUBMITTED.
-    """
+def _open_plan_intents(loop: Any, mission_id: str) -> list[str]:
+    return sorted(item.subject_id for item in loop.store.list_intents(*OPEN_INTENT_STATES)
+                  if item.kind == "plan" and item.mission_id == mission_id)
 
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = e2e.build_world(evidence, key="p23e-run-exit-held")
-    world.store.close()
-    config = OrchestratorConfig(
-        evidence_root=evidence,
-        max_concurrency=3,
-        test_timeout_seconds=60,
-        max_planning_attempts=2,
-    )
-    gate = asyncio.Event()
-    provider = RoleScriptedProvider({"planner": [refine_step()]}, gate=gate)
+
+def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(tmp_path) -> None:
+    """``max_cycles`` is small on purpose: on a loop that counts waiting as progress the
+    budget is spent in milliseconds and ``run()`` returns with the intent still SUBMITTED."""
+
+    provider = LayeredScriptedProvider()
+    provider.held.add("planner")
 
     async def case() -> dict[str, Any]:
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.env.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.env)
-            auto_grant(loop)
-            mission_id = world.mission.id
-            # The fixture has already moved the Mission to PLANNING, so the round the
-            # loop would open on a CREATED Mission is opened here by the same call.
-            await loop._try_planner_intent(mission_id, ordinal=1)
+        async with product_world(tmp_path / "root", provider, max_concurrency=3, test_timeout_seconds=60,
+                                 max_planning_attempts=2) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md，列出三条要点", "idempotency_key": "p23e-run-exit-held",
+                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            loop = world.loop
+            # the loop itself opens the first round, the deployment grants it between cycles
             running = asyncio.create_task(loop.run(max_cycles=120))
+            await asyncio.wait_for(provider.entered.wait(), 10)
             # Long enough for a busy loop to burn 120 cycles many times over, short
             # enough that a waiting loop has only polled.
             await asyncio.sleep(1.0)
             held = {
                 "returned": running.done(),
                 "open": _open_plan_intents(loop, mission_id),
-                "calls_started": dict(provider.by_role),
+                "calls_started": provider.asked.count("planner"),
             }
-            gate.set()
-            # the plan commits and the loop moves on to the leaves; the planning round
-            # itself is what this test is about
-            for _ in range(400):
-                types = [item.type for item in loop.store.list_events(mission_id)]
-                if "PlanRevisionCommitted" in types or running.done():
+            provider.held.clear()
+            provider.release.set()
+            # the plan commits (proposal, its review, adoption) and the loop moves on to the
+            # leaves; the planning rounds themselves are what this test is about
+            for _ in range(500):
+                committed = any(item.type == "PlanRevisionCommitted" for item in loop.store.list_events(mission_id))
+                if (committed and not _open_plan_intents(loop, mission_id)) or running.done():
                     break
                 await asyncio.sleep(0.02)
             running.cancel()
@@ -101,23 +80,21 @@ def test_run_waits_for_an_inflight_planning_intent_however_slow_the_model_is(
                 await running
             except (asyncio.CancelledError, Exception):
                 pass
-            mission = loop.store.get_mission(mission_id)
             return {
+                "mission_id": mission_id,
                 "held": held,
                 "types": [item.type for item in loop.store.list_events(mission_id)],
                 "open": _open_plan_intents(loop, mission_id),
-                "status": None if mission is None else mission.status,
+                "status": str(loop.store.get_mission(mission_id).status.value),
             }
 
     outcome = asyncio.run(case())
     held = outcome["held"]
-    assert held["open"] == [f"{world.mission.id}:planner:1"], held
-    assert held["returned"] is False, (
-        f"run() returned while the planning intent was still in flight: {held}"
-    )
-    # A waiting loop yields; the runtime's turn task reaches the provider and holds at
-    # the gate — a starved loop never lets it start.
-    assert held["calls_started"].get("planner") == 1, held
+    assert held["open"] == [f"{outcome['mission_id']}:planner:1"], held
+    assert held["returned"] is False, f"run() returned while the planning intent was still in flight: {held}"
+    # A waiting loop yields; the runtime's turn task reaches the provider and holds there —
+    # a starved loop never lets it start.
+    assert held["calls_started"] == 1, held
     assert outcome["open"] == [], f"an intent was left in flight: {outcome}"
     assert "PlanRevisionCommitted" in outcome["types"], outcome["types"]
-    assert outcome["status"] is not MissionStatus.PLANNING, outcome["status"]
+    assert outcome["status"] != "PLANNING", outcome["status"]

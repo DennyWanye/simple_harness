@@ -130,32 +130,40 @@ def test_a_refused_native_decision_is_not_repeated():
     assert infrastructure_retry(selection) is None
 
 
-def test_the_systems_own_retry_is_recorded_as_such_and_not_as_a_planner_choice(tmp_path):
-    """片 A 第 3 项：系统原地重做走决定管道，但来源如实标注，不再标成"确定性做法选择"。"""
+def test_the_systems_own_retry_is_recorded_as_such_and_not_as_a_planner_choice(tmp_path, monkeypatch):
+    """片 A 第 3 项：系统原地重做走决定管道，但来源如实标注，不再标成"确定性做法选择"。
+
+    产品同形世界：执行者第一次交的结果格式不对（认领了没声明的端口），系统自己批准原地重做；
+    这次重做的决定标为系统来源、规划器没有被问；第二次交对了，任务完成。"""
     import asyncio
-    from types import SimpleNamespace
 
-    import test_htn_end_to_end as e2e
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+    from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN
+    from agent_orchestrator.testing.product_world import product_world
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, broken_result, worker_reply
 
-    from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN, dispatch_local
-
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
     assert SYSTEM_RETRY_ORIGIN == "system_infrastructure_retry"
-    world = e2e.build_world(tmp_path, key="system-retry-origin")
-    collected: list[str] = []
+    results = {"n": 0}
 
-    async def collect(intent, result, mission, text, dispatch):
-        collected.append(text)
+    def worker(request):
+        reply = worker_reply(request)
+        if isinstance(reply, tuple):
+            return reply
+        results["n"] += 1
+        return broken_result(request) if results["n"] == 1 else reply
 
-    handler = SimpleNamespace(store=world.store, _new_mode=lambda mission: object(),
-                              _collect_plan_decision=collect)
-    document = {"schema_version": 1, "decision_type": "REPAIR"}
-    intent = SimpleNamespace(intent_id="intent-system-retry", mission_id=world.mission.id, kind="plan",
-                             config={"native_planning_decision": document})
-    assert asyncio.run(dispatch_local(handler, intent)) is True
-    [prepared] = [event for event in world.store.list_events(world.mission.id)
-                  if event.type == "NativePlanningDecisionPrepared"]
-    assert prepared.payload["origin"] == "system_infrastructure_retry"
-    assert len(collected) == 1 and "<planning_decision>" in collected[0]
-    # a Planner intent carries no such document and is never dispatched locally
-    plain = SimpleNamespace(intent_id="intent-planner", mission_id=world.mission.id, kind="plan", config={})
-    assert asyncio.run(dispatch_local(handler, plain)) is False
+    async def case():
+        provider = LayeredScriptedProvider(worker=worker)
+        async with product_world(tmp_path / "root", provider) as world:
+            created = world.create({"goal": "写一份 NOTES.md，列出三条要点。", "success_criteria": ["file:NOTES.md"],
+                                    "idempotency_key": "system-retry-origin"})
+            mission = await world.run_until_settled(created["mission_id"])
+            events = world.store.list_events(mission.id)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, [e.type for e in events][-15:])
+            prepared = [event for event in events if event.type == "NativePlanningDecisionPrepared"]
+            assert [event.payload["origin"] for event in prepared] == [SYSTEM_RETRY_ORIGIN]
+            # 规划器只被问了两次：提做法、采用做法；重做不是它的决定
+            assert provider.asked.count("planner") == 2
+
+    asyncio.run(case())

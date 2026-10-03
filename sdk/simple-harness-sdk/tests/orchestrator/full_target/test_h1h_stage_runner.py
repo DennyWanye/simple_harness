@@ -46,7 +46,7 @@ def test_corrected_matrix_keeps_partial_and_uncovered_cases_honest() -> None:
     assert rows["A08"]["coverage"] == "MATCH"
     assert "other-principal" in rows["A08"]["coverage_note"]
     assert rows["O08"]["coverage"] == "MATCH"
-    assert rows["O09"]["nodeid"].endswith("test_o09_real_t0_materialization_rolls_back_link_fault_and_replays_once")
+    assert rows["O09"]["nodeid"].endswith("test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart")
     assert rows["O09"]["status"] == "NOT_RUN"
 
 

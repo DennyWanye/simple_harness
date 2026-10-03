@@ -1,253 +1,306 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A real ``Orchestrator`` loop on the assured lane, with a planning world and scripted models.
+"""规划族用例的真实主循环世界：产品同形部署 + 脚本化模型回复（HTN 补齐阶段 A′，2026-10-03 换芯）。
 
-What a deployment supplies and this fixture stands in for:
+此前这里自己拼一个保证通道主循环：旧执行池、没绑执行图、``install_hierarchical(planning=env)``
+的内存规划世界（``plan.goal`` / ``plan.leaf``）、手写根 ``task-root``、库内做法、手批检查策略、
+``decision_loop.auto_grant`` 在建意图的同一事务里签授权。现在全部换成产品那一份：
 
-* the Assurance assembly (``install_assurance``: native root, four consumers, the review
-  runtime) — the production one, unchanged;
-* the Host's root initialisation: the root goal's semantic binding and duty, the person's
-  confirmation of the completion mapping (CONTENT_ONLY), and the lossless check policy for
-  the "new method" review of the root goal;
-* the Host's auto permission for every Planner request (``decision_loop.auto_grant``).
+* 任务经 :func:`agent_orchestrator.testing.product_world.product_world` 建出——部署组装、
+  原生执行池、保证通道、建任务即绑定执行图；规划世界是通用"用户目标"世界（根 ``user-goal``，
+  子目标 ``sub-goal-1`` / ``sub-goal-2``，步骤 ``prepare-delivery`` / ``continue-delivery``）；
+* 完成映射确认、规划授权、检查策略投影都由部署职责在**两轮之间**做（自动模式，与产品同一条
+  路）；带 ``action:`` 要求的任务由 :func:`confirm_completion` 替人在确认页确认；
+* 产品没有库内做法：做法一律由规划器经 :func:`propose` 提出、过独立审阅，再经 :func:`adopt`
+  采用。
 
-Only the model replies are scripted.  The root goal has **no** library method: the Planner
-has to propose one, which is the path this fixture exists to exercise.
+替身只有模型回复：:func:`script` 按次序给一个角色的回复；审阅员（保证通道审阅请求不带角色
+标记，归 ``"unknown"``）的回复由 :func:`review` 按审查包里的准则现写。
 """
 from __future__ import annotations
 
+import asyncio
 import json
-import sys
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
-for extra in (HERE.parent, HERE.parent / "fixtures" / "htn"):
-    if str(extra) not in sys.path:
-        sys.path.insert(0, str(extra))
-
-from decision_loop import _envelope, auto_grant, decision_text  # noqa: E402
-from htn_world import Env, method, param, step, task_binding  # noqa: E402
-
-from agent_orchestrator.api.operation_completion import OperationCompletionApi  # noqa: E402
-from agent_orchestrator.assurance.policy import AssurancePolicy  # noqa: E402
-from agent_orchestrator.contracts import Budget  # noqa: E402
-from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
-from agent_orchestrator.contracts.obligations import Obligation  # noqa: E402
-from agent_orchestrator.governance.permissions import Principal  # noqa: E402
-from agent_orchestrator.orchestrator.assurance_assembly import (  # noqa: E402
-    AssuranceDeploymentPorts,
-    install_assurance,
+from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import (
+    REVIEWER,
+    LayeredScriptedProvider,
+    decision,
+    one_step_method,
+    review_input,
+    worker_reply,
 )
-from agent_orchestrator.orchestrator.assurance_check_policy import (  # noqa: E402
-    lossless_planning_subject_mapping,
-)
-from agent_orchestrator.orchestrator.commit_service import MissionSpec  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of, role_of  # noqa: E402
 
-TENANT = "tenant-assured-loop"
-PRINCIPAL = Principal("assured-loop-user")
-ROOT_TASK = "task-root"
-ROOT_DUTY = "obl-root"
-#: the assured factory names the Mission's success criteria ``c-user-<n>``
+#: the first user requirement (the product names success criteria ``c-user-<n>``)
 CRITERION = "c-user-1"
-TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
-#: the assured review instructions carry no ``[role:…]`` marker, so the scripted
-#: provider files every assured reviewer under this name
-REVIEWER = "unknown"
+CONFIG = {"max_concurrency": 3, "test_timeout_seconds": 60}
+Reply = Callable[[Any], Any]
 
 
-class HeldProvider(RoleScriptedProvider):
-    """A scripted provider whose calls for the roles in ``held`` wait at ``release``."""
-
-    def __init__(self, scripts: dict[str, Any], *, held: tuple[str, ...] = ()) -> None:
-        super().__init__(scripts)
-        import asyncio
-
-        self.held = set(held)
-        self.release = asyncio.Event()
-
-    async def invoke(self, request: Any, *, cancel: Any) -> Any:
-        if role_of(request) in self.held:
-            await self.release.wait()
-        return await super().invoke(request, cancel=cancel)
+# ---------------------------------------------------------------- scripted replies
 
 
-def _env(mission_id: str) -> Env:
-    env = Env(mission=mission_id)
-    env.register_type("plan.goal", form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
-                      criteria=(CRITERION,), domain="plan")
-    env.register_type("plan.leaf", parameters=(("subject", "string"),),
-                      outputs=(("result", "plan.result"),), capabilities=("plan.read",), domain="plan")
-    return env
+def script(*steps: Any) -> Reply:
+    """One role's replies in order; a step is a reply text or a function of the request.
+    Past the last step the role has nothing to say (the provider fails that call loudly)."""
 
+    queue = list(steps)
 
-def proposed_method(method_id: str = "plan.proposed", *, version: int = 1) -> Any:
-    """root (compound) → one leaf that carries the Mission's one criterion."""
-
-    return method(method_id, "plan.goal", parameter_schema="plan.goal.params", version=version,
-                  steps=(step("leaf", "plan.leaf", TaskForm.PRIMITIVE, {"subject": param("subject")},
-                              capabilities=("plan.read",)),),
-                  links=((CRITERION, "leaf", None),), finalizer="leaf")
-
-
-def _open_subject(package: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    goal = next(row for row in package["views"]["goals"] if row["open"])
-    return goal, goal["subject_key"]
-
-
-def propose_step(contract: Any):
-    """A scripted Planner: PROPOSE_METHOD ``contract`` for the open goal."""
-
-    def reply(request: Any) -> str:
-        _, subject = _open_subject(package_of(request))
-        return decision_text(_envelope(
-            subject, "PROPOSE_METHOD",
-            {"method_proposal": {"method": contract.to_json(), "author": "model",
-                                 "rationale": "no registered method serves this goal"}},
-            rationale="现有做法都不适用，提出一个新做法。"))
+    def reply(request: Any) -> Any:
+        if not queue:
+            return None
+        step = queue.pop(0)
+        return step(request) if callable(step) else step
 
     return reply
 
 
-def refine_with_step(contract: Any):
-    """A scripted Planner: REFINE the open goal with exactly ``contract``."""
+def provider(*, planner: Iterable[Any] = (), reviewer: Iterable[Any] | None = None,
+             worker: Reply = worker_reply) -> LayeredScriptedProvider:
+    """A layered scripted provider whose planner (and, if given, reviewer) answer in order;
+    the reviewer defaults to :func:`review` ("ACCEPT") for every call."""
+
+    return LayeredScriptedProvider(planner=script(*planner),
+                                   reviewer=script(*reviewer) if reviewer is not None else review(),
+                                   worker=worker)
+
+
+def open_goal(package: Mapping[str, Any]) -> dict[str, Any]:
+    return next(row for row in package["views"]["goals"] if row["open"])
+
+
+def context_for(package: Mapping[str, Any], goal_type: str | None = None) -> dict[str, Any]:
+    """The method-writing material for the open goal (or the first goal of ``goal_type``)."""
+
+    contexts = package.get("method_proposal_contexts") or []
+    if goal_type is not None:
+        return next(row for row in contexts if row["request"]["goal_type_ref"]["id"] == goal_type)
+    goal = open_goal(package)
+    return next(row for row in contexts if row["subject_key"] == goal["subject_key"])
+
+
+def type_ref(request: Mapping[str, Any], type_id: str) -> dict[str, Any]:
+    for row in [*request["operators"], *request.get("subgoal_types", ())]:
+        if row["task_type_ref"]["id"] == type_id:
+            return dict(row["task_type_ref"])
+    raise AssertionError(f"{type_id} is not offered to this goal")
+
+
+def method_body(context: Mapping[str, Any], *, steps: Sequence[tuple[Any, ...]],
+                links: Sequence[tuple[str, str]], finalizer: str | None,
+                ordering: Sequence[tuple[str, str]] = (), method_id: str | None = None,
+                version: int | None = None) -> dict[str, Any]:
+    """A method proposal body.  ``steps`` are ``(local_id, task_type, arguments)``; a
+    compound step's type is a sub-goal type.  ``links`` are ``(criterion, step)`` (the
+    child answers for the criterion under the same id)."""
+
+    request = context["request"]
+    identity = request["new_method_identity"]
+    rows = []
+    for local_id, type_id, arguments in steps:
+        ref = type_ref(request, type_id)
+        operator = next((row for row in request["operators"] if row["task_type_ref"]["id"] == type_id), None)
+        rows.append({"local_id": local_id, "task_type_ref": ref,
+                     "form": "primitive" if operator is not None else "compound",
+                     "arguments": dict(arguments),
+                     "required_capabilities": list(operator["required_capabilities"]) if operator else [],
+                     "obligation_relation": "refines_parent"})
+    return {
+        "schema_version": 1, "method_id": method_id or identity["method_id"],
+        "method_version": identity["method_version"] if version is None else version,
+        "goal_type_ref": request["goal_type_ref"],
+        "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
+        "output_schema_ref": request["goal_signature"]["output_schema_ref"],
+        "applicable_when": [], "exploration_assumptions": [], "steps": rows,
+        "ordering": [{"before": before, "after": after} for before, after in ordering],
+        "required_capabilities": [], "expected_effects": [],
+        "composition": {
+            "criterion_links": [{"parent_criterion_id": criterion, "child_step": step, "child_criterion_id": criterion,
+                                 "evidence_requirement": f"{step} 这一步负责 {criterion}"}
+                                for criterion, step in links],
+            "outputs": {}, "finalizer_step": finalizer, "independent_review_required": True,
+        },
+        "basis_refs": [],
+    }
+
+
+def propose(builder: Callable[[dict[str, Any]], dict[str, Any]] = one_step_method, *,
+            goal_type: str | None = None, seen: list[dict[str, Any]] | None = None) -> Reply:
+    """A scripted Planner: PROPOSE_METHOD ``builder(context)`` for the open goal."""
 
     def reply(request: Any) -> str:
-        goal, subject = _open_subject(package_of(request))
-        ref = contract.method_ref()
-        return decision_text(_envelope(
-            subject, "REFINE",
-            {"method_ref": {"kind": "method", "id": ref.method_id, "semantic_revision": int(ref.version),
-                            "content_hash": ref.content_hash},
-             "bindings": dict(goal["params"])},
-            rationale="采用通过审阅的新做法。"))
+        package = package_of(request)
+        if seen is not None:
+            seen.append(package)
+        context = context_for(package, goal_type)
+        return decision(context["subject_key"], "PROPOSE_METHOD",
+                        {"method_proposal": {"method": builder(context), "rationale": "没有适用的做法，提一个。"}},
+                        "现有做法都不适用，提出一个新做法。")
 
     return reply
 
 
-def review_reply(verdict: str = "ACCEPT", *, limitation: str = "") -> str:
-    grade = "PASS" if verdict == "ACCEPT" else ("UNKNOWN" if verdict == "INCONCLUSIVE" else "FAIL")
-    return json.dumps({"schema_version": 2, "verdict": verdict, "assessments": [
-        {"criterion_id": CRITERION, "verdict": grade, "evidence_ids": [],
-         "reason": limitation or "fixture method review",
-         "limitations": [limitation] if limitation else []}], "findings": []})
+def adopt(version: int | None = None, *, seen: list[dict[str, Any]] | None = None) -> Reply:
+    """A scripted Planner: REFINE the open goal with the proposed method of ``version`` (by
+    default the newest one shown), whatever its review said."""
+
+    def reply(request: Any) -> str:
+        package = package_of(request)
+        if seen is not None:
+            seen.append(package)
+        goal = open_goal(package)
+        rows = [row for row in package["views"]["methods"]
+                if row["goal_signature_id"] == goal["signature_id"]
+                and (version is None or row["method_ref"]["semantic_revision"] == version)]
+        assert rows, f"no proposed method v{version} is shown for {goal['signature_id']}"
+        chosen = max(rows, key=lambda row: row["method_ref"]["semantic_revision"])
+        return decision(goal["subject_key"], "REFINE",
+                        {"method_ref": dict(chosen["method_ref"]), "bindings": dict(goal["params"])},
+                        "采用这个做法。")
+
+    return reply
+
+
+def adopt_unknown(request: Any) -> str:
+    """A scripted Planner: REFINE with a method it was never shown."""
+
+    goal = open_goal(package_of(request))
+    return decision(goal["subject_key"], "REFINE",
+                    {"method_ref": {"kind": "method", "id": "plan.never-proposed", "semantic_revision": 1,
+                                    "content_hash": "0" * 64},
+                     "bindings": dict(goal["params"])}, "采用一个没见过的做法。")
+
+
+def no_change(request: Any) -> str:
+    goal = open_goal(package_of(request))
+    return decision(goal["subject_key"], "NO_CHANGE", {"reason": "nothing to change"}, "计划不需要改动。")
+
+
+def review(verdict: str = "ACCEPT", *, limitation: str = "") -> Reply:
+    """A scripted independent reviewer: one verdict for every criterion of the package."""
+
+    grade = {"ACCEPT": "PASS", "INCONCLUSIVE": "UNKNOWN"}.get(verdict, "FAIL")
+
+    def reply(request: Any) -> str | None:
+        package = review_input(request)
+        if package is None:
+            return None
+        return json.dumps({"schema_version": 2, "verdict": verdict, "assessments": [
+            {"criterion_id": criterion, "verdict": grade, "evidence_ids": [],
+             "reason": limitation or "fixture method review", "limitations": [limitation] if limitation else []}
+            for criterion in package["criterion_ids"]], "findings": []})
+
+    return reply
+
+
+# ---------------------------------------------------------------- the world
 
 
 @asynccontextmanager
-async def assured_loop(root: Path, provider: Any, *, key: str = "assured-loop", approve_method_policy: bool = True,
-                       library: tuple[Any, ...] = (), success_criteria: tuple[str, ...] = ("the report is written",),
-                       env_factory: Any = None, root_type: str = "plan.goal", host_policies: bool = False,
-                       **config: Any):
-    """``library`` methods are registered the way a deployment registers its own: admitted,
-    with no trial scope — the review gate is not about them.
+async def assured_loop(root: Path, scripted: Any, *, key: str = "assured-loop",
+                       success_criteria: Sequence[str] = ("file:report.md",),
+                       goal: str = "写一份报告 report.md", publishing: bool = False, **config: Any):
+    """A Mission created on the product deployment with ``scripted`` model replies.  The
+    loop has not run yet; drive it with :func:`run_until`.  ``publishing`` deploys the real
+    file-publish connector the way the product enables it (for ``action:`` requirements)."""
 
-    ``env_factory`` / ``root_type`` swap in another planning world (sub-goal types, more
-    criteria).  ``host_policies`` makes :func:`run_until` stand in for the Host's policy
-    projector: before every cycle it approves the "new method" review policy for each goal
-    of the plan that has none yet, the way the desktop Host does after a plan commit."""
-    cfg = OrchestratorConfig(evidence_root=Path(root) / "root", max_concurrency=3,
-                             test_timeout_seconds=60, **config)
+    if publishing:
+        from agent_orchestrator.governance.policies import DeploymentPolicy
+        from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
-    def root_setup(orch: Any) -> None:
-        orch.commit.install_assurance_root(principal=PRINCIPAL, tenant_id=TENANT, command_id="install")
-
-    def assembly(orch: Any) -> None:
-        install_assurance(orch, AssuranceDeploymentPorts(
-            tenant_id=TENANT, principal=PRINCIPAL, select_profile=lambda _spec: AssurancePolicy(),
-            notify_transport=lambda _message: None, host_fingerprint="cd" * 32))
-
-    async with Orchestrator(cfg, provider, poll_interval=0.02, assurance_root_setup=root_setup,
-                            startup_assembly=assembly) as loop:
-        mission, _ = loop.commit.create_mission(MissionSpec(
-            goal="交付一份报告", success_criteria=tuple(success_criteria), tenant_id=TENANT,
-            idempotency_key=key, allowed_tools=TOOLS,
-            budget=Budget(max_tokens=2_000_000, max_attempts=12),
-            orchestration_semantics_version="hierarchical"))
-        env = (env_factory or _env)(mission.id)
-        binding = task_binding(env, root_type, task_id=ROOT_TASK, obligation=ROOT_DUTY,
-                               parameters={"subject": "alpha"})
-        htn = HtnStore(loop.store)
-        ObligationStore(loop.store).register(
-            Obligation(obligation_id=ROOT_DUTY, mission_id=mission.id,  # type: ignore[arg-type]
-                       requirement_refs=("req-1",), goal_signature_id=root_type),
-            recursion_fuel=8)
-        loop.commit.admit_obligation_demand(
-            mission.id, ROOT_DUTY, principal=PRINCIPAL.principal_id,  # type: ignore[arg-type]
-            requester={"kind": "mission_root"}, evidence={"mission_id": mission.id})
-        htn.put_task_semantics(mission.id, binding)
-        for contract in library:
-            receipt = env.admit(contract)
-            assert receipt.admitted, receipt.problems
-            htn.register_method(contract, env.registry.registration(contract.method_ref()))
-        requirements = htn.latest_requirements_revision(mission.id)
-        reference = {"id": str(requirements.revision_id), "revision": int(requirements.revision),
-                     "content_hash": requirements.content_hash()}
-        OperationCompletionApi(loop.commit, tenant_id=TENANT, principal=PRINCIPAL).approve({
-            "mission_id": mission.id, "command_id": "approve-" + key,
-            "expected_requirements_ref": {"kind": "requirements", **reference},
-            "proposal": {"schema_version": 1, "mission_id": mission.id, "requirements_ref": reference,
-                         "mode": "CONTENT_ONLY",
-                         "content_criterion_ids": list(requirements.required_criterion_ids()),
-                         "effects": []}})
-        loop.commit.begin_planning(mission.id)
-        env.semantics = htn
-        loop.install_hierarchical(planning=env)
-        auto_grant(loop)
-        world = SimpleNamespace(loop=loop, store=loop.store, commit=loop.commit, mission=mission,
-                                env=env, provider=provider, htn=htn, host_policies=host_policies,
-                                approved_policies=set())
-        if approve_method_policy:
-            approve_method_policies(world)
-        await loop._try_planner_intent(mission.id, ordinal=1)
-        yield world
+        published = Path(root) / "published"
+        published.mkdir(parents=True, exist_ok=True)
+        config = {"connectors": {"file_publish": FilePublishConnector(
+                      published, Path(root) / "root" / "connectors" / "file_publish")},
+                  "deployment_policy": DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2"),
+                  **config}
+    async with product_world(Path(root) / "root", scripted, **{**CONFIG, **config}) as product:
+        created = product.create({"goal": goal, "idempotency_key": key, "success_criteria": list(success_criteria)})
+        mission = product.store.get_mission(created["mission_id"])
+        yield SimpleNamespace(loop=product.loop, store=product.store, commit=product.loop.commit, mission=mission,
+                              provider=scripted, htn=HtnStore(product.store), product=product,
+                              control=product.control)
 
 
-def approve_method_policies(world: Any) -> None:
-    """What the Host's projector does: the lossless METHOD_PLAN policy for every goal Task."""
+def confirm_completion(world: Any) -> dict[str, Any]:
+    """What the person does on the confirmation page of a Mission with an ``action:``
+    requirement (auto mode never signs those): content requirements as content, the action
+    as a required effect on the root duty, settled when the content hash matches."""
 
-    from agent_orchestrator.assurance.codec import AssuranceError
+    workspace = world.control.snapshot(world.mission.id)["snapshot"]["operation_workspace"]
+    assert workspace["state"] == "CONFIRMATION_REQUIRED" and workspace["editable"] is True, workspace
+    actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
+    content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+    [obligation] = workspace["obligations"]
+    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    ref = workspace["requirements_ref"]
+    return world.control.approve_operation_completion_spec({
+        "mission_id": world.mission.id, "command_id": "confirm-completion",
+        "expected_requirements_ref": ref,
+        "proposal": {
+            "schema_version": 1, "mission_id": world.mission.id,
+            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
+            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
+            "effects": [{"effect_key": "publish", "source_slot_key": "publish", "obligation_id": obligation["id"],
+                         "criterion_ids": actions, "required_milestone": milestone["id"],
+                         "milestone_policy_ref": milestone["milestone_policy_ref"],
+                         "evidence_policy_ref": milestone["evidence_policy_ref"]}],
+        },
+    })
 
-    for binding in world.htn.list_task_semantics(world.mission.id, form="compound"):
-        task_id = str(binding.task_id)
-        if task_id in world.approved_policies:
-            continue
-        try:
-            requirements_ref, subject_ref, mapping = lossless_planning_subject_mapping(
-                world.commit, mission_id=world.mission.id, task_id=task_id)
-        except AssuranceError:
-            continue  # nothing to review a method for this goal against (yet)
-        world.commit.approve_assurance_check_policy(
-            tenant_id=TENANT, mission_id=world.mission.id,
-            command_id="host-check-policy:method-plan:" + task_id, principal=PRINCIPAL,
-            requirements_ref=requirements_ref, planning_subject=subject_ref, purpose="METHOD_PLAN",
-            candidate_mapping=mapping, approval_source="HOST_LOSSLESS_AUTO")
-        world.approved_policies.add(task_id)
+
+async def step(world: Any) -> None:
+    """One round the way ``run()`` takes it: the deployment's duties, then one cycle."""
+
+    await world.product.deployment.between_cycles(auto=world.product.auto)
+    await world.loop._cycle()
+    await asyncio.sleep(0.01)
+
+
+async def run_until(world: Any, done: Callable[[Any], Any], *, cycles: int = 600) -> bool:
+    """Drive the loop one round at a time until ``done(world)``; False when it never was."""
+
+    for _ in range(cycles):
+        if done(world):
+            return True
+        await step(world)
+    return bool(done(world))
+
+
+async def spin(world: Any, cycles: int = 25) -> None:
+    for _ in range(cycles):
+        await step(world)
 
 
 def event_types(world: Any) -> list[str]:
     return [event.type for event in world.store.list_events(world.mission.id)]
 
 
-async def run_until(world: Any, done, *, cycles: int = 400) -> bool:
-    """Drive the loop one cycle at a time until ``done(world)``; False when it never was."""
-
-    import asyncio
-
-    for _ in range(cycles):
-        if done(world):
-            return True
-        if getattr(world, "host_policies", False):
-            approve_method_policies(world)
-        await world.loop._cycle()
-        await asyncio.sleep(0.01)
-    return done(world)
-
-
 def events_of(world: Any, kind: str) -> list[Any]:
     return [event for event in world.store.list_events(world.mission.id) if event.type == kind]
+
+
+def plan_revision(world: Any) -> int:
+    active = world.htn.active_plan_revision(world.mission.id)
+    return 0 if active is None else int(active.revision)
+
+
+def adopted_methods(world: Any) -> list[str]:
+    """``<method id>@<version>`` of every adopted method instance (method ids are the
+    product's fresh ``proposed-…`` ids, so only versions are compared by the cases)."""
+
+    network = world.loop._new_mode(world.mission).network(world.mission.id)
+    return sorted(str(draft.method_ref.method_id) + "@" + str(int(draft.method_ref.version))
+                  for draft in network.method_instances if draft.instance_id in network.adopted_instance_ids)
+
+
+__all__ = ("CONFIG", "CRITERION", "REVIEWER", "adopt", "adopt_unknown", "adopted_methods", "assured_loop",
+           "confirm_completion", "context_for", "event_types", "events_of", "method_body", "no_change", "open_goal",
+           "plan_revision", "propose", "provider", "review", "run_until", "script", "spin", "step", "type_ref")

@@ -7,20 +7,22 @@ The real deployment door and Facade create the Mission. Faults after the first
 source, during events, and at the batch receipt must roll back all SQLite state.
 Only immutable unreferenced CAS blobs may survive. Concurrent commits and reordered
 retries return the original receipt; an ordinary create cannot be adopted later.
+
+HTN 补齐阶段 A′：建任务走产品组装（``deployment.create_mission_with_sources``：任务、来源、根、
+执行图绑定在同一个事务里），不跑主循环。故障注入改为数据库触发器让真实事务里的那次写入失败
+（事件、回执）和 CAS 落盘失败（磁盘写不进）；"新连接看持久化回执"改为同一根目录上重启。
 """
 
 from __future__ import annotations
 
-import asyncio
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 from copy import deepcopy
 
 import pytest
+from p33_world import TENANT, opened
 
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
-from agent_orchestrator.api.missions import spec_from_request
-from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
@@ -30,14 +32,7 @@ from agent_orchestrator.observability.replay import (
     events_from_store,
     formal_from_snapshot,
 )
-from agent_orchestrator.orchestrator.commit_service import CommitService
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
-from agent_orchestrator.storage.store import Store
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-
-PERSON = Principal("g1-host")
 
 
 def command():
@@ -56,22 +51,17 @@ def command():
     }
 
 
-def run(tmp_path, body, *, publish=False):
-    async def case():
-        root = tmp_path / "evidence"
-        deployment = DeploymentPolicy(enabled_connectors=("file_publish",)) if publish else None
-        kwargs = {} if deployment is None else {"deployment_policy": deployment}
-        config = OrchestratorConfig(evidence_root=root, **kwargs)
-        connectors = (
-            {"file_publish": FilePublishConnector(root / "artifacts", tmp_path / "publish-ledger")}
-            if publish
-            else {}
-        )
-        async with Orchestrator(config, RoleScriptedProvider({}), connectors=connectors) as orch:
-            api = MissionControlV1(orch, tenant_id="tenant", principal=PERSON)
-            return body(orch, api)
+def world_at(tmp_path, *, publish=False):
+    root = tmp_path / "evidence"
+    if not publish:
+        return opened(root)
+    # 发布目录落在证据存储里：来源批次在门口就该被拒
+    return opened(root, deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
+                  connectors={"file_publish": FilePublishConnector(root / "artifacts", tmp_path / "publish-ledger")})
 
-    return asyncio.run(case())
+
+def create(world, value):
+    return world.deployment.create_mission_with_sources(world.loop, world.control, value)
 
 
 def database_state(store):
@@ -79,89 +69,85 @@ def database_state(store):
         return tuple(connection.iterdump())
 
 
+def fail_on(store, name, table, condition):
+    """让真实事务里的那一次写入失败（模拟写库出错），由 SQLite 自己回滚整个事务。"""
+
+    store.connection.execute(
+        f"CREATE TEMP TRIGGER {name} BEFORE INSERT ON {table} WHEN {condition} "
+        "BEGIN SELECT RAISE(ABORT, 'injected write failure'); END")
+
+
 def test_batch_reordering_reopen_returns_original_receipt_and_replays(tmp_path):
-    def body(orch, api):
-        value = command()
-        receipt = api.create_with_sources(value)
+    value = command()
+    with world_at(tmp_path) as world:
+        receipt = create(world, value)
         mid = receipt["mission_id"]
         assert receipt["created"] is True and receipt["status"] == "CREATED"
-        assert receipt["spec_hash"] == orch.store.find_mission("tenant", "g1-batch")[1]
+        assert receipt["spec_hash"] == world.store.find_mission(TENANT, "g1-batch")[1]
         assert set(receipt["source_versions"]) == {s["path"] for s in value["sources"]}
         assert len(receipt["sources"]) == 2 and len(receipt["batch_hash"]) == 64
+        # 根与执行图绑定在同一个事务里落下
+        assert world.store.connection.execute(
+            "SELECT COUNT(*) FROM taskgraph_policy_bindings WHERE mission_id=?", (mid,)).fetchone()[0] == 1
         for item in value["sources"]:
-            row = orch.store.get_source(mid, item["path"])
+            row = world.store.get_source(mid, item["path"])
             assert row["trust"] == "untrusted_external"
             assert (
-                orch.assembled.workspaces.artifact_store.read(row["version_hash"])
+                world.loop.assembled.workspaces.artifact_store.read(row["version_hash"])
                 == item["content"].encode()
             )
-        before = database_state(orch.store)
-        assert api.create_with_sources({**value, "sources": value["sources"][::-1]}) == receipt
-        assert database_state(orch.store) == before
-        # A fresh connection exercises persisted receipt identity, not facade memory.
-        with closing(Store.open(orch.store.path)) as reopened:
-            service = CommitService(
-                reopened, artifact_store=orch.assembled.workspaces.artifact_store
-            )
-            spec = spec_from_request(
-                "tenant",
-                value["mission"],
-                default_tools=orch.config.deployment_policy.allowed_tools,
-            )
-            assert service.create_mission_with_sources(
-                spec, sources=value["sources"], principal=PERSON
-            ) == {k: v for k, v in receipt.items() if k != "facade"}
-        projection = Projection().feed(events_from_store(orch.store, mid))
-        assert dict(projection.unknown) == {}
-        assert (
-            compare(projection.objects, formal_from_snapshot(orch.store.snapshot(mid)))[
-                "mismatches"
-            ]
-            == []
-        )
-
-    run(tmp_path, body)
+        before = database_state(world.store)
+        assert create(world, {**value, "sources": value["sources"][::-1]}) == receipt
+        assert database_state(world.store) == before
+    # A restarted deployment exercises persisted receipt identity, not facade memory.
+    with world_at(tmp_path) as reopened:
+        before = database_state(reopened.store)
+        assert create(reopened, value) == receipt
+        assert database_state(reopened.store) == before
+        projection = Projection().feed(events_from_store(reopened.store, mid))
+        # 来源事件都折叠得出来；产品建任务时写的保证通道/执行图事件回放还不认识（已报告）
+        assert not [kind for kind in projection.unknown if kind.startswith("Source")]
+        assert compare(projection.objects, formal_from_snapshot(reopened.store.snapshot(mid)))[
+            "mismatches"
+        ] == []
 
 
 @pytest.mark.parametrize("damage", ["content", "kind", "goal"])
 def test_batch_changed_body_conflicts_without_mutation(tmp_path, damage):
-    def body(orch, api):
+    with world_at(tmp_path) as world:
         value = command()
-        api.create_with_sources(value)
+        create(world, value)
         changed = deepcopy(value)
         if damage == "goal":
             changed["mission"]["goal"] += "不同目标"
         else:
             changed["sources"][0][damage] += "不同"
-        before = database_state(orch.store)
+        before = database_state(world.store)
         with pytest.raises(FacadeError) as raised:
-            api.create_with_sources(changed)
+            create(world, changed)
         assert raised.value.code == "conflict"
-        assert database_state(orch.store) == before
-
-    run(tmp_path, body)
+        assert database_state(world.store) == before
 
 
 def test_ordinary_create_cannot_be_adopted_as_an_atomic_batch(tmp_path):
-    def body(orch, api):
-        api.create(command()["mission"])
-        before = database_state(orch.store)
+    with world_at(tmp_path) as world:
+        world.deployment.create_mission(world.loop, world.control, command()["mission"])
+        before = database_state(world.store)
         with pytest.raises(FacadeError) as raised:
-            api.create_with_sources(command())
+            create(world, command())
         assert raised.value.code == "conflict"
-        assert database_state(orch.store) == before
-
-    run(tmp_path, body)
+        assert database_state(world.store) == before
 
 
 @pytest.mark.parametrize("point", ["second_cas", "source_event", "batch_receipt"])
 def test_batch_fault_rolls_back_mission_budget_binding_sources_receipts_and_events(
     tmp_path, monkeypatch, point
 ):
-    def body(orch, api):
-        before = database_state(orch.store)
-        cas = orch.assembled.workspaces.artifact_store
+    with world_at(tmp_path) as world:
+        before = database_state(world.store)
         if point == "second_cas":
+            # 第二份来源原文落盘失败（磁盘写不进）
+            cas = world.loop.assembled.workspaces.artifact_store
             original = cas.put_bytes
             calls = []
 
@@ -173,34 +159,18 @@ def test_batch_fault_rolls_back_mission_budget_binding_sources_receipts_and_even
 
             monkeypatch.setattr(cas, "put_bytes", fail)
             # Commit may hold a distinct ArtifactStore object for the same real CAS root.
-            monkeypatch.setattr(orch.commit._source_cas(), "put_bytes", fail)
+            monkeypatch.setattr(world.loop.commit._source_cas(), "put_bytes", fail)
         elif point == "source_event":
-            original = orch.store.append_event
-
-            def fail(event):
-                if event.type == "SourceRegistered" and event.payload["sources"][0][
-                    "path"
-                ].endswith("b.md"):
-                    raise RuntimeError("source event fault")
-                return original(event)
-
-            monkeypatch.setattr(orch.store, "append_event", fail)
+            fail_on(world.store, "fail_source_event", "events",
+                    "NEW.type = 'SourceRegistered' AND NEW.payload_json LIKE '%b.md%'")
         else:
-            original = orch.store.insert_receipt
-
-            def fail(**kwargs):
-                if kwargs["kind"] == "mission_source_batch":
-                    raise RuntimeError("batch receipt fault")
-                return original(**kwargs)
-
-            monkeypatch.setattr(orch.store, "insert_receipt", fail)
-        with pytest.raises((FacadeError, RuntimeError)):
-            api.create_with_sources(command())
-        assert database_state(orch.store) == before
-        with closing(Store.open(orch.store.path)) as reopened:
-            assert database_state(reopened) == before
-
-    run(tmp_path, body)
+            fail_on(world.store, "fail_batch_receipt", "commit_receipts", "NEW.kind = 'mission_source_batch'")
+        # 写库出错时门面不翻译 SQLite 的异常，原样抛出（与原用例注入 RuntimeError 同）
+        with pytest.raises((FacadeError, RuntimeError, sqlite3.Error)):
+            create(world, command())
+        assert database_state(world.store) == before
+    with world_at(tmp_path) as reopened:
+        assert reopened.store.list_missions() == []
 
 
 @pytest.mark.parametrize(
@@ -210,82 +180,64 @@ def test_batch_fault_rolls_back_mission_budget_binding_sources_receipts_and_even
         "sources/a.md/child",
         "sources/a.md",
         "sources/Dir/b.md",
-        "sources/e\u0301/b.md",
+        "sources/é/b.md",
     ],
 )
 def test_batch_active_aliases_and_file_ancestors_refuse_atomically(tmp_path, other):
-    def body(orch, api):
+    with world_at(tmp_path) as world:
         value = command()
         if "Dir" in other:
             value["sources"][0]["path"] = "sources/dir/a.md"
-        if "e\u0301" in other:
+        if "é" in other:
             value["sources"][0]["path"] = "sources/é/a.md"
         value["sources"][1]["path"] = other
-        before = database_state(orch.store)
+        before = database_state(world.store)
         with pytest.raises(FacadeError):
-            api.create_with_sources(value)
-        assert database_state(orch.store) == before
-
-    run(tmp_path, body)
+            create(world, value)
+        assert database_state(world.store) == before
 
 
 @pytest.mark.parametrize("field", ["principal", "tenant_id", "trust", "origin", "idempotency_key"])
 def test_batch_source_items_reject_caller_authority_fields(tmp_path, field):
-    def body(orch, api):
+    with world_at(tmp_path) as world:
         value = command()
         value["sources"][0][field] = "caller"
-        before = database_state(orch.store)
+        before = database_state(world.store)
         with pytest.raises(FacadeError) as raised:
-            api.create_with_sources(value)
+            create(world, value)
         assert raised.value.code == "invalid_request"
-        assert database_state(orch.store) == before
-
-    run(tmp_path, body)
+        assert database_state(world.store) == before
 
 
 def test_batch_runs_real_source_publish_storage_guard(tmp_path):
-    def body(orch, api):
-        before = database_state(orch.store)
-        with pytest.raises(FacadeError):
-            api.create_with_sources(command())
-        assert database_state(orch.store) == before
-
-    run(tmp_path, body, publish=True)
+    with world_at(tmp_path, publish=True) as world:
+        before = database_state(world.store)
+        with pytest.raises(FacadeError, match="source_publish_root_overlap"):
+            create(world, command())
+        assert database_state(world.store) == before
 
 
-def test_two_connections_commit_one_source_batch(tmp_path):
-    path = tmp_path / "orchestrator.db"
-    with closing(Store.open(path)):
-        pass
-    spec = spec_from_request("tenant", command()["mission"])
+def test_two_concurrent_requests_commit_one_source_batch(tmp_path):
+    """Host 的两个请求线程同时提交同一批：只建一个任务、两份回执相同。"""
 
-    def submit():
-        with closing(Store.open(path)) as store:
-            commit = CommitService(store, artifact_store=ArtifactStore(tmp_path / "artifacts"))
-            return commit.create_mission_with_sources(
-                spec, sources=command()["sources"], principal=PERSON
-            )
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        receipts = list(pool.map(lambda _: submit(), range(2)))
-    assert receipts[0] == receipts[1]
-    with closing(Store.open(path)) as store:
-        assert len(store.list_missions()) == 1
-        assert len(store.list_sources(receipts[0]["mission_id"])) == 2
+    with world_at(tmp_path) as world:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            receipts = list(pool.map(lambda _: create(world, command()), range(2)))
+        assert receipts[0] == receipts[1]  # 批次回执原样重放（含 created）
+        assert len(world.store.list_missions()) == 1
+        assert len(world.store.list_sources(receipts[0]["mission_id"])) == 2
 
 
 def test_same_batch_key_is_tenant_scoped(tmp_path):
-    def body(orch, api):
+    with world_at(tmp_path) as world:
         value = command()
-        original = api.create_with_sources(value)
-        foreign = MissionControlV1(orch, tenant_id="foreign", principal=Principal("other-host"))
-        other = foreign.create_with_sources(value)
-        assert original["mission_id"] != other["mission_id"]
-        assert original["command_id"] != other["command_id"]
-        assert api.create_with_sources(value) == original
-        assert foreign.create_with_sources(value) == other
-        for receipt, tenant in ((original, "tenant"), (other, "foreign")):
-            rows = orch.store.list_sources(receipt["mission_id"])
-            assert len(rows) == 2 and {row["tenant_id"] for row in rows} == {tenant}
-
-    run(tmp_path, body)
+        original = create(world, value)
+        foreign = MissionControlV1(world.loop, tenant_id="foreign", principal=Principal("other-host"))
+        before = database_state(world.store)
+        # 别的租户拿同一个批次键，拿不到本租户的回执；它在这个部署里也建不了任务、什么都不留下
+        with pytest.raises(FacadeError):
+            foreign.create_with_sources(value)
+        assert database_state(world.store) == before
+        assert create(world, value) == original
+        rows = world.store.list_sources(original["mission_id"])
+        assert len(rows) == 2 and {row["tenant_id"] for row in rows} == {TENANT}

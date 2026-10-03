@@ -1,79 +1,36 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""Real HTTP adapter -> BaseAgent -> SQLite failure/usage, with no model/network.
+"""协议错误时只认有效用量（HTN 补齐阶段 A′ 重写，2026-10-03，并入供方记账族）。
 
-The transport returns malformed tool arguments. Parsing must still fail and no
-tool may run; accounting is independent of that execution failure.  With valid
-usage the same request is sampled again (2026-09-26: a slip, not truncation), each
-sample a separate, fully accounted invocation; without it nothing is resampled. Commit-created
-subjects bind the real Provider admission guard. This is not a Host adapter test
-or a substitute for Orchestrator automatic late-accounting recovery.
+产品同形部署上，执行者第一次尝试的模型调用走真实的 OpenAI 兼容适配器（httpx 模拟传输，不连网），
+回一个参数是半截 JSON 的工具调用：
+
+* 解析照样失败，工具一次也不执行；
+* 回复里带着合法用量的，这几次调用照实结账（SETTLED，实际数），同一请求按"一时失手"再采样
+  （``empty_response_retries`` 次，每次各自记账）；
+* 用量缺失或不合法（总数对不上）的，不信它：授权留在 UNKNOWN、按上限占着额度，也不再采样；
+* 这次尝试失败不扣次数，同一做法再试一次，任务完成。
+
+原文件（旧做法：``leaf_world`` 手工建尝试、自己 new 守卫、计价价格表）的计价断言按分诊裁决②删除；
+两条"截断工具调用再采样 / 第二次准入超出任务金额上限"是计价用例，随删。"布尔型 token 数""推理
+token 为负"两种不合法用量与"总数对不上"走同一条解析路径，留一种代表。
 """
 
 import asyncio
 import json
+import sqlite3
 
 import httpx
 import pytest
 
-import sys
-from pathlib import Path
-
-from agent_orchestrator.contracts import Budget, sha256_hex
-from agent_orchestrator.orchestrator.commit_service import Reservation
-from agent_orchestrator.runtime.agent_worker import AgentBridge, user_message_json
-from agent_orchestrator.runtime.provider_budget_guard import ProviderBudgetGuard
-from simple_harness.agents import AgentConfig, AgentRuntimePorts, build_agent_runtime
-from simple_harness.agents.ports import AllowAllAuthorization
-from simple_harness.contracts import RunId
-from simple_harness.execution.budget import FrozenPriceEstimator
-from simple_harness.providers import OpenAICompatibleProvider, ProviderProtocolError, Secret
-from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
-from simple_harness.tools import ToolResult
-
-PROFILE = "default"
-
-
-def _leaf_task(tmp_path, *, key: str, goal: str, mission_cost_micros: int):
-    """一个已提交计划的分层任务里的一个步骤（删旧平面模式 第三刀：原来是平面任务 A）：
-    步骤额度 2 万 token，成本上限继承任务的。返回 ``(store, commit, mission, task)``。"""
-
-    full_target = Path(__file__).resolve().parents[1] / "orchestrator" / "full_target"
-    if str(full_target) not in sys.path:
-        sys.path.append(str(full_target))
-    from leaf_world import leaf_world
-
-    world = leaf_world(
-        tmp_path,
-        key=key,
-        goal=goal,
-        success_criteria=("file:report.md",),
-        tenant_id=key,
-        tools=("probe",),
-        budget=Budget(max_tokens=200_000, max_cost_micros=mission_cost_micros, max_attempts=6),
-        task_max_tokens=20_000,
-        global_budget=Budget(max_tokens=400_000, max_cost_micros=40_000, max_attempts=12),
-    )
-    return world.store, world.service, world.mission, world.tasks["a"]
-
-
-class InputBound:
-    fingerprint = "protocol-usage-oracle-bound-v1"
-    bound_protocol = "fixture-text-only-v1"
-    requires_prior_output_reserve = True
-
-    def estimate_input_tokens(self, request):
-        return 100
-
-
-class RecordingTool:
-    def __init__(self):
-        self.calls = []
-
-    async def execute(self, call, context):
-        self.calls.append(call)
-        return ToolResult.succeeded(call.call_id, {"observed": True})
-
+from agent_orchestrator.testing.fixtures import package_of, role_of
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    planner_reply,
+    retry_same_method,
+)
+from simple_harness.providers import OpenAICompatibleProvider, Secret
 
 VALID_USAGE = {
     "prompt_tokens": 100,
@@ -84,435 +41,101 @@ VALID_USAGE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+
+
+class HalfJsonFirstAttempt(LayeredScriptedProvider):
+    """第一次尝试的执行者调用走真实 HTTP 适配器，拿到半截 JSON 的工具参数；其余照脚本。"""
+
+    def __init__(self, client: httpx.AsyncClient) -> None:
+        super().__init__(planner=lambda request: retry_same_method(request) or planner_reply(request))
+        self.http = OpenAICompatibleProvider(client, "https://protocol.invalid/v1", "agent-model",
+                                             Secret("fixture-only"))
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        attempt = str(package_of(request).get("attempt", {}).get("attempt_id", ""))
+        if role_of(request) == "worker" and attempt.endswith(":attempt-1"):
+            self.asked.append("worker")
+            return await self.http.invoke(request, cancel=cancel)
+        return await super().invoke(request, cancel=cancel)
+
+
 @pytest.mark.parametrize(
     "usage,known",
     [
         pytest.param(VALID_USAGE, True, id="valid-usage-bad-tool-json"),
         pytest.param(None, False, id="missing-usage"),
-        pytest.param({**VALID_USAGE, "prompt_tokens": True}, False, id="bool-token-count"),
         pytest.param({**VALID_USAGE, "total_tokens": 149}, False, id="inconsistent-total"),
-        pytest.param(
-            {**VALID_USAGE, "completion_tokens_details": {"reasoning_tokens": -1}},
-            False,
-            id="invalid-reasoning-count",
-        ),
     ],
 )
-def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(
-    tmp_path, usage, known
-):
-    async def exercise():
-        calls = []
-        n = 3 if known else 1  # the original plus empty_response_retries resamples
+def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(tmp_path, usage, known):
+    async def case():
+        posted = []
 
         def transport(request):
-            # Do not record headers/credentials or make any real HTTP connection.
-            calls.append(request.url.path)
+            # 不带凭据头出去、不连网
+            posted.append(json.loads(request.content))
             payload = {
-                "id": "original-bad-tool-response",
-                "model": "deepseek-flash",
-                "choices": [
-                    {
-                        "finish_reason": "tool_calls",
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "tool_calls": [
-                                {
-                                    "id": "unparseable-call",
-                                    "type": "function",
-                                    "function": {"name": "probe", "arguments": '{"path": "never'},
-                                }
-                            ],
-                        },
-                    }
-                ],
+                "id": f"bad-tool-response-{len(posted)}",
+                "model": "agent-model",
+                "choices": [{
+                    "finish_reason": "tool_calls",
+                    "message": {"role": "assistant", "content": "", "tool_calls": [{
+                        "id": "unparseable-call", "type": "function",
+                        "function": {"name": "workspace_write_file", "arguments": '{"path": "never'},
+                    }]},
+                }],
             }
             if usage is not None:
                 payload["usage"] = usage
             return httpx.Response(200, json=payload)
 
-        store, commit, mission, task = _leaf_task(
-            tmp_path,
-            key="protocol-test",
-            goal="Read a tool response without concealing protocol errors",
-            mission_cost_micros=20_000,
-        )
-        try:
-            price = FrozenPriceEstimator(
-                "original-protocol-price", "consumer", 1_000_000, 2_000_000
-            )
-            guard = ProviderBudgetGuard(
-                commit,
-                owner="protocol-owner",
-                estimator=InputBound(),
-                max_slots=1,
-                priced=True,
-                price_tables={PROFILE: price},
-            )
-            tools = RecordingTool()
-            async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-                provider = OpenAICompatibleProvider(
-                    client,
-                    "https://protocol.invalid/v1",
-                    "deepseek-flash",
-                    Secret("fixture-only"),
-                )
-                ports = AgentRuntimePorts(
-                    provider=provider,
-                    authorization=AllowAllAuthorization(),
-                    database_path=str(tmp_path / "execution.db"),
-                    model="deepseek-flash",
-                    provider_admission=guard,
-                    tool_executor=tools,
-                    tool_names=("probe",),
-                    tool_schemas={
-                        "probe": {
-                            "type": "object",
-                            "properties": {"path": {"type": "string"}},
-                            "required": ["path"],
-                            "additionalProperties": False,
-                        }
-                    },
-                    policies=ConsumerRuntimePolicies(
-                        "consumer_supplied", False, "fail_closed", estimator=price
-                    ),
-                    default_max_output_tokens=1000,
-                    # Keep normal empty-response retry capability enabled. A
-                    # protocol error must not be silently reclassified as that case.
-                    empty_response_retries=2,
-                )
-                async with build_agent_runtime(ports) as runtime:
-                    agent = await runtime.create(
-                        AgentConfig(
-                            name="protocol-test",
-                            instructions="Call probe once.",
-                            model_profile_ref=PROFILE,
-                        ),
-                        creation_key="protocol-agent",
-                    )
-                    message = user_message_json("Read the requested file.")
-                    attempt, intent = commit.create_attempt(
-                        task.id,
-                        role="worker",
-                        model="deepseek-flash",
-                        prompt_version="worker-v2",
-                        context_version="protocol-fixture-v1",
-                        reservation=Reservation(tokens=4000, cost_micros=0),
-                        intent_config={
-                            "runtime_profile_id": PROFILE,
-                            "model": "deepseek-flash",
-                            "agent_config": agent.config.to_json(),
-                            "message": message,
-                            "provider_admission_fingerprint": guard.fingerprint,
-                        },
-                        input_hash=sha256_hex(message),
-                    )
-                    commit.claim_intent(intent.intent_id, owner="protocol-owner", lease_seconds=60)
-                    commit.record_agent_created(
-                        intent.intent_id,
-                        agent_id=agent.agent_id,
-                        expected_turn_id=agent.turn_id_for(intent.input_id),
-                    )
-                    receipt = await agent.submit(message["content"], input_id=intent.input_id)
-                    commit.record_submitted(
-                        intent.intent_id, receipt={"turn_id": receipt.turn_id, "seq": receipt.seq}
-                    )
-                    result = await agent.wait_turn(receipt.turn_id, timeout=5)
-                    # Distinguish a broken admission fixture from the intended
-                    # protocol red: the actual HTTP adapter must have been reached.
-                    assert calls == ["/v1/chat/completions"] * n, result.error
-                    assert str(result.state) == "failed"
-                    assert result.error["error_code"] == ProviderProtocolError.error_code
-                    original, *resampled = runtime.uow.list_provider_invocations(RunId(agent.run_id))
-                    assert len(resampled) == n - 1
-                    assert str(original.state) == "failed" and original.handoff_attempt == 1
-                    assert original.error_code == "provider_protocol_error"
-                    assert original.response_json is None
-                    assert original.estimator_digest == price.snapshot_digest
-                    assert tools.calls == [] and calls == ["/v1/chat/completions"] * n
-                    grants = list(store.connection.execute("SELECT * FROM provider_token_grants ORDER BY rowid"))
-                    grant = grants[0]
-                    assert len(grants) == n
-                    facts = AgentBridge(runtime, unpriced=False).usage_facts(
-                        agent_id=agent.agent_id
-                    )
-                    if known:
-                        assert dict(original.usage_json["usage"]) == {
-                            "input_tokens": 100,
-                            "output_tokens": 50,
-                            "total_tokens": 150,
-                            "cache_tokens": 20,
-                            "reasoning_tokens": 30,
-                        }
-                        assert str(original.budget_charge.kind) == "trusted_usage"
-                        assert original.budget_charge.amount_micros == 200
-                        assert (
-                            runtime.uow.read_provider_budget(original.run_id).committed_micros
-                            == 200 * n
-                        )
-                        for grant in grants:
-                            assert grant["state"] == "SETTLED"
-                            assert grant["actual_tokens"] == 150 and grant["actual_cost_micros"] == 200
-                        assert len(facts) == n and all(
-                            fact.tokens == 150 and fact.cost_micros == 200 for fact in facts
-                        )
-                    else:
-                        assert original.usage_json.get("usage") is None
-                        assert str(original.budget_charge.kind) != "trusted_usage"
-                        assert grant["state"] == "UNKNOWN"
-                        assert (
-                            grant["actual_tokens"] is None and grant["actual_cost_micros"] is None
-                        )
-                        assert facts == []
-                        assert commit.ledger.has_unknown_usage(attempt.id)
-                        assert commit.ledger.reservation(attempt.id)["state"] == "RESERVED"
-                    # Public same-input replay and reconcile retain the original
-                    # failed result and never cause an invisible second HTTP call.
-                    repeated = await agent.submit(message["content"], input_id=intent.input_id)
-                    assert repeated.turn_id == receipt.turn_id
-                    assert await agent.wait_turn(repeated.turn_id, timeout=5) == result
-                    await runtime.kernel.reconcile()
-                    assert runtime.uow.read_provider_invocation(original.invocation_id) == original
-                    assert len(runtime.uow.list_provider_invocations(original.run_id)) == n
-                    assert tools.calls == [] and calls == ["/v1/chat/completions"] * n
-        finally:
-            store.close()
-
-    asyncio.run(exercise())
-
-
-async def _exercise_priced_length_recovery(tmp_path, *, task_cost_micros: int) -> None:
-    """Run a length retry through the real HTTP adapter and both SDK/Orch ledgers."""
-    caps = []
-
-    def transport(request):
-        assert request.url.path == "/v1/chat/completions"
-        cap = json.loads(request.content)["max_tokens"]
-        caps.append(cap)
-        if len(caps) == 1:
-            message = {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "truncated-tool",
-                        "type": "function",
-                        "function": {"name": "probe", "arguments": '{"path":"unfinished'},
-                    }
-                ],
-            }
-            output = cap
-            finish_reason = "length"
-        else:
-            message = {"role": "assistant", "content": "complete"}
-            output = 40
-            finish_reason = "stop"
-        return httpx.Response(
-            200,
-            json={
-                "id": f"priced-response-{len(caps)}",
-                "model": "deepseek-flash",
-                "choices": [{"message": message, "finish_reason": finish_reason}],
-                "usage": {
-                    "prompt_tokens": 100,
-                    "completion_tokens": output,
-                    "total_tokens": 100 + output,
-                },
-            },
-        )
-
-    # 分层步骤的成本上限继承自任务（删旧平面模式 第三刀：平面任务能单独给一个比任务
-    # 小的成本上限，分层步骤没有这个口子），所以任务的成本上限就设成要测的那个数。
-    store, commit, mission, task = _leaf_task(
-        tmp_path,
-        key="length-protocol-test",
-        goal="Recover a truncated tool response within the original task budget",
-        mission_cost_micros=task_cost_micros,
-    )
-    try:
-        price = FrozenPriceEstimator("original-protocol-price", "consumer", 1_000_000, 2_000_000)
-        guard = ProviderBudgetGuard(
-            commit,
-            owner="protocol-owner",
-            estimator=InputBound(),
-            max_slots=1,
-            priced=True,
-            price_tables={PROFILE: price},
-        )
-        tools = RecordingTool()
+        root = tmp_path / "root"
         async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-            provider = OpenAICompatibleProvider(
-                client, "https://protocol.invalid/v1", "deepseek-flash", Secret("fixture-only")
-            )
-            ports = AgentRuntimePorts(
-                provider=provider,
-                authorization=AllowAllAuthorization(),
-                database_path=str(tmp_path / "execution.db"),
-                model="deepseek-flash",
-                provider_admission=guard,
-                tool_executor=tools,
-                tool_names=("probe",),
-                tool_schemas={
-                    "probe": {
-                        "type": "object",
-                        "properties": {"path": {"type": "string"}},
-                        "required": ["path"],
-                        "additionalProperties": False,
-                    }
-                },
-                policies=ConsumerRuntimePolicies(
-                    "consumer_supplied", False, "fail_closed", estimator=price
-                ),
-                default_max_output_tokens=1000,
-                max_output_tokens_ceiling=2000,
-                empty_response_retries=2,
-            )
-            async with build_agent_runtime(ports) as runtime:
-                agent = await runtime.create(
-                    AgentConfig(
-                        name="protocol-length-test",
-                        instructions="Call probe once.",
-                        model_profile_ref=PROFILE,
-                    ),
-                    creation_key="protocol-length-agent",
-                )
-                message = user_message_json("Read the requested file.")
-                attempt, intent = commit.create_attempt(
-                    task.id,
-                    role="worker",
-                    model="deepseek-flash",
-                    prompt_version="worker-v2",
-                    context_version="protocol-fixture-v1",
-                    reservation=Reservation(tokens=4000, cost_micros=0),
-                    intent_config={
-                        "runtime_profile_id": PROFILE,
-                        "model": "deepseek-flash",
-                        "agent_config": agent.config.to_json(),
-                        "message": message,
-                        "provider_admission_fingerprint": guard.fingerprint,
-                    },
-                    input_hash=sha256_hex(message),
-                )
-                commit.claim_intent(intent.intent_id, owner="protocol-owner", lease_seconds=60)
-                commit.record_agent_created(
-                    intent.intent_id,
-                    agent_id=agent.agent_id,
-                    expected_turn_id=agent.turn_id_for(intent.input_id),
-                )
-                receipt = await agent.submit(message["content"], input_id=intent.input_id)
-                commit.record_submitted(
-                    intent.intent_id, receipt={"turn_id": receipt.turn_id, "seq": receipt.seq}
-                )
-                result = await agent.wait_turn(receipt.turn_id, timeout=5)
-                records = runtime.uow.list_provider_invocations(RunId(agent.run_id))
-                grants = list(
-                    store.connection.execute("SELECT * FROM provider_token_grants ORDER BY rowid")
-                )
-                assert tools.calls == []
-                assert records[0].error_code == "provider_protocol_error"
-                assert str(records[0].state) == "failed" and records[0].response_json is None
-                assert records[0].handoff_attempt == 1
-                assert records[0].estimator_digest == price.snapshot_digest
-                assert records[0].usage_json["usage"]["total_tokens"] == 1100
-                assert records[0].budget_charge.amount_micros == 2100
-                assert grants[0]["state"] == "SETTLED"
-                assert grants[0]["actual_tokens"] == 1100
-                assert grants[0]["actual_cost_micros"] == 2100
-                assert grants[0]["output_ceiling"] == 1000
-                assert not commit.ledger.has_unknown_usage(attempt.id)
+            provider = HalfJsonFirstAttempt(client)
+            async with product_world(root, provider, max_concurrent_model_calls=1) as world:
+                mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                           "idempotency_key": "protocol-" + str(known)})["mission_id"]
+                store = world.store
 
-                if task_cost_micros == 10_000:
-                    assert str(result.state) == "committed", result.error
-                    assert result.public_output.content == "complete"
-                    assert caps == [1000, 2000]
-                    assert len(records) == len(grants) == 2
-                    assert [str(record.state) for record in records] == ["failed", "succeeded"]
-                    assert records[1].request_id != records[0].request_id
-                    assert records[1].invocation_id != records[0].invocation_id
-                    assert records[1].estimator_digest == price.snapshot_digest
-                    assert grants[1]["state"] == "SETTLED"
-                    assert grants[1]["prior_output_upper"] == 1000
-                    assert grants[1]["output_ceiling"] == 2000
-                    assert grants[1]["actual_tokens"] == 140
-                    assert grants[1]["actual_cost_micros"] == 180
-                    assert (
-                        runtime.uow.read_provider_budget(records[0].run_id).committed_micros == 2280
-                    )
-                    facts = AgentBridge(runtime, unpriced=False).usage_facts(
-                        agent_id=agent.agent_id
-                    )
-                    assert len(facts) == 2
-                    assert [(fact.tokens, fact.cost_micros) for fact in facts] == [
-                        (1100, 2100),
-                        (140, 180),
-                    ]
-                    assert commit.import_usage(attempt.id, mission.id, facts) == 2
-                    assert commit.import_usage(attempt.id, mission.id, facts) == 0
-                    assert commit.ledger.usage_for(attempt.id) == (1240, 2280, False)
-                    # Only the SDK turn has completed here. Its Orch Attempt is
-                    # still active: do not manufacture subject-level completion.
-                    assert commit.ledger.reservation(attempt.id)["state"] == "RESERVED"
+                async def drive():
+                    while str(store.get_mission(mission_id).status.value) not in {"COMPLETED", "FAILED"}:
+                        await world.drain(timeout=10)
+                await asyncio.wait_for(drive(), 60)
+                assert str(store.get_mission(mission_id).status.value) == "COMPLETED", world.loop.progress_log[-8:]
+
+                first = next(a for a in (store.get_attempt(row[0]) for row in store.connection.execute(
+                    "SELECT attempt_id FROM attempts WHERE mission_id=?", (mission_id,)))
+                    if a.id.endswith(":attempt-1"))
+                rows = [dict(row) for row in store.connection.execute(
+                    "SELECT * FROM provider_token_grants WHERE subject_id=? ORDER BY created_at", (first.id,))]
+                samples = 1 + (world.loop._config.empty_response_retries if known else 0)
+                # 真实 HTTP 适配器被调到了；有效用量时按"失手"再采样，否则不再采样
+                assert len(posted) == len(rows) == samples, (posted, rows)
+                # 半截 JSON 的工具调用一次也没执行：尝试 1 的执行者在执行池库里没有任何工具效果
+                agent_id = store.get_intent_for_subject(first.id).agent_id
+                effects = 0
+                for database in root.glob("execution*.db"):
+                    with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
+                        effects += db.execute("SELECT COUNT(*) FROM execution_effects WHERE run_id=?",
+                                              (agent_id,)).fetchone()[0]
+                assert effects == 0
+                assert first.failure["error"]["error_code"] == "provider_protocol_error"
+                if known:
+                    assert [row["state"] for row in rows] == ["SETTLED"] * samples
+                    assert all(row["actual_tokens"] == 150 for row in rows)
+                    assert not world.loop.commit.ledger.has_unknown_usage(first.id)
                 else:
-                    # First request: 1,100 tokens / 2,100 micros. A doubled cap
-                    # has a 3,100-token upper bound and costs 5,100 micros;
-                    # the Task's 6,000-micro ceiling rejects 2,100 + 5,100.
-                    assert task_cost_micros == 6000
-                    assert str(result.state) == "failed", result.error
-                    assert result.error["error_code"] == "provider_admission_denied"
-                    denial = result.error["detail"]
-                    assert denial["reason_code"] == "budget_exhausted"
-                    assert denial["account_id"] == f"budget:{task.id}"
-                    assert denial["dimension"] == "cost_micros"
-                    assert denial["request_cost_micros"] == 5100
-                    assert denial["requested"] > denial["remaining"]
-                    assert caps == [1000]
-                    assert len(records) == 2 and len(grants) == 1
-                    assert str(records[1].state) == "claimed"
-                    assert records[1].handoff_attempt == 0
-                    assert records[1].usage_json.get("usage") is None
-                    assert (
-                        runtime.uow.read_provider_budget(records[0].run_id).committed_micros == 2100
-                    )
-                    assert commit.ledger.reservation(attempt.id)["state"] == "RESERVED"
-                    facts = AgentBridge(runtime, unpriced=False).usage_facts(
-                        agent_id=agent.agent_id
-                    )
-                    assert len(facts) == 1 and facts[0].tokens == 1100
-                    assert facts[0].cost_micros == 2100
-                    assert commit.import_usage(attempt.id, mission.id, facts) == 1
-                    assert commit.import_usage(attempt.id, mission.id, facts) == 0
-                    assert commit.ledger.usage_for(attempt.id) == (1100, 2100, False)
+                    [row] = rows
+                    assert row["state"] == "UNKNOWN" and row["actual_tokens"] is None
+                    assert world.loop.commit.ledger.has_unknown_usage(first.id)
+                # 失败不扣次数，同一做法再试一次做完
+                released = [event.payload for event in store.list_events(mission_id)
+                            if event.type == "AttemptChargeReleased" and event.attempt_id == first.id]
+                assert released and released[0]["failure_class"] in {"INFRA", "INTERRUPTED"}
 
-                # The settled grants and original failed invocation survive
-                # reconciliation and a public same-input replay unchanged.
-                before = [(r.invocation_id, r.request_id, r.version, r.usage_json) for r in records]
-                grant_before = [dict(grant) for grant in grants]
-                repeated = await agent.submit(message["content"], input_id=intent.input_id)
-                assert repeated.turn_id == receipt.turn_id
-                assert await agent.wait_turn(repeated.turn_id, timeout=5) == result
-                await runtime.kernel.reconcile()
-                guard.recover(runtime.uow)
-                assert [
-                    (r.invocation_id, r.request_id, r.version, r.usage_json)
-                    for r in runtime.uow.list_provider_invocations(RunId(agent.run_id))
-                ] == before
-                assert [
-                    dict(row)
-                    for row in store.connection.execute(
-                        "SELECT * FROM provider_token_grants ORDER BY rowid"
-                    )
-                ] == grant_before
-                assert not commit.ledger.has_unknown_usage(attempt.id)
-                assert tools.calls == []
-                assert caps == ([1000, 2000] if task_cost_micros == 10_000 else [1000])
-    finally:
-        store.close()
-
-
-def test_priced_truncated_tool_retries_with_new_identity_and_settles_both_grants(tmp_path):
-    asyncio.run(_exercise_priced_length_recovery(tmp_path, task_cost_micros=10_000))
-
-
-def test_priced_truncated_tool_second_admission_denied_by_task_budget(tmp_path):
-    asyncio.run(_exercise_priced_length_recovery(tmp_path, task_cost_micros=6000))
+    asyncio.run(case())

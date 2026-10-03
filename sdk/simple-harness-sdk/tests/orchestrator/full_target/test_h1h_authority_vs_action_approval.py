@@ -1,11 +1,12 @@
-# ruff: noqa: E402 -- shared step07 fixtures require the test path.
+# ruff: noqa: E402, E501 -- shared step07 fixtures require the test path.
 """Executable A06 regression draft (intentionally PARTIAL).
 
 Both halves use production Stores and APIs.  The planning half runs on the product's
 deployment: the main loop proposed a method, had it reviewed and opened the adoption
 round (``h1i_seed.reviewed``); the planner's reply goes through the real collector.
-The action half still uses the action-ledger fixture: an unapproved external write is
-joined to the product world together with representative case 3.  These tests prove
+The action half is a variant of representative case 3 on the same product deployment: the
+system materialises the publish action with its real operation link and waits for the
+person's approval (``helpers_step07.operation_world``).  These tests prove
 both enforcement points independently and must not be mapped as full A06 coverage
 until a real origin producer joins them.
 """
@@ -13,10 +14,10 @@ until a real origin producer joins them.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-import hashlib
 import sys
 from pathlib import Path
+
+import pytest
 
 _SDK_TESTS = Path(__file__).resolve().parent.parent
 _FULL_TARGET = _SDK_TESTS / "full_target"
@@ -25,16 +26,21 @@ for _test_dir in (_FULL_TARGET, _STEP07):
     if str(_test_dir) not in sys.path:
         sys.path.insert(0, str(_test_dir))
 
-from helpers_step07 import ENABLED, candidate, ledger_service  # noqa: E402
 from h1i_seed import events as _events  # noqa: E402
 from h1i_seed import plan_reply, reviewed  # noqa: E402
-from test_htn_store import envelope  # noqa: E402
+from helpers_step07 import operation_world, until_pending  # noqa: E402
 
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from simple_harness.contracts import canonical_json
+
+
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
 def _revision_count(loop, mission_id: str) -> int:
@@ -85,91 +91,38 @@ def test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant(
     asyncio.run(case())
 
 
-def _put_complete_operation_link(service, mission, action) -> None:
-    task = service.store.get_task(action["task_id"])
-    assert task is not None
-    frozen = dataclasses.replace(envelope(), mission_id=mission.id, scope_id="mission")
-    HtnStore(service.store).bind_operation(frozen, principal_id="origin-principal")
-    admission = PlanningAdmissionStore(service.store)
-    binding = admission.get_operation_binding(str(frozen.operation_occurrence_id))
-    assert binding is not None
-    link = {
-        "operation_id": binding["operation_id"],
-        "request_hash": binding["request_hash"],
-        "operation_occurrence_id": binding["operation_occurrence_id"],
-        "mission_id": binding["mission_id"],
-        "envelope_hash": binding["envelope_hash"],
-        "principal_id": binding["principal_id"],
-        "scope_id": binding["scope_id"],
-        "obligation_id": binding["obligation_id"],
-        "producer_task_id": task.id,
-        "producer_htn_occurrence_id": "occ-h1h-a06",
-        "producer_contract_revision": 1,
-        "producer_plan_revision": 1,
-        "action_key": action["action_key"],
-        "action_id": action["action_id"],
-        "action_version": action["version"],
-        "params_hash": action["params_hash"],
-        "idempotency_key": action["idempotency_key"],
-        "provenance_receipt_id": "receipt-h1h-a06",
-        "link_hash": hashlib.sha256(b"h1h-a06-link").hexdigest(),
-        "link_json": "{}",
-    }
-    link["link_json"] = canonical_json(link)
-    admission.put_operation_action_link(link)
-
-
 def test_a06_unapproved_external_write_with_complete_origin_link_cannot_handoff(tmp_path):
-    """Reach the approval gate, with no missing-link shortcut or connector call."""
+    """Reach the approval gate, with no missing-link shortcut or connector call.
 
-    service, mission, tasks, config, connectors, _deployment = ledger_service(tmp_path)
-    action = service.propose_action(
-        candidate(operation="set"),
-        mission_id=mission.id,
-        task_id=tasks["A"].id,
-        result_id="result-h1h-a06",
-        attempt_id=f"{tasks['A'].id}:attempt-h1h-a06",
-        artifact_id="artifact-h1h-a06",
-        artifact_hash="a" * 64,
-        connectors=connectors,
-        deployment=ENABLED,
-    )
-    assert action["state"] == "AWAITING_APPROVAL"
-    assert action["required_approvals"] == 1
-    _put_complete_operation_link(service, mission, action)
-    before_handed_off = len(
-        [
-            event
-            for event in service.store.list_events(mission.id)
-            if event.type == "ActionHandedOff"
-        ]
-    )
+    代表用例 3 的变体（产品同形世界）：系统按人确认的效果自己物化出发布动作，带完整的真实操作
+    链接（T0），停在"等人批准"；此时直接走交接入口，只会因为没批准被拒，不预留、不调用发布服务。"""
 
-    handed, reason = service.begin_handoff(
-        action["action_key"],
-        owner="h1h-a06-owner",
-        lease_seconds=30.0,
-        connectors=connectors,
-        deployment=ENABLED,
-    )
+    async def case() -> None:
+        async with operation_world(tmp_path, key="h1h-a06-unapproved") as world:
+            action = await until_pending(world)
+            assert action["required_approvals"] == 1
+            link = PlanningAdmissionStore(world.store).get_operation_action_link_for_action(action["action_key"])
+            assert link is not None and link["action_key"] == action["action_key"]  # a complete, real link
+            before_handed_off = len(world.events("ActionHandedOff"))
 
-    assert handed is None
-    assert reason == "not_ready:AWAITING_APPROVAL"
-    stored = service.store.get_action(action["action_key"])
-    assert stored is not None and stored["state"] == "AWAITING_APPROVAL"
-    assert stored["handoffs"] == 0
-    assert service.ledger.reservation(f"action:{action['action_key']}") is None
-    assert config.calls == []
-    assert (
-        len(
-            [
-                event
-                for event in service.store.list_events(mission.id)
-                if event.type == "ActionHandedOff"
-            ]
-        )
-        == before_handed_off
-    )
+            handed, reason = world.service.begin_handoff(
+                action["action_key"],
+                owner="h1h-a06-owner",
+                lease_seconds=30.0,
+                connectors=world.connectors,
+                deployment=world.deployment,
+            )
+
+            assert handed is None
+            assert reason == "not_ready:AWAITING_APPROVAL"
+            stored = world.store.get_action(action["action_key"])
+            assert stored is not None and stored["state"] == "AWAITING_APPROVAL"
+            assert stored["handoffs"] == 0
+            assert world.service.ledger.reservation(f"action:{action['action_key']}") is None
+            assert world.publish_ledger() == [] and world.published_files() == []
+            assert len(world.events("ActionHandedOff")) == before_handed_off
+
+    asyncio.run(case())
 
 
 def test_a06_valid_grant_allows_real_refine_commit(tmp_path):

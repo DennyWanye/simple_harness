@@ -65,7 +65,7 @@ IMPLEMENTED_NODEIDS = {
     "P08": "tests/orchestrator/full_target/test_h1h_nonmutating_collect.py",
     "P09": "tests/orchestrator/full_target/test_h1i_wait_lifecycle.py::test_wait_target_terminal_before_registration_wakes",
     "P10": "tests/orchestrator/full_target/test_h1h_preview_problem_mapping.py",
-    "I01": "tests/orchestrator/full_target/test_h1i_decode_only_collector.py",
+    "I01": "tests/orchestrator/full_target/test_h1i_raw_artifact_collector.py",
     "I02": "tests/orchestrator/full_target/test_h1i_decision_replay.py",
     "I03": "tests/orchestrator/full_target/test_h1h_process_recovery.py::test_i03_process_exit_between_grant_and_side_binding_recovers_neither",
     "I04": "tests/orchestrator/full_target/test_h1i_preview_recovery.py",
@@ -137,10 +137,10 @@ COVERAGE_NOTES = {
 # coverage; only run() may report an execution PASS. Earlier audit results remain
 # evidence for their original source snapshot, not current gate status.
 IMPLEMENTED_NODEIDS.update({
-    "A06": "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_a06_same_mission_planning_grant_and_action_approval_are_independent",
-    "O03": "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_retired_unknown_action_blocks_official_commit_without_revision_or_outbox",
+    "A06": "tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant",
+    "O03": "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision",
     "O07": "tests/orchestrator/full_target/test_h1h_operation_live_boundaries.py::test_o07_real_t0_t1_success_receipt_is_applied_and_wrong_receipt_is_refused",
-    "O09": "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_o09_real_t0_materialization_rolls_back_link_fault_and_replays_once",
+    "O09": "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart",
     "P02": "tests/orchestrator/full_target/test_h1h_p02_compiler_cycles.py",
     "P03": "tests/orchestrator/full_target/test_h1h_p03_compiler_data_coverage_resources.py",
     "P04": "tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py",
@@ -150,11 +150,11 @@ IMPLEMENTED_NODEIDS.update({
     "I08": "tests/orchestrator/full_target/test_h1h_no_nanojev_process.py",
 })
 SUPPORTING_NODEIDS.update({
-    "A06": ("tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant", "tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_a06_zero_action_approvals_and_observed_method_gate_cannot_replace_grant"),
-    "O02": ("tests/orchestrator/full_target/test_h1h_operation_alias.py", "tests/orchestrator/full_target/test_h1h_operation_two_real_producers.py"),
-    "O03": ("tests/orchestrator/full_target/test_h1h_retired_method_unknown_action.py",),
-    "O07": ("tests/orchestrator/full_target/operation_completion/test_scoped_reconciliation.py",),
-    "O08": ("tests/orchestrator/full_target/test_h1h_operation_current_gates.py::test_o08_real_handoff_after_preview_invalidates_original_snapshot",),
+    "A06": ("tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_unapproved_external_write_with_complete_origin_link_cannot_handoff",),
+    "O02": ("tests/orchestrator/full_target/test_h1h_operation_alias.py", "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_two_required_publishes_each_need_their_own_chain"),
+    "O03": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent",),
+    "O07": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent",),
+    "O08": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_handoff_changes_the_operation_snapshot_a_plan_preview_read",),
     "P03": ("tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p02_p03_real_compiler_refusal_keeps_typed_reason",),
 })
 MATCHED = MATCHED | {"A06", "O03", "O07", "O08", "O09", "P02", "P03", "P04", "P06", "P07", "I06", "O02", "O04", "I08"}

@@ -1,46 +1,30 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""P2.3j: the repair round after a root review REJECT has something to repair *with*.
+"""修复轮里答错的替换决定：被按名拒绝、什么都不写，规划器下一轮仍能答对（HTN 补齐阶段 A′）。
 
-The Grok acceptance episode H-L3-C1-r1 (and H-L3-C2-r0, identical in shape) ended:
+P2.3j 的来历（C1 真机局：修复轮的规划包对已细化的目标什么材料都不给）已由
+``product_world/test_repair_material.py`` 守住；"修复时换做法、在跑的兄弟步骤经执行图收敛"
+由 ``product_world/test_repair_replace_method.py`` 守住（迁移裁决 A1 / 实施记录 A′-3）。
+这里只剩原文件"替换必须明说"那一组里还没有覆盖的两条，在产品同形世界里重写：
 
-    MethodSynthesisRoundRecorded{TRIAL_ADMITTED}      ← code.fix-by-reproduce-patch-verify-explain
-    → PlanRevisionCommitted{revision 1}, six leaves COMPLETED, six ports delivered
-    → HierarchicalRootReviewRejected{c-change-explained: FAIL, blocker}   ← the reviewer was right
-    → PlanningRejected{ordinal 4, root_review_rejected}                    ← D5-A opened the repair
-    → planner ordinal 5: ``method_library []`` / ``applicability []`` / ``open_compound_goals []``
-    → PlanningRejected{ordinal 5, no_applicable_method}
-    → HierarchicalMissionStalled{hierarchical_no_dispatchable_work} → MissionFailed
+* 对已细化的目标再发一次 REFINE（不退役旧做法就想换）→ 被拒，计划版本不动；
+* REPLACE_METHOD 换成**同一个做法、同样的参数** → 按名拒绝 ``REPAIR_NOT_ALLOWED``（2026-09-27
+  真机局：这种替换曾死在库表唯一约束上、报成内部错误），计划版本不动。
 
-The repair round's package listed methods and applicability only for compound goals
-*nobody had refined yet*, and the root was refined — by the very instance the review
-had just rejected.  So the Planner was told what the reviewer said and given nothing
-to say back: no library, no applicability, no way to name the rejected instance, and
-no route by which the findings reached a new synthesis round.
+两种错答在同一局里先后发出（一步内容被退回 → 修复轮），之后规划器答"同一做法再试一次"，
+任务照常完成：错答不变成系统事实，也不卡死任务。
 
-Three things change here, none of them in ``contracts/``:
-
-(a) the package carries a ``rejected_refinements`` section for the occurrence whose
-    adopted instance the root review rejected, and ``method_library`` /
-    ``applicability`` are computed for that occurrence too, with the rejected method
-    flagged;
-(b) a proposal may carry ``retire_method`` (the rejected instance) together with the
-    ``refine`` of the same goal — the replacement §9.1 calls "选择替代方法" — compiled
-    through the compiler's existing ``retire_instance_ids`` and the commit's existing
-    retirement checks;
-(c) when the Planner, shown that package, still declares ``no_applicable_method``,
-    the system's own applicability judgment (with the rejected method excluded) may
-    open a *second* synthesis round for that goal, once per rejected plan revision,
-    with the findings handed to the synthesiser as ``review_feedback``.
-
-The fixture under ``fixtures/htn/c1_repair_round/`` is the real ordinal-5 package and
-the real findings; the first test pins the defect shape so the repair is measured
-against what actually happened.
+原文件第三条"退役的实例必须是这一处正在用的那个"已由纯函数用例
+``test_planning_decision_admission.py::test_an_instance_belonging_to_another_subject_is_refused`` /
+``test_an_instance_that_is_not_active_on_the_subject_is_refused``（``METHOD_RETIRED``）与
+``test_a_one_character_difference_in_any_quadruple_component_is_refused``（陌生引用
+``REF_OUTSIDE_CONTEXT``）钉住，不另写（偏离：原用例按"删除"处理）。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -48,298 +32,157 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import test_htn_end_to_end as e2e  # noqa: E402
-from htn_world import method, out, param, step  # noqa: E402
-from test_htn_end_to_end import (  # noqa: E402
-    ROOT_DUTY,
-    ROOT_TASK,
-    World,
-    _accept_every_child,
-    committed,
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+    retry_same_method,
+    review_input,
+    review_reply,
 )
-from test_root_review_coordinator import coordinator, review  # noqa: E402
-
-from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
-from agent_orchestrator.contracts.models import (  # noqa: E402
-    Attempt,
-    Budget,
-    ContractError,
-)
-from agent_orchestrator.contracts.resolution import (  # noqa: E402
-    CriterionVerdict,
-    ReviewVerdict,
-)
-from agent_orchestrator.contracts.state_machines import (  # noqa: E402
-    AttemptStatus,
-)
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from scripted_plans import plan_revision_proposal_step  # noqa: E402
-
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "c1_repair_round"
-NOW_MS = 2_000_000
-ROOT_CRITERION = "c-root"
-FREE_TEXT_CRITERION = "根目标经根评审通过并形成 GoalResolution"
 
 
-def _c1() -> dict[str, Any]:
-    return {
-        "ord4": json.loads((FIXTURE / "package_ord4.json").read_text(encoding="utf-8")),
-        "ord5": json.loads((FIXTURE / "package_ord5.json").read_text(encoding="utf-8")),
-        "rejected": json.loads((FIXTURE / "root_review_rejected.json").read_text(encoding="utf-8")),
-        "planning": json.loads((FIXTURE / "planning_rejected.json").read_text(encoding="utf-8")),
-    }
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-C1_FINDING = _c1()["rejected"]["findings"][0]
-BLOCKER = ({"severity": "blocker", "criterion_id": ROOT_CRITERION, "detail": C1_FINDING["detail"]},)
+def _wrong_answer(kind: str, package: dict[str, Any]) -> str:
+    """规划器在修复轮里的一条错答：对被修复的已细化目标再细化一次，或"换成"同一个做法。"""
+
+    [goal] = [item for item in package["views"]["goals"] if item.get("under_repair") and item.get("adopted_method")]
+    subject = next(item["subject_key"] for item in package["planning_subjects"]
+                   if item["occurrence_id"] == goal["occurrence_id"])
+    current = dict(goal["adopted_method"]["method_ref"])
+    if kind == "refine_again":
+        return decision(subject, "REFINE", {"method_ref": current, "bindings": goal["params"]},
+                        "对这个目标再细化一次。")
+    instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
+                    and item["id"] == goal["adopted_method"]["method_instance_id"])
+    return decision(subject, "REPAIR", {"repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+                                        "replacement_method_ref": current, "bindings": goal["params"]},
+                    "换成同一个做法、同样的参数。")
+
+
+WRONG = ("refine_again", "readopt_same")
+
+
+def test_a_wrong_replacement_in_the_repair_round_is_refused_and_writes_no_revision(tmp_path):
+    asked: list[str] = []
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        repairs = [entry for entry in package.get("repair_requests") or ()
+                   if ((entry.get("request") or {}).get("context") or {}).get("event_type") != "GoalUnrefined"]
+        if not repairs:
+            return planner_reply(request)
+        if len(asked) < len(WRONG):
+            asked.append(WRONG[len(asked)])
+            return _wrong_answer(asked[-1], package)
+        asked.append("retry")
+        return retry_same_method(request)
+
+    rejected = {"done": False}
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        if str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT" and not rejected["done"]:
+            rejected["done"] = True
+            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：内容不满足要求。")
+        return review_reply(data)
+
+    async def case():
+        provider = LayeredScriptedProvider(planner=planner, reviewer=reviewer)
+        async with product_world(tmp_path / "root", provider, max_planning_attempts=4) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "idempotency_key": "repair-wrong-replace",
+                                       "success_criteria": ["file:NOTES.md"]})["mission_id"]
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            events = list(world.store.list_events(mission_id))
+            assert str(mission.status.value) == "COMPLETED", [event.type for event in events][-20:]
+            return events
+
+    events = asyncio.run(case())
+    assert asked == [*WRONG, "retry"]
+    evaluated = [event for event in events if event.type == "PlanningDecisionEvaluated"]
+    revisions = [event for event in events if event.type == "PlanRevisionCommitted"]
+    # 两条错答各被拒一次，依次是"再细化"（预览就被拒）和"换成同一个做法"（提交时被拒）。
+    refused = [event for event in evaluated if event.payload["status"] in {"REJECTED", "COMMIT_REJECTED"}]
+    assert [(event.payload["decision_type"], event.payload["status"]) for event in refused] == [
+        ("REFINE", "REJECTED"), ("REPAIR", "COMMIT_REJECTED")]
+    refine, readopt = refused
+    assert [event.payload["reason"] for event in events if event.type == "PlanningRejected"] == [
+        "proposal_not_grounded"] * 2
+    assert "exactly one open occurrence" in json.dumps(refine.payload["detail"])
+    assert readopt.payload["rejection_codes"] == ["REPAIR_NOT_ALLOWED"]
+    assert "a repair must choose a different method or different parameters" in json.dumps(readopt.payload["detail"])
+    # 错答什么都没提交：从头到尾只有第一版计划（"再试一次"不是新计划版本）。
+    assert [event.payload["base_plan_revision"] for event in revisions] == [0]
+    assert all(event.seq < refine.seq for event in revisions)
+    # 修复请求不是被错答了结的，而是被随后的"再试一次"了结。
+    [addressed] = [event for event in events if event.type == "PlanningRepairAddressed"]
+    assert addressed.seq > readopt.seq and addressed.payload["decision_type"] == "REPAIR"
 
 
 # ======================================================================================
-# The worlds
+# 暂留给导入方的旧名字（``test_criteria_driven_write_step.py`` 用 ``C1_FINDING``；
+# ``test_h1h_retired_method_unknown_action.py`` 用 ``_alt_method`` / ``_adopted_root`` /
+# ``_replacement``）。它们改掉导入后随删。``_rejected_open`` 建在已退役的
+# ``test_htn_end_to_end`` 世界与旧根审阅员上，无法保留。
 # ======================================================================================
+
+_HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
+if str(_HTN_FIXTURES) not in sys.path:
+    sys.path.insert(0, str(_HTN_FIXTURES))
+
+FIXTURE = _HTN_FIXTURES / "c1_repair_round"
+ROOT_TASK = "task-root"
+ROOT_DUTY = "obl-root"
+C1_FINDING = json.loads((FIXTURE / "root_review_rejected.json").read_text(encoding="utf-8"))["findings"][0]
 
 
 def _alt_method(method_id: str = "plan.alt"):
-    """A second registered method for ``plan.goal``: the replacement the Planner may pick."""
+    from agent_orchestrator.contracts.htn import TaskForm
+    from htn_world import method, out, param, step
 
     return method(
-        method_id,
-        "plan.goal",
-        parameter_schema="plan.goal.params",
+        method_id, "plan.goal", parameter_schema="plan.goal.params",
         steps=(
-            step(
-                "leaf2",
-                "plan.leaf",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("plan.read",),
-            ),
-            step(
-                "review2",
-                "plan.review",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject"), "result": out("leaf2", "result")},
-                capabilities=("plan.read",),
-            ),
+            step("leaf2", "plan.leaf", TaskForm.PRIMITIVE, {"subject": param("subject")},
+                 capabilities=("plan.read",)),
+            step("review2", "plan.review", TaskForm.PRIMITIVE,
+                 {"subject": param("subject"), "result": out("leaf2", "result")}, capabilities=("plan.read",)),
         ),
         links=(("c-root", "review2", "c-reviewed"),),
         finalizer="review2",
     )
 
 
-def _register(world: World, contract: Any) -> None:
-    receipt = world.env.admit(contract)
-    assert receipt.admitted, receipt.problems
-    HtnStore(world.store).register_method(
-        contract, world.env.registry.registration(contract.method_ref())
-    )
-
-
-def _seeded(tmp_path, *, key: str, alt: bool, free_text: bool = False) -> World:
-    """A committed plan whose gating children are accepted; the store is left open."""
-
-    original = e2e._spec
-    if free_text:
-        # The Mission Judge checks ``file:`` criteria on the integrated artifact tree,
-        # which leaves accepted through the assembly do not populate; a free-text
-        # criterion goes to the (scripted) independent Critic instead.
-        import dataclasses
-
-        def spec(*args: Any, **kwargs: Any):
-            return dataclasses.replace(
-                original(*args, **kwargs), success_criteria=(FREE_TEXT_CRITERION,)
-            )
-
-        e2e._spec = spec
-    try:
-        world = committed(tmp_path, key=key, demand=True)
-    finally:
-        e2e._spec = original
-    if alt:
-        _register(world, _alt_method())
-    world.dispatch.issue_input_witnesses(world.mission.id, world.network(), now_ms=1_000_000)
-    _accept_every_child(world)
-    return world
-
-
-def _rejected_open(tmp_path, *, key: str, alt: bool, with_method_ref: bool = True) -> World:
-    """A Mission whose root review REJECTED the plan and whose repair round is on
-    record; the store is left open for ``world.plan``."""
-
-    world = _seeded(tmp_path, key=key, alt=alt)
-    coordinator(world).cut(world.mission.id, now_ms=NOW_MS)
-    review(
-        world,
-        verdict=ReviewVerdict.REJECTED,
-        verdicts={ROOT_CRITERION: CriterionVerdict.FAIL},
-        findings=BLOCKER,
-    )
-    return world
-
-
-def _running_attempt(world: World, task_id: str, *, ordinal: int | None = None) -> str:
-    if ordinal is None:
-        # 带协议绑定的世界里这一步被验收时已经有过一次真实尝试（序号 1），这里接着往下编。
-        ordinal = 1 + max(
-            (int(item.ordinal) for item in world.store.list_attempts(task_id)), default=0,
-        )
-    attempt_id = f"{task_id}:att-{ordinal}"
-    world.store.insert_attempt(
-        Attempt(
-            id=attempt_id,
-            task_id=task_id,
-            mission_id=world.mission.id,
-            role="worker",
-            model="fixture",
-            prompt_version="worker-hierarchical-v2",
-            context_version="ctx",
-            budget_reserved=Budget(max_tokens=500),
-            lease_owner="w",
-            lease_expires_at=None,
-            status=AttemptStatus.RUNNING,
-            retry_of=None,
-            created_at=1.0,
-            version=1,
-            ordinal=ordinal,
-            creation_key=f"k-{attempt_id}",
-            input_id="i",
-            failure=None,
-        )
-    )
-    return attempt_id
-
-
-# ======================================================================================
-# 1. The defect, pinned by the real package
-# ======================================================================================
-
-
-# ======================================================================================
-# 2. (a) the repaired package
-# ======================================================================================
-
-
-# ======================================================================================
-# 3. (b) retire + refine as one replacement
-# ======================================================================================
-
-
-def _replacement(
-    world: World,
-    contract: Any,
-    *,
-    instance_id: str,
-    revision: int,
-    proposal_id: str = "p-replace",
-) -> str:
-    reference = contract.method_ref()
-    return plan_revision_proposal_step(
-        proposal_id=proposal_id,
-        expected_plan_revision=revision,
-        read_set=[
-            {
-                "kind": "method",
-                "id": reference.method_id,
-                "semantic_revision": reference.version,
-                "content_hash": reference.content_hash,
-            }
-        ],
-        operations=[
-            {
-                "op": "retire_method",
-                "method_instance_id": instance_id,
-                "reason": "the root review rejected this instance's result",
-            },
-            {
-                "op": "refine",
-                "goal_id": ROOT_TASK,
-                "obligation_id": ROOT_DUTY,
-                "method_ref": {
-                    "id": reference.method_id,
-                    "version": reference.version,
-                    "content_hash": reference.content_hash,
-                },
-                "bindings": {},
-            },
-        ],
-        rationale="replace the rejected method with the alternative",
-    )
-
-
-def _adopted_root(world: World) -> str:
+def _adopted_root(world: Any) -> str:
     network = world.network()
     draft = network.adopted_instance_for(network.root_occurrence_ids[0])
     assert draft is not None
     return str(draft.instance_id)
 
 
-def test_a_retirement_must_name_the_instance_adopted_at_the_refined_occurrence(tmp_path) -> None:
-    world = _rejected_open(tmp_path, key="p23j-replace-stranger", alt=True)
-    # 撤的不是这一处正在用的做法：这一处仍被占着，候选认不出"还没细化的那一处"。
-    with pytest.raises(ContractError, match="exactly one open occurrence"):
-        world.plan(
-            _replacement(world, _alt_method(), instance_id="mi-stranger", revision=1),
-            command_id="cmd-stranger",
-        )
+def _replacement(world: Any, contract: Any, *, instance_id: str, revision: int, proposal_id: str = "p-replace") -> str:
+    from scripted_plans import plan_revision_proposal_step
 
-
-def test_refining_a_refined_goal_without_retiring_is_still_refused(tmp_path) -> None:
-    """The control: the replacement is explicit, never implied by a second refine."""
-
-    world = _seeded(tmp_path, key="p23j-replace-implicit", alt=True)
-    alt = _alt_method()
-    reference = alt.method_ref()
-    text = plan_revision_proposal_step(
-        proposal_id="p-implicit",
-        expected_plan_revision=1,
-        read_set=[
-            {
-                "kind": "method",
-                "id": reference.method_id,
-                "semantic_revision": reference.version,
-                "content_hash": reference.content_hash,
-            }
-        ],
+    reference = contract.method_ref()
+    method_ref = {"id": reference.method_id, "version": reference.version, "content_hash": reference.content_hash}
+    return plan_revision_proposal_step(
+        proposal_id=proposal_id, expected_plan_revision=revision,
+        read_set=[{"kind": "method", "id": reference.method_id, "semantic_revision": reference.version,
+                   "content_hash": reference.content_hash}],
         operations=[
-            {
-                "op": "refine",
-                "goal_id": ROOT_TASK,
-                "obligation_id": ROOT_DUTY,
-                "method_ref": {
-                    "id": reference.method_id,
-                    "version": reference.version,
-                    "content_hash": reference.content_hash,
-                },
-                "bindings": {},
-            }
+            {"op": "retire_method", "method_instance_id": instance_id,
+             "reason": "the root review rejected this instance's result"},
+            {"op": "refine", "goal_id": ROOT_TASK, "obligation_id": ROOT_DUTY, "method_ref": method_ref, "bindings": {}},
         ],
+        rationale="replace the rejected method with the alternative",
     )
-    with pytest.raises(ContractError, match="exactly one open occurrence"):
-        world.plan(text, command_id="cmd-implicit")
-    assert int(world.network().plan_revision) == 1
-
-
-def test_readopting_the_same_method_with_the_same_parameters_is_refused_by_name(tmp_path) -> None:
-    """Verification P0-1: a repair record without the method reference (the shape older
-    records have) leaves the history empty; replacing the adopted instance with the very
-    same method and parameters is still refused by the commit, by name, and nothing is
-    written."""
-
-    world = _rejected_open(tmp_path, key="p23j-readopt-id", alt=False, with_method_ref=False)
-    old = _adopted_root(world)
-    outcome = world.plan(
-        _replacement(world, world.contract, instance_id=old, revision=1),
-        command_id="cmd-readopt-id",
-    )
-    assert not outcome.committed
-    assert outcome.last_reason == "REPAIR_NOT_ALLOWED"
-    assert int(world.network().plan_revision) == 1
-
-
-# ======================================================================================
-# 4. End to end on a real Orchestrator, cycle by cycle
-# ======================================================================================
-
-

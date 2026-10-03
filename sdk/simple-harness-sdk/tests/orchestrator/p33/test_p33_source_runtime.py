@@ -6,99 +6,75 @@
 来源只由 Host/人登记；同一 source 的新版出现后，旧 Attempt 的材料仍是旧版，
 新 Attempt 才看到新版。Worker 改写已登记来源并报 artifact 必须拒绝；解析与
 验证使用 CAS 原文。这里用确定性 Provider，真实模型和 Host 原生仍属于 G。
+
+HTN 补齐阶段 A′：前三条在产品同形世界里跑（产品部署组装 + 真实 ``FilePublishConnector``，
+经门面建任务、登记来源），不跑主循环。
 """
 
 import asyncio
 
 import pytest
-from fixtures_provider import RoleScriptedProvider
+from p33_world import opened, request
 
-from agent_orchestrator.contracts import Budget, ContractError
+from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
-from agent_orchestrator.orchestrator.commit_service import MissionSpec
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
+PUBLISHING = DeploymentPolicy(enabled_connectors=("file_publish",))
 
-def spec(key: str = "g-1", **overrides) -> MissionSpec:
-    base = dict(
-        goal="实现记录器并验证",
-        success_criteria=("file:c.md",),
-        tenant_id="tenant-5",
-        idempotency_key=key,
-        allowed_tools=("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests"),
-        budget=Budget(max_tokens=200_000, max_attempts=12),
-    )
-    base.update(overrides)
-    return MissionSpec(**base)
+
+def publishing(root, publisher):
+    return opened(root, connectors={"file_publish": publisher}, deployment_policy=PUBLISHING)
 
 
 @pytest.mark.parametrize("location", ["cas", "workspace", "ancestor", "symlink", "case_alias"])
 def test_source_mission_rejects_publisher_overlapping_actual_source_roots(tmp_path, location):
-    async def case():
-        evidence = tmp_path / "evidence"
-        locations = {
-            "cas": evidence / "artifacts" / "sha256",
-            "workspace": evidence / "workspaces" / "nested",
-            "ancestor": evidence.parent,
-            "case_alias": evidence / "ARTIFACTS" / "sha256",
-        }
-        if location == "symlink":
-            target = evidence / "artifacts"
-            target.mkdir(parents=True)
-            link = tmp_path / "publish-link"
-            link.symlink_to(target, target_is_directory=True)
-            locations["symlink"] = link
-        publisher = FilePublishConnector(locations[location], tmp_path / "publish-ledger")
-        config = OrchestratorConfig(
-            evidence_root=evidence,
-            deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
-        )
-        async with Orchestrator(
-            config, RoleScriptedProvider({}), connectors={"file_publish": publisher}
-        ) as orch:
-            # 2026-09-26（用户决定）：通用任务（code-v1）能带资料，有资料目录，
-            # 所以拒绝与证据存储重叠的发布目录。
-            with pytest.raises(ContractError, match="source_publish_root_overlap"):
-                await orch.submit_mission(spec("general", domain=CODE_DOMAIN))
-            assert orch.store.list_missions() == []
-
-    asyncio.run(case())
+    evidence = tmp_path / "evidence"
+    locations = {
+        "cas": evidence / "artifacts" / "sha256",
+        "workspace": evidence / "workspaces" / "nested",
+        "ancestor": evidence.parent,
+        "case_alias": evidence / "ARTIFACTS" / "sha256",
+    }
+    if location == "symlink":
+        target = evidence / "artifacts"
+        target.mkdir(parents=True)
+        link = tmp_path / "publish-link"
+        link.symlink_to(target, target_is_directory=True)
+        locations["symlink"] = link
+    publisher = FilePublishConnector(locations[location], tmp_path / "publish-ledger")
+    with publishing(evidence, publisher) as world:
+        # 2026-09-26（用户决定）：通用任务（code-v1）能带资料，有资料目录，
+        # 所以拒绝与证据存储重叠的发布目录；门口拒绝，一行不写。
+        with pytest.raises(FacadeError, match="source_publish_root_overlap"):
+            world.control.create(request("general", domain=CODE_DOMAIN))
+        assert world.store.list_missions() == []
 
 
 def test_source_mission_accepts_disjoint_publish_directory(tmp_path):
-    async def case():
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "evidence",
-            deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
-        )
-        publisher = FilePublishConnector(tmp_path / "published", tmp_path / "ledger")
-        async with Orchestrator(
-            config, RoleScriptedProvider({}), connectors={"file_publish": publisher}
-        ) as orch:
-            assert (await orch.submit_mission(spec(domain=CODE_DOMAIN))).id
-
-    asyncio.run(case())
+    publisher = FilePublishConnector(tmp_path / "published", tmp_path / "ledger")
+    with publishing(tmp_path / "evidence", publisher) as world:
+        created = world.control.create(request("g-1", domain=CODE_DOMAIN))
+        assert created["created"] is True
+        world.control.register_source({"mission_id": created["mission_id"], "path": "sources/a.md",
+                                       "content": "原文。", "kind": "markdown", "idempotency_key": "a"})
+        assert len(world.store.list_sources(created["mission_id"])) == 1
 
 
 def test_source_storage_validation_uses_current_deployment_after_reopen(tmp_path):
-    async def case():
-        config = OrchestratorConfig(
-            evidence_root=tmp_path / "evidence",
-            deployment_policy=DeploymentPolicy(enabled_connectors=("file_publish",)),
-        )
-        async with Orchestrator(config, RoleScriptedProvider({})) as first:
-            mission = await first.submit_mission(spec(domain=CODE_DOMAIN))
-        unsafe = FilePublishConnector(config.workspaces_root, tmp_path / "ledger")
-        async with Orchestrator(
-            config, RoleScriptedProvider({}), connectors={"file_publish": unsafe}
-        ) as second:
-            with pytest.raises(ContractError, match="source_publish_root_overlap"):
-                second.validate_source_storage(mission.id)
-
-    asyncio.run(case())
+    evidence = tmp_path / "evidence"
+    with opened(evidence, deployment_policy=PUBLISHING) as first:
+        mission_id = first.control.create(request("g-1", domain=CODE_DOMAIN))["mission_id"]
+    # 重启后部署换了一个落在工作区里的发布目录：已有任务再导入来源时按今天的物理根复查
+    unsafe = FilePublishConnector(evidence / "workspaces", tmp_path / "ledger")
+    with publishing(evidence, unsafe) as second:
+        before = second.store.snapshot(mission_id)
+        with pytest.raises(FacadeError, match="source_publish_root_overlap"):
+            second.control.register_source({"mission_id": mission_id, "path": "sources/a.md",
+                                            "content": "原文。", "kind": "markdown", "idempotency_key": "a"})
+        assert second.store.snapshot(mission_id) == before
+        assert second.store.list_sources(mission_id) == []
 
 
 @pytest.mark.parametrize("view", ["work", "verify"])

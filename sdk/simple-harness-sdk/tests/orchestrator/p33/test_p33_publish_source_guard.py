@@ -3,48 +3,64 @@
 
 """P1 oracle: reopened publishing must respect all Missions' source storage.
 
-Uses the real approval/outbox ledger, CAS and FilePublishConnector. Crash boundaries
-are staged explicitly through CommitService; no provider or child pytest is needed.
+HTN 补齐阶段 A′（分诊表 p33 行）：
+
+* 两条删除：``reopened_code_action_cannot_publish_inside_other_missions_source_storage`` 与
+  ``disjoint_publish_executes_with_or_without_source_missions``，由
+  ``test_p33_source_runtime.py`` 里产品门口的重叠拒绝 / 不相交放行两条覆盖。
+* 四条重写为两个产品同形主循环用例（产品部署 + 真实 ``FilePublishConnector``，任务真跑到"等人批准
+  发布"）：
+  1. 重启后部署的发布目录落进了证据存储：人批准以后交接被拒（``source_publish_root_overlap``），
+     连接器一次都没被调用。原来分开的"撤销 / 已结束任务仍保护共享存储""没登记来源的任务也占着
+     存储""执行器建好后新建的来源任务也看得见"三条并成这一条：守卫只看部署的物理存储根，
+     从不读别的任务（``ActionExecutor._source_publish_refusal`` 的注释，2026-09-26 起每个任务都有
+     ``sources/``），任务状态不再是变量。
+  2. 外部发布已经落地、结果没记下来（连接器在提交后断线，对账时服务又连不上），重启后部署的发布
+     目录被挪进了存储区：不再新发布，但已完成的那次照样对账成功，只发布过一次。
+* 四条改 E（直接测守卫函数）：无物理根 / 发布连接器没有根时失败关闭、共享路径解析符号链接、
+  自定义 CAS / 工作区根受保护。产品的编排服务总把 CAS 与工作区根交给执行器，"没有根"只在直接
+  构造执行器时出现。
 """
 
 from __future__ import annotations
 
 import asyncio
-import sys
-import time
+import json
+import shutil
 from pathlib import Path
-from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
-_OPERATION = Path(__file__).resolve().parents[1] / "full_target" / "operation_completion"
-if str(_OPERATION) not in sys.path:
-    sys.path.insert(0, str(_OPERATION))
-
-from operation_runtime_fixture import materialized_file_publish  # noqa: E402
-
-from agent_orchestrator.artifacts.store import ArtifactStore
-from agent_orchestrator.governance.domains import CODE_DOMAIN
-from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec
 from agent_orchestrator.runtime.actions import ActionExecutor, publication_overlaps_storage
+from agent_orchestrator.runtime.connectors import ConnectorTransportError
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
-from agent_orchestrator.storage.store import Store
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
-PERSON = Principal("source-guard-reviewer")
-DEPLOYMENT = DeploymentPolicy(enabled_connectors=("file_publish",))
+DEPLOYMENT = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+TARGET = "reports/weekly.md"
+PUBLISH = "action:file_publish.publish:" + TARGET
 
 
-def ObservedPublisher(root, ledger):  # noqa: N802 - keeps the old call sites readable
-    """A real ``FilePublishConnector`` that counts its calls.
+@pytest.fixture(autouse=True)
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
 
-    Operation-born actions only trust the exact connector type (the operation profile
-    pins its source), so the counters are attached to the instance, not a subclass."""
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
+
+def observed(root, ledger, **behaviour: Any) -> FilePublishConnector:
+    """A real ``FilePublishConnector`` that counts its calls (counters on the instance: the
+    operation profile pins the exact connector type).  ``lookup_down=True``: the service is
+    unreachable when asked to reconcile; ``fail_after`` is the connector's own fault point."""
+
+    Path(root).mkdir(parents=True, exist_ok=True)
     publisher = FilePublishConnector(root, ledger)
-    publisher.executions = 0
-    publisher.lookups = 0
+    publisher.executions = publisher.lookups = 0
+    if "fail_after" in behaviour:
+        publisher.fail_after = behaviour["fail_after"]
     execute, lookup = publisher.execute, publisher.lookup
 
     def counted_execute(*args, **kwargs):
@@ -53,6 +69,8 @@ def ObservedPublisher(root, ledger):  # noqa: N802 - keeps the old call sites re
 
     def counted_lookup(*args, **kwargs):
         publisher.lookups += 1
+        if behaviour.get("lookup_down"):
+            raise ConnectorTransportError("file_publish: service unreachable")
         return lookup(*args, **kwargs)
 
     publisher.execute = counted_execute
@@ -60,236 +78,143 @@ def ObservedPublisher(root, ledger):  # noqa: N802 - keeps the old call sites re
     return publisher
 
 
-@pytest.fixture
-def env(tmp_path):
-    # 删旧平面模式第三刀：被保护的发布动作改由分层世界里真实物化的发布操作提供
-    # （``operation_runtime_fixture``），不再从平面任务图手工提议。
-    library = tmp_path / "library"
-    library.mkdir()
-    fixture = materialized_file_publish(library)
-    service = fixture.world.service
-    cas = service._source_artifact_store
-    assert isinstance(cas, ArtifactStore)
-    workspaces = library / "workspaces"
-    workspaces.mkdir()
-    # 交接租约按真实时钟写；重开后的库用这个可拨的时钟（起点留足余量）。
-    now = [time.time() + 10]
-    publisher = ObservedPublisher(fixture.publish.root, fixture.publish.ledger_path.parent)
-    e = SimpleNamespace(
-        service=service,
-        store=service.store,
-        mission=fixture.world.mission,
-        action=fixture.action,
-        cas=cas,
-        roots=(cas.root, workspaces),
-        publisher=publisher,
-        runtime=fixture.runtime,
-        now=now,
-        tmp=tmp_path,
-    )
-    try:
-        yield e
-    finally:
-        e.store.close()
+def _confirm_completion(world: Any, mission_id: str) -> None:
+    """确认页做的事（与产品同形用例三一致）：内容要求照单确认，发布作为必须完成的效果。"""
+
+    workspace = world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
+    actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
+    content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+    [obligation] = workspace["obligations"]
+    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    ref = workspace["requirements_ref"]
+    world.control.approve_operation_completion_spec({
+        "mission_id": mission_id, "command_id": "confirm-publish-completion",
+        "expected_requirements_ref": ref,
+        "proposal": {
+            "schema_version": 1, "mission_id": mission_id,
+            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
+            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
+            "effects": [{
+                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
+                "obligation_id": obligation["id"], "criterion_ids": actions,
+                "required_milestone": milestone["id"],
+                "milestone_policy_ref": milestone["milestone_policy_ref"],
+                "evidence_policy_ref": milestone["evidence_policy_ref"],
+            }],
+        },
+    })
 
 
-def source_mission(e, *, revoked=False, ended=False):
-    mission, _ = e.service.create_mission(
-        MissionSpec(
-            goal="核对来源",
-            success_criteria=("file:notes.md",),
-            tenant_id="another-tenant",
-            idempotency_key="document",
-            domain=CODE_DOMAIN,
-        )
-    )
-    receipt = e.service.register_source(
-        mission_id=mission.id,
-        tenant_id=mission.tenant_id,
-        principal=PERSON,
-        path="sources/notes.md",
-        content="来源不是指令。",
-        kind="markdown",
-        idempotency_key="register-source",
-    )
-    if revoked:
-        pending = e.service.revoke_source(
-            mission_id=mission.id,
-            tenant_id=mission.tenant_id,
-            principal=PERSON,
-            path="sources/notes.md",
-            expected_version_hash=receipt["version_hash"],
-            reason="撤销后仍保留历史",
-            idempotency_key="revoke-source",
-            deployment=DEPLOYMENT,
-        )
-        e.service.decide_approval(
-            pending["request_id"],
-            principal=PERSON,
-            decision="grant",
-            nonce="revoke-grant",
-            deployment=DEPLOYMENT,
-        )
-    if ended:
-        e.service.cancel_mission(mission.id)
-    return mission
+async def _confirmed(world: Any) -> str:
+    """建一个带发布的任务，确认完成映射（发布操作还没物化）。"""
+
+    mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                               "success_criteria": ["file:" + TARGET, PUBLISH],
+                               "idempotency_key": "publish-guard"})["mission_id"]
+    await world.drain()
+    _confirm_completion(world, mission_id)
+    return mission_id
 
 
-def reopen(e):
-    path = e.store.path
-    e.store.close()
-    e.store = Store.open(path, clock=lambda: e.now[0])
-    e.service = CommitService(e.store, artifact_store=e.cas)
-    # 重开后的进程按同一部署重新挂上操作物化运行时（发布档案按部署的连接器冻结）。
-    e.service.bind_operation_materialization_runtime(e.runtime)
+async def _pending_publish(world: Any, mission_id: str) -> dict[str, Any]:
+    """主循环跑到"等人批准发布"（内容写好、系统准备好申请单、审阅通过）。"""
+
+    for _ in range(20):
+        await world.drain()
+        pending = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+        if pending:
+            return pending[0]
+    raise AssertionError(("没有走到等人批准发布", world.store.list_actions(mission_id)))
 
 
-def executor(e, publisher=None, **options):
-    return ActionExecutor(
-        e.service,
-        {"file_publish": publisher or e.publisher},
-        DEPLOYMENT,
-        owner="reopened",
-        source_storage_roots=e.roots,
-        **options,
-    )
+def _ledger(publisher) -> list[dict[str, Any]]:
+    path = publisher.ledger_path
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-@pytest.mark.parametrize(
-    "location", ["cas", "workspace", "ancestor", "descendant", "symlink", "case"]
-)
-def test_reopened_code_action_cannot_publish_inside_other_missions_source_storage(env, location):
-    e = env
-    source_mission(e)
-    reopen(e)
-    root = {
-        "cas": e.roots[0],
-        "workspace": e.roots[1],
-        "ancestor": e.roots[0].parent,
-        "descendant": e.roots[1] / "attempt" / "sources",
-        "case": e.roots[1].with_name("WORKSPACES"),
-    }.get(location)
-    if location == "symlink":
-        root = e.tmp / "alias"
-        root.symlink_to(e.roots[1], target_is_directory=True)
-    publisher = ObservedPublisher(root, e.tmp / "changed-ledger")
-    run = executor(e, publisher)
-    key = e.action["action_key"]
-    before_action = e.store.get_action(key)
-    before_approval = e.store.get_approval(e.action["approval_request_id"])
-    assert asyncio.run(run.hand_off(key)) is None
-    assert run.last_refusal[key] == "source_publish_root_overlap"
-    assert publisher.executions == 0 and not publisher.ledger_path.exists()
-    assert e.store.get_action(key) == before_action
-    assert e.store.get_approval(e.action["approval_request_id"]) == before_approval
-    assert e.service.ledger.reservation("action:" + key) is None
-    refused = [
-        event for event in e.store.list_events(e.mission.id) if event.type == "ActionHandoffRefused"
-    ]
-    assert refused[-1].payload["reason"] == "source_publish_root_overlap"
+def test_publish_dir_moved_into_storage_after_restart_refuses_the_handoff(tmp_path):
+    async def case():
+        root, ledger = tmp_path / "root", tmp_path / "ledger"
+        safe = observed(tmp_path / "published", ledger)
+        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": safe},
+                                 deployment_policy=DEPLOYMENT) as world:
+            mission_id = await _confirmed(world)
+        # 重启：部署的发布目录换成了证据存储里的一个目录（工作区下面）。建任务门口的检查已经
+        # 过去了；发布操作在这之后才按今天的部署物化（物化之后再换目录，先被"操作引用不可用"拦下）。
+        inside = observed(root / "workspaces" / "published", ledger)
+        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": inside},
+                                 deployment_policy=DEPLOYMENT) as world:
+            approval = await _pending_publish(world, mission_id)
+            decided = world.control.decide(approval["request_id"], "approve")
+            assert decided["request_state"] in {"GRANTED", "APPROVED"}, decided
+            for _ in range(3):
+                await world.drain(timeout=5)
+            [action] = {a["action_id"]: a for a in world.store.list_actions(mission_id)}.values()
+            assert action["state"] != "SUCCEEDED" and action["handoffs"] == 0, action
+            refused = [e for e in world.store.list_events(mission_id) if e.type == "ActionHandoffRefused"]
+            assert refused and {e.payload["reason"] for e in refused} == {"source_publish_root_overlap"}
+            assert world.loop._actions.last_refusal[action["action_key"]] == "source_publish_root_overlap"
+        assert safe.executions == inside.executions == 0
+        assert _ledger(inside) == [] and not any((root / "workspaces" / "published").rglob("*.md"))
+
+    asyncio.run(case())
 
 
-def test_revoked_history_and_ended_mission_still_protect_shared_storage(env):
-    e = env
-    doc = source_mission(e, revoked=True, ended=True)
-    assert e.store.list_sources(doc.id, active_only=True) == []
-    reopen(e)
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
-    run = executor(e, publisher)
-    assert asyncio.run(run.hand_off(e.action["action_key"])) is None
-    assert run.last_refusal[e.action["action_key"]] == "source_publish_root_overlap"
-    assert publisher.executions == 0
+def test_completed_receipt_is_still_reconciled_even_when_new_publication_is_forbidden(tmp_path):
+    async def case():
+        root, ledger = tmp_path / "root", tmp_path / "ledger"
+        # 外部发布在提交后断线（连接器自己的故障点），随后对账时服务也连不上
+        before = observed(tmp_path / "published", ledger, fail_after="commit", lookup_down=True)
+        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": before},
+                                 deployment_policy=DEPLOYMENT) as world:
+            mission_id = await _confirmed(world)
+            approval = await _pending_publish(world, mission_id)
+            world.control.decide(approval["request_id"], "approve")
+            for _ in range(10):
+                await world.drain(timeout=3)
+                states = {a["state"] for a in world.store.list_actions(mission_id)}
+                if before.executions and "UNKNOWN" in states:
+                    break
+            assert before.executions == 1 and states == {"UNKNOWN"}, (states, before.executions)
+        assert [e["state"] for e in _ledger(before)] == ["PREPARED", "COMMITTED"]
+        # 运维把发布目录（连同已发布的文件）挪进了证据存储区；重启后不能再新发布
+        moved = root / "workspaces" / "published"
+        shutil.move(str(tmp_path / "published"), str(moved))
+        after = observed(moved, ledger)
+        async with product_world(root, LayeredScriptedProvider(), connectors={"file_publish": after},
+                                 deployment_policy=DEPLOYMENT) as world:
+            for _ in range(10):
+                await world.drain(timeout=3)
+                actions = world.store.list_actions(mission_id)
+                if {a["state"] for a in actions} != {"UNKNOWN"}:
+                    break
+            settled = actions[-1]
+            assert settled["state"] == "SUCCEEDED" and settled["handoffs"] == 1, settled
+        assert before.executions == 1 and after.executions == 0 and after.lookups >= 1
+        assert [e["state"] for e in _ledger(before)] == ["PREPARED", "COMMITTED"]
+        assert len([p for p in moved.rglob("*") if p.is_file()]) == 1
+
+    asyncio.run(case())
 
 
-def test_mission_without_registered_sources_already_reserves_storage(env):
-    e = env
-    e.service.create_mission(
-        MissionSpec(
-            goal="等待导入来源",
-            success_criteria=("file:notes.md",),
-            tenant_id="another",
-            idempotency_key="empty-document",
-            domain=CODE_DOMAIN,
-        )
-    )
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
-    assert asyncio.run(executor(e, publisher).hand_off(e.action["action_key"])) is None
-    assert publisher.executions == 0
+# ---------------------------------------------------------------- 守卫函数（E）
+
+ACTION = {"connector": "file_publish"}
 
 
-@pytest.mark.parametrize("sources", [False, True])
-def test_disjoint_publish_executes_with_or_without_source_missions(env, sources):
-    e = env
-    if sources:
-        source_mission(e)
-    # Prefix sibling is not a descendant: library/workspaces-published remains valid.
-    root = e.roots[1].with_name("workspaces-published")
-    root.mkdir()
-    publisher = ObservedPublisher(root, e.tmp / "sibling-ledger")
-    result = asyncio.run(executor(e, publisher).hand_off(e.action["action_key"]))
-    assert result["state"] == "SUCCEEDED" and publisher.executions == 1
-    published = Path(result["receipt"]["after"]["path"]).read_bytes()
-    assert published == e.cas.path_for(e.action["params"]["content_hash"]).read_bytes()
+@pytest.mark.parametrize("missing", ["roots", "publisher_root"])
+def test_guard_without_physical_roots_fails_closed(tmp_path, missing):
+    """没有物理存储根（只在直接构造执行器时出现）或发布连接器没有根：失败关闭。"""
 
-
-def test_current_code_library_without_roots_hook_fails_closed(env):
-    e = env
-    assert e.service.domain_for(e.mission.id).source_roots == ("sources/",)
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "current-ledger")
-    run = ActionExecutor(e.service, {"file_publish": publisher}, DEPLOYMENT, owner="current")
-    assert asyncio.run(run.hand_off(e.action["action_key"])) is None
-    assert run.last_refusal[e.action["action_key"]] == "source_publish_root_unavailable"
-    assert publisher.executions == 0
-
-
-def test_source_library_without_physical_roots_fails_closed(env):
-    e = env
-    source_mission(e)
-    run = ActionExecutor(e.service, {"file_publish": e.publisher}, DEPLOYMENT, owner="no-roots")
-    assert asyncio.run(run.hand_off(e.action["action_key"])) is None
-    assert run.last_refusal[e.action["action_key"]] == "source_publish_root_unavailable"
-    assert e.publisher.executions == 0
-
-
-def test_guard_observes_source_missions_created_after_executor_construction(env):
-    e = env
-    publisher = ObservedPublisher(e.roots[1], e.tmp / "changed-ledger")
-    run = executor(e, publisher)
-    source_mission(e)
-    assert asyncio.run(run.hand_off(e.action["action_key"])) is None
-    assert publisher.executions == 0
-
-
-def test_completed_receipt_is_still_reconciled_even_when_new_publication_is_forbidden(env):
-    e = env
-    key = e.action["action_key"]
-    handed, _ = e.service.begin_handoff(
-        key,
-        owner="before-crash",
-        lease_seconds=1,
-        connectors={"file_publish": e.publisher},
-        deployment=DEPLOYMENT,
-    )
-    # Crash after the real external commit, before recording its outcome in SQLite.
-    e.publisher.execute(
-        handed["operation"],
-        handed["target"],
-        handed["params"],
-        idempotency_key=handed["idempotency_key"],
-    )
-    source_mission(e)
-    e.now[0] += 2
-    reopen(e)
-    run = ActionExecutor(
-        e.service,
-        {"file_publish": e.publisher},
-        DEPLOYMENT,
-        owner="reopened",
-        source_storage_roots=(*e.roots, e.publisher.root),
-    )
-    [settled] = asyncio.run(run.reconcile())
-    assert settled["state"] == "SUCCEEDED" and settled["handoffs"] == 1
-    assert e.publisher.executions == 1 and e.publisher.lookups == 1
+    if missing == "roots":
+        publisher = FilePublishConnector(tmp_path / "published", tmp_path / "ledger")
+        run = ActionExecutor(None, {"file_publish": publisher}, DEPLOYMENT, owner="no-roots")
+    else:
+        run = ActionExecutor(None, {"file_publish": object()}, DEPLOYMENT, owner="no-root-attr",
+                             source_storage_roots=(tmp_path / "artifacts", tmp_path / "workspaces"))
+    assert run._source_publish_refusal(ACTION) == "source_publish_root_unavailable"
 
 
 @pytest.mark.parametrize(
@@ -312,13 +237,14 @@ def test_shared_path_helper_resolves_parent_symlinks_and_keeps_siblings_distinct
     assert publication_overlaps_storage(target, (protected,)) is overlap
 
 
-def test_explicit_custom_cas_and_workspace_roots_are_protected(env):
-    e = env
-    e.cas = ArtifactStore(e.tmp / "custom-cas")
-    e.service = CommitService(e.store, artifact_store=e.cas)
-    e.service.bind_operation_materialization_runtime(e.runtime)
-    e.roots = (e.cas.root, e.tmp / "custom-workspaces")
-    source_mission(e)
-    publisher = ObservedPublisher(e.cas.root, e.tmp / "changed-ledger")
-    assert asyncio.run(executor(e, publisher).hand_off(e.action["action_key"])) is None
-    assert publisher.executions == 0
+@pytest.mark.parametrize("which", ["cas", "workspaces", "disjoint"])
+def test_explicit_custom_cas_and_workspace_roots_are_protected(tmp_path, which):
+    roots = (tmp_path / "custom-cas", tmp_path / "custom-workspaces")
+    target = {"cas": roots[0], "workspaces": roots[1] / "nested", "disjoint": tmp_path / "published"}[which]
+    publisher = FilePublishConnector(target, tmp_path / "ledger")
+    run = ActionExecutor(None, {"file_publish": publisher}, DEPLOYMENT, owner="custom",
+                         source_storage_roots=roots)
+    expected = None if which == "disjoint" else "source_publish_root_overlap"
+    assert run._source_publish_refusal(ACTION) == expected
+    # 只管发布连接器：别的连接器不受这道守卫影响
+    assert run._source_publish_refusal({"connector": "other"}) is None
