@@ -1,5 +1,5 @@
 {
-  "deployment_id": "0596f81ce7b4d641241f889dfb2ce8d6880296f7764f820cf5d646860eeb79bf",
+  "deployment_id": "3ec153b74fce5a00934ee3f123d7f61327df07095ef249f503d46d0e3388efa3",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -108,7 +108,7 @@
     "agent_orchestrator/governance/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/governance/budget_limits.py": "9db41e25e4ebce1ecc39daa71f60abc8eb154c49eea87f60988258bc7a738c19",
     "agent_orchestrator/governance/budget_tail_schema.py": "22f44deea809683b1b351f9e8bdc454ad15eb298fef14a26dea8aaae7efb5ffd",
-    "agent_orchestrator/governance/budgets.py": "ddf256ac3801c4fce25d882bd2f343d2bb7cd3ccdf908a900b0f014d71a1f7dd",
+    "agent_orchestrator/governance/budgets.py": "52e0a12bab40480ed50150ac625f590796969af0b45b739666c73d92b9b8adea",
     "agent_orchestrator/governance/domains.py": "f965b26c87e10f0ed4f544a016859b5de6fd51a7118c3b7a4c97b07e1b5735e8",
     "agent_orchestrator/governance/mission_system_tail_schema.py": "dd3bacc7519a8ba05dd852b4dc0cab3aa239ffda74e7d25740396f241bd88060",
     "agent_orchestrator/governance/permissions.py": "c19b39be295b2788f876e6c9f2f8b25b00b42cc36a43eee4f912f01958a594c8",
@@ -358,7 +358,7 @@
     "agent_orchestrator/runtime/operation_ref_resolver.py": "622d867e2852391789d4e2ce67b09f481bb7ae747c35e9fa20e097f0c3153348",
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
-    "agent_orchestrator/runtime/provider_budget_guard.py": "49f5eca2b9575fbfec8dddba3190e7b07c750bd47f9f4763b9d673d95a161eb8",
+    "agent_orchestrator/runtime/provider_budget_guard.py": "9c5cbec8934345e0386958c9a5bc2cecab1368e34019e5cde35f702abbb689e5",
     "agent_orchestrator/runtime/role_templates.py": "3c89c4d2a647bd124e244175e8f574105f6f27ccb124a9e78b56cb307ba4a584",
     "agent_orchestrator/runtime/sandbox.py": "9a257d133a5b54da66649e23cbbe6af11d91027126e0c9cecb8200d97bd87f89",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",

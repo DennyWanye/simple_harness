@@ -91,6 +91,9 @@ class AccountSnapshot:
             return None
         return self.limits.max_tokens - self.reserved_tokens - self.settled_tokens
 
+    def remaining_cost_micros(self) -> None:
+        return None  # money is not a budget dimension; the column goes in step 3
+
     def remaining_attempts(self) -> int | None:
         if self.limits.max_attempts is None:
             return None
