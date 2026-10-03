@@ -77,6 +77,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
             "replay",
             "business_replay",
             "attribution",
+            "metrics",
             "verification",
             "costs",
             "input_references",
@@ -86,6 +87,9 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report["mission_id"] == selected["mission_id"]
         assert report["business_replay"]["version"] == "business-replay-v3"
         assert report["business_replay"]["mission_rows"]["missions"] == 1
+        assert report["metrics"]["version"] == "metrics-v1"
+        assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix"}
+        assert report["metrics"]["cost"]["cost_micros_by_role"] is None
         assert report["scope"]["selected_only"] is True
         assert foreign["mission_id"] not in rendered
         assert "FOREIGN-MISSION-SENTINEL" not in rendered

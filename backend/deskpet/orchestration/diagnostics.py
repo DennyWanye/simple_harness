@@ -18,6 +18,7 @@ from typing import Any
 
 from agent_orchestrator.contracts.models import sha256_hex
 from agent_orchestrator.observability.business_replay import coverage_report
+from agent_orchestrator.observability.metrics import metrics
 from agent_orchestrator.observability.replay import (
     FORMAL_FIELDS,
     REPLAY_VERSION,
@@ -402,6 +403,9 @@ def build_diagnostics(
         # 全业务重放 v3 的骨架：哪些业务表已能由事件重建（HTN 补齐阶段 A；阶段 G 取代上面的 v2）
         "business_replay": coverage_report(store, mission_id),
         "attribution": attribution_report,
+        # 指标统计的唯一入口（HTN 补齐阶段 B）。桌面部署不注入价格表（service.py price_table=None），
+        # 金额一律记为未定价的 null。
+        "metrics": metrics(store, mission_id, unpriced=True),
         "verification": _verification(snapshot),
         "costs": {
             "usage": _pick(snapshot.get("budget_usage"), (
