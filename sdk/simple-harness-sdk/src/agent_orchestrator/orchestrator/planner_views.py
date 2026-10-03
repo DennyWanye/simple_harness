@@ -221,7 +221,12 @@ def read_planner_package(
             signature.to_json() for signature in world.predicates.signatures()
             if observers is not None and observers.observer_for(signature.predicate_ref.id) is not None],
     }
+    latest = htn.latest_requirements_revision(mission.id)
     return assemble_planner_package(
+        requirements=None if latest is None else {
+            "revision": int(latest.revision),
+            "criteria": [{"id": str(item.criterion_id), "revision": int(item.revision),
+                          "statement": str(item.statement)} for item in latest.criteria]},
         package_version=package_version, mission=mission, network=network, views=views,
         sections=sections, previous_feedback=previous_feedback,
         authorities=[*_network_authorities(network), *duty_refs],

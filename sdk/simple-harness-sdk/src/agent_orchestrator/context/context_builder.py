@@ -202,6 +202,7 @@ def build_worker_package(
     task: Task,
     attempt: Attempt,
     *,
+    mission_requirements: Sequence[str],
     previous_attempts: Sequence[Attempt],
     verifier_feedback: Sequence[Mapping[str, Any]],
     workspace_files: Sequence[str],
@@ -230,7 +231,8 @@ def build_worker_package(
     package: dict[str, Any] = {
         "role": role,
         "mission_root_goal": mission.goal,  # §10 item 1
-        "mission_success_criteria": list(mission.success_criteria),
+        # 任务的现行要求原文（最新要求修订，调用方读出）——审阅按什么判，执行者就看什么
+        "mission_success_criteria": list(mission_requirements),
         "task_contract": _task_contract(task),  # §10 item 2
         "attempt": {
             "attempt_id": attempt.id,

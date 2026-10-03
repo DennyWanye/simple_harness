@@ -3305,7 +3305,9 @@ class HierarchicalDispatch:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return []
-        criteria = [str(item).strip() for item in mission.success_criteria]
+        from ..deployment.root import current_statements
+
+        criteria = [str(item).strip() for item in current_statements(self.store, mission)]
         steps: dict[str, set[str]] = {}
         for link in getattr(method.composition, "criterion_links", ()) or ():
             if link.child_step is not None:

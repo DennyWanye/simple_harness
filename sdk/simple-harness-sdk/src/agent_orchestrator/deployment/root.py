@@ -71,6 +71,11 @@ def current_criteria(store: Any, mission: Any) -> tuple[tuple[str, str], ...]:
     return tuple((str(item.criterion_id), str(item.statement)) for item in latest.criteria)
 
 
+def current_statements(store: Any, mission: Any) -> tuple[str, ...]:
+    """The statements of the Mission's requirements as they stand, in order."""
+    return tuple(statement for _, statement in current_criteria(store, mission))
+
+
 def apply_changes(previous: RequirementsRevision, changes: Any, *,
                   highest_used: int) -> tuple[tuple[str, int, str], ...]:
     """The entries of the next revision: untouched entries carried as they are, a rewrite
@@ -199,4 +204,4 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
     loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "goal_parameters", "initialize_root", "install_planning", "user_requirements")
+__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "user_requirements")

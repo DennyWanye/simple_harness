@@ -17,6 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
+
+from ..deployment.root import current_statements
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ContractError, MissionStatus
@@ -276,7 +278,7 @@ class ActionCommitsMixin:
                 raise CandidateRejected("mission_not_active", mission_id)
             cand, decision = check_candidate(
                 candidate,
-                criteria=mission.success_criteria,
+                criteria=current_statements(self._store, mission),
                 connectors=connectors,
                 deployment=deployment,
             )

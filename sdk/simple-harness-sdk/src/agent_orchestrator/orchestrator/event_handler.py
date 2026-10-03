@@ -187,6 +187,7 @@ from .commit_service import (
     mission_account,
     task_account,
 )
+from ..deployment.root import current_criteria, current_statements
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
@@ -2388,12 +2389,11 @@ class Orchestrator:
                 for key, record in sorted({
                     str(item.proposition_key): item
                     for item in HtnStore(self.store).list_observations(mission_id)}.items())),
-            # ``c-user-<n>`` names the Mission's n-th criterion; a ``file:X`` one names a file
+            # 现行要求里的 ``file:X``：要求编号 → 文件
             "criterion_files": tuple(
-                (f"c-user-{number}", statement[len("file:"):].strip())
-                for number, statement in enumerate(
-                    (str(item).strip() for item in (mission.success_criteria if mission is not None else ())), start=1)
-                if statement.startswith("file:") and statement[len("file:"):].strip()),
+                (name, statement.strip()[len("file:"):].strip())
+                for name, statement in (() if mission is None else current_criteria(self.store, mission))
+                if statement.strip().startswith("file:") and statement.strip()[len("file:"):].strip()),
         }
 
     def _handoff_ground_gone(self, action_key: str) -> bool:
@@ -8122,7 +8122,7 @@ class Orchestrator:
         seed = dict((mission.final_report or {}).get("workspace_seed", {}))
         targets = [
             c.removeprefix("pytest:").strip()
-            for c in (*task.success_criteria, *mission.success_criteria)
+            for c in (*task.success_criteria, *current_statements(self.store, mission))
             if c.startswith("pytest:")
         ]
         protected = {}
@@ -8146,7 +8146,7 @@ class Orchestrator:
         from ..runtime.action_schema import worker_action_contract
 
         return worker_action_contract(
-            mission_criteria=mission.success_criteria,
+            mission_criteria=dict(current_criteria(self.store, mission)),
             task_criteria=task.success_criteria,
             task_outputs=self._action_candidate_outputs(mission, task),
             connectors=self._connectors,
@@ -9846,6 +9846,7 @@ class Orchestrator:
                 mission,
                 task,
                 placeholder,
+                mission_requirements=current_statements(self.store, mission),
                 previous_attempts=attempts,
                 verifier_feedback=verifier_feedback,
                 workspace_files=previous_files,
@@ -10219,7 +10220,7 @@ class Orchestrator:
         stored = self.store.get_result(terminal.accepted_result_id or "")
         summary = "" if stored is None else stored.envelope.summary
         test_runs: dict[str, dict[str, Any]] = {}
-        for criterion in mission.success_criteria:
+        for criterion in current_statements(self.store, mission):
             if not criterion.startswith("pytest:"):
                 continue
             target = criterion.removeprefix("pytest:").strip() or None
@@ -10249,7 +10250,7 @@ class Orchestrator:
         # the certified grades (Host real model run 20, 2026-09-23).
         assured_grades = self._assured_root_grades(mission, new_mode)
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(mission.success_criteria):
+        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
             if criterion.startswith("pytest:"):
                 outcome = test_runs.get(criterion, {})
                 judgments.append(
@@ -10349,7 +10350,7 @@ class Orchestrator:
         self.commit.expire_approvals(mission.id)
         actions = {
             criterion: self.commit.action_for_criterion(mission.id, criterion, self._connectors)
-            for criterion in mission.success_criteria
+            for criterion in current_statements(self.store, mission)
             if criterion.startswith(ACTION_PREFIX)
         }
         for criterion, action in actions.items():
@@ -10432,7 +10433,7 @@ class Orchestrator:
     ) -> None:
         by_criterion = {str(item.get("criterion")): dict(item) for item in plain}
         judgments: list[dict[str, Any]] = []
-        for ordinal, criterion in enumerate(mission.success_criteria):
+        for ordinal, criterion in enumerate(current_statements(self.store, mission)):
             if not criterion.startswith(ACTION_PREFIX):
                 judgments.append(by_criterion[criterion])
                 continue

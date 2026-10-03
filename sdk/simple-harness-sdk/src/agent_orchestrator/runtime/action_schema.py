@@ -37,7 +37,7 @@ _USER_REQUIREMENT_ID = re.compile(r"c-user-[1-9][0-9]*")
 
 
 def _task_action_scope(
-    mission_criteria: Sequence[str], task_criteria: Sequence[str]
+    mission_criteria: Mapping[str, str], task_criteria: Sequence[str]
 ) -> set[tuple[str, str, str]]:
     from ..verification.criteria import task_criterion_text
 
@@ -50,7 +50,7 @@ def _task_action_scope(
 
 def _action_contract(
     *,
-    mission_criteria: Sequence[str],
+    mission_criteria: Mapping[str, str],  # 现行要求：编号 → 原文
     task_criteria: Sequence[str],
     connectors: Mapping[str, Any],
     deployment: DeploymentPolicy,
@@ -62,7 +62,7 @@ def _action_contract(
     Other descriptors are projected as declared; no parameter types are guessed.
     """
 
-    charter = {parsed for criterion in mission_criteria
+    charter = {parsed for criterion in mission_criteria.values()
                if (parsed := parse_action_criterion(criterion)) is not None}
     task_scope = _task_action_scope(mission_criteria, task_criteria)
     # A Task may declare its action solely by its actions/*.json output, with the
@@ -149,7 +149,7 @@ def declared_action_outputs(store: Any, mission_id: str, task: Any) -> tuple[str
 
 def worker_action_contract(
     *,
-    mission_criteria: Sequence[str],
+    mission_criteria: Mapping[str, str],  # 现行要求：编号 → 原文
     task_criteria: Sequence[str],
     task_outputs: Sequence[str],
     connectors: Mapping[str, Any],
