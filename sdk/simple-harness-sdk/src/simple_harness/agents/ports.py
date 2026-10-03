@@ -27,7 +27,6 @@ from simple_harness.runtime.termination import TerminationLimits
 
 from .context.budget import ContextPolicy
 from .context.tokenizer import TokenizerPort
-from .memory.embedding import EmbeddingPort
 
 DEFAULT_CHILD_INSTRUCTIONS = "你是被委派的工作 Agent。只处理交给你的目标，给出简洁、可核对的结论。"
 
@@ -78,11 +77,6 @@ class AgentRuntimePorts:
     # default is an explicit upper bound whose fingerprint marks its counts.
     context_policy: ContextPolicy = field(default_factory=ContextPolicy)
     tokenizer: TokenizerPort | None = None
-    # AgentSession recall (Slice 4).  ``embedding`` is the caller's real model; None
-    # means lexical-only search with a visible ``embedding_unavailable`` degradation.
-    embedding: EmbeddingPort | None = None
-    recall_limit: int = 6
-    recall_token_share: float = 0.25
     # Runtime-wide concurrency caps across all Agents (BA35); None = unbounded.
     # Waiters are served FIFO, so N Agents take turns instead of starving.
     max_concurrent_model_calls: int | None = None
@@ -146,19 +140,6 @@ class AgentRuntimePorts:
             raise TypeError("context_policy must use ContextPolicy")
         if self.tokenizer is not None and not callable(getattr(self.tokenizer, "count_text", None)):
             raise TypeError("tokenizer must implement count_text and fingerprint")
-        if self.embedding is not None and not callable(getattr(self.embedding, "embed", None)):
-            raise TypeError("embedding must implement embed / fingerprint / dim")
-        if (
-            isinstance(self.recall_limit, bool)
-            or not isinstance(self.recall_limit, int)
-            or self.recall_limit < 0
-        ):
-            raise ValueError("recall_limit must be a non-negative integer")
-        if (
-            not isinstance(self.recall_token_share, float)
-            or not 0.0 <= self.recall_token_share <= 0.9
-        ):
-            raise ValueError("recall_token_share must be a float in [0, 0.9]")
         for name in ("max_output_tokens_ceiling",):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:

@@ -309,35 +309,6 @@ def test_concurrency_caps_are_enforced_fairly_across_agents(tmp_path):
     asyncio.run(case())
 
 
-def test_history_queries_are_bounded_tool_calls(tmp_path):
-    """BA36: session_history tools count against the per-turn tool limit and leave a
-    durable effect row, so their cost is visible and capped."""
-
-    async def case():
-        search = ("session_history_search", {"query": "连接池"})
-        provider = ScriptedProvider(["记下", search, search, search, "不该到这"])
-        async with build_agent_runtime(_ports(tmp_path, provider)) as runtime:
-            agent = await runtime.create(
-                _config(tools=("session_history_search",), max_tool_calls_per_turn=2),
-                creation_key="cost",
-            )
-            await agent.ask("连接池上限 20", input_id="i1", timeout=5)
-            failed = await agent.ask("反复搜", input_id="i2", timeout=10)
-            assert failed.state is AgentTurnState.FAILED
-            assert failed.error["error_code"] == "react_max_tool_calls_exceeded"
-            effects = _rows(
-                runtime.uow,
-                "SELECT tool_name, state FROM execution_effects WHERE run_id=? "
-                "ORDER BY turn_ordinal",
-                agent.run_id,
-            )
-            assert [row[0] for row in effects] == ["session_history_search"] * 2
-            assert all(row[1] == "succeeded" for row in effects)
-            assert runtime._session_tools.searches == 2
-
-    asyncio.run(case())
-
-
 def test_lost_tool_response_is_never_blindly_retried(tmp_path):
     """BA39: a tool whose response is lost after the side effect stays UNKNOWN until the
     Host reconciles; re-driving never executes it twice."""

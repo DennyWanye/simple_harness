@@ -64,7 +64,7 @@ READ_SCHEMA: dict[str, JsonValue] = {
 
 
 class ArpSessionHistoryTools:
-    """Drop-in replacement for the legacy ``SessionHistoryTools`` (same names, same hooks)."""
+    """The model-facing Session history tools (search and read) on the native plane."""
 
     def __init__(self) -> None:
         self._runtime: AgentRuntime | None = None

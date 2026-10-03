@@ -26,7 +26,7 @@ from collections.abc import Callable, Sequence
 from typing import cast
 
 from simple_harness.contracts import JsonValue, RunId, canonical_json, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.contracts.messages import Message
 from simple_harness.execution.base_agent import AgentJournalRecord
 from simple_harness.execution.sqlite.uow import SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import ExecutionLease
@@ -84,9 +84,6 @@ class JournalContextPort:
         tool_specs_for_run: ToolSpecsResolver,
         clock: Callable[[], float] = time.time,
         page_size: int = 64,
-        recall: Callable[[str, str, int, tuple[int, ...]], Sequence[Message]] | None = None,
-        recall_token_share: float = 0.0,
-        on_records: Callable[[tuple[AgentJournalRecord, ...]], None] | None = None,
         replay_reasoning: bool = False,
     ) -> None:
         self._uow = uow
@@ -99,13 +96,6 @@ class JournalContextPort:
         self._tool_specs_for_run = tool_specs_for_run
         self._clock = clock
         self._page_size = max(8, int(page_size))
-        # Slice 4: ``recall(agent_id, query, token_budget, exclude_seqs)`` returns
-        # derived recall messages (never Journal rows, BA20); ``on_records`` feeds the
-        # derived indexes after each committed append.
-        self._recall = recall
-        self._recall_share = recall_token_share
-        self._on_records = on_records
-        self.last_recall_query_hash: str | None = None
         self.policy_hash = policy_hash(
             policy, tokenizer_fingerprint=tokenizer.fingerprint, model=model
         )
@@ -202,27 +192,14 @@ class JournalContextPort:
         highwater = self._uow.agent_journal_highwater(run_id.value)
         if bound is not None and bound.revision == highwater and bound.provider_request_id:
             # BA28: the request at this revision is already frozen and bound; a resume
-            # re-runs neither recall nor selection recording.
-            return self._assemble(run_id, record=False, recall=False)
+            # does not record the selection again.
+            return self._assemble(run_id, record=False)
         return self._assemble(run_id, record=True)
 
     async def prepare(self, run_id: RunId) -> None:
-        """Pre-embed the current input off the loop thread (review S4-04)."""
+        """Nothing to prepare for the Journal-only context (the native plane overrides)."""
 
-        prewarm = getattr(self._recall, "prewarm", None)
-        if prewarm is None:
-            return
-        bound = self._uow.latest_agent_context_selection(run_id.value)
-        highwater = self._uow.agent_journal_highwater(run_id.value)
-        if bound is not None and bound.revision == highwater and bound.provider_request_id:
-            # Like load(), resuming an already frozen revision must not redo
-            # recall work, including potentially external query embedding.
-            return
-        current = self._uow.latest_agent_journal_record(run_id.value, kind="user_input")
-        if current is not None:
-            await prewarm(_text_of(current))
-
-    def _assemble(self, run_id: RunId, *, record: bool, recall: bool = True) -> ContextSnapshot:
+    def _assemble(self, run_id: RunId, *, record: bool) -> ContextSnapshot:
         agent_id = run_id.value
         self.loads += 1
         highwater = self._uow.agent_journal_highwater(agent_id)
@@ -234,55 +211,11 @@ class JournalContextPort:
         # Bounded read: instructions plus the newest pages until the budget is spent.
         records = self._read_bounded(agent_id, highwater, available)
         units = build_units(records)
-        # First pass with the whole budget; recall (S4) only takes room that the
-        # required parts leave free, capped by its share, and only when it has hits.
         assembly = assemble(units, budget_tokens=available, count=self._count)
         current_turn = next(
             (unit.turn_id for unit in reversed(units) if unit.kind == "user_input"), None
         )
         messages = assembly.messages
-        query_hash_value: str | None = None
-        recalled_hash: str | None = None
-        recall_cap = 0
-        if recall and self._recall is not None and not assembly.required_over_budget:
-            recall_cap = min(
-                int(available * self._recall_share), max(0, available - assembly.required_tokens)
-            )
-        if recall_cap > 0 and self._recall is not None:
-            current_input = next(
-                (unit for unit in reversed(units) if unit.kind == "user_input"), None
-            )
-            query = (
-                ""
-                if current_input is None
-                else "\n".join(_text_of(r) for r in current_input.records)
-            )
-            if query.strip():
-                recalled = tuple(self._recall(agent_id, query, recall_cap, assembly.selected_seqs))
-                if recalled:
-                    from ..memory.retrieval import query_hash as _qh
-
-                    recall_tokens = sum(count_message(self._tokenizer, m) for m in recalled)
-                    assembly = assemble(
-                        units, budget_tokens=available - recall_tokens, count=self._count
-                    )
-                    query_hash_value = _qh(query.strip())
-                    self.last_recall_query_hash = query_hash_value
-                    # Recall goes right after the leading run of SYSTEM messages
-                    # (instructions + folded-history summary), never re-ordering
-                    # anything that follows (review S4-09).
-                    lead = 0
-                    while (
-                        lead < len(assembly.messages)
-                        and assembly.messages[lead].role is MessageRole.SYSTEM
-                    ):
-                        lead += 1
-                    messages = tuple(
-                        [*assembly.messages[:lead], *recalled, *assembly.messages[lead:]]
-                    )
-                    recalled_hash = hashlib.sha256(
-                        canonical_json([m.to_dict() for m in recalled]).encode("utf-8")
-                    ).hexdigest()
         if not record:
             return ContextSnapshot(highwater, messages)
         assembly_hash = hashlib.sha256(
@@ -291,8 +224,6 @@ class JournalContextPort:
                     "seqs": list(assembly.selected_seqs),
                     "dropped": [list(r) for r in assembly.dropped_ranges],
                     "tools": tool_tokens,
-                    "recall": query_hash_value,
-                    "recall_payload": recalled_hash,
                 }
             ).encode("utf-8")
         ).hexdigest()
@@ -314,12 +245,6 @@ class JournalContextPort:
             policy_hash=self.policy_hash,
             tokenizer_fingerprint=self._tokenizer.fingerprint,
             now=self._clock(),
-            query_hash=query_hash_value,
-            index_generation=(
-                getattr(self._recall, "index_generation", None)
-                if query_hash_value is not None
-                else None
-            ),
         )
         if assembly.summary is not None and assembly.summary_source_hash is not None:
             self._uow.upsert_agent_summary(
@@ -460,8 +385,6 @@ class JournalContextPort:
             execution_lease=execution_lease,
             now=self._clock(),
         )
-        if created and self._on_records is not None:
-            self._on_records(stored)
         # A snapshot for the caller's CAS chain (every ReAct append site reads only
         # ``revision``); selections are recorded only by ``load``, never by appends.
         return ContextSnapshot(highwater, ())

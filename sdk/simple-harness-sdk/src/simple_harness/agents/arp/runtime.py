@@ -237,10 +237,8 @@ def build_arp_runtime(
     holder: dict[str, Any] = {}
 
     def context_factory(uow, **kwargs):  # type: ignore[no-untyped-def]
-        # Native composer: the legacy recall adapter is not used (F comes from the
-        # ContextRecallCoordinator), the append semantics are inherited unchanged.
-        kwargs["recall"] = None
-        kwargs["recall_token_share"] = 0.0
+        # Native composer: recall comes from the ContextRecallCoordinator; the append
+        # semantics are inherited unchanged.
         holder["context"] = ArpContextPort(uow, **kwargs)
         return holder["context"]
 

@@ -50,19 +50,18 @@ def _native(tokenizer: ExactWordTokenizer, *, authorization) -> NativePlaneAssem
     )
 
 
-def test_native_pool_is_assembled_beside_the_legacy_pool_and_creates_only_from_intents(tmp_path) -> None:
+def test_a_native_pool_creates_only_from_intents(tmp_path) -> None:
+    """2026-10-03: every pool is native (the legacy pool was removed), so only the native
+    half of the old side-by-side case remains."""
     async def case() -> None:
         tokenizer = ExactWordTokenizer()
         provider = ScriptedProvider(["好的。"] * 4)
         profiles = {
-            "default": PoolProfile("default", provider, "agent-model"),
             "native": PoolProfile("native", provider, "agent-model", context_policy=ContextPolicy(), tokenizer=tokenizer, native_plane=_native(tokenizer, authorization=RecordingAuthorization())),
         }
-        assembled = assemble_orchestrator_runtime(OrchestratorConfig(evidence_root=tmp_path / "root"), profiles=profiles, default_profile="default")
-        legacy, native = assembled.pool("default"), assembled.pool("native")
-        assert getattr(legacy.runtime, "arp", None) is None and legacy.bridge.native_plane is False
+        assembled = assemble_orchestrator_runtime(OrchestratorConfig(evidence_root=tmp_path / "root"), profiles=profiles, default_profile="native")
+        native = assembled.pool("native")
         assert native.runtime.arp.protocol == "ARP_V1_1_1" and native.bridge.native_plane is True
-        assert native.execution_db != legacy.execution_db
         async with native.runtime:
             with pytest.raises(ValueError):
                 await native.bridge.create(creation_key="k1", config_json=CONFIG.to_json())
@@ -78,9 +77,6 @@ def test_native_pool_is_assembled_beside_the_legacy_pool_and_creates_only_from_i
                 "SELECT original_receipt_ref_json, state FROM arp_creation_intents WHERE creation_key='k1'"
             ).fetchone()
             assert row is not None and row[1] == "BOUND" and "dispatch-intent:intent-k1" in row[0]
-        async with legacy.runtime:
-            legacy_id, _, _ = await legacy.bridge.create(creation_key="k1", config_json=CONFIG.to_json())
-            assert legacy_id
 
     asyncio.run(case())
 
