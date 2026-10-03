@@ -474,6 +474,10 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
             continue
         if event.task_id and event.task_id not in active_tasks:
             continue
+        if event.type == "ResultRejected" and event.payload.get("reason") == "superseded":
+            # 系统自己收回的尝试（换计划时取消、被另一份结果取代）晚到的结果：不是这一步做错了，
+            # 不发给规划器——否则换计划时取消在跑的尝试会反过来打断这次换计划（阶段 E）。
+            continue
         if (event.type in {"AttemptLost", "AttemptTimedOut"}
                 and event.payload.get("reason") in {"runtime_unavailable", "provider_outcome_unknown"}):
             # The authoritative failure row below produces the runtime request.

@@ -277,6 +277,11 @@ class ActivePlanView:
     snapshot: TaskNetworkSnapshot
     mission_admits_work: bool = True
     requirements_revision: int = 0
+    #: 阶段 E：活动计划是按第几版要求定的，以及现在的要求是第几版。两者不等说明用户改了要求、
+    #: 新计划还没提交——这版计划不再开新工（``STALE_BINDING`` / ``requirements_changed``）。
+    #: 都为 0 表示调用方没有给出，不比较。
+    planned_requirements_revision: int = 0
+    current_requirements_revision: int = 0
     scope_epochs: Mapping[str, int] = field(default_factory=dict)
     dispatch_generations: Mapping[OccurrenceId, int] = field(default_factory=dict)
     input_binding_revisions: Mapping[TaskRef, int] = field(default_factory=dict)
@@ -928,6 +933,18 @@ def _stale_gate(context: _Context) -> _GateResult:
     if binding is None:
         return None
     problems: list[ReadinessDetail] = []
+    planned, current = context.plan.planned_requirements_revision, context.plan.current_requirements_revision
+    if planned and current and planned != current:
+        problems.append(
+            ReadinessDetail(
+                code="requirements_changed",
+                subject=str(context.plan.mission_id),
+                message=(
+                    f"the plan was made for requirements revision {planned}; the user amended "
+                    f"them to revision {current} and no plan for that revision is committed yet"
+                ),
+            )
+        )
     current_generation = context.plan.dispatch_generations.get(context.view.occurrence_id)
     if current_generation is not None and current_generation != int(binding.dispatch_generation):
         problems.append(

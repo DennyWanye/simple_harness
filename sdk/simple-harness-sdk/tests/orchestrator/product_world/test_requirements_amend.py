@@ -133,3 +133,121 @@ def test_amend_writes_everything_in_one_transaction(tmp_path):
             assert again["changes"]["added"] == ["c-user-5"]
 
     asyncio.run(case())
+
+
+# ----------------------------------------------------------------------------- 改要求后重新规划
+
+def parallel_method(context: dict[str, Any]) -> dict[str, Any]:
+    """每条要求一个互不依赖的步骤（步骤名 s1、s2…），最后一步收尾。"""
+    from agent_orchestrator.testing.scripted_replies import one_step_method
+
+    request = context["request"]
+    method = one_step_method(context)
+    [step] = method["steps"]
+    names = [item["id"] for item in request["criterion_evidence"]]
+    method["steps"] = [dict(step, local_id=f"s{n}") for n in range(1, len(names) + 1)]
+    method["ordering"] = []
+    method["composition"]["criterion_links"] = [
+        {"parent_criterion_id": name, "child_step": f"s{n}", "child_criterion_id": name,
+         "evidence_requirement": f"s{n} 这一步写出 {name} 要求的文件"} for n, name in enumerate(names, start=1)]
+    method["composition"]["finalizer_step"] = f"s{len(names)}"
+    return method
+
+
+def replanning_planner(seen: dict[str, Any]):
+    """没有做法时提"每条要求一步"的做法并采用；收到"要求已更新"后为根目标提新做法、再换上去。"""
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        seen.setdefault("packages", []).append(package)
+        contexts = package.get("method_proposal_contexts") or []
+        repairs = [entry["request"] for entry in package.get("repair_requests") or ()
+                   if entry["request"].get("trigger_source") == "REQUIREMENTS_UPDATE"]
+        if not repairs:
+            if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
+                return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                    "method": parallel_method(contexts[0]), "rationale": "每条要求一步。"}}, "每条要求一步。")
+            return planner_reply(request)
+        seen.setdefault("updates", []).extend(repairs)
+        goal = next(item for item in package["views"]["goals"]
+                    if item["form"] == "compound" and item.get("adopted_method"))
+        subject = goal["subject_key"]
+        current = goal["adopted_method"]["method_ref"]
+        fresh = [item["method_ref"] for item in package["views"]["methods"]
+                 if item["method_ref"] != current and (item.get("review") or {}).get("outcome") == "PASSED"
+                 and item["method_ref"]["id"] in seen.get("proposed", ())]
+        if not fresh:
+            [context] = [item for item in contexts if item["subject_key"] == subject]
+            method = parallel_method(context)
+            seen.setdefault("proposed", []).append(method["method_id"])
+            seen["proposed_version"] = method["method_version"]
+            return decision(subject, "PROPOSE_METHOD", {"method_proposal": {
+                "method": method, "rationale": "按新要求重排。"}}, "要求改了，换做法。")
+        instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
+                        and item["id"] == goal["adopted_method"]["method_instance_id"])
+        return decision(subject, "REPAIR", {"repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+                                            "replacement_method_ref": dict(fresh[-1]), "bindings": goal["params"]},
+                        "换成按新要求写的做法。")
+
+    return planner
+
+
+class SlowSecondStep(LayeredScriptedProvider):
+    """写 b.md 的那一步一直在跑，直到测试放行。"""
+
+    def __init__(self, **roles: Any) -> None:
+        super().__init__(**roles)
+        self.go = asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        from agent_orchestrator.testing.fixtures import role_of
+
+        if role_of(request) == "worker" and package_of(request).get("task_contract", {}).get("outputs") == ["b.md"]:
+            await self.go.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
+    """第 1 步验收后用户加一条要求：旧计划不再派新尝试；自动模式代确认第 2 版；规划器收到
+    "要求已更新"（带改了哪几条）并按第 2 版重排；任务按第 2 版完成。"""
+    seen: dict[str, Any] = {}
+
+    async def case():
+        provider = SlowSecondStep(planner=replanning_planner(seen))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-replan",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            assert htn.list_acceptances(mission_id), "a.md 那一步没有通过验收"
+            amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            mark = max(e.seq for e in world.store.list_events(mission_id))
+            provider.go.set()
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            events = list(world.store.list_events(mission_id))
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status, mission.final_report,
+                [(e.type, json.dumps(e.payload, ensure_ascii=False)[:300]) for e in events
+                 if e.type in {"PlanningRejected", "PlanningRepairRequested", "MissionStalled"}][-6:])
+
+            # 改要求之后、新计划提交之前：没有新尝试
+            committed = next(e.seq for e in events if e.seq > mark and e.type == "PlanningDecisionEvaluated"
+                             and e.payload.get("status") == "COMMITTED")
+            assert not [e for e in events if mark < e.seq < committed and e.type == "AttemptCreated"]
+            # 规划器收到的事实
+            [update] = seen["updates"][:1]
+            assert update["context"]["changes"] == {"added": ["c-user-3"], "rewritten": [], "removed": []}
+            assert update["context"]["previous_revision"] == 1
+            # 新计划按第 2 版；根结论按第 2 版
+            assert int(htn.active_plan_revision(mission_id).read_set.requirements_revision) == 2
+            resolution = htn.adopted_goal_resolution(mission_id, f"user-duty-{mission_id}")
+            assert int(resolution.requirements_version) == 2
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:extra.md"]
+            assert judged["met"] is True
+
+    asyncio.run(case())

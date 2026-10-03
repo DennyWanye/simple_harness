@@ -9,6 +9,8 @@ an operation authorization nor evidence that an effect has happened.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -425,6 +427,12 @@ def freeze_plan_completion_scopes(
         content_hash=requirements.content_hash(),
     )
     spec = OperationCompletionReader(store).read_requirements(mission_id, ref)
+    # 范围记的是"提交这一刻库里的任务合同"。这次提交刚收回执行权的任务（合同版本已 +1）若仍在
+    # 新计划里，候选计划里带的还是收回之前的那一版——与读计划时一样，叠上库里最新的合同（阶段 E：
+    # 用户改要求后根目标换了合同，下一次计划提交会把它当成变动对象收回一次）。
+    htn = HtnStore(store)
+    plan = replace(plan, task_bindings=tuple(
+        htn.task_semantics_of(mission_id, str(item.task_id)) or item for item in plan.task_bindings))
     scopes = compile_completion_scopes(
         spec,
         plan,

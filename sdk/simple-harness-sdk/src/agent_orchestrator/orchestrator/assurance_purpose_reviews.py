@@ -447,7 +447,11 @@ def method_plan_package(
     occurrence_id = None
     scope_ref = None
     active = htn.active_plan_revision(mission_id)
-    if active is not None:
+    latest = htn.latest_requirements_revision(mission_id)
+    # 阶段 E：用户改了要求、按新版的计划还没提交时，这个目标在活动计划里的完成范围是旧版要求的，
+    # 与这次做法审阅无关——和"还没有完成范围"同样处理。
+    if active is not None and (latest is None
+                               or int(active.read_set.requirements_revision) == int(latest.revision)):
         row = store.connection.execute(
             "SELECT occurrence_id FROM plan_memberships WHERE mission_id=? AND revision=? "
             "AND task_id=? LIMIT 2",

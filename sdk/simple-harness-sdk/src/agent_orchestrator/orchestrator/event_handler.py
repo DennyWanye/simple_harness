@@ -3778,6 +3778,11 @@ class Orchestrator:
         mission = self.store.get_mission(mission_id)
         if mission is not None and self._assembly_missing(mission, at="planner_retry"):
             return False
+        if (mission is not None and self._planning_start_gate is not None
+                and not self._planning_start_gate(mission)):
+            # 阶段 E：现行要求还没有已确认的完成映射（用户刚改了要求、还没确认）——不问规划器，
+            # 它出的计划必在冻结完成范围时被拒。确认页显示"等确认完成要求"。
+            return False
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
         except UnsupportedPlanningPackage as error:

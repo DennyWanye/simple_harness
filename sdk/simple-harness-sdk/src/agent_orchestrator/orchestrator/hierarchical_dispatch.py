@@ -851,7 +851,25 @@ class HierarchicalDispatch:
             # whatever the deployment had observed.
             scope_epochs=self.scope_epochs(mission_id),
             integrity_error=integrity,
+            **self.requirements_revisions(mission_id),
         )
+
+    def requirements_revisions(self, mission_id: str) -> dict[str, int]:
+        """Which requirements revision the active plan was made for, and which is current
+        (阶段 E).  Before any plan is committed there is nothing to compare."""
+        semantics = self.semantics()
+        active = semantics.active_plan_revision(mission_id)
+        latest = semantics.latest_requirements_revision(mission_id)
+        if active is None or latest is None:
+            return {}
+        return {"planned_requirements_revision": int(active.read_set.requirements_revision),
+                "current_requirements_revision": int(latest.revision)}
+
+    def requirements_changed(self, mission_id: str) -> bool:
+        """The user amended the requirements and no plan for the new revision is committed."""
+        found = self.requirements_revisions(mission_id)
+        return bool(found) and bool(found["planned_requirements_revision"]) and (
+            found["planned_requirements_revision"] != found["current_requirements_revision"])
 
     def scope_epochs(self, mission_id: str) -> dict[str, int]:
         """The live validity epoch of every scope this Mission's witnesses name.
