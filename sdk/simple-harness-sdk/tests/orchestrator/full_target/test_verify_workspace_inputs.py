@@ -21,51 +21,31 @@ The fixture under ``fixtures/htn/c3_verify_workspace/`` is the real
 verify leaf is dispatched on the patched snapshot, bound files count as recorded
 workspace files, ``rule_check`` / ``code_test`` pass, and the root review ACCEPT
 completes the Mission.
+
+2026-10-03（HTN 补齐阶段 A′）：主循环那一节（旧代码领域搭建、``install_hierarchical(planning=)``）
+删掉；``inspect@2`` 覆盖后仍收到补丁端口那条按分诊裁决④并入代码领域测试世界的参数化主循环用例
+（``test_code_domain_world.py``）。这里只留覆盖层与 rule_check 的六条纯函数用例。
 """
+
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-import sys
 from pathlib import Path
-from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from test_htn_deployment_wiring import _task_of  # noqa: E402
-from test_inspect_leaf_patch_input import (  # noqa: E402
-    INSPECT,
-    _c1_method,
-    _CodeWorld,
-    _rebound,
-)
-from test_read_only_rewrite_bound import (  # noqa: E402
-    _four_step,
-)
-
-from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
+from agent_orchestrator.artifacts.bound_workspace import (
     bound_artifacts_named_in_envelope,
     overlay_bound_producer_files,
 )
-from agent_orchestrator.artifacts.versioning import UpstreamInput  # noqa: E402
-from agent_orchestrator.contracts.models import Artifact  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import mission_account  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
-from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import (  # noqa: E402
-    RoleScriptedProvider,
-    envelope_step,
-)
+from agent_orchestrator.artifacts.versioning import UpstreamInput
+from agent_orchestrator.contracts.models import Artifact
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "c3_verify_workspace"
 NOT_RECORDED = "artifact 'stats/window.py' is not a recorded workspace file"
 WINDOW = "stats/window.py"
 PATCH_DIFF = "patch.diff"
 REPORT = "REPORT.md"
-TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
 
 SEED_WINDOW = (FIXTURE / "seed_window.py").read_text(encoding="utf-8")
 PATCHED_WINDOW = (FIXTURE / "patched_window.py").read_text(encoding="utf-8")
@@ -215,215 +195,3 @@ def test_an_envelope_path_that_is_neither_recorded_nor_bound_stays_missing() -> 
         lambda _artifact_id: None,
     )
     assert [item.path for item in combined] == [REPORT]
-
-
-# ======================================================================================
-# 4. True Orchestrator.run(): patch accepted → verify workspace is patched → COMPLETED
-# ======================================================================================
-
-
-class _C3Worker:
-    """Scripted Worker for ``code.fix-by-patch@2`` in the C3 envelope shape.
-
-    The verify leaf lists ``stats/window.py`` *and* ``REPORT.md``, the way the
-    real episode did, and writes the patched source (same bytes the patch leaf
-    already accepted).  Before the fix that is the ``rule_check`` failure; after,
-    the path is a bound baseline file and verification passes.
-    """
-
-    def __init__(self) -> None:
-        self._queues: dict[str, list[Any]] = {}
-        self.verify_attempts = 0
-
-    def __call__(self, request: Any) -> Any:
-        from agent_orchestrator.testing.fixtures import package_of
-
-        package = package_of(request)
-        attempt_id = str((package.get("attempt") or {}).get("attempt_id") or "")
-        if attempt_id not in self._queues:
-            self._queues[attempt_id] = self._script(package)
-        queue = self._queues[attempt_id]
-        if not queue:
-            raise AssertionError(f"worker script exhausted for {attempt_id}")
-        step = queue.pop(0)
-        if callable(step) and not isinstance(step, (str, tuple)):
-            return step(request)
-        return step
-
-    def _script(self, package: dict[str, Any]) -> list[Any]:
-        goal = str((package.get("task_contract") or {}).get("goal") or "")
-        if "read the repository" in goal:
-            return _write_and_envelope(
-                [("FACTS.md", '{"tests": ["tests/test_public_window.py"]}\n')],
-                ["FACTS.md"],
-                {"facts": "FACTS.md"},
-            )
-        if "reproduce" in goal:
-            return _write_and_envelope(
-                [("diagnosis.md", "# diagnosis\nwindow_sum drops the last sample\n")],
-                ["diagnosis.md"],
-                {"diagnosis": "diagnosis.md"},
-            )
-        if "apply a patch" in goal:
-            return _write_and_envelope(
-                [
-                    (WINDOW, PATCHED_WINDOW),
-                    (PATCH_DIFF, PATCH_TEXT),
-                    (REPORT, "# patch\nwindow_sum now covers the exclusive end\n"),
-                ],
-                [WINDOW, PATCH_DIFF, REPORT],
-                {"patch": PATCH_DIFF},
-            )
-        if "run the test suite" in goal:
-            self.verify_attempts += 1
-            return _write_and_envelope(
-                [
-                    (WINDOW, PATCHED_WINDOW),
-                    (REPORT, "# verify\n2 passed\nwindow_sum covers the requested range\n"),
-                ],
-                [WINDOW, REPORT],
-                {"report": REPORT},
-            )
-        raise AssertionError(f"unexpected leaf goal: {goal!r}")
-
-
-def _write_and_envelope(
-    writes: list[tuple[str, str]], artifacts: list[str], outputs: dict[str, str]
-) -> list[Any]:
-    steps: list[Any] = [
-        ("workspace_write_file", {"path": path, "content": text}) for path, text in writes
-    ]
-    steps.append(
-        envelope_step(
-            summary="scripted leaf",
-            artifacts=artifacts,
-            claims=["scripted"],
-            override=lambda body: {**body, "outputs": dict(outputs)},
-        )
-    )
-    return steps
-
-
-def _world(tmp_path, *, key: str) -> _CodeWorld:
-    """The four-step shape of shipped ``code.fix-by-patch@2`` (facts → reproduce
-    → apply-patch → verify, both root criteria on verify) on the real code
-    domain, with the C3 seed.  The synthesizer path is the same harness P2.3m
-    uses; the seed row itself is ``ALREADY_REGISTERED``."""
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    return _CodeWorld(
-        evidence,
-        method=_four_step("code.fix-by-patch.p23o"),
-        key=key,
-        db_name="orchestrator.db",
-        success_criteria=(f"file:{REPORT}",),
-        allowed_tools=TOOLS,
-        workspace_seed=dict(SEED),
-        max_attempts=12,
-    )
-
-
-def _conservation(loop: Orchestrator, mission_id: str) -> dict[str, Any]:
-    report = loop.commit.ledger.costs_report(mission_id)
-    account = next(
-        item for item in report["accounts"] if item["account_id"] == mission_account(mission_id)
-    )
-    remaining = int(account["remaining_tokens"] or 0)
-    reserved = int(account["reserved_tokens"])
-    settled = int(account["settled_tokens"])
-    pool = int(account["limits"]["max_tokens"])
-    return {
-        "holds": remaining + reserved + settled == pool,
-        "remaining": remaining,
-        "reserved": reserved,
-        "settled": settled,
-        "pool": pool,
-    }
-
-
-def _run(world: _CodeWorld, tmp_path, provider: RoleScriptedProvider) -> dict[str, Any]:
-    evidence = Path(tmp_path) / "evidence"
-    world.store.close()
-
-    async def case() -> dict[str, Any]:
-        config = OrchestratorConfig(
-            evidence_root=evidence,
-            max_concurrency=1,
-            test_timeout_seconds=30,
-            max_planning_attempts=1,
-        )
-        async with Orchestrator(config, provider, poll_interval=0.02) as loop:
-            world.world.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.world)
-            await asyncio.wait_for(loop.run(max_cycles=400), timeout=60)
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            events = list(loop.store.list_events(mission.id))
-            verify_id = _task_of(
-                loop._hierarchical or world.dispatch, mission.id, "code.verify-tests"
-            )
-            attempts = list(loop.store.list_attempts(verify_id))
-            intent_inputs: list[str] = []
-            intent_raw: Any = None
-            if attempts:
-                intent = loop.store.get_intent_for_subject(attempts[0].id)
-                if intent is not None:
-                    intent_raw = intent.config.get("inputs")
-                    intent_inputs = [item["path"] for item in (intent.config.get("inputs") or [])]
-            layers = [
-                item.payload
-                for item in events
-                if item.type == "VerificationLayerRecorded" and item.task_id == verify_id
-            ]
-            workspaces = [
-                row
-                for row in loop.store.list_workspaces()
-                if str(row.get("attempt_id") or "").startswith(verify_id)
-            ]
-            return {
-                "status": mission.status,
-                "stop_reason": mission.stop_reason,
-                "report": dict(mission.final_report or {}),
-                "types": [item.type for item in events],
-                "events": events,
-                "conservation": _conservation(loop, mission.id),
-                "verify_inputs": intent_inputs,
-                "verify_intent_raw": intent_raw,
-                "verify_layers": layers,
-                "verify_attempts": len(attempts),
-                "verify_id": verify_id,
-                "workspaces": [
-                    {
-                        "id": row["workspace_id"],
-                        "detail": row["detail"],
-                    }
-                    for row in workspaces
-                ],
-                "progress": list(loop.progress_log),
-                "task_status": {
-                    task.id: (str(task.status), task.goal)
-                    for task in loop.store.list_tasks(mission.id)
-                },
-                "roles": dict(provider.by_role),
-                "provider_calls": provider.calls,
-            }
-
-    return asyncio.run(case())
-
-
-def test_inspect_at_2_still_receives_the_patch_port_after_overlay(tmp_path) -> None:
-    """P2.3k N1 still holds: inspect@2 waits for, then receives, the patch port.
-    Overlay adds seed files only when the producer recorded them; ``_accept``
-    records the port document alone, so the manifest path is unchanged."""
-
-    world = _CodeWorld(
-        tmp_path,
-        method=_rebound(_c1_method()),
-        key="p23o-inspect-port",
-        workspace_seed={WINDOW: SEED_WINDOW},
-    )
-    world.accept("code.read-repository-facts")
-    world.accept("code.reproduce-failure")
-    world.accept("code.apply-patch")
-    assert world.inputs(INSPECT) == ["out/patch.json"]

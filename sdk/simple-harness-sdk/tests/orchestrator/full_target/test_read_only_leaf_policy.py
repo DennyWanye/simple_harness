@@ -17,17 +17,20 @@ code_test``) onto every occurrence.  It now reads the leaf's binding: a leaf who
 type declares a read-only side effect, no write capability and no resource writes is
 not given ``code_test`` — unless one of its own criteria names a ``pytest:`` target,
 in which case the criterion nobody would check wins, as before.
+
+2026-10-03（HTN 补齐阶段 A′）：旧代码领域搭建（裸 ``CommitService`` 建任务、``install_hierarchical``）
+删掉。"C3 计划物化出的只读叶子不带 code_test""TaskCommitted 提议说的一样"（分诊裁决④）和
+"只读叶子改了起始文件收集时拒收""只加产出照收"两条换芯用例，并入代码领域测试世界的参数化主循环
+用例（``test_code_domain_world.py``）；这里只留直接测函数的用例。
 """
+
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from test_htn_deployment_wiring import _both_lane_world, _task_of  # noqa: E402
 
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     GoalSignature,
@@ -152,32 +155,8 @@ def test_a_binding_that_declares_no_side_effect_is_not_assumed_read_only() -> No
 
 
 # ======================================================================================
-# 3. The shipped code domain, materialised for real (the C3 plan)
+# 3. The shipped code domain: a criterion-linked leaf keeps code_test
 # ======================================================================================
-
-
-def test_the_c3_plans_read_only_leaves_are_materialised_without_code_test(tmp_path) -> None:
-    service, mission, _semantics, _world, dispatch = _both_lane_world(tmp_path)
-    tasks = {task.id: task for task in service.store.list_tasks(mission.id)}
-    policies = {
-        step: tasks[_task_of(dispatch, mission.id, type_id)].verification_policy
-        for step, type_id in (
-            ("facts", "code.read-repository-facts"),
-            ("reproduce", "code.reproduce-failure"),
-            ("patch", "code.apply-patch"),
-            ("verify", "code.verify-tests"),
-        )
-    }
-    # Every leaf of a Mission on the completion protocol also carries the content
-    # review layer; what this test is about is the deterministic ``code_test`` layer.
-    for step in ("facts", "reproduce"):
-        assert "code_test" not in policies[step], (step, policies[step])
-        assert policies[step] == ("format_check", "rule_check", "critic_review"), (
-            step, policies[step])
-    assert policies["patch"] == ("format_check", "rule_check", "code_test", "critic_review")
-    # Verification P1-2: ``verify`` is ``external_read`` too, but it is the step the
-    # plan's criterion_links point at — the deterministic layer stays on it.
-    assert policies["verify"] == ("format_check", "rule_check", "code_test", "critic_review")
 
 
 def test_a_criterion_linked_leaf_keeps_code_test_whatever_its_side_effect_says() -> None:
@@ -219,22 +198,6 @@ def test_a_criterion_linked_leaf_keeps_code_test_whatever_its_side_effect_says()
     # 每个叶子都带内容审阅层；这条测的是确定性的 ``code_test`` 层留不留。
     assert plain == ("format_check", "rule_check", "critic_review")
     assert linked == ("format_check", "rule_check", "code_test", "critic_review")
-
-
-def test_the_task_committed_proposal_says_the_same(tmp_path) -> None:
-    """The durable record a Worker's verification is later read from (C3's
-    ``TaskCommitted.proposal.verification_policy`` carried ``code_test`` on every leaf)."""
-
-    service, mission, _semantics, _world, dispatch = _both_lane_world(tmp_path)
-    facts = _task_of(dispatch, mission.id, "code.read-repository-facts")
-    patch = _task_of(dispatch, mission.id, "code.apply-patch")
-    committed = {
-        event.task_id: event.payload["proposal"]["verification_policy"]
-        for event in service.store.list_events(mission.id)
-        if event.type == "TaskCommitted"
-    }
-    assert "code_test" not in committed[facts]
-    assert "code_test" in committed[patch]
 
 
 # ======================================================================================
@@ -289,162 +252,3 @@ def test_read_only_rewrites_is_empty_for_a_writing_leaf_or_no_change() -> None:
         )
         == []
     )
-
-
-SEED = {
-    "stats/window.py": (
-        "def window_sum(values, start, end):\n    return sum(values[start:end - 1])\n"
-    )
-}
-TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
-
-
-def _collect_facts_leaf(
-    tmp_path,
-    *,
-    key: str,
-    writes: list[tuple[str, str]],
-    artifacts: list[str],
-    mutate: Any | None = None,
-):
-    """Dispatch the C1-r1 method's ``read-facts`` leaf to a scripted Worker that writes
-    ``writes`` and submits ``artifacts`` with ``facts.json`` claimed at its port, then
-    collect the result through the real ``_collect_attempt``.
-
-    ``mutate(loop, intent)`` runs after the Worker returns and before collection, so a
-    test can change workspace bytes without going through the write tool (P2.3u
-    fallback).
-    """
-
-    import asyncio
-
-    from test_inspect_leaf_patch_input import _c1_method, _CodeWorld, _rebound
-
-    from agent_orchestrator.orchestrator.event_handler import Orchestrator
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-    from agent_orchestrator.storage.htn_store import HtnStore
-    from agent_orchestrator.testing.fixtures import RoleScriptedProvider, envelope_step
-
-    evidence = Path(tmp_path) / "evidence"
-    evidence.mkdir(parents=True, exist_ok=True)
-    world = _CodeWorld(
-        evidence,
-        method=_rebound(_c1_method()),
-        key=key,
-        db_name="orchestrator.db",
-        allowed_tools=TOOLS,
-        workspace_seed=SEED,
-    )
-    facts = world.task("code.read-repository-facts")
-    world.store.close()
-    steps: list[Any] = [
-        ("workspace_write_file", {"path": path, "content": text}) for path, text in writes
-    ]
-    steps.append(
-        envelope_step(
-            summary="repository facts",
-            artifacts=artifacts,
-            claims=["facts recorded"],
-            override=lambda body: {**body, "outputs": {"facts": "facts.json"}},
-        )
-    )
-    provider = RoleScriptedProvider({"worker": steps})
-    config = OrchestratorConfig(evidence_root=evidence, max_concurrency=1, test_timeout_seconds=5)
-
-    async def case() -> dict[str, Any]:
-        async with Orchestrator(config, provider) as loop:
-            world.world.semantics = HtnStore(loop.store)
-            loop.install_hierarchical(planning=world.world)
-            mission = loop.store.get_mission(world.mission.id)
-            assert mission is not None
-            await loop._decide(mission)
-            intent = next(
-                item
-                for item in loop.store.list_intents(
-                    "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
-                )
-                if item.mission_id == mission.id
-                and item.kind == "attempt"
-                and str(item.subject_id).startswith(facts)
-            )
-            assert await loop._dispatch(intent)
-            intent = loop.store.get_intent(intent.intent_id)
-
-            async def completed():
-                while True:
-                    result = await loop.bridge_for(intent).result(
-                        agent_id=intent.agent_id, turn_id=intent.expected_turn_id
-                    )
-                    if result is not None:
-                        return result
-                    await asyncio.sleep(0.01)
-
-            result = await asyncio.wait_for(completed(), timeout=10)
-            if mutate is not None:
-                mutate(loop, intent)
-            await loop._collect_attempt(intent, result)
-            events = loop.store.list_events(mission.id)
-            return {
-                "rejections": [e.payload for e in events if e.type == "ResultRejected"],
-                "submitted": [e.type for e in events if e.type == "ResultSubmitted"],
-                "artifacts": sorted(a.path for a in loop.store.list_mission_artifacts(mission.id)),
-                "gateway": [
-                    {
-                        "tool": call.get("tool"),
-                        "outcome": call.get("outcome"),
-                        "error_code": call.get("error_code"),
-                    }
-                    for call in loop.assembled.gateway.calls
-                ],
-            }
-
-    return asyncio.run(case())
-
-
-def test_a_read_only_leaf_that_rewrites_a_seed_file_is_refused_at_collection(tmp_path) -> None:
-    """C3's ``facts`` leaf, replayed at collection: bytes on ``stats/window.py``
-    changed outside the write tool (P2.3u's gateway now blocks the tool itself).
-    The result is refused with the reason written down; nothing is registered."""
-
-    rewritten = (
-        "def window_sum(values, start, end):\n    return sum(values[start:end])\n"
-    )
-
-    def mutate(loop: Any, intent: Any) -> None:
-        workspace = loop.assembled.workspaces.get(str(intent.config["attempt_id"]))
-        workspace.write_text("stats/window.py", rewritten)
-
-    outcome = _collect_facts_leaf(
-        tmp_path,
-        key="p23k-p12-rewrite",
-        writes=[
-            ("facts.json", '{"tests": ["tests/test_public_window.py"]}'),
-        ],
-        artifacts=["stats/window.py", "facts.json"],
-        mutate=mutate,
-    )
-    assert outcome["rejections"], outcome
-    last = outcome["rejections"][-1]
-    assert last["reason"] == "read_only_leaf_rewrote_workspace"
-    assert last["detail"]["paths"] == ["stats/window.py"]
-    assert last["detail"]["side_effect_kind"] == "external_read"
-    assert outcome["submitted"] == []
-    assert outcome["artifacts"] == []
-
-
-def test_a_read_only_leaf_that_only_adds_its_outputs_is_collected(tmp_path) -> None:
-    """The control: new files (its port output, a report) are how a read-only leaf
-    delivers; nothing it started from changed, so the result goes through."""
-
-    outcome = _collect_facts_leaf(
-        tmp_path,
-        key="p23k-p12-clean",
-        writes=[
-            ("facts.json", '{"tests": ["tests/test_public_window.py"]}'),
-            ("REPORT.md", "# facts\n\nread only\n"),
-        ],
-        artifacts=["facts.json", "REPORT.md"],
-    )
-    assert [item["reason"] for item in outcome["rejections"]] == []
-    assert outcome["submitted"] == ["ResultSubmitted"]
-    assert outcome["artifacts"] == ["REPORT.md", "facts.json"]

@@ -12,7 +12,7 @@
   原样重放；修复时"同做法同参数再落地"按名拒绝（09-27 真机缺陷）且下一轮能恢复。
 * **直接测函数（E）**：主体/范围核对、意图哈希与重放冲突、整数图版本闸（待定③，暂留）、
   读集检查器按渠道、任务网络快照与义务开口合同、扫源码"提交路径之外没人准入需求"。
-* **暂留，供他人导入**：旧的裸 ``CommitService`` 构造器，等导入方迁完再删（见文件末节）。
+* 旧的裸 ``CommitService`` 构造器（原「暂留，供他人导入」一节）已随导入方迁走删掉（2026-10-03）。
 
 迁移时删掉的原用例（按分诊表第三节第 3 小节；覆盖用例换芯后在产品路径上）：
 默认分层两条 →【整圈】；同命令两次 → test_h1i_commit_recovery::test_i05_exit_after_durable_commit_*；
@@ -54,9 +54,8 @@ from h1i_seed import (  # noqa: E402
     root_task,
 )
 from htn_world import Env, method, out, param, root_network, step, task_binding  # noqa: E402
-from scripted_plans import approve_content_only_completion  # noqa: E402
 
-from agent_orchestrator.contracts import Budget, ContractError  # noqa: E402
+from agent_orchestrator.contracts import ContractError  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import ObservationRecord  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     AbsenceRead,
@@ -68,11 +67,9 @@ from agent_orchestrator.contracts.htn import (  # noqa: E402
     ReadItem,
     ReadItemKind,
     ReleaseCondition,
-    RunningWorkPolicy,
     ScopeEpochRead,
     SemanticReadSet,
     SupportSetRead,
-    TaskBindingRewrite,
     TaskForm,
 )
 from agent_orchestrator.contracts.obligations import Obligation, ShapeChange  # noqa: E402
@@ -92,9 +89,6 @@ from agent_orchestrator.orchestrator._read_set import (  # noqa: E402
     SemanticReadSetChecker,
 )
 from agent_orchestrator.orchestrator.commit_service import CommitService, MissionSpec  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
-    CommitService as _PlainCommitService,
-)
 from agent_orchestrator.orchestrator.obligation_commits import (  # noqa: E402
     DEMAND_ADMITTED,
     DEMAND_WITHDRAWN,
@@ -113,7 +107,7 @@ from agent_orchestrator.planning.htn.grounding import ground_method  # noqa: E40
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.obligation_store import ObligationStore  # noqa: E402
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
-from agent_orchestrator.storage.store import Store, StoreError  # noqa: E402
+from agent_orchestrator.storage.store import StoreError  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
@@ -473,7 +467,7 @@ def test_a_duty_given_up_may_be_asked_for_again_and_a_withdrawal_must_be_signed_
 
 
 # ============================================================ 直接测函数（E）
-#: 纯构造用的根目标名（E 用；也被他人导入，见文件末节）。
+#: 纯构造用的根目标名（E 用；完成范围编译器的两个用例文件也导入）。
 ROOT_TASK = "task-root"
 ROOT_DUTY = "obl-root"
 
@@ -850,183 +844,4 @@ def test_nothing_outside_the_commit_path_admits_a_demand() -> None:
     assert offenders == [], (
         "a demand may only be admitted through CommitService.admit_obligation_demand; "
         f"{offenders} name the ledger primitive directly"
-    )
-
-
-# =====================================================================================
-# 暂留，供他人导入（2026-10-03）：下面是旧的裸 ``CommitService`` 构造器，本文件已不再使用
-# （``ROOT_TASK`` / ``ROOT_DUTY`` / ``_env`` / ``_outer`` 在上面 E 一节，本文件自己也用）。
-# 仍在导入的：operation_completion/test_completion_spec_approval、test_scoped_content_integrity、
-# test_completion_scope_compiler，test_h1h_operation_matrix / _tenant / _current_gates，
-# assurance_exec/_operation_world，scripts/assurance_seams/_assured_fixture 与
-# critic-format-repair-seam（patch ``CommitService`` 这个模块名）。它们迁完后整节删除。
-# =====================================================================================
-TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
-FUEL = 8
-
-
-def _spec(key: str, *, mode: str) -> MissionSpec:
-    return MissionSpec(
-        goal="交付一个可验收的层次计划",
-        success_criteria=("file:a.md",),
-        tenant_id="tenant-p23a",
-        idempotency_key=key,
-        allowed_tools=TOOLS,
-        budget=Budget(max_tokens=200_000, max_attempts=12),
-        orchestration_semantics_version=mode,
-    )
-
-
-@dataclasses.dataclass
-class World:
-    service: CommitService
-    mission: Any
-    env: Env
-    contract: Any
-    binding: Any
-    draft: Any
-    bundle: Any
-    command: CommitPlanCommand
-    principal: PlanPrincipal
-
-    @property
-    def store(self) -> Store:
-        return self.service.store
-
-    @property
-    def semantics(self) -> HtnStore:
-        return HtnStore(self.service.store)
-
-    @property
-    def duties(self) -> ObligationStore:
-        return ObligationStore(self.service.store)
-
-    def commit(self, command: CommitPlanCommand | None = None, principal=None):
-        return self.service.commit_plan_revision(
-            command or self.command, principal or self.principal
-        )
-
-
-def _world(tmp_path, *, mode: str = HIERARCHICAL_SEMANTICS, key: str = "p23a",
-           confirm_completion: bool = True) -> World:
-    """``confirm_completion=False``：留给自己发布并确认完成要求的夹具（它们测的就是确认本身）。"""
-    service = CommitService(Store.open(tmp_path / "orchestrator.db"))
-    mission, _ = service.create_mission(_spec(key, mode=mode))
-    env = _env(mission.id)
-    contract = _outer()
-    receipt = env.admit(contract)
-    assert receipt.admitted, receipt.problems
-    binding = task_binding(
-        env,
-        "plan.goal",
-        task_id=ROOT_TASK,
-        obligation=ROOT_DUTY,
-        parameters={"subject": "alpha"},
-    )
-    network = root_network(env, binding)
-    if mode == HIERARCHICAL_SEMANTICS:
-        ObligationStore(service.store).register(
-            Obligation(
-                obligation_id=ROOT_DUTY,  # type: ignore[arg-type]
-                mission_id=mission.id,
-                requirement_refs=("req-1",),
-                goal_signature_id="plan.goal",
-            ),
-            recursion_fuel=FUEL,
-        )
-        HtnStore(service.store).put_task_semantics(mission.id, binding)
-        HtnStore(service.store).register_method(
-            contract, env.registry.registration(contract.method_ref())
-        )
-        if confirm_completion and type(service) is _PlainCommitService:
-            approve_content_only_completion(service, mission, binding, command_id=f"approve-{key}")
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(binding, contract, {}, report, catalog=env.catalog, schemas=env.schemas)
-    confirmed = HtnStore(service.store).latest_requirements_revision(mission.id)
-    bundle = compile_refinement_bundle(
-        draft,
-        network,
-        method=contract,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-        requirements_revision=0 if confirmed is None else int(confirmed.revision),
-    )
-    command = CommitPlanCommand(
-        command_id="cmd-1",
-        mission_id=mission.id,
-        delta=bundle.delta,
-        network=bundle.network,
-        task_bindings=bundle.task_bindings,
-        base_graph_version=1,
-        issued_by="manager-1",
-        scope_id="mission",
-        source={"intent_id": "plan-1"},
-    )
-    return World(
-        service=service,
-        mission=mission,
-        env=env,
-        contract=contract,
-        binding=binding,
-        draft=draft,
-        bundle=bundle,
-        command=command,
-        principal=PlanPrincipal("manager-1", "mission", 0),
-    )
-
-
-def _second_revision(
-    world: World, *, superseded=(), retired=(), command_id: str = "cmd-2"
-) -> CommitPlanCommand:
-    """A do-nothing second revision on top of the first (暂留，供他人导入)."""
-
-    replaced_tasks = {
-        str(spec.task_id)
-        for spec in world.bundle.network.occurrences
-        if spec.occurrence_id in set(superseded)
-    }
-    rewrites, bindings = [], []
-    for binding in world.bundle.network.task_bindings:
-        if str(binding.task_id) not in replaced_tasks:
-            bindings.append(binding)
-            continue
-        stored = world.semantics.task_semantics_of(world.mission.id, str(binding.task_id))
-        moved = dataclasses.replace(
-            stored,
-            contract_revision=int(stored.contract_revision) + 1,
-            dispatch_generation=int(stored.dispatch_generation) + 1,
-        )
-        rewrites.append(TaskBindingRewrite(content_hash_of(stored.to_json()), moved))
-        bindings.append(moved)
-    delta = dataclasses.replace(
-        world.command.delta,
-        delta_id="delta-second",
-        base_plan_revision=1,
-        occurrences=(),
-        method_instances=(),
-        data_requirements=(),
-        retired_instance_ids=tuple(retired),
-        referenced_occurrences=tuple(
-            spec.occurrence_id for spec in world.command.delta.occurrences
-        ),
-        binding_rewrites=tuple(rewrites),
-    )
-    network = dataclasses.replace(
-        world.bundle.network, plan_revision=2, task_bindings=tuple(bindings)
-    )
-    return dataclasses.replace(
-        world.command,
-        command_id=command_id,
-        delta=delta,
-        network=network,
-        task_bindings=(),
-        superseded_occurrences=tuple(superseded),
-        running_work_policy=(
-            RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE
-            if superseded
-            else RunningWorkPolicy.RETAIN_IF_BINDINGS_UNCHANGED
-        ),
     )
