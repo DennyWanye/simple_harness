@@ -118,6 +118,20 @@ def stale_evidence_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: 
     return produced
 
 
+def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
+    """阶段 D：两个没有先后的步骤，通过验收的产出落在同一个文件上、内容不同 → 一条写入冲突修复请求
+    （路径、两步、两份产出）。同一对产出只记一次；怎么办（加先后、重做其中一步、换做法）由规划器定。"""
+    produced = False
+    for clash in dispatch.write_conflicts(mission.id):
+        source_key = "write-conflict:" + content_hash_of({"mission": mission.id, **clash})
+        if source_key in seen:
+            continue
+        produced |= record_request(dispatch, mission.id, event_type="WriteConflict",
+                                   trigger_refs=tuple(clash["steps"]), source_key=source_key,
+                                   detail={"reason": "write_conflict", **clash})
+    return produced
+
+
 #: 片 B：计划里有目标还没有做法 → 每个计划版本一条请求，幂等键是这个前缀加任务号和计划版本号。
 #: 任务号必须在键里：事件的幂等键是全库唯一的，只写版本号的话，同一个库里第一个任务占了
 #: "第 1 版"之后，后面每个任务的第 1 版请求都撞键写不进去（片 B 真机第 2、3 局）。
@@ -448,6 +462,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     produced |= stale_evidence_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
+    produced |= write_conflict_triggers(dispatch, mission, seen=seen)
     produced |= open_goal_triggers(handler, dispatch, mission, seen=seen)
     events = tuple(store.iter_events(mission.id))
     for event in events:

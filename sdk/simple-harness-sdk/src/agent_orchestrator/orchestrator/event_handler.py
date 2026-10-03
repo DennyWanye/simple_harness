@@ -190,6 +190,7 @@ from .commit_service import (
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
+    WriteConflictPending,
     append_hierarchical_event,
     is_hierarchical,
     record_assembly_missing,
@@ -9722,6 +9723,10 @@ class Orchestrator:
             # nothing — overlay only reads producers the manifest already named.
             if inputs:
                 inputs = new_mode.overlay_attempt_inputs(mission.id, inputs)
+        except WriteConflictPending as error:
+            # 阶段 D：上游两步把同一个文件写成了两样；这一步不开工，等规划器处理写入冲突修复请求
+            self._note(f"task {task.id} not dispatched: {error}")
+            return False
         except ArtifactConflict as error:
             self._commit_stop_task(
                 task.id,

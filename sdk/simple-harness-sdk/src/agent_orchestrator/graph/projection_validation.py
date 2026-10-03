@@ -34,7 +34,7 @@ it has not been given.
 from __future__ import annotations
 
 import heapq
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -898,6 +898,24 @@ def _ordered(
     return target in reach[source]
 
 
+def ordering_of(snapshot: TaskNetworkSnapshot) -> Callable[[OccurrenceId, OccurrenceId], bool]:
+    """``ordered(a, b)``: the plan makes one of the two wait for the other — an order edge or
+    a data edge, through refinement, in either direction; or one is a refinement ancestor of
+    the other.  The same notion the resource-conflict check above uses."""
+
+    projection = snapshot.execution_projection()
+    successors = _declared_successors(projection)
+    view = snapshot.refinement_view()
+    reach: dict[str, set[str]] = {}
+
+    def ordered(left: OccurrenceId, right: OccurrenceId) -> bool:
+        return (right in view.ancestors_of(left) or left in view.ancestors_of(right)
+                or _ordered(projection, successors, reach, left, right)
+                or _ordered(projection, successors, reach, right, left))
+
+    return ordered
+
+
 __all__ = (
     "MAX_CONFLICTS_PER_RESOURCE",
     "GraphIntegrityError",
@@ -906,6 +924,7 @@ __all__ = (
     "ProjectionReport",
     "find_cycle",
     "kahn_order",
+    "ordering_of",
     "require_topological_order",
     "validate_execution_projection",
     "validate_refinement_acyclic",

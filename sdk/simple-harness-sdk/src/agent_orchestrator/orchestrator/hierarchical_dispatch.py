@@ -246,6 +246,16 @@ def is_hierarchical(mission: Mission) -> bool:
     return semantics_of(mission) == HIERARCHICAL_SEMANTICS
 
 
+class WriteConflictPending(ContractError):
+    """A step's inputs come from unordered producers that wrote one file differently; it
+    waits for the Planner's answer to the write-conflict repair request (阶段 D)."""
+
+    def __init__(self, conflicts: Sequence[Mapping[str, Any]]) -> None:
+        self.conflicts = tuple(dict(item) for item in conflicts)
+        super().__init__("WRITE_CONFLICT: " + "; ".join(
+            f"{item['path']} written by {item['steps'][0]} and {item['steps'][1]}" for item in self.conflicts))
+
+
 class PlanIntegrityError(GraphIntegrityError):
     """Corruption that is *not* a cycle: the plan's meaning is incomplete (§18.5).
 
@@ -3514,6 +3524,50 @@ class HierarchicalDispatch:
         rules = self.target_rules_for(task_id)
         return manifest_upstream_inputs(result.manifest, rules, network=network)
 
+    def write_conflicts(self, mission_id: str, *, touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
+        """Steps with no order between them whose accepted outputs land on one file (阶段 D).
+
+        Two steps the plan lets run at the same time each delivered a file at the same
+        path, with different content: which one a later step should start from is not
+        something the plan says, and picking one ("first come") would be the Harness
+        deciding it.  Each such pair is reported once — path, the two steps, the two
+        outputs — for the Planner to settle.  A relay (one step delivers the next version
+        of an upstream file) is ordered by its data edge and is not a conflict; identical
+        content is not one either.  ``touching`` keeps only the conflicts one of those producer
+        tasks is a party to.
+        """
+        from ..graph.projection_validation import ordering_of
+
+        network = self.network(mission_id)
+        occurrences: dict[str, list[Any]] = {}
+        for spec in network.occurrences:
+            if spec.form is TaskForm.PRIMITIVE:
+                occurrences.setdefault(str(spec.task_id), []).append(spec.occurrence_id)
+        holders: dict[str, list[tuple[str, Any]]] = {}
+        for task_id in sorted(occurrences):
+            producer = self.store.get_task(task_id)
+            for artifact_id in (() if producer is None else producer.accepted_artifacts):
+                artifact = self.store.get_artifact(artifact_id)
+                if artifact is None or artifact.path.startswith(("actions/", ".")):
+                    continue
+                holders.setdefault(artifact.path, []).append((task_id, artifact))
+        ordered = None
+        found: list[dict[str, Any]] = []
+        for path in sorted(holders):
+            entries = holders[path]
+            for seat, (left, left_file) in enumerate(entries):
+                for right, right_file in entries[seat + 1:]:
+                    if left == right or left_file.content_hash == right_file.content_hash:
+                        continue
+                    if touching is not None and not {left, right} & set(touching):
+                        continue
+                    ordered = ordered or ordering_of(network)
+                    if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
+                        continue
+                    found.append({"path": path, "steps": [left, right],
+                                  "artifacts": [left_file.id, right_file.id]})
+        return found
+
     def overlay_attempt_inputs(
         self, mission_id: str, inputs: Sequence[UpstreamInput]
     ) -> list[UpstreamInput]:
@@ -3521,7 +3575,14 @@ class HierarchicalDispatch:
 
         Dispatch and its writer-transaction check share this projection.  The
         Attempt freezes the resulting exact artifact identities and hashes.
+
+        阶段 D：这一步的某个上游与另一个没有先后的步骤把同一个文件写成了两样，该从哪一份开工
+        计划没有说，不在这里"先到先占"——拒绝（``WriteConflictPending``），这一步等规划器处理
+        写入冲突修复请求。
         """
+        clashes = self.write_conflicts(mission_id, touching=tuple(dict.fromkeys(item.task_id for item in inputs)))
+        if clashes:
+            raise WriteConflictPending(clashes)
         from ..artifacts.bound_workspace import overlay_bound_producer_files
         from .occurrence_tasks import read_only_leaf
 

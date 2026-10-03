@@ -49,6 +49,8 @@ EVENT_TRIGGER_MAP: dict[str, RepairTriggerSource] = {
     "nodispatchablework": RepairTriggerSource.NO_DISPATCHABLE_WORK,
     "operation_not_applied": RepairTriggerSource.OPERATION_NOT_APPLIED,
     "operationnotapplied": RepairTriggerSource.OPERATION_NOT_APPLIED,
+    "write_conflict": RepairTriggerSource.WRITE_CONFLICT,
+    "writeconflict": RepairTriggerSource.WRITE_CONFLICT,
 }
 
 
