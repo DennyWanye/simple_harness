@@ -33,6 +33,7 @@ from typing import Any
 
 from ...contracts.evidence_state import PreconditionPhase, PreconditionWitnessRecord, TruthValue
 from ...contracts.htn import (
+    ResourceRef,
     Binding,
     ChildBinding,
     MethodContract,
@@ -728,6 +729,10 @@ def plan_slots(
     return tuple(plans)
 
 
+#: 写入目标的命名空间：任务工作区里的一个文件路径。
+WORKSPACE_FILE = "workspace_file"
+
+
 def child_task_bindings(
     draft: MethodInstanceDraft,
     method: MethodContract,
@@ -737,8 +742,13 @@ def child_task_bindings(
     schemas: SchemaCatalog,
     sharing: SharedGoalIndex | None = None,
     reuse_acceptances: Mapping[str, TypedRef] | None = None,
+    write_targets: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[TaskSemanticBindingV1, ...]:
     """The semantic bindings of the slots this draft *creates*.
+
+    ``write_targets``（阶段 D）：步骤名 → 这一步按做法负责写出的文件路径（做法把 ``file:X``
+    要求链接到了它）。记成这一步的写入目标，两个没有先后的步骤写同一个文件由已有的资源
+    冲突检查在编译期退回。
 
     A shared slot binds an occurrence that already exists, so it contributes no
     binding here: TG §3.2 keeps ``TaskSemanticBindingV1`` the single authority for
@@ -760,7 +770,8 @@ def child_task_bindings(
     for plan in plans:
         if plan.shared:
             continue
-        out.append(task_binding_for(plan, draft, task, schemas=schemas))
+        out.append(task_binding_for(plan, draft, task, schemas=schemas,
+                                    writes=tuple((write_targets or {}).get(plan.identity.slot_key, ()))))
     return tuple(out)
 
 
@@ -770,6 +781,7 @@ def task_binding_for(
     parent: TaskSemanticBindingV1,
     *,
     schemas: SchemaCatalog,
+    writes: Sequence[str] = (),
 ) -> TaskSemanticBindingV1:
     """Build the semantic binding of one newly created slot."""
 
@@ -809,7 +821,11 @@ def task_binding_for(
             slot_key=plan.identity.slot_key,
         ),
         resource_reads=spec.resource_reads if spec.form is TaskForm.PRIMITIVE else (),
-        resource_writes=spec.resource_writes if spec.form is TaskForm.PRIMITIVE else (),
+        resource_writes=(
+            (*spec.resource_writes,
+             *(ResourceRef(WORKSPACE_FILE, path) for path in dict.fromkeys(writes)
+               if (WORKSPACE_FILE, path) not in {ref.key for ref in spec.resource_writes}))
+            if spec.form is TaskForm.PRIMITIVE else ()),
         side_effect_kind=spec.side_effect_kind if spec.form is TaskForm.PRIMITIVE else None,
     )
 

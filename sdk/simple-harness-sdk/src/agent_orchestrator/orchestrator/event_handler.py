@@ -2357,12 +2357,19 @@ class Orchestrator:
 
         checker = SemanticReadSetChecker(self.store, HtnStore(self.store), mission_id=mission_id)
         duties = ObligationStore(self.store).obligation_ids(mission_id)
+        mission = self.store.get_mission(mission_id)
         return {
             "scope_epochs": tuple(sorted(
                 (scope, int(epoch)) for scope, epoch in current_scope_epochs(self.store, mission_id).items()
                 if not scope.startswith("assurance:"))),
             "obligation_items": tuple(
                 (str(duty), checker.read_item(ReadItemKind.OBLIGATION, str(duty))) for duty in sorted(map(str, duties))),
+            # ``c-user-<n>`` names the Mission's n-th criterion; a ``file:X`` one names a file
+            "criterion_files": tuple(
+                (f"c-user-{number}", statement[len("file:"):].strip())
+                for number, statement in enumerate(
+                    (str(item).strip() for item in (mission.success_criteria if mission is not None else ())), start=1)
+                if statement.startswith("file:") and statement[len("file:"):].strip()),
         }
 
     def _handoff_ground_gone(self, action_key: str) -> bool:

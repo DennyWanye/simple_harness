@@ -203,6 +203,7 @@ def compile_refinement(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    criterion_files: Mapping[str, str] | None = None,
 ) -> ProposedPlanDelta:
     """§18.3: emit the partial order, the data bindings, the coverage and the read-set.
 
@@ -230,6 +231,7 @@ def compile_refinement(
         compiled_from_proposal_id=compiled_from_proposal_id,
         scope_epochs=scope_epochs,
         obligation_items=obligation_items,
+        criterion_files=criterion_files,
     ).delta
 
 
@@ -252,6 +254,7 @@ def compile_refinement_bundle(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """The ten steps of implementation design §5.2, in order."""
 
@@ -311,6 +314,7 @@ def compile_refinement_bundle(
         schemas=schemas,
         sharing=sharing,
         reuse_acceptances=dict(reuse_acceptances or {}),
+        write_targets=_write_targets(method, criterion_files or {}),
     )
     binding_by_task = {binding.task_id: binding for binding in new_bindings}
     occurrences: list[OccurrenceSpec] = []
@@ -494,6 +498,7 @@ def compile_candidate_from_snapshot(
     compiled_from_proposal_id: str | None = None,
     scope_epochs: Mapping[str, int] | None = None,
     obligation_items: Mapping[str, ReadItem] | None = None,
+    criterion_files: Mapping[str, str] | None = None,
 ) -> RefinementCompilation:
     """Pure candidate kernel used by H1H preview.
 
@@ -516,6 +521,7 @@ def compile_candidate_from_snapshot(
         compiled_from_proposal_id=compiled_from_proposal_id,
         scope_epochs=scope_epochs,
         obligation_items=obligation_items,
+        criterion_files=criterion_files,
     )
 
 
@@ -1435,6 +1441,20 @@ def build_read_set(
             for scope, epoch in sorted((scope_epochs or {}).items())
         ),
     )
+
+
+def _write_targets(method: MethodContract, criterion_files: Mapping[str, str]) -> dict[str, list[str]]:
+    """Step name → the files the method makes that step answer for: every ``file:X``
+    requirement its ``criterion_links`` hang on the step (the finalizer when no step is
+    named).  A structural fact read off the method — not a guess about what a step writes."""
+
+    targets: dict[str, list[str]] = {}
+    for link in method.composition.criterion_links:
+        slot = link.child_step or method.composition.finalizer_step
+        path = criterion_files.get(str(link.child_criterion_id or link.parent_criterion_id))
+        if slot and path and path not in targets.setdefault(str(slot), []):
+            targets[str(slot)].append(path)
+    return targets
 
 
 def _derive_delta_id(draft: MethodInstanceDraft, base: PlanRevision) -> str:

@@ -81,6 +81,8 @@ class PreviewInputs:
     #: （义务编号 → 条目，用提交核对器的同一公式读出）。编译出的读集带上它们，提交时逐项重核。
     scope_epochs: tuple[tuple[str, int], ...] = ()
     obligation_items: tuple[tuple[str, ReadItem], ...] = ()
+    #: 要求编号 → 文件路径（``file:X`` 要求），做法把它链接到哪一步，哪一步就以它为写入目标。
+    criterion_files: tuple[tuple[str, str], ...] = ()
 
     def scope_epoch_reads(self) -> tuple[ScopeEpochRead, ...]:
         return tuple(ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
@@ -344,6 +346,7 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         compiled_from_proposal_id=proposal.proposal_id,
         scope_epochs=dict(inputs.scope_epochs),
         obligation_items=dict(inputs.obligation_items),
+        criterion_files=dict(inputs.criterion_files),
     )
 
 
