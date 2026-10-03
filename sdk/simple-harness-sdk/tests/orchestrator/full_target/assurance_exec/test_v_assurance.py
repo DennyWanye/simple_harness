@@ -5,7 +5,7 @@ V01–V05, V12 and the bounded half of V14 drive the production anchor selector,
 grounded/clean closure and the fixed acceptance evaluator directly: they are
 pure over rows the validity service reads, so no Store is stubbed and nothing
 here can cache a prior VERIFIED. The Store-level cases (barrier, racing epoch,
-authority/expiry, shared consumers, certificate context, restore quarantine,
+authority/expiry, shared consumers, certificate context, root quarantine,
 event replay) live in ``test_v_assurance_store.py``.
 """
 
@@ -700,10 +700,9 @@ def test_invalidation_racing_cache(tmp_path):
 
 
 # --------------------------------------------------------------------------- V13
-def test_restore_quarantine_and_current_reauthorization():
-    """根闸门接缝（产品同形）：根状态文件丢失时主循环不派发；真的离线备份 / 恢复得到新身份、没有活授权；
-    产品部署在恢复目录上起不来（现状）；没有当前读权限时隔离管理面拒绝一切读取；闸门层契约下，
-    别的调用者 / 策略变化 / 过期 / 时钟回拨 / 恢复库缺文件各自按名拒绝。"""
+def test_root_quarantine_and_current_read_authority():
+    """根闸门接缝（产品同形）：根状态文件丢失时主循环不派发；冷启动只开管理面、没有当前读权限时拒绝一切
+    读取；闸门层契约下本租户读得到，别的租户 / 权限过期按名拒绝。离线备份与受管恢复已删（A″）。"""
     seam = SDK_ROOT / "scripts/assurance_seams/root-gate-seam.py"
     completed = subprocess.run([sys.executable, str(seam)], capture_output=True, text=True, timeout=600,
                                cwd=str(SDK_ROOT))
@@ -713,12 +712,8 @@ def test_restore_quarantine_and_current_reauthorization():
     assert report["provider_calls"] == 0
     assert set(report["results"]) == {
         "missing_root_state_refuses_the_main_loop_before_any_model_call",
-        "managed_backup_restore_new_identity_no_live_grant",
-        "product_deployment_refuses_to_start_on_a_restored_root",
         "quarantine_without_current_authority_refuses_every_read",
-        "exact_grant_replay_and_read_without_execution_resume",
-        "other_caller_policy_expiry_and_clock_rollback_refuse",
-        "partial_restored_database_refuses",
+        "native_root_read_checks_tenant_and_expiry",
     } and all(report["results"].values())
 
 

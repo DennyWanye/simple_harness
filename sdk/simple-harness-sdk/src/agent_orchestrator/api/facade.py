@@ -77,7 +77,6 @@ TAKEOVER_ACTIONS = ("stop", "retry_with_note")
 NOT_FOUND = "no such object for this caller"
 
 
-
 #: Who issued a planning grant (2026-09-25): a person, or the Host under auto mode.
 PLANNING_APPROVAL_SOURCES = frozenset({"HUMAN", "HOST_AUTO_PERMISSION"})
 
@@ -189,25 +188,6 @@ class MissionControlV1:
         except AssuranceError as error:
             raise FacadeError(error.code, "native root installation refused") from error
 
-    def reauthorize_restored_read(self, command: Mapping[str, Any]) -> dict[str, Any]:
-        from ..assurance.codec import AssuranceError, array, fields
-        from ..assurance.refs import AssuranceRef
-
-        try:
-            body = fields(dict(command), {"command_id", "root_incarnation_id", "restore_manifest_hash",
-                                         "targets"}, {"ttl_ms"})
-            targets = []
-            for value in array(body["targets"], minimum=1):
-                row = fields(value, {"mission_id", "ref", "purpose"})
-                targets.append((row["mission_id"], AssuranceRef.from_json(row["ref"]), row["purpose"]))
-            ref = self._orchestrator.commit.reauthorize_restored_read(
-                principal=self._principal, tenant_id=self._tenant,
-                **{key: value for key, value in body.items() if key != "targets"}, targets=targets,
-            )
-            return {"state": "READ_ONLY_REAUTHORIZED", "execution_allowed": False,
-                    "receipt_ref": ref.to_json()}
-        except AssuranceError as error:
-            raise FacadeError(error.code, "restored read authorization refused") from error
 
     # ------------------------------------------------------ assurance reads
     def _assurance_read(self, verb: str, body: Mapping[str, Any]) -> dict[str, Any]:

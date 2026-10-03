@@ -606,8 +606,6 @@ class Orchestrator:
                 if self._assurance_root_setup is not None:
                     self._assurance_root_setup(self)
                 try:
-                    if (self._config.evidence_root / "restore-manifest.json").exists():
-                        self._assurance_root_gate.check_restored_integrity()
                     self._assurance_root_gate.require_execution()
                 except AssuranceError:
                     # Keep the authenticated management API available. No SDK

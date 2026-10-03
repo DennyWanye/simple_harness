@@ -685,6 +685,33 @@ DROP INDEX IF EXISTS planning_repair_mission_idx;
 DROP TABLE IF EXISTS planning_repair_continuations;
 """
 
+# 2026-10-03 (HTN 补齐阶段 A″, decision ⑤): the managed offline restore was removed, so
+# the artifacts barrier no longer lets an "offline relocation" rewrite storage paths.
+DDL_V37 = """
+DROP TRIGGER IF EXISTS assurance_source_artifacts_update;
+CREATE TRIGGER assurance_source_artifacts_update AFTER UPDATE ON artifacts WHEN (NEW.artifact_id IS NOT OLD.artifact_id OR NEW.mission_id IS NOT OLD.mission_id OR NEW.task_id IS NOT OLD.task_id OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.path IS NOT OLD.path OR NEW.content_hash IS NOT OLD.content_hash OR NEW.version IS NOT OLD.version OR NEW.json IS NOT OLD.json OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id,OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:artifacts',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id,OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','artifacts'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id,OLD.mission_id);
+ END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -722,6 +749,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(34, "orchestrator-drop-captured-baseline", DDL_V34),
     Migration(35, "orchestrator-drop-taskgraph-requirements", DDL_V35),
     Migration(36, "orchestrator-drop-planning-repair-continuations", DDL_V36),
+    Migration(37, "orchestrator-artifacts-barrier-without-offline-relocation", DDL_V37),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

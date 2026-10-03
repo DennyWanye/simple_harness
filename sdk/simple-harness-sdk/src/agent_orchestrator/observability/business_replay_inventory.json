@@ -191,7 +191,7 @@
    ],
    "gaps": [
     "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage: 迁移时改写，不发事件",
-    "agent_orchestrator/storage/store.py:Store.update_artifact_storage: 启动时（Orchestrator.__aenter__）和离线恢复（restore_offline）改存放位置，不发事件"
+    "agent_orchestrator/storage/store.py:Store.update_artifact_storage: 启动时（Orchestrator.__aenter__）改存放位置，不发事件"
    ]
   },
   "assurance_blob_pins": {
@@ -761,7 +761,7 @@
    "gaps": [
     "agent_orchestrator/storage/assurance_upgrade.py:DDL: 迁移一次性补写 AssuranceLegacyClassified 回执，不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_review_pins.ensure_review_blob_pins / _transition（审阅对象钉住与释放）不发事件",
-    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_root_commits.install_native_root / _initialize_clock / reauthorize_restored_read（保证通道根与时钟）不发事件",
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_root_commits.install_native_root / _initialize_clock（保证通道根与时钟）不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 failure_classes.record_review_interruption（审阅调用被打断）在事件事务之外单独写，不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 operation_proposal_review.persist_action_proposal_review_inputs 在 operation_runtime.ensure_assured_proposal_reviews 路径上不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_changes.original_source_mutation 在 PolicyCommitsMixin.seed_policy / record_policy_drift、HtnStore.register_method / set_method_registration 路径上不发事件",

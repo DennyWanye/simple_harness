@@ -617,8 +617,8 @@ def planned(htn: HtnStore) -> HtnStore:
 
 
 def test_operation_completion_is_the_new_head_without_replacing_admission() -> None:
-    assert schema.SCHEMA_VERSION == 36  # 迁移 25～36 已追加在后
-    assert schema.SCHEMA_NAME == "orchestrator-drop-captured-baseline"
+    assert schema.SCHEMA_VERSION == 37  # 迁移 25～37 已追加在后
+    assert schema.SCHEMA_NAME == "orchestrator-artifacts-barrier-without-offline-relocation"
     assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
     assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
     assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL

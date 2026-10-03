@@ -186,7 +186,6 @@ class Store:
         self.fired: list[str] = []
         self._readonly = False
         self._assurance_change_context: tuple[str, object | None] | None = None
-        self._assurance_offline_relocation: tuple[str, object | None] | None = None
         from .assurance_changes import install_change_context
 
         install_change_context(self)

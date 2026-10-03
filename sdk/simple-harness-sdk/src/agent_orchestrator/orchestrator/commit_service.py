@@ -640,18 +640,6 @@ class CommitService(ProtectedTailCommitsMixin,
         return install_native_root(self, self._assurance_root_gate, principal=principal,
                                    tenant_id=tenant_id, command_id=command_id)
 
-    def reauthorize_restored_read(self, *, principal: Any, tenant_id: str, **command: Any):
-        from .assurance_root_commits import reauthorize_restored_read
-        from ..assurance.codec import AssuranceError
-
-        if self._assurance_root_gate is None:
-            raise AssuranceError("ASSURANCE_ROOT_GATE_UNBOUND")
-        if self._assurance_read_authority is None:
-            raise AssuranceError("CURRENT_READ_AUTHORITY_UNAVAILABLE")
-        return reauthorize_restored_read(
-            self, self._assurance_root_gate, principal=principal, tenant_id=tenant_id,
-            authority=self._assurance_read_authority, **command,
-        )
 
     def create_mission(
         self,

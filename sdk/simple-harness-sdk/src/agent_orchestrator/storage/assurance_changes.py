@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, text
+from ..assurance.codec import AssuranceError, fingerprint, text
 
 if TYPE_CHECKING:
     from .store import Store
@@ -34,70 +34,6 @@ def install_change_context(store: Store) -> None:
         return receipt_id
 
     store.connection.create_function("assurance_change_receipt", 0, current_receipt)
-
-    def offline_relocation() -> int:
-        context = store._assurance_offline_relocation
-        return int(
-            context is not None
-            and context[1] is store._current_task()
-            and store.connection.in_transaction
-        )
-
-    store.connection.create_function("assurance_offline_relocation", 0, offline_relocation)
-
-    def same_artifact_content(old: str, new: str) -> int:
-        try:
-            old_body, new_body = decode(old), decode(new)
-            if not isinstance(old_body, dict) or not isinstance(new_body, dict):
-                return 0
-            old_body.pop("storage_uri", None)
-            new_body.pop("storage_uri", None)
-            return int(canonical(old_body) == canonical(new_body))
-        except AssuranceError:
-            return 0
-
-    store.connection.create_function(
-        "assurance_same_artifact_content",
-        2,
-        same_artifact_content,
-        deterministic=True,
-    )
-
-
-@contextmanager
-def relocating_restored_artifacts(store: Store, *, root_incarnation_id: str) -> Iterator[None]:
-    """Managed offline restore only: relocate paths without rewriting formal history.
-
-    The restored root is already quarantined before this path can be used. The
-    SQL exception permits only storage_uri changes; it cannot suppress changes
-    to content identity or verification. Old certificates remain tied to the old
-    root, and the normal startup gate must refuse disclosure/dispatch.
-    """
-    import hashlib
-
-    from .assurance_work import atomic
-
-    root = store.path.parent
-    marker_path = root / "restore-quarantine.json"
-    manifest_path = root / "restore-manifest.json"
-    if marker_path.is_symlink() or manifest_path.is_symlink():
-        raise AssuranceError("RESTORE_QUARANTINE_MISMATCH")
-    marker = decode(marker_path.read_bytes())
-    if (
-        marker.get("root_incarnation_id") != root_incarnation_id
-        or marker.get("state") != "QUARANTINED"
-        or marker.get("restore_manifest_hash")
-        != hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-    ):
-        raise AssuranceError("RESTORE_QUARANTINE_MISMATCH")
-    if store._assurance_offline_relocation is not None:
-        raise AssuranceError("RESTORE_RELOCATION_ALREADY_ACTIVE")
-    with atomic(store):
-        store._assurance_offline_relocation = (root_incarnation_id, store._current_task())
-        try:
-            yield
-        finally:
-            store._assurance_offline_relocation = None
 
 
 @contextmanager
