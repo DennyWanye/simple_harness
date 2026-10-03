@@ -1660,6 +1660,9 @@ class HierarchicalDispatch:
 
         返回的是别名：原产出记录原样，只把"生产者"换成这个目标，接它的数据依赖于是按原规则
         解析、发见证、冻结输入，文件归属仍是真正写出它的那一步。
+
+        阶段 D（补全方案 2.2）：目标端口与收尾步骤同名端口声明的格式不同就不出别名——接它的步骤
+        拿不到数据（数据未绑定），并记一条 ``GoalPortSchemaMismatch`` 说明是哪个目标哪个端口。
         """
 
         from dataclasses import replace
@@ -1676,8 +1679,8 @@ class HierarchicalDispatch:
                     or spec.occurrence_id not in complete):
                 continue
             adopted = network.adopted_instance_for(spec.occurrence_id)
-            ports = tuple(str(port.port_key)
-                          for port in network.binding_for_occurrence(spec.occurrence_id).output_ports)
+            ports = {str(port.port_key): port.schema_ref
+                     for port in network.binding_for_occurrence(spec.occurrence_id).output_ports}
             if adopted is None or not ports:
                 continue
             try:
@@ -1694,8 +1697,19 @@ class HierarchicalDispatch:
         while moved:  # a finalizer that is itself a sub-goal resolves one level per pass
             moved = False
             for goal, finalizer, ports in goals:
-                for port in ports:
+                for port, schema in ports.items():
                     if (str(goal), port) in by_place or (finalizer, port) not in by_place:
+                        continue
+                    delivered = {str(item.port_key): item.schema_ref for item in
+                                 network.binding_for_occurrence(OccurrenceId(finalizer)).output_ports}
+                    if delivered.get(port) != schema:
+                        append_hierarchical_event(
+                            self.store, "GoalPortSchemaMismatch", mission_id,
+                            key=f"{mission_id}:{goal}:{port}:{int(network.plan_revision)}",
+                            payload={"goal_occurrence": str(goal), "port": port,
+                                     "finalizer_occurrence": finalizer,
+                                     "detail": "the goal's port and its finalizer step's port declare "
+                                               "different formats; the goal delivers nothing on it"})
                         continue
                     named = [replace(item, producer_occurrence=goal) for item in by_place[(finalizer, port)]]
                     by_place[(str(goal), port)] = named

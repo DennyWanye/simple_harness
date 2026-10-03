@@ -92,3 +92,48 @@ def test_a_sub_goal_is_planned_reviewed_and_completed_on_the_product_deployment(
                 for key in world.deployment.duties.policy_scopes)
 
     asyncio.run(case())
+
+
+def test_goal_port_schema_mismatch_is_unbound(tmp_path):
+    """子目标的端口 = 它收尾步骤的同名端口；两边声明的格式不同就不对外交付（接它的步骤数据未绑定），
+    并记一条说明（HTN 补齐阶段 D，补全方案 2.2）。
+
+    **改坏检验**：去掉格式比较 → 格式不同也照样出别名 → 变红。"""
+    from dataclasses import replace
+
+    from agent_orchestrator.contracts.semantic_base import VersionedRef
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+            created = world.create({"goal": "写两份笔记", "idempotency_key": "sub-goal-ports",
+                                    "success_criteria": ["file:notes/a.md", "file:NOTES.md"]})
+            mission = await world.run_until_settled(created["mission_id"], rounds=20)
+            assert str(mission.status.value) == "COMPLETED"
+            dispatch = world.loop._dispatch_for(mission.id)
+            network = dispatch.network(mission.id)
+            recorded = tuple(dispatch._recorded_outputs(mission.id, network))
+            done = dispatch._complete_goals(mission.id, network)
+            [goal] = done
+            aliases = dispatch.goal_port_outputs(mission.id, network, recorded, complete=done)
+            assert aliases and {item.producer_occurrence for item in aliases} == {goal}
+
+            class OtherFormat:
+                """The same plan, except the sub-goal declares another format on its ports."""
+
+                def __getattr__(self, name):
+                    return getattr(network, name)
+
+                def binding_for_occurrence(self, occurrence):
+                    binding = network.binding_for_occurrence(occurrence)
+                    if occurrence != goal:
+                        return binding
+                    other = VersionedRef("user.other-format", 1, "c" * 64)
+                    return replace(binding, output_ports=tuple(
+                        replace(port, schema_ref=other) for port in binding.output_ports))
+
+            assert dispatch.goal_port_outputs(mission.id, OtherFormat(), recorded, complete=done) == ()
+            notes = [e.payload for e in world.store.list_events(mission.id) if e.type == "GoalPortSchemaMismatch"]
+            assert [(n["goal_occurrence"], n["port"]) for n in notes] == [
+                (str(goal), str(port.port_key)) for port in network.binding_for_occurrence(goal).output_ports]
+
+    asyncio.run(case())
