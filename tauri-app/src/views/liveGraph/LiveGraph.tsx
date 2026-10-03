@@ -41,6 +41,7 @@ const MAX_PAGES = 20;
 const TITLE_LIMIT = 40;
 const SNAPSHOT_TYPE = "taskgraph.execution_snapshot";
 const DETAIL_TYPE = "taskgraph.execution_detail";
+const WHY_TYPE = "taskgraph.why_not_ready";
 const ICON: Record<ExecNode["kind"], string> = {
   attempt: "▶", check: "✔", review: "⚖", planning: "🧭", repair_request: "🔧", plan_revision: "📋", operation: "📤",
 };
@@ -414,7 +415,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       )}
       {tab === "graph" && pickedStep && (
         <StepPanel step={pickedStep} title={titleOf(pickedStep)} execs={(view?.nodes ?? []).filter((n) => homes.get(n.node_id) === pickedStep.occurrence_id)}
-          onPick={pick} onClose={() => setPicked(null)} onLoadMoreEvents={onLoadMoreEvents} />
+          onPick={pick} onClose={() => setPicked(null)} onLoadMoreEvents={onLoadMoreEvents} missionId={missionId} channel={channel} />
       )}
       {tab === "graph" && pickedExec && (
         <aside className="lg-panel" aria-label="执行详情" data-testid="lg-panel">
@@ -429,9 +430,9 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   );
 }
 
-function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents }: {
+function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents, missionId, channel }: {
   step: StructureNode; title: string; execs: ExecNode[]; onPick: (id: string) => void; onClose: () => void;
-  onLoadMoreEvents?: () => void;
+  onLoadMoreEvents?: () => void; missionId: string; channel: MissionsChannel | null;
 }) {
   const display = stepDisplay(step);
   const ended = display.tone === "done" || display.tone === "failed" || display.tone === "cancelled";
@@ -446,6 +447,7 @@ function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents }: {
         <span className="lg-dot" style={{ background: TONE_COLOR[display.tone] }} /> {display.label}
         {reason && <span className="lg-muted">{" · " + reason}</span>}
       </p>
+      {!ended && display.tone !== "running" && <WhyNotReady missionId={missionId} channel={channel} step={step} />}
       {step.step && step.step.evidence.length > 0 && <>
         <h4>这一步要交付</h4>
         <ul>{step.step.evidence.map((text, index) => <li key={index}>{text}</li>)}</ul>
@@ -463,6 +465,44 @@ function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents }: {
       )}
       {onLoadMoreEvents && <p className="lg-muted">原始事件在页面下方「原始事件记录」。</p>}
     </aside>
+  );
+}
+
+/** 点开一个还没开工的步骤：读 SDK 的"为什么还不开工"（原因代码 + 依据），读不到就说读不到。 */
+function WhyNotReady({ missionId, channel, step }: { missionId: string; channel: MissionsChannel | null; step: StructureNode }) {
+  const [body, setBody] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    if (!channel) return undefined;
+    const id = newRequestKey();
+    pending.current = id;
+    const off = channel.onMessage((raw) => {
+      const message = raw as unknown as { type?: string; payload?: unknown };
+      const payload = asRecord(message.payload);
+      if (message.type !== WHY_TYPE + "_response" || payload.request_id !== pending.current) return;
+      pending.current = null;
+      if (payload.ok === true) { setBody(asRecord(payload.data)); setError(null); }
+      else setError(asText(payload.error) || "读取失败");
+    });
+    if (!channel.send({ type: WHY_TYPE, request_id: id, payload: { mission_id: missionId, occurrence_id: step.occurrence_id } })) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a send failure is reported once
+      setError("连接不可用，请求未发送");
+    }
+    return () => { off?.(); pending.current = null; };
+  }, [channel, missionId, step.occurrence_id, step.readiness]);
+  const codes = Array.isArray(body?.reason_codes) ? (body.reason_codes as unknown[]).map(String) : [];
+  const details = Array.isArray(body?.details) ? (body.details as unknown[]).map(String).filter((d) => !d.startsWith("phase=")) : [];
+  return (
+    <div data-testid="lg-why-not-ready">
+      <h4>为什么还不开工</h4>
+      {error ? <p className="lg-muted">{error}</p> : body === null ? <p className="lg-muted">读取中…</p> : (
+        <ul>
+          {codes.length === 0 ? <li>没有挡着它的原因，等调度派发</li> : codes.map((code) => <li key={code}>{readinessLabel(code)}</li>)}
+          {details.map((detail, index) => <li key={"d" + index} className="lg-muted">{detail}</li>)}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -1340,6 +1340,10 @@ class OrchestrationService:
         from .taskgraph import read_taskgraph
         return read_taskgraph(self, operation, request)
 
+    def taskgraph_operate(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        from .taskgraph import operate_taskgraph
+        return operate_taskgraph(self, verb, request)
+
     def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
         from .assurance import read_assurance
         return read_assurance(self, verb, request)
@@ -1403,6 +1407,14 @@ class OrchestrationService:
             )
         if not export:
             return report
+        # 导出时才核对执行图历史（要在临时副本上重建，比只看诊断贵）；读视图之外做。
+        from .diagnostics import taskgraph_history
+        try:
+            reads = self._orchestrator.taskgraph_read_api(tenant_id=self.tenant_id, principal=self._principal)
+            history = taskgraph_history(self._orchestrator.store, reads, mission_id, self.root / "support" / "tmp")
+        except Exception as error:  # noqa: BLE001 - the rest of the report is still exported
+            history = {"status": "READ_UNAVAILABLE", "error": type(error).__name__}
+        report = {**report, "taskgraph_history": history}
         try:
             return export_support(self.root / "support", report)
         except ValueError as error:

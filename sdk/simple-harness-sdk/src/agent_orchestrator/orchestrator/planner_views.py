@@ -200,6 +200,7 @@ def read_planner_package(
     sections = {
         "repair_requests": pending_requests(store, mission.id),
         "human_answers": answered_questions_for_planner(store, mission.id),
+        "abandoned_plan_changes": abandoned_plan_changes_for_planner(store, mission.id),
         "method_selection": choices,
         # Written for every goal that has no method yet, however many candidates it
         # has: the Planner may judge at any time that none of them fits and propose one.
@@ -245,4 +246,28 @@ def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str
     ][-16:]
 
 
-__all__ = ("answered_questions_for_planner", "read_planner_package")
+def abandoned_plan_changes_for_planner(store: Any, mission_id: str) -> list[dict[str, Any]]:
+    """用户亲手放弃过的改计划（最近 8 条）：哪一个决定、改的是什么、用户的理由原文。
+
+    阶段 B 第 2 条（2026-10-03）：一次改计划卡在半路、用户点"放弃这次改计划"后，旧计划恢复执行；
+    不告诉规划器，它会再提同样的改法，来回循环。这里只摆事实，要不要换个改法由它判断。"""
+    import json
+
+    from ..storage.planning_decision_store import PlanningDecisionStore
+
+    decisions = PlanningDecisionStore(store)
+    rows = []
+    for event in store.iter_events(mission_id):
+        if event.type != "TaskGraphConvergenceAbandoned":
+            continue
+        result = event.payload.get("result") or {}
+        row = decisions.get_planning_decision(str(result["decision_id"])) if result.get("decision_id") else None
+        decision = {} if row is None else json.loads(row["canonical_json"])
+        rows.append({"decision_id": result.get("decision_id"),
+                     "decision_type": decision.get("decision_type"), "subject_key": decision.get("subject_key"),
+                     "rationale": decision.get("rationale"), "plan_revision": result.get("source_revision"),
+                     "reason": event.payload.get("reason") or ""})
+    return rows[-8:]
+
+
+__all__ = ("abandoned_plan_changes_for_planner", "answered_questions_for_planner", "read_planner_package")

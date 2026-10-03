@@ -87,3 +87,56 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
             retry_kind="OPERATOR_REPAIR" if code == "GRAPH_INTEGRITY" else "REQUERY",
             source_identity=None)
         raise TaskGraphRequestError(wire.to_json()) from error
+
+
+#: 操作员拒绝码 → 给人看的原因（SDK 的两道安全检查不满足时如实告诉人，按钮不替人重试）。
+_OPERATOR_REFUSALS = {
+    "TASKGRAPH_CONVERGENCE_NOT_QUIESCENT": "旧尝试还没停下，不能放弃这次改计划；等它停下或先取消它",
+    "TASKGRAPH_ABANDONMENT_OLD_DEMAND_CHANGED": "计划结构已经变了，不能再放弃这次改计划",
+    "TASKGRAPH_CONVERGENCE_TERMINAL": "这次改计划已经结束了",
+    "TASKGRAPH_CONVERGENCE_CAS_CONFLICT": "状态已经变了，请刷新后再试",
+    "TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT": "这条通知的状态已经变了，请刷新后再试",
+}
+
+
+def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
+    """人在"改计划进度"面板上点的两个动作（HTN 补齐阶段 B 第 2 条）。
+
+    只从控制通道进来——那是人的点击；主 Agent 的工具里没有这两个动词。本机用户身份就是启用
+    执行图的那个人；每次点击生成自己的命令号，同一次点击重放不会做两遍。
+    """
+    import uuid
+
+    fields = {"abandon_convergence": ("mission_id", "job_id", "expected_version", "reason"),
+              "retry_notification": ("mission_id", "message_id", "expected_version", "reason")}
+    if verb not in fields or set(request) != set(fields[verb]):
+        _invalid()
+    version = request["expected_version"]
+    if type(version) is not int or not 1 <= version <= 2**53 - 1:
+        _invalid()
+    for key in fields[verb]:
+        if key != "expected_version" and (not isinstance(request[key], str) or not request[key].strip()
+                                          or len(request[key]) > (2048 if key == "reason" else 512)):
+            _invalid()
+    service._refuse_secrets(request["reason"])
+    mission_id = request["mission_id"]
+    service._require()._mission(mission_id)
+    from agent_orchestrator.storage.store import StoreError
+
+    command_id = f"ui-click-{verb}-{uuid.uuid4().hex}"
+    try:
+        operator = service._orchestrator.taskgraph_operator_api(tenant_id=service.tenant_id,
+                                                                principal=service._principal)
+        if verb == "abandon_convergence":
+            receipt = operator.abandon_convergence(mission_id, request["job_id"], expected_version=version,
+                                                   command_id=command_id, reason=request["reason"])
+        else:
+            receipt = operator.retry_notification(mission_id, request["message_id"], expected_version=version,
+                                                  command_id=command_id, reason=request["reason"])
+    except StoreError as error:  # StoreConflict is a StoreError
+        code = str(error).split(":", 1)[0].strip()
+        logger.info("taskgraph %s refused for %s: %s", verb, mission_id, error)
+        raise OrchestrationRequestError("taskgraph_refused", _OPERATOR_REFUSALS.get(code, f"没有做成：{code}")) from error
+    service.wake()
+    return dict(receipt)
+

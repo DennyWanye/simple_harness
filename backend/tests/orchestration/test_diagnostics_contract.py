@@ -101,7 +101,10 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
         assert receipts[0] == receipts[1]
         path = Path(receipts[0]["path"])
         assert path.parent == orchestration_root / "support"
-        assert json.loads(path.read_text()) == report
+        exported = json.loads(path.read_text())
+        # 导出比诊断多一节"核对执行图历史"（HTN 补齐阶段 B 第 2 条），其余逐字相同
+        assert exported.pop("taskgraph_history")["replay"]["status"] == "GRAPH_PROJECTION_VERIFIED"
+        assert exported == report
         assert service._call("snapshot", mission_id) == before
         assert len(provider.asked) == calls  # diagnostics and exports never call the model
     finally:

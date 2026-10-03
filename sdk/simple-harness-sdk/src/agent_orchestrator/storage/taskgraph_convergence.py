@@ -334,6 +334,14 @@ class TaskGraphConvergenceStore:
             raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
         if state == job.state:
             return
+        if state in ("APPLIED", "ABANDONED"):
+            # 阶段 B 第 2 条（2026-10-03）：推进这个作业的通知连败被挡住后，作业结束了（人放弃、
+            # 决定被拒或被新决定替代）。被挡的通知仍算"在等执行图来源"，任务就永远挂着。放回待发：
+            # 原投递路径读到作业已结束，照常带回执了结，不另开一条路。
+            self.store.connection.execute(
+                "UPDATE taskgraph_followups SET delivery_state='PENDING',row_version=row_version+1,"
+                "next_attempt_ms=? WHERE mission_id=? AND kind='CONVERGE' AND subject_key=? "
+                "AND delivery_state='BLOCKED'", (now_ms, job.mission_id, job.job_id))
         # §10.1 auxiliary event, written only by this transition's own Commit; the new
         # row version is the transition's identity, so a retried Commit reuses it.
         version = job.row_version + 1

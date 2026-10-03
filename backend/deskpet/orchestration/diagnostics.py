@@ -436,6 +436,59 @@ def build_diagnostics(
     return _redact(report, extra_secrets)
 
 
+#: 诊断包里最多放多少对相邻版本的结构差异（最新的在后）。
+MAX_HISTORY_DIFFS = 32
+
+
+def taskgraph_history(store: Any, reads: Any, mission_id: str, scratch: Path) -> dict[str, Any]:
+    """核对执行图历史（HTN 补齐阶段 B 第 2 条；原计划不变量第 16 条）。
+
+    在临时副本上用 SDK 的 ``replay_taskgraph`` 从种子版本重建到最新版本，只把**重建报告**放进诊断包——
+    重建出来的库里有任务原文，用完即删。另附历史版本清单（只读，标"历史，不可执行"）和相邻版本的
+    结构差异（对象种类、标识、前后哈希；没有正文）。不调模型，不重放外部动作。
+    """
+    import tempfile
+
+    from agent_orchestrator.contracts.models import ContractError
+    from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
+
+    rows = store.connection.execute(
+        "SELECT revision,source_kind,manifest_hash,parent_revision FROM taskgraph_revision_records "
+        "WHERE mission_id=? ORDER BY revision", (mission_id,)).fetchall()
+    if not rows:
+        return {"status": "NOT_ENABLED"}
+    latest = int(rows[-1][0])
+    scratch.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=scratch) as directory:
+        try:
+            built = replay_taskgraph(store, mission_id=mission_id, through_revision=latest,
+                                     target_path=Path(directory) / "replay.sqlite")
+            replay = {"status": built.status, "runtime_status": built.runtime_status,
+                      "through_revision": built.through_revision, "revision_count": built.revision_count,
+                      "coverage_start_revision": built.coverage_start_revision,
+                      "coverage_start_kind": built.coverage_start_kind}
+        except ContractError as error:
+            replay = {"status": "REPLAY_FAILED", "error": str(error)[:300]}
+    diffs = []
+    pairs = [(int(a[0]), int(b[0])) for a, b in zip(rows, rows[1:])][-MAX_HISTORY_DIFFS:]
+    for before, after in pairs:
+        try:
+            diff = reads.diff(mission_id, before, after)
+            diffs.append({"from_revision": before, "to_revision": after, "changes": [
+                _pick(change, ("kind", "identity", "before_hash", "after_hash")) for change in diff.get("changes", ())]})
+        except Exception as error:  # noqa: BLE001 - one unreadable pair is reported, not fatal
+            diffs.append({"from_revision": before, "to_revision": after, "error": type(error).__name__})
+    return {
+        "status": "CHECKED",
+        "replay": replay,
+        "revisions": [{"revision": int(row[0]), "source_kind": str(row[1]), "manifest_hash": str(row[2]),
+                       "parent_revision": row[3], "label": "历史，不可执行" if int(row[0]) != latest else "当前"}
+                      for row in rows],
+        "diffs": diffs,
+        "omitted_diffs": max(0, len(rows) - 1 - len(pairs)),
+    }
+
+
 def export_support(directory: Path, report: Mapping[str, Any]) -> dict[str, Any]:
     """Write one content-addressed local JSON report, refusing reports over 2 MiB."""
 
@@ -463,4 +516,4 @@ def export_support(directory: Path, report: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
-__all__ = ("DIAGNOSTICS_VERSION", "MAX_SUPPORT_BYTES", "build_diagnostics", "export_support")
+__all__ = ("DIAGNOSTICS_VERSION", "MAX_SUPPORT_BYTES", "build_diagnostics", "export_support", "taskgraph_history")

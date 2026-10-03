@@ -54,6 +54,8 @@ def test_message_types_are_the_planned_set():
         "taskgraph.convergence",
         "taskgraph.execution_snapshot",
         "taskgraph.execution_detail",
+        "taskgraph.abandon_convergence",
+        "taskgraph.retry_notification",
         "mission_assurance_snapshot",
         "mission_assurance_review",
         "mission_assurance_use_check",
