@@ -76,8 +76,19 @@ def flaky_connector(connector: FilePublishConnector, faults: Faults) -> FilePubl
             raise ConnectorTransportError("the publishing service is unreachable")
         return real_lookup(key)
 
+    real_record = connector.ledger_record
+
+    def ledger_record(key: str) -> Any:  # the reconciler's read, unreachable the same way
+        faults.lookups += 1
+        if faults.unreachable_lookups > 0:
+            faults.unreachable_lookups -= 1
+            faults.log.append("lookup-unreachable")
+            raise ConnectorTransportError("the publishing service is unreachable")
+        return real_record(key)
+
     connector.execute = execute  # type: ignore[method-assign]
     connector.lookup = lookup  # type: ignore[method-assign]
+    connector.ledger_record = ledger_record  # type: ignore[method-assign]
     return connector
 
 

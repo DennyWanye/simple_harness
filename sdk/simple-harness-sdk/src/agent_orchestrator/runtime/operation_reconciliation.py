@@ -73,9 +73,8 @@ def handoff_events(store: Any, action: Mapping[str, Any]) -> tuple[Any, ...]:
     return events
 
 
-def context(
-    store: Any, runtime: Any, action: Mapping[str, Any]
-) -> tuple[Any, Any, Any, tuple[Any, ...]]:
+def scope(store: Any, runtime: Any, action: Mapping[str, Any]) -> tuple[Any, Any, tuple[Any, ...]]:
+    """The frozen identity a proof about this action must match: (resolved, profile, handoffs)."""
     link = PlanningAdmissionStore(store).get_operation_action_link_for_action(
         str(action["action_key"])
     )
@@ -90,6 +89,13 @@ def context(
         operation_name=str(action["operation"]),
         expected_hash=resolved.parameters.connector_profile_hash,
     )
+    return resolved, profile, handoff_events(store, action)
+
+
+def context(
+    store: Any, runtime: Any, action: Mapping[str, Any]
+) -> tuple[Any, Any, Any, tuple[Any, ...]]:
+    resolved, profile, events = scope(store, runtime, action)
     registration = runtime.profiles.resolve_connector_operation(
         action["connector"], action["operation"]
     )
@@ -102,7 +108,7 @@ def context(
         or not callable(getattr(adapter, "verify", None))
     ):
         raise ReconciliationProofError("no registered scoped reconciliation adapter")
-    return resolved, profile, adapter, handoff_events(store, action)
+    return resolved, profile, adapter, events
 
 
 def validate_evidence(
@@ -136,8 +142,11 @@ def validate_evidence(
         raise ReconciliationProofError("query does not bind the idempotency key")
     if data["outcome"] == "NOT_APPLIED_FINAL":
         kind = data["proof"]["kind"]
+        # A person's ruling is accepted wherever the effect froze it; every other kind
+        # must also be one the connector profile registered (阶段 B 裁决第 3 类).
+        human = kind == "HUMAN_RULED_NOT_APPLIED"
         if (
-            kind not in profile.nonapplication_proofs
+            (not human and kind not in profile.nonapplication_proofs)
             or kind not in resolved.effect_contract.accepted_nonapplication_proofs
         ):
             raise ReconciliationProofError("proof kind not frozen and registered")
@@ -206,3 +215,24 @@ def stored_negative_proof(
         return True
     except (ContractError, KeyError, TypeError, ValueError):
         return False
+
+
+def nonapplication_outcome(store: Any, action: Mapping[str, Any]) -> dict[str, Any]:
+    """How one ended attempt of an effect did not happen, in plain facts for the next card
+    and the stop report (阶段 B 裁决第 1 类): a person's ruling, a send that never reached
+    the service, or the service's refusal in its own words."""
+    kind = None
+    ref = action.get("scoped_reconciliation_ref")
+    if isinstance(ref, Mapping):
+        receipt = store.get_receipt(str(ref.get("id")))
+        if receipt is not None:
+            kind = ((receipt.get("observation") or {}).get("proof") or {}).get("kind")
+    error = str(action.get("error") or "")
+    if kind == "HUMAN_RULED_NOT_APPLIED":
+        outcome = "human_ruled_not_applied"
+    elif error.startswith("proven_not_applied:") or not error:
+        outcome = "not_delivered"
+    else:
+        outcome = "service_refused"
+    return {"action_key": str(action["action_key"]), "attempt": int(action.get("version") or 1),
+            "outcome": outcome, "reason": error[:300]}

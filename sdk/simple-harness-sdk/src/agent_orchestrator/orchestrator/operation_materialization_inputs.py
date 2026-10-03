@@ -15,6 +15,7 @@ from ..contracts.operation_payloads import (
     ConditionalWriteKind,
     ConnectorOperationProfileV1,
     FrozenActionProposalV2,
+    NonapplicationProofKind,
     OperationEffectContractV2,
     OperationParametersV1,
     ReconciliationPolicy,
@@ -329,7 +330,9 @@ def build_operation_materialization_inputs(
         policy.retry_policy_ref,
         policy.reconciliation_policy,
         policy.idempotency_contract,
-        profile.nonapplication_proofs,
+        # The profile's own proofs, plus a person's ruling that the effect did not happen
+        # (阶段 B 裁决第 3 类) — accepted for every effect, never claimed by a connector.
+        (*profile.nonapplication_proofs, NonapplicationProofKind.HUMAN_RULED_NOT_APPLIED),
         sources.spec.content_hash(),
         sources.effect.effect_key,
         sources.effect.milestone_policy_ref,

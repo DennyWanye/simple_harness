@@ -79,7 +79,7 @@ class ScopedReconciliationObservationV1:
         if ids != sorted(set(ids)):
             raise ContractError("handoff ids must be unique and sorted")
         _receipt(data["observation_receipt_ref"])
-        if data["observation_origin"] not in ("REMOTE_QUERY", "LOCAL_EXECUTOR"):
+        if data["observation_origin"] not in ("REMOTE_QUERY", "LOCAL_EXECUTOR", "HUMAN_RULING"):
             raise ContractError("unknown observation origin")
         if data["outcome"] not in ("APPLIED", "NOT_APPLIED_FINAL", "PENDING", "PARTIAL", "UNKNOWN"):
             raise ContractError("unknown observation outcome")
@@ -106,7 +106,10 @@ class ScopedReconciliationObservationV1:
             "EXECUTOR_NO_SEND_FINAL": (
                 "execution_epoch send_boundary_receipt_ref dispatch_closed_receipt_ref"
             ),
+            "CONNECTOR_LEDGER_NOT_LINKED": "ledger_protocol_id ledger_state ledger_receipt_ref",
+            "HUMAN_RULED_NOT_APPLIED": "ruling_principal_id override_receipt_ref",
         }
+        origins = {"EXECUTOR_NO_SEND_FINAL": "LOCAL_EXECUTOR", "HUMAN_RULED_NOT_APPLIED": "HUMAN_RULING"}
         if kind == "NONE":
             _exact(proof, "kind reason_code", "proof")
             identifier(proof["reason_code"], "reason_code")
@@ -127,7 +130,9 @@ class ScopedReconciliationObservationV1:
                     index(proof[name], name)
                 else:
                     identifier(proof[name], name)
-            origin = "LOCAL_EXECUTOR" if kind == "EXECUTOR_NO_SEND_FINAL" else "REMOTE_QUERY"
+            if kind == "CONNECTOR_LEDGER_NOT_LINKED" and proof["ledger_state"] not in ("NO_INTENT", "ABORTED"):
+                raise ContractError("ledger proof state must be NO_INTENT or ABORTED")
+            origin = origins.get(kind, "REMOTE_QUERY")
             if data["observation_origin"] != origin:
                 raise ContractError("proof origin mismatch")
             if (

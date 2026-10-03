@@ -886,6 +886,25 @@ describe("P1-5 缺失界面", () => {
     expect(screen.getByText(`等待：handoff（自 ${clock(1789000200)}）`)).toBeTruthy();
   });
 
+  it("d) 结果不明要人裁定：依据必填，人点“没生效”才发裁定；失败未证实的只能裁“没生效”", () => {
+    const channel = openMission({
+      ...DETAIL,
+      waiting_on: [
+        { kind: "reconciliation", action_key: "act:v1", needs_human: true, since: 1789000300 },
+        { kind: "reconciliation", action_key: "act:v2", needs_human: true, state: "FAILED", since: 1789000400 },
+      ],
+    });
+    const unknown = screen.getByTestId("resolve-act:v1");
+    const failed = screen.getByTestId("resolve-act:v2");
+    expect(within(failed).queryByRole("button", { name: "已生效" })).toBeNull();
+    const noEffect = within(unknown).getByRole("button", { name: "没生效" }) as HTMLButtonElement;
+    expect(noEffect.disabled).toBe(true);
+    fireEvent.change(within(unknown).getByLabelText("裁定依据"), { target: { value: "查了发布目录，文件不在" } });
+    fireEvent.click(within(unknown).getByRole("button", { name: "没生效" }));
+    expect(channel.last("mission_action_resolve")?.payload).toEqual(
+      { action_key: "act:v1", outcome: "failed", basis: "查了发布目录，文件不在" });
+  });
+
   it("d) 旧形态的 waiting_on（纯字符串）原样显示", () => {
     openMission();
     expect(screen.getByText("等待：approval-1")).toBeTruthy();

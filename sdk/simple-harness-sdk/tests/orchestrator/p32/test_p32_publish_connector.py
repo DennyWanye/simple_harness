@@ -212,3 +212,24 @@ def test_p32_11_a_taken_name_with_other_content_is_a_conflict(connector, store_r
     with pytest.raises(ConnectorRejected) as refused:
         _publish(connector, store_root)
     assert "conflict" in str(refused.value)
+
+
+def test_a_cleanup_error_after_the_link_never_writes_aborted(connector, store_root, monkeypatch):
+    """核验边角（2026-10-03）：链接已成功、清理临时文件时出错——台账不写"已放弃"，意图保持未了结，
+    交给人裁定；事后有人删掉刚发布的文件，也不会凭一条假的"已放弃"出"没落地"证明。"""
+    import os
+
+    import agent_orchestrator.runtime.connectors_publish as connectors_publish
+
+    real_unlink = os.unlink
+
+    def unlink(path, **kwargs):  # type: ignore[no-untyped-def]
+        if str(path).startswith(".publish-"):
+            raise PermissionError(1, "cleanup refused")
+        return real_unlink(path, **kwargs)
+
+    monkeypatch.setattr(connectors_publish.os, "unlink", unlink)
+    with pytest.raises(PermissionError):
+        _publish(connector, store_root)
+    monkeypatch.undo()
+    assert [entry["state"] for entry in connector.ledger_record(KEY)["entries"]] == ["PREPARED"]

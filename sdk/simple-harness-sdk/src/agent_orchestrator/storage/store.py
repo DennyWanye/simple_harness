@@ -1677,6 +1677,17 @@ class Store:
             }
             for action in self.list_actions(mission_id, "UNKNOWN")
         )
+        waiting.extend(  # 阶段 B 裁决第 1 类: a failed hand-off whose proof could not be read
+            {
+                "kind": "reconciliation",
+                "action_key": action["action_key"],
+                "needs_human": True,
+                "state": "FAILED",
+                "since": action.get("updated_at") or action.get("handed_off_at"),
+            }
+            for action in self.list_actions(mission_id, "FAILED")
+            if action.get("needs_human")
+        )
         waiting.extend(  # review P2-6: a hand-off whose outcome is not in yet (maybe a crash)
             {
                 "kind": "handoff",

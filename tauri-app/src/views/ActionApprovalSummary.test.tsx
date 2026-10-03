@@ -26,6 +26,15 @@ describe("ActionApprovalSummary", () => {
     expect(screen.getByText("（模型生成，未核实）")).toBeTruthy();
   });
 
+  it("系统按原内容重交时，卡上写明上次为什么没生效", () => {
+    const summary = { connector: "file_publish", operation: "publish", target: "README.md",
+      params: { artifact_path: "README.md" }, reason: "系统准备的申请", reason_source: "system",
+      previous_attempt: { outcome: "service_refused", reason: "conflict: reports/README.v1.md already exists", attempt: 1 } };
+    render(<ActionApprovalSummary summary={summary} action={{}} />);
+    expect(screen.getByTestId("previous-attempt").textContent).toBe(
+      "上次没有生效：发布服务拒绝了（conflict: reports/README.v1.md already exists），这是重新提交的申请。");
+  });
+
   it("其他连接器写成 连接器.操作 → 目标", () => {
     expect(actionHeadline({ connector: "mail", operation: "send", target: "a@b" }, {})).toBe("mail.send → a@b");
   });

@@ -140,13 +140,23 @@ class OperationMaterializationCommitsMixin:
             )
         if heads:
             materialized = self._store.get_receipt("materialize:" + heads[0]["intent_id"])
-            if materialized is not None:
+            if materialized is not None and not self._closed_without_effect(materialized):
                 # Replacing a real effect requires its original reconciliation/retirement
                 # proof. A new command alone must never bypass an UNKNOWN action.
                 raise OperationCompletionError(
                     "OP_NONAPPLICATION_PROOF_INSUFFICIENT",
                     "materialized intent requires reconciliation before replacement",
                 )
+
+    def _closed_without_effect(self, materialized: Any) -> bool:
+        """The head's action ended and is proven not to have happened (never handed off,
+        or a stored non-application proof) — it may be replaced (阶段 B 裁决第 1 类)."""
+        from ..runtime.operation_reconciliation import stored_negative_proof
+
+        action = self._store.get_action(str(materialized.get("action_key") or ""))
+        if action is None or action["state"] not in {"FAILED", "REJECTED"}:
+            return False
+        return int(action.get("handoffs") or 0) == 0 or stored_negative_proof(self._store, action)
 
     def submit_operation_intent(
         self, command: SubmitOperationIntentV2, *, tenant_id: str, principal: Principal

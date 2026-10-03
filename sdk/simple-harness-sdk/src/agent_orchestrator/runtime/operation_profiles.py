@@ -23,6 +23,7 @@ from ..contracts.operation_completion import CompletionPinV1
 from ..contracts.operation_payloads import (
     ConditionalWriteKind,
     ConnectorOperationProfileV1,
+    NonapplicationProofKind,
     ReconciliationPolicy,
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef
@@ -110,6 +111,9 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
         )
         self._profile = self._build_profile()
         self._adapter = _FilePublishProfileAdapter(candidate, self._profile)
+        from .operation_reconciliation_file_publish import FilePublishReconciliationAdapter
+
+        self._reconciliation = FilePublishReconciliationAdapter(candidate, self._profile)
 
     @property
     def retry_policy_ref(self) -> VersionedRef:
@@ -186,7 +190,8 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
             {"id": "file-publish-ledger", "version": "1"},
             ConditionalWriteKind.NONE,
             self._idempotency_contract(),
-            (),
+            # 阶段 B 裁决第 1、3 类：the publisher's own ledger proves a link never happened
+            (NonapplicationProofKind.CONNECTOR_LEDGER_NOT_LINKED,),
             TypedRef(
                 TypedRefKind.SOURCE,
                 "file-publish-connector-source",
@@ -204,6 +209,7 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
             adapter=self._adapter,
             implementation_ref=self._implementation_ref,
             profile=self._profile,
+            reconciliation_adapter=self._reconciliation,
         )
 
     def require_effect_supported(self, effect: Any) -> None:

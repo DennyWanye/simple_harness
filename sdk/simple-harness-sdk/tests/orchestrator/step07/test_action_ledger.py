@@ -313,9 +313,10 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
     * ``in_flight_then_succeeded``：服务很慢，动作停在"已交接"——改内容的新候选被拒
       （``action_in_flight``），已交接的批准不能撤回；服务答完后动作成功——同样内容的候选还是那一版，
       改内容的被拒（``action_already_executed``），没有新的待办版本。
-    * ``rejected``：目标处已有别人放的同名文件，服务拒绝——动作失败；改内容的新候选是一次新的
-      尝试（第 2 版、``after=FAILED``），要重新批准。这次交接没有否定证明，对外操作快照判它
-      "未了结"，挡住操作闸门（O03 的真实来源）。
+    * ``rejected``：目标处已有别人放的同名文件，服务拒绝——动作失败。刚失败时没有否定证明，
+      对外操作快照判它"未了结"、挡住操作闸门，这时任何新版本都被拒（``action_outcome_unproven``）；
+      随后对账由发布台账证明它从未落地（阶段 B 裁决第 1 类），闸门打开，系统按原内容出新的一张卡，
+      卡上带着上次的结局和服务原文理由；别人的文件原样不动。
     * ``lost``：服务写下意图后连接中断——动作结果不明；任务结束时取消待办工作也不碰它，
       它的批准仍是已批准；改内容的候选被拒（``action_in_flight``）。
     """
@@ -383,10 +384,21 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
             with pytest.raises(SourceUnavailable, match="operation_unresolved"):
                 operation_gate(snapshot)
             if outcome == "rejected":
-                v2 = w.propose(changed, artifact_hash=HASH_B, result="result-2")
-                assert (v2["version"], v2["state"], v2["after"]) == (2, "AWAITING_APPROVAL", "FAILED")
-                assert v2["idempotency_key"] == f"{action['action_id']}:v2"
-                assert w.store.get_approval(v2["approval_request_id"])["state"] == "PENDING"
+                early = w.propose(changed, artifact_hash=HASH_B, result="result-2")
+                assert early["state"] == "REFUSED" and early["refused"] == "action_outcome_unproven", early
+                await run_until(w.product, lambda: any(
+                    a["state"] == "AWAITING_APPROVAL" for a in w.store.list_actions(w.mission_id)))
+                [proof] = [e.payload for e in w.store.list_events(w.mission_id)
+                           if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key]
+                assert proof["outcome"] == "NOT_APPLIED_FINAL"
+                operation_gate(build_operation_snapshot(w.mission_id, reader=StoreOperationReader(w.store)))
+                [v2] = [a for a in w.store.list_actions(w.mission_id) if a["state"] == "AWAITING_APPROVAL"]
+                assert v2["params_hash"] == ran["params_hash"] and v2["after"] == "FAILED"
+                assert v2["previous_attempt"]["outcome"] == "service_refused"
+                assert "already exists" in v2["previous_attempt"]["reason"]
+                assert w.store.get_approval(v2["approval_request_id"])["summary"]["previous_attempt"] == v2["previous_attempt"]
+                name = _name_for(action["idempotency_key"], PurePosixPath(TARGET))
+                assert (w.published / "reports" / name).read_text(encoding="utf-8") == "别人放的"
                 return
             busy = w.propose(changed, artifact_hash=HASH_B, result="result-2")
             assert busy["state"] == "REFUSED" and busy["refused"] == "action_in_flight"

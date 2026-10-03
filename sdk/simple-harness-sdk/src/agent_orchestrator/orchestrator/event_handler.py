@@ -2093,13 +2093,26 @@ class Orchestrator:
                 self._note(f"recovered actual provider overrun: {error}")
         import_late_accounting(self)
 
+    async def _reconcile_actions(self) -> list[dict[str, Any]]:
+        """Reconcile every live action — with the operation runtime bound first when this
+        deployment has a publisher, so the registered reconciler answers even in a fresh
+        process (阶段 B 裁决第 1、3 类); without one, operation-linked actions stay as they are."""
+        from .operation_runtime import ensure_operation_runtime
+
+        if self.connectors:
+            try:
+                ensure_operation_runtime(self)
+            except ContractError:
+                pass  # no trusted publisher registered here
+        return await self.actions.reconcile()
+
     async def run(self, *, max_cycles: int = 10_000, until_idle: bool = True) -> None:
         """Drive the loop until idle.  ``max_cycles`` bounds *progressing* cycles (work
         done), never the waiting: a slow real model turn may keep the loop polling for
         many minutes and must not end the run early (step 4 real-run finding)."""
 
         await self.recover()
-        await self.actions.reconcile()  # D7-5': every run() first asks about UNKNOWN actions
+        await self._reconcile_actions()  # D7-5': every run() first asks about UNKNOWN actions
         cycles = 0
         idle_rounds = 0
         # P1-A's carry-on budget is per ``run()``: a fresh execution cycle is allowed
@@ -2134,7 +2147,7 @@ class Orchestrator:
                     continue
                 mark, hollow, backoff = moved, 0, self._poll
                 if cycles % RECONCILE_EVERY_CYCLES == 0:
-                    await self.actions.reconcile()
+                    await self._reconcile_actions()
                 # P2.3e: a progressing cycle does not sleep, and the in-process bridge
                 # answers without suspending — so a run of progressing cycles used to
                 # starve the runtime's own turn tasks (H-L3-C1: two turns submitted at
@@ -2169,7 +2182,7 @@ class Orchestrator:
                 self._mission_marks.clear()
             if idle_rounds >= 2:
                 # review P2-6: one more look at hand-offs whose lease lapsed (a crashed owner)
-                settled = await self.actions.reconcile()
+                settled = await self._reconcile_actions()
                 if any(a["state"] != "UNKNOWN" for a in settled):
                     idle_rounds = 0
                     continue

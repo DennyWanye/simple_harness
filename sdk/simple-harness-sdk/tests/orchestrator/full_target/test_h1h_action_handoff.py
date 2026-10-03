@@ -7,11 +7,9 @@ HTN 补齐阶段 A′：全部跑在产品同形世界上（``step07/helpers_ste
   世界里依次改坏已存字节，裁决①b1）。
 * 桥接身份错：代表用例 3 的变体。系统自己物化出带真实链接的发布动作、人已批准，改坏已存链接的
   字节（①b1）后交接被拒、什么都不预留不发送；恢复原字节后主循环照常发布完成（正对照）。
-* O06：代表用例 3 的变体。发布服务写下意图后连接中断（外界事件），动作结果不明；对账只拿到空的
-  查询结果（弱证据），系统不再交接、预留不释放、闸门判"未了结"、等人裁决。原用例直接改写台账行
-  造出"已确认未开始 + 弱证明"的状态（违反①b2），产品上对带链接的动作从不由空查询记"已确认未开始"，
-  所以"弱证明再交接"那一支（``rehandoff_needs_authoritative_not_applied_proof``）在真实路径上走不到，
-  改为断言再交接在更早一道就被拒（``rehandoff_needs_confirmed_not_started``）且发布服务没被再调用。
+* O06：代表用例 3 的变体。发布服务写下意图后连接中断（外界事件），台账留下"已放弃"。2026-10-03
+  阶段 B 裁决第 3 类之后，登记的发布对账适配器据台账证明"没开始"（权威的否定证明），系统原地
+  重交一次，发布成功、只发布一份；人工直接再交接在拿到证明之前仍被拒（``rehandoff_needs_confirmed_not_started``）。
 """
 # ruff: noqa: E402, E501 -- shared step07 fixture path is installed before imports.
 
@@ -38,13 +36,6 @@ from helpers_step07 import (
 )
 
 from agent_orchestrator.runtime.actions import ActionExecutor
-from agent_orchestrator.runtime.planning_operations import (
-    OperationEffect,
-    SourceUnavailable,
-    StoreOperationReader,
-    build_operation_snapshot,
-    operation_gate,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -126,64 +117,37 @@ def test_new_protocol_bad_bridge_identity_refuses_handoff(tmp_path) -> None:
     asyncio.run(case())
 
 
-def _lose_after_intent(publish) -> None:
-    publish.fail_after = "intent"  # the connection drops once the service has written its intent
+def _lose_after_intent_once(publish) -> None:
+    real = publish.execute
+    calls = {"n": 0}
+
+    def execute(*args, **kwargs):  # the connection drops once the service has written its intent
+        calls["n"] += 1
+        publish.fail_after = "intent" if calls["n"] == 1 else None
+        return real(*args, **kwargs)
+
+    publish.execute = execute
 
 
-async def _lost(world):
-    """Approve the system's publish action and run until the loop's own reconciliation has
-    looked once and found only an empty lookup."""
-    action = await until_pending(world)
-    key = action["action_key"]
-    request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
-    world.control.decide(request["request_id"], "approve")
-    await run_until(world.product, lambda: world.store.get_action(key).get("reconcile") == "STILL_UNKNOWN")
-    stored = world.store.get_action(key)
-    assert (stored["state"], stored["handoffs"]) == ("UNKNOWN", 1)
-    assert "reconciliation_proof" not in stored
-    # the service wrote its intent, then gave up before the only commit point: nothing published
-    assert world.publish_ledger() == ["PREPARED", "ABORTED"] and world.published_files() == []
-    reservation = world.service.ledger.reservation(f"action:{key}")
-    assert reservation is not None and reservation["state"] == "RESERVED"
-    return key, reservation
-
-
-def test_o06_executor_weak_reconcile_rehandoff_cannot_call_connector(tmp_path) -> None:
+def test_o06_a_publish_lost_after_its_intent_is_proven_not_started_and_sent_again(tmp_path) -> None:
     async def case() -> None:
-        async with operation_world(tmp_path, key="h1h-o06-weak", publish_setup=_lose_after_intent) as world:
-            key, reservation = await _lost(world)
+        async with operation_world(tmp_path, key="h1h-o06", publish_setup=_lose_after_intent_once) as world:
+            action = await until_pending(world)
+            key = action["action_key"]
             executor = ActionExecutor(world.service, world.connectors, world.deployment, owner="h1h-o06",
                                       source_storage_roots=(tmp_path / "root",))
+            request = [a for a in world.control.approvals(world.mission_id) if a.get("state") == "PENDING"][0]
+            world.control.decide(request["request_id"], "approve")
+            await run_until(world.product, lambda: world.store.get_action(key)["state"] == "SUCCEEDED")
+            done = world.store.get_action(key)
+            assert done["handoffs"] == 2
+            [proof] = [e.payload for e in world.store.list_events(world.mission_id)
+                       if e.type == "ActionScopedReconciled" and e.payload["action_key"] == key]
+            assert proof["outcome"] == "NOT_APPLIED_FINAL"
+            assert world.publish_ledger() == ["PREPARED", "ABORTED", "PREPARED", "COMMITTED"]
+            assert len(world.published_files()) == 1
+            # a manual re-hand-off of the finished action is refused, the service is not called again
             assert await executor.hand_off(key, rehandoff=True) is None
-            assert executor.last_refusal[key] == "rehandoff_needs_confirmed_not_started"
-            reconciled = await executor.reconcile_one(key, allow_rehandoff=True)  # weak evidence again
-            assert reconciled is not None and reconciled["reconcile"] == "STILL_UNKNOWN"
-            after = world.store.get_action(key)
-            assert (after["state"], after["handoffs"]) == ("UNKNOWN", 1)
-            assert world.service.ledger.reservation(f"action:{key}") == reservation
-            assert world.publish_ledger() == ["PREPARED", "ABORTED"]  # the service was not called again
-            assert world.published_files() == []
-
-    asyncio.run(case())
-
-
-def test_o06_executor_empty_lookup_rehandoff_keeps_new_protocol_hold(tmp_path) -> None:
-    async def case() -> None:
-        async with operation_world(tmp_path, key="h1h-o06-empty", publish_setup=_lose_after_intent) as world:
-            key, reservation = await _lost(world)
-            # more rounds of the product's own loop: still no hand-off, the hold is kept
-            for _ in range(3):
-                await world.product.drain(timeout=5.0)
-            after = world.store.get_action(key)
-            assert (after["state"], after["handoffs"], after["reconcile"]) == ("UNKNOWN", 1, "STILL_UNKNOWN")
-            assert "reconciliation_proof" not in after
-            assert world.service.ledger.reservation(f"action:{key}") == reservation
-            assert world.publish_ledger() == ["PREPARED", "ABORTED"] and world.published_files() == []
-            assert [(w["kind"], w["needs_human"]) for w in world.store.waiting_on(world.mission_id)] == [
-                ("reconciliation", True)]  # a person rules on it
-            snapshot = build_operation_snapshot(world.mission_id, reader=StoreOperationReader(world.store))
-            assert [effect for _operation, effect in snapshot.effects] == [OperationEffect.UNRESOLVED]
-            with pytest.raises(SourceUnavailable, match="operation_unresolved"):
-                operation_gate(snapshot)
+            assert world.publish_ledger() == ["PREPARED", "ABORTED", "PREPARED", "COMMITTED"]
 
     asyncio.run(case())

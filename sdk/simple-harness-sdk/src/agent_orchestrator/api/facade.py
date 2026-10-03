@@ -639,6 +639,31 @@ class MissionControlV1:
         except (ActionCommitError, StoreError, ContractError) as error:
             raise FacadeError("refused", str(error)) from error
 
+    def resolve_unknown(self, action_key: str, *, outcome: str, basis: str) -> dict[str, Any]:
+        """A person rules on an action nothing else can settle (阶段 B 裁决第 3 类): an
+        UNKNOWN outcome, or a failed hand-off with no proof — "applied" / "not applied".
+        The ruling is the person's click; a model never reaches this."""
+        if outcome not in {"succeeded", "failed"}:
+            raise FacadeError("invalid_request", "outcome must be succeeded or failed")
+        if not str(basis).strip():
+            raise FacadeError("invalid_request", "a ruling needs a basis")
+        self._clean(basis)
+        action = self._store.get_action(str(action_key))
+        if action is None:
+            raise FacadeError("not_found", NOT_FOUND)
+        self._mission(str(action["mission_id"]))
+        from ..orchestrator.operation_runtime import ensure_operation_runtime
+
+        try:
+            ensure_operation_runtime(self._orchestrator)
+            return dict(self._approvals.resolve_unknown(
+                str(action_key), outcome=outcome, basis=str(basis),
+                evidence={"source": "user_ruling", "action_key": str(action_key)}))
+        except ApprovalRequestError as error:
+            raise FacadeError("invalid_request", str(error)) from error
+        except (ActionCommitError, StoreError, ContractError) as error:
+            raise FacadeError("refused", str(error)) from error
+
     def comment(self, target_id: str, text: str) -> dict[str, Any]:
         if not str(text).strip():
             raise FacadeError("invalid_request", "a comment needs text")

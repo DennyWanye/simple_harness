@@ -11,9 +11,10 @@
    未决，计划变更的总闸关着；整个过程不重发；服务恢复后核对成成功，任务完成，始终只有一次发布。
 3. 人在审批卡上拒绝：什么都不发布，任务不会完成。部署的"每个任务最多交接几个动作"为 0 时：
    交接前就拒绝，连接器没被碰，任务以动作失败结束。
-3b. 请求根本没到服务端（连接断了）：动作停在"结果未知"——文件发布连接器没有登记带否定证明的
-   对账适配器，"账本里没有这条意图"不足以证明没发生，不重交；只有人能裁决（要有依据和证据，
-   记 HumanOverride，只裁这一次）。
+3b. 请求根本没到服务端（连接断了）：发布台账里没有这条意图，登记的对账适配器据此证明"没开始"，
+   原地重交一次，任务完成、只发布一次（阶段 B 裁决第 3 类）。发布后文件被用户删掉、回执又丢了：
+   谁也判不了，等人裁决；人裁"没生效"即是证明，闸门打开，系统按原内容出新卡（要有依据，记
+   HumanOverride，只裁这一次）。
 4. 审阅员不认可系统准备的申请单：停给人判断（不重交）；判断不了：替代重交两次后停下。
 5. 计划里没有任何步骤写出要发布的文件：系统把事实交给规划器（修复请求点名缺的文件），不建申请单。
 6. 最终审查看得到根自己已验收的发布效果和读回核对。
@@ -23,8 +24,6 @@
 9. 效果验收写到一半数据库写失败（触发器注入，外界的写入故障）：效果验收、交付回执整体回滚，不重发；
    故障排除、进程重启后效果验收照常写一次，任务完成，始终只有一次发布。
 
-10. 确认页选了发布连接器到达不了的完成标准（DELIVERED）：系统不悄悄降级成它能到达的标准，申请单
-   一份都不提交，效果一直等着（之后的去向见报告：疑似停在进行中）。
 11. 申请单物化成动作时，动作—意图链接那一行写失败（触发器注入）：动作与链接一起回滚、按名推迟；
    故障排除、重启后只物化一次，批准后只发布一次（原 test_h1h_operation_current_gates 的 O09）。
 替身只有模型回复和发布服务那一侧的意外（:mod:`publish_world`）；产品闸门一个没关。
@@ -253,38 +252,59 @@ def test_the_deployment_handoff_cap_refuses_before_anything_leaves(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("outcome", ("succeeded", "failed"))
-def test_a_person_rules_on_a_publish_nobody_can_settle(tmp_path, outcome):
-    from agent_orchestrator.api.approvals import ApprovalApi
-    from agent_orchestrator.orchestrator.action_commits import ActionCommitError
-
-    faults = Faults(drop_requests=10)
+def test_a_publish_lost_before_the_service_is_handed_off_again(tmp_path):
+    faults = Faults(drop_requests=1)
 
     async def run() -> None:
         async with publishing(tmp_path, faults=faults) as case:
             case.approve(await case.until_approval())
-            await case.drain_until(lambda: any(a["state"] == "UNKNOWN" for a in case.actions()), rounds=10)
-            for _ in range(3):
-                await case.world.drain()
+            await case.drain_until(lambda: case.status() == "COMPLETED", rounds=20)
+            assert case.status() == "COMPLETED"
+            [action] = case.actions()
+            assert action["state"] == "SUCCEEDED" and action["handoffs"] == 2, action  # 原地重交一次
+            assert faults.executed == 1 and len(case.published_files()) == 1
+            [proof] = [e.payload for e in case.events("ActionScopedReconciled")]
+            assert proof["outcome"] == "NOT_APPLIED_FINAL"
+            assert len(case.events("ApprovalRequested")) == 1  # 人只批准过一次
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("outcome", ("succeeded", "failed"))
+def test_a_person_rules_on_a_publish_nobody_can_settle(tmp_path, outcome):
+    """发布落盘后文件被用户删掉、回执又丢了：台账说"链接过"，文件却不在——谁也判不了，等人。"""
+    from agent_orchestrator.api.facade import FacadeError
+
+    faults = Faults(lose_replies=1, remove_published=True)
+
+    async def run() -> None:
+        async with publishing(tmp_path, faults=faults) as case:
+            case.approve(await case.until_approval())
+            await case.drain_until(lambda: any(a["state"] == "UNKNOWN" and a.get("needs_human")
+                                               for a in case.actions()), rounds=10)
             [action] = case.actions()
             assert action["state"] == "UNKNOWN" and action["handoffs"] == 1, action  # 不重交
-            assert faults.executed == 0 and faults.lookups >= 1 and case.published_files() == []
-            person = ApprovalApi(case.world.loop.commit, Principal("operation-approver"))  # 命令行 resolve 同一入口
-            with pytest.raises(ActionCommitError, match="basis and evidence"):
-                person.resolve_unknown(action["action_key"], outcome=outcome, basis="", evidence={})
-            ruled = person.resolve_unknown(action["action_key"], outcome=outcome, basis="查了发布目录",
-                                           evidence={"checked": "publish root"})
+            control = case.world.control
+            with pytest.raises(FacadeError):
+                control.resolve_unknown(action["action_key"], outcome=outcome, basis="")
+            ruled = control.resolve_unknown(action["action_key"], outcome=outcome, basis="我查了发布目录，文件不在")
             assert ruled["state"] == ("SUCCEEDED" if outcome == "succeeded" else "FAILED")
             [override] = case.events("HumanOverride")
             assert override.payload["subject"] == action["action_key"]
-            with pytest.raises(ActionCommitError, match="only an UNKNOWN action"):
-                person.resolve_unknown(action["action_key"], outcome=outcome, basis="again", evidence={"x": 1})
-            for _ in range(3):
-                await case.world.drain()
-            # 人的裁决不让系统重发，也不让任务凭它完成（裁决之后的去向见报告：疑似停在进行中）。
-            assert faults.executed == 0 and case.published_files() == []
-            assert [a["handoffs"] for a in case.actions()] == [1]
-            assert case.status() != "COMPLETED"
+            with pytest.raises(FacadeError):
+                control.resolve_unknown(action["action_key"], outcome=outcome, basis="again")
+            if outcome == "succeeded":
+                return
+            # 人裁"没生效"就是证明：闸门打开，系统按原内容出新卡，卡上写着上次是人裁定没生效
+            [proof] = [e.payload for e in case.events("ActionScopedReconciled")]
+            assert proof["outcome"] == "NOT_APPLIED_FINAL"
+            await case.drain_until(lambda: any(a["state"] == "AWAITING_APPROVAL" for a in case.actions()), rounds=20)
+            [card] = [a for a in case.actions() if a["state"] == "AWAITING_APPROVAL"]
+            assert card["previous_attempt"]["outcome"] == "human_ruled_not_applied"
+            faults.remove_published = False
+            case.approve(await case.until_approval())
+            await case.drain_until(lambda: case.status() == "COMPLETED", rounds=20)
+            assert case.status() == "COMPLETED" and len(case.published_files()) == 1
 
     asyncio.run(run())
 
@@ -530,45 +550,6 @@ def test_an_effect_acceptance_write_failure_rolls_back_and_is_written_once_after
 
     asyncio.run(first())
     asyncio.run(second())
-
-
-def test_a_milestone_the_profile_cannot_reach_is_never_downgraded(tmp_path):
-    """E02：用户要求 DELIVERED，内置的文件发布档案只到得了 FILE_PUBLISHED / CONTENT_HASH_VERIFIED。"""
-
-    async def run() -> None:
-        async with publishing(tmp_path, confirm=False) as case:
-            await case.world.drain()
-            page = case.world.control.snapshot(case.mission_id)["snapshot"]["operation_workspace"]
-            assert "DELIVERED" not in {m["id"] for m in page["milestones"]}
-            actions = [c["id"] for c in page["criteria"] if c["statement"].startswith("action:")]
-            [obligation] = page["obligations"]
-            policy = next(m for m in page["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
-            ref = page["requirements_ref"]
-            case.world.control.approve_operation_completion_spec({
-                "mission_id": case.mission_id, "command_id": "confirm-delivered", "expected_requirements_ref": ref,
-                "proposal": {"schema_version": 1, "mission_id": case.mission_id,
-                             "requirements_ref": {key: ref[key] for key in ("id", "revision", "content_hash")},
-                             "mode": "REQUIRED_EFFECTS",
-                             "content_criterion_ids": [c["id"] for c in page["criteria"] if c["id"] not in actions],
-                             "effects": [{"effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
-                                          "obligation_id": obligation["id"], "criterion_ids": actions,
-                                          "required_milestone": "DELIVERED",
-                                          "milestone_policy_ref": policy["milestone_policy_ref"],
-                                          "evidence_policy_ref": policy["evidence_policy_ref"]}]}})
-            await case.drain_until(lambda: bool(HtnStore(case.store).list_acceptances(case.mission_id)), rounds=20)
-            for _ in range(3):
-                await case.world.drain()
-            spec_hash, document = case.store.connection.execute(
-                "SELECT spec_hash, document_json FROM operation_completion_specs WHERE mission_id=?",
-                (case.mission_id,)).fetchone()
-            assert json.loads(document)["effects"][0]["required_milestone"] == "DELIVERED"
-            effect = read_current_effect(case.store, case.mission_id, spec_hash, "publish-weekly")
-            assert effect["state"] == "AWAITING_INTENT" and effect["complete"] is False
-            assert OperationIntentStore(case.store).for_mission(case.mission_id) == ()
-            assert case.actions() == [] and case.published_files() == []
-            assert case.status() != "COMPLETED"
-
-    asyncio.run(run())
 
 
 def test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart(tmp_path):

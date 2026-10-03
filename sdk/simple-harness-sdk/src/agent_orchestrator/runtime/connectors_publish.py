@@ -43,6 +43,8 @@ from .connectors import (
 
 PUBLISH_NAME = "file_publish"
 LEDGER_FILE = "ledger.jsonl"
+LOCK_FILE = "ledger.lock"
+LEDGER_PROTOCOL = "file-publish-ledger-v1"
 
 
 def _hash(data: bytes) -> str:
@@ -214,6 +216,29 @@ class FilePublishConnector:
         data = _read_nofollow(Path(str(params["storage_uri"])))
         if _hash(data) != content_hash:
             raise ConnectorRejected("artifact_bytes_mismatch")
+        # One publish at a time holds the ledger lock from the duplicate check to its last
+        # line, so a reconciler that gets the lock sees a finished history (阶段 B 裁决第 1 类).
+        with self._exclusive():
+            return self._execute_locked(target, relative, params, data, content_hash,
+                                        idempotency_key=idempotency_key)
+
+    def _exclusive(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def held() -> Any:
+            self._ledger_dir.mkdir(parents=True, exist_ok=True)
+            with (self._ledger_dir / LOCK_FILE).open("a") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+        return held()
+
+    def _execute_locked(self, target: str, relative: PurePosixPath, params: Mapping[str, Any],
+                        data: bytes, content_hash: str, *, idempotency_key: str) -> Receipt:
         done = self._entries(idempotency_key)
         if done and done[-1].get("state") != "ABORTED":  # this key already reached the link
             return self._published(done[-1])
@@ -236,6 +261,7 @@ class FilePublishConnector:
                 # whatever it holds — the key's own file is returned by the fast path above
                 raise ConnectorRejected(f"conflict: {final_path} already exists")
             self._append(entry)  # the intent is on disk before the only commit point
+            linked = False
             try:
                 if self.fail_after == "intent":
                     raise ConnectorTransportError("file_publish: lost after writing the intent")
@@ -252,6 +278,7 @@ class FilePublishConnector:
                         handle.flush()
                         os.fsync(handle.fileno())
                     os.link(temporary, final_name, src_dir_fd=fd, dst_dir_fd=fd)
+                    linked = True
                 finally:
                     try:
                         os.unlink(temporary, dir_fd=fd)
@@ -259,8 +286,11 @@ class FilePublishConnector:
                         pass
             except BaseException:
                 # this process knows the link did not happen: say so, so the action can be
-                # handed off again instead of waiting for a person (the ledger is ours)
-                self._append({**entry, "state": "ABORTED"})
+                # handed off again instead of waiting for a person (the ledger is ours).
+                # Once the link returned, the publish happened: no ABORTED, the intent stays
+                # open and a person rules (核验 2026-10-03).
+                if not linked:
+                    self._append({**entry, "state": "ABORTED"})
                 raise
             os.fsync(fd)
             if self.fail_after == "link":
@@ -286,6 +316,50 @@ class FilePublishConnector:
             return handle.read()
 
     # ---------------------------------------------------------------- reconciliation
+    def ledger_record(self, idempotency_key: str) -> dict[str, Any]:
+        """The ledger's whole history for one key, read under the ledger lock.
+
+        The raw protocol document a reconciliation proof rests on (阶段 B 裁决第 1、3 类).
+        A publish in flight holds the lock, so this never answers mid-publish: it raises
+        as if the service could not be reached, and the reconciler asks again later."""
+
+        self._ledger_dir.mkdir(parents=True, exist_ok=True)
+        with (self._ledger_dir / LOCK_FILE).open("a") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise ConnectorTransportError("file_publish: a publish is in progress") from error
+            try:
+                lines = 0
+                if self.ledger_path.is_file():
+                    lines = sum(1 for line in self.ledger_path.read_text(encoding="utf-8").splitlines()
+                                if line.strip())
+                entries = self._entries(idempotency_key)
+                return {
+                    "protocol": LEDGER_PROTOCOL,
+                    "ledger": _hash(str(self.ledger_path).encode("utf-8")),
+                    "key": idempotency_key,
+                    "entries": entries,
+                    "line_count": lines,
+                    # An ABORTED line is written for any error after the intent, including
+                    # one raised after a link that did succeed (核验 2026-10-03): whether the
+                    # key's own file sits at its final path, with its bytes, is part of the record.
+                    "final_file_present": self._final_file_present(entries),
+                }
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _final_file_present(self, entries: list[dict[str, Any]]) -> bool:
+        intents = [entry for entry in entries if entry.get("final_path")]
+        if not intents:
+            return False
+        last = intents[-1]
+        try:
+            data = _read_nofollow(self._root / str(last["final_path"]))
+        except ConnectorRejected:
+            return False
+        return _hash(data) == str(last.get("content_hash"))
+
     def lookup(self, idempotency_key: str) -> Receipt | None:
         entries = self._entries(idempotency_key)
         if not entries:

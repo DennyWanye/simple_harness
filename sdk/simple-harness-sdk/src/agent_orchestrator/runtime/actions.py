@@ -220,7 +220,27 @@ class ActionExecutor:
             updated = await self.reconcile_one(str(action["action_key"]), allow_rehandoff=True)
             if updated is not None:
                 settled.append(updated)
+        # 阶段 B 裁决第 1 类: a failed action that left our hands has no proof yet that it
+        # did not happen; the registered reconciler is the one that decides that too.
+        for action in self._commit.store.list_actions(mission_id, "FAILED"):
+            if self._failed_unproven(action):
+                updated = await self.reconcile_one(str(action["action_key"]))
+                if updated is not None:
+                    settled.append(updated)
         return settled
+
+    def _failed_unproven(self, action: Mapping[str, Any]) -> bool:
+        """FAILED, handed off at least once, operation-linked, no stored proof, and not
+        already waiting for a person."""
+        if action.get("state") != "FAILED" or int(action.get("handoffs") or 0) < 1 or action.get("needs_human"):
+            return False
+        from ..storage.planning_admission_store import PlanningAdmissionStore
+        from .operation_reconciliation import stored_negative_proof
+
+        store = self._commit.store
+        if PlanningAdmissionStore(store).get_operation_action_link_for_action(str(action["action_key"])) is None:
+            return False
+        return not stored_negative_proof(store, action)
 
     async def reconcile_one(self, action_key: str, *, allow_rehandoff: bool = False) -> dict[str, Any] | None:
         """Observe one exact Action; TaskGraph convergence never re-sends it."""
@@ -232,7 +252,8 @@ class ActionExecutor:
         action = store.get_action(action_key)
         if action is None:
             raise ActionCommitError("action reconciliation source is unavailable")
-        if action["state"] not in {"UNKNOWN", "HANDED_OFF"}:
+        failed = action["state"] == "FAILED"
+        if action["state"] not in {"UNKNOWN", "HANDED_OFF"} and not (failed and self._failed_unproven(action)):
             return action
         def require_current() -> None:
             current = store.get_action(action_key)
@@ -252,7 +273,9 @@ class ActionExecutor:
                 return await self._rehandoff_scoped(key, runtime) if allow_rehandoff else action
         connector = self._connectors.get(str(action["connector"]))
         receipt: Receipt | None = None
-        if connector is None or not getattr(connector, "supports_reconciliation", False):
+        if failed:
+            verdict = "STILL_UNKNOWN"  # its outcome is booked; only a proof is sought below
+        elif connector is None or not getattr(connector, "supports_reconciliation", False):
             verdict = "STILL_UNKNOWN"
         else:
             try:
@@ -300,6 +323,8 @@ class ActionExecutor:
                             key, evidence=evidence, adapter=adapter,
                             service_authority=runtime.service_authority)
                 except Exception:  # unavailable/incomplete protocol evidence stays unresolved
+                    if failed:
+                        return self._commit.record_reconciliation_unavailable(key)
                     with store.transaction():
                         require_current()
                         updated = self._commit.record_reconciliation(key, verdict="STILL_UNKNOWN")
@@ -312,6 +337,10 @@ class ActionExecutor:
                     ):
                         updated = await self._rehandoff_scoped(key, runtime)
                     return updated
+        if failed:
+            # No operation runtime here: nothing can be proven this round, and nothing moved
+            # — not reported as settled, so an idle loop stays idle (核验 2026-10-03).
+            return None
         with store.transaction():
             require_current()
             updated = self._commit.record_reconciliation(key, verdict=verdict, receipt=receipt)

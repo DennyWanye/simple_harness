@@ -1162,6 +1162,13 @@ class OrchestrationService:
         self.wake()
         return result
 
+    def resolve_unknown(self, action_key: str, outcome: str, *, basis: str) -> dict[str, Any]:
+        """A person's ruling on an action nothing else can settle (阶段 B 裁决第 3 类)."""
+        self._refuse_secrets(basis)
+        result = self._call("resolve_unknown", action_key, outcome=outcome, basis=basis)
+        self.wake()
+        return result
+
     def comment(self, target_id: str, text: str) -> dict[str, Any]:
         self._refuse_secrets(text)
         result = self._call("comment", target_id, text)

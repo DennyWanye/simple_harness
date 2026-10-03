@@ -111,6 +111,7 @@ const OWN_RESPONSES = new Set([
   "mission_cancel_response",
   "mission_approval_decide_response",
   "mission_takeover_response",
+  "mission_action_resolve_response",
   "mission_comment_response",
   "mission_artifact_read_response",
 ]);
@@ -367,6 +368,29 @@ function ActionOutcome({ action }: { action: Record<string, unknown> }): React.J
 
 /** Task 已经结束的状态：这些 Task 不再提供接管。 */
 const TASK_ENDED = new Set(["DONE", "COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
+
+/**
+ * 阶段 B 裁决第 3 类：一次对外动作结果不明（或失败了却证明不了没生效），系统判不了，由人裁定。
+ * 依据必填；"没生效"之后系统会按原内容重新出一张审批卡。只能由人亲手点。
+ */
+const ResolveOutcomeBox: React.FC<{ actionKey: string; failed: boolean; send: (type: string, payload?: Json) => unknown }> = ({ actionKey, failed, send }) => {
+  const [basis, setBasis] = useState("");
+  return (
+    <div style={{ ...box, marginTop: tokens.space.xs }} data-testid={`resolve-${actionKey}`}>
+      <div style={{ color: dark.textMuted }}>系统判断不了这次发布有没有生效，请你查看后裁定：</div>
+      <textarea aria-label="裁定依据" placeholder="写一句你依据什么判断（例如：查了发布目录）" style={field}
+        value={basis} onChange={(e) => setBasis(e.target.value)} />
+      <div style={{ display: "flex", gap: tokens.space.sm }}>
+        {failed ? null : (
+          <button type="button" style={button} disabled={!basis.trim()}
+            onClick={() => send("mission_action_resolve", { action_key: actionKey, outcome: "succeeded", basis })}>已生效</button>
+        )}
+        <button type="button" style={button} disabled={!basis.trim()}
+          onClick={() => send("mission_action_resolve", { action_key: actionKey, outcome: "failed", basis })}>没生效</button>
+      </div>
+    </div>
+  );
+};
 
 /**
  * 代码评审第 1 轮 P1-5⑤：卡住的 Task 不一定被判为 blocked（例如一直在跑、在排队），
@@ -667,6 +691,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         case "mission_cancel_response":
         case "mission_approval_decide_response":
         case "mission_takeover_response":
+        case "mission_action_resolve_response":
           if (ok && selectedRef.current) refreshSelected(selectedRef.current);
           break;
         case "mission_artifact_read_response":
@@ -997,7 +1022,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
                   {waiting.map((item, index) => (
-                    <div key={`${index}-${text(record(item).request_id)}`}>{waitLine(item)}</div>
+                    <div key={`${index}-${text(record(item).request_id)}`}>
+                      {waitLine(item)}
+                      {text(record(item).kind) === "reconciliation" && record(item).needs_human === true ? (
+                        <ResolveOutcomeBox actionKey={text(record(item).action_key)}
+                          failed={text(record(item).state) === "FAILED"} send={send} />
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               ) : null}
