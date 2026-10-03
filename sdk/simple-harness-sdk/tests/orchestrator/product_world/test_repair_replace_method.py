@@ -205,11 +205,13 @@ def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
 
     original = hierarchical_dispatch.HierarchicalDispatch.commit_preview_plan_proposal
     refused: list[str] = []
+    calls: list[str] = []
 
     def commit_once_refused(self, mission_id, proposal, **kwargs):  # type: ignore[no-untyped-def]
-        if not refused and int(kwargs["preview"].base_revision) >= 1:
+        calls.append(mission_id)
+        if len(calls) == 2:  # the first commit is the initial plan; the second is the replacement
             refused.append(mission_id)
-            raise PlanCommitRejected("TEST_COMMIT_CONFLICT: the plan moved under this commit")
+            raise PlanCommitRejected("TEST_COMMIT_CONFLICT", "the plan moved under this commit")
         return original(self, mission_id, proposal, **kwargs)
 
     monkeypatch.setattr(hierarchical_dispatch.HierarchicalDispatch, "commit_preview_plan_proposal",
@@ -249,10 +251,14 @@ def test_a_refused_method_change_lifts_its_fence(tmp_path, monkeypatch):
             assert str(store.get_mission(mission_id).status.value) == "COMPLETED", [e.type for e in events][-20:]
             ended = [event.payload for event in events if event.type == "TaskGraphConvergenceAdvanced"
                      and event.payload["to_state"] == "ABANDONED"]
-            assert [item["reason"] for item in ended] == ["decision_refused"]
+            # The refused decision's fence ended with it; a later live fence is only ever
+            # replaced by a newer decision's, never stacked under it.
+            assert ended and ended[0]["reason"] == "decision_refused"
+            assert {item["reason"] for item in ended} <= {"decision_refused", "superseded_by_new_decision"}
             jobs = dict(store.connection.execute(
                 "SELECT job_id, state FROM taskgraph_convergence_jobs WHERE mission_id=?", (mission_id,)).fetchall())
-            assert sorted(jobs.values()) == ["ABANDONED", "APPLIED"], jobs
+            assert list(jobs.values()).count("APPLIED") == 1, jobs
+            assert set(jobs.values()) == {"ABANDONED", "APPLIED"}, jobs
             assert any(event.type == "PlanningDecisionEvaluated" and event.payload["status"] == "COMMIT_REJECTED"
                        for event in events)
 
