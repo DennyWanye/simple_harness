@@ -28,7 +28,7 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -549,7 +549,8 @@ class Orchestrator:
         self.progress_log: list[str] = []
         #: intent id → the refusal last noted for its collection, so a refusal that
         #: repeats every round is noted once per distinct reason (NEXT-TG-1.0 §5.1).
-        self._collection_refusals: dict[str, str] = {}
+        # 一轮故障（阶段 B 裁决第 9 类）：(任务, 出事地点) → (连续次数, 第一次的库时钟)
+        self._round_faults: dict[tuple[str, str], tuple[int, float]] = {}
         #: planning intents already noted as waiting for their TaskGraph binding.
         self._creation_refusals_noted: set[str] = set()
         # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
@@ -1529,7 +1530,7 @@ class Orchestrator:
         self._contract_checked.add(mission.id)
         return False
 
-    async def _plan_integrity_stop(self, mission: Mission, error: GraphIntegrityError) -> None:
+    async def _plan_integrity_stop(self, mission: Mission, error: Exception) -> None:
         """Stop *this* Mission for a damaged plan and leave the run alone (§24.1 dec. 11).
 
         ``GraphIntegrityError`` is a ``RuntimeError``, and ``_cycle`` only forgives
@@ -1540,16 +1541,20 @@ class Orchestrator:
         on with the rest.
         """
 
-        if self._hierarchical is not None:
-            dispatch = self._dispatch_for(mission.id)
-            if dispatch is not None:
-                dispatch.record_integrity_failure(mission.id, error)
-        detail = {
-            "code": getattr(error, "code", "projection_not_orderable"),
-            "subjects": sorted(str(item) for item in error.remaining),
-            "cycle": [str(item) for item in error.cycle],
-            "diagnose": error.diagnose()[:600],
-        }
+        if isinstance(error, GraphIntegrityError):
+            if self._hierarchical is not None:
+                dispatch = self._dispatch_for(mission.id)
+                if dispatch is not None:
+                    dispatch.record_integrity_failure(mission.id, error)
+            detail = {
+                "code": getattr(error, "code", "projection_not_orderable"),
+                "subjects": sorted(str(item) for item in error.remaining),
+                "cycle": [str(item) for item in error.cycle],
+                "diagnose": error.diagnose()[:600],
+            }
+        else:  # a stored record that fails its own integrity check (history, inputs, sources)
+            detail = {"code": str(error).split(":", 1)[0][:120] or type(error).__name__,
+                      "subjects": [], "cycle": [], "diagnose": str(error)[:600]}
         current = self.store.get_mission(mission.id)
         status = mission.status if current is None else current.status
         if status is MissionStatus.PLANNING:
@@ -3213,6 +3218,91 @@ class Orchestrator:
                 progressed = True
         return progressed
 
+    async def _mission_round(self, mission_id: str, where: str, step: Callable[[], Awaitable[Any]]) -> bool:
+        """One Mission's share of this round, behind one boundary (阶段 B 裁决第 9 类).
+
+        Whatever escapes ``step`` — a disk or I/O error, a read-side integrity refusal, a
+        trigger's ABORT, a refused Commit — is this Mission's fault for this round only:
+        the transaction it was in has rolled back, the fault is recorded, the rest of
+        this Mission's round is skipped and every other Mission carries on.  Next round
+        it is tried again in place; nothing is asked of a model again (raw replies and
+        decisions are durable and collection is idempotent).  What a fault means is read
+        from one table (``classify_round_fault``): damaged data stops the Mission at
+        once; anything else is retried and stops it, by name, only after
+        ``NON_MODEL_FAILURE_CAP`` consecutive rounds at the same place spanning at least
+        ``ROUND_FAULT_MIN_SECONDS``.  ``StoreBusy`` (another instance holds the lock)
+        is the whole store's, not this Mission's, and still skips the round."""
+
+        try:
+            progressed = bool(await step())
+        except StoreBusy:
+            raise
+        except Exception as error:  # noqa: BLE001 - the boundary: never the loop's end
+            if self.store.connection.in_transaction:
+                self.store.connection.rollback()
+            return await self._round_fault(mission_id, where, error)
+        self._round_faults.pop((mission_id, where), None)
+        return progressed
+
+    async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
+        from .failure_classes import (
+            NON_MODEL_FAILURE_CAP, ROUND_CORRUPT, ROUND_FAULT_MIN_SECONDS, classify_round_fault,
+        )
+
+        kind = classify_round_fault(error)
+        now = self.store.now
+        count, first = self._round_faults.get((mission_id, where), (0, now))
+        count += 1
+        self._round_faults[(mission_id, where)] = (count, first)
+        summary = f"{type(error).__name__}: {str(error)[:300]}"
+        self._note(f"mission {mission_id}: round fault at {where} #{count} ({kind}) {summary}")
+        logger.warning("orchestrator.round_fault mission=%s where=%s count=%s kind=%s error=%s",
+                       mission_id, where, count, kind, summary)
+        if count == 1:
+            # A separate short transaction; when even that cannot be written (a full
+            # disk) the in-memory count is the record and the cap still applies.
+            try:
+                with self.store.transaction():
+                    self.commit._emit("MissionRoundFault", mission_id,
+                                      key=f"{mission_id}:{where}:{int(first * 1000)}",
+                                      payload={"where": where, "class": kind, "error_type": type(error).__name__,
+                                               "summary": summary, "count": count})
+            except Exception:  # noqa: BLE001
+                self._note(f"mission {mission_id}: round fault not recorded (store unwritable)")
+        try:
+            mission = self.store.get_mission(mission_id)
+        except Exception:  # noqa: BLE001
+            return False
+        if mission is None or mission.status in TERMINAL_MISSION:
+            self._round_faults.pop((mission_id, where), None)
+            return False
+        try:
+            if kind == ROUND_CORRUPT:
+                await self._plan_integrity_stop(mission, error)
+                ended = self.store.get_mission(mission_id)
+                if ended is not None and ended.status in TERMINAL_MISSION:
+                    self._round_faults.pop((mission_id, where), None)
+                    return True
+                return False  # not stoppable from its state (still CREATED): retried next round
+            if count >= NON_MODEL_FAILURE_CAP and now - first >= ROUND_FAULT_MIN_SECONDS:
+                detail = {"where": where, "error_type": type(error).__name__, "summary": summary,
+                          "rounds": count, "seconds": round(now - first, 3)}
+                if mission.status is MissionStatus.PLANNING:
+                    self._commit_fail_planning(mission.id, reason="store_fault", detail=detail,
+                                               stop_reason=MissionStopReason.STORE_FAULT)
+                elif mission.status is MissionStatus.ACTIVE:
+                    self._commit_fail_mission(mission.id, stop_reason=MissionStopReason.STORE_FAULT,
+                                              detail=detail)
+                else:
+                    return False
+                await self._release_mission(mission.id)
+                self._round_faults.pop((mission_id, where), None)
+                self._note(f"mission {mission.id} stopped: store fault at {where} ({count} rounds)")
+                return True
+        except Exception as stop_error:  # noqa: BLE001 - the stop itself could not be written
+            self._note(f"mission {mission_id}: stop not written ({type(stop_error).__name__}); retrying")
+        return False
+
     async def _cycle(self) -> bool:
         try:
             return await self._cycle_inner()
@@ -3291,38 +3381,28 @@ class Orchestrator:
         for mission in self._active_missions():
             if mission.id not in due:
                 continue
-            from .method_plan_reviews import advance as advance_method_reviews
-            from .planning_repair_requests import collect_triggers
-            try:
-                if advance_method_reviews(self, mission):
-                    progressed = True
-                    busy.add(mission.id)
-                if collect_triggers(self, mission):
-                    progressed = True
-                    busy.add(mission.id)
-                if self._resume_planning_services(mission):
-                    progressed = True
-                    busy.add(mission.id)
-            except GraphIntegrityError as error:
-                # Both read the plan.  A damaged plan is that Mission's stop, never the
-                # loop's (§24.1 decision 11): ``GraphIntegrityError`` is a ``RuntimeError``
-                # that ``_cycle`` does not forgive, so unguarded it took every other
-                # Mission in this process down with it.
-                # A Mission still CREATED is stopped by its own planning start below.
-                if mission.status is not MissionStatus.CREATED:
-                    await self._plan_integrity_stop(mission, error)
-                    progressed = True
-                continue
-            except BudgetExhausted as error:
-                self._stop_planning_round(mission.id, reason="budget_exhausted",
-                    detail={"phase": "planning_service_resume", "dimension": error.dimension,
-                            "requested": error.requested, "remaining": error.remaining},
-                    stop_reason=MissionStopReason.BUDGET_EXHAUSTED)
-                progressed = True
-            except RoutingUnavailable:
-                # The durable receipt remains pending until a bound planner is available.
-                pass
-            if self._gather_evidence(mission):
+
+            async def before_planning(mission: Mission = mission) -> bool:
+                from .method_plan_reviews import advance as advance_method_reviews
+                from .planning_repair_requests import collect_triggers
+                moved = False
+                try:
+                    moved = advance_method_reviews(self, mission) or moved
+                    moved = collect_triggers(self, mission) or moved
+                    moved = self._resume_planning_services(mission) or moved
+                except BudgetExhausted as error:
+                    self._stop_planning_round(mission.id, reason="budget_exhausted",
+                        detail={"phase": "planning_service_resume", "dimension": error.dimension,
+                                "requested": error.requested, "remaining": error.remaining},
+                        stop_reason=MissionStopReason.BUDGET_EXHAUSTED)
+                    return True
+                except RoutingUnavailable:
+                    pass  # the durable receipt remains pending until a bound planner is available
+                return self._gather_evidence(mission) or moved
+
+            # A damaged plan, a store fault, a refused Commit: this Mission's round, never
+            # the loop's (§24.1 decision 11; 阶段 B 裁决第 9 类).
+            if await self._mission_round(mission.id, "before_planning", before_planning):
                 progressed = True
                 busy.add(mission.id)
         for mission in self._active_missions():
@@ -3332,46 +3412,38 @@ class Orchestrator:
                 busy.add(mission.id)
                 if self._assembly_missing(mission, at="start_planning"):
                     continue
-                if await self._start_planning(mission):
+                if await self._mission_round(mission.id, "start_planning",
+                                             lambda mission=mission: self._start_planning(mission)):
                     progressed = True
         if await self._retry_deferred_planning():
             progressed = True
         active = {mission.id for mission in self._active_missions()}
         for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
             if (intent.kind == "critic" or intent.config.get("assurance_protocol") == "assurance-exec-v1.1") and self._critic_subject_stopped(intent):
-                if await self._collect_stopped_critic(intent):
+                if await self._mission_round(intent.mission_id, "collect_stopped_critic",
+                                             lambda intent=intent: self._collect_stopped_critic(intent)):
                     progressed = True
                 continue
             if intent.mission_id not in active:
                 continue
-            if await self._dispatch(intent):
+            if await self._mission_round(intent.mission_id, "dispatch",
+                                         lambda intent=intent: self._dispatch(intent)):
                 progressed = True
         for intent in self.store.list_intents("SUBMITTED"):
             if intent.kind == "critic":
-                if self._critic_subject_stopped(intent) and await self._collect_after_stop(intent):
+                if self._critic_subject_stopped(intent) and await self._mission_round(
+                        intent.mission_id, "collect_after_stop",
+                        lambda intent=intent: self._collect_after_stop(intent)):
                     progressed = True
                 continue  # critics are collected inline by the critic runner
             if intent.mission_id not in active:
-                if await self._collect_after_stop(intent):
+                if await self._mission_round(intent.mission_id, "collect_after_stop",
+                                             lambda intent=intent: self._collect_after_stop(intent)):
                     progressed = True
                 continue
-            try:
-                if await self._collect(intent):
-                    progressed = True
-                    self._collection_refusals.pop(intent.intent_id, None)
-            except (BudgetError, CommitRejected) as error:
-                # 2026-09-25: one Mission's refused collection must not stop every
-                # other Mission's results (it re-raised out of run() each round).
-                # The row stays SUBMITTED and is retried next round, visibly — noted
-                # once per distinct reason, not once per round.  (It read ``intent.id``,
-                # which does not exist, so the refusal it meant to isolate became an
-                # AttributeError that stopped every Mission: NEXT-TG-1.0 §5.1.)
-                reason = f"{type(error).__name__}: {error}"
-                if self._collection_refusals.get(intent.intent_id) != reason:
-                    self._collection_refusals[intent.intent_id] = reason
-                    self._note(f"intent {intent.intent_id}: collection refused ({reason})")
-                    logger.warning("orchestrator.collection_refused intent=%s mission=%s error=%s",
-                                   intent.intent_id, intent.mission_id, reason)
+            if await self._mission_round(intent.mission_id, "collect",
+                                         lambda intent=intent: self._collect(intent)):
+                progressed = True
         # D6-9': verification runs in a bounded set of tasks (``verifier_workers``); the loop
         # reaps finished ones and starts new ones.  A crash inside a verification is raised at
         # the next phase boundary — nothing else is decided after it (fault-injection tests)
@@ -3403,7 +3475,7 @@ class Orchestrator:
             if mission.id not in due:
                 continue
             self._raise_if_verification_crashed()
-            if await self._decide(mission):
+            if await self._mission_round(mission.id, "decide", lambda mission=mission: self._decide(mission)):
                 progressed = True
                 busy.add(mission.id)
         self._mark_quiet(due - busy, round_cursor)
@@ -3483,18 +3555,6 @@ class Orchestrator:
                 stop_reason=MissionStopReason.PLANNING_FAILED,
             )
             self._note(f"mission {mission_id}: {error} → stopped")
-            return False
-        except GraphIntegrityError as error:
-            # P2.3c part 2: the hierarchical package is built from the plan, so a
-            # damaged plan is now noticed *before* a model call rather than after one.
-            # It is still one Mission's stop and not the run's: §24.1 decision 11, and
-            # ``GraphIntegrityError`` is a ``RuntimeError`` that ``_cycle`` does not
-            # forgive.  Corruption is not a bad proposal, so the Planner is not asked
-            # again — which is exactly what the damaged-plan witness asserts.
-            damaged = self.store.get_mission(mission_id)
-            if damaged is None:
-                raise
-            await self._plan_integrity_stop(damaged, error)
             return False
         except RoutingUnavailable as unavailable:
             since = self._deferred_planning.get(mission_id, (self.store.now, ordinal))[0]
@@ -3618,14 +3678,13 @@ class Orchestrator:
             if mission is not None and mission.status is not MissionStatus.PLANNING:
                 # Review P0-1: a deferred round belonging to a Mission that is already
                 # ACTIVE is one of P2.3d's, and the retry must not carry its exhaustion
-                # out of the loop either.  A Mission still in PLANNING keeps the exact
-                # path it had, exception and all, so the legacy goldens do not move.
-                if await self._planner_round_on_committed_plan(
-                    mission_id, ordinal=ordinal, phase="deferred_planning"
-                ):
-                    progressed = True
-                continue
-            if await self._try_planner_intent(mission_id, ordinal=ordinal):
+                # out of the loop either.
+                step = (lambda mission_id=mission_id, ordinal=ordinal: self._planner_round_on_committed_plan(
+                    mission_id, ordinal=ordinal, phase="deferred_planning"))
+            else:
+                step = lambda mission_id=mission_id, ordinal=ordinal: self._try_planner_intent(  # noqa: E731
+                    mission_id, ordinal=ordinal)
+            if await self._mission_round(mission_id, "deferred_planning", step):
                 progressed = True
         return progressed
 
@@ -7243,10 +7302,7 @@ class Orchestrator:
         # the phase is a projection of typed state, recorded as an event.
         # (``new_mode`` was asked once, above, before the read-only check.)
         if new_mode is not None:
-            try:
-                new_mode.advance_compound_phases(mission.id)
-            except GraphIntegrityError as error:
-                await self._plan_integrity_stop(mission, error)
+            new_mode.advance_compound_phases(mission.id)
 
     def _parse_envelope(
         self, text: str, attempt: Attempt, *, turn_id: str
@@ -8335,11 +8391,7 @@ class Orchestrator:
             self._composition_assembly(mission, new_mode).resolve_ready(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:
             self._note(f"mission {mission.id}: inner composition review deferred ({error})")
-        try:
-            settled = new_mode.root_review_ready(mission.id)
-        except GraphIntegrityError as error:
-            await self._plan_integrity_stop(mission, error)
-            return True
+        settled = new_mode.root_review_ready(mission.id)
         if settled:
             current = self.store.get_mission(mission.id)  # not the cycle's stale snapshot
             if current is None or current.status is not MissionStatus.ACTIVE:
@@ -8387,33 +8439,29 @@ class Orchestrator:
         # ``admit_for_dispatch`` built out of a READY_CANDIDATE readiness report, so an
         # occurrence waiting on data, evidence, an approval or a refinement is withheld
         # with a named reason instead of quietly running.
-        try:
-            # P2.3c part 2b: re-read every acceptance a declared DATA edge rests on
-            # and record the licence to bind it (I19: recompute rather than reuse
-            # the old TRUE).  It runs *before* the readiness read because the
-            # resolver looks the witness up by acceptance id; issuing it afterwards
-            # would leave the consumer in WAITING_DATA for one whole cycle after its
-            # producer was accepted.
-            new_mode.issue_input_witnesses(
-                mission.id,
-                new_mode.network(mission.id),
-                now_ms=int(self.store.now * 1000),
-            )
-            # P2.3c part 2c: the same act on the START-precondition lane, and for
-            # the same reason.  A leaf under a gated method inherits its parent
-            # method's ``applicable_when`` as a SELECT precondition, and TG §9
-            # refuses to dispatch it without a purpose=START witness — which
-            # nothing issued, so the real-model smoke committed a plan and then
-            # withheld every leaf with ``witness_missing`` for ever.
-            new_mode.issue_start_witnesses(
-                mission.id,
-                new_mode.network(mission.id),
-                now_ms=int(self.store.now * 1000),
-            )
-            admissions = new_mode.admissions(mission.id)
-        except GraphIntegrityError as error:
-            await self._plan_integrity_stop(mission, error)
-            return True
+        # P2.3c part 2b: re-read every acceptance a declared DATA edge rests on
+        # and record the licence to bind it (I19: recompute rather than reuse
+        # the old TRUE).  It runs *before* the readiness read because the
+        # resolver looks the witness up by acceptance id; issuing it afterwards
+        # would leave the consumer in WAITING_DATA for one whole cycle after its
+        # producer was accepted.
+        new_mode.issue_input_witnesses(
+            mission.id,
+            new_mode.network(mission.id),
+            now_ms=int(self.store.now * 1000),
+        )
+        # P2.3c part 2c: the same act on the START-precondition lane, and for
+        # the same reason.  A leaf under a gated method inherits its parent
+        # method's ``applicable_when`` as a SELECT precondition, and TG §9
+        # refuses to dispatch it without a purpose=START witness — which
+        # nothing issued, so the real-model smoke committed a plan and then
+        # withheld every leaf with ``witness_missing`` for ever.
+        new_mode.issue_start_witnesses(
+            mission.id,
+            new_mode.network(mission.id),
+            now_ms=int(self.store.now * 1000),
+        )
+        admissions = new_mode.admissions(mission.id)
         new_mode.record_withheld(mission.id, admissions)
         plan = allocate_v2(
             tasks,
@@ -9044,11 +9092,7 @@ class Orchestrator:
         """
 
         semantics = new_mode.semantics()
-        try:
-            inputs = new_mode.root_resolution_inputs(mission.id)
-        except GraphIntegrityError as error:
-            await self._plan_integrity_stop(mission, error)
-            return False
+        inputs = new_mode.root_resolution_inputs(mission.id)
         if inputs.reason == "ALREADY_RESOLVED":
             return True
         required_stage = None
@@ -9247,11 +9291,7 @@ class Orchestrator:
         # NEEDS_REFINEMENT.  The gate is ``form`` from the semantic binding, not the
         # status string — ``TaskStatus.READY`` on a compound is a rebuildable display
         # index and never a permission to dispatch.
-        try:
-            intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
-        except GraphIntegrityError as error:
-            await self._plan_integrity_stop(mission, error)
-            return True
+        intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
         if intercepted is not None:
             self._note(
                 f"task {task.id} not dispatched: {intercepted.reason} "
@@ -9266,11 +9306,7 @@ class Orchestrator:
         # the whole plan; every other caller (repair, a manual drive)
         # pays for the fresh read rather than skipping the gate.
         if admission is None:
-            try:
-                admission = new_mode.admissions(mission.id).admission_for(task.id)
-            except GraphIntegrityError as error:
-                await self._plan_integrity_stop(mission, error)
-                return True
+            admission = new_mode.admissions(mission.id).admission_for(task.id)
         # Review F11: ``isinstance`` and not a duck-typed ``gate_passed`` probe.
         # ``EligiblePrimitiveTask.gate_passed`` is guarded by the admission token,
         # but a structural test would let *any* object carrying a true attribute of
@@ -9332,9 +9368,6 @@ class Orchestrator:
             # nothing — overlay only reads producers the manifest already named.
             if inputs:
                 inputs = new_mode.overlay_attempt_inputs(mission.id, inputs)
-        except GraphIntegrityError as error:
-            await self._plan_integrity_stop(mission, error)
-            return True
         except ArtifactConflict as error:
             self._commit_stop_task(
                 task.id,

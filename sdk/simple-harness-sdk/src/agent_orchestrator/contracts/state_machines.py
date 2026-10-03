@@ -53,6 +53,9 @@ class MissionStopReason(StrEnum):
     #: *verdicts*, and no root Resolution was formed here) — §7.4 forbids reporting a
     #: bound, a timeout and an incomplete model under one name.
     NO_DISPATCHABLE_WORK = "no_dispatchable_work"
+    #: 2026-10-03 阶段 B 裁决第 9 类：这个任务的库读写在同一处连续出错，原地重试到上限仍不行。
+    #: 不借"规划失败""运行环境不可用"——那两个各有含义。
+    STORE_FAULT = "store_fault"
 
 
 class TaskStatus(StrEnum):

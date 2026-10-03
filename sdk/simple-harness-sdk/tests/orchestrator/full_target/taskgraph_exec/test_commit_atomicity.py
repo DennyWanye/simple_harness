@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Abort actual SQLite writes after the original planning authority checks."""
 import asyncio
-import sqlite3
 
 import pytest
 
 from production_fixture import enabled_world
-from agent_orchestrator.storage.store import StoreConflict, StoreError
+from agent_orchestrator.storage.store import StoreConflict
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.artifacts.store import read_nofollow
 
@@ -53,10 +52,12 @@ def test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt(tmp_p
                 f"CREATE TRIGGER tg_test_abort BEFORE INSERT ON {table} WHEN {predicate} "
                 "BEGIN SELECT RAISE(ABORT,'TG_TEST_ATOMIC_WRITE'); END")
             try:
-                with pytest.raises((sqlite3.DatabaseError, StoreError), match='TG_TEST_ATOMIC_WRITE'):
-                    async with asyncio.timeout(20):
-                        while True:
-                            await world.step()
+                # 阶段 B 裁决第 9 类：写失败不再冲出主循环；这一个任务的这一轮被接住、记一条
+                # "任务一轮故障"，下一轮原地再来。
+                async with asyncio.timeout(20):
+                    while not any(event.type == 'MissionRoundFault' and 'TG_TEST_ATOMIC_WRITE'
+                                  in event.payload['summary'] for event in store.iter_events(mission)):
+                        await world.step()
             finally:
                 store.connection.execute('DROP TRIGGER tg_test_abort')
             assert {task.id for task in store.list_tasks(mission)} == tasks

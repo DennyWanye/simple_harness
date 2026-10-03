@@ -391,8 +391,8 @@ def test_a_damaged_plan_stops_one_mission_and_is_read_as_corruption(tmp_path, en
 
     * 读侧：默认读抛 ``GraphIntegrityError``（``semantic_binding_missing``）；消息点名缺的任务、不提环、
       不给拓扑序。
-    * 主循环：判定分支（``_decide``）或派发入口（``_next_attempt``）都以完整性失败停下这一个任务，
-      不让异常冲出共享的主循环。
+    * 主循环：判定分支（``_decide``）或派发入口（``_next_attempt``）抛出的完整性失败，由"一个任务
+      一轮"的边界接住，停下这一个任务，不让异常冲出共享的主循环。
     """
 
     async def case() -> Any:
@@ -413,10 +413,12 @@ def test_a_damaged_plan_stops_one_mission_and_is_read_as_corruption(tmp_path, en
             assert follow_task in str(caught.value)
             assert caught.value.cycle == () and not hasattr(caught.value, "order")
             mission = store.get_mission(mission_id)
+            # 阶段 B 裁决第 9 类：损坏由"一个任务一轮"的边界接住，查表判"数据损坏"、当轮停
             if entry == "decide":
-                assert await loop._decide(mission) is True
+                step = lambda: loop._decide(mission)  # noqa: E731
             else:
-                assert await loop._next_attempt(mission, store.get_task(follow_task), []) is True
+                step = lambda: loop._next_attempt(mission, store.get_task(follow_task), [])  # noqa: E731
+            assert await loop._mission_round(mission.id, entry, step) is True
             return store.get_mission(mission_id), _events(store, mission_id, PLAN_INTEGRITY_FAILED)
 
     mission, integrity = asyncio.run(case())

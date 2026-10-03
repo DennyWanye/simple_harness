@@ -142,3 +142,30 @@ def review_exhausted_by_interruption(store: Any, review_key: str) -> bool:
         (REVIEW_TURN_INTERRUPTED, review_key),
     ).fetchone()
     return row is not None
+
+
+# ---------------------------------------------------------------- 一轮故障
+# 2026-10-03 阶段 B 裁决第 9 类：一个任务这一轮的工作冲出了异常（库读写出错、读侧拒绝、
+# 触发器拒绝……）。主循环在"一个任务一轮"的边界接住，只按这张表分两类，不在代码里另判：
+#   CORRUPT 数据损坏：重试也是同一个结果，当轮停这个任务（规划失败，带完整性错误码）；
+#   RETRY   其余：原地重试；同一任务同一处连续 NON_MODEL_FAILURE_CAP 轮、且距第一次至少
+#           ROUND_FAULT_MIN_SECONDS 秒才停（"库读写故障"）。表里没有的一律按 RETRY，由上限兜住。
+ROUND_CORRUPT = "CORRUPT"
+ROUND_RETRY = "RETRY"
+ROUND_FAULT_MIN_SECONDS = 120.0
+_CORRUPT_CODES = (
+    "TASKGRAPH_HISTORY_INTEGRITY", "TASKGRAPH_ATTEMPT_INPUT_INTEGRITY",
+    "TASKGRAPH_SOURCE_INTEGRITY", "corrupt stored result",
+)
+
+
+def classify_round_fault(error: BaseException) -> str:
+    """CORRUPT | RETRY for an exception that escaped one Mission's round."""
+
+    from ..graph.projection_validation import GraphIntegrityError as ProjectionIntegrity
+    from ..storage.taskgraph_store import GraphIntegrityError as HistoryIntegrity
+
+    if isinstance(error, (ProjectionIntegrity, HistoryIntegrity)):
+        return ROUND_CORRUPT
+    text = str(error)
+    return ROUND_CORRUPT if any(code in text for code in _CORRUPT_CODES) else ROUND_RETRY
