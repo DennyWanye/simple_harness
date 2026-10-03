@@ -289,3 +289,21 @@ def test_an_action_approval_keeps_its_fields_and_the_reason_source():
     forged = project_approval({"request_id": "a-2", "kind": "action",
                                "summary": {**summary, "reason_source": "model (untrusted)"}})["summary"]
     assert forged["reason_source"] == "model"
+
+
+def test_a_resubmitted_action_card_says_why_the_last_one_did_not_take_effect():
+    """2026-10-03 真机点击发现：系统按原内容重交的卡片，SDK 写了"上次为何没生效"，Host 摘要只放行
+    白名单字段把它丢了，卡片上看不到。"""
+    from deskpet.orchestration.projection import project_approval
+
+    previous = {"action_key": "action-1:v1", "attempt": 1, "outcome": "human_ruled_not_applied",
+                "reason": "human_ruled_failed"}
+    summary = {"connector": "file_publish", "operation": "publish", "target": "minutes.md",
+               "params": {"artifact_path": "minutes.md"}, "reason": "发布", "reason_source": "system",
+               "previous_attempt": previous}
+    shown = project_approval({"request_id": "a-1", "kind": "action", "summary": summary})["summary"]
+    assert shown["previous_attempt"] == {"attempt": 1, "outcome": "human_ruled_not_applied",
+                                         "reason": "human_ruled_failed"}
+    first = project_approval({"request_id": "a-2", "kind": "action",
+                              "summary": {k: v for k, v in summary.items() if k != "previous_attempt"}})["summary"]
+    assert "previous_attempt" not in first
