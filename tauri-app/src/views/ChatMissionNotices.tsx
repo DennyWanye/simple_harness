@@ -34,6 +34,7 @@ const button: React.CSSProperties = {
   cursor: "pointer",
   flexShrink: 0,
 };
+const oneLine: React.CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
 const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
 /** 只摆最新几条；旧库里攒下的一批通知由人点一次"全部已收到"清掉。 */
 const SHOWN = 3;
@@ -121,7 +122,8 @@ export function ChatMissionNotices(): React.JSX.Element | null {
       {notices.slice(-SHOWN).map((notice) => (
         <div key={notice.notice_id} style={box} data-testid={`chat-notice-${notice.notice_id}`}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
+            {/* 目标原文可能很长：只摆一行，悬停看全文。 */}
+            <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
             {notice.status === "FAILED" && notice.stop_reason ? <div style={muted}>停止原因：{notice.stop_reason}</div> : null}
           </div>
           <button type="button" style={button} disabled={busy[notice.notice_id] === true}

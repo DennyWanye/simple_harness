@@ -37,6 +37,9 @@ describe("主对话里的后台任务结束通知", () => {
     fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: NOTICES } });
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByText("停止原因：planning_failed")).toBeTruthy();
+    const goal = screen.getByText("后台任务已完成：写 NOTES.md");
+    expect(goal.style.whiteSpace).toBe("nowrap");
+    expect(goal.getAttribute("title")).toBe("写 NOTES.md");
     expect(fake.sent.some((m) => m.type === "mission_notice_ack")).toBe(false);
 
     fireEvent.click(screen.getAllByRole("button", { name: "已收到" })[0]);
