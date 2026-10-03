@@ -212,6 +212,7 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
 def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
     """Queue one review or consume a durable verdict, without re-sending an action."""
     from ..storage.operation_completion_store import OperationCompletionStore
+    from .review_adjudication import accepted_or_adjudicated, adjudication_of
     from .operation_outcomes import (
         _effect_owner,
         accept_operation_outcome,
@@ -255,12 +256,20 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                     ):
                         continue
                     record = HtnStore(store).official_review_record(existing["review_package_id"])
-                    if record is not None and record.verdict is ReviewVerdict.ACCEPT:
+                    if record is None:
+                        continue
+                    if accepted_or_adjudicated(store, record):
                         accept_operation_outcome(
                             orchestrator.commit,
                             mission_id=mission_id,
                             binding_id=existing["binding_id"], service_authority=runtime.service_authority,
                         )
+                        return True
+                    if (record.verdict is ReviewVerdict.INCONCLUSIVE
+                            and adjudication_of(store, str(record.record_id)) is None
+                            and orchestrator._ask_person_to_adjudicate_outcome(
+                                store.get_mission(mission_id), record, existing["document"])):
+                        # 判不下来（含审阅员两次回复都无法采用）→ 问人；答复被消费后下一轮验收。
                         return True
                 # 2026-09-29：唯一一份审阅被重启打断而用完（不是审阅员的结论）——重审一次。
                 if not outcome_retake_due(store, mission_id, current):

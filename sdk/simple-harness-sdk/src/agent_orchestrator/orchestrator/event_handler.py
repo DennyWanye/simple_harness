@@ -211,6 +211,13 @@ OBSERVATION_EVENTS = frozenset({
 })
 HOLLOW_CYCLES_NOTED = 100
 WAIT_BACKOFF_MAX = 1.0
+#: 裁决题在回答前过期：这份审查不会再有结论，如实交给规划器（同 method_plan_reviews 的口径）。
+_RULING_STALE = {"outcome": "NO_VERDICT",
+                 "reason": "the question asking the person to rule on this review went stale before "
+                           "it was answered (the plan, the requirements or the management epoch "
+                           "changed); no ruling was given"}
+
+
 class DeferredPlanning(dict):
     """mission id → (since, ordinal) of a Planner round waiting for its pool.
 
@@ -2348,9 +2355,14 @@ class Orchestrator:
 
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
                for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")):
-            # 2026-09-29 真机第七局：一份发布的结果审阅两次都没做成，这项效果永远核不完；
+            # 2026-09-29 真机第七局：一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
             # 再把它当合法等待，任务就一直挂着。交给卡死检测明确停下。被重启打断而用完的
             # 还有一次重审（outcome_retake_due），重审没用完前仍是合法等待。
+            return False
+        if any(item["kind"] == "outcome" and item["ruling"] in {"stale", "fail"}
+               for item in self._inconclusive_reviews(mission.id)):
+            # 阶段 C 第 3 条：结果审查判不下来，人打回了或裁决题在回答前过期——不会再有放行，
+            # 同样交给卡死确认（如实告诉规划器），不当合法等待。裁决题待答仍是合法等待。
             return False
         from ..storage.htn_store import HtnStore
         from .completion_status import read_occurrence_completion
@@ -8797,7 +8809,7 @@ class Orchestrator:
 
         return CompositionAcceptanceAssembly(
             self.store, self.commit, dispatch=dispatch, issued_by=self._owner,
-            ask_person=partial(self._ask_person_to_adjudicate_compound, mission),
+            ask_person=partial(self._ask_person_to_adjudicate_compound, mission, dispatch),
             on_rejected=partial(self._request_composition_repair, mission, dispatch),
             on_deferred=partial(self._composition_deferred, mission),
         )
@@ -8843,18 +8855,23 @@ class Orchestrator:
         return row, {"question_id": decision_id, "state": row["state"]}
 
     def _ask_person_to_adjudicate_compound(
-        self, mission: Mission, record: Any, task_id: str, occurrence_id: str
+        self, mission: Mission, dispatch: Any, record: Any, task_id: str, occurrence_id: str
     ) -> bool:
         """2026-10-01（第 3 项）：中间目标的组合审阅复审后仍判不下来 → 同根终审，问人裁决。"""
+        decision_id = "adjudicate-compound:" + str(record.record_id)
+        if self._ruling_question_stale(decision_id):
+            return self._request_composition_repair(
+                mission, dispatch, record, None, task_id, occurrence_id, ruling_stale=True)
         return self._ask_person_to_adjudicate(
             mission, record, target_id=str(task_id), subject_key=str(task_id),
-            decision_id="adjudicate-compound:" + str(record.record_id),
+            decision_id=decision_id,
             intro="中间目标「" + str(occurrence_id) + "」的组合审查两位审阅员都判不下来，"
                   "需要你裁决这一部分拼起来是否合格。",
             extra={"package_id": str(record.package_id), "occurrence_id": str(occurrence_id)})
 
     def _request_composition_repair(
-        self, mission: Mission, dispatch: Any, record: Any, package: Any, task_id: str, occurrence_id: str
+        self, mission: Mission, dispatch: Any, record: Any, package: Any, task_id: str,
+        occurrence_id: str, *, ruling_stale: bool = False,
     ) -> bool:
         """2026-10-01（第 3 项）：组合审阅打回 / 拒绝（或人裁决打回）→ 一条修复请求交规划器。
 
@@ -8869,8 +8886,9 @@ class Orchestrator:
             dispatch, mission.id, event_type="VerifierAcceptanceRejected",
             trigger_refs=(str(task_id),), source_key="composition-review:" + str(record.record_id),
             detail={"source": "composition_review", "record_id": str(record.record_id),
-                    "package_id": str(package.package_id), "occurrence_id": str(occurrence_id),
+                    "package_id": str(record.package_id), "occurrence_id": str(occurrence_id),
                     "verdict": str(record.verdict), "findings": self._review_record_findings(record),
+                    **(_RULING_STALE if ruling_stale else {}),
                     **({"human_ruling": ruling} if ruling is not None else {})})
         if produced:
             self._note(f"mission {mission.id}: composition review of {occurrence_id} concluded "
@@ -8893,11 +8911,35 @@ class Orchestrator:
         record, package = state.record, state.package
         if record is None or package is None:
             return False
+        decision_id = "adjudicate-root:" + str(record.record_id)
+        if self._ruling_question_stale(decision_id):
+            return self._request_root_review_repair(mission, new_mode, state, ruling_stale=True)
         return self._ask_person_to_adjudicate(
             mission, record, target_id=str(state.task_id), subject_key=str(state.task_id),
-            decision_id="adjudicate-root:" + str(record.record_id),
+            decision_id=decision_id,
             intro="最终审查两位审阅员都判不下来，需要你裁决整个任务的产出是否合格。",
             extra={"package_id": str(package.package_id)})
+
+    def _ask_person_to_adjudicate_outcome(self, mission: Mission, record: Any, binding: Any) -> bool:
+        """阶段 C 第 3 条：发布结果的审查判不下来（含审阅员两次回复都无法采用）→ 问人裁决。
+
+        裁决"通过"后按已有的使用证书路径验收这次发布；"打回"或题目过期则这项效果核不完，
+        由卡死确认如实交给规划器。"""
+        return self._ask_person_to_adjudicate(
+            mission, record, target_id=str(binding.operation_occurrence_id),
+            subject_key=str(binding.operation_occurrence_id),
+            decision_id="adjudicate-outcome:" + str(record.record_id),
+            intro="一次对外操作的结果审查两位审阅员都判不下来，需要你裁决这次操作的结果是否合格。",
+            extra={"package_id": str(record.package_id), "effect_key": str(binding.effect_key)})
+
+    def _ruling_question_stale(self, decision_id: str) -> bool:
+        """The person was asked to rule and the question was retired unanswered (the plan,
+        the requirements or the management epoch changed).  No ruling will come: reported
+        to the Planner as "no verdict", once per record, never re-asked by this loop."""
+        from ..storage.planning_human_store import PlanningHumanStore
+
+        row = PlanningHumanStore(self.store).get(decision_id)
+        return row is not None and row["state"] == "STALE"
 
     def _ask_person_to_adjudicate(
         self, mission: Mission, record: Any, *, target_id: str, subject_key: str,
@@ -8955,7 +8997,8 @@ class Orchestrator:
         return True
 
     def _request_root_review_repair(
-        self, mission: Mission, new_mode: HierarchicalDispatch, state: Any
+        self, mission: Mission, new_mode: HierarchicalDispatch, state: Any, *,
+        ruling_stale: bool = False,
     ) -> bool:
         """最终审查打回（或人裁决打回）→ 一条通用修复请求交规划器（片 0 第 2 步，2026-10-01）。
 
@@ -9004,6 +9047,7 @@ class Orchestrator:
                     "package_id": str(package.package_id), "verdict": str(record.verdict),
                     "findings": self._review_record_findings(record),
                     "repair_round": len(requested) + 1, "max_repairs": limit,
+                    **(_RULING_STALE if ruling_stale else {}),
                     **({"human_ruling": ruling} if ruling is not None else {})})
         if produced:
             self._note(f"mission {mission.id}: the final review concluded {record.verdict!s}; "
@@ -9052,12 +9096,13 @@ class Orchestrator:
 
         return len(self._root_review_request_keys(mission_id))
 
-    def _final_review_unreadable_detail(self, mission_id: str) -> dict[str, Any]:
-        """The final review ended without a verdict: its reply failed decoding twice.
+    def _reviews_without_verdict_detail(self, mission_id: str) -> dict[str, Any]:
+        """Why reviews of this Mission ended without a verdict, for the stop report.
 
-        Real run 2026-09-28 (mission-655daf8071519553): the stop said only
-        ``no_dispatchable_work``; the cause was the final reviewer's reply, still
-        undecodable after its one format repair. Say so in the report.
+        Two honest causes, never merged: the review *call* never came back and its
+        retries ran out (an infrastructure matter); or the review is on record as
+        inconclusive — the reviewers could not tell, or the reviewer's last reply could
+        not be used — and the person's ruling is pending, went stale, or was "fail".
         """
 
         detail: dict[str, Any] = {}
@@ -9070,15 +9115,19 @@ class Orchestrator:
                 found = [item for item in found if not item["interrupted"]]
             if found:
                 detail[name] = found[0]
+        inconclusive = self._inconclusive_reviews(mission_id)
+        if inconclusive:
+            detail["inconclusive_reviews"] = inconclusive[:16]
         return detail
 
     def _exhausted_reviews(self, mission_id: str, prefix: str) -> list[dict[str, str]]:
-        """Reviews under ``prefix`` whose retries ran out (no verdict will come).
+        """Reviews under ``prefix`` that will never have an official record.
 
-        Two endings: the reply never decoded (``AssuranceReviewFormatExhausted``), or the
-        second reply decoded and still could not be imported as given — it cited
-        evidence it was never shown, say (``AssuranceReviewImportRejected``; 片 C 真机
-        第 1 局, 2026-10-02: that ending was not reported at all).
+        The review call did not come back and its retries ran out
+        (``AssuranceReviewFormatExhausted``), or the reply could not be imported for a
+        reason that is not the reviewer's to repair (``AssuranceReviewImportRejected``).
+        A reply that came back and could not be *used* is not here: after its one
+        repair it is on record as inconclusive (see ``_inconclusive_reviews``).
         """
 
         rows = self.store.connection.execute(
@@ -9095,6 +9144,27 @@ class Orchestrator:
             if key.startswith(prefix):
                 found.append({"reason": str(payload.get("reason", "")), "review_key": key,
                               "interrupted": review_exhausted_by_interruption(self.store, key)})
+        return found
+
+    def _inconclusive_reviews(self, mission_id: str) -> list[dict[str, str]]:
+        """Inconclusive official records the person was asked to rule on and has not passed:
+        ``ruling`` is ``pending`` / ``stale`` / ``fail``.  Read from the questions this loop
+        registered (one per record), so every kind of review is reported the same way."""
+        from ..storage.planning_human_store import PlanningHumanStore
+        from .review_adjudication import adjudication_of
+
+        found = []
+        for row in PlanningHumanStore(self.store).list(mission_id):
+            decision_id = str(row["decision_id"])
+            if not decision_id.startswith("adjudicate-"):
+                continue
+            kind, _, record_id = decision_id[len("adjudicate-"):].partition(":")
+            ruling = adjudication_of(self.store, record_id)
+            if ruling is not None and ruling.get("decision") == "pass":
+                continue
+            found.append({"kind": kind, "record_id": record_id,
+                          "ruling": "fail" if ruling is not None
+                          else "stale" if row["state"] == "STALE" else "pending"})
         return found
 
     def _root_review_stop_detail(
@@ -9118,7 +9188,7 @@ class Orchestrator:
             RootReviewStatus.REVIEW_REJECTED,
             RootReviewStatus.CUT_BUDGET_SPENT,
         }:
-            return self._final_review_unreadable_detail(mission.id)
+            return self._reviews_without_verdict_detail(mission.id)
         package = getattr(state, "package", None)
         record = getattr(state, "record", None)
         active = new_mode.semantics().active_plan_revision(mission.id)

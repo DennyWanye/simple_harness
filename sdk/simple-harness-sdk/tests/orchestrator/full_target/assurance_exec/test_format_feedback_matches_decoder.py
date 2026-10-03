@@ -17,7 +17,7 @@ from agent_orchestrator.orchestrator.assurance_review_transport import _FORMAT_F
 
 def _reply(reason: str) -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "ACCEPT",
         "assessments": [{"criterion_id": "c-1", "verdict": "PASS", "evidence_ids": ["ev-1"],
                          "reason": reason, "limitations": []}],
@@ -60,6 +60,7 @@ def _orch(payloads):
 
     fake = SimpleNamespace(store=_exhausted_store(payloads))
     fake._exhausted_reviews = Orchestrator._exhausted_reviews.__get__(fake)
+    fake._inconclusive_reviews = lambda mission_id: []
     return fake
 
 
@@ -68,10 +69,10 @@ def test_a_stop_after_an_unreadable_final_review_says_so():
 
     content = {"review_key": "assurance-content:x", "reason": "R"}
     final = {"review_key": "assurance-mission-final:k", "reason": "REVIEW_FORMAT_REPAIR_EXHAUSTED"}
-    assert Orchestrator._final_review_unreadable_detail(_orch([content, final]), "m1") == {
+    assert Orchestrator._reviews_without_verdict_detail(_orch([content, final]), "m1") == {
         "final_review": {"reason": "REVIEW_FORMAT_REPAIR_EXHAUSTED",
                          "review_key": "assurance-mission-final:k", "interrupted": False}}
-    assert Orchestrator._final_review_unreadable_detail(_orch([content]), "m1") == {}
+    assert Orchestrator._reviews_without_verdict_detail(_orch([content]), "m1") == {}
 
 
 def test_an_operation_outcome_review_that_ran_out_is_not_a_legal_wait():
@@ -84,5 +85,5 @@ def test_an_operation_outcome_review_that_ran_out_is_not_a_legal_wait():
     outcome = {"review_key": "assurance-operation-outcome:a9", "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
     fake = _orch([outcome])
     assert Orchestrator._has_pending_operation_completion(fake, SimpleNamespace(id="m1")) is False
-    assert Orchestrator._final_review_unreadable_detail(fake, "m1") == {
+    assert Orchestrator._reviews_without_verdict_detail(fake, "m1") == {
         "operation_outcome_review": {**outcome, "interrupted": False}}

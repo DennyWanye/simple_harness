@@ -18,6 +18,7 @@ from ..storage.store import _event_from_row
 from .assurance_check_use import CurrentAuthority, prepare_local_check_use
 from .assurance_review_import import (
     prepare_official_review,
+    REPAIRABLE_INTERPRETATION_ERRORS,
     read_imported_review_locked,
     read_official_review_binding_locked,
     review_scope_id,
@@ -130,9 +131,15 @@ class AssuranceReviewConsumer:
                     raise AssuranceError("REVIEW_WORK_SOURCE_MISSING")
                 event = _event_from_row(sources[0])
             ref = AssuranceRef.from_json(event.payload["classification_receipt_ref"])
+            unusable_second = (event.type == "AssuranceReviewFormatRejected"
+                               and event.payload.get("invocation_ordinal") == 2)
             if (event.type == "AssuranceReviewFormatRejected"
-                    or event.payload.get("classification") == "TURN_FAILED"):
+                    or event.payload.get("classification") == "TURN_FAILED") and not unusable_second:
+                # First unusable reply: asked again in a fresh session.  A call that never
+                # came back (TURN_FAILED) stays an infrastructure matter on both calls.
                 return self._prepare_format_repair(reader, ref)
+            # The second call's reply still cannot be decoded: imported below as "no usable
+            # reply" — an INCONCLUSIVE record, the same exit as "cannot tell" (阶段 C 第 3 条).
             imported = read_imported_review_locked(self.commit, reader, ref)
             body = imported.binding.to_json()
             existing = HtnStore(self.store).official_review_record(body["package_ref"]["id"])
@@ -291,8 +298,9 @@ class AssuranceReviewConsumer:
                 # Missing/temporarily denied evidence is not an immutable model
                 # error. The tick retains it under the same persistent retry cap.
                 raise
-            # Immutable interpretation failure is an explicit original receipt,
-            # not a dropped inbox item or a fabricated ReviewRecord.
+            # Immutable interpretation failure is an explicit original receipt.  (A
+            # repairable one on the second call never reaches here: ``_interpret`` reads
+            # it as "no usable reply" and the record is INCONCLUSIVE.)
             error_code = error.code
             if (
                 error_code in REPAIRABLE_INTERPRETATION_ERRORS
@@ -554,12 +562,6 @@ class AssuranceReviewConsumer:
         return PreparedAssuranceWork(exhausted, rejected=True)
 
 
-#: A reply the reviewer committed that decodes but cannot be imported as given —
-#: its own mistake, not a missing source.  POLICY_CATALOGUE_MISMATCH is the
-#: package's, not the reply's, and stays final.
-REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
-    {"UNEXPOSED_EVIDENCE", "DUPLICATE_CRITERION", "FINDING_SCOPE", "MANDATORY_CRITERIA_INVALID"}
-)
 INTERPRETATION_REJECTED = "AssuranceReviewInterpretationRejected"
 SECOND_OPINION_REQUESTED = "AssuranceReviewSecondOpinionRequested"
 
