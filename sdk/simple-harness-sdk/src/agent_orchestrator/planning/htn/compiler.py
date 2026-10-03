@@ -1467,7 +1467,7 @@ def _write_targets(method: MethodContract, criterion_files: Mapping[str, str]) -
     targets: dict[str, list[str]] = {}
     for link in method.composition.criterion_links:
         slot = link.child_step or method.composition.finalizer_step
-        path = criterion_files.get(str(link.child_criterion_id or link.parent_criterion_id))
+        path = criterion_files.get(str(link.parent_criterion_id))
         if slot and path and path not in targets.setdefault(str(slot), []):
             targets[str(slot)].append(path)
     return targets

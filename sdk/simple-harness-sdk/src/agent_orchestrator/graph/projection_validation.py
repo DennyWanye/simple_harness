@@ -909,6 +909,8 @@ def ordering_of(snapshot: TaskNetworkSnapshot) -> Callable[[OccurrenceId, Occurr
     reach: dict[str, set[str]] = {}
 
     def ordered(left: OccurrenceId, right: OccurrenceId) -> bool:
+        if left not in projection.projected_occurrences or right not in projection.projected_occurrences:
+            return True  # not in the execution projection: it does not run beside anything
         return (right in view.ancestors_of(left) or left in view.ancestors_of(right)
                 or _ordered(projection, successors, reach, left, right)
                 or _ordered(projection, successors, reach, right, left))

@@ -1704,13 +1704,16 @@ class HierarchicalDispatch:
                     delivered = {str(item.port_key): item.schema_ref for item in
                                  network.binding_for_occurrence(OccurrenceId(finalizer)).output_ports}
                     if delivered.get(port) != schema:
-                        append_hierarchical_event(
-                            self.store, "GoalPortSchemaMismatch", mission_id,
-                            key=f"{mission_id}:{goal}:{port}:{int(network.plan_revision)}",
-                            payload={"goal_occurrence": str(goal), "port": port,
-                                     "finalizer_occurrence": finalizer,
-                                     "detail": "the goal's port and its finalizer step's port declare "
-                                               "different formats; the goal delivers nothing on it"})
+                        try:
+                            append_hierarchical_event(
+                                self.store, "GoalPortSchemaMismatch", mission_id,
+                                key=f"{mission_id}:{goal}:{port}:{int(network.plan_revision)}",
+                                payload={"goal_occurrence": str(goal), "port": port,
+                                         "finalizer_occurrence": finalizer,
+                                         "detail": "the goal's port and its finalizer step's port declare "
+                                                   "different formats; the goal delivers nothing on it"})
+                        except StoreError:
+                            pass  # read from a read-only view: the note is written by the next writable read
                         continue
                     named = [replace(item, producer_occurrence=goal) for item in by_place[(finalizer, port)]]
                     by_place[(str(goal), port)] = named
@@ -3109,11 +3112,12 @@ class HierarchicalDispatch:
         UNKNOWN preconditions (阶段 D)."""
         from ..planning.htn.evidence_round import EvidenceRoundResult
 
-        reread = self._reread_recorded(mission_id, now_ms=now_ms)
-        looked = self._unknown_precondition_round(mission_id, now_ms=now_ms)
+        reread, read = self._reread_recorded(mission_id, now_ms=now_ms)
+        # a proposition read again just now is not asked a second time in the same round
+        looked = self._unknown_precondition_round(mission_id, now_ms=now_ms, skip=read)
         return EvidenceRoundResult(outcomes=(*reread, *looked.outcomes), unobservable=looked.unobservable)
 
-    def _reread_recorded(self, mission_id: str, *, now_ms: int | None) -> tuple[Any, ...]:
+    def _reread_recorded(self, mission_id: str, *, now_ms: int | None) -> tuple[tuple[Any, ...], frozenset[str]]:
         """Read the recorded propositions again when the world has moved.
 
         A desktop Mission's world is its accepted artifacts and its reference material: a
@@ -3132,7 +3136,7 @@ class HierarchicalDispatch:
 
         index = getattr(self._world(), "observer_index", None)
         if index is None:
-            return ()
+            return (), frozenset()
         semantics = self.semantics()
         mark = content_hash_of({
             "acceptances": sorted(str(item.acceptance_id) for item in semantics.list_acceptances(mission_id)),
@@ -3143,7 +3147,7 @@ class HierarchicalDispatch:
         done = f"EvidenceReread:{mission_id}:{mark}"
         if self.store.connection.execute(
                 "SELECT 1 FROM events WHERE idempotency_key=?", (done,)).fetchone() is not None:
-            return ()
+            return (), frozenset()
         questions = semantics.observation_questions(mission_id)
         moment = int(self.store.now * 1000) if now_ms is None else int(now_ms)
         written: list[Any] = []
@@ -3163,14 +3167,15 @@ class HierarchicalDispatch:
                 continue
             written.append(record_observation(semantics, mission_id, outcome, scope_id=question["scope_id"]))
         if not questions:
-            return ()  # nothing was ever recorded: nothing to read again, and nothing to say
+            return (), frozenset()  # nothing was ever recorded: nothing to read again, and nothing to say
         append_hierarchical_event(
             self.store, "EvidenceReread", mission_id, key=f"{mission_id}:{mark}",
             payload={"mark": mark, "read": read,
                      "changed": [str(item.record.proposition_key) for item in written]})
-        return tuple(written)
+        return tuple(written), frozenset(read)
 
-    def _unknown_precondition_round(self, mission_id: str, *, now_ms: int | None = None) -> Any:
+    def _unknown_precondition_round(self, mission_id: str, *, now_ms: int | None = None,
+                                    skip: Collection[str] = ()) -> Any:
         """Look at the UNKNOWN preconditions of every still-open goal, once.
 
         P2.3c part 2c.  Part 2b built the round (``planning.htn.evidence_round``) and
@@ -3254,7 +3259,7 @@ class HierarchicalDispatch:
                     now_ms=moment,
                 )
                 for ask in asks_for_requests(requests, candidates):
-                    if ask.proposition_key in looked_at:
+                    if ask.proposition_key in looked_at or ask.proposition_key in skip:
                         continue
                     asks.setdefault(ask.proposition_key, ask)
         if not asks:

@@ -345,6 +345,7 @@ SOURCE_COLUMNS = {
         "valid_until_ms",
         "observation_json",
         "created_at",
+        "question_json",
     ),
     "operation_acceptance_scopes": (
         "acceptance_id",

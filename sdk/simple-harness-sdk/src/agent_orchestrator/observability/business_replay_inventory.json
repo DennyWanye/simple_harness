@@ -1310,7 +1310,8 @@
     "query_watermark_ms",
     "valid_until_ms",
     "observation_json",
-    "created_at"
+    "created_at",
+    "question_json"
    ],
    "writers": [
     "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation"

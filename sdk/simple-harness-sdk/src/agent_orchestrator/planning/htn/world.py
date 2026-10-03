@@ -297,11 +297,13 @@ class DeploymentPlanningWorld:
     def snapshot(self) -> EvidenceSnapshot:
         """The evidence this Mission has recorded, as a planning snapshot.
 
-        Built from the ``observations`` table, one entry per proposition key, with
-        the support counts merged by :meth:`EvidenceEntry.from_observations` — so a
-        counter-observation is not outvoted and an authoritative negative keeps its
-        flag.  A proposition with no observation is simply absent, which the
-        snapshot's own contract reads as UNKNOWN.
+        Built from the ``observations`` table, one entry per proposition key, by
+        :meth:`EvidenceEntry.from_observations`: one observer's latest reading of a
+        proposition replaces its own earlier ones (looking again is "recompute, do not
+        reuse the old answer"; the earlier rows stay stored), and different observers are
+        still merged — so a counter-observation from another source is not outvoted and an
+        authoritative negative keeps its flag.  A proposition with no observation is
+        simply absent, which the snapshot's own contract reads as UNKNOWN.
 
         ``support_revision`` is the number of observations behind the snapshot.  It
         moves exactly when the evidence moves, which is what a read-set needs from

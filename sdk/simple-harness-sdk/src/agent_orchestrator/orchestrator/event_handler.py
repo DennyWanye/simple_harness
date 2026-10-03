@@ -413,7 +413,19 @@ def _refusal_codes(event: Any) -> list[str]:
     """The problem codes a ``PlanningRejected`` event names."""
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
     problems = detail.get("problems") if isinstance(detail, Mapping) else None
-    return [str(item.get("code")) for item in problems or () if isinstance(item, Mapping)]
+    preview = detail.get("preview") if isinstance(detail, Mapping) else None
+    mapped = preview.get("mapped_problems") if isinstance(preview, Mapping) else None
+    return [*(str(item.get("code")) for item in problems or () if isinstance(item, Mapping)),
+            *(str(item) for item in mapped or ())]
+
+
+def _stale_commit_problems(reason: object) -> dict[str, Any]:
+    """A commit refused because the world moved between preview and commit (the read set or
+    the plan revision went stale) is the same fact as a stale request: named so on the
+    refusal, it is not counted as the Planner answering wrongly (阶段 D)."""
+    if str(reason) in {"READ_SET_STALE", "PLAN_REVISION_STALE"}:
+        return {"problems": [{"code": "REQUEST_BINDING_STALE", "detail": str(reason)}]}
+    return {}
 
 
 def _task_ref_hashes(semantics: Any) -> frozenset[str]:
@@ -7142,7 +7154,8 @@ class Orchestrator:
             await reject_planning(
                 intent,
                 reason="proposal_not_grounded",
-                detail={"error": str(error)[:300]},
+                detail={"error": str(error)[:300],
+                        **_stale_commit_problems(getattr(error, "reason", ""))},
             )
             return
 
@@ -7175,7 +7188,8 @@ class Orchestrator:
         await reject_planning(
             intent,
             reason="proposal_not_grounded",
-            detail={"refusals": refusals},
+            detail={"refusals": refusals,
+                    **_stale_commit_problems(plan_outcome.refusals[-1].reason if plan_outcome.refusals else "")},
         )
 
     def _release_refused_fence(self, mission_id: str, decision_id: str) -> None:

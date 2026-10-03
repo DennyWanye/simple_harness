@@ -35,6 +35,9 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
             # 规划器作答期间世界变了（真实会发生：一个文件变了、一条观察的真值翻了）
             state["bumped"] = True
             HtnStore(state["world"].store).bump_epoch(state["mission"], "mission", bumped_by="test-world-moved")
+        elif "charged_when_stale" not in state:
+            # 过期那次被退回之后、任何一次提交之前：系统数到的"答错次数"
+            state["charged_when_stale"] = state["world"].loop._planning_attempts(state["mission"])
         return planner_reply(request)
 
     async def case():
@@ -56,6 +59,12 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
             assert refusal_charges_planner(["REQUEST_BINDING_STALE"]) is False
             assert refusal_charges_planner(["METHOD_STRUCTURE_INVALID"]) is True
             assert refusal_charges_planner([]) is True
+            # 产品接线上也没扣：这个任务里没有任何一次拒收被计入"规划器答错"
+            from agent_orchestrator.orchestrator.event_handler import _refusal_codes
+
+            rejected = [e for e in events if e.type == "PlanningRejected"]
+            assert [e for e in rejected if refusal_charges_planner(_refusal_codes(e))] == []
+            assert state["charged_when_stale"] == 0
             # 提交的读集：有作用域纪元和被细化目标的义务，没有已删的三项
             rows = [json.loads(row[0]) for row in world.store.connection.execute(
                 "SELECT item_json FROM plan_read_sets WHERE mission_id=? AND subject_type='read_set'"

@@ -191,9 +191,9 @@ def _observation_question(question: Mapping[str, Any] | None, proposition: str) 
         raise StoreConflict("an observation is stored with the question it answers (predicate_ref, arguments)")
     predicate = VersionedRef.from_json(question["predicate_ref"]).to_json()
     arguments = {key: question["arguments"][key] for key in sorted(question["arguments"])}
-    digest = content_hash_of({"predicate": predicate, "arguments": arguments})
-    expected = f"{predicate['id']}@{predicate['version']}#{digest[:32]}"
-    if expected != proposition:
+    from ..knowledge.predicates import proposition_key_of
+
+    if proposition_key_of(predicate, arguments) != proposition:
         raise StoreConflict("the question does not compute back to the observation's proposition key")
     return canonical_json({"predicate_ref": predicate, "arguments": arguments})
 
@@ -1716,6 +1716,7 @@ class HtnStore:
             read_set.method_revisions,
             read_set.observation_revisions,
             read_set.acceptance_revisions,
+            read_set.obligation_revisions,
         ):
             for item in group:
                 rows.append(

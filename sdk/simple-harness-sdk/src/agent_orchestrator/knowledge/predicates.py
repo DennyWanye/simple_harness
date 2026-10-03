@@ -288,13 +288,17 @@ def proposition_key(signature: PredicateSignature, arguments: Mapping[str, Any])
     """AER §8.1: the identity of a proposition is the predicate version plus its typed
     arguments — never natural-language similarity."""
 
+    return proposition_key_of(signature.predicate_ref.to_json(), arguments)
+
+
+def proposition_key_of(predicate_ref: Mapping[str, Any], arguments: Mapping[str, Any]) -> str:
+    """The same identity from a predicate reference in JSON form — the one formula; the
+    observation store checks a stored question against its key with it."""
+
     digest = content_hash_of(
-        {
-            "predicate": signature.predicate_ref.to_json(),
-            "arguments": {key: arguments[key] for key in sorted(arguments)},
-        }
+        {"predicate": dict(predicate_ref), "arguments": {key: arguments[key] for key in sorted(arguments)}}
     )
-    return f"{signature.predicate_ref.id}@{signature.predicate_ref.version}#{digest[:32]}"
+    return f"{predicate_ref['id']}@{predicate_ref['version']}#{digest[:32]}"
 
 
 def closed_world_denial_admissible(
