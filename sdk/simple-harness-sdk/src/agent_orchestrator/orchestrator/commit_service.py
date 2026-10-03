@@ -552,6 +552,30 @@ class CommitService(ProtectedTailCommitsMixin,
         return self._ledger
 
     # -------------------------------------------------------------- events
+    def _terminal_binding(self, mission_id: str, task_id: str) -> str:
+        """``bound`` / ``outside`` (an auxiliary Task outside the semantic graph) /
+        ``missing`` (a TaskGraph member whose semantic binding cannot be read).
+
+        The one query behind both the terminal-event gate and the stop cascade: a member
+        with a missing binding cannot have a terminal record written for it."""
+
+        from ..storage.htn_store import HtnStore
+
+        if HtnStore(self._store).task_semantics_of(mission_id, task_id) is not None:
+            return "bound"
+        member = self._store.connection.execute(
+            "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
+            (mission_id, task_id)).fetchone()
+        return "outside" if member is None else "missing"
+
+    def _unbound_open_tasks(self, mission_id: str) -> list[str]:
+        """Open TaskGraph members whose binding is damaged: they end with the Mission and
+        get no terminal record (2026-10-03 阶段 B 裁决第 7 类); the final report names them."""
+
+        return sorted(task.id for task in self._store.list_tasks(mission_id)
+                      if task.status in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}
+                      and self._terminal_binding(mission_id, task.id) == "missing")
+
     def _emit(
         self,
         event_type: str,
@@ -568,15 +592,10 @@ class CommitService(ProtectedTailCommitsMixin,
         from .taskgraph_terminal import TERMINAL_EVENTS, record_terminal_event
         bind_terminal = event_type in TERMINAL_EVENTS and task_id is not None
         if bind_terminal:
-            from ..storage.htn_store import HtnStore
-            semantic = HtnStore(self._store).task_semantics_of(mission_id, str(task_id))
-            if semantic is None:
-                member = self._store.connection.execute(
-                    "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
-                    (mission_id, task_id)).fetchone()
-                if member is not None:
-                    raise CommitRejected("TASKGRAPH_TERMINAL_BINDING_MISSING")
-                bind_terminal = False  # original auxiliary Task outside the semantic graph
+            binding = self._terminal_binding(mission_id, str(task_id))
+            if binding == "missing":
+                raise CommitRejected("TASKGRAPH_TERMINAL_BINDING_MISSING")
+            bind_terminal = binding == "bound"  # "outside": an auxiliary Task outside the graph
         if bind_terminal:
             task = self._require_task(str(task_id))
             # A later generation may reach the same terminal status. It must not
@@ -1346,6 +1365,9 @@ class CommitService(ProtectedTailCommitsMixin,
                 "detail": dict(detail),
                 "tasks": self._task_reports(mission_id),
             }
+            unbound = self._unbound_open_tasks(mission_id)
+            if unbound:
+                report["tasks_without_terminal_record"] = unbound
             report.update(self._ledger.usage_flags(mission_id))
             failed = next_mission(
                 mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
@@ -1368,8 +1390,17 @@ class CommitService(ProtectedTailCommitsMixin,
         dispatch intent of the Mission is closed and its reservation released."""
 
         cancelled: list[str] = []
+        unbound = set(self._unbound_open_tasks(mission_id))
         for task in self._store.list_tasks(mission_id):
             if task.id == skip_task:
+                continue
+            if task.id in unbound:
+                # A damaged binding: no terminal record can be written truthfully. Like a
+                # BLOCKED Task it ends with the Mission; its open Attempts still close.
+                for attempt in self._store.list_attempts(task.id):
+                    if attempt.status in OPEN_ATTEMPT_STATES:
+                        self._close_attempt(attempt, AttemptStatus.CANCELLED, reason="mission_stopped")
+                        cancelled.append(attempt.id)
                 continue
             if task.status is TaskStatus.VERIFYING:
                 active = next_task(task, TaskStatus.ACTIVE)

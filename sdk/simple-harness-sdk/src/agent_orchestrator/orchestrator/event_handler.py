@@ -5186,8 +5186,9 @@ class Orchestrator:
                 AttemptStatus.CANCELLED,
             }:
                 self._record_late_result(attempt, result)
-            self._settle_if_known(attempt)
+            # The intent closes first: settlement needs the dispatch closed (阶段 B 裁决第 8 类)
             self._settle_intent(intent, "SETTLED" if result is not None else "FAILED")
+            self._settle_if_known(attempt)
             await self._release_attempt(attempt.id, cancel=False)
         else:
             self._settle_intent(intent, "FAILED")
@@ -5239,8 +5240,8 @@ class Orchestrator:
                 await self._release_attempt(attempt.id, cancel=True)
                 return False  # collected (cost, late result) once the turn settles
             self._import_usage(intent)
-            self._settle_if_known(attempt)
             self._settle_intent(intent, "FAILED")
+            self._settle_if_known(attempt)
             await self._release_attempt(attempt.id, cancel=False)
             return True
         now = self.store.now
@@ -6842,11 +6843,13 @@ class Orchestrator:
         if result.state is AgentTurnState.COMMITTED:
             self._reset_after_handoff_unknown_streak(attempt.mission_id)
         if attempt.status is not AttemptStatus.RUNNING:
-            if attempt.status in {AttemptStatus.SUPERSEDED, AttemptStatus.CANCELLED}:
+            closed = attempt.status in {AttemptStatus.SUPERSEDED, AttemptStatus.CANCELLED}
+            if closed:
                 # D3-6': a late result on a closed Attempt is history, never a transition
                 self._record_late_result(attempt, result)
-                self._settle_if_known(attempt)
             self._settle_intent(intent, "SETTLED")
+            if closed:
+                self._settle_if_known(attempt)
             await self._release_attempt(attempt.id, cancel=False)
             return
         echoed = self.bridge_for(intent).echoed_models(agent_id=intent.agent_id or "")

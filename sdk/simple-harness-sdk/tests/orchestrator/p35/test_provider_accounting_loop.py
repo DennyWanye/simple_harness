@@ -227,10 +227,9 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
 
     * 排队不计费：b 的回合活着、标明在等槽位且不计费，尝试照旧在跑（不被当成卡死），也没有授权行；
     * 用户这时取消任务：b 那次调用永远不交出去；a 那次随后返回，照实结账（不因取消丢账）；
-      两步未用的首审尾款都释放、认领收干净。
-
-    （取消后两次尝试的预留停在 RESERVED「assurance_settlement_pending」、主循环不再重试结账，
-    记为疑似产品缺陷，见迁移报告；这里不对它下断言。）"""
+      两步未用的首审尾款都释放、认领收干净；
+    * 两次尝试的预留在取消后的几轮里就结清，不等 300 秒的全量重核（2026-10-03 阶段 B 裁决第 8 类：
+      此前收集时先结账、后关派发，结账必然失败，预留停在 RESERVED）。"""
 
     async def case():
         provider = HeldStep("a.md")
@@ -294,5 +293,11 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
             assert not store.list_mission_claims(mission_id)
             assert {row[0] for row in store.connection.execute(
                 "SELECT state FROM budget_tail_holds WHERE mission_id=?", (mission_id,))} == {"RELEASED"}
+            for _ in range(5):
+                await world.drain(timeout=0.5)
+            holds = dict(store.connection.execute(
+                "SELECT r.subject_id, r.state FROM budget_reservations r JOIN dispatch_intents i"
+                " ON i.subject_id=r.subject_id WHERE i.mission_id=? AND i.kind='attempt'", (mission_id,)).fetchall())
+            assert holds and set(holds.values()) == {"SETTLED"}, holds
 
     asyncio.run(case())

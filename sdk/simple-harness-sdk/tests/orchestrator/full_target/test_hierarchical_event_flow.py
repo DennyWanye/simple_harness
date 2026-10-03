@@ -57,7 +57,6 @@ from agent_orchestrator.contracts import MissionStatus, TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.graph.eligibility import OccurrenceOutcome, ReadinessReason  # noqa: E402
 from agent_orchestrator.graph.projection_validation import GraphIntegrityError  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import CommitRejected  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E402
     COMPOUND_DISPLAY_STATUS,
     COMPOUND_PHASE_CHANGED,
@@ -386,11 +385,6 @@ def test_a_planner_turn_that_did_not_commit_is_a_planning_rejection(tmp_path) ->
     assert "planner turn failed" in json.dumps(rejected.payload["detail"], ensure_ascii=False)
 
 
-@pytest.mark.xfail(strict=True, raises=CommitRejected, reason=(
-    "疑似产品缺陷（2026-10-03 A′ 迁移发现）：完整性失败停任务时，fail_mission 的级联给每个未终结的步骤"
-    "写终止事件，缺语义的那一步被 commit_service._emit 以 TASKGRAPH_TERMINAL_BINDING_MISSING 拒绝"
-    "（commit_service.py:578），CommitRejected 从 _plan_integrity_stop 冲出 _decide / _next_attempt，"
-    "任务停不下来。修好后本用例转为通过。"))
 @pytest.mark.parametrize("entry", ["decide", "dispatch"])
 def test_a_damaged_plan_stops_one_mission_and_is_read_as_corruption(tmp_path, entry: str) -> None:
     """计划第 1 版提交后，continue 那一行语义被改坏（①b1）：
@@ -428,3 +422,5 @@ def test_a_damaged_plan_stops_one_mission_and_is_read_as_corruption(tmp_path, en
     mission, integrity = asyncio.run(case())
     assert integrity and integrity[0].payload["code"] == "semantic_binding_missing"
     assert mission.status is MissionStatus.FAILED
+    # 2026-10-03 阶段 B 裁决第 7 类：绑定坏掉的那一步没有终止记录，随任务一起结束，报告里点名
+    assert mission.final_report["tasks_without_terminal_record"]

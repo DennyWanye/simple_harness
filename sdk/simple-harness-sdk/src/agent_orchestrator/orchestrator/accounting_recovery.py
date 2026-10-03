@@ -222,8 +222,47 @@ def import_late_accounting(orch) -> bool:
     orch._late_accounting_quiet = unchanged
     if full:
         orch._late_accounting_full_quiet = unchanged
+    if full:
+        progressed = _settle_expired_ended_holds(orch) or progressed
     from .taskgraph_action_settlement import settle_resolved_actions
     return settle_resolved_actions(orch) or progressed
+
+
+def _settle_expired_ended_holds(orch) -> bool:
+    """A hold left by a Mission that ended long ago is counted at its upper bound.
+
+    2026-10-03 (阶段 B 裁决第 8 类): after the Mission ended its holds are re-checked on
+    every full pass; a late usage record settles them as it is.  Once three full passes
+    (300 s × 3) went by without one, the hold is counted at the larger of its reservation
+    and the known facts — overcount, never undercount, never freeze (users, 2026-09-24 /
+    09-26) — and the event names why.  Time passing is not a store write, so this runs on
+    every full pass even when the quiet-generation check skipped the scan above.
+    """
+    from .assurance_consumers import UPPER_BOUND_EVENT
+
+    store = orch.store
+    ended = sorted(str(status) for status in TERMINAL_MISSION)
+    rows = store.connection.execute(
+        "SELECT i.subject_id, i.mission_id FROM dispatch_intents i"
+        " JOIN budget_reservations r ON r.subject_id=i.subject_id"
+        " JOIN missions m ON m.mission_id=i.mission_id"
+        " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED')"
+        f" AND m.status IN ({','.join('?' * len(ended))}) AND m.updated_at <= ?",
+        (*ended, store.now - ENDED_MISSION_RECHECK_SECONDS * 3),
+    ).fetchall()
+    progressed = False
+    for subject_id, mission_id in rows:
+        with store.transaction():
+            reservation = orch.commit.ledger.reservation(subject_id)
+            if reservation is None or reservation["state"] == "SETTLED":
+                continue
+            settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
+            orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject_id, payload={
+                "subject_id": subject_id, "reason": "mission_ended_usage_unknown",
+                "counted_tokens": settled["settled_tokens"],
+                "counted_cost_micros": settled["settled_cost_micros"]})
+        progressed = True
+    return progressed
 
 
 def _import_hold(orch, intent_id: str) -> bool:
@@ -264,10 +303,15 @@ def _open_holds(store) -> list:
 
 
 def _live_missions(store) -> frozenset[str]:
+    """Missions checked on every round: those still running, and those that ended within
+    the last three full passes — a Mission that just ended (a cancel while its turn ran)
+    gets its holds settled on the very next round, not after the 300-second sweep."""
+
     ended = sorted(str(status) for status in TERMINAL_MISSION)
     return frozenset(row[0] for row in store.connection.execute(
-        f"SELECT mission_id FROM missions WHERE status NOT IN ({','.join('?' * len(ended))})",
-        ended,
+        f"SELECT mission_id FROM missions WHERE status NOT IN ({','.join('?' * len(ended))})"
+        " OR updated_at > ?",
+        (*ended, store.now - ENDED_MISSION_RECHECK_SECONDS * 3),
     ).fetchall())
 
 
