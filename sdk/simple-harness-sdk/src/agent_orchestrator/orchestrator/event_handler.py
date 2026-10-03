@@ -5384,8 +5384,8 @@ class Orchestrator:
 
         A turn gone from this process (a restart) is overdue at once; one blocked on a
         provider hand-off nobody can resolve waits ``_service_blocker_limit``; a running
-        turn that reports no provider progress waits ``stall_seconds`` (the Attempt
-        rule); a queued one is not timed.  The first look in a process counts from the
+        turn that reports no provider progress waits the per-turn deadline (what a
+        content review waits); a queued one is not timed.  The first look in a process counts from the
         intent's submission, so a restart does not reset the clock."""
 
         if liveness.exists and liveness.settled:
@@ -5397,7 +5397,10 @@ class Orchestrator:
         elif self._provider_blocked(liveness) or self._definite_auth_failure(liveness.blocker):
             shape, limit = ("blocked",), float(self._service_blocker_limit)
         elif liveness.state == str(AgentTurnState.RUNNING) and not liveness.blocked:
-            shape, limit = ("running", liveness.progress), float(self._config.stall_seconds)
+            # One model call reports no provider progress while it runs (thinking replies
+            # took over 220 s on the desktop, 核验 2026-10-03), so a running review gets
+            # the same per-turn deadline a content review waits — not the Attempt stall.
+            shape, limit = ("running", liveness.progress), float(self._critic_wait)
         else:
             shape, limit = ("untimed",), None
         mark = self._review_call_marks.get(intent.intent_id)

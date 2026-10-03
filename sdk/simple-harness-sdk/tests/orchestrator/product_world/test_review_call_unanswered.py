@@ -2,9 +2,9 @@
 """审阅调用一直不回来，任务不许挂着（2026-10-03 阶段 B 裁决第 6 类）。
 
 做法审阅、根终审交出去后，模型调用迟迟不回来（卡住，或重启后回合已不在本进程）：此前意图一直
-"已提交"，任务挂着，主循环每轮还自称有进展。现在审阅调用像执行尝试一样计时（运行中没有进展
-``stall_seconds``、结果不明 ``_service_blocker_limit``、回合不在本进程立即到期；起点是意图提交
-时刻，重启不清零），到期按"被打断"收口：意图关为失败、记分类"回合失败 / 调用作废"与打断回执，
+"已提交"，任务挂着，主循环每轮还自称有进展。现在审阅调用计时（运行中按单轮时限——与内容审阅
+等的一样长，正常的慢回复不被误杀；结果不明按服务阻塞时限；回合不在本进程立即到期；起点是
+意图提交时刻，重启不清零），到期按"被打断"收口：意图关为失败、记分类"回合失败 / 调用作废"与打断回执，
 之后完全交给现有路径——第二次调用在新会话里重开；第二次也没回来，做法审阅出"没有结论"
 （原因如实写"调用没拿到回复"），根终审重切新包。
 
@@ -71,7 +71,7 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
     async def case():
         provider = _ReviewHeld("MISSION_FINAL", times=1)
         try:
-            async with product_world(tmp_path / "root", provider, stall_seconds=2.0) as world:
+            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=3.0) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-held"))["mission_id"]
                 await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
@@ -98,7 +98,7 @@ def test_a_review_that_never_answers_twice_is_recut_not_left_hanging(tmp_path):
     async def case():
         provider = _ReviewHeld("MISSION_FINAL", times=2)
         try:
-            async with product_world(tmp_path / "root", provider, stall_seconds=2.0) as world:
+            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=3.0) as world:
                 store = world.store
                 mission_id = world.create(_notes("root-held-twice"))["mission_id"]
                 await _drive_until(world, lambda: len(_abandoned(store, mission_id)) == 2, timeout=120)
@@ -123,7 +123,7 @@ def test_a_root_review_interrupted_by_a_restart_does_not_keep_the_loop_busy(tmp_
     async def case() -> None:
         first = _ReviewHeld("MISSION_FINAL", times=1)
         try:
-            async with product_world(root, first, stall_seconds=600.0) as world:
+            async with product_world(root, first, turn_deadline_seconds=600.0) as world:
                 mission_id = world.create(_notes("root-restart"))["mission_id"]
                 stop = asyncio.Event()
 
@@ -145,7 +145,7 @@ def test_a_root_review_interrupted_by_a_restart_does_not_keep_the_loop_busy(tmp_
             first.let_go.set()
 
         second = _ReviewHeld("MISSION_FINAL", times=0)
-        async with product_world(root, second, stall_seconds=600.0) as world:
+        async with product_world(root, second, turn_deadline_seconds=600.0) as world:
             store = world.store
             for _ in range(20):  # each drain is a run() that has to return on its own
                 assert await world.drain(timeout=60), "run() did not reach idle"
@@ -158,5 +158,39 @@ def test_a_root_review_interrupted_by_a_restart_does_not_keep_the_loop_busy(tmp_
             assert abandoned["abandoned"]["shape"] in {"missing", "blocked"}
             assert abandoned["abandoned"]["waited_seconds"] >= abandoned["abandoned"]["limit_seconds"]
             assert second.purpose_calls == 1
+
+    asyncio.run(case())
+
+
+def test_a_slow_review_inside_the_turn_deadline_is_not_abandoned(tmp_path):
+    """核验阻断项（2026-10-03）：一次正常的慢审阅（真机思考模式单次调用超过 220 秒，运行中没有
+    提供方进度标记）不许按"执行尝试的停滞时限"作废——审阅运行中等的是单轮时限。
+
+    这里停滞时限 1 秒、单轮时限 30 秒，审阅回复 3 秒才回来：照常采用，没有作废、没有第二次调用。
+    """
+
+    async def case():
+        provider = _ReviewHeld("MISSION_FINAL", times=1)
+
+        async def release_later() -> None:
+            while not provider.held_calls:
+                await asyncio.sleep(0.05)
+            await asyncio.sleep(3.0)
+            provider.let_go.set()
+
+        releaser = asyncio.create_task(release_later())
+        try:
+            async with product_world(tmp_path / "root", provider, stall_seconds=1.0,
+                                     turn_deadline_seconds=30.0) as world:
+                store = world.store
+                mission_id = world.create(_notes("root-slow"))["mission_id"]
+                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                                   timeout=120)
+                assert str(store.get_mission(mission_id).status.value) == "COMPLETED"
+                assert _abandoned(store, mission_id) == []
+                assert provider.purpose_calls == 1
+        finally:
+            provider.let_go.set()
+            await releaser
 
     asyncio.run(case())
