@@ -2336,6 +2336,23 @@ class Orchestrator:
             return False
         return row is not None
 
+    def _handoff_ground_gone(self, action_key: str) -> bool:
+        from ..contracts.error_table import HANDOFF_VALIDITY_STALE
+
+        actions = getattr(self, "_actions", None)
+        return actions is not None and str(actions.last_refusal.get(action_key, "")).startswith(
+            HANDOFF_VALIDITY_STALE)
+
+    def _handoff_refusals(self, mission_id: str) -> dict[str, Any]:
+        """For the stall record: the operations whose hand-off is refused because the step
+        they belong to no longer stands on current ground, with the refusal as given."""
+        actions = getattr(self, "_actions", None)
+        rows = [{"action_key": str(a["action_key"]), "task_id": a.get("task_id"),
+                 "reason": actions.last_refusal.get(str(a["action_key"]), "")}
+                for a in (self.store.list_actions(mission_id) if actions is not None else ())
+                if self._handoff_ground_gone(str(a["action_key"]))]
+        return {"handoff_refused": rows} if rows else {}
+
     def _has_pending_operation_completion(self, mission: Mission) -> bool:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
         from .operation_outcomes import outcome_exhaustion_is_final
@@ -2345,6 +2362,9 @@ class Orchestrator:
             # 2026-09-29 真机第七局：一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
             # 再把它当合法等待，任务就一直挂着。交给卡死检测明确停下。被重启打断而用完的
             # 还有一次重审（outcome_retake_due），重审没用完前仍是合法等待。
+            return False
+        if self._handoff_refusals(mission.id):
+            # 这项效果的交接因为所属步骤的地基没了而一直被拒：同样不会自己好，不当合法等待。
             return False
         if any(item["kind"] == "outcome" and item["ruling"] in {"stale", "fail"}
                for item in self._inconclusive_reviews(mission.id)):
@@ -2432,7 +2452,11 @@ class Orchestrator:
             # review / arbitration / source-change request still open (2026-09-30 real
             # run: a result suspended for a review was failed "no dispatchable work" in
             # the same cycle its review request was made).
-            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES for a in actions)
+            # An action whose hand-off was refused because its step's ground is gone is not
+            # waiting on a person: left counted here it would hang for ever (阶段 C 核验).
+            "approvals_pending": any(a["state"] in OPEN_ACTION_STATES
+                                     and not self._handoff_ground_gone(str(a["action_key"]))
+                                     for a in actions)
             or bool(self.store.list_approvals(mission.id, "PENDING")),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
@@ -2715,6 +2739,7 @@ class Orchestrator:
                         "withheld": [item.to_json() for item in admissions.refusals],
                         "admitted_not_dispatched": [],
                         "outstanding_obligations": outstanding,
+                        **self._handoff_refusals(mission.id),
                         "fingerprint": after,
                         "confirmed_after_one_more_cycle": True,
                         **self._root_review_stop_detail(mission, new_mode),
@@ -2741,6 +2766,7 @@ class Orchestrator:
                     detail={"withheld": withheld[:32], "withheld_count": len(withheld),
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
                             "outstanding_obligations": outstanding,
+                            **self._handoff_refusals(mission.id),
                             # 最终审查没给出结论（回复用完仍无法采用）或被打回，是事实，一并交给规划器。
                             **self._root_review_stop_detail(mission, new_mode)})
             except (GraphIntegrityError, ContractError, StoreError, SourceUnavailable) as error:
@@ -2770,6 +2796,7 @@ class Orchestrator:
                     "withheld": withheld,
                     "admitted_not_dispatched": sorted(admissions.readiness),
                     "outstanding_obligations": outstanding,
+                    **self._handoff_refusals(mission.id),
                     "fingerprint": after,
                     "confirmed_after_one_more_cycle": True,
                     # P2.3j: a Mission that idles *because* its root review rejected the
@@ -3501,8 +3528,9 @@ class Orchestrator:
         # a dropped planning contract) is stopped by name, never left to make every
         # later step of the round refuse — ``_cycle`` skips a whole round on a refusal.
         for mission in self._active_missions():
-            if self._refuse_unsupported_contract(mission):
-                progressed = True
+            with self._round_boundary(mission.id, "contract_check"):
+                if self._refuse_unsupported_contract(mission):
+                    progressed = True
         await self._close_finished_agents()
         progressed = import_late_accounting(self) or progressed
         if self._assurance_tick is not None and await self._assurance_tick.tick():

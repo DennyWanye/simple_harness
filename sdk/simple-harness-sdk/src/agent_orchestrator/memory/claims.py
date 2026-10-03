@@ -12,8 +12,11 @@ Agent's confidence.  One rule for every domain (删旧平面模式第三刀, 202
 * unsupported — every cited item is untrusted (D4-12) or cannot be resolved: the claim
   stays UNDER_REVIEW with ``grade=unsupported``.
 
-VERIFIED knowledge is written only from system-generated scoped test observations
-(``memory.code_observations``), never from a model's claim.
+VERIFIED knowledge has two sources, neither of them the proposing Agent's own word: a
+system-generated scoped test observation (``memory.code_observations``), or the
+independent reviewer confirming the claim, one by one, against evidence other than the
+reviewed result itself (阶段 C; applied at acceptance, see ``commit_service``).  This
+module's grading stays as it is — it never grades a claim VERIFIED.
 
 Evidence reference grammar (data, parsed leniently): ``pytest:<path>``, ``file:<path>``,
 ``artifact:<path>``, ``tool-run:<id>``, ``knowledge:<id>``, or a bare workspace path.
@@ -189,7 +192,8 @@ def grade_claim(
             "system_domain": domain.id,
             "grading_version": domain.version,
             "reason": "References support provenance, not arbitrary semantic entailment; "
-            "only system-generated scoped observations are VERIFIED.",
+            "VERIFIED comes from a system test observation or the independent review's "
+            "claim-by-claim confirmation.",
         },
         refs,
     )

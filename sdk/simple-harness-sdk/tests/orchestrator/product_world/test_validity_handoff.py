@@ -28,7 +28,8 @@ from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, planner_reply
 from test_operation import PUBLISH, TARGET, _confirm_completion
 
 
@@ -40,13 +41,25 @@ def _quick(monkeypatch):
 
 
 def test_handoff_refused_when_scope_epoch_moved(tmp_path):
+    stall_contexts: list[dict[str, Any]] = []
+
     async def case():
         published = tmp_path / "published"
         published.mkdir()
         connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
-                                 deployment_policy=policy) as world:
+        def planner(request: Any) -> Any:
+            package = package_of(request)
+            asked = next((entry for entry in package.get("repair_requests") or ()
+                          if entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"), None)
+            if asked is None:
+                return planner_reply(request)
+            stall_contexts.append(asked["request"]["context"])
+            return decision(package["planning_subjects"][0]["subject_key"], "NO_CHANGE",
+                            {"reason": "计划本身没有可改的。"}, "不改计划。")
+
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner),
+                                 connectors={"file_publish": connector}, deployment_policy=policy) as world:
             store = world.store
             mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
                                        "success_criteria": ["file:" + TARGET, PUBLISH],
@@ -77,7 +90,15 @@ def test_handoff_refused_when_scope_epoch_moved(tmp_path):
             refusal = world.loop.actions.last_refusal.get(action["action_key"], "")
             assert refusal.startswith("validity_stale:scope_epoch:"), refusal
             assert int(after.get("handoffs") or 0) == 0 and not any(published.rglob("*.md"))
-            assert str(store.get_mission(mission_id).status.value) == "ACTIVE"  # 不是"动作失败"
+            # 地基一直不回来：这不是"等人审批"，任务不会永远挂着——停滞确认后如实交给规划器，
+            # 规划器不改，就按"没有可派发的工作"停，报告里写着哪次交接为什么被拒。
+            mission = await world.run_until_settled(mission_id, rounds=20, timeout=20)
+            assert stall_contexts and stall_contexts[0]["handoff_refused"][0]["action_key"] == action["action_key"]
+            assert mission.status.value == "FAILED", mission.status
+            assert mission.final_report["stop_reason"] == "no_dispatchable_work"  # 不是"动作失败"
+            [refused] = mission.final_report["detail"]["handoff_refused"]
+            assert refused["reason"].startswith("validity_stale:scope_epoch:")
+            assert int(store.get_action(action["action_key"]).get("handoffs") or 0) == 0
             return json.dumps({"state": after["state"], "refusal": refusal}, ensure_ascii=False)
 
     print(asyncio.run(case()))
