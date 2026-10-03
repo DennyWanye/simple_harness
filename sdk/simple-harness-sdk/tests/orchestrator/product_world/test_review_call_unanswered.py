@@ -194,3 +194,50 @@ def test_a_slow_review_inside_the_turn_deadline_is_not_abandoned(tmp_path):
             await releaser
 
     asyncio.run(case())
+
+
+def test_a_final_review_that_never_answers_stops_by_name(tmp_path):
+    """2026-10-03 收尾裁决第 2 张：根终审的调用永远不回来——每包 2 次、同一版要求最多切 3 次包，
+    一共 6 次调用；切包用完后问规划器一次（它答"不改"），任务按"没有可派发的工作"停。停止报告如实
+    写"切包用完"和重切原因（审阅被打断），不再写成"被打回"。"""
+    from agent_orchestrator.testing.fixtures import package_of
+    from agent_orchestrator.testing.scripted_replies import decision, planner_reply
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        if any(entry["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+               for entry in package.get("repair_requests") or ()):
+            return decision(package["planning_subjects"][0]["subject_key"], "NO_CHANGE",
+                            {"reason": "审阅一直没有回复，计划本身没有可改的。"}, "不改计划。")
+        return planner_reply(request)
+
+    class _AlwaysLate(_ReviewHeld):
+        """每次根终审调用都拖过单轮时限才返回（迟到的回复不被采用）；不一直扣着，免得占住
+        脚本模型的并发名额、连规划器那一轮都发不出去。"""
+
+        async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+            data = review_input(request)
+            if data is not None and str((data.get("package") or {}).get("purpose")) == self.purpose:
+                self.purpose_calls += 1
+                await asyncio.sleep(4.0)
+            return await LayeredScriptedProvider.invoke(self, request, cancel=cancel)
+
+    async def case():
+        provider = _AlwaysLate("MISSION_FINAL", times=0)
+        provider._answer["planner"] = planner
+        try:
+            async with product_world(tmp_path / "root", provider, turn_deadline_seconds=2.0) as world:
+                store = world.store
+                mission_id = world.create(_notes("root-never"))["mission_id"]
+                await _drive_until(world, lambda: str(store.get_mission(mission_id).status.value) in TERMINAL,
+                                   timeout=240)
+                mission = store.get_mission(mission_id)
+                assert mission.final_report["stop_reason"] == "no_dispatchable_work"
+                assert provider.purpose_calls == 6
+                root = mission.final_report["detail"]["root_review"]
+                assert root["reason"] == "root_review_cut_budget_spent"
+                assert "REVIEW_INTERRUPTED" in root["stale_reasons"]
+        finally:
+            provider.let_go.set()
+
+    asyncio.run(case())

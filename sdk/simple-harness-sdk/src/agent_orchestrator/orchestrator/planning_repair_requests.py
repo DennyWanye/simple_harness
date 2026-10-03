@@ -171,6 +171,17 @@ def request_planner_for_stall(dispatch: Any, mission: Any, *, plan_revision: int
         scope=tasks + tuple(str(spec.occurrence_id) for spec in network.occurrences))
 
 
+def stall_asks_since_new_work(store: Any, mission_id: str) -> int:
+    """自上一次有新尝试建立以来，因"停在原地"问过规划器几次（只数事件，不看计划内容）。"""
+    count = 0
+    for event in store.iter_events(mission_id):
+        if event.type == "AttemptCreated":
+            count = 0
+        elif event.type == REQUESTED and str(event.payload.get("source_key", "")).startswith(STALLED_PREFIX):
+            count += 1
+    return count
+
+
 def stall_request_asked(store: Any, mission_id: str, plan_revision: int) -> dict[str, Any] | None:
     """这一版计划因为停在原地而记下的那条请求：请求编号、规划器那一轮有没有开出来。
 

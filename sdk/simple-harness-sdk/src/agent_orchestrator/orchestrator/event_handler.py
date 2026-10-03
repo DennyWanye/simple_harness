@@ -47,7 +47,7 @@ from ..artifacts.bound_workspace import (
     decode_unified_diff_text,
     files_patched_by_unified_diff,
 )
-from ..artifacts.store import ArtifactStoreError, backfill, read_nofollow, read_verified
+from ..artifacts.store import ArtifactStoreError, read_nofollow, read_verified
 from ..artifacts.versioning import (
     ArtifactConflict,
     UpstreamInput,
@@ -553,6 +553,12 @@ class Orchestrator:
         self._review_call_marks: dict[str, tuple[Any, float]] = {}
         # 一轮故障（阶段 B 裁决第 9 类）：(任务, 出事地点) → (连续次数, 第一次的库时钟)
         self._round_faults: dict[tuple[str, str], tuple[int, float]] = {}
+        #: Missions whose restart recovery faulted: each round retries the recovery first,
+        #: inside the boundary, and skips the rest of that Mission's round until it holds.
+        self._unrecovered: set[str] = set()
+        #: Faults caught while binding frozen tool authority at startup, handed to the
+        #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
+        self._startup_faults: list[tuple[str, str, Exception]] = []
         #: planning intents already noted as waiting for their TaskGraph binding.
         self._creation_refusals_noted: set[str] = set()
         # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
@@ -780,9 +786,6 @@ class Orchestrator:
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
-            changes = backfill(self._store.list_all_artifacts(), workspaces.artifact_store)
-            if changes:
-                self._store.update_artifact_storage(changes)
             self._bind_startup_tools()
             try:
                 await self._assembled.__aenter__()
@@ -793,8 +796,7 @@ class Orchestrator:
                     # has failed; do not pretend that failed runtime has started.
                     import_late_accounting(self)
                 raise
-            # P3.2 D3: artifacts recorded before 0.10 move into the content-addressed store
-            # (or are marked unavailable); execution copies a crash left behind are removed
+            # execution copies a crash left behind are removed
             workspaces = self._assembled.workspaces
             self.cleanup_workspaces()  # P3.2 D4: finished Missions past their retention
             self._bridge = self._assembled.pool(self._default_profile).bridge
@@ -2000,46 +2002,58 @@ class Orchestrator:
         return not taskgraph_enabled(self.store, mission_id) or not is_assured(self.store, mission_id)
 
     def _bind_startup_tools(self) -> None:
-        """Reconstruct frozen tool authority before SDK automatic recovery starts."""
+        """Reconstruct frozen tool authority before SDK automatic recovery starts.
+
+        One intent at a time: what one Mission's stored rows refuse is that Mission's
+        fault (handed to the round boundary by the first ``run()``), never a reason the
+        whole service cannot start (2026-10-03 收尾裁决第 3 张)."""
         for intent in self.store.list_intents("AGENT_CREATED", "SUBMITTED"):
-            if intent.agent_id is None or self._pool_missing(intent):
-                continue
-            if self._domain_unreadable(intent.mission_id):
-                continue
-            if intent.kind == "attempt":
-                attempt = self.store.get_attempt(intent.subject_id)
-                if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
-                    self._bind_workspace(attempt)
-                    self._bind_agent(intent.agent_id, intent.config)
-            elif (
-                intent.kind == "critic" or self._assured_review_intent(intent)
-            ) and not self._critic_subject_stopped(intent):
-                if intent.state == "AGENT_CREATED":
-                    # A created Agent is not necessarily a submitted SDK turn.
-                    # With no durable turn there is nothing startup can resume;
-                    # recover() retains its cancel + Mission FAILED semantics for
-                    # invalid source authority. A crash after submit still leaves
-                    # a durable turn even if Host has not recorded SUBMITTED.
-                    uow = self.bridge_for(intent).runtime.uow
-                    turn = uow.read_agent_turn_by_input(intent.agent_id, intent.input_id)
-                    if turn is None and intent.expected_turn_id is not None:
-                        turn = uow.read_agent_turn(intent.expected_turn_id)
-                    if turn is None:
-                        if any(
-                            row.phase not in {AgentTurnState.COMMITTED, AgentTurnState.FAILED}
-                            for row in uow.list_agent_turns(intent.agent_id)
-                        ):
-                            raise ContractError(
-                                "Critic SDK turn identity differs from frozen intent"
-                            )
-                        continue
-                    if (
-                        turn.agent_id != intent.agent_id
-                        or turn.input_id != intent.input_id
-                        or turn.turn_id != intent.expected_turn_id
+            try:
+                self._bind_startup_intent(intent)
+            except (StoreBusy, InjectedCrash):
+                raise
+            except Exception as error:  # noqa: BLE001 - the boundary, deferred to run()
+                self._startup_faults.append((intent.mission_id, f"startup_bind:{intent.intent_id}", error))
+
+    def _bind_startup_intent(self, intent: DispatchIntent) -> None:
+        if intent.agent_id is None or self._pool_missing(intent):
+            return
+        if self._domain_unreadable(intent.mission_id):
+            return
+        if intent.kind == "attempt":
+            attempt = self.store.get_attempt(intent.subject_id)
+            if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
+                self._bind_workspace(attempt)
+                self._bind_agent(intent.agent_id, intent.config)
+        elif (
+            intent.kind == "critic" or self._assured_review_intent(intent)
+        ) and not self._critic_subject_stopped(intent):
+            if intent.state == "AGENT_CREATED":
+                # A created Agent is not necessarily a submitted SDK turn.
+                # With no durable turn there is nothing startup can resume;
+                # recover() retains its cancel + Mission FAILED semantics for
+                # invalid source authority. A crash after submit still leaves
+                # a durable turn even if Host has not recorded SUBMITTED.
+                uow = self.bridge_for(intent).runtime.uow
+                turn = uow.read_agent_turn_by_input(intent.agent_id, intent.input_id)
+                if turn is None and intent.expected_turn_id is not None:
+                    turn = uow.read_agent_turn(intent.expected_turn_id)
+                if turn is None:
+                    if any(
+                        row.phase not in {AgentTurnState.COMMITTED, AgentTurnState.FAILED}
+                        for row in uow.list_agent_turns(intent.agent_id)
                     ):
-                        raise ContractError("Critic SDK turn differs from frozen intent")
-                self._bind_critic(intent.agent_id, intent.config)
+                        raise ContractError(
+                            "SERVICE_TURN_IDENTITY_MISMATCH: Critic SDK turn identity differs from frozen intent"
+                        )
+                    return
+                if (
+                    turn.agent_id != intent.agent_id
+                    or turn.input_id != intent.input_id
+                    or turn.turn_id != intent.expected_turn_id
+                ):
+                    raise ContractError("SERVICE_TURN_IDENTITY_MISMATCH: Critic SDK turn differs from frozen intent")
+            self._bind_critic(intent.agent_id, intent.config)
 
     async def recover(self) -> None:
         """§16.4 recovery (D3-6'): rebind the workspaces of in-flight turns, let the
@@ -2050,38 +2064,16 @@ class Orchestrator:
         self._require_assurance_execution_root()
         if isinstance(self._deferred_planning, DeferredPlanning):
             self._deferred_planning.bind(self.store)
+        # 2026-10-03 收尾裁决第 3 张：恢复按意图、按任务各包进"一个任务一轮"的边界——一个任务的
+        # 坏数据只是它自己的故障，别的任务照常恢复，服务照常起来。
+        for mission_id, where, error in self._startup_faults:
+            await self._round_fault(mission_id, where, error)
+        self._startup_faults.clear()
         for intent in self.store.list_intents("AGENT_CREATED", "SUBMITTED"):
-            if intent.agent_id is None:
-                continue
-            if self._pool_missing(intent):
-                # The frozen turn belongs to another runtime pool. Leave its
-                # workspace and SDK turn untouched for that pool to recover.
-                continue
-            if self._domain_unreadable(intent.mission_id):
-                continue  # stopped by name by the contract gate in the first round
-            if intent.kind == "attempt":
-                attempt = self.store.get_attempt(intent.subject_id)
-                if attempt is not None:
-                    self._bind_workspace(attempt)
-                    self._bind_agent(intent.agent_id, intent.config)
-            elif intent.kind == "critic" or self._assured_review_intent(intent):
-                if self._critic_subject_stopped(intent):
-                    self.assembled.gateway.unbind(intent.agent_id)
-                    await self._cancel_turn(intent)
-                    continue
-                self._bind_critic(intent.agent_id, intent.config)
+            await self._mission_round(intent.mission_id, f"recover_intent:{intent.intent_id}",
+                                      lambda intent=intent: self._recover_intent(intent))
         for mission in self._active_missions():
-            try:
-                report = self.commit.heal_mission(mission.id)
-            except StoreBusy as error:  # another instance is healing; the loop retries
-                self._note(f"recover {mission.id}: store busy ({error})")
-                continue
-            if report["closed_attempts"]:
-                self._note(f"recover {mission.id}: {report}")
-            for attempt_id in report["closed_attempts"]:
-                await self._release_attempt(attempt_id, cancel=True)
-            self._reimport_unsettled(mission)
-            self._check_interpreter(mission)  # step 9 (plan D9-4')
+            await self._recover_mission_round(mission)
         for pool in self.assembled.pools.values():  # D6-5': each pool recovers only its own library
             try:
                 await pool.bridge.recover()
@@ -2093,10 +2085,59 @@ class Orchestrator:
                 self._note(f"recovered actual provider overrun: {error}")
         import_late_accounting(self)
 
+    async def _recover_intent(self, intent: DispatchIntent) -> bool:
+        if intent.agent_id is None:
+            return False
+        if self._pool_missing(intent):
+            # The frozen turn belongs to another runtime pool. Leave its
+            # workspace and SDK turn untouched for that pool to recover.
+            return False
+        if self._domain_unreadable(intent.mission_id):
+            return False  # stopped by name by the contract gate in the first round
+        if intent.kind == "attempt":
+            attempt = self.store.get_attempt(intent.subject_id)
+            if attempt is not None:
+                self._bind_workspace(attempt)
+                self._bind_agent(intent.agent_id, intent.config)
+        elif intent.kind == "critic" or self._assured_review_intent(intent):
+            if self._critic_subject_stopped(intent):
+                self.assembled.gateway.unbind(intent.agent_id)
+                await self._cancel_turn(intent)
+                return False
+            self._bind_critic(intent.agent_id, intent.config)
+        return False
+
+    async def _recover_mission(self, mission: Mission) -> bool:
+        try:
+            report = self.commit.heal_mission(mission.id)
+        except StoreBusy as error:  # another instance is healing; the loop retries
+            self._note(f"recover {mission.id}: store busy ({error})")
+            return False
+        if report["closed_attempts"]:
+            self._note(f"recover {mission.id}: {report}")
+        for attempt_id in report["closed_attempts"]:
+            await self._release_attempt(attempt_id, cancel=True)
+        self._reimport_unsettled(mission)
+        self._check_interpreter(mission)  # step 9 (plan D9-4')
+        return False
+
+    async def _recover_mission_round(self, mission: Mission) -> None:
+        """Recover one Mission behind the boundary; until it holds, the Mission is
+        ``_unrecovered`` and the rest of its round is skipped (its data is not ready)."""
+        self._unrecovered.discard(mission.id)  # the boundary must not skip the recovery itself
+        await self._mission_round(mission.id, "recover", lambda: self._recover_mission(mission))
+        current = self.store.get_mission(mission.id)
+        if (mission.id, "recover") in self._round_faults and current is not None \
+                and current.status not in TERMINAL_MISSION:
+            self._unrecovered.add(mission.id)
+
     async def _reconcile_actions(self) -> list[dict[str, Any]]:
         """Reconcile every live action — with the operation runtime bound first when this
         deployment has a publisher, so the registered reconciler answers even in a fresh
-        process (阶段 B 裁决第 1、3 类); without one, operation-linked actions stay as they are."""
+        process (阶段 B 裁决第 1、3 类); without one, operation-linked actions stay as they are.
+
+        Each action is reconciled behind its Mission's round boundary (2026-10-03 收尾裁决
+        第 3 张): a store fault on one action is that Mission's, and the others go on."""
         from .operation_runtime import ensure_operation_runtime
 
         if self.connectors:
@@ -2104,7 +2145,23 @@ class Orchestrator:
                 ensure_operation_runtime(self)
             except ContractError:
                 pass  # no trusted publisher registered here
-        return await self.actions.reconcile()
+        settled: list[dict[str, Any]] = []
+        live = [(action, True) for action in self.store.list_actions(None, "UNKNOWN", "HANDED_OFF")]
+        # 阶段 B 裁决第 1 类: a failed action that left our hands has no proof yet that it
+        # did not happen; the registered reconciler is the one that decides that too.
+        live += [(action, False) for action in self.store.list_actions(None, "FAILED")
+                 if self.actions._failed_unproven(action)]
+        for action, rehandoff in live:
+            key = str(action["action_key"])
+
+            async def one(key: str = key, rehandoff: bool = rehandoff) -> bool:
+                updated = await self.actions.reconcile_one(key, allow_rehandoff=rehandoff)
+                if updated is not None:
+                    settled.append(updated)
+                return False
+
+            await self._mission_round(str(action["mission_id"]), f"reconcile:{key}", one)
+        return settled
 
     async def run(self, *, max_cycles: int = 10_000, until_idle: bool = True) -> None:
         """Drive the loop until idle.  ``max_cycles`` bounds *progressing* cycles (work
@@ -2670,8 +2727,12 @@ class Orchestrator:
             from . import planning_repair_requests as repair_requests
 
             withheld = [item.to_json() for item in admissions.refusals]
+            # 表二 20（2026-10-03 收尾裁决）：规划器改了计划却没派出任何新尝试、又停在原地——每个新
+            # 计划版本都能再问一次，等于不限。只数次数：自上次有新尝试以来问满上限就不再问。
+            stall_cap = int(self._config.max_planning_attempts)
+            stall_asks = repair_requests.stall_asks_since_new_work(self.store, mission.id)
             try:
-                asked = repair_requests.request_planner_for_stall(
+                asked = stall_asks < stall_cap and repair_requests.request_planner_for_stall(
                     new_mode, mission, plan_revision=int(admissions.plan_revision),
                     detail={"withheld": withheld[:32], "withheld_count": len(withheld),
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
@@ -2697,6 +2758,8 @@ class Orchestrator:
                     # 这一版计划问过规划器（请求编号、它那一轮有没有开出来）之后仍停在原地。
                     "planner_asked": repair_requests.stall_request_asked(
                         self.store, mission.id, int(admissions.plan_revision)),
+                    "stall_asks_without_new_work": stall_asks,
+                    "stall_asks_cap": stall_cap,
                     # §6.4: the report names the structure that was expanded and the
                     # duties still outstanding.  Every refusal, not a sample — an
                     # operator must not have to re-derive which gate held what.
@@ -3252,6 +3315,8 @@ class Orchestrator:
         ``where`` names the place and, for an intent, the intent: one healthy intent's
         success must not reset another intent's streak."""
 
+        if mission_id in self._unrecovered and not where.startswith(("recover", "startup_bind")):
+            return False  # its restart recovery has not held yet; retried first next round
         try:
             progressed = bool(await step())
         except (StoreBusy, InjectedCrash):
@@ -3295,6 +3360,28 @@ class Orchestrator:
         if mission is None or mission.status in TERMINAL_MISSION:
             # Nothing left to stop; the streak (and its single record) stays, so an
             # ended Mission's failing collection does not write one event per round.
+            # At the cap the intent itself is closed (2026-10-03 收尾裁决第 3 张): left
+            # SUBMITTED it keeps ``run()`` waiting and its reservation can never be settled
+            # at the bound ("宁可多算、不冻结").  If even that cannot be written, keep waiting.
+            intent_id = where.partition(":")[2]
+            if (mission is not None and intent_id and where.startswith("collect")
+                    and count >= NON_MODEL_FAILURE_CAP and now - first >= ROUND_FAULT_MIN_SECONDS):
+                try:
+                    intent = self.store.get_intent(intent_id)
+                    if intent is not None and intent.state in {"AGENT_CREATED", "SUBMITTED"}:
+                        with self.store.transaction():
+                            self._settle_intent(intent, "FAILED")
+                            self.commit._emit("MissionRoundFault", mission_id,
+                                              key=f"{mission_id}:{where}:closed",
+                                              payload={"where": where, "class": kind, "count": count,
+                                                       "closed_intent": intent_id,
+                                                       "reason": "round_fault_after_mission_end",
+                                                       "error_type": type(error).__name__, "summary": summary})
+                        self._round_faults.pop((mission_id, where), None)
+                        self._note(f"mission {mission_id}: intent {intent_id} closed after {count} failing rounds")
+                        return True
+                except Exception:  # noqa: BLE001
+                    self._note(f"mission {mission_id}: failing intent {intent_id} could not be closed; waiting")
             return False
         try:
             if kind == ROUND_CORRUPT:
@@ -3391,6 +3478,10 @@ class Orchestrator:
             progressed = True
         if await self._wake_planning_waits():
             progressed = True
+        for mission in self._active_missions():
+            if mission.id in self._unrecovered:
+                await self._recover_mission_round(mission)
+        self._unrecovered &= {mission.id for mission in self._active_missions()}
         busy: set[str] = set()  # 本轮有进展的任务：下一轮照样处理，不记"安静"
         round_cursor = self._event_cursor()
         due = self._missions_due(self._active_missions(), round_cursor)
@@ -9033,7 +9124,10 @@ class Orchestrator:
         active = new_mode.semantics().active_plan_revision(mission.id)
         return {
             "root_review": {
-                "reason": "root_review_rejected",
+                # 如实写是哪一种：被打回，还是这一版要求的切包次数用完（含审阅调用一直被打断）。
+                "reason": ("root_review_cut_budget_spent"
+                           if state.status is RootReviewStatus.CUT_BUDGET_SPENT else "root_review_rejected"),
+                "stale_reasons": [str(item) for item in getattr(state, "stale_reasons", ()) or ()],
                 "status": str(state.status),
                 "package_id": "" if package is None else str(package.package_id),
                 "plan_revision": 0 if active is None else int(active.revision),

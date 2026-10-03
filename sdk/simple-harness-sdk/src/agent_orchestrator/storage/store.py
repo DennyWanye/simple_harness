@@ -1505,30 +1505,6 @@ class Store:
             ).fetchall()
         return [_workspace_row(row) for row in rows]
 
-    def list_all_artifacts(self) -> list[Artifact]:
-        rows = self._connection.execute(
-            "SELECT json FROM artifacts ORDER BY created_at, artifact_id"
-        ).fetchall()
-        return [Artifact.from_json(_loads(row[0])) for row in rows]
-
-    def update_artifact_storage(self, changes: Sequence[tuple[str, str]]) -> None:
-        """P3.2 D3 migration: point each artifact at its content-addressed file, or at
-        ``""`` when its bytes were lost or changed before the upgrade (unavailable)."""
-
-        with self.transaction() as connection:
-            for artifact_id, storage_uri in changes:
-                row = connection.execute(
-                    "SELECT json FROM artifacts WHERE artifact_id = ?", (artifact_id,)
-                ).fetchone()
-                if row is None:
-                    raise StoreError(f"artifact {artifact_id} is not recorded")
-                data = json.loads(row[0])
-                data["storage_uri"] = storage_uri
-                connection.execute(
-                    "UPDATE artifacts SET json = ? WHERE artifact_id = ?",
-                    (canonical_json(data), artifact_id),
-                )
-
     def get_artifact(self, artifact_id: str) -> Artifact | None:
         row = self._connection.execute(
             "SELECT json FROM artifacts WHERE artifact_id = ?", (artifact_id,)

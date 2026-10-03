@@ -130,37 +130,9 @@ class ArtifactStore:
         return data
 
 
-def backfill(artifacts: Iterable[Artifact], store: ArtifactStore) -> list[tuple[str, str]]:
-    """Move pre-0.10 Artifacts into the store (plan D3 migration, review round 2 P2-3).
-
-    Returns ``(artifact_id, new storage_uri)`` for every record that changes: the store's
-    file when the original is still a regular file with the recorded hash, ``""``
-    (unavailable) when it is missing, a symlink or changed.  Re-running is harmless: a
-    record already in the store or already unavailable is left alone.
-    """
-
-    changes: list[tuple[str, str]] = []
-    for artifact in artifacts:
-        uri = artifact.storage_uri
-        if not uri or store.contains(Path(uri)):
-            continue
-        try:
-            data = read_nofollow(Path(uri))
-        except ArtifactStoreError:
-            changes.append((artifact.id, ""))
-            continue
-        if hashlib.sha256(data).hexdigest() != artifact.content_hash:
-            changes.append((artifact.id, ""))
-            continue
-        store.put_bytes(data)
-        changes.append((artifact.id, str(store.path_for(artifact.content_hash))))
-    return changes
-
-
 __all__ = (
     "ArtifactStore",
     "ArtifactStoreError",
-    "backfill",
     "open_nofollow",
     "read_nofollow",
     "read_verified",

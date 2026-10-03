@@ -27,7 +27,6 @@ import pytest
 from agent_orchestrator.artifacts.store import (
     ArtifactStore,
     ArtifactStoreError,
-    backfill,
     read_verified,
 )
 from agent_orchestrator.artifacts.workspace import EXEC_COPY_MARK, WorkspaceError, WorkspaceManager
@@ -256,28 +255,3 @@ def test_p32_5b_an_unavailable_artifact_is_refused_not_guessed():
     with pytest.raises(ArtifactStoreError) as refused:
         read_verified(artifact)
     assert refused.value.reason == "unavailable"
-
-
-def test_p32_5b_backfill_moves_intact_bytes_and_marks_the_rest_unavailable(tmp_path):
-    store = ArtifactStore(tmp_path / "artifacts")
-    legacy = tmp_path / "workspaces" / "att-1"
-    legacy.mkdir(parents=True)
-    (legacy / "ok.md").write_bytes(b"intact")
-    (legacy / "changed.md").write_bytes(b"after")
-    in_store = store.path_for(store.put_bytes(b"stored"))
-    artifacts = [
-        _artifact("ok.md", b"intact", str(legacy / "ok.md")),
-        _artifact("missing.md", b"gone", str(legacy / "missing.md")),
-        _artifact("changed.md", b"before", str(legacy / "changed.md")),
-        _artifact("stored.md", b"stored", str(in_store)),
-    ]
-    changes = dict(backfill(artifacts, store))
-    ok, missing, changed, stored = artifacts
-    assert changes[ok.id] == str(store.path_for(ok.content_hash))
-    assert store.read(ok.content_hash) == b"intact"
-    assert changes[missing.id] == "" and changes[changed.id] == ""
-    assert stored.id not in changes
-    updated = [
-        dataclasses.replace(a, storage_uri=changes.get(a.id, a.storage_uri)) for a in artifacts
-    ]
-    assert backfill(updated, store) == []  # re-running changes nothing

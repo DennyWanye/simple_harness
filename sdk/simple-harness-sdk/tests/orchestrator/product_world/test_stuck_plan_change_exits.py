@@ -108,6 +108,20 @@ def test_a_plan_change_stuck_behind_a_blocked_notification_has_two_exits(tmp_pat
                 else:
                     operator.abandon_convergence(mission_id, job["job_id"], expected_version=job["row_version"],
                                                  command_id="click-abandon-1", reason=REASON)
+                # 双击、或看着没刷新的旧画面再点一次：带的是点击前的版本号——按名拒收，库里不多写。
+                with pytest.raises(StoreError) as refused:
+                    if exit_ == "retry":
+                        stale = view["blocked_notifications"][0]
+                        operator.retry_notification(mission_id, stale["message_id"],
+                                                    expected_version=stale["row_version"],
+                                                    command_id="click-again", reason="又点了一次")
+                    else:
+                        operator.abandon_convergence(mission_id, job["job_id"], expected_version=job["row_version"],
+                                                     command_id="click-again", reason="又点了一次")
+                assert str(refused.value) in {"TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT", "TASKGRAPH_CONVERGENCE_TERMINAL",
+                                              "TASKGRAPH_CONVERGENCE_CAS_CONFLICT"}
+                assert store.get_receipt("click-again") is None
+                assert not [event for event in store.list_events(mission_id) if event.trace_id == "click-again"]
                 world.loop._wake.set() if hasattr(world.loop, "_wake") else None
                 for _ in range(900):
                     if str(store.get_mission(mission_id).status.value) in TERMINAL:
