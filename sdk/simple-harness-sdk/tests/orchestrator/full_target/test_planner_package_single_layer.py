@@ -76,12 +76,12 @@ def _first_request(tmp_path: Path, key: str) -> dict[str, Any]:
     return asyncio.run(case())
 
 
-def test_the_request_is_nine_views_and_nothing_twice(tmp_path: Path) -> None:
+def test_the_request_is_eleven_views_and_nothing_twice(tmp_path: Path) -> None:
     package = _first_request(tmp_path, "single-layer-shape")["package"]
     assert set(package) == TOP_LEVEL
     assert not GONE & set(package)
     # (the package is read back from the stored intent, whose JSON keys are canonical)
-    assert sorted(package["views"]) == sorted(VIEW_NAMES) and len(VIEW_NAMES) == 9
+    assert sorted(package["views"]) == sorted(VIEW_NAMES) and len(VIEW_NAMES) == 11
     assert package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
 
     # the open root goal is said once, in views.goals, with its parameters
@@ -105,7 +105,7 @@ def test_the_request_is_nine_views_and_nothing_twice(tmp_path: Path) -> None:
 
 def test_the_prompt_names_only_fields_the_package_has(tmp_path: Path) -> None:
     prompt = PLANNER_HIERARCHICAL.instructions
-    for stale in ("plan.open_compound_goals", "method_library", "planning_rejected",
+    for stale in ("plan.open_compound_goals", "planning_rejected",
                   "data_rebind_candidates", "typed_parameters", "refined_goals_under_repair"):
         assert stale not in prompt, stale
     package = _first_request(tmp_path, "single-layer-prompt")["package"]
@@ -115,6 +115,9 @@ def test_the_prompt_names_only_fields_the_package_has(tmp_path: Path) -> None:
         assert name in prompt and name in package, name
     for view in ("goals", "plans", "methods", "failures"):
         assert f"      {view}：" in prompt, view
+    # 阶段 C3：全库做法的目录与读过的原文是规划包里真实的两个视图
+    for view in ("method_library", "library_reads"):
+        assert f"views.{view}：" in prompt and view in package["views"], view
 
 
 def test_a_failure_is_indexed_in_the_view_and_detailed_only_in_its_repair_request() -> None:
@@ -171,8 +174,8 @@ def _assemble(**views: Any) -> dict[str, Any]:
                                     views=rows, sections={"repair_requests": []})
 
 
-def test_the_assembler_needs_exactly_the_nine_views() -> None:
-    with pytest.raises(PlannerPackageError, match="nine views"):
+def test_the_assembler_needs_exactly_the_eleven_views() -> None:
+    with pytest.raises(PlannerPackageError, match="eleven views"):
         assemble_planner_package(package_version=10, mission=_Mission(), network=_Network(),
                                  views={"goals": ()})
     assert not hasattr(planner_package, "hierarchical_planner_package")

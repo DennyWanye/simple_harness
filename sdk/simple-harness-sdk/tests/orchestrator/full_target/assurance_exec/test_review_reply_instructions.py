@@ -34,9 +34,12 @@ def test_the_example_in_the_instructions_is_a_reply_the_decoder_accepts() -> Non
 
 def test_the_example_shows_every_field_and_nothing_else() -> None:
     example = _example()
-    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "claims", "methods", "summary"}
-    assert set(example["methods"][0]) == {"method_ref", "reusable", "purpose", "at_fault", "reason"}
-    assert set(example["summary"]) == {"faithful", "reason"}
+    # 做法表态、摘要核对只对带对应一节的审查包；示例里给空，免得照抄成"范围错误"（阶段 C3）
+    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "claims", "methods"}
+    assert example["methods"] == []
+    for shape in ('{"method_ref": "做法编号@版本", "reusable": true, "purpose": "一句用途", "at_fault": false, '
+                  '"reason": "为什么这样判"}', '{"faithful": true, "reason": "为什么这样判"}'):
+        assert shape in REVIEW_INSTRUCTIONS
     assert set(example["assessments"][0]) == {
         "criterion_id", "verdict", "evidence_ids", "reason", "limitations"
     }

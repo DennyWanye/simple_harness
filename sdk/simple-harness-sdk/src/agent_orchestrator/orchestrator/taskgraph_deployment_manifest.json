@@ -1,5 +1,5 @@
 {
-  "deployment_id": "bd3dad7ec830e4482102641f244f52d30156cf67472bc8bad16c4809b1216af6",
+  "deployment_id": "ae44b5f4febbdd47199b25adbb7d5327d286f2cda2e0881447abd97a3543509d",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -50,7 +50,7 @@
     "agent_orchestrator/assurance/policy.py": "3b42fbdce4488b760c18f52c5b954b0848983b1763f17347a0d6a4b0bb4fdc1d",
     "agent_orchestrator/assurance/policy_domain.py": "73fdf155052fc8e44dc45393798b4a7d9a6642f1f42cdcaccb418fef63b0d0dc",
     "agent_orchestrator/assurance/refs.py": "26773f51bc1392dbc3f869facb8d156b5788c57e9bff89f35b3043a69e586911",
-    "agent_orchestrator/assurance/review_input.py": "8eb446813210c3ce5fa731b26bfba9c45cc31fc22621d33178bf802c376f37ba",
+    "agent_orchestrator/assurance/review_input.py": "47719e9ddfb8cc08428b8d49218682bcc38f1c28e766c7e91f42e473cdf7f97a",
     "agent_orchestrator/assurance/reviews.py": "b01c61a0bd6afc7c35fee3a5de21b0868f5931a0f350eb98c9f6d803e035dc4d",
     "agent_orchestrator/assurance/root_gate.py": "78ffeaca675d367d570f05ffbfcf7dcf2eba71059a808185207b355350c328ad",
     "agent_orchestrator/assurance/schemas/check-binding-v2.schema.json": "9573c9bd17200fd6d8484eea25a414b600cd6a5088055929c25ab6d0ab10d915",
@@ -204,7 +204,7 @@
     "agent_orchestrator/orchestrator/method_plan_reviews.py": "f82716e53999fe42a75cc855043cfbc951fa846afb11aaea3d584fed1bef3fd9",
     "agent_orchestrator/orchestrator/obligation_accounts.py": "7e547221bab2a8779dd926ad9ecbd486d8b0a00a5fe9982470d85ea7127abb3d",
     "agent_orchestrator/orchestrator/obligation_commits.py": "4af7dbec693e32558921f56f0d577b8a73ebbd214997c801650da667328b362a",
-    "agent_orchestrator/orchestrator/occurrence_tasks.py": "4359b5b5c2465c5c5c54df55e7e88c129bfde1318e7dbd8830cdcad52bac4884",
+    "agent_orchestrator/orchestrator/occurrence_tasks.py": "fe8ecec85660c79a325c6e4a35d3bedf7f187248fbde21df3d787a96e808ea56",
     "agent_orchestrator/orchestrator/operation_completion.py": "49a144badf081cad2cf070553dff3e886a749d4a35c3f709436879443fc7b0a4",
     "agent_orchestrator/orchestrator/operation_intent_sources.py": "20b430a210984b60f5ce5fd957fc1f3fcc61745f5c6949f1f7b7559a21e57819",
     "agent_orchestrator/orchestrator/operation_materialization.py": "1fcc21fa160bd7e91154e771224ed9ceddd11227b756d8fd8f54eac1d3a9f93a",
@@ -303,7 +303,7 @@
     "agent_orchestrator/planning/htn/observers/appworld.py": "0f16d1873deb5f6bd98a7f7ed60362a77d0aab539e9039d852cfcf339f4d5953",
     "agent_orchestrator/planning/htn/observers/code.py": "de8b4b3b62265205827d6704f2abd398bb63a3d803d2b3f5df08c7a59825e640",
     "agent_orchestrator/planning/htn/observers/workspace.py": "546d4f9ec1532be9ad45cb8a1cb0e8088aaa87614328e4af6b2485d34ede398e",
-    "agent_orchestrator/planning/htn/planner_package.py": "483794e9f25631580552c468b4032ce39a49754acce8a6ba0ad418104137d005",
+    "agent_orchestrator/planning/htn/planner_package.py": "b5f05795aeae6d2d2d0ffca67163c5629beefcc01025bae8b566f566745648f8",
     "agent_orchestrator/planning/htn/refinement.py": "edf5c6b6296f9f19621986ab14362fe83d6aad63c54ff3d71f9f580f8c751ce6",
     "agent_orchestrator/planning/htn/registry.py": "9de1080f2a432c09c99044f8cd267b6ab6e8815b3563ab3990d0a52a31a91aa3",
     "agent_orchestrator/planning/htn/repair_adapter.py": "b30f12c369a0170175e21fc7b2b7d34b0ed481ef2bbfb85caab8987b2e6a3ed2",
