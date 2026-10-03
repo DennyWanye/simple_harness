@@ -59,6 +59,7 @@ from ...contracts.htn import (
     PortCardinality,
     ProposedPlanDelta,
     ReadItem,
+    ScopeEpochRead,
     ReadItemKind,
     ReleaseCondition,
     ReusePolicy,
@@ -200,6 +201,8 @@ def compile_refinement(
     requirements_revision: int = 0,
     delta_id: str | None = None,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
 ) -> ProposedPlanDelta:
     """§18.3: emit the partial order, the data bindings, the coverage and the read-set.
 
@@ -225,6 +228,8 @@ def compile_refinement(
         requirements_revision=requirements_revision,
         delta_id=delta_id,
         compiled_from_proposal_id=compiled_from_proposal_id,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
     ).delta
 
 
@@ -245,6 +250,8 @@ def compile_refinement_bundle(
     requirements_revision: int = 0,
     delta_id: str | None = None,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
 ) -> RefinementCompilation:
     """The ten steps of implementation design §5.2, in order."""
 
@@ -430,6 +437,8 @@ def compile_refinement_bundle(
         parent_binding=parent_binding,
         plans=plans,
         requirements_revision=requirements_revision,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
     )
     identifier_ = delta_id or _derive_delta_id(draft, current.plan_revision)
     delta = ProposedPlanDelta(
@@ -483,6 +492,8 @@ def compile_candidate_from_snapshot(
     budget: GraphStructureBudget = DEFAULT_PROJECTION_BUDGET,
     requirements_revision: int = 0,
     compiled_from_proposal_id: str | None = None,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
 ) -> RefinementCompilation:
     """Pure candidate kernel used by H1H preview.
 
@@ -503,6 +514,8 @@ def compile_candidate_from_snapshot(
         budget=budget,
         requirements_revision=requirements_revision,
         compiled_from_proposal_id=compiled_from_proposal_id,
+        scope_epochs=scope_epochs,
+        obligation_items=obligation_items,
     )
 
 
@@ -1327,8 +1340,14 @@ def build_read_set(
     parent_binding: TaskSemanticBindingV1,
     plans: Sequence[SlotPlan],
     requirements_revision: int = 0,
+    scope_epochs: Mapping[str, int] | None = None,
+    obligation_items: Mapping[str, ReadItem] | None = None,
 ) -> SemanticReadSet:
-    """ADR-13: what this compilation actually read, beside the integer gate.
+    """ADR-13: what this compilation read that the plan-revision gate does not cover.
+
+    阶段 D：两样在提案与提交之间会变、计划修订号管不到的东西也记下——作用域纪元
+    （``scope_epochs``，调用方在冻结预览输入时读的那一份）和被细化目标、被共用目标的义务
+    （``obligation_items``：义务编号 → 调用方用核对器同一公式读出的条目）。
 
     A precondition witness is listed as an observation read **only when it names a
     stored :class:`~...contracts.evidence_state.ValidityWitness`**, and an acceptance a
@@ -1386,11 +1405,13 @@ def build_read_set(
         for plan in plans
         if plan.acceptance_ref is not None
     ]
+    duties = [str(parent_binding.obligation_id)]
     for plan in plans:
         if not plan.shared:
             continue
         spec = current.occurrence(plan.bound_occurrence_id)
         binding = current.binding_for_task(spec.task_id)
+        duties.append(str(binding.obligation_id))
         goal_reads.append(
             ReadItem(
                 kind=ReadItemKind.TASK,
@@ -1405,6 +1426,14 @@ def build_read_set(
         method_revisions=tuple(method_reads),
         observation_revisions=tuple(observation_reads),
         acceptance_revisions=tuple(acceptance_reads),
+        obligation_revisions=tuple(
+            (obligation_items or {})[duty] for duty in dict.fromkeys(duties)
+            if duty in (obligation_items or {})
+        ),
+        scope_epochs=tuple(
+            ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
+            for scope, epoch in sorted((scope_epochs or {}).items())
+        ),
     )
 
 

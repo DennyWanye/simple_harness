@@ -68,6 +68,7 @@ from ..context.retrieval import (
     knowledge_view,
     rank_knowledge,
 )
+from ..contracts.error_table import refusal_charges_planner
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -405,6 +406,13 @@ def planning_failure_detail(error: Exception, detail: dict[str, Any]) -> dict[st
 def _turn_failed(event: Any) -> bool:
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
     return isinstance(detail, Mapping) and detail.get("turn_failed") is True
+
+
+def _refusal_codes(event: Any) -> list[str]:
+    """The problem codes a ``PlanningRejected`` event names."""
+    detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
+    problems = detail.get("problems") if isinstance(detail, Mapping) else None
+    return [str(item.get("code")) for item in problems or () if isinstance(item, Mapping)]
 
 
 def _task_ref_hashes(semantics: Any) -> frozenset[str]:
@@ -2335,6 +2343,27 @@ class Orchestrator:
         except sqlite3.Error:
             return False
         return row is not None
+
+    def _preview_read_facts(self, mission_id: str) -> dict[str, Any]:
+        """What a plan proposal reads that the plan-revision gate does not cover, as it
+        stands when the preview inputs are frozen (阶段 D): the scope epochs — the
+        Assurance lane's own ``assurance:`` scopes are not plan facts — and every duty of
+        the Mission, each read with the commit checker's own formula."""
+        from ..contracts.htn import ReadItemKind
+        from ..storage.htn_store import HtnStore
+        from ..storage.obligation_store import ObligationStore
+        from ._read_set import SemanticReadSetChecker
+        from .taskgraph_epochs import current_scope_epochs
+
+        checker = SemanticReadSetChecker(self.store, HtnStore(self.store), mission_id=mission_id)
+        duties = ObligationStore(self.store).obligation_ids(mission_id)
+        return {
+            "scope_epochs": tuple(sorted(
+                (scope, int(epoch)) for scope, epoch in current_scope_epochs(self.store, mission_id).items()
+                if not scope.startswith("assurance:"))),
+            "obligation_items": tuple(
+                (str(duty), checker.read_item(ReadItemKind.OBLIGATION, str(duty))) for duty in sorted(map(str, duties))),
+        }
 
     def _handoff_ground_gone(self, action_key: str) -> bool:
         from ..contracts.error_table import HANDOFF_VALIDITY_STALE
@@ -6005,6 +6034,8 @@ class Orchestrator:
                 if _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:
                     forgiven += 1
                     continue
+                if not refusal_charges_planner(_refusal_codes(event)):
+                    continue  # 请求过期：规划器作答期间世界变了，不算它答错（错误码表那一列）
                 count += 1
             elif event.type == "PlanningDecisionEvaluated" and event.payload.get("status") == "COMMITTED":
                 count = 0
@@ -6831,6 +6862,7 @@ class Orchestrator:
                         runtime_work=runtime_work,
                         repair_impact=read_repair_impact_indexes(self.store, network, mission.id) if graph_mutation else None,
                         goal_reuse_sources=graph_repair_sources(self.store, network) if graph_mutation else (),
+                        **self._preview_read_facts(mission.id),
                 )
             preview = new_mode.preview_plan_proposal(proposal, inputs=frozen_inputs)
             if isinstance(preview, PreviewUnavailable):

@@ -16,6 +16,8 @@ from typing import Any
 
 from ..contracts.evidence_state import EvidenceSnapshot
 from ..contracts.htn import (
+    ReadItem,
+    ScopeEpochRead,
     GraphStructureBudget,
     MethodInstanceId,
     MethodRef,
@@ -75,6 +77,18 @@ class PreviewInputs:
     goal_reuse_sources: tuple[Mapping[str, Any], ...] = ()
     taskgraph_contract: bool = False
     sharing_entries: tuple[SharedGoalEntry, ...] | None = None
+    #: 阶段 D：冻结预览输入时读到的作用域纪元（范围 → 纪元）与本任务各义务的读集条目
+    #: （义务编号 → 条目，用提交核对器的同一公式读出）。编译出的读集带上它们，提交时逐项重核。
+    scope_epochs: tuple[tuple[str, int], ...] = ()
+    obligation_items: tuple[tuple[str, ReadItem], ...] = ()
+
+    def scope_epoch_reads(self) -> tuple[ScopeEpochRead, ...]:
+        return tuple(ScopeEpochRead(scope_id=scope, validity_epoch=int(epoch))
+                     for scope, epoch in sorted(self.scope_epochs))
+
+    def obligation_reads(self, obligation_ids: Sequence[object]) -> tuple[ReadItem, ...]:
+        known = dict(self.obligation_items)
+        return tuple(known[key] for key in dict.fromkeys(str(item) for item in obligation_ids) if key in known)
 
     def __post_init__(self) -> None:
         if type(self.taskgraph_contract) is not bool:
@@ -328,6 +342,8 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         budget=inputs.budget,
         requirements_revision=inputs.requirements_revision,
         compiled_from_proposal_id=proposal.proposal_id,
+        scope_epochs=dict(inputs.scope_epochs),
+        obligation_items=dict(inputs.obligation_items),
     )
 
 
