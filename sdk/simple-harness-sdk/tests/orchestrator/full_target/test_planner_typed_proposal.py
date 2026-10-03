@@ -212,9 +212,7 @@ GOLDEN_BOUND_FIELDS = frozenset(
         "authored_by",
         "authorization_ref",
         "budget_account",
-        "budget_grant_revision",
         "grant_ref",
-        "manager_epoch",
         "mission_id",
         "opened_by",
         "principal",
@@ -229,13 +227,12 @@ GOLDEN_BOUND_FIELDS = frozenset(
 
 def test_the_bound_field_set_is_exactly_the_golden_set():
     assert SYSTEM_BOUND_FIELDS == GOLDEN_BOUND_FIELDS
-    assert len(GOLDEN_BOUND_FIELDS) == 14
+    assert len(GOLDEN_BOUND_FIELDS) == 12
 
 
 def test_the_golden_set_names_every_authority_channel_the_gate_checks():
     assert {
         "mission_id",
-        "manager_epoch",
         "scope",
         "principal",
         "budget_account",

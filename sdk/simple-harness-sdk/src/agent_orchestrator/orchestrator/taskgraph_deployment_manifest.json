@@ -1,5 +1,5 @@
 {
-  "deployment_id": "38decc415e83cc782351695206607cec544681d559b71bdcce6e5882ea1e70ff",
+  "deployment_id": "01aa3345dd9c023783fe7203b57daad71fdaaba0e8f8c3bb1e2eac627ba432d0",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -281,7 +281,7 @@
     "agent_orchestrator/planning/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/planning/decision_adapter.py": "1d9f40739746e5b4ec8bacb8b8b3bf8a32b0b99cdfb6dbbce773ce0be5c1f7a9",
     "agent_orchestrator/planning/decision_admission.py": "17d35cc0f2c4c0c44e52d29c9c05a73b10d49e3e96bae5151671745afbdcbe01",
-    "agent_orchestrator/planning/decision_codec.py": "3f0cfdea940633ca71d663e71a6b28fac5697f1dbcbddea481e70d2fa783823f",
+    "agent_orchestrator/planning/decision_codec.py": "65635bbe151e5f94f5d0ad3075b2d1e43961e56dabeda610c6008807e233b0b1",
     "agent_orchestrator/planning/decision_feedback.py": "e8870a01d4ba8c4dd702a02f23f13ad2ba3c1d14dd1baf9efb4782cb9165ad6f",
     "agent_orchestrator/planning/htn/__init__.py": "23ae6e575a1849a2e7d6b835d458b042e6107ea16b5a521f71dd4ee4a1479317",
     "agent_orchestrator/planning/htn/applicability.py": "cf9e2b015d1d4deb11a0501102dd3da26e9c745f0e5ba40afbb9928bd7ff8987",
@@ -297,7 +297,7 @@
     "agent_orchestrator/planning/htn/graph_repair.py": "45f7b01c9508ab8497a3d2a073132aeee57107a7a3228eb1c6c0f9c368856750",
     "agent_orchestrator/planning/htn/grounding.py": "dac7b7f7bc1ead420164d4785428ca67905c87aa364aaf257e62783c939e21d7",
     "agent_orchestrator/planning/htn/method_lifecycle.py": "0c45d560d99a00423bc38a901695814fb1663c931fbadea94e691b0fdb4df2e5",
-    "agent_orchestrator/planning/htn/method_proposals.py": "9e238237eaf6eb3e1cfc74ac1572a8828e1b56f9f510b853f1e0f7da774de698",
+    "agent_orchestrator/planning/htn/method_proposals.py": "4d211d70d372c21f478531559926af98a73fc8b614ba16f2588f238ead23b27d",
     "agent_orchestrator/planning/htn/method_selection.py": "02aa838ca4da61bef0afe3286c3e3754fe9be4c90a814a9f9746910a997199bb",
     "agent_orchestrator/planning/htn/observation_pipeline.py": "6d7c7538fe490b5365931a22bc34ff3fc67668194f9e63d6f503d43bba1407e9",
     "agent_orchestrator/planning/htn/observers/__init__.py": "dc4b8724bb77af055a5d2b2ebe44bc166b220c8495c9e2428f6b59866fab2d99",
@@ -360,7 +360,7 @@
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
     "agent_orchestrator/runtime/provider_budget_guard.py": "a89aa33e2226d6d7a66cd5c5cfceec253db56fbfcac95f7493a3cf265be2d2aa",
-    "agent_orchestrator/runtime/role_templates.py": "68eb7c414eb8a10c1d3ba60890884c81354b112498c3896bfc2377ffec85ec2a",
+    "agent_orchestrator/runtime/role_templates.py": "44b13d804bcd32ab569916010195aa420ec6c6ec2657021a4307fa9dc283776d",
     "agent_orchestrator/runtime/sandbox.py": "9a257d133a5b54da66649e23cbbe6af11d91027126e0c9cecb8200d97bd87f89",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",

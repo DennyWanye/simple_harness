@@ -149,10 +149,10 @@ def test_a_reply_claiming_an_authority_field_is_refused_at_the_boundary() -> Non
         proposal_id="prop-1", expected_plan_revision=0, read_set=[],
         operations=[{"op": "refine", "goal_id": "task-root", "obligation_id": "obl-root",
                      "method_ref": {"id": "m", "version": 1, "content_hash": "a" * 64}, "bindings": {}}],
-        extras={"manager_epoch": 3})
+        extras={"registry_status": "ADMITTED"})
     with pytest.raises(ContractError) as caught:
         scripted_plan_proposal(text, mission_id="mission-stub")
-    assert "manager_epoch" in str(caught.value)
+    assert "registry_status" in str(caught.value)
 
 
 def test_every_phase_has_a_display_status() -> None:
