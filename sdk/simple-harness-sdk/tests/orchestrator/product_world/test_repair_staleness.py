@@ -175,7 +175,9 @@ def test_knowledge_and_summaries_follow_a_repair(tmp_path):
             assert len(records) >= 2
             old = records[0]
             assert old.status == "VERIFIED" and old.version == 1 and old.superseded_by is None
-            assert knowledge_standing(store, old).startswith("STALE:")
+            # 过时的原因是来源那一步已不在现行计划里撑着（不是文件被覆盖碰巧带出来的）
+            standing = knowledge_standing(store, old)
+            assert standing.startswith("STALE:") and not standing.startswith("STALE:artifact_replaced"), standing
             listed = knowledge_tools.read_knowledge_tool(store, mission_id, "knowledge_list", {"limit": 5})
             ids = [item["id"] for item in listed["items"]]
             assert old.id not in ids

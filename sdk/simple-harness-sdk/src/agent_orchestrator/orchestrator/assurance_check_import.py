@@ -64,8 +64,10 @@ def read_local_check_binding_locked(
     try:
         current = OperationCompletionReader(store).read_scope(mission_id, scope.plan_ref, scope.occurrence_id)
     except OperationCompletionError as error:
-        # 检查在跑的时候用户改了要求（阶段 E）：这一步的完成范围按旧版要求定，已不能读——与范围
-        # 变了同一个结论，不让它冲出主循环（HTN 补齐 F1 随机序列发现）
+        # 检查在跑的时候用户改了要求（阶段 E）：这一步的完成范围按旧版要求定，已过期——与范围变了
+        # 同一个结论（HTN 补齐 F1 随机序列发现）。别的完整性错误照旧抛出
+        if error.code != "OP_EFFECT_SCOPE_STALE":
+            raise
         raise AssuranceError("CHECK_SCOPE_CHANGED") from error
     if current != scope:
         raise AssuranceError("CHECK_SCOPE_CHANGED")

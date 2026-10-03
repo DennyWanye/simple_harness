@@ -71,7 +71,7 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
                 " ORDER BY created_at, rowid", (mission_id,))]
             read_set = rows[-1]
             assert {"scope_id": "mission", "validity_epoch": 1} in read_set["scope_epochs"]
-            assert read_set["obligation_revisions"], read_set
+            assert read_set.get("obligation_revisions"), read_set
             assert not {"manager_epoch", "budget_grant_revision", "support_sets"} & set(read_set)
 
     asyncio.run(case())

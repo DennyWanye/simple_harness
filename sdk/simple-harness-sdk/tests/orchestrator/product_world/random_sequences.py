@@ -14,7 +14,8 @@
 ========  ==========================================================
 
 对照物：①执行图历史在临时副本上离线重建（``replay_taskgraph``）通过，且每个修订号的清单哈希与在线
-一致；②关库重开前后，每个任务的快照逐字节一致；③不变式（见 :func:`check_invariants`）。
+一致；②关库重开前后，每个任务的快照与每一步"为什么还不开工"逐字节一致；③不变式（见
+:func:`check_invariants`）。动作只走产品入口（门面的取消、改要求）。
 
 不装 Hypothesis：序列取自 ``random.Random(seed)``（与保证通道已有的随机序列用例同一规矩）。失败时
 保存种子、动作序列，按"去掉一段动作再跑"缩小，留最小反例。
@@ -30,11 +31,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_orchestrator.api.facade import FacadeError
+from agent_orchestrator.contracts.state_machines import TERMINAL_ATTEMPT
 from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 from agent_orchestrator.testing.fixtures import package_of
-from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import (
     LayeredScriptedProvider,
     decision,
@@ -182,7 +185,24 @@ def check_invariants(store: Any, scratch: Path, step: int) -> None:
                        for record in [htn.official_review_record(str(package.package_id))] if record is not None]
             if not records:
                 raise InvariantBroken(f"{mission_id}: task {task_id} accepted without an official review record")
+            if not any(str(record.verdict) == "ACCEPT" for record in records):
+                raise InvariantBroken(f"{mission_id}: task {task_id} accepted but no official review passed it")
+        held = store.connection.execute(  # 用量未知（调用可能还在跑）的预留不释放
+            "SELECT r.subject_id FROM budget_reservations r WHERE r.mission_id=? AND r.state='SETTLED'"
+            " AND r.settled_tokens < r.reserved_tokens AND EXISTS (SELECT 1 FROM provider_token_grants g"
+            " WHERE g.subject_id=r.subject_id AND g.state IN ('RESERVED','HANDED_OFF','UNKNOWN'))",
+            (mission_id,)).fetchall()
+        if held:
+            raise InvariantBroken(f"{mission_id}: reservation {held[0][0]} released while its call is unaccounted")
         plan = htn.active_plan_revision(mission_id)
+        if plan is not None:  # 被取代、不在现行计划里的步骤没有在跑的尝试
+            current = {str(member.task_id) for member in htn.list_plan_memberships(mission_id, plan.revision)}
+            for task in store.list_tasks(mission_id):
+                if str(task.id) in current:
+                    continue
+                live = [attempt.id for attempt in store.list_attempts(task.id) if attempt.status not in TERMINAL_ATTEMPT]
+                if live:
+                    raise InvariantBroken(f"{mission_id}: step {task.id} left the plan but attempt {live[0]} still runs")
         if plan is not None and int(plan.revision) >= 1:
             target = scratch / f"replay-{step}-{mission_id}.db"
             report = replay_taskgraph(store, mission_id=mission_id, through_revision=int(plan.revision),
@@ -201,9 +221,20 @@ def check_invariants(store: Any, scratch: Path, step: int) -> None:
             target.unlink()
 
 
-def snapshots(store: Any) -> str:
-    return json.dumps({mission_id: store.snapshot(mission_id) for mission_id in _mission_ids(store)},
-                      sort_keys=True, ensure_ascii=False, default=str)
+def snapshots(world: Any) -> str:
+    """Every Mission's snapshot plus, for every step of its active plan, "why is it not running"."""
+    store, htn = world.store, HtnStore(world.store)
+    reads = world.loop.taskgraph_read_api(tenant_id=TENANT, principal=world.control._principal)
+    whys: dict[str, Any] = {}
+    for mission_id in _mission_ids(store):
+        plan = htn.active_plan_revision(mission_id)
+        for member in htn.list_plan_memberships(mission_id, plan.revision) if plan is not None else ():
+            try:
+                whys[f"{mission_id}/{member.occurrence_id}"] = reads.why_not_ready(mission_id, str(member.occurrence_id))
+            except Exception as error:  # noqa: BLE001 - a refusal is part of what must not change
+                whys[f"{mission_id}/{member.occurrence_id}"] = f"{type(error).__name__}: {error}"
+    return json.dumps({"snapshots": {mission_id: store.snapshot(mission_id) for mission_id in _mission_ids(store)},
+                       "why_not_ready": whys}, sort_keys=True, ensure_ascii=False, default=str)
 
 
 # ----------------------------------------------------------------------------- the driver
@@ -256,11 +287,11 @@ async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str
                             "changes": [{"op": "remove", "criterion_id": str(latest.criteria[-1].criterion_id)}],
                             "reason": "用户撤回一条要求", "source": SOURCE})
                         log.append(f"{step}:withdraw:{mission_id}")
-                    except Exception as error:  # noqa: BLE001 - a refused amendment is an outcome, not a break
+                    except FacadeError as error:  # 门面按名拒绝是结果；别的异常是缺陷，照常冲出
                         log.append(f"{step}:withdraw-refused:{type(error).__name__}:{getattr(error, 'code', '')}")
             elif action == "cancel" and live:
                 mission_id = live[rng.randrange(len(live))]
-                world.loop.commit.cancel_mission(mission_id)
+                world.control.cancel(mission_id)
                 log.append(f"{step}:cancel:{mission_id}")
             elif action == "replace" and live:
                 mission_id = live[rng.randrange(len(live))]
@@ -268,13 +299,13 @@ async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str
                 log.append(f"{step}:replace:{mission_id}")
             elif action == "restart":
                 await world.drain(timeout=20)
-                before = snapshots(world.store)
+                before = snapshots(world)
                 await world_cm.__aexit__(None, None, None)
                 world_cm = product_world(root, LayeredScriptedProvider(planner=script.planner, reviewer=script.reviewer))
                 world = await world_cm.__aenter__()
-                after = snapshots(world.store)
+                after = snapshots(world)
                 if after != before:
-                    raise InvariantBroken(f"step {step}: a mission's snapshot changed across close and reopen")
+                    raise InvariantBroken(f"step {step}: a snapshot or a why-not-ready changed across close and reopen")
                 log.append(f"{step}:restart")
             check_invariants(world.store, scratch, step)
     except InvariantBroken:

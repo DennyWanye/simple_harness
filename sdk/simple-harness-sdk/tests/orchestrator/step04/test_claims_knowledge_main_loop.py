@@ -399,7 +399,7 @@ def test_blackboard_layers_versioned_citation_and_review_package_sections(world)
     assert "content" not in world["raw_read"]  # 原始记录引用层不带任何文件内容
     # 引用带版本：对的通过；版本不符、不写版本都报问题
     assert world["check_ok"] == []
-    assert "not the current version" in world["check_wrong_version"][0]
+    assert world["check_wrong_version"] and "not the current version" in world["check_wrong_version"][0]
     assert "names no version" in world["check_no_version"][0]
     # 是否当前读时判定：知识行没变，依据没了或来源验收不在了就是过时
     assert world["standing"] == "CURRENT" and record.support["acceptance_id"].startswith("acc-")

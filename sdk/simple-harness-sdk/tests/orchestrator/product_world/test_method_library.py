@@ -501,7 +501,9 @@ def test_a_mission_with_registered_sources_promotes_nothing(tmp_path):
             mission = await world.run_until_settled(created["mission_id"], rounds=20)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
             assert _events(world, mission.id, "SourceRegistered")
-            [skipped] = _events(world, mission.id, "MethodPromotionSkipped")
+            skippeds = _events(world, mission.id, "MethodPromotionSkipped")
+            assert len(skippeds) == 1, skippeds  # 改坏检验只认断言失败
+            [skipped] = skippeds
             assert skipped.payload["reason"] == "untrusted_input" and _entries(world) == []
 
     asyncio.run(run())
@@ -594,7 +596,9 @@ def test_planner_blame_when_replacing_a_derived_method(tmp_path):
             prefer.append(entry["entry_id"])
             second = await _deliver(world, "planner-blame-b")
             assert state.get("rework") and state.get("replaced")
-            [row] = MethodLibraryStore(world.store).attributions(entry["entry_id"])
+            rows = MethodLibraryStore(world.store).attributions(entry["entry_id"])
+            assert len(rows) == 1, rows  # 改坏检验只认断言失败
+            [row] = rows
             assert row["source_kind"] == "PLANNER" and row["mission_id"] == second.id
             assert row["reason"] == "照先例的拆法本身漏了一步"
 

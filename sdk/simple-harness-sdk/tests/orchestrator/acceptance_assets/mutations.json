@@ -58,6 +58,17 @@
    "note": "不注册桌面观察器"
   },
   {
+   "id": "D-06",
+   "source": "阶段 D 欠账（读集补义务那一半，D-01 是纪元那一半）",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "            if duty in (obligation_items or {})\n        ),",
+   "replacement": "            if False\n        ),",
+   "tests": [
+    "tests/orchestrator/product_world/test_epoch_and_read_set.py::test_stale_reply_after_epoch_moved_is_not_charged"
+   ],
+   "note": "读集不写义务"
+  },
+  {
    "id": "F1-01",
    "source": "F1 新用例 1",
    "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
@@ -78,6 +89,17 @@
     "tests/orchestrator/product_world/test_repair_staleness.py::test_knowledge_and_summaries_follow_a_repair"
    ],
    "note": "知识当前性不看来源验收"
+  },
+  {
+   "id": "F1-03",
+   "source": "F1 新用例 3",
+   "file": "src/agent_orchestrator/memory/verified_knowledge.py",
+   "original": "            if version != record.version:",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_blackboard_layers_versioned_citation_and_review_package_sections"
+   ],
+   "note": "引用核对不比版本（错版本的拒绝由已有用例钉住；新用例 test_repair_staleness 只证明对的版本被接受）"
   },
   {
    "id": "F1-04",
@@ -105,12 +127,12 @@
    "id": "F1-07",
    "source": "F1 新用例 7",
    "file": "src/agent_orchestrator/orchestrator/requirements_amendment.py",
-   "original": "        if (htn.adopted_goal_resolution(mission_id, str(root.obligation_id)) is not None",
-   "replacement": "        if (False",
+   "original": "        if (htn.adopted_goal_resolution(mission_id, str(root.obligation_id)) is not None\n                or assured_closeout_pending(store, mission)):",
+   "replacement": "        if (False):",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_refused_while_closing_out_and_after_the_end"
    ],
-   "note": "改要求不看收尾"
+   "note": "改要求不看收尾（两个条件一起去掉：用例里根结论已采用且收尾在途，两者同时成立）"
   },
   {
    "id": "F1-08",
@@ -160,12 +182,12 @@
    "id": "F1-12",
    "source": "F1 新用例 12",
    "file": "src/agent_orchestrator/storage/method_library_store.py",
-   "original": "            blamed = connection.execute(\"DELETE FROM method_library_attributions\").rowcount",
-   "replacement": "            blamed = 0",
+   "original": "            entries = connection.execute(\"DELETE FROM method_library\").rowcount",
+   "replacement": "            entries = 0",
    "tests": [
     "tests/orchestrator/product_world/test_method_library.py::test_command_line_lists_and_clears_the_library"
    ],
-   "note": "清空只清一张表"
+   "note": "清空不删全库做法（只删归因会撞外键，那是库在挡，不是用例在抓）"
   },
   {
    "id": "F1-13",
@@ -177,6 +199,17 @@
     "tests/orchestrator/product_world/test_method_library.py::test_planner_blame_when_replacing_a_derived_method"
    ],
    "note": "换做法时不记归因"
+  },
+  {
+   "id": "F1-14",
+   "source": "F1 新用例 14（守护用例）",
+   "file": "tests/orchestrator/acceptance_assets/seams_current.json",
+   "original": "\"agent_orchestrator.api.taskgraph:TaskGraphReadApi.why_not_ready\",",
+   "replacement": "\"agent_orchestrator.api.taskgraph:TaskGraphReadApi.why_not_ready_gone\",",
+   "tests": [
+    "tests/orchestrator/acceptance_assets/test_acceptance_assets.py::test_every_seam_producer_imports"
+   ],
+   "note": "接缝表写错一个生产方名字"
   },
   {
    "id": "F1-15",
@@ -221,6 +254,39 @@
     "tests/orchestrator/product_world/test_method_library.py::test_a_method_not_passed_here_is_refused_at_the_plan_commit"
    ],
    "note": "候选清单不按采用闸门的判据过滤"
+  },
+  {
+   "id": "F1-19",
+   "source": "F1 新用例 15（K08）",
+   "file": "src/agent_orchestrator/runtime/actions.py",
+   "original": "self._commit._store.fault(\"after_handoff_before_call\", \"action\")",
+   "replacement": "None",
+   "tests": [
+    "tests/orchestrator/product_world/test_fault_points.py"
+   ],
+   "note": "交接后、调用前的注入点不触发"
+  },
+  {
+   "id": "F1-20",
+   "source": "F1 新用例 15（K09）",
+   "file": "src/agent_orchestrator/runtime/actions.py",
+   "original": "self._commit._store.fault(\"after_external_effect\", \"action\")",
+   "replacement": "None",
+   "tests": [
+    "tests/orchestrator/product_world/test_fault_points.py"
+   ],
+   "note": "外部生效后、记录前的注入点不触发"
+  },
+  {
+   "id": "F1-21",
+   "source": "F1 新用例 8（不开工原因）",
+   "file": "src/agent_orchestrator/graph/eligibility.py",
+   "original": "    if planned and current and planned != current:",
+   "replacement": "    if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_holds_dispatch_then_replans_and_delivers"
+   ],
+   "note": "派发处不报\"要求已改\""
   },
   {
    "id": "M01",
@@ -319,7 +385,7 @@
    "original": null,
    "replacement": null,
    "tests": [],
-   "note": "receipt 丢失创建新 command；绑定场景 C03；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "note": "receipt 丢失创建新 command；绑定场景 C03；已有用例 tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity（K01、K02 已引用），改哪里在 F2 按 TaskGraph 补全后的代码补写"
   },
   {
    "id": "M12",

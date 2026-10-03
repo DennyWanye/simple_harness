@@ -317,7 +317,9 @@ def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(t
             assert store.get_intent(closed[0]["closed_intent"]).state == "FAILED"
             accounting._settle_expired_ended_holds(loop)
             # 按上限结清的那条用量事实如实记下（阶段 B 欠的断言，HTN 补齐 F1）
-            [counted] = [event for event in store.list_events(a) if event.type == "ReservationCountedAtUpperBound"]
+            counteds = [event for event in store.list_events(a) if event.type == "ReservationCountedAtUpperBound"]
+            assert len(counteds) == 1, counteds  # 改坏检验只认断言失败
+            [counted] = counteds
             assert counted.payload["counted_tokens"] > 0
             assert not store.connection.execute(
                 "SELECT 1 FROM budget_reservations r JOIN dispatch_intents i ON i.subject_id=r.subject_id "

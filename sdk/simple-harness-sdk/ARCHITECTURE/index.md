@@ -1,5 +1,23 @@
 最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
 
+## 验收资产（HTN 补齐阶段 F1，2026-10-04）
+
+G（全业务事件重放）与联测（F2）共用，只此一份：
+
+| 资产 | 位置 | 说明 |
+|---|---|---|
+| 接缝表 | `tests/orchestrator/acceptance_assets/seams_current.json` | 24 行：原计划来源 / 现行生产方（`模块:类.方法`）/ 关联键 / 读不到时的行为 / 用例 / 差别与出处 / 结论；缺口 0 |
+| 崩溃切点 | `tests/orchestrator/acceptance_assets/crash_points.json` | K01～K18：切点、恢复要求、方式（进程强退 / 进程内抛错）、注入点（`FAULT_POINTS` 名字或"函数级"）、已有用例、在 G 还是 F2 执行 |
+| 改坏清单 | `tests/orchestrator/acceptance_assets/mutations.json` | 编号、文件、原文、改成什么、绑定用例；TaskGraph 原计划 §15 的 M01～M12 文件留空，F2 补写 |
+| 守护用例 | `tests/orchestrator/acceptance_assets/test_acceptance_assets.py` | 生产方能导入、注入点与函数名在代码里、改坏原文恰好出现一次、绑定用例存在（不跑被绑定的用例） |
+
+怎么跑（都在本目录下）：
+
+- 改坏：`uv run --frozen python scripts/acceptance/run_mutations.py [编号 ...]`——备份 → 改 → 重生成部署清单 → 只跑绑定用例 → 从备份恢复并核哈希；只认断言失败为"抓到"。结果写仓库根 `.local-test-evidence/<日期>/mutations/results-<时刻>.json`。
+- 随机动作序列：`RANDOM_SEQ_SEEDS=1,2,3 RANDOM_SEQ_STEPS=500 uv run --frozen pytest tests/orchestrator/product_world/test_random_sequences.py`（默认 1 个种子 50 步）；反例缩小后写 `.local-test-evidence/<日期>/random-sequences/`。
+- 屏障开销：`uv run --frozen python scripts/acceptance/measure_method_barrier.py 1 10 50`。
+- 新注入点（`orchestrator/event_handler.py` `FAULT_POINTS`）：`before_goal_resolution`、`after_handoff_before_call`、`after_external_effect`，触发用例 `tests/orchestrator/product_world/test_fault_points.py`。
+
 <!-- v14-final-integration-current -->
 最后更新：2026-09-22 CST。V1.4（去除NanoJev）本阶段核心最终集成与原生完整效果闭环 PASS，TaskGraph接线资料 READY。Host已安装 `0.13.0.dev20260922+htn.1`（wheel SHA-256 `af9e273061ceeeb3204ccbb4e4d32965fb3bba568e6c7e63f1af1b18244b9800`），528包内文件逐字节一致。新Mission默认hierarchical/独立world；Mission与根合同同事务，CompletionSpec确认后才规划。真实Tauri案例 `mission-5bb7c1fef5597956` 完成内容→操作审查→界面审批→ActionExecutor发布→效果验收→根Resolution→Mission COMPLETED：12次DeepSeek调用、98229tokens、0未知、1次发布。冷恢复/只读回放前后1Attempt/8intents/102events/12calls/1action不变。旧回放语义投影仍PARTIAL（23未知事件类型/1未覆盖字段/UI账本未对齐；覆盖字段差异0），不得将此记为全部回放通过。真实模型新请求默认输出16384，上限32768；历史失败保留。SDK候选dirty源码未整体合并main、未release，Host工作树改动保留。H6大批量晋级、H8 576局对比依用户要求移出阶段并停止，原完整门禁历史保持OPEN。后文旧状态仅为历史。 [Delivery and evidence](/Users/denny/projects/simple_harness/plans/taskSys2/升级planV1/v1.4/最终集成与端到端交付-2026-09-22.md).
 <!-- /v14-final-integration-current -->

@@ -13,7 +13,7 @@
 
     uv run --frozen python scripts/acceptance/run_mutations.py [编号 ...] [--upstream 上游证据.json]
 
-结果写到 ``<仓库>/.local-test-evidence/<日期>/mutations/results.json``（不进仓库），并打印每条一行。
+结果写到 ``<仓库>/.local-test-evidence/<日期>/mutations/results-<时刻>.json``（不进仓库），并打印每条一行。
 """
 from __future__ import annotations
 
@@ -67,11 +67,13 @@ def _judge(tests: list[str]) -> tuple[str, list[str]]:
             for kind in ("failure", "error"):
                 for node in case.findall(kind):
                     name = f"{case.get('classname')}::{case.get('name')}"
-                    text = (node.get("message") or "") + (node.text or "")[:200]
-                    if kind == "failure" and "AssertionError" in ((node.get("type") or "") + text):
-                        failures.append(name)
+                    message = (node.get("message") or "").strip()
+                    # pytest 的断言失败：带说明的记成 "AssertionError: …"，不带说明的只记 "assert …"；
+                    # ``pytest.raises`` 没等到该有的拒绝记成 "Failed: DID NOT RAISE …"，也是用例的显式检查
+                    if kind == "failure" and message.startswith(("assert ", "AssertionError", "Failed: DID NOT RAISE")):
+                        failures.append(f"{name}: {message[:160]}")
                     else:
-                        other.append(f"{name}: {(node.get('type') or kind)}")
+                        other.append(f"{name}: {kind}: {message[:240]}")
         if failures:
             return "KILLED", failures
         return "INVALID", other or [done.stdout[-400:]]
@@ -118,8 +120,9 @@ def main(argv: list[str]) -> int:
     results = run(args.ids, args.upstream)
     out = REPO / ".local-test-evidence" / datetime.date.today().isoformat() / "mutations"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "results.json").write_text(json.dumps(results, ensure_ascii=False, indent=1) + "\n")
-    print(f"written: {out / 'results.json'}")
+    target = out / f"results-{datetime.datetime.now().strftime('%H%M%S')}.json"  # 每次一份，不覆盖前一次
+    target.write_text(json.dumps(results, ensure_ascii=False, indent=1) + "\n")
+    print(f"written: {target}")
     return 0 if all(r["verdict"] in {"KILLED", "SKIPPED"} for r in results) else 1
 
 

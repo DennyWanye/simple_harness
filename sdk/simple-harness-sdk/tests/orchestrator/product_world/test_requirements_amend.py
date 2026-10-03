@@ -12,7 +12,7 @@ from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.obligation_store import ObligationStore
 from agent_orchestrator.testing.fixtures import package_of
-from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, planner_reply
 
 SOURCE = {"kind": "MAIN_AGENT", "run_id": "run-1", "call_id": "call-1", "permission_mode": "auto"}
@@ -238,6 +238,12 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
             assert dispatch.requirements_changed(mission_id)
             assert dispatch.requirements_revisions(mission_id) == {
                 "planned_requirements_revision": 1, "current_requirements_revision": 2}
+            # 派发处如实报出不开工的原因（产品只读接口"为什么还不开工"）
+            reads = world.loop.taskgraph_read_api(tenant_id=TENANT, principal=world.control._principal)
+            plan = htn.active_plan_revision(mission_id)
+            reasons = {code for member in htn.list_plan_memberships(mission_id, plan.revision)
+                       for code in reads.why_not_ready(mission_id, str(member.occurrence_id))["reason_codes"]}
+            assert "requirements_changed" in reasons, reasons
             provider.go.set()
             mission = await world.run_until_settled(mission_id, rounds=40)
             events = list(world.store.list_events(mission_id))

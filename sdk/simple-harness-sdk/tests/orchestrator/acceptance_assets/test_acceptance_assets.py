@@ -29,12 +29,14 @@ def _load(name: str) -> dict:
 SEAMS = _load("seams_current.json")["rows"]
 POINTS = _load("crash_points.json")["points"]
 MUTATIONS = _load("mutations.json")["mutations"]
+# 进程强退的切点由这个测试辅助脚本埋（K01、K02），其余注入点都在源码里
+CRASH_SEEDS = [SDK / path for path in ['tests/orchestrator/full_target/taskgraph_exec/crash_seed.py']]
 
 
 @lru_cache(maxsize=1)
 def _code_text() -> str:
     return "\n".join(path.read_text(encoding="utf-8")
-                     for root in ("src", "tests") for path in (SDK / root).rglob("*.py"))
+                     for path in [*(SDK / "src").rglob("*.py"), *CRASH_SEEDS])
 
 
 def _test_exists(nodeid: str) -> bool:
@@ -66,7 +68,10 @@ def test_ids_are_unique() -> None:
 @pytest.mark.parametrize("row", SEAMS, ids=lambda row: row["id"])
 def test_every_seam_producer_imports(row: dict) -> None:
     for target in row["current_producer"]:
-        _resolve(target)
+        try:
+            _resolve(target)
+        except (ImportError, AttributeError) as error:
+            raise AssertionError(f"{row['id']}: {target} does not resolve ({error})") from error
     for nodeid in row.get("tests") or ():
         assert _test_exists(nodeid), nodeid
 
