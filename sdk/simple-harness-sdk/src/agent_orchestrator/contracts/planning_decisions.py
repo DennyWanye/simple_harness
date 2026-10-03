@@ -93,7 +93,8 @@ MAX_SUBJECT_KEY_CHARS = 256
 
 
 class PlanningDecisionType(StrEnum):
-    """§11: the eight things a planner reply may propose."""
+    """§11: the things a planner reply may propose.  ``READ_METHOD_LIBRARY`` (阶段 C3) reads
+    library precedents into the next package and changes no plan state."""
 
     REFINE = "REFINE"
     PROPOSE_METHOD = "PROPOSE_METHOD"
@@ -103,6 +104,7 @@ class PlanningDecisionType(StrEnum):
     REQUEST_HUMAN = "REQUEST_HUMAN"
     WAIT = "WAIT"
     NO_CHANGE = "NO_CHANGE"
+    READ_METHOD_LIBRARY = "READ_METHOD_LIBRARY"
 
 
 class PlanningRefKind(StrEnum):
@@ -1201,8 +1203,17 @@ class RepairReplaceMethodDecision:
     rejected_method_instance: PlanningRefV1
     replacement_method_ref: PlanningRefV1
     bindings: Mapping[str, Any]
+    #: 换下的做法本身有错（阶段 C3）：规划器明确写一句理由才算；拿不准就不写。对照全库先例写的
+    #: 做法被这样换下，记为对那条先例的一次归因。
+    method_at_fault: str | None = None
 
     def __post_init__(self) -> None:
+        if self.method_at_fault is not None:
+            reason = text(self.method_at_fault, "repair_replace.method_at_fault")
+            if len(reason) > MAX_METHOD_AT_FAULT_CHARS:
+                raise ContractError(
+                    f"repair_replace.method_at_fault is at most {MAX_METHOD_AT_FAULT_CHARS} characters")
+            object.__setattr__(self, "method_at_fault", reason)
         repair_kind = enum_of(RepairKind, self.repair_kind, "repair_replace.repair_kind")
         if repair_kind is not RepairKind.REPLACE_METHOD:
             raise ContractError("repair_replace.repair_kind must be REPLACE_METHOD")
@@ -1236,6 +1247,7 @@ class RepairReplaceMethodDecision:
             "rejected_method_instance": self.rejected_method_instance.to_json(),
             "replacement_method_ref": self.replacement_method_ref.to_json(),
             "bindings": dict(self.bindings),
+            **({} if self.method_at_fault is None else {"method_at_fault": self.method_at_fault}),
         }
 
     @classmethod
@@ -1251,12 +1263,14 @@ class RepairReplaceMethodDecision:
                 "replacement_method_ref",
                 "bindings",
             ),
+            optional=("method_at_fault",),
         )
         return cls(
             repair_kind=data["repair_kind"],
             rejected_method_instance=data["rejected_method_instance"],
             replacement_method_ref=data["replacement_method_ref"],
             bindings=data["bindings"],
+            method_at_fault=data.get("method_at_fault") or None,
         )
 
 
@@ -1687,6 +1701,35 @@ class ProposeMethodDecision:
         return cls(method_proposal=data["method_proposal"])
 
 
+MAX_METHOD_AT_FAULT_CHARS = 300
+MAX_LIBRARY_READ_ENTRIES = 3
+
+
+@dataclass(frozen=True, slots=True)
+class ReadMethodLibraryDecision:
+    """阶段 C3：读全库做法原文。只读——不改任何计划状态；下一轮规划包的 ``views.library_reads``
+    带上这些条目的做法全文。``entries`` 是规划包 ``views.method_library`` 目录里的编号。"""
+
+    entries: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.entries, (str, bytes)) or not isinstance(self.entries, (list, tuple)):
+            raise ContractError("read_method_library.entries must be a list of entry ids")
+        entries = tuple(identifier(item, "read_method_library.entries") for item in self.entries)
+        if not 1 <= len(entries) <= MAX_LIBRARY_READ_ENTRIES or len(set(entries)) != len(entries):
+            raise ContractError(
+                f"read_method_library.entries names 1 to {MAX_LIBRARY_READ_ENTRIES} distinct entries")
+        object.__setattr__(self, "entries", entries)
+
+    def to_json(self) -> dict[str, Any]:
+        return {"entries": list(self.entries)}
+
+    @classmethod
+    def from_json(cls, value: object, name: str = "read_method_library") -> ReadMethodLibraryDecision:
+        data = fields_of(value, name, required=("entries",))
+        return cls(entries=data["entries"])
+
+
 # --------------------------------------------------------------------------------------
 # PlanningDecisionEnvelopeV1 (V2 section 13), canonical JSON / hash (V2 section 15)
 # --------------------------------------------------------------------------------------
@@ -1701,6 +1744,7 @@ PAYLOAD_BY_DECISION_TYPE: Mapping[PlanningDecisionType, type[Any]] = MappingProx
         PlanningDecisionType.REQUEST_EVIDENCE: RequestEvidenceDecision,
         PlanningDecisionType.REQUEST_HUMAN: RequestHumanDecision,
         PlanningDecisionType.PROPOSE_METHOD: ProposeMethodDecision,
+        PlanningDecisionType.READ_METHOD_LIBRARY: ReadMethodLibraryDecision,
     }
 )
 
@@ -1763,6 +1807,7 @@ _ALL_PAYLOAD_CLASSES = (
     RequestEvidenceDecision,
     RequestHumanDecision,
     ProposeMethodDecision,
+    ReadMethodLibraryDecision,
 )
 
 
@@ -1984,6 +2029,8 @@ __all__ = (
     "ENVELOPE_FIELDS",
     "EvidenceQuestionV1",
     "HumanOptionV1",
+    "MAX_LIBRARY_READ_ENTRIES",
+    "MAX_METHOD_AT_FAULT_CHARS",
     "MAX_PD_ALTERNATIVES",
     "MAX_PD_ARGUMENTS",
     "MAX_PD_ASSUMPTIONS",
@@ -2016,6 +2063,7 @@ __all__ = (
     "PlanningRetryBudgetView",
     "PlanningUncertaintyV1",
     "ProposeMethodDecision",
+    "ReadMethodLibraryDecision",
     "REPAIR_PAYLOAD_BY_KIND",
     "RefineDecision",
     "ReplanTriggerHintV1",

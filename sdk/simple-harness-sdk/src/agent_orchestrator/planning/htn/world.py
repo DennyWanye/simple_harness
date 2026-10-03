@@ -60,6 +60,7 @@ from .applicability import CapabilityRecord, CapabilitySnapshot
 from .domain_package import DomainPackageInstaller
 from .observation_pipeline import ObserverIndex, build_index
 from .observers import PredicateObserver
+from ...contracts.htn import MethodRegistryStatus
 from .registry import (
     AdmissionPolicy,
     MethodRegistry,
@@ -288,6 +289,9 @@ class DeploymentPlanningWorld:
     policy_version: int = 1
     max_steps: int = 64
     package_installer: DomainPackageInstaller | None = None
+    #: the deployment's own methods, installed from the seed library: the only methods a
+    #: plan may adopt without a method review of the Mission (the desktop has none)
+    seed_methods: tuple[Any, ...] = ()
     _empty_at_ms: int = field(default=0, repr=False)
 
     # -- the structural type -------------------------------------------------------
@@ -337,29 +341,6 @@ class DeploymentPlanningWorld:
             entries=entries,
         )
 
-    def freeze_method_evaluation(self, reference: Any, evaluation_set: Any, *,
-                                 baseline_mission_ids: tuple[str, ...], policy: Any = None) -> Any:
-        from ...storage.method_evaluation_store import MethodEvaluationStore
-        if self.semantics is None:
-            raise ContractError("method evaluation needs the durable method store")
-        service = MethodEvaluationStore(self.semantics._store)
-        result = service.freeze(reference, evaluation_set,
-            baseline_mission_ids=baseline_mission_ids, policy=policy)
-        service.refresh_registry(self.registry, mission_id=self.mission_id)
-        return result
-
-    def evaluate_method(self, reference: Any, *, promote: bool = False) -> Any:
-        from ...storage.method_evaluation_store import MethodEvaluationStore
-        if self.semantics is None:
-            raise ContractError("method evaluation needs the durable method store")
-        service = MethodEvaluationStore(self.semantics._store)
-        result = service.evaluate(reference)
-        if promote and result["state"] in {"EVALUATED", "ADMITTED"}:
-            service.promote(reference)
-            result = {**result, "state": "ADMITTED"}
-        service.refresh_registry(self.registry, mission_id=self.mission_id)
-        return result
-
     # -- what a deployment does with it --------------------------------------------
     def policy(self, **overrides: Any) -> AdmissionPolicy:
         """The admission policy this deployment decides a method proposal against."""
@@ -401,6 +382,21 @@ class DeploymentPlanningWorld:
 
     def type_for(self, reference: VersionedRef) -> TaskTypeSpec | None:
         return self.catalog.resolve(reference)
+
+
+def catalog_digest(world: Any) -> str:
+    """The identity of the type catalogue a method was written against: every task type, the
+    predicate declarations and the planning package version.  Task types do not depend on the
+    Mission, so two Missions of one deployment get the same digest; a library method is listed
+    only to Missions whose digest equals the one it was promoted under."""
+    from ...runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
+
+    return content_hash_of({
+        "task_types": [spec.to_json() for spec in sorted(
+            world.catalog.task_types(), key=lambda item: (item.task_type_ref.id, int(item.task_type_ref.version)))],
+        "predicates": sorted(content_hash_of(signature.to_json()) for signature in world.predicates.signatures()),
+        "package_version": PLANNING_DECISION_PACKAGE_VERSION,
+    })
 
 
 def build_planning_world(
@@ -495,6 +491,7 @@ def build_planning_world(
     policy = world.policy()
     for domain in installed:
         admit_domain(domain, registry=registry, policy=policy)
+    world.seed_methods = registry.method_refs()
     publish_methods(world)
     return world
 
@@ -525,9 +522,22 @@ def publish_methods(world: DeploymentPlanningWorld) -> tuple[str, ...]:
             continue
         world.semantics.register_method(contract, registration)
         published.append(f"{reference.method_id}@{int(reference.version)}")
-    from ...storage.method_evaluation_store import MethodEvaluationStore
-    MethodEvaluationStore(world.semantics._store).refresh_registry(world.registry, mission_id=world.mission_id)
+    restore_trial_methods(world)
     return tuple(published)
+
+
+def restore_trial_methods(world: DeploymentPlanningWorld) -> None:
+    """Read back into the registry the methods this Mission itself proposed (their trial scope
+    is this Mission).  Nothing else in the method store is loaded: another Mission's method
+    reaches this one only as a library precedent the Planner rewrites and proposes anew."""
+    for stored in world.semantics.list_methods():
+        registration = stored.registration
+        if registration.trial_scope_mission != world.mission_id:
+            continue
+        if (registration.status is MethodRegistryStatus.TRIAL_ADMITTED
+                and world.registry.definition(registration.method_ref) is not None):
+            continue
+        world.registry.restore(stored.contract, registration)
 
 
 __all__ = (
@@ -536,6 +546,7 @@ __all__ = (
     "DeploymentPlanningWorld",
     "assign_readers",
     "build_planning_world",
+    "catalog_digest",
     "capability_records",
     "declared_capability_ids",
     "domain_observers",

@@ -59,6 +59,8 @@ def read_planner_package(
     from .planning_graph_repairs import graph_repair_sources
     from .planning_repair_requests import pending_requests, repair_goal_occurrences
     from .planning_selection import candidate_context
+    from ..planning.htn.world import catalog_digest
+    from .method_library import directory, library_reads
 
     htn = dispatch.semantics()
     duties = ObligationStore(store)
@@ -206,6 +208,10 @@ def read_planner_package(
              "authorized": row.authorized, "compatible": row.compatible}
             for row in world.capabilities().records],
         "planning_budgets": [dict(budget)],
+        # 全库做法（阶段 C3）：目录只有编号与一句用途；读过的条目带原文，只当先例
+        "method_library": directory(store, mission, catalog_digest(world),
+                                    method_signatures(network, under_repair)),
+        "library_reads": library_reads(store, mission.id),
     }
 
     # what the Planner is asked about, and what its decisions may name ----------------

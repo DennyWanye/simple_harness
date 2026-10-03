@@ -196,6 +196,9 @@ class CommitPlanCommand:
     structure_budget: GraphStructureBudget = DEFAULT_PROJECTION_BUDGET
     granted_fuel: Mapping[str, int] = field(default_factory=dict)
     source: Mapping[str, Any] = field(default_factory=dict)
+    #: the deployment's own seed methods (what the planning world installed): the only
+    #: methods adopted without a method review of this Mission
+    seed_methods: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         if not str(self.command_id).strip():
@@ -379,19 +382,20 @@ class PlanCommitsMixin:
     def _check_method_reviews(self, command: CommitPlanCommand) -> None:
         """审阅闸门（片 A 第 6 项）：采用规划器在本任务里提出的做法，须有通过的新做法审阅正式记录。
 
-        只在保证通道上生效——独立审阅只在那里存在。部署自带的库做法没有开过新做法审阅，
-        不归这道闸管。闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
+        放行的只有部署自带的种子做法（规划世界装入、随命令给出）；其余做法不管从哪来，都要有本任务通过的做法审阅（阶段 C3：复用也要审）。
+        闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
         """
 
-        from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_proposed_methods
+        from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_adopted_methods
 
         if not command.delta.method_instances:
             return
-        refused = unreviewed_proposed_methods(self._store, command.mission_id, command.delta.method_instances)
+        refused = unreviewed_adopted_methods(
+            self._store, command.mission_id, command.delta.method_instances, command.seed_methods)
         if refused:
             raise PlanCommitRejected(
                 REVIEW_REQUIRED,
-                "a method proposed in this Mission is adopted only after its independent "
+                "a method is adopted in a Mission only after its independent "
                 "review passed (or the person passed it): "
                 + json.dumps(refused, ensure_ascii=False, sort_keys=True),
             )

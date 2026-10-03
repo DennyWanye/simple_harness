@@ -11,7 +11,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from ..contracts.htn import ContractRevision, ObligationId, TaskRef, TaskSemanticBindingV1
+from ..contracts.htn import (
+    ContractRevision,
+    GoalSignature,
+    ObligationId,
+    TaskRef,
+    TaskSemanticBindingV1,
+)
 from ..contracts.obligations import Obligation
 from ..contracts.resolution import (
     AllExpr,
@@ -127,6 +133,32 @@ def apply_changes(previous: RequirementsRevision, changes: Any, *,
     return tuple((name, entries[name][0], entries[name][1]) for name in order)
 
 
+def root_binding(store: Any, mission: Any, definition: Any, *, task_id: str, duty_id: str,
+                 contract_revision: int, parameters: Mapping[str, Any]) -> TaskSemanticBindingV1:
+    """The root's binding as the requirements stand.  Task types are the same for every Mission;
+    what is this Mission's own — the user's words and the requirements — is only here: the
+    signature keeps the root type's id, version and schemas, states the user's goal verbatim and
+    covers the content requirements (an ``action:`` requirement is prepared by the system, the
+    planner arranges content only; a Mission with nothing but actions covers them all).
+    ``requirement_refs`` is every current requirement.  Root initialisation and a requirements
+    amendment both write the root through this one rule."""
+
+    requirements = current_criteria(store, mission)
+    names = tuple(name for name, _ in requirements)
+    content = tuple(name for name, statement in requirements if not statement.startswith("action:"))
+    kind = definition.goal_signature
+    signature = GoalSignature(kind.signature_id, kind.version, kind.parameter_schema_ref,
+                              kind.output_schema_ref, mission.goal, content or names)
+    return TaskSemanticBindingV1(
+        task_id=TaskRef(task_id), obligation_id=ObligationId(duty_id),
+        contract_revision=ContractRevision(int(contract_revision)),
+        contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": dict(parameters),
+                                       "goal_signature": signature.to_json()}),
+        form=definition.form, goal_signature=signature, typed_parameters=dict(parameters),
+        output_ports=definition.output_ports, requirement_refs=names, semantic_scope="mission",
+    )
+
+
 def goal_parameters(mission: Any) -> dict[str, Any]:
     """The product's root parameters: the user's goal, verbatim."""
     return {"goal": mission.goal}
@@ -153,12 +185,8 @@ def initialize_root(
     world = world_factory(loop, mission)
     definition = next(t for t in world.catalog.task_types() if t.task_type_ref.id == root_type)
     parameters = root_parameters(mission)
-    binding = TaskSemanticBindingV1(
-        task_id=TaskRef(task_id), obligation_id=ObligationId(duty_id), contract_revision=ContractRevision(1),
-        contract_hash=content_hash_of({"task_type": definition.to_json(), "parameters": parameters}),
-        form=definition.form, goal_signature=definition.goal_signature, typed_parameters=parameters,
-        output_ports=definition.output_ports, requirement_refs=criterion_ids(mission), semantic_scope="mission",
-    )
+    binding = root_binding(loop.store, mission, definition, task_id=task_id, duty_id=duty_id,
+                           contract_revision=1, parameters=parameters)
     # Root requirements are reviewed over accepted contributions. Concrete file/pytest
     # statements are projected to leaf checks by the materializer; naming those checks as
     # root executions would require invented receipts.
@@ -204,4 +232,4 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
     loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "user_requirements")
+__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "root_binding", "user_requirements")

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "decision_type": "READ_METHOD_LIBRARY",
+  "subject_key": "subject-root",
+  "rationale": "目录里这条的用途对得上，先读原文。",
+  "reason_refs": [],
+  "assumptions": [],
+  "payload": {
+    "entries": [
+      "lib-0123456789abcdef01234567"
+    ]
+  },
+  "uncertainties": [],
+  "alternatives": [],
+  "replan_triggers": []
+}

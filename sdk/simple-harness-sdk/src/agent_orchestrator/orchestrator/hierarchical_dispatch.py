@@ -3550,6 +3550,7 @@ class HierarchicalDispatch:
             issued_by=principal.principal_id,
             scope_id=principal.scope_id,
             budget_requirement=compilation.budget_requirement,
+            seed_methods=tuple(getattr(self.require_planning_world(), "seed_methods", ())),
             source={
                 **dict(source or {}),
                 "proposal_id": proposal.proposal_id,

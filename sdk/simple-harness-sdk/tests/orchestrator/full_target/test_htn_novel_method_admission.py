@@ -10,8 +10,8 @@ codec, so no test here depends on a live model.
 What is pinned:
 
 * a well-formed proposal walks ``DRAFT → STRUCTURALLY_VALID → TRIAL_ADMITTED`` and
-  stops there — ``promote`` answers ``PROMOTION_NOT_AVAILABLE``, because
-  ``EVALUATED → ADMITTED`` needs the offline evaluation P8 delivers (§7.3);
+  stops there — the registry has no promotion; a method reaches the method library
+  only after delivery and a root review that called it reusable (阶段 C3);
 * a proposal that names an operator nobody registered is ``REJECTED`` with the
   missing capability spelled out;
 * a model-authored payload that writes its own ``registry_status`` is refused
@@ -356,30 +356,12 @@ def test_a_policy_step_bound_refuses_an_oversized_method() -> None:
 # ================================================================== the lifecycle
 
 
-@pytest.mark.parametrize(
-    "target",
-    [MethodRegistryStatus.EVALUATED, MethodRegistryStatus.ADMITTED],
-)
-def test_promotion_beyond_the_trial_is_not_available(target) -> None:
+def test_the_registry_has_no_promotion() -> None:
+    """阶段 C3：晋级只有一条路——交付成功、根终审判可复用后由完成写方写进全库表；注册表不再有
+    晋级入口，被采纳的做法登记状态始终是本任务试用。"""
     env = code_env()
     receipt = admitted(env, "valid")
-    promoted = env.registry.promote(receipt.method_ref, target, policy=env.policy())
-    assert promoted.verdict is AdmissionVerdict.PROMOTION_NOT_AVAILABLE
-
-
-def test_promotion_explains_that_the_offline_evaluation_is_missing() -> None:
-    env = code_env()
-    receipt = admitted(env, "valid")
-    promoted = env.registry.promote(
-        receipt.method_ref, MethodRegistryStatus.ADMITTED, policy=env.policy()
-    )
-    assert "P8" in promoted.steps[0].detail
-
-
-def test_promotion_does_not_change_the_registration() -> None:
-    env = code_env()
-    receipt = admitted(env, "valid")
-    env.registry.promote(receipt.method_ref, MethodRegistryStatus.ADMITTED, policy=env.policy())
+    assert not hasattr(env.registry, "promote")
     registration = env.registry.registration(receipt.method_ref)
     assert registration is not None
     assert registration.status is MethodRegistryStatus.TRIAL_ADMITTED

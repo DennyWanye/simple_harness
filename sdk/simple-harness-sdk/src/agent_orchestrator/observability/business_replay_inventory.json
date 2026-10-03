@@ -736,6 +736,7 @@
     "AssuranceStatusNotified",
     "AssuranceUseCertified",
     "AssuranceUseValidityChecked",
+    "MethodLibraryEntryRetired",
     "MissionCreated",
     "OperationCompletionSpecApproved",
     "OperationIntentSubmitted",
@@ -756,8 +757,7 @@
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_root_commits.install_native_root / _initialize_clock（保证通道根与时钟）不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 failure_classes.record_review_interruption（审阅调用被打断）在事件事务之外单独写，不发事件",
     "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 operation_proposal_review.persist_action_proposal_review_inputs 在 operation_runtime.ensure_assured_proposal_reviews 路径上不发事件",
-    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_changes.original_source_mutation 在 PolicyCommitsMixin.seed_policy / record_policy_drift、HtnStore.register_method / set_method_registration 路径上不发事件",
-    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 MethodEvaluationStore.record_oracle（做法评测）不发事件"
+    "agent_orchestrator/storage/store.py:Store.insert_receipt: 经 assurance_changes.original_source_mutation 在 PolicyCommitsMixin.seed_policy / record_policy_drift、HtnStore.register_method / set_method_registration 路径上不发事件"
    ]
   },
   "criterion_evaluations": {
@@ -1065,22 +1065,6 @@
     "updated_at"
    ],
    "note": "做法库（跨任务）"
-  },
-  "method_evaluations": {
-   "class": "global",
-   "fields": [
-    "method_id",
-    "method_version",
-    "method_hash",
-    "set_hash",
-    "frozen_json",
-    "evidence_hash",
-    "evaluation_json",
-    "state",
-    "created_at",
-    "updated_at"
-   ],
-   "note": "做法评测（阶段 C3 删）"
   },
   "method_instances": {
    "class": "business",
@@ -1678,6 +1662,7 @@
    ],
    "events": [
     "PlanningHumanRequested",
+    "PlanningLibraryRead",
     "PlanningMethodProposed",
     "PlanningRejected",
     "PlanningRetryAuthorized",
@@ -2074,19 +2059,6 @@
     "SourceRevoked",
     "SourceSuperseded"
    ]
-  },
-  "summaries": {
-   "class": "derived",
-   "fields": [
-    "summary_id",
-    "mission_id",
-    "scope",
-    "subject_id",
-    "version",
-    "json",
-    "created_at"
-   ],
-   "note": "由知识原文按规则生成"
   },
   "task_semantics": {
    "class": "business",
@@ -2597,6 +2569,43 @@
     "agent_orchestrator/storage/store.py:Store.register_workspace: 不发事件（Orchestrator._bind_workspace / _register_copy）",
     "agent_orchestrator/storage/store.py:Store.set_workspace_state: 不发事件（Orchestrator._bind_workspace / cleanup_workspaces）"
    ]
+  },
+  "method_library": {
+   "class": "global",
+   "fields": [
+    "entry_id",
+    "owner",
+    "goal_type_id",
+    "catalog_digest",
+    "method_id",
+    "method_version",
+    "method_hash",
+    "purpose",
+    "source_mission_id",
+    "root_review_record_id",
+    "based_on",
+    "state",
+    "retired_by",
+    "retired_reason",
+    "retired_at",
+    "promoted_at"
+   ],
+   "note": "全库做法（先例，阶段 C3）；不按任务重放，阶段 G 单独核对。写方 MethodLibraryStore.insert/retire/clear；事件 MethodPromoted、MethodPromotionSkipped（来源任务里）、MethodLibraryEntryRetired（触发它的任务里）；命令行清空不发事件"
+  },
+  "method_library_attributions": {
+   "class": "global",
+   "fields": [
+    "entry_id",
+    "source_ref",
+    "source_kind",
+    "mission_id",
+    "method_id",
+    "method_version",
+    "method_hash",
+    "reason",
+    "recorded_at"
+   ],
+   "note": "全库做法的归因（阶段 C3）；不按任务重放，阶段 G 单独核对。写方 MethodLibraryStore.add_attribution/clear；归因本身不发事件（规划器一侧随换做法的计划提交、审阅员一侧随根终审记录导入），第 2 个任务归因时发 MethodLibraryEntryRetired"
   }
  }
 }

@@ -11,10 +11,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import Any
 
-from ..contracts.htn import ContractRevision
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import TERMINAL_MISSION
@@ -62,7 +60,7 @@ def amend_requirements(
     expected_requirements_ref: Mapping[str, Any], changes: Sequence[Mapping[str, Any]],
     reason: str, source: Mapping[str, Any], principal: Any,
 ) -> dict[str, Any]:
-    from ..deployment.root import apply_changes, build_requirements
+    from ..deployment.root import apply_changes, build_requirements, root_binding
     from .assurance_final_writer import assured_closeout_pending
     from .hierarchical_dispatch import append_hierarchical_event
 
@@ -115,16 +113,12 @@ def amend_requirements(
         revision = build_requirements(mission_id, int(previous.revision) + 1, entries,
                                       str(principal.principal_id), credential=command_id)
         htn.insert_requirements_revision(revision)
-        # 2 the root contract: the world, rebuilt in this transaction, already reads the new revision
-        world = orchestrator._planning_world_factory(mission)
-        definition = next(item for item in world.catalog.task_types()
+        # 2 the root contract: the same rule root initialisation uses, reading the new revision
+        definition = next(item for item in dispatch.require_planning_world().catalog.task_types()
                           if item.goal_signature.signature_id == root.goal_signature.signature_id)
-        htn.put_task_semantics(mission_id, replace(
-            root, contract_revision=ContractRevision(int(root.contract_revision) + 1),
-            contract_hash=content_hash_of({"task_type": definition.to_json(),
-                                           "parameters": dict(root.typed_parameters)}),
-            goal_signature=definition.goal_signature,
-            requirement_refs=tuple(name for name, _, _ in entries)))
+        htn.put_task_semantics(mission_id, root_binding(
+            store, mission, definition, task_id=str(root.task_id), duty_id=str(root.obligation_id),
+            contract_revision=int(root.contract_revision) + 1, parameters=root.typed_parameters))
         # 3 the root duty answers for the new set
         ObligationStore(store).revise_requirement_refs(
             mission_id, root.obligation_id, [name for name, _, _ in entries])
@@ -144,7 +138,6 @@ def amend_requirements(
             "requirements_content_hash": revision.content_hash(), **changed})
         store.insert_receipt(commit_id=command_id, kind=RECEIPT_KIND, subject_id=mission_id,
                              base_version=int(previous.revision), proposal_hash=proposal_hash, receipt=receipt)
-    orchestrator.forget_planning_world(mission_id)
     return receipt
 
 

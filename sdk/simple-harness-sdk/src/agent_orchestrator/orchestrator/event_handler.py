@@ -60,6 +60,7 @@ from ..context.context_builder import (
     ContextRejected,
     build_worker_package,
 )
+from ..context.knowledge_tools import MAX_PUSHED_SUMMARIES, step_summaries
 from ..context.retrieval import (
     KnowledgeContext,
     RetrievalUnavailable,
@@ -104,7 +105,6 @@ from ..governance.promotion import diff_params, interpreter_versions, resolve_pa
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
 from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE, knowledge_standing
-from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..graph.terminal import terminal_task
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
@@ -1288,10 +1288,20 @@ class Orchestrator:
         self._mission_dispatches.clear()
         self.install_hierarchical()
 
-    def forget_planning_world(self, mission_id: str) -> None:
-        """The Mission's requirements changed: its planning world is rebuilt on next use
-        (the root goal's coverage follows the requirements; 阶段 E)."""
-        self._mission_dispatches.pop(mission_id, None)
+    def _blame_replaced_method(self, mission_id: str, decision: Any, decision_id: str) -> None:
+        """换做法提交成功、规划器写明"换下的做法本身有错"（阶段 C3）：换下的做法若是照全库先例
+        写的，记一条归因。同一事务；程序只记规划器明确写出的，怎么数在 method_library 里。"""
+        from ..contracts.planning_decisions import RepairReplaceMethodDecision
+        from .method_library import record_attribution
+
+        payload = decision.payload
+        if not isinstance(payload, RepairReplaceMethodDecision) or not payload.method_at_fault:
+            return
+        from ..storage.htn_store import HtnStore
+
+        replaced = HtnStore(self.store).get_method_instance(mission_id, str(payload.rejected_method_instance.id))
+        record_attribution(self.store, mission_id=mission_id, method_ref=replaced.method_ref,
+                           source_ref=decision_id, source_kind="PLANNER", reason=payload.method_at_fault)
 
     def _dispatch_for(self, mission_id: str) -> HierarchicalDispatch | None:
         if self._planning_world_factory is None:
@@ -2995,7 +3005,7 @@ class Orchestrator:
                        for e in events if e.type == "PlanningServiceResumed"}
             service_types = {"PlanningEvidenceRecorded", "PlanningMethodProposed", "PlanningMethodReviewed",
                              "PlanningHumanAnswered", "PlanningHumanStale", "PlanningHumanRequested", "PlanningRuntimeBlockWoken",
-                             "PlanningRepairRequested"}
+                             "PlanningRepairRequested", "PlanningLibraryRead"}
             addressed = {request_id for e in events if e.type == "PlanningRepairAddressed"
                          for request_id in e.payload.get("repair_request_ids", ())}
             def service_key(event: Any) -> str:
@@ -5344,7 +5354,7 @@ class Orchestrator:
     ) -> KnowledgeContext:
         """§10 items 4/5/7 for one Task: ranked Verified Knowledge (read back in full),
         the disputed claims (marked), the candidate / rejected claims for the templates
-        that may see them, and the deterministic summaries.  Raises
+        that may see them, and the checked step summaries.  Raises
         ``RetrievalUnavailable`` instead of pretending the Mission has no knowledge."""
 
         if not self._config.knowledge_sharing:
@@ -5359,7 +5369,6 @@ class Orchestrator:
             records = [record for record in self.store.list_knowledge(mission.id)
                        if not knowledge_standing(self.store, record).startswith(KNOWLEDGE_STALE)]
             claims = self.store.list_mission_claims(mission.id)
-            summaries = build_summaries(self.store, mission.id)
             disputes = disputed_claims(claims, mission_id=mission.id)
         except (StoreBusy, OSError, ValueError) as error:  # index unreadable / not ready
             raise RetrievalUnavailable(str(error)) from error
@@ -5370,9 +5379,6 @@ class Orchestrator:
             limit=self._config.max_knowledge_items,
         )
         by_id = {record.id: record for record in records}
-        from ..context.compression import GLOBAL_BRANCH, branch_of
-
-        branch = branch_of(task, tasks_by_id)
         visible_records = [by_id[item.id] for item in ranked.items]
         scored = {item.id: item for item in ranked.items}
         return KnowledgeContext(
@@ -5393,8 +5399,8 @@ class Orchestrator:
             rejected=tuple(
                 candidate_claims(claims, mission_id=mission.id, statuses=(ClaimStatus.REJECTED,))
             ),
-            branch_summary=summaries.get(branch if branch != GLOBAL_BRANCH else GLOBAL_BRANCH),
-            global_summary=summaries.get(f"mission:{mission.id}"),
+            step_summaries=tuple(row for row in step_summaries(self.store, mission.id)
+                                 if row["source_task"] != task.id)[:MAX_PUSHED_SUMMARIES],
         )
 
 
@@ -6429,6 +6435,7 @@ class Orchestrator:
                     PlanningDecisionType.REQUEST_EVIDENCE,
                     PlanningDecisionType.REQUEST_HUMAN,
                     PlanningDecisionType.PROPOSE_METHOD,
+                    PlanningDecisionType.READ_METHOD_LIBRARY,
                 },
             )
         except PlanningDecisionCodecError as error:
@@ -6625,8 +6632,16 @@ class Orchestrator:
                 await reject_planning(intent, reason="proposal_not_grounded", detail=detail)
             return
         if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
-            and decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD}):
-            from .planning_method_proposal import prepare_method, persist_method
+            and decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD,
+                                           PlanningDecisionType.READ_METHOD_LIBRARY}):
+            from .planning_method_proposal import (
+                decode_proposal,
+                persist_method,
+                prepare_method,
+                proposal_origin,
+                read_library,
+            )
+            from ..contracts.planning_decisions import ReadMethodLibraryDecision
             from ..contracts.planning_decisions import RequestHumanDecision, ProposeMethodDecision
             prepared_method = None
             try:
@@ -6645,12 +6660,19 @@ class Orchestrator:
                             payload=decision.payload, current=current,
                             next_ordinal=int(intent.config.get("ordinal", 1)) + 1, repair_context=None)
                         event_type = "PlanningHumanRequested"
+                    elif isinstance(decision.payload, ReadMethodLibraryDecision):
+                        # 只读（阶段 C3）：记一条读取事件，下一轮规划包带上原文
+                        service_detail = read_library(new_mode, mission, decision.payload)
+                        event_type = "PlanningLibraryRead"
                     else:
                         assert isinstance(decision.payload, ProposeMethodDecision)
                         prepared_method = prepare_method(new_mode, mission.id, decision.payload, checked.subject)
                         # 每个目标最多提几次是按这条事件里的目标任务数的，所有通道都要带。
+                        # 来源（阶段 C3）：写这个做法时的类型目录哈希、它参照的全库做法
                         service_detail = {**persist_method(new_mode, *prepared_method),
-                                          "subject_task_id": str(checked.subject["task_id"])}
+                                          "subject_task_id": str(checked.subject["task_id"]),
+                                          **proposal_origin(new_mode, mission.id,
+                                                            decode_proposal(decision.payload))}
                         event_type = "PlanningMethodProposed"
                         # BW03: the admitted draft gets its independent METHOD_PLAN
                         # review on the round transport, authored by this intent.
@@ -7157,6 +7179,7 @@ class Orchestrator:
                         decision_type=str(decision.decision_type),
                         plan_revision=plan_outcome.receipt.new_plan_revision,
                     )
+                    self._blame_replaced_method(mission.id, decision, decision_id)
                     new_mode.advance_compound_phases(mission.id)
                     self._settle_intent(intent, "SETTLED")
                     self._settle_service_if_known(intent.subject_id, mission.id)

@@ -78,13 +78,6 @@ from .grounding import (
     ground_method,
     may_share,
 )
-from .method_lifecycle import (
-    EvaluationSetV1,
-    MethodEvaluationRecordV1,
-    MethodLifecyclePolicyV1,
-    MethodLifecycleReceipt,
-    MethodLifecycleService,
-)
 from .method_selection import (
     MAX_EVIDENCE_QUESTIONS,
     MethodCandidates,
@@ -144,11 +137,6 @@ __all__ = (
     "CrossDomainScenario",
     "FourArm",
     "ScenarioKind",
-    "EvaluationSetV1",
-    "MethodEvaluationRecordV1",
-    "MethodLifecyclePolicyV1",
-    "MethodLifecycleReceipt",
-    "MethodLifecycleService",
     "DomainInstallReceipt",
     "DomainPackageInstaller",
     "ObserverRegistrationV1",

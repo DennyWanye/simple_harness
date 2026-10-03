@@ -584,7 +584,6 @@ def _assured_outcome_use(commit: Any, mission_id: str, binding_id: str) -> Any:
 def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, candidate: Any) -> Any:
     from ..contracts import TaskStatus
     from ..contracts.htn import TaskForm
-    from ..memory.summaries import refresh_summaries
     from ..verification.acceptance_rules import ExecutionPosture, IndependenceFacts
     from .completion_status import read_occurrence_completion
     from .leaf_acceptance import LeafAcceptanceAssembly
@@ -663,7 +662,6 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
         ):
             completed = next_task(task, TaskStatus.COMPLETED)
             store.update_task(completed, expected_version=task.version)
-            refresh_summaries(store, mission_id)
             commit._emit(
                 "TaskCompleted",
                 mission_id,

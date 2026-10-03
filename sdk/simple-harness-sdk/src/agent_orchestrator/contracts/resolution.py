@@ -791,6 +791,8 @@ class CriterionOutcome:
 
 
 _CLAIM_TO_CONFIRM_KEYS = ("claim_id", "content", "content_sha256", "evidence")
+_METHOD_TO_JUDGE_KEYS = ("method_ref", "goal", "based_on", "method")
+_SUMMARY_TO_CONFIRM_KEYS = ("result_ref", "summary", "summary_sha256")
 _RELATED_ENTRY_KEYS = ("kind", "id", "version", "content_sha256", "content", "status", "source_task")
 
 
@@ -847,6 +849,13 @@ class ReviewPackage:
     #: 用过的知识（``used_knowledge``），各带版本、内容哈希与原文。**不是证据**：不在证据
     #: 目录里，审阅员没法把它写进 ``evidence_ids``。
     related_entries: tuple[Mapping[str, Any], ...] = ()
+    #: 本任务采用的做法（阶段 C3，只在根终审包里）：``method_ref``（"编号@版本"）/ ``goal``（它服务
+    #: 的目标）/ ``based_on``（来自哪条全库做法，没有为 None）/ ``method``（做法定义全文）。审阅员在
+    #: 回复的 ``methods`` 里逐个表态：可不可复用、一句用途、是不是做法本身的错。
+    methods_to_judge: tuple[Mapping[str, Any], ...] = ()
+    #: 本步待核对摘要（阶段 C3，只在步骤内容审查包里）：``result_ref``（结果指纹）/ ``summary``
+    #: （执行者写的摘要原文）/ ``summary_sha256``。审阅员在回复的 ``summary`` 里说它是否忠实。
+    summary_to_confirm: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -858,6 +867,12 @@ class ReviewPackage:
             self.claims_to_confirm, "package.claims_to_confirm", _CLAIM_TO_CONFIRM_KEYS))
         object.__setattr__(self, "related_entries", _package_rows(
             self.related_entries, "package.related_entries", _RELATED_ENTRY_KEYS))
+        object.__setattr__(self, "methods_to_judge", _package_rows(
+            self.methods_to_judge, "package.methods_to_judge", _METHOD_TO_JUDGE_KEYS))
+        if self.summary_to_confirm is not None:
+            [row] = _package_rows([self.summary_to_confirm], "package.summary_to_confirm",
+                                  _SUMMARY_TO_CONFIRM_KEYS)
+            object.__setattr__(self, "summary_to_confirm", row)
         if any(row["kind"] not in {"dispute", "used_knowledge"} for row in self.related_entries):
             raise ContractError("package.related_entries kind must be dispute or used_knowledge")
         object.__setattr__(self, "purpose", enum_of(ReviewPurpose, self.purpose, "package.purpose"))
@@ -980,6 +995,10 @@ class ReviewPackage:
                if self.claims_to_confirm else {}),
             **({"related_entries": [dict(row) for row in self.related_entries]}
                if self.related_entries else {}),
+            **({"methods_to_judge": [dict(row) for row in self.methods_to_judge]}
+               if self.methods_to_judge else {}),
+            **({"summary_to_confirm": dict(self.summary_to_confirm)}
+               if self.summary_to_confirm is not None else {}),
         }
 
     def content_hash(self) -> str:
@@ -1005,6 +1024,8 @@ class ReviewPackage:
                 "review_budget_ref",
                 "claims_to_confirm",
                 "related_entries",
+                "methods_to_judge",
+                "summary_to_confirm",
             ),
         )
 
@@ -1049,6 +1070,8 @@ class ReviewPackage:
             review_budget_ref=data.get("review_budget_ref"),
             claims_to_confirm=tuple(data.get("claims_to_confirm", ())),
             related_entries=tuple(data.get("related_entries", ())),
+            methods_to_judge=tuple(data.get("methods_to_judge", ())),
+            summary_to_confirm=data.get("summary_to_confirm"),
         )
 
 

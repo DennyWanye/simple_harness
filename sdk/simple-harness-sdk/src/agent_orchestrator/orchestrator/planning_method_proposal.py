@@ -66,16 +66,27 @@ def _identity_problems(dispatch: Any, mission_id: str, method: Any) -> list[str]
             f"method_version={next_version} or a new method_id"]
 
 
+def _goal_identity(signature: Any) -> tuple[Any, ...]:
+    """What makes a binding an instance of a goal type: id, version and the two schemas.  The
+    statement and the criteria of the root are the Mission's own and live on the binding only."""
+    return (signature.signature_id, int(signature.version), signature.parameter_schema_ref,
+            signature.output_schema_ref)
+
+
 def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any) -> list[str]:
     """中间目标的做法：恰好覆盖分给这个目标的要求，每一步都落到某条要求上（片 B）。
 
-    秩序检查（覆盖完整、归属唯一），不判断拆得好不好。只管要求是由上级做法分下来的目标；
-    类型自己声明判据的目标（根目标）由注册协议的覆盖检查管。
+    秩序检查（覆盖完整、归属唯一），不判断拆得好不好。根目标的要求写在根绑定的签名上（类型与
+    任务无关，阶段 C3）：每一条都要有链接；中间目标的要求是上级做法分下来的。
     """
     from .assurance_check_policy import assigned_criterion_ids
 
     if binding.goal_signature.coverage_criteria:
-        return []
+        linked = {str(link.parent_criterion_id) for link in method.composition.criterion_links}
+        missing = sorted(set(binding.goal_signature.coverage_criteria) - linked)
+        return [] if not missing else [
+            f"ROOT_COVERAGE_GAP: the composition covers none of criteria {', '.join(missing)} of the "
+            "goal; every requirement of the goal needs a criterion link"]
     assigned = set(assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
     if not assigned:
         return []
@@ -118,11 +129,10 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
             f"METHOD_PROPOSALS_EXHAUSTED: {MAX_METHOD_PROPOSALS_PER_GOAL} methods were already "
             "proposed for this goal in this Mission; choose among the methods in the library or "
             "ask the user",), code="PLANNING_BOUND_REACHED")
-    proposal = decode_dropping_unknown(  # planner-authored (user decision 2026-09-26)
-        MethodProposal.from_json, dict(payload.method_proposal), root_names=("method_proposal",))
+    proposal = decode_proposal(payload)
     binding = dispatch.network(mission_id).binding_for_task(TaskRef(subject["task_id"]))
     goal_type = world.catalog.resolve(proposal.method.goal_type_ref)
-    if goal_type is None or goal_type.goal_signature != binding.goal_signature:
+    if goal_type is None or _goal_identity(goal_type.goal_signature) != _goal_identity(binding.goal_signature):
         raise MethodProposalRefused((
             "GOAL_MISMATCH: method.goal_type_ref must be the goal type of the planning subject "
             f"({binding.goal_signature.signature_id})",))
@@ -135,6 +145,11 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
                  "链接到一个步骤（写出这个文件的那一步），发布本身由系统完成"
                  for item in dispatch._publish_source_steps(mission_id, proposal.method, share)]
     problems += _coverage_problems(dispatch, mission_id, binding, proposal.method)
+    if proposal.based_on is not None and proposal_origin(dispatch, mission_id, proposal)["based_on"] is None:
+        problems.append(
+            f"LIBRARY_ENTRY_UNAVAILABLE: based_on {proposal.based_on!r} is not a library entry listed "
+            "to this Mission for this goal type; cite an entry_id from views.method_library, or leave "
+            "based_on out")
     if problems:
         raise MethodProposalRefused(tuple(problems))
     # Candidate admission mutates only an isolated registry. Persist/install the
@@ -145,6 +160,51 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
     if not receipt.admitted or receipt.method_ref is None:
         raise MethodProposalRefused(rejection_problems(receipt) or (f"REJECTED: {receipt.verdict!s}",))
     return receipt, candidate.definition(receipt.method_ref), candidate.registration(receipt.method_ref)
+
+
+def read_library(dispatch: Any, mission: Any, payload: Any) -> dict[str, Any]:
+    """A READ_METHOD_LIBRARY decision: order only — within the Mission's read allowance, and
+    every entry is one the Mission is listed for the goals it is planning.  Nothing changes;
+    the event this returns the detail of is what the next package's ``library_reads`` reads."""
+    from ..planning.htn.planner_package import method_signatures
+    from ..planning.htn.world import catalog_digest
+    from .method_library import MAX_LIBRARY_READS, reads_used, visible_entry
+    from .planning_repair_requests import repair_goal_occurrences
+
+    store = dispatch.store
+    if reads_used(store, mission.id) >= MAX_LIBRARY_READS:
+        raise MethodProposalRefused((
+            f"LIBRARY_READS_EXHAUSTED: this Mission already read the method library {MAX_LIBRARY_READS} "
+            "times; work from views.library_reads, write your own method, or ask the user",),
+            code="PLANNING_BOUND_REACHED")
+    network = dispatch.network(mission.id)
+    goal_types = method_signatures(network, repair_goal_occurrences(store, network))
+    digest = catalog_digest(dispatch.require_planning_world())
+    missing = [entry for entry in payload.entries
+               if visible_entry(store, mission, digest, goal_types, entry) is None]
+    if missing:
+        raise MethodProposalRefused(tuple(
+            f"LIBRARY_ENTRY_UNAVAILABLE: {entry!r} is not an entry of views.method_library"
+            for entry in missing))
+    return {"entries": list(payload.entries)}
+
+
+def proposal_origin(dispatch: Any, mission_id: str, proposal: Any) -> dict[str, Any]:
+    """What a proposal's event records about where it came from: the type catalogue it was
+    written against, and the library entry it cites when this Mission may see that entry."""
+    from ..planning.htn.world import catalog_digest
+    from .method_library import visible_entry
+
+    digest = catalog_digest(dispatch.require_planning_world())
+    entry = None if proposal.based_on is None else visible_entry(
+        dispatch.store, dispatch.store.get_mission(mission_id), digest,
+        (proposal.method.goal_type_ref.id,), proposal.based_on)
+    return {"catalog_digest": digest, "based_on": None if entry is None else entry["entry_id"]}
+
+
+def decode_proposal(payload: Any) -> Any:
+    return decode_dropping_unknown(  # planner-authored (user decision 2026-09-26)
+        MethodProposal.from_json, dict(payload.method_proposal), root_names=("method_proposal",))
 
 
 def persist_method(dispatch: Any, receipt: Any, contract: Any, registration: Any) -> dict[str, Any]:

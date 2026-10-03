@@ -17,7 +17,7 @@ from agent_orchestrator.orchestrator.assurance_review_transport import _FORMAT_F
 
 def _reply(reason: str) -> dict:
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "verdict": "ACCEPT",
         "assessments": [{"criterion_id": "c-1", "verdict": "PASS", "evidence_ids": ["ev-1"],
                          "reason": reason, "limitations": []}],

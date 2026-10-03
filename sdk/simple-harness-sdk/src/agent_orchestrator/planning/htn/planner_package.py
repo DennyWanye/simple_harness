@@ -3,7 +3,7 @@
 
 """The package a hierarchical Planner is given, assembled in one layer.
 
-What the model reads is facts, in nine views, plus the things it is asked to act on:
+What the model reads is facts, in eleven views, plus the things it is asked to act on:
 
 ``views``
     ``goals`` (every goal and step on the board, with its state), ``obligations``,
@@ -66,10 +66,12 @@ from ...contracts.planning_decisions import (
 from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
 
-#: The nine views, in the order the package lists them.
+#: The views, in the order the package lists them.  ``method_library`` is the directory of
+#: library precedents (id and one line of purpose, never the method); ``library_reads`` the
+#: entries this Mission's Planner read, with the method as written for its source Mission.
 VIEW_NAMES = (
     "goals", "obligations", "plans", "methods", "facts", "accepted_results",
-    "failures", "capabilities", "planning_budgets",
+    "failures", "capabilities", "planning_budgets", "method_library", "library_reads",
 )
 
 #: The whole provider envelope is bounded, not just the views: the package is a prompt.
@@ -81,7 +83,7 @@ MAX_FAILURES = 16
 
 #: The views size pressure may shorten, in the order it does so.  Goals, the plan and
 #: the budgets are mandatory and are never dropped.
-_SHRINKABLE = ("accepted_results", "failures", "facts", "methods")
+_SHRINKABLE = ("accepted_results", "failures", "facts", "methods", "library_reads")
 
 
 class PlannerPackageError(ContractError):
@@ -879,7 +881,7 @@ def assemble_planner_package(
 ) -> dict[str, Any]:
     """The whole package, as a plain mapping the context builder can seal.
 
-    ``views`` is the nine views, row for row as the model will read them; ``sections``
+    ``views`` is the eleven views, row for row as the model will read them; ``sections``
     is everything else the reader gathered (repair requests, candidate lists, …).
     This function adds the protocol fields, computes ``visible_refs`` from the rows
     actually shown, applies the count caps and the size bound, and records what it
@@ -892,7 +894,7 @@ def assemble_planner_package(
 
     if set(views) != set(VIEW_NAMES):
         raise PlannerPackageError(
-            f"the package needs exactly the nine views; got {sorted(views)}")
+            f"the package needs exactly the eleven views; got {sorted(views)}")
     omitted_counts = {str(key): int(value) for key, value in dict(omitted or {}).items() if int(value) > 0}
     shown: dict[str, list[Any]] = {name: [dict(row) for row in views[name]] for name in VIEW_NAMES}
     for name, limit in (("accepted_results", MAX_ACCEPTED_RESULTS), ("failures", MAX_FAILURES)):

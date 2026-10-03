@@ -327,7 +327,6 @@ SNAPSHOT_FIELDS: dict[str, str] = {
 VERSION_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("retrieval", "agent_orchestrator.context.retrieval", "RETRIEVAL_VERSION"),
     ("context_builder", "agent_orchestrator.context.context_builder", "CONTEXT_BUILDER_VERSION"),
-    ("summary", "agent_orchestrator.context.compression", "SUMMARY_VERSION"),
     ("allocator", "agent_orchestrator.scheduling.allocator", "ALLOCATOR_VERSION"),
     ("backpressure", "agent_orchestrator.scheduling.backpressure", "BACKPRESSURE_VERSION"),
     ("model_router", "agent_orchestrator.runtime.model_router", "ROUTER_VERSION"),

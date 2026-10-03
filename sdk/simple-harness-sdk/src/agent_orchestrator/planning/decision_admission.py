@@ -50,6 +50,7 @@ from ..contracts.planning_decisions import (
     PlanningRequestBinding,
     PlanningRetryBudgetView,
     ProposeMethodDecision,
+    ReadMethodLibraryDecision,
     RefineDecision,
     RepairCancelBranchDecision,
     RepairProposeSuccessorDecision,
@@ -1177,7 +1178,8 @@ def _check_payload(
     elif isinstance(payload, RequestEvidenceDecision):
         _check_request_evidence(decision, context, stage)
     elif isinstance(
-        payload, (WaitDecision, NoChangeDecision, RefineDecision, RequestHumanDecision, ProposeMethodDecision)
+        payload, (WaitDecision, NoChangeDecision, RefineDecision, RequestHumanDecision, ProposeMethodDecision,
+                  ReadMethodLibraryDecision)
     ):
         return
     else:  # pragma: no cover - the envelope's payload is a closed set

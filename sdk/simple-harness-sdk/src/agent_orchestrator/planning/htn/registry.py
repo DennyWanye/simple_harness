@@ -736,10 +736,15 @@ class MethodProposal:
     author: RegistryAuthor
     declared_status: MethodRegistryStatus = MethodRegistryStatus.DRAFT
     rationale: str = ""
+    #: the library entry this method was written after (阶段 C3); the proposer's statement,
+    #: checked against what the Mission may see before it is recorded
+    based_on: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.method, MethodContract):
             raise ContractError("proposal.method must be a MethodContract")
+        if self.based_on is not None:
+            object.__setattr__(self, "based_on", identifier(self.based_on, "proposal.based_on"))
         object.__setattr__(self, "author", enum_of(RegistryAuthor, self.author, "proposal.author"))
         object.__setattr__(
             self,
@@ -766,13 +771,14 @@ class MethodProposal:
             value,
             name,
             required=("method",),
-            optional=("author", "registry_status", "rationale"),
+            optional=("author", "registry_status", "rationale", "based_on"),
         )
         return cls(
             method=MethodContract.from_json(data["method"], f"{name}.method"),
             author=data.get("author", RegistryAuthor.MODEL),
             declared_status=data.get("registry_status", MethodRegistryStatus.DRAFT),
             rationale=data.get("rationale", ""),
+            based_on=data.get("based_on") or None,
         )
 
 
@@ -848,7 +854,6 @@ class MethodRegistry:
         self._registrations: dict[tuple[str, int, str], MethodRegistration] = {}
         self._receipts: dict[tuple[str, int, str], AdmissionReceipt] = {}
         self._trial_uses: dict[tuple[tuple[str, int, str], str], int] = {}
-        self._evaluation_scopes: dict[tuple[str, int, str], frozenset[str]] = {}
         #: goal type ``(id, version, content_hash)`` → the methods written for it, in
         #: insertion order.  Retrieval is on the hot path of every refinement, and a
         #: scan of every definition per frontier item is the wrong shape for it.
@@ -863,7 +868,6 @@ class MethodRegistry:
         candidate._registrations = dict(self._registrations)
         candidate._receipts = dict(self._receipts)
         candidate._trial_uses = dict(self._trial_uses)
-        candidate._evaluation_scopes = dict(self._evaluation_scopes)
         candidate._by_goal_type = {key: list(value) for key, value in self._by_goal_type.items()}
         candidate._by_goal_type_id = {key: list(value) for key, value in self._by_goal_type_id.items()}
         return candidate
@@ -900,15 +904,6 @@ class MethodRegistry:
         self._definitions[key] = contract
         self._registrations[key] = registration
         self._index(contract, key)
-        self._evaluation_scopes.pop(key, None)
-
-    def allow_evaluation_trials(self, ref: MethodRef, mission_ids: Sequence[str]) -> None:
-        """Install the system-frozen offline evaluation cohort; not model-selectable scope."""
-        registration = self._require_registration(ref)
-        if registration.status is not MethodRegistryStatus.TRIAL_ADMITTED:
-            return
-        self._evaluation_scopes[self._key(ref)] = frozenset(
-            str(mission_ref(item, "evaluation.mission_id")) for item in mission_ids)
 
     # -- admission ----------------------------------------------------------------
 
@@ -1184,41 +1179,6 @@ class MethodRegistry:
 
     # -- lifecycle ----------------------------------------------------------------
 
-    def promote(
-        self, ref: MethodRef, target: MethodRegistryStatus, *, policy: AdmissionPolicy
-    ) -> AdmissionReceipt:
-        """§7.3: P2 implements the lifecycle only as far as ``TRIAL_ADMITTED``.
-
-        Everything beyond it — ``EVALUATED`` and ``ADMITTED`` — needs the offline
-        multi-instance evaluation that P8 delivers, so this answers
-        ``PROMOTION_NOT_AVAILABLE`` instead of writing a status the evidence does
-        not support.  Succeeding once is not a promotion.
-        """
-
-        target = enum_of(MethodRegistryStatus, target, "target")
-        registration = self.registration(ref)
-        detail = (
-            f"promotion to {target!s} needs the offline evaluation delivered with P8; "
-            "one successful trial does not promote a method (§7.3)"
-        )
-        return AdmissionReceipt(
-            method_ref=ref,
-            verdict=AdmissionVerdict.PROMOTION_NOT_AVAILABLE,
-            author=RegistryAuthor.SYSTEM,
-            policy_ref=policy.policy_ref,
-            policy_version=policy.policy_version,
-            mission_id=policy.mission_id,
-            steps=(
-                AdmissionStepRecord(
-                    step=AdmissionStepId.TRIAL_ADMISSION,
-                    outcome=StepOutcome.DEFERRED,
-                    detail=detail,
-                ),
-            ),
-            transitions=(() if registration is None else (registration.status,)),
-            registration=registration,
-        )
-
     def suspend(self, ref: MethodRef, *, reason: str) -> MethodRegistration:
         """§7.3 v1.2: a counter-example suspends a method without erasing history.
 
@@ -1320,8 +1280,7 @@ class MethodRegistry:
         mission = mission_ref(mission_id, "mission_id")
         return (
             registration.status is MethodRegistryStatus.TRIAL_ADMITTED
-            and (registration.trial_scope_mission == str(mission)
-                 or str(mission) in self._evaluation_scopes.get(self._key(ref), frozenset()))
+            and registration.trial_scope_mission == str(mission)
         )
 
     def candidates_for(
@@ -1361,8 +1320,6 @@ class MethodRegistry:
         goal_type_ref: VersionedRef,
         *,
         mission_id: MissionRef,
-        statement: str = "",
-        minimum_similarity: float = 0.5,
     ) -> tuple[MethodSuggestion, ...]:
         """Advisory near-matches.  §8.3: similarity produces candidates, not bindings.
 
@@ -1401,18 +1358,6 @@ class MethodRegistry:
                         similarity=1.0,
                     )
                 )
-                continue
-            if statement:
-                similarity = statement_similarity(statement, method.goal_type_ref.id)
-                if similarity >= minimum_similarity:
-                    out.append(
-                        MethodSuggestion(
-                            method_ref=ref,
-                            reason=SuggestionReason.SIMILAR_GOAL_STATEMENT,
-                            detail="lexical overlap only; never an automatic binding (§8.3)",
-                            similarity=similarity,
-                        )
-                    )
         return tuple(out)
 
 

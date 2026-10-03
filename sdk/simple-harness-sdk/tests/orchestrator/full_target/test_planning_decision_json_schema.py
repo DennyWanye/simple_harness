@@ -46,6 +46,8 @@ from agent_orchestrator.contracts.planning_decisions import (
     MAX_PD_REPLAN_TRIGGERS,
     MAX_PD_UNCERTAINTIES,
     MAX_PD_WAIT_REFS,
+    MAX_LIBRARY_READ_ENTRIES,
+    MAX_METHOD_AT_FAULT_CHARS,
     MAX_PLANNING_REF_ID,
     MAX_SUBJECT_KEY_CHARS,
     MIN_PD_EVIDENCE_QUESTIONS,
@@ -123,6 +125,9 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/waitPayload/properties/wait_for/maxItems": MAX_PD_WAIT_REFS,
     "#/$defs/waitPayload/properties/reason/maxLength": MAX_TEXT,
     "#/$defs/noChangePayload/properties/reason/maxLength": MAX_TEXT,
+    "#/$defs/readMethodLibraryPayload/properties/entries/minItems": 1,
+    "#/$defs/readMethodLibraryPayload/properties/entries/maxItems": MAX_LIBRARY_READ_ENTRIES,
+    "#/$defs/repairReplaceMethodPayload/properties/method_at_fault/maxLength": MAX_METHOD_AT_FAULT_CHARS,
     "#/$defs/evidenceQuestion/properties/predicate_key/maxLength": MAX_ID,
     "#/$defs/evidenceQuestion/properties/arguments/maxProperties": MAX_PD_ARGUMENTS,
     "#/$defs/evidenceQuestion/properties/purpose/maxLength": MAX_TEXT,
@@ -167,6 +172,7 @@ PAYLOAD_DEF_BY_DECISION_TYPE = {
     "WAIT": "#/$defs/waitPayload",
     "NO_CHANGE": "#/$defs/noChangePayload",
     "REQUEST_HUMAN": "#/$defs/requestHumanPayload",
+    "READ_METHOD_LIBRARY": "#/$defs/readMethodLibraryPayload",
 }
 REPAIR_PAYLOAD_BY_KIND = {
     "REPLACE_METHOD": "#/$defs/repairReplaceMethodPayload",
@@ -383,6 +389,10 @@ def _codec_canonical_variants() -> dict[str, dict[str, Any]]:
     for path in _valid_paths():
         variants[path.stem] = _read(path)
 
+    blamed = _read(VALID_DIR / "repair-replace-method.json")
+    blamed["payload"]["method_at_fault"] = "被换下的做法漏了一步，拆法本身有错。"
+    variants["variant-replace-method-at-fault"] = blamed
+
     blocked = _read(VALID_DIR / "repair-declare-runtime-blocked.json")
     blocked["payload"]["blockers"] = [{"code": "NO_USABLE_METHOD"}]
     variants["variant-blocked-item-without-detail"] = blocked
@@ -577,10 +587,12 @@ def test_payload_defs_are_complete_and_match_the_codec_required_fields() -> None
         "requestEvidencePayload": ["questions"],
         "requestHumanPayload": ["question", "options", "blocking"],
         "proposeMethodPayload": ["method_proposal"],
+        "readMethodLibraryPayload": ["entries"],
     }
+    optional = {"repairReplaceMethodPayload": ["method_at_fault"]}
     for name, required in expected.items():
         assert defs[name]["required"] == required, name
-        assert sorted(defs[name]["properties"]) == sorted(required), name
+        assert sorted(defs[name]["properties"]) == sorted(required + optional.get(name, [])), name
 
 
 def _object_def_names(schema: dict[str, Any]) -> list[str]:
@@ -822,6 +834,7 @@ def test_valid_fixtures_number_at_least_eleven_and_cover_every_shape() -> None:
         ("REQUEST_EVIDENCE", None),
         ("REQUEST_HUMAN", None),
         ("PROPOSE_METHOD", None),
+        ("READ_METHOD_LIBRARY", None),
     }
 
 

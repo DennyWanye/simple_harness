@@ -18,8 +18,8 @@ Three properties, and one absence:
    *refuse* it and record the attempt — it is never normalised away — and the author
    on this path is fixed at MODEL, with no way for a caller to say otherwise.
 
-The absence: nothing here promotes.  Past ``TRIAL_ADMITTED`` lies the offline
-evaluation, and the registry answers ``PROMOTION_NOT_AVAILABLE`` for every target.
+The absence: nothing here promotes.  A method reaches the method library only through the
+completion writer, after delivery and a root review that called it reusable (阶段 C3).
 """
 
 from __future__ import annotations
@@ -493,26 +493,14 @@ def test_the_module_has_no_promote_entry() -> None:
     assert [name for name in dir(method_proposals) if "promote" in name.lower()] == []
 
 
-def test_the_registry_refuses_every_promotion_target() -> None:
+def test_the_registry_has_no_promotion_entry() -> None:
+    """阶段 C3：注册表没有晋级入口；进全库只经完成写方（method_library.promote_methods）。"""
     env = empty_library_env()
     receipt = admit(env, proposal(legal_method()))
-    for target in (MethodRegistryStatus.EVALUATED, MethodRegistryStatus.ADMITTED):
-        answer = env.registry.promote(receipt.method_ref, target, policy=env.policy())
-        assert answer.verdict is AdmissionVerdict.PROMOTION_NOT_AVAILABLE
-
-
-def test_succeeding_once_does_not_change_the_registration() -> None:
-    env = empty_library_env()
-    receipt = admit(env, proposal(legal_method()))
-    env.registry.promote(receipt.method_ref, MethodRegistryStatus.ADMITTED, policy=env.policy())
+    assert not hasattr(env.registry, "promote")
     registration = env.registry.registration(receipt.method_ref)
     assert registration is not None
     assert registration.status is MethodRegistryStatus.TRIAL_ADMITTED
-
-
-# ======================================================================================
-# 5. Mutation self-check
-# ======================================================================================
 
 
 def test_mutant_a_request_that_leaked_the_registry_status_would_be_caught() -> None:

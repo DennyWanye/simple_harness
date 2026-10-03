@@ -186,6 +186,7 @@ def finalize_assured_mission(
         key=mission_id,
         payload={"stop_reason": done.stop_reason, "final_report": report},
     )
+    _promote_methods(store, mission_id, resolution)
     body = {
         "schema_version": 1,
         "mission_id": mission_id,
@@ -233,6 +234,25 @@ def finalize_assured_mission(
     request_assured_notification(commit, mission_id, final, state_version=done.version)
     return ref
 
+
+
+def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
+    """The one road into the method library (阶段 C3): delivered, the root's final review passed,
+    and that review called the method reusable.  Same transaction as ``MissionCompleted``; a
+    promotion that fails for any reason is undone and recorded — the Mission still completes."""
+    from .method_library import PROMOTION_SKIPPED, promote_methods
+
+    store.connection.execute("SAVEPOINT method_promotion")
+    try:
+        promote_methods(store, mission_id, resolution)
+    except Exception as error:  # noqa: BLE001 - the library is a by-product; completion never fails on it
+        store.connection.execute("ROLLBACK TO method_promotion")
+        from .hierarchical_dispatch import append_hierarchical_event
+
+        append_hierarchical_event(store, PROMOTION_SKIPPED, mission_id, key=f"{mission_id}:unreadable",
+                                  payload={"reason": "unreadable", "error_type": type(error).__name__,
+                                           "error": str(error)[:300]})
+    store.connection.execute("RELEASE method_promotion")
 
 __all__ = (
     "CLOSEOUT_KEY",

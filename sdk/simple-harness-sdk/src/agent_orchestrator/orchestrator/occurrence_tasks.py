@@ -540,7 +540,8 @@ def occurrence_task(
     criteria = occurrence_criteria(binding, requirements, owned=owned_refs, claimed=claimed)
     goal = binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}"
     if owned_refs and primitive:
-        goal = scoped_goal(goal, criteria, [text for ref, text in owned if ref in owned_refs])
+        # "整个任务"一句取用户原话（阶段 C3：桌面类型的说明是固定句，原话只在任务上）
+        goal = scoped_goal(mission.goal, criteria, [text for ref, text in owned if ref in owned_refs])
     policy = occurrence_policy(
         criteria, deployed, declared_policy,
         read_only=read_only_leaf(binding) and not criterion_linked,
