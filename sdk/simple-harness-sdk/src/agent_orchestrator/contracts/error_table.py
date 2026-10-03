@@ -122,10 +122,16 @@ _HANDOFF_TRANSIENT: frozenset[str] = frozenset({
 })
 
 
+#: 交接前核对发现这一步的有效性见证过期（纪元动了、所依据的验收不再当前）：同样不是动作
+#: 失败，留在可交接状态；地基恢复后自然通过，不恢复则由卡死记录如实交给规划器。
+HANDOFF_VALIDITY_STALE = "validity_stale:"
+
+
 def handoff_refusal_transient(reason: object) -> bool:
     """A handoff refusal that ends by itself (the caller waits instead of stopping)."""
 
-    return isinstance(reason, str) and reason in _HANDOFF_TRANSIENT
+    return isinstance(reason, str) and (
+        reason in _HANDOFF_TRANSIENT or reason.startswith(HANDOFF_VALIDITY_STALE))
 
 
 PLANNING_ERRORS: Mapping[P, ErrorEntry] = MappingProxyType(_PLANNING)

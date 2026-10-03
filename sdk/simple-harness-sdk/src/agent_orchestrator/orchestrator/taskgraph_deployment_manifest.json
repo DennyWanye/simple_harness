@@ -1,5 +1,5 @@
 {
-  "deployment_id": "1b4b6742b5e7afae242158d30a844251cabf0f25a1df88f185eb2fc014fb1596",
+  "deployment_id": "94d932bb5d7ddbf3612f0f7a6c6a5334d22c4893f5c8c20765216525d2d08f47",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -69,7 +69,7 @@
     "agent_orchestrator/context/knowledge_tools.py": "685a0ed3cc9bf99c6c5605fac7c5d70777349a85123422a10a66d6b4c66d088e",
     "agent_orchestrator/context/retrieval.py": "07b7ca72576bb88390e55a46d8e5ee79fe50ff68e4132e313946e8168212f6ef",
     "agent_orchestrator/contracts/__init__.py": "5345c68d365488c86c425bc0e47e4ee6e5efc4c67a5d109ae15b24e58ea48490",
-    "agent_orchestrator/contracts/error_table.py": "512ad3c94f074127ce2280f029421f9539143e34a119404542eb01bd909a736b",
+    "agent_orchestrator/contracts/error_table.py": "aacee8ea7a2624a32f2f0ce99f3284caec73ccb27d44f7fc15244624123e9f20",
     "agent_orchestrator/contracts/evidence_state.py": "d251feb15bd77a1c58c5b983b3a30bd78eb5c2228e3f29b8333e6d9304ee24de",
     "agent_orchestrator/contracts/htn.py": "64f7589beff2eef3cd0ded059ad616364962c0c609bae6dc245bece66f48ef58",
     "agent_orchestrator/contracts/ids.py": "5b048365c5cd02a64e41776e09880585757183d174ee81a2ff29ed556064b358",
@@ -166,7 +166,7 @@
     "agent_orchestrator/orchestrator/_read_set.py": "802a2444f0597e8aed4686c632aa4930d8c65c4497268d37c6fc2782ceac89c0",
     "agent_orchestrator/orchestrator/accepted_outputs.py": "4b2ae492f97f1ca29c9ebe6b893e85c63ee10ca181421daf52f16dacea8d89dd",
     "agent_orchestrator/orchestrator/accounting_recovery.py": "512e7a695b2d15db976e09fbd0f99fac5ff0016fd20dc4586dd524bb6e4c1565",
-    "agent_orchestrator/orchestrator/action_commits.py": "05bc894253999df473f92f1b3c87fd068a0020e99eafd04dd49618a2c37bf12e",
+    "agent_orchestrator/orchestrator/action_commits.py": "649217c5fb12d24015659ac882a7b86b898c0c86a1bdf1897eb71243f7e7203c",
     "agent_orchestrator/orchestrator/assurance_assembly.py": "29a59756fa425f30bf285c55c05676a680284d534b2766f9edbb1c125bbc6a10",
     "agent_orchestrator/orchestrator/assurance_check_import.py": "81c1096993b5b5722266ce96b61793299f400bf7d305b96e478cb4739d7bbbaa",
     "agent_orchestrator/orchestrator/assurance_check_policy.py": "ef138d7bfec24868e6c49c9561a8d7d57437295aa6d0b186275ed69c892f6314",

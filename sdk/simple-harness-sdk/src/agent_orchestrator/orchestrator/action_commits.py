@@ -15,6 +15,7 @@ SUPERSEDED."""
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -917,6 +918,8 @@ class ActionCommitsMixin:
                     require_taskgraph_unfenced(self._store, str(action["mission_id"]), str(action["task_id"]))
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
+            if reason is None and action.get("task_id"):
+                reason = self._validity_refusal(action)
             # Every action is linked to the operation it was materialised from (2026-10-02:
             # the flat mode, whose actions carried no link, was removed).
             if reason is None:
@@ -1101,6 +1104,44 @@ class ActionCommitsMixin:
             )
             if started >= int(deployment.max_action_handoffs_per_mission):
                 return "handoff_cap_reached"
+        return None
+
+    def _validity_refusal(self, action: Mapping[str, Any]) -> str | None:
+        """Before anything leaves the system, the step this operation belongs to must still
+        stand on current ground (阶段 C 第 5 条).
+
+        The step's latest usable validity witnesses are read back: one taken at a scope
+        epoch that has since moved, or resting on an Acceptance that is no longer current
+        (its step was repaired, replaced or cancelled), refuses the hand-off.  The refusal
+        changes nothing and costs nothing — the action stays ready and is tried again next
+        round; when the ground does not come back, the stall record says why and the
+        Planner decides."""
+        from ..contracts.evidence_state import ValidityWitness, WitnessDecision
+        from ..contracts.semantic_base import TypedRefKind
+        from ..memory.knowledge_standing import acceptance_is_current
+        from ..storage.htn_store import HtnStore
+
+        mission_id, task_id = str(action["mission_id"]), str(action["task_id"])
+        htn = HtnStore(self._store)
+        latest: dict[tuple[str, str], ValidityWitness] = {}
+        for digest, raw in self._store.connection.execute(
+                "SELECT subject_digest, witness_json FROM validity_witnesses WHERE mission_id=?"
+                " AND consumer_kind='task' AND consumer_id=? ORDER BY as_of_ms, witness_id",
+                (mission_id, task_id)):
+            witness = ValidityWitness.from_json(json.loads(raw))
+            latest[(str(digest), str(witness.purpose))] = witness
+        for witness in latest.values():
+            if witness.decision is not WitnessDecision.USABLE:
+                continue
+            current = htn.epoch(mission_id, witness.scope_id)
+            if witness.scope_epoch != current:
+                return f"validity_stale:scope_epoch:{witness.scope_id}:{witness.scope_epoch}->{current}"
+            for reference in witness.support_refs:
+                if reference.kind is not TypedRefKind.ACCEPTANCE:
+                    continue
+                ok, why = acceptance_is_current(self._store, mission_id, reference.id)
+                if not ok:
+                    return f"validity_stale:{why}:{reference.id}"
         return None
 
     def _planning_rehandoff_proven(self, action: Mapping[str, Any], bridge: Mapping[str, Any]) -> bool:
