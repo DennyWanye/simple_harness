@@ -21,9 +21,11 @@ ALLOWED = {
     "deployment/root.py",                  # 第 1 版要求书的唯一构造
     "verification/criteria.py",            # 受保护尾部的任务身份哈希（初始输入的身份）
 }
-#: 建任务门口里的两处（能不能用 action / pytest），只在 ``create_mission`` 里
-DOOR = {"orchestrator/event_handler.py": 2}
-CHARTER_READ = re.compile(r"\b(?:mission|spec|charter)\.success_criteria\b")
+#: 建任务门口里的一处（把章程交给"能不能用 action / pytest"的检查）
+DOOR = {"orchestrator/event_handler.py": 1}
+#: 任意变量名读章程都算；步骤合同（``task`` / ``contract`` / ``self`` 等）的同名字段不算
+TASK_SIDE = {"task", "contract", "self", "dep", "previous", "leaf", "item", "binding", "row", "node", "t", "child"}
+CHARTER_READ = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.success_criteria\b")
 
 
 def test_charter_criteria_read_only_at_the_door():
@@ -31,7 +33,8 @@ def test_charter_criteria_read_only_at_the_door():
     for path in sorted(SOURCE.rglob("*.py")):
         name = path.relative_to(SOURCE).as_posix()
         count = sum(1 for line in path.read_text(encoding="utf-8").splitlines()
-                    if CHARTER_READ.search(line) and not line.lstrip().startswith("#"))
+                    if not line.lstrip().startswith("#")
+                    and any(name not in TASK_SIDE for name in CHARTER_READ.findall(line)))
         if count and name not in ALLOWED and count != DOOR.get(name, 0):
             offenders[name] = count
     assert offenders == {}, f"这些文件读了建任务时的章程，应改读现行要求：{offenders}"

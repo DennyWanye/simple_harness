@@ -534,3 +534,101 @@ def test_knowledge_goes_stale_when_requirements_are_amended(tmp_path):
             assert knowledge_standing(store, store.get_knowledge(record.id)).startswith("STALE:")
 
     asyncio.run(case())
+
+
+def _script(name: str) -> Any:
+    """另一份用例文件里的剧本（同目录），按文件载入。"""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(f"_amend_{name}", Path(__file__).with_name(f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_amend_passes_the_same_door_as_creating_a_mission(tmp_path):
+    """改要求过的是建任务的同一道门（阶段 E 核验阻断 2）：写错的 ``action:``、部署不会执行的操作在门口
+    就拒掉，一样都不写——不会等到规划时才把正在跑的任务弄成失败。"""
+    from agent_orchestrator.governance.policies import DeploymentPolicy
+    from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner_reply),
+                                 connectors={"file_publish": connector}, deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报", "success_criteria": ["file:reports/weekly.md"],
+                                       "idempotency_key": "amend-door"})["mission_id"]
+            before = written(world.store, mission_id)
+            for bad in ("action:file_publish", "action:file_publish.delete:reports/weekly.md",
+                        "action:no_such_connector.publish:x"):
+                with pytest.raises(FacadeError) as refused:
+                    amend(world, mission_id, [{"op": "add", "statement": bad}], command_id="bad-" + bad)
+                assert refused.value.code in {"AMEND_REQUIREMENT_REFUSED", "invalid_request"}, bad
+            assert written(world.store, mission_id) == before
+
+    asyncio.run(case())
+
+
+def test_amend_that_adds_a_publish_is_judged_as_an_operation_mission(tmp_path):
+    """建任务时只有内容要求，后来加了一条"发布这个文件"：带操作的那一版等人确认；发布批准并生效后，
+    收尾按现行要求走"先核操作、再逐条判定"，任务完成（阶段 E 核验阻断 1：收尾曾按建任务时的要求判）。"""
+    from agent_orchestrator.governance.policies import DeploymentPolicy
+    from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+    from agent_orchestrator.testing.scripted_replies import decision, one_step_method
+
+    operation = _script("test_operation")
+
+    def planner(request: Any) -> Any:  # 有可用做法就采用，没有就提一步做法；"要求已更新"此时没有旧计划可换
+        package = package_of(request)
+        goals = [item for item in package["views"]["goals"] if item["open"]]
+        if not goals:
+            return planner_reply(request)
+        selection = (package.get("method_selection") or [{}])[0]
+        if selection.get("applicable"):
+            chosen = selection["applicable"][0]
+            return decision(goals[0]["subject_key"], "REFINE", {
+                "method_ref": {"kind": "method", "id": chosen["method_id"],
+                               "semantic_revision": chosen["method_version"],
+                               "content_hash": chosen["method_content_hash"]},
+                "bindings": dict(selection.get("bindings") or goals[0]["params"])}, "采用通过审阅的做法。")
+        context = (package.get("method_proposal_contexts") or [None])[0]
+        return decision(context["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+            "method": one_step_method(context), "rationale": "一步写出周报。"}}, "一步写出周报。")
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner),
+                                 connectors={"file_publish": connector}, deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + operation.TARGET],
+                                       "idempotency_key": "amend-adds-publish"})["mission_id"]
+            amend(world, mission_id, [{"op": "add", "statement": operation.PUBLISH}])
+            await world.drain()
+            # 带操作的那一版系统不代确认：等人
+            assert operation._workspace(world, mission_id)["state"] == "CONFIRMATION_REQUIRED"
+            operation._confirm_completion(world, mission_id)
+            approvals: list[dict[str, Any]] = []
+            for _ in range(20):
+                await world.drain()
+                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                if approvals:
+                    break
+            assert approvals, world.store.get_mission(mission_id).status
+            world.control.decide(approvals[0]["request_id"], "approve")
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            events = list(world.store.list_events(mission_id))
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            assert not [e.payload for e in events if e.type == "MissionRoundFault"]
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:" + operation.TARGET, operation.PUBLISH]
+
+    asyncio.run(case())

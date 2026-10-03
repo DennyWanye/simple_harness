@@ -1129,14 +1129,20 @@ class OrchestrationService:
         # 新增"发布某文件"时，先得有一条"写出这个文件"的要求（与建任务同一条规矩）
         detail = self._call("snapshot", str(request.get("mission_id") or ""))
         workspace = (detail.get("snapshot") or {}).get("operation_workspace") or {}
-        present = {str(item.get("statement") or "").strip() for item in workspace.get("criteria") or ()}
-        present.update(statements)
-        sources = []
-        for text in statements:
-            source = "file:" + text[len(PUBLISH_PREFIX):].strip() if text.startswith(PUBLISH_PREFIX) else ""
-            if source and source != "file:" and source not in present:
-                sources.append({"op": "add", "statement": source})
-                present.add(source)
+        current = {str(item.get("id")): str(item.get("statement") or "").strip()
+                   for item in workspace.get("criteria") or ()}
+        added: list[str] = []
+        for item in changes:  # 改完之后的要求清单
+            if item.get("op") == "add":
+                added.append(str(item.get("statement") or "").strip())
+            elif item.get("op") == "remove":
+                current.pop(str(item.get("criterion_id")), None)
+            elif str(item.get("criterion_id")) in current:
+                current[str(item.get("criterion_id"))] = str(item.get("statement") or "").strip()
+        resulting = [*current.values(), *added]
+        # 同一个函数：每个要发布的文件先得有一条"写出它"的要求；缺的补成新增条目
+        sources = [{"op": "add", "statement": source}
+                   for source in _with_publish_sources(resulting) if source not in resulting]
         receipt = self._call("amend_requirements", {**dict(request), "changes": [*sources, *changes]})
         self.wake()
         return dict(receipt)

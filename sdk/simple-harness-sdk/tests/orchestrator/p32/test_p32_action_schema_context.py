@@ -34,7 +34,7 @@ def _connector(tmp_path):
 def test_schema_follower_passes_original_checker_without_publishing(tmp_path):
     connectors = {"file_publish": _connector(tmp_path)}
     contract = worker_action_contract(
-        mission_criteria=(ACTION,), task_criteria=(ACTION,),
+        mission_criteria={"c-user-1": ACTION}, task_criteria=(ACTION,),
         task_outputs=("report.md", "actions/publish.json"),
         connectors=connectors, deployment=ENABLED,
     )
@@ -82,7 +82,7 @@ def test_schema_follower_passes_original_checker_without_publishing(tmp_path):
 
 def test_undeployed_or_unrecognised_operation_never_gains_a_schema(tmp_path):
     connectors = {"file_publish": _connector(tmp_path)}
-    scope = dict(mission_criteria=(ACTION,), task_criteria=(ACTION,),
+    scope = dict(mission_criteria={"c-user-1": ACTION}, task_criteria=(ACTION,),
                  task_outputs=("actions/publish.json",), connectors=connectors)
     assert worker_action_contract(**scope, deployment=DeploymentPolicy()) is None
     assert worker_action_contract(**{**scope, "connectors": {}}, deployment=ENABLED) is None
@@ -104,7 +104,7 @@ def test_another_deployed_descriptor_supplies_its_own_required_params(tmp_path):
     connector = TestConfigService(tmp_path / "service.json")
     criterion = "action:test_config.set:mode"
     contract = worker_action_contract(
-        mission_criteria=(criterion,), task_criteria=(criterion,),
+        mission_criteria={"c-user-1": criterion}, task_criteria=(criterion,),
         task_outputs=("actions/mode.json",), connectors={"test_config": connector},
         deployment=DeploymentPolicy(enabled_connectors=("test_config",)),
     )
@@ -120,7 +120,8 @@ def test_another_deployed_descriptor_supplies_its_own_required_params(tmp_path):
 def test_existing_action_scope_is_not_rejected_by_an_unrelated_eight_operation_cap(tmp_path):
     criteria = tuple(f"action:file_publish.publish:reports/{i}.md" for i in range(9))
     contract = worker_action_contract(
-        mission_criteria=criteria, task_criteria=criteria,
+        mission_criteria={f"c-user-{n}": text for n, text in enumerate(criteria, start=1)},
+        task_criteria=criteria,
         task_outputs=("actions/publish.json",),
         connectors={"file_publish": _connector(tmp_path)}, deployment=ENABLED,
     )

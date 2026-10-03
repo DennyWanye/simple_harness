@@ -70,12 +70,17 @@ class DeploymentDuties:
         store = self.orchestrator.store
         confirmed = 0
         rows = store.connection.execute(
-            "SELECT mission_id FROM missions WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED','STOPPED')"
-            " ORDER BY created_at LIMIT 50"
+            "SELECT mission_id FROM missions WHERE status NOT IN ("
+            + ",".join("?" for _ in TERMINAL) + ") ORDER BY created_at DESC LIMIT 50",
+            tuple(sorted(TERMINAL)),
         ).fetchall()
+        unconfirmed = getattr(self.orchestrator, "_requirements_unconfirmed", None)
         for (mission_id,) in rows:
             mission = store.get_mission(str(mission_id))
             if mission is None:
+                continue
+            # 只有现行要求还没确认的任务才去读确认页（每轮对每个进行中任务取整份快照太重）
+            if unconfirmed is not None and not unconfirmed(mission):
                 continue
             try:
                 workspace = (self.control.snapshot(mission.id)["snapshot"] or {}).get("operation_workspace")

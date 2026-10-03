@@ -15,6 +15,7 @@ from dataclasses import replace
 from typing import Any
 
 from ..contracts.htn import ContractRevision
+from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import TERMINAL_MISSION
 from ..storage.htn_store import HtnStore
@@ -104,6 +105,11 @@ def amend_requirements(
         except ValueError as error:
             code, _, detail = str(error).partition(": ")
             raise RequirementsAmendmentError(code, detail) from error
+
+        try:  # the same door a new Mission's requirements pass
+            orchestrator.check_requirement_statements([statement for _, _, statement in entries])
+        except ContractError as error:
+            raise RequirementsAmendmentError("AMEND_REQUIREMENT_REFUSED", str(error)) from error
 
         # 1 the next revision of the requirements, carrying its credential
         revision = build_requirements(mission_id, int(previous.revision) + 1, entries,

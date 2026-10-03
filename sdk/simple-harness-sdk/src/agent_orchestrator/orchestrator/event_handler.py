@@ -1945,10 +1945,17 @@ class Orchestrator:
                 raise MissionRequestError(
                     f"runtime profile {spec.runtime_profile_id!r} is not configured"
                 )
-        self._check_action_criteria(spec.success_criteria)
+        self.check_requirement_statements(spec.success_criteria)
         self._check_source_publish_roots(spec)
+
+    def check_requirement_statements(self, statements: Sequence[str]) -> None:
+        """What this deployment can do with these requirement statements: an ``action:`` one
+        must be well-formed and name an operation the deployment would run; a ``pytest:`` one
+        needs local code execution.  One door for creating a Mission and for amending its
+        requirements (阶段 E)."""
+        self._check_action_criteria(statements)
         if not self._config.deployment_policy.local_code_execution:
-            tests = [c for c in spec.success_criteria if c.startswith("pytest:")]
+            tests = [c for c in statements if c.startswith("pytest:")]
             if tests:
                 raise ContractError(
                     "pytest criteria need local code execution, which this deployment has "
@@ -8778,7 +8785,7 @@ class Orchestrator:
                 # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
                 # it.  Nothing to re-judge and nothing to dispatch: idle, not stalled.
                 return False
-            if any(c.startswith(ACTION_PREFIX) for c in current.success_criteria):
+            if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
                 return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)

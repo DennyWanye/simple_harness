@@ -502,9 +502,15 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     # Internal leaf/composition requirements snapshots are not user amendments.
     # Only a persisted revision carrying its amendment credential opens this trigger.
     revisions = {int(item.revision): item for item in htn.list_requirements_revisions(mission.id)}
+    # 只有"现行计划是按更早一版要求定的"才有东西要规划器改；任务还没有计划时改要求，
+    # 第一份计划本来就按最新版定，不另发请求（否则会与首次规划撞车）。
+    active = htn.active_plan_revision(mission.id)
+    planned_for = None if active is None else int(active.read_set.requirements_revision)
     for number in sorted(revisions):
         revision = revisions[number]
         source_key = "requirements:" + str(revision.revision_id)
+        if planned_for is None or number <= planned_for:
+            continue
         if revision.amendment_credential_ref and source_key not in seen:
             from .requirements_amendment import compare_revisions
 
