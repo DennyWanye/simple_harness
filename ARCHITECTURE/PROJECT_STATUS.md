@@ -1,4 +1,4 @@
-最后更新：2026-10-04 CST（HTN 补齐阶段 F1，SDK opt.148 待发）。
+最后更新：2026-10-04 CST（HTN 补齐阶段 F1，SDK opt.148，Host 钉版 4508b45a）。
 
 **HTN 补齐阶段 F1：验收资产就位（G 与联测要用）**
 - 三份清单放在 SDK `tests/orchestrator/acceptance_assets/`：接缝表（24 行，缺口 0）、崩溃切点（18 行）、改坏清单；守护用例钉住清单与代码对得上。改坏执行器 `scripts/acceptance/run_mutations.py`，随机动作序列驱动（默认 1 种子 50 步），屏障开销测量脚本（1/10/50 个已绑定任务 → 多写 1/10/50 条事件，0.5～2.9 毫秒，交 G 定）。
