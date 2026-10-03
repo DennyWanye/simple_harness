@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { ActionApprovalSummary } from "./ActionApprovalSummary";
 import { actionHeadline } from "./actionHeadline";
 
 describe("ActionApprovalSummary", () => {
+  afterEach(cleanup);
   it("把发布写成一句人话，系统写的理由标「系统生成」", () => {
     const summary = {
       connector: "file_publish", operation: "publish", target: "README.md",
