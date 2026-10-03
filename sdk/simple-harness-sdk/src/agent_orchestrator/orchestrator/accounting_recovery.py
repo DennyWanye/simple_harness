@@ -198,7 +198,9 @@ def import_late_accounting(orch) -> bool:
         rows = [row for row in rows if row[1] in live]
     progressed = False
     for row in rows:
-        progressed = _import_hold(orch, row[0]) or progressed
+        # one hold is one Mission's: its fault is that Mission's round fault, never the loop's
+        with orch._round_boundary(str(row[1]), "late_accounting"):
+            progressed = _import_hold(orch, row[0]) or progressed
     after = _holds_generation(orch)
     unchanged = after if after is not None and after == generation else None
     orch._late_accounting_quiet = unchanged

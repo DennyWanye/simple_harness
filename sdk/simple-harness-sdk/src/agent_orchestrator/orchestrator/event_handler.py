@@ -28,7 +28,7 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -564,6 +564,8 @@ class Orchestrator:
         #: Missions whose restart recovery faulted: each round retries the recovery first,
         #: inside the boundary, and skips the rest of that Mission's round until it holds.
         self._unrecovered: set[str] = set()
+        #: faults caught by ``_round_boundary`` inside a global scan, settled right after it
+        self._parked_faults: list[tuple[str, str, Exception]] = []
         #: Faults caught while binding frozen tool authority at startup, handed to the
         #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
         self._startup_faults: list[tuple[str, str, Exception]] = []
@@ -3178,6 +3180,15 @@ class Orchestrator:
 
         progressed = False
         for listed in self._active_missions():
+            if listed.id in self._unrecovered:
+                continue
+            with self._round_boundary(listed.id, "planning_wait"):
+                progressed = self._wake_planning_wait(listed) or progressed
+        return progressed
+
+    def _wake_planning_wait(self, listed: Mission) -> bool:
+        progressed = False
+        for _ in (0,):  # one Mission; ``continue`` below ends its share
             if self.store.count_events(listed.id, "PlanningWaitRegistered") == 0:
                 continue
             try:
@@ -3319,15 +3330,37 @@ class Orchestrator:
 
         if mission_id in self._unrecovered and not where.startswith(("recover", "startup_bind")):
             return False  # its restart recovery has not held yet; retried first next round
-        try:
+        progressed = False
+        with self._round_boundary(mission_id, where):
             progressed = bool(await step())
+        return await self._settle_parked_faults() or progressed
+
+    @contextlib.contextmanager
+    def _round_boundary(self, mission_id: str, where: str) -> Iterator[None]:
+        """The boundary itself — the one place a Mission's fault is caught.
+
+        ``_mission_round`` is this plus settling the fault at once.  The round's global
+        scans (late accounting, the Assurance tick, TaskGraph notifications, planning
+        waits and blocks) walk every Mission inside one synchronous or interleaved pass,
+        so each wraps one Mission's share in this boundary directly: the fault is parked,
+        the scan carries on with the next Mission, and ``_settle_parked_faults`` applies
+        the same table and the same cap right after the scan."""
+        try:
+            yield
         except (StoreBusy, InjectedCrash):
             raise
         except Exception as error:  # noqa: BLE001 - the boundary: never the loop's end
             if self.store.connection.in_transaction:
                 self.store.connection.rollback()
-            return await self._round_fault(mission_id, where, error)
-        self._round_faults.pop((mission_id, where), None)
+            self._parked_faults.append((mission_id, where, error))
+        else:
+            self._round_faults.pop((mission_id, where), None)
+
+    async def _settle_parked_faults(self) -> bool:
+        progressed = False
+        while self._parked_faults:
+            mission_id, where, error = self._parked_faults.pop(0)
+            progressed = await self._round_fault(mission_id, where, error) or progressed
         return progressed
 
     async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
@@ -3479,6 +3512,9 @@ class Orchestrator:
         if self._taskgraph_notifications is not None and await self._taskgraph_notifications.tick():
             progressed = True
         if await self._wake_planning_waits():
+            progressed = True
+        # 上面几处全局扫描里各任务的那一份都在同一个边界里；出了错的在这里按同一张表结清
+        if await self._settle_parked_faults():
             progressed = True
         for mission in self._active_missions():
             if mission.id in self._unrecovered:

@@ -142,7 +142,10 @@ def register_block(handler: Any, mission: Any, *, payload: RepairRuntimeBlockedD
 def wake_blocks(handler: Any) -> bool:
     progressed = False
     for mission in handler._active_missions():
-        with handler.store.transaction():
+        if mission.id in handler._unrecovered:
+            continue
+        # one Mission's share of this scan, behind the round boundary (阶段 C 第 0′ 条)
+        with handler._round_boundary(mission.id, "wake_blocks"), handler.store.transaction():
             block = pending_block(handler.store, mission.id)
             if block is None:
                 continue
