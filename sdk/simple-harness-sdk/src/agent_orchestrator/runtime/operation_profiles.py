@@ -206,24 +206,31 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
             profile=self._profile,
         )
 
+    def require_effect_supported(self, effect: Any) -> None:
+        """The one capability condition for a required effect (阶段 B 裁决第 4 类).
+
+        The confirmation page refuses an effect this profile cannot reach; materialising
+        re-checks it only because the deployment may have changed since confirmation."""
+        if effect.required_milestone not in self.supported_milestones:
+            raise OperationMaterializationInputError(
+                "OP_CAPABILITY_UNSUPPORTED", "the required milestone is not supported by this profile"
+            )
+        if effect.evidence_policy_ref != self.evidence_policy_ref:
+            raise OperationMaterializationInputError(
+                "OP_CAPABILITY_UNSUPPORTED", "the evidence policy is not the file-publish policy"
+            )
+        if effect.milestone_policy_ref != self.milestone_policy_ref:
+            raise OperationMaterializationInputError(
+                "OP_CAPABILITY_UNSUPPORTED", "the milestone policy is not the file-publish policy"
+            )
+
     def policy_for(
         self, sources: PreparedOperationIntentSources
     ) -> DeploymentOperationPolicyInputs:
         """Return only the built-in policy whose evidence pin was approved in the Spec."""
         if not isinstance(sources, PreparedOperationIntentSources):
             raise OperationMaterializationInputError("OP_INTENT_SOURCE_UNRESOLVED", "typed sources")
-        if sources.effect.required_milestone not in self.supported_milestones:
-            raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED", "approved Spec requires unsupported milestone"
-            )
-        if sources.effect.evidence_policy_ref != self.evidence_policy_ref:
-            raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED", "approved evidence policy is not file-publish policy"
-            )
-        if sources.effect.milestone_policy_ref != self.milestone_policy_ref:
-            raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED", "approved milestone policy is not file-publish policy"
-            )
+        self.require_effect_supported(sources.effect)
         return DeploymentOperationPolicyInputs(
             retry_policy_ref=self.retry_policy_ref,
             required_target_condition=ConditionalWriteKind.NONE,

@@ -176,3 +176,56 @@ def test_a_fenced_publish_waits_instead_of_failing(tmp_path, monkeypatch):
             assert action["state"] == "SUCCEEDED" and action["handoffs"] == 1
 
     asyncio.run(case())
+
+
+def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_path):
+    """阶段 B 裁决第 4 类：确认页提交了发布档案到不了的完成标准（"已送达"），当场按名拒收
+    （``OP_CAPABILITY_UNSUPPORTED``），库里不写完成要求——不再收下以后让效果永远停在"等申请"。
+
+    **改坏检验**：确认处不核对档案 → 收下了 → 变红。
+    """
+    from agent_orchestrator.api.facade import FacadeError
+    from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "delivered"})["mission_id"]
+            await world.drain()
+            workspace = _workspace(world, mission_id)
+            assert "DELIVERED" not in {m["id"] for m in workspace["milestones"]}  # the page never offers it
+            actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
+            content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+            [obligation] = workspace["obligations"]
+            milestone = workspace["milestones"][0]
+            ref = workspace["requirements_ref"]
+            with pytest.raises(FacadeError) as refused:
+                world.control.approve_operation_completion_spec({
+                    "mission_id": mission_id, "command_id": "confirm-delivered",
+                    "expected_requirements_ref": ref,
+                    "proposal": {
+                        "schema_version": 1, "mission_id": mission_id,
+                        "requirements_ref": {"id": ref["id"], "revision": ref["revision"],
+                                             "content_hash": ref["content_hash"]},
+                        "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
+                        "effects": [{
+                            "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
+                            "obligation_id": obligation["id"], "criterion_ids": actions,
+                            "required_milestone": "DELIVERED",
+                            "milestone_policy_ref": milestone["milestone_policy_ref"],
+                            "evidence_policy_ref": milestone["evidence_policy_ref"],
+                        }],
+                    },
+                })
+            assert refused.value.code == "OP_CAPABILITY_UNSUPPORTED"
+            assert OperationCompletionStore(world.store).get_spec_exact(
+                mission_id, ref["revision"], ref["content_hash"]) is None
+            assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
+
+    asyncio.run(case())

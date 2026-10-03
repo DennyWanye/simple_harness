@@ -365,6 +365,27 @@ class MissionControlV1:
         except (ContractError, ValueError, StoreError) as error:
             raise FacadeError(getattr(error, "code", "invalid_request"), str(error)) from error
 
+    def _require_effects_supported(self, command: Mapping[str, Any]) -> None:
+        """Refuse, by name, an effect this deployment's profile cannot reach (阶段 B 裁决第 4 类).
+
+        The page lists only supported choices; this is the gate for a caller that went
+        around it, or a deployment that changed — never left to fail at materialisation."""
+        from ..contracts.operation_completion import OperationCompletionRequirementsV1
+        from ..runtime.operation_profiles import BuiltinOperationProfiles
+        from ..orchestrator.operation_materialization_inputs import OperationMaterializationInputError
+
+        proposal = command.get("proposal") if isinstance(command, Mapping) else None
+        if not isinstance(proposal, Mapping) or not proposal.get("effects"):
+            return
+        effects = OperationCompletionRequirementsV1.from_json(proposal).effects
+        try:
+            registry = getattr(self._orchestrator, "_operation_profiles", None) or BuiltinOperationProfiles(
+                self._orchestrator.connectors)
+            for effect in effects:
+                registry.require_effect_supported(effect)
+        except OperationMaterializationInputError as error:
+            raise FacadeError(error.code, str(error)) from error
+
     @_native_root
     def approve_operation_completion_spec(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Confirm the exact completion mapping using this facade's fixed caller."""
@@ -372,6 +393,7 @@ class MissionControlV1:
         from ..orchestrator.operation_completion import OperationCompletionError
 
         try:
+            self._require_effects_supported(command)
             receipt = OperationCompletionApi(
                 self._orchestrator.commit, tenant_id=self._tenant, principal=self._principal,
             ).approve(command)

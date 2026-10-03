@@ -356,4 +356,14 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
             progressed = True
         except (ContractError, ValueError) as error:  # OperationCompletionError / sources errors
             orch._note(f"system operation {plan['effect_key']} not submitted: {error}")
+            if getattr(error, "code", None) == "OP_CAPABILITY_UNSUPPORTED":
+                # 阶段 B 裁决第 4 类: the deployment changed after confirmation and its
+                # profile can no longer reach the confirmed milestone. Deterministic: no
+                # retry; the Mission stops by name with the fact recorded.
+                from ..contracts.state_machines import MissionStopReason
+
+                orch._commit_fail_mission(mission_id, stop_reason=MissionStopReason.ACTION_FAILED, detail={
+                    "reason": "operation_capability_unsupported", "effect_key": plan["effect_key"],
+                    "error": str(error)[:300]})
+                return True
     return progressed
