@@ -39,6 +39,7 @@ def test_message_types_are_the_planned_set():
         "mission_approval_list",
         "mission_approval_decide",
         "mission_takeover",
+        "mission_action_resolve",
         "mission_comment",
         "mission_notices",
         "mission_notice_ack",

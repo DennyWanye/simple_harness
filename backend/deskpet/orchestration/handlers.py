@@ -45,6 +45,7 @@ MESSAGE_TYPES = (
     "mission_approval_list",
     "mission_approval_decide",
     "mission_takeover",
+    "mission_action_resolve",
     "mission_comment",
     "mission_notices",
     "mission_notice_ack",
@@ -217,6 +218,10 @@ def _takeover(service: Any, body: Mapping[str, Any]) -> Any:
     )
 
 
+def _resolve_unknown(service: Any, body: Mapping[str, Any]) -> Any:
+    return service.resolve_unknown(_text(body, "action_key"), _text(body, "outcome"), basis=_text(body, "basis"))
+
+
 def _comment(service: Any, body: Mapping[str, Any]) -> Any:
     return service.comment(_text(body, "target_id"), _text(body, "text"))
 
@@ -265,6 +270,8 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_approval_list": _approvals,
     "mission_approval_decide": _decide,
     "mission_takeover": _takeover,
+    # 阶段 B 裁决第 3 类：结果不明 / 失败未证实的动作，人点"已生效 / 没生效"
+    "mission_action_resolve": _resolve_unknown,
     "mission_comment": _comment,
     # HTN 补齐阶段 B 第 1 条：主对话里的任务结束通知卡片；"已收到"只由人点
     "mission_notices": lambda service, body: service.pending_notices(body),
