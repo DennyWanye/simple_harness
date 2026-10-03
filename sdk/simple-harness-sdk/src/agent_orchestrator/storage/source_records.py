@@ -7,7 +7,7 @@
 
 * 连接打开时，在临时库里给每张这样的表装一个插入后触发器，记下本事务插入了哪张表的哪一行；
   也记下本事务写了哪些任务的事件（给没有 ``mission_id`` 的行定归属）。
-* 最外层事务提交前，:func:`name_written_rows` 按任务各追加一条 ``SourceRecordsWritten``
+* 最外层事务提交前，:func:`name_written_rows` 按任务各追加一条 ``ImmutableRowsNamed``
   ``{rows: [{table, key, content_hash}]}``，再清空记录。行的任务取它的 ``mission_id`` 列，或
   它 JSON 正文里写的 ``mission_id``；都没有的，归到本事务里唯一的那个任务；本事务没有任务事件、
   或涉及不止一个任务时，记在部署时间线上（时钟观察、保证通道根的安装这类部署级事实）。
@@ -32,7 +32,7 @@ from ..contracts.models import Event
 if TYPE_CHECKING:
     from .store import Store
 
-EVENT_TYPE = "SourceRecordsWritten"
+EVENT_TYPE = "ImmutableRowsNamed"
 DEPLOYMENT_TIMELINE = "deployment"
 
 

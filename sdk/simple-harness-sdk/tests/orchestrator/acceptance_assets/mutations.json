@@ -344,6 +344,28 @@
    "note": "有 gaps 的折叠表也算覆盖"
   },
   {
+   "id": "G-15",
+   "source": "阶段 G 第 7 批",
+   "file": "src/agent_orchestrator/orchestrator/taskgraph_deployment.py",
+   "original": "                    or upstream[\"business_replay\"] not in {\"NOT_RUN\", \"CONSISTENT\"}",
+   "replacement": "                    or False",
+   "tests": [
+    "tests/orchestrator/full_target/test_business_replay_inventory.py::test_deployment_identity_never_takes_an_unproven_replay"
+   ],
+   "note": "部署身份的读取方接受重放结论的任意取值"
+  },
+  {
+   "id": "G-16",
+   "source": "阶段 G 第 7 批",
+   "file": "src/agent_orchestrator/__main__.py",
+   "original": "    return EXIT_OK if complete else EXIT_FAILED\n\n\n",
+   "replacement": "    return EXIT_OK\n\n\n",
+   "tests": [
+    "tests/orchestrator/step02/test_cli_demo.py::test_replay_answers_with_a_usage_error_or_a_complete_report"
+   ],
+   "note": "命令行 replay 遇到不一致仍退出 0"
+  },
+  {
    "id": "G-17",
    "source": "阶段 G 第 1 批",
    "file": "src/agent_orchestrator/storage/source_records.py",

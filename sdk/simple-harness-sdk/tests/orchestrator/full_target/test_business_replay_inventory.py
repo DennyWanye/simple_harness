@@ -107,3 +107,27 @@ def test_a_folded_table_with_gaps_is_not_covered(tmp_path, monkeypatch):
     finally:
         store.close()
     assert result["status"] == business_replay.NOT_COVERED
+
+
+def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):
+    """部署身份里的重放结论只有 NOT_RUN 与 CONSISTENT；说一致就得带 v3 报告的哈希（裁决 G-9）。
+
+    **改坏检验**（G-15）：读取方接受任意取值 → 说一致却没带哈希的清单被接受 → 变红。"""
+
+    from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+    from agent_orchestrator.runtime.planning_operations import SourceUnavailable
+
+    reader = InstalledHtnWiringAcceptance()
+    original = json.loads(reader.manifest.read_text(encoding="utf-8"))
+    assert original["upstream"]["business_replay"] == "NOT_RUN"
+    reader._read()  # the installed manifest itself is accepted
+
+    for value in ({**original["upstream"], "business_replay": "CONSISTENT"},
+                  {**original["upstream"], "business_replay": "PARTIAL"},
+                  {**original["upstream"], "business_replay_receipt_sha256": "a" * 64}):
+        edited = tmp_path / "manifest.json"
+        edited.write_text(json.dumps({**original, "upstream": value}), encoding="utf-8")
+        reader.manifest = edited
+        with pytest.raises(SourceUnavailable) as refused:
+            reader._read()
+        assert str(refused.value.__cause__) == "actual HTN wiring evidence is missing"

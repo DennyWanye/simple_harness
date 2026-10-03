@@ -26,12 +26,7 @@ from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.observability.replay import (
-    Projection,
-    compare,
-    events_from_store,
-    formal_from_snapshot,
-)
+from agent_orchestrator.observability.business_replay import verify_library, verify_mission
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
 
@@ -104,12 +99,10 @@ def test_batch_reordering_reopen_returns_original_receipt_and_replays(tmp_path):
         before = database_state(reopened.store)
         assert create(reopened, value) == receipt
         assert database_state(reopened.store) == before
-        projection = Projection().feed(events_from_store(reopened.store, mid))
-        # 来源事件都折叠得出来；产品建任务时写的保证通道/执行图事件回放还不认识（已报告）
-        assert not [kind for kind in projection.unknown if kind.startswith("Source")]
-        assert compare(projection.objects, formal_from_snapshot(reopened.store.snapshot(mid)))[
-            "mismatches"
-        ] == []
+        # 全业务重放 v3：没有不一致的表，全库每行恰好被点名一次
+        report = verify_mission(reopened.store, mid)
+        assert "INCONSISTENT" not in {item["status"] for item in report["tables"].values()}, report
+        assert verify_library(reopened.store)["status"] == "CONSISTENT"
 
 
 @pytest.mark.parametrize("damage", ["content", "kind", "goal"])

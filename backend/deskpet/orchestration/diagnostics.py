@@ -17,19 +17,10 @@ from pathlib import Path
 from typing import Any
 
 from agent_orchestrator.contracts.models import sha256_hex
-from agent_orchestrator.observability.business_replay import verify_mission
+from agent_orchestrator.observability.business_replay import verify_library, verify_mission
 from agent_orchestrator.observability.metrics import metrics
-from agent_orchestrator.observability.replay import (
-    FORMAL_FIELDS,
-    REPLAY_VERSION,
-    Projection,
-    compare,
-    events_from_store,
-    failure_timeline,
-    formal_from_snapshot,
-)
 from agent_orchestrator.observability.secrets import redact_text
-from agent_orchestrator.observability.traces import attribution
+from agent_orchestrator.observability.traces import attribution, failure_timeline
 
 MAX_SUPPORT_BYTES = 2 * 1024 * 1024
 DIAGNOSTICS_VERSION = "host-mission-diagnostics-v1"
@@ -94,41 +85,21 @@ def _cost(value: object) -> dict[str, Any]:
     }
 
 
-def _replay_reference(value: object) -> dict[str, Any]:
-    row = _mapping(value)
-    # SDK source keys are JSON-encoded [mission_id, path, version_hash]. Action
-    # and approval keys may also contain caller-chosen text.
-    raw_kind = row.get("object")
-    kind = raw_kind if isinstance(raw_kind, str) and raw_kind in FORMAL_FIELDS else None
-    identifier = row.get("id")
-    raw_field = row.get("field")
-    field = raw_field if kind is not None and raw_field in (*FORMAL_FIELDS[kind], "*") else None
+def _replay(mission: Mapping[str, Any], library: Mapping[str, Any]) -> dict[str, Any]:
+    """全业务重放 v3 的结论与数字（HTN 补齐阶段 G）。只给每张表的状态与行数，不带行键——
+    行键可能含调用方写的文字。"""
+    tables = _mapping(mission.get("tables"))
     return {
-        "object": kind,
-        "object_sha256": _hash(raw_kind) if kind is None else None,
-        "id": identifier if kind in {"mission", "task", "attempt", "result"}
-              else None,
-        "id_sha256": _hash(identifier) if kind not in {"mission", "task", "attempt", "result"}
-                     else None,
-        "field": field,
-        "field_sha256": _hash(raw_field) if field is None else None,
-    }
-
-
-def _comparison(value: object) -> dict[str, Any]:
-    comparison = _mapping(value)
-    by_kind = _mapping(comparison.get("by_kind"))
-    return {
-        "coverage": _safe_scalar(comparison.get("coverage")),
-        "by_kind": {kind: _pick(by_kind.get(kind), ("expected", "decided"))
-                    for kind in FORMAL_FIELDS if kind in by_kind},
-        "not_covered": [_replay_reference(row) for row in _rows(comparison.get("not_covered"))],
-        "mismatches": [
-            {**_replay_reference(row), "replayed_sha256": _hash(row.get("replayed")),
-             "library_sha256": _hash(row.get("library"))}
-            for row in _rows(comparison.get("mismatches"))
-        ],
-        "consistent": comparison.get("consistent") is True,
+        "version": _safe_scalar(mission.get("version")),
+        "status": _safe_scalar(mission.get("status")),
+        "counts": {str(key): _safe_scalar(value) for key, value in _mapping(mission.get("counts")).items()},
+        "tables": {str(name): {"status": _safe_scalar(_mapping(item).get("status")),
+                               "rows": _safe_scalar(_mapping(item).get("rows")),
+                               "problems": len(list(_mapping(item).get("problems") or []))}
+                   for name, item in sorted(tables.items())},
+        "library": {"status": _safe_scalar(library.get("status")),
+                    "unnamed_rows": _safe_scalar(library.get("unnamed_count")),
+                    "named_twice": len(list(library.get("named_twice") or []))},
     }
 
 
@@ -375,33 +346,13 @@ def build_diagnostics(
         raise ValueError("snapshot mission does not belong to mission_id")
 
     store = orchestrator.store
-    events = events_from_store(store, mission_id)
-    projection = Projection().feed(events)
-    projection.check_structure()
-    comparison = _comparison(compare(projection.formal(), formal_from_snapshot(snapshot)))
     attribution_report = _attribution(attribution(store, mission_id), snapshot)
+    replay = _replay(verify_mission(store, mission_id), verify_library(store))
     report = {
         "mission_id": mission_id,
-        "replay": {
-            "version": REPLAY_VERSION,
-            "events": len(events),
-            "applied": projection.applied,
-            "duplicates": projection.duplicates,
-            "unknown_event_types": {
-                sha256_hex(kind): count for kind, count in projection.unknown.items()
-            },
-            "gaps": [
-                {**_pick(gap, ("rule", "object", "status", "state")),
-                 "id_sha256": _hash(gap.get("id")),
-                 "at_event_sha256": _hash(gap.get("at_event")),
-                 "result_id": _safe_scalar(gap.get("result_id"))}
-                for gap in projection.gaps
-            ],
-            "comparison": comparison,
-            "failure_timeline": _timeline(failure_timeline(events, projection)),
-        },
-        # 全业务重放 v3 的骨架：哪些业务表已能由事件重建（HTN 补齐阶段 A；阶段 G 取代上面的 v2）
-        "business_replay": verify_mission(store, mission_id),
+        # 全业务重放 v3：每张业务表能否由事件重建、与库里一致否（HTN 补齐阶段 G 取代 v2）
+        "replay": replay,
+        "failure_timeline": _timeline(failure_timeline(store, mission_id)),
         "attribution": attribution_report,
         # 指标统计的唯一入口（HTN 补齐阶段 B）。编排只记 token，不记金额。
         "metrics": metrics(store, mission_id),
@@ -419,7 +370,8 @@ def build_diagnostics(
             "through_seq": snapshot_view.get("through_seq"),
             "state_version": snapshot_view.get("state_version"),
             "not_covered": {
-                "replay": comparison["not_covered"],
+                "replay": sorted(name for name, item in replay["tables"].items()
+                                 if item["status"] == "NOT_COVERED"),
                 "excluded": [
                     "mission goal and criteria text",
                     "source content and journal payloads",

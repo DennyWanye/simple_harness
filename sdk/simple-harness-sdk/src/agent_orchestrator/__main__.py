@@ -10,11 +10,11 @@ Subcommands:
     attempt get --evidence-dir DIR ATTEMPT_ID
     artifact show --evidence-dir DIR ARTIFACT_ID
     approval list|approve|reject|revoke|comment|review|arbitrate|takeover|resolve --evidence-dir DIR --as PRINCIPAL ...
-    replay --evidence-dir DIR MISSION_ID [--events FILE] [--failures] [--attribution] [--out FILE]
+    replay --evidence-dir DIR MISSION_ID [--failures] [--attribution] [--out FILE]
     policy list|show|status --evidence-dir DIR
 
-``replay`` (step 8) rebuilds a Mission's formal state from its events on a read-only copy
-of the library and compares it with the library; it never executes or writes.
+``replay`` rebuilds a Mission's business tables from its events on a read-only copy of the
+library and compares them with the library (全业务重放 v3); it never executes or writes.
 
 ``approval`` (step 7) acts as the caller named by ``--as`` — in this local build a
 self-declared identity; a real deployment binds it to its authentication.
@@ -126,57 +126,46 @@ REAL_KNOBS: dict[str, Any] = {  # flash spends its output cap on reasoning (step
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    """``replay`` (plan D8-9'): read-only; a mismatch, a gap or coverage below 100 % exits
-    1; a missing library, events file or Mission exits 2."""
+    """``replay``: rebuild one Mission's business tables from its events on a read-only copy
+    and compare them with the library (全业务重放 v3, HTN 补齐阶段 G).  Anything but
+    "consistent" — inconsistent, not covered, or out of scope — exits 1; a missing library
+    or Mission exits 2."""
 
     import tempfile
 
-    from .observability.replay import library_copy, replay_mission
+    from .observability.business_replay import CONSISTENT, verify_library, verify_mission
     from .observability.secrets import redact_text
-    from .observability.traces import attribution
-    from .storage.store import StoreError
+    from .observability.traces import attribution, failure_timeline
+    from .storage.store import StoreError, library_copy
 
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
-    events = Path(args.events).resolve() if args.events else None
-    problem = None
-    if events is not None and not events.is_file():
-        problem = f"no events file at {events}"
-    elif events is None and not library.is_file():
-        problem = f"no library at {library} and no --events file"
-    elif args.attribution and not library.is_file():
-        problem = f"--attribution reads the library and there is none at {library}"
-    if problem is not None:  # review P2-5: an answer, never a traceback or a silent gap
-        _print({"error": problem})
+    if not library.is_file():  # review P2-5: an answer, never a traceback or a silent gap
+        _print({"error": f"no library at {library}"})
         return EXIT_USAGE
-    try:
-        report = replay_mission(
-            mission_id=args.mission_id,
-            library=library if library.is_file() else None,
-            events_file=events,
-            failures=args.failures,
-        )
-    except (StoreError, ValueError) as error:
-        _print({"error": str(error)})
-        return EXIT_USAGE
-    if args.attribution:
-        with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory() as scratch:
+        try:
             store = Store.open_readonly(library_copy(library, Path(scratch)))
-            try:
+        except StoreError as error:
+            _print({"error": str(error)})
+            return EXIT_USAGE
+        try:
+            if store.get_mission(args.mission_id) is None:
+                _print({"error": f"no Mission {args.mission_id} in {library}"})
+                return EXIT_USAGE
+            report = {"mission": verify_mission(store, args.mission_id), "library": verify_library(store)}
+            if args.failures:
+                report["failure_timeline"] = failure_timeline(store, args.mission_id)
+            if args.attribution:
                 report["attribution"] = attribution(store, args.mission_id)
-            finally:
-                store.close()
+        finally:
+            store.close()
     text, _found = redact_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
     )
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
-    comparison = report.get("comparison") or {}
-    complete = (
-        comparison.get("consistent", True)
-        and comparison.get("coverage", 1.0) == 1.0
-        and not report["gaps"]
-    )
+    complete = report["mission"]["status"] == CONSISTENT and report["library"]["status"] == CONSISTENT
     return EXIT_OK if complete else EXIT_FAILED
 
 
@@ -276,7 +265,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
     from .api.policies import PolicyApi, PolicyRequestError
     from .governance.permissions import Principal
     from .governance.promotion import registry_consistency
-    from .observability.replay import library_copy
+    from .storage.store import library_copy
 
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
     if not library.is_file():  # review P2-4: never create an empty library by accident
@@ -397,9 +386,6 @@ def build_parser() -> argparse.ArgumentParser:
     replay = sub.add_parser("replay")  # step 8
     common(replay)
     replay.add_argument("mission_id")
-    replay.add_argument(
-        "--events", default=None, help="replay an events.jsonl instead of the library's events"
-    )
     replay.add_argument("--failures", action="store_true", help="add the timeline of what failed")
     replay.add_argument(
         "--attribution", action="store_true", help="add the contribution attribution"

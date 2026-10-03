@@ -18,6 +18,7 @@ instead of a lost update.  Event appends are idempotent on ``idempotency_key``
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import threading
 import time
@@ -1803,3 +1804,16 @@ __all__ = (
     "StoredResult",
     "proposal_hash",
 )
+
+
+def library_copy(library: Path, into: Path) -> Path:
+    """Copy ``orchestrator.db`` with its ``-wal`` / ``-shm`` into ``into`` (plan D8-1'):
+    the library itself is never opened, so it cannot be written."""
+
+    into.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        source = library.with_name(library.name + suffix)
+        if source.is_file():
+            shutil.copy2(source, into / (library.name + suffix))
+    return into / library.name
+

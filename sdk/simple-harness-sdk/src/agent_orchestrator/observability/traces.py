@@ -342,4 +342,52 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
     }
 
 
-__all__ = ("ATTRIBUTION_VERSION", "attribution")
+TIMELINE_TYPES = frozenset(
+    {
+        "AttemptCreated",
+        "AttemptStarted",
+        "ResultSubmitted",
+        "VerificationFailed",
+        "VerificationSuspended",
+        "AttemptLost",
+        "AttemptTimedOut",
+        "OutcomeRecorded",
+        "TaskFailed",
+        "TaskCancelled",
+        "MissionFailed",
+        "ActionFailed",
+        "ActionOutcomeUnknown",
+        "ApprovalRejected",
+    }
+)
+
+
+def failure_timeline(store: Store, mission_id: str) -> list[dict[str, Any]]:
+    """The key events of every Task that did not complete (plan D8-3'): read from the
+    library's current state and the Mission's events (HTN 补齐阶段 G：v2 投影删了)."""
+
+    mission = store.get_mission(mission_id)
+    mission_failed = mission is not None and str(mission.status) == "FAILED"
+    failed = {
+        task.id for task in store.list_tasks(mission_id)
+        if str(task.status) in {"FAILED", "CANCELLED"}
+        or (mission_failed and str(task.status) not in {"COMPLETED", "FAILED", "CANCELLED"})
+    }
+    lines = []
+    for event in store.iter_events(mission_id):
+        kind = event.type
+        relevant = event.task_id in failed or kind == "MissionFailed"
+        if kind == "VerificationLayerRecorded":
+            relevant = relevant and event.payload.get("status") in {"FAIL", "ERROR"}
+        elif kind not in TIMELINE_TYPES:
+            continue
+        if not relevant:
+            continue
+        payload = dict(event.payload)
+        payload.pop("final_report", None)
+        lines.append({"seq": event.seq, "type": kind, "task_id": event.task_id,
+                      "attempt_id": event.attempt_id, "detail": payload})
+    return lines
+
+
+__all__ = ("ATTRIBUTION_VERSION", "TIMELINE_TYPES", "attribution", "failure_timeline")

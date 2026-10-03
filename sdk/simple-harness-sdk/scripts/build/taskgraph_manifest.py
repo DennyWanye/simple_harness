@@ -88,8 +88,9 @@ def upstream_from(evidence_path: Path) -> dict[str, str]:
         "mission_id": mission_id,
         "mission_receipt_sha256": _sha(receipt_bytes),
         "cold_replay_receipt_sha256": _sha(files["cold_replay_receipt"].read_bytes()),
-        # The legacy replay projection still reports unknown event kinds (09-22 note).
-        "semantic_replay": "PARTIAL",
+        # 全业务重放 v3 还没在这次上游局上跑过（09-27 的库在迁移 38～41 之前）；联测用新的真实
+        # 上游局跑 v3 后改成 CONSISTENT 并带报告哈希。读取方永远不把 NOT_RUN 当成通过。
+        "business_replay": "NOT_RUN",
     }
 
 
@@ -179,8 +180,14 @@ def verify(wheel: Path) -> dict[str, object]:
             del value["upstream"]["cold_replay_receipt_sha256"]
             (root / MANIFEST_REL).write_text(json.dumps(value), encoding="utf-8")
 
+        def unproven_replay(root: Path) -> None:  # 说一致却没带 v3 报告的哈希
+            value = json.loads((root / MANIFEST_REL).read_text(encoding="utf-8"))
+            value["upstream"]["business_replay"] = "CONSISTENT"
+            (root / MANIFEST_REL).write_text(json.dumps(value), encoding="utf-8")
+
         counterexample("changed_manifest", changed_manifest)
         counterexample("missing_evidence", missing_evidence)
+        counterexample("unproven_replay", unproven_replay)
     return results
 
 

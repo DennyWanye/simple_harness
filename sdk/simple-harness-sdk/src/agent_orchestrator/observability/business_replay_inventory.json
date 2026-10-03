@@ -2519,5 +2519,5 @@
    "note": "全库做法的归因（阶段 C3）；不按任务重放，阶段 G 单独核对。写方 MethodLibraryStore.add_attribution/clear；归因本身不发事件（规划器一侧随换做法的计划提交、审阅员一侧随根终审记录导入），第 2 个任务归因时发 MethodLibraryEntryRetired"
   }
  },
- "rebuild_rule": "业务表二选一：immutable_source = 只增、库层不许改删，每行被同事务的 SourceRecordsWritten 事件按主键与内容哈希点名，v3 核点名；fold = 会改，建行事件带整行、每次改动有事件，由 rebuilder 指名的函数折叠出来逐列比对。gaps 非空的 fold 表不算覆盖（阶段 G 裁决 G-1）"
+ "rebuild_rule": "业务表二选一：immutable_source = 只增、库层不许改删，每行被同事务的 ImmutableRowsNamed 事件按主键与内容哈希点名，v3 核点名；fold = 会改，建行事件带整行、每次改动有事件，由 rebuilder 指名的函数折叠出来逐列比对。gaps 非空的 fold 表不算覆盖（阶段 G 裁决 G-1）"
 }

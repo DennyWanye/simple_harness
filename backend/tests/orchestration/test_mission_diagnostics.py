@@ -75,7 +75,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report.keys() == {
             "mission_id",
             "replay",
-            "business_replay",
+            "failure_timeline",
             "attribution",
             "metrics",
             "verification",
@@ -85,8 +85,8 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
             "scope",
         }
         assert report["mission_id"] == selected["mission_id"]
-        assert report["business_replay"]["version"] == "business-replay-v3"
-        assert report["business_replay"]["tables"]["missions"]["rows"] == 1
+        assert report["replay"]["version"] == "business-replay-v3"
+        assert report["replay"]["tables"]["missions"]["rows"] == 1
         assert report["metrics"]["version"] == "metrics-v1"
         assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix"}
         assert set(report["metrics"]["cost"]) == {"tokens_by_role", "tokens_by_profile"}
@@ -97,8 +97,8 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert secret not in rendered
         assert "<redacted:configured_secret>" in rendered
         assert "selected.txt" not in rendered
-        assert report["replay"]["comparison"].keys() >= {"not_covered", "mismatches"}
-        assert isinstance(report["replay"]["failure_timeline"], list)
+        assert report["replay"]["library"]["status"] == "CONSISTENT"
+        assert isinstance(report["failure_timeline"], list)
 
         first = export_support(orchestration_root / "support", report)
         second = export_support(orchestration_root / "support", report)
@@ -131,19 +131,13 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
         secret = 'p36"quoted\\credential\nRAW-CONFIGURED-SECRET-CANARY'
         source_key = json.dumps([mission_id, source_path, "a" * 64], separators=(",", ":"))
 
-        original_compare = diagnostics.compare
+        original_verify = diagnostics.verify_mission
         original_attribution = diagnostics.attribution
 
-        def comparison_with_source_key(replayed, library):
-            result = original_compare(replayed, library)
-            result["not_covered"].append(
-                {"object": "source", "id": source_key, "field": "version_hash"}
-            )
-            result["mismatches"].append({
-                "object": "source", "id": source_key, "field": "version_hash",
-                "replayed": raw_detail, "library": source_path,
-            })
-            result["consistent"] = False
+        def replay_with_source_key(store, selected_id):
+            result = original_verify(store, selected_id)
+            result["tables"]["sources"]["problems"] = [
+                f"row {source_key} is not named", f"{raw_detail} {source_path}"]
             return result
 
         def attribution_with_raw_paths(store, selected_id):
@@ -184,9 +178,9 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
             }
             return result
 
-        monkeypatch.setattr(diagnostics, "compare", comparison_with_source_key)
+        monkeypatch.setattr(diagnostics, "verify_mission", replay_with_source_key)
         monkeypatch.setattr(diagnostics, "attribution", attribution_with_raw_paths)
-        monkeypatch.setattr(diagnostics, "failure_timeline", lambda _events, _projection: [{
+        monkeypatch.setattr(diagnostics, "failure_timeline", lambda _store, _mission_id: [{
             "seq": 7, "type": "OutcomeRecorded", "task_id": "task-1",
             "attempt_id": "attempt-1", "detail": {
                 "outcome": "failure", "result_id": "result-1", "summary": raw_detail,
@@ -252,7 +246,7 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
                        "RAW-GOAL-CANARY", "RAW-BINARY-CANARY", secret):
             assert canary not in rendered
         assert "<redacted:configured_secret>" in rendered
-        assert report["replay"]["failure_timeline"][0]["detail"] == {
+        assert report["failure_timeline"][0]["detail"] == {
             "payload_sha256": sha256_hex({
                 "outcome": "failure", "result_id": "result-1", "summary": raw_detail,
                 "failures": [{"reason": raw_detail, "source": source_path}],
@@ -262,8 +256,8 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
             "outcome": "failure", "outcome_sha256": None, "result_id": "result-1",
             "failures_count": 1, "proposed_tasks_count": 1,
         }
-        reference = report["replay"]["comparison"]["not_covered"][-1]
-        assert reference["id"] is None and reference["id_sha256"] == sha256_hex(source_key)
+        assert report["replay"]["tables"]["sources"]["problems"] == 2  # 只给条数，不带行键
+        assert source_key not in rendered
         product = report["attribution"]["final_products"][0]
         assert product["path_sha256"] == sha256_hex(product_path)
         assert (product["role"], product["model"], product["content_hash"]) == (

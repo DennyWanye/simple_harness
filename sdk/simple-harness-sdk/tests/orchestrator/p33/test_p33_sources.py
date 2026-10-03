@@ -44,12 +44,7 @@ from p33_world import opened, request
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.observability.replay import (
-    Projection,
-    compare,
-    events_from_store,
-    formal_from_snapshot,
-)
+from agent_orchestrator.observability.business_replay import verify_library, verify_mission
 from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.store import Store
@@ -57,10 +52,6 @@ from agent_orchestrator.storage.store import Store
 PATH = "sources/report.md"
 TEXT = "来源原文：我们不建议删除前提。\n"
 DEPLOYMENT = DeploymentPolicy(approval_ttl_seconds=10)
-#: 产品建任务时就会写、回放折叠还不认识的事件（已报告为观测缺口）；来源与审批事件不在其中。
-CREATION_ONLY_UNKNOWN = frozenset(
-    {"AssuranceProfileActivated", "AssuranceEvidenceChanged", "ObligationDemandAdmitted",
-     "TaskGraphContractEnabled"})
 
 
 def _hash(text):
@@ -137,10 +128,11 @@ def _approve(e, pending, nonce="approve"):
 
 
 def _assert_replay(e):
-    projection = Projection().feed(events_from_store(e.store, e.mission.id))
-    assert set(projection.unknown) <= CREATION_ONLY_UNKNOWN, dict(projection.unknown)
-    report = compare(projection.objects, formal_from_snapshot(e.store.snapshot(e.mission.id)))
-    assert report["coverage"] == 1.0 and report["mismatches"] == [], report
+    """全业务重放 v3：资料表与全库点名都没有不一致（HTN 补齐阶段 G 取代 v2 比对）。"""
+    report = verify_mission(e.store, e.mission.id)
+    assert report["tables"]["sources"]["status"] != "INCONSISTENT", report["tables"]["sources"]
+    assert "INCONSISTENT" not in {item["status"] for item in report["tables"].values()}, report
+    assert verify_library(e.store)["status"] == "CONSISTENT"
 
 
 def test_register_cas_metadata_idempotency_and_historical_read(env):
@@ -317,16 +309,16 @@ def test_invalidated_source_approval_can_be_rejected_without_touching_sources(
     before = e.store.list_sources(e.mission.id)
     source_events = [
         event
-        for event in events_from_store(e.store, e.mission.id)
-        if event["type"].startswith("Source")
+        for event in e.store.iter_events(e.mission.id)
+        if event.type.startswith("Source")
     ]
     result = e.api.decide(pending["request_id"], "reject", reason="已失效", nonce="dismiss")
     assert result["request_state"] == "REJECTED"
     assert e.store.list_sources(e.mission.id) == before
     assert [
         event
-        for event in events_from_store(e.store, e.mission.id)
-        if event["type"].startswith("Source")
+        for event in e.store.iter_events(e.mission.id)
+        if event.type.startswith("Source")
     ] == source_events
     assert [d["decision"] for d in e.store.list_decisions(pending["request_id"])] == ["reject"]
     after = e.store.snapshot(e.mission.id)

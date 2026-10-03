@@ -5,7 +5,7 @@
 
 * ``business`` —— 任务的业务事实，必须能由事件重建，二选一（裁决 G-1）：
   * ``immutable_source``：只增、库层不许改删；每一行都被**同一事务**里的
-    ``SourceRecordsWritten`` 事件按主键与内容哈希点名（存储层自动做，见
+    ``ImmutableRowsNamed`` 事件按主键与内容哈希点名（存储层自动做，见
     :mod:`agent_orchestrator.storage.source_records`）。v3 核"每行恰好被点名一次、哈希对得上、
     点名的行都在"。
   * ``fold``：会改的表；建行事件带整行、每次改动都有事件，由 ``rebuilder`` 指名的折叠函数

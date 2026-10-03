@@ -1419,17 +1419,14 @@ class OrchestrationService:
             from . import diagnostics
         except ImportError:
             return False
-        projection = diagnostics.Projection
         store = getattr(self._orchestrator, "store", None)
         return all(callable(value) for value in (
             getattr(self._control, "snapshot", None),
             getattr(store, "read_view", None),
             getattr(store, "snapshot", None),
             getattr(store, "iter_events", None),
-            diagnostics.events_from_store, diagnostics.formal_from_snapshot,
-            diagnostics.compare, diagnostics.failure_timeline, diagnostics.attribution,
-            getattr(projection, "feed", None), getattr(projection, "formal", None),
-            getattr(projection, "check_structure", None),
+            diagnostics.verify_mission, diagnostics.verify_library,
+            diagnostics.failure_timeline, diagnostics.attribution,
         ))
 
     def mission_diagnostics(self, request: Mapping[str, Any], *, export: bool = False) -> dict[str, Any]:

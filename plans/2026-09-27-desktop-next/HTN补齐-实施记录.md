@@ -671,7 +671,7 @@ M01～M12（TaskGraph 原计划 §15）文件留空，F2 补写。第三轮重�
   - 删没有生产写方或生产始终为空的 7 张表：`bound_inputs`、`obligation_relations`、`obligation_expansions`、`obligation_shape_changes`、`policy_evaluations`、`policy_decisions`、`policy_proposals`（触发器随表去掉；`assurance_source_inventory.py` 同步删）。连同删掉的写方：`HtnStore.insert_bound_input / list_bound_inputs / adopt_goal_resolution`、`ObligationStore` 的按义务扣燃料、形状变化、关系三组、`BudgetLedger.settle_known` 与 `CommitService.settle_subject_known`（`known_only` 早被强制为假）、`ResolutionCommits.record_delivery_receipt` 命令与 `DeliveryReceiptRecorded` 事件；规划包义务视图里恒为 `"ROOT"` 的 `relation` 一项（提示词不用它）。`ObligationStore.persist` 遇到带扣燃料 / 形状变化的内存账本直接拒绝，不静默丢。
   - 保证通道 9 个全局触发器（做法定义、策略版本、策略启用三表 × 增改删）照原文重建，只把唤醒名单限成没结束的任务；全局纪元照旧加 1。`assurance_changes.original_source_mutation` 配套：没有没结束的绑定任务时唤醒名单为空是正常的、照常记回执，有却没唤醒才报错。
   - 34 张原先没有守卫的只增业务表与回执账加"不许改、不许删"守卫（另 17 张原来就有）。
-- **自动点名**（新 `storage/source_records.py`）：写库连接打开时在临时库里给 51 张需点名的表装插入后触发器；最外层事务提交前按任务各追加一条 `SourceRecordsWritten{rows:[{table,key,content_hash}]}`（内容哈希 = 整行规范 JSON），内容只由已提交的行算出。行的任务取 `mission_id` 列或 JSON 正文里的 `mission_id`，都没有时取本事务唯一的任务，否则记部署时间线（实测只剩时钟观察、保证通道根与环境安装这类部署级回执）。G-0 第 1 条核过前提：所有写都在 `Store.transaction()` 里。
+- **自动点名**（新 `storage/source_records.py`）：写库连接打开时在临时库里给 51 张需点名的表装插入后触发器；最外层事务提交前按任务各追加一条 `ImmutableRowsNamed{rows:[{table,key,content_hash}]}`（内容哈希 = 整行规范 JSON），内容只由已提交的行算出。行的任务取 `mission_id` 列或 JSON 正文里的 `mission_id`，都没有时取本事务唯一的任务，否则记部署时间线（实测只剩时钟观察、保证通道根与环境安装这类部署级回执）。G-0 第 1 条核过前提：所有写都在 `Store.transaction()` 里。
 - **重放口径摘要**：`MissionCreated` 带 `replay_scope`（覆盖清单 + 编码清单 v5 的摘要），v3 只核口径相同的任务，其余报"范围外"。
 - **覆盖清单第 2 版**：每张业务表标 `rebuild`（50 张 `immutable_source`、25 张 `fold`，`rebuilder` 各批接上）；`commit_receipts` 改 `log` 并 `named`；`assurance_blob_pins`、`workspaces` 改运行表；非业务表都写排除理由。
 - **v3 引擎**（`observability/business_replay.py` 重写）：`verify_mission`（只增表核"每行恰好被点名一次、哈希对得上、点名的行都在"；折叠表有折叠函数且无缺口才比对，否则"未覆盖"；整体状态 一致 / 不一致 / 未覆盖 / 范围外）、`verify_library`（全库每行恰好被点名一次）、`check_inventory`（加：只增源记录必须有守卫、指名的折叠函数必须已登记）。Host 诊断导出的 `business_replay` 一节改调 `verify_mission`。
@@ -689,7 +689,17 @@ M01～M12（TaskGraph 原计划 §15）文件留空，F2 补写。第三轮重�
   4. 逐表补领域事件会在每个提交服务里加一份"把整行抄进事件"的代码（约 25 个表、几十处写入口），任何一处漏写就是"不一致"；裁决自己也承认清单显示的缺口远少于实际（73 张不够 vs 27 张），按表补要 9.5 天且容易漏。
 - **可选做法**：
   - A. 按计划：逐表补领域事件 + 逐表折叠函数。领域事件读起来像业务（"任务建了、预算加了"），但两份写法（领域事件给消费者、整行给重放）并存在各提交服务里。
-  - B. **存储层统一记"整行变化"**（同第 1 批点名的机制）：领域事件不动（照旧给消费者用）；重放只读 `RowsChanged` 与 `SourceRecordsWritten`。一个通用折叠函数；G-2～G-5 的工作变成：装机制、核 25 张表、补主键缺的、处理没有任务归属的行、写用例与改坏，估 2～3 天。
+  - B. **存储层统一记"整行变化"**（同第 1 批点名的机制）：领域事件不动（照旧给消费者用）；重放只读 `RowsChanged` 与 `ImmutableRowsNamed`。一个通用折叠函数；G-2～G-5 的工作变成：装机制、核 25 张表、补主键缺的、处理没有任务归属的行、写用例与改坏，估 2～3 天。
   - C. 混合：可读性强的几张（任务、步骤、计划修订）补领域事件，其余用 B。两套口径，违反"一件事一条路径"。
 - **推荐 B**。理由：与第 1 批同一机制、同一处收口，"每一次改动都有事件且内容足以算出改后的列"由构造保证而不靠逐处记得写；满足原计划 v1.4 §16.1"每一次正式变更记录足够 payload……纯 reducer 重建"；体积与 A 相同；工期省约 7 天。代价：重放读的是"行状态"事件而不是领域事件——领域事件本来就给消费者用，不需要为重放改写；原计划没有要求重放只读领域事件。
 - **需要先改计划**：施工清单第三节 G-2～G-5 的"做法"与改坏条目、裁决 G-1 "会被改的表"一段、主计划第 3.21 版修订记录；工期相应缩短。
+- 第 1 批的点名事件原名 `SourceRecordsWritten`，与资料类事件（`Source…`）同前缀、按前缀筛资料事件的用例会误收，改名 `ImmutableRowsNamed`。
+
+### G-7　v3 取代 v2、部署身份、诊断与界面（先于第 2～6 批做：与偏差单 1 无关）
+- 删 `observability/replay.py`（v2）整个文件；`library_copy` 挪到 `storage/store.py`；`failure_timeline` 挪到 `observability/traces.py`，改读库里步骤与任务的现行状态加事件流。
+- 命令行 `replay` 改成 v3：输出 `{mission: verify_mission, library: verify_library}`，不是一致就退出 1；删 `--events`（只给事件文件的离线模式，v3 要读源记录）；`--failures`、`--attribution` 保留。
+- Host 诊断导出：`replay` 一节换成 v3 的结论与数字（每张表状态、行数、问题条数，不带行键）；`failure_timeline` 挪到报告顶层；`business_replay` 骨架一节并进 `replay`；`service._detect_diagnostics` 的能力检查同步改。
+- 前端 `MissionDiagnostics.tsx`：只显示"重建结果：一致 N 张表 · 不一致 · 未覆盖"（范围外的任务如实说），失败过程照旧，明细收在展开里；测试同步改。
+- 部署身份：上游证据里 `semantic_replay: PARTIAL` 换成 `business_replay: NOT_RUN / CONSISTENT`（一致必须带 `business_replay_receipt_sha256`）；清单生成写 `NOT_RUN`；`taskgraph_manifest.py verify` 加反例"说一致却没带报告哈希"。
+- 删 v2 的用例与审计插件：`T/step08/test_replay.py`、`T/p33_replay_audit.py`、`T/p33/test_g_replay_audit_plugin.py`；`T/p33/test_p33_sources.py`、`test_p33_g1_create_sources.py` 的 v2 比对改成 v3 断言（没有不一致的表、全库点名一致）。
+- 用例：命令行 replay 改写（库里改坏一条源记录 → 不一致、退出 1）；新 `test_business_replay_inventory.py::test_deployment_identity_never_takes_an_unproven_replay`；Host `test_mission_diagnostics.py` 3 条、前端 `MissionDiagnostics.test.tsx` 11 条通过。改坏 G-15、G-16 抓到。
