@@ -1622,9 +1622,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 model=model,
                 prompt_version=prompt_version,
                 context_version=context_version,
-                budget_reserved=Budget(
-                    max_tokens=reservation.tokens, max_cost_micros=reservation.cost_micros
-                ),
+                budget_reserved=Budget(max_tokens=reservation.tokens),
                 lease_owner=None,
                 lease_expires_at=None,
                 status=AttemptStatus.PENDING,

@@ -60,7 +60,6 @@ class OperationSpec:
     # plan D7-2': "state" sets the target to a value (running it again changes nothing
     # more); "event" makes a new fact each time (append, pay).  Step 7 runs state only.
     kind: str = "state"
-    cost_micros_ceiling: int | None = None  # per call; None = unpriced (never 0)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -69,7 +68,6 @@ class OperationSpec:
             "required_params": list(self.required_params),
             "mutates": self.mutates,
             "kind": self.kind,
-            "cost_micros_ceiling": self.cost_micros_ceiling,
         }
 
 

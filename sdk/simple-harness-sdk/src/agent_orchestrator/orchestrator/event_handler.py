@@ -651,14 +651,6 @@ class Orchestrator:
                         )
                         else None
                     ),
-                    price_tables={
-                        key: (
-                            profile.price_table.estimator()
-                            if profile.price_table is not None
-                            else None
-                        )
-                        for key, profile in self._profiles.items()
-                    },
                 )
             if self._provider_token_estimators is not None:
                 from ..runtime.provider_budget_guard import ProviderBudgetGuard
@@ -678,20 +670,12 @@ class Orchestrator:
                     else None
                 )
                 def guard_for(key: str, estimator: Any) -> Any:
-                    profile = self._profiles[key]
                     return ProviderBudgetGuard(
                         self._commit,
                         owner=self._owner,
                         estimator=estimator,
                         max_slots=self._config.max_concurrent_model_calls,
                         profile_slots=slots,
-                        price_tables={
-                            key: (
-                                profile.price_table.estimator()
-                                if profile.price_table is not None
-                                else None
-                            )
-                        },
                     )
 
                 def admission_for(key: str) -> Any:
@@ -4626,23 +4610,10 @@ class Orchestrator:
 
     # -------------------------------------------------------------- dispatch
     def _reservation(self, tokens: int, profile_id: str | None = None) -> Reservation:
-        profile = self._profiles.get(profile_id or self._default_profile)
-        table = profile.price_table if profile is not None else self._config.price_table
-        if table is None:
-            return Reservation(tokens=tokens, cost_micros=0)
-        rate = max(table.input_micros_per_million_tokens, table.output_micros_per_million_tokens)
-        return Reservation(tokens=tokens, cost_micros=(tokens * rate + 999_999) // 1_000_000)
+        return Reservation(tokens=tokens, cost_micros=0)
 
     def _first_critic_reservation(self, budget: FirstRequestBudget, profile_id: str) -> Reservation:
-        table = self._profiles[profile_id].price_table
-        if table is None:
-            return Reservation(budget.minimum_tokens, 0)
-        input_tokens = budget.provider_input_cap.max_input_tokens
-        output_tokens = budget.output_ceiling
-        cost = (input_tokens * table.input_micros_per_million_tokens + 999_999) // 1_000_000 + (
-            output_tokens * table.output_micros_per_million_tokens + 999_999
-        ) // 1_000_000
-        return Reservation(budget.minimum_tokens, cost)
+        return Reservation(budget.minimum_tokens, 0)
 
     async def _dispatch(self, intent: DispatchIntent) -> bool:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""

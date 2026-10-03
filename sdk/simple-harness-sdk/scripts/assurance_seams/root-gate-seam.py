@@ -70,7 +70,7 @@ async def native_round(base: Path, results: dict[str, Any]) -> dict[str, Any]:
 
 def management_orchestrator(root: Path) -> Any:
     """宿主不带根安装回调地起服务（产品那份池子配置照旧）；执行池一起就算失败。"""
-    cfg = OrchestratorConfig(evidence_root=root, model="agent-model", price_table=None)
+    cfg = OrchestratorConfig(evidence_root=root, model="agent-model")
     counter = FixtureWordCounter()
     provider = LayeredScriptedProvider()
     native = NativePools(tenant_id=TENANT, principal_id=USER.principal_id, allowed_tools=DEFAULT_TOOLS,

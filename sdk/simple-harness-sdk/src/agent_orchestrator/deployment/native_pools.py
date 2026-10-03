@@ -356,7 +356,7 @@ def pool_options(
             raise RuntimeError(f"上下文执行库配置不一致：{identifier}")
         counters[identifier] = pool_counter
         options["profiles"][identifier] = RuntimeProfile(
-            identifier, calibrated(base, pool_counter), config.model, price_table=config.price_table,
+            identifier, calibrated(base, pool_counter), config.model,
             provider_kind=kind, context_policy=policy, tokenizer=pool_counter,
             default_max_output_tokens=default_output, max_output_tokens_ceiling=32768,
             native_plane=native.assembly(identifier, tokens=tokens, counter=pool_counter),

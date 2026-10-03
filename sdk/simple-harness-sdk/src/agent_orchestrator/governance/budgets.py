@@ -91,11 +91,6 @@ class AccountSnapshot:
             return None
         return self.limits.max_tokens - self.reserved_tokens - self.settled_tokens
 
-    def remaining_cost_micros(self) -> int | None:
-        if self.limits.max_cost_micros is None:
-            return None
-        return self.limits.max_cost_micros - self.reserved_cost_micros - self.settled_cost_micros
-
     def remaining_attempts(self) -> int | None:
         if self.limits.max_attempts is None:
             return None
@@ -118,7 +113,6 @@ class AccountSnapshot:
             "settled_tool_calls": self.settled_tool_calls,
             "remaining_tool_calls": self.remaining_tool_calls(),
             "remaining_tokens": self.remaining_tokens(),
-            "remaining_cost_micros": self.remaining_cost_micros(),
             "remaining_attempts": self.remaining_attempts(),
             "version": self.version,
         }
@@ -227,11 +221,6 @@ class BudgetLedger:
             remaining_tokens = snapshot.remaining_tokens()
             if remaining_tokens is not None and tokens > remaining_tokens:
                 raise BudgetExhausted(snapshot.account_id, "tokens", tokens, remaining_tokens)
-            remaining_cost = snapshot.remaining_cost_micros()
-            if remaining_cost is not None and cost_micros > remaining_cost:
-                raise BudgetExhausted(
-                    snapshot.account_id, "cost_micros", cost_micros, remaining_cost
-                )
             if counts_attempt:
                 remaining_attempts = snapshot.remaining_attempts()
                 if remaining_attempts is not None and remaining_attempts < 1:
@@ -311,10 +300,9 @@ class BudgetLedger:
             return
         chain = self._chain(reservation["account_id"])
         for snapshot in chain:
-            for dimension, delta in deltas.items():
-                remaining = getattr(snapshot, "remaining_" + dimension)()
-                if remaining is not None and delta > remaining:
-                    raise BudgetExhausted(snapshot.account_id, dimension, delta, remaining)
+            remaining = snapshot.remaining_tokens()
+            if remaining is not None and deltas["tokens"] > remaining:
+                raise BudgetExhausted(snapshot.account_id, "tokens", deltas["tokens"], remaining)
         for snapshot in chain:
             self._apply(
                 snapshot.account_id,

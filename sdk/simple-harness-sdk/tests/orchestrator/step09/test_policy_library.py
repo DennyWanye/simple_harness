@@ -55,7 +55,7 @@ def test_params_are_resolved_whitelisted_and_content_addressed(tmp_path):
     assert version_id(full) != version_id(resolve_params(cfg, {"exploration_slots": slots + 1}))
     for core in (
         {"deployment_policy": {}},
-        {"hard_cap_micros": 1},
+        {"task_max_tokens": 1},
         {"knowledge_sharing": False},
         {"budgets": {}},
         {"code_test": False},
