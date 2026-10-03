@@ -234,6 +234,19 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
                 [(e.type, json.dumps(e.payload, ensure_ascii=False)[:300]) for e in events
                  if e.type in {"PlanningRejected", "PlanningRepairRequested", "MissionStalled"}][-6:])
 
+            # 自动模式：系统代确认了第 2 版（纯内容要求）
+            approvals = [e.payload for e in events if e.seq > mark and e.type == "OperationCompletionSpecApproved"]
+            assert [a["approval_source"] for a in approvals] == ["HOST_AUTO_PERMISSION"]
+            # 规划包给的是现行要求（第 2 版），旧版通过的那一步如实标出
+            asked = next(p for p in seen["packages"] if any(
+                entry["request"].get("trigger_source") == "REQUIREMENTS_UPDATE"
+                for entry in p.get("repair_requests") or ()))
+            assert asked["mission"]["requirements"]["revision"] == 2
+            assert [c["id"] for c in asked["mission"]["requirements"]["criteria"]] == [
+                "c-user-1", "c-user-2", "c-user-3"]
+            assert "success_criteria" not in asked["mission"]
+            assert [(row["requirements_revision"], row["counts_under_current"])
+                    for row in asked["views"]["accepted_results"]] == [(1, False)]
             # 改要求之后、新计划提交之前：没有新尝试
             committed = next(e.seq for e in events if e.seq > mark and e.type == "PlanningDecisionEvaluated"
                              and e.payload.get("status") == "COMMITTED")
@@ -249,5 +262,48 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:extra.md"]
             assert judged["met"] is True
+
+    asyncio.run(case())
+
+
+def test_planning_waits_for_the_amended_requirements_to_be_confirmed(tmp_path):
+    """第 2 版要求还没人确认时，规划器一次都不被问（它出的计划必在冻结完成范围时被拒）；
+    用户确认之后才问，任务按第 2 版完成。
+
+    **改坏检验**：开工闸门只在第一次规划前看 → 确认前规划器就被问到 → 变红。"""
+    seen: dict[str, Any] = {}
+
+    async def case():
+        provider = SlowSecondStep(planner=replanning_planner(seen))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-confirm",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            await until_first_plan(world, mission_id)
+            # 从这里起没有"自动代确认"：等同于手动模式下等用户点确认
+            world.deployment.duties.auto_confirm_content_completion = lambda **_: 0
+            amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            asked_before = len(seen["packages"])
+            for _ in range(4):
+                await world.drain(timeout=20)
+            assert len(seen["packages"]) == asked_before, [  # 规划器没有被问
+                ([e["request"].get("trigger_source") for e in p.get("repair_requests") or ()],
+                 p["mission"]["requirements"]["revision"]) for p in seen["packages"][asked_before:]] + [
+                e.payload.get("approval_source") for e in world.store.list_events(mission_id)
+                if e.type == "OperationCompletionSpecApproved"]
+            workspace = world.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
+            assert workspace["state"] == "CONFIRMATION_REQUIRED" and workspace["requirements_ref"]["revision"] == 2
+            ref = workspace["requirements_ref"]
+            world.control.approve_operation_completion_spec({
+                "mission_id": mission_id, "command_id": "user-confirms-revision-2",
+                "expected_requirements_ref": ref,
+                "proposal": {"schema_version": 1, "mission_id": mission_id,
+                             "requirements_ref": {k: ref[k] for k in ("id", "revision", "content_hash")},
+                             "mode": "CONTENT_ONLY",
+                             "content_criterion_ids": [c["id"] for c in workspace["criteria"]], "effects": []},
+                "approval_source": "HUMAN"})
+            provider.go.set()
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            assert len(seen["packages"]) > asked_before and seen.get("updates")
 
     asyncio.run(case())

@@ -131,6 +131,19 @@ def read_planner_package(
     # accepted results ---------------------------------------------------------------
     outputs = htn.list_acceptance_outputs(mission.id)
     accepted = []
+    counted: dict[str, frozenset[str]] = {}
+
+    def _counted(occurrence_id: str) -> frozenset[str]:
+        """The acceptances this step's completion rests on right now (completion reading)."""
+        from .completion_status import read_occurrence_completion
+
+        if occurrence_id not in counted:
+            try:
+                counted[occurrence_id] = frozenset(
+                    read_occurrence_completion(store, mission.id, occurrence_id).preparation_acceptance_ids)
+            except Exception:  # noqa: BLE001 - unreadable completion counts nothing
+                counted[occurrence_id] = frozenset()
+        return counted[occurrence_id]
     for acceptance in htn.list_acceptances(mission.id):
         if str(acceptance.validity) != "CURRENT":
             continue
@@ -148,6 +161,11 @@ def read_planner_package(
                 "ports": ports,
                 "artifacts": [item.to_json() for item in acceptance.artifact_refs],
                 "currentness": str(acceptance.validity),
+                # 阶段 E：这次验收是按第几版要求通过的；在现行计划与现行要求下还算不算数
+                #（完成度读取的答案，不另写规则）
+                "requirements_revision": int(acceptance.requirements_revision),
+                "counts_under_current": str(acceptance.acceptance_id) in _counted(
+                    str(occurrence.occurrence_id)),
                 "support_revision": acceptance.contract_revision,
                 "permitted_uses": ["DATA"] if ports else [],
             })

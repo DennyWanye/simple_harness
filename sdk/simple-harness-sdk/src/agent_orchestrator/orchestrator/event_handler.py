@@ -2968,6 +2968,8 @@ class Orchestrator:
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
             return False
+        if self._requirements_unconfirmed(mission):
+            return False
         with self.store.transaction():
             if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
                 return False
@@ -3287,6 +3289,8 @@ class Orchestrator:
                         continue
                     event = self._pending_planning_wait(mission.id)
                     if event is None or self._planner_intents_in_flight(mission.id):
+                        continue
+                    if self._requirements_unconfirmed(mission):
                         continue
                     dispatch = self._dispatch_for(mission.id)
                     if dispatch is None:
@@ -3771,6 +3775,14 @@ class Orchestrator:
             if mission is None or mission.status in TERMINAL_MISSION:
                 self._deferred_planning.pop(mission_id, None)
 
+    def _requirements_unconfirmed(self, mission: Mission) -> bool:
+        """The Mission's current requirements have no confirmed completion mapping yet (the
+        Mission was just created, or the user just amended them): the Planner is not asked —
+        a plan it made would be refused when its completion scopes are frozen.  The
+        confirmation page shows "waiting for the completion requirements to be confirmed".
+        Every path that opens a Planner round asks this one question (阶段 E)."""
+        return self._planning_start_gate is not None and not self._planning_start_gate(mission)
+
     async def _try_planner_intent(self, mission_id: str, *, ordinal: int) -> bool:
         """Create the Planner intent, or — review P0-1 — wait (bounded) while its pool is
         cooling down; a package that would carry a credential stops planning visibly."""
@@ -3778,10 +3790,7 @@ class Orchestrator:
         mission = self.store.get_mission(mission_id)
         if mission is not None and self._assembly_missing(mission, at="planner_retry"):
             return False
-        if (mission is not None and self._planning_start_gate is not None
-                and not self._planning_start_gate(mission)):
-            # 阶段 E：现行要求还没有已确认的完成映射（用户刚改了要求、还没确认）——不问规划器，
-            # 它出的计划必在冻结完成范围时被拒。确认页显示"等确认完成要求"。
+        if mission is not None and self._requirements_unconfirmed(mission):
             return False
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
@@ -3939,7 +3948,7 @@ class Orchestrator:
         Host's event loop."""
         if self._assembly_missing(mission, at="start_planning"):
             return False
-        if self._planning_start_gate is not None and not self._planning_start_gate(mission):
+        if self._requirements_unconfirmed(mission):
             return False
         self.commit.begin_planning(mission.id)
         try:
