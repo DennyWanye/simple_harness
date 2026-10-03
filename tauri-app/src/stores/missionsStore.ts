@@ -63,7 +63,7 @@ export interface OrchestrationStatus {
   reason: string | null;
   orchestrator_version?: string;
   sdk_version?: string;
-  model?: { provider_id: string; configured: string; requested: string; price: string } | null;
+  model?: { provider_id: string; configured: string; requested: string } | null;
   active_missions?: number;
   allowed_tools?: string[];
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */

@@ -6,7 +6,7 @@
  * P2-4、P2-5、P2-8）。
  *
  * 覆盖不可用态、空态、列表（ui_state 词汇）、新建表单校验、详情（验证层 NOT_REQUIRED
- * 不显示成通过、金额"未计价"）、审批卡（拒绝必须写理由）、取消、事件游标与分页、
+ * 不显示成通过）、审批卡（拒绝必须写理由）、取消、事件游标与分页、
  * 时间线最近 50 条、产物、评论、策略漂移、等待原因、local_tests_disabled 提示。
  * 状态与列表由 App 层常驻的 useMissionsFeed 负责，这里按 App 的挂法把两者一起挂上。
  */
@@ -110,7 +110,7 @@ const DETAIL = {
   ],
   waiting_on: ["approval-1"],
   mission_policy: { version_id: "policy-seed-abc" },
-  usage: { input_tokens: 1200, output_tokens: 300, amount_micros: null },
+  usage: { input_tokens: 1200, output_tokens: 300 },
   event_count: 7,
 };
 
@@ -466,12 +466,12 @@ describe("MissionsView（HA-10）", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("详情：NOT_REQUIRED 不显示成通过；金额显示未计价；模型文本标注未核实", () => {
+  it("详情：NOT_REQUIRED 不显示成通过；不显示金额；模型文本标注未核实", () => {
     openMission();
     const codeTest = screen.getByTestId("layer-attempt-1-code_test");
     expect(codeTest.textContent).toMatch(/不需要/);
     expect(codeTest.getAttribute("data-status")).toBe("NOT_REQUIRED");
-    expect(screen.getByText(/未计价/)).toBeTruthy();
+    expect(screen.queryByText(/金额|未计价/)).toBeNull();
     expect(screen.getAllByText(/模型生成，未核实/).length).toBeGreaterThan(0);
     expect(screen.getByText(/policy-seed-abc/)).toBeTruthy();
   });
@@ -482,7 +482,7 @@ describe("MissionsView（HA-10）", () => {
   ])("显示账本当前用量，未知不冒充零 %j", (usage, expected) => {
     openMission({
       ...DETAIL,
-      usage: { ...usage, amount_micros: null },
+      usage,
     });
     expect(screen.getByText(expected)).toBeTruthy();
   });
