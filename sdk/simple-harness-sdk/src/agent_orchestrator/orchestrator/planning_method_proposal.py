@@ -66,16 +66,27 @@ def _identity_problems(dispatch: Any, mission_id: str, method: Any) -> list[str]
             f"method_version={next_version} or a new method_id"]
 
 
+def _goal_identity(signature: Any) -> tuple[Any, ...]:
+    """What makes a binding an instance of a goal type: id, version and the two schemas.  The
+    statement and the criteria of the root are the Mission's own and live on the binding only."""
+    return (signature.signature_id, int(signature.version), signature.parameter_schema_ref,
+            signature.output_schema_ref)
+
+
 def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any) -> list[str]:
     """中间目标的做法：恰好覆盖分给这个目标的要求，每一步都落到某条要求上（片 B）。
 
-    秩序检查（覆盖完整、归属唯一），不判断拆得好不好。只管要求是由上级做法分下来的目标；
-    类型自己声明判据的目标（根目标）由注册协议的覆盖检查管。
+    秩序检查（覆盖完整、归属唯一），不判断拆得好不好。根目标的要求写在根绑定的签名上（类型与
+    任务无关，阶段 C3）：每一条都要有链接；中间目标的要求是上级做法分下来的。
     """
     from .assurance_check_policy import assigned_criterion_ids
 
     if binding.goal_signature.coverage_criteria:
-        return []
+        linked = {str(link.parent_criterion_id) for link in method.composition.criterion_links}
+        missing = sorted(set(binding.goal_signature.coverage_criteria) - linked)
+        return [] if not missing else [
+            f"ROOT_COVERAGE_GAP: the composition covers none of criteria {', '.join(missing)} of the "
+            "goal; every requirement of the goal needs a criterion link"]
     assigned = set(assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
     if not assigned:
         return []
@@ -122,7 +133,7 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
         MethodProposal.from_json, dict(payload.method_proposal), root_names=("method_proposal",))
     binding = dispatch.network(mission_id).binding_for_task(TaskRef(subject["task_id"]))
     goal_type = world.catalog.resolve(proposal.method.goal_type_ref)
-    if goal_type is None or goal_type.goal_signature != binding.goal_signature:
+    if goal_type is None or _goal_identity(goal_type.goal_signature) != _goal_identity(binding.goal_signature):
         raise MethodProposalRefused((
             "GOAL_MISMATCH: method.goal_type_ref must be the goal type of the planning subject "
             f"({binding.goal_signature.signature_id})",))

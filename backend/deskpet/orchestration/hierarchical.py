@@ -23,26 +23,18 @@ def planning_world(loop: Any, mission: Any) -> Any:
 
     world = build_planning_world(mission.id, domains=(), semantics=htn, predicates=workspace_predicates(),
                                  observers=workspace_observers(loop.store, mission.id))
-    from agent_orchestrator.deployment.root import current_criteria
-
-    requirements = current_criteria(loop.store, mission)  # 现行要求（最新要求修订），不读章程
-    criteria = tuple(name for name, _ in requirements)
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("desktop.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("desktop.workspace-outputs", 1, content_hash_of({"fields": []}))
     world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
     world.schemas.register(ObjectSchema(outputs))
-    content_criteria = tuple(name for name, statement in requirements if not statement.startswith("action:"))
-    # 2026-09-29（plans/2026-09-28-system-operations）：发布等操作由系统在任务层面准备，
-    # 规划器只安排内容。根任务要求规划器覆盖的只有内容要求；根的完整要求清单
-    # （initialize_root 的 requirement_refs）仍含全部要求，义务与已批准效果照旧挂接。
-    signature = GoalSignature("desktop.user-goal", 1, params, outputs, mission.goal,
-                              content_criteria or criteria)
-    # 步骤类型不带本任务的要求（阶段 E）：一步负责哪些要求只来自上级做法的链接，所以改要求之后
-    # 类型不变，旧步骤还能被新做法沿用。
-    preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs, mission.goal, ())
+    # 类型与任务无关（阶段 C3）：用户原话与本任务的要求只在根绑定上（SDK deployment.root.root_binding，
+    # 规划器要覆盖的只有内容要求，发布等操作由系统在任务层面准备）；一步负责哪些要求只来自上级
+    # 做法的链接。同一部署上任意两个任务的类型目录逐字节相同，全库做法才能按目标类型跨任务列出。
+    signature = GoalSignature("desktop.user-goal", 1, params, outputs, "The user's goal; the root binding carries the user's own words and requirements.", ())
+    preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs, "One step of the user's goal; the plan's links say which requirements it answers for.", ())
     continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
-        "Continue from an accepted upstream delivery: " + mission.goal, ())
+        "One step of the user's goal that continues from an accepted upstream delivery; the plan's links say which requirements it answers for.", ())
     ports = (PortSpec("delivery", outputs),)
     # 内容步骤不再有申请单端口：申请单由系统按已批准效果生成（2026-09-29）。
     preparation_ports = ports
@@ -90,8 +82,9 @@ def planning_world(loop: Any, mission: Any) -> Any:
             task_type_ref=ref, form=form, goal_signature=goal_signature,
             input_ports=input_ports, output_ports=declared_ports,
             parameter_schema_ref=params, output_schema_ref=outputs,
+            # 执行者引用是固定体：一步实际能用哪些工具由"任务 ∩ 步骤 ∩ 角色 ∩ 部署"的交集决定
             operator_ref=(VersionedRef("desktop.workspace-worker", 1,
-                content_hash_of({"tools": list(mission.allowed_tools)}))
+                content_hash_of({"capability": "workspace.prepare"}))
                 if form is TaskForm.PRIMITIVE else None),
             required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
             side_effect_kind=SideEffectKind.LOCAL_WRITE if form is TaskForm.PRIMITIVE else SideEffectKind.NONE,

@@ -86,7 +86,47 @@ async def test_the_desktop_registers_sub_goal_types_by_level(orchestration_root,
             assert world.schemas.resolve(compound[name].parameter_schema_ref) is not None
             # a later step takes what the sub-goal produced through this port (its finalizer's delivery)
             assert [port.port_key for port in compound[name].output_ports] == ["delivery"]
-        # the root goal still declares the user's content requirements
-        assert compound["desktop.user-goal"].goal_signature.coverage_criteria
+        # the root type is the same for every Mission; the user's requirements are on the root binding
+        assert compound["desktop.user-goal"].goal_signature.coverage_criteria == ()
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_desktop_world_is_mission_independent(orchestration_root, principal):
+    """阶段 C3 前置改造：桌面类型与任务无关——两个不同任务的类型目录哈希相等，执行者引用不含工具
+    清单，根类型不带判据；用户原话与要求在根绑定上。
+
+    **改坏检验**：步骤类型说明文字改回用户原话 → 两个任务的目录哈希不等。"""
+    from dataclasses import replace
+
+    from agent_orchestrator.contracts.semantic_base import content_hash_of
+    from agent_orchestrator.planning.htn.world import catalog_digest
+    from deskpet.orchestration import hierarchical
+
+    service = OrchestrationService(orchestration_root, OrchestrationSettings(),
+        provider=notes_provider(), principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    await service.start()
+    try:
+        first = service.create_mission(notes_request("c3-first"))
+        second = service.create_mission(notes_request("c3-second", goal="Write OTHER.md"))
+        loop = service._orchestrator
+        missions = [loop.store.get_mission(item["mission_id"]) for item in (first, second)]
+        worlds = [hierarchical.planning_world(loop, missions[0]),
+                  hierarchical.planning_world(loop, replace(missions[1], allowed_tools=("workspace_read_file",)))]
+        assert catalog_digest(worlds[0]) == catalog_digest(worlds[1])
+        for world, mission in zip(worlds, missions, strict=True):
+            for spec in world.catalog.task_types():
+                assert spec.goal_signature.coverage_criteria == ()
+                assert mission.goal not in spec.goal_signature.statement
+                if spec.operator_ref is not None:
+                    assert spec.operator_ref.content_hash == content_hash_of({"capability": "workspace.prepare"})
+        roots = []
+        for mission in missions:
+            network = loop._dispatch_for(mission.id).network(mission.id)
+            [occurrence] = network.root_occurrence_ids
+            roots.append(network.binding_for_occurrence(occurrence).goal_signature)
+        assert [root.statement for root in roots] == [mission.goal for mission in missions]
+        assert all(root.coverage_criteria for root in roots)
     finally:
         await service.close()

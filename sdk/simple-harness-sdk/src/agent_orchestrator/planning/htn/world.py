@@ -403,6 +403,21 @@ class DeploymentPlanningWorld:
         return self.catalog.resolve(reference)
 
 
+def catalog_digest(world: Any) -> str:
+    """The identity of the type catalogue a method was written against: every task type, the
+    predicate declarations and the planning package version.  Task types do not depend on the
+    Mission, so two Missions of one deployment get the same digest; a library method is listed
+    only to Missions whose digest equals the one it was promoted under."""
+    from ...runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
+
+    return content_hash_of({
+        "task_types": [spec.to_json() for spec in sorted(
+            world.catalog.task_types(), key=lambda item: (item.task_type_ref.id, int(item.task_type_ref.version)))],
+        "predicates": sorted(content_hash_of(signature.to_json()) for signature in world.predicates.signatures()),
+        "package_version": PLANNING_DECISION_PACKAGE_VERSION,
+    })
+
+
 def build_planning_world(
     mission_id: str,
     *,

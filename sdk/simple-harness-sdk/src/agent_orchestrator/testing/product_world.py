@@ -45,22 +45,17 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store),
                                  predicates=workspace_predicates(),
                                  observers=workspace_observers(loop.store, mission.id))
-    from ..deployment.root import current_criteria
-
-    requirements = current_criteria(loop.store, mission)  # 现行要求（最新要求修订），不读章程
-    criteria = tuple(name for name, _ in requirements)
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("user.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
     world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
     world.schemas.register(ObjectSchema(outputs))
-    content = tuple(name for name, statement in requirements if not statement.startswith("action:"))
-    signature = GoalSignature("user-goal", 1, params, outputs, mission.goal, content or criteria)
-    # 步骤类型不带本任务的要求（阶段 E）：一步负责哪些要求只来自上级做法的链接，所以改要求之后
-    # 类型不变，旧步骤还能被新做法沿用。
-    step = GoalSignature("prepare-delivery", 1, params, outputs, mission.goal, ())
+    # 类型与任务无关（阶段 C3）：用户原话与本任务的要求只在根绑定上（deployment.root.root_binding），
+    # 一步负责哪些要求只来自上级做法的链接。同一部署上任意两个任务的类型目录逐字节相同。
+    signature = GoalSignature("user-goal", 1, params, outputs, "The user's goal; the root binding carries the user's own words and requirements.", ())
+    step = GoalSignature("prepare-delivery", 1, params, outputs, "One step of the user's goal; the plan's links say which requirements it answers for.", ())
     continuation = GoalSignature("continue-delivery", 1, params, outputs,
-                                 "Continue from an accepted upstream delivery: " + mission.goal, ())
+                                 "One step of the user's goal that continues from an accepted upstream delivery; the plan's links say which requirements it answers for.", ())
     ports = (PortSpec("delivery", outputs),)
     levels = {"user-goal": 0, "sub-goal-1": 1, "sub-goal-2": 2}
     for name, form in (("user-goal", TaskForm.COMPOUND), ("sub-goal-1", TaskForm.COMPOUND),
@@ -90,7 +85,7 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
         world.catalog.register(TaskTypeSpec(
             task_type_ref=VersionedRef(name, 1, content_hash_of(body)), form=form, goal_signature=goal_signature,
             input_ports=input_ports, output_ports=ports, parameter_schema_ref=params, output_schema_ref=outputs,
-            operator_ref=(VersionedRef("user.workspace-worker", 1, content_hash_of({"tools": list(mission.allowed_tools)}))
+            operator_ref=(VersionedRef("user.workspace-worker", 1, content_hash_of({"capability": "workspace.prepare"}))
                           if form is TaskForm.PRIMITIVE else None),
             required_capabilities=("workspace.prepare",) if form is TaskForm.PRIMITIVE else (),
             side_effect_kind=SideEffectKind.LOCAL_WRITE if form is TaskForm.PRIMITIVE else SideEffectKind.NONE,

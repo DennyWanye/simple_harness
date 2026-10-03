@@ -1146,8 +1146,9 @@ class RootReviewCoordinator:
                     # moment this leaf was accepted — and explained once at the top of
                     # the request (``requirements_revision_semantics``).
                     "accepted_at_requirements_revision": int(acceptance.requirements_revision),
+                    # this step's own wording (step types are the same for every Mission)
                     "goal_statement": (
-                        "" if child is None else str(child.goal_signature.statement)
+                        "" if child is None else str(child.typed_parameters.get("goal") or "")
                     ),
                     "carries_root_criteria": carries,
                     "accepted_outputs": outputs,

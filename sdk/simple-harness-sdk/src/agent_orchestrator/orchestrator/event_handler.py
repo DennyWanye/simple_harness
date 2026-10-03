@@ -1288,11 +1288,6 @@ class Orchestrator:
         self._mission_dispatches.clear()
         self.install_hierarchical()
 
-    def forget_planning_world(self, mission_id: str) -> None:
-        """The Mission's requirements changed: its planning world is rebuilt on next use
-        (the root goal's coverage follows the requirements; 阶段 E)."""
-        self._mission_dispatches.pop(mission_id, None)
-
     def _dispatch_for(self, mission_id: str) -> HierarchicalDispatch | None:
         if self._planning_world_factory is None:
             return self._hierarchical

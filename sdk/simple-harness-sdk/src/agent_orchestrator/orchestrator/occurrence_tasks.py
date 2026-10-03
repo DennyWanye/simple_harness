@@ -538,7 +538,9 @@ def occurrence_task(
     # 兜底分支，兜底又把已被认领的 file: 要求全部排除，所有要求都是 file: 时子目标一条都不剩。
     owned_refs = [ref for ref, _ in owned if ref in set(binding.requirement_refs)]
     criteria = occurrence_criteria(binding, requirements, owned=owned_refs, claimed=claimed)
-    goal = binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}"
+    # 类型与任务无关（阶段 C3）：步骤类型的说明是固定句，"整个任务"一句取用户原话
+    goal = mission.goal if primitive else (
+        binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}")
     if owned_refs and primitive:
         goal = scoped_goal(goal, criteria, [text for ref, text in owned if ref in owned_refs])
     policy = occurrence_policy(
