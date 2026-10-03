@@ -1,5 +1,5 @@
 {
-  "deployment_id": "70087a2b73cdf430c1374424c8562c9846456e8dc5de646a70d01b970a477086",
+  "deployment_id": "e44facb74df75771ce0c18a263467c3cbf76664400367049e8e3bc0379991ac5",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -198,8 +198,8 @@
     "agent_orchestrator/orchestrator/completion_status.py": "e022dc12a00dd0f59eb400394d99dcc6a370def290a7c894b3027e6d9b135452",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "81722fdaa708a09054ae7d223210e9b99d5702f49c9afb419794d011c2dc8203",
-    "agent_orchestrator/orchestrator/event_handler.py": "e1cf671d9c6cec5481164b4cd74fe873d17993e90cd3eb4f43b3e5fdccc8fe50",
-    "agent_orchestrator/orchestrator/failure_classes.py": "35f9707e5c76b6597c8dfa4a15521174ce0283cad867133ddef27e1fdc4cb578",
+    "agent_orchestrator/orchestrator/event_handler.py": "01e9de7f43c9b88fbad09f4856c58bef6980719f6ce3165604262a0aeb22b738",
+    "agent_orchestrator/orchestrator/failure_classes.py": "20d14198bbbc53279c38cc256c11583d38e0d9e685ba7cee2202017d21ab9922",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "592a3f9e14613d28e443f59494071a3f22d8658559feee6697b4821cb3c4ace2",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "a88333f752b27adf2ae136d688e5c85691424faa8f814039a7e8bb554d53781b",
@@ -333,7 +333,7 @@
     "agent_orchestrator/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "agent_orchestrator/runtime/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/runtime/action_schema.py": "4161f6d83f264497c0427aa65bbd60860d1c2a9bd8a33cee4b40a5e15cb46664",
-    "agent_orchestrator/runtime/actions.py": "61eb95f32570b3b87a8849bcb2219f729d6cfb98bf4028c460c536e8a1a048fe",
+    "agent_orchestrator/runtime/actions.py": "cf1fed1bb27c7a3862f291716b17cab57fa0188b1df038a9448aa74574d40880",
     "agent_orchestrator/runtime/agent_worker.py": "6d9972ab60e87517bea511ca63043338994c24719b18705ec2503219acd3b10f",
     "agent_orchestrator/runtime/appworld_templates.py": "bf31b751f173f8ccdbd1aacc3c5b0b00f94743be80a6ec0c55105cae58577821",
     "agent_orchestrator/runtime/assembly.py": "23c80488f1c524331c0c040333d3d391f6299842b27a36ffa8111ab0c9b440eb",

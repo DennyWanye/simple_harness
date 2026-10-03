@@ -194,3 +194,127 @@ def test_an_ended_missions_failing_collection_is_recorded_once_not_every_round(t
             assert len(faults) == 1 and "TEST_AFTER_STOP" in faults[0]["summary"], faults
 
     asyncio.run(case())
+
+
+# ======================================================================================
+# 2026-10-03 收尾裁决第 3 张：重启恢复、动作对账、启动绑定也在同一个边界里
+# ======================================================================================
+def test_a_fault_while_recovering_one_mission_does_not_stop_the_others(tmp_path):
+    """任务 A 的重启恢复出库错误：``run()`` 不抛，B 照常完成；A 记一条"任务一轮故障"（地点 recover），
+    恢复成功之前它这一轮的其余工作都跳过；故障排除后 A 原地继续并完成。"""
+    import sqlite3
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
+            store, loop = world.store, world.loop
+            a = world.create(_notes("recover-a"))["mission_id"]
+            b = world.create(_notes("recover-b"))["mission_id"]
+            real = loop.commit.heal_mission
+            broken = {"on": True}
+
+            def heal(mission_id: str):  # type: ignore[no-untyped-def]
+                if broken["on"] and mission_id == a:
+                    raise sqlite3.OperationalError("disk I/O error")
+                return real(mission_id)
+
+            loop.commit.heal_mission = heal  # type: ignore[method-assign]
+            for _ in range(12):
+                await world.drain(timeout=20)
+                if _status(store, b) in TERMINAL:
+                    break
+            assert _status(store, b) == "COMPLETED"
+            assert _status(store, a) not in TERMINAL and a in loop._unrecovered
+            assert [fault["where"] for fault in _faults(store, a)] == ["recover"]
+            assert not store.list_tasks(a) or not [e for e in store.iter_events(a) if e.type == "AttemptCreated"]
+            broken["on"] = False
+            for _ in range(12):
+                await world.drain(timeout=20)
+                if _status(store, a) in TERMINAL:
+                    break
+            assert _status(store, a) == "COMPLETED" and a not in loop._unrecovered
+
+    asyncio.run(case())
+
+
+def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_path):
+    """启动时给在途回合重建工具权限，某一条的身份与冻结记录不符：服务照常起来，这条算数据损坏，
+    第一轮只停它所在的任务（带码），不再让整个启动失败。"""
+    from agent_orchestrator.contracts.models import ContractError
+
+    async def case():
+        provider = LayeredScriptedProvider()
+        provider.held.add("worker")
+        try:
+            async with product_world(tmp_path / "root", provider) as world:
+                store, loop = world.store, world.loop
+                a = world.create(_notes("startup-a"))["mission_id"]
+                runner = asyncio.create_task(loop.run())
+                for _ in range(400):
+                    if provider.asked.count("worker") >= 1:
+                        break
+                    await asyncio.sleep(0.05)
+                runner.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await runner
+
+                def refuse(intent):  # type: ignore[no-untyped-def]
+                    raise ContractError("SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent")
+
+                loop._bind_startup_intent = refuse  # type: ignore[method-assign]
+                loop._bind_startup_tools()  # what ``__aenter__`` runs: must not raise
+                assert loop._startup_faults and loop._startup_faults[0][0] == a
+                await loop.recover()
+                assert _status(store, a) == "FAILED"
+                [fault] = _faults(store, a)
+                assert fault["where"].startswith("startup_bind:") and fault["class"] == "CORRUPT"
+        finally:
+            provider.release.set()
+
+    asyncio.run(case())
+
+
+def test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled(tmp_path, monkeypatch):
+    """任务已结束、它那次回合的收尾一直出错：到上限后把这条调用关为失败（记明原因），``run()`` 能回到
+    空闲；它的额度预留随后能按上限结清（宁可多算、不冻结）。此前这条调用永远开着。"""
+    import sqlite3
+
+    import agent_orchestrator.orchestrator.accounting_recovery as accounting
+    import agent_orchestrator.orchestrator.failure_classes as failure_classes
+
+    monkeypatch.setattr(failure_classes, "ROUND_FAULT_MIN_SECONDS", 0.2)
+    monkeypatch.setattr(accounting, "ENDED_MISSION_RECHECK_SECONDS", 0.0)
+
+    async def case():
+        provider = LayeredScriptedProvider()
+        provider.held.add("worker")
+        async with product_world(tmp_path / "root", provider) as world:
+            store, loop = world.store, world.loop
+            a = world.create(_notes("ended-close"))["mission_id"]
+            runner = asyncio.create_task(loop.run())
+            try:
+                for _ in range(400):
+                    if provider.asked.count("worker") >= 1:
+                        break
+                    await asyncio.sleep(0.05)
+                loop.commit.cancel_mission(a)
+
+                async def failing(intent):  # type: ignore[no-untyped-def]
+                    raise sqlite3.OperationalError("disk I/O error")
+
+                loop._collect_after_stop = failing  # type: ignore[method-assign]
+                provider.release.set()
+                await asyncio.wait_for(runner, 60)  # run() comes back to idle on its own
+            finally:
+                provider.release.set()
+                runner.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await runner
+            closed = [fault for fault in _faults(store, a) if fault.get("closed_intent")]
+            assert len(closed) == 1 and closed[0]["reason"] == "round_fault_after_mission_end", _faults(store, a)
+            assert store.get_intent(closed[0]["closed_intent"]).state == "FAILED"
+            accounting._settle_expired_ended_holds(loop)
+            assert not store.connection.execute(
+                "SELECT 1 FROM budget_reservations r JOIN dispatch_intents i ON i.subject_id=r.subject_id "
+                "WHERE i.mission_id=? AND r.state='RESERVED'", (a,)).fetchall()
+
+    asyncio.run(case())

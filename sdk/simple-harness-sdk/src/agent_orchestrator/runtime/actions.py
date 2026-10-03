@@ -213,22 +213,6 @@ class ActionExecutor:
             service_authority=runtime.service_authority,
         )
 
-    async def reconcile(self, mission_id: str | None = None) -> list[dict[str, Any]]:
-        """Use the original scoped reconciliation protocol for every live action."""
-        settled = []
-        for action in self._commit.store.list_actions(mission_id, "UNKNOWN", "HANDED_OFF"):
-            updated = await self.reconcile_one(str(action["action_key"]), allow_rehandoff=True)
-            if updated is not None:
-                settled.append(updated)
-        # 阶段 B 裁决第 1 类: a failed action that left our hands has no proof yet that it
-        # did not happen; the registered reconciler is the one that decides that too.
-        for action in self._commit.store.list_actions(mission_id, "FAILED"):
-            if self._failed_unproven(action):
-                updated = await self.reconcile_one(str(action["action_key"]))
-                if updated is not None:
-                    settled.append(updated)
-        return settled
-
     def _failed_unproven(self, action: Mapping[str, Any]) -> bool:
         """FAILED, handed off at least once, operation-linked, no stored proof, and not
         already waiting for a person."""
