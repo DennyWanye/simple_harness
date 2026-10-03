@@ -463,8 +463,6 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
             "reserved_tokens": ledger.get("reserved_tokens"),
             "settled_tokens": ledger.get("settled_tokens"),
             "ledger_version": ledger.get("version"),
-            "amount_micros": None,  # no DeepSeek price table is injected: unpriced, never 0
-            "priced": False,
         },
         "event_count": snapshot.get("event_count"),
         "through_seq": view.get("through_seq"),

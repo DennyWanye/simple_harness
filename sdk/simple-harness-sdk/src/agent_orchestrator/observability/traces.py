@@ -27,29 +27,19 @@ if TYPE_CHECKING:
     from ..storage.store import Store
 
 ATTRIBUTION_VERSION = "attribution-v1"
-UNPRICED_NOTE = "unpriced deployment: money is not recorded (null, never zero)"
 
 
 def _bucket() -> dict[str, Any]:
-    return {"tokens": 0, "cost_micros": 0, "priced": True, "rows": 0}
+    return {"tokens": 0, "rows": 0}
 
 
-def _add(bucket: dict[str, Any], tokens: int, cost: int | None, unpriced: bool) -> None:
+def _add(bucket: dict[str, Any], tokens: int) -> None:
     bucket["tokens"] += int(tokens)
     bucket["rows"] += 1
-    if cost is None or unpriced:
-        bucket["priced"] = False
-    else:
-        bucket["cost_micros"] += int(cost)
 
 
-def _money(bucket: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "tokens": bucket["tokens"],
-        "rows": bucket["rows"],
-        "cost_micros": bucket["cost_micros"] if bucket["priced"] and bucket["rows"] else None,
-        "cost_note": None if bucket["priced"] or not bucket["rows"] else UNPRICED_NOTE,
-    }
+def _usage(bucket: dict[str, Any]) -> dict[str, Any]:
+    return {"tokens": bucket["tokens"], "rows": bucket["rows"]}
 
 
 def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 - one report
@@ -171,29 +161,29 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
     unknown_rows = 0
     usage_by_subject: dict[str, int] = defaultdict(int)
     rows = store.connection.execute(
-        "SELECT subject_id, input_tokens + output_tokens, cost_micros, unpriced, unknown"
+        "SELECT subject_id, input_tokens + output_tokens, unknown"
         " FROM imported_usage WHERE mission_id = ?",
         (mission_id,),
     ).fetchall()
-    for subject, tokens, cost, unpriced, unknown in rows:
+    for subject, tokens, unknown in rows:
         subject = str(subject)
         tokens = int(tokens or 0)
-        _add(total, tokens, cost, bool(unpriced))
+        _add(total, tokens)
         usage_by_subject[subject] += tokens
         unknown_rows += int(bool(unknown))
         owner = subject.split(":critic:")[0] if ":critic:" in subject else None
         if subject in attempts:
-            _add(per_attempt[subject], tokens, cost, bool(unpriced))
+            _add(per_attempt[subject], tokens)
         elif owner is not None and owner in attempts:
-            _add(per_attempt_verification[owner], tokens, cost, bool(unpriced))
+            _add(per_attempt_verification[owner], tokens)
         else:
             role = _service_role(subject)
             if role == "planner":
-                _add(services[role], tokens, cost, bool(unpriced))
+                _add(services[role], tokens)
             elif role == "critic":  # the Mission-level judgment Critic
-                _add(services["judge"], tokens, cost, bool(unpriced))
+                _add(services["judge"], tokens)
             else:
-                _add(unclassified, tokens, cost, bool(unpriced))
+                _add(unclassified, tokens)
                 unclassified_subjects.append(subject)
     tool_calls: dict[str, int] = {}
     action_reservations = []
@@ -238,8 +228,6 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         for bucket in (work, check):
             target["tokens"] += bucket["tokens"]
             target["rows"] += bucket["rows"]
-            target["cost_micros"] += bucket["cost_micros"]
-            target["priced"] = target["priced"] and bucket["priced"]
         attempt_view.append(
             {
                 "attempt_id": attempt_id,
@@ -252,8 +240,8 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                 "status": str(attempt.status),
                 "on_success_path": on_path,
                 "exploration_reason": reason,
-                "work": _money(work),
-                "verification": _money(check),
+                "work": _usage(work),
+                "verification": _usage(check),
                 "tool_calls": tool_calls.get(attempt_id, 0),
             }
         )
@@ -341,11 +329,11 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         "action_reservations": action_reservations,
         "human": human,
         "cost": {
-            "success_path": _money(path_bucket),
-            "exploration": _money(exploration_bucket),
-            "services": {role: _money(b) for role, b in sorted(services.items())},
-            "unclassified": {**_money(unclassified), "subjects": unclassified_subjects},
-            "total": _money(total),
+            "success_path": _usage(path_bucket),
+            "exploration": _usage(exploration_bucket),
+            "services": {role: _usage(b) for role, b in sorted(services.items())},
+            "unclassified": {**_usage(unclassified), "subjects": unclassified_subjects},
+            "total": _usage(total),
             "unknown_usage_rows": unknown_rows,
             "ledger": ledger,
             "reconciled": reconciled,

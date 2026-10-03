@@ -89,7 +89,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report["business_replay"]["mission_rows"]["missions"] == 1
         assert report["metrics"]["version"] == "metrics-v1"
         assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix"}
-        assert report["metrics"]["cost"]["cost_micros_by_role"] is None
+        assert set(report["metrics"]["cost"]) == {"tokens_by_role", "tokens_by_profile"}
         assert report["scope"]["selected_only"] is True
         assert foreign["mission_id"] not in rendered
         assert "FOREIGN-MISSION-SENTINEL" not in rendered
@@ -154,12 +154,8 @@ async def test_diagnostics_projects_sdk_payloads_and_actual_runtime_identity_wit
                 "prompt_version": "worker-v1", "status": "COMPLETED",
                 "on_success_path": False,
                 "exploration_reason": "mission_not_completed", "tool_calls": 2,
-                "work": {"tokens": 12, "rows": 1, "cost_micros": None,
-                         "cost_note": "unpriced deployment: money is not recorded (null, never zero)"},
-                "verification": {
-                    "tokens": 3, "rows": 1, "cost_micros": None,
-                    "cost_note": "unpriced deployment: money is not recorded (null, never zero)",
-                },
+                "work": {"tokens": 12, "rows": 1},
+                "verification": {"tokens": 3, "rows": 1},
                 "raw": raw_detail,
             }]
             result["final_products"] = [{
