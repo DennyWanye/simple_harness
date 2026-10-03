@@ -1218,13 +1218,12 @@ class Orchestrator:
 
         return self._hierarchical
 
-    def install_hierarchical(self, planning: Any = None, **kwargs: Any) -> HierarchicalDispatch:
+    def install_hierarchical(self) -> HierarchicalDispatch:
         """Install the hierarchical assembly (P2.3b).  Without it nothing is planned,
-        dispatched or judged: a Mission is recorded as waiting for the assembly."""
+        dispatched or judged: a Mission is recorded as waiting for the assembly.  Each
+        Mission's planning world is bound per Mission (``_dispatch_for``)."""
 
-        self._hierarchical = HierarchicalDispatch(
-            self.store, self.commit, planning=planning, **kwargs
-        )
+        self._hierarchical = HierarchicalDispatch(self.store, self.commit)
         return self._hierarchical
 
     def set_between_cycles(self, duty: Callable[[], Any] | None, *, every_seconds: float) -> None:

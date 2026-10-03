@@ -134,6 +134,7 @@ async def product_world(
     root: Path, provider: Any, *, auto: bool = True, tenant_id: str = TENANT, principal: Any = None,
     world_factory: Callable[[Any, Any], Any] = user_goal_world, names: RootNames = USER_GOAL_NAMES,
     allowed_tools: tuple[str, ...] = DEFAULT_TOOLS, connectors: Mapping[str, Any] | None = None,
+    root_parameters: Callable[[Any], dict[str, Any]] | None = None,
     **config: Any,
 ):
     """A started Orchestrator on the product's deployment, with scripted model replies.
@@ -157,7 +158,8 @@ async def product_world(
     world_holder: dict[str, Any] = {}
     deployment = UserMissionDeployment(
         tenant_id=tenant_id, principal=principal, world_factory=world_factory, names=names,
-        host_fingerprint="ab" * 32, notify=lambda payload: world_holder["world"].notices.append(dict(payload)))
+        host_fingerprint="ab" * 32, notify=lambda payload: world_holder["world"].notices.append(dict(payload)),
+        **({} if root_parameters is None else {"root_parameters": root_parameters}))
 
     def assemble(orchestrator: Any) -> None:
         deployment.assemble(orchestrator)
