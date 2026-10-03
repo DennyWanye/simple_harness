@@ -2517,7 +2517,10 @@ class Orchestrator:
             "approvals_pending": any(a["state"] in OPEN_ACTION_STATES
                                      and not self._handoff_ground_gone(str(a["action_key"]))
                                      for a in actions)
-            or bool(self.store.list_approvals(mission.id, "PENDING")),
+            or bool(self.store.list_approvals(mission.id, "PENDING"))
+            # 阶段 E：现行要求在等人确认（用户刚改了要求）——规划器这时不被问、旧计划也不再开工，
+            # 这是在等人，不是停滞。
+            or self._requirements_unconfirmed(mission),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
             "planning_wait": self._has_pending_planning_waits(mission.id),
@@ -7381,6 +7384,19 @@ class Orchestrator:
             self._note(f"attempt {attempt.id}: SDK turn failed → RETRY_WAIT")
             return
         text = "" if result.public_output is None else str(result.public_output.content)
+        stale_plan = self._dispatch_for(attempt.mission_id)
+        if stale_plan is not None and stale_plan.requirements_changed(attempt.mission_id):
+            # 阶段 E：用户改了要求、按新版的计划还没提交。这份结果是按旧版要求的计划做出来的：
+            # 归档为"被取代"，不当成执行者做错（不发修复请求、不为它切审查包）；
+            # 新计划要不要再做这一步由规划器定。
+            self.commit.reject_result(
+                attempt.id, turn_id=result.turn_id, reason="superseded",
+                detail={"error": "requirements_changed", "output_head": text[:400]})
+            self._settle_intent(intent, "FAILED")
+            self._settle_if_known(attempt)
+            await self._release_attempt(attempt.id, cancel=False)
+            self._note(f"attempt {attempt.id}: result set aside, the requirements were amended")
+            return
         try:
             envelope, client_result_id = self._parse_envelope(text, attempt, turn_id=result.turn_id)
             self.commit.check_result_evidence(attempt.mission_id, envelope)

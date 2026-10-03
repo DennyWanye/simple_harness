@@ -307,3 +307,41 @@ def test_planning_waits_for_the_amended_requirements_to_be_confirmed(tmp_path):
             assert len(seen["packages"]) > asked_before and seen.get("updates")
 
     asyncio.run(case())
+
+
+def test_a_result_that_lands_while_requirements_are_unconfirmed_is_not_reviewed_under_the_old_ones(tmp_path):
+    """改了要求、第 2 版还没确认：在跑的那一步照常跑完交结果。它的完成范围是旧版的——不为它切审查包
+    （审出来的验收也不会被接受），主循环不报故障；确认后规划器按新版重排，任务完成。"""
+    seen: dict[str, Any] = {}
+
+    async def case():
+        provider = SlowSecondStep(planner=replanning_planner(seen))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-window",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            confirm = world.deployment.duties.auto_confirm_content_completion
+            world.deployment.duties.auto_confirm_content_completion = lambda **_: 0
+            amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            mark = max(e.seq for e in world.store.list_events(mission_id))
+            provider.go.set()  # b.md 那一步在"要求已改、未确认"的窗口里跑完
+            for _ in range(6):
+                await world.drain(timeout=20)
+            window = [e for e in world.store.list_events(mission_id) if e.seq > mark]
+            rejected = [e.payload for e in window if e.type == "ResultRejected"]
+            assert [r["reason"] for r in rejected] == ["superseded"]  # 归档为被取代，不算执行者做错
+            assert not [e.payload for e in window if e.type in {"MissionRoundFault", "MissionFailed"}]
+            assert not [e for e in window if e.type == "PlanningRepairRequested"
+                        and e.payload["request"]["trigger_source"] == "WORKER_REJECT"]
+            assert len(htn.list_acceptances(mission_id)) == 1  # 窗口里没有按旧版新增验收
+            assert not [e for e in window if e.type == "AssuranceReviewImported"]  # 也没有白花一次审阅
+            assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"  # 在等人确认，不是停滞
+            world.deployment.duties.auto_confirm_content_completion = confirm
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+
+    asyncio.run(case())
