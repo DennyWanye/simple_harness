@@ -301,3 +301,42 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
             assert holds and set(holds.values()) == {"SETTLED"}, holds
 
     asyncio.run(case())
+
+
+def test_a_hold_left_by_an_ended_mission_is_counted_at_its_bound_after_three_full_passes(tmp_path):
+    """任务被取消时，一次用量说不清的调用的预留还留着：任务结束后每轮照常重核（等迟到的用量），
+    过了三次全量重核（300 秒 × 3）仍说不清，就按上限结清并留下事件写明原因——宁可多算，不冻结
+    （2026-10-03 阶段 B 裁决第 8 类）。时间用库时钟往前拨来模拟。"""
+
+    async def case():
+        provider = Relay("broken")
+        async with product_world(tmp_path / "root", provider, **QUICK) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "ended-hold"})["mission_id"]
+            store = world.store
+            for _ in range(200):
+                await world.drain(timeout=2)
+                held = events(store, mission_id, "ReservationHeld")
+                if held:
+                    break
+            [held] = [event.payload for event in held]
+            subject = held["subject_id"]
+            world.control.cancel(mission_id)
+            for _ in range(3):
+                await world.drain(timeout=2)
+            assert status(store, mission_id) == "CANCELLED"
+            assert world.loop.commit.ledger.reservation(subject)["state"] == "RESERVED"
+            assert not events(store, mission_id, "ReservationCountedAtUpperBound")
+
+            clock = store._clock
+            store._clock = lambda: clock() + 3 * 300 + 1
+            world.loop._late_accounting_ended_at = None  # the next round is a full pass
+            await world.drain(timeout=2)
+            reservation = world.loop.commit.ledger.reservation(subject)
+            assert reservation["state"] == "SETTLED"
+            [counted] = [event.payload for event in events(store, mission_id, "ReservationCountedAtUpperBound")]
+            assert counted["subject_id"] == subject and counted["reason"] == "mission_ended_usage_unknown"
+            assert counted["counted_tokens"] == reservation["settled_tokens"] >= held["reserved_tokens"]
+            assert world.loop.commit.ledger.has_unknown_usage(subject)  # the fact itself stays unknown
+
+    asyncio.run(case())
