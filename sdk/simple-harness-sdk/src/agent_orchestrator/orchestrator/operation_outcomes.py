@@ -610,6 +610,12 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
             or task.status in {TaskStatus.CANCELLED, TaskStatus.FAILED}
         ):
             raise OperationOutcomeError("OP_EFFECT_SCOPE_STALE", "owner unavailable")
+        if binding.completion_scope_id == owner.scope_id:
+            # 2026-10-03 真机：结构修复给被换代的目标记"旧派发作废"，要等该目标当前一代的结果提交才清
+            # （HtnStore.clear_revoked_generation）。效果的归属目标没有自己的执行结果——这次发布结果的
+            # 验收就是它当前一代的结果（绑定的完成范围钉在当前计划版本上，上面刚核对过）；不在这里清，
+            # 验收见到标记拒收、目标又等验收，互相等。同一事务：下面任何一项核对不过，清除一起回滚。
+            htn.clear_revoked_generation(mission_id, owner.task_ref.id)
         acceptance_id = "acc-" + binding_id
         try:
             previous = htn.get_acceptance(acceptance_id)

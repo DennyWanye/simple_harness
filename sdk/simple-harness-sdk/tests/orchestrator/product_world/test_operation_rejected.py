@@ -219,3 +219,59 @@ def test_a_planner_that_answers_no_change_stops_the_mission(tmp_path):
             await world_cm.__aexit__(None, None, None)
 
     asyncio.run(case())
+
+
+class _Successor(_Provider):
+    """规划器读到拒绝后，给写周报那一步提一个后继步骤重写（真机里真实模型就是这么答的）。"""
+
+    def __init__(self) -> None:
+        super().__init__(rewrite=True)
+        self._answer["planner"] = self._successor
+
+    def _successor(self, request: Any) -> Any:
+        package = package_of(request)
+        if not any((entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
+                   for entry in package.get("repair_requests") or ()):
+            return planner_reply(request)
+        self.not_applied.append({})
+        [step] = [item for item in package["views"]["goals"] if item.get("form") == "primitive"]
+        subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
+
+        def visible(kind: str, identity: str) -> Any:
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+        [task_type] = [row for row in package["successor_types"]
+                       if row["statement"] == step["statement"] and row["form"] == "primitive"]
+        return decision(subject["subject_key"], "REPAIR", {
+            "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", step["task_id"]),
+            "obligation_ref": visible("obligation", step["obligation_id"]),
+            "goal_type_ref": task_type["task_type_ref"], "bindings": {"goal": "按用户的理由重写周报。"}},
+            "用户拒绝了发布，给写周报那一步提后继重写。")
+
+
+def test_a_rejected_publish_rewritten_by_a_successor_step_completes(tmp_path):
+    """2026-10-03 真机发现：规划器用后继步骤重写内容后，根目标留着"旧派发作废"的内部标记（要等根目标
+    自己的新一代结果提交才清），发布结果的验收见到它就判"效果来源已脏"拒收，根目标又等这次验收——
+    互相等，任务一直挂着。标记早于这次发布结果的准备，与它无关。"""
+
+    async def case():
+        provider = _Successor()
+        world_cm, world, mission_id, published = await _rejected_once(tmp_path, provider)
+        try:
+            await _drive_until(world, lambda: _new_card(world, mission_id) or _status(world, mission_id) in TERMINAL)
+            m = world.store.get_mission(mission_id)
+            [card] = _pending_cards(world, mission_id)
+            world.control.decide(card["request_id"], "approve")
+            for _ in range(40):
+                if _status(world, mission_id) in TERMINAL:
+                    break
+                await world.drain(timeout=5)
+            deferred = [e.payload["reason"] for e in world.store.list_events(mission_id)
+                        if e.type == "OperationOutcomeDeferred"]
+            tail = [e.type for e in world.store.list_events(mission_id)
+                    if not e.type.startswith(("Assurance", "Heartbeat", "TaskGraphFollowup"))][-25:]
+            assert _status(world, mission_id) == "COMPLETED", (deferred, tail)
+        finally:
+            await world_cm.__aexit__(None, None, None)
+
+    asyncio.run(case())

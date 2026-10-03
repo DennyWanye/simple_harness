@@ -1,5 +1,5 @@
 {
-  "deployment_id": "6ba34bf2dea673a13e65b695c135945be331a4a178df9fd12af735e723a1f3ed",
+  "deployment_id": "35eb1f6bcc7854f4f911bfb596bb7762f1e7eb52d924d9053db80127bb70f643",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -198,7 +198,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "e022dc12a00dd0f59eb400394d99dcc6a370def290a7c894b3027e6d9b135452",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "81722fdaa708a09054ae7d223210e9b99d5702f49c9afb419794d011c2dc8203",
-    "agent_orchestrator/orchestrator/event_handler.py": "19d1c0651bf0ed26f2ec7b7d8d4cd77ee68ad47d45a794d06e1c1f0990648524",
+    "agent_orchestrator/orchestrator/event_handler.py": "34a8e7ddca91546030c734d1040ca8eeedb2a4287a5755e04aadab90c32ccf47",
     "agent_orchestrator/orchestrator/failure_classes.py": "35f9707e5c76b6597c8dfa4a15521174ce0283cad867133ddef27e1fdc4cb578",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "592a3f9e14613d28e443f59494071a3f22d8658559feee6697b4821cb3c4ace2",
     "agent_orchestrator/orchestrator/human_commits.py": "9a49eeef96064972ffe2dda9971b2f7a6d2cf67dddf5d107dd7e902308554958",
@@ -210,7 +210,7 @@
     "agent_orchestrator/orchestrator/operation_intent_sources.py": "20b430a210984b60f5ce5fd957fc1f3fcc61745f5c6949f1f7b7559a21e57819",
     "agent_orchestrator/orchestrator/operation_materialization.py": "1fcc21fa160bd7e91154e771224ed9ceddd11227b756d8fd8f54eac1d3a9f93a",
     "agent_orchestrator/orchestrator/operation_materialization_inputs.py": "cfcd5ab1058a2e7810b7445637687d639a9aa3149ffc66a2e66d7d55386faa03",
-    "agent_orchestrator/orchestrator/operation_outcomes.py": "a7a08658c7b3e2eca390b56c8741e0aadbc5c67696a1a29efdc2c3f1030d722c",
+    "agent_orchestrator/orchestrator/operation_outcomes.py": "cc04f0fc545887b550268b6e3253104610715e4e1f59ba087331c16a48d48069",
     "agent_orchestrator/orchestrator/operation_proposal_review.py": "6ea10de7da3a94ae2969c93e65d87db44a52d45e79c0773e8e9dfc5e7640cdac",
     "agent_orchestrator/orchestrator/operation_reconciliation.py": "02f3c7d68cbd352de2af884197cecd0dedbc0ff329109a30fc4dceec36319df5",
     "agent_orchestrator/orchestrator/operation_runtime.py": "2f36c1a9b701ac8b6814aedb5d42ff6b0d5af43689f8ce05dc28bffb7e56bd16",
