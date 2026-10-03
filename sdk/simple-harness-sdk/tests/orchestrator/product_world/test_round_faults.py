@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import pytest
 
@@ -143,5 +144,53 @@ def test_a_damaged_plan_history_stops_only_its_own_mission(tmp_path):
             assert str(mission.status.value) == "FAILED" and mission.stop_reason == "planning_failed"
             assert mission.final_report["detail"]["code"] == "TASKGRAPH_HISTORY_INTEGRITY"
             assert _status(store, b) == "COMPLETED"
+
+    asyncio.run(case())
+
+
+def test_an_ended_missions_failing_collection_is_recorded_once_not_every_round(tmp_path):
+    """核验阻断项（2026-10-03）：任务已结束、它那次回合的收尾收集一直出错时，故障只记一次。
+    此前任务结束就清计数，每轮写一条新的"任务一轮故障"，主循环按最短间隔空转。"""
+
+    async def case():
+        provider = LayeredScriptedProvider()
+        provider.held.add("worker")
+        async with product_world(tmp_path / "root", provider) as world:
+            store = world.store
+            a = world.create(_notes("ended-a"))["mission_id"]
+            stop = asyncio.Event()
+
+            async def drive() -> None:
+                while not stop.is_set():
+                    await world.loop.run()
+                    await world.deployment.between_cycles(auto=True)
+                    await asyncio.sleep(0.05)
+
+            runner = asyncio.create_task(drive())
+            try:
+                for _ in range(400):
+                    if provider.asked.count("worker") >= 1:
+                        break
+                    await asyncio.sleep(0.05)
+                world.loop.commit.cancel_mission(a)
+                store.connection.execute(
+                    "CREATE TRIGGER test_after_stop BEFORE INSERT ON events WHEN NEW.mission_id="
+                    f"'{a}' AND NEW.type='IntentSettled' BEGIN SELECT RAISE(ABORT,'TEST_AFTER_STOP'); END")
+                provider.release.set()
+                for _ in range(100):
+                    if _faults(store, a):
+                        break
+                    await asyncio.sleep(0.05)
+                await asyncio.sleep(2)
+            finally:
+                stop.set()
+                provider.release.set()
+                # The stopped turn's intent stays open while its collection keeps failing,
+                # so ``run()`` keeps waiting on it (backing off, writing nothing).
+                runner.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await runner
+            faults = _faults(store, a)
+            assert len(faults) == 1 and "TEST_AFTER_STOP" in faults[0]["summary"], faults
 
     asyncio.run(case())

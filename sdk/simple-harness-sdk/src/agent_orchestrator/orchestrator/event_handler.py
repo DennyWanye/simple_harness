@@ -3231,11 +3231,15 @@ class Orchestrator:
         once; anything else is retried and stops it, by name, only after
         ``NON_MODEL_FAILURE_CAP`` consecutive rounds at the same place spanning at least
         ``ROUND_FAULT_MIN_SECONDS``.  ``StoreBusy`` (another instance holds the lock)
-        is the whole store's, not this Mission's, and still skips the round."""
+        is the whole store's, not this Mission's, and still skips the round; an
+        ``InjectedCrash`` stands for the process dying and still ends ``run()``.
+
+        ``where`` names the place and, for an intent, the intent: one healthy intent's
+        success must not reset another intent's streak."""
 
         try:
             progressed = bool(await step())
-        except StoreBusy:
+        except (StoreBusy, InjectedCrash):
             raise
         except Exception as error:  # noqa: BLE001 - the boundary: never the loop's end
             if self.store.connection.in_transaction:
@@ -3274,7 +3278,8 @@ class Orchestrator:
         except Exception:  # noqa: BLE001
             return False
         if mission is None or mission.status in TERMINAL_MISSION:
-            self._round_faults.pop((mission_id, where), None)
+            # Nothing left to stop; the streak (and its single record) stays, so an
+            # ended Mission's failing collection does not write one event per round.
             return False
         try:
             if kind == ROUND_CORRUPT:
@@ -3420,28 +3425,28 @@ class Orchestrator:
         active = {mission.id for mission in self._active_missions()}
         for intent in self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
             if (intent.kind == "critic" or intent.config.get("assurance_protocol") == "assurance-exec-v1.1") and self._critic_subject_stopped(intent):
-                if await self._mission_round(intent.mission_id, "collect_stopped_critic",
+                if await self._mission_round(intent.mission_id, f"collect_stopped_critic:{intent.intent_id}",
                                              lambda intent=intent: self._collect_stopped_critic(intent)):
                     progressed = True
                 continue
             if intent.mission_id not in active:
                 continue
-            if await self._mission_round(intent.mission_id, "dispatch",
+            if await self._mission_round(intent.mission_id, f"dispatch:{intent.intent_id}",
                                          lambda intent=intent: self._dispatch(intent)):
                 progressed = True
         for intent in self.store.list_intents("SUBMITTED"):
             if intent.kind == "critic":
                 if self._critic_subject_stopped(intent) and await self._mission_round(
-                        intent.mission_id, "collect_after_stop",
+                        intent.mission_id, f"collect_after_stop:{intent.intent_id}",
                         lambda intent=intent: self._collect_after_stop(intent)):
                     progressed = True
                 continue  # critics are collected inline by the critic runner
             if intent.mission_id not in active:
-                if await self._mission_round(intent.mission_id, "collect_after_stop",
+                if await self._mission_round(intent.mission_id, f"collect_after_stop:{intent.intent_id}",
                                              lambda intent=intent: self._collect_after_stop(intent)):
                     progressed = True
                 continue
-            if await self._mission_round(intent.mission_id, "collect",
+            if await self._mission_round(intent.mission_id, f"collect:{intent.intent_id}",
                                          lambda intent=intent: self._collect(intent)):
                 progressed = True
         # D6-9': verification runs in a bounded set of tasks (``verifier_workers``); the loop
