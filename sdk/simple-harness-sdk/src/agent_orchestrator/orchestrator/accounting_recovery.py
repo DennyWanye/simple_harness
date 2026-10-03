@@ -13,13 +13,11 @@ from simple_harness.agents import AgentConfig
 from simple_harness.agents.base import input_hash_for
 from simple_harness.agents.contracts import _message_from_json
 from simple_harness.contracts import canonical_json
-from simple_harness.execution.budget import FrozenPriceEstimator
 from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 from simple_harness.execution.uow import UnitOfWorkConflict
 
 from ..contracts.models import jsonable, sha256_hex
 from ..governance.budgets import BudgetError, UsageFact
-from ..governance.provider_prices import ProviderPrice
 from ..contracts.state_machines import TERMINAL_MISSION
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.provider_budget_guard import ProviderBudgetGuard
@@ -141,14 +139,6 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
             and original.run_id.value == binding.run_id,
             "physical identity",
         )
-        price = ProviderPrice.from_record(original)
-        legacy_unpriced = (row["price_digest"] is None and row["price_json"] is None
-                           and row["cost_upper_micros"] is None and (price is None or
-                           price.digest == FrozenPriceEstimator(
-                               "consumer-v1", "consumer", 0, 0).snapshot_digest))
-        _require(legacy_unpriced or (
-            row["price_digest"] == (None if price is None else price.digest)
-            and row["price_json"] == (None if price is None else price.json)), "original price")
         record = uow.read_effective_provider_invocation(original.invocation_id)
         _require(record is not None, "missing effective invocation")
         usage = record.usage_json
@@ -161,15 +151,8 @@ def _facts(commit, bridge, intent, reservation, *, grants=None, historical=False
             complete = False
             continue
         input_tokens, output_tokens = values
-        amount = None
-        if row["cost_upper_micros"] is not None:
-            amount = None if price is None else price.known_charge(
-                record, input_tokens=input_tokens, output_tokens=output_tokens)
-            if amount is None:
-                complete = False
-                continue
         facts.append(UsageFact("provider-invocation:" + record.invocation_id,
-                               input_tokens, output_tokens, amount))
+                               input_tokens, output_tokens))
     return facts, complete, task_id
 
 
@@ -191,9 +174,8 @@ def import_late_accounting(orch) -> bool:
     live = None if full else _live_missions(store)
     if full:
         orch._late_accounting_ended_at = now
-    # Guard recovery reads effective receipts and validates original price. An
-    # actual overrun is committed before it raises; its real cost must still be
-    # imported. Other failures stay fail-closed and are checked per subject below.
+    # Guard recovery reads effective receipts. An actual overrun is committed
+    # before it raises; its real usage must still be imported. Other failures stay fail-closed and are checked per subject below.
     for pool in orch.assembled.pools.values():
         guard = pool.bridge.runtime.ports.provider_admission
         if guard is not None:
@@ -259,8 +241,7 @@ def _settle_expired_ended_holds(orch) -> bool:
             settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
             orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject_id, payload={
                 "subject_id": subject_id, "reason": "mission_ended_usage_unknown",
-                "counted_tokens": settled["settled_tokens"],
-                "counted_cost_micros": settled["settled_cost_micros"]})
+                "counted_tokens": settled["settled_tokens"]})
         progressed = True
     return progressed
 

@@ -120,8 +120,7 @@ def read_planner_package(
                      "remaining": account.remaining_fuel},
             "failures": [{"count": account.failure_count}],
             "attempts": account.consumed_attempts,
-            "budget": {"lineage_ref": duty.budget_lineage_ref, "spent_tokens": account.consumed_tokens,
-                       "spent_cost_micros": account.consumed_cost_micros},
+            "budget": {"lineage_ref": duty.budget_lineage_ref, "spent_tokens": account.consumed_tokens},
         })
         duty_refs.append({"kind": "obligation", "id": str(duty.obligation_id), "semantic_revision": 1,
                           "content_hash": content_hash_of(duty.to_json())})

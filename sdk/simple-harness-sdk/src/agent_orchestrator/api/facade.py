@@ -9,7 +9,7 @@ Orchestrator door (:meth:`Orchestrator.create_mission`), the Commit Service or t
 Approval API, and every read is a projection of the orchestration library.
 
 * **Strict fields** (P3.1-A06): a request names only the open fields; an unknown field is
-  refused, a field this surface does not open (tool set, risk level, task kind, money or
+  refused, a field this surface does not open (tool set, risk level, task kind or
   runtime budgets) is refused by name — nothing is silently dropped.
 * **Persistent receipts** (P3.1-A03): the same idempotency key with the same body returns
   the first receipt; a different body under that key is a ``conflict``.
@@ -67,7 +67,7 @@ CLOSED_FIELDS = {
 OPEN_BUDGET = frozenset({"max_tokens", "max_attempts"})
 LIST_FIELDS = ("success_criteria", "stop_conditions", "untrusted_sources")
 CLOSED_BUDGET = frozenset(
-    {"max_cost_micros", "max_runtime_seconds", "max_concurrency", "max_tool_calls"}
+    {"max_runtime_seconds", "max_concurrency", "max_tool_calls"}
 )
 MAX_EVENT_PAGE = 200
 MAX_ARTIFACT_BYTES = 256 * 1024

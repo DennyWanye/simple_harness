@@ -652,14 +652,6 @@ class Orchestrator:
                         )
                         else None
                     ),
-                    price_tables={
-                        key: (
-                            profile.price_table.estimator()
-                            if profile.price_table is not None
-                            else None
-                        )
-                        for key, profile in self._profiles.items()
-                    },
                 )
             if self._provider_token_estimators is not None:
                 from ..runtime.provider_budget_guard import ProviderBudgetGuard
@@ -679,20 +671,12 @@ class Orchestrator:
                     else None
                 )
                 def guard_for(key: str, estimator: Any) -> Any:
-                    profile = self._profiles[key]
                     return ProviderBudgetGuard(
                         self._commit,
                         owner=self._owner,
                         estimator=estimator,
                         max_slots=self._config.max_concurrent_model_calls,
                         profile_slots=slots,
-                        price_tables={
-                            key: (
-                                profile.price_table.estimator()
-                                if profile.price_table is not None
-                                else None
-                            )
-                        },
                     )
 
                 def admission_for(key: str) -> Any:
@@ -4618,7 +4602,7 @@ class Orchestrator:
                 **source_binding,
                 **self._service_config(decision),
             },
-            reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens, decision.profile_id),
+            reservation=self._reservation(0 if native_decision is not None else self._config.planner_reserve_tokens),
         )
         self._bind_hierarchical_planning_request(
             intent=intent,
@@ -4631,24 +4615,11 @@ class Orchestrator:
         return intent
 
     # -------------------------------------------------------------- dispatch
-    def _reservation(self, tokens: int, profile_id: str | None = None) -> Reservation:
-        profile = self._profiles.get(profile_id or self._default_profile)
-        table = profile.price_table if profile is not None else self._config.price_table
-        if table is None:
-            return Reservation(tokens=tokens, cost_micros=0)
-        rate = max(table.input_micros_per_million_tokens, table.output_micros_per_million_tokens)
-        return Reservation(tokens=tokens, cost_micros=(tokens * rate + 999_999) // 1_000_000)
+    def _reservation(self, tokens: int) -> Reservation:
+        return Reservation(tokens=tokens)
 
-    def _first_critic_reservation(self, budget: FirstRequestBudget, profile_id: str) -> Reservation:
-        table = self._profiles[profile_id].price_table
-        if table is None:
-            return Reservation(budget.minimum_tokens, 0)
-        input_tokens = budget.provider_input_cap.max_input_tokens
-        output_tokens = budget.output_ceiling
-        cost = (input_tokens * table.input_micros_per_million_tokens + 999_999) // 1_000_000 + (
-            output_tokens * table.output_micros_per_million_tokens + 999_999
-        ) // 1_000_000
-        return Reservation(budget.minimum_tokens, cost)
+    def _first_critic_reservation(self, budget: FirstRequestBudget) -> Reservation:
+        return Reservation(tokens=budget.minimum_tokens)
 
     async def _dispatch(self, intent: DispatchIntent) -> bool:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""
@@ -9902,23 +9873,18 @@ class Orchestrator:
                 return await self._defer_for_profile(mission, task, unavailable)
             first = self._first_critic_budget(critic_decision)
             if isinstance(first, FirstRequestBudget):
-                first_reservation = self._first_critic_reservation(
-                    first, critic_decision.profile_id
-                )
+                first_reservation = self._first_critic_reservation(first)
                 first_critic_binding = {
                     "first_critic_budget": {
                         "provider_input_cap": first.provider_input_cap.to_json(),
                         "output_ceiling": first.output_ceiling,
                         "minimum_tokens": first.minimum_tokens,
-                        "cost_micros": first_reservation.cost_micros,
                     }
                 }
                 critic_tail = first_reservation
             else:
                 first_critic_binding = {"first_critic_budget_unknown": first.reason}
-                critic_tail = self._reservation(
-                    self._config.critic_reserve_tokens, critic_decision.profile_id
-                )
+                critic_tail = self._reservation(self._config.critic_reserve_tokens)
         self._deferred.pop(task.id, None)
         if self._pressure.is_raised:  # §18.5 "缩小每个 Attempt 预算" (D6-3 ④)
             tokens = max(4_000, int(tokens * self._config.reduced_reserve_ratio))
@@ -9948,7 +9914,7 @@ class Orchestrator:
                 prompt_version=role.prompt_version,
                 context_version=package.context_version,
                 reservation=replace(
-                    self._reservation(tokens, decision.profile_id),
+                    self._reservation(tokens),
                     tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
                 ),
                 runtime_profile_id=decision.profile_id,

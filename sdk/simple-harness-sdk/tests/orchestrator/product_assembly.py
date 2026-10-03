@@ -52,7 +52,7 @@ def unstarted(root: Path, provider: Any, *, thinking_provider: Any = None, owner
     模拟一个装配缺失的进程打开了已有的库（守卫"没装分层装配就不发规划"用）。"""
     principal = Principal("product-world-user")
     counter = FixtureWordCounter()
-    cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", price_table=None, **config)
+    cfg = OrchestratorConfig(evidence_root=Path(root), model="agent-model", **config)
     native = NativePools(tenant_id=TENANT, principal_id=principal.principal_id, allowed_tools=DEFAULT_TOOLS,
                          meter_factory=counter.meter_factory)
     options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures",

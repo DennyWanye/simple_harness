@@ -1,3 +1,5 @@
+最后更新：2026-10-03 CST（HTN 补齐阶段 C 第 0 条，删金额计价，分支 htn-c0，未发版）。**编排只记 token。** 删 `PriceTable`/`price_table`/`hard_cap_micros`、`Budget.max_cost_micros`、`OperationSpec.cost_micros_ceiling`、`governance/provider_prices.py`；供应方准入去价格比对，身份 `provider-budget-admission-v4`（只接受当前一个）；账本、尾预算、义务账、事件载荷、指标/归因、Host 诊断与详情、前端去金额；迁移 38 删 5 张表 13 个金额列并重建 `assurance_source_obligations_update`。旧编排库启动即失败，需新建编排数据目录。
+
 最后更新：2026-10-03 CST（HTN 补齐阶段 B 第三批第 2 类 + 第 2 条，SDK opt.142）。**人拒绝发布交规划器；改计划卡住有出口。** `system_operations` 对已物化而被人拒绝（动作 REJECTED）的发布：候选字节变了替代重交，没变交 `_ask_planner_after_rejection`——修复请求来源 `RepairTriggerSource.OPERATION_NOT_APPLIED`（事件名 OperationNotApplied），context 带 target / rejection_reason / rejected_by / rejections / remaining；与 `_ask_planner_for_source` 共用 `_ask_planner_once`（同 key 只问一次；规划器提交了决定且没有待答的人工问题仍未解决即停）；拒满 `SOURCE_REPAIR_CAP` 或回应后内容未变以 APPROVAL_REJECTED/`operation_rejected` 停。规划器模板 `planner-hierarchical-v19`；规划包新段 `abandoned_plan_changes`（`planner_views.abandoned_plan_changes_for_planner`，读 TaskGraphConvergenceAbandoned 回执里的 decision_id 与 reason）。`api/taskgraph.convergence` 多 `blocked_notifications`。`TaskGraphConvergenceStore._transition` 在作业进 APPLIED/ABANDONED 时把该作业被挡的 CONVERGE 通知放回 PENDING（否则 `awaiting_sources` 让任务永远等）。Host `taskgraph.operate_taskgraph`（控制通道 `taskgraph.abandon_convergence` / `taskgraph.retry_notification`，经 `taskgraph_operator_api`，命令号每次点击生成）；诊断导出 `diagnostics.taskgraph_history`（临时副本 `replay_taskgraph`，只留报告、历史清单与相邻结构差异）。前端 `PlanChangePanel`、执行图步骤详情 `WhyNotReady`。
 
 最后更新：2026-10-03 CST（HTN 补齐阶段 B 第三批第 1、3 类，SDK opt.141）。**发布没落地的证明与人工裁定。** `contracts/operation_payloads.NonapplicationProofKind` 加 `CONNECTOR_LEDGER_NOT_LINKED`（连接器档案可声明）与 `HUMAN_RULED_NOT_APPLIED`（只能由人工裁定写，冻结效果合约总是接受）；`contracts/operation_reconciliation` 对应两种证明字段与观察来源 `HUMAN_RULING`。`runtime/connectors_publish.FilePublishConnector` 发布在台账排他锁内执行，`ledger_record(key)` 在共享锁下给出该键的台账行与 `final_file_present`；链接返回后出错不写 ABORTED。`runtime/operation_reconciliation_file_publish.FilePublishReconciliationAdapter` 由文件发布档案登记，只在"无意图"或"末行 ABORTED 且目标文件不在/字节不对"时出权威的未生效观察。`runtime/actions.reconcile` 同时扫描失败而无证明的已交接动作（`_failed_unproven`），无运行时返回 None 不计进展；查不到时 `record_reconciliation_unavailable` 计数到非模型失败上限置 needs_human。`action_commits.override_action_outcome` 接受结果不明或失败未证明的动作，判失败时在同一事务写人工裁定证明；`propose_action` 对失败未证明的拒收（`action_outcome_unproven`），已证明未生效的同内容新版本带 `previous_attempt`。`system_operations` 对已物化而证明未生效的头按原计划重交，上限 `SYSTEM_RESUBMIT_CAP=2`，超过以 ACTION_FAILED/publish_not_applied 停。facade `resolve_unknown`；Host 控制通道 `mission_action_resolve`；前端 `ResolveOutcomeBox`。
@@ -568,7 +570,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 
 - provider 在启动时对 `get_chain()` 的第一个启用项做一次快照，之后换 provider 需要重启才生效。
 - DeepSeek 官方端点把 `deepseek-v4-flash` 映射为 `deepseek-flash`，status 里同时显示两个 id。
-- 没有注入价目表：金额记为 null，界面显示"未计价"，不写成 0。
+- 编排只记 token、不记金额（2026-10-03 HTN 补齐阶段 C 删金额计价：价目表、金额预算维度、供应方准入的价格比对、账本与义务账的金额列一并删除，迁移 38 删 13 个金额列；供应方准入身份升 v4，旧编排库不兼容，需新建编排数据目录）。主对话计费与原生运行层的金额不在此列。
 - **Task 预算下限**（SDK 0.9.11 起，F-ORCH-1）：
   - Graph Manager 会拒绝预算低于 `k × (base + critic)` 的 Task。k 是每个 Task 的候选数；base 是单轮最多产出的 token 数，这个部署是 8192；critic 部分只在验证政策含 critic_review 时计入，是 Critic 的预留 6000。
   - 被拒后，Planner / Manager 会收到原因（`task_budget_below_floor`）并重新规划，系统不会替它们编一个数。它们的输入里也写明了下限。
@@ -651,7 +653,6 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 - ruff：本片新增/修改文件全绿（`manifest.py` 的 2 条为既有）。
 - **未验证**：真实模型/checkpoint 观测、真实 Mission 驱动循环内的端到端、Primary、`RETRY_OR_ESCALATE`。未打包、未发布。
   - **宿主崩溃后的逃逸进程认不出来**：金丝雀随执行目录一起删除，宿主重启时没有线索可扫（SDK journal 已登记，留待后续处理）。
-- DeepSeek 价目没有注入，金额显示"未计价"。
 - 策略只读：SDK 的策略接口与命令行也只剩 `list / show / status` 三个只读动作（提议、评测、晋级、回滚 2026-10-02 已删）。
 - 编排的证据目录（workspaces）不会自动清理。
 - PyInstaller 打包 spec 仍停在 0.6.4，尚未跟进。

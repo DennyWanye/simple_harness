@@ -60,8 +60,8 @@ def _rows(value: object) -> list[Mapping[str, Any]]:
     return [row for row in value if isinstance(row, Mapping)]
 
 
-def _money(value: object) -> dict[str, Any]:
-    return _pick(value, ("tokens", "rows", "cost_micros", "cost_note"))
+def _usage(value: object) -> dict[str, Any]:
+    return _pick(value, ("tokens", "rows"))
 
 
 def _cost(value: object) -> dict[str, Any]:
@@ -70,16 +70,16 @@ def _cost(value: object) -> dict[str, Any]:
     services = _mapping(cost.get("services"))
     unclassified = _mapping(cost.get("unclassified"))
     return {
-        "success_path": _money(cost.get("success_path")),
-        "exploration": _money(cost.get("exploration")),
-        "services": {role: _money(services.get(role)) for role in ("planner", "judge")
+        "success_path": _usage(cost.get("success_path")),
+        "exploration": _usage(cost.get("exploration")),
+        "services": {role: _usage(services.get(role)) for role in ("planner", "judge")
                      if role in services},
         "unclassified": {
-            **_money(unclassified),
+            **_usage(unclassified),
             "subject_sha256": [_hash(item) for item in unclassified.get("subjects", ())
                                if isinstance(item, str)],
         },
-        "total": _money(cost.get("total")),
+        "total": _usage(cost.get("total")),
         "unknown_usage_rows": _safe_scalar(cost.get("unknown_usage_rows")),
         "ledger": {
             **_pick(ledger, (
@@ -206,7 +206,7 @@ def _attribution(value: object, snapshot: Mapping[str, Any]) -> dict[str, Any]:
                            "runtime_profile_id", "prompt_version", "status", "on_success_path",
                            "exploration_reason", "tool_calls")),
              "context_version": context_versions.get(row.get("attempt_id")),
-             "work": _money(row.get("work")), "verification": _money(row.get("verification"))}
+             "work": _usage(row.get("work")), "verification": _usage(row.get("verification"))}
             for row in _rows(source.get("attempts"))
         ],
         "actions": [
@@ -403,14 +403,12 @@ def build_diagnostics(
         # 全业务重放 v3 的骨架：哪些业务表已能由事件重建（HTN 补齐阶段 A；阶段 G 取代上面的 v2）
         "business_replay": coverage_report(store, mission_id),
         "attribution": attribution_report,
-        # 指标统计的唯一入口（HTN 补齐阶段 B）。桌面部署不注入价格表（service.py price_table=None），
-        # 金额一律记为未定价的 null。
-        "metrics": metrics(store, mission_id, unpriced=True),
+        # 指标统计的唯一入口（HTN 补齐阶段 B）。编排只记 token，不记金额。
+        "metrics": metrics(store, mission_id),
         "verification": _verification(snapshot),
         "costs": {
             "usage": _pick(snapshot.get("budget_usage"), (
-                "reserved_tokens", "settled_tokens", "reserved_cost_micros",
-                "settled_cost_micros", "unpriced_settlements", "attempts_created", "version")),
+                "reserved_tokens", "settled_tokens", "attempts_created", "version")),
             "attribution": attribution_report.get("cost"),
         },
         "input_references": _input_references(snapshot),

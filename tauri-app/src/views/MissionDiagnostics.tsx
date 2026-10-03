@@ -91,7 +91,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
       <p>任务状态：{asText(attribution.mission_status) || "未知"} · 回放事件：{asText(replay.events)}</p>
       <p>{comparison.consistent === true ? "回放已覆盖字段与记录一致" : "回放存在差异或尚无法核对"}；未覆盖字段 {asList(comparison.not_covered).length} 项，差异 {asList(comparison.mismatches).length} 项。</p>
       <p>未知事件类型 {Object.keys(asRecord(replay.unknown_event_types)).length} 类 · 证据链缺口 {asList(attribution.breaks).length} 项。回放一致不代表任务交付成功。</p>
-      <p>记录用量：{asText(total.tokens) || "未知"} tokens · 金额：{total.cost_micros == null ? "未计价" : `${asText(total.cost_micros)} 微单位`}</p>
+      <p>记录用量：{asText(total.tokens) || "未知"} tokens</p>
       <p>预留：{usage.reserved_tokens == null ? "未知" : asText(usage.reserved_tokens)} tokens · 未知用量记录（已入账）：{unknownRows == null ? "未知" : unknownRows} · 账本核对：{cost.reconciled === true ? "一致" : "未对齐或不可用"}</p>
       <p>待结算用量：{ledger.unsettled_usage_tokens == null ? "未知" : asText(ledger.unsettled_usage_tokens)} tokens。{incomplete ? "记录不完整，以上已记录用量不能作为最终总消耗。" : "仅表示当前账本记录，不是供应商独立账单。"}</p>
       <p>未知记录数只统计已入账数据，不包含尚未入账的在途调用。</p>

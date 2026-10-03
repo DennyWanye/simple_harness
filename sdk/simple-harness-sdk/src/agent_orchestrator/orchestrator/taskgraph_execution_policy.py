@@ -93,11 +93,7 @@ class TaskGraphExecutionImports:
                     raise SourceUnavailable("taskgraph_execution_profile_identity_invalid")
                 # Explicit declaration fields only; never serialize a provider,
                 # connector implementation, tokenizer or credential-bearing repr.
-                profiles.append({**profile.to_json(),
-                    "price_table": None if profile.price_table is None else {
-                        "snapshot_id": profile.price_table.snapshot_id,
-                        "input_micros_per_million_tokens": profile.price_table.input_micros_per_million_tokens,
-                        "output_micros_per_million_tokens": profile.price_table.output_micros_per_million_tokens}})
+                profiles.append(profile.to_json())
             body: dict[str, Any] = {"mission_id": mission_id,
                 "mission": {"tenant_id": mission.tenant_id,
                     "status": str(mission.status), "allowed_tools": list(mission.allowed_tools)},

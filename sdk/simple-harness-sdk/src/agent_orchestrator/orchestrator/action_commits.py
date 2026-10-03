@@ -992,7 +992,6 @@ class ActionCommitsMixin:
                         account_id=mission_account(str(action["mission_id"])),
                         subject_id=subject,
                         tokens=0,
-                        cost_micros=int(spec.cost_micros_ceiling or 0),
                         counts_attempt=False,
                         tool_calls=1,
                         mission_id=str(action["mission_id"]),

@@ -61,9 +61,9 @@ def test_failure_count_and_spend_survive_every_change_of_shape() -> None:
     target = duty().obligation_id
 
     ledger.record_failure(target)
-    ledger.record_spend(target, cost_micros=1_200, attempts=1)
+    ledger.record_spend(target, tokens=1_200, attempts=1)
     ledger.record_failure(target)
-    ledger.record_spend(target, cost_micros=800, attempts=1)
+    ledger.record_spend(target, tokens=800, attempts=1)
 
     # The work is renamed, re-planned onto another method, handed to another agent
     # and finally re-issued as a successor task.
@@ -74,7 +74,7 @@ def test_failure_count_and_spend_survive_every_change_of_shape() -> None:
 
     account = ledger.account(target)
     assert account.failure_count == 2
-    assert account.consumed_cost_micros == 2_000
+    assert account.consumed_tokens == 2_000
     assert account.consumed_attempts == 2
 
 
@@ -83,15 +83,15 @@ def test_a_successor_under_the_same_duty_keeps_spending_the_same_allowance() -> 
     ledger.register(duty(), recursion_fuel=5)
     target = duty().obligation_id
     ledger.record_failure(target)
-    ledger.record_spend(target, cost_micros=5_000, attempts=2)
+    ledger.record_spend(target, tokens=5_000, attempts=2)
 
     ledger.note_shape_change(target, ShapeChange.SUCCESSOR_TASK, detail="task-9")
     ledger.record_failure(target)
-    ledger.record_spend(target, cost_micros=1_000, attempts=1)
+    ledger.record_spend(target, tokens=1_000, attempts=1)
 
     account = ledger.account(target)
     assert account.failure_count == 2
-    assert account.consumed_cost_micros == 6_000
+    assert account.consumed_tokens == 6_000
     assert account.consumed_attempts == 3
 
 
@@ -250,20 +250,20 @@ def test_a_refused_lifecycle_value_changes_nothing() -> None:
 
 
 def test_a_refused_record_spend_does_not_leave_half_of_itself_behind() -> None:
-    """The cost is validated before the attempt count, so a bad attempt count used
-    to land the cost anyway and a retry would then double-count it."""
+    """Every argument is validated before any lands, so a bad attempt count cannot
+    land the tokens anyway and a retry cannot double-count them."""
 
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
     target = duty().obligation_id
-    ledger.record_spend(target, cost_micros=1_000, attempts=1)
+    ledger.record_spend(target, tokens=1_000, attempts=1)
     before = ledger.account(target)
 
     with pytest.raises(ContractError, match="attempts"):
-        ledger.record_spend(target, cost_micros=500, attempts=-1)
+        ledger.record_spend(target, tokens=500, attempts=-1)
 
     assert ledger.account(target) == before
-    assert ledger.account(target).consumed_cost_micros == 1_000
+    assert ledger.account(target).consumed_tokens == 1_000
 
 
 def test_a_refused_record_failure_does_not_increment_the_counter() -> None:
@@ -295,17 +295,16 @@ def test_a_refused_shape_change_is_not_recorded() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_tokens_accrue_beside_money_and_attempts() -> None:
-    """Three ceilings, three counters: a run can be inside its cost and out of context."""
+def test_tokens_accrue_beside_attempts() -> None:
+    """Two ceilings, two counters, reported separately."""
 
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=3)
     target = duty().obligation_id
 
-    ledger.record_spend(target, cost_micros=1_200, attempts=1, tokens=4_000)
-    account = ledger.record_spend(target, cost_micros=300, attempts=1, tokens=1_500)
+    ledger.record_spend(target, attempts=1, tokens=4_000)
+    account = ledger.record_spend(target, attempts=1, tokens=1_500)
 
-    assert account.consumed_cost_micros == 1_500
     assert account.consumed_attempts == 2
     assert account.consumed_tokens == 5_500
     assert account.to_json()["consumed_tokens"] == 5_500
@@ -326,11 +325,11 @@ def test_a_refused_token_amount_leaves_every_counter_alone() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=3)
     target = duty().obligation_id
-    ledger.record_spend(target, cost_micros=1_000, attempts=1, tokens=2_000)
+    ledger.record_spend(target, attempts=1, tokens=2_000)
     before = ledger.account(target)
 
     with pytest.raises(ContractError, match="tokens"):
-        ledger.record_spend(target, cost_micros=500, attempts=1, tokens=-1)
+        ledger.record_spend(target, attempts=1, tokens=-1)
 
     assert ledger.account(target) == before
 

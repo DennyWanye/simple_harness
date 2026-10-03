@@ -9,9 +9,8 @@ new Attempts only after a restart.  A fresh install has no chain: the service is
 unavailable with "未配置模型" and the chat still starts.
 
 DeepSeek's official endpoint names its flash model ``deepseek-flash``; a configuration that
-says ``deepseek-v4-flash`` there is mapped and the status shows both ids.  No price table
-is injected, so money is recorded as unpriced (never 0).  The API key lives only inside
-the SDK ``Secret``; it is never in a repr, a log line, a payload or the manifest.
+says ``deepseek-v4-flash`` there is mapped and the status shows both ids.  The API key lives
+only inside the SDK ``Secret``; it is never in a repr, a log line, a payload or the manifest.
 """
 
 from __future__ import annotations
@@ -46,7 +45,6 @@ class ProviderSnapshot:
             "provider_id": self.provider_id,
             "configured": self.configured_model,
             "requested": self.requested_model,
-            "price": "unpriced",
         }
 
 

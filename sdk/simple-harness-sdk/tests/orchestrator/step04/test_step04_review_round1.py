@@ -28,15 +28,9 @@ from agent_orchestrator.storage.store import Store
 
 # ------------------------------------------------------------------ P0-1 / P1-2
 def test_a_child_budget_inherits_every_bounded_dimension():
-    parent = Budget(
-        max_tokens=100_000, max_attempts=6, max_cost_micros=1_000_000, max_runtime_seconds=600
-    )
+    parent = Budget(max_tokens=100_000, max_attempts=6, max_runtime_seconds=600)
     child = inherit_limits(Budget(max_tokens=20_000, max_attempts=2), parent)
-    assert (
-        child.fits_within(parent)
-        and child.max_cost_micros == 1_000_000
-        and child.max_runtime_seconds == 600
-    )
+    assert child.fits_within(parent) and child.max_runtime_seconds == 600
 
 
 # ------------------------------------------------------------------ P1-3 / P1-4

@@ -305,10 +305,8 @@ class ObligationAccountView:
 
     obligation_id: ObligationId
     failure_count: int
-    consumed_cost_micros: int
     consumed_attempts: int
-    #: Tokens spent against this duty.  Money and tokens are separate axes: a
-    #: deployment can be inside its cost ceiling and far past its context budget.
+    #: Tokens spent against this duty.  Attempts and tokens are separate axes.
     #: ``storage.obligation_store`` persists this as ``spent_tokens``.
     consumed_tokens: int = 0
     #: Whether a demand for this duty is currently admitted (TG decision 9).  An
@@ -330,7 +328,6 @@ class ObligationAccountView:
         return {
             "obligation_id": str(self.obligation_id),
             "failure_count": self.failure_count,
-            "consumed_cost_micros": self.consumed_cost_micros,
             "consumed_attempts": self.consumed_attempts,
             "consumed_tokens": self.consumed_tokens,
             "has_admitted_demand": self.has_admitted_demand,
@@ -360,7 +357,6 @@ class _Account:
 
     __slots__ = (
         "consumed_attempts",
-        "consumed_cost_micros",
         "consumed_tokens",
         "demand_admitted",
         "expansion_keys",
@@ -378,7 +374,6 @@ class _Account:
         self.fuel_limit = fuel_limit
         self.fuel_used = 0
         self.failure_count = 0
-        self.consumed_cost_micros = 0
         self.consumed_attempts = 0
         self.consumed_tokens = 0
         self.demand_admitted = False
@@ -515,7 +510,6 @@ class ObligationLedger:
         return ObligationAccountView(
             obligation_id=account.obligation.obligation_id,
             failure_count=account.failure_count,
-            consumed_cost_micros=account.consumed_cost_micros,
             consumed_attempts=account.consumed_attempts,
             consumed_tokens=account.consumed_tokens,
             has_admitted_demand=account.demand_admitted,
@@ -543,24 +537,20 @@ class ObligationLedger:
         self,
         target: ObligationId,
         *,
-        cost_micros: int = 0,
         attempts: int = 0,
         tokens: int = 0,
     ) -> ObligationAccountView:
-        """Accrue spend against the duty on all three axes at once.
+        """Accrue spend against the duty on both axes at once.
 
-        Money, attempts and tokens are separate ceilings and are reported
-        separately; a run can be well inside its cost budget and out of context.
+        Attempts and tokens are separate ceilings and are reported separately.
         """
 
         account = self._require(target)
         # Validate every argument before touching the row: a rejected call must
         # leave the ledger exactly as it was, or a caller that retries after a
         # validation error would double-count the half that did land.
-        spent = index(cost_micros, "cost_micros")
         tries = index(attempts, "attempts")
         spent_tokens = index(tokens, "tokens")
-        account.consumed_cost_micros += spent
         account.consumed_attempts += tries
         account.consumed_tokens += spent_tokens
         return self.account(target)

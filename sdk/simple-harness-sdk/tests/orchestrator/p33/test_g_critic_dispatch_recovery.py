@@ -14,7 +14,7 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
 
 def test_critic_wait_inherits_sdk_deadline_and_rejects_invalid_explicit_windows(tmp_path):
-    config = OrchestratorConfig(evidence_root=tmp_path, turn_deadline_seconds=321, price_table=None)
+    config = OrchestratorConfig(evidence_root=tmp_path, turn_deadline_seconds=321)
     provider = LayeredScriptedProvider()
 
     def build(**kwargs):

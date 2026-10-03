@@ -5,9 +5,8 @@
 """Assemble the one BaseAgent runtime the orchestrator drives (D10', D13').
 
 ``OrchestratorConfig`` is the deployment binding ORCH §2 demands: explicit
-concurrency, explicit pricing mode (``unpriced`` or a real price table with
-``pricing_key="consumer"``), and one runtime-wide hard cap that, because every
-Attempt is its own Run, acts as the per-Attempt hard limit.
+concurrency and token reserves.  Orchestration records token usage only; every
+pool runs under the native runtime's local default policies.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTok
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import AgentRuntime
 from simple_harness.contracts import canonical_json
-from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 from simple_harness.execution.provider_admission import ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 
@@ -43,25 +41,7 @@ from .tool_gateway import TOOL_NAMES, WorkspaceToolGateway, read_tool_schemas
 from .domain_tools import DomainTool
 from ..planning.htn.backend_port import PlanningBackend, PlanningLimits
 
-CONSUMER_PRICING_KEY = "consumer"
 OWNER_SCOPE = "agent-orchestrator"  # D3-10': one scope shared by every orchestrator instance
-
-
-@dataclass(frozen=True, slots=True)
-class PriceTable:
-    """Real prices in micros per million tokens (host-certified, §18.4)."""
-
-    snapshot_id: str
-    input_micros_per_million_tokens: int
-    output_micros_per_million_tokens: int
-
-    def estimator(self) -> FrozenPriceEstimator:
-        return FrozenPriceEstimator(
-            snapshot_id=self.snapshot_id,
-            pricing_key=CONSUMER_PRICING_KEY,
-            input_micros_per_million_tokens=self.input_micros_per_million_tokens,
-            output_micros_per_million_tokens=self.output_micros_per_million_tokens,
-        )
 
 
 
@@ -96,8 +76,6 @@ class OrchestratorConfig:
     default_max_output_tokens: int = 4096
     max_output_tokens_ceiling: int = 8192  # SDK empty-response escalation cap (F-BA-1)
     empty_response_retries: int = 2
-    price_table: PriceTable | None = None
-    hard_cap_micros: int | None = None
     planner_reserve_tokens: int = 4_000
     critic_reserve_tokens: int = 6_000
     attempt_reserve_tokens: int = 20_000
@@ -181,10 +159,6 @@ class OrchestratorConfig:
                 or self.max_concurrent_model_calls < 1):
             raise ValueError("max_concurrent_model_calls must be a positive integer")
 
-    @property
-    def unpriced(self) -> bool:
-        return self.price_table is None
-
     def backpressure_limits(self) -> BackpressureLimits:
         """The §18.5 caps as one registry (D6-2)."""
 
@@ -208,23 +182,6 @@ class OrchestratorConfig:
     def workspaces_root(self) -> Path:
         return self.evidence_root / "workspaces"
 
-    def policies(self) -> ConsumerRuntimePolicies:
-        if self.price_table is None:
-            if self.hard_cap_micros is not None:
-                raise ValueError(
-                    "a hard cap needs a price table (unpriced runs cannot enforce money)"
-                )
-            return ConsumerRuntimePolicies.local_default()
-        return ConsumerRuntimePolicies(
-            "consumer_supplied",
-            False,
-            "fail_closed",
-            estimator=self.price_table.estimator(),
-            budget_policy=BudgetPolicy(
-                hard_cap_micros=self.hard_cap_micros, refuse_on_unknown=True
-            ),
-        )
-
     def to_json(self) -> dict[str, Any]:
         return {
             "planning": {
@@ -242,14 +199,6 @@ class OrchestratorConfig:
             "sdk_lease_ttl_seconds": self.sdk_lease_ttl_seconds,
             "stall_seconds": self.stall_seconds,
             "test_timeout_seconds": self.test_timeout_seconds,
-            "pricing": "unpriced_local"
-            if self.price_table is None
-            else {
-                "snapshot_id": self.price_table.snapshot_id,
-                "input_micros_per_million_tokens": self.price_table.input_micros_per_million_tokens,
-                "output_micros_per_million_tokens": self.price_table.output_micros_per_million_tokens,
-                "hard_cap_micros": self.hard_cap_micros,
-            },
             "reserves": {
                 "planner_tokens": self.planner_reserve_tokens,
                 "critic_tokens": self.critic_reserve_tokens,
@@ -449,19 +398,6 @@ def _check_intent_contexts(
                     raise ValueError("provider admission identity differs from a persisted intent")
 
 
-def _policies_for(config: OrchestratorConfig, profile: RuntimeProfile) -> ConsumerRuntimePolicies:
-    table = profile.price_table
-    if table is None:
-        return ConsumerRuntimePolicies.local_default()
-    return ConsumerRuntimePolicies(
-        "consumer_supplied",
-        False,
-        "fail_closed",
-        estimator=table.estimator(),
-        budget_policy=BudgetPolicy(hard_cap_micros=config.hard_cap_micros, refuse_on_unknown=True),
-    )
-
-
 def assemble_orchestrator_runtime(
     config: OrchestratorConfig,
     provider=None,  # type: ignore[no-untyped-def]
@@ -474,17 +410,14 @@ def assemble_orchestrator_runtime(
     provider_handoff_fence: ProviderHandoffFence | None = None,
 ) -> AssembledOrchestratorRuntime:
     """One pool per runtime profile (D6-5').  ``provider`` alone is the single-profile
-    path every earlier step used: the ``default`` profile with ``config.model`` and
-    ``config.price_table``."""
+    path every earlier step used: the ``default`` profile with ``config.model``."""
 
     config.evidence_root.mkdir(parents=True, exist_ok=True)
     if profiles is None:
         if provider is None:
             raise ValueError("either a provider or runtime profiles are required")
         profiles = {
-            DEFAULT_PROFILE: RuntimeProfile(
-                DEFAULT_PROFILE, provider, config.model, price_table=config.price_table
-            )
+            DEFAULT_PROFILE: RuntimeProfile(DEFAULT_PROFILE, provider, config.model)
         }
     if not profiles:
         raise ValueError("at least one runtime profile is required")
@@ -539,7 +472,7 @@ def assemble_orchestrator_runtime(
             model=profile.model,
             owner_id=config.owner_id,
             lease_ttl_seconds=float(config.sdk_lease_ttl_seconds or 30.0),
-            policies=replace(_policies_for(config, profile), tool_reconciliation=gateway),
+            policies=replace(ConsumerRuntimePolicies.local_default(), tool_reconciliation=gateway),
             default_max_output_tokens=default_out,
             max_output_tokens_ceiling=max(ceiling, default_out),
             empty_response_retries=config.empty_response_retries,
@@ -557,7 +490,7 @@ def assemble_orchestrator_runtime(
         runtime = build_arp_runtime(ports, native.arp_ports(database), owner_scope=OWNER_SCOPE)
         if native.after_build is not None:
             native.after_build(runtime)
-        bridge = AgentBridge(runtime, unpriced=profile.unpriced, caller_for=native.caller_for)
+        bridge = AgentBridge(runtime, caller_for=native.caller_for)
         pools[profile_id] = RuntimePool(
             profile=profile,
             runtime=runtime,
@@ -574,11 +507,9 @@ def assemble_orchestrator_runtime(
 
 
 __all__ = (
-    "CONSUMER_PRICING_KEY",
     "OWNER_SCOPE",
     "AssembledOrchestratorRuntime",
     "OrchestratorConfig",
-    "PriceTable",
     "RuntimePool",
     "assemble_orchestrator_runtime",
     "execution_db_for",

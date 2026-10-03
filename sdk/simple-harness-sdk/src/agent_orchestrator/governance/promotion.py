@@ -57,8 +57,6 @@ NON_PROMOTABLE = frozenset(
         "budget",
         "global_budget",
         "task_max_tokens",  # fixed per-leaf allowance (2026-09-25)
-        "hard_cap_micros",
-        "price_table",
         "planner_reserve_tokens",
         "critic_reserve_tokens",
         "attempt_reserve_tokens",

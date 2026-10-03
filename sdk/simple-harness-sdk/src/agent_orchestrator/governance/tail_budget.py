@@ -30,7 +30,6 @@ def _text(value: str, name: str) -> None:
 @dataclass(frozen=True, slots=True)
 class TailReserve:
     tokens: int
-    cost_micros: int
     tool_calls: int = 0
     attempts: int = 0
 
@@ -46,7 +45,6 @@ class TailAllocation:
     account_id: str
     role: str
     tokens: int
-    cost_micros: int
     tool_calls: int = 0
     counts_attempt: bool = False
 
@@ -55,7 +53,7 @@ class TailAllocation:
         _text(self.account_id, "account")
         if self.role != "critic":
             raise BudgetError("tail allocation role is not a protected role")
-        TailReserve(self.tokens, self.cost_micros, self.tool_calls)
+        TailReserve(tokens=self.tokens, tool_calls=self.tool_calls)
         if self.counts_attempt is not False:
             raise BudgetError("a Critic is a service; it never counts as an Attempt")
 
@@ -132,7 +130,6 @@ class TailBudgetLedger:
             subject_id=subject,
             mission_id=mission_id,
             tokens=reserve.tokens,
-            cost_micros=reserve.cost_micros,
             tool_calls=reserve.tool_calls,
             counts_attempt=False,
         )
@@ -201,12 +198,12 @@ class TailBudgetLedger:
             raise BudgetError("tail reservation is not live")
         if (
             self.ledger.has_unknown_usage(hold["subject_id"])
-            or self.ledger.usage_for(hold["subject_id"])[0]
+            or self.ledger.usage_for(hold["subject_id"])
         ):
             raise BudgetError("tail is not an unused hold")
         totals = {
             name: sum(getattr(a, name) for a in ordered)
-            for name in ("tokens", "cost_micros", "tool_calls")
+            for name in ("tokens", "tool_calls")
         }
         attempts = sum(int(a.counts_attempt) for a in ordered)
         if attempts > hold["remaining_attempts"]:
@@ -260,11 +257,9 @@ class TailBudgetLedger:
         )
         self.store.connection.execute(
             "UPDATE budget_reservations SET reserved_tokens=reserved_tokens-?,"
-            "reserved_cost_micros=reserved_cost_micros-?,"
             "reserved_tool_calls=reserved_tool_calls-?,updated_at=? WHERE subject_id=?",
             (
                 totals["tokens"],
-                totals["cost_micros"],
                 totals["tool_calls"],
                 self.store.now,
                 hold["subject_id"],
@@ -278,7 +273,6 @@ class TailBudgetLedger:
                     subject_id=a.subject_id,
                     mission_id=hold["mission_id"],
                     tokens=a.tokens,
-                    cost_micros=a.cost_micros,
                     tool_calls=a.tool_calls,
                     counts_attempt=a.counts_attempt,
                 )

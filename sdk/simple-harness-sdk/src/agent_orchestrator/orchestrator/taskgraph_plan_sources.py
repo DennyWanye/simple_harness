@@ -200,13 +200,13 @@ class TaskGraphPlanSourceReader:
             network_body = _source_snapshot_payload(local.view.network)
             evidence = world.snapshot()
             predicates = tuple(world.predicates.signatures())
-            # Settlement advances monetary/token/attempt counters without changing
+            # Settlement advances token/attempt counters without changing
             # who still wants the work. Keep the complete account in the budget
             # channel, which is rechecked on continuation, and retain all demand,
             # lifecycle, failure/fuel and shape facts in the immutable demand lane.
             obligation_accounts = [item.to_json() for item in local.obligation_accounts.value]
             demand_accounts = [{key: value for key, value in account.items()
-                if key not in {"consumed_cost_micros", "consumed_tokens", "consumed_attempts"}}
+                if key not in {"consumed_tokens", "consumed_attempts"}}
                 for account in obligation_accounts]
             bodies = {
                 "request": {"request": request.to_json(), "decision": decision_body,

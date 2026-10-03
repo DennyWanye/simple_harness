@@ -307,7 +307,6 @@ def account(
     return ObligationAccountView(
         obligation_id=obligation,
         failure_count=0,
-        consumed_cost_micros=0,
         consumed_attempts=0,
         has_admitted_demand=has_admitted_demand,
         fuel_limit=3,

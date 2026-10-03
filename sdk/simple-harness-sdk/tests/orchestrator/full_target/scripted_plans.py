@@ -213,7 +213,7 @@ def seed_verified_result(
         model="fixture-worker",
         prompt_version="fixture-worker-v1",
         context_version="fixture-v1",
-        reservation=Reservation(tokens=1_000, cost_micros=0),
+        reservation=Reservation(tokens=1_000),
         intent_config={"message": "do the leaf"},
         input_hash="a" * 64,
         inputs=tuple(item.to_json() for item in upstream),

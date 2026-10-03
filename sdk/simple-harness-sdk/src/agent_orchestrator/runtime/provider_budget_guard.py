@@ -21,7 +21,6 @@ from types import MappingProxyType
 from typing import Any
 
 from simple_harness.contracts import canonical_json
-from simple_harness.execution.budget import FrozenPriceEstimator
 from simple_harness.execution.provider_admission import (
     ProviderAdmissionDenied,
     ProviderAdmissionFailure,
@@ -31,8 +30,7 @@ from simple_harness.execution.provider_admission import (
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
 
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, TaskStatus
-from ..governance.budgets import BudgetError, BudgetExhausted
-from ..governance.provider_prices import ProviderPrice
+from ..governance.budgets import BudgetExhausted
 from .first_request_budget import (
     INPUT_CAP_PROTOCOL,
     FirstRequestBudgetUnknown,
@@ -133,19 +131,14 @@ def held_guarded_grants(store) -> int:
     ).fetchone()[0])
 
 
-#: Slot counts an earlier build may have frozen into a v2 admission identity.
-LEGACY_SLOT_RANGE = 16
-
-
 class ProviderBudgetCommitAdapter:
     """Narrow accounting writer; shares CommitService's Store and BudgetLedger."""
 
-    def __init__(self, commit, *, owner: str, fingerprint: str, accepted: frozenset[str] | None = None) -> None:
+    def __init__(self, commit, *, owner: str, fingerprint: str) -> None:
         self.commit = commit
         self.store = commit.store
         self.owner = owner
         self.fingerprint = fingerprint
-        self.accepted = frozenset({fingerprint}) if accepted is None else accepted
 
     def authority(self, *, agent_id: str, turn_id: str):
         rows = self.store.connection.execute(
@@ -160,7 +153,7 @@ class ProviderBudgetCommitAdapter:
             raise _deny("provider subject Mission is terminal")
         if intent.state not in {"AGENT_CREATED", "SUBMITTED"}:
             raise _deny("provider dispatch intent is stopped")
-        if intent.config.get("provider_admission_fingerprint") not in self.accepted:
+        if intent.config.get("provider_admission_fingerprint") != self.fingerprint:
             raise _deny("provider admission differs from frozen intent")
         task_id = intent.config.get("task_id")
         lease = intent
@@ -229,19 +222,13 @@ class ProviderBudgetCommitAdapter:
         return (outcome is not None and outcome["document"].intent_id == source["intent_id"]
             and outcome["review_package_id"] == intent.config.get("review_package_id"))
 
-    def grow(self, reservation, *, required: int, required_cost_micros: int = 0) -> None:
-        if (required <= reservation["reserved_tokens"]
-                and required_cost_micros <= reservation["reserved_cost_micros"]):
+    def grow(self, reservation, *, required: int) -> None:
+        if required <= reservation["reserved_tokens"]:
             return
-        self.commit.ledger.grow(
-            subject_id=reservation["subject_id"],
-            tokens=required,
-            cost_micros=required_cost_micros,
-        )
+        self.commit.ledger.grow(subject_id=reservation["subject_id"], tokens=required)
 
 
 class ProviderBudgetGuard:
-    supports_priced_budgets = True
     input_cap_protocol = INPUT_CAP_PROTOCOL
 
     def __init__(
@@ -252,23 +239,8 @@ class ProviderBudgetGuard:
         estimator: TokenEstimatorPort,
         max_slots: int,
         poll_seconds: float = 0.01,
-        priced: bool = False,
-        price_tables: Mapping[str, FrozenPriceEstimator | None] | None = None,
         profile_slots: Mapping[str, int] | None = None,
     ) -> None:
-        if type(priced) is not bool:
-            raise ValueError("priced must be an explicit boolean")
-        self.requires_price = priced
-        self._price_tables = None if price_tables is None else MappingProxyType(dict(price_tables))
-        if self.price_tables is not None and any(
-            not isinstance(key, str)
-            or not key
-            or (value is not None and not isinstance(value, FrozenPriceEstimator))
-            for key, value in self.price_tables.items()
-        ):
-            raise ValueError("price tables must be explicitly frozen per profile")
-        if priced and not self.price_tables:
-            raise ValueError("priced admission requires frozen profile price tables")
         if not owner or not callable(getattr(estimator, "estimate_input_tokens", None)):
             raise ValueError("provider admission requires owner and an explicit estimator")
         for name in ("fingerprint", "bound_protocol"):
@@ -292,33 +264,17 @@ class ProviderBudgetGuard:
             raise ValueError("provider admission polling must be in (0,1]")
         self.estimator = estimator
         # NEXT-TG-1.0 §9 多任务并发 (2026-09-29): the physical slot count is capacity, not
-        # how one frozen request is accounted.  v3 leaves it out, so raising the slots
-        # keeps every frozen intent's identity; a request frozen by an earlier build (v2
-        # hashed the slot count in) is the same accounting identity under any slot count.
-        self.fingerprint = self._identity(version=3)
-        self.accepted_fingerprints = frozenset({
-            self.fingerprint,
-            *(
-                self.legacy_fingerprint(max_slots=n, profile_slots=variant)
-                for n in range(1, LEGACY_SLOT_RANGE + 1)
-                for variant in (
-                    None,
-                    None if self.profile_slots is None else dict(self.profile_slots),
-                    None if self.profile_slots is None else {key: n for key in self.profile_slots},
-                )
-            ),
-        })
+        # how one frozen request is accounted, so it stays out of the identity and raising
+        # the slots keeps every frozen intent's identity.  v4 (2026-10-03) accounts tokens
+        # only: no price contract is part of it.
+        self.fingerprint = self._identity()
         self.adapter = ProviderBudgetCommitAdapter(
-            commit, owner=owner, fingerprint=self.fingerprint, accepted=self.accepted_fingerprints
+            commit, owner=owner, fingerprint=self.fingerprint
         )
         self.store = commit.store
         self.poll_seconds = poll_seconds
         self._waiting: dict[str, tuple[str, str]] = {}
         self._clock = time.time
-
-    @property
-    def price_tables(self) -> Mapping[str, FrozenPriceEstimator | None] | None:
-        return self._price_tables
 
     async def acquire(
         self, *, request, record, cancel, uow, execution_lease
@@ -343,34 +299,18 @@ class ProviderBudgetGuard:
         finally:
             self._waiting.pop(record.invocation_id, None)
 
-    def _identity(self, *, version: int, max_slots: int | None = None,
-                  profile_slots: Mapping[str, int] | None = None) -> str:
+    def _identity(self) -> str:
         body: dict[str, Any] = {
             "estimator": self.estimator.fingerprint,
             "protocol": self.estimator.bound_protocol,
             "prior_output": self.estimator.requires_prior_output_reserve,
+            "version": 4,
         }
-        if version == 2:  # the earlier builds' byte order: slots between prior_output and version
-            body["max_slots"] = max_slots
-            if profile_slots is not None:
-                body["profile_slots"] = dict(profile_slots)
-        body.update({
-            "version": version,
-            "requires_price": self.requires_price,
-            "prices": None if self.price_tables is None else {
-                key: None if value is None else value.snapshot_json()
-                for key, value in self.price_tables.items()
-            },
-        })
-        return f"provider-budget-admission-v{version}:" + sha256(canonical_json(body).encode()).hexdigest()
-
-    def legacy_fingerprint(self, *, max_slots: int, profile_slots: Mapping[str, int] | None) -> str:
-        """The v2 identity an earlier build froze for this same accounting under that slot count."""
-        return self._identity(version=2, max_slots=max_slots, profile_slots=profile_slots)
+        return "provider-budget-admission-v4:" + sha256(canonical_json(body).encode()).hexdigest()
 
     def accepts(self, fingerprint: object) -> bool:
         """A frozen request's admission identity is this accounting (any slot count)."""
-        return fingerprint in self.accepted_fingerprints
+        return fingerprint == self.fingerprint
 
     def waiting_for_slot(self, *, agent_id: str, turn_id: str) -> bool:
         """Actual local waiters only; not a synthetic SDK progress increment."""
@@ -379,12 +319,6 @@ class ProviderBudgetGuard:
     async def _acquire(
         self, *, request, record, cancel, uow, execution_lease
     ) -> ProviderAdmissionTicket:
-        try:
-            sdk_price = ProviderPrice.from_record(record)
-        except BudgetError as exc:
-            raise _deny(str(exc)) from exc
-        price_json = None if sdk_price is None else sdk_price.json
-        price_digest = None if sdk_price is None else sdk_price.digest
         # Resolve identities from SDK records, never provider-message metadata.
         binding = uow.read_agent_binding_for_run(record.run_id.value)
         turn = uow.read_open_agent_turn(record.run_id.value)
@@ -393,23 +327,6 @@ class ProviderBudgetGuard:
         profile = binding.config_json.get("model_profile_ref")
         if self.profile_slots is not None and profile not in self.profile_slots:
             raise _deny("provider profile has no declared physical slot limit")
-        if self.price_tables is not None and profile not in self.price_tables:
-            raise _deny("provider profile has no declared price contract")
-        expected_price = None if self.price_tables is None else self.price_tables[profile]
-        if expected_price is None:
-            sentinel = FrozenPriceEstimator("consumer-v1", "consumer", 0, 0)
-            if sdk_price is not None and sdk_price.digest != sentinel.snapshot_digest:
-                raise _deny("unpriced profile received a different frozen provider price")
-            if self.requires_price:
-                raise _deny("priced admission requires a priced profile")
-            price = None
-        else:
-            if sdk_price is None or sdk_price.digest != expected_price.snapshot_digest:
-                raise _deny(
-                    "provider price differs from the frozen profile price",
-                    reason_code="price_mismatch",
-                )
-            price = sdk_price
         limits = binding.config_json.get("limits", {})
         seconds = limits.get("turn_deadline_seconds")
         if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
@@ -477,8 +394,6 @@ class ProviderBudgetGuard:
                             != frozen_first.get("provider_input_cap")
                             or intent.config.get("provider_output_ceiling")
                             != frozen_first.get("output_ceiling")
-                            or intent.config.get("provider_first_cost_micros")
-                            != frozen_first.get("cost_micros")
                         ):
                             raise _deny(
                                 "FIRST Critic cap differs from original protected tail",
@@ -520,14 +435,6 @@ class ProviderBudgetGuard:
                             "provider output exceeds frozen FIRST Critic ceiling",
                             reason_code="input_cap_identity",
                         )
-                    expected_cost = (
-                        0 if price is None else price.cost(cap.max_input_tokens, ceiling)
-                    )
-                    if intent.config.get("provider_first_cost_micros") != expected_cost:
-                        raise _deny(
-                            "FIRST Critic cost differs from frozen provider price",
-                            reason_code="input_cap_identity",
-                        )
                     if public_input < 1:
                         raise _deny(
                             "provider estimator returned no input count",
@@ -556,26 +463,12 @@ class ProviderBudgetGuard:
                         continue
                     if str(previous.state) == "claimed":
                         continue  # a proven never-handed-off request has no usage
-                    previous_price = ProviderPrice.from_record(previous)
-                    if (None if previous_price is None else previous_price.digest) != price_digest:
-                        raise _deny(
-                            "Agent provider price changed from its frozen history",
-                            reason_code="price_mismatch",
-                        )
                     actual = _usage(previous) if str(previous.state) in {"succeeded", "failed"} else None
-                    resolved = actual is not None and (
-                        price is None
-                        or previous_price is None
-                        or previous_price.known_charge(
-                            previous, input_tokens=actual[0], output_tokens=actual[1]
-                        )
-                        is not None
-                    )
-                    if resolved:
+                    if actual is not None:
                         prior_output += actual[1]
                         continue
                     # Rule 2026-09-24 (may overcount, never undercount): an earlier call whose
-                    # usage or price is unresolved keeps its own grant held (UNKNOWN, awaiting
+                    # usage is unresolved keeps its own grant held (UNKNOWN, awaiting
                     # late accounting) but never freezes the Agent's next call — its output is
                     # bounded by its request's own cap, a proven upper bound.
                     cap = request_output_cap(previous)
@@ -587,7 +480,6 @@ class ProviderBudgetGuard:
                     prior_output += cap
                 extra = prior_output if self.estimator.requires_prior_output_reserve else 0
                 upper = public_input + extra + output
-                cost_upper = None if price is None else price.cost(public_input + extra, output)
                 row = self._row(ticket)
                 if row is not None and row["state"] != "RELEASED":
                     raise _deny("provider invocation already owns an admission grant")
@@ -605,9 +497,6 @@ class ProviderBudgetGuard:
                         "prior_output_upper": extra,
                         "output_ceiling": output,
                         "total_upper": upper,
-                        "price_json": price_json,
-                        "price_digest": price_digest,
-                        "cost_upper_micros": cost_upper,
                     }
                     if any(row[key] != value for key, value in expected.items()):
                         raise _deny("released provider grant identity or allowance changed")
@@ -671,21 +560,7 @@ class ProviderBudgetGuard:
                             "existing Agent history predates the provider admission contract"
                         )
                     try:
-                        costs = self.store.connection.execute(
-                            "SELECT actual_cost_micros,cost_upper_micros,state "
-                            "FROM provider_token_grants WHERE subject_id=? AND state!='RELEASED'",
-                            (intent.subject_id,),
-                        ).fetchall()
-                        if price is not None and any(c[1] is None for c in costs):
-                            raise _deny("priced subject contains unpriced provider history")
-                        if price is None and any(c[1] is not None for c in costs):
-                            raise _deny("unpriced subject contains priced provider history")
-                        spent_cost = sum(c[0] if c[0] is not None else (c[1] or 0) for c in costs)
-                        self.adapter.grow(
-                            reservation,
-                            required=int(spent) + upper,
-                            required_cost_micros=spent_cost + (cost_upper or 0),
-                        )
+                        self.adapter.grow(reservation, required=int(spent) + upper)
                     except BudgetExhausted as exc:
                         raise _deny(
                             str(exc),
@@ -697,7 +572,6 @@ class ProviderBudgetGuard:
                             mission_id=intent.mission_id,
                             subject_id=intent.subject_id,
                             request_tokens=upper,
-                            request_cost_micros=cost_upper,
                         ) from exc
                     self.store.connection.execute(
                         "INSERT INTO provider_token_grants("
@@ -705,8 +579,8 @@ class ProviderBudgetGuard:
                         "subject_id,agent_id,turn_id,intent_id,owner,sdk_owner,sdk_epoch,"
                         "fingerprint,request_hash,wire_hash,"
                         "public_input_upper,prior_output_upper,output_ceiling,total_upper,"
-                        "price_json,price_digest,cost_upper_micros,state,created_at,updated_at)"
-                        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'RESERVED',?,?)"
+                        "state,created_at,updated_at)"
+                        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'RESERVED',?,?)"
                         " ON CONFLICT(invocation_id,handoff_ordinal) DO UPDATE SET "
                         "owner=excluded.owner,"
                         "sdk_owner=excluded.sdk_owner,sdk_epoch=excluded.sdk_epoch,"
@@ -730,9 +604,6 @@ class ProviderBudgetGuard:
                             extra,
                             output,
                             upper,
-                            price_json,
-                            price_digest,
-                            cost_upper,
                             self.store.now,
                             self.store.now,
                         ),
@@ -812,29 +683,6 @@ class ProviderBudgetGuard:
             return False  # no evidence that a different pool's call never started
         if record.request_fingerprint != row["request_hash"]:
             raise _deny("SDK record differs from admission identity")
-        price = ProviderPrice.from_record(record)
-        # Migration v11 contained only token/unpriced grants. Their absent price
-        # columns are compatible only with the exact original SDK zero sentinel.
-        legacy_unpriced = (
-            row["price_digest"] is None
-            and row["price_json"] is None
-            and row["cost_upper_micros"] is None
-            and (
-                price is None
-                or price.digest
-                == FrozenPriceEstimator("consumer-v1", "consumer", 0, 0).snapshot_digest
-            )
-        )
-        if not legacy_unpriced and (
-            (None if price is None else price.digest) != row["price_digest"]
-            or (None if price is None else price.json) != row["price_json"]
-        ):
-            raise _deny(
-                "observed provider price differs from the admitted snapshot",
-                reason_code="price_mismatch",
-            )
-        if row["cost_upper_micros"] is None:
-            price = None  # original declared unpriced profile, not a zero-priced claim
         state = str(record.state)
         if record.handoff_attempt < ticket.handoff_ordinal and state == "claimed":
             # This callback runs after the synchronous SDK CAS returned/failed.
@@ -855,25 +703,12 @@ class ProviderBudgetGuard:
                 self._update(ticket, "UNKNOWN")
             return False
         total = sum(actual)
-        actual_cost = (
-            None
-            if price is None
-            else price.known_charge(record, input_tokens=actual[0], output_tokens=actual[1])
-        )
-        if price is not None and actual_cost is None:
-            self._update(ticket, "UNKNOWN", actual_tokens=total, actual_output_tokens=actual[1])
-            return False
-        overrun = (
-            total > row["total_upper"]
-            or actual[1] > row["output_ceiling"]
-            or (actual_cost is not None and actual_cost > row["cost_upper_micros"])
-        )
+        overrun = total > row["total_upper"] or actual[1] > row["output_ceiling"]
         self._update(
             ticket,
             "OVERRUN" if overrun else "SETTLED",
             actual_tokens=total,
             actual_output_tokens=actual[1],
-            actual_cost_micros=actual_cost,
         )
         return overrun
 

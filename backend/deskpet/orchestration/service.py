@@ -300,7 +300,6 @@ class OrchestrationService:
             lease_seconds=self.settings.lease_seconds,
             deployment_policy=self._deployment,
             sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
-            price_table=None,  # unpriced: money is recorded as null, never 0
             task_max_tokens=self.settings.task_max_tokens,  # fixed per-leaf allowance
             **knobs,
         )

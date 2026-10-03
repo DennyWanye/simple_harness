@@ -5,8 +5,7 @@
 
 What can be filled from this build's records: system health (Attempt outcomes,
 timeouts, backpressure transitions and the peak queue observations), cost (tokens by
-role and by runtime profile; money only when the deployment is priced — otherwise
-``null`` with the reason, never zero), knowledge reuse, verification pass rate, Mission
+role and by runtime profile; orchestration records no money), knowledge reuse, verification pass rate, Mission
 duration, and the role distribution against §29.2's starting mix (all eight §9.2 roles,
 ``null`` where the original gives no share)."""
 
@@ -29,7 +28,7 @@ def _service_role(subject_id: str) -> str:
     return "service"
 
 
-def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
+def metrics(store: Store, mission_id: str) -> dict[str, Any]:
     attempts = [a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id)]
     by_id = {a.id: a for a in attempts}
     statuses = Counter(str(a.status) for a in attempts)
@@ -42,14 +41,12 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
     }
     tokens_by_role: Counter[str] = Counter()
     tokens_by_profile: Counter[str] = Counter()
-    cost_by_role: Counter[str] = Counter()
-    cost_by_profile: Counter[str] = Counter()
     rows = store.connection.execute(
-        "SELECT subject_id, input_tokens + output_tokens, cost_micros FROM imported_usage"
+        "SELECT subject_id, input_tokens + output_tokens FROM imported_usage"
         " WHERE mission_id = ?",
         (mission_id,),
     ).fetchall()
-    for subject_id, tokens, cost in rows:
+    for subject_id, tokens in rows:
         attempt = by_id.get(subject_id)
         if attempt is not None:
             role, profile = attempt.role, attempt.runtime_profile_id
@@ -59,9 +56,6 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
             profile = str((intent.config if intent else {}).get("runtime_profile_id", "default"))
         tokens_by_role[role] += int(tokens)
         tokens_by_profile[profile] += int(tokens)
-        if cost is not None:
-            cost_by_role[role] += int(cost)
-            cost_by_profile[profile] += int(cost)
     passed = store.count_events(mission_id, "VerificationPassed")
     failed = store.count_events(mission_id, "VerificationFailed")
     events = store.iter_events(mission_id)
@@ -124,11 +118,6 @@ def metrics(store: Store, mission_id: str, *, unpriced: bool) -> dict[str, Any]:
         "cost": {
             "tokens_by_role": dict(tokens_by_role),
             "tokens_by_profile": dict(tokens_by_profile),
-            "cost_micros_by_role": None if unpriced else dict(cost_by_role),
-            "cost_micros_by_profile": None if unpriced else dict(cost_by_profile),
-            "cost_note": "unpriced deployment: money is not recorded (never written as zero)"
-            if unpriced
-            else None,
         },
         "verification": {
             "passed": passed,
