@@ -102,3 +102,56 @@ def test_handoff_refused_when_scope_epoch_moved(tmp_path):
             return json.dumps({"state": after["state"], "refusal": refusal}, ensure_ascii=False)
 
     print(asyncio.run(case()))
+
+
+def test_handoff_goes_through_once_the_witness_is_reissued(tmp_path):
+    """纪元动了、上游验收仍然当前：发布步骤的输入见证每轮按验收现状重发，新纪元下的见证一出来，
+    交接就照常放行，只发出去一次（HTN 补齐 F1，阶段 C 用例 12 欠的后一半）。
+
+    **改坏检验**：输入见证不重发 → 一直按旧纪元拒绝 → 没有发出去 → 变红。"""
+    from test_input_revisions import relay
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        contexts = package.get("method_proposal_contexts") or []
+        if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
+            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": relay(contexts[0], pin=False), "rationale": "先写笔记，再接着写周报。"}}, "两步。")
+        return planner_reply(request)
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner),
+                                 connectors={"file_publish": connector}, deployment_policy=policy) as world:
+            store = world.store
+            mission_id = world.create({"goal": "写笔记，再接着写周报并发布",
+                                       "success_criteria": ["file:notes/a.md", "file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "validity-reissue"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            approvals: list[dict[str, Any]] = []
+            for _ in range(30):
+                await world.drain()
+                approvals = [a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"]
+                if approvals:
+                    break
+            [action] = store.list_actions(mission_id)[-1:]
+
+            def witnesses() -> list[dict[str, Any]]:
+                return [json.loads(row[0]) for row in store.connection.execute(
+                    "SELECT witness_json FROM validity_witnesses WHERE mission_id=? AND consumer_id=?",
+                    (mission_id, action["task_id"]))]
+
+            assert {(w["scope_id"], w["scope_epoch"], w["decision"]) for w in witnesses()} == {("mission", 0, "USABLE")}
+            HtnStore(store).bump_epoch(mission_id, "mission", bumped_by="test-world-changed")
+            world.control.decide(approvals[0]["request_id"], "approve")
+            mission = await world.run_until_settled(mission_id, rounds=20)
+            assert mission.status.value == "COMPLETED", mission.final_report
+            assert ("mission", 1, "USABLE") in {(w["scope_id"], w["scope_epoch"], w["decision"]) for w in witnesses()}
+            assert int(store.get_action(action["action_key"]).get("handoffs") or 0) == 1
+            assert len(list(published.rglob("*.md"))) == 1
+
+    asyncio.run(case())
