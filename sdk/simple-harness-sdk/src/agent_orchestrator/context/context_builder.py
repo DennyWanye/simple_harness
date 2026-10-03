@@ -40,7 +40,7 @@ from ..governance.domains import (
 from ..observability.secrets import environment_secrets, find_secrets
 from .retrieval import KnowledgeContext
 
-CONTEXT_BUILDER_VERSION = "context-builder-v4"  # host support 0.9.8: deployed_verification_layers
+CONTEXT_BUILDER_VERSION = "context-builder-v5"  # host support 0.9.8: deployed_verification_layers
 VISIBILITY_TEMPLATES = ("worker", "verifier")
 ENABLED_TEMPLATES = ("worker", "verifier")
 
@@ -107,7 +107,9 @@ def _knowledge_section(
                 if retrieval["status"] != "ok"
                 else domain.context_wording.get(
                     "knowledge_note",
-                    "只有 VERIFIED 条目可以当作事实引用；引用时把 id 写进 used_knowledge",
+                    "verified_knowledge 里的条目可以当作事实引用；引用时把它的 ref（编号@版本）写进 "
+                    "used_knowledge。可用 knowledge_list / knowledge_read 查目录与原文；目录里 "
+                    "layer=candidate 的只是线索，不是事实",
                 )
             ),
         },

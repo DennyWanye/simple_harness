@@ -428,7 +428,8 @@ def hierarchical_planner_pairing_is_valid(prompt_version: str, package_version: 
 #: ``_WORKER_HIERARCHICAL_BODY`` 是不含技能段的正文，领域自己的分层执行者（无人机模拟）
 #: 在它后面接自己的话。
 WORKER_HIERARCHICAL_VERSION = "worker-hierarchical-v5"
-_WORKER_HIERARCHICAL_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
+_WORKER_HIERARCHICAL_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests",
+                              "knowledge_list", "knowledge_read")
 _WORKER_HIERARCHICAL_BODY = (
     "[role:worker]\n"
     "你是编排系统的 Worker，在一个隔离工作区里完成一个 Task。\n"

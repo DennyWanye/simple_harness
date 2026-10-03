@@ -721,6 +721,10 @@ _INTERPRETATION_FEEDBACK = {
     "DUPLICATE_CRITERION": "a criterion_id appears more than once in assessments; give each exactly once.",
     "FINDING_SCOPE": "a finding names a criterion_id outside this review's criterion_ids.",
     "MANDATORY_CRITERIA_INVALID": "assessments must cover exactly the given criterion_ids, no more and no fewer.",
+    "CLAIM_SCOPE": (
+        "claims named a claim_id that is not in package.claims_to_confirm; confirm only the "
+        "claims listed there (leave claims out when the list is empty)."
+    ),
 }
 
 

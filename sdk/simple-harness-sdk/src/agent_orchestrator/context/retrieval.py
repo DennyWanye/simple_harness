@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..contracts import Claim, ClaimStatus, Task
-from ..memory.verified_knowledge import KnowledgeRecord
+from ..memory.verified_knowledge import KnowledgeRecord, knowledge_ref
 
 RETRIEVAL_VERSION = "retrieval-v3-evidence-relevance"
 WEIGHTS = {
@@ -161,7 +161,6 @@ def rank_knowledge(
     tasks_by_id: Mapping[str, Task],
     limit: int = DEFAULT_LIMIT,
     query_text: str | None = None,
-    stale: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
 ) -> RetrievalResult:
     """Deterministic ranking of one Mission's knowledge for ``task`` (D4-9)."""
 
@@ -176,17 +175,15 @@ def rank_knowledge(
         if r.status == "SUPERSEDED"
     ]
     superseded_ids = [str(item["id"]) for item in superseded]
-    stale_dropped = {
-        r.id: [dict(reason) for reason in stale[r.id]] for r in own if stale and stale.get(r.id)
-    }
-    live = [r for r in own if r.status == "VERIFIED" and r.id not in stale_dropped]
+    # Out-of-date knowledge never reaches here: the caller filters by knowledge_standing.
+    live = [r for r in own if r.status == "VERIFIED"]
     if not live:
         return RetrievalResult(
             RETRIEVAL_VERSION,
             "ok",
             (),
             tuple(superseded),
-            {"superseded": superseded_ids, **({"stale": stale_dropped} if stale_dropped else {})},
+            {"superseded": superseded_ids},
             considered,
             limit=limit,
         )
@@ -205,7 +202,7 @@ def rank_knowledge(
         }
         # Match the complete, case-sensitive identity or evidence reference. Do
         # not tokenize paths: shared directories/basenames are not exact hits.
-        # This runs after Mission, status and stale filtering and before dedup.
+        # This runs after Mission and status filtering and before dedup.
         if reference and (reference == record.id or reference in record.evidence):
             parts["exact_reference"] = 1.0
         if parts["relevance"] == 0 and "exact_reference" not in parts:
@@ -254,7 +251,6 @@ def rank_knowledge(
             "superseded": superseded_ids,
             "over_limit": truncated,
             "no_relevance": unrelated,
-            **({"stale": stale_dropped} if stale_dropped else {}),
         },
         considered,
         reason="no_relevant_match_use_knowledge_catalog" if not kept else None,
@@ -335,6 +331,9 @@ def knowledge_view(record: KnowledgeRecord, scored: Scored | None = None) -> dic
     view = {
         "id": record.id,
         "version": record.version,
+        # how a result cites it in used_knowledge, and where its verification came from
+        "ref": knowledge_ref(record.id, record.version),
+        "basis": str(record.verifier.get("basis") or "test_observation"),
         "status": record.status,
         "key": record.key,
         "stance": record.stance,
@@ -344,7 +343,8 @@ def knowledge_view(record: KnowledgeRecord, scored: Scored | None = None) -> dic
         "evidence": list(record.evidence),
         "source_task": record.source_task,
         "source_attempt": record.source_attempt,
-        "dependencies": list(record.dependencies),
+        "dependencies": [knowledge_ref(item["id"], item["version"])
+                         for item in record.support.get("knowledge", ())],
         "used_by": list(record.used_by),
         "disputed_by": list(record.disputed_by),
         "score": None if scored is None else round(scored.score, 4),

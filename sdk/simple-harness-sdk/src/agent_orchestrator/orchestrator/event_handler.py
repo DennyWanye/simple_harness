@@ -102,6 +102,7 @@ from ..governance.policies import action_decision, deployed_layers, effective_to
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
+from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE, knowledge_standing
 from ..memory.summaries import build_summaries
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..graph.terminal import terminal_task
@@ -5228,7 +5229,10 @@ class Orchestrator:
         except InjectedCrash as error:
             raise RetrievalUnavailable(str(error)) from error
         try:
-            records = self.store.list_knowledge(mission.id)
+            # 过时的知识不推给任何人：是否当前只在 knowledge_standing 一处判定（已取代的
+            # 照旧交给排序，它会列进"已被取代"名单）
+            records = [record for record in self.store.list_knowledge(mission.id)
+                       if not knowledge_standing(self.store, record).startswith(KNOWLEDGE_STALE)]
             claims = self.store.list_mission_claims(mission.id)
             summaries = build_summaries(self.store, mission.id)
             disputes = disputed_claims(claims, mission_id=mission.id)

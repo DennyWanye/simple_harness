@@ -40,23 +40,34 @@ class Contradiction:
         return self.other.status is ClaimStatus.VERIFIED
 
 
-def find_contradiction(
-    claim: Claim, existing: Sequence[Claim]
-) -> Contradiction | None:
-    """The first existing claim ``claim`` contradicts (deterministic order: by id)."""
+def contradictions(claim: Claim, existing: Sequence[Claim]) -> list[Contradiction]:
+    """Every existing claim ``claim`` contradicts (deterministic order: by id).
 
+    The one structural rule: another step's live claim that this claim names in
+    ``contradicts``, or that speaks about the same subject ``key`` with another stance."""
+
+    found = []
     for other in sorted(existing, key=lambda item: item.id):
         if other.id == claim.id or other.mission_id != claim.mission_id:
             continue
         if other.status not in CONFLICTABLE or other.source_task == claim.source_task:
             continue
         if other.id in claim.contradicts:
-            return Contradiction(
+            found.append(Contradiction(
                 claim, other, other.key or claim.key or f"claim:{other.id}", "explicit"
-            )
-        if claim.key is not None and other.key == claim.key and other.stance != claim.stance:
-            return Contradiction(claim, other, claim.key, "stance")
-    return None
+            ))
+        elif claim.key is not None and other.key == claim.key and other.stance != claim.stance:
+            found.append(Contradiction(claim, other, claim.key, "stance"))
+    return found
+
+
+def find_contradiction(
+    claim: Claim, existing: Sequence[Claim]
+) -> Contradiction | None:
+    """The first existing claim ``claim`` contradicts."""
+
+    found = contradictions(claim, existing)
+    return found[0] if found else None
 
 
 def mission_disputes(store: Store, mission_id: str) -> list[dict[str, Any]]:
@@ -89,6 +100,7 @@ def mission_disputes(store: Store, mission_id: str) -> list[dict[str, Any]]:
 __all__ = (
     "CONFLICTABLE",
     "Contradiction",
+    "contradictions",
     "find_contradiction",
     "mission_disputes",
 )

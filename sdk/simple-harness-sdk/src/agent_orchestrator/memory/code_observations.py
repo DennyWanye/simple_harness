@@ -115,7 +115,6 @@ def scoped_test_observations(
                 source_result=envelope.id,
                 evidence=evidence,
                 verifier=basis,
-                dependencies=envelope.used_knowledge,
                 created_at=now,
                 evidence_trust=("trusted",),
             )

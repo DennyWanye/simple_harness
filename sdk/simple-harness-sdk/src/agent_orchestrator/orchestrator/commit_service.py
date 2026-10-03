@@ -13,6 +13,7 @@ Orchestrator, the API and the recovery path do.
 
 from __future__ import annotations
 
+import hashlib
 import contextlib
 
 import json
@@ -65,7 +66,10 @@ from ..governance.domains import (
 from ..governance.policies import DeploymentPolicy
 from ..memory.claims import grade_claim
 from ..memory.summaries import refresh_summaries
-from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord
+from ..memory.knowledge_standing import CURRENT as KNOWLEDGE_CURRENT
+from .review_adjudication import accepted_or_adjudicated, adjudication_of
+from ..memory.knowledge_standing import knowledge_standing
+from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord, parse_knowledge_ref
 from ..observability.lineage import lineage
 from ..governance.budget_limits import inherit_limits
 from ..graph.terminal import terminal_task
@@ -983,13 +987,21 @@ class CommitService(ProtectedTailCommitsMixin,
         task: Task,
         attempt: Attempt,
         stored: StoredResult,
+        review: Any = None,
     ) -> list[dict[str, Any]]:
         """D4-2/D4-3/D4-4/D4-5 inside the accept transaction: grade every claim of the
         accepted result from the verification that ran, project the VERIFIED ones into
         the Verified Knowledge store with their provenance, record the reuse chain of
-        ``used_knowledge`` and apply an explicit, legal supersession."""
+        ``used_knowledge`` and apply an explicit, legal supersession.
+
+        阶段 C：一条结论成为"已验证"有两个来源——系统自己跑过的测试观察，或独立审阅员在
+        正式审阅记录（``review``）里逐条确认。每条入库的知识自带它的依据（``support``：
+        来源验收、确认时引用的证据产物、本步用过的知识），之后是否仍然当前只读它。"""
 
         envelope = stored.envelope
+        confirmed = self._review_confirmations(mission, envelope.id, review)
+        used = {knowledge_id: version
+                for knowledge_id, version in map(parse_knowledge_ref, envelope.used_knowledge)}
         domain = self.domain_for(mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
         artifact_paths = [
@@ -1016,9 +1028,9 @@ class CommitService(ProtectedTailCommitsMixin,
             for ref in proposal.evidence or envelope.evidence:
                 if ref.startswith("knowledge:"):
                     record = self._store.get_knowledge(ref.removeprefix("knowledge:"))
-                    if (record is not None and record.id in envelope.used_knowledge
-                            and record.mission_id == mission.id and record.status == "VERIFIED"
-                            and record.superseded_by is None
+                    if (record is not None and used.get(record.id) == record.version
+                            and record.mission_id == mission.id
+                            and knowledge_standing(self._store, record) == KNOWLEDGE_CURRENT
                             and self._accepted_result(record.source_result)):
                         resolved_refs.add(ref)
                 elif ref.startswith("tool-run:"):
@@ -1074,6 +1086,17 @@ class CommitService(ProtectedTailCommitsMixin,
                 dict(grade.basis, layer=grade.basis.get("layer", "grading")),
             )
             target_status = grade.status
+            verifier = dict(grade.basis)
+            confirmation = confirmed.get(claim.id)
+            if (confirmation is not None and target_status is not ClaimStatus.VERIFIED
+                    and confirmation["content_sha256"]
+                    == hashlib.sha256(claim.content.encode("utf-8")).hexdigest()):
+                # The independent reviewer confirmed this claim against evidence other
+                # than the reviewed result itself: that is what makes it knowledge.
+                target_status = ClaimStatus.VERIFIED
+                verifier = {key: value for key, value in confirmation.items() if key != "content_sha256"}
+                metadata["grade"] = "verified"
+                metadata["basis"] = {"layer": "review", "reason": "confirmed by the independent review"}
             # D4-6': conflict precedes grading — a contested claim is capped at DISPUTED
             # and never projected, whatever its own evidence says
             contradiction = find_contradiction(claim, existing_claims)
@@ -1110,11 +1133,12 @@ class CommitService(ProtectedTailCommitsMixin,
                     source_attempt=attempt.id,
                     source_result=envelope.id,
                     evidence=updated.evidence,
-                    verifier=dict(grade.basis),
-                    dependencies=envelope.used_knowledge,
+                    verifier=verifier,
                     created_at=self._store.now,
                     supersedes=supersedes,
                     evidence_trust=grade.evidence_trust,
+                    support=self._knowledge_support(
+                        mission, task, stored, updated.id, updated.evidence, confirmation),
                 )
                 self._store.upsert_knowledge(record)
                 self._emit(
@@ -1129,39 +1153,108 @@ class CommitService(ProtectedTailCommitsMixin,
                         "stance": record.stance,
                         "verifier": dict(record.verifier),
                         "supersedes": supersedes,
+                        "basis": record.verifier.get("basis", "test_observation"),
+                        "support": dict(record.support),
                     },
                 )
                 if supersedes is not None:
                     self._supersede_knowledge(supersedes, by=record.id)
         for observation, record in observations:
+            record = replace(
+                record, verifier={**dict(record.verifier), "basis": "test_observation"},
+                support=self._knowledge_support(mission, task, stored, record.id, record.evidence, None))
             self._store.upsert_claim(observation)
             self._store.upsert_knowledge(record)
             report.append({"claim_id": observation.id, "status": "VERIFIED", "key": None})
             self._emit("KnowledgeCommitted", mission.id, key=record.id,
                        task_id=task.id, attempt_id=attempt.id,
                        payload={"knowledge_id": record.id, "verifier": dict(record.verifier),
-                                "system_observation": True})
-        for reference in envelope.used_knowledge:
-            used = self._store.get_knowledge(reference)
-            if used is None or used.mission_id != mission.id or used.status != "VERIFIED":
+                                "system_observation": True, "basis": "test_observation",
+                                "support": dict(record.support)})
+        for knowledge_id in used:
+            source = self._store.get_knowledge(knowledge_id)
+            if source is None or source.mission_id != mission.id or source.status != "VERIFIED":
                 continue
-            if task.id not in used.used_by:
-                self._store.upsert_knowledge(replace(used, used_by=(*used.used_by, task.id)))
+            if task.id not in source.used_by:
+                self._store.upsert_knowledge(replace(source, used_by=(*source.used_by, task.id)))
             self._emit(
                 "KnowledgeUsed",
                 mission.id,
-                key=f"{envelope.id}:{used.id}",
+                key=f"{envelope.id}:{source.id}",
                 task_id=task.id,
                 attempt_id=attempt.id,
                 payload={
-                    "knowledge_id": used.id,
-                    "version": used.version,
+                    "knowledge_id": source.id,
+                    "version": source.version,
                     "result_id": envelope.id,
-                    "source_task": used.source_task,
-                    "source_attempt": used.source_attempt,
+                    "source_task": source.source_task,
+                    "source_attempt": source.source_attempt,
                 },
             )
         return report
+
+    def _review_confirmations(self, mission: Mission, result_id: str, review: Any) -> dict[str, dict[str, Any]]:
+        """The claims the official content review confirmed, by claim id (阶段 C).
+
+        Read from the record's authenticated manifest.  A confirmation counts only when
+        the review as a whole stands (ACCEPT, or INCONCLUSIVE and the person passed it)
+        and it cites at least one piece of evidence that is not the reviewed result
+        itself — a result cannot be the proof of its own claims."""
+        validity = getattr(self, "_assurance_validity", None)
+        if review is None or validity is None or not accepted_or_adjudicated(self._store, review):
+            return {}
+        from ..assurance.codec import decode
+        from ..assurance.refs import AssuranceRef, Pin
+        from ..storage.assurance_reads import AssuranceReader
+
+        reader = AssuranceReader(self._store, tenant_id=validity.tenant_id, mission_id=mission.id)
+        manifest = decode(reader.read_exact_metadata(AssuranceRef(
+            "input_manifest", Pin(review.evidence_manifest_hash, 0, review.evidence_manifest_hash))).body_json)
+        ruling = adjudication_of(self._store, str(review.record_id))
+        found: dict[str, dict[str, Any]] = {}
+        for row in manifest.get("claims", ()):
+            independent = [ref for ref in row["evidence_refs"]
+                           if not (ref["kind"] == "result" and ref["pin"]["id"] == result_id)]
+            if not row["confirmed"] or not independent:
+                continue
+            found[row["claim_id"]] = {
+                "basis": "review_confirmed", "record_id": str(review.record_id),
+                "review_key": manifest["review_key"], "reviewer_agent_id": str(review.reviewer_agent_id),
+                "manifest_hash": review.evidence_manifest_hash, "reason": row["reason"],
+                "evidence_refs": row["evidence_refs"], "adjudication": ruling,
+                "content_sha256": row["content_sha256"],
+            }
+        return found
+
+    def _knowledge_support(
+        self, mission: Mission, task: Task, stored: StoredResult, knowledge_id: str,
+        evidence: Sequence[str], confirmation: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """What a piece of knowledge rests on, computed here and stored on its record: the
+        acceptance of its source step, the evidence artifacts (the ones the reviewer cited
+        or the claim names; all of the result's when neither says), and the knowledge the
+        step used.  Nothing is written by this — the record carries it."""
+        from ..contracts.semantic_base import content_hash_of
+        from .assurance_validity import acceptance_id_for
+
+        envelope = stored.envelope
+        cited = {ref["pin"]["id"] for ref in (confirmation or {}).get("evidence_refs", ())
+                 if ref["kind"] == "artifact"}
+        artifacts = [a for a in map(self._store.get_artifact, stored.artifacts) if a is not None]
+        named = [a for a in artifacts if a.id in cited or a.path in evidence]
+        knowledge = []
+        for source_id, _ in map(parse_knowledge_ref, envelope.used_knowledge):
+            source = self._store.get_knowledge(source_id)
+            if source is None or source.mission_id != mission.id or source.id == knowledge_id:
+                continue
+            knowledge.append({"id": source.id, "version": int(source.version),
+                              "content_hash": content_hash_of(source.content)})
+        return {
+            "acceptance_id": acceptance_id_for(task.id, envelope.id),
+            "artifacts": [{"id": a.id, "version": int(a.version), "content_hash": a.content_hash}
+                          for a in (named or artifacts)],
+            "knowledge": knowledge,
+        }
 
     def _accepted_result(self, result_id: str) -> bool:
         stored = self._store.get_result(result_id)
@@ -2680,32 +2773,34 @@ class CommitService(ProtectedTailCommitsMixin,
                 error.code, "the current use certificate could not be prepared"
             ) from error
 
-    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str) -> None:
+    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str) -> Any:
         """Assurance 1.1: the prepared ACCEPT use is locked before this UoW's own writes.
 
         The freshness/authority/root gates must see the world as it was when the
         transaction began; the result, artifact and acceptance rows this UoW then
         moves are its intended effect, not foreign changes. The certificate itself
         is committed later by ``accept_review`` in this same generation. A missing
-        candidate is not licensed here; ``accept_review`` refuses it."""
+        candidate is not licensed here; ``accept_review`` refuses it.  Returns the locked
+        candidate (its official review record is what claim confirmation reads), or None."""
         from ..assurance.codec import AssuranceError
         from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
         from .resolution_commits import ResolutionCommitRejected
 
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
-            return
+            return None
         candidate = validity.candidate_for_consumer(
             mission_id, ACCEPTANCE_CONSUMER, acceptance_id_for(task_id, result_id)
         )
         if candidate is None:
-            return
+            return None
         try:
             validity.lock_use_locked(candidate, now_ms=int(self._store.now * 1000))
         except AssuranceError as error:
             raise ResolutionCommitRejected(
                 error.code, "the current use certificate refused this acceptance"
             ) from error
+        return candidate
 
     def _accept_result(
         self,
@@ -2734,8 +2829,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 ) is None:
                     raise CommitRejected("verified result has no atomic scoped Acceptance")
                 return self._require_task(stored.envelope.task_id)
-            self._lock_assured_acceptance(stored.envelope.mission_id,
-                                          stored.envelope.task_id, result_id)
+            licensed = self._lock_assured_acceptance(stored.envelope.mission_id,
+                                                     stored.envelope.task_id, result_id)
             attempt = self._require_attempt(stored.envelope.attempt_id)
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
@@ -2759,6 +2854,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 task,
                 attempt,
                 stored,
+                review=None if licensed is None else licensed.record,
             )
             self._store.update_attempt(
                 next_attempt(attempt, AttemptStatus.COMPLETED), expected_version=attempt.version

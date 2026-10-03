@@ -790,6 +790,26 @@ class CriterionOutcome:
         )
 
 
+_CLAIM_TO_CONFIRM_KEYS = ("claim_id", "content", "content_sha256", "evidence")
+_RELATED_ENTRY_KEYS = ("kind", "id", "version", "content_sha256", "content", "status", "source_task")
+
+
+def _package_rows(value: object, name: str, keys: tuple[str, ...]) -> tuple[Mapping[str, Any], ...]:
+    """Rows of a review-package section: exactly ``keys``, JSON values, unique ids."""
+
+    if not isinstance(value, (list, tuple)):
+        raise ContractError(f"{name} must be a list")
+    rows = []
+    for item in value:
+        if not isinstance(item, Mapping) or tuple(sorted(item)) != tuple(sorted(keys)):
+            raise ContractError(f"{name} rows must carry exactly {list(keys)}")
+        rows.append({key: (list(item[key]) if isinstance(item[key], (list, tuple)) else item[key]) for key in keys})
+    ids = [(row.get("kind"), row[keys[0] if keys[0] != "kind" else "id"]) for row in rows]
+    if len(set(ids)) != len(ids):
+        raise ContractError(f"{name} must not repeat an entry")
+    return tuple(rows)
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewPackage:
     """AER §5.2: the immutable anchor a review is bound to.
@@ -820,6 +840,13 @@ class ReviewPackage:
     #: Binds the package to the exact requirements text it was cut from, so a later
     #: requirements revision cannot be read back through this anchor (AER §3.2).
     requirements_content_hash: str | None = None
+    #: 本步待确认结论（阶段 C）：被审结果里的每条结论——``claim_id`` / ``content`` /
+    #: ``content_sha256`` / ``evidence``。审阅员在回复的 ``claims`` 里逐条确认。
+    claims_to_confirm: tuple[Mapping[str, Any], ...] = ()
+    #: 相关条目：与本步结论同主题、立场相反的他步结论或知识（``dispute``），以及本步声明
+    #: 用过的知识（``used_knowledge``），各带版本、内容哈希与原文。**不是证据**：不在证据
+    #: 目录里，审阅员没法把它写进 ``evidence_ids``。
+    related_entries: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -827,6 +854,12 @@ class ReviewPackage:
             "package_id",
             ReviewPackageId(identifier(self.package_id, "package.package_id")),
         )
+        object.__setattr__(self, "claims_to_confirm", _package_rows(
+            self.claims_to_confirm, "package.claims_to_confirm", _CLAIM_TO_CONFIRM_KEYS))
+        object.__setattr__(self, "related_entries", _package_rows(
+            self.related_entries, "package.related_entries", _RELATED_ENTRY_KEYS))
+        if any(row["kind"] not in {"dispute", "used_knowledge"} for row in self.related_entries):
+            raise ContractError("package.related_entries kind must be dispute or used_knowledge")
         object.__setattr__(self, "purpose", enum_of(ReviewPurpose, self.purpose, "package.purpose"))
         if not isinstance(self.binding, ReviewBinding):
             raise ContractError("package.binding must be a ReviewBinding")
@@ -941,6 +974,12 @@ class ReviewPackage:
                 None if self.method_instance_id is None else str(self.method_instance_id)
             ),
             "review_budget_ref": self.review_budget_ref,
+            # The two sections exist only on a step's content review; a package without
+            # them keeps the bytes (and so the hash) it always had.
+            **({"claims_to_confirm": [dict(row) for row in self.claims_to_confirm]}
+               if self.claims_to_confirm else {}),
+            **({"related_entries": [dict(row) for row in self.related_entries]}
+               if self.related_entries else {}),
         }
 
     def content_hash(self) -> str:
@@ -964,6 +1003,8 @@ class ReviewPackage:
                 "independence_policy_ref",
                 "method_instance_id",
                 "review_budget_ref",
+                "claims_to_confirm",
+                "related_entries",
             ),
         )
 
@@ -1006,6 +1047,8 @@ class ReviewPackage:
                 else MethodInstanceId(data["method_instance_id"])
             ),
             review_budget_ref=data.get("review_budget_ref"),
+            claims_to_confirm=tuple(data.get("claims_to_confirm", ())),
+            related_entries=tuple(data.get("related_entries", ())),
         )
 
 

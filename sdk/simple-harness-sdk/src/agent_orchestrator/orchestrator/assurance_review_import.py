@@ -401,6 +401,27 @@ def _interpret_reply(
                 "limitations": list(assessment.limitations),
             }
         )
+    # Package's original binding remains authoritative; no expanded TypedRef V1.
+    from ..contracts.resolution import ReviewPackage
+
+    package = ReviewPackage.from_json(decode(raw_package(imported)))
+    # 逐条确认（阶段 C）：只能确认审查包"本步待确认结论"里的编号；证据照准则那样解析，
+    # 没披露给它的标签一样拒。漏写的编号就是没确认，不拒收。
+    listed = {row["claim_id"]: row for row in package.claims_to_confirm}
+    confirmations = []
+    for item in sorted(reply.claims, key=lambda item: item.claim_id):
+        if item.claim_id not in listed:
+            raise AssuranceError("CLAIM_SCOPE")
+        refs = resolve_evidence_ids(
+            bound["review_key"], item.evidence_ids, imported.catalogue, imported.exposed
+        )
+        confirmations.append({
+            "claim_id": item.claim_id,
+            "content_sha256": listed[item.claim_id]["content_sha256"],
+            "confirmed": bool(item.confirmed),
+            "evidence_refs": [ref.to_json() for ref in refs],
+            "reason": item.reason,
+        })
     verdict = reply.verdict
     if verdict == "ACCEPT" and not decision.acceptable:
         verdict = "REWORK" if Grade.FAIL in decision.effective_grades.values() else "INCONCLUSIVE"
@@ -418,6 +439,7 @@ def _interpret_reply(
             {"criterion_id": item.criterion_id, "severity": item.severity, "reason": item.reason}
             for item in reply.findings
         ],
+        "claims": confirmations,
         "success_witness": sorted(decision.success_witness),
         "consumed_receipts": [ref.to_json() for ref in decision.consumed_receipts],
         "exposed_evidence_refs": [
@@ -428,10 +450,6 @@ def _interpret_reply(
         **({} if no_usable_reply is None
            else {"interpretation": NO_USABLE_REPLY, "error_code": no_usable_reply}),
     }
-    # Package's original binding remains authoritative; no expanded TypedRef V1.
-    from ..contracts.resolution import ReviewPackage
-
-    package = ReviewPackage.from_json(decode(raw_package(imported)))
     record = ReviewRecord(
         "assurance-review:"
         + fingerprint({"review_key": bound["review_key"], "turn_ref": imported.turn.ref.to_json()}),

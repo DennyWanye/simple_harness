@@ -40,7 +40,6 @@ from production_fixture import chain_planner, enabled_world  # noqa: E402
 
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
-from agent_orchestrator.memory.blackboard import Blackboard  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
 from agent_orchestrator.memory.summaries import build_summaries  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
@@ -102,7 +101,8 @@ class _Worker:
                 {"content": "新的观测取代旧的", "confidence": 0.8, "key": "probe.result", "supersedes": known,
                  "evidence": [NOTES]},
             ]
-            used = [known]
+            # 引用写成"编号@版本"（上下文里每条已核实知识自带 ref）
+            used = [(package.get("verified_knowledge") or [{}])[0].get("ref", "unknown")]
         envelope = {
             "task_id": contract.get("task_id", ""), "attempt_id": package.get("attempt", {}).get("attempt_id", ""),
             "outcome": "candidate", "summary": f"{step} 完成", "claims": claims, "evidence": files,
@@ -182,7 +182,6 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
         rebuilt = build_summaries(store, mission_id)
         rebuilt_again = build_summaries(store, mission_id)
         statuses_after = {c.id: c.status for c in store.list_mission_claims(mission_id)}
-        board = Blackboard(store)
         knowledge_id = knowledge[0].id if knowledge else ""
         facts = {
             "mission": mission, "crashes": crashes, "fired": list(store.fired), "tasks": tasks,
@@ -197,9 +196,6 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "disputes": mission_disputes(store, mission_id),
             "summaries": summaries_before, "rebuilt": rebuilt, "rebuilt_again": rebuilt_again,
             "statuses_before": statuses_before, "statuses_after": statuses_after,
-            "board_verified": [k.id for k in board.verified_knowledge(mission_id)],
-            "board_candidates": {c.id for c in board.candidate_claims(mission_id)},
-            "board_writes": [n for n in ("upsert_knowledge", "write", "upsert_claim") if hasattr(board, n)],
             "listing": read_knowledge_tool(store, mission_id, "knowledge_list", {}),
             "reading": read_knowledge_tool(store, mission_id, "knowledge_read", {"id": knowledge_id}),
             "foreign_read": _refusal(lambda: read_knowledge_tool(
@@ -346,13 +342,9 @@ def test_artifact_versions_survive_a_redelivered_turn(world):
 
 
 def test_blackboard_and_summaries_are_read_only_projections(world):
-    """黑板只读、已核实与候选两层分开；摘要按分支、确定、不改声明状态。"""
+    """摘要按分支、确定、不改声明状态。（黑板的三层读取见 product_world/test_blackboard_tools.py。）"""
 
     (record,) = world["knowledge"]
-    assert world["board_verified"] == [record.id]
-    assert world["board_candidates"] == {
-        c.id for c in world["claims"].values() if c.status is not ClaimStatus.VERIFIED}
-    assert world["board_writes"] == []
     persisted, rebuilt = world["summaries"], world["rebuilt"]
     mission_id = world["mission"].id
     assert set(persisted) == set(world["tasks"]) | {mission_id}

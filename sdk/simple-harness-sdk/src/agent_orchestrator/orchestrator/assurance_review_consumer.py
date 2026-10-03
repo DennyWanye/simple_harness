@@ -288,13 +288,7 @@ class AssuranceReviewConsumer:
                 return self._prepare_second_opinion(reader, imported, event)
             return PreparedAssuranceWork(prepared.import_locked)
         except AssuranceError as error:
-            if error.code not in {
-                "UNEXPOSED_EVIDENCE",
-                "DUPLICATE_CRITERION",
-                "FINDING_SCOPE",
-                "POLICY_CATALOGUE_MISMATCH",
-                "MANDATORY_CRITERIA_INVALID",
-            }:
+            if error.code not in REPAIRABLE_INTERPRETATION_ERRORS | {"POLICY_CATALOGUE_MISMATCH"}:
                 # Missing/temporarily denied evidence is not an immutable model
                 # error. The tick retains it under the same persistent retry cap.
                 raise

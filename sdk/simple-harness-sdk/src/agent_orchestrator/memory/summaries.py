@@ -20,8 +20,6 @@ if TYPE_CHECKING:
 def build_summaries(
     store: Store,
     mission_id: str,
-    *,
-    stale: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """``subject_id → summary`` for every branch plus the global one (pure read)."""
 
@@ -30,7 +28,7 @@ def build_summaries(
     knowledge = store.list_knowledge(mission_id)
     # Currentness is a read projection; retain the accepted records and claims
     # unchanged so historical evidence remains inspectable.
-    invalid = {kid: list(issues) for kid, issues in (stale or {}).items() if issues}
+    invalid: dict[str, list[dict[str, Any]]] = {}
     noncurrent = [record for record in knowledge if record.status != "VERIFIED"]
     for record in noncurrent:
         invalid.setdefault(record.id, []).append(
