@@ -25,7 +25,7 @@
  *   鈥?A fresh red error auto-expands the panel + switches to "閿欒".
  */
 import { ChatMissionCard } from "../views/ChatMissionCard";
-import { missionIdFromToolResult } from "../views/chatMission";
+import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "../views/chatMission";
 import {
   useEffect,
   useLayoutEffect,
@@ -762,7 +762,7 @@ function ChatRow({
       );
     }
     // 2026-09-29：主 Agent 发起的后台任务在对话里显示成任务卡片（进度 + 人亲手点的确认/批准）
-    const missionId = msg.toolName === "mission_start" && msg.toolOk !== false
+    const missionId = MISSION_CARD_TOOLS.has(msg.toolName ?? "") && msg.toolOk !== false
       ? missionIdFromToolResult(msg.toolResultRaw)
       : "";
     if (missionId) {

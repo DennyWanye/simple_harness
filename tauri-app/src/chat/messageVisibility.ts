@@ -31,6 +31,6 @@ export function shouldHideToolTrace(message: Message, hideTools: boolean): boole
   if (message.role !== "tool_result") return false;
   if (message.tool_ok === false || !message.tool_result) return true;
   // 后台任务卡片是给人看的（进度与待确认/批准），不是执行痕迹
-  if (message.tool_name === "mission_start") return false;
+  if (message.tool_name === "mission_start" || message.tool_name === "mission_amend") return false;
   return extractArtifactsFromResult(message.tool_result).length === 0;
 }

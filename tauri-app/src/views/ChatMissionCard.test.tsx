@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatMissionCard } from "./ChatMissionCard";
-import { MissionsChannelContext, missionIdFromToolResult } from "./chatMission";
+import { MISSION_CARD_TOOLS, MissionsChannelContext, missionIdFromToolResult } from "./chatMission";
 import { shouldHideToolTrace } from "../chat/messageVisibility";
 
 type Sent = { type: string; request_id: string; payload: Record<string, unknown> };
@@ -31,7 +31,7 @@ const DETAIL = {
   actions: [{ action_key: "a-0", state: "SUCCEEDED", target: "wordfreq.py", published_path: "/pub/wordfreq.v1.py" }],
 };
 
-function mount() {
+function mount(detail: Record<string, unknown> = DETAIL) {
   const fake = fakeChannel();
   render(
     <MissionsChannelContext.Provider value={fake.channel as never}>
@@ -39,7 +39,7 @@ function mount() {
     </MissionsChannelContext.Provider>,
   );
   const get = fake.sent.find((m) => m.type === "mission_get")!;
-  fake.push({ type: "mission_get_response", payload: { ok: true, request_id: get.request_id, data: DETAIL } });
+  fake.push({ type: "mission_get_response", payload: { ok: true, request_id: get.request_id, data: detail } });
   return fake;
 }
 
@@ -77,5 +77,16 @@ describe("对话里的后台任务卡片", () => {
     expect(missionIdFromToolResult("not json")).toBe("");
     expect(shouldHideToolTrace({ role: "tool_result", tool_name: "mission_start", tool_ok: true,
       tool_result: JSON.stringify({ mission_id: "m-9" }) } as never, true)).toBe(false);
+  });
+
+  it("改要求的工具结果也出任务卡片；要求改过之后卡片写明是第几版", () => {
+    expect(MISSION_CARD_TOOLS.has("mission_amend")).toBe(true);
+    expect(shouldHideToolTrace({ role: "tool_result", tool_name: "mission_amend", tool_ok: true,
+      tool_result: JSON.stringify({ mission_id: "m-1", requirements_revision: 2 }) } as never, true)).toBe(false);
+    mount();
+    expect(screen.queryByTestId("chat-mission-requirements-revision")).toBeNull(); // 第 1 版不提
+    cleanup();
+    mount({ ...DETAIL, operation_workspace: { state: "APPROVED", requirements_ref: { id: "r", revision: 2, content_hash: "h" } } });
+    expect(screen.getByTestId("chat-mission-requirements-revision").textContent).toBe("要求第 2 版");
   });
 });

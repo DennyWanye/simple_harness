@@ -255,6 +255,30 @@ const field: React.CSSProperties = {
 };
 
 const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
+
+const BUDGET_ROWS_SHOWN = 8;
+
+/** 预算去向：这件事（含下级、含被换掉的做法）到现在花了多少、试了几次。默认收起；只列花过或试过的。 */
+export function BudgetByDuty({ rows }: { rows: unknown[] }) {
+  const spent = rows.map(record).filter((row) => Number(row.attempts) > 0 || Number(row.settled_tokens) > 0);
+  if (!spent.length) return null;
+  const shown = spent.slice(0, BUDGET_ROWS_SHOWN);
+  return (
+    <details data-testid="mission-budget-by-duty" style={muted}>
+      <summary>预算去向</summary>
+      {shown.map((row) => {
+        const unknown = Number(row.unknown_usage_attempts) || 0;
+        return (
+          <div key={text(row.obligation_id)} style={{ paddingLeft: (Number(row.depth) || 0) * 12 }}>
+            {`${text(row.label) || text(row.obligation_id)} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）`}
+            {unknown ? `，另有 ${unknown} 次用量未知` : ""}
+          </div>
+        );
+      })}
+      {spent.length > shown.length ? <div>{`其余 ${spent.length - shown.length} 项`}</div> : null}
+    </details>
+  );
+}
 const heading: React.CSSProperties = { fontWeight: tokens.weight.semibold };
 
 const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
@@ -1020,6 +1044,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                   ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`
                   : `本任务输入上下文 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`}
               </div>}
+              <BudgetByDuty rows={list(detail.budget_by_duty)} />
+              {list(detail.unrefined_goals).length ? (
+                <div style={muted} data-testid="mission-unrefined-goals">
+                  {`还没细化：${list(detail.unrefined_goals).map((goal) => text(record(goal).label)).join("；")}（规划器还没给它们定做法）`}
+                </div>
+              ) : null}
               {waiting.length ? (
                 <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
                   {waiting.map((item, index) => (
