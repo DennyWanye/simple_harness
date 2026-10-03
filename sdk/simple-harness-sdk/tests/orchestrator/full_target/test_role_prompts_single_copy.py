@@ -71,7 +71,7 @@ def test_the_hierarchical_workers_of_other_domains_still_register() -> None:
     """领域自己的分层执行者（AppWorld、无人机模拟）不在这次收口范围里，照常登记。"""
     assert templates.HIERARCHICAL_WORKER_VERSIONS == frozenset({
         templates.WORKER_HIERARCHICAL.prompt_version,
-        "worker-appworld-hierarchical-v1", "worker-drone-sim-hierarchical-v1"})
+        "worker-appworld-hierarchical-v2", "worker-drone-sim-hierarchical-v2"})
 
 
 def test_a_proposed_method_is_admitted_from_the_decoded_proposal() -> None:
