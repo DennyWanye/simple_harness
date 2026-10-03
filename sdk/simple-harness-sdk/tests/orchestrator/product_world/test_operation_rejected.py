@@ -183,3 +183,39 @@ def test_a_planner_answer_that_leaves_the_content_unchanged_stops(tmp_path):
             await world_cm.__aexit__(None, None, None)
 
     asyncio.run(case())
+
+
+class _NoChange(_Provider):
+    """规划器读到拒绝后回"不改"。"""
+
+    def __init__(self) -> None:
+        super().__init__(rewrite=False)
+        self._answer["planner"] = self._no_change
+
+    def _no_change(self, request: Any) -> Any:
+        package = package_of(request)
+        if not any((entry.get("request") or {}).get("trigger_source") == "OPERATION_NOT_APPLIED"
+                   for entry in package.get("repair_requests") or ()):
+            return planner_reply(request)
+        self.not_applied.append({})
+        subject = package["planning_subjects"][0]["subject_key"]
+        return decision(subject, "NO_CHANGE", {"reason": "用户说先别发"}, "不改。")
+
+
+def test_a_planner_that_answers_no_change_stops_the_mission(tmp_path):
+    """核验阻断项（2026-10-03）：规划器回"不改"（被接受的决定，状态是"无状态变化"）也是回应——
+    以"批准被拒"停，不许一直挂在"进行中"。"""
+
+    async def case():
+        provider = _NoChange()
+        world_cm, world, mission_id, published = await _rejected_once(tmp_path, provider)
+        try:
+            await _drive_until(world, lambda: _status(world, mission_id) in TERMINAL, rounds=40)
+            mission = world.store.get_mission(mission_id)
+            assert str(mission.stop_reason) == "approval_rejected"
+            assert len(provider.not_applied) == 1 and not _pending_cards(world, mission_id)
+            assert not list(published.rglob("*.md"))
+        finally:
+            await world_cm.__aexit__(None, None, None)
+
+    asyncio.run(case())
