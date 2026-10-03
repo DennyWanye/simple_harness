@@ -40,7 +40,11 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     from ..planning.htn.world import build_planning_world, capability_records
     from ..storage.htn_store import HtnStore
 
-    world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store), observers=())
+    from ..planning.htn.observers.workspace import workspace_observers, workspace_predicates
+
+    world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store),
+                                 predicates=workspace_predicates(),
+                                 observers=workspace_observers(loop.store, mission.id))
     criteria = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("user.goal-parameters", 1, content_hash_of(params_body))

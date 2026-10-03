@@ -55,7 +55,7 @@ from typing import Any
 from ...contracts.evidence_state import EvidenceEntry, EvidenceSnapshot
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef, content_hash_of
-from ...knowledge.predicates import PredicateRegistry
+from ...knowledge.predicates import PredicateRegistry, PredicateSignature
 from .applicability import CapabilityRecord, CapabilitySnapshot
 from .domain_package import DomainPackageInstaller
 from .observation_pipeline import ObserverIndex, build_index
@@ -413,6 +413,7 @@ def build_planning_world(
     unhealthy: Iterable[str] = (),
     unauthorized: Iterable[str] = (),
     observers: Sequence[PredicateObserver] | None = None,
+    predicates: Sequence[PredicateSignature] = (),
     scope_id: str = DEFAULT_SCOPE,
     capability_layers: Mapping[str, str | None] = CAPABILITY_LAYERS,
 ) -> DeploymentPlanningWorld:
@@ -439,7 +440,10 @@ def build_planning_world(
             f"{sorted(known)}"
         )
     schemas = SchemaCatalog()
+    declared = tuple(predicates)  # the deployment's own declarations, beside the seed domains'
     predicates = PredicateRegistry()
+    for signature in declared:
+        predicates.register(signature)
     catalog = TaskTypeCatalog()
     registry = MethodRegistry()
     package_installer = DomainPackageInstaller()
@@ -485,7 +489,7 @@ def build_planning_world(
         if observers is None
         else tuple(observers)
     )
-    world.observers = build_index(predicates, assign_readers(chosen_observers))
+    world.observers = build_index(world.predicates, assign_readers(chosen_observers))
     policy = world.policy()
     for domain in installed:
         admit_domain(domain, registry=registry, policy=policy)

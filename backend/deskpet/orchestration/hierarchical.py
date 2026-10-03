@@ -18,7 +18,11 @@ def planning_world(loop: Any, mission: Any) -> Any:
     from agent_orchestrator.storage.htn_store import HtnStore
 
     htn = HtnStore(loop.store)
-    world = build_planning_world(mission.id, domains=(), semantics=htn, observers=())
+    # 桌面的三样只读观察（文件在不在、文件内容哈希、资料是否当前版本）：实现在 SDK 一份，这里注册
+    from agent_orchestrator.planning.htn.observers.workspace import workspace_observers, workspace_predicates
+
+    world = build_planning_world(mission.id, domains=(), semantics=htn, predicates=workspace_predicates(),
+                                 observers=workspace_observers(loop.store, mission.id))
     criteria = tuple(f"c-user-{i + 1}" for i in range(len(mission.success_criteria)))
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("desktop.goal-parameters", 1, content_hash_of(params_body))
