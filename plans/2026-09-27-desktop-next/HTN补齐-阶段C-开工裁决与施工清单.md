@@ -47,7 +47,7 @@
 
 ### 1.4 "已过时"由谁在什么事务里写：不写库，读取时由同一个判定函数得出
 
-**结论：不重建"写已过时"的生产方。知识是否当前，在每次被读（读工具、上下文推送、`used_knowledge` 核对、审查包取条目）时由一个函数 `knowledge_standing()` 当场判定；判定依据只读这条知识的支持集合（见 1.5）。**
+**（2026-10-03 偏差裁决：下文"支持集合"均指知识记录自带的 `support` 字段。）结论：不重建"写已过时"的生产方。知识是否当前，在每次被读（读工具、上下文推送、`used_knowledge` 核对、审查包取条目）时由一个函数 `knowledge_standing()` 当场判定；判定依据只读这条知识的支持集合（见 1.5）。**
 
 - 事实：opt.134 删掉了 `KnowledgeIndex.stale` 与资料依赖；现在知识状态只有 `VERIFIED`/`SUPERSEDED`（`SDK/memory/verified_knowledge.py:28`），读工具只过滤已取代（`SDK/context/knowledge_tools.py:19-23`），`used_knowledge` 核对也只认已取代（同文件 `verified_knowledge.py:131-158`）。`rank_knowledge` 和 `build_summaries` 还留着没人传的 `stale` 参数（`SDK/context/retrieval.py:164,179-182`、`SDK/memory/summaries.py:24`）。
 - 关键事实：**验收本身的"是否当前"在库里也不写**——验收行插入后不再改（`SDK/storage/htn_store.py:1129-1169` 只有插入），"当前"一直是读时推出的：义务没被取消或取代、所在步骤的完成范围仍然完整（`SDK/orchestrator/completion_support.py:28-90`）。修复、换做法、要求修订让旧验收"失效"，走的是好几条不同的写路径（计划提交改义务状态、取消任务、新结果被接受……）。如果知识要"写已过时"，就得在每一条这样的路径上都挂一个写方，漏一条就是静默错误。
@@ -55,15 +55,13 @@
 - 前次裁决已定：知识过时不加作用域纪元（`HTN补齐-开工前裁决-2026-10-02.md` 1.2 第 3 条）。本裁决与之一致。
 - 与计划原文的差别记偏差单 3。
 
-### 1.5 没人用的支持集合表：接上，作为知识依赖的唯一记录处
+### 1.5 知识的依据记在知识记录里；没人用的支持集合表本阶段不接，去留归 D
 
-**结论：接上 `justification_sets` / `support_members`，每条审阅确认入库的知识在同一验收事务里写一组支持集合；`KnowledgeRecord` 不另加依赖字段。**
+**结论：`KnowledgeRecord` 加 `support` 字段（来源验收编号；证据产物的编号、版本、内容哈希；用过的上游知识的编号、版本、内容哈希），与知识行同一次写入，建成后不改；`knowledge_standing()` 只读它。`KnowledgeRecord.dependencies` 删掉（与 `support.knowledge` 是同一件事，只留一处）。`justification_sets` / `support_members` 不写。**（2026-10-03 偏差裁决改，见 `HTN补齐-阶段C-偏差裁决-知识支持集合.md`）
 
-- 事实：两张表有写方法 `HtnStore.insert_justification_set`（`SDK/storage/htn_store.py:1428-1510`）、有读方——修复影响分析已经按"成员 → 主体"读它（`SDK/orchestrator/repair_impact.py:53`）、计划读集也读（`SDK/orchestrator/_read_set.py:438-450`），但生产里没人写；全业务重放清单把它记为缺口（`SDK/observability/business_replay_inventory.json` 的 `justification_sets`/`support_members` 两条 `gaps`）。
-- 接上的好处：修复影响分析自动把"受影响的知识"算进去；重放清单的这条缺口关掉；依赖只记一处。
-- 成员：来源验收（`ACCEPTANCE`）、确认时引用的证据产物（`ARTIFACT`，带版本与内容哈希）、本步声明用过的知识（`KNOWLEDGE`），极性一律为真。`KnowledgeRecord.dependencies` 保持原义（D4-3 的复用链，只作出处展示），失效判定只读支持集合。
-- 注意：这两张表在保证通道屏障触发器里（`SDK/storage/assurance_barrier_v26.sql`），写入会让通道纪元加 1。同一事务里本来就写 `claims`（也在触发器里），属于本事务自身效果；用例 3 钉住"写了支持集合之后验收仍成功"。
-- 计划读集里的 `SupportSetRead`（`SDK/contracts/htn.py:2250`，在编码清单里）怎么用，归 D 的读集改造，本阶段不碰。
+- 事实：这两张表是保证通道的源表（`SDK/storage/assurance_source_inventory.py:13-14`、`assurance_barrier_v26.sql`），每张使用证书都完整读它们、不分主体类型（`SDK/storage/assurance_reads.py:279-291`），并作为验收支持图的输入（`SDK/orchestrator/assurance_validity.py:501-533,830-860`），收尾复查就比这三类查询集（`SDK/orchestrator/assurance_recheck.py:25`）。往里写知识支持集合会让本任务全部现行验收证书和根结论证书"依据已变"，收尾报 `EVIDENCE_STALE`（已用产品同形用例跑出）。`knowledge` 表不在通道清单里，写知识行不碰证书。
+- 代价：修复影响分析（`SDK/orchestrator/repair_impact.py:53`）的影响清单里不再列知识编号；没有代码按它做事，知识过时本来就读时判定。重放清单里这两张表"生产无写方"的缺口保持原样。
+- 两张表与计划读集的 `SupportSetRead`（`SDK/contracts/htn.py:2250`）一起，接上或删归 D。
 
 ### 1.6 `used_knowledge` 记编号加版本：字符串写成 `编号@版本`，不改合同
 
@@ -164,6 +162,14 @@
 6. 叶子以外的用途：`claims` 必须为空或不写（待确认列表为空，任何一项都是 `CLAIM_SCOPE`）。
 
 ### C4　确认入库、支持集合、过时判定（B 后半）
+> **2026-10-03 偏差裁决（`HTN补齐-阶段C-偏差裁决-知识支持集合.md`）**：本节凡写"支持集合""`justification_sets`/`support_members`""`insert_justification_set`"之处，一律改为知识记录自带的 `support` 字段。替换后的条文：
+>
+> - `knowledge_standing(store, record) -> "CURRENT" | "SUPERSEDED" | "STALE:<原因>"`：按 1.4 的四条只读 `record.support`；`support` 为空判 `STALE:no_support`（开发期不兼容）。不读 `justification_sets`。
+> - 构造 `KnowledgeRecord` 前由 `_knowledge_support()` 算出 `support`（来源验收 `acceptance_id_for(任务, 结果)`；确认引用或 `evidence` 命中的产物带版本与内容哈希；`used_knowledge` 里同任务、非自身的知识带版本与内容哈希），随知识行一次 `upsert_knowledge` 写入；系统测试观察那条用 `replace` 补上后再写。**不写 `justification_sets` / `support_members`。** 删 `KnowledgeRecord.dependencies` 及其写入（`commit_service.py`、`SDK/memory/code_observations.py:118`），读工具展示（`SDK/context/retrieval.py:347`）改从 `support.knowledge` 生成同名键。`KnowledgeCommitted` 事件载荷加 `basis`、`support`。
+> 5. 重放清单 `business_replay_inventory.json`：`justification_sets`、`support_members` 两条不动（缺口保留，去留归 D）；`knowledge` 条目加 `note`："支持集合记在 json 的 support 字段，与知识行同一次写入、建成后不改；是否当前为读时推出，不落库"。
+>
+> 用例 3 预期：第 1 条知识 `VERIFIED`、`verifier.basis=="review_confirmed"`、带记录编号；`support` 含来源验收编号与产物（编号、版本、内容哈希）；本任务 `justification_sets`/`support_members` 无行；第 2 条仍是"有支持"；验收成功；收尾评估不含 `EVIDENCE_STALE`
+
 1. 新文件 `SDK/memory/knowledge_standing.py`：
    - `acceptance_is_current(store, mission_id, acceptance_id) -> (bool, reason)`：从 `completion_support.py:28-90` 抽出（义务状态、完成范围仍完整），`read_completion_support` 与 `current_child_supports` 改调它——**同一判定只留一份**。
    - `knowledge_standing(store, record) -> "CURRENT" | "SUPERSEDED" | "STALE:<原因>"`：按 1.4 的四条读支持集合（`HtnStore.list_justification_sets(mission, subject_kind="knowledge")`）。
