@@ -1756,8 +1756,7 @@ class Store:
         if not self.has_table("budget_accounts"):
             return None
         row = self.connection.execute(
-            "SELECT reserved_tokens, settled_tokens, reserved_cost_micros, "
-            "settled_cost_micros, unpriced_settlements, attempts_created, version "
+            "SELECT reserved_tokens, settled_tokens, attempts_created, version "
             "FROM budget_accounts WHERE mission_id = ? AND scope = 'mission'",
             (mission_id,),
         ).fetchone()

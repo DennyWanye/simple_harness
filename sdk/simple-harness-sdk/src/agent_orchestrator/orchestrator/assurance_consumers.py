@@ -701,7 +701,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
                 self.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject, payload={
                     "subject_id": subject, "reason": "unknown_usage",
                     "counted_tokens": settled["settled_tokens"],
-                    "counted_cost_micros": settled["settled_cost_micros"],
                     "closeout_receipt_ref": ref.to_json()})
         if state == "READY" and self.finalizer is not None:
             final = self.finalizer(mission_id, evaluation)

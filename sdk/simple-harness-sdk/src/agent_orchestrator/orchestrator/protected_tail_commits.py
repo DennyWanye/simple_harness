@@ -4,7 +4,7 @@
 
 The caller freezes actual routed-profile amounts, calculates the actual next
 Attempt ID, and retains all existing dispatch/lease/Task acceptance gates. These
-hooks perform no routing, price estimation, submission, acceptance or await.
+hooks perform no routing, allowance estimation, submission, acceptance or await.
 They must share the caller's transaction with the corresponding real writes.
 """
 
@@ -87,8 +87,8 @@ class ProtectedTailCommitsMixin:
     ) -> dict[str, Any]:
         """Before Worker reserve, alongside its actual Attempt creation.
 
-        ``reserve`` is the caller's actual routed Critic allowance (both money
-        and tokens). A Critic is a service, so it consumes no Attempt count.
+        ``reserve`` is the caller's actual routed Critic allowance (tokens). A
+        Critic is a service, so it consumes no Attempt count.
         """
         task = self._protected_tail_task(task_id, semantic_revision)
         self._protected_attempt(task_id, attempt_id, allow_next=True)
@@ -136,9 +136,8 @@ class ProtectedTailCommitsMixin:
                     subject_id,
                     account_id,
                     "critic",
-                    reservation.tokens,
-                    reservation.cost_micros,
-                    reservation.tool_calls,
+                    tokens=reservation.tokens,
+                    tool_calls=reservation.tool_calls,
                     counts_attempt=False,
                 )
             ],

@@ -166,7 +166,6 @@ def test_the_tool_call_dimension_reserves_settles_and_exhausts_like_tokens(tmp_p
             account_id="budget:m1:task-1",
             subject_id="a1",
             tokens=0,
-            cost_micros=0,
             counts_attempt=True,
             tool_calls=6,
         )
@@ -176,7 +175,6 @@ def test_the_tool_call_dimension_reserves_settles_and_exhausts_like_tokens(tmp_p
                 account_id="budget:m1:task-1",
                 subject_id="a2",
                 tokens=0,
-                cost_micros=0,
                 counts_attempt=True,
                 tool_calls=5,
             )

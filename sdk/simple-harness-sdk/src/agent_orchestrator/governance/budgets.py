@@ -8,13 +8,12 @@ Two layers, never mixed:
 
 * **Allocation layer** (this module): ``budget_accounts`` for Mission → Task →
   Attempt, ``budget_reservations`` per dispatch subject.  Reserve before an
-  Attempt starts (§18.3), Settle with the real cost afterwards, release what was
+  Attempt starts (§18.3), Settle with the real usage afterwards, release what was
   not used.  Child limits never exceed the parent (§18.2) and a child allocation
   never *adds* funds.
 * **Fact layer** (the SDK ``provider_invocations`` ledger): the only source of
-  actual token / money figures.  ``import_usage`` copies each ``usage_ref`` at
-  most once (``imported_usage`` PK).  In ``unpriced`` mode the money column stays
-  ``NULL`` and the settlement is flagged ``unpriced`` — never written as zero.
+  actual token figures.  ``import_usage`` copies each ``usage_ref`` at most once
+  (``imported_usage`` PK).  Orchestration accounts tokens only; it records no money.
 
 An UNKNOWN provider call keeps its reservation occupied: ``settle`` refuses to
 run until the caller says every usage ref is final.
@@ -56,8 +55,7 @@ class UsageFact:
     usage_ref: str
     input_tokens: int
     output_tokens: int
-    cost_micros: int | None  # None == unpriced (deployment has no price table)
-    unknown: bool = False  # priced deployment, but the SDK could not price this call
+    unknown: bool = False  # the call's token usage could not be read
 
     @property
     def tokens(self) -> int:
@@ -72,9 +70,6 @@ class AccountSnapshot:
     limits: Budget
     reserved_tokens: int
     settled_tokens: int
-    reserved_cost_micros: int
-    settled_cost_micros: int
-    unpriced_settlements: int
     attempts_created: int
     version: int
     reserved_tool_calls: int = 0
@@ -91,9 +86,6 @@ class AccountSnapshot:
             return None
         return self.limits.max_tokens - self.reserved_tokens - self.settled_tokens
 
-    def remaining_cost_micros(self) -> None:
-        return None  # money is not a budget dimension; the column goes in step 3
-
     def remaining_attempts(self) -> int | None:
         if self.limits.max_attempts is None:
             return None
@@ -107,9 +99,6 @@ class AccountSnapshot:
             "limits": self.limits.to_json(),
             "reserved_tokens": self.reserved_tokens,
             "settled_tokens": self.settled_tokens,
-            "reserved_cost_micros": self.reserved_cost_micros,
-            "settled_cost_micros": self.settled_cost_micros,
-            "unpriced_settlements": self.unpriced_settlements,
             "attempts_created": self.attempts_created,
             "reserved_attempts": self.reserved_attempts,
             "reserved_tool_calls": self.reserved_tool_calls,
@@ -166,9 +155,6 @@ class BudgetLedger:
             limits=Budget.from_json(json.loads(row["limits_json"])),
             reserved_tokens=row["reserved_tokens"],
             settled_tokens=row["settled_tokens"],
-            reserved_cost_micros=row["reserved_cost_micros"],
-            settled_cost_micros=row["settled_cost_micros"],
-            unpriced_settlements=row["unpriced_settlements"],
             attempts_created=row["attempts_created"],
             version=row["version"],
             reserved_tool_calls=int(row["reserved_tool_calls"] or 0),
@@ -203,12 +189,11 @@ class BudgetLedger:
         account_id: str,
         subject_id: str,
         tokens: int,
-        cost_micros: int,
         counts_attempt: bool,
         tool_calls: int = 0,
         mission_id: str | None = None,
     ) -> str:
-        """Reserve ``tokens`` / ``cost_micros`` (/ ``tool_calls``) on ``account_id`` and every ancestor.
+        """Reserve ``tokens`` (/ ``tool_calls``) on ``account_id`` and every ancestor.
 
         Idempotent per ``subject_id``: a second call returns the existing reservation.
         Fails closed on the first dimension that does not fit (§18.3: 避免并发 Agent 同时超支).
@@ -237,7 +222,6 @@ class BudgetLedger:
             self._apply(
                 snapshot.account_id,
                 reserved_tokens=tokens,
-                reserved_cost_micros=cost_micros,
                 reserved_tool_calls=tool_calls,
                 attempts_created=1 if counts_attempt else 0,
             )
@@ -251,8 +235,9 @@ class BudgetLedger:
             )
         self._store.connection.execute(
             "INSERT INTO budget_reservations(reservation_id,account_id,mission_id,subject_id,state,"
+            # STEP3-INTERIM: the NOT NULL money column until migration 38 drops it
             "reserved_tokens,reserved_cost_micros,reserved_tool_calls,created_at,updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,0,?,?,?)",
             (
                 reservation_id,
                 account_id,
@@ -260,7 +245,6 @@ class BudgetLedger:
                 subject_id,
                 "RESERVED",
                 tokens,
-                cost_micros,
                 tool_calls,
                 self._store.now,
                 self._store.now,
@@ -270,7 +254,7 @@ class BudgetLedger:
 
     def release_attempt(self, account_id: str) -> None:
         """Give back one attempt on ``account_id`` and every ancestor (2026-09-28：非模型原因
-        的失败不扣次数)。只退次数；token、费用与工具次数照常结清。"""
+        的失败不扣次数)。只退次数；token 与工具次数照常结清。"""
 
         if not self._store.connection.in_transaction:
             raise BudgetError("attempt release requires a Commit transaction")
@@ -286,35 +270,29 @@ class BudgetLedger:
         ).fetchone()
         return None if row is None else dict(row)
 
-    def grow(self, *, subject_id: str, tokens: int, cost_micros: int) -> None:
-        """Raise an existing envelope in both dimensions; all checks precede writes."""
+    def grow(self, *, subject_id: str, tokens: int) -> None:
+        """Raise an existing token envelope; all checks precede writes."""
         if not self._store.connection.in_transaction:
             raise BudgetError("reservation grow requires a Commit transaction")
-        if any(type(v) is not int or v < 0 for v in (tokens, cost_micros)):
-            raise BudgetError("reservation allowance must be nonnegative integers")
+        if type(tokens) is not int or tokens < 0:
+            raise BudgetError("reservation allowance must be a nonnegative integer")
         reservation = self.reservation(subject_id)
         if reservation is None or reservation["state"] != "RESERVED":
             raise BudgetError("reservation grow requires a live original subject")
-        deltas = {
-            "tokens": max(0, tokens - reservation["reserved_tokens"]),
-            "cost_micros": max(0, cost_micros - reservation["reserved_cost_micros"]),
-        }
-        if not any(deltas.values()):
+        delta = max(0, tokens - reservation["reserved_tokens"])
+        if not delta:
             return
         chain = self._chain(reservation["account_id"])
         for snapshot in chain:
             remaining = snapshot.remaining_tokens()
-            if remaining is not None and deltas["tokens"] > remaining:
-                raise BudgetExhausted(snapshot.account_id, "tokens", deltas["tokens"], remaining)
+            if remaining is not None and delta > remaining:
+                raise BudgetExhausted(snapshot.account_id, "tokens", delta, remaining)
         for snapshot in chain:
-            self._apply(
-                snapshot.account_id,
-                **{"reserved_" + dimension: delta for dimension, delta in deltas.items()},
-            )
+            self._apply(snapshot.account_id, reserved_tokens=delta)
         self._store.connection.execute(
-            "UPDATE budget_reservations SET reserved_tokens=reserved_tokens+?,"
-            "reserved_cost_micros=reserved_cost_micros+?,updated_at=? WHERE subject_id=?",
-            (deltas["tokens"], deltas["cost_micros"], self._store.now, subject_id),
+            "UPDATE budget_reservations SET reserved_tokens=reserved_tokens+?,updated_at=?"
+            " WHERE subject_id=?",
+            (delta, self._store.now, subject_id),
         )
 
     # ------------------------------------------------------------ usage facts
@@ -329,10 +307,10 @@ class BudgetLedger:
         for fact in facts:
             cursor = self._store.connection.execute(
                 "INSERT INTO imported_usage(usage_ref,subject_id,mission_id,input_tokens,output_tokens,"
-                "cost_micros,unpriced,unknown,imported_at) VALUES (?,?,?,?,?,?,?,?,?)"
+                # STEP3-INTERIM: the NOT NULL money flag until migration 38 drops it
+                "unpriced,unknown,imported_at) VALUES (?,?,?,?,?,0,?,?)"
                 " ON CONFLICT(usage_ref) DO UPDATE SET"
                 " input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,"
-                " cost_micros=excluded.cost_micros, unpriced=excluded.unpriced,"
                 " unknown=excluded.unknown, imported_at=excluded.imported_at"
                 " WHERE imported_usage.unknown=1 AND excluded.unknown=0",
                 (
@@ -341,8 +319,6 @@ class BudgetLedger:
                     mission_id,
                     fact.input_tokens,
                     fact.output_tokens,
-                    fact.cost_micros,
-                    0 if (fact.cost_micros is not None or fact.unknown) else 1,
                     1 if fact.unknown else 0,
                     self._store.now,
                 ),
@@ -350,31 +326,25 @@ class BudgetLedger:
             imported += cursor.rowcount
         return imported
 
-    def usage_for(self, subject_id: str) -> tuple[int, int | None, bool]:
-        """(tokens, cost_micros or None, unpriced_present) over the subject's imported usage."""
+    def usage_for(self, subject_id: str) -> int:
+        """Tokens over the subject's imported usage."""
 
         row = self._store.connection.execute(
-            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), SUM(cost_micros), MAX(unpriced)"
+            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0)"
             " FROM imported_usage WHERE subject_id = ?",
             (subject_id,),
         ).fetchone()
-        tokens = int(row[0])
-        unpriced = bool(row[2])
-        cost = None if unpriced or row[1] is None else int(row[1])
-        return tokens, cost, unpriced
+        return int(row[0])
 
-    def known_usage_for(self, subject_id: str) -> tuple[int, int | None, bool]:
+    def known_usage_for(self, subject_id: str) -> int:
         """Like :meth:`usage_for`, but unknown rows do not count as a 0-token charge."""
 
         row = self._store.connection.execute(
-            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), SUM(cost_micros), MAX(unpriced)"
+            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0)"
             " FROM imported_usage WHERE subject_id = ? AND unknown = 0",
             (subject_id,),
         ).fetchone()
-        tokens = int(row[0])
-        unpriced = bool(row[2])
-        cost = None if unpriced or row[1] is None else int(row[1])
-        return tokens, cost, unpriced
+        return int(row[0])
 
     def imported_unknown_count(self, subject_id: str) -> int:
         row = self._store.connection.execute(
@@ -408,23 +378,19 @@ class BudgetLedger:
         if self.has_unknown_usage(subject_id):
             # ORCH §12.2: an UNKNOWN charge keeps the reservation occupied until reconciled.
             raise BudgetError(f"{subject_id} has an unknown provider charge; reservation held")
-        tokens, cost, unpriced = self.usage_for(subject_id)
-        settled_cost = 0 if cost is None else cost
+        tokens = self.usage_for(subject_id)
         for snapshot in self._chain(reservation["account_id"]):
             self._apply(
                 snapshot.account_id,
                 reserved_tokens=-int(reservation["reserved_tokens"]),
-                reserved_cost_micros=-int(reservation["reserved_cost_micros"]),
                 reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
                 settled_tokens=tokens,
-                settled_cost_micros=settled_cost,
                 settled_tool_calls=int(tool_calls),
-                unpriced_settlements=1 if unpriced else 0,
             )
         self._store.connection.execute(
-            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?, settled_cost_micros = ?,"
-            " settled_tool_calls = ?, unpriced = ?, updated_at = ? WHERE subject_id = ?",
-            (tokens, cost, int(tool_calls), 1 if unpriced else 0, self._store.now, subject_id),
+            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
+            " settled_tool_calls = ?, updated_at = ? WHERE subject_id = ?",
+            (tokens, int(tool_calls), self._store.now, subject_id),
         )
         settled = self.reservation(subject_id)
         assert settled is not None
@@ -443,23 +409,19 @@ class BudgetLedger:
             raise BudgetError(f"no reservation for {subject_id}")
         if reservation["state"] == "SETTLED":
             return reservation
-        tokens, cost, unpriced = self.known_usage_for(subject_id)
-        settled_cost = 0 if cost is None else cost
+        tokens = self.known_usage_for(subject_id)
         for snapshot in self._chain(reservation["account_id"]):
             self._apply(
                 snapshot.account_id,
                 reserved_tokens=-int(reservation["reserved_tokens"]),
-                reserved_cost_micros=-int(reservation["reserved_cost_micros"]),
                 reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
                 settled_tokens=tokens,
-                settled_cost_micros=settled_cost,
                 settled_tool_calls=int(tool_calls),
-                unpriced_settlements=1 if unpriced else 0,
             )
         self._store.connection.execute(
-            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?, settled_cost_micros = ?,"
-            " settled_tool_calls = ?, unpriced = ?, updated_at = ? WHERE subject_id = ?",
-            (tokens, cost, int(tool_calls), 1 if unpriced else 0, self._store.now, subject_id),
+            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
+            " settled_tool_calls = ?, updated_at = ? WHERE subject_id = ?",
+            (tokens, int(tool_calls), self._store.now, subject_id),
         )
         settled = self.reservation(subject_id)
         assert settled is not None
@@ -479,24 +441,20 @@ class BudgetLedger:
             raise BudgetError(f"no reservation for {subject_id}")
         if reservation["state"] == "SETTLED":
             return reservation
-        known_tokens, known_cost, unpriced = self.known_usage_for(subject_id)
+        known_tokens = self.known_usage_for(subject_id)
         tokens = max(int(reservation["reserved_tokens"]), int(known_tokens))
-        cost = max(int(reservation["reserved_cost_micros"]), int(known_cost or 0))
         for snapshot in self._chain(reservation["account_id"]):
             self._apply(
                 snapshot.account_id,
                 reserved_tokens=-int(reservation["reserved_tokens"]),
-                reserved_cost_micros=-int(reservation["reserved_cost_micros"]),
                 reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
                 settled_tokens=tokens,
-                settled_cost_micros=cost,
                 settled_tool_calls=0,
-                unpriced_settlements=1 if unpriced else 0,
             )
         self._store.connection.execute(
-            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?, settled_cost_micros = ?,"
-            " settled_tool_calls = 0, unpriced = ?, updated_at = ? WHERE subject_id = ?",
-            (tokens, cost, 1 if unpriced else 0, self._store.now, subject_id),
+            "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
+            " settled_tool_calls = 0, updated_at = ? WHERE subject_id = ?",
+            (tokens, self._store.now, subject_id),
         )
         settled = self.reservation(subject_id)
         assert settled is not None
@@ -507,7 +465,7 @@ class BudgetLedger:
             "SELECT * FROM budget_accounts WHERE mission_id = ? ORDER BY account_id", (mission_id,)
         ).fetchall()
         usage = self._store.connection.execute(
-            "SELECT subject_id, usage_ref, input_tokens, output_tokens, cost_micros, unpriced, unknown"
+            "SELECT subject_id, usage_ref, input_tokens, output_tokens, unknown"
             " FROM imported_usage WHERE mission_id = ? ORDER BY imported_at, usage_ref",
             (mission_id,),
         ).fetchall()
@@ -564,7 +522,7 @@ class BudgetLedger:
             "SELECT * FROM budget_accounts WHERE mission_id = ? ORDER BY account_id", (mission_id,)
         ).fetchall()
         usage = self._store.connection.execute(
-            "SELECT subject_id, usage_ref, input_tokens, output_tokens, cost_micros, unpriced, unknown"
+            "SELECT subject_id, usage_ref, input_tokens, output_tokens, unknown"
             " FROM imported_usage WHERE mission_id = ? ORDER BY imported_at, usage_ref",
             (mission_id,),
         ).fetchall()

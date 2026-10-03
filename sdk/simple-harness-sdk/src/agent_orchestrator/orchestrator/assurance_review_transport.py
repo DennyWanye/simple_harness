@@ -231,8 +231,7 @@ def ensure_review_invocation(
     text(request_command_id)
     text(tenant_id)
     integer(reservation.tokens, minimum=1)
-    integer(reservation.cost_micros)
-    # create_service_intent's existing service reserve covers tokens/cost, not
+    # create_service_intent's existing service reserve covers tokens, not
     # a separately named tool allowance. Do not claim it reserved an ignored cap.
     if reservation.tool_calls != 0:
         raise AssuranceError("REVIEW_SERVICE_RESERVATION_INVALID")
@@ -266,7 +265,7 @@ def ensure_review_invocation(
         "binding_hash": binding.content_hash,
         "ordinal": ordinal,
         "config_hash": fingerprint(invocation_config),
-        "reservation": {"tokens": reservation.tokens, "cost_micros": reservation.cost_micros},
+        "reservation": {"tokens": reservation.tokens},
         "account_id": account_id,
         "prior_failure_ref": None if prior_failure is None else prior_failure.to_json(),
     }
@@ -398,7 +397,6 @@ def ensure_review_invocation(
             or reserve["mission_id"] != mission_id
             or reserve["account_id"] != account_id
             or reserve["reserved_tokens"] != reservation.tokens
-            or reserve["reserved_cost_micros"] != reservation.cost_micros
         ):
             raise AssuranceError("REVIEW_RESERVATION_MISMATCH")
         event = commit._emit(
@@ -591,10 +589,7 @@ def read_review_invocation_locked(
         "binding_hash": binding.content_hash,
         "ordinal": body["ordinal"],
         "config_hash": fingerprint(dict(intent.config)),
-        "reservation": {
-            "tokens": historical.get("reserved_tokens"),
-            "cost_micros": historical.get("reserved_cost_micros"),
-        },
+        "reservation": {"tokens": historical.get("reserved_tokens")},
         "account_id": historical.get("account_id"),
         "prior_failure_ref": body["prior_failure_receipt_ref"],
     }
@@ -856,7 +851,7 @@ def ensure_format_repair_invocation(
     """One bounded repair of an actual malformed response, on the same package.
 
     Original frozen evidence bytes are resent. No latest search, implicit second
-    semantic review, extra account or fabricated zero-cost reservation is used.
+    semantic review, extra account or fabricated zero-token reservation is used.
     The current handoff validator must admit these bytes before reserving again.
     """
     from ..assurance.codec import canonical
@@ -927,10 +922,7 @@ def ensure_format_repair_invocation(
         package=package,
         request_command_id=request["request_command_id"],
         config=config,
-        reservation=Reservation(
-            tokens=request["reservation"]["tokens"],
-            cost_micros=request["reservation"]["cost_micros"],
-        ),
+        reservation=Reservation(tokens=request["reservation"]["tokens"]),
         require_current_locked=require_current,
         prior_failure=prior_failure,
         repair_reason={"TURN_FAILED": "TURN_RETRY", "SECOND_OPINION": "SECOND_OPINION"}.get(

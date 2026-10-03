@@ -22,7 +22,6 @@ from simple_harness.execution.effects import EffectState, effect_request_hash
 
 from ..contracts.models import jsonable, sha256_hex
 from ..governance.budgets import UsageFact
-from ..governance.provider_prices import ProviderPrice
 from ..graph.execution_contracts import CompleteRead
 from ..runtime.dispatch_history import read_dispatch_history
 from ..runtime.planning_operations import SourceUnavailable
@@ -50,8 +49,8 @@ class TaskGraphRuntimeImports:
     def _unguarded_usage(bridge: Any, originals: Any, turn: Any) -> tuple[list[UsageFact], bool]:
         """Read legacy SDK calls that never had orchestrator admission grants.
 
-        Identity/account ownership is checked by the caller. Missing usage or
-        pricing keeps the original reservation open; it is never a zero charge.
+        Identity/account ownership is checked by the caller. Missing usage keeps
+        the original reservation open; it is never a zero charge.
         Guarded calls continue through the original grant validator.
         """
         complete = str(turn.phase) in {"committed", "failed"}
@@ -71,16 +70,8 @@ class TaskGraphRuntimeImports:
                 complete = False
                 continue
             input_tokens, output_tokens = tokens["input_tokens"], tokens["output_tokens"]
-            amount = None
-            if not bridge.unpriced:
-                price = ProviderPrice.from_record(original)
-                amount = None if price is None else price.known_charge(
-                    record, input_tokens=input_tokens, output_tokens=output_tokens)
-                if amount is None:
-                    complete = False
-                    continue
             facts.append(UsageFact("provider-invocation:" + record.invocation_id,
-                                   input_tokens, output_tokens, amount))
+                                   input_tokens, output_tokens))
         return facts, complete
 
     def _read(self, intent: DispatchIntent, bridge: Any) -> RuntimeSubjectFacts:
@@ -195,16 +186,16 @@ class TaskGraphRuntimeImports:
         imports = []
         for fact in facts:
             imported = store.connection.execute(
-                "SELECT subject_id,mission_id,input_tokens,output_tokens,cost_micros,unknown "
+                "SELECT subject_id,mission_id,input_tokens,output_tokens,unknown "
                 "FROM imported_usage WHERE usage_ref=?", (fact.usage_ref,),
             ).fetchone()
             if imported is None:
                 physical = False
             elif tuple(imported) != (intent.subject_id, intent.mission_id, fact.input_tokens,
-                                     fact.output_tokens, fact.cost_micros, int(fact.unknown)):
+                                     fact.output_tokens, int(fact.unknown)):
                 # A still-unknown old import awaits the real accounting importer;
                 # differing final amounts or identities are corruption.
-                if (imported[0] != intent.subject_id or imported[1] != intent.mission_id or not imported[5]):
+                if (imported[0] != intent.subject_id or imported[1] != intent.mission_id or not imported[4]):
                     raise SourceUnavailable("taskgraph_runtime_imported_usage_mismatch")
                 physical = False
             imports.append({"usage_ref": fact.usage_ref, "actual": _document(fact),

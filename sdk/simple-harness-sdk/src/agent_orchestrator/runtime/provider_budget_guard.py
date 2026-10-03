@@ -225,11 +225,7 @@ class ProviderBudgetCommitAdapter:
     def grow(self, reservation, *, required: int) -> None:
         if required <= reservation["reserved_tokens"]:
             return
-        self.commit.ledger.grow(
-            subject_id=reservation["subject_id"],
-            tokens=required,
-            cost_micros=0,
-        )
+        self.commit.ledger.grow(subject_id=reservation["subject_id"], tokens=required)
 
 
 class ProviderBudgetGuard:

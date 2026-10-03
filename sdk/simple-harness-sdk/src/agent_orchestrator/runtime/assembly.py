@@ -490,7 +490,7 @@ def assemble_orchestrator_runtime(
         runtime = build_arp_runtime(ports, native.arp_ports(database), owner_scope=OWNER_SCOPE)
         if native.after_build is not None:
             native.after_build(runtime)
-        bridge = AgentBridge(runtime, unpriced=True, caller_for=native.caller_for)
+        bridge = AgentBridge(runtime, caller_for=native.caller_for)
         pools[profile_id] = RuntimePool(
             profile=profile,
             runtime=runtime,

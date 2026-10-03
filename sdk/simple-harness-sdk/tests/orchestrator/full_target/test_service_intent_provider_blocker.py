@@ -142,7 +142,7 @@ def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_p
                 "planner_calls": provider.role_calls.get("planner", 0),
                 "open": [item.subject_id for item in world.store.list_intents(*OPEN)
                          if item.mission_id == mission_id],
-                "known": world.loop.commit.ledger.known_usage_for(subject)[0],
+                "known": world.loop.commit.ledger.known_usage_for(subject),
                 "unknown": world.loop.commit.ledger.has_unknown_usage(subject),
                 "ledger": assert_terminal_ledger(world, mission_id, unknown=True),
             }

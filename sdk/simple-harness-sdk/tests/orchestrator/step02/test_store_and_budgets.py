@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Step 2 · slice A2/A5: single-writer store with CAS and idempotent events; budget
-Reserve/Settle on the account chain; usage facts imported at most once; unpriced
-settlements never written as zero."""
+Reserve/Settle on the account chain; usage facts imported at most once; tokens only."""
 
 from __future__ import annotations
 
@@ -87,7 +86,7 @@ def test_cas_and_idempotent_events(tmp_path):
     assert store.fired == ["probe"]
 
 
-def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
+def test_budget_chain_reserve_settle_and_import_usage(tmp_path):
     store = Store.open(tmp_path / "o.db")
     ledger = BudgetLedger(store)
     with store.transaction():
@@ -109,7 +108,6 @@ def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
             account_id="budget:task-1",
             subject_id="attempt-1",
             tokens=500,
-            cost_micros=0,
             counts_attempt=True,
         )
         assert (
@@ -117,7 +115,6 @@ def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
                 account_id="budget:task-1",
                 subject_id="attempt-1",
                 tokens=500,
-                cost_micros=0,
                 counts_attempt=True,
             )
             == first
@@ -128,7 +125,6 @@ def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
                 account_id="budget:task-1",
                 subject_id="attempt-2",
                 tokens=200,
-                cost_micros=0,
                 counts_attempt=True,
             )
         assert exc.value.dimension == "tokens"
@@ -137,29 +133,21 @@ def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
                 subject_id="attempt-1",
                 mission_id="mission-1",
                 facts=[
-                    UsageFact("provider-request:r1", 120, 30, None),
-                    UsageFact("provider-request:r1", 120, 30, None),
+                    UsageFact("provider-request:r1", 120, 30),
+                    UsageFact("provider-request:r1", 120, 30),
                 ],
             )
             == 1
         )
         settled = ledger.settle(subject_id="attempt-1")
-        assert (
-            settled["settled_tokens"] == 150
-            and settled["settled_cost_micros"] is None
-            and settled["unpriced"] == 1
-        )
+        assert settled["settled_tokens"] == 150
         mission_account = ledger.account("budget:mission-1")
         assert mission_account.reserved_tokens == 0 and mission_account.settled_tokens == 150
-        assert (
-            mission_account.unpriced_settlements == 1 and mission_account.settled_cost_micros == 0
-        )
         # attempts are counted on the chain and enforced
         ledger.reserve(
             account_id="budget:task-1",
             subject_id="attempt-2",
             tokens=100,
-            cost_micros=0,
             counts_attempt=True,
         )
         with pytest.raises(BudgetExhausted) as exc:
@@ -167,9 +155,8 @@ def test_budget_chain_reserve_settle_and_unpriced(tmp_path):
                 account_id="budget:task-1",
                 subject_id="attempt-3",
                 tokens=1,
-                cost_micros=0,
                 counts_attempt=True,
             )
         assert exc.value.dimension == "attempts"
     report = ledger.costs_report("mission-1")
-    assert len(report["usage"]) == 1 and report["usage"][0]["unpriced"] == 1
+    assert len(report["usage"]) == 1 and report["usage"][0]["input_tokens"] == 120

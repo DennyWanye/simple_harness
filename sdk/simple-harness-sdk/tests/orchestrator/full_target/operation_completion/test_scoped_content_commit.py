@@ -82,7 +82,7 @@ def test_occ11_preparation_acceptance_is_scoped_replay_safe_and_not_an_effect(tm
             with pytest.raises(CommitRejected):
                 commit.create_attempt(leaf.id, role="worker", model="agent-model", prompt_version="v1",
                                       context_version="scoped-content-v1",
-                                      reservation=Reservation(tokens=1_000, cost_micros=0),
+                                      reservation=Reservation(tokens=1_000),
                                       intent_config={"message": "must not dispatch another worker"},
                                       input_hash="b" * 64)
             again = commit.accept_result(leaf.accepted_result_id, verifier_results=())

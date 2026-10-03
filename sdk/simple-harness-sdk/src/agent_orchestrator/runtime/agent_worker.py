@@ -52,9 +52,8 @@ class Liveness:
 
 
 class AgentBridge:
-    def __init__(self, runtime: AgentRuntime, *, unpriced: bool, caller_for: Callable[[Any], Any] | None = None) -> None:
+    def __init__(self, runtime: AgentRuntime, *, caller_for: Callable[[Any], Any] | None = None) -> None:
         self._runtime = runtime
-        self._unpriced = unpriced
         # ARP-EXEC-1.1.1: a native-plane pool derives the authenticated creation caller
         # from the claimed dispatch intent; the legacy pool passes no caller.
         self._caller_for = caller_for
@@ -66,10 +65,6 @@ class AgentBridge:
     @property
     def runtime(self) -> AgentRuntime:
         return self._runtime
-
-    @property
-    def unpriced(self) -> bool:
-        return self._unpriced
 
     def check_tools(self, config: AgentConfig) -> None:
         missing = set(config.tool_names) - set(self._runtime.tool_names)
@@ -213,7 +208,6 @@ class AgentBridge:
                             f"provider-invocation:{record.invocation_id}",
                             0,
                             0,
-                            None,
                             unknown=True,
                         )
                     )
@@ -243,37 +237,17 @@ class AgentBridge:
                             f"provider-invocation:{record.invocation_id}",
                             0,
                             0,
-                            None,
                             unknown=True,
                         )
                     )
                 continue
             input_tokens = int((tokens or {}).get("input_tokens") or 0)
             output_tokens = int((tokens or {}).get("output_tokens") or 0)
-            charge = record.budget_charge
-            if self._runtime.ports.provider_admission is not None and not self._unpriced:
-                # A final token count does not settle an unknown price. Do not
-                # occupy the append-only usage_ref before real reconciliation.
-                from ..governance.provider_prices import ProviderPrice
-
-                price = ProviderPrice.from_record(record)
-                if (
-                    price is None
-                    or price.known_charge(
-                        record, input_tokens=input_tokens, output_tokens=output_tokens
-                    )
-                    is None
-                ):
-                    continue
-            amount = None if self._unpriced else charge.amount_micros
-            unknown = (not self._unpriced) and charge.amount_micros is None
             facts.append(
                 UsageFact(
                     f"provider-invocation:{record.invocation_id}",
                     input_tokens,
                     output_tokens,
-                    amount,
-                    unknown=unknown,
                 )
             )
         return facts

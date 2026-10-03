@@ -224,7 +224,6 @@ class MissionSpec:
 @dataclass(frozen=True, slots=True)
 class Reservation:
     tokens: int
-    cost_micros: int
     tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
 
 
@@ -401,7 +400,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     "subject_id": subject_id,
                     "reason": reason,
                     "reserved_tokens": reservation.get("reserved_tokens"),
-                    "reserved_cost_micros": reservation.get("reserved_cost_micros"),
                 },
             )
 
@@ -856,7 +854,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     subject_id=subject_id,
                     mission_id=mission_id,
                     tokens=reservation.tokens,
-                    cost_micros=reservation.cost_micros,
                     counts_attempt=False,
                 )
             intent = DispatchIntent(
@@ -889,7 +886,6 @@ class CommitService(ProtectedTailCommitsMixin,
                     "subject_id": subject_id,
                     "kind": kind,
                     "tokens": reservation.tokens,
-                    "cost_micros": reservation.cost_micros,
                 },
             )
             return intent
@@ -1602,7 +1598,7 @@ class CommitService(ProtectedTailCommitsMixin,
 
                 self.reserve_critic_tail(
                     attempt_id=attempt_id, task_id=task.id,
-                    reserve=TailReserve(critic_tail.tokens, critic_tail.cost_micros),
+                    reserve=TailReserve(tokens=critic_tail.tokens),
                     semantic_revision=self.protected_tail_revision(task.id),
                 )
             self._ledger.reserve(  # BudgetExhausted propagates; nothing was written
@@ -1610,7 +1606,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 subject_id=attempt_id,
                 mission_id=task.mission_id,
                 tokens=reservation.tokens,
-                cost_micros=reservation.cost_micros,
                 counts_attempt=True,
                 tool_calls=reservation.tool_calls,
             )
@@ -1698,7 +1693,6 @@ class CommitService(ProtectedTailCommitsMixin,
                 payload={
                     "subject_id": attempt_id,
                     "tokens": reservation.tokens,
-                    "cost_micros": reservation.cost_micros,
                 },
             )
             if (
@@ -2124,10 +2118,8 @@ class CommitService(ProtectedTailCommitsMixin,
             payload={
                 "subject_id": subject_id,
                 "settled_tokens": settled["settled_tokens"],
-                "settled_cost_micros": settled["settled_cost_micros"],
                 "released_tokens": int(settled["reserved_tokens"])
                 - int(settled["settled_tokens"] or 0),
-                "unpriced": bool(settled["unpriced"]),
                 "settled_tool_calls": int(settled.get("settled_tool_calls") or 0),
             },
         )
