@@ -180,43 +180,86 @@ def _stop(orch: Any, mission_id: str, detail: dict[str, Any]) -> bool:
     return True
 
 
+def _ask_planner_once(orch: Any, mission: Any, *, key: str, event_type: str, detail: dict[str, Any],
+                      stop: Any) -> bool:
+    """问规划器一次（同一个 ``key`` 只问一次）；它提交过决定而事情仍没解决，就调 ``stop`` 停。
+
+    "回应过"只认规划器真正提交的决定（格式错被退回不算，审阅 2026-09-29）；它提交的决定是
+    去问用户、问题还没答时不算回应完——等人答。"""
+
+    from ..storage.planning_human_store import PlanningHumanStore
+    from .planning_repair_requests import REQUESTED, record_request
+
+    store = orch.store
+    events = tuple(store.iter_events(mission.id))
+    asked = next((e for e in events if e.type == REQUESTED and e.payload.get("source_key") == key), None)
+    if asked is not None:
+        answered = any(e.type == "PlanningDecisionEvaluated" and e.seq > asked.seq
+                       and e.payload.get("status") == "COMMITTED" for e in events)
+        if answered and not PlanningHumanStore(store).pending(mission.id):
+            return stop("；规划器已回应但仍未解决")
+        return False
+    dispatch = orch._new_mode(mission)
+    if dispatch is None:
+        return stop("")
+    root = next(iter(dispatch.network(mission.id).root_occurrence_ids), None)
+    root_task = None if root is None else dispatch.network(mission.id).binding_for_occurrence(root).task_id
+    return record_request(dispatch, mission.id, event_type=event_type,
+                          trigger_refs=tuple(str(x) for x in (root_task,) if x) or (mission.id,),
+                          source_key=key, detail=detail)
+
+
 def _ask_planner_for_source(orch: Any, mission: Any, htn: HtnStore, effect_key: str,
                             target: str, matches: list[str]) -> bool:
     """找不到要发布的文件（或判断不了用哪一版）：请规划器补/改步骤；它回应过仍不行就停。"""
 
-    from .planning_repair_requests import REQUESTED, record_request
+    from .planning_repair_requests import REQUESTED
 
-    store = orch.store
     active = htn.active_plan_revision(mission.id)
     prefix = f"system-operation-source:{effect_key}:"
-    key = prefix + str(active.revision)
-    events = tuple(store.iter_events(mission.id))
-    mine = [e for e in events if e.type == REQUESTED and str(e.payload.get("source_key", "")).startswith(prefix)]
-    asked = next((e for e in mine if e.payload.get("source_key") == key), None)
     reason = (f"已批准的发布 {target} 找不到" + ("唯一的" if matches else "") + "来源文件："
               + ("、".join(matches) + " 都匹配，需指定其中一个步骤的产出" if matches
                  else f"当前计划里没有任何步骤产出 {target}，需要补一个写出它的步骤"))
-    if asked is not None:
-        # 只认规划器真正提交的决定（格式错被退回不算"回应过"，审阅 2026-09-29）
-        answered = any(e.type == "PlanningDecisionEvaluated" and e.seq > asked.seq
-                       and e.payload.get("status") == "COMMITTED" for e in events)
-        if answered:
-            return _stop(orch, mission.id, {"effect_key": effect_key, "target": target,
-                                            "explanation": reason + "；规划器已回应但仍未解决"})
-        return False
-    if len(mine) >= SOURCE_REPAIR_CAP:
-        return _stop(orch, mission.id, {"effect_key": effect_key, "target": target,
-                                        "explanation": reason + f"；已请规划器补过 {len(mine)} 次"})
-    dispatch = orch._new_mode(mission)
-    if dispatch is None:
-        return _stop(orch, mission.id, {"effect_key": effect_key, "target": target, "explanation": reason})
-    root = next(iter(dispatch.network(mission.id).root_occurrence_ids), None)
-    root_task = None if root is None else dispatch.network(mission.id).binding_for_occurrence(root).task_id
-    return record_request(dispatch, mission.id, event_type="VerifierAcceptanceRejected",
-                          trigger_refs=tuple(str(x) for x in (root_task,) if x) or (mission.id,),
-                          source_key=key,
-                          detail={"reason": "system_operation_source_unresolved", "effect_key": effect_key,
-                                  "target": target, "matches": matches, "explanation": reason})
+
+    def stop(why: str) -> bool:
+        return _stop(orch, mission.id, {"effect_key": effect_key, "target": target, "explanation": reason + why})
+
+    key = prefix + str(active.revision)
+    mine = [e for e in orch.store.iter_events(mission.id)
+            if e.type == REQUESTED and str(e.payload.get("source_key", "")).startswith(prefix)]
+    if all(e.payload.get("source_key") != key for e in mine) and len(mine) >= SOURCE_REPAIR_CAP:
+        return stop(f"；已请规划器补过 {len(mine)} 次")
+    return _ask_planner_once(orch, mission, key=key, event_type="VerifierAcceptanceRejected", stop=stop,
+                             detail={"reason": "system_operation_source_unresolved", "effect_key": effect_key,
+                                     "target": target, "matches": matches, "explanation": reason})
+
+
+def _ask_planner_after_rejection(orch: Any, mission: Any, rejected: dict[str, Any]) -> bool:
+    """阶段 B 裁决第 2 类：人拒绝了发布卡——把拒绝理由原文交给规划器（改内容、问人或不改由它判断）。
+
+    上限（秩序，不是判断）：每次拒绝只问一次；规划器回应了而内容没换出新版本就停；同一效果被人
+    拒绝累计 ``SOURCE_REPAIR_CAP`` 次直接停。被拒过的同一份内容系统不会再自动重交。"""
+
+    from ..contracts.state_machines import MissionStopReason
+
+    count = len(rejected["rejections"])
+    latest = rejected["rejections"][-1]
+
+    def stop(why: str) -> bool:
+        orch._commit_fail_mission(mission.id, stop_reason=MissionStopReason.APPROVAL_REJECTED, detail={
+            "reason": "operation_rejected", "effect_key": rejected["effect_key"], "target": rejected["target"],
+            "rejections": rejected["rejections"], "explanation": f"发布 {rejected['target']} 被人拒绝" + why})
+        return True
+
+    if count >= SOURCE_REPAIR_CAP:
+        return stop(f"；已被拒绝 {count} 次")
+    return _ask_planner_once(
+        orch, mission, key=f"operation-rejected:{rejected['effect_key']}:{latest['request_id']}",
+        event_type="OperationNotApplied", stop=lambda why: stop(why.replace("仍未解决", "内容未变")),
+        detail={"reason": "operation_rejected_by_person", "effect_key": rejected["effect_key"],
+                "target": rejected["target"], "rejection_reason": latest["reason"],
+                "rejected_by": latest["rejected_by"], "rejections": count,
+                "remaining": SOURCE_REPAIR_CAP - count})
 
 
 def _needs_approval(orch: Any, operation: tuple[str, str, str]) -> bool:
@@ -292,6 +335,17 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
                 # 已进入执行链，由批准卡片和执行流程接手——除非这一版的动作已经证实没生效、
                 # 且不是人拒绝的（阶段 B 裁决第 1 类）：按原内容重交一张新卡，有上限。
                 action = _materialized_action(store, head["intent_id"])
+                if action is not None and action["state"] == "REJECTED":
+                    # 阶段 B 裁决第 2 类：人拒绝了这张卡。内容换出了新版本（字节变了）就替代重交，
+                    # 再出一张卡；没换就交规划器（同一份内容不再拿去问已经说"不"的人）。
+                    if _artifact_hash(store, head["candidate_artifact_id"]) != artifact.content_hash:
+                        plans.append(_resubmit_plan(effect, operation, head["intent_id"], mission_id, spec_hash,
+                                                    row, acceptance, artifact, len(mine), authority))
+                    else:
+                        plans.append({"effect_key": effect.effect_key, "rejected": {
+                            "effect_key": effect.effect_key, "target": operation[2],
+                            "rejections": _person_rejections(store, mine)}})
+                    continue
                 if action is None or not _proven_not_applied(store, action):
                     continue
                 if len(mine) > SYSTEM_RESUBMIT_CAP:
@@ -331,6 +385,26 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
 def _materialized_action(store: Any, intent_id: str) -> Any:
     receipt = store.get_receipt("materialize:" + intent_id)
     return None if receipt is None else store.get_action(str(receipt.get("action_key") or ""))
+
+
+def _artifact_hash(store: Any, artifact_id: Any) -> str | None:
+    artifact = store.get_artifact(str(artifact_id or ""))
+    return None if artifact is None else str(artifact.content_hash)
+
+
+def _person_rejections(store: Any, intents: list[Any]) -> list[dict[str, Any]]:
+    """Each card of this effect a person rejected, oldest first: who and their words."""
+    found = []
+    for intent in intents:
+        action = _materialized_action(store, intent["intent_id"])
+        if action is None or action["state"] != "REJECTED":
+            continue
+        for request in store.list_approvals(str(action["mission_id"]), "REJECTED"):
+            if request.get("kind") == "action" and str(request.get("subject_key")) == str(action["action_key"]):
+                found.append((float(request.get("closed_at") or 0), {
+                    "request_id": request["request_id"], "action_key": action["action_key"],
+                    "rejected_by": request.get("rejected_by"), "reason": request.get("reason") or ""}))
+    return [item for _, item in sorted(found, key=lambda pair: (pair[0], pair[1]["request_id"]))]
 
 
 def _proven_not_applied(store: Any, action: Any) -> bool:
@@ -378,6 +452,10 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
             orch._commit_fail_mission(mission_id, stop_reason=MissionStopReason.ACTION_FAILED,
                                       detail=dict(plan["stop_failed"]))
             return True
+        if "rejected" in plan:
+            if _ask_planner_after_rejection(orch, orch.store.get_mission(mission_id), plan["rejected"]):
+                return True
+            continue
         if plan.get("ask"):
             mission = orch.store.get_mission(mission_id)
             if _ask_planner_for_source(orch, mission, HtnStore(orch.store), plan["effect_key"],

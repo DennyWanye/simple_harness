@@ -137,6 +137,20 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(panel.textContent).toContain("修补请求");
   });
 
+  it("点开还没开工的步骤，读 SDK 的「为什么还不开工」并说人话", () => {
+    const channel = mount();
+    channel.reply(SNAP, snapshot({}, { phases: { b: "PENDING" } }));
+    const list = screen.getByText("全部步骤（3）").closest("details")!;
+    fireEvent.click(within(list).getByText("发布：产出 NOTES.md"));
+    const [why] = channel.all("taskgraph.why_not_ready");
+    expect(why.payload).toEqual({ mission_id: M, occurrence_id: "b" });
+    channel.reply("taskgraph.why_not_ready", { reason_codes: ["WAITING_ORDER"], details: ["phase=PENDING", "上一步还没交付"] });
+    const box = screen.getByTestId("lg-why-not-ready");
+    expect(box.textContent).toContain("等上一步完成");
+    expect(box.textContent).toContain("上一步还没交付");
+    expect(box.textContent).not.toContain("phase=");
+  });
+
   it("已完成的步骤详情不再显示「还没开始」的原因", () => {
     const channel = mount();
     channel.reply(SNAP, snapshot());

@@ -34,6 +34,7 @@ import { MissionProgress } from "./liveGraph/MissionProgress";
 import { MissionAssurance } from "./MissionAssurance";
 import { PublishCriterionHelper } from "./PublishCriterionHelper";
 import { ActionApprovalSummary } from "./ActionApprovalSummary";
+import { PlanChangePanel } from "./PlanChangePanel";
 import { useConfirm } from "../components/useConfirm";
 import {
   asList as list,
@@ -1032,6 +1033,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                   ))}
                 </div>
               ) : null}
+              {!TERMINAL.has(text(mission.status)) && <PlanChangePanel key={selectedId + ":plan-change"} missionId={selectedId} channel={channel} />}
               {!TERMINAL.has(text(mission.status)) && <button
                 type="button"
                 style={{ ...button, marginTop: tokens.space.sm }}

@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v18"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v19"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -181,8 +181,16 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "这一版计划不会再有这次审查的结论。"
         "要不要改计划（换做法、补步骤、重试）、要不要问用户，由你判断；同一版计划"
         "只会这样问你一次，你这一轮之后计划仍停在原地，任务就按「没有可派发的工作」结束。"
+        "trigger_source 为 OPERATION_NOT_APPLIED 的请求说的是：用户在审批卡上拒绝了一项已批准效果的对外操作"
+        "（比如发布），context.target 是目标，context.rejection_reason 是用户拒绝时写的原话，"
+        "context.rejections 是这项效果已被拒几次、context.remaining 是还剩几次。系统不会把同一份内容再拿去问"
+        "用户：要按理由改内容（重做或换写出它的步骤，产出变了系统会出一张新卡）、问用户，还是不改，由你判断；"
+        "你回应之后内容没变，或被拒次数用完，任务就按「批准被拒」结束。"
         "unknown_coverage 或 unresolved_operations 没解决时不能声称修复完成。\n"
         "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。\n"
+        "  - abandoned_plan_changes：用户亲手放弃过的改计划（卡在半路、用户点了「放弃这次改计划」，旧计划已恢复）："
+        "decision_type / subject_key / rationale 是当时那个决定，reason 是用户的理由原文。"
+        "不要原样再提同一个改法；仍需要改时先读理由，换一种改法或先问用户。\n"
         "  - previous_feedback：不为 null 表示你上一次的回复被拒绝了（见最后一节）。\n"
         "\n可用决定：\n"
         "  - REFINE：为一个还没有做法的目标采用一个做法。payload 为 "

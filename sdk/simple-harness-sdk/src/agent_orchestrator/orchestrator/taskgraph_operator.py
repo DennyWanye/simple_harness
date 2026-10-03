@@ -67,7 +67,8 @@ class TaskGraphOperatorService:
             raise StoreError("TASKGRAPH_OPERATOR_MISSION_MISSING")
         receipt = {"version": 1, "kind": intent["kind"], "command_id": command_id,
                    "mission_id": mission.id, "intent_hash": sha256_hex(intent),
-                   "principal_id": self.guard.principal.principal_id, "result": result}
+                   "principal_id": self.guard.principal.principal_id, "reason": intent["reason"],
+                   "result": result}
         self.store.insert_receipt(commit_id=command_id, kind=intent["kind"], subject_id=mission.id,
             base_version=mission.version, proposal_hash=receipt["intent_hash"], receipt=receipt)
         identity = derive_id("tg-operator-command", command_id)
@@ -102,7 +103,8 @@ class TaskGraphOperatorService:
             job = self.jobs.abandon(mission_id, job_id, expected_version=expected_version,
                 caller=self.guard.principal, command_id=command_id, now_ms=int(self.store.now * 1000))
             record = self.sources.local.sources.history.read_revision(mission_id, job.source_revision).record
-            return self._record(command_id, intent, {"job_id": job.job_id, "state": job.state,
+            return self._record(command_id, intent, {"job_id": job.job_id, "decision_id": job.decision_id,
+                "state": job.state,
                 "row_version": job.row_version, "candidate_hash": job.candidate_hash,
                 "impact_hash": job.impact_hash, "source_revision": job.source_revision,
                 "restored_network_hash": record.manifest_hash})

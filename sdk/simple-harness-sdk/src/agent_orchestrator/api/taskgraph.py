@@ -481,10 +481,15 @@ class TaskGraphReadApi:
                     "source_revision": row["source_revision"], "candidate_hash": row["candidate_hash"],
                     "impact_hash": row["impact_hash"], "state": row["state"],
                     "row_version": row["row_version"], "targets": targets, "diagnostic_refs": diagnostics})
-            if len(jobs) > 4096 or any(len(job["targets"]) > 4096 for job in jobs):
+            # 阶段 B 第 2 条：连败被挡住的通知（§10.2 三类被挡通知都在运维查询里可见），带重发要的行版本。
+            blocked = [dict(row) for row in connection.execute(
+                "SELECT message_id,row_version,kind,subject_key,last_error_code AS error_code,attempts "
+                "FROM taskgraph_followups WHERE mission_id=? AND delivery_state='BLOCKED' ORDER BY message_id",
+                (mission_id,))]
+            if len(jobs) > 4096 or any(len(job["targets"]) > 4096 for job in jobs) or len(blocked) > 4096:
                 _fail("BOUND_REACHED", "convergence view exceeds its public bound")
             return {"schema_version": 1, "mission_id": mission_id, "through_seq": through,
-                    "jobs": jobs, "complete": True}
+                    "jobs": jobs, "blocked_notifications": blocked, "complete": True}
 
 
 __all__ = ["TaskGraphReadApi", "TaskGraphReadError"]

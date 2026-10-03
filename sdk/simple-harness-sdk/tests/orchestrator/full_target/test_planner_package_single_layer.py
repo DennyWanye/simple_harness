@@ -49,7 +49,7 @@ from simple_harness.contracts import canonical_json
 TOP_LEVEL = {
     "context_builder_version", "package_version", "role", "mode", "mission",
     "planning_protocol", "planning_subjects", "visible_refs", "previous_feedback",
-    "decision_limits", "views", "repair_requests", "human_answers", "method_selection",
+    "decision_limits", "views", "repair_requests", "human_answers", "abandoned_plan_changes", "method_selection",
     "method_proposal_contexts", "sharing_candidates", "successor_types",
     "evidence_predicates", "truncated", "omitted_counts",
 }

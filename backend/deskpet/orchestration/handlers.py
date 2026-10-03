@@ -37,6 +37,8 @@ MESSAGE_TYPES = (
     "taskgraph.convergence",
     "taskgraph.execution_snapshot",
     "taskgraph.execution_detail",
+    "taskgraph.abandon_convergence",
+    "taskgraph.retry_notification",
     "mission_assurance_snapshot",
     "mission_assurance_review",
     "mission_assurance_use_check",
@@ -250,6 +252,8 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     # NEXT-TG-1.0 §8：执行过程（尝试/审阅/修补/规划/操作）走 SDK 正式接口，Host 不再直读 SDK 表
     "taskgraph.execution_snapshot": lambda service, body: service.taskgraph_read("execution_snapshot", body),
     "taskgraph.execution_detail": lambda service, body: service.taskgraph_read("execution_detail", body),
+    "taskgraph.abandon_convergence": lambda service, body: service.taskgraph_operate("abandon_convergence", body),
+    "taskgraph.retry_notification": lambda service, body: service.taskgraph_operate("retry_notification", body),
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
