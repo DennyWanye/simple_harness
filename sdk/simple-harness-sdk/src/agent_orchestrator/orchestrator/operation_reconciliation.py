@@ -166,10 +166,18 @@ class OperationReconciliationCommitsMixin:
                 raise ReconciliationProofError("action missing")
             count = int(action.get("reconcile_unavailable") or 0) + 1
             fields: dict[str, Any] = {"reconcile_unavailable": count}
-            if count >= NON_MODEL_FAILURE_CAP:
+            marked = count >= NON_MODEL_FAILURE_CAP
+            if marked:
                 fields.update(needs_human=True, reconcile="STILL_UNKNOWN",
                               reconcile_note="proof_unavailable_after_retries")
-            return self._update_action(action_key, **fields)
+            updated = self._update_action(action_key, **fields)
+            # 每一轮读不到证明都是这个动作的事实（到上限转人工更是）：留事件，不静默改动作行
+            # （阶段 G 收尾大语料）
+            self._emit("ActionReconciliationUnavailable", str(action["mission_id"]),
+                       key=f"{action_key}:{count}",
+                       payload={"action_id": str(action["action_id"]), "action_key": action_key,
+                                "count": count, "marked_for_person": marked})
+            return updated
 
     def finish_proven_nonapplication(
         self, action_key: str, *, reason: str, service_authority: object

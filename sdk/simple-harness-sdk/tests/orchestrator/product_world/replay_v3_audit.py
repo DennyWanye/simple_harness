@@ -90,12 +90,10 @@ def pytest_runtest_teardown(item: Any, nextitem: Any) -> Any:
             result = {"database": str(database), "status": "UNREADABLE",
                       "error": f"{type(error).__name__}: {error}"}
         _RESULTS.append({"test": item.nodeid, **result})
+    _write(item.config.getoption("--replay-v3-audit"))  # 每条用例后都更新：中途被打断也不丢已核的
 
 
-def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
-    target = session.config.getoption("--replay-v3-audit")
-    if not target:
-        return
+def _write(target: str) -> list[dict[str, Any]]:
     failed = [row for row in _RESULTS if row["status"] not in {CONSISTENT, "EXEMPT"}]
     summary = {"databases": len(_RESULTS), "not_consistent": len(failed),
                "exempt": sum(1 for row in _RESULTS if row["status"] == "EXEMPT"),
@@ -103,5 +101,13 @@ def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
                "results": _RESULTS}
     Path(target).parent.mkdir(parents=True, exist_ok=True)
     Path(target).write_text(json.dumps(summary, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    return failed
+
+
+def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
+    target = session.config.getoption("--replay-v3-audit")
+    if not target:
+        return
+    failed = _write(target)
     if failed and session.config.getoption("--replay-v3-audit-strict"):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED

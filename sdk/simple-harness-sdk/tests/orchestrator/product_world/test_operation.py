@@ -357,6 +357,7 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例直接改动作行（清掉转人工标记）造'发布器已不在'的局面")
 def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_path):
     """核验阻断项（2026-10-03）：失败而没查清的发布，发布器已不在（目录撤销授权、重启后没接）时，
     对账这一轮什么也做不了——不许把它算作"有进展"让 ``run()`` 一直空转。"""
@@ -387,6 +388,13 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
                 if any(a["state"] == "FAILED" for a in world.store.list_actions(mission_id)):
                     break
             [action] = [a for a in world.store.list_actions(mission_id) if a["state"] == "FAILED"]
+            # 阶段 G 收尾：对账读不到证明的每一轮（计数、到上限转人工）都留事件——用例直接改库
+            # 之前，这个任务能由事件重建（改坏 G-29：计数不写事件 → 变红）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+            report = verify_mission(world.store, mission_id)
+            assert report["status"] == CONSISTENT, report["silent_changes"]
+            assert [e.payload["marked_for_person"] for e in world.store.list_events(mission_id)
+                    if e.type == "ActionReconciliationUnavailable"][-1] is True
             action["reconcile_unavailable"], action["needs_human"] = 0, False
             world.store.put_action(action)
             world.loop._connectors = {}

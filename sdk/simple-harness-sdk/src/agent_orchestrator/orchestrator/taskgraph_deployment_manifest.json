@@ -1,5 +1,5 @@
 {
-  "deployment_id": "e8e4d5fe7de069e1a26373edf1f8484f7511740f8f335d7c0188dfcd059aa6e3",
+  "deployment_id": "b8c56851bb22698d779c79f037a7e173c79d5c6a7a2345f4ec3084a9455798de",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -210,7 +210,7 @@
     "agent_orchestrator/orchestrator/operation_materialization_inputs.py": "641d233539b5c5b5511051941f5bbfc9a1853fe4a2540a932ab825418e6881d2",
     "agent_orchestrator/orchestrator/operation_outcomes.py": "fd5516b2dde85886f14c38070d0fb534d49b6be66b2362945c8bcd2f69901df5",
     "agent_orchestrator/orchestrator/operation_proposal_review.py": "6ea10de7da3a94ae2969c93e65d87db44a52d45e79c0773e8e9dfc5e7640cdac",
-    "agent_orchestrator/orchestrator/operation_reconciliation.py": "02f3c7d68cbd352de2af884197cecd0dedbc0ff329109a30fc4dceec36319df5",
+    "agent_orchestrator/orchestrator/operation_reconciliation.py": "09befe97ea178d3e7654d8c88f138fcae424cf7328bf107d1a45ad84fd43e8b1",
     "agent_orchestrator/orchestrator/operation_runtime.py": "2e7cd823aa4a4ef6de9162e10a85350d29f2c4bdcca80a9d9fc82cc4309bbb34",
     "agent_orchestrator/orchestrator/plan_commits.py": "39ab440146ca653f28734103aed49c27aaa89913bbb1d9f29b830ea711074990",
     "agent_orchestrator/orchestrator/planner_views.py": "75af1e07f3d29ca2dc2b05aa96c81ea3e6d98f4646ce768955400c5084c1b4b0",

@@ -603,6 +603,17 @@
    "note": "动作内容没变也重写（只改时间、没有事件）"
   },
   {
+   "id": "G-29",
+   "source": "阶段 G 收尾大语料",
+   "file": "src/agent_orchestrator/orchestrator/operation_reconciliation.py",
+   "original": "            self._emit(\"ActionReconciliationUnavailable\", str(action[\"mission_id\"]),",
+   "replacement": "            (lambda *a, **k: None)(\"ActionReconciliationUnavailable\", str(action[\"mission_id\"]),",
+   "tests": [
+    "tests/orchestrator/product_world/test_operation.py::test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle"
+   ],
+   "note": "对账读不到证明（计数、到上限转人工）不留事件"
+  },
+  {
    "id": "M01",
    "source": "TaskGraph 代码级计划 §15",
    "file": null,
