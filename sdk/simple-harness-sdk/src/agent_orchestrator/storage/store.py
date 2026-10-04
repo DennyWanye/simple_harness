@@ -593,9 +593,14 @@ class Store:
         types: Sequence[str] | None = None,
     ) -> list[Event]:
         """``types`` filters in SQL: a reader that wants a few kinds does not parse the
-        rest (存储层记账事件让一个任务的事件约翻一倍，偏差裁决 1 R13)."""
+        rest.  Without ``types`` the storage layer's own ``RowsWritten`` bookkeeping is left
+        out (阶段 G 阻断核验：它约占一个任务事件的四分之一，混进来会把读前 N 条再筛的读取方
+        挤到读不到最新事件)；全业务重放直接读它，要它的读取方显式点名这个类型。"""
 
-        kinds = "" if types is None else f" AND type IN ({','.join('?' * len(types))})"
+        from .source_records import EVENT_TYPE
+
+        kinds = (f" AND type != '{EVENT_TYPE}'" if types is None
+                 else f" AND type IN ({','.join('?' * len(types))})")
         rows = self._connection.execute(
             f"SELECT * FROM events WHERE mission_id = ? AND seq > ?{kinds} ORDER BY seq LIMIT ?",  # noqa: S608
             (mission_id, after_seq, *(types or ()), limit),

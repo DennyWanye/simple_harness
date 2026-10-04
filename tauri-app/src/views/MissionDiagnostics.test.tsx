@@ -28,7 +28,7 @@ class Channel {
   reconnect() { act(() => this.states.forEach((fn) => fn("disconnected"))); }
 }
 const report = (mission_id = "m1") => ({
-  mission_id, replay: { version: "business-replay-v3", status: "INCONSISTENT", counts: { CONSISTENT: 74, INCONSISTENT: 1 }, tables: {}, library: { status: "CONSISTENT" } }, failure_timeline: [],
+  mission_id, replay: { version: "business-replay-v3", status: "INCONSISTENT", counts: { CONSISTENT: 74, INCONSISTENT: 1 }, tables: {} }, failure_timeline: [],
   attribution: { mission_status: "FAILED", attempts: [{ attempt_id: "a1", task_id: "t1", role: "worker", model: "deepseek-flash", status: "FAILED", on_success_path: false, work: { tokens: 50 }, verification: { tokens: 30 } }], cost: { total: { tokens: 80 } } },
 });
 const read = () => fireEvent.click(screen.getByRole("button", { name: "查看回放与贡献" }));

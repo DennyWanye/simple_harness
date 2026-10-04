@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_orchestrator.contracts.models import sha256_hex
-from agent_orchestrator.observability.business_replay import verify_library, verify_mission
+from agent_orchestrator.observability.business_replay import verify_mission
 from agent_orchestrator.observability.metrics import metrics
 from agent_orchestrator.observability.secrets import redact_text
 from agent_orchestrator.observability.traces import attribution, failure_timeline
@@ -85,9 +85,10 @@ def _cost(value: object) -> dict[str, Any]:
     }
 
 
-def _replay(mission: Mapping[str, Any], library: Mapping[str, Any]) -> dict[str, Any]:
-    """全业务重放 v3 的结论与数字（HTN 补齐阶段 G）。只给每张表的状态与行数，不带行键——
-    行键可能含调用方写的文字。"""
+def _replay(mission: Mapping[str, Any]) -> dict[str, Any]:
+    """全业务重放 v3 的结论与数字（HTN 补齐阶段 G）。只给这个任务每张表的状态与行数，不带
+    行键——行键可能含调用方写的文字。全库检查要扫整个库，不在诊断里做（阶段 G 阻断核验：
+    诊断在主循环的事件循环上同步执行，扫全库会让后台整个停住）；它留在命令行 ``replay``。"""
     tables = _mapping(mission.get("tables"))
     return {
         "version": _safe_scalar(mission.get("version")),
@@ -97,10 +98,6 @@ def _replay(mission: Mapping[str, Any], library: Mapping[str, Any]) -> dict[str,
                                "rows": _safe_scalar(_mapping(item).get("rows")),
                                "problems": len(list(_mapping(item).get("problems") or []))}
                    for name, item in sorted(tables.items())},
-        "library": {"status": _safe_scalar(library.get("status")),
-                    "unnamed_rows": _safe_scalar(library.get("unnamed_count")),
-                    "named_twice": len(list(library.get("named_twice") or [])),
-                    "global": _safe_scalar(_mapping(library.get("global")).get("status"))},
     }
 
 
@@ -348,7 +345,7 @@ def build_diagnostics(
 
     store = orchestrator.store
     attribution_report = _attribution(attribution(store, mission_id), snapshot)
-    replay = _replay(verify_mission(store, mission_id), verify_library(store))
+    replay = _replay(verify_mission(store, mission_id))
     report = {
         "mission_id": mission_id,
         # 全业务重放 v3：每张业务表能否由事件重建、与库里一致否（HTN 补齐阶段 G 取代 v2）

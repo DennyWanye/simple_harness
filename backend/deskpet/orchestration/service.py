@@ -1425,7 +1425,7 @@ class OrchestrationService:
             getattr(store, "read_view", None),
             getattr(store, "snapshot", None),
             getattr(store, "iter_events", None),
-            diagnostics.verify_mission, diagnostics.verify_library,
+            diagnostics.verify_mission,
             diagnostics.failure_timeline, diagnostics.attribution,
         ))
 

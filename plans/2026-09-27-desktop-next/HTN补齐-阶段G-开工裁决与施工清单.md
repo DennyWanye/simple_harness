@@ -283,7 +283,7 @@
 - 做法（只增表已由 G-1 自动点名收口，本批只管会改的表与派生核对）：
   - `planning_decisions`：解码、准入、编译三种进度行（`event_handler.py` 回复收集里的 `record_progress`，约 :6351）现在完全不发事件——每次写入发一条 `PlanningDecisionRecorded`，带这一行改后的全部列（正文大时放内容寻址仓库、带哈希）；`PlanningDecisionEvaluated` 的幂等键改成"决定编号 + 序号 + 状态"，不再吞掉同一决定的第二次评估。
   - `planning_requests`（建行只有 `BudgetReserved`、换派发意图 `rebind_planning_request_intent` 同样）、`planning_human_requests`（建题只带编号）、`plan_revisions`（读集原文）、`taskgraph_convergence_jobs`（`WAITING→WAITING` 只加版本号不发事件——改成发；建行补 `decision_id`、`request_id`、`source_revision`）、`missions`（`MissionCreated` 补实际生效预算、成功标准、停止条件、允许工具、风险级别、规划协议四项、领域版本与快照、策略提供方；`MissionCancelled` 与规划失败的 `MissionFailed` 补终报）、`tasks`（`TaskCommitted` 补完整任务与序号）、`obligations`（根义务与子义务建行补签名、燃料上限、预算谱系、授权；`revise_requirement_refs` 登记）、`method_instances`（建行补草稿全文，或核"与网络文档一致"）。
-  - 由计划网络文档推出的只增行（`order_constraints`、`method_child_occurrences`、`data_requirements`、`operation_completion_scopes`）：v3 用 `taskgraph_revision_records.network_json` 现算并比对，算不出来的列记为缺口在本批补。
+  - 由计划网络文档推出的只增行（`order_constraints`、`method_child_occurrences`、`data_requirements`、`operation_completion_scopes`）：v3 用 `taskgraph_revision_records.network_json` 现算并比对，算不出来的列记为缺口在本批补。（偏差裁决 3：前三张已由 `taskgraph_history_sources.validate_revision_sources` 覆盖；`operation_completion_scopes` 改按独立源记录核，不属网络文档投影。）
   - `initialize_root`：同事务的义务建行事件带整行（会改的表）；根任务语义、要求第 1 版（只增）由自动点名覆盖。
 - 功能用例：`T/product_world/test_business_replay.py` 加 `::test_planning_and_plan_tables_rebuild_after_repair_and_amendment`（换做法一次、改要求一次、问人一次后上列各表 `CONSISTENT`）；`::test_a_second_evaluation_of_the_same_decision_is_not_swallowed`。
 - 改坏：G-05 规划决定"进度"分支不发事件 → 抓到；G-06 `MissionCreated` 写请求预算而不是实际生效预算 → 抓到（有全局预算时两者不同）；G-18 `PlanningDecisionEvaluated` 键改回"决定编号" → 抓到。

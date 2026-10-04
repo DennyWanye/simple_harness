@@ -97,8 +97,8 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert secret not in rendered
         assert "<redacted:configured_secret>" in rendered
         assert "selected.txt" not in rendered
-        assert report["replay"]["library"]["status"] == "CONSISTENT"
-        assert report["replay"]["library"]["global"] == "CONSISTENT"
+        assert report["replay"]["status"] == "CONSISTENT"
+        assert "library" not in report["replay"]  # 全库检查不在诊断里做（阶段 G 阻断核验）
         assert isinstance(report["failure_timeline"], list)
 
         first = export_support(orchestration_root / "support", report)

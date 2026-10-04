@@ -71,7 +71,6 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
   };
   const replay = asRecord(report?.replay);
   const counts = asRecord(replay.counts);
-  const library = asRecord(replay.library);
   const count = (key: string) => (typeof counts[key] === "number" ? counts[key] : 0) as number;
   const failures = asList(report?.failure_timeline);
   const attribution = asRecord(report?.attribution);
@@ -94,7 +93,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
       <p>任务状态：{asText(attribution.mission_status) || "未知"}</p>
       {replay.status === "OUT_OF_SCOPE"
         ? <p>重建结果：这个任务是按旧口径建的，不在重建核对范围内。</p>
-        : <p>重建结果：一致 {count("CONSISTENT")} 张表 · 不一致 {count("INCONSISTENT")} 张{library.status === "CONSISTENT" ? "" : " · 全库核对不一致"}。</p>}
+        : <p>重建结果：一致 {count("CONSISTENT")} 张表 · 不一致 {count("INCONSISTENT")} 张。</p>}
       <p>证据链缺口 {asList(attribution.breaks).length} 项。重建一致不代表任务交付成功。</p>
       <p>记录用量：{asText(total.tokens) || "未知"} tokens</p>
       <p>预留：{usage.reserved_tokens == null ? "未知" : asText(usage.reserved_tokens)} tokens · 未知用量记录（已入账）：{unknownRows == null ? "未知" : unknownRows} · 账本核对：{cost.reconciled === true ? "一致" : "未对齐或不可用"}</p>
