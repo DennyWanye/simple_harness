@@ -304,6 +304,9 @@ def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
                     product.control.planning_authorization(command)
                 return result
 
+            from safety_facts import safety_facts
+
+            before = safety_facts(loop.store, mission.id)
             dispatch.preview_plan_proposal = preview_then_change  # type: ignore[method-assign]
             try:
                 await loop._collect_plan_decision(
@@ -321,6 +324,8 @@ def test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound(
             )
             assert stored is not None
             assert stored["status"] == str(PlanningDecisionStatus.COMMIT_REJECTED), stored
+            # 拒绝不只是报错：没有新计划、没有新派发、没有对外交接、没有预留被放掉
+            assert safety_facts(loop.store, mission.id) == before
             expected = "AUTHORIZATION_REQUIRED" if change == "expire" else "REQUEST_BINDING_STALE"
             assert stored["rejection_codes"] == [expected], stored
             assert [item["reason"] for item in stored["detail"]["refusals"]] == [expected]

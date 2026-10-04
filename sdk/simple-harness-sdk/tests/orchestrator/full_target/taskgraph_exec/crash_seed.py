@@ -28,9 +28,19 @@ def _accounts(connection):
     return [r[0] for r in connection.execute('SELECT account_id FROM budget_accounts ORDER BY account_id')]
 
 
-async def main(base: Path, mode: str):
+def _real_provider():
+    """联测 S4：真实模型下的同一条路径（``crash_seed.py <dir> <mode> real``）。"""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'agents'))
+    from real_provider_config import build_real_provider, resolve_real_provider
+
+    config = resolve_real_provider()
+    assert config is not None, 'no real provider configured (SH_BASEURL / SH_APIKEY / SH_MODEL)'
+    return build_real_provider(config)
+
+
+async def main(base: Path, mode: str, real: bool = False):
     base.mkdir(parents=True, exist_ok=True)
-    async with enabled_world(base, key='tg-process-' + mode) as world:
+    async with enabled_world(base, key='tg-process-' + mode, provider=_real_provider() if real else None) as world:
         store = world.store
 
         def exit_with_original_reply(code):
@@ -78,12 +88,12 @@ async def main(base: Path, mode: str):
             store.fault = fault
         else:
             raise AssertionError('unexpected fault mode')
-        async with asyncio.timeout(30):
+        async with asyncio.timeout(900 if real else 30):
             while True:
                 await world.step()
         raise AssertionError('process exit point was not reached')
 
 
 if __name__ == '__main__':
-    asyncio.run(main(Path(sys.argv[1]), sys.argv[2]))
+    asyncio.run(main(Path(sys.argv[1]), sys.argv[2], real=sys.argv[3:] == ['real']))
 

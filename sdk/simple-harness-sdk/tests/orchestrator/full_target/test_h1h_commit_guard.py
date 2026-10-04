@@ -51,6 +51,9 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
                     approved.update(round_.world.control.decide(round_.approval_id, "approve"))
                 return result
 
+            from safety_facts import safety_facts
+
+            before = safety_facts(round_.loop.store, round_.mission_id)
             dispatch.preview_plan_proposal = preview_then_approve  # type: ignore[method-assign]
             try:
                 row = await run_rounds(round_)
@@ -58,6 +61,11 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
                 dispatch.preview_plan_proposal = original  # type: ignore[method-assign]
             assert approved["request_state"] == "GRANTED", approved
             assert row["status"] == "COMMIT_REJECTED", row
+            # 被拒的改计划没有留下任何东西：没有新计划、没有新派发、没有预留被放掉。人批准的那次发布
+            # 是另一件事（它的交接照常发生），所以对外交接不在这里比。
+            after = safety_facts(round_.loop.store, round_.mission_id)
+            assert {k: v for k, v in after.items() if k != "external_handoffs"} == {
+                k: v for k, v in before.items() if k != "external_handoffs"}
             assert "TASKGRAPH_PLAN_SOURCE_CHANGED" in json.dumps(row["detail"]), row
             assert round_.plan_revision() == 1
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]

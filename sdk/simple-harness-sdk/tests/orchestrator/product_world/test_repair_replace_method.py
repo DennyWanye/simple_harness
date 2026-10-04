@@ -191,6 +191,13 @@ def test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs
             from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
             report = verify_mission(store, mission_id)
             assert report["status"] == CONSISTENT, report["silent_changes"]
+            # 联测 F2 数据表直接测试：换计划留下的收敛作业与它的目标，绕过接口也改不了、挂不到别的任务上
+            from table_guards import check_table_guards
+            other = world.create({"goal": "另一个任务", "idempotency_key": "replace-method-other",
+                                  "success_criteria": ["file:other.md"]})["mission_id"]
+            assert check_table_guards(store.connection, mission_id, other, (
+                "taskgraph_convergence_jobs", "taskgraph_convergence_targets")) == [
+                "taskgraph_convergence_jobs", "taskgraph_convergence_targets"]
 
     asyncio.run(case())
 
