@@ -57,7 +57,7 @@
    "tests": [
     "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_at_attempt_boundary_preserves_original_accounting"
    ],
-   "run_in": "G"
+   "run_in": "G（已执行）"
   },
   {
    "id": "K05",
@@ -153,12 +153,12 @@
    "from": "AER⑨",
    "method": "构造场景",
    "injection": [
-    "（构造场景）"
+    "（真场景：执行者调用半路时取消任务，调用随后返回）"
    ],
    "tests": [
-    "tests/orchestrator/full_target/taskgraph_exec/test_late_accounting_quiet.py::test_ended_mission_holds_are_rechecked_every_five_minutes"
+    "tests/orchestrator/product_world/test_late_usage.py::test_usage_arriving_after_the_mission_ended_settles_the_original_account"
    ],
-   "run_in": "G"
+   "run_in": "G（已执行）"
   },
   {
    "id": "K12",
@@ -167,10 +167,12 @@
    "from": "阶段 C 评估 U1",
    "method": "函数级抛错",
    "injection": [
-    "accounting_recovery._import_hold（函数级）"
+    "BudgetLedger.import_usage（函数级，任务已停后收回调用时导入那一次）"
    ],
-   "tests": [],
-   "run_in": "G"
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round"
+   ],
+   "run_in": "G（已执行）"
   },
   {
    "id": "K13",

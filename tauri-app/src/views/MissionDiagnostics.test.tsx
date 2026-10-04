@@ -28,7 +28,7 @@ class Channel {
   reconnect() { act(() => this.states.forEach((fn) => fn("disconnected"))); }
 }
 const report = (mission_id = "m1") => ({
-  mission_id, replay: { version: "business-replay-v3", status: "NOT_COVERED", counts: { CONSISTENT: 50, NOT_COVERED: 1 }, tables: {}, library: { status: "CONSISTENT" } }, failure_timeline: [],
+  mission_id, replay: { version: "business-replay-v3", status: "INCONSISTENT", counts: { CONSISTENT: 74, INCONSISTENT: 1 }, tables: {}, library: { status: "CONSISTENT" } }, failure_timeline: [],
   attribution: { mission_status: "FAILED", attempts: [{ attempt_id: "a1", task_id: "t1", role: "worker", model: "deepseek-flash", status: "FAILED", on_success_path: false, work: { tokens: 50 }, verification: { tokens: 30 } }], cost: { total: { tokens: 80 } } },
 });
 const read = () => fireEvent.click(screen.getByRole("button", { name: "查看回放与贡献" }));
@@ -42,7 +42,7 @@ describe("P36 selected Mission diagnostics", () => {
     expect(channel.last().payload).toEqual({ mission_id: "m1" });
     channel.reply(channel.last(), report());
     expect(screen.getByText(/任务状态：FAILED/)).toBeTruthy();
-    expect(screen.getByText(/重建结果：一致 50 张表 · 不一致 0 张 · 未覆盖 1 张。/)).toBeTruthy();
+    expect(screen.getByText(/重建结果：一致 74 张表 · 不一致 1 张。/)).toBeTruthy();
     expect(screen.getByText(/记录用量：80 tokens/)).toBeTruthy();
     expect(screen.getByText(/记录不完整/)).toBeTruthy();
     expect(screen.getByText(/未知用量记录（已入账）：未知/)).toBeTruthy();

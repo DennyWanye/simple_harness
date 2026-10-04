@@ -89,7 +89,7 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
         assert response["payload"]["ok"] is True, response
         report = response["payload"]["data"]
         assert report["attribution"]["mission_status"] == "COMPLETED"
-        assert report["replay"]["comparison"]["consistent"] is True
+        assert report["replay"]["status"] == "CONSISTENT" and report["replay"]["library"]["global"] == "CONSISTENT"
         assert report["verification"]["results"]
         assert report["verification"]["artifacts"]
         assert report["attribution"]["attempts"]

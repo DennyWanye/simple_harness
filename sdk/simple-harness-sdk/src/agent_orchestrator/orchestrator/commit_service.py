@@ -2684,7 +2684,9 @@ class CommitService(ProtectedTailCommitsMixin,
             self._emit(
                 "VerificationLayerRecorded",
                 stored.envelope.mission_id,
-                key=f"{result_id}:{layer}",
+                # 同一结果同一层再验一次、结论或明细变了，要有自己的事件（阶段 G）；一模一样的重放
+                # 仍是同一条
+                key=f"{result_id}:{layer}:{sha256_hex([status, dict(detail)])[:16]}",
                 task_id=stored.envelope.task_id,
                 attempt_id=stored.envelope.attempt_id,
                 payload={

@@ -1,7 +1,7 @@
 {
- "inventory_version": 2,
+ "inventory_version": 3,
  "replay_version": "business-replay-v3",
- "timestamp_rule": "以 _at / _at_ms 结尾的时间字段只核对与事件序号的先后一致，不按值相等比较；其余字段按值比较。",
+ "timestamp_rule": "只增表按内容哈希核（时间列一并核）；折叠表逐列精确比对，时间列也比（整行事件抄的就是库里的值）。",
  "tables": {
   "acceptance_commit_receipts": {
    "class": "business",
@@ -108,8 +108,7 @@
     "ApprovalRejected",
     "ApprovalRevoked"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "approval_decisions": {
    "class": "business",
@@ -130,7 +129,12 @@
     "ApprovalRejected",
     "HumanOverride"
    ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "owner": {
+    "column": "request_id",
+    "table": "approvals",
+    "key": "request_id"
+   }
   },
   "approvals": {
    "class": "business",
@@ -166,8 +170,7 @@
     "SourceSuperseded",
     "VerificationSuspended"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "artifacts": {
    "class": "business",
@@ -196,11 +199,7 @@
     "VerificationFailed",
     "VerificationPassed"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage: 迁移时改写，不发事件"
-   ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "assurance_blob_pins": {
    "class": "runtime",
@@ -264,8 +263,7 @@
     "MissionCompleted",
     "ReservationCountedAtUpperBound"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "assurance_creation_contracts": {
    "class": "business",
@@ -284,9 +282,6 @@
    "events": [
     "AssuranceProfileActivated",
     "MissionCreated"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/assurance_upgrade.py:DDL: 迁移一次性补写（MIGRATION_CLASSIFICATION），不发事件"
    ],
    "rebuild": "immutable_source"
   },
@@ -539,8 +534,7 @@
     "VerificationPassed",
     "VerificationStarted"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "budget_accounts": {
    "class": "business",
@@ -575,11 +569,8 @@
     "TaskCancelled",
     "TaskCommitted"
    ],
-   "gaps": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger._apply: 经 BudgetLedger.grow（ProviderBudgetGuard._acquire 模型调用追加额度）不发事件"
-   ],
    "rebuild": "fold",
-   "rebuilder": null
+   "silent_ok": "预算账户的预留与追加额度是记账：行本身就是事实，消费者（预算面板、准入）读行；结账释放另有 BudgetReleased 告诉保证通道收尾"
   },
   "budget_reservations": {
    "class": "business",
@@ -612,11 +603,8 @@
     "ReservationCountedAtUpperBound",
     "TaskCancelled"
    ],
-   "gaps": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.grow: 不发事件（唯一调用方 ProviderBudgetGuard._acquire 无事件）"
-   ],
    "rebuild": "fold",
-   "rebuilder": null
+   "silent_ok": "每次调用的预留与追加（grow）是记账：行本身就是事实，准入与面板读行；结清另有 BudgetReleased / ReservationCountedAtUpperBound"
   },
   "budget_tail_holds": {
    "class": "business",
@@ -645,8 +633,7 @@
     "BudgetReserved",
     "TaskCancelled"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "budget_tail_transfers": {
    "class": "business",
@@ -663,7 +650,12 @@
    "events": [
     "BudgetReserved"
    ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "owner": {
+    "column": "hold_id",
+    "table": "budget_tail_holds",
+    "key": "hold_id"
+   }
   },
   "claims": {
    "class": "business",
@@ -692,8 +684,7 @@
     "VerificationFailed",
     "VerificationStarted"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "commit_receipts": {
    "class": "log",
@@ -730,11 +721,6 @@
     "AssuranceReviewImported",
     "OperationProposalReviewed",
     "VerificationPassed"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 operation_outcomes.record_operation_outcome_review（操作结果审阅记录）单独一个事务，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 RootReviewCoordinator.record_review（根审阅记录）不发事件"
    ],
    "rebuild": "immutable_source"
   },
@@ -852,11 +838,7 @@
    "events": [
     "GoalResolutionCommitted"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.adopt_goal_resolution: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
-   ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "human_overrides": {
    "class": "business",
@@ -889,11 +871,8 @@
     "agent_orchestrator/governance/budgets.py:BudgetLedger.import_usage"
    ],
    "events": [],
-   "gaps": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.import_usage: 不发事件（经 CommitService.import_usage、accounting_recovery._import_hold）"
-   ],
    "rebuild": "fold",
-   "rebuilder": null
+   "silent_ok": "导入的用量行就是消费回执（执行侧编号 + 当时按多少算 + 是否未知，偏差裁决 1 第四节 G-4）；没有消费者等这条事件，结账由 BudgetReleased / IntentSettled 告诉消费者"
   },
   "input_manifest_bindings": {
    "class": "business",
@@ -923,13 +902,8 @@
     "TaskGraphDispatchBound",
     "VerificationPassed"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 AssuranceLocalChecks.prepare 时只有首次登记检查规格才发 AssuranceCheckSpecRegistered，之后不发事件"
-   ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "silent_ok": "与输入清单同一笔先写后用；用到它的审查包或尝试的那一笔才有领域事件"
   },
   "input_manifests": {
    "class": "business",
@@ -956,13 +930,11 @@
     "TaskGraphDispatchBound",
     "VerificationPassed"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest: 经 AssuranceLocalChecks.prepare 时只有首次登记检查规格才发 AssuranceCheckSpecRegistered，之后不发事件"
-   ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "owner": {
+    "column": "origin_mission_id"
+   },
+   "silent_ok": "输入清单按内容寻址、先写后用（组合审阅先写清单再切包，是开工裁决\"不做\"里保留的既定流程）；用到它的审查包或尝试的那一笔才有领域事件"
   },
   "knowledge": {
    "class": "business",
@@ -987,8 +959,7 @@
     "KnowledgeSuperseded",
     "KnowledgeUsed"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "method_child_occurrences": {
    "class": "business",
@@ -1026,7 +997,8 @@
     "created_at",
     "updated_at"
    ],
-   "note": "做法库（跨任务）"
+   "note": "做法定义（跨任务，只增；登记时的状态会改）；归部署时间线，由整行变化折叠（阶段 G 第 6 批）",
+   "rebuild": "fold"
   },
   "method_instances": {
    "class": "business",
@@ -1053,8 +1025,7 @@
    "events": [
     "PlanRevisionCommitted"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "mission_domains": {
    "class": "business",
@@ -1108,9 +1079,6 @@
    "events": [
     "MissionCreated"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/store.py:Store._bind_legacy_missions: 迁移时补绑旧任务，不发事件"
-   ],
    "rebuild": "immutable_source"
   },
   "missions": {
@@ -1143,8 +1111,7 @@
     "TaskCancelled",
     "TaskFailed"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "obligations": {
    "class": "business",
@@ -1180,11 +1147,7 @@
     "ObligationDemandWithdrawn",
     "PlanRevisionCommitted"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件"
-   ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "observations": {
    "class": "business",
@@ -1211,9 +1174,6 @@
    ],
    "events": [
     "TaskGraphSourceChanged"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件（调用方 planning_evidence.persist_questions 所在事务也不发别的事件）"
    ],
    "rebuild": "immutable_source"
   },
@@ -1537,8 +1497,7 @@
    "events": [
     "PlanRevisionCommitted"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "planning_admission_checks": {
    "class": "business",
@@ -1563,7 +1522,12 @@
     "PlanRevisionCommitted",
     "TaskGraphRevisionRecorded"
    ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "owner": {
+    "column": "request_id",
+    "table": "planning_requests",
+    "key": "request_id"
+   }
   },
   "planning_decisions": {
    "class": "business",
@@ -1592,11 +1556,13 @@
     "PlanningRetryAuthorized",
     "TaskCommitted"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.record_planning_decision: 经 Orchestrator._collect_plan_decision.record_decision 的多数调用（进度状态 record_progress、证据轮、过期、延后修复 defer_current_repair 等）同一事务内不发事件"
-   ],
    "rebuild": "fold",
-   "rebuilder": null
+   "owner": {
+    "column": "request_id",
+    "table": "planning_requests",
+    "key": "request_id"
+   },
+   "silent_ok": "规划决定在解码、准入、编译途中的进度行没有消费者；结论由 PlanningDecisionEvaluated 告诉消费者"
   },
   "planning_human_requests": {
    "class": "business",
@@ -1624,8 +1590,7 @@
     "PlanningHumanRequested",
     "PlanningHumanStale"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "planning_lane_grants": {
    "class": "business",
@@ -1652,9 +1617,6 @@
    ],
    "events": [
     "TaskGraphSourceChanged"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_grant: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件（调用方 PlanningAuthorizationApi.issue / renew / revoke 不发别的事件）"
    ],
    "rebuild": "immutable_source"
   },
@@ -1714,9 +1676,6 @@
    "events": [
     "TaskGraphSourceChanged"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore._insert_binding: 经 bind_request（facade.planning_authorization / PlanningAuthorizationApi.bind_request）不发事件；经 put_grant 时只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件"
-   ],
    "rebuild": "immutable_source"
   },
   "planning_requests": {
@@ -1745,8 +1704,7 @@
     "BudgetReserved",
     "PlanningDeploymentBound"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "policy_activations": {
    "class": "global",
@@ -1757,7 +1715,8 @@
     "json",
     "created_at"
    ],
-   "note": "策略启用记录"
+   "note": "策略启用记录；归部署时间线，由整行变化折叠",
+   "rebuild": "fold"
   },
   "policy_versions": {
    "class": "global",
@@ -1770,7 +1729,8 @@
     "created_at",
     "updated_at"
    ],
-   "note": "策略版本"
+   "note": "策略版本；归部署时间线，由整行变化折叠",
+   "rebuild": "fold"
   },
   "provider_token_grants": {
    "class": "runtime",
@@ -1856,8 +1816,7 @@
     "VerificationStarted",
     "VerificationSuspended"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "review_packages": {
    "class": "business",
@@ -1888,11 +1847,6 @@
     "OperationProposalReviewed",
     "VerificationPassed"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 RootReviewCoordinator.cut（根审阅切包）不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package: 经 operation_runtime.ensure_assured_proposal_reviews → ActionProposalReviewCoordinator.prepare_review 不发事件"
-   ],
    "rebuild": "immutable_source"
   },
   "review_records": {
@@ -1919,11 +1873,6 @@
     "AssuranceReviewImported",
     "OperationProposalReviewed",
     "VerificationPassed"
-   ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 CompositionAcceptanceAssembly.resolve_one（中间目标组合审阅）在 commit_goal_resolution 事务之外先写，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 operation_outcomes.record_operation_outcome_review（操作结果审阅记录）单独一个事务，不发事件",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record: 经 RootReviewCoordinator.record_review（根审阅记录）不发事件"
    ],
    "rebuild": "immutable_source"
   },
@@ -1961,8 +1910,7 @@
     "SourceRevoked",
     "SourceSuperseded"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "task_semantics": {
    "class": "business",
@@ -2044,8 +1992,7 @@
     "TaskGraphConvergenceAdvanced",
     "TaskGraphConvergenceRequested"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "taskgraph_convergence_targets": {
    "class": "business",
@@ -2209,8 +2156,7 @@
     "VerificationFailed",
     "VerificationPassed"
    ],
-   "rebuild": "fold",
-   "rebuilder": null
+   "rebuild": "fold"
   },
   "tool_calls": {
    "class": "business",
@@ -2226,10 +2172,8 @@
     "agent_orchestrator/storage/store.py:Store.record_tool_call"
    ],
    "events": [],
-   "gaps": [
-    "agent_orchestrator/storage/store.py:Store.record_tool_call: 不发事件（经 CommitService.record_tool_call ← Orchestrator._record_tool_call）"
-   ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "silent_ok": "工具调用行按执行侧调用编号记，是消费回执；没有消费者等这条事件，结果与验证由各自事件告诉消费者"
   },
   "validity_dirty": {
    "class": "runtime",
@@ -2405,11 +2349,8 @@
     "AssuranceProfileActivated",
     "MissionCreated"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.bump_epoch: SDK 与 Host 生产代码均无调用方（只在测试里用），不发事件；即便调用也只在启用执行图时发 TaskGraphSourceChanged"
-   ],
    "rebuild": "fold",
-   "rebuilder": null
+   "silent_ok": "保证通道那一行只由屏障触发器跟着源表的那一笔改；作用域纪元由 bump_epoch 改、同事务另有领域事件"
   },
   "validity_witnesses": {
    "class": "business",
@@ -2441,9 +2382,6 @@
     "TaskGraphSourceChanged",
     "VerificationPassed"
    ],
-   "gaps": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_validity_witness: 只在启用执行图的任务里发 TaskGraphSourceChanged（只带来源引用），其余任务不发事件；在 CompositionAcceptanceAssembly.resolve_one、RootReviewCoordinator.cut、HierarchicalDispatch._record_witness 路径上同事务没有别的事件"
-   ],
    "rebuild": "immutable_source"
   },
   "verifications": {
@@ -2464,7 +2402,11 @@
     "VerificationLayerRecorded"
    ],
    "rebuild": "fold",
-   "rebuilder": null
+   "owner": {
+    "column": "result_id",
+    "table": "results",
+    "key": "result_id"
+   }
   },
   "workspaces": {
    "class": "runtime",
@@ -2501,7 +2443,8 @@
     "retired_at",
     "promoted_at"
    ],
-   "note": "全库做法（先例，阶段 C3）；不按任务重放，阶段 G 单独核对。写方 MethodLibraryStore.insert/retire/clear；事件 MethodPromoted、MethodPromotionSkipped（来源任务里）、MethodLibraryEntryRetired（触发它的任务里）；命令行清空不发事件"
+   "note": "全库做法（先例，阶段 C3）；归部署时间线，由整行变化折叠（阶段 G 第 6 批）。写方 MethodLibraryStore.insert/retire/clear；事件 MethodPromoted（来源任务里）、MethodLibraryEntryRetired（触发它的任务里）、MethodLibraryCleared（部署时间线，命令行清空）",
+   "rebuild": "fold"
   },
   "method_library_attributions": {
    "class": "global",
@@ -2516,8 +2459,9 @@
     "reason",
     "recorded_at"
    ],
-   "note": "全库做法的归因（阶段 C3）；不按任务重放，阶段 G 单独核对。写方 MethodLibraryStore.add_attribution/clear；归因本身不发事件（规划器一侧随换做法的计划提交、审阅员一侧随根终审记录导入），第 2 个任务归因时发 MethodLibraryEntryRetired"
+   "note": "全库做法的归因（阶段 C3）；归部署时间线，由整行变化折叠。写方 MethodLibraryStore.add_attribution/clear；归因随换做法的计划提交或根终审记录导入写，同一事务里有它们的领域事件",
+   "rebuild": "fold"
   }
  },
- "rebuild_rule": "业务表二选一：immutable_source = 只增、库层不许改删，每行被同事务的 ImmutableRowsNamed 事件按主键与内容哈希点名，v3 核点名；fold = 会改，建行事件带整行、每次改动有事件，由 rebuilder 指名的函数折叠出来逐列比对。gaps 非空的 fold 表不算覆盖（阶段 G 裁决 G-1）"
+ "rebuild_rule": "业务表二选一（偏差裁决 1）：immutable_source = 只增、库层不许改删，每行被同事务的 RowsWritten 事件 named 一栏按主键与内容哈希点名；fold = 会改，每个事务里每个被改的键在 RowsWritten 的 changed 一栏记改前/改后整行哈希与改后整行，重放按序号接链、通用折叠、逐列精确比对。没有 mission_id 的业务表用 owner 写明经哪张表找任务。改了业务行的事务必须有本任务的领域事件，确属内部记账的表写 silent_ok 与理由。"
 }

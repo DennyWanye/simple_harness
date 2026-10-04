@@ -139,4 +139,29 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
             assert provider.calls == 0 and _physical_calls(root) == before_calls
             assert loop.store.connection.execute('SELECT COUNT(*) FROM attempts').fetchone()[0] == 1
             assert loop.store.connection.execute('SELECT COUNT(*) FROM taskgraph_revision_records').fetchone()[0] == 1
+            # 阶段 G（K04）：恢复后导入的是执行侧原回执——每条用量在整行事件里只写一次（"未知→
+            # 已知"的覆盖除外），v3 对这个任务一致，两库对照一致。
+            _assert_usage_imported_once_and_replayable(loop.store, source['mission_id'], root)
     asyncio.run(recover())
+
+
+def _assert_usage_imported_once_and_replayable(store, mission_id, root):
+    from agent_orchestrator.observability.business_replay import (
+        CONSISTENT, verify_execution_ledgers, verify_mission)
+
+    writes, last = {}, {}
+    for (payload,) in store.connection.execute(
+            "SELECT payload_json FROM events WHERE type='RowsWritten' ORDER BY seq"):
+        for item in json.loads(payload)['changed']:
+            if item['table'] != 'imported_usage':
+                continue
+            ref = item['key']['usage_ref']
+            overwrite = (last.get(ref) or {}).get('unknown') == 1 and (item['row'] or {}).get('unknown') == 0
+            writes[ref] = writes.get(ref, 0) + (0 if overwrite else 1)
+            last[ref] = item['row']
+    refs = [r[0] for r in store.connection.execute('SELECT usage_ref FROM imported_usage')]
+    assert refs and sorted(writes) == sorted(refs) and set(writes.values()) == {1}, writes
+    report = verify_mission(store, mission_id)
+    assert report['status'] == CONSISTENT, [(t, i) for t, i in report['tables'].items() if i['status'] != CONSISTENT]
+    ledgers = verify_execution_ledgers(store, sorted(root.glob('execution*.db')))
+    assert ledgers['status'] == CONSISTENT and ledgers['calls'] >= len(refs), ledgers

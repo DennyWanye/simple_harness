@@ -388,3 +388,87 @@ def test_a_fault_in_a_global_scan_is_one_missions_round_fault(tmp_path, monkeypa
             assert place in {fault["where"] for fault in faults}, faults
 
     asyncio.run(case())
+
+
+def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round(tmp_path, monkeypatch):
+    """崩溃切点 K12（HTN 补齐阶段 G 第 4 批）：任务已取消、那次调用这才返回，导入它的迟到用量时
+    写库出错一次。``run()`` 不抛；另一个任务照常完成；出事任务记一轮故障；下一轮导入恰好一次
+    （事务回滚，没有半截行、没有重复事件）；全业务重放与两库对照一致。
+
+    **改坏检验**（G-11）：迟到用量的导入挪到故障边界之外 → 异常冲出主循环 → 变红。"""
+    import sqlite3
+
+    from agent_orchestrator.governance.budgets import BudgetLedger
+    from agent_orchestrator.observability.business_replay import (
+        CONSISTENT, verify_execution_ledgers, verify_mission)
+
+    broken: dict[str, Any] = {"subject": None, "hits": 0}
+    original = BudgetLedger.import_usage
+
+    def failing_once(self, *, subject_id, mission_id, facts):  # type: ignore[no-untyped-def]
+        if subject_id == broken["subject"] and not broken["hits"]:
+            broken["hits"] += 1
+            raise sqlite3.OperationalError("disk I/O error")
+        return original(self, subject_id=subject_id, mission_id=mission_id, facts=facts)
+
+    monkeypatch.setattr(BudgetLedger, "import_usage", failing_once)
+
+    async def case():
+        provider = LayeredScriptedProvider()
+        provider.held.add("worker")
+        root = tmp_path / "root"
+        async with product_world(root, provider) as world:
+            store = world.store
+            a = world.create(_notes("late-import-a"))["mission_id"]
+            stop = asyncio.Event()
+            crashed: list[BaseException] = []
+
+            async def drive() -> None:
+                try:
+                    while not stop.is_set():
+                        await world.loop.run()
+                        await world.deployment.between_cycles(auto=True)
+                        await asyncio.sleep(0.05)
+                except Exception as error:  # noqa: BLE001 - escaping the loop is the defect
+                    crashed.append(error)
+
+            runner = asyncio.create_task(drive())
+            try:
+                await asyncio.wait_for(provider.entered.wait(), 60)
+                world.control.cancel(a)
+                for _ in range(300):
+                    if _status(store, a) == "CANCELLED":
+                        break
+                    await asyncio.sleep(0.05)
+                [(subject,)] = store.connection.execute(
+                    "SELECT subject_id FROM dispatch_intents WHERE mission_id=? AND kind='attempt'", (a,)).fetchall()
+                provider.held.discard("worker")
+                b = world.create(_notes("late-import-b"))["mission_id"]
+                broken["subject"] = subject
+                provider.release.set()
+                for _ in range(600):
+                    if crashed or (_status(store, b) in TERMINAL
+                                   and world.loop.commit.ledger.reservation(subject)["state"] == "SETTLED"):
+                        break
+                    await asyncio.sleep(0.05)
+            finally:
+                stop.set()
+                provider.release.set()
+                await asyncio.wait_for(runner, 30)
+            assert not crashed, crashed
+            assert broken["hits"] == 1 and _status(store, b) == "COMPLETED"
+            faults = _faults(store, a)
+            assert len(faults) == 1 and "disk I/O error" in faults[0]["summary"], faults
+            assert world.loop.commit.ledger.reservation(subject)["state"] == "SETTLED"
+            refs = [row[0] for row in store.connection.execute(
+                "SELECT usage_ref FROM imported_usage WHERE subject_id=? AND unknown=0", (subject,))]
+            writes = [item["key"]["usage_ref"] for event in store.list_events(a, types=("RowsWritten",))
+                      for item in event.payload["changed"]
+                      if item["table"] == "imported_usage" and item["row"]["subject_id"] == subject]
+            assert refs and sorted(writes) == sorted(refs), (writes, refs)
+            assert len([e for e in store.list_events(a) if e.type == "BudgetReleased"
+                        and e.payload["subject_id"] == subject]) == 1
+            assert verify_mission(store, a)["status"] == CONSISTENT
+            assert verify_execution_ledgers(store, sorted(root.glob("execution*.db")))["status"] == CONSISTENT
+
+    asyncio.run(case())

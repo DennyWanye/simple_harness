@@ -174,7 +174,7 @@ def read_planner_package(
     # about it (``repair_requests``), and only there.
     refused: list[tuple[float, dict[str, Any]]] = []
     failed: list[tuple[float, dict[str, Any]]] = []
-    for event in store.list_events(mission.id):
+    for event in store.list_events(mission.id, types=sorted(_PLANNING_REJECTIONS)):
         if event.type in _PLANNING_REJECTIONS:
             refused.append((float(event.created_at), {
                 "source": "planning", "reason": str(event.payload.get("reason") or ""),
@@ -286,9 +286,7 @@ def abandoned_plan_changes_for_planner(store: Any, mission_id: str) -> list[dict
 
     decisions = PlanningDecisionStore(store)
     rows = []
-    for event in store.iter_events(mission_id):
-        if event.type != "TaskGraphConvergenceAbandoned":
-            continue
+    for event in store.list_events(mission_id, types=["TaskGraphConvergenceAbandoned"]):
         result = event.payload.get("result") or {}
         row = decisions.get_planning_decision(str(result["decision_id"])) if result.get("decision_id") else None
         decision = {} if row is None else json.loads(row["canonical_json"])

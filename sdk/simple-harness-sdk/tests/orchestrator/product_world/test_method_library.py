@@ -366,8 +366,8 @@ def test_library_writes_do_not_touch_the_barrier(tmp_path):
     asyncio.run(run())
 
 
-def test_root_review_blame_is_recorded_through_the_import(tmp_path):
-    """根终审打回时审阅员写明"做法本身有错"：照先例写的做法经正式记录导入记一条归因（来源是审阅记录）。"""
+def _blaming_provider() -> tuple[LayeredScriptedProvider, dict[str, bool], list[str]]:
+    """根终审第一次看到照先例写的做法时，审阅员写明"做法本身有错"（打回）。"""
     from agent_orchestrator.testing.scripted_replies import decision as planner_decision
 
     blamed = {"done": False}
@@ -394,25 +394,74 @@ def test_root_review_blame_is_recorded_through_the_import(tmp_path):
                 "reason": "照先例的拆法漏了一步"})
         return judging_reviewer()(request)
 
+    return LayeredScriptedProvider(planner=planner, reviewer=reviewer), blamed, prefer
+
+
+async def _blamed_by_root_review(world: Any, prefer: list[str], key: str) -> tuple[dict[str, Any], str, list[Any]]:
+    await _deliver(world, key + "-a")
+    [entry] = _entries(world)
+    prefer.append(entry["entry_id"])
+    created = world.create({"goal": "写一份笔记", "idempotency_key": key + "-b",
+                            "success_criteria": ["file:notes/a.md"]})
+    rows: list[Any] = []
+    for _ in range(30):
+        await world.drain(timeout=10)
+        rows = MethodLibraryStore(world.store).attributions(entry["entry_id"])
+        if rows:
+            break
+    return entry, created["mission_id"], rows
+
+
+def test_root_review_blame_is_recorded_through_the_import(tmp_path):
+    """根终审打回时审阅员写明"做法本身有错"：照先例写的做法经正式记录导入记一条归因（来源是审阅记录）。"""
+    provider, blamed, prefer = _blaming_provider()
+
     async def run():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner, reviewer=reviewer)) as world:
-            await _deliver(world, "blame-root-a")
-            [entry] = _entries(world)
-            prefer.append(entry["entry_id"])
-            created = world.create({"goal": "写一份笔记", "idempotency_key": "blame-root-b",
-                                    "success_criteria": ["file:notes/a.md"]})
-            rows: list[Any] = []
-            for _ in range(30):
-                await world.drain(timeout=10)
-                rows = MethodLibraryStore(world.store).attributions(entry["entry_id"])
-                if rows:
-                    break
+        async with product_world(tmp_path / "root", provider) as world:
+            entry, mission_id, rows = await _blamed_by_root_review(world, prefer, "blame-root")
             assert blamed["done"] and len(rows) == 1
-            assert rows[0]["source_kind"] == "ROOT_REVIEW" and rows[0]["mission_id"] == created["mission_id"]
+            assert rows[0]["source_kind"] == "ROOT_REVIEW" and rows[0]["mission_id"] == mission_id
             assert rows[0]["reason"] == "照先例的拆法漏了一步"
             assert MethodLibraryStore(world.store).get(entry["entry_id"])["state"] == "LISTED"
 
     asyncio.run(run())
+
+
+def test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear(tmp_path):
+    """全局表（全库做法、归因、做法定义、策略）与任务表走同一机制，归部署时间线（HTN 补齐阶段 G
+    第 6 批）：晋级、根终审归因、主 Agent 退役、命令行清空之后，全库检查的"全局"一节一致。
+
+    **改坏检验**（G-13）：命令行清空不留事件 → 静默改动被报出 → 变红；（G-14）全局表的改动
+    不记整行 → 库里的行重建不出来 → 变红。"""
+    from agent_orchestrator.__main__ import main
+    from agent_orchestrator.observability.business_replay import CONSISTENT, verify_library
+    from agent_orchestrator.storage.store import Store
+
+    provider, blamed, prefer = _blaming_provider()
+
+    async def run():
+        async with product_world(tmp_path / "root", provider) as world:
+            entry, _mission_id, rows = await _blamed_by_root_review(world, prefer, "global-replay")
+            assert blamed["done"] and len(rows) == 1
+            world.control.retire_library_entry({"entry_id": entry["entry_id"], "reason": "用户说不要了",
+                                                "command_id": "chat-method-retire:g:1"})
+            report = verify_library(world.store)["global"]
+            assert report["status"] == CONSISTENT, report
+            assert {"method_library", "method_library_attributions", "method_contracts",
+                    "policy_versions", "policy_activations"} <= {
+                        name for name, item in report["tables"].items() if item["rows"]}
+
+    asyncio.run(run())
+    assert main(["method-library", "clear", "--evidence-dir", str(tmp_path / "root"), "--yes"]) == 0
+    store = Store.open_readonly(tmp_path / "root" / "orchestrator.db")
+    try:
+        report = verify_library(store)["global"]
+        assert report["status"] == CONSISTENT and report["silent_changes"] == [], report
+        assert report["tables"]["method_library"]["rows"] == 0
+        cleared = [event for event in store.list_events("deployment") if event.type == "MethodLibraryCleared"]
+        assert [event.payload for event in cleared] == [{"entries": 1, "attributions": 1}]
+    finally:
+        store.close()
 
 
 def test_a_failing_promotion_never_fails_completion(tmp_path, monkeypatch):

@@ -13,6 +13,7 @@ from typing import Any
 
 LISTED = "LISTED"
 RETIRED = "RETIRED"
+CLEARED_EVENT = "MethodLibraryCleared"
 _COLUMNS = ("entry_id", "owner", "goal_type_id", "catalog_digest", "method_id", "method_version",
             "method_hash", "purpose", "source_mission_id", "root_review_record_id", "based_on",
             "state", "retired_by", "retired_reason", "retired_at", "promoted_at")
@@ -85,12 +86,25 @@ class MethodLibraryStore:
                 for row in rows]
 
     def clear(self) -> dict[str, int]:
-        """Empty both tables (a development diagnostic); the method definitions are untouched."""
+        """Empty both tables (a development diagnostic); the method definitions are untouched.
+
+        A deployment-level fact: one ``MethodLibraryCleared`` on the deployment timeline in the
+        same transaction — a global table never changes silently (HTN 补齐阶段 G 第 6 批)."""
+        from ..contracts import Event, ids
+        from .source_records import DEPLOYMENT_TIMELINE
+
         with self.store.transaction() as connection:
             blamed = connection.execute("DELETE FROM method_library_attributions").rowcount
             connection.execute("UPDATE method_library SET based_on=NULL")
             entries = connection.execute("DELETE FROM method_library").rowcount
-        return {"entries": int(entries), "attributions": int(blamed)}
+            counts = {"entries": int(entries), "attributions": int(blamed)}
+            seq = int(connection.execute("SELECT coalesce(max(seq), 0) FROM events").fetchone()[0])
+            key = f"{CLEARED_EVENT}:{seq}"
+            self.store.append_event(Event(
+                id=ids.event_id(key), type=CLEARED_EVENT, trace_id=ids.trace_id(DEPLOYMENT_TIMELINE),
+                mission_id=DEPLOYMENT_TIMELINE, task_id=None, attempt_id=None, actor_type="system",
+                actor_id="method-library", payload=counts, idempotency_key=key, created_at=self.store.now))
+        return counts
 
 
-__all__ = ("LISTED", "RETIRED", "MethodLibraryStore")
+__all__ = ("CLEARED_EVENT", "LISTED", "RETIRED", "MethodLibraryStore")

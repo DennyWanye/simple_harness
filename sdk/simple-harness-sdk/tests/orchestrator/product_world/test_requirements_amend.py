@@ -408,6 +408,43 @@ def test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_a
     asyncio.run(case())
 
 
+def test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result_aside(tmp_path, monkeypatch):
+    """验完、提交结论前用户改了要求：提交读完成范围时已过期，结果按"被取代"归档，主循环不崩，
+    任务按第 2 版完成（阶段 G 随机序列发现；与验证开头同一条规则）。
+
+    **改坏检验**（G-23）：提交结论处不认"完成范围已过期" → 错误冲出主循环 → 变红。"""
+    from agent_orchestrator.orchestrator.commit_service import CommitService
+
+    seen: dict[str, Any] = {}
+    race: dict[str, Any] = {"world": None, "mission_id": None, "fired": False}
+    original = CommitService.accept_result
+
+    def amended_before_commit(self, result_id, **kwargs):  # type: ignore[no-untyped-def]
+        if not race["fired"] and race["mission_id"] is not None:
+            race["fired"] = True
+            amend(race["world"], race["mission_id"], [{"op": "add", "statement": "file:extra.md"}])
+        return original(self, result_id, **kwargs)
+
+    monkeypatch.setattr(CommitService, "accept_result", amended_before_commit)
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=replanning_planner(seen))) as world:
+            race["world"] = world
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-before-commit",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            race["mission_id"] = mission_id
+            try:
+                mission = await world.run_until_settled(mission_id, rounds=40)
+            except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
+                raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
+            events = list(world.store.list_events(mission_id))
+            assert race["fired"] and str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            assert [e.payload["detail"]["error"] for e in events if e.type == "ResultRejected"
+                    and e.payload.get("reason") == "superseded"][:1] == ["completion_scope_stale"]
+
+    asyncio.run(case())
+
+
 def test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check(tmp_path, monkeypatch):
     """改要求落在第一步的检查正要入账时，规划器只换掉另一步、把这一步原样留在新计划里（阻断核验 B1）：
     这一步的结果按"被取代"归档、尝试回到重试等待，新计划提交后由规划器定原样重做、通过；主循环不崩，任务按新版完成。
@@ -476,7 +513,10 @@ def test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check(
                                        "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
             race["mission_id"] = mission_id
             try:
-                mission = await world.run_until_settled(mission_id, rounds=60)
+                # 有时限：结果不归档时会被反复重验、主循环一直不空闲（改坏后的样子），不能挂住
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError("the mission never settled: the result keeps being re-verified") from error
             except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
                 raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
             events = list(world.store.list_events(mission_id))

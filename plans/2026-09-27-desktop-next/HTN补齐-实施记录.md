@@ -703,3 +703,28 @@ M01～M12（TaskGraph 原计划 §15）文件留空，F2 补写。第三轮重�
 - 部署身份：上游证据里 `semantic_replay: PARTIAL` 换成 `business_replay: NOT_RUN / CONSISTENT`（一致必须带 `business_replay_receipt_sha256`）；清单生成写 `NOT_RUN`；`taskgraph_manifest.py verify` 加反例"说一致却没带报告哈希"。
 - 删 v2 的用例与审计插件：`T/step08/test_replay.py`、`T/p33_replay_audit.py`、`T/p33/test_g_replay_audit_plugin.py`；`T/p33/test_p33_sources.py`、`test_p33_g1_create_sources.py` 的 v2 比对改成 v3 断言（没有不一致的表、全库点名一致）。
 - 用例：命令行 replay 改写（库里改坏一条源记录 → 不一致、退出 1）；新 `test_business_replay_inventory.py::test_deployment_identity_never_takes_an_unproven_replay`；Host `test_mission_diagnostics.py` 3 条、前端 `MissionDiagnostics.test.tsx` 11 条通过。改坏 G-15、G-16 抓到。
+
+### G-2～G-5（按偏差裁决 1：存储层统一记整行变化）
+- **裁决**：`HTN补齐-阶段G-偏差裁决-1.md` 选 B 并附 8 条；主计划升第 3.21 版、施工清单第三节加注后施工。
+- **机制**（`storage/source_records.py` 重写；第 1 批的点名并进来，一条事件一条路径）：每个最外层事务提交前按任务各写一条 `RowsWritten{named, changed, with_events}`。
+  - 会被改的 25 张表：插入 / 更新 / 删除后的临时触发器按**主键**记"本事务碰过的键"，第一次碰到时把原行存进临时影子表；提交前比前后整行哈希，相同（含同一事务先插后删、保存点回滚掉的）不记；主键被改算旧键删 + 新键写。触发器里不用 `OR IGNORE`（外层 upsert 的冲突策略会盖过它），写成"不存在才插"。
+  - 归属：本行 `mission_id` 或清单 `owner`（`planning_decisions`、`planning_admission_checks` 经 `planning_requests`，`verifications` 经 `results`，`approval_decisions` 经 `approvals`，`budget_tail_transfers` 经 `budget_tail_holds`，`input_manifests` 用 `origin_mission_id`），找不到就抛错回滚；只有回执账另认正文里的 `mission_id`、再取本事务唯一任务、否则部署时间线。屏障触发器写的 `AssuranceEvidenceChanged` 不算本事务的任务、也不算领域事件（修第 1 批多任务时归属落到部署时间线的隐患）。
+  - 幂等键 `rows-written:{任务}:{追加前最大序号}:{摘要}`，直接插入、撞键报错。每个最外层事务开头清空临时记录。
+- **v3**（`observability/business_replay.py` 重写）：一个通用折叠——按序号逐条接链（改前哈希 = 折叠到此刻的哈希、改后哈希 = 所带整行的哈希），最后与库里本任务的行逐列精确比对（时间列也比）；只增表核点名；"静默改动"（改了业务行、本事务没有本任务领域事件）算不一致，确属内部记账的 5 张表写 `silent_ok` 与理由：预算账户、预算预留（预留与追加额度）、导入用量（就是消费回执）、规划决定（解码 / 准入 / 编译途中的进度行）、工具调用（按执行侧编号记的消费回执）。"未覆盖"状态与各表的 `gaps` 不再有意义，删掉；清单第 3 版（`owner`、`silent_ok`；没有 `mission_id` 的业务表必须写 `owner`；会改的表必须有显式主键）。
+- **读事件的地方**：`RowsWritten` 进"不算进展"一组（空转水位、全局事件游标）；门面对外事件页滤掉它（游标照常越过）；规划视图两处改成 SQL 按类型筛（`Store.list_events` 加 `types`）。
+- **原子性**：根终审切包（输入清单、包、"已切包"事件）包进一个事务（`RootReviewCoordinator.cut` → `_cut_locked`）。
+- **幂等键**：`PlanningDecisionEvaluated` 改"决定编号:尝试序号:状态"，`VerificationLayerRecorded` 改"结果:层:结论与明细摘要"。**没找到同一决定 / 同一结果层被评两次的产品路径**（换做法等兄弟步骤收敛时也只评一次），改坏 G-08、G-18 无用例可绑，记在清单里，联测时再找真实触发。
+- **实测**：一个两条要求的任务跑完，75 张业务表全部一致、没有静默改动、全库点名一致；`RowsWritten` 275 条 / 238 KiB。
+- **用例**（`T/product_world/test_business_replay.py` 新增 8 条）：来回改同一行每次都记、链连续；同事务先插后删与保存点回滚不留记录、跨事务删除如实记；命令重放与空改动不多记；另开连接绕过存储层改一行后链断；静默改动被报、记账表放行；只有记账的事务不算进展；两个没结束任务时回执归属正确；根终审切包写一半出错不留没人认领的包。第一条用例改成整个任务一致。水位用例放在本文件（真主循环），不在 `test_between_cycles_host_duty.py`（那里是假的主循环）。
+- **随机序列找到的两处**：① 组合审阅的输入清单"先写后用"是正常写法、却没有领域事件 → 清单给 `input_manifests`、`input_manifest_bindings`、`validity_epochs` 加 `silent_ok` 与理由（共 8 张）。② 偶发崩溃"要求已改"冲出主循环：用户改要求的时刻落在**验完之后、提交结论之前**，提交读完成范围时已过期。按 F1 阻断核验那条规则（完成范围过期 → 结果归档为"被取代"）在提交结论处同样处理，走同一个 `_set_aside_stale`。新确定性用例 `test_requirements_amend.py::test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result_aside`（在提交结论那一刻插入改要求），改坏 G-23 抓到。
+- **第 4、5 批的两库边界与三条崩溃切点（K04、K11、K12）**、第 6 批全局表另做，见下节。
+
+### G-4～G-6　两库对照、三条崩溃切点、保证通道回执、全局表
+- **两库对照**（裁决 G-7，只读、不进重建）：`business_replay.verify_execution_ledgers(store, 执行库路径)`——编排导入的每条用量回执在执行库里恰好有一条调用（按执行库自己的"有效记账"读）、已知用量的数一致；还记着"未知"、执行库此刻已有用量的是等下一轮补导入的迟到用量，单独计数，不算不一致；不认识的编号前缀、两个执行库里都有同一调用，都算不一致。审计插件对每个库同时跑（同目录的 `execution*.db`）。用例：跑完的任务两库一致、副本里把一条用量多算 1 → 报"不一致"（改坏 G-24：已知用量不比数 → 抓到）。
+- **K04**（执行侧已存结果、编排没消费；进程强退）：`test_process_recovery.py` 原用例恢复后加核——每条用量在整行事件里只写一次（"未知→已知"的覆盖除外）、v3 对该任务一致、两库对照一致。通过。
+- **K11**（用量晚到、任务已终态）：新 `T/product_world/test_late_usage.py`，**真场景**——执行者的模型调用半路时用户取消任务 → 任务终态 → 调用这才返回。结果：用量在收回那次被取消的调用时导入（意图那时还没结清，走产品本身的收回路径），按原预留、原账户结账（实际 150、释放 19850）；不新建尝试、不派发、不再调模型、任务状态不变。之后多出的事件如实列在断言里：收回调用（结果按"被取代"归档、意图结清）、结账，以及收尾与执行图跟进对"任务已终态"的观察（`MISSION_TERMINAL`），没有新工作、没有内容被接受——比施工清单写的"只多导入与结账类事件"多了"对终态的观察"，属如实描述，不是缺陷。v3、两库对照一致。
+- **K12**（迟到用量导入写库出错）：`test_round_faults.py` 新用例，同上场景，取消后那次调用收回时 `BudgetLedger.import_usage` 抛一次 `sqlite3.OperationalError`；另一个任务同时在跑。结果：主循环不抛；另一个任务完成；出事任务记一条一轮故障（地点"任务已停后的收回"）；下一轮导入恰好一次（整行事件里每条用量只写一次、结账事件一条）；v3、两库对照一致。改坏 G-11：这处收回挪到故障边界之外 → 主循环冲出 → 抓到。
+- `crash_points.json` 的 K04、K11、K12 三行写回用例、标"G（已执行）"。
+- **G-5**：两处审阅被打断的回执本来就和它的事件在同一事务里（`assurance_review_collect.py` 两处都在 `atomic` 内），不用改代码。`test_review_call_unanswered.py` 第一条加核：打断回执被本任务点名恰好一次、v3 与全库检查一致。改坏 G-12 原意"回执落到部署时间线"在偏差裁决 1 的机制下不会发生（回执归属按正文里的任务号认），记为无可达触发（同 G-08、G-18）。
+- **G-6 全局表**（偏差裁决 1 第五节的自然延伸，不另开偏差单）：做法定义、全库做法、归因、策略版本、策略启用五张表清单改成"全局 + 由整行变化折叠"，改动一律归部署时间线；部署时间线那条整行事件的"领域事件"取本事务里所有领域事件（全局表的改动由某个任务的动作或部署命令引起）。命令行清空全库做法补 `MethodLibraryCleared{entries, attributions}`（部署时间线，同一事务）。v3 新 `verify_global`，与任务表共用同一个折叠（`_rebuild`）；全库检查带"全局"一节，算进全库结论。Host 诊断"全库"一节加全局结论，界面不一致时写"全库核对不一致"。用例 `test_method_library.py::test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear`（晋级 → 根终审归因 → 主 Agent 退役 → 命令行清空，五张表都有行、清空后一致、没有静默改动）。改坏 G-13（清空不留事件）、G-14（全局表不记整行）都抓到。
+- **顺带修的**：① 验完提交结论处的"完成范围过期"（见上节）让 F1-17、F1-22 的改坏锚点重复，锚点加长；F1-22 改坏后结果被反复重验、主循环不空闲（以前是崩溃），用例加 240 秒时限，改坏照样抓到。② Host `test_diagnostics_contract.py` 还在读 v2 的 `comparison`，G-7 漏改，改成 v3 结论。

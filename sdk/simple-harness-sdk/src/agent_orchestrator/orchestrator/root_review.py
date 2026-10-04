@@ -843,6 +843,11 @@ class RootReviewCoordinator:
 
         What it does **not** write: a ``ReviewRecord``.  There is no conclusion yet.
         """
+        # 写输入清单、包与"已切包"事件在同一个事务里：中途出错不留没人认领的包（阶段 G）
+        with self.store.transaction():
+            return self._cut_locked(mission_id, now_ms=now_ms)
+
+    def _cut_locked(self, mission_id: str, *, now_ms: int) -> ReviewPackage:
 
         state = self.state(mission_id)
         if not state.needs_cut:

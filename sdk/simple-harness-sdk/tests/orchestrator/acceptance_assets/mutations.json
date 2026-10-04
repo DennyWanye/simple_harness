@@ -237,8 +237,8 @@
    "id": "F1-17",
    "source": "F1-6 随机序列发现的缺陷",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise",
-   "replacement": "            if True:\n                raise",
+   "original": "            # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）\n            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise",
+   "replacement": "            # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）\n            if True:\n                raise",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_an_amendment_landing_while_a_check_is_imported_sets_that_verification_aside"
    ],
@@ -292,8 +292,8 @@
    "id": "F1-22",
    "source": "F1 阻断核验 B1",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "            return await self._set_aside_stale(result_id)",
-   "replacement": "            return False",
+   "original": "                raise\n            return await self._set_aside_stale(result_id)\n        if critic_admission_failure is not None:",
+   "replacement": "                raise\n            return False\n        if critic_admission_failure is not None:",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check"
    ],
@@ -303,12 +303,12 @@
    "id": "G-01",
    "source": "阶段 G 第 1 批",
    "file": "src/agent_orchestrator/storage/source_records.py",
-   "original": "    content = {column[1]: _value(row[column[1]]) for column in columns}",
-   "replacement": "    content = {column[1]: None for column in columns}",
+   "original": "    return hashlib.sha256(canonical_json(dict(content)).encode(\"utf-8\")).hexdigest()",
+   "replacement": "    return hashlib.sha256(b\"\").hexdigest()",
    "tests": [
     "tests/orchestrator/product_world/test_business_replay.py::test_a_completed_mission_rebuilds_its_source_tables"
    ],
-   "note": "点名与比对不看内容（哈希不含列值）：改过内容的源记录行不报"
+   "note": "行内容哈希不看内容（恒定）：改过内容的源记录行不报、改动全被当成没变"
   },
   {
    "id": "G-02",
@@ -334,14 +334,120 @@
   },
   {
    "id": "G-04",
-   "source": "阶段 G 第 1 批",
+   "source": "阶段 G 第 2 批（偏差裁决 1 改写）",
    "file": "src/agent_orchestrator/observability/business_replay.py",
-   "original": "    if folder is None or entry.get(\"gaps\"):",
-   "replacement": "    if folder is None:",
+   "original": "            elif \"mission_id\" not in entry[\"fields\"] and not isinstance(entry.get(\"owner\"), dict):",
+   "replacement": "            elif False:",
    "tests": [
-    "tests/orchestrator/full_target/test_business_replay_inventory.py::test_a_folded_table_with_gaps_is_not_covered"
+    "tests/orchestrator/full_target/test_business_replay_inventory.py::test_a_business_table_without_mission_id_must_name_its_owner"
    ],
-   "note": "有 gaps 的折叠表也算覆盖"
+   "note": "清单不查没有 mission_id 的业务表写没写 owner"
+  },
+  {
+   "id": "G-05",
+   "source": "阶段 G 第 2 批（偏差裁决 1 改写）",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "        for operation in (\"UPDATE\", \"DELETE\"):",
+   "replacement": "        for operation in ():",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_completed_mission_rebuilds_its_source_tables"
+   ],
+   "note": "临时触发器只装插入、不装更新与删除：改动没被记下，折叠结果与库不一致"
+  },
+  {
+   "id": "G-06",
+   "source": "阶段 G 第 2 批（偏差裁决 1 改写）",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "        identity = f\"rows-written:{mission_id}:{seq}:{digest}\"",
+   "replacement": "        identity = f\"rows-written:{mission_id}:{digest}\"",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_row_changed_back_and_forth_is_logged_every_time"
+   ],
+   "note": "幂等键不含追加前序号：来回改成同样内容时撞键"
+  },
+  {
+   "id": "G-07",
+   "source": "阶段 G 第 3 批",
+   "file": "src/agent_orchestrator/orchestrator/root_review.py",
+   "original": "        with self.store.transaction():\n            return self._cut_locked(mission_id, now_ms=now_ms)",
+   "replacement": "        if True:\n            return self._cut_locked(mission_id, now_ms=now_ms)",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_root_review_cut_that_fails_halfway_leaves_no_unclaimed_package"
+   ],
+   "note": "根终审切包与\"已切包\"事件不在一个事务里"
+  },
+  {
+   "id": "G-08",
+   "source": "阶段 G 第 2、3 批",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "VerificationLayerRecorded 键改回\"结果:层\"：键已照裁决改，但没找到同一决定 / 同一结果层被评两次的产品路径（等收敛的换做法只评一次），改坏无用例可绑，联测时再找真实触发"
+  },
+  {
+   "id": "G-09",
+   "source": "阶段 G 第 2 批（偏差裁决 1 改写）",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "        if before_hash == after_hash:  # unchanged, or inserted and removed again\n            continue",
+   "replacement": "        if before_hash is None and after_hash is None:\n            continue",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_an_idempotent_replay_adds_no_row_events"
+   ],
+   "note": "不跳过前后哈希相同的空改动"
+  },
+  {
+   "id": "G-10",
+   "source": "阶段 G 第 2 批（偏差裁决 1 改写）",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "        for operation in (\"UPDATE\", \"DELETE\"):",
+   "replacement": "        for operation in (\"UPDATE\",):",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_rows_inserted_and_removed_in_one_transaction_leave_no_trace"
+   ],
+   "note": "不装删除后的触发器：删掉的行没被记下"
+  },
+  {
+   "id": "G-11",
+   "source": "阶段 G 第 4 批（崩溃切点 K12）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            if intent.mission_id not in active:\n                if await self._mission_round(intent.mission_id, f\"collect_after_stop:{intent.intent_id}\",\n                                             lambda intent=intent: self._collect_after_stop(intent)):",
+   "replacement": "            if intent.mission_id not in active:\n                if await self._collect_after_stop(intent):",
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round"
+   ],
+   "note": "K12：迟到用量（任务已停后收回的调用）的导入在故障边界之外，写库出错冲出主循环"
+  },
+  {
+   "id": "G-12",
+   "source": "阶段 G 第 5 批（偏差裁决 1 第四节）",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "无可达触发：两处打断回执本来就与事件同一事务（assurance_review_collect.py 两处都在 atomic 内）；即使挪出事务，回执归属也按正文 mission_id 认，点名不落部署时间线、v3 仍一致。原意「回执归到部署时间线」在偏差裁决 1 的机制下不会发生；正向核对见 test_review_call_unanswered.py::test_a_root_review_that_never_answers_is_reopened"
+  },
+  {
+   "id": "G-13",
+   "source": "阶段 G 第 6 批",
+   "file": "src/agent_orchestrator/storage/method_library_store.py",
+   "original": "            self.store.append_event(Event(",
+   "replacement": "            (lambda event: None)(Event(",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear"
+   ],
+   "note": "命令行清空全库做法不留事件（静默清空）"
+  },
+  {
+   "id": "G-14",
+   "source": "阶段 G 第 6 批",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "    return tuple(sorted(name for name, entry in _inventory().items() if entry.get(\"rebuild\") == \"fold\"))",
+   "replacement": "    return tuple(sorted(name for name, entry in _inventory().items()\n                        if entry.get(\"rebuild\") == \"fold\" and entry[\"class\"] == \"business\"))",
+   "tests": [
+    "tests/orchestrator/product_world/test_method_library.py::test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear"
+   ],
+   "note": "全局表的改动不记整行"
   },
   {
    "id": "G-15",
@@ -369,12 +475,87 @@
    "id": "G-17",
    "source": "阶段 G 第 1 批",
    "file": "src/agent_orchestrator/storage/source_records.py",
-   "original": "        if entry.get(\"rebuild\") == \"immutable_source\" or entry.get(\"named\") is True",
-   "replacement": "        if entry.get(\"rebuild\") == \"immutable_source\"",
+   "original": "                        if entry.get(\"rebuild\") == \"immutable_source\" or entry.get(\"named\") is True))",
+   "replacement": "                        if entry.get(\"rebuild\") == \"immutable_source\"))",
    "tests": [
     "tests/orchestrator/product_world/test_business_replay.py::test_every_immutable_row_and_receipt_is_named_in_its_own_transaction"
    ],
-   "note": "自动点名漏掉回执账"
+   "note": "点名漏掉回执账"
+  },
+  {
+   "id": "G-18",
+   "source": "阶段 G 第 2、3 批",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "PlanningDecisionEvaluated 键改回\"决定编号\"：键已照裁决改，但没找到同一决定 / 同一结果层被评两次的产品路径（等收敛的换做法只评一次），改坏无用例可绑，联测时再找真实触发"
+  },
+  {
+   "id": "G-19",
+   "source": "阶段 G 第 2 批（偏差裁决 1）",
+   "file": "src/agent_orchestrator/observability/business_replay.py",
+   "original": "            if item[\"before\"] != (None if current is None else current[0]):",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_an_out_of_band_write_breaks_the_chain"
+   ],
+   "note": "v3 不核改前哈希（不接链）"
+  },
+  {
+   "id": "G-20",
+   "source": "阶段 G 第 2 批（偏差裁决 1）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "    \"RowsWritten\",\n})",
+   "replacement": "})",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_bookkeeping_alone_is_not_progress"
+   ],
+   "note": "空转水位把存储层记账事件当进展"
+  },
+  {
+   "id": "G-21",
+   "source": "阶段 G 第 2 批（偏差裁决 1）",
+   "file": "src/agent_orchestrator/observability/business_replay.py",
+   "original": "        if touched and not payload[\"with_events\"] and not all(\"silent_ok\" in tables[t] for t in touched):",
+   "replacement": "        if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_silent_change_is_reported"
+   ],
+   "note": "v3 不核静默改动"
+  },
+  {
+   "id": "G-22",
+   "source": "阶段 G 第 2 批（偏差裁决 1 第五节）",
+   "file": "src/agent_orchestrator/storage/source_records.py",
+   "original": "    ignored = \",\".join(f\"'{kind}'\" for kind in sorted({EVENT_TYPE, *TRIGGER_EVENTS}))",
+   "replacement": "    ignored = \",\".join(f\"'{kind}'\" for kind in sorted({EVENT_TYPE}))",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_rows_are_owned_by_their_declared_mission_while_other_missions_are_live"
+   ],
+   "note": "归属把屏障触发器写的 AssuranceEvidenceChanged 也算进本事务的任务"
+  },
+  {
+   "id": "G-23",
+   "source": "阶段 G 第 2 批（随机序列发现）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）\n            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise\n",
+   "replacement": "            # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）\n            raise\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result_aside"
+   ],
+   "note": "验完提交结论前完成范围过期，错误冲出主循环"
+  },
+  {
+   "id": "G-24",
+   "source": "阶段 G 第 4 批（裁决 G-7 两库对照）",
+   "file": "src/agent_orchestrator/observability/business_replay.py",
+   "original": "        elif not known or (row[\"input_tokens\"], row[\"output_tokens\"]) != (\n                tokens[\"input_tokens\"], tokens[\"output_tokens\"]):",
+   "replacement": "        elif not known:",
+   "tests": [
+    "tests/orchestrator/product_world/test_business_replay.py::test_a_completed_mission_rebuilds_its_source_tables"
+   ],
+   "note": "两库对照不比已知用量的数"
   },
   {
    "id": "M01",

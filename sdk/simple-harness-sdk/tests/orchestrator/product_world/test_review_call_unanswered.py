@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from agent_orchestrator.observability.business_replay import CONSISTENT, verify_library, verify_mission
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, review_input
 
@@ -83,6 +84,12 @@ def test_a_root_review_that_never_answers_is_reopened(tmp_path):
                 intent = store.get_intent(abandoned["intent_id"])
                 assert intent.state == "FAILED"
                 assert store.get_receipt("assurance-review-interrupted:" + abandoned["intent_id"]) is not None
+                # 阶段 G 第 5 批：打断回执与它的事件同一事务，点名归本任务；整个任务重建一致
+                named = [item["key"]["commit_id"] for event in store.list_events(mission_id, types=("RowsWritten",))
+                         for item in event.payload["named"] if item["table"] == "commit_receipts"]
+                assert named.count("assurance-review-interrupted:" + abandoned["intent_id"]) == 1
+                assert verify_mission(store, mission_id)["status"] == CONSISTENT
+                assert verify_library(store)["status"] == CONSISTENT
         finally:
             provider.let_go.set()
 

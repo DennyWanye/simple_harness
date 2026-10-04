@@ -99,7 +99,8 @@ def _replay(mission: Mapping[str, Any], library: Mapping[str, Any]) -> dict[str,
                    for name, item in sorted(tables.items())},
         "library": {"status": _safe_scalar(library.get("status")),
                     "unnamed_rows": _safe_scalar(library.get("unnamed_count")),
-                    "named_twice": len(list(library.get("named_twice") or []))},
+                    "named_twice": len(list(library.get("named_twice") or [])),
+                    "global": _safe_scalar(_mapping(library.get("global")).get("status"))},
     }
 
 
@@ -370,8 +371,6 @@ def build_diagnostics(
             "through_seq": snapshot_view.get("through_seq"),
             "state_version": snapshot_view.get("state_version"),
             "not_covered": {
-                "replay": sorted(name for name, item in replay["tables"].items()
-                                 if item["status"] == "NOT_COVERED"),
                 "excluded": [
                     "mission goal and criteria text",
                     "source content and journal payloads",

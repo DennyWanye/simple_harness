@@ -212,6 +212,8 @@ OBSERVATION_EVENTS = frozenset({
     "AssuranceCloseoutEvaluated",
     "AssuranceUseValidityChecked",
     "HierarchicalMissionStalled",
+    # 存储层记账（全业务重放 v3）：跟着业务写入走，本身不是进展（偏差裁决 1 R13）
+    "RowsWritten",
 })
 HOLLOW_CYCLES_NOTED = 100
 WAIT_BACKOFF_MAX = 1.0
@@ -2921,7 +2923,8 @@ class Orchestrator:
         Global on purpose: a Mission waiting for a concurrency slot, a budget or a
         backpressure drop is freed by *another* Mission's events, never by its own."""
         row = self.store.connection.execute(
-            "SELECT seq FROM events WHERE type != 'HeartbeatReceived' ORDER BY seq DESC LIMIT 1"
+            "SELECT seq FROM events WHERE type NOT IN ('HeartbeatReceived', 'RowsWritten')"
+            " ORDER BY seq DESC LIMIT 1"
         ).fetchone()
         return -1 if row is None else int(row[0])
 
@@ -6410,7 +6413,8 @@ class Orchestrator:
                 self.store,
                 "PlanningDecisionEvaluated",
                 mission.id,
-                key=decision_id,
+                # 同一决定再评一次（另一次尝试或另一个结论）也要有自己的事件，不被同键吞掉（阶段 G）
+                key=f"{decision_id}:{attempt_ordinal}:{status!s}",
                 payload={
                     "request_id": request_id,
                     "decision_id": decision_id,
@@ -8030,6 +8034,12 @@ class Orchestrator:
                 )
             else:
                 self.commit.fail_result(result_id, failures=verdict.failures, owner=self._owner)
+        except (AssuranceError, OperationCompletionError) as error:
+            # 验完、提交结论前，用户改了要求或计划换了一版：同上，结果归档为"被取代"（阶段 G
+            # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）
+            if error.code not in {"CHECK_SCOPE_CHANGED", "OP_EFFECT_SCOPE_STALE"}:
+                raise
+            return await self._set_aside_stale(result_id)
         except (CommitRejected, IllegalTransition, ResolutionCommitRejected) as error:
             # the Attempt was closed / taken over while we verified (P1-4): the verdict is
             # dropped; the library's state is whatever the other Commit made it. An

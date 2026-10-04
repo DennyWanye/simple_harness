@@ -96,17 +96,16 @@ def test_inventory_v2_rules(edited):
             edited(change)
 
 
-def test_a_folded_table_with_gaps_is_not_covered(tmp_path, monkeypatch):
-    """有 ``gaps`` 的折叠表即使有折叠函数也报"未覆盖"（裁决 G-1：gaps 必须为空才算覆盖）。"""
+def test_a_business_table_without_mission_id_must_name_its_owner(edited):
+    """没有 ``mission_id`` 的业务表必须写明经哪张表找到任务（偏差裁决 1 第 3 条：不兜底）。
 
-    entry = {"class": "business", "rebuild": "fold", "rebuilder": "probe", "gaps": ["x.py:writer"]}
-    monkeypatch.setitem(business_replay.FOLDERS, "probe", lambda store, mission_id, events: [])
-    store = Store.open(tmp_path / "o.db")
-    try:
-        result = business_replay._folded_table(store, "m", "missions", entry)
-    finally:
-        store.close()
-    assert result["status"] == business_replay.NOT_COVERED
+    **改坏检验**（G-04）：清单不查 ``owner`` → 删掉 ``planning_decisions`` 的 ``owner`` 不报错 → 变红。"""
+
+    def no_owner(tables):
+        del tables["planning_decisions"]["owner"]
+
+    with pytest.raises(InventoryError, match="planning_decisions: a business table without mission_id names its owner"):
+        edited(no_owner)
 
 
 def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):

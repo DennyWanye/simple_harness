@@ -2,13 +2,13 @@
 """全业务重放 v3 审计插件（HTN 补齐阶段 G；取代 v2 的 ``p33_replay_audit``）。
 
 每条用例结束后，在它的临时目录里找编排库（``orchestrator.db``），只读打开，按 v3 核：全库
-检查（只增表与回执账每行恰好被点名一次）+ 每个任务逐表重建比对。会话结束把汇总写成 JSON。
+检查（只增表与回执账每行恰好被点名一次）+ 两库对照（同目录的执行库）+ 每个任务逐表重建比对。会话结束把汇总写成 JSON。
 
     PYTHONPATH=tests/orchestrator/product_world uv run --frozen pytest -p replay_v3_audit \\
         --replay-v3-audit=.local-test-evidence/<日期>/g-replay/audit.json [--replay-v3-audit-strict] ...
 
-默认只观察，不改变用例结果。``--replay-v3-audit-strict`` 时，有任何"不一致"、范围内任务有
-"未覆盖"、或全库检查不一致，整轮判失败。范围外的任务（按别的口径建的）如实计数，不算失败。
+默认只观察，不改变用例结果。``--replay-v3-audit-strict`` 时，有任何"不一致"（含静默改动）、
+或全库检查不一致，整轮判失败。范围外的任务（按别的口径建的）如实计数，不算失败。
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ import pytest
 from agent_orchestrator.observability.business_replay import (
     CONSISTENT,
     INCONSISTENT,
-    NOT_COVERED,
     OUT_OF_SCOPE,
+    verify_execution_ledgers,
     verify_library,
     verify_mission,
 )
@@ -41,14 +41,16 @@ def audit_database(path: Path) -> dict[str, Any]:
             "SELECT mission_id FROM missions ORDER BY created_at")]
         reports = {mission_id: verify_mission(store, mission_id) for mission_id in missions}
         library = verify_library(store)
+        ledgers = verify_execution_ledgers(store, sorted(path.parent.glob("execution*.db")))
     finally:
         store.close()
     statuses = Counter(report["status"] for report in reports.values())
     bad_tables = sorted({f"{name}:{item['status']}" for report in reports.values()
                          for name, item in report["tables"].items()
-                         if item["status"] in {INCONSISTENT, NOT_COVERED}})
-    failed = library["status"] != CONSISTENT or statuses[INCONSISTENT] or statuses[NOT_COVERED]
+                         if item["status"] == INCONSISTENT})
+    failed = library["status"] != CONSISTENT or ledgers["status"] != CONSISTENT or statuses[INCONSISTENT]
     return {"database": str(path), "library": library["status"], "unnamed": library["unnamed_count"],
+            "execution_ledgers": {k: v for k, v in ledgers.items() if v},
             "missions": dict(sorted(statuses.items())), "tables_not_consistent": bad_tables,
             "status": INCONSISTENT if failed else CONSISTENT,
             "out_of_scope": statuses[OUT_OF_SCOPE]}

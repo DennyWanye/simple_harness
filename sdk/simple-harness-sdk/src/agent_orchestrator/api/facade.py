@@ -826,7 +826,9 @@ class MissionControlV1:
         rows = rows[:limit]
         return {
             "mission_id": mission.id,
-            "events": [{**event.to_json(), "seq": event.seq} for event in rows],
+            # 存储层记账事件（全业务重放 v3）不给界面：游标照常越过它们（偏差裁决 1 R13）
+            "events": [{**event.to_json(), "seq": event.seq} for event in rows
+                       if event.type != "RowsWritten"],
             "through_seq": rows[-1].seq if rows else after_seq,
             "has_more": has_more,
         }

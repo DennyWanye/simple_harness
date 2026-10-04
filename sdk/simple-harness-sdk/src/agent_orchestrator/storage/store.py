@@ -209,7 +209,7 @@ class Store:
         connection.execute("PRAGMA synchronous = FULL")
         store = cls(connection, resolved, clock)
         store._initialize_or_validate()
-        from . import source_records  # 只增业务表与回执账的自动点名（HTN 补齐阶段 G）
+        from . import source_records  # 业务行写入的统一记账（HTN 补齐阶段 G）
 
         source_records.install(connection)
         store._source_naming = True
@@ -441,6 +441,10 @@ class Store:
             self._depth = 1
             self._holder = self._current_task()
             self._transaction_generation += 1
+            if self._source_naming:  # 只记本事务里的写（偏差裁决 1 第 5 条）
+                from .source_records import begin
+
+                begin(self._connection)
             try:
                 yield self._connection
             except BaseException:
@@ -449,9 +453,9 @@ class Store:
             else:
                 try:
                     if self._source_naming:
-                        from .source_records import name_written_rows
+                        from .source_records import record_written_rows
 
-                        name_written_rows(self, self._connection)
+                        record_written_rows(self, self._connection)
                     self._connection.execute("COMMIT")
                 except BaseException:
                     # A deferred FK can fail at COMMIT, leaving SQLite's
@@ -585,11 +589,16 @@ class Store:
             return Event(**{**event.to_json(), "seq": cursor.lastrowid})
 
     def list_events(
-        self, mission_id: str, *, after_seq: int = 0, limit: int = 10_000
+        self, mission_id: str, *, after_seq: int = 0, limit: int = 10_000,
+        types: Sequence[str] | None = None,
     ) -> list[Event]:
+        """``types`` filters in SQL: a reader that wants a few kinds does not parse the
+        rest (存储层记账事件让一个任务的事件约翻一倍，偏差裁决 1 R13)."""
+
+        kinds = "" if types is None else f" AND type IN ({','.join('?' * len(types))})"
         rows = self._connection.execute(
-            "SELECT * FROM events WHERE mission_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-            (mission_id, after_seq, limit),
+            f"SELECT * FROM events WHERE mission_id = ? AND seq > ?{kinds} ORDER BY seq LIMIT ?",  # noqa: S608
+            (mission_id, after_seq, *(types or ()), limit),
         ).fetchall()
         return [_event_from_row(row) for row in rows]
 
