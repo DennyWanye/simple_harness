@@ -16,6 +16,12 @@ G（全业务事件重放）与联测（F2）共用，只此一份：
 - 改坏：`uv run --frozen python scripts/acceptance/run_mutations.py [编号 ...]`——备份 → 改 → 重生成部署清单 → 只跑绑定用例 → 从备份恢复并核哈希；只认断言失败为"抓到"。结果写仓库根 `.local-test-evidence/<日期>/mutations/results-<时刻>.json`。
 - 随机动作序列：`RANDOM_SEQ_SEEDS=1,2,3 RANDOM_SEQ_STEPS=500 uv run --frozen pytest tests/orchestrator/product_world/test_random_sequences.py`（默认 1 个种子 50 步）；`RANDOM_SEQ_REOPEN_EVERY=25` 每 25 步关库重开，`RANDOM_SEQ_PROGRESS=文件` 每步一行心跳（长跑给看门狗看）；反例缩小后写 `.local-test-evidence/<日期>/random-sequences/`。
 
+## 一轮故障按类型码处理（TaskGraph 补全第一批，2026-10-04）
+
+- 主循环在"一个任务一轮"的边界接住异常后，`orchestrator/failure_classes.classify_round_fault` 只调 `contracts/error_table.round_fault_handling`：异常是 `CodedFault` 且码在 `ROUND_FAULTS` 里 → 按表（`CORRUPT_STOP` 当轮停 / `RETRY_IN_PLACE`）；没带码或码没登记 → 原地重试，由连续次数上限兜住。不读异常文字。
+- 新加会改变一轮故障处理的异常：继承 `CodedFault`、类上写 `code = RoundFaultCode.X` 并在 `ROUND_FAULTS` 登记；`tests/orchestrator/full_target/test_round_fault_codes.py` 的源码扫描会抓没登记的。
+- "是否绑定执行图"只用 `storage/taskgraph_store.require_bound`（`NotBoundError` / `KernelUnsupportedError`）；不该报错的调用方捕获 `NotBoundError`。
+
 ## HTN 一致性补改（2026-10-04）
 
 - **前提被推翻**：`orchestrator/planning_repair_requests.precondition_triggers`——还没开工的原子步骤，最新开工许可（`HierarchicalDispatch.start_witness_index`）真值为假，就记一条证据失效请求（`context.reason = method_precondition_false`，带步骤、做法、前提原文、真值、依据、纪元）。前提只在派发前查，验收时不复查。
