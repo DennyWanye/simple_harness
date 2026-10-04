@@ -72,57 +72,14 @@ class ShapeChange(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class SatisfactionPolicy:
-    """§6.1: what evidence, and in what combination, discharges this duty."""
-
-    required_criterion_ids: tuple[str, ...]
-    independent_review_required: bool = True
-    delivery_stage_required: str | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "required_criterion_ids",
-            identifiers(self.required_criterion_ids, "satisfaction_policy.required_criterion_ids"),
-        )
-        if not isinstance(self.independent_review_required, bool):
-            raise ContractError("satisfaction_policy.independent_review_required must be a boolean")
-        object.__setattr__(
-            self,
-            "delivery_stage_required",
-            optional_identifier(
-                self.delivery_stage_required, "satisfaction_policy.delivery_stage_required"
-            ),
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "required_criterion_ids": list(self.required_criterion_ids),
-            "independent_review_required": self.independent_review_required,
-            "delivery_stage_required": self.delivery_stage_required,
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "satisfaction_policy") -> SatisfactionPolicy:
-        data = fields_of(
-            value,
-            name,
-            required=("required_criterion_ids",),
-            optional=("independent_review_required", "delivery_stage_required"),
-        )
-        return cls(
-            required_criterion_ids=tuple(data["required_criterion_ids"]),
-            independent_review_required=data.get("independent_review_required", True),
-            delivery_stage_required=data.get("delivery_stage_required"),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class Obligation:
-    """§6.1: a duty, its authority scope, its funding lineage and its lifecycle.
+    """§6.1: a duty, its scope, its funding lineage and its lifecycle.
 
-    ``scope`` / ``authority_ref`` describe *where* work is allowed, and are not a
-    self-issued credential: holding the obligation does not grant the capability.
+    ``scope`` describes *where* work is allowed and is not a self-issued credential:
+    holding the obligation does not grant the capability.  What discharges a duty is the
+    completion reading, what it spent is the duty ledger, and what it may do is the
+    deployment policy (HTN 一致性补改 H-5: the contract's own copies of those were never
+    read and are gone).
     """
 
     obligation_id: ObligationId
@@ -131,10 +88,8 @@ class Obligation:
     goal_signature_id: str
     parameters: dict[str, Any] = field(default_factory=dict)
     scope: str = "mission"
-    authority_ref: str | None = None
     requiredness: Requiredness = Requiredness.REQUIRED
     budget_lineage_ref: str | None = None
-    satisfaction_policy: SatisfactionPolicy | None = None
     lifecycle: ObligationLifecycle = ObligationLifecycle.UNSATISFIED
     resolution_ref: str | None = None
     parent_obligation_id: ObligationId | None = None
@@ -160,11 +115,6 @@ class Obligation:
         object.__setattr__(self, "scope", identifier(self.scope, "obligation.scope"))
         object.__setattr__(
             self,
-            "authority_ref",
-            optional_identifier(self.authority_ref, "obligation.authority_ref"),
-        )
-        object.__setattr__(
-            self,
             "requiredness",
             enum_of(Requiredness, self.requiredness, "obligation.requiredness"),
         )
@@ -173,10 +123,6 @@ class Obligation:
             "budget_lineage_ref",
             optional_identifier(self.budget_lineage_ref, "obligation.budget_lineage_ref"),
         )
-        if self.satisfaction_policy is not None and not isinstance(
-            self.satisfaction_policy, SatisfactionPolicy
-        ):
-            raise ContractError("obligation.satisfaction_policy must be a SatisfactionPolicy")
         object.__setattr__(
             self, "lifecycle", enum_of(ObligationLifecycle, self.lifecycle, "obligation.lifecycle")
         )
@@ -204,12 +150,8 @@ class Obligation:
             "goal_signature_id": self.goal_signature_id,
             "parameters": dict(self.parameters),
             "scope": self.scope,
-            "authority_ref": self.authority_ref,
             "requiredness": str(self.requiredness),
             "budget_lineage_ref": self.budget_lineage_ref,
-            "satisfaction_policy": (
-                None if self.satisfaction_policy is None else self.satisfaction_policy.to_json()
-            ),
             "lifecycle": str(self.lifecycle),
             "resolution_ref": self.resolution_ref,
             "parent_obligation_id": (
@@ -226,16 +168,13 @@ class Obligation:
             optional=(
                 "parameters",
                 "scope",
-                "authority_ref",
                 "requiredness",
                 "budget_lineage_ref",
-                "satisfaction_policy",
                 "lifecycle",
                 "resolution_ref",
                 "parent_obligation_id",
             ),
         )
-        raw_policy = data.get("satisfaction_policy")
         raw_parent = data.get("parent_obligation_id")
         return cls(
             obligation_id=ObligationId(data["obligation_id"]),
@@ -244,14 +183,8 @@ class Obligation:
             goal_signature_id=data["goal_signature_id"],
             parameters=dict(data.get("parameters", {})),
             scope=data.get("scope", "mission"),
-            authority_ref=data.get("authority_ref"),
             requiredness=data.get("requiredness", Requiredness.REQUIRED),
             budget_lineage_ref=data.get("budget_lineage_ref"),
-            satisfaction_policy=(
-                None
-                if raw_policy is None
-                else SatisfactionPolicy.from_json(raw_policy, f"{name}.satisfaction_policy")
-            ),
             lifecycle=data.get("lifecycle", ObligationLifecycle.UNSATISFIED),
             resolution_ref=data.get("resolution_ref"),
             parent_obligation_id=None if raw_parent is None else ObligationId(raw_parent),
@@ -476,11 +409,6 @@ class ObligationLedger:
             requirement_refs=opening.requirement_refs,
             goal_signature_id=opening.goal_signature.signature_id,
             scope=parent.obligation.scope,
-            authority_ref=(
-                parent.obligation.authority_ref
-                if opening.authorization_ref is None
-                else opening.authorization_ref.id
-            ),
             budget_lineage_ref=(
                 opening.grant_ref
                 if opening.budget_inheritance is BudgetInheritance.SEPARATE_GRANT
@@ -698,7 +626,6 @@ __all__ = (
     "ObligationAccountView",
     "ObligationLedger",
     "ObligationLifecycle",
-    "SatisfactionPolicy",
     "ShapeChange",
     "funding_owner_conflicts",
     "obligation_refs",

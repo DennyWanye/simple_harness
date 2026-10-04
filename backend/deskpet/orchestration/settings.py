@@ -52,8 +52,9 @@ class OrchestrationSettings:
     default_mission_max_tokens: int = 20_000_000
     task_max_tokens: int = 3_000_000
     default_mission_max_attempts: int = 12
-    # New official DeepSeek source Missions; existing Missions keep their profile.
-    context_input_tokens: int = 262_144
+    # New Missions' context window: 512K by default, 256K on request (user 2026-10-04);
+    # an existing Mission keeps the pool it was frozen on.
+    context_input_tokens: int = 524_288
     # P3.2 (plan D9 / P32-14): the one directory the user authorised for published files.
     # Empty means no directory is authorised, and then nothing can be published at all —
     # the connector is not even enabled, so a Mission may not carry a publish criterion.
@@ -126,8 +127,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         enabled=enabled if isinstance(enabled, bool) else True,
         max_concurrency=_bounded_int(raw.get("max_concurrency"), 2, 1, 4),
         max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 2, 1, 4),
-        context_input_tokens=(524_288 if type(raw.get("context_input_tokens")) is int
-                              and raw["context_input_tokens"] == 524_288 else 262_144),
+        context_input_tokens=(262_144 if type(raw.get("context_input_tokens")) is int
+                              and raw["context_input_tokens"] == 262_144 else 524_288),
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",

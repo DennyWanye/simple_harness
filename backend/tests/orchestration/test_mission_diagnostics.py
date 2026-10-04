@@ -13,6 +13,7 @@ from agent_orchestrator.contracts.models import sha256_hex
 from deskpet.orchestration import diagnostics
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.diagnostics import (
+    DUTY_FIELDS,
     MAX_SUPPORT_BYTES,
     build_diagnostics,
     export_support,
@@ -100,6 +101,13 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report["replay"]["status"] == "CONSISTENT"
         assert "library" not in report["replay"]  # 全库检查不在诊断里做（阶段 G 阻断核验）
         assert isinstance(report["failure_timeline"], list)
+        # 预算去向（一致性补改 H-6）：与同一份快照的义务账逐字段一致、不带目标原文
+        # （改坏 H-06：去掉这一节 → 变红）
+        duties = report["costs"]["by_duty"]
+        expected = view["snapshot"]["budget_by_duty"]
+        assert duties and duties[0]["depth"] == 0
+        assert duties == [{name: row[name] for name in DUTY_FIELDS} for row in expected]
+        assert all("label" not in row for row in duties)
 
         first = export_support(orchestration_root / "support", report)
         second = export_support(orchestration_root / "support", report)

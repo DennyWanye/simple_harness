@@ -25,7 +25,6 @@ from agent_orchestrator.contracts.obligations import (
     Obligation,
     ObligationLedger,
     ObligationLifecycle,
-    SatisfactionPolicy,
     ShapeChange,
     funding_owner_conflicts,
 )
@@ -50,7 +49,6 @@ def duty(
         goal_signature_id=goal,
         parameters={"subject": "alpha"},
         budget_lineage_ref=budget,
-        satisfaction_policy=SatisfactionPolicy(required_criterion_ids=("c-complete",)),
     )
 
 
@@ -126,12 +124,8 @@ def test_obligation_round_trips_through_json_unchanged() -> None:
         goal_signature_id="compare-sources",
         parameters={"subject": "alpha", "depth": 2},
         scope="mission-1",
-        authority_ref="grant-1",
         requiredness=Requiredness.REQUIRED,
         budget_lineage_ref="budget-root",
-        satisfaction_policy=SatisfactionPolicy(
-            required_criterion_ids=("c-complete",), independent_review_required=True
-        ),
         parent_obligation_id="obligation-root",  # type: ignore[arg-type]
     )
 

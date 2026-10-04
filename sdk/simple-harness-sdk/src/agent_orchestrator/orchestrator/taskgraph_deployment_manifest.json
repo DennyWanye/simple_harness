@@ -1,5 +1,5 @@
 {
-  "deployment_id": "45bc993943647b8507468ed34988eea8621a49014b5a62c91d3328a26655038c",
+  "deployment_id": "3b3ef7f2fc58ad160fb54cf3ffc10c9c13852b31f512d1fcc0278f1a1da5418c",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -73,7 +73,7 @@
     "agent_orchestrator/contracts/htn.py": "dca3213cb7ec4c7120ebb9ebebf733e5219f0ad1fb628a21dcbb860cba51e615",
     "agent_orchestrator/contracts/ids.py": "5b048365c5cd02a64e41776e09880585757183d174ee81a2ff29ed556064b358",
     "agent_orchestrator/contracts/models.py": "9a9382601cc3927c1e5e0fb2b7bc78af68964fe3b7de54b079127f3a87b9ba31",
-    "agent_orchestrator/contracts/obligations.py": "600c2c93d27caed887478faab72298ecbfd4af3a3161e248c43a2052d49ac2d3",
+    "agent_orchestrator/contracts/obligations.py": "51289118bc1a3ce753a8f40ce96ca7e48646ad2456daaea49669929ab936b9b5",
     "agent_orchestrator/contracts/operation_completion.py": "e3a42845ddc15782522febeb9533d8ec7bb11ebb7705f3285762e99012611287",
     "agent_orchestrator/contracts/operation_intents.py": "60cc3c8831aa8d4406b05ff11ba692c5678648dde0366647090ea0f5a96b5c9e",
     "agent_orchestrator/contracts/operation_payloads.py": "2dcd96ba2a6e3070f534738cf3b8af22fc934a760e6d46421c669fa5eec4b65a",

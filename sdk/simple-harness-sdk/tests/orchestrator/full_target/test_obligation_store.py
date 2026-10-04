@@ -24,7 +24,6 @@ from agent_orchestrator.contracts.htn import ObligationId, Requiredness
 from agent_orchestrator.contracts.obligations import (
     Obligation,
     ObligationLifecycle,
-    SatisfactionPolicy,
     ShapeChange,
 )
 from agent_orchestrator.storage.obligation_store import ObligationStore
@@ -68,7 +67,6 @@ def _duty(
         scope="mission",
         requiredness=Requiredness.REQUIRED,
         budget_lineage_ref=budget_lineage_ref,
-        satisfaction_policy=SatisfactionPolicy(required_criterion_ids=("c-complete",)),
         lifecycle=lifecycle,
         resolution_ref=resolution_ref,
         parent_obligation_id=None if parent is None else ObligationId(parent),
