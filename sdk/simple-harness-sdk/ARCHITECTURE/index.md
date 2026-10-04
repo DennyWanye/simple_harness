@@ -16,6 +16,13 @@ G（全业务事件重放）与联测（F2）共用，只此一份：
 - 改坏：`uv run --frozen python scripts/acceptance/run_mutations.py [编号 ...]`——备份 → 改 → 重生成部署清单 → 只跑绑定用例 → 从备份恢复并核哈希；只认断言失败为"抓到"。结果写仓库根 `.local-test-evidence/<日期>/mutations/results-<时刻>.json`。
 - 随机动作序列：`RANDOM_SEQ_SEEDS=1,2,3 RANDOM_SEQ_STEPS=500 uv run --frozen pytest tests/orchestrator/product_world/test_random_sequences.py`（默认 1 个种子 50 步）；`RANDOM_SEQ_REOPEN_EVERY=25` 每 25 步关库重开，`RANDOM_SEQ_PROGRESS=文件` 每步一行心跳（长跑给看门狗看）；反例缩小后写 `.local-test-evidence/<日期>/random-sequences/`。
 
+## HTN 一致性补改（2026-10-04）
+
+- **前提被推翻**：`orchestrator/planning_repair_requests.precondition_triggers`——还没开工的原子步骤，最新开工许可（`HierarchicalDispatch.start_witness_index`）真值为假，就记一条证据失效请求（`context.reason = method_precondition_false`，带步骤、做法、前提原文、真值、依据、纪元）。前提只在派发前查，验收时不复查。
+- **停下时结果不明的对外操作**：判定 `runtime/operation_reconciliation.action_outcome_unresolved`；停任务三处写 `final_report.unresolved_actions` / `unresolved_actions_note`；`orchestrator/event_handler.ACTION_SETTLED_AFTER_STOP`（`ActionSettledAfterMissionStopped`，键 = 动作 + 结果状态）在每轮对账后写一次，并 `request_assured_notification` 通知 Host（通知编号就是这条事件的编号）。
+- **要求轻重**：`contracts/resolution.RequirementClass` 只有 `HARD_CONSTRAINT`、`REQUIRED_OUTCOME`；轻重与"或"由审阅员按原话判（`assurance/review_input.REVIEW_INSTRUCTIONS`）。
+- **还算不算数**：`orchestrator/planner_views.accepted_steps(store, mission_id, network, htn)` → `(验收, 步骤出现, 是否算数)`；规划包 `accepted_results[].counts_under_current` 与门面快照 `steps_no_longer_counting` 共用。
+
 ## 全业务事件重放 v3（HTN 补齐阶段 G，2026-10-04）
 
 - **记录**（`src/agent_orchestrator/storage/source_records.py`）：存储层每个最外层事务提交前，按任务各写一条 `RowsWritten{named, changed, with_events}`——只增表与回执账按主键 + 内容哈希点名；会改的表（业务 + 全局）记每个被改的键的改前 / 改后整行哈希与改后整行；`with_events` 是本事务里本任务的领域事件。归属：行的 `mission_id`，或清单 `owner` 写明的关联；全局表一律归部署时间线；找不到归属就抛错回滚。写连接只有存储层一处，绕过它的写会让链断。
