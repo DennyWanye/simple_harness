@@ -4,7 +4,7 @@
 义务行里不存这些数；读的时候由尝试与结算记录推出，下级义务的合计进上级。规划包、对外快照
 读的是同一处。只记账，不改任何上限。
 
-**改坏检验**：规划包的义务视图改回读零 → 变红。
+**改坏检验**：规划包的义务视图改回读零 → 变红；TG6-01 步骤账不按任务分 → 预算去向那条变红。
 """
 from __future__ import annotations
 
@@ -122,6 +122,12 @@ def test_budget_by_duty_and_unrefined_goals(tmp_path):
             assert rows[0]["attempts"] == sum(len(world.store.list_attempts(task.id))
                                              for task in world.store.list_tasks(mission_id)) > 0
             assert all(row["depth"] == 0 or row["parent_obligation_id"] for row in rows)
+            # 逐步骤（TaskGraph 补全第六批）：两个普通步骤各一行，合计等于义务行
+            steps = [step for row in rows for step in row["steps"]]
+            assert len(steps) == 2 and len({step["task_id"] for step in steps}) == 2, steps
+            for name in accounts[rows[0]["obligation_id"]]:
+                assert sum(step[name] for step in steps) == rows[0][name], name
+            assert all(step["branches"] == 1 for step in steps)
             assert snapshot["unrefined_goals"] == []
             assert snapshot["steps_no_longer_counting"] == []  # 全按现行要求通过
             # 子目标还没有做法的那几轮里，它在"还没细化"里

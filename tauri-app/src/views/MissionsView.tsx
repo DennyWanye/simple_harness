@@ -270,6 +270,13 @@ export function StepsNoLongerCounting({ rows }: { rows: unknown[] }) {
 }
 
 /** 预算去向：这件事（含下级、含被换掉的做法）到现在花了多少、试了几次。默认收起；只列花过或试过的。 */
+/** 一行花费：已用 token、尝试次数（失败次数）、用量未知的次数。义务行与步骤行同一个写法。 */
+function spendLine(row: Json, label: string): string {
+  const unknown = Number(row.unknown_usage_attempts) || 0;
+  return `${label} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）`
+    + (unknown ? `，另有 ${unknown} 次用量未知` : "");
+}
+
 export function BudgetByDuty({ rows }: { rows: unknown[] }) {
   const spent = rows.map(record).filter((row) => Number(row.attempts) > 0 || Number(row.settled_tokens) > 0);
   if (!spent.length) return null;
@@ -278,11 +285,22 @@ export function BudgetByDuty({ rows }: { rows: unknown[] }) {
     <details data-testid="mission-budget-by-duty" style={muted}>
       <summary>预算去向</summary>
       {shown.map((row) => {
-        const unknown = Number(row.unknown_usage_attempts) || 0;
+        const steps = list(row.steps).map(record).filter((step) => Number(step.attempts) > 0 || Number(step.settled_tokens) > 0);
+        const line = spendLine(row, text(row.label) || text(row.obligation_id));
         return (
           <div key={text(row.obligation_id)} style={{ paddingLeft: (Number(row.depth) || 0) * 12 }}>
-            {`${text(row.label) || text(row.obligation_id)} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）`}
-            {unknown ? `，另有 ${unknown} 次用量未知` : ""}
+            {steps.length ? (
+              <details data-testid="mission-budget-steps">
+                <summary>{line}</summary>
+                {steps.slice(0, BUDGET_ROWS_SHOWN).map((step) => (
+                  <div key={text(step.task_id)} style={{ paddingLeft: 12 }}>
+                    {spendLine(step, text(step.label) || text(step.task_id))}
+                    {Number(step.branches) > 1 ? `（${Number(step.branches)} 个分支共用）` : ""}
+                  </div>
+                ))}
+                {steps.length > BUDGET_ROWS_SHOWN ? <div style={{ paddingLeft: 12 }}>{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div> : null}
+              </details>
+            ) : line}
           </div>
         );
       })}

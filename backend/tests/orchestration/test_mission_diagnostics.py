@@ -14,6 +14,7 @@ from deskpet.orchestration import diagnostics
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.diagnostics import (
     DUTY_FIELDS,
+    STEP_FIELDS,
     MAX_SUPPORT_BYTES,
     build_diagnostics,
     export_support,
@@ -106,8 +107,10 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         duties = report["costs"]["by_duty"]
         expected = view["snapshot"]["budget_by_duty"]
         assert duties and duties[0]["depth"] == 0
-        assert duties == [{name: row[name] for name in DUTY_FIELDS} for row in expected]
-        assert all("label" not in row for row in duties)
+        assert duties == [{**{name: row[name] for name in DUTY_FIELDS},
+                           "steps": [{name: step[name] for name in STEP_FIELDS} for step in row["steps"]]}
+                          for row in expected]  # 逐步骤的花费随义务行带出（TaskGraph 补全第六批）
+        assert all("label" not in row and all("label" not in step for step in row["steps"]) for row in duties)
 
         first = export_support(orchestration_root / "support", report)
         second = export_support(orchestration_root / "support", report)

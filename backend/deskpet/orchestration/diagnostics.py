@@ -48,6 +48,9 @@ def _pick(value: object, names: tuple[str, ...]) -> dict[str, Any]:
 #: 诊断包里预算去向每一行带的字段（不含 ``label``：它取自任务目标原文）。
 DUTY_FIELDS = ("obligation_id", "parent_obligation_id", "depth", "lifecycle", "attempts",
                "failed_attempts", "settled_tokens", "unknown_usage_attempts")
+#: 每个义务下逐步骤的花费（TaskGraph 补全第六批），同样不含 ``label``。
+STEP_FIELDS = ("task_id", "branches", "attempts", "failed_attempts", "settled_tokens",
+               "unknown_usage_attempts")
 
 
 def _rows(value: object) -> list[Mapping[str, Any]]:
@@ -366,7 +369,9 @@ def build_diagnostics(
             "attribution": attribution_report.get("cost"),
             # 预算花在哪件事上（义务账，阶段 D/E；一致性补改 H-6）：只给编号、层级与数字，
             # 不带"这件事是什么"的原文——那是任务目标的话
-            "by_duty": [_pick(row, DUTY_FIELDS) for row in _rows(snapshot.get("budget_by_duty"))],
+            "by_duty": [{**_pick(row, DUTY_FIELDS),
+                         "steps": [_pick(step, STEP_FIELDS) for step in _rows(row.get("steps"))]}
+                        for row in _rows(snapshot.get("budget_by_duty"))],
         },
         "input_references": _input_references(snapshot),
         "versions": _versions(versions),

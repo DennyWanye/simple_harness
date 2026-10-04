@@ -67,3 +67,14 @@
 - 单元层：`test_htn_and_or_shared_goal.py` 共用一节重写（点名共用只建一个、两个使用方；不点名就做两次；两个方向换做法保留共用步骤与留下分支的边；作用域 / 类型 / 副作用 / 步骤名 / 子目标各一条退回；在跑与已验收两种共用）；决定信封 / 合同 / JSON 规约 / 编解码 / 准入 / 适配各加 `reuse` 用例、删 `BIND_EXISTING_GOAL` 用例与夹具；`test_seed_methods.py` 删 3 条只测自动合并的用例。
 - 相关定向用例 1321 条：1297 过、4 跳过、20 失败。17 条是主分支同样失败的老失败（`test_htn_store.py` 14 条、`test_planning_decision_store.py` 2 条、`test_h1h_commit_guard.py::test_o03_…` 1 条，主分支逐条对照过）；3 条是本批删步骤复用方式后过时的编码用例，合成一条"做法步骤不带复用方式、带了按未知字段拒绝"，该文件 110 过。
 - 改坏：TG3-04（不比较交给共用步骤的要求）KILLED；TG3-05（`_merge` 改回"碰到就删"）KILLED——该用例原来是编译直接抛异常、执行器判"无效"，改成先捕获再断言；TG3-06（范围没变也不算沿用）KILLED。
+
+## 第六批　逐步骤的预算去向（先于第四、五批做：不依赖它们）
+
+### 六-1　改动
+- `SDK/orchestrator/obligation_accounts.py`：新 `step_accounts`——逐任务算尝试数、失败数（只算模型的失败）、已结算 token、用量未知的尝试数；义务账改为把它按义务汇总（同一份算法，没有第二处计算）。`obligation_rows` 每个义务行带 `steps`：这个义务自己的普通步骤，每步带花费与 `branches`（有几个已采纳做法持有它；共用步骤只是一个任务，只出现一次）。
+- Host 诊断：`STEP_FIELDS`，每个义务行带 `steps`（不带目标原文）。
+- 界面"预算去向"：有步骤的义务行可展开（默认收起），每步一行同样写法，共用的标"几个分支共用"，超过 8 步合成"其余几步"。
+
+### 六-2　用例与改坏
+- `T/product_world/test_obligation_accounts.py`：子目标 + 收尾两步，每步一行、各项合计等于义务行。`test_shared_steps.py` 第一条：共用步骤只出现一次、标 2 个分支、只尝试一次。前端 `BudgetByDuty.test.tsx` 加一条（展开、共用标注、没花费的不列）。Host `test_mission_diagnostics.py`、`test_chat_mission_amend.py` 12 过。
+- 改坏 TG6-01（步骤账不按任务分）KILLED。

@@ -841,6 +841,17 @@
     "tests/orchestrator/product_world/test_shared_steps.py::test_a_named_shared_step_is_done_once_and_feeds_the_other_branch"
    ],
    "note": "范围没变也不算沿用：共用在跑的步骤交的结果被当作过期归档，下游永远等不到，任务失败"
+  },
+  {
+   "id": "TG6-01",
+   "source": "TaskGraph 补全第六批（逐步骤的预算去向）",
+   "file": "src/agent_orchestrator/orchestrator/obligation_accounts.py",
+   "original": "        account = accounts.setdefault(task.id, _blank())\n",
+   "replacement": "        account = accounts.setdefault(mission_id, _blank())\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_obligation_accounts.py::test_budget_by_duty_and_unrefined_goals"
+   ],
+   "note": "步骤账不按任务分：预算去向里没有逐步骤的行，义务合计也对不上"
   }
  ]
 }

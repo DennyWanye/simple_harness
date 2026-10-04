@@ -175,13 +175,14 @@ def _run(tmp_path: Any, *, overreach_first: bool):
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state,
                                                               evaluated[-3:])
             network = world.loop._dispatch_for(mission_id).network(mission_id)
-            return network, evaluated, state
+            rows = world.control.snapshot(mission_id)["snapshot"]["budget_by_duty"]
+            return network, evaluated, state, rows
 
     return asyncio.run(case())
 
 
 def test_a_named_shared_step_is_done_once_and_feeds_the_other_branch(tmp_path):
-    network, _, state = _run(tmp_path, overreach_first=False)
+    network, _, state, rows = _run(tmp_path, overreach_first=False)
     writes = [item.occurrence_id for item in network.occurrences
               if str(network.binding_for_occurrence(item.occurrence_id).goal_signature.signature_id)
               == "prepare-delivery"]
@@ -192,10 +193,14 @@ def test_a_named_shared_step_is_done_once_and_feeds_the_other_branch(tmp_path):
                and any(child.occurrence_id == shared for child in instance.child_bindings)]
     assert len(holders) == 2  # 左右两个子目标的做法都持有它
     assert any(item.producer_occurrence == shared for item in network.data_requirements)  # 右边下游读它
+    # 预算去向（第六批）：共用的步骤只出现一次，标两个分支共用
+    task = str(network.binding_for_occurrence(shared).task_id)
+    listed = [step for row in rows for step in row["steps"] if step["task_id"] == task]
+    assert len(listed) == 1 and listed[0]["branches"] == 2 and listed[0]["attempts"] == 1, listed
 
 
 def test_sharing_does_not_widen_what_the_named_step_answers_for(tmp_path):
-    _, rejected, state = _run(tmp_path, overreach_first=True)
+    _, rejected, state, _ = _run(tmp_path, overreach_first=True)
     assert state["overreached"]
     refused = [item for item in rejected if "REUSE_NOT_ALLOWED" in (item.get("rejection_codes") or ())]
     assert refused, rejected
