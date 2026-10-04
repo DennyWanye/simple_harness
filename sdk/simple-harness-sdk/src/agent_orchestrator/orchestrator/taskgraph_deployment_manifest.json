@@ -1,5 +1,5 @@
 {
-  "deployment_id": "279a3e2cf6a0d9d1c8ce295aafe6158a1f0003ddfa1134c88bf4e2445836f2f9",
+  "deployment_id": "81b3a24638653b0606abf445d71442961633d9e7a4c688c4a1376b2bc2d14771",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -240,7 +240,7 @@
     "agent_orchestrator/orchestrator/state_machine.py": "3a6cd8c2657939121657eacc4444df072ac312ae679a607cd54c5031cb5b20ef",
     "agent_orchestrator/orchestrator/system_operations.py": "3ba6fa8b120b57fb7abdcd9d8290aa456669f33292db3c6215e0b252203830cc",
     "agent_orchestrator/orchestrator/tail_revision.py": "d749f7e3862901cab16e13243eb8b7eae2b603d1d582b9aa0792df6da0a22563",
-    "agent_orchestrator/orchestrator/taskgraph_action_settlement.py": "2e88a3a98b29a8b5448ae38c43d240f96d61a2c0aa2ae71b0b6f5f28466853b2",
+    "agent_orchestrator/orchestrator/taskgraph_action_settlement.py": "e155dea240e51c0a178ba9b6a12027634f0e4cbabf93fe7a7b359db573280b51",
     "agent_orchestrator/orchestrator/taskgraph_assembly.py": "c5b3c30dafdc860f754e8ec776edb7b681c1ef33d1e2922749a05891031b6b7b",
     "agent_orchestrator/orchestrator/taskgraph_bindings.py": "143106c1cd7f1678d676ad34cd58a6afa3c6c9f1a000c4cb8542188fc2b12755",
     "agent_orchestrator/orchestrator/taskgraph_candidate.py": "3dcdd256618d5f9a541f199cc4a28fcd8db97ba86732d7994d26e6b5acc608ef",
@@ -256,7 +256,7 @@
     "agent_orchestrator/orchestrator/taskgraph_execution_view.py": "ba904c4a5a5f68de00a60a84d8734f96447a81765640319d4d889f08c8404c94",
     "agent_orchestrator/orchestrator/taskgraph_followups.py": "be92c8ae50622584a2b3971c1c7620232db13f23dbf11c15f74041a055219c33",
     "agent_orchestrator/orchestrator/taskgraph_materialization.py": "1f9a28ae0e116388dfe8ee54379cf368ffaa66068173633d34ce7cd8751fd036",
-    "agent_orchestrator/orchestrator/taskgraph_notifications.py": "bac33dd60eec47183754262161a605f6a7056c131b206b926cdecb25e8d8d6e8",
+    "agent_orchestrator/orchestrator/taskgraph_notifications.py": "2627c49f8d1591a8324d7b496fcd82c9f7d3ecf5d9aab92a6c175ce071041c1f",
     "agent_orchestrator/orchestrator/taskgraph_operator.py": "31cdb3ffcbbed62fead4f61f65a2c7cdbad0eb41d398ea4032151fe82161ef19",
     "agent_orchestrator/orchestrator/taskgraph_outcomes.py": "def12c37973940d20a771f6e350293ed112b9a1d698355452aee5a2556031ea1",
     "agent_orchestrator/orchestrator/taskgraph_plan_commit.py": "7a65b550f0ddf15c1a5a8e23c5c18dc50863fae08566e2d9699be018e565e828",

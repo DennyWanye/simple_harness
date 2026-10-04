@@ -43,13 +43,11 @@ def settle_resolved_actions(orchestrator: Any) -> bool:
         actions = store.list_actions(mission.id)
         if not actions:
             continue
-        # one Mission's actions are that Mission's: its fault is its own round fault
-        with orchestrator._round_boundary(mission.id, "action_settlement"):
-            try:
-                require_bound(store, mission.id)
-            except NotBoundError:
-                continue  # an older unbound Mission: its holds are never settled here
-            progressed = _settle_mission_actions(orchestrator, mission, actions) or progressed
+        try:
+            require_bound(store, mission.id)
+        except NotBoundError:
+            continue  # an older unbound Mission: its holds are never settled here
+        progressed = _settle_mission_actions(orchestrator, mission, actions) or progressed
     return progressed
 
 

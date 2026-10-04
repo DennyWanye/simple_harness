@@ -76,7 +76,7 @@ class TaskGraphNotifications:
             "WHERE r.mission_id=? AND e.seq<=? ORDER BY r.revision DESC LIMIT 1",
             (event.mission_id, event.seq)).fetchone()
         if row is None:
-            # Events before the explicit seed/captured baseline are outside coverage.
+            # Events before the Mission's first plan revision (its seed) are outside coverage.
             return ()
         revision = int(row[0])
         self.history.read_revision(event.mission_id, revision)
