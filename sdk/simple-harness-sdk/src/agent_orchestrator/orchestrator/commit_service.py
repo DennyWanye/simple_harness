@@ -1440,6 +1440,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 ),
             }
             report.update(self._ledger.usage_flags(mission_id))
+            self._note_unresolved_actions(mission_id, report)
             updated = next_mission(
                 mission,
                 MissionStatus.FAILED,
@@ -3059,6 +3060,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     payload={"stop_reason": done.stop_reason, "final_report": report},
                 )
                 return done
+            self._note_unresolved_actions(mission_id, report)
             failed = next_mission(
                 mission,
                 MissionStatus.FAILED,

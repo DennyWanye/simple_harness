@@ -357,7 +357,8 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
     asyncio.run(case())
 
 
-def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stop", ["cancel", "planning_failed"])
+def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known(tmp_path, monkeypatch, stop):
     """HTN 一致性补改 H-2：发布交出去了、结果不明（链接成功后才报错，等人裁定），这时人取消任务——
     最终报告如实列出这个结果不明的发布、并说系统会继续核对；之后人裁定"已生效"，系统经同一条
     通知路径再报一次"核对结果：已生效"，只报一次。
@@ -400,7 +401,10 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
             [action] = world.store.list_actions(mission_id)
             assert action["state"] in {"UNKNOWN", "FAILED"} and action["needs_human"], action
 
-            world.control.cancel(mission_id)
+            if stop == "cancel":
+                world.control.cancel(mission_id)
+            else:  # 规划失败停任务（预算或规划次数用尽等走的同一条路）也写明（完成评估需补项）
+                world.loop.commit.fail_planning(mission_id, reason="planning_exhausted", detail={})
             await world.drain()
             report = world.store.get_mission(mission_id).final_report
             assert [(row["action_key"], row["operation"], row["target"], row["state"])

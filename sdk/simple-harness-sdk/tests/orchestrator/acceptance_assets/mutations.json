@@ -764,6 +764,17 @@
     "tests/orchestrator/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known"
    ],
    "note": "任务停下后对外操作有了结果也不通知"
+  },
+  {
+   "id": "H-02c",
+   "source": "HTN 一致性补改 H-2（完成评估需补项）",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "            self._note_unresolved_actions(mission_id, report)\n            updated = next_mission(\n                mission,\n                MissionStatus.FAILED,\n",
+   "replacement": "            updated = next_mission(\n                mission,\n                MissionStatus.FAILED,\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known"
+   ],
+   "note": "规划失败停任务不写结果不明的对外操作"
   }
  ]
 }

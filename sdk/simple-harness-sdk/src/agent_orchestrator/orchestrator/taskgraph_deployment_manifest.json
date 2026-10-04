@@ -1,5 +1,5 @@
 {
-  "deployment_id": "41cb1595ea69a2735e434cedd70b8762cc78b41ced257dc0771228ee809807c4",
+  "deployment_id": "9c752788eb85a94912f6d9b701530fc88d9584d690455a80fe135fcf3e76de95",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -189,7 +189,7 @@
     "agent_orchestrator/orchestrator/assurance_tick.py": "6f7c022a190c1cda655bb3742bd2688a6f78114fe699424fb367db4f1a415575",
     "agent_orchestrator/orchestrator/assurance_validity.py": "c552c9c90e8e910b96022fa8e89baa357f3afb594e2075fb3f6790d8473ed949",
     "agent_orchestrator/orchestrator/attempt_execution.py": "cabf14a0d88dac3730069cd9c3baf206cc09f01973f4a872667ac3de8f7fc0e6",
-    "agent_orchestrator/orchestrator/commit_service.py": "a77985b2723c2b50c9904137601906255136e9e9f8df8af7fd205999fe6149eb",
+    "agent_orchestrator/orchestrator/commit_service.py": "03aba837370c292fba4113a7c561a2034195dbfee6b18f8505292dfcaed7f97d",
     "agent_orchestrator/orchestrator/completion_inputs.py": "3b8ec3cbad0148a9d84ebfa1a12d588e6d7579f6ecee493e23e63a8173f92e5b",
     "agent_orchestrator/orchestrator/completion_status.py": "0e5230f54979677b73caf6927da2f089d3b5414a8f5e099d023f3f734ff9b03c",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
