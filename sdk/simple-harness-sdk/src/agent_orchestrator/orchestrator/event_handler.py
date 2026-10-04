@@ -88,6 +88,7 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import jsonable, sha256_hex
 from ..contracts.planning_decisions import (
     PlanningRefKind,
@@ -217,6 +218,12 @@ OBSERVATION_EVENTS = frozenset({
 })
 HOLLOW_CYCLES_NOTED = 100
 WAIT_BACKOFF_MAX = 1.0
+class ServiceTurnIdentityMismatch(ContractError, CodedFault):
+    """The Critic turn bound at start differs from the frozen intent: retrying meets the same row."""
+
+    code = RoundFaultCode.SERVICE_TURN_IDENTITY_MISMATCH
+
+
 #: A stopped Mission's action whose outcome became known after the stop (H-2).
 ACTION_SETTLED_AFTER_STOP = "ActionSettledAfterMissionStopped"
 #: 裁决题在回答前过期：这份审查不会再有结论，如实交给规划器（同 method_plan_reviews 的口径）。
@@ -1590,13 +1597,13 @@ class Orchestrator:
                 if dispatch is not None:
                     dispatch.record_integrity_failure(mission.id, error)
             detail = {
-                "code": getattr(error, "code", "projection_not_orderable"),
+                "code": str(error.code),
                 "subjects": sorted(str(item) for item in error.remaining),
                 "cycle": [str(item) for item in error.cycle],
                 "diagnose": error.diagnose()[:600],
             }
         else:  # a stored record that fails its own integrity check (history, inputs, sources)
-            detail = {"code": str(error).split(":", 1)[0][:120] or type(error).__name__,
+            detail = {"code": str(error.code) if isinstance(error, CodedFault) else type(error).__name__,
                       "subjects": [], "cycle": [], "diagnose": str(error)[:600]}
         current = self.store.get_mission(mission.id)
         status = mission.status if current is None else current.status
@@ -2089,7 +2096,7 @@ class Orchestrator:
                         row.phase not in {AgentTurnState.COMMITTED, AgentTurnState.FAILED}
                         for row in uow.list_agent_turns(intent.agent_id)
                     ):
-                        raise ContractError(
+                        raise ServiceTurnIdentityMismatch(
                             "SERVICE_TURN_IDENTITY_MISMATCH: Critic SDK turn identity differs from frozen intent"
                         )
                     return
@@ -2098,7 +2105,7 @@ class Orchestrator:
                     or turn.input_id != intent.input_id
                     or turn.turn_id != intent.expected_turn_id
                 ):
-                    raise ContractError("SERVICE_TURN_IDENTITY_MISMATCH: Critic SDK turn differs from frozen intent")
+                    raise ServiceTurnIdentityMismatch("SERVICE_TURN_IDENTITY_MISMATCH: Critic SDK turn differs from frozen intent")
             self._bind_critic(intent.agent_id, intent.config)
 
     async def recover(self) -> None:
@@ -3532,7 +3539,7 @@ class Orchestrator:
             NON_MODEL_FAILURE_CAP, ROUND_CORRUPT, ROUND_FAULT_MIN_SECONDS, classify_round_fault,
         )
 
-        kind = classify_round_fault(error)
+        kind, code = classify_round_fault(error)
         now = self.store.now
         count, first = self._round_faults.get((mission_id, where), (0, now))
         count += 1
@@ -3548,7 +3555,8 @@ class Orchestrator:
                 with self.store.transaction():
                     self.commit._emit("MissionRoundFault", mission_id,
                                       key=f"{mission_id}:{where}:{int(first * 1000)}",
-                                      payload={"where": where, "class": kind, "error_type": type(error).__name__,
+                                      payload={"where": where, "class": kind, "code": code,
+                                               "error_type": type(error).__name__,
                                                "summary": summary, "count": count})
             except Exception:  # noqa: BLE001
                 self._note(f"mission {mission_id}: round fault not recorded (store unwritable)")

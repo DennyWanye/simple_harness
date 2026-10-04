@@ -12,6 +12,7 @@ from typing import Any, Iterator, NoReturn
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import Attempt, ContractError
 from ..contracts.htn import TaskSemanticBindingV1
 from ..artifacts.taskgraph_inputs import decode_frozen_manifest
@@ -20,8 +21,8 @@ from ..graph.revision_records import HistoricalRevision
 from .store import Store
 
 
-class AttemptInputIntegrityError(ContractError):
-    pass
+class AttemptInputIntegrityError(ContractError, CodedFault):
+    code = RoundFaultCode.TASKGRAPH_ATTEMPT_INPUT_INTEGRITY
 
 
 def _fail(message: str) -> NoReturn:

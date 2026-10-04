@@ -48,6 +48,7 @@ from ..contracts.htn import (
     resource_conflicts,
     undeclared_set_ports,
 )
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import ContractError
 from .task_network import (
     GATING_REQUIREDNESS,
@@ -106,7 +107,7 @@ class ProjectionReport:
         return frozenset(problem.kind for problem in self.problems)
 
 
-class GraphIntegrityError(RuntimeError):
+class GraphIntegrityError(RuntimeError, CodedFault):
     """The projection could not be ordered (TG §14.3).
 
     Raised on the execution / materialisation path, which then stops dispatching
@@ -115,6 +116,8 @@ class GraphIntegrityError(RuntimeError):
     order: a partial order over the healthy prefix is not a plan, and handing one
     out invites someone to execute it.
     """
+
+    code = RoundFaultCode.PROJECTION_NOT_ORDERABLE
 
     def __init__(self, remaining: Sequence[str], cycle: Sequence[str]) -> None:
         self.remaining = tuple(remaining)

@@ -40,6 +40,7 @@ from ..contracts import (
     ResultEnvelope,
     Task,
 )
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import sha256_hex
 from ..memory.verified_knowledge import KnowledgeRecord
 from . import schema
@@ -47,6 +48,12 @@ from . import schema
 
 class StoreError(RuntimeError):
     pass
+
+
+class StoredResultCorrupt(StoreError, CodedFault):
+    """A stored attempt result that no longer decodes: retrying reads the same bytes."""
+
+    code = RoundFaultCode.STORED_RESULT_CORRUPT
 
 
 class StoreConflict(StoreError):
@@ -1800,7 +1807,7 @@ def _stored_result(data: Mapping[str, Any]) -> StoredResult:
             usage_refs=tuple(data.get("usage_refs", ())),
         )
     except (KeyError, ContractError) as error:
-        raise StoreError(f"corrupt stored result: {error}") from error
+        raise StoredResultCorrupt(f"corrupt stored result: {error}") from error
 
 
 def proposal_hash(proposal: object) -> str:

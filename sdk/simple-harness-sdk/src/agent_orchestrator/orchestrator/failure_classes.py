@@ -148,28 +148,21 @@ def review_exhausted_by_interruption(store: Any, review_key: str) -> bool:
 
 # ---------------------------------------------------------------- 一轮故障
 # 2026-10-03 阶段 B 裁决第 9 类：一个任务这一轮的工作冲出了异常（库读写出错、读侧拒绝、
-# 触发器拒绝……）。主循环在"一个任务一轮"的边界接住，只按这张表分两类，不在代码里另判：
+# 触发器拒绝……）。主循环在"一个任务一轮"的边界接住，分两类：
 #   CORRUPT 数据损坏：重试也是同一个结果，当轮停这个任务（规划失败，带完整性错误码）；
 #   RETRY   其余：原地重试；同一任务同一处连续 NON_MODEL_FAILURE_CAP 轮、且距第一次至少
-#           ROUND_FAULT_MIN_SECONDS 秒才停（"库读写故障"）。表里没有的一律按 RETRY，由上限兜住。
+#           ROUND_FAULT_MIN_SECONDS 秒才停（"库读写故障"）。
+# 分到哪一类只按异常带的类型码查错误码表（``contracts.error_table.round_fault_handling``，
+# TaskGraph 补全第一批），不读异常文字；没带码或码没登记的一律 RETRY，由上限兜住。
 ROUND_CORRUPT = "CORRUPT"
 ROUND_RETRY = "RETRY"
 ROUND_FAULT_MIN_SECONDS = 120.0
-_CORRUPT_CODES = (
-    "TASKGRAPH_HISTORY_INTEGRITY", "TASKGRAPH_ATTEMPT_INPUT_INTEGRITY",
-    "TASKGRAPH_SOURCE_INTEGRITY", "corrupt stored result",
-    # 审阅回合的身份与冻结记录不符（启动绑定时发现）：重试也是同一个结果。
-    "SERVICE_TURN_IDENTITY_MISMATCH",
-)
 
 
-def classify_round_fault(error: BaseException) -> str:
-    """CORRUPT | RETRY for an exception that escaped one Mission's round."""
+def classify_round_fault(error: BaseException) -> tuple[str, str | None]:
+    """(CORRUPT | RETRY, the error's type code) for an exception that escaped one Mission's round."""
 
-    from ..graph.projection_validation import GraphIntegrityError as ProjectionIntegrity
-    from ..storage.taskgraph_store import GraphIntegrityError as HistoryIntegrity
+    from ..contracts.error_table import RoundFaultHandling, round_fault_handling
 
-    if isinstance(error, (ProjectionIntegrity, HistoryIntegrity)):
-        return ROUND_CORRUPT
-    text = str(error)
-    return ROUND_CORRUPT if any(code in text for code in _CORRUPT_CODES) else ROUND_RETRY
+    handling, code = round_fault_handling(error)
+    return (ROUND_CORRUPT if handling is RoundFaultHandling.CORRUPT_STOP else ROUND_RETRY), code

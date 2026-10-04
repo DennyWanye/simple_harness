@@ -140,11 +140,16 @@ def test_a_damaged_plan_history_stops_only_its_own_mission(tmp_path):
             finally:
                 stop.set()
                 provider.release.set()
-                await asyncio.wait_for(runner, 30)
+                crashed = None
+                try:
+                    await asyncio.wait_for(runner, 30)
+                except Exception as error:  # noqa: BLE001 - asserted below, after the verdicts
+                    crashed = error
             mission = store.get_mission(a)
             assert str(mission.status.value) == "FAILED" and mission.stop_reason == "planning_failed"
             assert mission.final_report["detail"]["code"] == "TASKGRAPH_HISTORY_INTEGRITY"
             assert _status(store, b) == "COMPLETED"
+            assert crashed is None, crashed
 
     asyncio.run(case())
 
@@ -259,7 +264,9 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
                     await runner
 
                 def refuse(intent):  # type: ignore[no-untyped-def]
-                    raise ContractError("SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent")
+                    from agent_orchestrator.orchestrator.event_handler import ServiceTurnIdentityMismatch
+
+                    raise ServiceTurnIdentityMismatch("SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent")
 
                 loop._bind_startup_intent = refuse  # type: ignore[method-assign]
                 loop._bind_startup_tools()  # what ``__aenter__`` runs: must not raise

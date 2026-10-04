@@ -775,6 +775,17 @@
     "tests/orchestrator/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known"
    ],
    "note": "规划失败停任务不写结果不明的对外操作"
+  },
+  {
+   "id": "TG3-01",
+   "source": "TaskGraph 补全第一批（错误码表第二步）",
+   "file": "src/agent_orchestrator/contracts/error_table.py",
+   "original": "    RoundFaultCode.TASKGRAPH_HISTORY_INTEGRITY: RoundFaultHandling.CORRUPT_STOP,\n",
+   "replacement": "    RoundFaultCode.TASKGRAPH_HISTORY_INTEGRITY: RoundFaultHandling.RETRY_IN_PLACE,\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_round_faults.py::test_a_damaged_plan_history_stops_only_its_own_mission"
+   ],
+   "note": "历史完整性损坏按表改成原地重试：损坏的任务不再当轮停"
   }
  ]
 }

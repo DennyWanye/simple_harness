@@ -153,8 +153,64 @@ def handoff_refusal_transient(reason: object) -> bool:
         reason in _HANDOFF_TRANSIENT or reason.startswith(HANDOFF_VALIDITY_STALE))
 
 
+# 一轮故障（TaskGraph 补全第一批，原计划 §12）：一个任务这一轮的工作冲出异常时，主循环只按
+# 异常带的类型码查这张表，决定"数据损坏、当轮停这个任务"还是"原地重试、由连续次数上限兜住"。
+# 不读异常文字。没带码的异常（库锁、磁盘、网络、程序错误）与带了却没登记的码一律原地重试
+# （用户 2026-09-28：基础设施故障原地重试）；"未知码拒绝"落在登记上——带码的异常类都继承
+# :class:`CodedFault`，它的码必须是 :class:`RoundFaultCode` 里登记过的（源码扫描用例守住）。
+
+
+class RoundFaultHandling(StrEnum):
+    CORRUPT_STOP = "CORRUPT_STOP"
+    RETRY_IN_PLACE = "RETRY_IN_PLACE"
+
+
+class RoundFaultCode(StrEnum):
+    """异常对象上带的、决定一轮故障怎么处理的码。"""
+
+    TASKGRAPH_HISTORY_INTEGRITY = "TASKGRAPH_HISTORY_INTEGRITY"
+    # 执行投影排不出先后（有环）：沿用执行图对外的既有码字面
+    PROJECTION_NOT_ORDERABLE = "projection_not_orderable"
+    # 计划的意思读不全（不是环）：某一步没有语义绑定、或读不出唯一的根目标
+    SEMANTIC_BINDING_MISSING = "semantic_binding_missing"
+    ROOT_NOT_IDENTIFIED = "root_not_identified"
+    TASKGRAPH_ATTEMPT_INPUT_INTEGRITY = "TASKGRAPH_ATTEMPT_INPUT_INTEGRITY"
+    TASKGRAPH_SOURCE_INTEGRITY = "TASKGRAPH_SOURCE_INTEGRITY"
+    STORED_RESULT_CORRUPT = "STORED_RESULT_CORRUPT"
+    # 审阅回合的身份与冻结记录不符（启动绑定时发现）：重试也是同一个结果。
+    SERVICE_TURN_IDENTITY_MISMATCH = "SERVICE_TURN_IDENTITY_MISMATCH"
+
+
+_ROUND_FAULT: dict[RoundFaultCode, RoundFaultHandling] = {
+    RoundFaultCode.TASKGRAPH_HISTORY_INTEGRITY: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.PROJECTION_NOT_ORDERABLE: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.SEMANTIC_BINDING_MISSING: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.ROOT_NOT_IDENTIFIED: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.TASKGRAPH_ATTEMPT_INPUT_INTEGRITY: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.TASKGRAPH_SOURCE_INTEGRITY: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.STORED_RESULT_CORRUPT: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.SERVICE_TURN_IDENTITY_MISMATCH: RoundFaultHandling.CORRUPT_STOP,
+}
+
+
+class CodedFault(Exception):
+    """带类型码的异常的共同基类：子类在类上写 ``code = RoundFaultCode.…``。"""
+
+    code: RoundFaultCode
+
+
+def round_fault_handling(error: BaseException) -> tuple[RoundFaultHandling, str | None]:
+    """(怎么处理, 异常带的码)。只看异常对象上的类型码，不读异常文字。"""
+
+    code = getattr(error, "code", None) if isinstance(error, CodedFault) else None
+    if isinstance(code, RoundFaultCode) and code in _ROUND_FAULT:
+        return _ROUND_FAULT[code], str(code)
+    return RoundFaultHandling.RETRY_IN_PLACE, None if code is None else str(code)
+
+
 PLANNING_ERRORS: Mapping[P, ErrorEntry] = MappingProxyType(_PLANNING)
 TASKGRAPH_ERRORS: Mapping[T, ErrorEntry] = MappingProxyType(_TASKGRAPH)
+ROUND_FAULTS: Mapping[RoundFaultCode, RoundFaultHandling] = MappingProxyType(_ROUND_FAULT)
 
 def classify(code: object) -> ErrorEntry:
     """登记过的跨边界码的归类；没登记的码一律拒绝（§12 fail-closed）。"""
@@ -175,6 +231,11 @@ def ordered(codes: Iterable[P]) -> tuple[P, ...]:
 
 __all__ = (
     "PLANNING_ERRORS",
+    "ROUND_FAULTS",
+    "CodedFault",
+    "RoundFaultCode",
+    "RoundFaultHandling",
+    "round_fault_handling",
     "TASKGRAPH_ERRORS",
     "ErrorCategory",
     "ErrorEntry",

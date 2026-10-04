@@ -65,6 +65,7 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
+from ..contracts.error_table import RoundFaultCode
 from ..contracts.evidence_state import (
     Availability,
     TruthValue,
@@ -269,7 +270,8 @@ class PlanIntegrityError(GraphIntegrityError):
 
     def __init__(self, mission_id: str, code: str, subjects: Sequence[str], message: str) -> None:
         self.mission_id = str(mission_id)
-        self.code = str(code)
+        # 只收登记过的一轮故障码（错误码表 RoundFaultCode）：没登记的当场报错
+        self.code = RoundFaultCode(code)
         self.subjects = tuple(sorted(str(item) for item in subjects))
         self._message = str(message)
         super().__init__(self.subjects, ())
@@ -2633,7 +2635,7 @@ class HierarchicalDispatch:
         projection's healthy prefix is a partial order, not a plan.
         """
 
-        code = getattr(error, "code", "projection_not_orderable")
+        code = str(error.code)
         return self._append(
             PLAN_INTEGRITY_FAILED,
             mission_id,

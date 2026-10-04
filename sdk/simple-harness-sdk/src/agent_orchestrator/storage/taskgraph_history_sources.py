@@ -16,15 +16,20 @@ from typing import NoReturn
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import ContractError
 from ..contracts.resolution import RequirementsRevision
 from ..graph.network_codec import NetworkDocumentV1, decode
 from .store import Store
 
 
+class SourceIntegrityError(ContractError, CodedFault):
+    code = RoundFaultCode.TASKGRAPH_SOURCE_INTEGRITY
+
+
 def _invalid(reason: str) -> NoReturn:
     # Keep foreign row identities and raw database content out of diagnostics.
-    raise ContractError(f"TASKGRAPH_SOURCE_INTEGRITY: {reason}")
+    raise SourceIntegrityError(f"TASKGRAPH_SOURCE_INTEGRITY: {reason}")
 
 
 def _exact_rows(

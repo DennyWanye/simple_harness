@@ -12,6 +12,7 @@ from typing import Iterator, NoReturn
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import ContractError
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
@@ -61,8 +62,8 @@ def require_bound(store: Store, mission_id: str) -> None:
 
 
 
-class GraphIntegrityError(ContractError):
-    pass
+class GraphIntegrityError(ContractError, CodedFault):
+    code = RoundFaultCode.TASKGRAPH_HISTORY_INTEGRITY
 
 
 def _fail(message: str) -> NoReturn:
