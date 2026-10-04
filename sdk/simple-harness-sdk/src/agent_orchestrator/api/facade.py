@@ -775,6 +775,32 @@ class MissionControlV1:
                          else str(binding.goal_signature.signature_id)})
         return rows
 
+    def _steps_no_longer_counting(self, mission_id: str) -> list[dict[str, Any]]:
+        """Steps that passed their acceptance but no longer count under the current plan and
+        requirements (e.g. accepted under an earlier version of the requirements) — the same
+        reading the Planner package's ``counts_under_current`` gives."""
+        from ..orchestrator.planner_views import accepted_steps
+
+        dispatch = self._orchestrator._dispatch_for(mission_id)
+        if dispatch is None:
+            return []
+        try:
+            network = dispatch.network(mission_id)
+            steps = accepted_steps(self._store, mission_id, network, dispatch.semantics())
+        except (ContractError, StoreError):
+            return []
+        rows = []
+        for acceptance, occurrence, counts in steps:
+            if counts:
+                continue
+            task = self._store.get_task(str(occurrence.task_id))
+            goal = str(getattr(task, "goal", "") or "").strip()
+            rows.append({"occurrence_id": str(occurrence.occurrence_id), "task_id": str(occurrence.task_id),
+                         "acceptance_id": str(acceptance.acceptance_id),
+                         "requirements_revision": int(acceptance.requirements_revision),
+                         "label": goal[:60] or str(occurrence.task_id)})
+        return rows
+
     def snapshot(self, mission_id: str) -> dict[str, Any]:
         store = self._store
         with store.read_view():  # the snapshot and its cursor come from one read
@@ -787,6 +813,7 @@ class MissionControlV1:
             snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
             snapshot["budget_by_duty"] = obligation_rows(store, mission.id)
             snapshot["unrefined_goals"] = self._unrefined_goals(mission.id)
+            snapshot["steps_no_longer_counting"] = self._steps_no_longer_counting(mission.id)
             from ..orchestrator.planning_selection import awaits_authority
             from ..storage.planning_decision_store import PlanningDecisionStore
             planning = PlanningDecisionStore(store)

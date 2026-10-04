@@ -1,5 +1,5 @@
 {
-  "deployment_id": "c72ec1316e852d67dcaaf5541f2a51c41370d9805b70341493f80f2de0d9557d",
+  "deployment_id": "c8d58bac20a7675e4b73fa1a11b3c02279b038e0ca20b647685f6d521efd42f3",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -7,7 +7,7 @@
     "agent_orchestrator/api/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/api/approvals.py": "456359314d2ac0d2dd07000708cd2271d8b6f547346ac2c383f3ec1a19319798",
     "agent_orchestrator/api/assurance.py": "aa645b9c6d5945e673c372bbf33dd544c0eae291d3df201b9d09df321555dde2",
-    "agent_orchestrator/api/facade.py": "b41ce5d5fa276f0e2e313fe9ed2896ee7acef34fecf91157ce841bfb74b3a347",
+    "agent_orchestrator/api/facade.py": "23de84731e2e280abc50b8c12412523b56e0850501b08f0a74b60f3b290c3e4a",
     "agent_orchestrator/api/missions.py": "1ad6d203e40239e61b6df27ffd999a93deeb1d5db6725d23d983a0be7d79a608",
     "agent_orchestrator/api/operation_completion.py": "a83f3902d2bf99a52b2526139370eaac192873457be936cc6432b9c6a462cf37",
     "agent_orchestrator/api/operation_intents.py": "b0566b5792b73b81c2c6251aa2480c373dfcb363de3dac02be25b75e2c5a91b1",
@@ -213,7 +213,7 @@
     "agent_orchestrator/orchestrator/operation_reconciliation.py": "09befe97ea178d3e7654d8c88f138fcae424cf7328bf107d1a45ad84fd43e8b1",
     "agent_orchestrator/orchestrator/operation_runtime.py": "2e7cd823aa4a4ef6de9162e10a85350d29f2c4bdcca80a9d9fc82cc4309bbb34",
     "agent_orchestrator/orchestrator/plan_commits.py": "39ab440146ca653f28734103aed49c27aaa89913bbb1d9f29b830ea711074990",
-    "agent_orchestrator/orchestrator/planner_views.py": "75af1e07f3d29ca2dc2b05aa96c81ea3e6d98f4646ce768955400c5084c1b4b0",
+    "agent_orchestrator/orchestrator/planner_views.py": "feda571491d3b6603bf6d3177678a47725cd9d14ec58b152a241972e19adbd05",
     "agent_orchestrator/orchestrator/planning_admission_commits.py": "93233a63ba09a7032232ced3fd26f1909d128dfd5e4181e36d4fa82006bb4dce",
     "agent_orchestrator/orchestrator/planning_backend_commit.py": "2a93f2465d658174df17b8c16588c52e78332188e5f80e5275c2d221eb0c3baa",
     "agent_orchestrator/orchestrator/planning_backend_runtime.py": "dc8951379fa9baf2844be61cebaecf1cbf0289e9c2f5e6919ebdf4c39e113163",

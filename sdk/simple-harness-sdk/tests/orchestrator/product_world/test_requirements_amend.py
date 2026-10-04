@@ -244,6 +244,10 @@ def test_amend_holds_dispatch_then_replans_and_delivers(tmp_path):
             reasons = {code for member in htn.list_plan_memberships(mission_id, plan.revision)
                        for code in reads.why_not_ready(mission_id, str(member.occurrence_id))["reason_codes"]}
             assert "requirements_changed" in reasons, reasons
+            # 任务详情同一读法：按第 1 版通过的那一步，在第 2 版下不再算数（HTN 一致性补改 H-7）
+            [stale] = world.control.snapshot(mission_id)["snapshot"]["steps_no_longer_counting"]
+            assert stale["requirements_revision"] == 1 and stale["label"]
+            assert stale["acceptance_id"] == str(htn.list_acceptances(mission_id)[0].acceptance_id)
             provider.go.set()
             mission = await world.run_until_settled(mission_id, rounds=40)
             events = list(world.store.list_events(mission_id))

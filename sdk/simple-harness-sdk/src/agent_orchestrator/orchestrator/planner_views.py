@@ -35,6 +35,37 @@ from .completion_support import read_completion_support
 _PLANNING_REJECTIONS = frozenset({"PlanningRejected"})
 
 
+def accepted_steps(store: Any, mission_id: str, network: Any, htn: Any) -> list[tuple[Any, Any, bool]]:
+    """Each current acceptance with the step it was accepted for, and whether that step's
+    completion rests on it under the current plan and requirements — the completion
+    reading's answer, not a rule of its own.  The Planner package and the mission snapshot
+    both read it here."""
+    from .completion_status import read_occurrence_completion
+
+    counted: dict[str, frozenset[str]] = {}
+
+    def _counted(occurrence_id: str) -> frozenset[str]:
+        if occurrence_id not in counted:
+            try:
+                counted[occurrence_id] = frozenset(
+                    read_occurrence_completion(store, mission_id, occurrence_id).preparation_acceptance_ids)
+            except Exception:  # noqa: BLE001 - unreadable completion counts nothing
+                counted[occurrence_id] = frozenset()
+        return counted[occurrence_id]
+
+    rows = []
+    for acceptance in htn.list_acceptances(mission_id):
+        if str(acceptance.validity) != "CURRENT":
+            continue
+        if read_completion_support(store, mission_id, str(acceptance.acceptance_id)) is None:
+            continue
+        for occurrence in network.occurrences:
+            if occurrence.task_id == acceptance.task_id:
+                rows.append((acceptance, occurrence,
+                             str(acceptance.acceptance_id) in _counted(str(occurrence.occurrence_id))))
+    return rows
+
+
 def read_planner_package(
     *,
     store: Any,
@@ -131,44 +162,22 @@ def read_planner_package(
     # accepted results ---------------------------------------------------------------
     outputs = htn.list_acceptance_outputs(mission.id)
     accepted = []
-    counted: dict[str, frozenset[str]] = {}
-
-    def _counted(occurrence_id: str) -> frozenset[str]:
-        """The acceptances this step's completion rests on right now (completion reading)."""
-        from .completion_status import read_occurrence_completion
-
-        if occurrence_id not in counted:
-            try:
-                counted[occurrence_id] = frozenset(
-                    read_occurrence_completion(store, mission.id, occurrence_id).preparation_acceptance_ids)
-            except Exception:  # noqa: BLE001 - unreadable completion counts nothing
-                counted[occurrence_id] = frozenset()
-        return counted[occurrence_id]
-    for acceptance in htn.list_acceptances(mission.id):
-        if str(acceptance.validity) != "CURRENT":
-            continue
-        if read_completion_support(store, mission.id, str(acceptance.acceptance_id)) is None:
-            continue
+    for acceptance, occurrence, counts in accepted_steps(store, mission.id, network, htn):
         ports = [row for row in outputs if row.get("acceptance_id") == str(acceptance.acceptance_id)]
-        for occurrence in network.occurrences:
-            if occurrence.task_id != acceptance.task_id:
-                continue
-            accepted.append({
-                "acceptance_ref": {"kind": "acceptance", "id": str(acceptance.acceptance_id),
-                                   "semantic_revision": 1,
-                                   "content_hash": content_hash_of(acceptance.to_json())},
-                "producer_occurrence": str(occurrence.occurrence_id),
-                "ports": ports,
-                "artifacts": [item.to_json() for item in acceptance.artifact_refs],
-                "currentness": str(acceptance.validity),
-                # 阶段 E：这次验收是按第几版要求通过的；在现行计划与现行要求下还算不算数
-                #（完成度读取的答案，不另写规则）
-                "requirements_revision": int(acceptance.requirements_revision),
-                "counts_under_current": str(acceptance.acceptance_id) in _counted(
-                    str(occurrence.occurrence_id)),
-                "support_revision": acceptance.contract_revision,
-                "permitted_uses": ["DATA"] if ports else [],
-            })
+        accepted.append({
+            "acceptance_ref": {"kind": "acceptance", "id": str(acceptance.acceptance_id),
+                               "semantic_revision": 1,
+                               "content_hash": content_hash_of(acceptance.to_json())},
+            "producer_occurrence": str(occurrence.occurrence_id),
+            "ports": ports,
+            "artifacts": [item.to_json() for item in acceptance.artifact_refs],
+            "currentness": str(acceptance.validity),
+            # 阶段 E：这次验收是按第几版要求通过的；在现行计划与现行要求下还算不算数
+            "requirements_revision": int(acceptance.requirements_revision),
+            "counts_under_current": counts,
+            "support_revision": acceptance.contract_revision,
+            "permitted_uses": ["DATA"] if ports else [],
+        })
 
     # failures: an index.  The record of a step failure is in the pending repair request
     # about it (``repair_requests``), and only there.

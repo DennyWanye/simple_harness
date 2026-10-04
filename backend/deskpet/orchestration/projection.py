@@ -453,6 +453,7 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
         # 阶段 E：预算去向（逐义务，含下级与被换掉的做法）与还没细化的目标——SDK 读时推出，原样透传
         "budget_by_duty": [dict(row) for row in snapshot.get("budget_by_duty") or ()],
         "unrefined_goals": [dict(row) for row in snapshot.get("unrefined_goals") or ()],
+        "steps_no_longer_counting": [dict(row) for row in snapshot.get("steps_no_longer_counting") or ()],
         "waiting_on": waiting_on,
         "blocked": [dict(b) for b in blocked],
         "disputes": [dict(d) for d in snapshot.get("disputes") or ()],

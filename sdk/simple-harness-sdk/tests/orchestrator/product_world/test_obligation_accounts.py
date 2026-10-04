@@ -123,6 +123,7 @@ def test_budget_by_duty_and_unrefined_goals(tmp_path):
                                              for task in world.store.list_tasks(mission_id)) > 0
             assert all(row["depth"] == 0 or row["parent_obligation_id"] for row in rows)
             assert snapshot["unrefined_goals"] == []
+            assert snapshot["steps_no_longer_counting"] == []  # 全按现行要求通过
             # 子目标还没有做法的那几轮里，它在"还没细化"里
             assert any(any(goal["label"] == "写出 notes/a.md，列三条要点" for goal in goals) for goals in seen)
 

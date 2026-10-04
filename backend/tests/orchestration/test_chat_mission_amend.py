@@ -94,10 +94,13 @@ def test_projection_passes_budget_and_drops_charter():
     view = {"through_seq": 1, "snapshot": {
         "mission": {"id": "m", "goal": "g", "success_criteria": ["file:a.md"], "status": "ACTIVE"},
         "budget_by_duty": [{"obligation_id": "d", "label": "整个任务", "depth": 0, "attempts": 2}],
-        "unrefined_goals": [{"occurrence_id": "o", "task_id": "t", "label": "整理"}]}}
+        "unrefined_goals": [{"occurrence_id": "o", "task_id": "t", "label": "整理"}],
+        "steps_no_longer_counting": [{"occurrence_id": "o1", "task_id": "t1", "acceptance_id": "a1",
+                                      "requirements_revision": 1, "label": "写 a.md"}]}}
     detail = project_detail(view, blocked=())
     assert detail["budget_by_duty"] == view["snapshot"]["budget_by_duty"]
     assert detail["unrefined_goals"] == view["snapshot"]["unrefined_goals"]
+    assert detail["steps_no_longer_counting"] == view["snapshot"]["steps_no_longer_counting"]
     assert "success_criteria" not in MISSION_FIELDS and "success_criteria" not in detail["mission"]
 
 
