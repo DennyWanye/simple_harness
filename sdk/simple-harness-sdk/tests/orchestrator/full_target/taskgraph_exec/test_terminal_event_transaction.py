@@ -8,7 +8,7 @@ TASKGRAPH_TERMINAL_TRANSACTION_REQUIRED.
 
 from types import SimpleNamespace
 
-from agent_orchestrator.orchestrator import taskgraph_dispatch, taskgraph_terminal
+from agent_orchestrator.orchestrator import taskgraph_terminal
 from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.storage import htn_store
 from agent_orchestrator.storage.store import Store
@@ -19,7 +19,6 @@ def test_a_terminal_event_emitted_outside_a_transaction_is_recorded_in_one(tmp_p
     service = CommitService.__new__(CommitService)
     service._store = store
     service._require_task = lambda task_id: SimpleNamespace(version=3)
-    monkeypatch.setattr(taskgraph_dispatch, "taskgraph_enabled", lambda store, mission_id: True)
     monkeypatch.setattr(htn_store.HtnStore, "task_semantics_of", lambda self, m, t: object())
     seen = []
 

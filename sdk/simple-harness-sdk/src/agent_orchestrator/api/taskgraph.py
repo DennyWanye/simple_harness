@@ -173,8 +173,10 @@ class TaskGraphReadApi:
         was wrong.  Say so plainly instead; once enabled, the strict integrity
         checks below still apply unchanged.
         """
-        from ..storage.taskgraph_store import taskgraph_enabled
-        if not taskgraph_enabled(self._store, mission_id):
+        from ..storage.taskgraph_store import NotBoundError, require_bound
+        try:
+            require_bound(self._store, mission_id)
+        except NotBoundError:
             # A user Mission is bound when it is created (2026-10-03); an unbound one is
             # an older Mission in a development library, shown as having no graph.
             _fail("NOT_ENABLED", "此任务没有执行图")

@@ -301,7 +301,7 @@
     "tests/orchestrator/product_world/test_repair_replace_method.py::test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs",
     "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_a_shared_sub_goal_has_two_consumers"
    ],
-   "difference": "原计划的 TaskGraphStore.read_active_consumers 仍在，但生产代码不调用；现行由本地来源读修订钉里的 demand_refs、独立义务另由 taskgraph_demands.py 读，换计划时由 graph/convergence.py 计算受影响生产者",
+   "difference": "原计划的 TaskGraphStore.read_active_consumers 生产与测试都不用，已删（TaskGraph 补全第二批，方案第 7 节偏离 22）；现行由本地来源读修订钉里的 demand_refs、独立义务另由 taskgraph_demands.py 读，换计划时由 graph/convergence.py 计算受影响生产者",
    "verdict": "改名或挪位",
    "gap_for_taskgraph": null
   },

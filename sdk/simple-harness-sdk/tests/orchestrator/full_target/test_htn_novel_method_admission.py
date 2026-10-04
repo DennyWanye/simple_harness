@@ -51,7 +51,6 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     MethodProposal,
     RejectionCode,
     StepOutcome,
-    SuggestionReason,
     method_is_recursive,
     statement_similarity,
 )
@@ -381,12 +380,11 @@ def test_a_suspended_method_keeps_its_definition() -> None:
     assert env.registry.definition(receipt.method_ref) is not None
 
 
-def test_a_suspended_method_is_offered_as_a_suggestion_with_its_status() -> None:
+def test_a_suspended_method_is_not_offered() -> None:
     env = code_env()
     receipt = admitted(env, "valid")
     env.registry.suspend(receipt.method_ref, reason="a counter-example was recorded")
-    suggestions = env.registry.suggest_for(ref("code.fix-failing-test"), mission_id=env.mission)
-    assert [item.reason for item in suggestions] == [SuggestionReason.NOT_RETRIEVABLE_HERE]
+    assert env.registry.candidates_for(ref("code.fix-failing-test"), mission_id=env.mission) == ()
 
 
 def test_a_reinstated_method_is_retrievable_again() -> None:
@@ -419,29 +417,10 @@ def test_a_trial_admitted_method_is_invisible_to_another_mission() -> None:
     assert env.registry.candidates_for(ref("code.fix-failing-test"), mission_id="mission-2") == ()
 
 
-def test_a_trial_admitted_method_is_suggested_to_another_mission_with_a_reason() -> None:
+def test_the_candidate_says_it_is_trial_scoped() -> None:
     env = code_env()
     admitted(env, "valid")
-    suggestions = env.registry.suggest_for(ref("code.fix-failing-test"), mission_id="mission-2")
-    assert suggestions and suggestions[0].reason is SuggestionReason.NOT_RETRIEVABLE_HERE
-
-
-def test_trial_use_is_counted_per_mission() -> None:
-    env = code_env()
-    receipt = admitted(env, "valid")
-    env.registry.note_trial_use(receipt.method_ref, mission_id=env.mission)
-    env.registry.note_trial_use(receipt.method_ref, mission_id=env.mission)
-    env.registry.note_trial_use(receipt.method_ref, mission_id="mission-2")
-    assert env.registry.trial_uses(receipt.method_ref, mission_id=env.mission) == 2
-    assert env.registry.trial_uses(receipt.method_ref, mission_id="mission-2") == 1
-
-
-def test_the_candidate_carries_its_trial_count() -> None:
-    env = code_env()
-    receipt = admitted(env, "valid")
-    env.registry.note_trial_use(receipt.method_ref, mission_id=env.mission)
     candidate = env.registry.candidates_for(ref("code.fix-failing-test"), mission_id=env.mission)[0]
-    assert candidate.trial_uses == 1
     assert candidate.trial_scoped
 
 
@@ -458,28 +437,12 @@ def test_suspending_an_unregistered_method_is_refused() -> None:
 # =================================================================== retrieval
 
 
-def test_a_method_for_another_goal_version_is_only_a_suggestion() -> None:
-    env = code_env()
-    admitted(env, "valid")
-    suggestions = env.registry.suggest_for(ref("code.fix-failing-test", 2), mission_id=env.mission)
-    assert [item.reason for item in suggestions] == [
-        SuggestionReason.OTHER_VERSION_OF_SAME_GOAL_TYPE
-    ]
-
-
-def test_a_suggestion_is_never_a_candidate() -> None:
+def test_a_method_for_another_goal_version_is_not_a_candidate() -> None:
     env = code_env()
     admitted(env, "valid")
     assert (
         env.registry.candidates_for(ref("code.fix-failing-test", 2), mission_id=env.mission) == ()
     )
-
-
-def test_every_suggestion_is_marked_advisory() -> None:
-    env = code_env()
-    admitted(env, "valid")
-    suggestions = env.registry.suggest_for(ref("code.fix-failing-test", 2), mission_id=env.mission)
-    assert all(item.advisory_only for item in suggestions)
 
 
 def test_similarity_is_symmetric_and_bounded() -> None:

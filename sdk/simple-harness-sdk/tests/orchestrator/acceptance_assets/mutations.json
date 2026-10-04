@@ -786,6 +786,28 @@
     "tests/orchestrator/product_world/test_round_faults.py::test_a_damaged_plan_history_stops_only_its_own_mission"
    ],
    "note": "历史完整性损坏按表改成原地重试：损坏的任务不再当轮停"
+  },
+  {
+   "id": "TG3-02",
+   "source": "TaskGraph 补全第二批（绑定判断只留 require_bound）",
+   "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+   "original": "            try:\n                require_bound(store, intent.mission_id)\n            except NotBoundError:\n",
+   "replacement": "            require_bound(store, intent.mission_id)\n            if False:\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_unbound_legacy_mission.py::test_an_unbound_legacy_mission_neither_blocks_startup_nor_the_loop"
+   ],
+   "note": "补记账扫描不再跳过没绑定的老任务：它的预留每轮都报一轮故障，老任务不再由关口按名停"
+  },
+  {
+   "id": "TG3-03",
+   "source": "TaskGraph 补全第二批（已创建就损坏也按名停）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "        if status is MissionStatus.CREATED:\n            # Damaged before its first planning round: stopped the same way, by name\n",
+   "replacement": "        if False:\n            # Damaged before its first planning round: stopped the same way, by name\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_hierarchical_event_flow.py::test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_planner_branch"
+   ],
+   "note": "计划完整性停止不处理已创建状态：任务一直停在已创建"
   }
  ]
 }

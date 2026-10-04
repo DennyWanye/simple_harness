@@ -1540,9 +1540,14 @@ class Orchestrator:
             )
             self._note(f"mission {mission.id}: {error} → stopped")
             return True
-        from ..storage.taskgraph_store import taskgraph_enabled
+        from ..storage.taskgraph_store import NotBoundError, require_bound
         from .assurance_final_writer import is_assured
-        if not taskgraph_enabled(self.store, mission.id) or not is_assured(self.store, mission.id):
+        try:
+            require_bound(self.store, mission.id)
+            bound = True
+        except NotBoundError:
+            bound = False
+        if not bound or not is_assured(self.store, mission.id):
             # 2026-10-03 (A′ release review): a Mission of a development library created
             # before every Mission was TaskGraph-bound and assured at creation is ended
             # here, by name, never served nor allowed to stop the loop for the others.
@@ -1607,6 +1612,11 @@ class Orchestrator:
                       "subjects": [], "cycle": [], "diagnose": str(error)[:600]}
         current = self.store.get_mission(mission.id)
         status = mission.status if current is None else current.status
+        if status is MissionStatus.CREATED:
+            # Damaged before its first planning round: stopped the same way, by name
+            # (TaskGraph 补全第二批; the contract gate does the same for an unbound one).
+            self.commit.begin_planning(mission.id)
+            status = MissionStatus.PLANNING
         if status is MissionStatus.PLANNING:
             self._commit_fail_planning(mission.id, reason="plan_integrity", detail=detail)
         elif status is MissionStatus.ACTIVE:
@@ -1688,8 +1698,10 @@ class Orchestrator:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return
-        from ..storage.taskgraph_store import taskgraph_enabled
-        if not taskgraph_enabled(self.store, mission_id):
+        from ..storage.taskgraph_store import NotBoundError, require_bound
+        try:
+            require_bound(self.store, mission_id)
+        except NotBoundError:
             # An unbound Mission of an older development library (stopped by name by the
             # contract gate): its runtime history is not read through the TaskGraph, so
             # its reservations stay held — never settled as known zero usage.
@@ -2046,13 +2058,14 @@ class Orchestrator:
         its first round, instead of taking ``__aenter__`` / ``recover`` down for every
         Mission.
         """
-        from ..storage.taskgraph_store import taskgraph_enabled
+        from ..storage.taskgraph_store import NotBoundError, require_bound
         from .assurance_final_writer import is_assured
         try:
             self.commit.domain_for(mission_id)
-        except CommitRejected:
+            require_bound(self.store, mission_id)
+        except (CommitRejected, NotBoundError):
             return True
-        return not taskgraph_enabled(self.store, mission_id) or not is_assured(self.store, mission_id)
+        return not is_assured(self.store, mission_id)
 
     def _bind_startup_tools(self) -> None:
         """Reconstruct frozen tool authority before SDK automatic recovery starts.

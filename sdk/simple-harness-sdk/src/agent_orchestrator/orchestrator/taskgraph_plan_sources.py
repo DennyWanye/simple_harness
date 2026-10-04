@@ -159,8 +159,7 @@ class TaskGraphPlanSourceReader:
                     raise SourceUnavailable("taskgraph_plan_method_source_incomplete")
                 method_definitions.append(definition)
                 methods.append({"ref": ref.to_json(), "definition": definition.to_json(),
-                    "registration": registration.to_json(), "receipt": _document(world.registry.receipt(ref)),
-                    "trial_uses": world.registry.trial_uses(ref, mission_id=local.view.network.mission_id)})
+                    "registration": registration.to_json(), "receipt": _document(world.registry.receipt(ref))})
             def receipt(value: CompleteRead[Any]) -> dict[str, Any]:
                 # Event sequence is the snapshot boundary, not a source identity.
                 # An unrelated event cannot invalidate otherwise identical inputs.

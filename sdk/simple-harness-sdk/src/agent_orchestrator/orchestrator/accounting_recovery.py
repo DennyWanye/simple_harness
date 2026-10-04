@@ -256,12 +256,14 @@ def _import_hold(orch, intent_id: str) -> bool:
             reservation = orch.commit.ledger.reservation(intent.subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 return False
-            from ..storage.taskgraph_store import taskgraph_enabled
+            from ..storage.taskgraph_store import NotBoundError, require_bound
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-            if not taskgraph_enabled(store, intent.mission_id):
+            try:
+                require_bound(store, intent.mission_id)
+            except NotBoundError:
                 # A global scan: an older unbound Mission of a development library is
-                # skipped, never allowed to stop the startup scan or the loop
-                # (release review 2026-10-03).
+                # skipped — its holds are never settled as known zero usage — and never
+                # allowed to stop the startup scan or the loop (release review 2026-10-03).
                 return False
             source = TaskGraphRuntimeImports(orch).read_subject(intent)
             facts, complete, task_id = source.usage, source.accounting_complete, source.task_id

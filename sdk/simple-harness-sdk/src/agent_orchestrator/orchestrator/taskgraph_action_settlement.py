@@ -36,30 +36,44 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
 
 def settle_resolved_actions(orchestrator: Any) -> bool:
     """Revisit actual held Action accounts after the original proof is imported."""
-    from ..storage.taskgraph_store import taskgraph_enabled
+    from ..storage.taskgraph_store import NotBoundError, require_bound
     store = orchestrator.store
     progressed = False
     for mission in store.list_missions():
-        if not taskgraph_enabled(store, mission.id):
+        actions = store.list_actions(mission.id)
+        if not actions:
             continue
-        for action in store.list_actions(mission.id):
-            subject = action.get("reservation_subject")
-            if not subject:
-                continue
+        # one Mission's actions are that Mission's: its fault is its own round fault
+        with orchestrator._round_boundary(mission.id, "action_settlement"):
             try:
-                with store.transaction():
-                    current = store.get_action(action["action_key"])
-                    if current is None or current.get("reservation_subject") != subject:
-                        raise SourceUnavailable("taskgraph_action_settlement_identity_changed")
-                    reservation = orchestrator.commit.ledger.reservation(subject)
-                    if reservation is None or reservation["state"] == "SETTLED":
-                        continue
-                    require_action_settlement(orchestrator, subject, mission.id)
-                    orchestrator.commit._settle_subject(subject, mission.id, task_id=None,
-                        tool_calls=int(current["handoffs"]))
-                    progressed = True
-            except (BudgetError, SourceUnavailable):
-                # The original UNKNOWN/reservation records remain authoritative.
-                # Scheduler recovery will re-read them after new real evidence.
-                continue
+                require_bound(store, mission.id)
+            except NotBoundError:
+                continue  # an older unbound Mission: its holds are never settled here
+            progressed = _settle_mission_actions(orchestrator, mission, actions) or progressed
+    return progressed
+
+
+def _settle_mission_actions(orchestrator: Any, mission: Any, actions: list[dict[str, Any]]) -> bool:
+    store = orchestrator.store
+    progressed = False
+    for action in actions:
+        subject = action.get("reservation_subject")
+        if not subject:
+            continue
+        try:
+            with store.transaction():
+                current = store.get_action(action["action_key"])
+                if current is None or current.get("reservation_subject") != subject:
+                    raise SourceUnavailable("taskgraph_action_settlement_identity_changed")
+                reservation = orchestrator.commit.ledger.reservation(subject)
+                if reservation is None or reservation["state"] == "SETTLED":
+                    continue
+                require_action_settlement(orchestrator, subject, mission.id)
+                orchestrator.commit._settle_subject(subject, mission.id, task_id=None,
+                    tool_calls=int(current["handoffs"]))
+                progressed = True
+        except (BudgetError, SourceUnavailable):
+            # The original UNKNOWN/reservation records remain authoritative.
+            # Scheduler recovery will re-read them after new real evidence.
+            continue
     return progressed

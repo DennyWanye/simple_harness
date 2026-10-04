@@ -179,6 +179,9 @@ class RoundFaultCode(StrEnum):
     STORED_RESULT_CORRUPT = "STORED_RESULT_CORRUPT"
     # 审阅回合的身份与冻结记录不符（启动绑定时发现）：重试也是同一个结果。
     SERVICE_TURN_IDENTITY_MISMATCH = "SERVICE_TURN_IDENTITY_MISMATCH"
+    # 任务没绑定执行图、或绑定的内核版本这一版不认（开发库里的老任务）：重试也是同一个结果。
+    TASKGRAPH_NOT_BOUND = "TASKGRAPH_NOT_BOUND"
+    TASKGRAPH_KERNEL_UNSUPPORTED = "TASKGRAPH_KERNEL_UNSUPPORTED"
 
 
 _ROUND_FAULT: dict[RoundFaultCode, RoundFaultHandling] = {
@@ -190,6 +193,8 @@ _ROUND_FAULT: dict[RoundFaultCode, RoundFaultHandling] = {
     RoundFaultCode.TASKGRAPH_SOURCE_INTEGRITY: RoundFaultHandling.CORRUPT_STOP,
     RoundFaultCode.STORED_RESULT_CORRUPT: RoundFaultHandling.CORRUPT_STOP,
     RoundFaultCode.SERVICE_TURN_IDENTITY_MISMATCH: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.TASKGRAPH_NOT_BOUND: RoundFaultHandling.CORRUPT_STOP,
+    RoundFaultCode.TASKGRAPH_KERNEL_UNSUPPORTED: RoundFaultHandling.CORRUPT_STOP,
 }
 
 

@@ -44,21 +44,27 @@ from .taskgraph_history_sources import validate_revision_sources
 KERNEL_VERSION = "taskgraph-exec-v2"
 
 
-def taskgraph_enabled(store: Store, mission_id: str) -> bool:
-    """Whether the Mission is bound.  Every user Mission is bound when it is created
-    (2026-10-03); only global scans and read pages still ask, to skip older unbound
-    Missions of a development library.  Everything acting on one Mission uses
-    :func:`require_bound`."""
-    row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
-    if row is not None and row[0] != KERNEL_VERSION:
-        raise StoreError("TASKGRAPH_KERNEL_UNSUPPORTED")
-    return row is not None
+class NotBoundError(StoreError, CodedFault):
+    """The Mission has no TaskGraph binding.  Every user Mission is bound when it is
+    created (2026-10-03); only an older Mission of a development library is not."""
+
+    code = RoundFaultCode.TASKGRAPH_NOT_BOUND
+
+
+class KernelUnsupportedError(StoreError, CodedFault):
+    code = RoundFaultCode.TASKGRAPH_KERNEL_UNSUPPORTED
 
 
 def require_bound(store: Store, mission_id: str) -> None:
-    """An internal contract: a Mission acted on is bound (it was bound at creation)."""
-    if not taskgraph_enabled(store, mission_id):
-        raise StoreError("TASKGRAPH_NOT_BOUND")
+    """The one check that a Mission is TaskGraph-bound; raises by name otherwise.  A
+    caller that must not raise (a startup skip, a read page, the contract gate that
+    stops such a Mission by name) catches :class:`NotBoundError` — nobody asks a
+    yes/no question instead (TaskGraph 补全第二批)."""
+    row = store.connection.execute("SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
+    if row is None:
+        raise NotBoundError("TASKGRAPH_NOT_BOUND")
+    if row[0] != KERNEL_VERSION:
+        raise KernelUnsupportedError("TASKGRAPH_KERNEL_UNSUPPORTED")
 
 
 
@@ -386,14 +392,5 @@ class TaskGraphStore:
             record = RevisionRecord(document=document, manifest_hash=row["manifest_hash"], sdk_snapshot_hash=row["sdk_snapshot_hash"], source_kind=row["source_kind"], parent_revision=row["parent_revision"], parent_manifest_hash=row["parent_manifest_hash"], certificate=certificate, admission_check_id=row["admission_check_id"], event_id=row["event_id"], command_id=row["command_id"], created_at=row["created_at"], pins=pins)
             return HistoricalRevision(record=record)
 
-    def read_active_consumers(self, mission_id: str, producer_occurrence_id: str) -> tuple[DemandRef, ...]:
-        with self._store.read_view() as connection:
-            active = connection.execute("SELECT revision FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'", (mission_id,)).fetchall()
-            if len(active) != 1:
-                _fail("mission must have exactly one ACTIVE revision")
-            revision = int(active[0][0])
-            history = self.read_revision(mission_id, revision)
-            return tuple(row for row in history.record.pins.demand_refs if row.producer_occurrence_id == producer_occurrence_id)
 
-
-__all__ = ["GraphIntegrityError", "TaskGraphStore", "require_bound", "taskgraph_enabled"]
+__all__ = ["GraphIntegrityError", "KernelUnsupportedError", "NotBoundError", "TaskGraphStore", "require_bound"]

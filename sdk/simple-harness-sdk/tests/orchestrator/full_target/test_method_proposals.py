@@ -233,7 +233,6 @@ def test_a_goal_type_nobody_declares_has_no_candidates_to_retrieve() -> None:
     other = task_binding(env, "synth.goal", task_id="t-2", obligation="o-2")
     request = context(env, other, mission_id=MISSION)
     assert request.rejected_methods == ()
-    assert request.suggested_method_refs == ()
 
 
 def test_the_request_carries_no_field_the_system_binds() -> None:

@@ -298,7 +298,6 @@ class MethodProposalContext:
     operators: tuple[OperatorOffer, ...] = ()
     rejected_methods: tuple[ApplicabilityNote, ...] = ()
     unavailable_capabilities: tuple[str, ...] = ()
-    suggested_method_refs: tuple[Mapping[str, Any], ...] = ()
     #: The goal type's own ``{id, version, content_hash}`` from the catalogue —
     #: ``method.goal_type_ref`` is copied from it.  ``None`` when the deployment does
     #: not declare the type (the empty-library case).
@@ -350,7 +349,6 @@ class MethodProposalContext:
             "operators": [item.to_json() for item in self.operators],
             "rejected_methods": [item.to_json() for item in self.rejected_methods],
             "unavailable_capabilities": list(self.unavailable_capabilities),
-            "suggested_method_refs": [dict(item) for item in self.suggested_method_refs],
             "goal_type_ref": None if self.goal_type_ref is None else dict(self.goal_type_ref),
             "method_shape": {key: list(value) for key, value in METHOD_SHAPE.items()},
             "criterion_evidence": [dict(item) for item in self.criterion_evidence],
@@ -508,22 +506,6 @@ def build_context(
                     for capability in offer.unavailable_capabilities
                 }
             )
-        ),
-        suggested_method_refs=(
-            tuple(
-                {
-                    "id": suggestion.method_ref.method_id,
-                    "version": int(suggestion.method_ref.version),
-                    "content_hash": suggestion.method_ref.content_hash,
-                    "reason": str(suggestion.reason),
-                    "advisory_only": True,
-                }
-                for suggestion in registry.suggest_for(
-                    goal_type, mission_id=MissionRef(mission_id)
-                )
-            )
-            if mission_id is not None and goal_type is not None
-            else ()
         ),
         goal_type_ref=None if goal_type is None else goal_type.to_json(),
         criterion_evidence=tuple(

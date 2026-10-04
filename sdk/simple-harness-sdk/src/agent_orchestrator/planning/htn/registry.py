@@ -789,31 +789,10 @@ class MethodCandidate:
     method: MethodContract
     method_ref: MethodRef
     registration: MethodRegistration
-    trial_uses: int = 0
 
     @property
     def trial_scoped(self) -> bool:
         return self.registration.status is MethodRegistryStatus.TRIAL_ADMITTED
-
-
-class SuggestionReason(StrEnum):
-    """Why a method is *suggested* rather than offered.  Never an admission."""
-
-    OTHER_VERSION_OF_SAME_GOAL_TYPE = "other_version_of_same_goal_type"
-    SIMILAR_GOAL_STATEMENT = "similar_goal_statement"
-    NOT_RETRIEVABLE_HERE = "not_retrievable_here"
-
-
-@dataclass(frozen=True, slots=True)
-class MethodSuggestion:
-    """§8.3 / TG §12: lexical closeness produces a *suggestion*, nothing more."""
-
-    method_ref: MethodRef
-    reason: SuggestionReason
-    detail: str
-    similarity: float = 0.0
-    #: Stated on every suggestion so no caller can read one as a decision.
-    advisory_only: bool = True
 
 
 def _statement_tokens(statement: str) -> frozenset[str]:
@@ -853,7 +832,6 @@ class MethodRegistry:
         self._definitions: dict[tuple[str, int, str], MethodContract] = {}
         self._registrations: dict[tuple[str, int, str], MethodRegistration] = {}
         self._receipts: dict[tuple[str, int, str], AdmissionReceipt] = {}
-        self._trial_uses: dict[tuple[tuple[str, int, str], str], int] = {}
         #: goal type ``(id, version, content_hash)`` → the methods written for it, in
         #: insertion order.  Retrieval is on the hot path of every refinement, and a
         #: scan of every definition per frontier item is the wrong shape for it.
@@ -867,7 +845,6 @@ class MethodRegistry:
         candidate._definitions = dict(self._definitions)
         candidate._registrations = dict(self._registrations)
         candidate._receipts = dict(self._receipts)
-        candidate._trial_uses = dict(self._trial_uses)
         candidate._by_goal_type = {key: list(value) for key, value in self._by_goal_type.items()}
         candidate._by_goal_type_id = {key: list(value) for key, value in self._by_goal_type_id.items()}
         return candidate
@@ -1249,18 +1226,6 @@ class MethodRegistry:
             raise ContractError(f"method {ref.method_id!r} v{ref.version} is not registered")
         return registration
 
-    # -- trial accounting ---------------------------------------------------------
-
-    def note_trial_use(self, ref: MethodRef, *, mission_id: MissionRef) -> int:
-        """§7.3 v1.2: trial counts follow the mission, not the plan revision."""
-
-        key = (self._key(ref), str(mission_ref(mission_id, "mission_id")))
-        self._trial_uses[key] = self._trial_uses.get(key, 0) + 1
-        return self._trial_uses[key]
-
-    def trial_uses(self, ref: MethodRef, *, mission_id: MissionRef) -> int:
-        return self._trial_uses.get((self._key(ref), str(mission_ref(mission_id, "mission_id"))), 0)
-
     # -- retrieval ----------------------------------------------------------------
 
     def retrievable(self, ref: MethodRef, *, mission_id: MissionRef) -> bool:
@@ -1289,9 +1254,9 @@ class MethodRegistry:
         """Methods offered for exactly this goal type, in a deterministic order.
 
         Matching is on the full ``(id, version, content_hash)`` of the goal type:
-        a method written against another revision of the same goal is a
-        *suggestion* (:meth:`suggest_for`), not a candidate, because the parameter
-        and coverage contract it was checked against is a different one.
+        a method written against another revision of the same goal is not a
+        candidate, because the parameter and coverage contract it was checked
+        against is a different one.
         """
 
         mission = mission_ref(mission_id, "mission_id")
@@ -1310,54 +1275,8 @@ class MethodRegistry:
                     method=method,
                     method_ref=ref,
                     registration=registration,
-                    trial_uses=self.trial_uses(ref, mission_id=mission),
                 )
             )
-        return tuple(out)
-
-    def suggest_for(
-        self,
-        goal_type_ref: VersionedRef,
-        *,
-        mission_id: MissionRef,
-    ) -> tuple[MethodSuggestion, ...]:
-        """Advisory near-matches.  §8.3: similarity produces candidates, not bindings.
-
-        Every entry carries ``advisory_only=True`` and no caller in this package
-        ever turns one into a :class:`MethodCandidate`; a human or a planner has to
-        publish a method against the real goal type first.
-        """
-
-        mission = mission_ref(mission_id, "mission_id")
-        out: list[MethodSuggestion] = []
-        for key in sorted(self._definitions):
-            method = self._definitions[key]
-            ref = MethodRef(method_id=key[0], version=key[1], content_hash=key[2])
-            if method.goal_type_ref == goal_type_ref:
-                if not self.retrievable(ref, mission_id=mission):
-                    out.append(
-                        MethodSuggestion(
-                            method_ref=ref,
-                            reason=SuggestionReason.NOT_RETRIEVABLE_HERE,
-                            detail=(
-                                f"registered as {self._registrations[key].status!s}; "
-                                "not offered to this mission's search"
-                            ),
-                        )
-                    )
-                continue
-            if method.goal_type_ref.id == goal_type_ref.id:
-                out.append(
-                    MethodSuggestion(
-                        method_ref=ref,
-                        reason=SuggestionReason.OTHER_VERSION_OF_SAME_GOAL_TYPE,
-                        detail=(
-                            f"written against {method.goal_type_ref.id!r} "
-                            f"v{method.goal_type_ref.version}, not v{goal_type_ref.version}"
-                        ),
-                        similarity=1.0,
-                    )
-                )
         return tuple(out)
 
 
@@ -1971,13 +1890,11 @@ __all__ = (
     "MethodCandidate",
     "MethodProposal",
     "MethodRegistry",
-    "MethodSuggestion",
     "ObjectSchema",
     "RejectionCode",
     "SchemaCatalog",
     "SchemaField",
     "StepOutcome",
-    "SuggestionReason",
     "TaskTypeCatalog",
     "TaskTypeSpec",
     "condition_truth_is_constant",
