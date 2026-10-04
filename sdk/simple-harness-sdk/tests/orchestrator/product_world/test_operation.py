@@ -409,9 +409,22 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
             assert "继续核对" in str(report.get("unresolved_actions_note"))
             assert not [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
 
+            # 扫描读一次出错（阻断核验 2026-10-04）：那一个任务的错按任务记下，主循环不停，下一轮照发
+            import agent_orchestrator.runtime.operation_reconciliation as reconciliation
+            real_unresolved = reconciliation.action_outcome_unresolved
+            broken = {"left": 1}
+
+            def flaky(store, row):  # type: ignore[no-untyped-def]
+                if broken["left"] and row.get("action_key") == action["action_key"]:
+                    broken["left"] -= 1
+                    raise RuntimeError("读动作出错")
+                return real_unresolved(store, row)
+
+            monkeypatch.setattr(reconciliation, "action_outcome_unresolved", flaky)
             world.control.resolve_unknown(action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在")
             for _ in range(3):
                 await world.drain()
+            assert broken["left"] == 0
             settles = [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
             assert len(settles) == 1, settles
             [settled] = settles

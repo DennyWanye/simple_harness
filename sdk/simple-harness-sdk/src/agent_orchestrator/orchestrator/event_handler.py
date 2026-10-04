@@ -2208,6 +2208,7 @@ class Orchestrator:
 
             await self._mission_round(str(action["mission_id"]), f"reconcile:{key}", one)
         self._notice_actions_settled_after_stop()
+        await self._settle_parked_faults()
         return settled
 
     def _notice_actions_settled_after_stop(self) -> None:
@@ -2222,26 +2223,28 @@ class Orchestrator:
             "SELECT mission_id FROM missions WHERE status IN ('CANCELLED','FAILED')"
             " AND json_extract(json, '$.final_report.unresolved_actions') IS NOT NULL").fetchall()
         for (mission_id,) in rows:
-            mission = self.store.get_mission(str(mission_id))
-            for listed in (mission.final_report or {}).get("unresolved_actions") or ():
-                key = str(listed.get("action_key") or "")
-                action = self.store.get_action(key)
-                if action is None or action_outcome_unresolved(self.store, action):
-                    continue
-                state = str(action["state"])
-                if self.store.connection.execute(
-                        "SELECT 1 FROM events WHERE idempotency_key=?",
-                        (f"{ACTION_SETTLED_AFTER_STOP}:{key}:{state}",)).fetchone() is not None:
-                    continue  # already said
-                with self.store.transaction():
-                    event = self.commit._emit(
-                        ACTION_SETTLED_AFTER_STOP, mission.id, key=f"{key}:{state}",
-                        task_id=action.get("task_id"),
-                        payload={"action_key": key, "action_id": str(action.get("action_id") or ""),
-                                 "operation": str(action.get("operation") or ""),
-                                 "target": str(action.get("target") or ""), "state": state,
-                                 "applied": state == "SUCCEEDED"})
-                    request_assured_notification(self.commit, mission.id, event, state_version=mission.version)
+            # one Mission's fault is that Mission's; the scan goes on (阻断核验 2026-10-04)
+            with self._round_boundary(str(mission_id), "notice:settled-actions"):
+                mission = self.store.get_mission(str(mission_id))
+                for listed in (mission.final_report or {}).get("unresolved_actions") or ():
+                    key = str(listed.get("action_key") or "")
+                    action = self.store.get_action(key)
+                    if action is None or action_outcome_unresolved(self.store, action):
+                        continue
+                    state = str(action["state"])
+                    if self.store.connection.execute(
+                            "SELECT 1 FROM events WHERE idempotency_key=?",
+                            (f"{ACTION_SETTLED_AFTER_STOP}:{key}:{state}",)).fetchone() is not None:
+                        continue  # already said
+                    with self.store.transaction():
+                        event = self.commit._emit(
+                            ACTION_SETTLED_AFTER_STOP, mission.id, key=f"{key}:{state}",
+                            task_id=action.get("task_id"),
+                            payload={"action_key": key, "action_id": str(action.get("action_id") or ""),
+                                     "operation": str(action.get("operation") or ""),
+                                     "target": str(action.get("target") or ""), "state": state,
+                                     "applied": state == "SUCCEEDED"})
+                        request_assured_notification(self.commit, mission.id, event, state_version=mission.version)
 
     async def run(self, *, max_cycles: int = 10_000, until_idle: bool = True) -> None:
         """Drive the loop until idle.  ``max_cycles`` bounds *progressing* cycles (work

@@ -792,3 +792,7 @@ M01～M12（TaskGraph 原计划 §15）文件留空，F2 补写。第三轮重�
 ### 一致性-4　已知旧失败（与本轮无关）
 - `T/.../test_root_review_coordinator.py::test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once` 在 opt.148、opt.149 上同样失败。
 - Host `host_support/test_facade.py` 17 条"Orchestrator needs the deployment's native runtime profiles"为旧失败。
+
+### 一致性-5　阻断核验（Opus，只读，只报阻断；报告 `HTN一致性补改-阻断核验.md`）后的修改
+- 阻断 1 条，已修：停下后发核对结果通知的扫描没有按任务兜错，一个已停任务读取出错会让每次 `run()` 在对账那一步就退出、所有任务停住。改为每个任务一份包进 `_round_boundary`，扫完调 `_settle_parked_faults()`，与其它全局扫描同一做法。取消用例里加一段：扫描读一次出错，主循环不停，下一轮照样发出通知。手工改坏（去掉这道兜错）→ 用例以异常变红，已恢复。
+- 核验另记一条非阻断：规划失败、要求没达到这两种停法，最终报告不列结果不明的对外操作。核查：这两种停法走的也是 `fail_mission` / 步骤失败停任务，已在三处之列；如果核验指的是别的停法，等完成评估一并看。
