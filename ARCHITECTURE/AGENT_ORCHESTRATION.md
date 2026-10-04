@@ -1,4 +1,8 @@
-最后更新：2026-10-04 CST（TaskGraph 补全第三至六批，SDK opt.152）。**共用、改要求后重审、删钉住、逐步骤预算去向。**
+最后更新：2026-10-05 CST（联合测试修补，SDK opt.153）。**改要求后重审的人裁决：裁决回执的对象是那份结果。**
+- `event_handler._ask_carried_ruling`：沿用步骤按新要求重审判不下来时请人裁决，裁决回执（`AssuranceReviewAdjudicated`）的对象写结果编号——内容审阅判的是结果，写新版验收时使用凭证只认对象一致的裁决。人判通过 → 新版验收；判打回 → 修复请求交规划器。
+- 验收资产：`tests/orchestrator/acceptance_assets/`（来源表 24 行、崩溃切点 18 行、改坏清单 89 条），执行器 `scripts/acceptance/run_mutations.py`；联测记录 `plans/2026-09-27-desktop-next/HTN补齐-阶段F2-联测记录.md`。
+
+（上一条）最后更新：2026-10-04 CST（TaskGraph 补全第三至六批，SDK opt.152）。**共用、改要求后重审、删钉住、逐步骤预算去向。**
 - **点名共用**：选做法 / 继续分解 / 换做法三种决定可带 `reuse {步骤名: 出现编号}`，落在 `RefineOperation.reuse`；系统只核秩序（`plan_preview._named_reuse`、`grounding.named_share_refusal`、`taskgraph_sharing.validate_sharing`）。候选一份来源 `taskgraph_plan_sources.eligible_sharing`，三种状态：在跑、已按现行要求通过、按旧版通过待重审。按签名自动合并、`SharedGoalIndex`、步骤 / 类型上的复用方式、`BIND_EXISTING_GOAL`、`ChildBinding.resolution_ref` 删除。换做法只删只属于被退休做法的边；上下游都共用时不重复声明边。
 - **在跑的步骤跨计划版本交结果**：范围除计划版本外没变就按现行范围验收（`OperationCompletionStore.scope_unchanged`，与已验收内容跨版本沿用同一个判断）；步骤已不在现行计划里按"范围过期"归档。
 - **改要求后沿用的叶子按新要求重审**（`orchestrator/carried_review.py`、`event_handler._carried_review`）：不建尝试、不调执行者；验证记录、内容审阅记录查找、验收编号都以（结果, 要求版本）为键（迁移 42）。每次重审的结局只有三种：新版验收（`CarriedResultAccepted`）、一条修复请求交规划器（`CARRIED_RESULT_REJECTED`）、等用户裁决；连续 3 次没能得出结论也交规划器。重审在自己的故障边界里。派发细分码 `CARRIED_REVIEW_PENDING` / `CARRIED_RESULT_REJECTED` / `CARRIED_RESULT_NOT_KEPT`。
