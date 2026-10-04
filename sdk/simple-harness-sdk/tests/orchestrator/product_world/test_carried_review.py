@@ -378,3 +378,87 @@ def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, m
             assert calls["carried"] == tried  # 交给规划器之后不再重来
 
     asyncio.run(case())
+
+
+def test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts(tmp_path):
+    """重审判不下来：审阅员对沿用的那一步按新版给不出可用的结论（原回复加一次补正都不可用），
+    系统请人裁决；人判通过后，这一步按新版算数（多一条第 2 版验收，没有重跑），任务照常完成。
+
+    **改坏检验**（TG4-06）：裁决回执的对象写成任务而不是那份结果（联测发现的缺陷）→ 人判通过后
+    使用凭证不认这条裁决，新版验收写不出，三次后错当成打回 → 变红。"""
+    from agent_orchestrator.api.planning_answers import answer_planning_question
+    from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
+
+    seen: dict[str, Any] = {"packages": []}
+    state: dict[str, Any] = {"second": False}
+    reviews: dict[str, int] = {}
+    base = amend_script.replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
+        done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
+        if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
+            state["second"] = True
+            [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
+            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。")
+        assert not _carried_rejections(package), "判不下来不是打回：规划器不该收到修复请求"
+        return base(request)
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        if (str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
+                and list(data.get("criterion_ids") or ()) == ["c-user-1"]):
+            reviews["c-user-1"] = reviews.get("c-user-1", 0) + 1
+            if reviews["c-user-1"] >= 2:
+                return "我看过了，没有问题。"  # 不是约定的回复格式：给不出可用结论
+        return review_reply(data)
+
+    def questions(world: Any, mission_id: str) -> list[dict[str, Any]]:
+        return [row for row in PlanningHumanStore(world.store).list(mission_id)
+                if str(row["decision_id"]).startswith("adjudicate-carried:")]
+
+    async def case():
+        provider = HeldStep("b.md", planner=planner, reviewer=reviewer)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-no-verdict",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            [first] = htn.list_acceptances(mission_id)
+            amend_script.amend(world, mission_id,
+                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            provider.go.set()
+            for _ in range(40):
+                await world.drain(timeout=20)
+                if questions(world, mission_id):
+                    break
+            [row] = questions(world, mission_id)
+            assert row["state"] == "PENDING"
+            mission = world.store.get_mission(mission_id)
+            assert str(mission.status.value) == "ACTIVE"
+            kept_task = str(first.task_id)
+            assert [int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
+                    if str(item.task_id) == kept_task] == [1]
+            answer_planning_question(
+                world.loop, tenant_id=mission.tenant_id, principal=world.deployment.principal,
+                decision_id=row["decision_id"], answer="pass", expected_version=row["version"],
+                nonce="n-" + row["decision_id"])
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError(f"the mission never settled: {state}") from error
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            assert len(world.store.list_attempts(kept_task)) == 1
+            assert sorted(int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
+                          if str(item.task_id) == kept_task) == [1, 2]
+            events = list(world.store.list_events(mission_id))
+            assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
+
+    asyncio.run(case())

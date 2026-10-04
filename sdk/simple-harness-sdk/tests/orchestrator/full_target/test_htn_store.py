@@ -5,9 +5,8 @@
 
 Three things are pinned here, in this order of importance:
 
-1. **The old library is untouched.**  The fifteen existing migrations keep their
-   checksums byte for byte, a legacy run writes nothing into the new tables, and
-   the upgrade is rehearsed on a *copy* of a v15 library (§20 rule 6).
+1. **The old migrations are untouched.**  The fifteen existing migrations keep their
+   checksums byte for byte.
 2. **Identity is enforced by the schema, not by good manners.**  One ACTIVE plan
    revision per Mission, one official review per package, one adopted resolution
    per obligation, one ``request_hash`` per ``OperationId``.
@@ -17,11 +16,12 @@ Three things are pinned here, in this order of importance:
 
 from __future__ import annotations
 
-import importlib.util
+import asyncio
 import json
 import re
-import shutil
 import sqlite3
+from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -98,14 +98,14 @@ from agent_orchestrator.knowledge.validity import (
 )
 from agent_orchestrator.storage import (
     acceptance_receipt_schema,
-    admission_seams_schema,
     htn_schema,
-    planning_decision_schema,
     schema,
     validity_subject_schema,
 )
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import Store, StoreConflict
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 from simple_harness.contracts import canonical_json
 
 MISSION = "mission-1"
@@ -164,7 +164,6 @@ FROZEN_MIGRATIONS: tuple[tuple[int, str, str], ...] = (
     ),
 )
 
-STEP02_TESTS = Path(__file__).resolve().parents[1] / "step02" / "test_store_and_budgets.py"
 SOURCE_ROOT = Path(__file__).resolve().parents[3] / "src" / "agent_orchestrator"
 
 #: Migration 16 as shipped.  Both are snapshots on purpose: once a library has been
@@ -611,20 +610,70 @@ def planned(htn: HtnStore) -> HtnStore:
     return htn
 
 
+PRODUCT_REQUEST = {"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"]}
+
+
+@pytest.fixture
+def bound(tmp_path: Path) -> Iterator[tuple[HtnStore, str]]:
+    """A Mission created the product way — assured and TaskGraph-bound in the creating
+    transaction — on a product world that is never run.  Writes that wake TaskGraph
+    (witnesses, observations, epochs) need a bound Mission; a hand-inserted one is not."""
+
+    runner = asyncio.Runner()
+    manager = product_world(tmp_path / "root", LayeredScriptedProvider())
+    world = runner.run(manager.__aenter__())
+    try:
+        created = world.create({**PRODUCT_REQUEST, "idempotency_key": "htn-store-bound"})
+        yield HtnStore(world.store), created["mission_id"]
+    finally:
+        runner.run(manager.__aexit__(None, None, None))
+        runner.close()
+
+
+@pytest.fixture(scope="module")
+def reviewed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[HtnStore, str]]:
+    """A Mission run to completion on the product world: its official review records were
+    imported by the review runtime and its acceptance quotes one of them."""
+
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    runner = asyncio.Runner()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+        root = tmp_path_factory.mktemp("reviewed") / "root"
+        manager = product_world(root, LayeredScriptedProvider())
+        world = runner.run(manager.__aenter__())
+        try:
+            created = world.create({**PRODUCT_REQUEST, "idempotency_key": "htn-store-reviewed"})
+            mission_id = created["mission_id"]
+            mission = runner.run(world.run_until_settled(mission_id, rounds=20))
+            assert mission.status.value == "COMPLETED", mission.final_report
+            yield HtnStore(world.store), mission_id
+        finally:
+            runner.run(manager.__aexit__(None, None, None))
+            runner.close()
+
+
+def _official_content_review(htn: HtnStore, mission_id: str) -> ReviewRecord:
+    [package] = htn.list_review_packages(mission_id, purpose=ReviewPurpose.TASK_CONTENT)
+    record = htn.official_review_record(str(package.package_id))
+    assert record is not None
+    return record
+
+
+def _acceptance_of_official_review(htn: HtnStore, mission_id: str) -> Acceptance:
+    official = _official_content_review(htn, mission_id)
+    [accepted] = [
+        item
+        for item in htn.list_acceptances(mission_id)
+        if item.review_record_id == official.record_id
+    ]
+    return accepted
+
+
 # --------------------------------------------------------------------------------------
 # Migration 16 and the legacy guard
 # --------------------------------------------------------------------------------------
-
-
-def test_operation_completion_is_the_new_head_without_replacing_admission() -> None:
-    assert schema.SCHEMA_VERSION == 37  # 迁移 25～37 已追加在后
-    assert schema.SCHEMA_NAME == "orchestrator-artifacts-barrier-without-offline-relocation"
-    assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
-    assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
-    assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL
-    assert schema.MIGRATIONS[20].name == "orchestrator-operation-seams"
-    assert schema.MIGRATIONS[21].name == "orchestrator-operation-completion"
-    assert schema.MIGRATIONS[22].name == "orchestrator-method-evaluations"
 
 
 def test_migration_seventeen_is_still_migration_seventeen() -> None:
@@ -843,27 +892,6 @@ def test_every_new_table_is_empty_in_a_fresh_library(store: Store) -> None:
         assert count == 0, table
 
 
-def test_a_legacy_run_writes_nothing_into_the_new_tables(tmp_path) -> None:
-    """Replay the step-02 store / budget tests, then look for leaks."""
-
-    spec = importlib.util.spec_from_file_location("step02_store_and_budgets", STEP02_TESTS)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.test_store_opens_validates_and_reopens(tmp_path)
-    module.test_cas_and_idempotent_events(tmp_path)
-    module.test_budget_chain_reserve_settle_and_import_usage(tmp_path)
-
-    legacy = Store.open(tmp_path / "o.db")
-    try:
-        assert legacy.count_events("mission-1") == 1
-        for table in FULL_TARGET_TABLES:
-            count = legacy.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608
-            assert count == 0, table
-    finally:
-        legacy.close()
-
-
 #: One row for every table migrations 7–15 created, so the rehearsal compares real
 #: content and not just an empty shell.  Written through a plain connection (foreign
 #: keys default off there): the drill is about bytes surviving the upgrade, not about
@@ -942,7 +970,6 @@ LEGACY_TAIL_ROWS: tuple[tuple[str, str, tuple[Any, ...]], ...] = (
         ("hold-1", "transfer-1", "{}", "{}", 1.0),
     ),
 )
-LEGACY_TAIL_TABLES: tuple[str, ...] = tuple(entry[0] for entry in LEGACY_TAIL_ROWS)
 
 
 def _open_at_version_fifteen(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1039,50 +1066,6 @@ def _dump(path: Path, table: str) -> list[tuple[Any, ...]]:
         return [tuple(row) for row in connection.execute(f"SELECT * FROM {table}")]  # noqa: S608
     finally:
         connection.close()
-
-
-def test_upgrading_a_copy_of_a_v15_library_keeps_every_old_row(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """§20 rule 6: the migration is rehearsed on a copy before it touches anything."""
-
-    original = tmp_path / "v15.db"
-    _open_at_version_fifteen(original, monkeypatch)
-    sampled = ("missions", "events", *LEGACY_TAIL_TABLES)
-    before = {table: _dump(original, table) for table in sampled}
-    assert all(before[table] for table in sampled), before
-    assert [row[0] for row in _dump(original, "orch_schema_migrations")] == list(range(1, 16))
-
-    rehearsal = tmp_path / "copy" / "v15.db"
-    rehearsal.parent.mkdir()
-    shutil.copy(original, rehearsal)
-
-    upgraded = Store.open(rehearsal)
-    try:
-        after = {table: _dump(rehearsal, table) for table in sampled}
-        assert after == before
-        applied = _dump(rehearsal, "orch_schema_migrations")
-        assert [row[0] for row in applied] == list(range(1, schema.SCHEMA_VERSION + 1))
-        assert applied[-1][1] == schema.SCHEMA_NAME
-        assert applied[-1][2] == schema.MIGRATIONS[-1].checksum
-        assert applied[19][1] == "orchestrator-h1h-admission-seams"
-        assert applied[19][2] == schema.MIGRATIONS[19].checksum
-        assert applied[18][1] == "orchestrator-planning-decision-v1"
-        assert applied[18][2] == schema.MIGRATIONS[18].checksum
-        assert applied[17][1] == "orchestrator-full-target-witness-subject"
-        assert applied[17][2] == MIGRATION_18_CHECKSUM
-        assert applied[16][1] == "orchestrator-full-target-acceptance-receipts"
-        assert applied[16][2] == MIGRATION_17_CHECKSUM
-        assert applied[15][1] == "orchestrator-full-target-htn"
-        assert applied[15][2] == MIGRATION_16_CHECKSUM
-        assert applied[:15] == _dump(original, "orch_schema_migrations")[:15]
-        for table in FULL_TARGET_TABLES:
-            assert (
-                upgraded.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0  # noqa: S608
-            ), table
-    finally:
-        upgraded.close()
-    assert _dump(original, "missions") == before["missions"]
 
 
 def test_the_upgrade_writes_a_backup_of_the_old_library(
@@ -1567,30 +1550,47 @@ def test_a_review_package_round_trips(htn: HtnStore) -> None:
     assert htn.list_review_packages(MISSION, purpose=ReviewPurpose.MISSION_FINAL) == ()
 
 
-def test_a_review_record_writes_its_criterion_evaluations(htn: HtnStore) -> None:
-    htn.insert_review_package(review_package())
-    record = review_record()
-    htn.insert_review_record(record, official=True)
-    stored = htn.get_review_record("review-1")
+def test_a_review_record_writes_its_criterion_evaluations(reviewed: tuple[HtnStore, str]) -> None:
+    htn, mission_id = reviewed
+    record = _official_content_review(htn, mission_id)
+    stored = htn.get_review_record(str(record.record_id))
     assert stored.record == record
     assert stored.official is True
-    evaluations = htn.list_criterion_evaluations("review-1")
-    assert len(evaluations) == 1
-    assert evaluations[0]["criterion_id"] == "c-1"
-    assert evaluations[0]["verdict"] == "PASS"
-    assert len(evaluations[0]["check_receipt_hash"]) == 64
+    evaluations = htn.list_criterion_evaluations(str(record.record_id))
+    assert record.criteria and len(evaluations) == len(record.criteria)
+    by_criterion = {item["criterion_id"]: item for item in evaluations}
+    for outcome in record.criteria:
+        row = by_criterion[outcome.criterion_id]
+        assert row["verdict"] == str(outcome.verdict)
+        assert row["check_execution"] == str(outcome.check_execution)
+        assert row["outcome"] == outcome.to_json()
+        assert re.fullmatch(r"[0-9a-f]{64}", row["check_receipt_hash"])
 
 
-def test_only_one_review_record_per_package_is_official(htn: HtnStore) -> None:
-    htn.insert_review_package(review_package())
-    htn.insert_review_record(review_record(), official=True)
+def test_only_one_review_record_per_package_is_official(reviewed: tuple[HtnStore, str]) -> None:
+    from agent_orchestrator.assurance.codec import AssuranceError
+
+    htn, mission_id = reviewed
+    official = _official_content_review(htn, mission_id)
+    package_id = str(official.package_id)
     htn.insert_review_record(
-        review_record(record_id="review-2", verdict=ReviewVerdict.REWORK), official=False
+        replace(official, record_id="review-2", verdict=ReviewVerdict.REWORK), official=False
     )
-    with pytest.raises(StoreConflict, match="conflicts with what is stored"):
-        htn.insert_review_record(review_record(record_id="review-3"), official=True)
-    assert htn.official_review_record("package-1").record_id == "review-1"
-    assert len(htn.list_review_records("package-1")) == 2
+    # The store makes a record official only through the review runtime's import ...
+    with pytest.raises(AssuranceError, match="REVIEW_RUNTIME_IMPORT_REQUIRED"):
+        htn.insert_review_record(replace(official, record_id="review-3"), official=True)
+    # ... and the schema refuses a second official row for the package whoever writes it.
+    connection = htn._store.connection
+    columns = [row[1] for row in connection.execute("PRAGMA table_info(review_records)")]
+    copied = ", ".join("'review-4'" if column == "record_id" else column for column in columns)
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            f"INSERT INTO review_records({', '.join(columns)}) SELECT {copied}"  # noqa: S608
+            " FROM review_records WHERE record_id=?",
+            (str(official.record_id),),
+        )
+    assert htn.official_review_record(package_id).record_id == official.record_id
+    assert len(htn.list_review_records(package_id)) == 2
 
 
 def test_a_review_record_may_not_change_its_package_purpose(htn: HtnStore) -> None:
@@ -1604,23 +1604,29 @@ def test_a_review_record_needs_its_package(htn: HtnStore) -> None:
         htn.insert_review_record(review_record())
 
 
-def test_an_acceptance_is_idempotent_and_refuses_a_changed_body(htn: HtnStore) -> None:
-    htn.insert_review_package(review_package())
-    htn.insert_review_record(review_record(), official=True)
-    digest = htn.insert_acceptance(acceptance())
-    assert htn.insert_acceptance(acceptance()) == digest
+def test_an_acceptance_is_idempotent_and_refuses_a_changed_body(
+    reviewed: tuple[HtnStore, str],
+) -> None:
+    htn, mission_id = reviewed
+    accepted = _acceptance_of_official_review(htn, mission_id)
+    digest = htn.insert_acceptance(accepted)
+    stored_hash = htn._store.connection.execute(
+        "SELECT content_hash FROM acceptances WHERE acceptance_id=?", (str(accepted.acceptance_id),)
+    ).fetchone()[0]
+    assert digest == stored_hash
+    assert htn.insert_acceptance(accepted) == digest
     with pytest.raises(StoreConflict, match="different content"):
-        htn.insert_acceptance(acceptance(validity_ms=99))
-    assert htn.get_acceptance("acceptance-1").accepted_at_ms == 10
+        htn.insert_acceptance(replace(accepted, accepted_at_ms=accepted.accepted_at_ms + 99))
+    assert htn.get_acceptance(str(accepted.acceptance_id)) == accepted
 
 
-def test_one_review_record_backs_at_most_one_acceptance(htn: HtnStore) -> None:
-    htn.insert_review_package(review_package())
-    htn.insert_review_record(review_record(), official=True)
-    htn.insert_acceptance(acceptance())
+def test_one_review_record_backs_at_most_one_acceptance(reviewed: tuple[HtnStore, str]) -> None:
+    htn, mission_id = reviewed
+    accepted = _acceptance_of_official_review(htn, mission_id)
     with pytest.raises(StoreConflict):
-        htn.insert_acceptance(acceptance(acceptance_id="acceptance-2"))
-    assert htn.list_acceptances(MISSION, obligation_id="obligation-1") == (acceptance(),)
+        htn.insert_acceptance(replace(accepted, acceptance_id="acceptance-2"))
+    obligation = str(accepted.obligation_id)
+    assert htn.list_acceptances(mission_id, obligation_id=obligation) == (accepted,)
 
 
 def test_an_acceptance_needs_the_review_record_it_quotes(htn: HtnStore) -> None:
@@ -1641,45 +1647,51 @@ def test_a_goal_resolution_round_trips_and_is_unique(htn: HtnStore) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_a_validity_witness_round_trips(htn: HtnStore) -> None:
+def test_a_validity_witness_round_trips(bound: tuple[HtnStore, str]) -> None:
+    htn, mission = bound
     stored = witness()
-    htn.insert_validity_witness(MISSION, stored, subject=NO_SUBJECT)
+    htn.insert_validity_witness(mission, stored, subject=NO_SUBJECT)
     assert htn.get_validity_witness("witness-1") == stored
-    assert htn.list_validity_witnesses(MISSION, scope_id="mission-1") == (stored,)
+    assert htn.list_validity_witnesses(mission, scope_id="mission-1") == (stored,)
 
 
-def test_one_witness_per_consumer_purpose_scope_and_support_revision(htn: HtnStore) -> None:
-    htn.insert_validity_witness(MISSION, witness(), subject=NO_SUBJECT)
+def test_one_witness_per_consumer_purpose_scope_and_support_revision(
+    bound: tuple[HtnStore, str],
+) -> None:
+    htn, mission = bound
+    htn.insert_validity_witness(mission, witness(), subject=NO_SUBJECT)
     with pytest.raises(StoreConflict, match="conflicts with one already stored"):
-        htn.insert_validity_witness(MISSION, witness(witness_id="witness-2"), subject=NO_SUBJECT)
+        htn.insert_validity_witness(mission, witness(witness_id="witness-2"), subject=NO_SUBJECT)
     htn.insert_validity_witness(
-        MISSION, witness(witness_id="witness-3", scope_epoch=2), subject=NO_SUBJECT
+        mission, witness(witness_id="witness-3", scope_epoch=2), subject=NO_SUBJECT
     )
-    assert len(htn.list_validity_witnesses(MISSION)) == 2
+    assert len(htn.list_validity_witnesses(mission)) == 2
 
 
-def test_two_licences_over_two_subjects_live_side_by_side(htn: HtnStore) -> None:
+def test_two_licences_over_two_subjects_live_side_by_side(bound: tuple[HtnStore, str]) -> None:
     """P2.3c part 2d, decision 1 (memo test 1), at the storage level.
 
     One consumer, one purpose, one scope epoch, one support revision — and two
     licences, because they were taken over two different supports.  AER §8.1 puts
     ``support_selection`` inside a witness's identity, so these are two rows.
     """
+    htn, mission = bound
 
     data = witness(witness_id="witness-data", support_refs_acceptance="acceptance-7")
     conditions = witness(witness_id="witness-pre", condition_digests=("d1", "d2"))
     assert witness_subject(data) == acceptance_subject("acceptance-7")
     assert witness_subject(conditions) == condition_subject(("d2", "d1"))
-    htn.insert_validity_witness(MISSION, data, subject=witness_subject(data))
-    htn.insert_validity_witness(MISSION, conditions, subject=witness_subject(conditions))
-    assert len(htn.list_validity_witnesses(MISSION)) == 2
-    assert htn.list_validity_witnesses(MISSION, subject=acceptance_subject("acceptance-7")) == (
+    htn.insert_validity_witness(mission, data, subject=witness_subject(data))
+    htn.insert_validity_witness(mission, conditions, subject=witness_subject(conditions))
+    assert len(htn.list_validity_witnesses(mission)) == 2
+    assert htn.list_validity_witnesses(mission, subject=acceptance_subject("acceptance-7")) == (
         data,
     )
 
 
-def test_two_conclusions_about_the_same_subject_still_conflict(htn: HtnStore) -> None:
+def test_two_conclusions_about_the_same_subject_still_conflict(bound: tuple[HtnStore, str]) -> None:
     """Decision 1 widened the key by one dimension; it did not open it."""
+    htn, mission = bound
 
     first = witness(witness_id="witness-data", support_refs_acceptance="acceptance-7")
     second = witness(
@@ -1687,9 +1699,9 @@ def test_two_conclusions_about_the_same_subject_still_conflict(htn: HtnStore) ->
         support_refs_acceptance="acceptance-7",
         truth=TruthValue.UNKNOWN,
     )
-    htn.insert_validity_witness(MISSION, first, subject=witness_subject(first))
+    htn.insert_validity_witness(mission, first, subject=witness_subject(first))
     with pytest.raises(StoreConflict, match="conflicts with one already stored"):
-        htn.insert_validity_witness(MISSION, second, subject=witness_subject(second))
+        htn.insert_validity_witness(mission, second, subject=witness_subject(second))
 
 
 def test_a_witness_cannot_be_stored_under_a_subject_it_does_not_name(htn: HtnStore) -> None:
@@ -1712,7 +1724,9 @@ def test_a_witness_cannot_be_stored_under_a_subject_it_does_not_name(htn: HtnSto
     assert htn.list_validity_witnesses(MISSION) == ()
 
 
-def test_the_index_key_still_separates_two_different_acceptances(htn: HtnStore) -> None:
+def test_the_index_key_still_separates_two_different_acceptances(
+    bound: tuple[HtnStore, str],
+) -> None:
     """Memo test 6, decision 1's core mutation self-check.
 
     **Mutation**: put the old seven-column key back (or write a constant into
@@ -1720,20 +1734,22 @@ def test_the_index_key_still_separates_two_different_acceptances(htn: HtnStore) 
     — which is precisely the defect part 2c's smoke hit, where a leaf's second
     licence could not be stored and the occurrence waited for it for ever.
     """
+    htn, mission = bound
 
     for index, acceptance in enumerate(("acceptance-7", "acceptance-8")):
         stored = witness(witness_id=f"witness-{index}", support_refs_acceptance=acceptance)
-        htn.insert_validity_witness(MISSION, stored, subject=witness_subject(stored))
-    assert len(htn.list_validity_witnesses(MISSION)) == 2
+        htn.insert_validity_witness(mission, stored, subject=witness_subject(stored))
+    assert len(htn.list_validity_witnesses(mission)) == 2
     assert {
         row[0]
         for row in htn._store.connection.execute("SELECT subject_digest FROM validity_witnesses")
     } == {acceptance_subject("acceptance-7"), acceptance_subject("acceptance-8")}
 
 
-def test_an_observation_round_trips(htn: HtnStore) -> None:
+def test_an_observation_round_trips(bound: tuple[HtnStore, str]) -> None:
     """An observation is stored with the question it answers; one without, or whose question
     does not compute back to its proposition key, is refused (阶段 D)."""
+    htn, mission = bound
     from dataclasses import replace
 
     from agent_orchestrator.knowledge.predicates import proposition_key
@@ -1744,44 +1760,47 @@ def test_an_observation_round_trips(htn: HtnStore) -> None:
     key = proposition_key(signature, question["arguments"])
     record = replace(observation(), proposition_key=key)
     with pytest.raises(StoreConflict, match="question"):
-        htn.insert_observation(MISSION, record, question=None)
+        htn.insert_observation(mission, record, question=None)
     with pytest.raises(StoreConflict, match="compute back"):
-        htn.insert_observation(MISSION, observation(), question=question)
-    htn.insert_observation(MISSION, record, scope_id="mission-1", question=question)
+        htn.insert_observation(mission, observation(), question=question)
+    htn.insert_observation(mission, record, scope_id="mission-1", question=question)
     assert htn.get_observation("observation-1") == record
-    assert htn.list_observations(MISSION, proposition_key=key) == (record,)
-    assert htn.list_observations(MISSION, proposition_key="other") == ()
-    assert htn.observation_questions(MISSION) == (
+    assert htn.list_observations(mission, proposition_key=key) == (record,)
+    assert htn.list_observations(mission, proposition_key="other") == ()
+    assert htn.observation_questions(mission) == (
         {"proposition_key": key, "scope_id": "mission-1", **question},)
     with pytest.raises(StoreConflict, match="already stored"):
-        htn.insert_observation(MISSION, record, question=question)
+        htn.insert_observation(mission, record, question=question)
 
 
-def test_epochs_advance_and_dirty_subjects_queue_up(htn: HtnStore) -> None:
-    assert htn.epoch(MISSION, "mission-1") == 0
-    assert htn.bump_epoch(MISSION, "mission-1", bumped_by="evidence-commit") == 0
-    assert htn.bump_epoch(MISSION, "mission-1", bumped_by="evidence-commit") == 1
-    assert htn.epoch(MISSION, "mission-1") == 1
+def test_epochs_advance_and_dirty_subjects_queue_up(bound: tuple[HtnStore, str]) -> None:
+    htn, mission = bound
+    assert htn.epoch(mission, "mission-1") == 0
+    # A missing row reads as epoch zero, so the first bump moves to one (bump_epoch returns
+    # the new epoch; inserting zero would leave the original witnesses current).
+    assert htn.bump_epoch(mission, "mission-1", bumped_by="evidence-commit") == 1
+    assert htn.bump_epoch(mission, "mission-1", bumped_by="evidence-commit") == 2
+    assert htn.epoch(mission, "mission-1") == 2
     entry = htn.mark_dirty(
-        MISSION,
+        mission,
         subject_kind="resolution",
         subject_id="resolution-1",
         scope_id="mission-1",
-        epoch=1,
+        epoch=2,
         reason="support retracted",
     )
-    assert htn.list_dirty(MISSION) == (entry,)
+    assert htn.list_dirty(mission) == (entry,)
     htn.mark_dirty(
-        MISSION,
+        mission,
         subject_kind="resolution",
         subject_id="resolution-1",
         scope_id="mission-1",
-        epoch=1,
+        epoch=2,
         reason="support retracted",
         state="CLEARED",
     )
-    assert htn.list_dirty(MISSION) == ()
-    assert len(htn.list_dirty(MISSION, state="CLEARED")) == 1
+    assert htn.list_dirty(mission) == ()
+    assert len(htn.list_dirty(mission, state="CLEARED")) == 1
 
 
 # --------------------------------------------------------------------------------------

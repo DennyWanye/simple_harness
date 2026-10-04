@@ -299,7 +299,7 @@
    "when_unreadable": "独立义务读不全/历史不一致：orchestrator/taskgraph_demands.py:read_independent_demands 抛 SourceUnavailable（taskgraph_demand_account_set_incomplete 等）；结构读不到见 P04。完整的空需求方仍先查独立义务与外部动作再决定取消（graph/convergence.py:compute_convergence_impact 只把被退役实例需要的生产者列为受影响）。读不到抛出的异常在每任务一轮的边界被接住（orchestrator/event_handler.py:Orchestrator._round_boundary → _round_fault），按 orchestrator/failure_classes.py:classify_round_fault 分类：历史完整性错误停该任务；其余原地重试、不算规划次数，首次记一条 MissionRoundFault 事件，连续 6 轮（NON_MODEL_FAILURE_CAP）且超过最短时长才按 STORE_FAULT 停该任务",
    "tests": [
     "tests/orchestrator/product_world/test_repair_replace_method.py::test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs",
-    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_a_shared_sub_goal_has_two_consumers"
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_a_named_shared_step_exists_once_with_two_consumers"
    ],
    "difference": "原计划的 TaskGraphStore.read_active_consumers 生产与测试都不用，已删（TaskGraph 补全第二批，方案第 7 节偏离 22）；现行由本地来源读修订钉里的 demand_refs、独立义务另由 taskgraph_demands.py 读，换计划时由 graph/convergence.py 计算受影响生产者",
    "verdict": "改名或挪位",

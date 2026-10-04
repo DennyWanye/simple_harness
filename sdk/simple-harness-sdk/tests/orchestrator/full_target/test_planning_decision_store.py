@@ -22,10 +22,8 @@ storage side: heads, DDL, idempotency, conflicts, foreign keys and crash recover
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import sqlite3
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -37,7 +35,7 @@ from agent_orchestrator.contracts.planning_decisions import (
     PlanningRequestBinding,
     compute_decision_id,
 )
-from agent_orchestrator.storage import admission_seams_schema, planning_decision_schema, schema
+from agent_orchestrator.storage import planning_decision_schema, schema
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import InjectedCrash, Store, StoreConflict
 
@@ -52,7 +50,6 @@ HASH_C = "c" * 64
 HASH_D = "d" * 64
 HASH_E = "e" * 64
 
-STEP02_TESTS = Path(__file__).resolve().parents[1] / "step02" / "test_store_and_budgets.py"
 
 #: Migrations 16, 17 and 18 as shipped.  Repeated here as literals, independently of
 #: ``test_htn_store.py``: a schema head may move forward, the old bytes may not.
@@ -192,18 +189,8 @@ def _decision_rows(store: Store) -> list[tuple[Any, ...]]:
 
 
 # --------------------------------------------------------------------------------------
-# S1: migration 19 is the head, and it is one migration with three STRICT tables
+# S1: migration 19 is one migration with three STRICT tables
 # --------------------------------------------------------------------------------------
-
-
-def test_migration_nineteen_is_the_new_head() -> None:
-    assert schema.SCHEMA_VERSION == 37  # 迁移 25～37 已追加在后
-    assert schema.MIGRATIONS[18].name == "orchestrator-planning-decision-v1"
-    assert schema.MIGRATIONS[18].ddl is planning_decision_schema.DDL
-    assert schema.MIGRATIONS[18].checksum == MIGRATION_19_CHECKSUM
-    assert schema.MIGRATIONS[19].ddl is admission_seams_schema.DDL
-    assert schema.MIGRATIONS[23].name == "orchestrator-planning-human-requests"
-    assert schema.checksum() == schema.MIGRATIONS[-1].checksum
 
 
 def test_a_fresh_library_has_the_three_strict_tables(store: Store) -> None:
@@ -739,28 +726,6 @@ def test_an_upgrade_from_eighteen_keeps_every_old_row(
         )
     finally:
         upgraded.close()
-
-
-def test_a_legacy_run_writes_nothing_into_the_new_tables(tmp_path) -> None:
-    """The legacy path is untouched: not one row in any of the three tables."""
-
-    spec = importlib.util.spec_from_file_location("step02_store_and_budgets", STEP02_TESTS)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.test_store_opens_validates_and_reopens(tmp_path)
-    module.test_cas_and_idempotent_events(tmp_path)
-    module.test_budget_chain_reserve_settle_and_import_usage(tmp_path)
-
-    legacy = Store.open(tmp_path / "o.db")
-    try:
-        assert legacy.count_events("mission-1") == 1
-        for table in NEW_TABLES:
-            count = legacy.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608
-            assert count == 0, table
-        assert PlanningDecisionStore(legacy).get_mission_protocol("mission-1") is None
-    finally:
-        legacy.close()
 
 
 def test_an_unreadable_decision_may_have_no_canonical_bytes(

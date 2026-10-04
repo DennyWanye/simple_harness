@@ -15,13 +15,20 @@ TG3-06 范围没变也不算沿用（在跑的步骤跨计划版本交的结果�
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
 
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, one_step_method
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    one_step_method,
+    review_input,
+    review_reply,
+)
 
 LEFT, RIGHT = "写出 out.md", "据 out.md 写出 NOTES.md"
 
@@ -92,13 +99,66 @@ def _refine(goal: dict[str, Any], chosen: dict[str, Any], bindings: dict[str, An
     return decision(goal["subject_key"], "REFINE", payload, "采用通过审阅的做法。")
 
 
-def _run(tmp_path: Any, *, overreach_first: bool):
+def _replace_right(package: dict[str, Any], state: dict[str, Any]) -> Any:
+    """右子目标被打回后换做法：先提一个新版本的"写 + 接着写"，审阅通过后用它替换，"写"仍点名共用。"""
+    repaired = [item for item in package["views"]["goals"]
+                if item.get("under_repair") and item.get("adopted_method")
+                and str(item["params"].get("goal")) == RIGHT]
+    if not repaired:
+        return None
+    [goal] = repaired
+    subject = next(item["subject_key"] for item in package["planning_subjects"]
+                   if item["occurrence_id"] == goal["occurrence_id"])
+    if state.get("right2") is None:
+        [context] = [item for item in package.get("method_proposal_contexts") or ()
+                     if item["subject_key"] == subject]
+        method = write_then_continue(context)
+        state["right2"] = (method["method_id"], method["method_version"])
+        return decision(subject, "PROPOSE_METHOD", {"method_proposal": {
+            "method": method, "rationale": "被打回：换一个新版本的做法。"}}, "换做法。")
+    alternatives = [item["method_ref"] for item in package["views"]["methods"]
+                    if (item["method_ref"]["id"], item["method_ref"]["semantic_revision"]) == state["right2"]
+                    and any(report["verdict"] == "APPLICABLE" and report["goal_occurrence_id"] == goal["occurrence_id"]
+                            for report in item.get("applicability", ()))]
+    if not alternatives:
+        return None  # 新做法还在审阅
+    instance = next(item for item in package["visible_refs"]
+                    if item["kind"] == "method_instance" and item["id"] == goal["adopted_method"]["method_instance_id"])
+    [shared] = [row for row in package.get("sharing_candidates") or () if row["task_type"] == "prepare-delivery"]
+    state["replaced"] = shared["occurrence_id"]
+    return decision(subject, "REPAIR", {
+        "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+        "replacement_method_ref": dict(alternatives[0]), "bindings": goal["params"],
+        "reuse": {"write": shared["occurrence_id"]}}, "换成新做法，写那一步仍共用左边的。")
+
+
+def _reject_notes_once(seen: dict[str, bool]):
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        package = data.get("package") or {}
+        if (str(package.get("purpose")) == "TASK_CONTENT" and not seen.get("rejected")
+                and "NOTES.md" in json.dumps(package, ensure_ascii=False)):
+            seen["rejected"] = True
+            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：NOTES.md 不满足要求。")
+        return review_reply(data)
+
+    return reviewer
+
+
+def _run(tmp_path: Any, *, overreach_first: bool, replace_right: bool = False):
     holder: dict[str, Any] = {}
     state: dict[str, Any] = {"root": False, "left": None, "right": None, "wide": None, "overreached": False,
-                             "named": []}
+                             "named": [], "replaced": None}
+    seen: dict[str, bool] = {}
 
     def planner(request: Any) -> Any:
         package = package_of(request)
+        if replace_right and package.get("repair_requests") and state["replaced"] is None:
+            reply = _replace_right(package, state)
+            if reply is not None:
+                return reply
         goals = {item["occurrence_id"]: item for item in package["views"]["goals"] if item["open"]}
         contexts = package.get("method_proposal_contexts") or []
         if not goals:
@@ -165,7 +225,9 @@ def _run(tmp_path: Any, *, overreach_first: bool):
         return None
 
     async def case():
-        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+        provider = (LayeredScriptedProvider(planner=planner, reviewer=_reject_notes_once(seen))
+                    if replace_right else LayeredScriptedProvider(planner=planner))
+        async with product_world(tmp_path / "root", provider) as world:
             mission_id = world.create({"goal": "写 out.md，再据它写 NOTES.md", "idempotency_key": "shared-1",
                                        "success_criteria": ["file:out.md", "file:NOTES.md"]})["mission_id"]
             holder.update(world=world, mission_id=mission_id)
@@ -176,6 +238,12 @@ def _run(tmp_path: Any, *, overreach_first: bool):
                                                               evaluated[-3:])
             network = world.loop._dispatch_for(mission_id).network(mission_id)
             rows = world.control.snapshot(mission_id)["snapshot"]["budget_by_duty"]
+            holder["attempts"] = {task.id: len(world.store.list_attempts(task.id))
+                                  for task in world.store.list_tasks(mission_id)}
+            holder["statuses"] = {task.id: str(task.status.value) for task in world.store.list_tasks(mission_id)}
+            holder["revisions"] = [e.payload["plan_revision"] for e in world.store.list_events(mission_id)
+                                   if e.type == "PlanRevisionCommitted"]
+            state.update(seen=dict(seen), holder=holder)
             return network, evaluated, state, rows
 
     return asyncio.run(case())
@@ -197,6 +265,22 @@ def test_a_named_shared_step_is_done_once_and_feeds_the_other_branch(tmp_path):
     task = str(network.binding_for_occurrence(shared).task_id)
     listed = [step for row in rows for step in row["steps"] if step["task_id"] == task]
     assert len(listed) == 1 and listed[0]["branches"] == 2 and listed[0]["attempts"] == 1, listed
+
+
+def test_the_branch_that_reuses_a_step_can_change_its_method_and_keep_sharing_it(tmp_path):
+    """右分支（点名共用左边那一步的一方）的"接着写"被审阅打回，规划器给右分支换做法、"写"仍点名
+    共用：共用的那一步不被取消、不重做（始终一次尝试），左分支不受影响，任务完成。"""
+    network, _, state, _ = _run(tmp_path, overreach_first=False, replace_right=True)
+    assert state["seen"].get("rejected") and state["replaced"]
+    holder = state["holder"]
+    shared = next(item.occurrence_id for item in network.occurrences if str(item.occurrence_id) == state["replaced"])
+    task = str(network.binding_for_occurrence(shared).task_id)
+    assert holder["attempts"][task] == 1 and holder["statuses"][task] == "COMPLETED", holder
+    assert len(holder["revisions"]) >= 4, holder["revisions"]  # 根、左、右、右换做法
+    adopted = set(network.adopted_instance_ids)
+    holders = [instance for instance in network.method_instances if instance.instance_id in adopted
+               and any(child.occurrence_id == shared for child in instance.child_bindings)]
+    assert len(holders) == 2  # 换做法后仍是两个分支共用
 
 
 def test_sharing_does_not_widen_what_the_named_step_answers_for(tmp_path):

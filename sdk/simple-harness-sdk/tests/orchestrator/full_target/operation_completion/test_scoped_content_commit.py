@@ -56,7 +56,8 @@ def test_occ11_projection_uses_only_verified_result_layers_and_artifact_identity
             [artifact] = [a for a in case.store.list_mission_artifacts(case.mission_id) if a.path == TARGET]
             assert tuple(item.id for item in projection.artifacts) == (artifact.id,)
             assert projection.artifacts[0].content_hash == artifact.content_hash
-            assert {row["layer"] for row in case.store.list_verifications(leaf.accepted_result_id)} >= {
+            assert {row["layer"] for row in case.store.list_verifications(
+                leaf.accepted_result_id, requirements_revision=1)} >= {
                 "critic_review"}
 
     asyncio.run(run())

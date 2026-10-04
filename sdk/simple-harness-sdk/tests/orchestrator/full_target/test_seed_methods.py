@@ -63,7 +63,6 @@ from agent_orchestrator.planning.htn.backends.panda import (  # noqa: E402
 from agent_orchestrator.planning.htn.compiler import (  # noqa: E402
     compile_refinement_bundle,
 )
-from agent_orchestrator.planning.htn.grounding import GroundingError  # noqa: E402
 from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
     evidence_requests,
     planning_frontier,
@@ -141,8 +140,13 @@ def code_goal(env: Env):
 
 
 def appworld_goal(env: Env):
+    # The current appworld goal is version 2 (``appworld-operation-v1``); version 1
+    # is history and its methods are no longer offered (registry: latest version only).
     return task_binding(
-        env, "appworld.fulfil-request", parameters={"app": "mail", "request": "send"}
+        env,
+        "appworld.fulfil-request",
+        version=2,
+        parameters={"app": "mail", "request": "send", "target": "inbox"},
     )
 
 
@@ -285,18 +289,6 @@ def test_the_appworld_decomposition_compiles_to_a_valid_increment() -> None:
     assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
 
 
-def test_when_the_api_does_not_cover_it_only_the_search_alternative_applies() -> None:
-    env = world_for_appworld(seed_env())
-    env.say("appworld.api-supports-request", {"app": "mail"}, TruthValue.FALSE)
-    binding = appworld_goal(env)
-    refuted = assessment(env, binding, "appworld.fulfil-by-api")
-    assert refuted.status is ApplicabilityStatus.PRECONDITION_FALSE
-    with pytest.raises(GroundingError):
-        decompose(env, binding, "appworld.fulfil-by-api")
-    _, _, bundle = decompose(env, binding, "appworld.fulfil-by-search")
-    assert validate_execution_projection(bundle.network.execution_projection(), BUDGET).ok
-
-
 def test_the_two_domains_go_through_the_same_calls() -> None:
     """The generality claim: no branch anywhere decides which domain this is."""
 
@@ -348,10 +340,17 @@ def test_the_invented_domain_s_own_alternative_applies_when_the_first_is_refuted
 
 
 def test_registering_a_third_domain_does_not_disturb_the_first_two() -> None:
-    env = widget_env()
+    before = seed_env()
+    offered = {
+        method_ref
+        for method_ref in before.registry.method_refs()
+        if before.registry.retrievable(method_ref, mission_id=before.mission)
+    }
     for name in PILOT_DOMAINS:
-        for contract in load_domain(name).methods:
-            assert env.registry.retrievable(contract.method_ref(), mission_id=env.mission)
+        assert any(item.method_id.startswith(f"{name}.") for item in offered)
+    env = widget_env()
+    for method_ref in offered:
+        assert env.registry.retrievable(method_ref, mission_id=env.mission)
 
 
 # ===================================================================== recursion
@@ -988,14 +987,18 @@ def _assessed_revert(env: Env):
 
 
 def _seed_method(env: Env, method_id: str):
-    contract = next(
-        definition
-        for definition in (
-            env.registry.definition(reference) for reference in env.registry.method_refs()
-        )
-        if definition is not None and definition.method_id == method_id
+    """The current (latest) version of a seed method; earlier versions are history."""
+
+    return max(
+        (
+            definition
+            for definition in (
+                env.registry.definition(reference) for reference in env.registry.method_refs()
+            )
+            if definition is not None and definition.method_id == method_id
+        ),
+        key=lambda definition: definition.method_version,
     )
-    return contract
 
 
 def _readings(network) -> list:

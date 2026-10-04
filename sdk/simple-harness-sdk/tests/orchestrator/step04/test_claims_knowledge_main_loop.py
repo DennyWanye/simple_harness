@@ -143,7 +143,7 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
         write_result = next(r for r, t in results.items() if t == write_task)
         stored_write = store.get_result(write_result)
         write_artifacts = [store.get_artifact(a) for a in stored_write.artifacts]
-        layers = [dict(item) for item in store.list_verifications(write_result)]
+        layers = [dict(item) for item in store.list_verifications(write_result, requirements_revision=1)]
         artifacts = [(a.path, a.version, a.task_id) for a in store.list_mission_artifacts(mission_id)
                      if not a.path.startswith(".")]
 

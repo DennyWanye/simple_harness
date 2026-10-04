@@ -544,8 +544,9 @@ def task_binding(
     obligation: str = "obl-root",
     parameters: Mapping[str, Any] | None = None,
     scope: str | None = None,
+    version: int = 1,
 ) -> TaskSemanticBindingV1:
-    spec = env.catalog.require(ref(task_type))
+    spec = env.catalog.require(ref(task_type, version))
     return TaskSemanticBindingV1(
         task_id=task_id,
         obligation_id=obligation,

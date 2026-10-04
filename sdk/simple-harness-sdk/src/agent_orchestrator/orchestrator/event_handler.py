@@ -8256,8 +8256,9 @@ class Orchestrator:
             mission, task, item, record=record, failures=[dict(failure) for failure in verdict.failures])
 
     def _ask_carried_ruling(self, mission: Mission, task: Task, record: Any, item: Any) -> bool:
+        # 内容审阅判的是那份结果：裁决回执的对象写结果，按新版写验收时使用凭证才认它
         return self._ask_person_to_adjudicate(
-            mission, record, target_id=task.id, subject_key=task.id,
+            mission, record, target_id=item.result_id, subject_key=task.id, task_id=task.id,
             decision_id="adjudicate-carried:" + str(record.record_id),
             intro="改要求后沿用的一步（" + str(task.goal)[:60] + "）按新要求重审，两位审阅员都判不下来，"
                   "需要你裁决它是否仍然合格。",
@@ -9396,7 +9397,7 @@ class Orchestrator:
 
     def _ask_person_to_adjudicate(
         self, mission: Mission, record: Any, *, target_id: str, subject_key: str,
-        decision_id: str, intro: str, extra: Mapping[str, Any],
+        decision_id: str, intro: str, extra: Mapping[str, Any], task_id: str | None = None,
     ) -> bool:
         """One blocking two-option question per official record; its answer becomes the
         ``AssuranceReviewAdjudicated`` receipt (never a planner round). True when this
@@ -9444,7 +9445,7 @@ class Orchestrator:
                 mission.id, record, target_id=target_id, decision=str(answer.get("answer")),
                 note="", principal_id=str(answer.get("principal_id") or ""),
                 decision_receipt_hash=str(answer.get("receipt_hash") or ""), request_id=decision_id,
-                task_id=target_id)
+                task_id=task_id or target_id)
         self._note(f"mission {mission.id}: the person ruled {answer.get('answer')} on review {record.record_id}")
         return True
 

@@ -1740,6 +1740,18 @@ def test_fan_out_bound_is_reported() -> None:
     )
 
 
+def test_a_projection_exactly_at_a_bound_passes_and_one_over_is_refused() -> None:
+    """TaskGraph 场景 S08（规模边界）：等于上限照常通过，多一个就按"到上限"拒绝，不截断。"""
+    projection = snapshot().execution_projection()
+    nodes, edges = len(projection.nodes), len(projection.edges)
+    at = validate_execution_projection(projection, budget(max_nodes=nodes, max_edges=edges))
+    assert ProblemKind.BOUND_REACHED not in kinds(at)
+    for over in (budget(max_nodes=nodes - 1, max_edges=edges), budget(max_nodes=nodes, max_edges=edges - 1)):
+        report = validate_execution_projection(projection, over)
+        assert ProblemKind.BOUND_REACHED in kinds(report)
+        assert len(report.topological_order or ()) == nodes
+
+
 def test_report_carries_the_budget_version_it_was_checked_against() -> None:
     report = validate_execution_projection(
         snapshot().execution_projection(), budget(budget_version=7)

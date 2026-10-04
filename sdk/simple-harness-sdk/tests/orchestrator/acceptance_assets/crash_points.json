@@ -16,7 +16,7 @@
     "tests/orchestrator/full_target/taskgraph_exec/test_commit_atomicity.py::test_commit_write_failure_leaves_no_plan_tasks_budget_or_graph_receipt",
     "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K02",
@@ -30,7 +30,7 @@
    "tests": [
     "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K03",
@@ -42,8 +42,10 @@
     "after_agent_created",
     "after_submit"
    ],
-   "tests": [],
-   "run_in": "F2"
+   "tests": [
+    "tests/orchestrator/product_world/test_crash_recovery.py::test_work_the_executor_already_received_is_found_again_not_created_anew"
+   ],
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K04",
@@ -71,7 +73,7 @@
    "tests": [
     "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_artifact_versions_survive_a_redelivered_turn"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K06",
@@ -85,9 +87,10 @@
    ],
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_review_cold_resume",
-    "tests/orchestrator/product_world/test_fault_points.py::test_goal_conclusion_point_fires"
+    "tests/orchestrator/product_world/test_fault_points.py::test_goal_conclusion_point_fires",
+    "tests/orchestrator/product_world/test_crash_recovery.py::test_a_saved_goal_review_is_taken_up_again_without_asking_the_reviewer_twice"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K07",
@@ -102,7 +105,7 @@
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_acceptance_atomic_faults"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K08",
@@ -114,9 +117,10 @@
     "after_handoff_before_call（F1-2 新增）"
    ],
    "tests": [
-    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire"
+    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire",
+    "tests/orchestrator/product_world/test_crash_recovery.py::test_a_publish_cut_off_midway_is_settled_under_its_own_identity"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K09",
@@ -128,9 +132,10 @@
     "after_external_effect（F1-2 新增）"
    ],
    "tests": [
-    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire"
+    "tests/orchestrator/product_world/test_fault_points.py::test_operation_points_fire",
+    "tests/orchestrator/product_world/test_crash_recovery.py::test_a_publish_cut_off_midway_is_settled_under_its_own_identity"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K10",
@@ -144,7 +149,7 @@
    "tests": [
     "tests/orchestrator/full_target/test_after_handoff_unknown_bounded.py::test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent"
    ],
-   "run_in": "F2"
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K11",
@@ -183,8 +188,10 @@
    "injection": [
     "Orchestrator._reconcile_actions（函数级）"
    ],
-   "tests": [],
-   "run_in": "F2"
+   "tests": [
+    "tests/orchestrator/product_world/test_crash_recovery.py::test_a_fault_while_reconciling_one_action_is_that_missions_round_fault"
+   ],
+   "run_in": "F2（已执行 2026-10-05）"
   },
   {
    "id": "K14",

@@ -105,7 +105,7 @@
    "id": "F1-04",
    "source": "F1 新用例 4",
    "file": "src/agent_orchestrator/context/knowledge_tools.py",
-   "original": "                or not acceptance_is_current(store, mission_id, acceptance_id_for(task.id, str(result_id)))[0]):",
+   "original": "                or not any(acceptance_is_current(store, mission_id, acceptance)[0]\n                           for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id)))):",
    "replacement": "                or False):",
    "tests": [
     "tests/orchestrator/product_world/test_repair_staleness.py::test_knowledge_and_summaries_follow_a_repair"
@@ -292,8 +292,8 @@
    "id": "F1-22",
    "source": "F1 阻断核验 B1",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "                raise\n            return await self._set_aside_stale(result_id)\n        if critic_admission_failure is not None:",
-   "replacement": "                raise\n            return False\n        if critic_admission_failure is not None:",
+   "original": "                return self._verdict_refused(result_id, error)\n            return await self._set_aside_stale(result_id)\n        if critic_admission_failure is not None:",
+   "replacement": "                return self._verdict_refused(result_id, error)\n            return False\n        if critic_admission_failure is not None:",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check"
    ],
@@ -616,110 +616,136 @@
   {
    "id": "M01",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "取消 grant 复核；绑定场景 A03；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/orchestrator/planning_admission_commits.py",
+   "original": "    if refusal is not None:\n        _raise(refusal, \"planning grant is inactive or expired at commit\")",
+   "replacement": "    if False:\n        _raise(refusal, \"planning grant is inactive or expired at commit\")",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_authority_matrix.py::test_a04_reply_bound_before_grant_change_is_stale_and_never_rebound"
+   ],
+   "note": "取消计划许可复核（场景 A03）：提交时不再复核规划许可仍有效 → 许可过期后绑定的回复照样提交"
   },
   {
    "id": "M02",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "操作读失败改空；绑定场景 R06；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/runtime/planning_operations.py",
+   "original": "            except Exception as exc:\n                raise SourceUnavailable(\"operation_read_failed\", detail=type(exc).__name__) from exc\n            if len(bindings) + len(links) + len(actions) > self.max_rows:",
+   "replacement": "            except Exception as exc:\n                bindings, links, actions = [], [], []\n            if len(bindings) + len(links) + len(actions) > self.max_rows:",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_operation_matrix.py::test_o01_store_complete_empty_has_digest_and_read_error_is_not_empty"
+   ],
+   "note": "操作读取失败改成空（场景 R06）：读操作来源出错时当作没有操作"
   },
   {
    "id": "M03",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "历史读取取最新；绑定场景 S01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/observability/taskgraph_replay.py",
+   "original": "                mission_id, revision, record.source_kind, record.manifest_hash,",
+   "replacement": "                mission_id, revision, record.source_kind, verified[-1].record.manifest_hash,",
+   "tests": [
+    "tests/orchestrator/product_world/test_random_sequences.py"
+   ],
+   "note": "历史读取取最新（场景 S01）：离线重建每个修订都取最新修订的清单哈希（与 F1-16 同一处，随机序列的对照物抓到）"
   },
   {
    "id": "M04",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "忽略 DATA 只用 ORDER；绑定场景 D01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/artifacts/input_bindings.py",
+   "original": "            if item.producer_occurrence == occurrence and item.output_port == output_port\n",
+   "replacement": "            if item.output_port == output_port\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_only_the_data_predecessor_of_a_mixed_pair_enters_the_manifest",
+    "tests/orchestrator/full_target/test_versioning_v2_manifest.py::test_an_order_only_predecessor_contributes_no_file"
+   ],
+   "note": "顺序关系顺带交文件（场景 D01）：取上游产出时不看是谁产的，只按端口名取 → 只有先后关系的上游文件也混进输入"
   },
   {
    "id": "M05",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "空 manifest 回退；绑定场景 D02；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "        if not requirements and not any(port.required for port in binding.input_ports):\n            return None",
+   "replacement": "        if not requirements:\n            return None",
+   "tests": [
+    "tests/orchestrator/full_target/test_input_manifest_same_source.py::test_a_required_port_the_plan_drew_no_edge_for_is_not_an_empty_success"
+   ],
+   "note": "解析失败回退成空输入（场景 D02）：必需输入端口没接线时当作没有输入"
   },
   {
    "id": "M06",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "去掉 source 集合 digest；绑定场景 C02；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/orchestrator/taskgraph_preview.py",
+   "original": "                or sha256_hex(current.before.to_json()) != preview.network_hash\n                or tuple(sorted(current.source_reads, key=lambda item: item.channel)) != preview.source_reads):",
+   "replacement": "                or sha256_hex(current.before.to_json()) != preview.network_hash):",
+   "tests": [
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale",
+    "tests/orchestrator/full_target/test_h1h_commit_interleaving.py"
+   ],
+   "note": "去掉来源集合摘要（场景 C02）：提交前重读来源时不比各来源读数 → 预览之后来源变了照样提交"
   },
   {
    "id": "M07",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "按旧父批量取消；绑定场景 R01；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "        return (one in retiring_members and other in retiring_members\n                and not any(one in held and other in held for held in surviving_members))\n",
+   "replacement": "        return one in retiring_members or other in retiring_members\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
+   ],
+   "note": "按旧做法批量取消（场景 R01）：换做法时碰到被退休做法的孩子就删（与 TG3-05 同一处）→ 共用步骤与留下分支的边被删"
   },
   {
    "id": "M08",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "generation 不检查；绑定场景 R07；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/graph/eligibility.py",
+   "original": "    if current_generation is not None and current_generation != int(binding.dispatch_generation):",
+   "replacement": "    if False:",
+   "tests": [
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_moved_dispatch_generation_is_a_stale_binding"
+   ],
+   "note": "不检查派发代次（场景 R07）：派发代次变了仍当作可派发"
   },
   {
    "id": "M09",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "以 Task.CANCELLED 视为 settled；绑定场景 D04；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/graph/eligibility.py",
+   "original": "        if (constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL\n                and context.settlements is not None):",
+   "replacement": "        if (constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL\n                and False):",
+   "tests": [
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_cancelled_predecessor_whose_real_work_is_not_settled_does_not_release_clean_up"
+   ],
+   "note": "任务已取消当作已结清（场景 D04）：不查结清事实，已取消直接放行清理步骤"
   },
   {
    "id": "M10",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "NOT_CHECKED 改 PASS；绑定场景 S07；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/planning/htn/validation.py",
+   "original": "    if methods is None or snapshot is None or predicates is None:\n        if delta.method_instances:",
+   "replacement": "    if methods is None or snapshot is None or predicates is None:\n        if False:",
+   "tests": [
+    "tests/orchestrator/full_target/test_compound_gate_no_pseudo_cycle.py::test_validate_delta_says_when_it_could_not_check_preconditions"
+   ],
+   "note": "没检查当作通过（场景 S07）：缺方法定义/证据快照/谓词表时不报\"未检查\""
   },
   {
    "id": "M11",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "receipt 丢失创建新 command；绑定场景 C03；已有用例 tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity（K01、K02 已引用），改哪里在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "                        command_id=f\"plan:{intent.intent_id}\",\n                        source={\"intent_id\": intent.intent_id, \"agent_id\": intent.agent_id},\n                        owner=self._owner,",
+   "replacement": "                        command_id=f\"plan:{intent.intent_id}:{__import__('time').time_ns()}\",\n                        source={\"intent_id\": intent.intent_id, \"agent_id\": intent.agent_id},\n                        owner=self._owner,",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
+   ],
+   "note": "回执丢失另起新命令（场景 C03）：计划提交命令号每次现造，重启后对不上原提交身份"
   },
   {
    "id": "M12",
    "source": "TaskGraph 代码级计划 §15",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "compound 派普通 Worker；绑定场景 S05；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+   "file": "src/agent_orchestrator/graph/eligibility.py",
+   "original": "    if binding is None or binding.form is not TaskForm.COMPOUND:\n        return None\n    return _refused(\n        ReadinessReason.NEEDS_REFINEMENT,",
+   "replacement": "    if True:\n        return None\n    return _refused(\n        ReadinessReason.NEEDS_REFINEMENT,",
+   "tests": [
+    "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_compound_task_needs_refinement"
+   ],
+   "note": "复合步骤派给普通执行者（场景 S05）：复合步骤不再按形态拦下"
   },
   {
    "id": "H-01",
@@ -940,6 +966,17 @@
     "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it"
    ],
    "note": "一端已离开网络的边不删：跨分支连到被换掉步骤的边悬空"
+  },
+  {
+   "id": "TG4-06",
+   "source": "F2 联测（改要求后重审判不下来→人裁决）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            mission, record, target_id=item.result_id, subject_key=task.id, task_id=task.id,",
+   "replacement": "            mission, record, target_id=task.id, subject_key=task.id, task_id=task.id,",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts"
+   ],
+   "note": "裁决回执的对象写成任务而不是结果：人判通过后使用凭证不认，新版验收写不出"
   }
  ]
 }

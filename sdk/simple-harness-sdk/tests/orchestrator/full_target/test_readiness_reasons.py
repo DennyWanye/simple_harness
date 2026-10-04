@@ -719,6 +719,38 @@ def test_an_unknown_predecessor_never_settles_even_under_settled_terminal() -> N
     assert "order_outcome_unknown" in report.detail_codes
 
 
+def test_a_cancelled_predecessor_whose_real_work_is_not_settled_does_not_release_clean_up() -> None:
+    """TaskGraph 场景 D04："任务已取消"不等于"它发出去的真实调用已结清"。
+
+    只有拿到这一步现行合同、现行派发代次下的结清事实，``settled_terminal`` 的顺序边才放行。
+    **改坏检验**（M09）：不查结清事实、把已取消直接当已结清 → 第一段变红。
+    """
+    from agent_orchestrator.graph.settlement import SettledTerminalOccurrence
+
+    plan = plan_of(snapshot_of(release_condition=ReleaseCondition.SETTLED_TERMINAL))
+    cancelled = {OCC_A: OccurrenceOutcome.CANCELLED}
+
+    def report(settlements):  # type: ignore[no-untyped-def]
+        return evaluate_readiness(consumer_view(), plan, cancelled, evidence_of(), input_ok(),
+                                  now_ms=NOW_MS, settlements=settlements)
+
+    waiting = report({})
+    assert waiting.reason is ReadinessReason.WAITING_ORDER
+    assert "order_settlement_pending" in waiting.detail_codes
+    binding = plan.snapshot.binding_for_occurrence(OCC_A)
+    settled = SettledTerminalOccurrence(
+        mission_id=str(plan.mission_id), plan_revision=int(plan.plan_revision), occurrence_id=str(OCC_A),
+        contract_revision=int(binding.contract_revision), dispatch_generation=int(binding.dispatch_generation),
+        outcome=str(OccurrenceOutcome.CANCELLED), source_digest="0" * 64)
+    assert report({OCC_A: settled}).reason is not ReadinessReason.WAITING_ORDER
+    # a fact taken under another dispatch generation proves nothing about this one
+    stale = SettledTerminalOccurrence(
+        mission_id=settled.mission_id, plan_revision=settled.plan_revision, occurrence_id=settled.occurrence_id,
+        contract_revision=settled.contract_revision, dispatch_generation=settled.dispatch_generation + 1,
+        outcome=settled.outcome, source_digest=settled.source_digest)
+    assert report({OCC_A: stale}).reason is ReadinessReason.WAITING_ORDER
+
+
 def test_a_predecessor_with_no_observed_outcome_is_waiting_not_released() -> None:
     report = report_for(resolutions={})
     assert report.reason is ReadinessReason.WAITING_ORDER

@@ -7,23 +7,24 @@
 """
 from __future__ import annotations
 
-from test_htn_store import MISSION, acceptance, review_package, review_record, store  # noqa: F401  (fixture)
+from test_htn_store import _acceptance_of_official_review, reviewed  # noqa: F401  (fixture)
 
 from agent_orchestrator.assurance.codec import decode, fingerprint
 from agent_orchestrator.contracts.semantic_base import Provenance, TypedRefKind, content_hash_of
 from agent_orchestrator.orchestrator.root_review import acceptance_ref
-from agent_orchestrator.storage.htn_store import HtnStore
 
 
-def test_the_candidate_ref_names_the_stored_acceptance_body(store):  # type: ignore[no-untyped-def]
-    htn = HtnStore(store)
-    htn.insert_review_package(review_package())
-    htn.insert_review_record(review_record(), official=True)
-    htn.insert_acceptance(acceptance())
-    ref = acceptance_ref(store, "acceptance-1")
-    assert (ref.kind, ref.id, ref.revision, ref.produced_by) == (TypedRefKind.ACCEPTANCE, "acceptance-1", 0, Provenance.TOOL)
-    assert ref.content_hash == content_hash_of(acceptance().to_json())
+def test_the_candidate_ref_names_the_stored_acceptance_body(reviewed):  # type: ignore[no-untyped-def]
+    """在产品同形世界里跑完的任务上取真实验收（正式审阅记录只能经审阅导入写入，手工拼不出来）。"""
+    htn, mission_id = reviewed
+    store = htn._store
+    accepted = _acceptance_of_official_review(htn, mission_id)
+    identity = str(accepted.acceptance_id)
+    ref = acceptance_ref(store, identity)
+    assert (ref.kind, ref.id, ref.revision, ref.produced_by) == (TypedRefKind.ACCEPTANCE, identity, 0, Provenance.TOOL)
+    assert ref.content_hash == content_hash_of(accepted.to_json())
     # ... which is exactly how the assurance side pins the same row for the reviewer's evidence.
-    row = store.connection.execute("SELECT acceptance_json FROM acceptances WHERE acceptance_id='acceptance-1'").fetchone()
+    row = store.connection.execute(
+        "SELECT acceptance_json FROM acceptances WHERE acceptance_id=?", (identity,)).fetchone()
     assert ref.content_hash == fingerprint(decode(row[0]))
-    assert ref.content_hash != content_hash_of("acceptance-1")  # the old placeholder
+    assert ref.content_hash != content_hash_of(identity)  # the old placeholder
