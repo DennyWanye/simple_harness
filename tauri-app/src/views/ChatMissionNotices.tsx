@@ -11,7 +11,14 @@ import { dark } from "../theme/components";
 import { asList as list, asRecord as record, asText as text, newRequestKey } from "../stores/missionsStore";
 import { MissionsChannelContext } from "./chatMission";
 
-type Notice = { notice_id: string; mission_id: string; status: string; status_zh: string; goal: string; stop_reason: string };
+type Settled = { operation: string; target: string; applied: boolean };
+type Notice = {
+  notice_id: string; mission_id: string; status: string; status_zh: string; goal: string; stop_reason: string;
+  /** 停下时还有几个对外操作结果不明（系统会继续核对）。 */
+  unresolved_actions: number;
+  /** 这条通知说的是停下后某个对外操作的核对结果。 */
+  action_settled: Settled | null;
+};
 
 const box: React.CSSProperties = {
   border: `1px solid ${tokens.color.accent.border}`,
@@ -51,6 +58,11 @@ function asNotice(value: unknown): Notice | null {
     status_zh: text(row.status_zh) || text(row.status),
     goal: text(row.goal),
     stop_reason: text(row.stop_reason),
+    unresolved_actions: Number(row.unresolved_actions) || 0,
+    action_settled: row.action_settled
+      ? { operation: text(record(row.action_settled).operation), target: text(record(row.action_settled).target),
+        applied: record(row.action_settled).applied === true }
+      : null,
   };
 }
 
@@ -123,8 +135,18 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         <div key={notice.notice_id} style={box} data-testid={`chat-notice-${notice.notice_id}`}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* 目标原文可能很长：只摆一行，悬停看全文。 */}
-            <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
-            {notice.status === "FAILED" && notice.stop_reason ? <div style={muted}>停止原因：{notice.stop_reason}</div> : null}
+            {notice.action_settled ? (
+              <>
+                <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务的对外操作有结果了：{notice.goal || notice.mission_id}</div>
+                <div style={muted}>{`${notice.action_settled.operation} ${notice.action_settled.target} 核对结果：${notice.action_settled.applied ? "已生效" : "未生效"}`}</div>
+              </>
+            ) : (
+              <>
+                <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
+                {notice.status === "FAILED" && notice.stop_reason ? <div style={muted}>停止原因：{notice.stop_reason}</div> : null}
+                {notice.unresolved_actions > 0 ? <div style={muted}>{`还有 ${notice.unresolved_actions} 个对外操作结果不明，系统会继续核对`}</div> : null}
+              </>
+            )}
           </div>
           <button type="button" style={button} disabled={busy[notice.notice_id] === true}
             onClick={() => acknowledge(notice.notice_id)}>已收到</button>

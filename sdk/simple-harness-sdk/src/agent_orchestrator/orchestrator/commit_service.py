@@ -1467,6 +1467,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 return mission
             report = dict(mission.final_report or {})
             report.update(self._ledger.usage_flags(mission_id))
+            self._note_unresolved_actions(mission_id, report)
             updated = next_mission(
                 mission,
                 MissionStatus.CANCELLED,
@@ -1499,6 +1500,7 @@ class CommitService(ProtectedTailCommitsMixin,
             if unbound:
                 report["tasks_without_terminal_record"] = unbound
             report.update(self._ledger.usage_flags(mission_id))
+            self._note_unresolved_actions(mission_id, report)
             failed = next_mission(
                 mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
             )
@@ -1512,6 +1514,21 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             self._assured_terminal_notice(mission_id, final, failed.version)
             return failed
+
+    def _note_unresolved_actions(self, mission_id: str, report: dict[str, Any]) -> None:
+        """A stopped Mission's report says which actions left our hands with no known
+        outcome; reconciliation goes on after the stop and says when each one is known
+        (HTN 一致性补改 H-2)."""
+        from ..runtime.operation_reconciliation import action_outcome_unresolved
+
+        rows = [{"action_key": str(action["action_key"]), "action_id": str(action.get("action_id") or ""),
+                 "operation": str(action.get("operation") or ""), "target": str(action.get("target") or ""),
+                 "state": str(action.get("state") or "")}
+                for action in self._store.list_actions(mission_id)
+                if action_outcome_unresolved(self._store, action)]
+        if rows:
+            report["unresolved_actions"] = rows
+            report["unresolved_actions_note"] = "这些对外操作已经交出、结果还不明；系统会继续核对，有结果再通知"
 
     def _cascade_stop(self, mission_id: str, *, skip_task: str | None) -> list[str]:
         """D3-13': every READY / ACTIVE / VERIFYING Task (except ``skip_task``) is
@@ -3327,6 +3344,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 "tasks": self._task_reports(mission.id),
             }
             report.update(self._ledger.usage_flags(mission.id))
+            self._note_unresolved_actions(mission.id, report)
             done = next_mission(
                 mission, MissionStatus.FAILED, stop_reason=str(stop_reason), final_report=report
             )

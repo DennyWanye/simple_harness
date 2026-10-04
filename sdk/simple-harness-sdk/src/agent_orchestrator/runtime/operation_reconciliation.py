@@ -157,6 +157,21 @@ def validate_evidence(
     return data
 
 
+def action_outcome_unresolved(store: Any, action: Mapping[str, Any]) -> bool:
+    """Whether nobody knows yet if this action took effect outside: it left our hands with
+    no outcome (HANDED_OFF / UNKNOWN), or an operation-linked one failed after leaving our
+    hands with no stored proof that it did not happen.  The one reading behind a stopped
+    Mission's ``unresolved_actions`` and behind "its result is in now" (H-2)."""
+    state = action.get("state")
+    if state in {"HANDED_OFF", "UNKNOWN"}:
+        return True
+    if state != "FAILED" or int(action.get("handoffs") or 0) < 1:
+        return False
+    if PlanningAdmissionStore(store).get_operation_action_link_for_action(str(action["action_key"])) is None:
+        return False
+    return not stored_negative_proof(store, action)
+
+
 def stored_negative_proof(
     store: Any, action: Mapping[str, Any], link: Mapping[str, Any] | None = None
 ) -> bool:

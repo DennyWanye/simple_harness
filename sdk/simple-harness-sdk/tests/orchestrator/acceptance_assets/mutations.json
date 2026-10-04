@@ -742,6 +742,28 @@
     "tests/orchestrator/full_target/assurance_exec/test_review_reply_instructions.py::test_the_weight_of_a_criterion_is_judged_from_its_own_words"
    ],
    "note": "审阅员提示词删掉按原话判轻重的判据"
+  },
+  {
+   "id": "H-02",
+   "source": "HTN 一致性补改 H-2",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "        if rows:\n            report[\"unresolved_actions\"] = rows\n",
+   "replacement": "        if False:\n            report[\"unresolved_actions\"] = rows\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known"
+   ],
+   "note": "取消不写结果不明的对外操作"
+  },
+  {
+   "id": "H-02b",
+   "source": "HTN 一致性补改 H-2",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "        self._notice_actions_settled_after_stop()\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known"
+   ],
+   "note": "任务停下后对外操作有了结果也不通知"
   }
  ]
 }

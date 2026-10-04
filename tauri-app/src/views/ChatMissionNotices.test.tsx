@@ -53,6 +53,26 @@ describe("主对话里的后台任务结束通知", () => {
     expect(fake.sent.filter((m) => m.type === "mission_notices").length).toBe(2);
   });
 
+  it("停下时有结果不明的对外操作就写明；之后核对出结果单独一张卡说已生效还是未生效", () => {
+    const fake = fakeChannel();
+    render(
+      <MissionsChannelContext.Provider value={fake.channel as never}>
+        <ChatMissionNotices />
+      </MissionsChannelContext.Provider>,
+    );
+    const first = fake.sent.find((m) => m.type === "mission_notices")!;
+    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: [
+      { notice_id: "ev-3", mission_id: "m-3", status: "CANCELLED", status_zh: "已取消", goal: "写周报并发布", unresolved_actions: 1 },
+      { notice_id: "ev-4", mission_id: "m-3", status: "CANCELLED", status_zh: "已取消", goal: "写周报并发布", unresolved_actions: 1,
+        action_settled: { operation: "publish", target: "reports/weekly.md", applied: false } },
+    ] } });
+    expect(screen.getByText("后台任务已取消：写周报并发布")).toBeTruthy();
+    expect(screen.getByText("还有 1 个对外操作结果不明，系统会继续核对")).toBeTruthy();
+    expect(screen.getByText("后台任务的对外操作有结果了：写周报并发布")).toBeTruthy();
+    expect(screen.getByText("publish reports/weekly.md 核对结果：未生效")).toBeTruthy();
+    expect(screen.getAllByText(/结果不明/).length).toBe(1);
+  });
+
   it("确认失败时卡片留着并提示", () => {
     const fake = fakeChannel();
     render(

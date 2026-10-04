@@ -218,15 +218,10 @@ class ActionExecutor:
     def _failed_unproven(self, action: Mapping[str, Any]) -> bool:
         """FAILED, handed off at least once, operation-linked, no stored proof, and not
         already waiting for a person."""
-        if action.get("state") != "FAILED" or int(action.get("handoffs") or 0) < 1 or action.get("needs_human"):
-            return False
-        from ..storage.planning_admission_store import PlanningAdmissionStore
-        from .operation_reconciliation import stored_negative_proof
+        from .operation_reconciliation import action_outcome_unresolved
 
-        store = self._commit.store
-        if PlanningAdmissionStore(store).get_operation_action_link_for_action(str(action["action_key"])) is None:
-            return False
-        return not stored_negative_proof(store, action)
+        return (action.get("state") == "FAILED" and not action.get("needs_human")
+                and action_outcome_unresolved(self._commit.store, action))
 
     async def reconcile_one(self, action_key: str, *, allow_rehandoff: bool = False) -> dict[str, Any] | None:
         """Observe one exact Action; TaskGraph convergence never re-sends it."""

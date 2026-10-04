@@ -357,6 +357,72 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
     asyncio.run(case())
 
 
+def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known(tmp_path, monkeypatch):
+    """HTN 一致性补改 H-2：发布交出去了、结果不明（链接成功后才报错，等人裁定），这时人取消任务——
+    最终报告如实列出这个结果不明的发布、并说系统会继续核对；之后人裁定"已生效"，系统经同一条
+    通知路径再报一次"核对结果：已生效"，只报一次。
+
+    **改坏检验**（H-02）：取消不写未决动作 → 变红。
+    """
+    import agent_orchestrator.runtime.connectors_publish as connectors_publish
+    from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
+
+    real_link = os.link
+    linked = {"n": 0}
+
+    def link(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        real_link(src, dst, **kwargs)
+        if "dst_dir_fd" in kwargs and str(dst).startswith("weekly."):
+            linked["n"] += 1
+            if linked["n"] == 1:
+                raise OSError(5, "Input/output error (the link applied, its reply was lost)")
+
+    monkeypatch.setattr(connectors_publish.os, "link", link)
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + TARGET, PUBLISH],
+                                       "idempotency_key": "cancel-unsettled"})["mission_id"]
+            await world.drain()
+            _confirm_completion(world, mission_id)
+            card = await _until_card(world, mission_id, 0)
+            world.control.decide(card["request_id"], "approve")
+            for _ in range(10):
+                await world.drain(timeout=5)
+                if any(a.get("needs_human") for a in world.store.list_actions(mission_id)):
+                    break
+            [action] = world.store.list_actions(mission_id)
+            assert action["state"] in {"UNKNOWN", "FAILED"} and action["needs_human"], action
+
+            world.control.cancel(mission_id)
+            await world.drain()
+            report = world.store.get_mission(mission_id).final_report
+            assert [(row["action_key"], row["operation"], row["target"], row["state"])
+                    for row in report.get("unresolved_actions") or ()] == [
+                (action["action_key"], action["operation"], action["target"], action["state"])]
+            assert "继续核对" in str(report.get("unresolved_actions_note"))
+            assert not [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
+
+            world.control.resolve_unknown(action["action_key"], outcome="succeeded", basis="我去发布目录看过，周报在")
+            for _ in range(3):
+                await world.drain()
+            settles = [e for e in world.store.list_events(mission_id) if e.type == ACTION_SETTLED_AFTER_STOP]
+            assert len(settles) == 1, settles
+            [settled] = settles
+            assert settled.payload["applied"] is True and settled.payload["state"] == "SUCCEEDED"
+            assert settled.payload["target"] == action["target"]
+            # 经同一条通知路径送到 Host（通知的事件就是这条核对结果）
+            assert [n for n in world.notices if n["event_id"] == settled.id]
+
+    asyncio.run(case())
+
+
 @pytest.mark.replay_audit_exempt("用例直接改动作行（清掉转人工标记）造'发布器已不在'的局面")
 def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_path):
     """核验阻断项（2026-10-03）：失败而没查清的发布，发布器已不在（目录撤销授权、重启后没接）时，

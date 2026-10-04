@@ -40,6 +40,7 @@ from .projection import (
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from .storage_usage import StorageUsage
 from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS
+from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
 
 from .runtime_profile import (
     ONLY_DEEPSEEK_REASON,
@@ -67,6 +68,19 @@ class OrchestrationRequestError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def _notice_line(row: Mapping[str, Any]) -> str:
+    """One line of the main Agent's notice context: a Mission that ended, or an outside
+    action of a stopped Mission whose result is known now (一致性补改 H-2)."""
+    head = f"- mission_id={row['mission_id']} status={row['status']} goal={row['goal'][:80]!r}"
+    settled = row.get("action_settled")
+    if settled:
+        return (head + f" action_checked={settled['operation']} {settled['target']}"
+                f" result={'applied' if settled['applied'] else 'not_applied'}")
+    return (head + (f" stop_reason={row['stop_reason']}" if row["stop_reason"] else "")
+            + (f" unresolved_actions={row['unresolved_actions']} (outcome unknown; the system keeps checking)"
+               if row.get("unresolved_actions") else ""))
 
 
 def backoff_delay(failures: int, maximum: float) -> float:
@@ -1233,13 +1247,23 @@ class OrchestrationService:
             if mission is None:
                 continue
             status = str(getattr(mission.status, "value", mission.status))
-            rows.append({
+            row = {
                 **notice,
                 "status": status,
                 "status_zh": _STATUS_ZH.get(status, status),
                 "goal": str(mission.goal or "")[:200],
                 "stop_reason": None if mission.stop_reason is None else str(mission.stop_reason),
-            })
+                "unresolved_actions": len((mission.final_report or {}).get("unresolved_actions") or ()),
+            }
+            # 一致性补改 H-2：通知的事件若是"停下后对外操作有了结果"，卡片说的是那个结果
+            found = self._orchestrator.store.connection.execute(
+                "SELECT type, payload_json FROM events WHERE event_id=?", (notice["notice_id"],)).fetchone()
+            if found is not None and found[0] == ACTION_SETTLED_AFTER_STOP:
+                payload = json.loads(found[1])
+                row["action_settled"] = {"operation": str(payload.get("operation") or ""),
+                                         "target": str(payload.get("target") or ""),
+                                         "applied": payload.get("applied") is True}
+            rows.append(row)
         return rows
 
     def ack_notice(self, body: Mapping[str, Any]) -> dict[str, Any]:
@@ -1268,11 +1292,7 @@ class OrchestrationService:
             return ""
         if not pending:
             return ""
-        lines = [
-            f"- mission_id={row['mission_id']} status={row['status']} goal={row['goal'][:80]!r}"
-            + (f" stop_reason={row['stop_reason']}" if row["stop_reason"] else "")
-            for row in pending[-limit:]
-        ]
+        lines = [_notice_line(row) for row in pending[-limit:]]
         more = len(pending) - len(lines)
         return ("\nHost task notices (background tasks that ended; the user has not acknowledged them "
                 "in this chat yet; use mission_status for details and tell the user when relevant):\n"
