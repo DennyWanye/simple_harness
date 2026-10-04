@@ -103,10 +103,21 @@ def test_a_saved_goal_review_is_taken_up_again_without_asking_the_reviewer_twice
     asyncio.run(case())
 
 
+#: 发布服务真被调用的次数（跨崩前、重开后两个世界累计）
+CALLS = {"publish": 0}
+
+
 def _publishing(tmp_path: Path, provider: LayeredScriptedProvider):  # type: ignore[no-untyped-def]
     published = tmp_path / "published"
     published.mkdir(exist_ok=True)
     connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+    execute = connector.execute
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        CALLS["publish"] += 1
+        return execute(*args, **kwargs)
+
+    connector.execute = counted  # type: ignore[method-assign]
     policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
     return product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
                          deployment_policy=policy)
@@ -149,7 +160,10 @@ def test_a_publish_cut_off_midway_is_settled_under_its_own_identity(tmp_path, po
     用原来那个动作再交一次；外部已生效的那次，查到原来那份，不再发。"""
 
     async def case():
+        CALLS["publish"] = 0
         mission_id = await _crash_while_publishing(tmp_path, point)
+        # 调用前就没了的那次一次没调；外部已生效的那次调过一次
+        assert CALLS["publish"] == (0 if point == "after_handoff_before_call" else 1)
         async with _publishing(tmp_path, LayeredScriptedProvider()) as world:
             before = [str(a["action_key"]) for a in world.store.list_actions(mission_id)]
             assert len(before) == 1
@@ -159,6 +173,7 @@ def test_a_publish_cut_off_midway_is_settled_under_its_own_identity(tmp_path, po
             assert [str(a["action_key"]) for a in actions] == before
             assert str(actions[0]["state"]) == "SUCCEEDED"
         assert len(_published(tmp_path)) == 1
+        assert CALLS["publish"] == 1  # 前后合计只真调了一次：没发出去的补发一次，已生效的不再发
 
     asyncio.run(case())
 

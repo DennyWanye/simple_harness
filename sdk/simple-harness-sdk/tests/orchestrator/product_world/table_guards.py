@@ -15,6 +15,18 @@ import pytest
 IMMUTABLE = ("taskgraph_policy_bindings", "taskgraph_revision_records", "taskgraph_member_pins",
              "taskgraph_method_pins", "taskgraph_demand_refs", "taskgraph_attempt_inputs",
              "taskgraph_convergence_targets")
+#: 跨任务插入由哪条守护拒绝（``taskgraph_policy_bindings`` 没有插入守护，一个任务一行，靠唯一约束）
+INSERT_GUARD = {
+    "taskgraph_policy_bindings": "",
+    "taskgraph_revision_records": "TG_REVISION_EVENT_MISMATCH",
+    "taskgraph_member_pins": "TG_PIN_IDENTITY_MISMATCH",
+    "taskgraph_method_pins": "TG_METHOD_IDENTITY_MISMATCH",
+    "taskgraph_demand_refs": "TG_DEMAND_IDENTITY_MISMATCH",
+    "taskgraph_attempt_inputs": "TG_ATTEMPT_IDENTITY_MISMATCH",
+    "taskgraph_convergence_jobs": "TG_CONVERGENCE_IDENTITY_MISMATCH",
+    "taskgraph_convergence_targets": "TG_TARGET_IDENTITY_MISMATCH",
+    "taskgraph_followups": "TG_FOLLOWUP_OWNER_MISMATCH",
+}
 #: 可以推进状态、但身份不能改的表：表名 → 一个身份列
 VERSIONED = {"taskgraph_convergence_jobs": "candidate_hash", "taskgraph_followups": "payload_hash"}
 
@@ -34,7 +46,7 @@ def check_table_guards(connection: sqlite3.Connection, mine: str, other: str, ta
         # 1. 原样改挂到另一个任务名下：身份对不上（触发器）或撞主键 / 外键
         moved = dict(row, mission_id=other)
         columns = ", ".join(moved)
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(sqlite3.IntegrityError, match=INSERT_GUARD[table]):  # 是那条守护拒的，不是碰巧撞键
             connection.execute(f"INSERT INTO {table} ({columns}) VALUES ({', '.join('?' for _ in moved)})",
                                tuple(moved.values()))
         # 2. 改、删

@@ -68,7 +68,10 @@ def test_process_exit_reuses_original_reply_and_commit_identity(tmp_path, mode, 
             raw = read_nofollow(loop.assembled.workspaces.artifact_store.path_for(source['raw_artifact_ref']))
             assert hashlib.sha256(raw).hexdigest() == source['raw_output_hash'] == source['raw_artifact_ref']
             before = loop.store.connection.total_changes
-            await loop._collect_plan_decision(intent, None, mission, raw.decode('utf-8'), dispatch)
+            try:
+                await loop._collect_plan_decision(intent, None, mission, raw.decode('utf-8'), dispatch)
+            except Exception as error:  # 原回复再送到一次必须是安静的：认出已提交过，不再走一遍提交
+                raise AssertionError(f'redelivering the original reply was not quiet: {error!r}') from error
             if committed:
                 assert loop.store.connection.total_changes == before
             record = TaskGraphStore(loop.store).read_revision(mission.id, 1).record

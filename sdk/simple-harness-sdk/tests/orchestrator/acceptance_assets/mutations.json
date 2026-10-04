@@ -729,12 +729,12 @@
    "id": "M11",
    "source": "TaskGraph 代码级计划 §15",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "                        command_id=f\"plan:{intent.intent_id}\",\n                        source={\"intent_id\": intent.intent_id, \"agent_id\": intent.agent_id},\n                        owner=self._owner,",
-   "replacement": "                        command_id=f\"plan:{intent.intent_id}:{__import__('time').time_ns()}\",\n                        source={\"intent_id\": intent.intent_id, \"agent_id\": intent.agent_id},\n                        owner=self._owner,",
+   "original": "                str(PlanningDecisionStatus.NO_STATE_CHANGE),\n                str(PlanningDecisionStatus.COMMITTED),\n            }:\n                # Internal collector replay",
+   "replacement": "                str(PlanningDecisionStatus.NO_STATE_CHANGE),\n            }:\n                # Internal collector replay",
    "tests": [
     "tests/orchestrator/full_target/taskgraph_exec/test_process_recovery.py::test_process_exit_reuses_original_reply_and_commit_identity"
    ],
-   "note": "回执丢失另起新命令（场景 C03）：计划提交命令号每次现造，重启后对不上原提交身份"
+   "note": "回执丢失另起新命令（场景 C03）：重开后原回复再次送到时，不认\"这条决定已经提交过\"，又走一遍提交"
   },
   {
    "id": "M12",
@@ -977,6 +977,18 @@
     "tests/orchestrator/product_world/test_carried_review.py::test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts"
    ],
    "note": "裁决回执的对象写成任务而不是结果：人判通过后使用凭证不认，新版验收写不出"
+  },
+  {
+   "id": "M07b",
+   "source": "TaskGraph 代码级计划 §15（M07 的另一半，独立核验补）",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "    return frozenset(dropped - surviving)\n",
+   "replacement": "    return frozenset(dropped)\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_shared_steps.py::test_the_branch_that_reuses_a_step_can_change_its_method_and_keep_sharing_it",
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
+   ],
+   "note": "按旧做法批量取消（场景 R01）：被退休做法的孩子一律离开计划，连留下的做法还持有的共用步骤也带走"
   }
  ]
 }

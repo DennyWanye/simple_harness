@@ -62,10 +62,13 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
             assert approved["request_state"] == "GRANTED", approved
             assert row["status"] == "COMMIT_REJECTED", row
             # 被拒的改计划没有留下任何东西：没有新计划、没有新派发、没有预留被放掉。人批准的那次发布
-            # 是另一件事（它的交接照常发生），所以对外交接不在这里比。
-            after = safety_facts(round_.loop.store, round_.mission_id)
-            assert {k: v for k, v in after.items() if k != "external_handoffs"} == {
-                k: v for k, v in before.items() if k != "external_handoffs"}
+            # 是另一件事（它的交接与它那条预留照常发生），所以这两样不在这里比。
+            def without_the_publish(facts):  # type: ignore[no-untyped-def]
+                return {**{k: v for k, v in facts.items() if k != "external_handoffs"},
+                        "reservations": [row for row in facts["reservations"]
+                                         if not row[0].startswith("reservation-action:")]}
+
+            assert without_the_publish(safety_facts(round_.loop.store, round_.mission_id)) == without_the_publish(before)
             assert "TASKGRAPH_PLAN_SOURCE_CHANGED" in json.dumps(row["detail"]), row
             assert round_.plan_revision() == 1
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]

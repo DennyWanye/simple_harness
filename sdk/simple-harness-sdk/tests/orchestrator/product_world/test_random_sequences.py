@@ -31,6 +31,13 @@ def _quick(monkeypatch):
     import agent_orchestrator.orchestrator.event_handler as event_handler
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+    # 已结束任务悬着的预留，结束满 15 分钟后按上限计入——这是按时间到点的收尾，新进程一启动就做一遍。
+    # 长跑超过 15 分钟时，它会正好落在"关库重开"两次快照之间，被对照物②当成"重开改了东西"
+    # （联测 2000 步第 3 个种子第 449 步的误报）。这条收尾另有用例（test_round_faults、test_late_usage），
+    # 这里把时限调到跑不到，只留"用量未知不放预留"那条不变式。
+    import agent_orchestrator.orchestrator.accounting_recovery as accounting_recovery
+
+    monkeypatch.setattr(accounting_recovery, "ENDED_MISSION_RECHECK_SECONDS", 1e9)
 
 
 @pytest.mark.parametrize("seed", SEEDS)
