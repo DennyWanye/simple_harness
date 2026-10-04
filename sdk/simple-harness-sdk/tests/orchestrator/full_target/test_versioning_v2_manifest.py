@@ -297,6 +297,9 @@ def index_of(
     return AcceptedOutputsIndex(
         outputs=tuple(outputs),
         completed_producers=frozenset(completed or {item.producer_occurrence for item in outputs}),
+        # 现行授权的那一版（产品里由验收投影给出）：这里每个端口只有一版
+        authorized_revisions={(item.producer_occurrence, item.output_port): item.source_revision
+                              for item in outputs},
     )
 
 
@@ -503,7 +506,7 @@ def _two_hashes_at_one_place() -> InputManifest:
 
 def _resolved(consumer, snapshot, produced, requirement_id, input_port):
     from agent_orchestrator.artifacts.input_bindings import ResolvedInputBinding
-    from agent_orchestrator.contracts.htn import BoundInput, SourceRevisionPolicy
+    from agent_orchestrator.contracts.htn import BoundInput
 
     return ResolvedInputBinding(
         binding_id=f"bind-{requirement_id}",
@@ -528,7 +531,6 @@ def _resolved(consumer, snapshot, produced, requirement_id, input_port):
         read_policy=ASSURANCE,
         freshness_policy=FRESHNESS,
         disclosure_scope="mission",
-        source_revision_policy=SourceRevisionPolicy.PINNED,
     )
 
 

@@ -74,7 +74,6 @@ from agent_orchestrator.contracts.htn import (
     PortCardinality,
     PortOrdering,
     PortSpec,
-    SourceRevisionPolicy,
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
@@ -150,7 +149,6 @@ def requirement(
     output_port: str = "report",
     input_port: str = "report",
     req_schema: VersionedRef = REPORT_SCHEMA,
-    revision_policy: SourceRevisionPolicy = SourceRevisionPolicy.PINNED,
     consumer: OccurrenceId = CONSUMER_OCC,
 ) -> DataRequirement:
     return DataRequirement(
@@ -162,7 +160,6 @@ def requirement(
         schema_ref=req_schema,
         assurance_policy_ref="assurance-standard",
         freshness_policy_ref="freshness-standard",
-        source_revision_policy=revision_policy,
     )
 
 
@@ -249,12 +246,18 @@ def index_of(
         if completed is not None
         else frozenset(item.producer_occurrence for item in outputs)
     )
+    if authorized is None:
+        # 一个端口上只有一版通过验收时，它就是现行授权的那一版（产品里由验收投影给出）
+        seen: dict[tuple[str, str], set[str]] = {}
+        for item in outputs:
+            seen.setdefault((str(item.producer_occurrence), item.output_port), set()).add(item.source_revision)
+        authorized = {key: next(iter(revisions)) for key, revisions in seen.items() if len(revisions) == 1}
     return AcceptedOutputsIndex(
         outputs=tuple(outputs),
         completed_producers=producers,
         authorized_revisions={
             (OccurrenceId(occ), port_key): revision
-            for (occ, port_key), revision in (authorized or {}).items()
+            for (occ, port_key), revision in authorized.items()
         },
     )
 
@@ -398,11 +401,12 @@ def test_single_port_is_not_ambiguous_when_the_revision_policy_selects_one() -> 
         index_of(
             output(producer="occ-a", revision="r1", content="v1"),
             output(producer="occ-a", revision="r2", content="v2"),
+            authorized={("occ-a", "report"): "r2"},
         ),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
+        policy=default_policy(),
     )
     assert result.ok
-    assert only(result).source_revision == "r1"
+    assert only(result).source_revision == "r2"
 
 
 # --------------------------------------------------------------------------------------
@@ -735,31 +739,14 @@ def two_revisions() -> AcceptedOutputsIndex:
     )
 
 
-def test_pinned_keeps_the_old_revision_when_a_newer_one_is_authorised() -> None:
-    result = resolve(
-        consumer_binding(port("report")),
-        [requirement("req-1", producer="occ-a", revision_policy=SourceRevisionPolicy.PINNED)],
-        two_revisions(),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
-    )
-    assert result.ok
-    binding = only(result)
-    assert binding.source_revision == "r1"
-    assert binding.requires_reacceptance is False
-
-
 def test_follow_authorized_revision_takes_the_current_authorised_one() -> None:
     result = resolve(
         consumer_binding(port("report")),
         [
-            requirement(
-                "req-1",
-                producer="occ-a",
-                revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION,
-            )
+            requirement("req-1", producer="occ-a")
         ],
         two_revisions(),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
+        policy=default_policy(),
     )
     assert result.ok
     assert only(result).source_revision == "r2"
@@ -769,32 +756,12 @@ def test_follow_authorized_revision_flags_reacceptance_when_the_revision_moved()
     result = resolve(
         consumer_binding(port("report")),
         [
-            requirement(
-                "req-1",
-                producer="occ-a",
-                revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION,
-            )
+            requirement("req-1", producer="occ-a")
         ],
         two_revisions(),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
+        policy=default_policy(),
     )
     assert only(result).requires_reacceptance is True
-
-
-def test_follow_authorized_revision_does_not_flag_reacceptance_when_unchanged() -> None:
-    result = resolve(
-        consumer_binding(port("report")),
-        [
-            requirement(
-                "req-1",
-                producer="occ-a",
-                revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION,
-            )
-        ],
-        two_revisions(),
-        policy=default_policy(pinned_revisions={"req-1": "r2"}),
-    )
-    assert only(result).requires_reacceptance is False
 
 
 def test_a_first_follow_binding_is_flagged_for_reacceptance() -> None:
@@ -803,11 +770,7 @@ def test_a_first_follow_binding_is_flagged_for_reacceptance() -> None:
     result = resolve(
         consumer_binding(port("report")),
         [
-            requirement(
-                "req-1",
-                producer="occ-a",
-                revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION,
-            )
+            requirement("req-1", producer="occ-a")
         ],
         two_revisions(),
     )
@@ -815,67 +778,27 @@ def test_a_first_follow_binding_is_flagged_for_reacceptance() -> None:
     assert only(result).requires_reacceptance is True
 
 
-def test_a_first_pinned_binding_is_not_flagged_for_reacceptance() -> None:
-    result = resolve(
-        consumer_binding(port("report")),
-        [requirement("req-1", producer="occ-a", revision_policy=SourceRevisionPolicy.PINNED)],
-        index_of(output(producer="occ-a", revision="r1")),
-    )
-    assert result.ok
-    assert only(result).requires_reacceptance is False
-
-
-def test_pinned_revision_that_is_no_longer_in_the_index_is_reported() -> None:
-    result = resolve(
-        consumer_binding(port("report")),
-        [requirement("req-1", producer="occ-a")],
-        two_revisions(),
-        policy=default_policy(pinned_revisions={"req-1": "r0"}),
-    )
-    assert result.manifest is None
-    assert ResolutionProblemKind.REVISION_NOT_AVAILABLE in result.kinds
-
-
-def test_the_revision_policy_is_recorded_on_the_binding() -> None:
-    for policy_value in SourceRevisionPolicy:
-        result = resolve(
-            consumer_binding(port("report")),
-            [requirement("req-1", producer="occ-a", revision_policy=policy_value)],
-            index_of(output(producer="occ-a", revision="r1"), authorized={("occ-a", "report"): "r1"}),
-            policy=default_policy(pinned_revisions={"req-1": "r1"}),
-        )
-        assert only(result).source_revision_policy is policy_value
-
-
 def test_follow_without_a_readable_authorised_revision_is_reported_not_guessed() -> None:
-    """阶段 D：跟随的输入读不到授权版本（比如同一端口上有两个都在计数的验收）→ 如实报
-    "版本不可用"，不在候选里任选、不取最新；钉住的输入此时用它钉的那一版。"""
+    """阶段 D：读不到授权版本（比如同一端口上有两个都在计数的验收）→ 如实报"版本不可用"，
+    不在候选里任选、不取最新。"""
 
     follow = resolve(
         consumer_binding(port("report")),
-        [requirement("req-1", producer="occ-a",
-                     revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION)],
-        index_of(output(producer="occ-a", revision="r1")),
+        [requirement("req-1", producer="occ-a")],
+        index_of(output(producer="occ-a", revision="r1"), authorized={}),
     )
     assert follow.manifest is None
     assert ResolutionProblemKind.REVISION_NOT_AVAILABLE in follow.kinds
-    pinned = resolve(
-        consumer_binding(port("report")),
-        [requirement("req-1", producer="occ-a", revision_policy=SourceRevisionPolicy.PINNED)],
-        index_of(output(producer="occ-a", revision="r1")),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
-    )
-    assert only(pinned).source_revision == "r1"
 
 
-def test_pinned_does_not_buy_a_way_past_revocation() -> None:
+def test_an_earlier_binding_does_not_buy_a_way_past_revocation() -> None:
     """TG §4.3: revocation, deletion and purpose limits are still checked now."""
 
     result = resolve(
         consumer_binding(port("report")),
         [requirement("req-1", producer="occ-a")],
         index_of(output(producer="occ-a", revision="r1", disclosure=DisclosureState.REVOKED)),
-        policy=default_policy(pinned_revisions={"req-1": "r1"}),
+        policy=default_policy(),
     )
     assert result.manifest is None
     assert ResolutionProblemKind.NOT_DISCLOSABLE in result.kinds

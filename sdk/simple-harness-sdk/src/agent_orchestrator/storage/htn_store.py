@@ -708,7 +708,7 @@ class HtnStore:
         self._insert(
             "INSERT INTO data_requirements(mission_id,plan_revision,requirement_id,"
             "producer_occurrence,output_port,consumer_occurrence,input_port,"
-            "source_revision_policy,requirement_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "requirement_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 mission,
                 number,
@@ -717,7 +717,6 @@ class HtnStore:
                 requirement.output_port,
                 str(requirement.consumer_occurrence),
                 requirement.input_port,
-                str(requirement.source_revision_policy),
                 canonical_json(requirement.to_json()),
                 self._store.now,
             ),

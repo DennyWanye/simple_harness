@@ -52,7 +52,6 @@ from ..contracts.htn import (
     PortCardinality,
     PortOrdering,
     PortSpec,
-    SourceRevisionPolicy,
     TaskRef,
     TaskSemanticBindingV1,
 )
@@ -66,11 +65,8 @@ from .paths import normalise_workspace_path
 
 
 class DisclosureState(StrEnum):
-    """TG §4.3: revocation, deletion and purpose limits are checked *now*.
-
-    ``PINNED`` pins a revision, never a permission — a pinned input whose source
-    was withdrawn is not readable because it used to be.
-    """
+    """TG §4.3: revocation, deletion and purpose limits are checked *now* — an input
+    whose source was withdrawn is not readable because it used to be."""
 
     DISCLOSABLE = "disclosable"
     REVOKED = "revoked"
@@ -310,8 +306,6 @@ class ResolutionPolicy:
         default_factory=SchemaCompatibilityRegistry
     )
     explicit_orders: tuple[ExplicitPortOrder, ...] = ()
-    #: requirement_id -> the revision this consumer is already bound to.
-    pinned_revisions: Mapping[str, str] = field(default_factory=dict)
     #: input ports on which speculative execution has been authorised.
     provisional_ports: frozenset[str] = frozenset()
     require_witness: bool = True
@@ -327,7 +321,6 @@ class ResolutionPolicy:
     allow_unknown_scope: bool = False
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "pinned_revisions", dict(self.pinned_revisions))
         object.__setattr__(self, "scope_epochs", dict(self.scope_epochs))
         object.__setattr__(self, "provisional_ports", frozenset(self.provisional_ports))
         object.__setattr__(self, "witness_purposes", frozenset(self.witness_purposes))
@@ -372,7 +365,6 @@ class ResolvedInputBinding:
     read_policy: str
     freshness_policy: str
     disclosure_scope: str
-    source_revision_policy: SourceRevisionPolicy
     converter_ref: str | None = None
     requires_reacceptance: bool = False
     provisional: bool = False
@@ -435,7 +427,6 @@ class ResolvedInputBinding:
             "read_policy": self.read_policy,
             "freshness_policy": self.freshness_policy,
             "disclosure_scope": self.disclosure_scope,
-            "source_revision_policy": str(self.source_revision_policy),
             "converter_ref": self.converter_ref,
             "requires_reacceptance": self.requires_reacceptance,
             "provisional": self.provisional,
@@ -588,39 +579,28 @@ def _select_by_revision(
     accepted: AcceptedOutputsIndex,
     policy: ResolutionPolicy,
 ) -> tuple[tuple[AcceptedOutput, ...], str | None, ResolutionProblem | None]:
-    """Narrow the candidates to the revision the source policy names.
+    """Narrow the candidates to the revision authorised now: every DATA edge follows
+    the acceptance that currently counts (TaskGraph 补全第五批：没有"钉住旧版本"）。"""
 
-    ``PINNED`` answers with the revision this consumer was already bound to, and a
-    newer accepted revision does not overrule it.  ``FOLLOW_AUTHORIZED_REVISION``
-    answers with whatever is authorised now, and says so by returning a target
-    that differs from the pin — which is what raises ``requires_reacceptance``.
-    """
-
-    pinned = policy.pinned_revisions.get(requirement.requirement_id)
     authorized = accepted.authorized_revision(
         requirement.producer_occurrence, requirement.output_port
     )
-    if requirement.source_revision_policy is SourceRevisionPolicy.PINNED:
-        # pinned to the revision this consumer first froze; before it has frozen any,
-        # the revision authorised now is the one it will pin
-        target = pinned if pinned is not None else authorized
-    else:
-        target = authorized
-        if target is None and candidates:
-            # 跟随的边读不到授权版本：报"来源不可用"，不在候选里任选、不取最新
-            return (
-                (),
-                None,
-                ResolutionProblem(
-                    kind=ResolutionProblemKind.REVISION_NOT_AVAILABLE,
-                    detail=(
-                        f"the authorised revision of {requirement.producer_occurrence}."
-                        f"{requirement.output_port} cannot be read"
-                    ),
-                    input_port=requirement.input_port,
-                    requirement_ids=(requirement.requirement_id,),
+    target = authorized
+    if target is None and candidates:
+        # 读不到授权版本：报"来源不可用"，不在候选里任选、不取最新
+        return (
+            (),
+            None,
+            ResolutionProblem(
+                kind=ResolutionProblemKind.REVISION_NOT_AVAILABLE,
+                detail=(
+                    f"the authorised revision of {requirement.producer_occurrence}."
+                    f"{requirement.output_port} cannot be read"
                 ),
-            )
+                input_port=requirement.input_port,
+                requirement_ids=(requirement.requirement_id,),
+            ),
+        )
     if target is None:
         # Nothing pins this input yet: every accepted revision is still a candidate,
         # and an ambiguity here is reported rather than resolved by recency.
@@ -948,8 +928,8 @@ def resolve_declared_inputs(
                     ResolutionProblem(
                         kind=ResolutionProblemKind.NOT_DISCLOSABLE,
                         detail=(
-                            f"{candidate.artifact_id} is {candidate.disclosure!s}; a pinned "
-                            "revision does not carry a permission forward"
+                            f"{candidate.artifact_id} is {candidate.disclosure!s}; an earlier "
+                            "binding does not carry a permission forward"
                         ),
                         input_port=requirement.input_port,
                         requirement_ids=(requirement.requirement_id,),
@@ -1013,11 +993,6 @@ def resolve_declared_inputs(
         for ordinal, (requirement, candidate, converter_ref, witness_id) in zip(
             ordinals, entries, strict=True
         ):
-            follows = (
-                requirement.source_revision_policy
-                is SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION
-            )
-            pin = policy.pinned_revisions.get(requirement.requirement_id)
             bindings.append(
                 ResolvedInputBinding(
                     binding_id=_binding_id(requirement, candidate, str(consumer.task_id)),
@@ -1042,14 +1017,10 @@ def resolve_declared_inputs(
                     read_policy=requirement.assurance_policy_ref,
                     freshness_policy=requirement.freshness_policy_ref,
                     disclosure_scope=candidate.disclosure_scope,
-                    source_revision_policy=requirement.source_revision_policy,
                     converter_ref=converter_ref,
-                    # A FOLLOW input that has never been pinned is *also* an input
-                    # change this consumer has not been accepted against: the first
-                    # binding is the first version, not a neutral starting point.
-                    requires_reacceptance=(
-                        follows and (pin is None or pin != candidate.source_revision)
-                    ),
+                    # Every binding follows the authorised revision, so each one is an
+                    # input this consumer has not been accepted against yet.
+                    requires_reacceptance=True,
                     provisional=candidate.provisional,
                     witness_id=witness_id,
                 )

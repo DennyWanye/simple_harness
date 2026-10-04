@@ -727,18 +727,6 @@ def data_flows(method: MethodContract) -> tuple[tuple[str, str, str, str], ...]:
     return tuple(out)
 
 
-def pinned_flows(method: MethodContract) -> frozenset[tuple[str, str, str, str]]:
-    """The DATA links the method declares pinned (``{"op": "output", ..., "pin": true}``)."""
-
-    return frozenset(
-        (node.step, node.port, step.local_id, name)
-        for step in method.steps
-        for name, argument in step.arguments.items()
-        for node in iter_values(argument)
-        if isinstance(node, OutputValue) and node.step != step.local_id and node.pin
-    )
-
-
 def describe_draft(draft: MethodInstanceDraft) -> str:
     """A short, deterministic description for diagnostics and journals."""
 
@@ -760,7 +748,6 @@ __all__ = (
     "SlotPlan",
     "child_task_bindings",
     "data_flows",
-    "pinned_flows",
     "derive_id",
     "describe_draft",
     "ground_method",

@@ -667,31 +667,6 @@ def test_an_unsupported_export_names_what_it_could_not_express() -> None:
     assert not export.supported
 
 
-def test_a_revision_following_data_policy_is_outside_the_fragment() -> None:
-    from agent_orchestrator.contracts.htn import SourceRevisionPolicy
-
-    _, _, bundle = code_delta()
-    requirement = bundle.delta.data_requirements[0]
-    following = type(requirement)(
-        requirement_id=requirement.requirement_id,
-        producer_occurrence=requirement.producer_occurrence,
-        output_port=requirement.output_port,
-        consumer_occurrence=requirement.consumer_occurrence,
-        input_port=requirement.input_port,
-        schema_ref=requirement.schema_ref,
-        assurance_policy_ref=requirement.assurance_policy_ref,
-        freshness_policy_ref=requirement.freshness_policy_ref,
-        source_revision_policy=SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION,
-    )
-    from dataclasses import replace
-
-    delta = replace(bundle.delta, data_requirements=(following,))
-    assert "revision-following-data" in unsupported_features(delta, network=bundle.network)
-
-
-# ==================================================================== generality
-
-
 def test_the_loader_does_not_name_a_domain() -> None:
     import agent_orchestrator.planning.htn.seed_methods.loader as loader
 

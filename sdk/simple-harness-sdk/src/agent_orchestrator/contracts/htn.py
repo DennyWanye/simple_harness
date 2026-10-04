@@ -210,13 +210,6 @@ class ObligationRelation(StrEnum):
     INDEPENDENT_AUTHORIZED = "independent_authorized"
 
 
-class SourceRevisionPolicy(StrEnum):
-    """TG §4.3: pinned historical input vs. follow-the-authorised-revision."""
-
-    PINNED = "PINNED"
-    FOLLOW_AUTHORIZED_REVISION = "FOLLOW_AUTHORIZED_REVISION"
-
-
 class PortCardinality(StrEnum):
     """TG §4.3: a single-valued port has exactly one binding; a set port is ordered."""
 
@@ -345,18 +338,13 @@ class ConstantValue:
 class OutputValue:
     step: str
     port: str
-    #: 阶段 D：这个输入固定用消费者第一次拿到的那一版；不写则每次新尝试跟随上游当前
-    #: 通过验收的那一版。
-    pin: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step", identifier(self.step, "value.output.step"))
         object.__setattr__(self, "port", identifier(self.port, "value.output.port"))
-        if type(self.pin) is not bool:
-            raise ContractError("value.output.pin must be a boolean")
 
     def to_json(self) -> dict[str, Any]:
-        return {"op": "output", "step": self.step, "port": self.port, **({"pin": True} if self.pin else {})}
+        return {"op": "output", "step": self.step, "port": self.port}
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,8 +397,8 @@ def parse_value(value: object, name: str, budget: StructureBudget) -> ValueExpr:
         data = fields_of(value, name, required=("op", "value"))
         return ConstantValue(value=data["value"])
     if op == "output":
-        data = fields_of(value, name, required=("op", "step", "port"), optional=("pin",))
-        return OutputValue(step=data["step"], port=data["port"], pin=data.get("pin", False))
+        data = fields_of(value, name, required=("op", "step", "port"))
+        return OutputValue(step=data["step"], port=data["port"])
     if op == "object":
         data = fields_of(value, name, required=("op", "fields"))
         raw = data["fields"]
@@ -1392,7 +1380,6 @@ class DataRequirement:
     schema_ref: VersionedRef
     assurance_policy_ref: str
     freshness_policy_ref: str
-    source_revision_policy: SourceRevisionPolicy = SourceRevisionPolicy.PINNED
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1424,13 +1411,6 @@ class DataRequirement:
             "freshness_policy_ref",
             identifier(self.freshness_policy_ref, "data.freshness_policy_ref"),
         )
-        object.__setattr__(
-            self,
-            "source_revision_policy",
-            enum_of(
-                SourceRevisionPolicy, self.source_revision_policy, "data.source_revision_policy"
-            ),
-        )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -1442,7 +1422,6 @@ class DataRequirement:
             "schema_ref": self.schema_ref.to_json(),
             "assurance_policy_ref": self.assurance_policy_ref,
             "freshness_policy_ref": self.freshness_policy_ref,
-            "source_revision_policy": str(self.source_revision_policy),
         }
 
     @classmethod
@@ -1460,7 +1439,6 @@ class DataRequirement:
                 "assurance_policy_ref",
                 "freshness_policy_ref",
             ),
-            optional=("source_revision_policy",),
         )
         return cls(
             requirement_id=data["requirement_id"],
@@ -1471,7 +1449,6 @@ class DataRequirement:
             schema_ref=VersionedRef.from_json(data["schema_ref"], f"{name}.schema_ref"),
             assurance_policy_ref=data["assurance_policy_ref"],
             freshness_policy_ref=data["freshness_policy_ref"],
-            source_revision_policy=data.get("source_revision_policy", SourceRevisionPolicy.PINNED),
         )
 
 
@@ -3450,7 +3427,6 @@ __all__ = (
     "ScopeEpochRead",
     "SemanticReadSet",
     "SideEffectKind",
-    "SourceRevisionPolicy",
     "TaskForm",
     "TaskRef",
     "TaskSemanticBindingV1",

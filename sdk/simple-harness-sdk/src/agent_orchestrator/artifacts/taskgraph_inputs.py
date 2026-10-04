@@ -7,7 +7,7 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.htn import BoundInput, OccurrenceId, SourceRevisionPolicy, TaskRef
+from ..contracts.htn import BoundInput, OccurrenceId, TaskRef
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import VersionedRef
 from .input_bindings import (
@@ -115,7 +115,6 @@ def decode_frozen_manifest(value: Mapping[str, Any]) -> InputManifest:
                 produced_schema_ref=VersionedRef.from_json(item["produced_schema_ref"]),
                 read_policy=_text(item["read_policy"]), freshness_policy=_text(item["freshness_policy"]),
                 disclosure_scope=_text(item["disclosure_scope"]),
-                source_revision_policy=SourceRevisionPolicy(item["source_revision_policy"]),
                 converter_ref=None if item["converter_ref"] is None else _text(item["converter_ref"]),
                 requires_reacceptance=_boolean(item["requires_reacceptance"]),
                 provisional=_boolean(item["provisional"]),

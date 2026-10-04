@@ -49,7 +49,6 @@ from ...contracts.htn import (
     ProposedPlanDelta,
     ReleaseCondition,
     ReusePolicy,
-    SourceRevisionPolicy,
     TaskForm,
     TaskSemanticBindingV1,
     condition_digest,
@@ -791,8 +790,6 @@ def unsupported_features(
         if feature not in features:
             features.append(feature)
 
-    for requirement in delta.data_requirements:
-        _note_data_feature(requirement, note)
     for constraint in delta.order_constraints:
         _note_order_feature(constraint, note)
     known = {spec.occurrence_id for spec in network.occurrences}
@@ -830,9 +827,6 @@ def unsupported_features(
     return tuple(features)
 
 
-def _note_data_feature(requirement: DataRequirement, note: Any) -> None:
-    if requirement.source_revision_policy is SourceRevisionPolicy.FOLLOW_AUTHORIZED_REVISION:
-        note("revision-following-data")
 
 
 def _note_order_feature(constraint: OrderConstraint, note: Any) -> None:

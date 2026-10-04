@@ -203,7 +203,6 @@ SOURCE_COLUMNS = {
         "output_port",
         "consumer_occurrence",
         "input_port",
-        "source_revision_policy",
         "requirement_json",
         "created_at",
     ),

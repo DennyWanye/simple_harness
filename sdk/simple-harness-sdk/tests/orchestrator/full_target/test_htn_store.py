@@ -65,7 +65,6 @@ from agent_orchestrator.contracts.htn import (
     ReusePolicy,
     ScopeEpochRead,
     SemanticReadSet,
-    SourceRevisionPolicy,
     TaskForm,
     admit_method,
 )
@@ -358,7 +357,6 @@ def data_requirement(*, requirement_id: str = "requirement-1") -> DataRequiremen
         schema_ref=vref("report-schema"),
         assurance_policy_ref="assurance-default",
         freshness_policy_ref="freshness-default",
-        source_revision_policy=SourceRevisionPolicy.PINNED,
     )
 
 

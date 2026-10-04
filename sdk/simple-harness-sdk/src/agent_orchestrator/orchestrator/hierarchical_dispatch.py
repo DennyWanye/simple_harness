@@ -1130,36 +1130,7 @@ class HierarchicalDispatch:
             policy,
             scope_epochs=self.scope_epochs(mission_id),
             now_ms=int(self.store.now * 1000) if now_ms is None else int(now_ms),
-            pinned_revisions=self._pinned_revisions(mission_id),
         )
-
-    def _pinned_revisions(self, mission_id: str) -> dict[str, str]:
-        """requirement id → the revision a *pinned* input stays on: the one its consumer
-        froze on its first Attempt (阶段 D).  Read from the immutable frozen input record;
-        an input whose consumer has not run yet has no entry."""
-        from ..contracts.htn import SourceRevisionPolicy
-
-        try:
-            network = self.network(mission_id)
-        except (GraphIntegrityError, ContractError, StoreError):
-            return {}
-        wanted = {(str(item.consumer_occurrence), item.input_port): item.requirement_id
-                  for item in network.data_requirements
-                  if item.source_revision_policy is SourceRevisionPolicy.PINNED}
-        if not wanted:
-            return {}
-        pinned: dict[str, str] = {}
-        for occurrence, raw in self.store.connection.execute(
-                "SELECT b.occurrence_id, m.manifest_json FROM taskgraph_attempt_inputs b"
-                " JOIN input_manifests m ON m.manifest_hash=b.manifest_hash"
-                " JOIN attempts a ON a.attempt_id=b.attempt_id"
-                " WHERE b.mission_id=? ORDER BY a.ordinal", (mission_id,)):
-            for binding in json.loads(raw).get("bindings", ()):
-                requirement = wanted.get((str(occurrence), str(binding.get("input_port"))))
-                revision = (binding.get("bound_input") or {}).get("source_revision")
-                if requirement is not None and revision is not None:
-                    pinned.setdefault(requirement, str(revision))
-        return pinned
 
     #: The purpose a witness must carry to license *binding an accepted output* as an
     #: input.  ``START`` because that is what the use is: starting this consumer's

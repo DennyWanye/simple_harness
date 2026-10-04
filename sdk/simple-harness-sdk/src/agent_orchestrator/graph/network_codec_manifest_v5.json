@@ -5,43 +5,43 @@
       "component": "OccurrenceSpec",
       "kind": "occurrence",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "TaskSemanticBindingV1",
       "kind": "task_semantics",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "MethodInstanceDraft",
       "kind": "method_instance",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "OrderConstraint",
       "kind": "order_constraint",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "DataRequirement",
       "kind": "data_requirement",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "TypedEdge",
       "kind": "typed_edge",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     },
     {
       "component": "ObligationCoverage",
       "kind": "obligation_coverage",
       "source_path": "agent_orchestrator/contracts/htn.py",
-      "source_sha256": "5d5deafb4167fc59b4883d0af10f16bd2dc30682dde3993ec729f2ee3177a7d4"
+      "source_sha256": "1309d28d4a7c985d069d7345cb46a946e23eebe4cdfc374ac93e7c7bccb750c2"
     }
   ],
   "supporting_sources": [

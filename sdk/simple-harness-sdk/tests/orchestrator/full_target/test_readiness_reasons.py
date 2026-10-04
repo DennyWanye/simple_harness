@@ -83,7 +83,6 @@ from agent_orchestrator.contracts.htn import (
     ReleaseCondition,
     ScopeEpochRead,
     SemanticReadSet,
-    SourceRevisionPolicy,
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
@@ -404,7 +403,6 @@ def resolved_binding(*, provisional: bool = False) -> ResolvedInputBinding:
         read_policy="read-standard",
         freshness_policy="freshness-standard",
         disclosure_scope=SCOPE,
-        source_revision_policy=SourceRevisionPolicy.PINNED,
         provisional=provisional,
         witness_id="w-start",
     )

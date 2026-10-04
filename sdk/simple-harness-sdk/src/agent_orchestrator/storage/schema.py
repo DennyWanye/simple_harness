@@ -1275,6 +1275,104 @@ CREATE TRIGGER assurance_source_verifications_delete AFTER DELETE ON verificatio
  END;
 """
 
+DDL_V43 = """
+-- TaskGraph 补全第五批：删"钉住旧版本"。数据边一律跟随现行算数的验收，表里不再有
+-- source_revision_policy 这一列；旧行的 JSON 里同名键一并去掉。表重建，索引与触发器原样重建。
+DROP TRIGGER assurance_source_data_requirements_insert;
+DROP TRIGGER assurance_source_data_requirements_update;
+DROP TRIGGER assurance_source_data_requirements_delete;
+DROP TRIGGER data_requirements_immutable_update;
+DROP TRIGGER data_requirements_immutable_delete;
+CREATE TABLE data_requirements_v43 (
+ mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+ plan_revision INTEGER NOT NULL,
+ requirement_id TEXT NOT NULL,
+ producer_occurrence TEXT NOT NULL,
+ output_port TEXT NOT NULL,
+ consumer_occurrence TEXT NOT NULL,
+ input_port TEXT NOT NULL,
+ requirement_json TEXT NOT NULL,
+ created_at REAL NOT NULL,
+ PRIMARY KEY(mission_id, plan_revision, requirement_id),
+ FOREIGN KEY(mission_id, plan_revision) REFERENCES plan_revisions(mission_id, revision)
+) STRICT;
+INSERT INTO data_requirements_v43(mission_id,plan_revision,requirement_id,producer_occurrence,output_port,consumer_occurrence,input_port,requirement_json,created_at)
+ SELECT mission_id,plan_revision,requirement_id,producer_occurrence,output_port,consumer_occurrence,input_port,json_remove(requirement_json,'$.source_revision_policy'),created_at FROM data_requirements;
+DROP TABLE data_requirements;
+ALTER TABLE data_requirements_v43 RENAME TO data_requirements;
+CREATE INDEX data_requirements_consumer_idx
+ ON data_requirements(mission_id, plan_revision, consumer_occurrence, input_port);
+CREATE INDEX data_requirements_producer_idx
+ ON data_requirements(mission_id, plan_revision, producer_occurrence, output_port);
+CREATE TRIGGER assurance_source_data_requirements_insert AFTER INSERT ON data_requirements WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:data_requirements',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','data_requirements'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id);
+ END;
+CREATE TRIGGER assurance_source_data_requirements_update AFTER UPDATE ON data_requirements WHEN (NEW.mission_id IS NOT OLD.mission_id OR NEW.plan_revision IS NOT OLD.plan_revision OR NEW.requirement_id IS NOT OLD.requirement_id OR NEW.producer_occurrence IS NOT OLD.producer_occurrence OR NEW.output_port IS NOT OLD.output_port OR NEW.consumer_occurrence IS NOT OLD.consumer_occurrence OR NEW.input_port IS NOT OLD.input_port OR NEW.requirement_json IS NOT OLD.requirement_json OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id,OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:data_requirements',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id,OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','data_requirements'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id,OLD.mission_id);
+ END;
+CREATE TRIGGER assurance_source_data_requirements_delete AFTER DELETE ON data_requirements WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:data_requirements',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','data_requirements'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (OLD.mission_id);
+ END;
+CREATE TRIGGER data_requirements_immutable_update BEFORE UPDATE ON data_requirements
+ BEGIN SELECT RAISE(ABORT,'immutable source record: data_requirements'); END;
+CREATE TRIGGER data_requirements_immutable_delete BEFORE DELETE ON data_requirements
+ BEGIN SELECT RAISE(ABORT,'immutable source record: data_requirements'); END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1318,6 +1416,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(40, "orchestrator-method-library-and-drop-rule-summaries", DDL_V40),
     Migration(41, "orchestrator-g-replay-v3", DDL_V41),
     Migration(42, "orchestrator-verifications-per-requirements", DDL_V42),
+    Migration(43, "orchestrator-data-requirements-drop-revision-policy", DDL_V43),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

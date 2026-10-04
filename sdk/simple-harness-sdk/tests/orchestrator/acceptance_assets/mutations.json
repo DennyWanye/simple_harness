@@ -896,6 +896,17 @@
     "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
    ],
    "note": "审阅记录查找不认要求版本：重审拿到的是旧版那条记录，没有按新版审，新版验收写不出来"
+  },
+  {
+   "id": "TG5-01",
+   "source": "TaskGraph 补全第五批（下游输入引用现行算数的验收；HTN 补齐 F1 第 6 号空缺）",
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "            if (state is None or output.acceptance_id not in allowed_acceptances\n                    or output.acceptance_id not in state.preparation_acceptance_ids):\n                continue\n",
+   "replacement": "            if state is None:\n                continue\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_redo.py::test_the_replaced_downstream_reads_the_kept_step_under_its_new_acceptance"
+   ],
+   "note": "下游取验收时不筛现行算数的：旧版验收也成了候选，下游冻结的输入不再一定是新版验收"
   }
  ]
 }
