@@ -103,7 +103,7 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                         "status": v["status"],
                         "verifier_version": (v.get("detail") or {}).get("verifier_version"),
                     }
-                    for v in store.list_verifications(producer.accepted_result_id)
+                    for v in store.list_verifications(producer.accepted_result_id, requirements_revision=None)
                     if v["status"] in {"PASS", "NEEDS_HUMAN"}
                 ]
             )

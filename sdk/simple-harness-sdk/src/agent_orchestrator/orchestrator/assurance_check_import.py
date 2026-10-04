@@ -87,7 +87,8 @@ def read_local_check_binding_locked(
     manifest_ref = AssuranceRef.from_json(payload["input_manifest_ref"], kinds={"input_manifest"})
     result = decode(reader.read_exact_metadata(result_ref).body_json)
     stored_result = store.get_result(result_ref.pin.id)
-    frozen = load_completion_result_inputs(store, stored_result)
+    frozen = load_completion_result_inputs(
+        store, stored_result, requirements_revision=int(scope.requirements_ref.revision))
     if frozen is None or frozen.scope != scope:
         raise AssuranceError("CHECK_SCOPE_CHANGED")
     manifest = decode(reader.read_exact_metadata(manifest_ref).body_json)

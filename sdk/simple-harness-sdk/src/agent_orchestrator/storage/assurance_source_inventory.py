@@ -633,6 +633,7 @@ SOURCE_COLUMNS = {
         "verification_id",
         "result_id",
         "attempt_id",
+        "requirements_revision",
         "layer",
         "status",
         "detail_json",

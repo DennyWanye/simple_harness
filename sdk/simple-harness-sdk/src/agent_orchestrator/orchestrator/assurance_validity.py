@@ -89,9 +89,24 @@ USE_TARGET_KINDS = {
 }
 
 
-def acceptance_id_for(task_id: str, result_id: str) -> str:
-    """The original leaf acceptance identity; kept in one place for both writers."""
-    return f"acc-{content_hash_of({'task': str(task_id), 'result': str(result_id)})[:32]}"
+def acceptance_id_for(task_id: str, result_id: str, requirements_revision: int) -> str:
+    """The leaf acceptance identity of one result under one requirements revision; kept in
+    one place for every writer and reader.  A result kept across an amendment and reviewed
+    again under the new revision gets its own acceptance (TaskGraph 补全第四批)."""
+    return "acc-" + content_hash_of({"task": str(task_id), "result": str(result_id),
+                                     "requirements_revision": int(requirements_revision)})[:32]
+
+
+def result_acceptance_ids(store: Any, mission_id: str, task_id: str, result_id: str) -> tuple[str, ...]:
+    """Every leaf acceptance of one result, oldest requirements revision first."""
+    from ..storage.htn_store import HtnStore
+
+    found = sorted(
+        (int(item.requirements_revision), str(item.acceptance_id))
+        for item in HtnStore(store).list_acceptances(mission_id)
+        if str(item.task_id) == str(task_id)
+        and str(item.acceptance_id) == acceptance_id_for(task_id, result_id, int(item.requirements_revision)))
+    return tuple(acceptance for _, acceptance in found)
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,18 +214,26 @@ class AssuranceValidity:
         return None
 
     # ---------------------------------------------------------------- prepare
-    def official_record_for_result(self, mission_id: str, result_id: str) -> ReviewRecord:
-        """The exact official TASK_CONTENT record bound to this Result; no latest fallback."""
+    def official_record_for_result(
+        self, mission_id: str, result_id: str, requirements_revision: int | None = None
+    ) -> ReviewRecord:
+        """The exact official TASK_CONTENT record bound to this Result under one requirements
+        revision (``None``: the one it was produced under); no latest fallback.  A result
+        kept across an amendment has one record per revision (TaskGraph 补全第四批)."""
+        from .completion_inputs import frozen_requirements_revision
+
         store = self.store
         with store.read_view():
             result = store.get_result(result_id)
             if result is None or result.envelope.mission_id != mission_id:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_MISSING")
+            revision = (frozen_requirements_revision(store, result) if requirements_revision is None
+                        else int(requirements_revision))
             rows = store.connection.execute(
                 "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? "
-                "AND subject_hash=? "
+                "AND subject_hash=? AND requirements_revision=? "
                 "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
-                (mission_id, fingerprint(result.envelope.to_json())),
+                (mission_id, fingerprint(result.envelope.to_json()), revision),
             ).fetchall()
             if len(rows) > 1:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_AMBIGUOUS")
@@ -223,10 +246,11 @@ class AssuranceValidity:
         return record
 
     def prepare_accept_use_for_result(
-        self, mission_id: str, result_id: str
+        self, mission_id: str, result_id: str, requirements_revision: int | None = None
     ) -> CandidateUseCertificate:
         """Fresh preparation at the head of the acceptance path (outside its UoW)."""
-        return self.prepare_accept_use(self.official_record_for_result(mission_id, result_id))
+        return self.prepare_accept_use(
+            self.official_record_for_result(mission_id, result_id, requirements_revision))
 
     def prepare_accept_use(self, record: ReviewRecord) -> CandidateUseCertificate:
         """Bounded read/compute outside the write lock; nothing is written.
@@ -238,7 +262,8 @@ class AssuranceValidity:
         def consumer(purpose: str, owner_task: str, target: AssuranceRef) -> tuple[str, str]:
             if purpose != "TASK_CONTENT":
                 raise AssuranceError("USE_PURPOSE_UNSUPPORTED", purpose)
-            return ACCEPTANCE_CONSUMER, acceptance_id_for(owner_task, target.pin.id)
+            return ACCEPTANCE_CONSUMER, acceptance_id_for(
+                owner_task, target.pin.id, int(record.binding.requirements_revision))
 
         return self._prepare_use(record, consumer)
 
@@ -818,4 +843,5 @@ __all__ = (
     "AssuranceValidity",
     "CandidateUseCertificate",
     "acceptance_id_for",
+    "result_acceptance_ids",
 )

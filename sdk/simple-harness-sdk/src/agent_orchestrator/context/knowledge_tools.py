@@ -71,7 +71,7 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
     from ..assurance.codec import fingerprint
     from ..contracts.resolution import ReviewPurpose
     from ..memory.knowledge_standing import acceptance_is_current
-    from ..orchestrator.assurance_validity import acceptance_id_for
+    from ..orchestrator.assurance_validity import result_acceptance_ids
     from ..orchestrator.method_library import review_manifest
     from ..orchestrator.review_adjudication import accepted_or_adjudicated
     from ..storage.htn_store import HtnStore
@@ -96,7 +96,8 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
         digest = _digest(summary)
         if (not checked.get("faithful") or checked.get("summary_sha256") != digest
                 or checked.get("result_ref") != fingerprint(stored.envelope.to_json())
-                or not acceptance_is_current(store, mission_id, acceptance_id_for(task.id, str(result_id)))[0]):
+                or not any(acceptance_is_current(store, mission_id, acceptance)[0]
+                           for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id)))):
             continue
         artifacts = [store.get_artifact(artifact_id) for artifact_id in task.accepted_artifacts]
         rows.append((float(stored.received_at), {

@@ -526,8 +526,11 @@ class AssuranceLocalChecks:
                 registry[layer] = entry
         return self._read_registry(mission_id)
 
-    def prepare(self, inputs: dict[str, Any]) -> LocalVerificationRecorder:
-        """Receives actual VerifierRouter arguments, never a Host API document."""
+    def prepare(self, inputs: dict[str, Any], *, requirements_revision: int | None = None) -> LocalVerificationRecorder:
+        """Receives actual VerifierRouter arguments, never a Host API document.
+
+        ``requirements_revision``: the revision the checks are bound under — ``None`` is the
+        result's own; a newer one reviews a kept, accepted result again (TaskGraph 补全第四批)."""
         from ..storage.htn_store import HtnStore
         from .completion_inputs import load_completion_result_inputs
 
@@ -550,7 +553,8 @@ class AssuranceLocalChecks:
                 raise AssuranceError("ASSURANCE_PROFILE_REQUIRED")
             metadata = reader.read_exact_metadata(ref)
             frozen = load_completion_result_inputs(
-                self.commit.store, self.commit.store.get_result(ref.pin.id)
+                self.commit.store, self.commit.store.get_result(ref.pin.id),
+                requirements_revision=requirements_revision,
             )
             if frozen is None:
                 raise AssuranceError("CHECK_SCOPE_UNAVAILABLE")

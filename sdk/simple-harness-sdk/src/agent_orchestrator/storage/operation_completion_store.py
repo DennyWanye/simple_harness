@@ -961,17 +961,28 @@ class OperationCompletionStore:
             for row in rows
         )
 
-    def scope_unchanged(self, old: Any, current: Any) -> bool:
+    #: What a requirements amendment may change in a kept step's scope (TaskGraph 补全第四批).
+    _REQUIREMENT_KEYS = frozenset({"requirements_ref", "spec_hash", "content_criterion_ids"})
+
+    def scope_unchanged(self, old: Any, current: Any, *, across_requirements: bool = False) -> bool:
         """Whether an earlier revision's frozen occurrence scope is the current one in all
         but the plan revision: same identity (requirements, Task contract, criteria,
         effects), adopted by a genuine commit, and the occurrence reads the same data
         edges.  The one reading behind carrying accepted content and an in-flight result
-        across a plan revision that did not touch the step (TaskGraph 补全第 8a 条)."""
+        across a plan revision that did not touch the step (TaskGraph 补全第 8a 条).
+
+        ``across_requirements``: the reading behind reviewing a kept, accepted result again
+        under amended requirements (第四批): besides the plan revision, the requirements
+        (their revision, Spec and the criteria handed to the step) may differ — to a newer
+        revision only; the Task contract, duty, role, effects and data edges may not."""
 
         if old.occurrence_id != current.occurrence_id or old.mission_id != current.mission_id:
             return False
-        if ({key: value for key, value in old.to_json().items() if key != "plan_ref"}
-                != {key: value for key, value in current.to_json().items() if key != "plan_ref"}):
+        ignored = {"plan_ref"} | (self._REQUIREMENT_KEYS if across_requirements else set())
+        if ({key: value for key, value in old.to_json().items() if key not in ignored}
+                != {key: value for key, value in current.to_json().items() if key not in ignored}):
+            return False
+        if across_requirements and int(current.requirements_ref.revision) <= int(old.requirements_ref.revision):
             return False
         row = self.get_scope_exact(old.mission_id, old.plan_ref.revision, old.occurrence_id)
         if row is None or row["document"] != old:

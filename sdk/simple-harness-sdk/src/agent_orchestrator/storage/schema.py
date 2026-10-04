@@ -1180,6 +1180,101 @@ CREATE TRIGGER validity_witnesses_immutable_delete BEFORE DELETE ON validity_wit
  BEGIN SELECT RAISE(ABORT,'immutable source record: validity_witnesses'); END;
 """
 
+DDL_V42 = """
+-- TaskGraph 补全第四批：验证记录按（结果, 要求版本, 层）唯一。改要求后同一份结果按新版要求重审，
+-- 两版的验证记录并存；旧库的记录要求版本记 0（开发期不做旧数据兼容）。表重建，触发器原样重建
+-- （更新触发器的比较列加上要求版本）。
+DROP TRIGGER assurance_verification_relocation;
+DROP TRIGGER assurance_source_verifications_insert;
+DROP TRIGGER assurance_source_verifications_update;
+DROP TRIGGER assurance_source_verifications_delete;
+CREATE TABLE verifications_v42 (
+ verification_id TEXT PRIMARY KEY,
+ result_id TEXT NOT NULL REFERENCES results(result_id),
+ attempt_id TEXT NOT NULL,
+ requirements_revision INTEGER NOT NULL CHECK(requirements_revision>=0),
+ layer TEXT NOT NULL,
+ status TEXT NOT NULL,
+ detail_json TEXT NOT NULL,
+ created_at REAL NOT NULL,
+ UNIQUE(result_id, requirements_revision, layer)
+) STRICT;
+INSERT INTO verifications_v42(verification_id,result_id,attempt_id,requirements_revision,layer,status,detail_json,created_at)
+ SELECT verification_id,result_id,attempt_id,0,layer,status,detail_json,created_at FROM verifications;
+DROP TABLE verifications;
+ALTER TABLE verifications_v42 RENAME TO verifications;
+CREATE TRIGGER assurance_verification_relocation BEFORE INSERT ON verifications
+WHEN EXISTS(SELECT 1 FROM verifications v JOIN results r ON r.result_id=v.result_id
+ JOIN results n ON n.result_id=NEW.result_id
+ WHERE v.verification_id=NEW.verification_id AND r.mission_id<>n.mission_id
+ AND EXISTS(SELECT 1 FROM assurance_mission_bindings b
+ WHERE b.mission_id IN (r.mission_id,n.mission_id)))
+BEGIN SELECT RAISE(ABORT,'ASSURANCE_SOURCE_RELOCATION_FORBIDDEN'); END;
+CREATE TRIGGER assurance_source_verifications_insert AFTER INSERT ON verifications WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:verifications',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','verifications'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id));
+ END;
+CREATE TRIGGER assurance_source_verifications_update AFTER UPDATE ON verifications WHEN (NEW.verification_id IS NOT OLD.verification_id OR NEW.result_id IS NOT OLD.result_id OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.requirements_revision IS NOT OLD.requirements_revision OR NEW.layer IS NOT OLD.layer OR NEW.status IS NOT OLD.status OR NEW.detail_json IS NOT OLD.detail_json OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id,OLD.result_id))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:verifications',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id,OLD.result_id))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','verifications'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (NEW.result_id,OLD.result_id));
+ END;
+CREATE TRIGGER assurance_source_verifications_delete AFTER DELETE ON verifications WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (OLD.result_id))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:verifications',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT mission_id FROM results WHERE result_id IN (OLD.result_id))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','verifications'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT mission_id FROM results WHERE result_id IN (OLD.result_id));
+ END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1222,6 +1317,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(39, "orchestrator-drop-support-sets-and-duty-spend", DDL_V39),
     Migration(40, "orchestrator-method-library-and-drop-rule-summaries", DDL_V40),
     Migration(41, "orchestrator-g-replay-v3", DDL_V41),
+    Migration(42, "orchestrator-verifications-per-requirements", DDL_V42),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

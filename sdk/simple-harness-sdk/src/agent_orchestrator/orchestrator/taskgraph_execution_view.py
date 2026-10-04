@@ -194,7 +194,7 @@ class ExecutionProjection:
         layers: dict[str, list[dict[str, Any]]] = {}
         for result_id, layer, status, detail in self._rows(
                 "SELECT v.result_id, v.layer, v.status, v.detail_json FROM verifications v JOIN results r"
-                " ON r.result_id=v.result_id WHERE r.mission_id=? ORDER BY v.result_id, v.layer"):
+                " ON r.result_id=v.result_id WHERE r.mission_id=? ORDER BY v.result_id, v.requirements_revision, v.layer"):
             if str(status) in _SKIPPED_LAYERS:
                 continue
             parsed = _json(detail)

@@ -189,6 +189,7 @@ from .commit_service import (
     task_account,
 )
 from ..deployment.root import current_criteria, current_statements
+from .carried_review import CARRIED_RESULT_REJECTED, carried_reviews
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
@@ -3790,6 +3791,20 @@ class Orchestrator:
             task = asyncio.create_task(self._verify(stored.envelope.id))
             self._verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
+        # TaskGraph 补全第四批：改要求后沿用的叶子按新要求重审，与验证共用同一组名额
+        for mission_id in sorted(active):
+            if len(self._verifying) >= self._config.verifier_workers:
+                break
+            new_mode = self._new_mode(self.store.get_mission(mission_id))
+            if new_mode is None:
+                continue
+            for item in carried_reviews(self.store, new_mode, mission_id):
+                if item.key in self._verifying:
+                    continue
+                if len(self._verifying) >= self._config.verifier_workers:
+                    break
+                self._verifying[item.key] = asyncio.create_task(self._carried_review(item))
+                await asyncio.sleep(0)
         self._raise_if_verification_crashed()
         self._observe_pressure(active)
         missions = self._active_missions()
@@ -5493,6 +5508,11 @@ class Orchestrator:
         attempt = self.store.get_attempt(attempt_id) if isinstance(attempt_id, str) else None
         if attempt is None:  # Mission judge has a view id, not a worker Attempt.
             return False
+        if intent.config.get("carried_requirements_revision") is not None:
+            # 第四批：重审已验收的结果——原尝试早已结束，看任务是否还在现行计划里
+            from .assurance_review_import import carried_review_alive
+
+            return not carried_review_alive(self.store, intent.mission_id, attempt.task_id)
         task = self.store.get_task(attempt.task_id)
         return attempt.status in TERMINAL_ATTEMPT or task is None or task.status in TERMINAL_TASK
 
@@ -8147,6 +8167,106 @@ class Orchestrator:
                 return True
         return True
 
+    async def _carried_review(self, item: Any) -> bool:
+        """TaskGraph 补全第四批：一份按旧版要求通过、被现行计划沿用的结果，按现行要求重审。
+
+        与新结果同一条"本地检查 → 审阅员独立会话 → 写验收"的流程，只是驱动不同：由计划提交后
+        的扫描驱动，不要尝试租约、不建尝试、不调执行者、不动尝试 / 任务 / 产物状态；验证记录与
+        验收都按（结果, 要求版本）记。通过 → 按新版要求写一条验收；没过 → 修复请求交规划器
+        （``CARRIED_RESULT_REJECTED``）；审阅员两次都判不下来 → 问用户裁决。"""
+        import functools
+
+        from ..assurance.codec import AssuranceError
+        from .assurance_review_import import carried_review_alive
+        from .operation_completion import OperationCompletionError
+        from .resolution_commits import ResolutionCommitRejected
+        from .review_adjudication import adjudication_of
+
+        revision = int(item.requirements_revision)
+        stored = self.store.get_result(item.result_id)
+        attempt = None if stored is None else self.store.get_attempt(stored.envelope.attempt_id)
+        task = self.store.get_task(item.task_id)
+        mission = self.store.get_mission(item.mission_id)
+        if (stored is None or attempt is None or task is None or mission is None
+                or self._assurance_reviews is None or self._assurance_local_checks is None
+                or not carried_review_alive(self.store, mission.id, task.id)):
+            return False
+        reviews = self._assurance_reviews
+        artifacts = [a for a in self.store.list_artifacts(attempt.id) if a.id in set(stored.artifacts)]
+        artifacts = bound_artifacts_named_in_envelope(
+            stored.envelope.artifacts, artifacts, self._upstream_inputs(attempt), self.store.get_artifact)
+        copy = self.assembled.workspaces.verification_copy(
+            attempt.id, protected=self._protected_files(mission, task, attempt),
+            seed=dict((mission.final_report or {}).get("workspace_seed", {})),
+            inputs=self._input_files(attempt), artifacts=artifacts)
+
+        async def recorder(layer: LayerResult) -> None:
+            detail = {"summary": layer.summary, **dict(layer.detail)}
+            if layer.layer == "critic_review":
+                detail.pop("critic_intent_id", None)
+                detail["verifier_version"] = None
+                if layer.status in {"PASS", "FAIL", NEEDS_HUMAN}:
+                    detail.update(reviews.provenance(mission.id, attempt.id, revision))
+            else:
+                detail["verifier_version"] = VERIFIER_VERSION
+            self.commit.record_verification_layer(
+                item.result_id, layer=layer.layer, status=layer.status, detail=detail,
+                requirements_revision=revision)
+
+        async def run_critic(test_output: str | None) -> CriticVerdict:
+            return await reviews.run_task(mission, task, attempt_id=attempt.id, requirements_revision=revision)
+
+        with self.store.read_view():
+            record = reviews.task_record(mission.id, attempt.id, revision)
+        ruling = None if record is None else adjudication_of(self.store, str(record.record_id))
+        human = None if ruling is None else {
+            "verdict": "PASS" if ruling.get("decision") == "pass" else "FAIL",
+            "note": "", "principal": ruling.get("principal_id"), "request_id": "adjudicate-carried:" + str(record.record_id)}
+        try:
+            verdict = await self._router.verify(
+                mission=mission, task=task, envelope=stored.envelope, artifacts=artifacts,
+                verification_copy=copy, client_result_id=None, run_critic=run_critic,
+                recorder=recorder, tampered=(), knowledge=KnowledgeIndex.load(self.store, mission.id),
+                human=human, reuse=None, needs_human_allowed=True, domain=self.commit.domain_for(mission.id),
+                local_check_recorder_factory=functools.partial(
+                    self._assurance_local_checks.prepare, requirements_revision=revision))
+            if verdict.passed:
+                self.commit.accept_carried_result(item.result_id, requirements_revision=revision)
+                self._note(f"result {item.result_id}: kept and passed again under requirements r{revision}")
+                return True
+        except (AssuranceError, OperationCompletionError, ContractError, CommitRejected,
+                ResolutionCommitRejected) as error:
+            # 计划又变了、审阅员暂不可用、检查口径还没批下来……下一轮再看；不当成没过
+            self._note(f"result {item.result_id}: re-review under r{revision} deferred ({error})")
+            return False
+        if any(layer.status == "ERROR" for layer in verdict.layers):
+            # 检查或审阅员这一层出错（不是审阅员的判断）：下一轮再审，不当成没过
+            self._note(f"result {item.result_id}: re-review under r{revision} errored; retried later")
+            return False
+        with self.store.read_view():
+            record = reviews.task_record(mission.id, attempt.id, revision)
+        if verdict.suspended and record is not None:
+            return self._ask_person_to_adjudicate(
+                mission, record, target_id=task.id, subject_key=task.id,
+                decision_id="adjudicate-carried:" + str(record.record_id),
+                intro="改要求后沿用的一步（" + str(task.goal)[:60] + "）按新要求重审，两位审阅员都判不下来，"
+                      "需要你裁决它是否仍然合格。",
+                extra={"result_id": item.result_id, "requirements_revision": revision})
+        from .planning_repair_requests import record_request
+
+        produced = record_request(
+            self._new_mode(mission), mission.id, event_type="VerifierAcceptanceRejected",
+            trigger_refs=(task.id,), source_key=f"carried-review:{item.result_id}:r{revision}",
+            detail={"source": "carried_review", "reason_code": CARRIED_RESULT_REJECTED,
+                    "result_id": item.result_id, "requirements_revision": revision,
+                    "occurrence_id": item.occurrence_id,
+                    **({} if record is None else {"record_id": str(record.record_id),
+                                                   "findings": self._review_record_findings(record)}),
+                    "failures": [dict(failure) for failure in verdict.failures]})
+        if produced:
+            self._note(f"result {item.result_id}: kept, rejected under requirements r{revision}; repair requested")
+        return produced
+
     def _critic_provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
         """The one parsed Critic verdict's durable intent, not a current template.
 
@@ -8184,8 +8304,12 @@ class Orchestrator:
                 and stored.envelope.mission_id == task.mission_id
                 else {}
             )
+            from .completion_inputs import frozen_requirements_revision
+
             rows = []
-            for row in self.store.list_verifications(result_id):
+            revision = None if stored is None else frozen_requirements_revision(self.store, stored)
+            for row in ([] if revision is None else self.store.list_verifications(
+                    result_id, requirements_revision=revision)):
                 if row["layer"] == "critic_review":
                     detail = row.get("detail") or {}
                     if (
@@ -8227,7 +8351,10 @@ class Orchestrator:
             str, list[bool]
         ] = {}  # review P2-7: what each Task Critic said, per criterion
         for task in tasks:
-            for layer in self.store.list_verifications(task.accepted_result_id or ""):
+            # 第四批：一份结果可能按几版要求审过，取最新一版的审阅意见
+            layers = self.store.list_verifications(task.accepted_result_id or "", requirements_revision=None)
+            newest = max((int(row["requirements_revision"]) for row in layers), default=0)
+            for layer in (row for row in layers if int(row["requirements_revision"]) == newest):
                 if layer["layer"] != "critic_review" or layer["status"] != "PASS":
                     continue
                 for item in (layer.get("detail") or {}).get("mission_criteria", []):

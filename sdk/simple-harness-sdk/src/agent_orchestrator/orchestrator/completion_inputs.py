@@ -335,12 +335,16 @@ def validate_result_port_claims(
     return tuple({"port_key": item.port_key, "path": item.path} for item in port_claims)
 
 
-def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs) -> Any:
+def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs,
+                   *, carried: bool = False) -> Any:
     """The completion scope this Attempt's result is judged under: the one frozen at
     dispatch, or — when a later plan revision did not change it in anything but the
     revision (:meth:`OperationCompletionStore.scope_unchanged`, the same reading that
     carries accepted content) — the current one (TaskGraph 补全第 8a 条: sharing a
-    running step always commits a revision).  A scope that really changed is stale."""
+    running step always commits a revision).  A scope that really changed is stale.
+
+    ``carried``: an accepted result reviewed again under amended requirements (第四批):
+    the current scope may also differ in its requirements, to a newer revision only."""
 
     from ..storage.operation_completion_store import OperationCompletionStore
 
@@ -362,16 +366,42 @@ def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the adopted plan is unavailable")
     plan_ref = PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash)
     scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
-    if scope != original and not completion.scope_unchanged(original, scope):
+    if scope != original and not completion.scope_unchanged(original, scope, across_requirements=carried):
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the completion scope changed under the Attempt")
     return scope
 
 
-def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletionResultInputs:
+def frozen_requirements_revision(store: Store, result: Any) -> int:
+    """The requirements revision a result was produced under — the scope frozen at its
+    dispatch, read without asking whether it is still current.  What a result's ordinary
+    verification layers are recorded under (TaskGraph 补全第四批)."""
+
+    from ..storage.operation_completion_store import OperationCompletionStore
+
+    envelope = getattr(result, "envelope", None)
+    intent = None if envelope is None else store.get_intent_for_subject(str(envelope.attempt_id))
+    if intent is None:
+        raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "original Attempt intent is unavailable")
+    frozen = FrozenCompletionInputs.from_json(intent.config.get("completion_inputs"))
+    row = OperationCompletionStore(store).get_scope_exact(
+        str(envelope.mission_id), frozen.plan_revision, frozen.occurrence_id)
+    if row is None or str(row["document"].scope_id) != frozen.scope_id:
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "frozen completion scope differs")
+    return int(row["document"].requirements_ref.revision)
+
+
+def load_completion_result_inputs(
+    store: Store, result: Any, *, requirements_revision: int | None = None
+) -> FrozenCompletionResultInputs:
     """Re-read frozen dispatch inputs and durable ResultSubmitted port claims.
 
     A Result without these anchors is refused so cold recovery cannot silently fall back
     to a current plan or to handler-local state.
+
+    ``requirements_revision``: the revision the result is judged under.  ``None`` or the
+    frozen one is the ordinary path.  A newer one is the review of a kept, accepted result
+    under amended requirements (TaskGraph 补全第四批): only an accepted result, the same
+    frozen inputs and claims, the current scope — which must be of exactly that revision.
     """
 
     envelope = getattr(result, "envelope", None)
@@ -410,7 +440,13 @@ def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletion
     ):
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "input manifest is not bound to Attempt")
 
-    scope = _current_scope(store, mission_id, frozen)
+    carried = requirements_revision is not None and int(requirements_revision) != frozen_requirements_revision(
+        store, result)
+    if carried and (getattr(result, "verification_state", None) != "DONE" or getattr(result, "verdict", None) != "PASS"):
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "only an accepted result is reviewed under newer requirements")
+    scope = _current_scope(store, mission_id, frozen, carried=carried)
+    if requirements_revision is not None and int(scope.requirements_ref.revision) != int(requirements_revision):
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "the current scope is of another requirements revision")
 
     events = [
         event
@@ -433,6 +469,7 @@ __all__ = (
     "FrozenCompletionInputs",
     "FrozenCompletionResultInputs",
     "freeze_attempt_completion_inputs",
+    "frozen_requirements_revision",
     "load_completion_result_inputs",
     "validate_result_port_claims",
 )

@@ -413,7 +413,8 @@ class LeafAcceptanceAssembly:
         # result under the frozen completion scope, never taken from the caller.
         projection = read_task_content_projection(self.store, mission_id, task_id, result_id)
         revision = projection.requirements
-        outcomes = layer_outcomes(self.store.list_verifications(result_id))
+        outcomes = layer_outcomes(self.store.list_verifications(
+            result_id, requirements_revision=int(revision.revision)))
         producer_agent_ids = (projection.producer_agent_id,)
         manifest = origin.context.inputs.binding.manifest_hash
         if input_manifest_hash and input_manifest_hash != manifest:
@@ -431,7 +432,9 @@ class LeafAcceptanceAssembly:
             projection=projection,
         )
         record = self._official_record(package)
-        acceptance_id = f"acc-{content_hash_of({'task': task_id, 'result': result_id})[:32]}"
+        from .assurance_validity import acceptance_id_for
+
+        acceptance_id = acceptance_id_for(task_id, result_id, int(revision.revision))
         try:
             previous = self.semantics.get_acceptance(acceptance_id)
         except StoreError:
@@ -469,7 +472,7 @@ class LeafAcceptanceAssembly:
         else:
             witness_id = candidate.certificate_id
         command = AcceptReviewCommand(
-            command_id=command_id or f"accept:{result_id}",
+            command_id=command_id or f"accept:{result_id}:r{int(revision.revision)}",
             mission_id=mission_id,
             task_id=task_id,
             obligation_id=str(binding.obligation_id),

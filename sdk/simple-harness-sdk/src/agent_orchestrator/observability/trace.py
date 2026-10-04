@@ -31,7 +31,7 @@ def trace(
             intent = store.get_intent_for_subject(attempt.id)
             config: Mapping[str, Any] = intent.config if intent is not None else {}
             stored = store.find_result_for_attempt(attempt.id)
-            layers = [] if stored is None else store.list_verifications(stored.envelope.id)
+            layers = [] if stored is None else store.list_verifications(stored.envelope.id, requirements_revision=None)
             echoed = sorted((echoes or {}).get(attempt.id, ()))
             spans.append(
                 {

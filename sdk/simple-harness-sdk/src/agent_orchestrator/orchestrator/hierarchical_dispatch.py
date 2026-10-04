@@ -2484,18 +2484,27 @@ class HierarchicalDispatch:
                 bindings[task_id] = task_view.binding
             task = self.store.get_task(task_id)
             if task is not None and task.accepted_result_id:
-                # 阶段 E：这一步已有通过的结果。结果在现行要求下算数 → 等完成，不再派执行者；
-                # 是按旧版要求通过的、现在不算数 → 如实报出来，系统不自动重跑，重做由规划器安排。
+                # 阶段 E：这一步已有通过的结果。结果在现行要求下算数 → 等完成，不再派执行者。
+                # 是按旧版要求通过的、现在不算数 → 不派执行者：系统请审阅员按新要求重审同一份结果
+                # （TaskGraph 补全第四批）；重审没过 → 如实报出来，换掉这一步或换做法由规划器定。
                 counts = self._accepted_result_counts(mission_id, str(spec.occurrence_id))
+                from .carried_review import CARRIED_RESULT_REJECTED, CARRIED_REVIEW_PENDING, rejected
+
+                latest = self.semantics().latest_requirements_revision(mission_id)
+                refused = (not counts and latest is not None
+                           and rejected(self.store, task.accepted_result_id, int(latest.revision)))
                 refusals.append(DispatchRefusal(
                     task_id=task_id, occurrence_id=str(spec.occurrence_id),
                     reason=ReadinessReason.NOT_SELECTED,
                     detail_codes=("PREPARATION_ALREADY_ACCEPTED",) if counts
-                    else ("ACCEPTED_UNDER_OLD_REQUIREMENTS",),
+                    else (CARRIED_RESULT_REJECTED,) if refused else (CARRIED_REVIEW_PENDING,),
                     detail="accepted preparation is waiting for completion, not another Worker" if counts
+                    else ("this step's result was accepted under an earlier revision of the requirements and "
+                          "the reviewer found it short under the current ones; it is not re-run "
+                          "automatically — replace the step (PROPOSE_SUCCESSOR) or its method") if refused
                     else ("this step's result was accepted under an earlier revision of the requirements; "
-                          "it does not count under the current ones and is not re-run automatically — "
-                          "replace the step (PROPOSE_SUCCESSOR) or its method to have it redone"),
+                          "the reviewer is judging the same result under the current ones (after its "
+                          "inputs count) — no Worker runs"),
                 ))
                 continue
             report = view.reports[spec.occurrence_id]

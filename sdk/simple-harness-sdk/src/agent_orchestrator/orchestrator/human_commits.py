@@ -307,10 +307,13 @@ class HumanCommitsMixin:
         stored = self._store.get_result(result_id)
         if stored is None:
             return
+        from .completion_inputs import frozen_requirements_revision
+
         rows = self._store.connection.execute(
             "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? AND subject_hash=? "
-            "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
-            (mission_id, fingerprint(stored.envelope.to_json())),
+            "AND requirements_revision=? AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
+            (mission_id, fingerprint(stored.envelope.to_json()),
+             frozen_requirements_revision(self._store, stored)),
         ).fetchall()
         if len(rows) != 1:
             return

@@ -28,7 +28,7 @@ from ..verification.critics import CriticVerdict
 from .assurance_content_review import ensure_task_content_review
 from .assurance_review_collect import collect_assurance_review
 from .assurance_review_consumer import AssuranceReviewConsumer
-from .assurance_review_import import read_official_review_binding_locked
+from .assurance_review_import import carried_review_alive, read_official_review_binding_locked
 
 # One review turn: the initial request plus a bounded number of tool rounds.
 # The per-call cap on the gateway binding is MAX_EVIDENCE_TOOL_CALLS; the turn's
@@ -105,15 +105,21 @@ class AssuranceReviewRuntime:
             self.evidence_tools.install(gateway)
         return self.consumer
 
-    def task_record(self, mission_id: str, attempt_id: str):
-        """Exact official source for this Result; no latest-Review fallback."""
+    def task_record(self, mission_id: str, attempt_id: str, requirements_revision: int | None = None):
+        """Exact official source for this Result under one requirements revision (``None``:
+        the one it was produced under); no latest-Review fallback (TaskGraph 补全第四批)."""
+        from .completion_inputs import frozen_requirements_revision
+
         result = self.store.find_result_for_attempt(attempt_id)
         if result is None or result.envelope.mission_id != mission_id:
             raise AssuranceError("REVIEW_RESULT_SOURCE_MISSING")
+        revision = (frozen_requirements_revision(self.store, result) if requirements_revision is None
+                    else int(requirements_revision))
         rows = self.store.connection.execute(
             "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? "
-            "AND subject_hash=? AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
-            (mission_id, fingerprint(result.envelope.to_json())),
+            "AND subject_hash=? AND requirements_revision=? "
+            "AND json_extract(binding_json,'$.subject.purpose')='TASK_CONTENT'",
+            (mission_id, fingerprint(result.envelope.to_json()), revision),
         ).fetchall()
         if len(rows) > 1:
             raise AssuranceError("REVIEW_RESULT_SOURCE_AMBIGUOUS")
@@ -126,9 +132,10 @@ class AssuranceReviewRuntime:
             )
         return record
 
-    def provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
+    def provenance(self, mission_id: str, attempt_id: str,
+                   requirements_revision: int | None = None) -> dict[str, str]:
         with self.store.read_view():
-            record = self.task_record(mission_id, attempt_id)
+            record = self.task_record(mission_id, attempt_id, requirements_revision)
             if record is None:
                 return {}
             rows = self.store.connection.execute(
@@ -378,7 +385,14 @@ class AssuranceReviewRuntime:
             request_command_id="mission-final-review:" + str(package.package_id),
         )
 
-    async def run_task(self, mission: Any, task: Any, *, attempt_id: str) -> CriticVerdict:
+    async def run_task(self, mission: Any, task: Any, *, attempt_id: str,
+                       requirements_revision: int | None = None) -> CriticVerdict:
+        """The TASK_CONTENT review of one result.  ``requirements_revision`` set: the result
+        was accepted under older requirements and is kept by the current plan; the reviewer
+        judges the same result under this newer revision (TaskGraph 补全第四批).  Driven by
+        the plan-commit scan, not by the Attempt: no lease, its own reservation on the Task,
+        alive while the Task is in the current plan."""
+        carried = requirements_revision is not None
         orch = self.orchestrator
         tick = orch._assurance_tick
         if tick is None or tick.consumers.get("REVIEW") is not self.consumer:
@@ -386,7 +400,7 @@ class AssuranceReviewRuntime:
         if mission.tenant_id != self.consumer.tenant_id:
             raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
         with self.store.read_view():
-            record = self.task_record(mission.id, attempt_id)
+            record = self.task_record(mission.id, attempt_id, requirements_revision)
             if record is None:
                 result = self.store.find_result_for_attempt(attempt_id)
         if record is not None:
@@ -394,12 +408,16 @@ class AssuranceReviewRuntime:
         with self.store.read_view():
             if result is None or result.envelope.task_id != task.id:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_MISMATCH")
+            from .completion_inputs import frozen_requirements_revision
+
             prior = self.store.connection.execute(
                 "SELECT i.dispatch_intent_id FROM assurance_review_invocations i "
                 "JOIN assurance_review_bindings b USING(mission_id,review_key) "
-                "WHERE b.mission_id=? AND b.subject_hash=? AND i.ordinal=1 "
+                "WHERE b.mission_id=? AND b.subject_hash=? AND b.requirements_revision=? AND i.ordinal=1 "
                 "AND json_extract(b.binding_json,'$.subject.purpose')='TASK_CONTENT'",
-                (mission.id, fingerprint(result.envelope.to_json())),
+                (mission.id, fingerprint(result.envelope.to_json()),
+                 frozen_requirements_revision(self.store, result) if not carried
+                 else int(requirements_revision)),
             ).fetchone()
             invocation = None
             if prior is not None:
@@ -413,7 +431,12 @@ class AssuranceReviewRuntime:
         deadline = self.store.now + orch._critic_wait
         if invocation is None:
             decision = orch._route_service("critic", mission.id)
-            fields, reservation = protected_critic_budget(orch, decision, task.id, attempt_id)
+            if carried:
+                # 重审不动原尝试的保护预算：在任务上另记一次审阅预留，不计尝试次数
+                fields: dict[str, Any] = {"carried_requirements_revision": int(requirements_revision)}
+                reservation = orch._reservation(orch._config.critic_reserve_tokens)
+            else:
+                fields, reservation = protected_critic_budget(orch, decision, task.id, attempt_id)
             config = {
                 **orch._service_config(decision),
                 **fields,
@@ -451,9 +474,12 @@ class AssuranceReviewRuntime:
             )
         review_key = invocation.to_json()["review_key"]
         while self.store.now < deadline:
-            self._require_live(mission.id, task.id, attempt_id)
+            if carried:
+                self._require_live_in_plan(mission.id, task.id)
+            else:
+                self._require_live(mission.id, task.id, attempt_id)
             with self.store.read_view():
-                record = self.task_record(mission.id, attempt_id)
+                record = self.task_record(mission.id, attempt_id, requirements_revision)
             if record is not None:
                 return self._licensed(record)
             with self.store.read_view():
@@ -465,7 +491,7 @@ class AssuranceReviewRuntime:
                 intent = self.store.get_intent(row[0])
             if intent.state not in {"SETTLED", "FAILED"}:
                 intent, answer = await orch._await_service_turn(
-                    intent, deadline, attempt_id=attempt_id
+                    intent, deadline, attempt_id=None if carried else attempt_id
                 )
                 if answer is None:
                     # SUBMITTED and its held reservation remain collectable. A
@@ -481,7 +507,8 @@ class AssuranceReviewRuntime:
             # effects; a repair intent goes through the original dispatcher above.
             await tick.tick()
             self._raise_final_failure(review_key)
-            orch._hold_lease(attempt_id)
+            if not carried:
+                orch._hold_lease(attempt_id)
             await asyncio.sleep(orch._poll)
         raise ContractError("Assurance review import wait window elapsed")
 
@@ -497,6 +524,12 @@ class AssuranceReviewRuntime:
             or task.status in TERMINAL_TASK
             or attempt.status in TERMINAL_ATTEMPT
         ):
+            raise ContractError("Assurance review subject stopped")
+
+    def _require_live_in_plan(self, mission_id: str, task_id: str) -> None:
+        """A re-review is alive while its Mission runs and its step is in the current plan."""
+        self.orchestrator._require_assurance_execution_root()
+        if not carried_review_alive(self.store, mission_id, task_id):
             raise ContractError("Assurance review subject stopped")
 
     def _raise_final_failure(self, review_key: str) -> None:

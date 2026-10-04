@@ -72,7 +72,11 @@ def ensure_task_content_review(
         projection = read_task_content_candidate(store, mission_id, task_id, result_id)
         semantics = HtnStore(store)
         task = semantics.task_semantics_of(mission_id, task_id)
-        frozen = load_completion_result_inputs(store, result)
+        # 第四批：已验收的结果按现行（更新的）要求重审时，冻结输入照旧、范围取现行的
+        frozen = load_completion_result_inputs(
+            store, result,
+            requirements_revision=int(projection.scope.requirements_ref.revision)
+            if result.verification_state == "DONE" and result.verdict == "PASS" else None)
         package = LeafAcceptanceAssembly(store, commit)._package(
             mission_id,
             task,
@@ -294,7 +298,8 @@ def ensure_task_content_review(
             tenant_id=tenant_id,
             binding=binding,
             package=package,
-            request_command_id="content-review:" + result_id,
+            # 同一份结果按几版要求审（第四批），每版一条审阅绑定
+            request_command_id=f"content-review:{result_id}:r{int(projection.requirements.revision)}",
             config=frozen_config,
             reservation=reservation,
             require_current_locked=require_current_locked,

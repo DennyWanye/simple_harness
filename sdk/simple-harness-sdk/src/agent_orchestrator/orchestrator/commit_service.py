@@ -1049,7 +1049,10 @@ class CommitService(ProtectedTailCommitsMixin,
         ]
         # Only runtime-recorded verification is evidence; caller-supplied acceptance
         # summaries are not execution receipts.
-        layers = [dict(item) for item in self._store.list_verifications(envelope.id)]
+        from .completion_inputs import frozen_requirements_revision
+
+        layers = [dict(item) for item in self._store.list_verifications(
+            envelope.id, requirements_revision=frozen_requirements_revision(self._store, stored))]
         from ..memory.code_observations import scoped_test_observations
 
         artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
@@ -1273,6 +1276,7 @@ class CommitService(ProtectedTailCommitsMixin,
         step used.  Nothing is written by this — the record carries it."""
         from ..contracts.semantic_base import content_hash_of
         from .assurance_validity import acceptance_id_for
+        from .completion_inputs import frozen_requirements_revision
 
         envelope = stored.envelope
         cited = {ref["pin"]["id"] for ref in (confirmation or {}).get("evidence_refs", ())
@@ -1287,7 +1291,8 @@ class CommitService(ProtectedTailCommitsMixin,
             knowledge.append({"id": source.id, "version": int(source.version),
                               "content_hash": content_hash_of(source.content)})
         return {
-            "acceptance_id": acceptance_id_for(task.id, envelope.id),
+            "acceptance_id": acceptance_id_for(
+                task.id, envelope.id, frozen_requirements_revision(self._store, stored)),
             "artifacts": [{"id": a.id, "version": int(a.version), "content_hash": a.content_hash}
                           for a in (named or artifacts)],
             "knowledge": knowledge,
@@ -2669,18 +2674,32 @@ class CommitService(ProtectedTailCommitsMixin,
             return self._require_result(result_id)
 
     def record_verification_layer(
-        self, result_id: str, *, layer: str, status: str, detail: Mapping[str, Any]
+        self, result_id: str, *, layer: str, status: str, detail: Mapping[str, Any],
+        requirements_revision: int | None = None,
     ) -> None:
+        """Record one layer under the requirements revision it was judged against: the
+        revision the result was produced under (``None``), or — for an accepted result
+        reviewed again under amended requirements (TaskGraph 补全第四批) — the newer one.
+        A revision under which the result is already accepted is immutable."""
+        from .completion_inputs import frozen_requirements_revision
+
         with self._store.transaction():
             stored = self._require_result(result_id)
-            if (
-                stored.verification_state == "DONE"
-                and stored.verdict == "PASS"
-            ):
+            frozen = frozen_requirements_revision(self._store, stored)
+            revision = frozen if requirements_revision is None else int(requirements_revision)
+            from ..storage.operation_completion_store import OperationCompletionStore
+            from .assurance_validity import acceptance_id_for
+
+            accepted = (
+                stored.verification_state == "DONE" and stored.verdict == "PASS" and revision == frozen
+            ) or OperationCompletionStore(self._store).get_acceptance_scope_exact(
+                stored.envelope.mission_id, acceptance_id_for(stored.envelope.task_id, result_id, revision)
+            ) is not None
+            if accepted:
                 known = next(
                     (
                         row
-                        for row in self._store.list_verifications(result_id)
+                        for row in self._store.list_verifications(result_id, requirements_revision=revision)
                         if row["layer"] == layer
                     ),
                     None,
@@ -2695,6 +2714,7 @@ class CommitService(ProtectedTailCommitsMixin,
             self._store.upsert_verification(
                 result_id=result_id,
                 attempt_id=stored.envelope.attempt_id,
+                requirements_revision=revision,
                 layer=layer,
                 status=status,
                 detail=detail,
@@ -2773,6 +2793,71 @@ class CommitService(ProtectedTailCommitsMixin,
                                             str(prepared.record.record_id))
         return completed
 
+    def accept_carried_result(self, result_id: str, *, requirements_revision: int) -> Any:
+        """TaskGraph 补全第四批：一份按旧版要求通过、被新计划沿用的结果，审阅员按新版要求重审
+        通过后，写一条按新版要求的验收（同一份结果与产物、带要求版本的新验收编号）。
+        不动尝试 / 任务 / 产物状态、不结清预算——那些在它当初通过时都已落定。"""
+        from ..assurance.codec import AssuranceError
+        from .resolution_commits import ResolutionCommitRejected
+
+        def prepare() -> Any:
+            with self._store.read_view():
+                stored = self._require_result(result_id)
+                mission_id = stored.envelope.mission_id
+            validity = getattr(self, "_assurance_validity", None)
+            if validity is None:
+                return None
+            try:
+                return validity.prepare_accept_use_for_result(mission_id, result_id, requirements_revision)
+            except AssuranceError as error:
+                raise ResolutionCommitRejected(
+                    error.code, "the current use certificate could not be prepared") from error
+
+        prepared = prepare()
+        for retry in (False, True):
+            try:
+                with self._store.transaction():
+                    receipt = self._accept_carried(result_id, int(requirements_revision))
+            except ResolutionCommitRejected as error:
+                if error.reason != "RECHECK_REQUIRED" or retry or prepared is None:
+                    raise
+                prepared = prepare()
+                continue
+            break
+        if prepared is not None:
+            self._assurance_validity.forget(prepared.identity.mission_id, str(prepared.record.record_id))
+        return receipt
+
+    def _accept_carried(self, result_id: str, requirements_revision: int) -> Any:
+        from .completion_inputs import load_completion_result_inputs
+        from .leaf_acceptance import LeafAcceptanceAssembly
+
+        stored = self._require_result(result_id)
+        if stored.verification_state != "DONE" or stored.verdict != "PASS":
+            raise CommitRejected("only an accepted result is reviewed again under newer requirements")
+        attempt = self._require_attempt(stored.envelope.attempt_id)
+        mission_id, task_id = stored.envelope.mission_id, stored.envelope.task_id
+        frozen = load_completion_result_inputs(self._store, stored, requirements_revision=requirements_revision)
+        self._lock_assured_acceptance(mission_id, task_id, result_id, requirements_revision)
+        receipt = LeafAcceptanceAssembly(self._store, self).accept(
+            mission_id, task_id, result_id=result_id,
+            layers=self._store.list_verifications(result_id, requirements_revision=requirements_revision),
+            artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
+            producer_agent_ids=(attempt.agent_id,),
+            reviewer_agent_id=f"critic:{attempt.id}",
+            now_ms=int(self._store.now * 1000),
+            input_manifest_hash=frozen.frozen.manifest_hash,
+            port_claims=frozen.port_claims,
+        )
+        self._emit(
+            "CarriedResultAccepted", mission_id,
+            key=f"{result_id}:r{requirements_revision}",
+            task_id=task_id, attempt_id=attempt.id,
+            payload={"result_id": result_id, "requirements_revision": int(requirements_revision),
+                     "acceptance_id": str(receipt.acceptance_id)},
+        )
+        return receipt
+
     def _prepare_assured_acceptance(self, result_id: str) -> Any:
         """Assurance 1.1: compute the current ACCEPT use right before the acceptance UoW.
 
@@ -2799,7 +2884,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 error.code, "the current use certificate could not be prepared"
             ) from error
 
-    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str) -> Any:
+    def _lock_assured_acceptance(self, mission_id: str, task_id: str, result_id: str,
+                                 requirements_revision: int | None = None) -> Any:
         """Assurance 1.1: the prepared ACCEPT use is locked before this UoW's own writes.
 
         The freshness/authority/root gates must see the world as it was when the
@@ -2815,8 +2901,12 @@ class CommitService(ProtectedTailCommitsMixin,
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
             return None
+        from .completion_inputs import frozen_requirements_revision
+
+        revision = (frozen_requirements_revision(self._store, self._require_result(result_id))
+                    if requirements_revision is None else int(requirements_revision))
         candidate = validity.candidate_for_consumer(
-            mission_id, ACCEPTANCE_CONSUMER, acceptance_id_for(task_id, result_id)
+            mission_id, ACCEPTANCE_CONSUMER, acceptance_id_for(task_id, result_id, revision)
         )
         if candidate is None:
             return None
@@ -2842,14 +2932,15 @@ class CommitService(ProtectedTailCommitsMixin,
         moved it yet), the losing candidates → SUPERSEDED with their results kept as
         history, and every dependent whose dependencies are now all COMPLETED → READY."""
 
+        from .completion_inputs import frozen_requirements_revision
+
         with self._store.transaction():
             stored = self._require_result(result_id)
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
                 from ..storage.operation_completion_store import OperationCompletionStore
-                from .leaf_acceptance import content_hash_of
-                acceptance_id = "acc-" + content_hash_of({
-                    "task": stored.envelope.task_id, "result": result_id,
-                })[:32]
+                from .assurance_validity import acceptance_id_for
+                acceptance_id = acceptance_id_for(
+                    stored.envelope.task_id, result_id, frozen_requirements_revision(self._store, stored))
                 if OperationCompletionStore(self._store).get_acceptance_scope_exact(
                     stored.envelope.mission_id, acceptance_id
                 ) is None:
@@ -2906,7 +2997,8 @@ class CommitService(ProtectedTailCommitsMixin,
             # transaction. No effect proposal is inferred from a Worker file.
             LeafAcceptanceAssembly(self._store, self).accept(
                 mission.id, task.id, result_id=result_id,
-                layers=self._store.list_verifications(result_id),
+                layers=self._store.list_verifications(
+                    result_id, requirements_revision=frozen_requirements_revision(self._store, stored)),
                 artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
                 producer_agent_ids=(attempt.agent_id,),
                 reviewer_agent_id=f"critic:{attempt.id}",

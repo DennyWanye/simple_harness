@@ -940,17 +940,23 @@ class Store:
 
     # ----------------------------------------------------------- verifications
     def upsert_verification(
-        self, *, result_id: str, attempt_id: str, layer: str, status: str, detail: Mapping[str, Any]
+        self, *, result_id: str, attempt_id: str, requirements_revision: int, layer: str, status: str,
+        detail: Mapping[str, Any],
     ) -> None:
+        """One verification layer of one result as judged under one requirements revision
+        (TaskGraph 补全第四批: a result kept across an amendment is reviewed again under the
+        new revision; both revisions' layers stand side by side)."""
         with self.transaction() as connection:
             connection.execute(
-                "INSERT INTO verifications(verification_id,result_id,attempt_id,layer,status,detail_json,created_at)"
-                " VALUES (?,?,?,?,?,?,?) ON CONFLICT(result_id, layer) DO UPDATE SET"
+                "INSERT INTO verifications(verification_id,result_id,attempt_id,requirements_revision,layer,"
+                "status,detail_json,created_at) VALUES (?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(result_id, requirements_revision, layer) DO UPDATE SET"
                 " status = excluded.status, detail_json = excluded.detail_json",
                 (
-                    f"{result_id}:{layer}",
+                    f"{result_id}:r{int(requirements_revision)}:{layer}",
                     result_id,
                     attempt_id,
+                    int(requirements_revision),
                     layer,
                     status,
                     canonical_json(dict(detail)),
@@ -958,14 +964,24 @@ class Store:
                 ),
             )
 
-    def list_verifications(self, result_id: str) -> list[dict[str, Any]]:
-        rows = self._connection.execute(
-            "SELECT layer, status, detail_json, created_at FROM verifications WHERE result_id = ?"
-            " ORDER BY created_at, layer",
-            (result_id,),
-        ).fetchall()
+    def list_verifications(self, result_id: str, *, requirements_revision: int | None) -> list[dict[str, Any]]:
+        """The layers recorded for one result under one requirements revision; ``None`` lists
+        every revision's layers (display only — a judgement reads one revision)."""
+        if requirements_revision is None:
+            rows = self._connection.execute(
+                "SELECT layer, status, detail_json, created_at, requirements_revision FROM verifications"
+                " WHERE result_id = ? ORDER BY requirements_revision, created_at, layer",
+                (result_id,),
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT layer, status, detail_json, created_at, requirements_revision FROM verifications"
+                " WHERE result_id = ? AND requirements_revision = ? ORDER BY created_at, layer",
+                (result_id, int(requirements_revision)),
+            ).fetchall()
         return [
-            {"layer": row[0], "status": row[1], "detail": _loads(row[2]), "created_at": row[3]}
+            {"layer": row[0], "status": row[1], "detail": _loads(row[2]), "created_at": row[3],
+             "requirements_revision": row[4]}
             for row in rows
         ]
 
@@ -1710,7 +1726,7 @@ class Store:
             "tasks": [task.to_json() for task in tasks],
             "attempts": [attempt.to_json() for attempt in attempts],
             "results": [
-                {**stored.to_json(), "verifications": self.list_verifications(stored.envelope.id)}
+                {**stored.to_json(), "verifications": self.list_verifications(stored.envelope.id, requirements_revision=None)}
                 for stored in results
                 if stored is not None
             ],

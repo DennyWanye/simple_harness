@@ -83,7 +83,7 @@ def cmd_attempt(args: argparse.Namespace) -> int:
                 if stored is None
                 else {
                     **stored.to_json(),
-                    "verifications": store.list_verifications(stored.envelope.id),
+                    "verifications": store.list_verifications(stored.envelope.id, requirements_revision=None),
                 },
             }
         )

@@ -541,15 +541,17 @@ def test_a_step_kept_by_the_replan_is_redone_when_the_amendment_lands_mid_check(
     asyncio.run(case())
 
 
-def test_kept_old_step_is_reported_not_rerun(tmp_path):
-    """改要求后规划器只换掉了没做完的那一步，已按旧版通过的那一步原样留在计划里：系统不自动重跑它，
-    派发处如实报"按旧版通过、现在不算数"；计划停住后规划器在请求里看得到这条，换掉这一步，任务按新版完成。
+def test_kept_old_step_is_reviewed_again_not_rerun(tmp_path):
+    """改要求后规划器只换掉了没做完的那一步，已按旧版通过的那一步原样留在计划里（TaskGraph 补全
+    第四批）：系统不派执行者、不建尝试，请审阅员按新版要求把同一份结果再审一次；通过后按新版多一条
+    验收，任务按新版完成。
 
-    **改坏检验**：细分原因改回"已通过、等完成" → 规划器看不到这条 → 变红。"""
+    **改坏检验**：TG4-01 重审通过却不写新版验收 → 这一步一直不算数 → 变红。"""
+    from agent_orchestrator.orchestrator.assurance_validity import acceptance_id_for
     from agent_orchestrator.testing.scripted_replies import decision
 
     seen: dict[str, Any] = {"packages": []}
-    state = {"second": False, "first": False}
+    state = {"second": False}
 
     def successor(package: dict[str, Any], step: dict[str, Any], why: str) -> Any:
         subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
@@ -575,15 +577,7 @@ def test_kept_old_step_is_reported_not_rerun(tmp_path):
         if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
             state["second"] = True
             [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
-            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步。")
-        if "NO_DISPATCHABLE_WORK" in sources and not state["first"]:
-            withheld = sources["NO_DISPATCHABLE_WORK"]["context"]["withheld"]
-            seen["withheld"] = withheld
-            old = [row for row in withheld if "ACCEPTED_UNDER_OLD_REQUIREMENTS" in (row.get("detail_codes") or ())]
-            if old:
-                state["first"] = True
-                step = next(item for item in steps if item["task_id"] == old[0]["task_id"])
-                return successor(package, step, "这一步是按旧版要求通过的，换掉重做。")
+            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步，做完的那步留着。")
         return base(request)
 
     async def case():
@@ -599,17 +593,24 @@ def test_kept_old_step_is_reported_not_rerun(tmp_path):
             [first] = htn.list_acceptances(mission_id)
             amend(world, mission_id, [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
             provider.go.set()
-            mission = await world.run_until_settled(mission_id, rounds=60)
+            mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 180)
             events = list(world.store.list_events(mission_id))
             assert str(mission.status.value) == "COMPLETED", (
                 mission.status, mission.final_report, state,
                 [(e.type, json.dumps(e.payload, ensure_ascii=False)[:300]) for e in events
                  if e.type in {"PlanningRejected", "MissionStalled", "HierarchicalMissionStalled"}][-4:])
-            assert state == {"second": True, "first": True}
-            # 旧的那一步没有被系统自动重跑：它只有当初那一次尝试
-            assert len(world.store.list_attempts(str(first.task_id))) == 1
-            [row] = [row for row in seen["withheld"] if row["task_id"] == str(first.task_id)]
-            assert row["detail_codes"] == ["ACCEPTED_UNDER_OLD_REQUIREMENTS"]
+            assert state["second"]
+            task_id = str(first.task_id)
+            # 留着的那一步没有被重跑：它只有当初那一次尝试
+            assert len(world.store.list_attempts(task_id)) == 1
+            result_id = world.store.get_task(task_id).accepted_result_id
+            # 按新版重审过（第 2 版要求下的审阅员一层通过），多了一条按第 2 版的验收
+            again = world.store.list_verifications(result_id, requirements_revision=2)
+            assert any(row["layer"] == "critic_review" and row["status"] == "PASS" for row in again), again
+            ids = {str(item.acceptance_id): int(item.requirements_revision)
+                   for item in htn.list_acceptances(mission_id) if str(item.task_id) == task_id}
+            assert ids == {acceptance_id_for(task_id, result_id, 1): 1, acceptance_id_for(task_id, result_id, 2): 2}
+            assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
 

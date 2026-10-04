@@ -400,7 +400,8 @@ class WorkspaceManager:
         """
 
         source = self._root / attempt_id
-        if not source.is_dir():
+        # 按记录重建时不读活动目录：已结束尝试的目录可能已回收（TaskGraph 补全第四批重审）
+        if artifacts is None and not source.is_dir():
             raise WorkspaceError(f"no workspace for {attempt_id}")
         target = self._root / f"{attempt_id}-verify"
         if target.exists():

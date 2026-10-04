@@ -166,9 +166,17 @@ class ProviderBudgetCommitAdapter:
         elif intent.config.get("attempt_id"):
             parent_attempt = self.store.get_attempt(str(intent.config["attempt_id"]))
             if parent_attempt is not None:
-                if parent_attempt.status in TERMINAL_ATTEMPT:
+                # TaskGraph 补全第四批：重审已验收的结果——原尝试与任务早已结束是常态，
+                # 它活着 = 这一步还在现行计划里（与审阅交接处同一个判断）
+                carried = intent.config.get("carried_requirements_revision") is not None
+                if carried:
+                    from ..orchestrator.assurance_review_import import carried_review_alive
+
+                    if not carried_review_alive(self.store, mission.id, parent_attempt.task_id):
+                        raise _deny("the step under re-review left the current plan")
+                elif parent_attempt.status in TERMINAL_ATTEMPT:
                     raise _deny("provider parent Attempt is terminal")
-                task_id = parent_attempt.task_id
+                task_id = None if carried else parent_attempt.task_id
         if task_id:
             task = self.store.get_task(str(task_id))
             if (

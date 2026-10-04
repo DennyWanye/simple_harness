@@ -217,7 +217,8 @@ def read_task_content_projection(
             raise OperationCompletionError(
                 "OP_CONTENT_REVIEW_UNAVAILABLE", "result Attempt differs"
             )
-        layers = layer_outcomes(store.list_verifications(result_id))
+        layers = layer_outcomes(store.list_verifications(
+            result_id, requirements_revision=int(scope.requirements_ref.revision)))
         # D7-8' sixth layer (2026-09-30, 审阅判不下来交给人): a Critic that could not
         # decide (NEEDS_HUMAN) counts as passed only under a recorded human_review PASS
         # of this same result; the person's ruling is the recorded ground, never a
@@ -313,7 +314,11 @@ def read_task_content_candidate(
         if result is None or result.envelope.mission_id != mission_id or result.envelope.task_id != task_id:
             raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "candidate result unavailable")
         attempt = store.get_attempt(result.envelope.attempt_id)
-        frozen = load_completion_result_inputs(store, result)
+        # 第四批：已验收的结果按现行（更新的）要求重审，冻结输入照旧、范围取现行的
+        accepted = result.verification_state == "DONE" and result.verdict == "PASS"
+        frozen = load_completion_result_inputs(
+            store, result,
+            requirements_revision=int(projected.scope.requirements_ref.revision) if accepted else None)
         if (attempt is None or attempt.task_id != task_id or not attempt.agent_id
             or frozen is None or frozen.scope != projected.scope):
             raise OperationCompletionError("OP_CONTENT_REVIEW_UNAVAILABLE", "candidate differs from frozen Attempt scope")
@@ -358,7 +363,8 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         raise ResolutionCommitRejected("OP_CONTENT_REVIEW_UNAVAILABLE", "no result identity")
     projection = read_task_content_projection(store, command.mission_id, command.task_id, result_id)
     result = store.get_result(result_id)
-    frozen = load_completion_result_inputs(store, result)
+    frozen = load_completion_result_inputs(
+        store, result, requirements_revision=int(command.requirements.revision))
     if frozen is None or command.package.binding.input_manifest_hash != frozen.frozen.manifest_hash:
         raise ResolutionCommitRejected(
             "OP_CONTENT_REVIEW_UNAVAILABLE", "review input differs from the original Attempt"
@@ -448,7 +454,7 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         raise ResolutionCommitRejected(
             "OP_CONTENT_REVIEW_UNAVAILABLE", "review is not the official Assurance record"
         )
-    for row in store.list_verifications(result_id):
+    for row in store.list_verifications(result_id, requirements_revision=int(command.requirements.revision)):
         if row["layer"] != "critic_review" or row["status"] not in {"PASS", "FAIL"}:
             continue
         named = dict(row.get("detail") or {}).get("official_review_record_id")

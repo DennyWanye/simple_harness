@@ -76,9 +76,9 @@ class AssuranceReviewHandoff:
         if body["subject"]["purpose"] == "TASK_CONTENT":
             result = store.get_result(body["subject"]["target"]["pin"]["id"])
             attempt = None if result is None else store.get_attempt(result.envelope.attempt_id)
+            # 存活（含"重审已验收结果"的情形）已由上面的 review_subject_stopped 判过，这里只核身份
             if (
                 attempt is None
-                or attempt.status in TERMINAL_ATTEMPT
                 or attempt.task_id != task.id
                 or intent.config.get("attempt_id") != attempt.id
             ):

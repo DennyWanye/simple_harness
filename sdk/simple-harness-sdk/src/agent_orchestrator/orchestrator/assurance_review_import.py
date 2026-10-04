@@ -140,13 +140,44 @@ def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
             and str((event.payload or {}).get("package_id", "")) == str(package_id)
             for event in store.list_events(mission.id)
         )
-    if task.status in TERMINAL_TASK:
-        return True
     if purpose == "TASK_CONTENT":
         result = store.get_result(body["subject"]["target"]["pin"]["id"])
         attempt = None if result is None else store.get_attempt(result.envelope.attempt_id)
-        return attempt is None or attempt.status in TERMINAL_ATTEMPT
-    return False
+        if attempt is None:
+            return True
+        if carried_review_binding(store, body, result):
+            # TaskGraph 补全第四批：重审的对象是已验收的结果，任务与原尝试早已结束是它的常态；
+            # 它活着 = 任务没结束、这一步还在现行计划里
+            return not carried_review_alive(store, mission.id, task.id)
+        return task.status in TERMINAL_TASK or attempt.status in TERMINAL_ATTEMPT
+    return task.status in TERMINAL_TASK
+
+
+def carried_review_binding(store: Any, body: Any, result: Any) -> bool:
+    """Whether a TASK_CONTENT review binding judges an accepted result again under
+    requirements newer than the ones it was produced under (TaskGraph 补全第四批)."""
+    from .completion_inputs import frozen_requirements_revision
+    from .operation_completion import OperationCompletionError
+
+    try:
+        return int(body["requirements_ref"]["revision"]) > frozen_requirements_revision(store, result)
+    except OperationCompletionError:
+        return False
+
+
+def carried_review_alive(store: Any, mission_id: str, task_id: str) -> bool:
+    """Whether a re-review of a kept, accepted result still has a subject: its Mission has
+    not ended and the step is in the current plan.  The one reading every carried-review
+    liveness check uses — the Attempt ended long ago and says nothing."""
+    from ..storage.htn_store import HtnStore
+
+    mission = store.get_mission(mission_id)
+    if mission is None or mission.status in TERMINAL_MISSION:
+        return False
+    htn = HtnStore(store)
+    active = htn.active_plan_revision(mission_id)
+    return active is not None and any(
+        str(item.task_id) == str(task_id) for item in htn.list_plan_memberships(mission_id, active.revision))
 
 
 def read_imported_review_locked(
