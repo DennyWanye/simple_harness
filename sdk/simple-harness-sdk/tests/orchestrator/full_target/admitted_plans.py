@@ -58,13 +58,14 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
     report = assess_method(
         parent, contract, world.snapshot(), world.capabilities(), registry=world.predicates
     )
-    # What this network already holds that a slot of the new method may bind instead of
-    # re-doing; the slots of an instance being replaced leave with it.
-    sharing = shared_goal_index(
+    # The steps the scripted decision named (TaskGraph 补全第三批), resolved against what
+    # this network holds; the slots of an instance being replaced leave with it.
+    held = {str(entry.occurrence_id): entry for entry in shared_goal_index(
         network,
         catalog=world.catalog,
         exclude_occurrence_ids=tuple(_occurrences_leaving_with(network, retiring)),
-    )
+    )}
+    reuse = {step: held[str(occurrence)] for step, occurrence in operation.reuse.items()}
     draft = ground_method(
         parent,
         contract,
@@ -72,7 +73,7 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
         report,
         catalog=world.catalog,
         schemas=world.schemas,
-        sharing=sharing,
+        reuse=reuse,
         plan_revision=network.plan_revision,
         goal_occurrence_id=OccurrenceId(occurrence),
     )
@@ -84,7 +85,7 @@ def compile_scripted(dispatch: Any, mission_id: str, proposal: PlanProposal) -> 
         catalog=world.catalog,
         schemas=world.schemas,
         registry=world.registry,
-        sharing=sharing,
+        reuse=reuse,
         retire_instance_ids=retiring,
         requirements_revision=0 if confirmed is None else int(confirmed.revision),
         compiled_from_proposal_id=proposal.proposal_id,

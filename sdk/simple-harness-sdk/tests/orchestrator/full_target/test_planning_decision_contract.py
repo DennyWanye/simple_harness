@@ -65,13 +65,12 @@ def test_planning_decision_type_members_are_pinned() -> None:
         ("PROPOSE_METHOD", "PROPOSE_METHOD"),
         ("REQUEST_EVIDENCE", "REQUEST_EVIDENCE"),
         ("REPAIR", "REPAIR"),
-        ("BIND_EXISTING_GOAL", "BIND_EXISTING_GOAL"),
         ("REQUEST_HUMAN", "REQUEST_HUMAN"),
         ("WAIT", "WAIT"),
         ("NO_CHANGE", "NO_CHANGE"),
         ("READ_METHOD_LIBRARY", "READ_METHOD_LIBRARY"),
     ]
-    assert len(PlanningDecisionType) == 9
+    assert len(PlanningDecisionType) == 8
 
 
 def test_planning_ref_kind_members_are_pinned() -> None:
@@ -220,7 +219,7 @@ def test_max_planning_ref_id_is_pinned_with_boundaries() -> None:
 
 def test_every_decision_kind_this_build_decodes_is_enabled() -> None:
     assert ENABLED_DECISIONS == frozenset({
-        "REFINE", "PROPOSE_METHOD", "REQUEST_EVIDENCE", "BIND_EXISTING_GOAL", "REQUEST_HUMAN",
+        "REFINE", "PROPOSE_METHOD", "REQUEST_EVIDENCE", "REQUEST_HUMAN",
         "WAIT", "NO_CHANGE", "READ_METHOD_LIBRARY",
         "REPAIR/REPLACE_METHOD", "REPAIR/REFINE_DEEPER", "REPAIR/REBIND_INPUT",
         "REPAIR/CANCEL_BRANCH", "REPAIR/RETRY_SAME_METHOD", "REPAIR/DECLARE_RUNTIME_BLOCKED",

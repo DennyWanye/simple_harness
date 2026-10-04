@@ -335,6 +335,38 @@ def validate_result_port_claims(
     return tuple({"port_key": item.port_key, "path": item.path} for item in port_claims)
 
 
+def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs) -> Any:
+    """The completion scope this Attempt's result is judged under: the one frozen at
+    dispatch, or — when a later plan revision did not change it in anything but the
+    revision (:meth:`OperationCompletionStore.scope_unchanged`, the same reading that
+    carries accepted content) — the current one (TaskGraph 补全第 8a 条: sharing a
+    running step always commits a revision).  A scope that really changed is stale."""
+
+    from ..storage.operation_completion_store import OperationCompletionStore
+
+    completion = OperationCompletionStore(store)
+    row = completion.get_scope_exact(mission_id, frozen.plan_revision, frozen.occurrence_id)
+    original = None if row is None else row["document"]
+    if (
+        original is None
+        or str(original.scope_id) != frozen.scope_id
+        or original.content_hash() != frozen.scope_hash
+        or original.plan_ref.snapshot_hash != frozen.plan_snapshot_hash
+        or original.task_ref.id != frozen.task_id
+        or original.task_ref.revision != frozen.task_revision
+        or original.task_ref.content_hash != frozen.task_hash
+    ):
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "frozen completion scope differs")
+    active = HtnStore(store).active_plan_revision(mission_id)
+    if active is None:
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "the adopted plan is unavailable")
+    plan_ref = PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash)
+    scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
+    if scope != original and not completion.scope_unchanged(original, scope):
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "the completion scope changed under the Attempt")
+    return scope
+
+
 def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletionResultInputs:
     """Re-read frozen dispatch inputs and durable ResultSubmitted port claims.
 
@@ -378,18 +410,7 @@ def load_completion_result_inputs(store: Store, result: Any) -> FrozenCompletion
     ):
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "input manifest is not bound to Attempt")
 
-    plan_ref = PlanRevisionPinV1(
-        revision=frozen.plan_revision, snapshot_hash=frozen.plan_snapshot_hash
-    )
-    scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
-    if (
-        str(scope.scope_id) != frozen.scope_id
-        or scope.content_hash() != frozen.scope_hash
-        or scope.task_ref.id != frozen.task_id
-        or scope.task_ref.revision != frozen.task_revision
-        or scope.task_ref.content_hash != frozen.task_hash
-    ):
-        raise _refuse("OP_EFFECT_SCOPE_STALE", "frozen completion scope differs")
+    scope = _current_scope(store, mission_id, frozen)
 
     events = [
         event

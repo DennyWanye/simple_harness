@@ -124,7 +124,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "reuse_accepted",
     "domain": "widget",
     "resource_reads": [
       {
@@ -188,7 +187,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget"
   },
   {
@@ -246,7 +244,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "resource_writes": [
       {
@@ -310,7 +307,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "resource_writes": [
       {
@@ -374,7 +370,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget"
   },
   {
@@ -422,7 +417,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "observes": [
       {
@@ -476,7 +470,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "observes": [
       {
@@ -530,7 +523,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "observes": [
       {
@@ -584,7 +576,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "observes": [
       {
@@ -642,7 +633,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "widget",
     "observes": [
       {

@@ -9,7 +9,7 @@
 
 * 叶子的完成范围换了新版本，但它仍算完成——内容就是原来那份验收（那份验收和它的完成范围原样
   还在库里），子目标也仍算完成，当前的子步骤支撑里有这个叶子；
-* 结构修复的来源表里，子目标仍带着它当前的目标结论。
+* 子目标仍带着它当前的目标结论。
 
 2026-10-03（HTN 补齐阶段 A′，分诊表：重写 2 → 1）：原来两条建在端到端枢纽世界上（裸
 ``CommitService`` 建任务、手工提交计划、手工验收叶子），产品上已建不出来。原第一条的后半
@@ -38,7 +38,6 @@ from test_nested_compound_composition import _method  # noqa: E402
 
 from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion  # noqa: E402
 from agent_orchestrator.orchestrator.completion_support import current_child_supports  # noqa: E402
-from agent_orchestrator.orchestrator.planning_graph_repairs import graph_repair_sources  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore  # noqa: E402
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
@@ -125,8 +124,7 @@ def test_an_unrelated_successor_retains_the_real_accepted_content(tmp_path):
             assert leaf_before.complete
             completion = OperationCompletionStore(store)
             [original] = completion.list_scoped_contributions(mission_id, leaf_before.scope.scope_id)
-            row = next(row for row in graph_repair_sources(store, network) if row["occurrence_id"] == str(assess.occurrence_id))
-            assert row["resolution_ref"]["id"] == str(resolution.resolution_id)
+            assert str(resolution.validity) == "CURRENT"
 
             # 规划器对还在跑的 act 提后继步骤：计划提交第 2 版。
             intent = await world.open_planner_round()
@@ -169,7 +167,8 @@ def test_an_unrelated_successor_retains_the_real_accepted_content(tmp_path):
             assert completion.get_acceptance_scope_exact(mission_id, original["document"].acceptance_id) == original
             nested = after.adopted_instance_for(assess.occurrence_id)
             assert str(leaf) in current_child_supports(store, mission_id, nested.child_bindings)
-            row = next(row for row in graph_repair_sources(store, after) if row["occurrence_id"] == str(assess.occurrence_id))
-            assert row["resolution_ref"]["id"] == str(resolution.resolution_id)
+            [still] = [item for item in htn.list_goal_resolutions(mission_id)
+                       if str(item.resolution_id) == str(resolution.resolution_id)]
+            assert str(still.validity) == "CURRENT"  # 子目标仍带着它当前的目标结论
 
     asyncio.run(case())

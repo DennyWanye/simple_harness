@@ -167,7 +167,7 @@ CONTRACT_ERROR_CODE_MAPPINGS: tuple[ContractErrorMapping, ...] = (
     ContractErrorMapping(
         code=PlanningDecisionRejectionCode.DECISION_TYPE_UNKNOWN,
         matches=_is_unknown_decision_type,
-        detail="decision_type is not one of the nine H1 types",
+        detail="decision_type is not one of the H1 decision types",
     ),
     ContractErrorMapping(
         code=PlanningDecisionRejectionCode.MALFORMED_DECISION,

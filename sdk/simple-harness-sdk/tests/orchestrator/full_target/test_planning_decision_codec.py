@@ -188,7 +188,7 @@ def test_a_fenced_json_block_is_accepted() -> None:
 
 @pytest.mark.parametrize(
     "fixture_name",
-    ("repair-propose-successor", "bind-existing-goal-reuse", "bind-existing-goal-share"),
+    ("repair-propose-successor",),
 )
 def test_demoted_operations_still_decode_and_round_trip(
     fixture_name: str,

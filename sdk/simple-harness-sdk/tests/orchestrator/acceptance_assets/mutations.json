@@ -808,6 +808,39 @@
     "tests/orchestrator/full_target/test_hierarchical_event_flow.py::test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_planner_branch"
    ],
    "note": "计划完整性停止不处理已创建状态：任务一直停在已创建"
+  },
+  {
+   "id": "TG3-04",
+   "source": "TaskGraph 补全第三批（点名共用：负责的要求不变）",
+   "file": "src/agent_orchestrator/planning/plan_preview.py",
+   "original": "        extra = sorted(handed - owned)\n",
+   "replacement": "        extra = []\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_shared_steps.py::test_sharing_does_not_widen_what_the_named_step_answers_for"
+   ],
+   "note": "不再比较交给共用步骤的要求：多负责一条要求的点名照样通过，不再按 REUSE_NOT_ALLOWED 退回"
+  },
+  {
+   "id": "TG3-05",
+   "source": "TaskGraph 补全第三批（换做法只删只属于被退休做法的边）",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "        return (one in retiring_members and other in retiring_members\n                and not any(one in held and other in held for held in surviving_members))\n",
+   "replacement": "        return one in retiring_members or other in retiring_members\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
+   ],
+   "note": "改回\"碰到被退休做法的孩子就删\"：共用步骤与留下分支之间的边被删，两个方向都变红"
+  },
+  {
+   "id": "TG3-06",
+   "source": "TaskGraph 补全第 8a 条（在跑的步骤跨计划版本交结果）",
+   "file": "src/agent_orchestrator/storage/operation_completion_store.py",
+   "original": "        if old.occurrence_id != current.occurrence_id or old.mission_id != current.mission_id:\n            return False\n",
+   "replacement": "        if True:\n            return False\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_shared_steps.py::test_a_named_shared_step_is_done_once_and_feeds_the_other_branch"
+   ],
+   "note": "范围没变也不算沿用：共用在跑的步骤交的结果被当作过期归档，下游永远等不到，任务失败"
   }
  ]
 }

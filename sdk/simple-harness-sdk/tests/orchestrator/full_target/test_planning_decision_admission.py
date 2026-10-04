@@ -85,6 +85,11 @@ REJECTION = PlanningDecisionRejectionCode
 #: The codes of §33 whose *decision* belongs to the strict codec (H1-C) or to the
 #: contract layer (H1-A2b).  They are never admission's answer; admission is
 #: reached only by a shape the codec already accepted.
+#: Codes a later layer produces, with the test that produces them there.  A named
+#: reuse (TaskGraph 补全第三批) is checked where the plan is previewed: the order
+#: checks need the network and the eligible sharing sources, not the request.
+PREVIEW_LAYER_CODES = frozenset({"REUSE_NOT_ALLOWED"})
+
 CODEC_LAYER_CODES = frozenset(
     {
         "DECISION_BLOCK_MISSING",
@@ -128,7 +133,6 @@ ADMISSION_CODE_CASES: dict[str, str] = {
     "RUNNING_WORK_NOT_RECONCILED": "test_running_work_on_the_retired_instance_is_refused",
     "REPAIR_NOT_ALLOWED": "test_a_phase_that_does_not_allow_repair_is_refused",
     "OBLIGATION_NOT_OPEN": "test_a_successor_on_a_closed_obligation_is_refused",
-    "REUSE_NOT_ALLOWED": "test_a_resolution_that_is_not_current_cannot_be_reused",
     "REFINEMENT_CYCLE": "test_a_successor_that_would_refine_itself_is_refused",
     "ORDER_CYCLE": "test_a_refinement_that_closes_an_order_cycle_is_refused",
     "DATA_UNBOUND": "test_a_data_edge_without_a_producer_is_refused",
@@ -343,8 +347,6 @@ def _context(**overrides: Any) -> AdmissionContext:
         "predicates": frozenset(),
         "active_method_instances": _instances(),
         "open_obligations": (_ref("obligation", "o-1", 2, HASH_C),),
-        "current_resolutions": (_ref("resolution", "r-1", 1, HASH_C),),
-        "shareable_goals": (_ref("task", "g-1", 1, HASH_B),),
         "authorization": AuthorizationView(approval_granted=True),
         "capabilities": CapabilityView(available=frozenset()),
         "budget": BudgetView(
@@ -462,8 +464,6 @@ def _context_for_knob(code: str) -> AdmissionContext:
         return _context(repair_allowed=False)
     if code == "OBLIGATION_NOT_OPEN":
         return _context(open_obligations=())
-    if code == "REUSE_NOT_ALLOWED":
-        return _context(current_resolutions=())
     if code == "REFINEMENT_CYCLE":
         return _context(
             plan_shape=PlanShapeView(refinement_cycle=("t-1 is an ancestor of goal.type",))
@@ -559,9 +559,10 @@ def test_the_h1f_case_list_is_not_empty_and_every_case_owns_its_code() -> None:
 
 def test_every_admission_rejection_code_has_a_case() -> None:
     listed = {member.value for member in REJECTION}
-    declared = set(ADMISSION_CODE_CASES) | CODEC_LAYER_CODES
+    declared = set(ADMISSION_CODE_CASES) | CODEC_LAYER_CODES | PREVIEW_LAYER_CODES
     assert declared == listed
     assert not (set(ADMISSION_CODE_CASES) & CODEC_LAYER_CODES)
+    assert not (set(ADMISSION_CODE_CASES) & PREVIEW_LAYER_CODES)
 
 
 # --------------------------------------------------------------------------------------
@@ -577,8 +578,6 @@ EXECUTABLE_VALID = (
 
 DECODE_ONLY_VALID = (
     "repair-propose-successor",
-    "bind-existing-goal-reuse",
-    "bind-existing-goal-share",
     "request-evidence",
     "request-human",
     "propose-method",
@@ -1105,30 +1104,6 @@ def test_a_refinement_that_leaves_an_obligation_uncovered_is_refused() -> None:
 # --------------------------------------------------------------------------------------
 
 
-def test_a_resolution_that_is_not_current_cannot_be_reused() -> None:
-    feedback = _reject(
-        _valid_envelope("bind-existing-goal-reuse"),
-        _context(
-            current_resolutions=(),
-            enabled_decision_types=H1_ENABLED | {"BIND_EXISTING_GOAL"},
-        ),
-    )
-    assert _codes(feedback) == ["REUSE_NOT_ALLOWED"]
-    assert feedback.problems[0].field_path == "/payload/resolution_ref"
-
-
-def test_a_goal_that_is_no_longer_demanded_cannot_be_shared() -> None:
-    feedback = _reject(
-        _valid_envelope("bind-existing-goal-share"),
-        _context(
-            shareable_goals=(),
-            enabled_decision_types=H1_ENABLED | {"BIND_EXISTING_GOAL"},
-        ),
-    )
-    assert _codes(feedback) == ["REUSE_NOT_ALLOWED"]
-    assert feedback.problems[0].field_path == "/payload/goal_ref"
-
-
 # --------------------------------------------------------------------------------------
 # The operation gate and the internal contract guard.
 # --------------------------------------------------------------------------------------
@@ -1437,9 +1412,6 @@ CITATION_SITES: tuple[tuple[str, str], ...] = (
     ("repair-replace-method", "/payload/replacement_method_ref"),
     ("repair-propose-successor", "/payload/old_task_ref"),
     ("repair-propose-successor", "/payload/obligation_ref"),
-    ("bind-existing-goal-reuse", "/payload/consumer_method_instance_ref"),
-    ("bind-existing-goal-reuse", "/payload/goal_ref"),
-    ("bind-existing-goal-reuse", "/payload/resolution_ref"),
     ("wait", "/payload/wait_for/0"),
 )
 
@@ -1478,24 +1450,6 @@ def test_the_wait_target_is_compared_as_a_full_quadruple() -> None:
     assert feedback.problems[0].field_path == "/payload/wait_for/0"
 
 
-def test_a_moved_goal_ref_is_refused() -> None:
-    raw = _raw_fixture("bind-existing-goal-share")
-    raw["payload"]["goal_ref"]["content_hash"] = HASH_C
-    decision = PlanningDecisionEnvelopeV1.from_json(raw)
-    feedback = _reject(decision, _context())
-    assert _codes(feedback) == ["REF_OUTSIDE_CONTEXT"]
-    assert feedback.problems[0].field_path == "/payload/goal_ref"
-
-
-def test_a_moved_consumer_instance_ref_is_refused() -> None:
-    raw = _raw_fixture("bind-existing-goal-reuse")
-    raw["payload"]["consumer_method_instance_ref"]["content_hash"] = HASH_C
-    decision = PlanningDecisionEnvelopeV1.from_json(raw)
-    feedback = _reject(decision, _context())
-    assert _codes(feedback) == ["REF_OUTSIDE_CONTEXT"]
-    assert feedback.problems[0].field_path == "/payload/consumer_method_instance_ref"
-
-
 def test_a_moved_successor_old_task_ref_is_refused() -> None:
     raw = _raw_fixture("repair-propose-successor")
     raw["payload"]["old_task_ref"]["semantic_revision"] = 5
@@ -1530,15 +1484,6 @@ def test_a_moved_replacement_method_ref_is_refused() -> None:
     feedback = _reject(decision, _context())
     assert _codes(feedback) == ["REF_OUTSIDE_CONTEXT"]
     assert feedback.problems[0].field_path == "/payload/replacement_method_ref"
-
-
-def test_a_moved_resolution_ref_is_refused() -> None:
-    raw = _raw_fixture("bind-existing-goal-reuse")
-    raw["payload"]["resolution_ref"]["semantic_revision"] = 2
-    decision = PlanningDecisionEnvelopeV1.from_json(raw)
-    feedback = _reject(decision, _context())
-    assert _codes(feedback) == ["REF_OUTSIDE_CONTEXT"]
-    assert feedback.problems[0].field_path == "/payload/resolution_ref"
 
 
 # --- P1-6: the repair target is the instance that quadruple names ------------------

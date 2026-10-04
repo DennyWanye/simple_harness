@@ -145,7 +145,7 @@ def test_terminal_replay_never_writes_raw_artifact_or_database(
     async def case() -> None:
         async with seeded(tmp_path, key="i01-terminal-raw-replay") as (loop, mission, _world, _root, dispatch, _product):
             opener = await _open_planner_round(loop, mission, dispatch, ordinal=1)
-            raw = _raw_fixture("bind-existing-goal-reuse", opener.config["planning_package"])
+            raw = _raw_fixture("repair-propose-successor", opener.config["planning_package"])
             await loop._collect_plan_decision(opener, object(), mission, raw, dispatch)
             terminal = PlanningDecisionStore(loop.store).get_planning_decision_by_attempt(
                 opener.intent_id, 0

@@ -287,9 +287,7 @@ def read_planner_package(
         package_version=package_version, mission=mission, network=network, views=views,
         sections=sections, previous_feedback=previous_feedback,
         authorities=[*_network_authorities(network), *duty_refs],
-        extra_refs=[*instance_refs, *(ref for row in sharing
-                                      for ref in (row["task_ref"], row["resolution_ref"])
-                                      if ref is not None)],
+        extra_refs=list(instance_refs),
         omitted={"methods": omitted_methods, "facts": omitted_facts})
 
 

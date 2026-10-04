@@ -1342,43 +1342,15 @@ def test_human_authorship_does_not_relax_the_model_promotion_rule() -> None:
         MethodRegistration.from_json(payload)
 
 
-def test_a_method_step_may_declare_how_its_work_is_de_duplicated() -> None:
-    step = MethodStep(
-        local_id="extract",
-        task_type_ref=vref("extract-evidence"),
-        form=TaskForm.PRIMITIVE,
-        arguments={},
-        required_capabilities=("sources.read",),
-        obligation_relation=ObligationRelation.REFINES_PARENT,
-        reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-    )
-
-    assert step.to_json()["reuse_policy"] == "reuse_accepted"
-    assert (
-        MethodStep.from_json(step.to_json(), "step", StructureBudget(MAX_CONDITION_NODES)) == step
-    )
-
-
-def test_a_step_that_declares_no_reuse_policy_keeps_the_published_schema_bytes() -> None:
-    """``method-contract-v1`` does not declare this field, so an unset step is unchanged."""
+def test_a_method_step_carries_no_reuse_policy() -> None:
+    """TaskGraph 补全第三批：共用由规划器在决定里点名，做法步骤不再声明复用方式——
+    步骤编码里没有这个键，带了按未知字段拒绝。"""
 
     contract = method_contract()
     assert "reuse_policy" not in contract.steps[0].to_json()
-    assert contract.steps[0].reuse_policy is None
-
-
-def test_a_method_step_refuses_an_unknown_reuse_policy() -> None:
-    payload = MethodStep(
-        local_id="extract",
-        task_type_ref=vref("extract-evidence"),
-        form=TaskForm.PRIMITIVE,
-        arguments={},
-        required_capabilities=(),
-        obligation_relation=ObligationRelation.REFINES_PARENT,
-    ).to_json()
-    payload["reuse_policy"] = "whatever_is_cheapest"
-
-    with pytest.raises(ContractError, match="must be one of"):
+    payload = contract.steps[0].to_json()
+    payload["reuse_policy"] = "reuse_accepted"
+    with pytest.raises(ContractError, match="unknown fields"):
         MethodStep.from_json(payload, "step", StructureBudget(MAX_CONDITION_NODES))
 
 

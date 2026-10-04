@@ -4482,14 +4482,20 @@ class Orchestrator:
                     str(item.predicate_ref.id) for item in iter_predicates(contract.applicable_when)
                 )
             )
+            # several goals may share the method's type; the first one assessed against it
+            # carries the report (a goal already refined is no longer assessed)
             report = next(
                 (
-                    report_by_method.get(
-                        (str(spec.occurrence_id), ref.method_id, ref.version, ref.content_hash)
+                    found
+                    for found in (
+                        report_by_method.get(
+                            (str(spec.occurrence_id), ref.method_id, ref.version, ref.content_hash)
+                        )
+                        for spec in network.occurrences
+                        if str(spec.occurrence_id) in subject_by_occurrence
+                        and subject_by_occurrence[str(spec.occurrence_id)] in applies_to
                     )
-                    for spec in network.occurrences
-                    if str(spec.occurrence_id) in subject_by_occurrence
-                    and subject_by_occurrence[str(spec.occurrence_id)] in applies_to
+                    if found is not None
                 ),
                 None,
             )
@@ -5875,6 +5881,25 @@ class Orchestrator:
             return True
         self._note(f"result {result_id}: acceptance refused {count}x ({error}) -> FAIL")
         return True
+
+    def _scope_carried(self, result_id: str) -> bool:
+        """The plan moved while this result was verified, but its step's completion scope
+        did not change in anything but the revision (TaskGraph 补全第 8a 条): the
+        verification started under the old revision is dropped and the same result is
+        verified again next round under the current scope — not set aside."""
+
+        from .completion_inputs import load_completion_result_inputs
+        from .operation_completion import OperationCompletionError
+
+        stored = self.store.get_result(result_id)
+        if stored is None:
+            return False
+        try:
+            with self.store.read_view():
+                frozen = load_completion_result_inputs(self.store, stored)
+        except OperationCompletionError:
+            return False
+        return frozen.scope.plan_ref.revision != frozen.frozen.plan_revision
 
     async def _set_aside_stale(self, result_id: str) -> bool:
         """Archive a result whose completion scope went stale under it (see
@@ -7999,6 +8024,8 @@ class Orchestrator:
             # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）
             if error.code not in {"CHECK_SCOPE_CHANGED", "OP_EFFECT_SCOPE_STALE"}:
                 raise
+            if self._scope_carried(result_id):
+                return self._verdict_refused(result_id, error)
             return await self._set_aside_stale(result_id)
         if critic_admission_failure is not None:
             admission_detail_error = critic_admission_failure.error
@@ -8077,6 +8104,8 @@ class Orchestrator:
             # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）
             if error.code not in {"CHECK_SCOPE_CHANGED", "OP_EFFECT_SCOPE_STALE"}:
                 raise
+            if self._scope_carried(result_id):
+                return self._verdict_refused(result_id, error)
             return await self._set_aside_stale(result_id)
         except (CommitRejected, IllegalTransition, ResolutionCommitRejected) as error:
             # the Attempt was closed / taken over while we verified (P1-4): the verdict is

@@ -215,18 +215,6 @@ def test_every_declared_predicate_has_an_observer(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", PILOT_DOMAINS)
-def test_each_domain_ships_a_shareable_read_only_sub_goal(name: str) -> None:
-    from agent_orchestrator.contracts.htn import ReusePolicy
-
-    domain = load_domain(name)
-    shareable = [
-        spec for spec in domain.task_types if spec.reuse_policy is not ReusePolicy.NEW_WORK
-    ]
-    assert shareable
-    assert all(spec.read_only for spec in shareable)
-
-
-@pytest.mark.parametrize("name", PILOT_DOMAINS)
 def test_every_seed_method_reaches_trial_admission(name: str) -> None:
     env = seed_env()
     for contract in load_domain(name).methods:
@@ -1035,48 +1023,6 @@ def _seed_method(env: Env, method_id: str):
     return contract
 
 
-def _assess_the_regression(env: Env, bundle):
-    """Round two: refine the assessment sub-goal against what round one left behind."""
-
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import shared_goal_index
-    from agent_orchestrator.planning.htn.applicability import assess_method
-    from agent_orchestrator.planning.htn.grounding import ground_method
-
-    network = bundle.network
-    child = next(
-        spec
-        for spec in network.occurrences
-        if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-        == "code.assess-regression"
-    )
-    parent = network.binding_for_occurrence(child.occurrence_id)
-    contract = _seed_method(env, "code.assess-by-reading")
-    report = assess_method(
-        parent, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    assert report.applicable, report.status
-    sharing = shared_goal_index(network, catalog=env.catalog)
-    draft = ground_method(
-        parent,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=sharing,
-        goal_occurrence_id=child.occurrence_id,
-    )
-    return compile_refinement_bundle(
-        draft,
-        network,
-        method=contract,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-        sharing=sharing,
-    )
-
-
 def _readings(network) -> list:
     return [
         spec
@@ -1086,36 +1032,9 @@ def _readings(network) -> list:
     ]
 
 
-def test_the_code_domain_can_now_express_a_shared_read_only_sub_goal() -> None:
-    """G2: no pair of seed methods could ever want the same read-only goal.
-
-    ``code.fix-by-patch`` and ``code.fix-by-revert`` both read the repository, but
-    they are alternatives for one goal, so only the chosen one is ever grounded — one
-    consumer, never two.  The assessment sub-goal is a *child*, not an alternative, so
-    the parent's reading and the child's are two slots of one goal.
-    """
-
-    env = world_for_code(seed_env())
-    first = _assessed_revert(env)
-    assert len(_readings(first.network)) == 1
-    second = _assess_the_regression(env, first)
-    assert len(_readings(second.network)) == 1, "two consumers, one reading"
-
-
-def test_the_assessment_still_gets_its_input_from_that_one_reading() -> None:
-    env = world_for_code(seed_env())
-    second = _assess_the_regression(env, _assessed_revert(env))
-    shared = str(_readings(second.network)[0].occurrence_id)
-    fed = {
-        str(requirement.consumer_occurrence)
-        for requirement in second.network.data_requirements
-        if str(requirement.producer_occurrence) == shared
-    }
-    assert len(fed) == 2, "the parent's revert and the child's reproduce both read it"
-
-
-def test_without_the_index_the_seed_pair_reads_the_repository_twice() -> None:
-    """The control: the sharing is the index's doing, not a property of the methods."""
+def test_without_a_named_reuse_the_seed_pair_reads_the_repository_twice() -> None:
+    """Nothing is shared by signature (TaskGraph 补全第三批): two identical reading steps
+    stay two steps unless the Planner names the existing one on its decision."""
 
     from agent_orchestrator.planning.htn.applicability import assess_method
     from agent_orchestrator.planning.htn.grounding import ground_method

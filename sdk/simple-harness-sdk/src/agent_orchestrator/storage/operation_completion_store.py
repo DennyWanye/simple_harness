@@ -961,6 +961,33 @@ class OperationCompletionStore:
             for row in rows
         )
 
+    def scope_unchanged(self, old: Any, current: Any) -> bool:
+        """Whether an earlier revision's frozen occurrence scope is the current one in all
+        but the plan revision: same identity (requirements, Task contract, criteria,
+        effects), adopted by a genuine commit, and the occurrence reads the same data
+        edges.  The one reading behind carrying accepted content and an in-flight result
+        across a plan revision that did not touch the step (TaskGraph 补全第 8a 条)."""
+
+        if old.occurrence_id != current.occurrence_id or old.mission_id != current.mission_id:
+            return False
+        if ({key: value for key, value in old.to_json().items() if key != "plan_ref"}
+                != {key: value for key, value in current.to_json().items() if key != "plan_ref"}):
+            return False
+        row = self.get_scope_exact(old.mission_id, old.plan_ref.revision, old.occurrence_id)
+        if row is None or row["document"] != old:
+            return False
+        htn = HtnStore(self._store)
+        receipt = htn.get_commit_receipt(row["plan_receipt_id"])
+        if (receipt.mission_id != old.mission_id or receipt.new_plan_revision != old.plan_ref.revision
+                or receipt.output_identity.get("snapshot_hash") != old.plan_ref.snapshot_hash):
+            return False
+
+        def data_at(revision: int) -> list[str]:
+            return sorted(canonical_json(item.to_json()) for item in htn.list_data_requirements(
+                old.mission_id, revision) if str(item.consumer_occurrence) == old.occurrence_id)
+
+        return data_at(old.plan_ref.revision) == data_at(current.plan_ref.revision)
+
     def retained_content_contributions(self, scope: Any) -> tuple[dict[str, Any], ...]:
         """Read original content receipts across an unchanged H4 occurrence scope.
 
@@ -974,24 +1001,13 @@ class OperationCompletionStore:
             "AND task_id=? AND plan_revision<? ORDER BY plan_revision DESC",
             (scope.mission_id, scope.occurrence_id, scope.task_ref.id, scope.plan_ref.revision),
         ).fetchall()
-        identity = {key: value for key, value in scope.to_json().items() if key != "plan_ref"}
-        htn = HtnStore(self._store)
-        def data_at(revision: int) -> list[str]:
-            return sorted(canonical_json(item.to_json()) for item in htn.list_data_requirements(
-                scope.mission_id, revision) if str(item.consumer_occurrence) == scope.occurrence_id)
-        data = data_at(scope.plan_ref.revision)
         found = {row["document"].acceptance_id: row for row in current}
         for raw in rows:
             stored = self._decoded(raw, scope_kind, "retained_completion_scope")
             if stored is None:
                 continue
             old = stored["document"]
-            if {key: value for key, value in old.to_json().items() if key != "plan_ref"} != identity:
-                continue
-            receipt = htn.get_commit_receipt(stored["plan_receipt_id"])
-            if (receipt.mission_id != scope.mission_id or receipt.new_plan_revision != old.plan_ref.revision
-                    or receipt.output_identity.get("snapshot_hash") != old.plan_ref.snapshot_hash
-                    or data_at(old.plan_ref.revision) != data):
+            if not self.scope_unchanged(old, scope):
                 continue
             for contribution in self.list_scoped_contributions(scope.mission_id, old.scope_id):
                 document = contribution["document"]

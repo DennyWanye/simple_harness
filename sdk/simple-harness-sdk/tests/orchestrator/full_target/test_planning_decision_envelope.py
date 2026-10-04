@@ -35,7 +35,6 @@ from agent_orchestrator.contracts.planning_decisions import (
     MAX_PD_WAIT_REFS,
     MIN_PD_EVIDENCE_QUESTIONS,
     AlternativeDisposition,
-    BindExistingGoalMode,
     BlockerCode,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionType,
@@ -116,20 +115,6 @@ PROPOSE_SUCCESSOR_PAYLOAD = {
     "goal_type_ref": {"id": "goal.type", "version": 1, "content_hash": HASH_A},
     "bindings": {},
 }
-BIND_REUSE_PAYLOAD = {
-    "mode": "REUSE_ACCEPTED",
-    "consumer_method_instance_ref": _instance_ref("mi-2"),
-    "step": "inspect",
-    "goal_ref": _ref("task", "g-1"),
-    "resolution_ref": _ref("resolution", "r-1"),
-}
-BIND_SHARE_PAYLOAD = {
-    "mode": "SHARE_ACTIVE",
-    "consumer_method_instance_ref": _instance_ref("mi-2"),
-    "step": "inspect",
-    "goal_ref": _ref("task", "g-1"),
-    "resolution_ref": None,
-}
 RUNTIME_BLOCKED_PAYLOAD = {
     "repair_kind": "DECLARE_RUNTIME_BLOCKED",
     "repair_request_id": "c" * 64,
@@ -159,8 +144,6 @@ VALID_DECISIONS = [
     ("REFINE", REFINE_PAYLOAD),
     ("REPAIR", REPLACE_METHOD_PAYLOAD),
     ("REPAIR", PROPOSE_SUCCESSOR_PAYLOAD),
-    ("BIND_EXISTING_GOAL", BIND_REUSE_PAYLOAD),
-    ("BIND_EXISTING_GOAL", BIND_SHARE_PAYLOAD),
     ("REPAIR", RUNTIME_BLOCKED_PAYLOAD),
     ("WAIT", WAIT_PAYLOAD),
     ("NO_CHANGE", NO_CHANGE_PAYLOAD),
@@ -264,13 +247,6 @@ def test_repair_kind_members_are_pinned() -> None:
         ("RETRY_SAME_METHOD", "RETRY_SAME_METHOD"),
         ("DECLARE_RUNTIME_BLOCKED", "DECLARE_RUNTIME_BLOCKED"),
         ("PROPOSE_SUCCESSOR", "PROPOSE_SUCCESSOR"),
-    ]
-
-
-def test_bind_existing_goal_mode_members_are_pinned() -> None:
-    assert [(m.name, m.value) for m in BindExistingGoalMode] == [
-        ("REUSE_ACCEPTED", "REUSE_ACCEPTED"),
-        ("SHARE_ACTIVE", "SHARE_ACTIVE"),
     ]
 
 
@@ -659,44 +635,6 @@ def test_propose_successor_payload_negatives(payload: dict) -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        {
-            "mode": "SHARE_ACTIVE",
-            "consumer_method_instance_ref": _instance_ref("mi-2"),
-            "step": "inspect",
-            "goal_ref": _ref("task", "g-1"),
-            "resolution_ref": _ref("resolution", "r-1"),
-        },
-        {
-            "mode": "REUSE_ACCEPTED",
-            "consumer_method_instance_ref": _instance_ref("mi-2"),
-            "step": "inspect",
-            "goal_ref": _ref("task", "g-1"),
-            "resolution_ref": None,
-        },
-        {
-            "mode": "FORCE_IT",
-            "consumer_method_instance_ref": _instance_ref("mi-2"),
-            "step": "inspect",
-            "goal_ref": _ref("task", "g-1"),
-            "resolution_ref": None,
-        },
-        {
-            "mode": "SHARE_ACTIVE",
-            "consumer_method_instance_ref": _ref("method", "mi-2"),
-            "step": "inspect",
-            "goal_ref": _ref("task", "g-1"),
-            "resolution_ref": None,
-        },
-    ],
-)
-def test_bind_existing_goal_payload_negatives(payload: dict) -> None:
-    with pytest.raises(ContractError):
-        PlanningDecisionEnvelopeV1.from_json(_envelope("BIND_EXISTING_GOAL", payload))
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
         {"blockers": [{"code": "OTHER"}], "resumable_if": []},
         # 2026-09-28 用户决定：列表外的文字原因按 OTHER 接收（原话进 detail）；非文字仍拒绝
         {"blockers": [{"code": 7, "detail": "x"}], "resumable_if": []},
@@ -927,3 +865,18 @@ def test_replace_method_decision_direct_round_trip() -> None:
 def test_request_human_decision_direct_round_trip() -> None:
     payload = RequestHumanDecision.from_json(REQUEST_HUMAN_PAYLOAD)
     assert payload.to_json() == REQUEST_HUMAN_PAYLOAD
+
+
+def test_a_refining_decision_may_name_existing_steps_to_reuse() -> None:
+    """TaskGraph 补全第三批：三种细化决定可带 reuse（做法里的步骤名 → 已有步骤的出现编号）。
+    没写就不出现在 JSON 里；空字符串、同一步点两次都拒。"""
+    from agent_orchestrator.contracts.planning_decisions import RefineDecision
+
+    base = {"method_ref": _ref("method", "m-1"), "bindings": {}}
+    plain = RefineDecision.from_json(base)
+    assert plain.reuse == {} and "reuse" not in plain.to_json()
+    named = RefineDecision.from_json({**base, "reuse": {"write": "occ-1"}})
+    assert dict(named.reuse) == {"write": "occ-1"} and named.to_json()["reuse"] == {"write": "occ-1"}
+    for bad in ({"write": ""}, {"": "occ-1"}, {"a": "occ-1", "b": "occ-1"}, ["write"]):
+        with pytest.raises(ContractError):
+            RefineDecision.from_json({**base, "reuse": bad})

@@ -55,7 +55,6 @@ from agent_orchestrator.contracts.planning_decisions import (
     PLANNING_DECISION_V1,
     AlternativeDisposition,
     AssumptionRisk,
-    BindExistingGoalMode,
     BlockerCode,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionRejectionCode,
@@ -88,7 +87,6 @@ SCHEMA_ENUM_MIRRORS: dict[str, type[Any]] = {
     "#/$defs/blockerCode": BlockerCode,
     "#/$defs/resumableIf": ResumableIf,
     "#/$defs/repairKind": RepairKind,
-    "#/$defs/bindExistingGoalMode": BindExistingGoalMode,
 }
 
 #: Every declared count/length cap, keyed by JSON pointer -> Python constant.  These
@@ -120,7 +118,6 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/refinePayload/properties/bindings/maxProperties": MAX_PD_BINDINGS,
     "#/$defs/repairReplaceMethodPayload/properties/bindings/maxProperties": MAX_PD_BINDINGS,
     "#/$defs/repairProposeSuccessorPayload/properties/bindings/maxProperties": MAX_PD_BINDINGS,
-    "#/$defs/bindGoalPayload/properties/step/maxLength": MAX_ID,
     "#/$defs/blockedItem/properties/detail/maxLength": MAX_TEXT,
     "#/$defs/waitPayload/properties/wait_for/maxItems": MAX_PD_WAIT_REFS,
     "#/$defs/waitPayload/properties/reason/maxLength": MAX_TEXT,
@@ -138,6 +135,9 @@ SCHEMA_LIMIT_MIRRORS: dict[str, int] = {
     "#/$defs/requestHumanPayload/properties/question/maxLength": MAX_TEXT,
     "#/$defs/requestHumanPayload/properties/options/maxItems": MAX_PD_HUMAN_OPTIONS,
     "#/$defs/repairRefineDeeperPayload/properties/bindings/maxProperties": MAX_PD_BINDINGS,
+    "#/$defs/refinePayload/properties/reuse/maxProperties": MAX_PD_BINDINGS,
+    "#/$defs/repairReplaceMethodPayload/properties/reuse/maxProperties": MAX_PD_BINDINGS,
+    "#/$defs/repairRefineDeeperPayload/properties/reuse/maxProperties": MAX_PD_BINDINGS,
     "#/$defs/repairRebindInputPayload/properties/requirement_id/maxLength": MAX_ID,
     "#/$defs/repairRebindInputPayload/properties/expected_requirement_hash/maxLength": 64,
     "#/$defs/repairRebindInputPayload/properties/output_port/maxLength": MAX_ID,
@@ -168,7 +168,6 @@ PAYLOAD_DEF_BY_DECISION_TYPE = {
     "REFINE": "#/$defs/refinePayload",
     "PROPOSE_METHOD": "#/$defs/proposeMethodPayload",
     "REQUEST_EVIDENCE": "#/$defs/requestEvidencePayload",
-    "BIND_EXISTING_GOAL": "#/$defs/bindGoalPayload",
     "WAIT": "#/$defs/waitPayload",
     "NO_CHANGE": "#/$defs/noChangePayload",
     "REQUEST_HUMAN": "#/$defs/requestHumanPayload",
@@ -391,7 +390,14 @@ def _codec_canonical_variants() -> dict[str, dict[str, Any]]:
 
     blamed = _read(VALID_DIR / "repair-replace-method.json")
     blamed["payload"]["method_at_fault"] = "被换下的做法漏了一步，拆法本身有错。"
+    blamed["payload"]["reuse"] = {"write": "occ-shared-1"}
     variants["variant-replace-method-at-fault"] = blamed
+
+    # 细化决定点名共用已有步骤（TaskGraph 补全第三批）
+    for stem in ("refine", "repair-refine-deeper"):
+        named = _read(VALID_DIR / f"{stem}.json")
+        named["payload"]["reuse"] = {"write": "occ-shared-1"}
+        variants[f"variant-{stem}-reuse"] = named
 
     blocked = _read(VALID_DIR / "repair-declare-runtime-blocked.json")
     blocked["payload"]["blockers"] = [{"code": "NO_USABLE_METHOD"}]
@@ -575,13 +581,6 @@ def test_payload_defs_are_complete_and_match_the_codec_required_fields() -> None
             "goal_type_ref",
             "bindings",
         ],
-        "bindGoalPayload": [
-            "mode",
-            "consumer_method_instance_ref",
-            "step",
-            "goal_ref",
-            "resolution_ref",
-        ],
         "waitPayload": ["wait_for", "reason"],
         "noChangePayload": ["reason"],
         "requestEvidencePayload": ["questions"],
@@ -589,7 +588,8 @@ def test_payload_defs_are_complete_and_match_the_codec_required_fields() -> None
         "proposeMethodPayload": ["method_proposal"],
         "readMethodLibraryPayload": ["entries"],
     }
-    optional = {"repairReplaceMethodPayload": ["method_at_fault"]}
+    optional = {"repairReplaceMethodPayload": ["method_at_fault", "reuse"], "refinePayload": ["reuse"],
+                "repairRefineDeeperPayload": ["reuse"]}
     for name, required in expected.items():
         assert defs[name]["required"] == required, name
         assert sorted(defs[name]["properties"]) == sorted(required + optional.get(name, [])), name
@@ -742,7 +742,6 @@ def test_method_instance_refs_are_pinned_to_their_kind() -> None:
     defs = _load_schema()["$defs"]
     for name, field in (
         ("repairReplaceMethodPayload", "rejected_method_instance"),
-        ("bindGoalPayload", "consumer_method_instance_ref"),
     ):
         node = defs[name]["properties"][field]
         kinds = [
@@ -751,17 +750,6 @@ def test_method_instance_refs_are_pinned_to_their_kind() -> None:
             if "properties" in branch
         ]
         assert kinds == [PlanningRefKind.METHOD_INSTANCE.value], (name, field)
-
-
-def test_bind_goal_payload_pins_share_active_without_a_resolution() -> None:
-    node = _load_schema()["$defs"]["bindGoalPayload"]
-    then_shapes = {
-        entry["if"]["properties"]["mode"]["const"]: entry["then"]["properties"]["resolution_ref"]
-        for entry in node["allOf"]
-    }
-    assert set(then_shapes) == {member.value for member in BindExistingGoalMode}
-    assert then_shapes[BindExistingGoalMode.SHARE_ACTIVE.value] == {"type": "null"}
-    assert then_shapes[BindExistingGoalMode.REUSE_ACCEPTED.value] == {"$ref": "#/$defs/planningRef"}
 
 
 def test_a_blocker_coded_other_requires_a_detail() -> None:
@@ -828,7 +816,6 @@ def test_valid_fixtures_number_at_least_eleven_and_cover_every_shape() -> None:
     assert covered == {
         ("REFINE", None),
         *(("REPAIR", kind.value) for kind in RepairKind),
-        ("BIND_EXISTING_GOAL", None),
         ("WAIT", None),
         ("NO_CHANGE", None),
         ("REQUEST_EVIDENCE", None),
@@ -836,15 +823,6 @@ def test_valid_fixtures_number_at_least_eleven_and_cover_every_shape() -> None:
         ("PROPOSE_METHOD", None),
         ("READ_METHOD_LIBRARY", None),
     }
-
-
-def test_valid_fixtures_cover_both_bind_existing_goal_modes() -> None:
-    modes = {
-        _read(path)["payload"]["mode"]
-        for path in _valid_paths()
-        if _read(path)["decision_type"] == "BIND_EXISTING_GOAL"
-    }
-    assert modes == {member.value for member in BindExistingGoalMode}
 
 
 def test_domain_parameter_maps_are_not_scanned_for_system_field_names() -> None:

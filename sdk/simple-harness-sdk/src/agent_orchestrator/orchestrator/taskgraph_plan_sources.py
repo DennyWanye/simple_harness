@@ -215,6 +215,7 @@ class TaskGraphPlanSourceReader:
                 # Event sequence is the snapshot boundary, not a source identity.
                 # An unrelated event cannot invalidate otherwise identical inputs.
                 return {"source_id": value.source_id, "digest": value.source_digest, "value": _document(value.value)}
+            acceptances = semantics.list_acceptances(request.mission_id)
             sharing_entries, sharing_inputs = eligible_sharing(self.local, local, world, requirement)
             operation_producers = read_operation_producers(store, execution.operation_snapshot.value)
             from .taskgraph_completion_sources import read_completion_sources

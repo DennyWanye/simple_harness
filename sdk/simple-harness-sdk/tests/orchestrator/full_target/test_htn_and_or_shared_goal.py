@@ -7,12 +7,11 @@
 dispatch the other and does not block the root, and the slots inside the chosen
 method are all necessary without being ordered.
 
-§8.3 / TG §12: two slots bind one goal occurrence only when the whole sharing
-signature matches and the task type has declared that reuse is permitted.  Every
-near miss in this file is a separate test, because each is a different way a real
-system loses money or sends something twice: a different scope, a different
-parameter, an unshareable side effect, a type that never opted in, and text that
-merely looks alike.
+§8.3 / TG §12, TaskGraph 补全第三批: a slot *is* an existing step only when the
+Planner named that step on its refining decision (``reuse``).  Nothing is shared by
+signature or by looking alike.  The Harness checks the order: the same task type and
+scope, an effect that may be shared at all, an ordinary step (not a sub-goal); and one
+branch leaving keeps the edges the other branch still needs.
 """
 
 from __future__ import annotations
@@ -60,12 +59,11 @@ from agent_orchestrator.planning.htn.compiler import (  # noqa: E402
 )
 from agent_orchestrator.planning.htn.grounding import (  # noqa: E402
     GroundingError,
+    ReuseRefused,
     SharedGoalEntry,
-    SharedGoalIndex,
-    ShareVerdict,
     SharingSignature,
     ground_method,
-    may_share,
+    named_share_refusal,
 )
 
 
@@ -93,7 +91,6 @@ def or_env() -> Env:
         outputs=(("facts", "demo.facts"),),
         capabilities=("demo.read",),
         effect=SideEffectKind.EXTERNAL_READ,
-        reuse=ReusePolicy.REUSE_ACCEPTED,
         domain="demo",
     )
     env.register_type(
@@ -323,20 +320,9 @@ def test_and_children_with_no_declared_order_run_in_parallel() -> None:
 # ======================================================================= sharing
 
 
-def shared_signature(
-    env: Env,
-    *,
-    subject: str = "alpha",
-    scope: str | None = None,
-    task_type: str = "demo.shared-read",
-) -> SharingSignature:
+def signature(env: Env, task_type: str = "demo.shared-read", *, scope: str | None = None) -> SharingSignature:
     spec = env.catalog.require(ref(task_type))
-    return SharingSignature.of(
-        spec,
-        {"subject": subject},
-        authority_scope=scope or env.mission,
-        semantic_scope=scope or env.mission,
-    )
+    return SharingSignature.of(spec, authority_scope=scope or env.mission, semantic_scope=scope or env.mission)
 
 
 def two_root_network(env: Env, *roots) -> TaskNetworkSnapshot:
@@ -362,8 +348,25 @@ def two_root_network(env: Env, *roots) -> TaskNetworkSnapshot:
     )
 
 
-def two_consumers(env: Env) -> tuple[TaskNetworkSnapshot, str, str]:
-    """Compile the first consumer, then the second one against a sharing index."""
+def _refine(env: Env, root, contract, network, *, reuse=None, retire=()):
+    report = assess_method(root, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
+    draft = ground_method(root, contract, {}, report, catalog=env.catalog, schemas=env.schemas,
+                          reuse=reuse, plan_revision=network.plan_revision)
+    bundle = compile_refinement_bundle(draft, network, method=contract, catalog=env.catalog,
+                                       schemas=env.schemas, registry=env.registry, reuse=reuse,
+                                       retire_instance_ids=tuple(retire))
+    return draft, bundle
+
+
+def _entry(network: TaskNetworkSnapshot, occurrence_id, env: Env, *, acceptance=None) -> SharedGoalEntry:
+    binding = network.binding_for_occurrence(occurrence_id)
+    return SharedGoalEntry(occurrence_id=occurrence_id, task_id=binding.task_id,
+                           obligation_id=binding.obligation_id, signature=signature(env),
+                           acceptance_ref=acceptance)
+
+
+def two_consumers(env: Env):
+    """The first branch reads once; the second branch names that reading step."""
 
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
     env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
@@ -373,583 +376,180 @@ def two_consumers(env: Env) -> tuple[TaskNetworkSnapshot, str, str]:
     )
     env.admit(first)
     env.admit(second)
-
-    root_one = task_binding(
-        env,
-        "demo.goal",
-        task_id="task-one",
-        obligation="obl-one",
-        parameters={"subject": "alpha"},
-    )
-    root_two = task_binding(
-        env,
-        "demo.goal2",
-        task_id="task-two",
-        obligation="obl-two",
-        parameters={"subject": "alpha"},
-    )
-    network = two_root_network(env, root_one, root_two)
-    report = assess_method(
-        root_one, first, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft_one = ground_method(root_one, first, {}, report, catalog=env.catalog, schemas=env.schemas)
-    bundle_one = compile_refinement_bundle(
-        draft_one,
-        network,
-        method=first,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-    )
+    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one",
+                            parameters={"subject": "alpha"})
+    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two",
+                            parameters={"subject": "alpha"})
+    draft_one, bundle_one = _refine(env, root_one, first, two_root_network(env, root_one, root_two))
     slot = next(item for item in draft_one.child_bindings if item.slot_key == "shared")
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id=slot.occurrence_id,
-                task_id=bundle_one.network.occurrence(slot.occurrence_id).task_id,
-                obligation_id=slot.obligation_id,
-                signature=shared_signature(env),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-            ),
-        )
-    )
-    report_two = assess_method(
-        root_two, second, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft_two = ground_method(
-        root_two,
-        second,
-        {},
-        report_two,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
-    bundle_two = compile_refinement_bundle(
-        draft_two,
-        bundle_one.network,
-        method=second,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-        sharing=index,
-    )
-    return bundle_two.network, str(draft_one.instance_id), str(slot.occurrence_id)
+    _, bundle_two = _refine(env, root_two, second, bundle_one.network,
+                            reuse={"shared": _entry(bundle_one.network, slot.occurrence_id, env)})
+    return bundle_two.network, str(draft_one.instance_id), str(slot.occurrence_id), (root_one, root_two)
 
 
-def test_a_shared_sub_goal_exists_once() -> None:
+def test_a_named_shared_step_exists_once_with_two_consumers() -> None:
     env = or_env()
-    network, _, shared = two_consumers(env)
+    network, _, shared, _ = two_consumers(env)
     assert sum(1 for spec in network.occurrences if str(spec.occurrence_id) == shared) == 1
-
-
-def test_a_shared_sub_goal_has_two_consumers() -> None:
-    env = or_env()
-    network, _, shared = two_consumers(env)
-    parents = network.refinement_view().parents_of[shared]
-    assert len(parents) == 2
-
-
-def test_the_second_consumer_references_rather_than_creates_the_shared_goal() -> None:
-    env = or_env()
-    network, _, shared = two_consumers(env)
-    second = next(
-        draft for draft in network.method_instances if draft.method_ref.method_id == "demo.second"
-    )
+    assert len(network.refinement_view().parents_of[shared]) == 2
+    second = next(draft for draft in network.method_instances if draft.method_ref.method_id == "demo.second")
     slot = next(item for item in second.child_bindings if item.slot_key == "shared")
-    assert str(slot.occurrence_id) == shared
-    assert slot.reuse_policy is not ReusePolicy.NEW_WORK
-
-
-def test_the_shared_network_is_still_acyclic() -> None:
-    env = or_env()
-    network, _, _ = two_consumers(env)
+    assert str(slot.occurrence_id) == shared and slot.reuse_policy is ReusePolicy.SHARE_ACTIVE
+    owners = [binding for binding in network.task_bindings if binding.occurrence_binding is not None
+              and str(binding.occurrence_binding.occurrence_id) == shared]
+    assert len(owners) == 1  # no second Task binding for a borrowed step
     assert validate_execution_projection(network.execution_projection(), BUDGET).ok
     assert validate_refinement_acyclic(network).ok
 
 
-def test_cancelling_one_consumer_keeps_the_shared_goal() -> None:
+def test_without_a_name_the_same_step_is_done_twice() -> None:
+    """Nothing is shared by signature: an identical step the Planner did not name is new work."""
+
     env = or_env()
-    network, first_instance, shared = two_consumers(env)
-    remaining = TaskNetworkSnapshot(
-        mission_id=network.mission_id,
-        plan_revision=network.plan_revision,
-        occurrences=network.occurrences,
-        task_bindings=tuple(
-            binding
-            if binding.adopted_method_instance_id != first_instance
-            else _without_adoption(binding)
-            for binding in network.task_bindings
-        ),
-        method_instances=network.method_instances,
-        adopted_instance_ids=tuple(
-            item for item in network.adopted_instance_ids if str(item) != first_instance
-        ),
-        root_occurrence_ids=network.root_occurrence_ids,
-        order_constraints=network.order_constraints,
-        data_requirements=network.data_requirements,
-        obligation_coverage=network.obligation_coverage,
-        required_obligations=network.required_obligations,
-    )
-    assert any(str(spec.occurrence_id) == shared for spec in remaining.occurrences)
-    assert len(remaining.refinement_view().parents_of[shared]) == 1
+    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
+    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
+    first = alternative("demo.first", "demo.primary-ready", "a")
+    second = alternative("demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2")
+    env.admit(first)
+    env.admit(second)
+    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"})
+    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"})
+    _, bundle_one = _refine(env, root_one, first, two_root_network(env, root_one, root_two))
+    _, bundle_two = _refine(env, root_two, second, bundle_one.network)
+    reads = [spec for spec in bundle_two.network.occurrences
+             if str(bundle_two.network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+             == "demo.shared-read"]
+    assert len(reads) == 2
 
 
-def _without_adoption(binding):
-    from agent_orchestrator.contracts.htn import TaskSemanticBindingV1
+@pytest.mark.parametrize("leaving", ["first", "second"])
+def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges(leaving: str) -> None:
+    """TaskGraph 补全第三批（改坏：编译器合并改回"碰到就删"→ 变红）：一个分支换做法，只撤它
+    自己对共用步骤的需求；共用步骤留着，它到留下那个分支下游的数据边也留着。两个方向都测：
+    首建方换做法、共用方换做法。"""
 
-    payload = binding.to_json()
-    payload["adopted_method_instance_id"] = None
-    return TaskSemanticBindingV1.from_json(payload)
+    env = or_env()
+    network, first_instance, shared, (root_one, root_two) = two_consumers(env)
+    second_instance = next(str(draft.instance_id) for draft in network.method_instances
+                           if draft.method_ref.method_id == "demo.second")
+    root, retire, staying_tail, goal, criterion = (
+        (root_one, first_instance, "b", "demo.goal", "c-done") if leaving == "first"
+        else (root_two, second_instance, "a", "demo.goal2", "c-done2"))
+    replacement = method(
+        f"demo.replacement-{leaving}", goal, parameter_schema=f"{goal}.params",
+        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
+                    capabilities=("demo.read",)),),
+        links=((criterion, "solo", "c-solo"),), finalizer="solo")
+    env.admit(replacement)
+    try:
+        _, bundle = _refine(env, root, replacement, network, retire=(retire,))
+    except CompilationRefused as refused:  # 留下分支的下游丢了输入边，整份编译被拒
+        bundle = refused
+    assert not isinstance(bundle, CompilationRefused), bundle
+    after = bundle.network
+    assert any(str(spec.occurrence_id) == shared for spec in after.occurrences)
+    assert len(after.refinement_view().parents_of[shared]) == 1
+    staying = next(spec.occurrence_id for spec in after.occurrences
+                   if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+                   == f"demo.{staying_tail}")
+    assert any(str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
+               for item in after.data_requirements)
+    assert validate_execution_projection(after.execution_projection(), BUDGET).ok
 
 
 # ============================================================== sharing refusals
 
 
-def test_a_different_scope_is_a_different_goal() -> None:
+def test_a_different_scope_is_refused_with_the_field_named() -> None:
     env = or_env()
-    left = shared_signature(env)
-    right = shared_signature(env, scope="mission-2")
-    decision = may_share(left, right, reuse_policy=ReusePolicy.REUSE_ACCEPTED)
-    assert decision.verdict is ShareVerdict.SIGNATURE_DIFFERS
-    assert "semantic_scope" in decision.differing_fields
+    refusal = named_share_refusal(signature(env), signature(env, scope="mission-2"))
+    assert refusal is not None and "semantic_scope" in refusal
 
 
-def test_different_parameters_are_a_different_goal() -> None:
+def test_a_different_type_is_refused() -> None:
     env = or_env()
-    decision = may_share(
-        shared_signature(env, subject="alpha"),
-        shared_signature(env, subject="beta"),
-        reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-    )
-    assert decision.verdict is ShareVerdict.SIGNATURE_DIFFERS
-    assert "typed_parameters" in decision.differing_fields
+    refusal = named_share_refusal(signature(env), signature(env, "demo.private-read"))
+    assert refusal is not None and "goal_type_ref" in refusal
 
 
-def test_a_type_that_never_opted_into_reuse_is_not_shared() -> None:
+def test_a_side_effecting_step_is_never_shared() -> None:
     env = or_env()
-    left = shared_signature(env, task_type="demo.private-read")
-    decision = may_share(left, left, reuse_policy=ReusePolicy.NEW_WORK)
-    assert decision.verdict is ShareVerdict.REUSE_NOT_PERMITTED
+    notify = signature(env, "demo.notify")
+    refusal = named_share_refusal(notify, notify)
+    assert refusal is not None and "two such actions are two actions" in refusal
 
 
-def test_a_side_effecting_goal_is_not_shared_even_when_identical() -> None:
-    """§8.3: two identically-parameterised sends are two sends."""
-
+def test_an_identical_order_is_admissible() -> None:
     env = or_env()
-    left = shared_signature(env, task_type="demo.notify")
-    decision = may_share(left, left, reuse_policy=ReusePolicy.REUSE_ACCEPTED)
-    assert decision.verdict is ShareVerdict.SIDE_EFFECT_NOT_SHAREABLE
+    assert named_share_refusal(signature(env), signature(env)) is None
 
 
-def test_the_contract_refuses_a_reusing_side_effecting_type_without_an_identity() -> None:
-    env = or_env()
-    from agent_orchestrator.contracts.models import ContractError
-
-    with pytest.raises(ContractError, match="effect_identity"):
-        env.register_type(
-            "demo.notify-reusing",
-            parameters=(("subject", "string"),),
-            outputs=(("receipt", "demo.receipt"),),
-            effect=SideEffectKind.EXTERNAL_EVENT_WRITE,
-            reuse=ReusePolicy.REUSE_ACCEPTED,
-        )
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
-        "authority_scope",
-        "assurance_policy_ref",
-        "freshness_policy_ref",
-    ],
-)
-def test_every_signature_field_blocks_sharing_on_its_own(field: str) -> None:
-    from dataclasses import replace
-
-    env = or_env()
-    left = shared_signature(env)
-    right = replace(left, **{field: "other-value"})
-    decision = may_share(left, right, reuse_policy=ReusePolicy.REUSE_ACCEPTED)
-    assert decision.verdict is ShareVerdict.SIGNATURE_DIFFERS
-    assert field in decision.differing_fields
-
-
-def test_an_identical_signature_with_reuse_is_shareable() -> None:
-    env = or_env()
-    left = shared_signature(env)
-    assert may_share(left, left, reuse_policy=ReusePolicy.REUSE_ACCEPTED).shareable
-
-
-def test_an_index_miss_reports_why_rather_than_guessing() -> None:
-    env = or_env()
-    index = SharedGoalIndex()
-    entry, decision = index.lookup(shared_signature(env), reuse_policy=ReusePolicy.REUSE_ACCEPTED)
-    assert entry is None
-    assert "no existing occurrence" in decision.reason
-
-
-def test_lexical_closeness_produces_a_suggestion_not_a_binding() -> None:
-    env = or_env()
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id="occ-existing",
-                task_id="task-existing",
-                obligation_id="obl-existing",
-                signature=shared_signature(env, subject="beta"),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-            ),
-        )
-    )
-    signature = shared_signature(env, subject="alpha")
-    entry, _ = index.lookup(signature, reuse_policy=ReusePolicy.REUSE_ACCEPTED)
-    assert entry is None
-    suggestions = index.suggest(signature, minimum=0.0)
-    assert suggestions and all(item.advisory_only for item in suggestions)
-    assert suggestions[0].decision.verdict is ShareVerdict.SIGNATURE_DIFFERS
-
-
-def test_a_suggestion_never_becomes_a_child_binding() -> None:
-    env = or_env()
+def _single_root(env: Env):
     env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = alternative("demo.suggesting", "demo.primary-ready", "a")
-    env.admit(contract)
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id="occ-lookalike",
-                task_id="task-lookalike",
-                obligation_id="obl-lookalike",
-                signature=shared_signature(env, subject="beta"),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-            ),
-        )
-    )
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(
-        binding,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
-    assert all(str(item.occurrence_id) != "occ-lookalike" for item in draft.child_bindings)
-
-
-def test_reuse_of_an_accepted_result_needs_the_acceptance() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = alternative("demo.reusing", "demo.primary-ready", "a")
-    env.admit(contract)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id=str(binding.task_id),
-                task_id=binding.task_id,
-                obligation_id=binding.obligation_id,
-                signature=shared_signature(env),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-                acceptance_ref=None,
-            ),
-        )
-    )
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(
-        binding,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
-    slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.reuse_policy is ReusePolicy.SHARE_ACTIVE
-
-
-def test_an_acceptance_makes_the_slot_a_reuse_of_an_accepted_result() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = alternative("demo.reusing-2", "demo.primary-ready", "a")
-    env.admit(contract)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id=str(binding.task_id),
-                task_id=binding.task_id,
-                obligation_id=binding.obligation_id,
-                signature=shared_signature(env),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-                acceptance_ref=acceptance_ref("acceptance-7"),
-            ),
-        )
-    )
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(
-        binding,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
-    slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.reuse_policy is ReusePolicy.REUSE_ACCEPTED
-
-
-def test_a_shared_occurrence_this_network_lacks_is_refused() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = alternative("demo.dangling", "demo.primary-ready", "a")
-    env.admit(contract)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id="occ-elsewhere",
-                task_id="task-elsewhere",
-                obligation_id="obl-elsewhere",
-                signature=shared_signature(env),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-                acceptance_ref=acceptance_ref("acceptance-9"),
-            ),
-        )
-    )
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(
-        binding,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
-    with pytest.raises(CompilationRefused, match="does not contain"):
-        compile_refinement_bundle(
-            draft,
-            root_network(env, binding),
-            method=contract,
-            catalog=env.catalog,
-            schemas=env.schemas,
-            registry=env.registry,
-            sharing=index,
-        )
-
-
-def test_a_shared_slot_creates_no_second_task_binding() -> None:
-    env = or_env()
-    network, _, shared = two_consumers(env)
-    owners = [
-        binding
-        for binding in network.task_bindings
-        if binding.occurrence_binding is not None
-        and str(binding.occurrence_binding.occurrence_id) == shared
-    ]
-    assert len(owners) == 1
-
-
-def test_the_acceptance_a_slot_reuses_is_a_recorded_read() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = alternative("demo.reads-acceptance", "demo.primary-ready", "a")
+    contract = alternative("demo.names", "demo.primary-ready", "a")
     env.admit(contract)
     root = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    other = task_binding(
-        env,
-        "demo.shared-read",
-        task_id="task-shared",
-        obligation="obl-shared",
-        parameters={"subject": "alpha"},
-    )
+    other = task_binding(env, "demo.shared-read", task_id="task-shared", obligation="obl-shared",
+                         parameters={"subject": "alpha"})
     from agent_orchestrator.contracts.htn import OccurrenceSpec
 
-    network = root_network(
-        env,
-        root,
-        extra_occurrences=(
-            OccurrenceSpec(
-                occurrence_id="occ-shared",
-                task_id=other.task_id,
-                obligation_id=other.obligation_id,
-                form=TaskForm.PRIMITIVE,
-            ),
-        ),
-        extra_bindings=(other,),
-    )
-    index = SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id="occ-shared",
-                task_id=other.task_id,
-                obligation_id=other.obligation_id,
-                signature=shared_signature(env),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-                acceptance_ref=acceptance_ref("acceptance-11"),
-            ),
-        )
-    )
-    report = assess_method(
-        root, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    draft = ground_method(
-        root, contract, {}, report, catalog=env.catalog, schemas=env.schemas, sharing=index
-    )
-    bundle = compile_refinement_bundle(
-        draft,
-        network,
-        method=contract,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        registry=env.registry,
-        sharing=index,
-    )
-    assert [item.id for item in bundle.delta.read_set.acceptance_revisions] == ["acceptance-11"]
-    assert "occ-shared" in {str(item) for item in bundle.delta.referenced_occurrences}
+    network = root_network(env, root, extra_occurrences=(OccurrenceSpec(
+        occurrence_id="occ-shared", task_id=other.task_id, obligation_id=other.obligation_id,
+        form=TaskForm.PRIMITIVE),), extra_bindings=(other,))
+    entry = SharedGoalEntry(occurrence_id="occ-shared", task_id=other.task_id,
+                            obligation_id=other.obligation_id, signature=signature(env))
+    return root, contract, network, entry
 
 
-# ============================================ the step's own reuse declaration
+def _ground(env: Env, root, contract, reuse):
+    report = assess_method(root, contract, env.snapshot(), env.capabilities(), registry=env.predicates)
+    return ground_method(root, contract, {}, report, catalog=env.catalog, schemas=env.schemas, reuse=reuse)
 
 
-def reusing_step_method(method_id: str, *, policy, shared: str = "demo.private-read"):
-    """A method whose ``shared`` slot declares its own reuse policy."""
+def test_naming_a_step_the_method_does_not_have_is_refused() -> None:
+    env = or_env()
+    root, contract, _, entry = _single_root(env)
+    with pytest.raises(ReuseRefused, match="does not have"):
+        _ground(env, root, contract, {"nope": entry})
 
-    return method(
-        method_id,
-        "demo.goal",
-        parameter_schema="demo.goal.params",
+
+def test_a_sub_goal_cannot_be_named() -> None:
+    env = or_env()
+    env.register_type("demo.sub", form=TaskForm.COMPOUND, parameters=(("subject", "string"),),
+                      criteria=("c-sub",), domain="demo")
+    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
+    contract = method(
+        "demo.with-sub", "demo.goal", parameter_schema="demo.goal.params",
         applicable=(atom("demo.primary-ready", {"subject": param("subject")}),),
-        steps=(
-            step(
-                "shared",
-                shared,
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject")},
-                capabilities=("demo.read",),
-                reuse_policy=policy,
-            ),
-            step(
-                "a",
-                "demo.a",
-                TaskForm.PRIMITIVE,
-                {"subject": param("subject"), "facts": out("shared", "facts")},
-                capabilities=("demo.read",),
-            ),
-        ),
-        links=(("c-done", "a", "c-a"),),
-        finalizer="a",
-    )
-
-
-def ground_with_index(env: Env, contract, index: SharedGoalIndex):
+        steps=(step("sub", "demo.sub", TaskForm.COMPOUND, {"subject": param("subject")}),),
+        links=(("c-done", "sub", "c-sub"),), finalizer="sub")
     env.admit(contract)
-    binding = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
-    report = assess_method(
-        binding, contract, env.snapshot(), env.capabilities(), registry=env.predicates
-    )
-    return binding, ground_method(
-        binding,
-        contract,
-        {},
-        report,
-        catalog=env.catalog,
-        schemas=env.schemas,
-        sharing=index,
-    )
+    root = task_binding(env, "demo.goal", parameters={"subject": "alpha"})
+    entry = SharedGoalEntry(occurrence_id="occ-x", task_id="task-x", obligation_id="obl-x",
+                            signature=signature(env, "demo.sub"))
+    with pytest.raises(ReuseRefused, match="sub-goal"):
+        _ground(env, root, contract, {"sub": entry})
 
 
-def index_for(env: Env, task_type: str, *, acceptance: str | None = None) -> SharedGoalIndex:
-    return SharedGoalIndex(
-        (
-            SharedGoalEntry(
-                occurrence_id="occ-existing",
-                task_id="task-existing",
-                obligation_id="obl-existing",
-                signature=shared_signature(env, task_type=task_type),
-                reuse_policy=ReusePolicy.REUSE_ACCEPTED,
-                acceptance_ref=None if acceptance is None else acceptance_ref(acceptance),
-            ),
-        )
-    )
-
-
-def test_a_step_may_declare_reuse_the_task_type_left_at_new_work() -> None:
-    """``method-contract-v1``: the step's own declaration wins when it makes one."""
-
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = reusing_step_method("demo.step-reuses", policy=ReusePolicy.REUSE_ACCEPTED)
-    _, draft = ground_with_index(
-        env, contract, index_for(env, "demo.private-read", acceptance="acceptance-21")
-    )
-    slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.occurrence_id == "occ-existing"
-    assert slot.reuse_policy is ReusePolicy.REUSE_ACCEPTED
-
-
-def test_a_step_that_declares_new_work_overrides_a_reusable_type() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = reusing_step_method(
-        "demo.step-refuses", policy=ReusePolicy.NEW_WORK, shared="demo.shared-read"
-    )
-    _, draft = ground_with_index(
-        env, contract, index_for(env, "demo.shared-read", acceptance="acceptance-22")
-    )
-    slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.occurrence_id != "occ-existing"
-    assert slot.reuse_policy is ReusePolicy.NEW_WORK
-
-
-def test_an_undeclared_step_takes_the_task_type_s_default() -> None:
-    env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = reusing_step_method("demo.step-silent", policy=None, shared="demo.shared-read")
-    _, draft = ground_with_index(
-        env, contract, index_for(env, "demo.shared-read", acceptance="acceptance-23")
-    )
-    slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.occurrence_id == "occ-existing"
-
-
-def test_a_reusing_slot_names_the_exact_acceptance_it_rests_on() -> None:
+def test_an_accepted_step_is_reused_under_its_exact_acceptance() -> None:
     """TG decision 9: reuse binds a specific Acceptance, not "some earlier result"."""
 
     env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = reusing_step_method("demo.step-cites", policy=ReusePolicy.REUSE_ACCEPTED)
-    _, draft = ground_with_index(
-        env, contract, index_for(env, "demo.private-read", acceptance="acceptance-24")
-    )
+    root, contract, _, entry = _single_root(env)
+    from dataclasses import replace
+
+    draft = _ground(env, root, contract, {"shared": replace(entry, acceptance_ref=acceptance_ref("acceptance-24"))})
     slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.acceptance_ref == acceptance_ref("acceptance-24")
+    assert slot.occurrence_id == "occ-shared"
+    assert slot.reuse_policy is ReusePolicy.REUSE_ACCEPTED and slot.acceptance_ref == acceptance_ref("acceptance-24")
 
 
-def test_a_slot_sharing_live_work_names_no_acceptance() -> None:
-    """I01: live work has not been accepted, so there is nothing to point at."""
-
+def test_a_running_step_is_shared_with_no_acceptance() -> None:
     env = or_env()
-    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
-    contract = reusing_step_method("demo.step-shares", policy=ReusePolicy.SHARE_ACTIVE)
-    _, draft = ground_with_index(env, contract, index_for(env, "demo.private-read"))
+    root, contract, _, entry = _single_root(env)
+    draft = _ground(env, root, contract, {"shared": entry})
     slot = next(item for item in draft.child_bindings if item.slot_key == "shared")
-    assert slot.reuse_policy is ReusePolicy.SHARE_ACTIVE
-    assert slot.acceptance_ref is None
+    assert slot.reuse_policy is ReusePolicy.SHARE_ACTIVE and slot.acceptance_ref is None
 
 
 def test_the_contract_refuses_an_acceptance_on_a_slot_that_shares_live_work() -> None:
@@ -965,15 +565,3 @@ def test_the_contract_refuses_an_acceptance_on_a_slot_that_shares_live_work() ->
             reuse_policy=ReusePolicy.SHARE_ACTIVE,
             acceptance_ref=acceptance_ref("acceptance-25"),
         )
-
-
-def test_a_step_may_not_declare_reuse_of_an_unshareable_effect() -> None:
-    """§8.3: the method does not get to overrule the type's declared side effect."""
-
-    env = or_env()
-    contract = reusing_step_method(
-        "demo.step-overreaches", policy=ReusePolicy.REUSE_ACCEPTED, shared="demo.notify"
-    )
-    receipt = env.admit(contract)
-    assert not receipt.admitted
-    assert any("two such actions are two actions" in item.detail for item in receipt.problems)

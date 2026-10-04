@@ -111,7 +111,7 @@ def test_package7_initial_refinement_reaches_atomic_commit(tmp_path, drop_versio
                 assert [row["status"] for row in adoption] == ["COMMITTED"]
                 first_package = package_of(seen["requests"][0])
                 assert first_package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
-                assert {"REPAIR", "BIND_EXISTING_GOAL"}.issubset(
+                assert {"REPAIR"}.issubset(
                     first_package["planning_protocol"]["enabled_decision_types"])
                 assert {"REBIND_INPUT", "CANCEL_BRANCH", "PROPOSE_SUCCESSOR"}.issubset(
                     first_package["planning_protocol"]["enabled_repair_kinds"])

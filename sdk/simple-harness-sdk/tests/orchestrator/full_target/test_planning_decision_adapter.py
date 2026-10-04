@@ -19,8 +19,6 @@ from agent_orchestrator.contracts.htn import (
 )
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
-    BindExistingGoalDecision,
-    BindExistingGoalMode,
     BlockedItemV1,
     BlockerCode,
     NoChangeDecision,
@@ -201,24 +199,17 @@ def test_replace_method_is_retire_then_refine_and_requests_stop_then_reconcile()
     )
 
 
-def test_h4_admitted_existing_goal_binding_keeps_exact_shared_goal() -> None:
+def test_a_named_reuse_rides_on_the_one_refine_operation() -> None:
+    """TaskGraph 补全第三批：细化决定点名的共用只经 ``_refine_operation`` 一处带到细化操作上。"""
+    method = _ref(PlanningRefKind.METHOD, "code.fix", 2, HASH_A)
     decision = _envelope(
-        PlanningDecisionType.BIND_EXISTING_GOAL,
-        BindExistingGoalDecision(
-            mode=BindExistingGoalMode.SHARE_ACTIVE,
-            consumer_method_instance_ref=_ref(PlanningRefKind.METHOD_INSTANCE, "mi-consumer"),
-            step="inspect",
-            goal_ref=_ref(PlanningRefKind.TASK, "goal-shared"),
-            resolution_ref=None,
-        ),
+        PlanningDecisionType.REFINE,
+        RefineDecision(method_ref=method, bindings={"target": "README.md"}, reuse={"write": "occ-1"}),
     )
-    outcome = adapt_admitted_decision(_admitted(decision), context=_context())
+    outcome = adapt_admitted_decision(_admitted(decision, method=method), context=_context())
     assert outcome.proposal is not None
-    assert outcome.proposal.operations[0].to_json() == {
-        "op": "bind_shared_goal", "consumer_method_instance_id": "mi-consumer",
-        "step": "inspect", "goal_id": "goal-shared", "resolution_id": None,
-    }
-    assert outcome.proposal.running_work_policy is RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE
+    [operation] = outcome.proposal.operations
+    assert dict(operation.reuse) == {"write": "occ-1"} and operation.to_json()["reuse"] == {"write": "occ-1"}
 
 
 def test_h4_admitted_successor_keeps_goal_and_stop_policy() -> None:

@@ -538,7 +538,6 @@ def _demo_env() -> Env:
         outputs=(("facts", "demo.facts"),),
         capabilities=("demo.read",),
         effect=SideEffectKind.EXTERNAL_READ,
-        reuse=ReusePolicy.REUSE_ACCEPTED,
         domain="demo",
     )
     for name, port in (("demo.a", "ra"), ("demo.b", "rb")):

@@ -68,7 +68,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",
@@ -120,7 +119,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",
@@ -172,7 +170,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",
@@ -224,7 +221,6 @@
     ],
     "side_effect_kind": "local_write",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",
@@ -276,7 +272,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",
@@ -320,7 +315,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "resource_reads": [
       {
         "namespace": "drone-sim",

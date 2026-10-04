@@ -419,7 +419,7 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
     ports = output_ports_in_revision(
         semantics,
         command.mission_id,
-        frozen.frozen.plan_revision,
+        frozen.scope.plan_ref.revision,
         OccurrenceId(projection.scope.occurrence_id),
         command.task_id,
     )

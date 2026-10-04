@@ -42,7 +42,6 @@ if str(_HTN_FIXTURES) not in sys.path:
 
 from agent_orchestrator.contracts import ContractError  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
-    BindSharedGoalOperation,
     PlanProposal,
     ProposeSuccessorOperation,
     RefineOperation,
@@ -131,18 +130,11 @@ def test_the_read_set_entries_keep_the_revision_and_hash_they_claim():
     assert {item.content_hash for item in proposal.read_set} == {HASH_A}
 
 
-def test_all_four_operation_kinds_parse():
+def test_the_operation_kinds_parse():
     proposal = _parse(
         operations=[
             _refine(),
             {"op": "retire_method", "method_instance_id": "mi-1", "reason": "绑定已变"},
-            {
-                "op": "bind_shared_goal",
-                "consumer_method_instance_id": "mi-2",
-                "step": "build",
-                "goal_id": "occ-shared",
-                "resolution_id": None,
-            },
             {
                 "op": "propose_successor",
                 "old_task_id": "task-failed",
@@ -155,7 +147,6 @@ def test_all_four_operation_kinds_parse():
     assert [type(item) for item in proposal.operations] == [
         RefineOperation,
         RetireMethodOperation,
-        BindSharedGoalOperation,
         ProposeSuccessorOperation,
     ]
 

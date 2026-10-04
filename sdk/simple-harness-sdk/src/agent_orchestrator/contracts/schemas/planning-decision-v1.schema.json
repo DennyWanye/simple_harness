@@ -226,7 +226,7 @@
         },
         "required_for": {
           "type": "array",
-          "maxItems": 9,
+          "maxItems": 8,
           "items": {
             "$ref": "#/$defs/decisionType"
           }

@@ -125,7 +125,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "reuse_accepted",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -189,7 +188,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -253,7 +251,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -317,7 +314,6 @@
     ],
     "side_effect_kind": "external_state_write",
     "reversible": false,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "preconditions": [
       {
@@ -396,7 +392,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -450,7 +445,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -523,7 +517,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "resource_reads": [
       {
@@ -577,7 +570,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -631,7 +623,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -685,7 +676,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -739,7 +729,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -797,7 +786,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -851,7 +839,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -905,7 +892,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {
@@ -963,7 +949,6 @@
     ],
     "side_effect_kind": "external_read",
     "reversible": true,
-    "reuse_policy": "new_work",
     "domain": "appworld",
     "observes": [
       {

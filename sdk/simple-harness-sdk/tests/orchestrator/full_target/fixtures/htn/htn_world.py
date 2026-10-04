@@ -44,7 +44,6 @@ from agent_orchestrator.contracts.htn import (
     PortSpec,
     RegistryAuthor,
     ResourceRef,
-    ReusePolicy,
     SideEffectKind,
     TaskForm,
     TaskSemanticBindingV1,
@@ -226,7 +225,6 @@ class Env:
         capabilities: Sequence[str] = (),
         effect: SideEffectKind = SideEffectKind.EXTERNAL_READ,
         reversible: bool = True,
-        reuse: ReusePolicy = ReusePolicy.NEW_WORK,
         observes: Sequence[str] = (),
         preconditions: Sequence[Mapping[str, Any]] = (),
         reads: Sequence[tuple[str, str]] = (),
@@ -280,7 +278,6 @@ class Env:
             reversible=reversible,
             resource_reads=tuple(ResourceRef(namespace=n, object_id=o) for n, o in reads),
             resource_writes=tuple(ResourceRef(namespace=n, object_id=o) for n, o in writes),
-            reuse_policy=reuse,
             observes=tuple(ref(item) for item in observes),
             preconditions=parse_conditions(list(preconditions), "preconditions"),
             effect_identity=effect_identity,
@@ -478,7 +475,6 @@ def step(
     *,
     capabilities: Sequence[str] = (),
     relation: ObligationRelation = ObligationRelation.REFINES_PARENT,
-    reuse_policy: ReusePolicy | None = None,
 ) -> MethodStep:
     from agent_orchestrator.contracts.htn import StructureBudget, parse_arguments
 
@@ -489,7 +485,6 @@ def step(
         arguments=parse_arguments(dict(arguments or {}), f"step.{local_id}", StructureBudget(512)),
         required_capabilities=tuple(capabilities),
         obligation_relation=relation,
-        reuse_policy=reuse_policy,
     )
 
 
@@ -605,7 +600,7 @@ def ground_draft(
     network: TaskNetworkSnapshot,
     *,
     bindings: Mapping[str, Any] | None = None,
-    sharing: Any = None,
+    reuse: Any = None,
     occurrence_id: str | None = None,
     snapshot: EvidenceSnapshot | None = None,
 ):
@@ -636,7 +631,7 @@ def ground_draft(
         report,
         catalog=env.catalog,
         schemas=env.schemas,
-        sharing=sharing,
+        reuse=reuse,
         plan_revision=network.plan_revision,
         goal_occurrence_id=occurrence_id,
     )
