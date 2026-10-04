@@ -89,6 +89,7 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
         binding = local.view.network.binding_for_occurrence(entry.occurrence_id)
         outcome = local.view.outcomes[entry.occurrence_id]
         accepted = None
+        carried = False
         if outcome is OccurrenceOutcome.ACCEPTED:
             eligible = [item for item in acceptances
                 if str(item.task_id) == str(entry.task_id)
@@ -101,17 +102,48 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
             if len(eligible) != 1:
                 continue
             accepted = eligible[0]
-            entry = replace(entry, acceptance_ref=TypedRef(kind=TypedRefKind.ACCEPTANCE,
-                id=str(accepted.acceptance_id), revision=accepted.contract_revision,
-                content_hash=sha256_hex(accepted.to_json())))
+        elif outcome is OccurrenceOutcome.SETTLED_OTHER:
+            # 第四批：任务做完了但现行要求下不算数——按旧版要求通过、待重审的步骤。点名它就是
+            # 沿用那份结果，审阅员按新版重审；重审已打回的不再是候选。
+            accepted = _kept_acceptance(reader.store, acceptances, entry, binding, requirement)
+            if accepted is None:
+                continue
+            carried = True
         elif outcome is not OccurrenceOutcome.RUNNING:
             continue
+        if accepted is not None:
+            entry = replace(entry, carried=carried, acceptance_ref=TypedRef(kind=TypedRefKind.ACCEPTANCE,
+                id=str(accepted.acceptance_id), revision=accepted.contract_revision,
+                content_hash=sha256_hex(accepted.to_json())))
         proof = read_shared_inputs(reader, local, entry, accepted)
         if proof is None:
             continue
         entries.append(entry)
         proofs[str(entry.occurrence_id)] = proof
     return entries, proofs
+
+
+def _kept_acceptance(store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any,
+                     requirement: Any) -> Any | None:
+    """The one acceptance a step's accepted result holds under an earlier requirements
+    revision, when the step may be kept across the amendment: same Task contract, not
+    yet judged under the current revision (the reviewer's rejection ends the candidacy)."""
+    from .assurance_validity import acceptance_id_for
+    from .carried_review import rejected
+
+    task = store.get_task(str(entry.task_id))
+    result_id = None if task is None else task.accepted_result_id
+    if not result_id or rejected(store, result_id, int(requirement.revision)):
+        return None
+    kept = [item for item in acceptances
+            if str(item.task_id) == str(entry.task_id)
+            and item.obligation_id == entry.obligation_id
+            and item.contract_revision == int(binding.contract_revision)
+            and int(item.requirements_revision) < int(requirement.revision)
+            and str(item.validity) == "CURRENT"
+            and str(item.acceptance_id) == acceptance_id_for(
+                entry.task_id, result_id, int(item.requirements_revision))]
+    return max(kept, key=lambda item: int(item.requirements_revision)) if kept else None
 
 
 class TaskGraphPlanSourceReader:

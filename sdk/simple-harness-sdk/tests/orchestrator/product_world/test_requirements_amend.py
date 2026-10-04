@@ -593,7 +593,10 @@ def test_kept_old_step_is_reviewed_again_not_rerun(tmp_path):
             [first] = htn.list_acceptances(mission_id)
             amend(world, mission_id, [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
             provider.go.set()
-            mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 180)
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 180)
+            except TimeoutError as error:  # 重审通过却不算数时会一直转（改坏后的样子）
+                raise AssertionError("the mission never settled: the kept step never counts") from error
             events = list(world.store.list_events(mission_id))
             assert str(mission.status.value) == "COMPLETED", (
                 mission.status, mission.final_report, state,

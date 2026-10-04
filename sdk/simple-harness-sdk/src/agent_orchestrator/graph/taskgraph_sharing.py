@@ -121,8 +121,11 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                or item.freshness_policy_ref != DEFAULT_FRESHNESS_POLICY for item in actual_inputs):
             raise ContractError("TASKGRAPH_SHARED_DATA_POLICY_DIFFERS")
         if demand.mode == "reuse_accepted":
+            # ``carried``: accepted under earlier requirements and kept — the same result is
+            # reviewed again under the current ones after the commit (TaskGraph 补全第四批).
             if (entry.acceptance_ref is None or child.acceptance_ref != entry.acceptance_ref
-                    or sources.outcomes.get(entry.occurrence_id) is not OccurrenceOutcome.ACCEPTED):
+                    or (sources.outcomes.get(entry.occurrence_id) is not OccurrenceOutcome.ACCEPTED
+                        and not entry.carried)):
                 raise ContractError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT")
         elif entry.acceptance_ref is not None:
             raise ContractError("TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE")

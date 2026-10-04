@@ -78,3 +78,31 @@
 ### 六-2　用例与改坏
 - `T/product_world/test_obligation_accounts.py`：子目标 + 收尾两步，每步一行、各项合计等于义务行。`test_shared_steps.py` 第一条：共用步骤只出现一次、标 2 个分支、只尝试一次。前端 `BudgetByDuty.test.tsx` 加一条（展开、共用标注、没花费的不列）。Host `test_mission_diagnostics.py`、`test_chat_mission_amend.py` 12 过。
 - 改坏 TG6-01（步骤账不按任务分）KILLED。
+
+## 第四批　改要求后沿用已验收的叶子，审阅员按新要求重审（方案第 3.5 版第 4 节）
+
+### 四-1　接法（偏差单 `TaskGraph-补全-偏差单-第四批重审入口.md`，独立裁决）
+方案原写"只放宽'尝试冻结范围 = 现行范围'这一条"。只读摸底发现现行"验证 → 验收"整条链约十处只服务刚交上来的结果，这个前提不成立。裁决：这条链上"每份结果一份"的键统一改为（结果, 要求版本），不建尝试、不建新表，重审由计划提交后的扫描驱动，核心流程与新结果共用。方案先改到第 3.5 版再动代码。
+
+### 四-2　改动
+- **键改为（结果, 要求版本）**：
+  - 验证记录表加 `requirements_revision` 列，唯一约束改为（结果, 要求版本, 层）（迁移 42：表重建、四个触发器原样重建；旧库记录记 0，开发期不做旧数据兼容）。`Store.list_verifications` 必须给要求版本（`None` 只供展示读全部）。两份表清单同步。
+  - 验收编号 `acceptance_id_for(任务, 结果, 要求版本)`、验收命令号、内容审阅的命令号都带要求版本；新 `result_acceptance_ids`（知识工具查"这份结果有没有现行算数的验收"用）。
+  - 内容审阅记录的四处查找（`assurance_review_runtime.task_record` 与查旧调用、`assurance_validity.official_record_for_result`、`human_commits` 人工裁决处）加"要求版本"条件。
+- **冻结输入的重审读法**：`completion_inputs.load_completion_result_inputs(..., requirements_revision=)`——只对已验收的结果成立；原冻结输入清单、端口认领不变，范围取现行的；`scope_unchanged(across_requirements=True)` 只放行"要求版本更新、任务合同 / 义务 / 副作用 / 数据边都没变"。新 `frozen_requirements_revision`（一份结果当初按哪一版要求做的）。正常路径不传参数，行为不变——在跑的结果撞上改要求照旧归档。
+- **重审驱动**：新 `orchestrator/carried_review.py` `carried_reviews`——现行计划里的普通步骤、有通过的结果、结果是按更旧的要求版本做的、现行要求下不算数、这一版还没有验收也没被打回、它读的上游在现行要求下都已算数。主循环里与验证共用同一组名额。`event_handler._carried_review`：按原产物记录重建只读副本 → 本地检查（绑现行范围）→ 审阅员独立会话 → 通过则 `commit.accept_carried_result`（只写验收、输出、内容贡献与 `CarriedResultAccepted` 事件；不动尝试 / 任务 / 产物状态、不结清预算）；打回则记修复请求（原因 `CARRIED_RESULT_REJECTED`，带审阅员意见）；两次都判不下来则问用户裁决；检查或审阅出错、计划又变了则下一轮再审，不当成没过。
+- **审阅员调用**：`run_task(..., requirements_revision=)`——不要尝试租约，审阅预留另记、不动原尝试的保护预算。"重审是否还活着"只有一个判断 `carried_review_alive`（任务没结束、这一步还在现行计划里），审阅交接 / 导入 / 证书三处共用的 `review_subject_stopped`、模型调用准入、停止判定都用它（原来这几处都按"原尝试、任务已结束"拒绝）。
+- **派发处**：`ACCEPTED_UNDER_OLD_REQUIREMENTS` 删除，改为 `CARRIED_REVIEW_PENDING`（等重审）与 `CARRIED_RESULT_REJECTED`（重审没过，等规划器）。
+- **共用候选第三种状态**：`eligible_sharing` 收"按旧版通过、待重审"的步骤（`SharedGoalEntry.carried`，规划包状态 `accepted_under_old_requirements`）；点名它时不查"负责的要求不变"，执行图共用核对放行；重审已打回的不再是候选。
+- **提示词**（仍是 v24）：改要求一段改写为沿用 / 重审 / 打回的说明，共用一段补第三种状态。
+- 顺带：验证副本按记录重建时不再要求原尝试的活动目录还在。
+
+### 四-3　登记
+- 新事件 `CarriedResultAccepted`、验证记录新列：全业务重放的表清单已更新，相关用例通过；本仓库没有单独的事件类型登记表。
+- 新原因码 `CARRIED_REVIEW_PENDING` / `CARRIED_RESULT_REJECTED` 是给规划器看的说明，不决定秩序，按第一批"清单只追决定秩序的码"不进错误码表。
+
+### 四-4　用例与改坏
+- `T/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun`（原"如实报出、不自动重跑"那条改写）：留着的步骤只有一次尝试，按第 2 版多一层审阅通过与一条验收，任务按新版完成。
+- 新 `T/product_world/test_carried_review.py` 3 条：重审打回 → 修复请求（带原因与意见）→ 规划器换掉重做 → 完成，同一份结果同一版只审一次；上游重审没过时下游不被送审；换做法时点名共用旧步骤 → 不重做、重审通过、a.md 只有一个任务在写。
+- 改要求整组 + 共用 + 重放等 44 条通过（正常路径未受影响）。
+- 改坏：TG4-01（通过不写验收）、TG4-02（打回不发修复请求）、TG4-03（重审不看上游）、TG4-04（审阅记录查找不认要求版本）；TG3-04 原文随代码更新。五条全部 KILLED。

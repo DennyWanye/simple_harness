@@ -88,7 +88,8 @@ def sharing_candidate_rows(dispatch: Any, mission_id: str, network: Any, world: 
             "writes": sorted(str(ref.object_id) for ref in binding.resource_writes),
             "reads_from": sorted(str(item.producer_occurrence) for item in network.data_requirements
                                  if item.consumer_occurrence == entry.occurrence_id),
-            "status": "accepted" if entry.acceptance_ref is not None else "running",
+            "status": ("accepted_under_old_requirements" if entry.carried
+                       else "accepted" if entry.acceptance_ref is not None else "running"),
         })
     return rows
 

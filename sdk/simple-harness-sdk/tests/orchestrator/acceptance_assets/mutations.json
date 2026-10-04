@@ -813,7 +813,7 @@
    "id": "TG3-04",
    "source": "TaskGraph 补全第三批（点名共用：负责的要求不变）",
    "file": "src/agent_orchestrator/planning/plan_preview.py",
-   "original": "        extra = sorted(handed - owned)\n",
+   "original": "        extra = [] if entry.carried else sorted(handed - owned)\n",
    "replacement": "        extra = []\n",
    "tests": [
     "tests/orchestrator/product_world/test_shared_steps.py::test_sharing_does_not_widen_what_the_named_step_answers_for"
@@ -852,6 +852,50 @@
     "tests/orchestrator/product_world/test_obligation_accounts.py::test_budget_by_duty_and_unrefined_goals"
    ],
    "note": "步骤账不按任务分：预算去向里没有逐步骤的行，义务合计也对不上"
+  },
+  {
+   "id": "TG4-01",
+   "source": "TaskGraph 补全第四批（重审通过写新版验收）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "                self.commit.accept_carried_result(item.result_id, requirements_revision=revision)\n",
+   "replacement": "                pass\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
+   ],
+   "note": "重审通过却不写新版验收：留下的那一步一直不算数，任务完成不了"
+  },
+  {
+   "id": "TG4-02",
+   "source": "TaskGraph 补全第四批（重审打回交规划器）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "        from .planning_repair_requests import record_request\n\n        produced = record_request(\n            self._new_mode(mission), mission.id,",
+   "replacement": "        record_request = lambda *args, **kwargs: False  # noqa: E731\n\n        produced = record_request(\n            self._new_mode(mission), mission.id,",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner"
+   ],
+   "note": "重审打回不发修复请求：规划器不知道这一步没过，任务完成不了"
+  },
+  {
+   "id": "TG4-03",
+   "source": "TaskGraph 补全第四批（重审按数据先后）",
+   "file": "src/agent_orchestrator/orchestrator/carried_review.py",
+   "original": "        if any(outcomes.get(producer) is not OccurrenceOutcome.ACCEPTED for producer in upstream):\n",
+   "replacement": "        if False:\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count"
+   ],
+   "note": "重审不看上游：上游还没算数，下游就被送审"
+  },
+  {
+   "id": "TG4-04",
+   "source": "TaskGraph 补全第四批（审阅记录按要求版本查找）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_runtime.py",
+   "original": "        revision = (frozen_requirements_revision(self.store, result) if requirements_revision is None\n                    else int(requirements_revision))\n        rows = self.store.connection.execute(\n",
+   "replacement": "        revision = frozen_requirements_revision(self.store, result)\n        rows = self.store.connection.execute(\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
+   ],
+   "note": "审阅记录查找不认要求版本：重审拿到的是旧版那条记录，没有按新版审，新版验收写不出来"
   }
  ]
 }

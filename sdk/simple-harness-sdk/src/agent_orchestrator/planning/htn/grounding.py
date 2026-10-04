@@ -221,8 +221,9 @@ def named_share_refusal(existing: SharingSignature, slot: SharingSignature) -> s
 
 @dataclass(frozen=True, slots=True)
 class SharedGoalEntry:
-    """One existing step a later slot may name: running, or accepted under the
-    current requirements (the TaskGraph plan sources decide which are eligible)."""
+    """One existing step a later slot may name: running, accepted under the current
+    requirements, or accepted under earlier requirements and awaiting the reviewer's
+    judgement under the current ones (the TaskGraph plan sources decide which are eligible)."""
 
     occurrence_id: OccurrenceId
     task_id: TaskRef
@@ -233,8 +234,13 @@ class SharedGoalEntry:
     #: specific acceptance and an id prefix does not establish which kind of thing
     #: it names.
     acceptance_ref: TypedRef | None = None
+    #: The acceptance is of an earlier requirements revision: the step is kept and the
+    #: same result is reviewed again under the current ones (TaskGraph 补全第四批).
+    carried: bool = False
 
     def __post_init__(self) -> None:
+        if self.carried and self.acceptance_ref is None:
+            raise ContractError("a carried shared step names the acceptance it was kept with")
         if self.acceptance_ref is not None and not isinstance(self.acceptance_ref, TypedRef):
             raise ContractError("shared_goal_entry.acceptance_ref must be a TypedRef")
 

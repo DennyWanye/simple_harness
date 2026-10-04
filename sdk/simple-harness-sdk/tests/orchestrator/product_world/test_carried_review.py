@@ -133,7 +133,10 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
             amend_script.amend(world, mission_id,
                                [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
             provider.go.set()
-            mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError(f"the mission never settled: {state}") from error
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state)
             # 规划器拿到的是一条带原因与审阅员意见的修复请求
             [request] = state["rejections"]
@@ -239,5 +242,60 @@ def test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count(tmp
                 upstream.accepted_result_id, requirements_revision=2) if row["layer"] == "critic_review"] == ["FAIL"]
             assert world.store.list_verifications(downstream.accepted_result_id, requirements_revision=2) == []
             assert reviews == {"c-user-1": 2}  # 负责第 1 条的那步审过两次（旧版、新版），下游没被送审
+
+    asyncio.run(case())
+
+
+def test_a_replacing_method_may_name_the_kept_step_and_it_is_reviewed_again(tmp_path):
+    """改要求后规划器换做法，新做法的第 1 步点名共用按旧版通过的那一步（候选状态
+    ``accepted_under_old_requirements``）：那一步不重做，审阅员按新版重审同一份结果，任务按新版完成。"""
+    seen: dict[str, Any] = {}
+    state: dict[str, Any] = {"named": None, "statuses": []}
+    base = amend_script.replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        import json
+
+        reply = base(request)
+        package = package_of(request)
+        kept = [row for row in package.get("sharing_candidates") or ()
+                if row["status"] == "accepted_under_old_requirements"]
+        if isinstance(reply, str) and '"REPLACE_METHOD"' in reply and kept:
+            body = json.loads(reply.removeprefix("<planning_decision>").removesuffix("</planning_decision>"))
+            body["payload"]["reuse"] = {"s1": kept[0]["occurrence_id"]}
+            state["named"] = kept[0]["occurrence_id"]
+            state["statuses"] = [row["status"] for row in package["sharing_candidates"]]
+            return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+        return reply
+
+    async def case():
+        provider = HeldStep("b.md", planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-named",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            [first] = htn.list_acceptances(mission_id)
+            amend_script.amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            provider.go.set()
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError(f"the mission never settled: {state}") from error
+            rejected = [e.payload for e in world.store.list_events(mission_id)
+                        if e.type == "PlanningDecisionEvaluated" and e.payload.get("status") == "REJECTED"]
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state,
+                                                              rejected[-2:])
+            assert state["named"], "the planner never saw a kept step to name"
+            kept_task = str(first.task_id)
+            assert len(world.store.list_attempts(kept_task)) == 1  # 没有重做
+            assert sorted(int(item.requirements_revision) for item in htn.list_acceptances(mission_id)
+                          if str(item.task_id) == kept_task) == [1, 2]
+            # a.md 只有那一个任务在写
+            writers = [task for task in world.store.list_tasks(mission_id) if tuple(task.outputs) == ("a.md",)]
+            assert [task.id for task in writers] == [kept_task]
 
     asyncio.run(case())
