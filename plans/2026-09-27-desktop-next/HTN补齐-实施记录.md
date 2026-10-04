@@ -760,3 +760,35 @@ M01～M12（TaskGraph 原计划 §15）文件留空，F2 补写。第三轮重�
 - **阻断核验**（Opus 只读，`HTN补齐-阶段G-阻断核验.md`）两项，已修：① Host 诊断调用全库检查，要扫整个库，又在主循环的事件循环上同步执行——开发数据副本已有两百多万条回执，打开一次诊断会让主循环、心跳续租、界面请求全部停住。改为诊断只核这个任务（`verify_mission`），全库检查只留在命令行 `replay`；Host 报告去掉"全库"一节，界面同步。② 存储层整行事件约占一个任务事件的四分之一，混在按任务读事件的通用接口里，约十处"读前 1 万条再按类型筛"的读取方在长任务上会读不到最新事件。改为 `Store.list_events`（`iter_events` 同走它）不指定类型时在 SQL 里排除 `RowsWritten`，要它的读取方显式点名；门面事件页原来那道筛选随之删掉（一条路径）。
 
 - **发版前开发数据副本启动检查**（`ui-full/userdata`，16G，APFS 克隆放原路径）：原库停在迁移第 36 版；用阶段 G 源码启动，迁移 37～41 一次跑完（第 41 版、76 个不许改删守卫装上）。编排服务随后以"模型准入身份与库里保存的意图不符"拒绝启动——**用主分支现装的 SDK opt.148 对照启动也是同一个错误**，是这份旧数据（迁移 36 时代建的意图）跟不上现行准入身份，与阶段 G 无关；按开发期规矩旧契约数据明确报错即可。另记一条待处理：一条旧意图让整个编排服务起不来，而不是只停那一个任务。
+
+## 一致性补改（分支 htn-h；计划第 3.23 版；方案 `HTN一致性补改方案-2026-10-04.md` 第 2 版，评估 `HTN一致性补改方案-评估-1.md`）
+
+依据：子代理复核 `HTN与原始计划一致性复核-2026-10-04.md` 找出 8 处不一致 + 1 处待定，用户 2026-10-04 逐项定（第 3 处选 A：轻重交审阅员按原话判；第 8 处：目前只做 macOS；第 9 处：默认 512K、256K 可选、不做对比实验；其余按推荐）。
+
+### 一致性-1　提交与改动
+- `bbce635b`　H-9 / H-6 / H-5：
+  - H-9：`BE/settings.py` 新任务默认 `context_input_tokens = 524_288`；解析只认 262144 一个可选值，其余一律 512K。用例 `test_thinking_pools.py::test_new_missions_default_to_the_512k_window_and_256k_is_the_option`，`test_long_context_profile.py` 改期望。
+  - H-6：`BE/diagnostics.py` 费用一节加 `by_duty`（取 SDK 快照里的 `budget_by_duty`，只留编号、层级、状态与数字，不带名称）。用例 `test_mission_diagnostics.py` 比对快照原数。
+  - H-5：`SDK/contracts/obligations.py` 删 `authority_ref`、`satisfaction_policy` 与只为它服务的 `SatisfactionPolicy`；`budget_lineage_ref` 保留（规划包在读、进了内容哈希，见计划第二节偏离）。
+- `99788b2f`　H-3：`RequirementClass` 只留硬约束 / 必须达到的结果，`Criterion.phase`、`is_required` 删，按"是否必须"分叉的代码删（`acceptance_rules.py`、`scoped_acceptance.py`、`resolution.py` 内部两处），根终审请求不再带 `requirement_class`。审阅员提示词判据段加一段"轻重按原话判"（偏好没做到判通过并写进局限；"A 或 B"做到一项即通过；`requirement_class` 是系统默认值）。用例 `test_review_reply_instructions.py::test_the_weight_of_a_criterion_is_judged_from_its_own_words`、新文件 `T/product_world/test_requirement_weight.py`（终审拿到的是用户原话）。改坏 H-03（删这句判据）变红。
+- `5dfaaade`　H-1：`SDK/orchestrator/planning_repair_requests.py` 新增 `precondition_triggers`：还没开工的原子步骤、最新开工许可说前提为假（只认 FALSE），立刻记一条证据失效请求（原因 `method_precondition_false`，写明步骤、做法、前提原文、真值、依据与纪元；去重键含前提摘要与纪元）。删 `recheck_method_instance` 及其结果类型与两条用例。新用例 `T/product_world/test_precondition_overturned.py`：两步做法、第 1 步写出文件让前提翻假，断言请求来了、内容如实、第 2 步没开工、早于任何停滞请求。改坏 H-01 变红。
+- `b6c09637`　H-7：把"这次验收在现行计划和现行要求下还算不算数"抽成 `planner_views.accepted_steps`，规划包与门面快照共用；快照加 `steps_no_longer_counting`（步骤编号、验收编号、按第几版要求通过、步骤目标文字），Host 投影原样透传，任务详情加一行"不再算数：……（按第 n 版要求通过）"（有才显示）。用例：`test_requirements_amend.py::test_amend_holds_dispatch_then_replans_and_delivers` 改要求后快照里有这一步、`test_obligation_accounts.py` 完成的任务为空、Host `test_chat_mission_amend.py` 透传、前端 `StepsNoLongerCounting.test.tsx`。
+- `f02f6856`　H-2：
+  - 取消、任务级失败、步骤失败带停任务三处写最终报告前，统一调 `_note_unresolved_actions`：列出结果不明的对外操作（交出未回 / 结果不明，或已交出、挂了操作链接、没有"没生效"证明的失败），写 `unresolved_actions` 与一句"系统会继续核对，有结果再通知"。"结果不明"的判定抽成 `runtime/operation_reconciliation.action_outcome_unresolved`，对账原来的 `_failed_unproven` 改为调它（一条路径）。
+  - 事件处理器每轮对账后调一次 `_notice_actions_settled_after_stop`：已取消 / 失败、报告里列了结果不明动作的任务，逐个看动作现在是否有了结果；有了就写一条 `ActionSettledAfterMissionStopped`（键 = 动作 + 结果状态，只写一次），并经保证通道同一条通知路径发出。四种结果来源（交出后晚到的结果、核对确认已生效、确认没生效的证明、人工裁决）都在这一处被读到。
+  - Host `pending_notices` 按通知编号读出事件：是这条就带 `action_settled`（操作、目标、是否生效）；任务结束的通知带 `unresolved_actions` 个数。主 Agent 上下文与主对话卡片分别写"还有 N 个对外操作结果不明，系统会继续核对""…核对结果：已生效 / 未生效"。
+  - 用例：SDK `T/product_world/test_operation.py::test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_known`（链接成功后报错 → 结果不明等人裁定 → 取消 → 报告列出 → 人裁定已生效 → 恰好一条核对结果事件且通知送到）；Host `test_mission_notices.py::test_a_stopped_mission_with_unsettled_actions_and_their_later_result_are_both_said`；前端 `ChatMissionNotices.test.tsx` 一条。
+
+### 一致性-2　与方案第 2 版的差异
+- **H-2 通知的判断点**：方案写"在 `reconcile_one` 返回后（及 `_resolve_action`）判断"。实际放在每轮对账循环结束后一处读（报告里列过、现在有结果、还没说过）。这样四种来源不必各自挂钩，人工裁决与晚到结果在下一轮对账时被读到（对账在每次 `run()` 开头和每若干轮进展后都跑）。
+- **H-3 审阅包里的类别字段**：方案写"不靠系统分类"。审阅员实际收到的是保证通道审阅包，准则全量带 `requirement_class` 且进了包哈希；没有剥掉，而是在提示词里写明这是系统默认值、轻重以原话为准（计划第二节偏离已记）。
+- **H-7 步骤名**：方案没定名称来源；用步骤任务的 `goal` 文字（截 60 字），没有时退回步骤编号。
+- **H-1 前提时点**：只在派发前查、验收时不复查（计划第二节偏离已记）。
+
+### 一致性-3　改坏检验
+- SDK（`run_mutations.py`，登记在 `T/acceptance_assets/mutations.json`）：H-01、H-03、H-02（取消不写未决动作）、H-02b（停下后有结果不通知）全部 KILLED。
+- Host（手工 cp 备份、清字节码后恢复）：H-06（诊断不带预算去向）、H-07（投影不透传不再算数的步骤）、H-09（默认改回 256K）、H-02c（通知不读核对结果事件）全部变红；第一次做 H-06 时替换模式没匹配上（那一行是字典项不是赋值），改正后重做才变红。
+
+### 一致性-4　已知旧失败（与本轮无关）
+- `T/.../test_root_review_coordinator.py::test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once` 在 opt.148、opt.149 上同样失败。
+- Host `host_support/test_facade.py` 17 条"Orchestrator needs the deployment's native runtime profiles"为旧失败。
