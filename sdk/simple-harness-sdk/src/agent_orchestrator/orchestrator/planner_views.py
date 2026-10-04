@@ -66,6 +66,33 @@ def accepted_steps(store: Any, mission_id: str, network: Any, htn: Any) -> list[
     return rows
 
 
+def sharing_candidate_rows(dispatch: Any, mission_id: str, network: Any, world: Any) -> list[dict[str, Any]]:
+    """What a refining decision may name in ``reuse`` (TaskGraph 补全第三批): exactly the
+    steps preview and commit accept — read by the same function — each with what the
+    Planner needs to judge whether it is the step it means.  Order only; no ranking."""
+
+    from ..planning.htn.grounding import occurrence_criteria
+
+    preview = getattr(dispatch, "_taskgraph_preview", None)
+    if preview is None:
+        return []
+    entries, local = preview.read_sources.sharing_candidates(mission_id)
+    rows = []
+    for entry in entries:
+        binding = network.binding_for_occurrence(entry.occurrence_id)
+        rows.append({
+            "occurrence_id": str(entry.occurrence_id),
+            "task_type": str(entry.signature.goal_type_ref.id),
+            "goal": dict(binding.typed_parameters).get("goal"),
+            "criteria": sorted(occurrence_criteria(network, world.registry.definition, entry.occurrence_id)),
+            "writes": sorted(str(ref.object_id) for ref in binding.resource_writes),
+            "reads_from": sorted(str(item.producer_occurrence) for item in network.data_requirements
+                                 if item.consumer_occurrence == entry.occurrence_id),
+            "status": "accepted" if entry.acceptance_ref is not None else "running",
+        })
+    return rows
+
+
 def read_planner_package(
     *,
     store: Any,
@@ -87,7 +114,6 @@ def read_planner_package(
 
     from ._read_set import SemanticReadSetChecker
     from .method_plan_reviews import reviews_by_method
-    from .planning_graph_repairs import graph_repair_sources
     from .planning_repair_requests import pending_requests, repair_goal_occurrences
     from .planning_selection import candidate_context
     from ..planning.htn.world import catalog_digest
@@ -222,7 +248,7 @@ def read_planner_package(
     }
 
     # what the Planner is asked about, and what its decisions may name ----------------
-    sharing = graph_repair_sources(store, network)
+    sharing = sharing_candidate_rows(dispatch, mission.id, network, world)
     open_goals = {choice["occurrence_id"] for choice in choices}
     repaired = {str(item) for item in under_repair}
     # A successor replaces a step the plan already holds.  Before the first plan there

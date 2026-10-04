@@ -37,8 +37,6 @@ from ..contracts.evidence_state import TruthValue
 from ..contracts.htn import MethodRef, MethodRegistryStatus
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
-    BindExistingGoalDecision,
-    BindExistingGoalMode,
     NoChangeDecision,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionRejectionCode,
@@ -382,8 +380,7 @@ class AdmissionContext:
       applicability and the parameters/preconditions it needs).
     * ``predicates`` — the registered predicate names.
     * ``active_method_instances`` — the instances adopted on the subjects.
-    * ``open_obligations`` / ``current_resolutions`` / ``shareable_goals`` — the
-      reference sets a successor, a reuse or a sharing decision needs.
+    * ``open_obligations`` — the reference set a successor decision needs.
     * ``authorization`` / ``capabilities`` / ``budget`` / ``operations`` /
       ``plan_shape`` — the governance, deployment and structural facts.
     * ``retry_budgets`` — the §39 counters the feedback reports back.
@@ -409,8 +406,6 @@ class AdmissionContext:
     predicates: frozenset[str]
     active_method_instances: tuple[MethodInstanceView, ...]
     open_obligations: tuple[PlanningRefV1, ...]
-    current_resolutions: tuple[PlanningRefV1, ...]
-    shareable_goals: tuple[PlanningRefV1, ...]
     authorization: AuthorizationView
     capabilities: CapabilityView
     budget: BudgetView
@@ -493,7 +488,7 @@ class AdmissionContext:
                 _method_instance_view,
             ),
         )
-        for name in ("open_obligations", "current_resolutions", "shareable_goals"):
+        for name in ("open_obligations",):
             object.__setattr__(
                 self, name, sequence_of(getattr(self, name), f"admission.{name}", _planning_ref)
             )
@@ -857,13 +852,6 @@ def _decision_refs(
     elif isinstance(payload, RepairProposeSuccessorDecision):
         found.append(("/payload/old_task_ref", payload.old_task_ref))
         found.append(("/payload/obligation_ref", payload.obligation_ref))
-    elif isinstance(payload, BindExistingGoalDecision):
-        found.append(
-            ("/payload/consumer_method_instance_ref", payload.consumer_method_instance_ref)
-        )
-        found.append(("/payload/goal_ref", payload.goal_ref))
-        if payload.resolution_ref is not None:
-            found.append(("/payload/resolution_ref", payload.resolution_ref))
     elif isinstance(payload, WaitDecision):
         found.extend(
             (f"/payload/wait_for/{position}", ref)
@@ -1054,39 +1042,6 @@ def _check_successor(
             )
 
 
-def _check_bind_existing_goal(
-    decision: PlanningDecisionEnvelopeV1, context: AdmissionContext, stage: _Stage
-) -> None:
-    """§27: reuse needs a CURRENT resolution; sharing needs a still-demanded goal."""
-
-    payload = decision.payload
-    assert isinstance(payload, BindExistingGoalDecision)  # narrowed by the caller
-    instance = _instance_for(context, payload.consumer_method_instance_ref)
-    if instance is None or not instance.active or instance.subject_key != decision.subject_key:
-        stage.refuse(REJECTION.REUSE_NOT_ALLOWED, "sharing must revise this subject's adopted method",
-                     field_path="/payload/consumer_method_instance_ref")
-    if payload.mode is BindExistingGoalMode.REUSE_ACCEPTED:
-        current = frozenset(_ref_key(ref) for ref in context.current_resolutions)
-        ref = payload.resolution_ref
-        if ref is None or _ref_key(ref) not in current:
-            stage.refuse(
-                REJECTION.REUSE_NOT_ALLOWED,
-                "the resolution being reused is not CURRENT",
-                field_path="/payload/resolution_ref",
-                observed=None if ref is None else ref.id,
-            )
-    else:
-        shareable = frozenset(_ref_key(ref) for ref in context.shareable_goals)
-        if _ref_key(payload.goal_ref) not in shareable:
-            stage.refuse(
-                REJECTION.REUSE_NOT_ALLOWED,
-                "the goal being shared is no longer demanded",
-                field_path="/payload/goal_ref",
-                subject_ref=payload.goal_ref,
-                observed=payload.goal_ref.id,
-            )
-
-
 def _check_request_evidence(
     decision: PlanningDecisionEnvelopeV1, context: AdmissionContext, stage: _Stage
 ) -> None:
@@ -1173,8 +1128,6 @@ def _check_payload(
         _check_repair_replace(decision, context, stage, defer_running_work=defer_running_work)
     elif isinstance(payload, RepairProposeSuccessorDecision):
         _check_successor(decision, context, stage)
-    elif isinstance(payload, BindExistingGoalDecision):
-        _check_bind_existing_goal(decision, context, stage)
     elif isinstance(payload, RequestEvidenceDecision):
         _check_request_evidence(decision, context, stage)
     elif isinstance(
@@ -1579,8 +1532,6 @@ def admit_planning_decision(
     payload = envelope.payload
     if isinstance(payload, RepairReplaceMethodDecision):
         instances = (payload.rejected_method_instance,)
-    elif isinstance(payload, BindExistingGoalDecision):
-        instances = (payload.consumer_method_instance_ref,)
     return AdmittedPlanningDecision(
         decision=envelope,
         subject=subject,

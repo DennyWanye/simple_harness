@@ -26,13 +26,11 @@ from ..contracts.htn import (
     RebindInputOperation,
     CancelBranchOperation,
     ProposeSuccessorOperation,
-    BindSharedGoalOperation,
     RetireMethodOperation,
     RunningWorkPolicy,
 )
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import (
-    BindExistingGoalDecision,
     NoChangeDecision,
     PlanningDecisionEnvelopeV1,
     PlanningDecisionType,
@@ -200,14 +198,20 @@ def _instance_id(admitted: AdmittedPlanningDecision, payload_ref: PlanningRefV1)
 
 
 def _refine_operation(
-    admitted: AdmittedPlanningDecision,
+    admitted: Any,
     payload: RefineDecision | RepairRefineDeeperDecision | RepairReplaceMethodDecision,
+    *,
+    method_ref: VersionedRef | None = None,
 ) -> RefineOperation:
+    """The one place a refining decision becomes a ``RefineOperation`` — the three
+    refining kinds (REFINE, REFINE_DEEPER, REPLACE_METHOD) carry ``reuse`` through here
+    and only here (TaskGraph 补全第三批)."""
     return RefineOperation(
         goal_id=_subject_id(admitted.subject, "task_id"),
         obligation_id=_subject_id(admitted.subject, "obligation_id"),
-        method_ref=_method_ref(admitted),
+        method_ref=_method_ref(admitted) if method_ref is None else method_ref,
         bindings=dict(payload.bindings),
+        reuse=dict(payload.reuse),
     )
 
 
@@ -279,10 +283,6 @@ def adapt_admitted_decision(
         return _proposal(admitted, adapter_context, (_rebind_operation(payload),),
                          running_work_policy=RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE)
 
-    if isinstance(payload, BindExistingGoalDecision):
-        return _proposal(admitted, adapter_context, (_bind_operation(payload),),
-                         running_work_policy=RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE)
-
     if decision.decision_type is PlanningDecisionType.REFINE or isinstance(payload, RepairRefineDeeperDecision):
         if not isinstance(payload, (RefineDecision, RepairRefineDeeperDecision)):
             raise ContractError("REFINE payload is not a RefineDecision")
@@ -351,21 +351,11 @@ def adapt_for_preview(
             trigger_refs=context.trigger_refs, read_set=context.read_set,
             operations=(_rebind_operation(payload),), rationale=decision.rationale,
             running_work_policy=RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE)
-    if isinstance(payload, BindExistingGoalDecision):
-        return PlanProposal(proposal_id=context.proposal_id, mission_id=MissionRef(context.mission_id),
-            expected_plan_revision=PlanRevision(context.base_plan_revision),
-            trigger_refs=context.trigger_refs, read_set=context.read_set,
-            operations=(_bind_operation(payload),), rationale=decision.rationale,
-            running_work_policy=RunningWorkPolicy.REQUEST_STOP_THEN_RECONCILE)
     if decision.decision_type is PlanningDecisionType.REFINE or isinstance(payload, RepairRefineDeeperDecision):
         if not isinstance(payload, (RefineDecision, RepairRefineDeeperDecision)) or not pre_admitted.method_refs:
             raise ContractError("REFINE preview lacks a resolved method")
-        operation = RefineOperation(
-            goal_id=_subject_id(pre_admitted.subject, "task_id"),
-            obligation_id=_subject_id(pre_admitted.subject, "obligation_id"),
-            method_ref=_versioned_ref(pre_admitted.method_refs[0]),
-            bindings=dict(payload.bindings),
-        )
+        operation = _refine_operation(pre_admitted, payload,
+                                      method_ref=_versioned_ref(pre_admitted.method_refs[0]))
         return PlanProposal(
             proposal_id=context.proposal_id,
             mission_id=MissionRef(context.mission_id),
@@ -394,12 +384,8 @@ def adapt_for_preview(
                                 else payload.rejected_method_instance.id),
             reason=decision.rationale,
         )
-        refine = RefineOperation(
-            goal_id=_subject_id(pre_admitted.subject, "task_id"),
-            obligation_id=_subject_id(pre_admitted.subject, "obligation_id"),
-            method_ref=_versioned_ref(pre_admitted.method_refs[0]),
-            bindings=dict(payload.bindings),
-        )
+        refine = _refine_operation(pre_admitted, payload,
+                                   method_ref=_versioned_ref(pre_admitted.method_refs[0]))
         return PlanProposal(
             proposal_id=context.proposal_id,
             mission_id=MissionRef(context.mission_id),
@@ -432,7 +418,3 @@ def _successor_operation(payload: RepairProposeSuccessorDecision) -> ProposeSucc
         VersionedRef(payload.goal_type_ref.id, payload.goal_type_ref.version, payload.goal_type_ref.content_hash),
         dict(payload.bindings))
 
-
-def _bind_operation(payload: BindExistingGoalDecision) -> BindSharedGoalOperation:
-    return BindSharedGoalOperation(payload.consumer_method_instance_ref.id, payload.step,
-        payload.goal_ref.id, None if payload.resolution_ref is None else payload.resolution_ref.id)

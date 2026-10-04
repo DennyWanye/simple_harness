@@ -27,7 +27,6 @@ from ..contracts.htn import (
     RebindInputOperation,
     CancelBranchOperation,
     ProposeSuccessorOperation,
-    BindSharedGoalOperation,
     RetireMethodOperation,
     TaskForm,
     TaskRef,
@@ -44,7 +43,9 @@ from .htn.compiler import (
 from .htn.compiler import (
     compile_candidate_from_snapshot as compile_refinement_candidate,
 )
-from .htn.grounding import ParameterBindingsError, SharedGoalEntry, SharedGoalIndex, ground_method
+from .htn.grounding import (
+    ParameterBindingsError, ReuseRefused, SharedGoalEntry, ground_method, occurrence_criteria, slot_criteria,
+)
 from .htn.registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog, iter_predicates
 from .htn.validation import DeltaProblemKind, DeltaReport, validate_delta
 
@@ -74,7 +75,6 @@ class PreviewInputs:
     # Store; an implicit empty value would hide an in-flight repair or hand-off.
     runtime_work: RuntimeWorkSnapshot
     repair_impact: Mapping[str, Any] | None = None
-    goal_reuse_sources: tuple[Mapping[str, Any], ...] = ()
     taskgraph_contract: bool = False
     sharing_entries: tuple[SharedGoalEntry, ...] | None = None
     #: 阶段 D：冻结预览输入时读到的作用域纪元（范围 → 纪元）与本任务各义务的读集条目
@@ -296,9 +296,6 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
     """Compile one candidate using only the explicitly frozen preview inputs."""
 
     proposal = inputs.proposal
-    if len(proposal.operations) == 1 and isinstance(proposal.operations[0], BindSharedGoalOperation):
-        from .htn.graph_repair import compile_bind_existing
-        return compile_bind_existing(inputs, proposal.operations[0])
     if len(proposal.operations) == 1 and isinstance(proposal.operations[0], ProposeSuccessorOperation):
         from .htn.graph_repair import compile_successor
         return compile_successor(inputs, proposal.operations[0])
@@ -337,10 +334,7 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
             problems=(str(assessment.status),),
         )
     occurrence = _refined_occurrence(inputs.network, operation, retiring)
-    # The fixed source reader captured these original signature entries in the
-    # same view as the network. Lookup remains the original full-signature gate;
-    # preview never queries a live Store or overrides NEW_WORK for repair reuse.
-    sharing = SharedGoalIndex(inputs.sharing_entries) if inputs.sharing_entries is not None else None
+    reuse = _named_reuse(inputs, operation, method)
     draft = ground_method(
         parent,
         method,
@@ -348,7 +342,7 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         assessment,
         catalog=inputs.catalog,
         schemas=inputs.schemas,
-        sharing=sharing,
+        reuse=reuse,
         plan_revision=inputs.network.plan_revision,
         goal_occurrence_id=OccurrenceId(occurrence),
     )
@@ -359,7 +353,7 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
         catalog=inputs.catalog,
         schemas=inputs.schemas,
         registry=inputs.registry,
-        sharing=sharing,
+        reuse=reuse,
         retire_instance_ids=tuple(MethodInstanceId(item) for item in retiring),
         budget=inputs.budget,
         requirements_revision=inputs.requirements_revision,
@@ -370,6 +364,37 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
             method.applicable_when, {item.name: item.value for item in draft.grounded_parameters}),
         criterion_files=dict(inputs.criterion_files),
     )
+
+
+def _named_reuse(inputs: PreviewInputs, operation: RefineOperation, method: Any) -> dict[str, SharedGoalEntry]:
+    """The steps the Planner named on this refinement, resolved against the eligible
+    sharing sources the fixed reader captured in the same view as the network (a step
+    that is running, or accepted under the current requirements).  Order only: the
+    named step must be one of those, and the requirements the new method hands to it
+    must already be its own (TaskGraph 补全第三批) — sharing does not widen what an
+    existing step answers for.  Inputs and order are checked by the TaskGraph
+    sharing gate."""
+
+    if not operation.reuse:
+        return {}
+    eligible = {str(entry.occurrence_id): entry for entry in (inputs.sharing_entries or ())}
+    named: dict[str, SharedGoalEntry] = {}
+    for step, occurrence in sorted(operation.reuse.items()):
+        entry = eligible.get(str(occurrence))
+        if entry is None:
+            raise ReuseRefused(
+                f"step {step!r} names {occurrence}, which is not a step this mission can share now "
+                "(only an ordinary step that is running, or accepted under the current "
+                "requirements, can be named)")
+        handed = slot_criteria(method, step)
+        owned = occurrence_criteria(inputs.network, inputs.registry.definition, entry.occurrence_id)
+        extra = sorted(handed - owned)
+        if extra:
+            raise ReuseRefused(
+                f"step {step!r} would hand {extra} to {occurrence}, which answers only for "
+                f"{sorted(owned)}; sharing a step does not add to what it answers for")
+        named[step] = entry
+    return named
 
 
 def preview_candidate(
@@ -426,6 +451,11 @@ def preview_candidate(
     except CompilationRefused as error:
         return PreviewUnavailable(
             "candidate_rejected", mapped_problems=map_compilation_refusal(error), detail=str(error)
+        )
+    except ReuseRefused as error:
+        # A named reuse the order checks refuse: the facts go back to the Planner.
+        return PreviewUnavailable(
+            "candidate_rejected", mapped_problems=(ReuseRefused.code,), detail=str(error)
         )
     except ParameterBindingsError as error:
         return PreviewUnavailable(

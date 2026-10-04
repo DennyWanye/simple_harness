@@ -357,7 +357,6 @@ class PlanCommitsMixin:
             self._check_structure(semantics, command)
             self._check_method_reviews(command)
             self._check_binding_rewrites(semantics, command)
-            self._check_resolution_reuses(command)
             obligations = ObligationStore(self._store)
             self._check_commit_ready(obligations, command)
             self._check_budget(semantics, obligations, command)
@@ -399,17 +398,6 @@ class PlanCommitsMixin:
                 "review passed (or the person passed it): "
                 + json.dumps(refused, ensure_ascii=False, sort_keys=True),
             )
-
-    def _check_resolution_reuses(self, command: CommitPlanCommand) -> None:
-        if not command.delta.resolution_reuses:
-            return
-        from .planning_graph_repairs import graph_repair_sources
-        sources = {row["resolution_ref"]["id"]: row["resolution_ref"]
-                   for row in graph_repair_sources(self._store, command.network) if row["resolution_ref"] is not None}
-        for ref in command.delta.resolution_reuses:
-            current = sources.get(ref.id)
-            if current is None or current["semantic_revision"] != ref.revision or current["content_hash"] != ref.content_hash:
-                raise PlanCommitRejected("REQUEST_BINDING_STALE", "reused GoalResolution is no longer CURRENT and adopted")
 
     def _check_binding_rewrites(self, semantics: HtnStore, command: CommitPlanCommand) -> None:
         """H4 rewires lineage/input control; Task meaning and duty stay immutable."""

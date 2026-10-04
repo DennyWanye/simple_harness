@@ -81,7 +81,6 @@
         "PROPOSE_METHOD",
         "REQUEST_EVIDENCE",
         "REPAIR",
-        "BIND_EXISTING_GOAL",
         "REQUEST_HUMAN",
         "WAIT",
         "NO_CHANGE",
@@ -146,12 +145,6 @@
         "authorization_granted",
         "human_resolved",
         "plan_revision_changed"
-      ]
-    },
-    "bindExistingGoalMode": {
-      "enum": [
-        "REUSE_ACCEPTED",
-        "SHARE_ACTIVE"
       ]
     },
     "planningRef": {
@@ -360,6 +353,14 @@
         "bindings": {
           "type": "object",
           "maxProperties": 64
+        },
+        "reuse": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -402,6 +403,14 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 300
+        },
+        "reuse": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -434,88 +443,6 @@
           "maxProperties": 64
         }
       }
-    },
-    "bindGoalPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "mode",
-        "consumer_method_instance_ref",
-        "step",
-        "goal_ref",
-        "resolution_ref"
-      ],
-      "properties": {
-        "mode": {
-          "$ref": "#/$defs/bindExistingGoalMode"
-        },
-        "consumer_method_instance_ref": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/planningRef"
-            },
-            {
-              "properties": {
-                "kind": {
-                  "const": "method_instance"
-                }
-              }
-            }
-          ]
-        },
-        "step": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        },
-        "goal_ref": {
-          "$ref": "#/$defs/planningRef"
-        },
-        "resolution_ref": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/planningRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "mode": {
-                "const": "SHARE_ACTIVE"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "resolution_ref": {
-                "type": "null"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "mode": {
-                "const": "REUSE_ACCEPTED"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "resolution_ref": {
-                "$ref": "#/$defs/planningRef"
-              }
-            }
-          }
-        }
-      ]
     },
     "blockedItem": {
       "type": "object",
@@ -723,6 +650,14 @@
         "bindings": {
           "type": "object",
           "maxProperties": 64
+        },
+        "reuse": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -1013,22 +948,6 @@
                 "$ref": "#/$defs/repairProposeSuccessorPayload"
               }
             ]
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "decision_type": {
-            "const": "BIND_EXISTING_GOAL"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/bindGoalPayload"
           }
         }
       }

@@ -16,12 +16,12 @@ else.  Re-grounding the same method against the same goal with the same
 parameters therefore lands on the same nodes, so a re-plan that keeps a slot keeps
 its node rather than minting a twin.
 
-Sharing (§8.3, TG §12): two slots bind the *same* occurrence only when the whole
-sharing signature matches — goal contract, typed parameters, input versions,
-authority scope, freshness, domain semantics and effect identity — *and* the task
-type has declared that reuse is permitted.  Lexical closeness produces a
-suggestion and never a binding, and a goal whose type writes anything is not
-shared by default: two sends are two sends, whatever the parameters say.
+Sharing (§8.3, TG §12; TaskGraph 补全第三批): a slot *is* an existing step only when
+the Planner named that step on its refining decision.  Nothing is matched by
+signature or by looking alike; the order checks (same task type and scope, an effect
+that may be shared at all) are :func:`named_share_refusal`, and the TaskGraph sharing
+gate checks the inputs.  A goal whose type writes outside the orchestrator is never
+shared: two sends are two sends.
 """
 
 from __future__ import annotations
@@ -72,9 +72,7 @@ from .registry import (
     SchemaCatalog,
     TaskTypeCatalog,
     TaskTypeSpec,
-    effective_reuse_policy,
     iter_values,
-    statement_similarity,
 )
 
 
@@ -175,153 +173,61 @@ def slot_identity(
 # --------------------------------------------------------------------------------------
 
 
-class ShareVerdict(StrEnum):
-    """Why two slots may or may not bind one goal occurrence."""
-
-    SHAREABLE = "SHAREABLE"
-    REUSE_NOT_PERMITTED = "REUSE_NOT_PERMITTED"
-    SIDE_EFFECT_NOT_SHAREABLE = "SIDE_EFFECT_NOT_SHAREABLE"
-    SIGNATURE_DIFFERS = "SIGNATURE_DIFFERS"
-
-
 @dataclass(frozen=True, slots=True)
 class SharingSignature:
-    """TG §12: everything two slots must agree on before they may share one goal.
+    """TG §12, as order only: what a named existing step and the slot naming it must
+    agree on before the slot may *be* that step.
 
-    Text is not on the list.  Two "send the monthly report" goals with identical
-    wording and different recipients differ here; two reads of the same file at the
-    same revision do not.
+    Whether the two are the same piece of work is the Planner's call — it named the
+    step (``RefineOperation.reuse``, TaskGraph 补全第三批).  What is checked here is
+    that the naming is admissible: the same task type, the same authority and
+    semantic scope and domain, and an effect that may be shared at all.  The goal's
+    wording and its inputs are not compared here; the inputs are checked against the
+    existing step by the TaskGraph sharing gate (``graph.taskgraph_sharing``).
     """
 
     goal_type_ref: VersionedRef
-    typed_parameters: tuple[tuple[str, Any], ...]
-    input_versions: tuple[str, ...]
     authority_scope: str
     semantic_scope: str
-    assurance_policy_ref: str
-    freshness_policy_ref: str
     domain_semantics: str
     side_effect_kind: SideEffectKind
     effect_identity: str | None = None
 
     @classmethod
-    def of(
-        cls,
-        spec: TaskTypeSpec,
-        parameters: Mapping[str, Any],
-        *,
-        authority_scope: str,
-        semantic_scope: str,
-        input_versions: Sequence[str] = (),
-        assurance_policy_ref: str = "assurance.default",
-        freshness_policy_ref: str = "freshness.default",
-    ) -> SharingSignature:
+    def of(cls, spec: TaskTypeSpec, *, authority_scope: str, semantic_scope: str) -> SharingSignature:
         return cls(
             goal_type_ref=spec.task_type_ref,
-            typed_parameters=tuple(sorted((key, parameters[key]) for key in parameters)),
-            input_versions=tuple(input_versions),
             authority_scope=identifier(authority_scope, "authority_scope"),
             semantic_scope=identifier(semantic_scope, "semantic_scope"),
-            assurance_policy_ref=identifier(assurance_policy_ref, "assurance_policy_ref"),
-            freshness_policy_ref=identifier(freshness_policy_ref, "freshness_policy_ref"),
             domain_semantics=spec.domain or "",
             side_effect_kind=spec.side_effect_kind,
             effect_identity=spec.effect_identity,
         )
 
-    def digest(self) -> str:
-        return content_hash_of(
-            {
-                "goal_type_ref": self.goal_type_ref.to_json(),
-                "typed_parameters": [list(item) for item in self.typed_parameters],
-                "input_versions": list(self.input_versions),
-                "authority_scope": self.authority_scope,
-                "semantic_scope": self.semantic_scope,
-                "assurance_policy_ref": self.assurance_policy_ref,
-                "freshness_policy_ref": self.freshness_policy_ref,
-                "domain_semantics": self.domain_semantics,
-                "side_effect_kind": str(self.side_effect_kind),
-                "effect_identity": self.effect_identity,
-            }
-        )
 
+def named_share_refusal(existing: SharingSignature, slot: SharingSignature) -> str | None:
+    """Why a slot may not be the existing step it named — or ``None`` when it may."""
 
-@dataclass(frozen=True, slots=True)
-class ShareDecision:
-    verdict: ShareVerdict
-    reason: str
-    differing_fields: tuple[str, ...] = ()
-
-    @property
-    def shareable(self) -> bool:
-        return self.verdict is ShareVerdict.SHAREABLE
-
-
-def may_share(
-    left: SharingSignature,
-    right: SharingSignature,
-    *,
-    reuse_policy: ReusePolicy,
-) -> ShareDecision:
-    """§8.3: the whole signature must match and the type must permit reuse."""
-
-    differing = tuple(
-        name
-        for name in (
-            "goal_type_ref",
-            "typed_parameters",
-            "input_versions",
-            "authority_scope",
-            "semantic_scope",
-            "assurance_policy_ref",
-            "freshness_policy_ref",
-            "domain_semantics",
-            "side_effect_kind",
-            "effect_identity",
-        )
-        if getattr(left, name) != getattr(right, name)
-    )
+    differing = [name for name in ("goal_type_ref", "authority_scope", "semantic_scope",
+                                   "domain_semantics", "side_effect_kind", "effect_identity")
+                 if getattr(existing, name) != getattr(slot, name)]
     if differing:
-        return ShareDecision(
-            verdict=ShareVerdict.SIGNATURE_DIFFERS,
-            reason=(
-                "the sharing signature differs in "
-                + ", ".join(differing)
-                + "; these are two goals, not one"
-            ),
-            differing_fields=differing,
-        )
-    if reuse_policy is ReusePolicy.NEW_WORK:
-        return ShareDecision(
-            verdict=ShareVerdict.REUSE_NOT_PERMITTED,
-            reason=(
-                "the task type has not declared that its result may be reused; "
-                "an occurrence stays its own work (TG §12)"
-            ),
-        )
-    if left.side_effect_kind not in READ_ONLY_EFFECTS and left.effect_identity is None:
-        return ShareDecision(
-            verdict=ShareVerdict.SIDE_EFFECT_NOT_SHAREABLE,
-            reason=(
-                "a goal that writes outside the orchestrator is not shared by default; "
-                "two identically-parameterised sends are two sends (§8.3)"
-            ),
-        )
-    return ShareDecision(
-        verdict=ShareVerdict.SHAREABLE,
-        reason="full signature match and the task type permits reuse",
-    )
+        return "the named step differs in " + ", ".join(differing) + "; it is another kind of work"
+    if existing.side_effect_kind not in READ_ONLY_EFFECTS and existing.effect_identity is None:
+        return ("the named step writes outside the orchestrator; two such actions are two "
+                "actions and are never shared (§8.3)")
+    return None
 
 
 @dataclass(frozen=True, slots=True)
 class SharedGoalEntry:
-    """One goal occurrence that already exists and may be bound by another slot."""
+    """One existing step a later slot may name: running, or accepted under the
+    current requirements (the TaskGraph plan sources decide which are eligible)."""
 
     occurrence_id: OccurrenceId
     task_id: TaskRef
     obligation_id: ObligationId
     signature: SharingSignature
-    reuse_policy: ReusePolicy
     #: The exact Acceptance this occurrence's result was accepted under, when there
     #: is one.  A typed reference, not a bare id: TG decision 9 binds reuse to a
     #: specific acceptance and an id prefix does not establish which kind of thing
@@ -333,74 +239,42 @@ class SharedGoalEntry:
             raise ContractError("shared_goal_entry.acceptance_ref must be a TypedRef")
 
 
-@dataclass(frozen=True, slots=True)
-class ShareSuggestion:
-    """A merge *candidate*.  §8.3: similarity never binds anything by itself."""
+def slot_criteria(method: MethodContract, slot: str) -> frozenset[str]:
+    """The criteria a method hands to one of its steps — the same reading as the
+    system's carried criteria (a link without a step lands on the finalizer; a link
+    without a child criterion id is carried under the parent's id)."""
 
-    occurrence_id: OccurrenceId
-    similarity: float
-    reason: str
-    decision: ShareDecision
-    advisory_only: bool = True
+    composition = method.composition
+    return frozenset(
+        str(link.child_criterion_id or link.parent_criterion_id)
+        for link in composition.criterion_links
+        if (link.child_step or composition.finalizer_step) == slot)
 
 
-class SharedGoalIndex:
-    """Known goal occurrences, addressed by their full sharing signature.
+def occurrence_criteria(network: Any, definition_of: Any, occurrence_id: OccurrenceId) -> frozenset[str]:
+    """Every criterion the adopted plan currently hands to one step (all the methods
+    that hold it).  ``definition_of``: a method reference → its contract."""
 
-    A plain dict keyed by :meth:`SharingSignature.digest`.  There is no fuzzy
-    lookup on this path on purpose: :meth:`suggest` exists for the fuzzy question
-    and returns suggestions, so nothing can slip from "looks alike" to "is the
-    same" by taking one more code path.
-    """
-
-    def __init__(self, entries: Sequence[SharedGoalEntry] = ()) -> None:
-        self._by_digest: dict[str, SharedGoalEntry] = {}
-        for entry in entries:
-            self.add(entry)
-
-    def add(self, entry: SharedGoalEntry) -> None:
-        if not isinstance(entry, SharedGoalEntry):
-            raise ContractError("add expects a SharedGoalEntry")
-        self._by_digest.setdefault(entry.signature.digest(), entry)
-
-    def entries(self) -> tuple[SharedGoalEntry, ...]:
-        return tuple(self._by_digest[key] for key in sorted(self._by_digest))
-
-    def lookup(
-        self, signature: SharingSignature, *, reuse_policy: ReusePolicy
-    ) -> tuple[SharedGoalEntry | None, ShareDecision]:
-        entry = self._by_digest.get(signature.digest())
-        if entry is None:
-            return None, ShareDecision(
-                verdict=ShareVerdict.SIGNATURE_DIFFERS,
-                reason="no existing occurrence carries this sharing signature",
-            )
-        decision = may_share(entry.signature, signature, reuse_policy=reuse_policy)
-        return (entry if decision.shareable else None), decision
-
-    def suggest(
-        self, signature: SharingSignature, *, statement: str = "", minimum: float = 0.5
-    ) -> tuple[ShareSuggestion, ...]:
-        """Occurrences that merely *look* related, each with the reason it was not bound."""
-
-        out: list[ShareSuggestion] = []
-        for entry in self.entries():
-            if entry.signature.digest() == signature.digest():
+    adopted = set(network.adopted_instance_ids)
+    out: set[str] = set()
+    for instance in network.method_instances:
+        if instance.instance_id not in adopted:
+            continue
+        for child in instance.child_bindings:
+            if child.occurrence_id != occurrence_id:
                 continue
-            similarity = statement_similarity(
-                statement or signature.goal_type_ref.id, entry.signature.goal_type_ref.id
-            )
-            if similarity < minimum:
-                continue
-            out.append(
-                ShareSuggestion(
-                    occurrence_id=entry.occurrence_id,
-                    similarity=similarity,
-                    reason="lexically close goal type; a human or planner decides (§8.3)",
-                    decision=may_share(entry.signature, signature, reuse_policy=entry.reuse_policy),
-                )
-            )
-        return tuple(sorted(out, key=lambda item: (-item.similarity, str(item.occurrence_id))))
+            method = definition_of(instance.method_ref)
+            if method is None:
+                raise GroundingError(f"the method holding {occurrence_id} is unavailable")
+            out |= slot_criteria(method, str(child.slot_key))
+    return frozenset(out)
+
+
+class ReuseRefused(GroundingError):
+    """A named reuse the order checks refuse; the message states the facts, the
+    Planner decides what to do (TaskGraph 补全第三批)."""
+
+    code = "REUSE_NOT_ALLOWED"
 
 
 # --------------------------------------------------------------------------------------
@@ -421,7 +295,6 @@ class SlotPlan:
     bound_task_id: TaskRef
     bound_obligation_id: ObligationId
     signature: SharingSignature
-    share_decision: ShareDecision | None = None
     acceptance_ref: TypedRef | None = None
     arguments: Mapping[str, Any] = None  # type: ignore[assignment]
 
@@ -500,8 +373,7 @@ def ground_method(
     *,
     catalog: TaskTypeCatalog,
     schemas: SchemaCatalog,
-    sharing: SharedGoalIndex | None = None,
-    reuse_acceptances: Mapping[str, TypedRef] | None = None,
+    reuse: Mapping[str, SharedGoalEntry] | None = None,
     plan_revision: PlanRevision = PlanRevision(0),
     goal_occurrence_id: OccurrenceId | None = None,
     world_snapshot_id: str | None = None,
@@ -570,8 +442,7 @@ def ground_method(
         parameters,
         instance_id=instance_id,
         catalog=catalog,
-        sharing=sharing,
-        reuse_acceptances=reuse_acceptances or {},
+        reuse=reuse or {},
     )
     child_bindings = tuple(
         ChildBinding(
@@ -658,11 +529,19 @@ def plan_slots(
     *,
     instance_id: MethodInstanceId,
     catalog: TaskTypeCatalog,
-    sharing: SharedGoalIndex | None,
-    reuse_acceptances: Mapping[str, TypedRef],
+    reuse: Mapping[str, SharedGoalEntry],
 ) -> tuple[SlotPlan, ...]:
-    """Decide, per slot, whether it creates work or binds an existing occurrence."""
+    """Decide, per slot, whether it creates work or *is* an existing step.
 
+    A slot is an existing step only when the Planner named it (``reuse``: step name →
+    the existing step, resolved by the caller from the eligible sharing sources).
+    Nothing is matched by signature: whether two pieces of work are one is the
+    Planner's judgement; here only the order is checked (:func:`named_share_refusal`).
+    """
+
+    unknown = sorted(set(reuse) - {step.local_id for step in method.steps})
+    if unknown:
+        raise ReuseRefused(f"reuse names step(s) {unknown} that this method does not have")
     plans: list[SlotPlan] = []
     for step in method.steps:
         spec = catalog.resolve(step.task_type_ref)
@@ -681,16 +560,8 @@ def plan_slots(
         )
         arguments = resolve_arguments(step, parameters, path=f"step[{step.local_id}]")
         signature = SharingSignature.of(
-            spec,
-            arguments,
-            authority_scope=task.semantic_scope,
-            semantic_scope=task.semantic_scope,
-        )
-        permitted = effective_reuse_policy(step, spec)
-        entry: SharedGoalEntry | None = None
-        decision = None
-        if sharing is not None:
-            entry, decision = sharing.lookup(signature, reuse_policy=permitted)
+            spec, authority_scope=task.semantic_scope, semantic_scope=task.semantic_scope)
+        entry = reuse.get(step.local_id)
         if entry is None:
             plans.append(
                 SlotPlan(
@@ -703,13 +574,17 @@ def plan_slots(
                     bound_task_id=identity.task_id,
                     bound_obligation_id=identity.obligation_id,
                     signature=signature,
-                    share_decision=decision,
                     arguments=arguments,
                 )
             )
             continue
-        acceptance = reuse_acceptances.get(step.local_id, entry.acceptance_ref)
-        policy = ReusePolicy.REUSE_ACCEPTED if acceptance is not None else ReusePolicy.SHARE_ACTIVE
+        if step.form is not TaskForm.PRIMITIVE:
+            raise ReuseRefused(f"step {step.local_id!r} is a sub-goal; only an ordinary step can be shared")
+        refusal = named_share_refusal(entry.signature, signature)
+        if refusal is not None:
+            raise ReuseRefused(f"step {step.local_id!r} cannot be {entry.occurrence_id}: {refusal}")
+        policy = (ReusePolicy.REUSE_ACCEPTED if entry.acceptance_ref is not None
+                  else ReusePolicy.SHARE_ACTIVE)
         plans.append(
             SlotPlan(
                 step=step,
@@ -721,8 +596,7 @@ def plan_slots(
                 bound_task_id=entry.task_id,
                 bound_obligation_id=entry.obligation_id,
                 signature=signature,
-                share_decision=decision,
-                acceptance_ref=acceptance,
+                acceptance_ref=entry.acceptance_ref,
                 arguments=arguments,
             )
         )
@@ -740,8 +614,7 @@ def child_task_bindings(
     *,
     catalog: TaskTypeCatalog,
     schemas: SchemaCatalog,
-    sharing: SharedGoalIndex | None = None,
-    reuse_acceptances: Mapping[str, TypedRef] | None = None,
+    reuse: Mapping[str, SharedGoalEntry] | None = None,
     write_targets: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[TaskSemanticBindingV1, ...]:
     """The semantic bindings of the slots this draft *creates*.
@@ -763,8 +636,7 @@ def child_task_bindings(
         parameters,
         instance_id=draft.instance_id,
         catalog=catalog,
-        sharing=sharing,
-        reuse_acceptances=reuse_acceptances or {},
+        reuse=reuse or {},
     )
     out: list[TaskSemanticBindingV1] = []
     for plan in plans:
@@ -875,11 +747,8 @@ def describe_draft(draft: MethodInstanceDraft) -> str:
 __all__ = (
     "GroundingError",
     "ParameterBindingsError",
-    "ShareDecision",
-    "ShareSuggestion",
-    "ShareVerdict",
+    "ReuseRefused",
     "SharedGoalEntry",
-    "SharedGoalIndex",
     "SharingSignature",
     "SlotIdentity",
     "SlotPlan",
@@ -889,8 +758,10 @@ __all__ = (
     "derive_id",
     "describe_draft",
     "ground_method",
+    "named_share_refusal",
+    "occurrence_criteria",
+    "slot_criteria",
     "instance_identity",
-    "may_share",
     "plan_slots",
     "requiredness_of",
     "resolve_arguments",

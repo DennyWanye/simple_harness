@@ -100,7 +100,6 @@ class PlanningDecisionType(StrEnum):
     PROPOSE_METHOD = "PROPOSE_METHOD"
     REQUEST_EVIDENCE = "REQUEST_EVIDENCE"
     REPAIR = "REPAIR"
-    BIND_EXISTING_GOAL = "BIND_EXISTING_GOAL"
     REQUEST_HUMAN = "REQUEST_HUMAN"
     WAIT = "WAIT"
     NO_CHANGE = "NO_CHANGE"
@@ -242,13 +241,6 @@ class RepairKind(StrEnum):
     RETRY_SAME_METHOD = "RETRY_SAME_METHOD"
     DECLARE_RUNTIME_BLOCKED = "DECLARE_RUNTIME_BLOCKED"
     PROPOSE_SUCCESSOR = "PROPOSE_SUCCESSOR"
-
-
-class BindExistingGoalMode(StrEnum):
-    """Section 27: why an existing goal is being bound."""
-
-    REUSE_ACCEPTED = "REUSE_ACCEPTED"
-    SHARE_ACTIVE = "SHARE_ACTIVE"
 
 
 # --------------------------------------------------------------------------------------
@@ -1041,6 +1033,24 @@ def _json_arg_map(value: object, name: str, *, limit: int) -> Mapping[str, Any]:
     return MappingProxyType(dict(json_object(value, name)))
 
 
+def _reuse_map(value: object, name: str) -> Mapping[str, str]:
+    """``reuse``（TaskGraph 补全第三批）：做法里的步骤名 → 本任务里一个已有步骤的出现编号。
+    写了就是"这一步就是那一步，不另做"；系统只核秩序（类型、负责的要求、输入、先后）。"""
+
+    if not isinstance(value, Mapping):
+        raise ContractError(f"{name} must be an object")
+    if len(value) > MAX_PD_BINDINGS:
+        raise ContractError(f"{name} has more than {MAX_PD_BINDINGS} entries")
+    out: dict[str, str] = {}
+    for step, occurrence in value.items():
+        if not isinstance(step, str) or not step.strip() or not isinstance(occurrence, str) or not occurrence.strip():
+            raise ContractError(f"{name} maps step names to occurrence ids (non-empty strings)")
+        out[step.strip()] = occurrence.strip()
+    if len(set(out.values())) != len(out):
+        raise ContractError(f"{name} names the same existing step twice")
+    return MappingProxyType(out)
+
+
 def _has_method_instance_kind(ref: PlanningRefV1, name: str) -> PlanningRefV1:
     if ref.kind is not PlanningRefKind.METHOD_INSTANCE:
         raise ContractError(f"{name} must have kind=method_instance")
@@ -1058,20 +1068,23 @@ class RefineDecision:
 
     method_ref: PlanningRefV1
     bindings: Mapping[str, Any]
+    reuse: Mapping[str, str] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "method_ref", _planning_ref(self.method_ref, "refine.method_ref"))
         object.__setattr__(
             self, "bindings", _json_arg_map(self.bindings, "refine.bindings", limit=MAX_PD_BINDINGS)
         )
+        object.__setattr__(self, "reuse", _reuse_map(self.reuse, "refine.reuse"))
 
     def to_json(self) -> dict[str, Any]:
-        return {"method_ref": self.method_ref.to_json(), "bindings": dict(self.bindings)}
+        return {"method_ref": self.method_ref.to_json(), "bindings": dict(self.bindings),
+                **({"reuse": dict(self.reuse)} if self.reuse else {})}
 
     @classmethod
     def from_json(cls, value: object, name: str = "refine") -> RefineDecision:
-        data = fields_of(value, name, required=("method_ref", "bindings"))
-        return cls(method_ref=data["method_ref"], bindings=data["bindings"])
+        data = fields_of(value, name, required=("method_ref", "bindings"), optional=("reuse",))
+        return cls(method_ref=data["method_ref"], bindings=data["bindings"], reuse=data.get("reuse") or {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -1176,6 +1189,7 @@ class RepairRefineDeeperDecision:
     repair_kind: RepairKind
     method_ref: PlanningRefV1
     bindings: Mapping[str, Any]
+    reuse: Mapping[str, str] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         kind = enum_of(RepairKind, self.repair_kind, "repair_refine.repair_kind")
@@ -1184,15 +1198,17 @@ class RepairRefineDeeperDecision:
         object.__setattr__(self, "repair_kind", kind)
         object.__setattr__(self, "method_ref", _planning_ref(self.method_ref, "repair_refine.method_ref"))
         object.__setattr__(self, "bindings", _json_arg_map(self.bindings, "repair_refine.bindings", limit=MAX_PD_BINDINGS))
+        object.__setattr__(self, "reuse", _reuse_map(self.reuse, "repair_refine.reuse"))
 
     def to_json(self) -> dict[str, Any]:
         return {"repair_kind": str(self.repair_kind), "method_ref": self.method_ref.to_json(),
-                "bindings": dict(self.bindings)}
+                "bindings": dict(self.bindings), **({"reuse": dict(self.reuse)} if self.reuse else {})}
 
     @classmethod
     def from_json(cls, value: object, name: str = "repair_refine") -> RepairRefineDeeperDecision:
-        data = fields_of(value, name, required=("repair_kind", "method_ref", "bindings"))
-        return cls(repair_kind=data["repair_kind"], method_ref=data["method_ref"], bindings=data["bindings"])
+        data = fields_of(value, name, required=("repair_kind", "method_ref", "bindings"), optional=("reuse",))
+        return cls(repair_kind=data["repair_kind"], method_ref=data["method_ref"], bindings=data["bindings"],
+                   reuse=data.get("reuse") or {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -1203,6 +1219,8 @@ class RepairReplaceMethodDecision:
     rejected_method_instance: PlanningRefV1
     replacement_method_ref: PlanningRefV1
     bindings: Mapping[str, Any]
+    #: 做法里的步骤名 → 已有步骤的出现编号（TaskGraph 补全第三批，见 :func:`_reuse_map`）
+    reuse: Mapping[str, str] = MappingProxyType({})
     #: 换下的做法本身有错（阶段 C3）：规划器明确写一句理由才算；拿不准就不写。对照全库先例写的
     #: 做法被这样换下，记为对那条先例的一次归因。
     method_at_fault: str | None = None
@@ -1240,6 +1258,7 @@ class RepairReplaceMethodDecision:
             "bindings",
             _json_arg_map(self.bindings, "repair_replace.bindings", limit=MAX_PD_BINDINGS),
         )
+        object.__setattr__(self, "reuse", _reuse_map(self.reuse, "repair_replace.reuse"))
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -1247,6 +1266,7 @@ class RepairReplaceMethodDecision:
             "rejected_method_instance": self.rejected_method_instance.to_json(),
             "replacement_method_ref": self.replacement_method_ref.to_json(),
             "bindings": dict(self.bindings),
+            **({"reuse": dict(self.reuse)} if self.reuse else {}),
             **({} if self.method_at_fault is None else {"method_at_fault": self.method_at_fault}),
         }
 
@@ -1263,13 +1283,14 @@ class RepairReplaceMethodDecision:
                 "replacement_method_ref",
                 "bindings",
             ),
-            optional=("method_at_fault",),
+            optional=("method_at_fault", "reuse"),
         )
         return cls(
             repair_kind=data["repair_kind"],
             rejected_method_instance=data["rejected_method_instance"],
             replacement_method_ref=data["replacement_method_ref"],
             bindings=data["bindings"],
+            reuse=data.get("reuse") or {},
             method_at_fault=data.get("method_at_fault") or None,
         )
 
@@ -1334,80 +1355,6 @@ class RepairProposeSuccessorDecision:
             obligation_ref=data["obligation_ref"],
             goal_type_ref=data["goal_type_ref"],
             bindings=data["bindings"],
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class BindExistingGoalDecision:
-    """V2 section 27: bind an existing goal.
-
-    ``REUSE_ACCEPTED`` requires a CURRENT resolution; ``SHARE_ACTIVE`` must carry a
-    null ``resolution_ref`` because nothing is being reused.
-    """
-
-    mode: BindExistingGoalMode
-    consumer_method_instance_ref: PlanningRefV1
-    step: str
-    goal_ref: PlanningRefV1
-    resolution_ref: PlanningRefV1 | None
-
-    def __post_init__(self) -> None:
-        mode = enum_of(BindExistingGoalMode, self.mode, "bind_goal.mode")
-        object.__setattr__(self, "mode", mode)
-        object.__setattr__(
-            self,
-            "consumer_method_instance_ref",
-            _has_method_instance_kind(
-                _planning_ref(
-                    self.consumer_method_instance_ref, "bind_goal.consumer_method_instance_ref"
-                ),
-                "bind_goal.consumer_method_instance_ref",
-            ),
-        )
-        object.__setattr__(self, "step", identifier(self.step, "bind_goal.step"))
-        object.__setattr__(
-            self, "goal_ref", _planning_ref(self.goal_ref, "bind_goal.goal_ref")
-        )
-        resolution_ref = _optional_planning_ref(self.resolution_ref, "bind_goal.resolution_ref")
-        if mode is BindExistingGoalMode.SHARE_ACTIVE:
-            if resolution_ref is not None:
-                raise ContractError("bind_goal.resolution_ref must be null when mode=SHARE_ACTIVE")
-        elif resolution_ref is None:
-            raise ContractError(
-                "bind_goal.resolution_ref is required when mode=REUSE_ACCEPTED"
-            )
-        object.__setattr__(self, "resolution_ref", resolution_ref)
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "mode": str(self.mode),
-            "consumer_method_instance_ref": self.consumer_method_instance_ref.to_json(),
-            "step": self.step,
-            "goal_ref": self.goal_ref.to_json(),
-            "resolution_ref": (
-                None if self.resolution_ref is None else self.resolution_ref.to_json()
-            ),
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "bind_goal") -> BindExistingGoalDecision:
-        data = fields_of(
-            value,
-            name,
-            required=(
-                "mode",
-                "consumer_method_instance_ref",
-                "step",
-                "goal_ref",
-                "resolution_ref",
-            ),
-        )
-        return cls(
-            mode=data["mode"],
-            consumer_method_instance_ref=data["consumer_method_instance_ref"],
-            step=data["step"],
-            goal_ref=data["goal_ref"],
-            resolution_ref=data["resolution_ref"],
         )
 
 
@@ -1738,7 +1685,6 @@ class ReadMethodLibraryDecision:
 PAYLOAD_BY_DECISION_TYPE: Mapping[PlanningDecisionType, type[Any]] = MappingProxyType(
     {
         PlanningDecisionType.REFINE: RefineDecision,
-        PlanningDecisionType.BIND_EXISTING_GOAL: BindExistingGoalDecision,
         PlanningDecisionType.WAIT: WaitDecision,
         PlanningDecisionType.NO_CHANGE: NoChangeDecision,
         PlanningDecisionType.REQUEST_EVIDENCE: RequestEvidenceDecision,
@@ -1801,7 +1747,6 @@ _ALL_PAYLOAD_CLASSES = (
     RepairCancelBranchDecision,
     RepairReplaceMethodDecision,
     RepairProposeSuccessorDecision,
-    BindExistingGoalDecision,
     WaitDecision,
     NoChangeDecision,
     RequestEvidenceDecision,
@@ -2021,8 +1966,6 @@ __all__ = (
     "AlternativeSummaryV1",
     "AssumptionRisk",
     "AssumptionV1",
-    "BindExistingGoalDecision",
-    "BindExistingGoalMode",
     "BlockerCode",
     "BlockedItemV1",
     "ENABLED_DECISIONS",

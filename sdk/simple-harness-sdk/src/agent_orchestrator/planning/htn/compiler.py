@@ -82,7 +82,7 @@ from ...graph.projection_validation import (
 from ...graph.task_network import DEFAULT_PROJECTION_BUDGET, TaskNetworkSnapshot
 from .grounding import (
     GroundingError,
-    SharedGoalIndex,
+    SharedGoalEntry,
     SlotPlan,
     child_task_bindings,
     data_flows,
@@ -193,8 +193,7 @@ def compile_refinement(
     catalog: TaskTypeCatalog,
     schemas: SchemaCatalog,
     registry: MethodRegistry | None = None,
-    sharing: SharedGoalIndex | None = None,
-    reuse_acceptances: Mapping[str, TypedRef] | None = None,
+    reuse: Mapping[str, SharedGoalEntry] | None = None,
     slot_authorizations: Mapping[str, TypedRef] | None = None,
     slot_grants: Mapping[str, str] | None = None,
     retire_instance_ids: Sequence[MethodInstanceId] = (),
@@ -222,8 +221,7 @@ def compile_refinement(
         catalog=catalog,
         schemas=schemas,
         registry=registry,
-        sharing=sharing,
-        reuse_acceptances=reuse_acceptances,
+        reuse=reuse,
         slot_authorizations=slot_authorizations,
         slot_grants=slot_grants,
         retire_instance_ids=retire_instance_ids,
@@ -246,8 +244,7 @@ def compile_refinement_bundle(
     catalog: TaskTypeCatalog,
     schemas: SchemaCatalog,
     registry: MethodRegistry | None = None,
-    sharing: SharedGoalIndex | None = None,
-    reuse_acceptances: Mapping[str, TypedRef] | None = None,
+    reuse: Mapping[str, SharedGoalEntry] | None = None,
     slot_authorizations: Mapping[str, TypedRef] | None = None,
     slot_grants: Mapping[str, str] | None = None,
     retire_instance_ids: Sequence[MethodInstanceId] = (),
@@ -300,8 +297,7 @@ def compile_refinement_bundle(
             parameters,
             instance_id=draft.instance_id,
             catalog=catalog,
-            sharing=sharing,
-            reuse_acceptances=dict(reuse_acceptances or {}),
+            reuse=dict(reuse or {}),
         )
     except GroundingError as error:
         raise CompilationRefused(str(error)) from error
@@ -316,8 +312,7 @@ def compile_refinement_bundle(
         parent_binding,
         catalog=catalog,
         schemas=schemas,
-        sharing=sharing,
-        reuse_acceptances=dict(reuse_acceptances or {}),
+        reuse=dict(reuse or {}),
         write_targets=_write_targets(method, criterion_files or {}),
     )
     binding_by_task = {binding.task_id: binding for binding in new_bindings}
@@ -496,7 +491,7 @@ def compile_candidate_from_snapshot(
     catalog: TaskTypeCatalog,
     schemas: SchemaCatalog,
     registry: MethodRegistry | None = None,
-    sharing: SharedGoalIndex | None = None,
+    reuse: Mapping[str, SharedGoalEntry] | None = None,
     retire_instance_ids: Sequence[MethodInstanceId] = (),
     budget: GraphStructureBudget = DEFAULT_PROJECTION_BUDGET,
     requirements_revision: int = 0,
@@ -520,7 +515,7 @@ def compile_candidate_from_snapshot(
         catalog=catalog,
         schemas=schemas,
         registry=registry,
-        sharing=sharing,
+        reuse=reuse,
         retire_instance_ids=retire_instance_ids,
         budget=budget,
         requirements_revision=requirements_revision,
@@ -1187,18 +1182,32 @@ def _merge(
         for child in draft.child_bindings
         if child.reuse_policy is not ReusePolicy.NEW_WORK
     }
-    # Edges of the *retired* membership, including those that land on a shared
-    # leaf, go with the membership.  The replacement compiles its own ORDER/DATA.
-    # When nothing is retiring, this set is empty so a later method that merely
-    # shares a live goal does not drop the first consumer's edges.
+    # Which edges leave with the retired membership (TaskGraph 补全第三批): an edge
+    # goes when either end leaves the network, or when both ends belong to the retired
+    # membership (its children or the goal it refined) and no surviving adopted
+    # method holds both ends.  An edge between a shared step and a surviving branch
+    # stays — that branch still needs it; the replacement compiles its own ORDER/DATA.
     retired_children: frozenset[OccurrenceId] = frozenset()
+    retiring_members: set[OccurrenceId] = set()
+    surviving_members: list[set[OccurrenceId]] = []
     if retired:
         dropped: set[OccurrenceId] = set()
         for instance in current.method_instances:
+            members = {child.occurrence_id for child in instance.child_bindings}
             if instance.instance_id in retired:
-                dropped.update(child.occurrence_id for child in instance.child_bindings)
+                dropped.update(members)
+                retiring_members.update(members)
+                retiring_members.add(instance.effective_goal_occurrence_id)
+            elif instance.instance_id in current.adopted_instance_ids:
+                surviving_members.append(members | {instance.effective_goal_occurrence_id})
         retired_children = frozenset(dropped)
     orphaned = frozenset(orphaned - kept_by_share)
+
+    def retires(one: OccurrenceId, other: OccurrenceId) -> bool:
+        if one in orphaned or other in orphaned:
+            return True
+        return (one in retiring_members and other in retiring_members
+                and not any(one in held and other in held for held in surviving_members))
     # P2.3j: the orphaned occurrences leave the network *with* the membership, not
     # only their edges.  Left in, they would still be counted as live work — the
     # commit side funds a revision against every occurrence the network names — and
@@ -1246,8 +1255,7 @@ def _merge(
                 *(
                     constraint
                     for constraint in current.order_constraints
-                    if constraint.before not in retired_children
-                    and constraint.after not in retired_children
+                    if not retires(constraint.before, constraint.after)
                 ),
                 *order_constraints,
             ),
@@ -1255,8 +1263,7 @@ def _merge(
                 *(
                     requirement
                     for requirement in current.data_requirements
-                    if requirement.producer_occurrence not in retired_children
-                    and requirement.consumer_occurrence not in retired_children
+                    if not retires(requirement.producer_occurrence, requirement.consumer_occurrence)
                 ),
                 *data_requirements,
             ),

@@ -655,7 +655,7 @@ def address_requests(store: Any, mission_id: str, *, package: Any,
     Evidence, human questions, proposals and WAIT preserve the request so the
     resumed planner can still see the failure that opened the service call.
     """
-    if status != "COMMITTED" or decision_type not in {"REFINE", "REPAIR", "BIND_EXISTING_GOAL"} or not isinstance(package, dict):
+    if status != "COMMITTED" or decision_type not in {"REFINE", "REPAIR"} or not isinstance(package, dict):
         return
     subject = next((s for s in package.get("planning_subjects", ())
                     if s.get("subject_key") == subject_key), None)

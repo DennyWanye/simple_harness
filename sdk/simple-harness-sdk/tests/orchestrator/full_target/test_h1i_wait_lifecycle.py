@@ -534,11 +534,10 @@ def test_wait_unknown_or_foreign_mission_ref_never_passes_from_task_existence(
     asyncio.run(case())
 
 
-def test_wait_accepts_a_task_ref_carrying_its_binding_contract_hash(tmp_path: Path) -> None:
-    """2026-09-30 真机（方案 B 第 1 局）：规划器的引用清单里同一步有两个引用——分层语义的
-    内容哈希（``_network_authorities``）与共享候选里的合同哈希（``graph_repair_sources``）。
-    规划器选了后者回 WAIT，"能不能等"只认前者，两次被拒、白花两轮规划次数。两者指的是
-    同一步、同一修订的同一份当前绑定：能等、等到终态时能被唤醒；错的哈希仍然拒绝。"""
+def test_wait_takes_the_one_task_ref_the_planner_is_shown(tmp_path: Path) -> None:
+    """规划包里一步只有一个引用：分层语义的内容哈希（``_network_authorities``）。2026-09-30
+    真机时共享候选还另给一个合同哈希，WAIT 两个都认；TaskGraph 补全第三批起共享候选只给出现
+    编号，合同哈希不再出现在规划器眼前，WAIT 只认内容哈希（一条路径）。"""
     from agent_orchestrator.contracts.planning_decisions import PlanningRefV1
 
     async def case() -> None:
@@ -552,12 +551,12 @@ def test_wait_accepts_a_task_ref_carrying_its_binding_contract_hash(tmp_path: Pa
             by_content = PlanningRefV1.from_json({**visible, "content_hash": semantics.content_hash()})
             wrong = PlanningRefV1.from_json({**visible, "content_hash": "0" * 64})
             assert loop._planning_wait_ref_waitable(mission, by_content)
-            assert loop._planning_wait_ref_waitable(mission, by_contract)
+            assert not loop._planning_wait_ref_waitable(mission, by_contract)
             assert not loop._planning_wait_ref_waitable(mission, wrong)
-            assert not loop._planning_wait_ref_satisfied(mission, by_contract)
+            assert not loop._planning_wait_ref_satisfied(mission, by_content)
             await _first_completed(product, loop, mission)
-            assert loop._planning_wait_ref_satisfied(mission, by_contract)
             assert loop._planning_wait_ref_satisfied(mission, by_content)
+            assert not loop._planning_wait_ref_satisfied(mission, by_contract)
             assert not loop._planning_wait_ref_satisfied(mission, wrong)
 
     asyncio.run(case())

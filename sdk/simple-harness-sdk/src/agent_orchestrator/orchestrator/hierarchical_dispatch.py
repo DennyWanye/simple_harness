@@ -131,7 +131,6 @@ from ..planning.htn.compiler import (
 )
 from ..planning.htn.grounding import (
     SharedGoalEntry,
-    SharedGoalIndex,
     SharingSignature,
 )
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
@@ -3911,15 +3910,14 @@ def shared_goal_index(
     *,
     catalog: Any,
     exclude_occurrence_ids: Sequence[OccurrenceId] = (),
-) -> SharedGoalIndex:
-    """The occurrences of this network a later slot may bind instead of re-doing.
+) -> tuple[SharedGoalEntry, ...]:
+    """The occurrences of this network a later slot may name instead of re-doing.
 
-    G2.  Every occurrence that has a semantic binding is offered; nothing here decides
-    that two goals *are* one.  :func:`may_share` still has to agree on the whole
-    sharing signature, on the consumer slot's reuse policy, and on the task type being
-    read-only or carrying an effect identity — so an index entry is a candidate, never
-    a merge.  An occurrence whose task type this deployment cannot resolve is skipped
-    rather than indexed under a guess.
+    G2.  Every occurrence that has a semantic binding is listed; nothing here decides
+    that two goals *are* one — the Planner names the step it means (TaskGraph 补全第三
+    批) and :func:`~..planning.htn.grounding.named_share_refusal` checks the order.  An
+    occurrence whose task type this deployment cannot resolve is skipped rather than
+    listed under a guess.
 
     P2.3n: ``exclude_occurrence_ids`` are occurrences that will leave with a
     ``retire_method`` in the same proposal — offering them as share targets would
@@ -3951,14 +3949,12 @@ def shared_goal_index(
                 obligation_id=binding.obligation_id,
                 signature=SharingSignature.of(
                     spec,
-                    dict(binding.typed_parameters),
                     authority_scope=binding.semantic_scope,
                     semantic_scope=binding.semantic_scope,
                 ),
-                reuse_policy=spec.reuse_policy,
             )
         )
-    return SharedGoalIndex(entries)
+    return tuple(entries)
 
 
 __all__ = (

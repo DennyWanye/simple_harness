@@ -69,13 +69,11 @@ from .domain_package import (
 )
 from .grounding import (
     GroundingError,
-    ShareDecision,
+    ReuseRefused,
     SharedGoalEntry,
-    SharedGoalIndex,
-    ShareVerdict,
     SharingSignature,
     ground_method,
-    may_share,
+    named_share_refusal,
 )
 from .method_selection import (
     MAX_EVIDENCE_QUESTIONS,
@@ -160,10 +158,8 @@ __all__ = (
     "RootNetwork",
     "SchemaCatalog",
     "SchemaField",
-    "ShareDecision",
-    "ShareVerdict",
+    "ReuseRefused",
     "SharedGoalEntry",
-    "SharedGoalIndex",
     "SharingSignature",
     "TaskTypeCatalog",
     "TaskTypeSpec",
@@ -176,7 +172,7 @@ __all__ = (
     "compile_refinement",
     "compile_refinement_bundle",
     "ground_method",
-    "may_share",
+    "named_share_refusal",
     "normalize_candidates",
     "planning_frontier",
     "to_hddl",

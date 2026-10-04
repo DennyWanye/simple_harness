@@ -52,7 +52,6 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     RejectionCode,
     StepOutcome,
     method_is_recursive,
-    statement_similarity,
 )
 
 
@@ -443,12 +442,6 @@ def test_a_method_for_another_goal_version_is_not_a_candidate() -> None:
     assert (
         env.registry.candidates_for(ref("code.fix-failing-test", 2), mission_id=env.mission) == ()
     )
-
-
-def test_similarity_is_symmetric_and_bounded() -> None:
-    assert statement_similarity("fix failing test", "fix failing test") == 1.0
-    assert statement_similarity("fix failing test", "") == 0.0
-    assert 0.0 < statement_similarity("fix failing test", "fix the test") < 1.0
 
 
 def test_a_recursive_method_is_recognised_and_still_admitted() -> None:

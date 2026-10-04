@@ -444,15 +444,6 @@ def _stale_commit_problems(reason: object) -> dict[str, Any]:
     return {}
 
 
-def _task_ref_hashes(semantics: Any) -> frozenset[str]:
-    """The two digests a planner may legitimately quote for one task binding.
-
-    2026-09-30（真机）：规划器引用清单里同一步有两个引用——``_network_authorities`` 用绑定
-    的内容哈希，H4 共享候选（``graph_repair_sources``）用它的合同哈希。两者指同一步、同一
-    修订的同一份当前绑定；WAIT 的"能不能等 / 等到了没有"两个都认，别的哈希照旧拒绝。
-    """
-    return frozenset({semantics.content_hash(), str(semantics.contract_hash)})
-
 class Orchestrator:
     def __init__(
         self,
@@ -3221,7 +3212,7 @@ class Orchestrator:
                     and task.status in TERMINAL_TASK
                     and semantics is not None
                     and int(semantics.contract_revision) == ref.semantic_revision
-                    and ref.content_hash in _task_ref_hashes(semantics)
+                    and ref.content_hash == semantics.content_hash()
                 )
             if ref.kind is PlanningRefKind.OBLIGATION:
                 obligation = ObligationStore(self.store).obligation(
@@ -3294,7 +3285,7 @@ class Orchestrator:
                                 and not self._awaiting_retry_decision(mission.id, task)))
             and semantics is not None
             and int(semantics.contract_revision) == ref.semantic_revision
-            and ref.content_hash in _task_ref_hashes(semantics)
+            and ref.content_hash == semantics.content_hash()
         )
 
     def _expand_planning_wait(
@@ -4580,13 +4571,8 @@ class Orchestrator:
         prompt = self._hierarchical_planner_template(mission.id)
         from .planning_evidence import evidence_authority
         evidence_observers, evidence_authorized = evidence_authority(world, authority)
-        from .planning_graph_repairs import graph_repair_sources
         from ..storage.obligation_store import ObligationStore
         from ..contracts.htn import ObligationId
-        reuse_sources = graph_repair_sources(self.store, network)
-        live_resolutions = {row["resolution_ref"]["id"]: row["resolution_ref"]
-                            for row in reuse_sources if row["resolution_ref"] is not None}
-        shareable = {row["task_ref"]["id"] for row in reuse_sources if row["share_active"]}
         duties = ObligationStore(self.store)
         open_duties = {str(duty.obligation_id) for duty in duties.list_obligations(mission.id)
             if (account := duties.account(mission.id, ObligationId(str(duty.obligation_id)))).has_admitted_demand
@@ -4620,12 +4606,6 @@ class Orchestrator:
                 ref for ref in visible_refs if ref.kind is PlanningRefKind.OBLIGATION
                 and ref.id in open_duties
             ),
-            current_resolutions=tuple(
-                ref for ref in visible_refs if ref.kind is PlanningRefKind.RESOLUTION
-                and live_resolutions.get(ref.id) == ref.to_json()
-            ),
-            shareable_goals=tuple(ref for ref in visible_refs if ref.kind is PlanningRefKind.TASK
-                and ref.id in shareable),
             authorization=AuthorizationView(
                 approval_granted=all(
                     item.authorization_granted for item in methods if item.requires_authorization
@@ -6999,9 +6979,8 @@ class Orchestrator:
                     scope_id="mission")
                 taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
                 from .repair_impact import read_repair_impact_indexes
-                from .planning_graph_repairs import graph_repair_sources
-                from ..contracts.htn import BindSharedGoalOperation, CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation
-                graph_mutation = any(isinstance(op, (BindSharedGoalOperation, CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation))
+                from ..contracts.htn import CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation
+                graph_mutation = any(isinstance(op, (CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation))
                                      for op in proposal.operations)
                 frozen_inputs = PreviewInputs(
                         decision_id=decision_id,
@@ -7025,7 +7004,6 @@ class Orchestrator:
                         capabilities=world.capabilities(),
                         runtime_work=runtime_work,
                         repair_impact=read_repair_impact_indexes(self.store, network, mission.id) if graph_mutation else None,
-                        goal_reuse_sources=graph_repair_sources(self.store, network) if graph_mutation else (),
                         **self._preview_read_facts(mission.id),
                 )
             preview = new_mode.preview_plan_proposal(proposal, inputs=frozen_inputs)

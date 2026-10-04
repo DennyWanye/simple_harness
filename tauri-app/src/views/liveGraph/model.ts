@@ -185,7 +185,7 @@ const OPERATION: Record<string, Display> = {
 };
 export const DECISION_TYPE: Record<string, string> = {
   REFINE: "拆分", PROPOSE_METHOD: "提出新方法", REQUEST_EVIDENCE: "要求补充证据", REPAIR: "修补计划",
-  BIND_EXISTING_GOAL: "复用已有目标", REQUEST_HUMAN: "请人处理", WAIT: "等待",
+  REQUEST_HUMAN: "请人处理", WAIT: "等待",
   NO_CHANGE: "不改动",
 };
 export const DECISION_STATUS: Record<string, string> = {

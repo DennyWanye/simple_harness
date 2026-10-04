@@ -719,10 +719,8 @@ class MethodStep:
     arguments: Mapping[str, Any]
     required_capabilities: tuple[str, ...]
     obligation_relation: ObligationRelation
-    #: How this step's work should be de-duplicated.  Unset means "take the default
-    #: from the task type"; the method does not get to silently override it by
-    #: omission, so the interpretation belongs to the caller that knows the default.
-    reuse_policy: ReusePolicy | None = None
+    # 去重不写在做法里：共用由规划器在细化决定上点名（``RefineOperation.reuse``，TaskGraph
+    # 补全第三批），做法保持与任务无关。
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "local_id", identifier(self.local_id, "step.local_id"))
@@ -739,13 +737,9 @@ class MethodStep:
             "obligation_relation",
             enum_of(ObligationRelation, self.obligation_relation, "step.obligation_relation"),
         )
-        if self.reuse_policy is not None:
-            object.__setattr__(
-                self, "reuse_policy", enum_of(ReusePolicy, self.reuse_policy, "step.reuse_policy")
-            )
 
     def to_json(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        return {
             "local_id": self.local_id,
             "task_type_ref": self.task_type_ref.to_json(),
             "form": str(self.form),
@@ -753,11 +747,6 @@ class MethodStep:
             "required_capabilities": list(self.required_capabilities),
             "obligation_relation": str(self.obligation_relation),
         }
-        # Omitted when unset: ``method-contract-v1`` does not declare this field, so a
-        # step that does not use it stays byte-identical to the published schema.
-        if self.reuse_policy is not None:
-            payload["reuse_policy"] = str(self.reuse_policy)
-        return payload
 
     @classmethod
     def from_json(cls, value: object, name: str, budget: StructureBudget) -> MethodStep:
@@ -772,7 +761,6 @@ class MethodStep:
                 "required_capabilities",
                 "obligation_relation",
             ),
-            optional=("reuse_policy",),
         )
         return cls(
             local_id=data["local_id"],
@@ -781,7 +769,6 @@ class MethodStep:
             arguments=parse_arguments(data["arguments"], f"{name}.arguments", budget),
             required_capabilities=tuple(data["required_capabilities"]),
             obligation_relation=data["obligation_relation"],
-            reuse_policy=data.get("reuse_policy"),
         )
 
 
@@ -2423,6 +2410,9 @@ class RefineOperation:
     obligation_id: str
     method_ref: VersionedRef
     bindings: Mapping[str, Any]
+    #: 做法里的步骤名 → 本任务一个已有步骤的出现编号：规划器点名"这一步就是那一步"
+    #: （TaskGraph 补全第三批）。系统只核秩序；空 = 全是新工作。
+    reuse: Mapping[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -2431,6 +2421,7 @@ class RefineOperation:
             "obligation_id": self.obligation_id,
             "method_ref": self.method_ref.to_json(),
             "bindings": dict(self.bindings),
+            **({"reuse": dict(self.reuse)} if self.reuse else {}),
         }
 
 
@@ -2444,23 +2435,6 @@ class RetireMethodOperation:
             "op": "retire_method",
             "method_instance_id": self.method_instance_id,
             "reason": self.reason,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class BindSharedGoalOperation:
-    consumer_method_instance_id: str
-    step: str
-    goal_id: str
-    resolution_id: str | None
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "op": "bind_shared_goal",
-            "consumer_method_instance_id": self.consumer_method_instance_id,
-            "step": self.step,
-            "goal_id": self.goal_id,
-            "resolution_id": self.resolution_id,
         }
 
 
@@ -2506,7 +2480,7 @@ class ProposeSuccessorOperation:
 
 
 PlanOperation: TypeAlias = (
-    "RefineOperation | RetireMethodOperation | BindSharedGoalOperation | ProposeSuccessorOperation | RebindInputOperation | CancelBranchOperation"
+    "RefineOperation | RetireMethodOperation | ProposeSuccessorOperation | RebindInputOperation | CancelBranchOperation"
 )
 
 
@@ -2517,33 +2491,23 @@ def parse_plan_operation(value: object, name: str) -> PlanOperation:
     op = value.get("op")
     if op == "refine":
         data = fields_of(
-            value, name, required=("op", "goal_id", "obligation_id", "method_ref", "bindings")
+            value, name, required=("op", "goal_id", "obligation_id", "method_ref", "bindings"),
+            optional=("reuse",),
         )
+        reuse = json_object(data.get("reuse") or {}, f"{name}.reuse")
         return RefineOperation(
             goal_id=identifier(data["goal_id"], f"{name}.goal_id"),
             obligation_id=identifier(data["obligation_id"], f"{name}.obligation_id"),
             method_ref=VersionedRef.from_json(data["method_ref"], f"{name}.method_ref"),
             bindings=json_object(data["bindings"], f"{name}.bindings"),
+            reuse={identifier(step, f"{name}.reuse"): identifier(occurrence, f"{name}.reuse")
+                   for step, occurrence in reuse.items()},
         )
     if op == "retire_method":
         data = fields_of(value, name, required=("op", "method_instance_id", "reason"))
         return RetireMethodOperation(
             method_instance_id=identifier(data["method_instance_id"], f"{name}.method_instance_id"),
             reason=text(data["reason"], f"{name}.reason"),
-        )
-    if op == "bind_shared_goal":
-        data = fields_of(
-            value,
-            name,
-            required=("op", "consumer_method_instance_id", "step", "goal_id", "resolution_id"),
-        )
-        return BindSharedGoalOperation(
-            consumer_method_instance_id=identifier(
-                data["consumer_method_instance_id"], f"{name}.consumer_method_instance_id"
-            ),
-            step=identifier(data["step"], f"{name}.step"),
-            goal_id=identifier(data["goal_id"], f"{name}.goal_id"),
-            resolution_id=optional_identifier(data["resolution_id"], f"{name}.resolution_id"),
         )
     if op == "cancel_branch":
         data = fields_of(value, name, required=("op", "method_instance_id", "step"))
@@ -2573,7 +2537,7 @@ def parse_plan_operation(value: object, name: str) -> PlanOperation:
         )
     raise ContractError(
         f"{name}.op must be one of "
-        "['bind_shared_goal', 'propose_successor', 'refine', 'retire_method']"
+        "['cancel_branch', 'propose_successor', 'rebind_input', 'refine', 'retire_method']"
     )
 
 
@@ -2995,7 +2959,6 @@ class ProposedPlanDelta:
     referenced_occurrences: tuple[OccurrenceId, ...] = ()
     compiled_from_proposal_id: str | None = None
     binding_rewrites: tuple[TaskBindingRewrite, ...] = ()
-    resolution_reuses: tuple[TypedRef, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "delta_id", identifier(self.delta_id, "delta.delta_id"))
@@ -3007,9 +2970,6 @@ class ProposedPlanDelta:
         )
         if not isinstance(self.read_set, SemanticReadSet):
             raise ContractError("delta.read_set must be a SemanticReadSet (ADR-13)")
-        if any(not isinstance(ref, TypedRef) or ref.kind is not TypedRefKind.RESOLUTION
-               for ref in self.resolution_reuses):
-            raise ContractError("delta.resolution_reuses requires typed GoalResolution references")
         rewritten = [item.binding.task_id for item in self.binding_rewrites]
         if len(rewritten) != len(set(rewritten)):
             raise ContractError("delta cannot rewrite a Task binding twice")
@@ -3083,8 +3043,6 @@ class ProposedPlanDelta:
             ]
         if self.binding_rewrites:
             payload["binding_rewrites"] = [item.to_json() for item in self.binding_rewrites]
-        if self.resolution_reuses:
-            payload["resolution_reuses"] = [item.to_json() for item in self.resolution_reuses]
         return payload
 
     @classmethod
@@ -3104,7 +3062,6 @@ class ProposedPlanDelta:
                 "referenced_occurrences",
                 "compiled_from_proposal_id",
                 "binding_rewrites",
-                "resolution_reuses",
             ),
         )
         return cls(
@@ -3152,8 +3109,6 @@ class ProposedPlanDelta:
                 OccurrenceId(item) for item in data.get("referenced_occurrences", ())
             ),
             compiled_from_proposal_id=data.get("compiled_from_proposal_id"),
-            resolution_reuses=sequence_of(data.get("resolution_reuses", ()), f"{name}.resolution_reuses",
-                lambda item, where: TypedRef.from_json(item, where)),
             binding_rewrites=sequence_of(data.get("binding_rewrites", ()), f"{name}.binding_rewrites",
                                         lambda item, where: TaskBindingRewrite.from_json(item, where)),
         )
@@ -3426,7 +3381,6 @@ __all__ = (
     "ArtifactRef",
     "AttemptRef",
     "Binding",
-    "BindSharedGoalOperation",
     "BoundInput",
     "BudgetInheritance",
     "ChildBinding",

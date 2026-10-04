@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v23"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v24"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -225,7 +225,7 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "\n可用决定：\n"
         "  - REFINE：为一个还没有做法的目标采用一个做法。payload 为 "
         "{\"method_ref\":四元组,\"bindings\":{参数名:值}}，method_ref 照抄 views.methods 里那一条的 "
-        "method_ref，bindings 用该目标的 params。\n"
+        "method_ref，bindings 用该目标的 params。可选 reuse 见下面「共用已有步骤」。\n"
         "  - PROPOSE_METHOD：现有做法都不合适（或一个都没有）时，自己提出一个新做法。payload 只有 "
         "method_proposal 对象，写法见下一节。提出后会有独立审阅员按任务要求逐条审这个做法"
         "（按它去做能不能满足要求、步骤拆得够不够细）；审阅有了结论你会再被叫到，结论在 views.methods 该条目的 "
@@ -239,9 +239,10 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "views.methods 里别的做法，也可以先用 PROPOSE_METHOD 为这个目标提一个，审阅通过后再换。"
         "可选字段 method_at_fault：只有当你判断失败的主要原因是被换下的做法的拆法本身（而不是某一步"
         "没做好、环境出错或要求变了）时，才写一句理由（1 到 300 个字符）；拿不准就不写这个字段。"
-        "被换下的做法若是照全库先例写的，这句话会记为对那条先例的一次归因，两个不同任务归因后它不再列出。\n"
+        "被换下的做法若是照全库先例写的，这句话会记为对那条先例的一次归因，两个不同任务归因后它不再列出。"
+        "可选 reuse 见下面「共用已有步骤」。\n"
         "      REFINE_DEEPER：继续分解一个已存在、还没有做法的目标；payload 为 repair_kind、method_ref、"
-        "bindings，subject_key 是该目标。\n"
+        "bindings，subject_key 是该目标；可选 reuse 同上。\n"
         "      RETRY_SAME_METHOD：原步骤、原做法再做一次；payload 为 repair_kind、failed_attempt_id"
         "（一个字符串：照抄 views.failures 里这一步最近一次失败那条的 attempt_review_ref.id，"
         "不是整个引用对象）、"
@@ -261,9 +262,15 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "EVIDENCE_INSUFFICIENT、OTHER 等，用 OTHER 时 detail 必须写）、"
         "resumable_if（数组，取 evidence_updated、human_resolved、plan_revision_changed）。"
         "它暂停新工作、不改做法，环境恢复后重新规划。\n"
-        "  - BIND_EXISTING_GOAL：让一个做法的步骤复用已有目标的成果；payload 为 mode、"
-        "consumer_method_instance_ref、step、goal_ref、resolution_ref，从 sharing_candidates 照抄；"
-        "SHARE_ACTIVE 时 resolution_ref 写 null。\n"
+        "  - 共用已有步骤：REFINE、REFINE_DEEPER、REPLACE_METHOD 的 payload 可以多一个 reuse 对象"
+        "{做法里的步骤 local_id: 已有步骤的 occurrence_id}，表示做法里的这一步就是计划里已有的那一步，不再另做一次。"
+        "能点名的只有 sharing_candidates 里列出的步骤（在跑的，或已按现行要求通过验收的），每行有它的类型、"
+        "负责的要求（criteria）、写出的文件（writes）、读哪些步骤的产出（reads_from）、状态。是不是同一件事由你判断；"
+        "系统只核秩序，对不上整份退回（原因代码 REUSE_NOT_ALLOWED 或 TaskGraph 共享检查的代码，并写明哪一条）："
+        "只能点名普通步骤，不能点名子目标；类型要相同；你的做法交给这一步的要求必须是它已经负责的要求"
+        "（共用不会让一步多负责别的要求）；它读别的步骤的产出（reads_from 不为空）时，那些上游也要在同一个 reuse 里"
+        "一并点名，输入才对得上；有对外副作用的步骤不能共用。共用的步骤只做一次、花费只记一份；"
+        "以后某个分支换做法，只要还有别的分支用着它，它不会被取消。\n"
         "  - REQUEST_EVIDENCE：请求 1–8 个已注册谓词的只读取证；payload 只有 questions 数组，每项包含 "
         "predicate_key（evidence_predicates 里的 id@version）、arguments（参数名 → 具体的值）、purpose、blocking。"
         "系统看一眼并记下观察，下一轮你在 views.facts 里看到结果。\n"

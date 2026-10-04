@@ -62,7 +62,6 @@ from ...contracts.htn import (
     PredicateCondition,
     RegistryAuthor,
     ResourceRef,
-    ReusePolicy,
     SideEffectKind,
     TaskForm,
     admit_method,
@@ -260,10 +259,9 @@ class TaskTypeSpec:
 
     ``form`` decides which half of §6.2 this is.  A ``PRIMITIVE`` type carries an
     ``operator_ref`` because it is dispatched; a ``COMPOUND`` type carries none
-    because it is refined.  ``reuse_policy`` is what the *type* permits, which is
-    the data-side expression of TG §12's "only when the method explicitly allows
-    reuse": a type that has not said so is never auto-shared, whatever two goals
-    look like.
+    because it is refined.  A type says nothing about de-duplication: sharing an
+    existing step is the Planner's named choice on a refining decision (TaskGraph
+    补全第三批), never inferred from two goals looking alike.
     """
 
     task_type_ref: VersionedRef
@@ -279,7 +277,6 @@ class TaskTypeSpec:
     reversible: bool = True
     resource_reads: tuple[ResourceRef, ...] = ()
     resource_writes: tuple[ResourceRef, ...] = ()
-    reuse_policy: ReusePolicy = ReusePolicy.NEW_WORK
     observes: tuple[VersionedRef, ...] = ()
     #: Structured conditions this type requires before it may be dispatched (§6.6).
     #: They are data, exactly like a method's ``applicable_when``, and are what makes
@@ -323,9 +320,6 @@ class TaskTypeSpec:
         )
         object.__setattr__(self, "reversible", flag(self.reversible, "task_type.reversible"))
         object.__setattr__(
-            self, "reuse_policy", enum_of(ReusePolicy, self.reuse_policy, "task_type.reuse_policy")
-        )
-        object.__setattr__(
             self,
             "effect_identity",
             None
@@ -355,13 +349,6 @@ class TaskTypeSpec:
             raise ContractError(
                 "a compound task type declares no resources or effects; those belong to "
                 "the primitive operators it is refined into (§6.2)"
-            )
-        if self.reuse_policy is not ReusePolicy.NEW_WORK and (
-            self.side_effect_kind not in READ_ONLY_EFFECTS and self.effect_identity is None
-        ):
-            raise ContractError(
-                "a side-effecting task type may only declare reuse together with an "
-                "explicit effect_identity; two sends are two sends (TG §12)"
             )
 
     @property
@@ -403,7 +390,6 @@ class TaskTypeSpec:
             "reversible": self.reversible,
             "resource_reads": [ref.to_json() for ref in self.resource_reads],
             "resource_writes": [ref.to_json() for ref in self.resource_writes],
-            "reuse_policy": str(self.reuse_policy),
             "observes": [ref.to_json() for ref in self.observes],
             "preconditions": [item.to_json() for item in self.preconditions],
             "effect_identity": self.effect_identity,
@@ -429,7 +415,6 @@ class TaskTypeSpec:
                 "reversible",
                 "resource_reads",
                 "resource_writes",
-                "reuse_policy",
                 "observes",
                 "preconditions",
                 "effect_identity",
@@ -474,7 +459,6 @@ class TaskTypeSpec:
                 f"{name}.resource_writes",
                 lambda item, where: ResourceRef.from_json(item, where),
             ),
-            reuse_policy=data.get("reuse_policy", ReusePolicy.NEW_WORK),
             observes=sequence_of(
                 data.get("observes", ()),
                 f"{name}.observes",
@@ -793,31 +777,6 @@ class MethodCandidate:
     @property
     def trial_scoped(self) -> bool:
         return self.registration.status is MethodRegistryStatus.TRIAL_ADMITTED
-
-
-def _statement_tokens(statement: str) -> frozenset[str]:
-    return frozenset(
-        token
-        for token in "".join(
-            character if character.isalnum() else " " for character in statement.lower()
-        ).split()
-        if token
-    )
-
-
-def statement_similarity(left: str, right: str) -> float:
-    """Jaccard overlap of the two statements' word sets.
-
-    Deliberately crude and deliberately advisory: §8.3 says lexical or vector
-    similarity may only produce a merge *candidate*, so the number exists to rank
-    suggestions for a human or a planner, never to authorise a binding.
-    """
-
-    left_tokens = _statement_tokens(left)
-    right_tokens = _statement_tokens(right)
-    if not left_tokens or not right_tokens:
-        return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
 class MethodRegistry:
@@ -1439,21 +1398,6 @@ def _check_structure_and_types(
                 f"step {step_spec.local_id!r} is primitive but task type "
                 f"{spec.task_type_ref.id!r} registers no operator",
             )
-        # §8.3 / TG §12: a method may declare that a slot's work is reusable, but it
-        # may not declare that about work the *type* says has an unshareable effect.
-        if (
-            step_spec.reuse_policy is not None
-            and step_spec.reuse_policy is not ReusePolicy.NEW_WORK
-            and not spec.read_only
-            and spec.effect_identity is None
-        ):
-            refuse(
-                RejectionCode.MALFORMED_DEFINITION,
-                f"step {step_spec.local_id!r} declares reuse policy "
-                f"{step_spec.reuse_policy!s}, but task type {spec.task_type_ref.id!r} "
-                "writes outside the orchestrator and declares no effect_identity; two "
-                "such actions are two actions (§8.3)",
-            )
         for name, argument in step_spec.arguments.items():
             for node in iter_values(argument):
                 if isinstance(node, ParameterValue) and declared and node.name not in declared:
@@ -1629,19 +1573,6 @@ def _check_registries(
                     )
                 )
     return problems, missing_predicates, missing_capabilities, missing_operators
-
-
-def effective_reuse_policy(step: MethodStep, spec: TaskTypeSpec) -> ReusePolicy:
-    """What de-duplication this slot permits (``method-contract-v1``, §8.3).
-
-    The step's own declaration wins when it makes one; ``None`` means "take the
-    default from the task type", which the contract deliberately leaves to the
-    caller that knows the default rather than resolving it by omission.
-    """
-
-    if step.reuse_policy is not None:
-        return step.reuse_policy
-    return spec.reuse_policy
 
 
 def method_is_recursive(method: MethodContract) -> bool:
@@ -1898,13 +1829,11 @@ __all__ = (
     "TaskTypeCatalog",
     "TaskTypeSpec",
     "condition_truth_is_constant",
-    "effective_reuse_policy",
     "implied_orderings",
     "iter_conditions",
     "iter_predicates",
     "iter_values",
     "method_is_recursive",
     "method_parameter_names",
-    "statement_similarity",
     "value_matches",
 )

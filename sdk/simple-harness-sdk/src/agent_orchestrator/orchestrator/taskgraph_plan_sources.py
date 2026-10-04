@@ -26,6 +26,7 @@ from ..graph.taskgraph_sharing import SharingSources
 from ..graph.eligibility import OccurrenceOutcome
 from .hierarchical_dispatch import shared_goal_index
 from .taskgraph_demands import independently_required_occurrences
+from ..planning.htn.grounding import SharedGoalEntry
 from ..planning.plan_preview import _source_snapshot_payload
 from ..runtime.planning_operations import SourceUnavailable, StoreOperationReader, build_operation_snapshot
 from ..runtime.taskgraph_operation_sources import read_operation_producers
@@ -74,6 +75,45 @@ class ExecutionReadContext:
     operation_snapshot: CompleteRead[Any]
 
 
+def eligible_sharing(reader: Any, local: Any, world: Any,
+                     requirement: Any) -> tuple[list[SharedGoalEntry], dict[str, Any]]:
+    """The steps a refining decision may name in ``reuse``, with the proof of their
+    inputs — the one reading behind the Planner package's ``sharing_candidates`` and
+    the preview / commit checks (TaskGraph 补全第三批): a step that is running, or
+    accepted under the current requirements with exactly one current Acceptance."""
+
+    acceptances = HtnStore(reader.store).list_acceptances(str(local.view.network.mission_id))
+    entries: list[SharedGoalEntry] = []
+    proofs: dict[str, Any] = {}
+    for entry in shared_goal_index(local.view.network, catalog=world.catalog):
+        binding = local.view.network.binding_for_occurrence(entry.occurrence_id)
+        outcome = local.view.outcomes[entry.occurrence_id]
+        accepted = None
+        if outcome is OccurrenceOutcome.ACCEPTED:
+            eligible = [item for item in acceptances
+                if str(item.task_id) == str(entry.task_id)
+                and item.obligation_id == entry.obligation_id
+                and item.contract_revision == int(binding.contract_revision)
+                and item.requirements_revision == int(requirement.revision)
+                and str(item.validity) == "CURRENT"]
+            # Multiple original Acceptances require an explicit choice;
+            # neither insertion order nor the newest timestamp grants one.
+            if len(eligible) != 1:
+                continue
+            accepted = eligible[0]
+            entry = replace(entry, acceptance_ref=TypedRef(kind=TypedRefKind.ACCEPTANCE,
+                id=str(accepted.acceptance_id), revision=accepted.contract_revision,
+                content_hash=sha256_hex(accepted.to_json())))
+        elif outcome is not OccurrenceOutcome.RUNNING:
+            continue
+        proof = read_shared_inputs(reader, local, entry, accepted)
+        if proof is None:
+            continue
+        entries.append(entry)
+        proofs[str(entry.occurrence_id)] = proof
+    return entries, proofs
+
+
 class TaskGraphPlanSourceReader:
     def __init__(self, local: TaskGraphLocalExecutionReader, *, imports: ExecutionImports) -> None:
         if not callable(getattr(imports, "read_runtime", None)) or not callable(getattr(imports, "read_execution_policy", None)):
@@ -97,6 +137,17 @@ class TaskGraphPlanSourceReader:
             return ExecutionReadContext(local=local, running_work=runtime, execution_policy=policy,
                 operation_snapshot=CompleteRead(value=operations, source_id=mission_id+":operations",
                     source_digest=operations.read_digest, through_seq=through))
+
+    def sharing_candidates(self, mission_id: str) -> tuple[tuple[SharedGoalEntry, ...], Any]:
+        """The steps a refining decision may name now, read the way preview reads them."""
+        with self.store.read_view():
+            local = self.read_execution(mission_id).local
+            world = self.local.dispatch_for(mission_id).require_planning_world()
+            requirement = HtnStore(self.store).latest_requirements_revision(mission_id)
+            if requirement is None:
+                return (), local
+            entries, _ = eligible_sharing(self.local, local, world, requirement)
+            return tuple(entries), local
 
     def __call__(self, store: Store, request_id: str, decision_id: str,
                  principal: PlanPrincipal) -> PlanMutationSources:
@@ -164,35 +215,7 @@ class TaskGraphPlanSourceReader:
                 # Event sequence is the snapshot boundary, not a source identity.
                 # An unrelated event cannot invalidate otherwise identical inputs.
                 return {"source_id": value.source_id, "digest": value.source_digest, "value": _document(value.value)}
-            acceptances = semantics.list_acceptances(request.mission_id)
-            sharing_entries = []
-            sharing_inputs = {}
-            for entry in shared_goal_index(local.view.network, catalog=world.catalog).entries():
-                binding = local.view.network.binding_for_occurrence(entry.occurrence_id)
-                outcome = local.view.outcomes[entry.occurrence_id]
-                accepted = None
-                if outcome is OccurrenceOutcome.ACCEPTED:
-                    eligible = [item for item in acceptances
-                        if str(item.task_id) == str(entry.task_id)
-                        and item.obligation_id == entry.obligation_id
-                        and item.contract_revision == int(binding.contract_revision)
-                        and item.requirements_revision == int(requirement.revision)
-                        and str(item.validity) == "CURRENT"]
-                    # Multiple original Acceptances require an explicit choice;
-                    # neither insertion order nor the newest timestamp grants one.
-                    if len(eligible) != 1:
-                        continue
-                    accepted = eligible[0]
-                    entry = replace(entry, acceptance_ref=TypedRef(kind=TypedRefKind.ACCEPTANCE,
-                        id=str(accepted.acceptance_id), revision=accepted.contract_revision,
-                        content_hash=sha256_hex(accepted.to_json())))
-                elif outcome is not OccurrenceOutcome.RUNNING:
-                    continue
-                proof = read_shared_inputs(self.local, local, entry, accepted)
-                if proof is None:
-                    continue
-                sharing_entries.append(entry)
-                sharing_inputs[str(entry.occurrence_id)] = proof
+            sharing_entries, sharing_inputs = eligible_sharing(self.local, local, world, requirement)
             operation_producers = read_operation_producers(store, execution.operation_snapshot.value)
             from .taskgraph_completion_sources import read_completion_sources
             completion = read_completion_sources(store, request.mission_id, local.view.network)
