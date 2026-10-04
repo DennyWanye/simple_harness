@@ -457,6 +457,49 @@ def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_bran
     assert validate_execution_projection(after.execution_projection(), BUDGET).ok
 
 
+def test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it() -> None:
+    """TaskGraph 补全第三批（合并规则①：任一端离开网络的边就删；改坏 TG3-08 → 变红）：别的分支
+    的步骤连到本分支某一步的边（改接过输入、跨分支连线就是这种形状），本分支换做法后那一步不在了，
+    这条边跟着走，不留悬空的边；另一个分支原封不动。"""
+    from dataclasses import replace as _replace
+
+    from agent_orchestrator.contracts.htn import OrderConstraint
+    from agent_orchestrator.contracts.models import ContractError
+
+    env = or_env()
+    network, first_instance, shared, (root_one, _root_two) = two_consumers(env)
+
+    def tail(name: str):
+        return next(spec.occurrence_id for spec in network.occurrences
+                    if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+                    == f"demo.{name}")
+
+    leaving, staying = tail("a"), tail("b")
+    template = network.order_constraints[0] if network.order_constraints else None
+    crossing = (_replace(template, before=staying, after=leaving) if template is not None
+                else OrderConstraint(before=staying, after=leaving))
+    network = _replace(network, order_constraints=(*network.order_constraints, crossing))
+    replacement = method(
+        "demo.replacement-crossing", "demo.goal", parameter_schema="demo.goal.params",
+        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
+                    capabilities=("demo.read",)),),
+        links=(("c-done", "solo", "c-solo"),), finalizer="solo")
+    env.admit(replacement)
+    try:
+        _, bundle = _refine(env, root_one, replacement, network, retire=(first_instance,))
+    except (CompilationRefused, ContractError) as refused:  # 悬空的边让整份编译被拒
+        bundle = refused
+    assert not isinstance(bundle, Exception), bundle
+    after = bundle.network
+    live = {spec.occurrence_id for spec in after.occurrences}
+    assert leaving not in live and staying in live
+    assert all(item.before in live and item.after in live for item in after.order_constraints)
+    assert all(item.producer_occurrence in live and item.consumer_occurrence in live
+               for item in after.data_requirements)
+    assert any(str(item.producer_occurrence) == shared and item.consumer_occurrence == staying
+               for item in after.data_requirements)
+
+
 # ============================================================== sharing refusals
 
 

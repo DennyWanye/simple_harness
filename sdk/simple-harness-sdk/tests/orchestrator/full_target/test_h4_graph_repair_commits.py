@@ -280,3 +280,4 @@ def test_rebinding_an_input_to_another_declared_producer_commits_and_reads_back_
             assert int(world.dispatch.network(world.mission.id).plan_revision) == 2
 
     asyncio.run(case())
+

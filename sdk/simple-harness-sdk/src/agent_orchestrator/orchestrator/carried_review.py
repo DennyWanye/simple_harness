@@ -25,6 +25,15 @@ from ..storage.store import Store
 CARRIED_RESULT_REJECTED = "CARRIED_RESULT_REJECTED"
 #: 派发处的细分原因：这一步的结果按旧版要求通过，正等审阅员按新要求重审。
 CARRIED_REVIEW_PENDING = "CARRIED_REVIEW_PENDING"
+#: 派发处的细分原因：这一步除了要求之外也变了（比如输入改接过），旧结果沿用不了，要规划器换掉它。
+CARRIED_RESULT_NOT_KEPT = "CARRIED_RESULT_NOT_KEPT"
+#: 重审连续出错（检查或审阅员这一层跑不起来）到这个次数，就按"没有结论"交给规划器，不再重来。
+MAX_CARRIED_REVIEW_ERRORS = 3
+
+
+def source_key(result_id: str, requirements_revision: int) -> str:
+    """The one repair request a (result, requirements revision) review can end in."""
+    return f"carried-review:{result_id}:r{int(requirements_revision)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +55,7 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
     """The kept steps due for a review under the current requirements, in data order."""
 
     from .assurance_validity import acceptance_id_for
-    from .completion_inputs import frozen_requirements_revision, load_completion_result_inputs
+    from .completion_inputs import frozen_requirements_revision
     from .operation_completion import OperationCompletionError
     from .taskgraph_outcomes import read_taskgraph_outcomes
 
@@ -56,10 +65,10 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
     if latest is None or active is None or int(latest.revision) <= 1:
         return []
     revision = int(latest.revision)
-    network = dispatch.network(mission_id)
     try:
+        network = dispatch.network(mission_id)
         outcomes = read_taskgraph_outcomes(store, mission_id, network)
-    except Exception:  # noqa: BLE001 - an unreadable plan is reported by its own path
+    except Exception:  # noqa: BLE001 - an unreadable plan is reported by this Mission's own round
         return []
     producers: dict[str, set[str]] = {}
     for item in network.data_requirements:
@@ -88,18 +97,40 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
         upstream = producers.get(occurrence, set())
         if any(outcomes.get(producer) is not OccurrenceOutcome.ACCEPTED for producer in upstream):
             continue  # 上游在现行要求下还不算数：先审上游
-        try:
-            load_completion_result_inputs(store, stored, requirements_revision=revision)
-        except OperationCompletionError:
-            continue  # 这一步除要求外也变了：不是"沿用"，由规划器定
+        if not kept(store, result_id, revision):
+            continue  # 这一步除要求外也变了：不是"沿用"，派发处如实报出来，由规划器定
         due.append(CarriedReview(mission_id, str(task.id), occurrence, result_id, revision))
     return due
 
 
 def rejected(store: Store, result_id: str, requirements_revision: int) -> bool:
-    """The reviewer already found this result short under this revision."""
-    return any(row["layer"] == "critic_review" and row["status"] == "FAIL"
-               for row in store.list_verifications(result_id, requirements_revision=requirements_revision))
+    """This result's review under this revision has ended without an acceptance: its one
+    repair request was recorded (a check failed, the reviewer found it short, the person
+    ruled against it, or the review kept erroring).  The durable end of the scan."""
+    stored = store.get_result(result_id)
+    if stored is None:
+        return False
+    return store.connection.execute(
+        "SELECT 1 FROM events WHERE mission_id=? AND type='PlanningRepairRequested'"
+        " AND json_extract(payload_json,'$.source_key')=? LIMIT 1",
+        (stored.envelope.mission_id, source_key(result_id, requirements_revision))).fetchone() is not None
 
 
-__all__ = ("CARRIED_RESULT_REJECTED", "CARRIED_REVIEW_PENDING", "CarriedReview", "carried_reviews", "rejected")
+def kept(store: Store, result_id: str, requirements_revision: int) -> bool:
+    """Whether this accepted result can be reviewed under this revision at all: only the
+    requirements moved under its step (same Task contract, duty, effects and data edges)."""
+    from .completion_inputs import load_completion_result_inputs
+    from .operation_completion import OperationCompletionError
+
+    stored = store.get_result(result_id)
+    if stored is None:
+        return False
+    try:
+        load_completion_result_inputs(store, stored, requirements_revision=requirements_revision)
+    except OperationCompletionError:
+        return False
+    return True
+
+
+__all__ = ("CARRIED_RESULT_NOT_KEPT", "CARRIED_RESULT_REJECTED", "CARRIED_REVIEW_PENDING",
+           "MAX_CARRIED_REVIEW_ERRORS", "CarriedReview", "carried_reviews", "kept", "rejected", "source_key")

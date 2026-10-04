@@ -690,6 +690,10 @@ def _compile_data(
                 f"the method binds {producer_step}.{output_port} into "
                 f"{consumer_step}.{input_port}, but one of the steps is not a slot"
             )
+        if producer.shared and consumer.shared:
+            # 两端都是点名共用的已有步骤：这条数据边网络里已经有了（共用核对会比对声明的输入
+            # 与现有输入是否相同），不是第二条
+            continue
         producer_spec = catalog.require(producer.step.task_type_ref)
         consumer_spec = catalog.require(consumer.step.task_type_ref)
         declared_output = producer_spec.output_port(output_port)
@@ -1234,6 +1238,15 @@ def _merge(
         if instance.instance_id != draft.instance_id and instance.instance_id not in retired
     ]
     instances.append(draft)
+    # 新做法点名共用已有步骤时，它声明的先后边、覆盖声明可能与网络里已有的完全相同（两端 / 被覆盖
+    # 的都是共用步骤）：那是同一条，不是第二条。只折叠完全相同的；同两端而条件不同的仍由下面的
+    # 校验拒绝。
+    kept_order = {constraint for constraint in current.order_constraints
+                  if not retires(constraint.before, constraint.after)}
+    order_constraints = tuple(constraint for constraint in order_constraints if constraint not in kept_order)
+    kept_coverage = {claim for claim in current.obligation_coverage
+                     if not any(covered in orphaned for covered in claim.covered_by)}
+    coverage = tuple(claim for claim in coverage if claim not in kept_coverage)
     try:
         return TaskNetworkSnapshot(
             mission_id=current.mission_id,

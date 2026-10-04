@@ -1598,7 +1598,6 @@ class ChildBinding:
     #: actually reusing an accepted result may name one: sharing live work has no
     #: acceptance yet, and new work has nothing to point at (I01).
     acceptance_ref: TypedRef | None = None
-    resolution_ref: TypedRef | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1649,13 +1648,6 @@ class ChildBinding:
                     "only REUSE_ACCEPTED binds a specific Acceptance (TG decision 9)"
                 )
 
-        if self.resolution_ref is not None:
-            if (not isinstance(self.resolution_ref, TypedRef)
-                    or self.resolution_ref.kind is not TypedRefKind.RESOLUTION
-                    or self.reuse_policy is not ReusePolicy.REUSE_ACCEPTED
-                    or self.acceptance_ref is not None):
-                raise ContractError("reused compound binds one exact GoalResolution, separately from Acceptance")
-
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "instance_id": str(self.instance_id),
@@ -1669,8 +1661,6 @@ class ChildBinding:
             payload["goal_occurrence_id"] = str(self.goal_occurrence_id)
         if self.acceptance_ref is not None:
             payload["acceptance_ref"] = self.acceptance_ref.to_json()
-        if self.resolution_ref is not None:
-            payload["resolution_ref"] = self.resolution_ref.to_json()
         return payload
 
     @classmethod
@@ -1684,7 +1674,6 @@ class ChildBinding:
                 "reuse_policy",
                 "goal_occurrence_id",
                 "acceptance_ref",
-                "resolution_ref",
             ),
         )
         raw_goal_occurrence = data.get("goal_occurrence_id")
@@ -1699,7 +1688,6 @@ class ChildBinding:
             goal_occurrence_id=(
                 None if raw_goal_occurrence is None else OccurrenceId(raw_goal_occurrence)
             ),
-            resolution_ref=(None if data.get("resolution_ref") is None else TypedRef.from_json(data["resolution_ref"], f"{name}.resolution_ref")),
             acceptance_ref=(
                 None
                 if raw_acceptance is None

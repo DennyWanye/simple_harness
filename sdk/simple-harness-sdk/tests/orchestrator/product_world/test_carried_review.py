@@ -156,6 +156,14 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
                 (mission_id, f"content-review:{result_id}:r2")).fetchone()[0] == 1
             events = list(world.store.list_events(mission_id))
             assert not [e for e in events if e.type == "CarriedResultAccepted"]
+            # 被换掉的那一步已不在现行计划里：它的结果读起来是"范围过期"（归档），不是完整性错误
+            # （阻断核验 B4：否则这种结果排队等验证时会把主循环冲垮）
+            from agent_orchestrator.orchestrator.completion_inputs import load_completion_result_inputs
+            from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
+
+            with pytest.raises(OperationCompletionError) as stale:
+                load_completion_result_inputs(world.store, world.store.get_result(result_id))
+            assert stale.value.code == "OP_EFFECT_SCOPE_STALE"
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
 
@@ -297,5 +305,76 @@ def test_a_replacing_method_may_name_the_kept_step_and_it_is_reviewed_again(tmp_
             # a.md 只有那一个任务在写
             writers = [task for task in world.store.list_tasks(mission_id) if tuple(task.outputs) == ("a.md",)]
             assert [task.id for task in writers] == [kept_task]
+
+    asyncio.run(case())
+
+
+def test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop(tmp_path, monkeypatch):
+    """重审时审阅员一直不可用（模型冷却、预留不够……）：不冲出主循环、不无限重来——到上限后
+    一条修复请求交规划器（带出错说明），扫描就此停下（阻断核验 B1、B2）。
+
+    **改坏检验**：TG4-05 出错不计数、每轮重来 → 规划器永远收不到 → 变红。"""
+    from agent_orchestrator.assurance.codec import AssuranceError
+    from agent_orchestrator.orchestrator import assurance_review_runtime as runtime
+
+    [owner] = [value for value in vars(runtime).values()
+               if isinstance(value, type) and "run_task" in vars(value)]
+    original = owner.run_task
+    calls = {"carried": 0}
+
+    async def unavailable(self, mission, task, *, attempt_id, requirements_revision=None):
+        if requirements_revision is not None:
+            calls["carried"] += 1
+            raise AssuranceError("REVIEW_ROUTE_UNAVAILABLE", "the reviewing model is cooling down")
+        return await original(self, mission, task, attempt_id=attempt_id)
+
+    monkeypatch.setattr(owner, "run_task", unavailable)
+    seen: dict[str, Any] = {"packages": []}
+    state: dict[str, Any] = {"second": False, "rejections": []}
+    base = amend_script.replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
+        done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
+        if "REQUIREMENTS_UPDATE" in sources and not state["second"]:
+            state["second"] = True
+            [unfinished] = [item for item in steps if item["occurrence_id"] not in done]
+            return successor(package, unfinished, "要求改了：只换掉还没做完的那一步。")
+        if _carried_rejections(package):
+            state["rejections"] = _carried_rejections(package)
+            return None
+        return base(request)
+
+    async def case():
+        provider = HeldStep("b.md", planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "carried-unavailable",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            htn = HtnStore(world.store)
+            for _ in range(20):
+                await world.drain(timeout=20)
+                if htn.list_acceptances(mission_id):
+                    break
+            assert htn.list_acceptances(mission_id)
+            amend_script.amend(world, mission_id,
+                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            provider.go.set()
+            try:
+                for _ in range(60):
+                    await world.drain(timeout=20)
+                    if state["rejections"]:
+                        break
+            except Exception as error:  # noqa: BLE001 - 冲出主循环就是这条要抓的缺陷
+                raise AssertionError(f"main loop crashed: {type(error).__name__}: {error}") from error
+            assert state["rejections"], f"the planner was never told ({calls})"
+            context = state["rejections"][0]["context"]
+            assert "REVIEW_ROUTE_UNAVAILABLE" in context["review_error"], context
+            tried = calls["carried"]
+            assert tried == 3
+            for _ in range(3):
+                await world.drain(timeout=5)
+            assert calls["carried"] == tried  # 交给规划器之后不再重来
 
     asyncio.run(case())

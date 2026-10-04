@@ -857,8 +857,8 @@
    "id": "TG4-01",
    "source": "TaskGraph 补全第四批（重审通过写新版验收）",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "                self.commit.accept_carried_result(item.result_id, requirements_revision=revision)\n",
-   "replacement": "                pass\n",
+   "original": "            self.commit.accept_carried_result(item.result_id, requirements_revision=revision)\n",
+   "replacement": "            pass\n",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
    ],
@@ -868,8 +868,8 @@
    "id": "TG4-02",
    "source": "TaskGraph 补全第四批（重审打回交规划器）",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "        from .planning_repair_requests import record_request\n\n        produced = record_request(\n            self._new_mode(mission), mission.id,",
-   "replacement": "        record_request = lambda *args, **kwargs: False  # noqa: E731\n\n        produced = record_request(\n            self._new_mode(mission), mission.id,",
+   "original": "        from .carried_review import source_key\n        from .planning_repair_requests import record_request\n",
+   "replacement": "        from .carried_review import source_key\n        record_request = lambda *args, **kwargs: False  # noqa: E731\n",
    "tests": [
     "tests/orchestrator/product_world/test_carried_review.py::test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner"
    ],
@@ -907,6 +907,39 @@
     "tests/orchestrator/product_world/test_carried_redo.py::test_the_replaced_downstream_reads_the_kept_step_under_its_new_acceptance"
    ],
    "note": "下游取验收时不筛现行算数的：旧版验收也成了候选，下游冻结的输入不再一定是新版验收"
+  },
+  {
+   "id": "TG4-05",
+   "source": "TaskGraph 补全第四批阻断核验 B1（重审出错有上限）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            if count < MAX_CARRIED_REVIEW_ERRORS:\n",
+   "replacement": "            if True:\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_review_that_cannot_run_ends_with_the_planner_not_the_loop"
+   ],
+   "note": "重审出错不设上限：每轮重来，规划器永远收不到"
+  },
+  {
+   "id": "TG3-07",
+   "source": "TaskGraph 补全第三批（完成评估补用例时发现：上下游都共用时边重复）",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "        if producer.shared and consumer.shared:\n",
+   "replacement": "        if False:\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_shared_steps.py::test_naming_a_step_that_reads_upstream_requires_naming_the_upstream_too"
+   ],
+   "note": "两端都是共用步骤的数据边再声明一次：连上游一起点名的决定因\"数据边声明了两次\"提交不了"
+  },
+  {
+   "id": "TG3-08",
+   "source": "TaskGraph 补全第三批（合并规则①：任一端离开网络的边就删）",
+   "file": "src/agent_orchestrator/planning/htn/compiler.py",
+   "original": "        if one in orphaned or other in orphaned:\n            return True\n",
+   "replacement": "        if False:\n            return True\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it"
+   ],
+   "note": "一端已离开网络的边不删：跨分支连到被换掉步骤的边悬空"
   }
  ]
 }

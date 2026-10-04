@@ -365,7 +365,14 @@ def _current_scope(store: Store, mission_id: str, frozen: FrozenCompletionInputs
     if active is None:
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the adopted plan is unavailable")
     plan_ref = PlanRevisionPinV1(revision=active.revision, snapshot_hash=active.snapshot_hash)
-    scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
+    try:
+        scope = OperationCompletionReader(store).read_scope(mission_id, plan_ref, frozen.occurrence_id)
+    except OperationCompletionError as error:
+        # 这一步已不在现行计划里（做法被换掉、分支被取消、换了后继）：它的范围过期了，
+        # 与"计划换了一版"同一个结论——结果归档，不是完整性错误
+        if error.code != "OP_COMPLETION_SCOPE_UNRESOLVED":
+            raise
+        raise _refuse("OP_EFFECT_SCOPE_STALE", "the step left the adopted plan") from error
     if scope != original and not completion.scope_unchanged(original, scope, across_requirements=carried):
         raise _refuse("OP_EFFECT_SCOPE_STALE", "the completion scope changed under the Attempt")
     return scope

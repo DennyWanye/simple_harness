@@ -205,3 +205,109 @@ def test_sharing_does_not_widen_what_the_named_step_answers_for(tmp_path):
     refused = [item for item in rejected if "REUSE_NOT_ALLOWED" in (item.get("rejection_codes") or ())]
     assert refused, rejected
     assert "sharing a step does not add to what it answers for" in str(refused[0])
+
+
+def test_naming_a_step_that_reads_upstream_requires_naming_the_upstream_too(tmp_path):
+    """被点名的步骤读别的步骤的产出时，上游要一并点名：左右两个子目标都用"写 + 接着写"的做法；
+    右边只点名共用左边的"接着写"（它读的是左边的"写"，而右边做法里它读右边自己的"写"）→ 输入
+    不同，整份退回；连"写"一起点名后通过，两步都只做一次，任务完成。
+
+    **改坏检验**：TG3-07 两端都是共用步骤的数据边照样再声明一次 → 连上游一起点名也提交不了 → 变红。"""
+    holder: dict[str, Any] = {}
+    state: dict[str, Any] = {"root": False, "left": None, "right": None, "partial": False, "full": False}
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        goals = {item["occurrence_id"]: item for item in package["views"]["goals"] if item["open"]}
+        contexts = package.get("method_proposal_contexts") or []
+        if not goals:
+            return None
+        roots = [c for c in contexts if _type_of(c) == "user-goal"]
+        if roots and not state["root"]:
+            state["root"] = True
+            method = two_branches(roots[0])
+            second = method["composition"]["criterion_links"][-1]["parent_criterion_id"]
+            method["composition"]["criterion_links"].append(  # 这条用例里左边也承接第二条要求
+                {"parent_criterion_id": second, "child_step": "left", "child_criterion_id": second,
+                 "evidence_requirement": "left 这个子目标也写出 NOTES.md"})
+            return decision(roots[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": method, "rationale": "左右两个子目标。"}}, "根目标拆成两个子目标。")
+        selections = {item["occurrence_id"]: item for item in package.get("method_selection") or ()}
+        by_text = {str(goal["params"].get("goal")): goal for goal in goals.values()}
+        sub = {str(c["subject_key"]): c for c in contexts if _type_of(c) == "sub-goal-1"}
+        left, right = by_text.get(LEFT), by_text.get(RIGHT)
+        for occurrence, goal in goals.items():  # 根目标：采用刚通过审阅的做法
+            selection = selections.get(occurrence) or {}
+            if goal not in (left, right) and selection.get("applicable"):
+                return _refine(goal, selection["applicable"][0], dict(selection.get("bindings") or goal["params"]))
+        if left is not None:
+            if state["left"] is None and str(left["subject_key"]) in sub:
+                method = write_then_continue(sub[str(left["subject_key"])])
+                state["left"] = (method["method_id"], method["method_version"])
+                return decision(left["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                    "method": method, "rationale": "写，再接着写。"}}, "左子目标两步。")
+            selection = selections.get(left["occurrence_id"]) or {}
+            chosen = next((item for item in selection.get("applicable") or ()
+                           if (item["method_id"], item["method_version"]) == state["left"]), None)
+            if chosen is not None:
+                return _refine(left, chosen, dict(selection.get("bindings") or left["params"]))
+            return None
+        if right is None:
+            return None
+        if state["right"] is None and str(right["subject_key"]) in sub:
+            method = write_then_continue(sub[str(right["subject_key"])])
+            state["right"] = (method["method_id"], method["method_version"])
+            return decision(right["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": method, "rationale": "两步都共用左边的。"}}, "右子目标两步。")
+        selection = selections.get(right["occurrence_id"]) or {}
+        applicable = {(item["method_id"], item["method_version"]): item for item in selection.get("applicable") or ()}
+        rows = {row["task_type"]: row for row in package.get("sharing_candidates") or ()}
+        if not {"prepare-delivery", "continue-delivery"} <= set(rows) or state["right"] not in applicable:
+            store = holder["world"].store
+            step = next((item for item in package["views"]["goals"]
+                         if item["form"] == "primitive" and item.get("task_id")
+                         and any(str(attempt.status.value) in {"RUNNING", "SUBMITTED", "VERIFYING"}
+                                 for attempt in store.list_attempts(item["task_id"]))), None)
+            if step is None:
+                return None
+            semantics = holder["world"].loop._dispatch_for(holder["mission_id"]).semantics().task_semantics_of(
+                holder["mission_id"], step["task_id"])
+            return decision(right["subject_key"], "WAIT", {"wait_for": [{
+                "kind": "task", "id": step["task_id"], "semantic_revision": int(semantics.contract_revision),
+                "content_hash": semantics.content_hash()}], "reason": "等左边两步都能共用"}, "还不能共用。")
+        assert rows["continue-delivery"]["reads_from"] == [rows["prepare-delivery"]["occurrence_id"]]
+        bindings = dict(selection.get("bindings") or right["params"])
+        both = {"write": rows["prepare-delivery"]["occurrence_id"],
+                "continue": rows["continue-delivery"]["occurrence_id"]}
+        if not state["partial"]:
+            state["partial"] = True  # 只点名下游那一步：它读的上游没点名
+            return _refine(right, applicable[state["right"]], bindings, {"continue": both["continue"]})
+        state["full"] = True
+        return _refine(right, applicable[state["right"]], bindings, both)
+
+    async def case():
+        import json
+
+        async with product_world(tmp_path / "root", LayeredScriptedProvider(planner=planner)) as world:
+            mission_id = world.create({"goal": "写 out.md，再据它写 NOTES.md", "idempotency_key": "shared-upstream",
+                                       "success_criteria": ["file:out.md", "file:NOTES.md"]})["mission_id"]
+            holder.update(world=world, mission_id=mission_id)
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError(f"the mission never settled: {state}") from error
+            refused = [json.dumps(e.payload, ensure_ascii=False) for e in world.store.list_events(mission_id)
+                       if e.type == "PlanningDecisionEvaluated" and e.payload.get("status") != "COMMITTED"
+                       and e.payload.get("decision_type") == "REFINE"]
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state,
+                                                              [item[:600] for item in refused[-2:]])
+            assert state["partial"] and state["full"]
+            # 退回原因写明：被共用的那一步的输入端口有了两个来源（它原来的上游 + 右边自己的"写"）
+            assert any("single_port_overbound" in item and "delivery" in item for item in refused), [
+                item[:600] for item in refused]
+            network = world.loop._dispatch_for(mission_id).network(mission_id)
+            kinds = [str(network.binding_for_occurrence(item.occurrence_id).goal_signature.signature_id)
+                     for item in network.occurrences]
+            assert kinds.count("prepare-delivery") == 1 and kinds.count("continue-delivery") == 1
+
+    asyncio.run(case())

@@ -354,7 +354,7 @@ def compile_successor(inputs: PreviewInputs, operation: Any) -> RefinementCompil
         resource_reads=spec.resource_reads, resource_writes=spec.resource_writes, side_effect_kind=spec.side_effect_kind)
     remap = lambda value: occurrence if value == old_spec.occurrence_id else value
     children = tuple(replace(child, occurrence_id=occurrence, goal_occurrence_id=None,
-                            acceptance_ref=None, resolution_ref=None, reuse_policy=ReusePolicy.NEW_WORK) if child == slot else child
+                            acceptance_ref=None, reuse_policy=ReusePolicy.NEW_WORK) if child == slot else child
                      for child in original.child_bindings)
     order = tuple(replace(edge, before=remap(edge.before), after=remap(edge.after)) for edge in current.order_constraints)
     data = tuple(replace(edge, producer_occurrence=remap(edge.producer_occurrence), consumer_occurrence=remap(edge.consumer_occurrence),

@@ -561,6 +561,8 @@ class Orchestrator:
         self._critic_verdicts: dict[str, CriticVerdict] = {}
         # result id -> (refusal signature, consecutive count); see _verdict_refused
         self._verdict_refusals: dict[str, tuple[str, int]] = {}
+        #: 重审连续没能得出结论的次数（按（结果, 要求版本）），见 ``_carried_review``
+        self._carried_errors: dict[str, int] = {}
         #: result id → the output-port claims that arrived with that envelope
         #: (P2.3c part 2d, decision 4).  ``ResultEnvelope`` is a frozen contract with
         #: ``additionalProperties`` refused, so the claims are parsed out of the block
@@ -8167,7 +8169,7 @@ class Orchestrator:
                 return True
         return True
 
-    async def _carried_review(self, item: Any) -> bool:
+    async def _carried_review_once(self, item: Any) -> bool:
         """TaskGraph 补全第四批：一份按旧版要求通过、被现行计划沿用的结果，按现行要求重审。
 
         与新结果同一条"本地检查 → 审阅员独立会话 → 写验收"的流程，只是驱动不同：由计划提交后
@@ -8214,58 +8216,108 @@ class Orchestrator:
                 requirements_revision=revision)
 
         async def run_critic(test_output: str | None) -> CriticVerdict:
-            return await reviews.run_task(mission, task, attempt_id=attempt.id, requirements_revision=revision)
+            from ..runtime.model_router import RoutingUnavailable
+
+            try:
+                return await reviews.run_task(mission, task, attempt_id=attempt.id, requirements_revision=revision)
+            except (AssuranceError, RoutingUnavailable, BudgetExhausted) as error:
+                # 与新结果同一个口径：审阅员这一层跑不起来是"出错"，不是没过、更不是通过
+                raise ContractError(f"Assurance review unavailable: {error}") from error
 
         with self.store.read_view():
             record = reviews.task_record(mission.id, attempt.id, revision)
         ruling = None if record is None else adjudication_of(self.store, str(record.record_id))
+        if record is not None and ruling is None and str(record.verdict) == "INCONCLUSIVE":
+            # 审阅员两次都判不下来、在等用户裁决：不重跑检查，只看问题答了没有
+            return self._ask_carried_ruling(mission, task, record, item)
         human = None if ruling is None else {
             "verdict": "PASS" if ruling.get("decision") == "pass" else "FAIL",
             "note": "", "principal": ruling.get("principal_id"), "request_id": "adjudicate-carried:" + str(record.record_id)}
-        try:
-            verdict = await self._router.verify(
-                mission=mission, task=task, envelope=stored.envelope, artifacts=artifacts,
-                verification_copy=copy, client_result_id=None, run_critic=run_critic,
-                recorder=recorder, tampered=(), knowledge=KnowledgeIndex.load(self.store, mission.id),
-                human=human, reuse=None, needs_human_allowed=True, domain=self.commit.domain_for(mission.id),
-                local_check_recorder_factory=functools.partial(
-                    self._assurance_local_checks.prepare, requirements_revision=revision))
-            if verdict.passed:
-                self.commit.accept_carried_result(item.result_id, requirements_revision=revision)
-                self._note(f"result {item.result_id}: kept and passed again under requirements r{revision}")
-                return True
-        except (AssuranceError, OperationCompletionError, ContractError, CommitRejected,
-                ResolutionCommitRejected) as error:
-            # 计划又变了、审阅员暂不可用、检查口径还没批下来……下一轮再看；不当成没过
-            self._note(f"result {item.result_id}: re-review under r{revision} deferred ({error})")
-            return False
-        if any(layer.status == "ERROR" for layer in verdict.layers):
-            # 检查或审阅员这一层出错（不是审阅员的判断）：下一轮再审，不当成没过
-            self._note(f"result {item.result_id}: re-review under r{revision} errored; retried later")
-            return False
+        verdict = await self._router.verify(
+            mission=mission, task=task, envelope=stored.envelope, artifacts=artifacts,
+            verification_copy=copy, client_result_id=None, run_critic=run_critic,
+            recorder=recorder, tampered=(), knowledge=KnowledgeIndex.load(self.store, mission.id),
+            human=human, reuse=None, needs_human_allowed=True, domain=self.commit.domain_for(mission.id),
+            local_check_recorder_factory=functools.partial(
+                self._assurance_local_checks.prepare, requirements_revision=revision))
+        if verdict.passed:
+            self.commit.accept_carried_result(item.result_id, requirements_revision=revision)
+            self._note(f"result {item.result_id}: kept and passed again under requirements r{revision}")
+            return True
+        errored = [layer for layer in verdict.layers if layer.status == "ERROR"]
+        if errored:
+            # 检查或审阅员这一层出错（不是谁的判断）：按次数上限重来，不当成没过
+            raise ContractError("; ".join(f"{layer.layer}: {layer.summary}" for layer in errored))
         with self.store.read_view():
             record = reviews.task_record(mission.id, attempt.id, revision)
         if verdict.suspended and record is not None:
-            return self._ask_person_to_adjudicate(
-                mission, record, target_id=task.id, subject_key=task.id,
-                decision_id="adjudicate-carried:" + str(record.record_id),
-                intro="改要求后沿用的一步（" + str(task.goal)[:60] + "）按新要求重审，两位审阅员都判不下来，"
-                      "需要你裁决它是否仍然合格。",
-                extra={"result_id": item.result_id, "requirements_revision": revision})
+            return self._ask_carried_ruling(mission, task, record, item)
+        return self._request_carried_repair(
+            mission, task, item, record=record, failures=[dict(failure) for failure in verdict.failures])
+
+    def _ask_carried_ruling(self, mission: Mission, task: Task, record: Any, item: Any) -> bool:
+        return self._ask_person_to_adjudicate(
+            mission, record, target_id=task.id, subject_key=task.id,
+            decision_id="adjudicate-carried:" + str(record.record_id),
+            intro="改要求后沿用的一步（" + str(task.goal)[:60] + "）按新要求重审，两位审阅员都判不下来，"
+                  "需要你裁决它是否仍然合格。",
+            extra={"result_id": item.result_id, "requirements_revision": int(item.requirements_revision)})
+
+    def _request_carried_repair(self, mission: Mission, task: Task, item: Any, *, record: Any = None,
+                                failures: Sequence[Mapping[str, Any]] = (), error: str | None = None) -> bool:
+        """The one durable end of a re-review that did not accept: a repair request to the
+        Planner (the scan stops on it).  Recorded once per (result, requirements revision)."""
+        from .carried_review import source_key
         from .planning_repair_requests import record_request
 
+        revision = int(item.requirements_revision)
         produced = record_request(
             self._new_mode(mission), mission.id, event_type="VerifierAcceptanceRejected",
-            trigger_refs=(task.id,), source_key=f"carried-review:{item.result_id}:r{revision}",
+            trigger_refs=(task.id,), source_key=source_key(item.result_id, revision),
             detail={"source": "carried_review", "reason_code": CARRIED_RESULT_REJECTED,
                     "result_id": item.result_id, "requirements_revision": revision,
                     "occurrence_id": item.occurrence_id,
                     **({} if record is None else {"record_id": str(record.record_id),
                                                    "findings": self._review_record_findings(record)}),
-                    "failures": [dict(failure) for failure in verdict.failures]})
+                    **({} if error is None else {"review_error": error[:2000]}),
+                    "failures": [dict(failure) for failure in failures]})
         if produced:
-            self._note(f"result {item.result_id}: kept, rejected under requirements r{revision}; repair requested")
+            self._note(f"result {item.result_id}: kept, not accepted under requirements r{revision}; repair requested")
         return produced
+
+    async def _carried_review(self, item: Any) -> bool:
+        """One round of a kept result's review, inside its own fault boundary: nothing it
+        raises reaches the main loop (a fault of one Mission stops only that step's review).
+        A round that could not conclude — the plan moved, the reviewer or a checker was
+        unavailable, anything unexpected — is retried, at most ``MAX_CARRIED_REVIEW_ERRORS``
+        times; then the Planner is told the review could not be done and decides."""
+        from .carried_review import MAX_CARRIED_REVIEW_ERRORS
+
+        try:
+            done = await self._carried_review_once(item)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the boundary; the count below is the bound
+            count = self._carried_errors.get(item.key, 0) + 1
+            text = f"{type(error).__name__}: {error}"
+            self._note(f"result {item.result_id}: re-review under r{item.requirements_revision} "
+                       f"could not conclude ({count}/{MAX_CARRIED_REVIEW_ERRORS}): {text}")
+            if count < MAX_CARRIED_REVIEW_ERRORS:
+                self._carried_errors[item.key] = count
+                return False
+            self._carried_errors.pop(item.key, None)
+            logger.warning("orchestrator.carried_review_gave_up result=%s mission=%s error=%s",
+                           item.result_id, item.mission_id, text)
+            mission, task = self.store.get_mission(item.mission_id), self.store.get_task(item.task_id)
+            if mission is None or task is None:
+                return False
+            try:
+                return self._request_carried_repair(mission, task, item, error=text)
+            except Exception as late:  # noqa: BLE001 - never out of the boundary
+                self._note(f"result {item.result_id}: repair request not recorded ({late})")
+                return False
+        self._carried_errors.pop(item.key, None)
+        return done
 
     def _critic_provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
         """The one parsed Critic verdict's durable intent, not a current template.
