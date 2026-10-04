@@ -240,6 +240,10 @@ class TaskGraphConvergenceStore:
                     return job
             else:
                 self.authority.require_reconciliation_started(self.store, job)
+                if job.state == "WAITING":
+                    # 还在等：和"已就绪"一样原样返回，不写一行只改版本号的空改动（阶段 G 收尾
+                    # 大语料：这种写入没有任何事件，是静默改动）
+                    return job
             self._transition(job, "READY" if ready else "WAITING", now_ms)
             return self.get_job(mission_id, job_id)
 
@@ -332,8 +336,6 @@ class TaskGraphConvergenceStore:
         )
         if changed.rowcount != 1:
             raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
-        if state == job.state:
-            return
         if state in ("APPLIED", "ABANDONED"):
             # 阶段 B 第 2 条（2026-10-03）：推进这个作业的通知连败被挡住后，作业结束了（人放弃、
             # 决定被拒或被新决定替代）。被挡的通知仍算"在等执行图来源"，任务就永远挂着。放回待发：

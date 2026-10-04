@@ -95,6 +95,7 @@ markers = [
   "simple_harness_conformance: mark test as requiring conformance host fixture",
   "real_provider: end-to-end test that calls a real LLM provider (opt in with --run-real-provider)",
   "real_embedding: test that needs a real embedding model (opt in with --run-real-embedding)",
+  "replay_audit_exempt(reason): the test damages or writes the library outside the product path on purpose; the v3 audit records it as exempt",
 ]
 
 [tool.ruff]

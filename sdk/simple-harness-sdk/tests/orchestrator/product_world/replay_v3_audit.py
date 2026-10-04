@@ -7,7 +7,8 @@
     PYTHONPATH=tests/orchestrator/product_world uv run --frozen pytest -p replay_v3_audit \\
         --replay-v3-audit=.local-test-evidence/<日期>/g-replay/audit.json [--replay-v3-audit-strict] ...
 
-默认只观察，不改变用例结果。``--replay-v3-audit-strict`` 时，有任何"不一致"（含静默改动）、
+用例故意改坏库、或绕过产品路径直接写库来造局面的，标 ``@pytest.mark.replay_audit_exempt("理由")``，
+报告记"豁免"与理由，不算失败。默认只观察，不改变用例结果。``--replay-v3-audit-strict`` 时，有任何"不一致"（含静默改动）、
 或全库检查不一致，整轮判失败。范围外的任务（按别的口径建的）如实计数，不算失败。
 """
 from __future__ import annotations
@@ -77,6 +78,11 @@ def pytest_runtest_teardown(item: Any, nextitem: Any) -> Any:
     root = item.funcargs.get("tmp_path") if hasattr(item, "funcargs") else None
     if root is None:
         return
+    exempt = item.get_closest_marker("replay_audit_exempt")
+    if exempt is not None:  # 用例故意改坏库，或绕过产品路径直接写库来造局面：如实记"豁免"与理由
+        _RESULTS.append({"test": item.nodeid, "status": "EXEMPT",
+                         "reason": (exempt.args or exempt.kwargs.get("reason", ("",)))[0]})
+        return
     for database in sorted(Path(root).rglob("orchestrator.db")):
         try:
             result = audit_database(database)
@@ -90,8 +96,9 @@ def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
     target = session.config.getoption("--replay-v3-audit")
     if not target:
         return
-    failed = [row for row in _RESULTS if row["status"] != CONSISTENT]
+    failed = [row for row in _RESULTS if row["status"] not in {CONSISTENT, "EXEMPT"}]
     summary = {"databases": len(_RESULTS), "not_consistent": len(failed),
+               "exempt": sum(1 for row in _RESULTS if row["status"] == "EXEMPT"),
                "missions": dict(sum((Counter(row.get("missions") or {}) for row in _RESULTS), Counter())),
                "results": _RESULTS}
     Path(target).parent.mkdir(parents=True, exist_ok=True)

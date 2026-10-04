@@ -103,6 +103,7 @@ def test_a_persistent_store_fault_stops_its_mission_by_name(tmp_path, monkeypatc
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例故意改坏计划历史")
 def test_a_damaged_plan_history_stops_only_its_own_mission(tmp_path):
     async def case():
         provider = LayeredScriptedProvider()

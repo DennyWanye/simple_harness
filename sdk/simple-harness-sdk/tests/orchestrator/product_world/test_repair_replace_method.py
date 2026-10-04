@@ -186,6 +186,11 @@ def test_a_rejected_step_can_have_its_method_replaced_while_a_sibling_still_runs
             assert superseded and superseded[0].seq < revisions[1].seq
             [addressed] = [event.payload for event in events if event.type == "PlanningRepairAddressed"]
             assert addressed["decision_type"] == "REPAIR" and addressed["status"] == "COMMITTED"
+            # 阶段 G 收尾：收敛作业"还在等"时每次重核只加版本号、没有事件，是静默改动；还在等就
+            # 原样返回（改坏 G-27：还在等也重写 → 变红）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+            report = verify_mission(store, mission_id)
+            assert report["status"] == CONSISTENT, report["silent_changes"]
 
     asyncio.run(case())
 

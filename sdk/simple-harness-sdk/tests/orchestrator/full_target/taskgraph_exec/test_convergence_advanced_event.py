@@ -42,8 +42,8 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
     """作业从"等待"（兄弟步骤的调用还在半路）一路推进到替换提交：每次真正的状态变化恰好一条
     事件，身份 = 作业 + 新行版本，前后状态首尾相接；停在"等待"期间反复检查不写事件。
 
-    **改坏检验**：删掉 ``_transition`` 里的 ``append_event`` → 红；删掉 ``state == job.state``
-    的提前返回 → 红（重复的"等待"也写事件）。"""
+    **改坏检验**：删掉 ``_transition`` 里的 ``append_event`` → 红；``advance_state`` 里"还在等就
+    原样返回"去掉 → 红（重复的"等待"写出一条首尾相同的事件，版本号也不再连续；改坏 G-27）。"""
 
     async def case() -> None:
         async with waiting_convergence(tmp_path, key="converge-advanced") as waiting:
@@ -91,9 +91,11 @@ def test_each_real_state_change_writes_one_advanced_event(tmp_path):
             assert len({e.trace_id for e in events}) == 1
             assert [(e.payload["from_state"], e.payload["to_state"]) for e in events] == [
                 ("FENCED", "WAITING"), ("WAITING", "READY"), ("READY", "APPLIED")]
-            # while it waited the job was re-checked (its row version moved) without a state
-            # change, and none of those re-checks wrote an event
-            assert events[1].payload["row_version"] > events[0].payload["row_version"] + 1
+            # while it waited the job was re-checked without a state change: those re-checks
+            # write nothing at all (阶段 G 收尾：只改版本号的空改动是静默改动), so the row
+            # versions of the real changes are consecutive
+            assert [e.payload["row_version"] for e in events] == list(
+                range(events[0].payload["row_version"], events[0].payload["row_version"] + len(events)))
 
     asyncio.run(case())
 

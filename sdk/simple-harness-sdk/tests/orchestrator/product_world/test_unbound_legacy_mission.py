@@ -61,6 +61,7 @@ def _as_old_library(path: Any, mission_id: str) -> None:
     db.close()
 
 
+@pytest.mark.replay_audit_exempt("用例直接改库造一个旧任务")
 def test_an_unbound_legacy_mission_neither_blocks_startup_nor_the_loop(tmp_path):
     root = tmp_path / "root"
 

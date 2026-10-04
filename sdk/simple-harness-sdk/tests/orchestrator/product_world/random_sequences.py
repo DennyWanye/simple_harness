@@ -249,6 +249,27 @@ def snapshots(world: Any) -> str:
                        "why_not_ready": whys}, sort_keys=True, ensure_ascii=False, default=str)
 
 
+def _differences(before: str, after: str, limit: int = 6) -> list[str]:
+    """The first few paths where two snapshots differ, with both values (shortened)."""
+    found: list[str] = []
+
+    def walk(a: Any, b: Any, path: str) -> None:
+        if len(found) >= limit or a == b:
+            return
+        if isinstance(a, dict) and isinstance(b, dict):
+            for key in sorted(set(a) | set(b)):
+                walk(a.get(key), b.get(key), f"{path}/{key}")
+        elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+            for index, (x, y) in enumerate(zip(a, b)):
+                walk(x, y, f"{path}[{index}]")
+        else:
+            found.append(f"{path}: {json.dumps(a, ensure_ascii=False, default=str)[:160]}"
+                         f" -> {json.dumps(b, ensure_ascii=False, default=str)[:160]}")
+
+    walk(json.loads(before), json.loads(after), "")
+    return found
+
+
 # ----------------------------------------------------------------------------- the driver
 
 def plan_actions(seed: int, steps: int, reopen_every: int = 0) -> list[str]:
@@ -317,15 +338,23 @@ async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str
                 script.rework.add(mission_id)
                 log.append(f"{step}:replace:{mission_id}")
             elif action == "restart":
-                await world.drain(timeout=20)
+                # "关库重开前后什么都不变"只对空闲的库成立；任务多时一次模型调用可能还在跑，
+                # 多给几轮。仍不空闲就是"带着进行中的工作重开"：恢复推进它是正当的，不比快照，
+                # 重开后的各项一致性照常核（日志记 restart-busy）。
+                idle = False
+                for _ in range(6):
+                    if await world.drain(timeout=20):
+                        idle = True
+                        break
                 before = snapshots(world)
                 await world_cm.__aexit__(None, None, None)
                 world_cm = product_world(root, LayeredScriptedProvider(planner=script.planner, reviewer=script.reviewer))
                 world = await world_cm.__aenter__()
                 after = snapshots(world)
-                if after != before:
-                    raise InvariantBroken(f"step {step}: a snapshot or a why-not-ready changed across close and reopen")
-                log.append(f"{step}:restart")
+                if idle and after != before:
+                    raise InvariantBroken(f"step {step}: a snapshot or a why-not-ready changed across close and reopen"
+                                          f" (idle before close: {idle}); {_differences(before, after)}")
+                log.append(f"{step}:restart" + ("" if idle else "-busy"))
             check_invariants(world.store, scratch, step)
             if progress is not None:  # 长跑时给看门狗看的心跳
                 with progress.open("a", encoding="utf-8") as handle:

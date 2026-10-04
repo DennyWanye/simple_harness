@@ -116,6 +116,7 @@ def test_a_mission_born_under_another_inventory_is_out_of_scope(tmp_path, monkey
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例绕过产品路径直接登记一条做法定义，造一次全局变动")
 def test_global_change_wakes_only_unfinished_missions(tmp_path):
     """一个已结束、一个进行中的任务，登记一个新做法：只有进行中的多一条证据变更事件，全局纪元
     加 1，变动回执照样记（裁决 G-3）。
@@ -313,6 +314,7 @@ def test_an_idempotent_replay_adds_no_row_events(tmp_path):
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例故意另开连接改坏一行")
 def test_an_out_of_band_write_breaks_the_chain(tmp_path):
     """绕过存储层（另开连接）改一行，之后再正常改一次：v3 报链断（偏差裁决 1 第 7 条）。
 
@@ -333,6 +335,7 @@ def test_an_out_of_band_write_breaks_the_chain(tmp_path):
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例故意造一次没有领域事件的改动")
 def test_a_silent_change_is_reported(tmp_path):
     """改了业务行、本事务却没有本任务的领域事件：报"静默改动"；写了 ``silent_ok`` 的记账表放行。
 

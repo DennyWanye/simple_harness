@@ -210,6 +210,7 @@ def test_directory_read_and_derived_proposal(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.replay_audit_exempt("用例直接插入全库做法造七条先例")
 def test_directory_filters(tmp_path, monkeypatch):
     """目录、读原文、based_on 三处同一个过滤：同一归属、同一类型目录哈希、仍在列；每类型最多 5 条、
     按晋级时间倒序、报省略数。
@@ -271,6 +272,7 @@ def test_adopted_method_needs_review_here():
     assert refused == [{"method_ref": other.to_json(), "review": "NONE"}]
 
 
+@pytest.mark.replay_audit_exempt("用例直接调用归因函数，不经计划提交或根终审导入")
 def test_retired_after_two_missions_blame_it(tmp_path):
     """归因按不同任务数：同一任务里规划器、审阅员各说一次只算一次；第二个任务说了即退役，目录不再列。
 
@@ -558,6 +560,7 @@ def test_a_mission_with_registered_sources_promotes_nothing(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.replay_audit_exempt("用例直接写一条归因")
 def test_command_line_lists_and_clears_the_library(tmp_path, capsys):
     """命令行 ``method-library list`` / ``clear --yes`` 的正常路径：列出全库，清空后两张全库表都空，
     做法定义不动（HTN 补齐 F1，阶段 C3 已登记偏差 5）。

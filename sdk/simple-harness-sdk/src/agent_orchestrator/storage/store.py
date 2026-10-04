@@ -1047,7 +1047,9 @@ class Store:
             connection.execute(
                 "INSERT INTO actions(action_key,action_id,version,mission_id,state,json,created_at,updated_at)"
                 " VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(action_key) DO UPDATE SET state = excluded.state,"
-                " json = excluded.json, updated_at = excluded.updated_at",
+                " json = excluded.json, updated_at = excluded.updated_at"
+                # 内容没变就不写：只改时间的空改动没有事件，是静默改动（阶段 G 收尾大语料）
+                " WHERE actions.json IS NOT excluded.json OR actions.state IS NOT excluded.state",
                 (
                     str(record["action_key"]),
                     str(record["action_id"]),

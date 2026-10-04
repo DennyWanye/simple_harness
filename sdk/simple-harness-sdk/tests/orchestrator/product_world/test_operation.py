@@ -348,6 +348,11 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
             assert not [e for e in world.store.list_events(mission_id) if e.type == "ActionScopedReconciled"
                         and e.payload["outcome"] == "NOT_APPLIED_FINAL"]
             assert len(list(published.rglob("*.md"))) == 1  # published exactly once
+            # 阶段 G 收尾：对账每轮重写一遍没变的动作行（只改时间）是静默改动；内容没变不写
+            # （改坏 G-28：写动作不看内容 → 变红）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+            report = verify_mission(world.store, mission_id)
+            assert report["status"] == CONSISTENT, report["silent_changes"]
 
     asyncio.run(case())
 

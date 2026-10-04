@@ -138,6 +138,7 @@ def test_precondition_needs_evidence_then_commits(tmp_path):
     asyncio.run(case())
 
 
+@pytest.mark.replay_audit_exempt("用例直接写资料表造两份版本的局面")
 @pytest.mark.parametrize("predicate,arguments,expected", [
     (FILE_PRESENT, {"path": "input.csv"}, True),
     (FILE_PRESENT, {"path": "missing.csv"}, False),
