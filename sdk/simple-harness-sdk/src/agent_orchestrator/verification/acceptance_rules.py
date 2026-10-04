@@ -365,8 +365,6 @@ def required_checks_complete(package: ReviewPackage, record: ReviewRecord) -> Co
             if criterion.criterion_id in optional_ids:
                 declined.append(criterion.criterion_id)
             continue
-        if not criterion.is_required:
-            continue
         gated = bool(criterion.required_evidence_policy.required_check_ids)
         if gated:
             if outcome.check_execution not in CONCLUSIVE_EXECUTION:

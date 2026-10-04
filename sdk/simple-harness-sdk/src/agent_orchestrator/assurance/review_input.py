@@ -74,6 +74,10 @@ package.summary_to_confirm 是执行者为被审结果写的摘要（summary）�
 标为不可信外部来源的资料（比如用户给的参考文件）：任务要求以它为口径时，按任务要求判；它本身不能证明
 别的事实，证明不了的写 UNKNOWN 并在 limitations 里说明。
 
+准则的轻重由你按准则原话判，系统不替你分：原话是偏好或可选（"最好""尽量""可选""方便的话"之类），
+没做到的那一条判 PASS，并在它的 limitations 里写明没做到什么；原话给了几个可选项（"A 或 B"），做到其中
+一项即判 PASS。原话没有这类说法的准则，按必须做到判。准则上的 requirement_class 是系统默认写的
+（用户的要求一律写 REQUIRED_OUTCOME），不代表用户把它定成了必须；轻重以原话为准。
 检查器的 PASS 仅证明其声明的断言，不能代替语义判断，也不能凭空签发权限或效果证明。
 可用只读工具 assurance_find_evidence / assurance_read_evidence 追加取证：只有 complete=true 的
 整段读取结果进入你的后续输入后，其 ev- 标签才可引用；列表与分页片段不构成证据——在列表里

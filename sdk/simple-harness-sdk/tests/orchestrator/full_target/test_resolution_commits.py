@@ -916,7 +916,7 @@ def _relaxed(command: AcceptReviewCommand) -> AcceptReviewCommand:
     relaxed = dataclasses.replace(
         command.requirements,
         criteria=tuple(
-            dataclasses.replace(item, requirement_class=RequirementClass.PREFERENCE)
+            dataclasses.replace(item, statement=item.statement + "（可选）")
             for item in command.requirements.criteria
         ),
     )

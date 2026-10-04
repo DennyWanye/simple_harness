@@ -97,3 +97,14 @@ def test_a_label_seen_only_in_a_listing_is_said_to_need_a_full_read_first() -> N
 def test_the_retry_hint_for_a_non_json_reply_names_fences_and_surrounding_text() -> None:
     hint = _FORMAT_FEEDBACK["JSON_INVALID"]
     assert "code fence" in hint and "before or after" in hint
+
+
+def test_the_weight_of_a_criterion_is_judged_from_its_own_words() -> None:
+    """用户 2026-10-04（一致性补改 H-3）：要求的轻重、偏好、"或"不由系统分类，审阅员按原话判。
+
+    **改坏检验**（H-03）：提示词删掉这段判据 → 变红。"""
+
+    for phrase in ("准则的轻重由你按准则原话判，系统不替你分", "没做到的那一条判 PASS",
+                   "在它的 limitations 里写明没做到什么", "做到其中\n一项即判 PASS", "按必须做到判",
+                   "不代表用户把它定成了必须；轻重以原话为准"):
+        assert phrase in REVIEW_INSTRUCTIONS, phrase

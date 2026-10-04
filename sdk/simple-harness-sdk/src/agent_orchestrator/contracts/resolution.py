@@ -30,11 +30,9 @@ from enum import StrEnum
 from typing import Any, NewType, TypeAlias
 
 from .evidence_state import (
-    PreconditionPhase,
     TemporalUse,
     Validity,
     limitation_text,
-    parse_phase,
 )
 from .htn import GoalSignature, MethodInstanceId, ObligationId, TaskRef
 from .models import ContractError
@@ -88,9 +86,12 @@ class CriterionOrigin(StrEnum):
 
 
 class RequirementClass(StrEnum):
+    """Hard constraints (operation proposals, leaf gates) and required outcomes.  A user's
+    "preferably / optionally / A or B" is not a class here: the reviewer judges its weight
+    from the user's own words (HTN 一致性补改 H-3, user 2026-10-04)."""
+
     HARD_CONSTRAINT = "HARD_CONSTRAINT"
     REQUIRED_OUTCOME = "REQUIRED_OUTCOME"
-    PREFERENCE = "PREFERENCE"
 
 
 class EvaluationKind(StrEnum):
@@ -188,7 +189,7 @@ class AmendmentPolicy:
 
 @dataclass(frozen=True, slots=True)
 class Criterion:
-    """AER §4.1: one traceable requirement with its class, evidence and phase."""
+    """AER §4.1: one traceable requirement with its class and evidence."""
 
     criterion_id: str
     revision: int
@@ -199,7 +200,6 @@ class Criterion:
     source_ref: TypedRef | None = None
     scope: str | None = None
     required_evidence_policy: RequiredEvidencePolicy = field(default_factory=RequiredEvidencePolicy)
-    phase: PreconditionPhase | None = None
     temporal_use: TemporalUse = TemporalUse.CURRENT_AT_USE
     amendment_policy: AmendmentPolicy = field(default_factory=AmendmentPolicy)
 
@@ -227,8 +227,6 @@ class Criterion:
         object.__setattr__(self, "scope", optional_identifier(self.scope, "criterion.scope"))
         if not isinstance(self.required_evidence_policy, RequiredEvidencePolicy):
             raise ContractError("criterion.required_evidence_policy has the wrong type")
-        if self.phase is not None:
-            object.__setattr__(self, "phase", parse_phase(self.phase, "criterion.phase"))
         object.__setattr__(
             self, "temporal_use", enum_of(TemporalUse, self.temporal_use, "criterion.temporal_use")
         )
@@ -239,10 +237,6 @@ class Criterion:
             and self.amendment_policy.model_exemptible
         ):
             raise ContractError("a HARD_CONSTRAINT may not be declared model-exemptible (AER §4.1)")
-
-    @property
-    def is_required(self) -> bool:
-        return self.requirement_class is not RequirementClass.PREFERENCE
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -255,7 +249,6 @@ class Criterion:
             "source_ref": None if self.source_ref is None else self.source_ref.to_json(),
             "scope": self.scope,
             "required_evidence_policy": self.required_evidence_policy.to_json(),
-            "phase": None if self.phase is None else str(self.phase),
             "temporal_use": str(self.temporal_use),
             "amendment_policy": self.amendment_policy.to_json(),
         }
@@ -277,7 +270,6 @@ class Criterion:
                 "source_ref",
                 "scope",
                 "required_evidence_policy",
-                "phase",
                 "temporal_use",
                 "amendment_policy",
             ),
@@ -297,7 +289,6 @@ class Criterion:
             required_evidence_policy=RequiredEvidencePolicy.from_json(
                 data.get("required_evidence_policy", {}), f"{name}.required_evidence_policy"
             ),
-            phase=data.get("phase"),
             temporal_use=data.get("temporal_use", TemporalUse.CURRENT_AT_USE),
             amendment_policy=AmendmentPolicy.from_json(
                 data.get("amendment_policy", {}), f"{name}.amendment_policy"
@@ -494,7 +485,7 @@ class RequirementsRevision:
             )
 
     def required_criterion_ids(self) -> tuple[str, ...]:
-        return tuple(criterion.criterion_id for criterion in self.criteria if criterion.is_required)
+        return tuple(criterion.criterion_id for criterion in self.criteria)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -1212,7 +1203,7 @@ def match_review_criteria(
     required = {
         criterion.criterion_id
         for criterion in package.criteria
-        if criterion.is_required and criterion.criterion_id not in optional_ids
+        if criterion.criterion_id not in optional_ids
     }
     missing = tuple(sorted(required - set(reported)))
     return CriterionMatch(unknown=unknown, duplicated=duplicated, missing_required=missing)

@@ -1211,8 +1211,8 @@ class RootReviewCoordinator:
             criteria=tuple(
                 {
                     "criterion_id": str(item.criterion_id),
+                    # 原话照给；轻重（偏好、可选、"或"）由审阅员按原话判（一致性补改 H-3）
                     "statement": str(item.statement),
-                    "requirement_class": str(item.requirement_class),
                     # P2.3h: who the plan made answerable for this criterion.  Empty
                     # means no accepted contribution carries it — the reviewer is told
                     # that in so many words rather than left to infer it.
