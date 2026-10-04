@@ -44,7 +44,6 @@ from ...contracts.htn import (
     ConstantCondition,
     ConstantValue,
     MethodContract,
-    MethodInstanceDraft,
     NotCondition,
     ObjectValue,
     OutputValue,
@@ -569,75 +568,6 @@ def assess_method(
     )
 
 
-class RecheckStatus(StrEnum):
-    """§6.6 rule 3: the pre-dispatch re-check verdict for a method instance."""
-
-    CONSISTENT = "CONSISTENT"
-    METHOD_INSTANCE_INVALIDATED = "METHOD_INSTANCE_INVALIDATED"
-
-
-@dataclass(frozen=True, slots=True)
-class RecheckResult:
-    status: RecheckStatus
-    changed_digests: tuple[str, ...] = ()
-    reason: str = ""
-
-    @property
-    def consistent(self) -> bool:
-        return self.status is RecheckStatus.CONSISTENT
-
-
-def recheck_method_instance(
-    draft: MethodInstanceDraft,
-    method: MethodContract,
-    snapshot: EvidenceSnapshot,
-    *,
-    registry: PredicateRegistry,
-    parameters: Mapping[str, Any] | None = None,
-    now_ms: int | None = None,
-) -> RecheckResult:
-    """Compare the witnesses frozen at selection time against the world now.
-
-    A disagreement invalidates *this method instance* — §6.6 rule 3 — and the
-    caller takes the "method precondition overturned" branch of the §9.1 decision
-    table.  It is deliberately not reported as CONFLICT (the world may be perfectly
-    consistent; it simply moved) and it does not by itself trigger a global re-plan.
-    """
-
-    if not isinstance(draft, MethodInstanceDraft):
-        raise ContractError("recheck_method_instance expects a MethodInstanceDraft")
-    grounded = dict(parameters or {})
-    for binding in draft.grounded_parameters:
-        grounded.setdefault(binding.name, binding.value)
-    by_digest = {condition_digest(item): item for item in method.applicable_when}
-    changed: list[str] = []
-    for witness in draft.precondition_witnesses:
-        condition = by_digest.get(witness.condition_digest)
-        if condition is None:
-            changed.append(witness.condition_digest)
-            continue
-        current = evaluate_condition(
-            condition,
-            registry=registry,
-            snapshot=snapshot,
-            parameters=grounded,
-            now_ms=now_ms,
-            path="recheck",
-        )
-        if current.truth is not witness.truth:
-            changed.append(witness.condition_digest)
-    if changed:
-        return RecheckResult(
-            status=RecheckStatus.METHOD_INSTANCE_INVALIDATED,
-            changed_digests=tuple(changed),
-            reason=(
-                "the snapshot witnesses disagree with the pre-dispatch re-check; "
-                "this method instance is invalid (§6.6 rule 3)"
-            ),
-        )
-    return RecheckResult(status=RecheckStatus.CONSISTENT, reason="witnesses still hold")
-
-
 def truth_of(value: object, name: str = "truth") -> TruthValue:
     return enum_of(TruthValue, value, name)
 
@@ -650,8 +580,6 @@ __all__ = (
     "CapabilitySnapshot",
     "ConditionEvaluation",
     "GateDecision",
-    "RecheckResult",
-    "RecheckStatus",
     "SupportProvenance",
     "all_truth",
     "any_truth",
@@ -660,6 +588,5 @@ __all__ = (
     "evaluate_condition",
     "ground_value",
     "not_truth",
-    "recheck_method_instance",
     "truth_of",
 )

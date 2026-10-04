@@ -715,8 +715,8 @@ def test_the_read_set_names_no_precondition_digest_as_a_fact(tmp_path=None) -> N
     ``READ_SET_UNRESOLVED`` — which is what stopped the real-model smoke run.
 
     The freeze the digests provide is not lost: they live on the
-    ``MethodInstanceDraft`` with the truth they were selected under, and §6.6 rule 3's
-    ``recheck_method_instance`` is what compares them to the world.
+    ``MethodInstanceDraft`` with the truth they were selected under, and the
+    pre-dispatch START witnesses re-evaluate them against the world.
     """
 
     del tmp_path

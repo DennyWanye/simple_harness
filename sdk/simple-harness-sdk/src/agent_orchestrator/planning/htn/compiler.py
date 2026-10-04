@@ -1382,8 +1382,8 @@ def build_read_set(
     blocker, and it had nothing to do with what the Planner wrote.
 
     Dropping those entries loses nothing: the digests are frozen on the
-    ``MethodInstanceDraft`` itself with the truth they were selected under, and §6.6
-    rule 3's ``recheck_method_instance`` is what compares them to the world later.  A
+    ``MethodInstanceDraft`` itself with the truth they were selected under, and the
+    pre-dispatch START witnesses re-evaluate them against the world each round.  A
     read-set entry is a promise that *this* store can re-check the subject, and a
     promise it cannot keep is worse than no promise at all.
     """

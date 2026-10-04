@@ -591,7 +591,7 @@ def ground_method(
 
     # Every applicable_when is TRUE here: ALL is TRUE only when every member is, and
     # the assessment above is APPLICABLE.  Freezing the digest with that truth is
-    # what lets recheck_method_instance say later that the world moved (§6.6 rule 3).
+    # what the pre-dispatch START witnesses compare the world against (§6.6 rule 3).
     witnesses = tuple(
         PreconditionWitnessRecord(
             condition_digest=condition_digest(condition),

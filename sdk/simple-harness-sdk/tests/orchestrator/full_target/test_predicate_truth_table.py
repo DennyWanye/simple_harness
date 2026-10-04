@@ -61,7 +61,6 @@ from agent_orchestrator.planning.htn.applicability import (
     ApplicabilityStatus,
     CapabilityRecord,
     CapabilitySnapshot,
-    RecheckStatus,
     SupportProvenance,
     all_truth,
     any_truth,
@@ -69,7 +68,6 @@ from agent_orchestrator.planning.htn.applicability import (
     authorization_gate,
     evaluate_condition,
     not_truth,
-    recheck_method_instance,
 )
 
 VALUES = (TruthValue.TRUE, TruthValue.FALSE, TruthValue.UNKNOWN, TruthValue.CONFLICT)
@@ -507,40 +505,6 @@ def _draft_for(contract: Any, witness_truth: TruthValue) -> MethodInstanceDraft:
             ),
         ),
     )
-
-
-def test_a_witness_that_still_holds_is_consistent() -> None:
-    world = World({"ready": TruthValue.TRUE})
-    contract = method_contract(applicable_when=(world.atom("ready"),))
-    result = recheck_method_instance(
-        _draft_for(contract, TruthValue.TRUE),
-        contract,
-        world.snapshot,
-        registry=world.registry,
-    )
-    assert result.status is RecheckStatus.CONSISTENT
-    assert result.consistent is True
-
-
-def test_a_witness_that_no_longer_holds_invalidates_the_method_instance() -> None:
-    """§6.6 rule 3: a return code, not a CONFLICT and not a global re-plan."""
-
-    world = World({"ready": TruthValue.FALSE})
-    contract = method_contract(applicable_when=(world.atom("ready"),))
-    result = recheck_method_instance(
-        _draft_for(contract, TruthValue.TRUE),
-        contract,
-        world.snapshot,
-        registry=world.registry,
-    )
-    assert result.status is RecheckStatus.METHOD_INSTANCE_INVALIDATED
-    assert result.changed_digests == (condition_digest(contract.applicable_when[0]),)
-    assert "CONFLICT" not in result.reason.upper()
-
-
-# --------------------------------------------------------------------------------------
-# Contract round 3: a closed-world denial must name a registered observer (P1.1c)
-# --------------------------------------------------------------------------------------
 
 
 def _denial(*, observer_id: str | None, coverage: QueryCompleteness) -> ObservationRecord:

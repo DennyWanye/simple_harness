@@ -118,6 +118,65 @@ def stale_evidence_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: 
     return produced
 
 
+def precondition_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
+    """做法前提被推翻（HTN 一致性补改 H-1，原计划 §6.6 规则 3、§9.1"方法前提被推翻 → 换做法"）。
+
+    派发前每轮都按当前观察重算做法的前提（``issue_start_witnesses``），不成立就写一张挡住的开工许可，
+    这一步停在原地。这里把"还没开工的原子步骤、它最新的开工许可说前提为假"如实交给规划器，不等判停滞：
+    哪一步、哪个做法、哪几条前提（原文）、现在读到什么、依据哪些观察。怎么办（换做法、等、问用户）
+    由规划器定。前提还没人看过（真值未知）走原来的取证，不叫规划器；同一组前提每翻一次（纪元加一）
+    只记一条。复用"证据失效"这类请求，不加新词。
+    """
+    from ..contracts.evidence_state import TruthValue
+    from ..contracts.htn import TaskForm, condition_digest
+    from ..contracts.models import ContractError
+
+    store = handler.store
+    network = dispatch.network(mission.id)
+    index = dispatch.start_witness_index(mission.id)
+    try:
+        world = dispatch._world()
+    except ContractError:
+        world = None
+    owners: dict[str, Any] = {}
+    for draft in network.method_instances:
+        for child in draft.child_bindings:
+            owners[str(child.occurrence_id)] = draft
+    produced = False
+    for spec in network.occurrences:
+        if spec.form is not TaskForm.PRIMITIVE:
+            continue
+        task_id = str(spec.task_id)
+        if store.list_attempts(task_id):
+            continue
+        held = index.get(task_id, {})
+        witnesses = {w.witness_id: w for w in held.values() if w.truth is TruthValue.FALSE}
+        for witness in witnesses.values():
+            digests = sorted(d for d, w in held.items() if w.witness_id == witness.witness_id)
+            source_key = (f"precondition:{task_id}:{content_hash_of(digests)[:16]}:"
+                          f"{int(witness.scope_epoch)}")
+            if source_key in seen:
+                continue
+            draft = owners.get(str(spec.occurrence_id))
+            conditions: list[Any] = list(digests)
+            if draft is not None and world is not None:
+                contract = world.registry.definition(draft.method_ref)
+                texts = {} if contract is None else {
+                    condition_digest(item): item.to_json() for item in contract.applicable_when}
+                conditions = [texts.get(digest, digest) for digest in digests]
+            produced |= record_request(dispatch, mission.id, event_type="EvidenceInvalidated",
+                trigger_refs=(task_id,), source_key=source_key,
+                detail={"reason": "method_precondition_false",
+                        "explanation": "这一步所在做法的前提现在不成立，这一步不会开工",
+                        "task_id": task_id, "occurrence_id": str(spec.occurrence_id),
+                        "method_ref": None if draft is None else draft.method_ref.to_json(),
+                        "conditions": conditions, "truth": str(witness.truth),
+                        "observed_at_ms": int(witness.as_of_ms),
+                        "support_revision": int(witness.support_revision),
+                        "support_refs": [ref.to_json() for ref in witness.support_refs]})
+    return produced
+
+
 def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
     """阶段 D：两个没有先后的步骤，通过验收的产出落在同一个文件上、内容不同 → 一条写入冲突修复请求
     （路径、两步、两份产出）。同一对产出只记一次；怎么办（加先后、重做其中一步、换做法）由规划器定。"""
@@ -463,6 +522,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     produced |= stale_evidence_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)
     produced |= write_conflict_triggers(dispatch, mission, seen=seen)
+    produced |= precondition_triggers(handler, dispatch, mission, seen=seen)
     produced |= open_goal_triggers(handler, dispatch, mission, seen=seen)
     events = tuple(store.iter_events(mission.id))
     for event in events:

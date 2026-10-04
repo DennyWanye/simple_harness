@@ -30,7 +30,6 @@ from .applicability import (
     CapabilityRecord,
     CapabilitySnapshot,
     assess_method,
-    recheck_method_instance,
 )
 from .backend_port import (
     BackendStatus,
@@ -180,7 +179,6 @@ __all__ = (
     "may_share",
     "normalize_candidates",
     "planning_frontier",
-    "recheck_method_instance",
     "to_hddl",
     "validate_delta",
     "validate_evidence_request",

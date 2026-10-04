@@ -720,6 +720,28 @@
    "replacement": null,
    "tests": [],
    "note": "compound 派普通 Worker；绑定场景 S05；改哪里与绑定用例在 F2 按 TaskGraph 补全后的代码补写"
+  },
+  {
+   "id": "H-01",
+   "source": "HTN 一致性补改 H-1",
+   "file": "src/agent_orchestrator/orchestrator/planning_repair_requests.py",
+   "original": "    produced |= precondition_triggers(handler, dispatch, mission, seen=seen)\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/product_world/test_precondition_overturned.py::test_an_overturned_precondition_reaches_the_planner_before_any_stall"
+   ],
+   "note": "系统扫描不看前提许可：前提被推翻要等判停滞才问规划器"
+  },
+  {
+   "id": "H-03",
+   "source": "HTN 一致性补改 H-3",
+   "file": "src/agent_orchestrator/assurance/review_input.py",
+   "original": "准则的轻重由你按准则原话判，系统不替你分",
+   "replacement": "准则逐条审查",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_reply_instructions.py::test_the_weight_of_a_criterion_is_judged_from_its_own_words"
+   ],
+   "note": "审阅员提示词删掉按原话判轻重的判据"
   }
  ]
 }
