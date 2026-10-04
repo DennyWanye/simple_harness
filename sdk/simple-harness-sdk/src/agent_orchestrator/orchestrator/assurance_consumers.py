@@ -46,6 +46,7 @@ CLOSEOUT_SOURCE_EVENTS = frozenset(
         "OperationOutcomeAccepted",
         "IntentSettled",
         "BudgetReleased",
+        "BudgetTailReleased",
         "AssuranceUseCertified",
         "AssuranceLocalCheckImported",
         "AssuranceExecutorCheckImported",

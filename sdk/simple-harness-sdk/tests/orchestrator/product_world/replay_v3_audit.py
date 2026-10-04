@@ -42,6 +42,9 @@ def audit_database(path: Path) -> dict[str, Any]:
         reports = {mission_id: verify_mission(store, mission_id) for mission_id in missions}
         library = verify_library(store)
         ledgers = verify_execution_ledgers(store, sorted(path.parent.glob("execution*.db")))
+        volume = [(row[0], int(row[1]), int(row[2])) for row in store.connection.execute(
+            "SELECT mission_id, count(*), sum(length(payload_json)) FROM events"
+            " WHERE type='RowsWritten' AND mission_id != 'deployment' GROUP BY mission_id")]
     finally:
         store.close()
     statuses = Counter(report["status"] for report in reports.values())
@@ -51,6 +54,9 @@ def audit_database(path: Path) -> dict[str, Any]:
     failed = library["status"] != CONSISTENT or ledgers["status"] != CONSISTENT or statuses[INCONSISTENT]
     return {"database": str(path), "library": library["status"], "unnamed": library["unnamed_count"],
             "execution_ledgers": {k: v for k, v in ledgers.items() if v},
+            # 偏差裁决 1 R9：整行事件最多的那个任务的条数与字节
+            "rows_written_max": max(({"mission_id": m, "events": n, "bytes": b} for m, n, b in volume),
+                                    key=lambda item: item["bytes"], default=None),
             "missions": dict(sorted(statuses.items())), "tables_not_consistent": bad_tables,
             "status": INCONSISTENT if failed else CONSISTENT,
             "out_of_scope": statuses[OUT_OF_SCOPE]}

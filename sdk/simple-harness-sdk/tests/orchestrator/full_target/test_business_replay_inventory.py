@@ -89,7 +89,7 @@ def test_inventory_v2_rules(edited):
     def silent_exclusion(tables):
         tables["workspaces"]["note"] = " "
 
-    for change, message in ((no_rebuild, "missions: a business table lists writers, events and rebuild"),
+    for change, message in ((no_rebuild, "missions: a business table says how it is rebuilt"),
                             (unknown_rebuild, "missions: rebuild must be one of"),
                             (silent_exclusion, "workspaces: a table outside business says why")):
         with pytest.raises(InventoryError, match=message):
@@ -130,3 +130,38 @@ def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):
         with pytest.raises(SourceUnavailable) as refused:
             reader._read()
         assert str(refused.value.__cause__) == "actual HTN wiring evidence is missing"
+
+
+#: 允许打开可写连接的文件与理由（偏差裁决 2）。清单外的 ``sqlite3.connect`` 必须是只读打开。
+WRITABLE_CONNECTIONS = {
+    "storage/store.py": "存储层本身（备份目标是副本）",
+    "observability/taskgraph_replay.py": "执行图历史重建到另一个新库",
+    "domains/drone_sim.py": "无人机模拟自己的库",
+    "evaluation/appworld_operations.py": "AppWorld 评测自己的库",
+}
+
+
+def test_only_the_store_opens_a_writable_connection():
+    """编排库的可写连接只来自存储层：经它写的每一行都被整行事件记下，绕过它的写会让链断
+    （HTN 补齐阶段 G 偏差裁决 2；运行时那一半是 ``test_an_out_of_band_write_breaks_the_chain``）。
+
+    **改坏检验**（G-25）：组装处的只读打开去掉 ``mode=ro`` → 清单外多一个可写连接 → 变红。"""
+    import ast
+    from pathlib import Path
+
+    import agent_orchestrator
+
+    package = Path(agent_orchestrator.__file__).parent
+    writable: dict[str, int] = {}
+    for path in sorted(package.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "connect" and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "sqlite3"
+                    and "mode=ro" not in (ast.get_source_segment(source, node) or "")):
+                name = path.relative_to(package).as_posix()
+                writable[name] = writable.get(name, 0) + 1
+    assert set(writable) <= set(WRITABLE_CONNECTIONS), sorted(set(writable) - set(WRITABLE_CONNECTIONS))
+    assert set(WRITABLE_CONNECTIONS) <= set(writable), (  # 清单过时也失败
+        sorted(set(WRITABLE_CONNECTIONS) - set(writable)))

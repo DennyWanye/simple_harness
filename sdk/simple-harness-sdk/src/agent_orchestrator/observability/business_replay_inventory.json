@@ -1,5 +1,5 @@
 {
- "inventory_version": 3,
+ "inventory_version": 4,
  "replay_version": "business-replay-v3",
  "timestamp_rule": "只增表按内容哈希核（时间列一并核）；折叠表逐列精确比对，时间列也比（整行事件抄的就是库里的值）。",
  "tables": {
@@ -16,13 +16,6 @@
     "output_identity_json",
     "detail_json",
     "applied_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.record_acceptance_receipt"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "GoalResolutionCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -41,12 +34,6 @@
     "source_revision",
     "output_json",
     "recorded_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_acceptance_output"
-   ],
-   "events": [
-    "AcceptanceCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -67,12 +54,6 @@
     "acceptance_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_acceptance"
-   ],
-   "events": [
-    "AcceptanceCommitted"
-   ],
    "rebuild": "immutable_source"
   },
   "actions": {
@@ -87,27 +68,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.put_action"
-   ],
-   "events": [
-    "ActionCancelled",
-    "ActionFailed",
-    "ActionHandedOff",
-    "ActionHandoffRefused",
-    "ActionNonapplicationFinalized",
-    "ActionOutcomeUnknown",
-    "ActionProposed",
-    "ActionReconciled",
-    "ActionRefused",
-    "ActionScopedReconciled",
-    "ActionSucceeded",
-    "ActionSuperseded",
-    "ApprovalExpired",
-    "ApprovalGranted",
-    "ApprovalRejected",
-    "ApprovalRevoked"
-   ],
    "rebuild": "fold"
   },
   "approval_decisions": {
@@ -120,14 +80,6 @@
     "nonce",
     "json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_decision"
-   ],
-   "events": [
-    "ApprovalGranted",
-    "ApprovalRejected",
-    "HumanOverride"
    ],
    "rebuild": "immutable_source",
    "owner": {
@@ -149,27 +101,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.put_approval"
-   ],
-   "events": [
-    "ActionCancelled",
-    "ActionProposed",
-    "ActionSuperseded",
-    "ApprovalCancelled",
-    "ApprovalExpired",
-    "ApprovalGranted",
-    "ApprovalRejected",
-    "ApprovalRequested",
-    "ApprovalRevoked",
-    "ApprovalSuperseded",
-    "HumanCommentAdded",
-    "HumanOverride",
-    "SourceRegistered",
-    "SourceRevoked",
-    "SourceSuperseded",
-    "VerificationSuspended"
-   ],
    "rebuild": "fold"
   },
   "artifacts": {
@@ -184,20 +115,6 @@
     "version",
     "json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store._renumber_artifact_lineage",
-    "agent_orchestrator/storage/store.py:Store.update_artifact_verification",
-    "agent_orchestrator/storage/store.py:Store.upsert_artifact"
-   ],
-   "events": [
-    "AssuranceExecutionImported",
-    "AssuranceLocalCheckFinished",
-    "PreparationAccepted",
-    "ResultSubmitted",
-    "TaskCompleted",
-    "VerificationFailed",
-    "VerificationPassed"
    ],
    "rebuild": "fold"
   },
@@ -232,12 +149,6 @@
     "import_receipt_id",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_check_binding"
-   ],
-   "events": [
-    "AssuranceCheckBound"
-   ],
    "rebuild": "immutable_source"
   },
   "assurance_closeouts": {
@@ -252,17 +163,6 @@
     "last_receipt_id",
     "updated_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/orchestrator/assurance_consumers.py:AssuranceCloseoutConsumer._write_locked",
-    "agent_orchestrator/orchestrator/assurance_final_writer.py:finalize_assured_mission"
-   ],
-   "events": [
-    "AssuranceCloseoutEvaluated",
-    "AssuranceMissionFinalized",
-    "AssuranceStatusNotificationRequested",
-    "MissionCompleted",
-    "ReservationCountedAtUpperBound"
-   ],
    "rebuild": "fold"
   },
   "assurance_creation_contracts": {
@@ -274,14 +174,6 @@
     "source_hash",
     "receipt_id",
     "created_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_creation_contract",
-    "agent_orchestrator/storage/assurance_upgrade.py:DDL"
-   ],
-   "events": [
-    "AssuranceProfileActivated",
-    "MissionCreated"
    ],
    "rebuild": "immutable_source"
   },
@@ -296,12 +188,6 @@
     "policy_hash",
     "policy_json",
     "approval_receipt_id"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_criterion_policy"
-   ],
-   "events": [
-    "AssuranceCheckPolicyApproved"
    ],
    "rebuild": "immutable_source"
   },
@@ -326,12 +212,6 @@
     "batch_hash",
     "batch_json",
     "disclosure_event_id"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_disclosure"
-   ],
-   "events": [
-    "AssuranceEvidenceDisclosed"
    ],
    "rebuild": "immutable_source"
   },
@@ -368,13 +248,6 @@
     "policy_json",
     "activation_receipt_id",
     "created_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.bind_profile_locked"
-   ],
-   "events": [
-    "AssuranceProfileActivated",
-    "MissionCreated"
    ],
    "rebuild": "immutable_source"
   },
@@ -417,13 +290,6 @@
     "source_receipt_id",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/orchestrator/assurance_review_transport.py:ensure_review_invocation"
-   ],
-   "events": [
-    "AssuranceReservationLinked",
-    "BudgetReserved"
-   ],
    "rebuild": "immutable_source"
   },
   "assurance_review_invocations": {
@@ -437,13 +303,6 @@
     "invocation_json",
     "reservation_event_id",
     "source_receipt_id"
-   ],
-   "writers": [
-    "agent_orchestrator/orchestrator/assurance_review_transport.py:ensure_review_invocation"
-   ],
-   "events": [
-    "AssuranceReservationLinked",
-    "BudgetReserved"
    ],
    "rebuild": "immutable_source"
   },
@@ -460,12 +319,6 @@
     "binding_json",
     "import_receipt_id",
     "created_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/orchestrator/assurance_review_import.py:PreparedOfficialReview.import_locked"
-   ],
-   "events": [
-    "AssuranceReviewImported"
    ],
    "rebuild": "immutable_source"
   },
@@ -484,12 +337,6 @@
     "issued_at_ms",
     "not_after_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.record_certificate"
-   ],
-   "events": [
-    "AssuranceUseCertified"
-   ],
    "rebuild": "immutable_source"
   },
   "attempts": {
@@ -507,32 +354,6 @@
     "turn_id",
     "json",
     "updated_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_attempt",
-    "agent_orchestrator/storage/store.py:Store.update_attempt"
-   ],
-   "events": [
-    "AgentCreated",
-    "AllocationDecided",
-    "AttemptCancelled",
-    "AttemptClaimed",
-    "AttemptCreated",
-    "AttemptLost",
-    "AttemptStarted",
-    "AttemptSuperseded",
-    "AttemptTimedOut",
-    "BudgetReserved",
-    "HeartbeatReceived",
-    "InputSubmitted",
-    "ModelRouted",
-    "OutcomeRecorded",
-    "ResultRejected",
-    "ResultSubmitted",
-    "TaskCompleted",
-    "VerificationFailed",
-    "VerificationPassed",
-    "VerificationStarted"
    ],
    "rebuild": "fold"
   },
@@ -553,22 +374,6 @@
     "settled_tool_calls",
     "reserved_attempts"
    ],
-   "writers": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger._apply",
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.open_account"
-   ],
-   "events": [
-    "ActionHandedOff",
-    "AttemptChargeReleased",
-    "AttemptCreated",
-    "BudgetReleased",
-    "BudgetReserved",
-    "MissionCreated",
-    "PlanOccurrencesMaterialised",
-    "ReservationCountedAtUpperBound",
-    "TaskCancelled",
-    "TaskCommitted"
-   ],
    "rebuild": "fold",
    "silent_ok": "预算账户的预留与追加额度是记账：行本身就是事实，消费者（预算面板、准入）读行；结账释放另有 BudgetReleased 告诉保证通道收尾"
   },
@@ -586,22 +391,6 @@
     "updated_at",
     "reserved_tool_calls",
     "settled_tool_calls"
-   ],
-   "writers": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.grow",
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.reserve",
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle",
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle_at_upper_bound",
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.settle_known",
-    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
-   ],
-   "events": [
-    "ActionHandedOff",
-    "AttemptCreated",
-    "BudgetReleased",
-    "BudgetReserved",
-    "ReservationCountedAtUpperBound",
-    "TaskCancelled"
    ],
    "rebuild": "fold",
    "silent_ok": "每次调用的预留与追加（grow）是记账：行本身就是事实，准入与面板读行；结清另有 BudgetReleased / ReservationCountedAtUpperBound"
@@ -622,17 +411,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.release_tail",
-    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.reserve_tail",
-    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
-   ],
-   "events": [
-    "AttemptCreated",
-    "BudgetReleased",
-    "BudgetReserved",
-    "TaskCancelled"
-   ],
    "rebuild": "fold"
   },
   "budget_tail_transfers": {
@@ -643,12 +421,6 @@
     "request_json",
     "receipt_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/governance/tail_budget.py:TailBudgetLedger.transfer_tail"
-   ],
-   "events": [
-    "BudgetReserved"
    ],
    "rebuild": "immutable_source",
    "owner": {
@@ -668,21 +440,6 @@
     "json",
     "updated_at",
     "key"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.upsert_claim"
-   ],
-   "events": [
-    "AttemptCancelled",
-    "AttemptSuperseded",
-    "ClaimDisputed",
-    "KnowledgeCommitted",
-    "KnowledgeSuperseded",
-    "KnowledgeUsed",
-    "OutcomeRecorded",
-    "ResultSubmitted",
-    "VerificationFailed",
-    "VerificationStarted"
    ],
    "rebuild": "fold"
   },
@@ -713,15 +470,6 @@
     "outcome_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "AssuranceReviewImported",
-    "OperationProposalReviewed",
-    "VerificationPassed"
-   ],
    "rebuild": "immutable_source"
   },
   "data_requirements": {
@@ -738,12 +486,6 @@
     "requirement_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_data_requirement"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "immutable_source"
   },
   "delivery_receipts": {
@@ -759,13 +501,6 @@
     "intent_hash",
     "receipt_json",
     "recorded_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.record_delivery_receipt"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "DeliveryReceiptRecorded"
    ],
    "rebuild": "immutable_source"
   },
@@ -831,13 +566,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.adopt_goal_resolution",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_goal_resolution"
-   ],
-   "events": [
-    "GoalResolutionCommitted"
-   ],
    "rebuild": "fold"
   },
   "human_overrides": {
@@ -847,12 +575,6 @@
     "mission_id",
     "json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_override"
-   ],
-   "events": [
-    "HumanOverride"
    ],
    "rebuild": "immutable_source"
   },
@@ -867,10 +589,6 @@
     "unknown",
     "imported_at"
    ],
-   "writers": [
-    "agent_orchestrator/governance/budgets.py:BudgetLedger.import_usage"
-   ],
-   "events": [],
    "rebuild": "fold",
    "silent_ok": "导入的用量行就是消费回执（执行侧编号 + 当时按多少算 + 是否未知，偏差裁决 1 第四节 G-4）；没有消费者等这条事件，结账由 BudgetReleased / IntentSettled 告诉消费者"
   },
@@ -885,23 +603,6 @@
     "input_binding_revision",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "AssuranceCheckSpecRegistered",
-    "AssuranceReservationLinked",
-    "AssuranceReviewImported",
-    "AssuranceReviewTurnImported",
-    "AttemptCreated",
-    "OperationIntentSubmitted",
-    "OperationOutcomeReviewPrepared",
-    "OperationProposalReviewed",
-    "PlanningMethodProposed",
-    "TaskGraphDispatchBound",
-    "VerificationPassed"
-   ],
    "rebuild": "immutable_source",
    "silent_ok": "与输入清单同一笔先写后用；用到它的审查包或尝试的那一笔才有领域事件"
   },
@@ -912,23 +613,6 @@
     "origin_mission_id",
     "manifest_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_input_manifest"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "AssuranceCheckSpecRegistered",
-    "AssuranceReservationLinked",
-    "AssuranceReviewImported",
-    "AssuranceReviewTurnImported",
-    "AttemptCreated",
-    "OperationIntentSubmitted",
-    "OperationOutcomeReviewPrepared",
-    "OperationProposalReviewed",
-    "PlanningMethodProposed",
-    "TaskGraphDispatchBound",
-    "VerificationPassed"
    ],
    "rebuild": "immutable_source",
    "owner": {
@@ -950,15 +634,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.upsert_knowledge"
-   ],
-   "events": [
-    "ClaimDisputed",
-    "KnowledgeCommitted",
-    "KnowledgeSuperseded",
-    "KnowledgeUsed"
-   ],
    "rebuild": "fold"
   },
   "method_child_occurrences": {
@@ -974,12 +649,6 @@
     "reuse_policy",
     "binding_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore._insert_child_occurrence"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -1018,13 +687,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_method_instance",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.set_method_instance_state"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "fold"
   },
   "mission_domains": {
@@ -1035,12 +697,6 @@
     "domain_version",
     "json",
     "bound_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.bind_mission_domain"
-   ],
-   "events": [
-    "MissionCreated"
    ],
    "rebuild": "immutable_source"
   },
@@ -1054,12 +710,6 @@
     "binding_hash",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.bind_mission_protocol"
-   ],
-   "events": [
-    "MissionCreated"
-   ],
    "rebuild": "immutable_source"
   },
   "mission_policies": {
@@ -1071,13 +721,6 @@
     "provider_kind",
     "json",
     "bound_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store._bind_legacy_missions",
-    "agent_orchestrator/storage/store.py:Store.bind_mission_policy"
-   ],
-   "events": [
-    "MissionCreated"
    ],
    "rebuild": "immutable_source"
   },
@@ -1093,23 +736,6 @@
     "json",
     "created_at",
     "updated_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_mission",
-    "agent_orchestrator/storage/store.py:Store.update_mission"
-   ],
-   "events": [
-    "AssuranceCloseoutRequested",
-    "AssuranceMissionFinalized",
-    "MissionCancelled",
-    "MissionCompleted",
-    "MissionCreated",
-    "MissionFailed",
-    "MissionPlanning",
-    "MissionSuccessJudged",
-    "PlanRevisionCommitted",
-    "TaskCancelled",
-    "TaskFailed"
    ],
    "rebuild": "fold"
   },
@@ -1133,20 +759,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.admit_demand",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.consume_fuel",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.persist",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.register",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.set_lifecycle",
-    "agent_orchestrator/storage/obligation_store.py:ObligationStore.withdraw_demand"
-   ],
-   "events": [
-    "GoalResolutionCommitted",
-    "ObligationDemandAdmitted",
-    "ObligationDemandWithdrawn",
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "fold"
   },
   "observations": {
@@ -1169,12 +781,6 @@
     "created_at",
     "question_json"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_observation"
-   ],
-   "events": [
-    "TaskGraphSourceChanged"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_acceptance_scopes": {
@@ -1191,12 +797,6 @@
     "delivery_receipt_id",
     "producer_receipt_id",
     "created_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_acceptance_scope"
-   ],
-   "events": [
-    "AcceptanceCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -1217,12 +817,6 @@
     "envelope_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.bind_operation"
-   ],
-   "events": [
-    "OperationMaterialized"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_completion_scopes": {
@@ -1242,12 +836,6 @@
     "plan_receipt_id",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_scope"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_completion_specs": {
@@ -1262,12 +850,6 @@
     "approval_receipt_id",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_spec"
-   ],
-   "events": [
-    "OperationCompletionSpecApproved"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_identities": {
@@ -1279,12 +861,6 @@
     "envelope_hash",
     "envelope_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.bind_operation"
-   ],
-   "events": [
-    "OperationMaterialized"
    ],
    "rebuild": "immutable_source"
   },
@@ -1327,12 +903,6 @@
     "binding_json",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/operation_intent_store.py:OperationIntentStore.insert"
-   ],
-   "events": [
-    "OperationIntentSubmitted"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_outcome_review_bindings": {
@@ -1358,12 +928,6 @@
     "producer_receipt_id",
     "created_at_ms"
    ],
-   "writers": [
-    "agent_orchestrator/storage/operation_completion_store.py:OperationCompletionStore.insert_outcome_binding"
-   ],
-   "events": [
-    "OperationOutcomeReviewPrepared"
-   ],
    "rebuild": "immutable_source"
   },
   "operation_payload_objects": {
@@ -1379,12 +943,6 @@
     "storage_uri",
     "source_receipt_id",
     "created_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/operation_payload_store.py:OperationPayloadStore.put_payload"
-   ],
-   "events": [
-    "OperationIntentSubmitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -1409,12 +967,6 @@
     "constraint_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_order_constraint"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "immutable_source"
   },
   "plan_commit_receipts": {
@@ -1431,12 +983,6 @@
     "output_identity_json",
     "receipt_json",
     "applied_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.record_commit_receipt"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -1469,12 +1015,6 @@
     "item_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.record_read_set"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
-   ],
    "rebuild": "immutable_source"
   },
   "plan_revisions": {
@@ -1489,13 +1029,6 @@
     "read_set_json",
     "created_at",
     "updated_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.activate_plan_revision",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_plan_revision"
-   ],
-   "events": [
-    "PlanRevisionCommitted"
    ],
    "rebuild": "fold"
   },
@@ -1514,13 +1047,6 @@
     "check_schema",
     "detail_json",
     "checked_at_ms"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_admission_check"
-   ],
-   "events": [
-    "PlanRevisionCommitted",
-    "TaskGraphRevisionRecorded"
    ],
    "rebuild": "immutable_source",
    "owner": {
@@ -1545,17 +1071,6 @@
     "detail_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.record_planning_decision"
-   ],
-   "events": [
-    "PlanningHumanRequested",
-    "PlanningLibraryRead",
-    "PlanningMethodProposed",
-    "PlanningRejected",
-    "PlanningRetryAuthorized",
-    "TaskCommitted"
-   ],
    "rebuild": "fold",
    "owner": {
     "column": "request_id",
@@ -1578,18 +1093,6 @@
     "created_at",
     "answered_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.answer",
-    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.register",
-    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.register_reusing_answer",
-    "agent_orchestrator/storage/planning_human_store.py:PlanningHumanStore.retire_stale"
-   ],
-   "events": [
-    "HumanCommentAdded",
-    "PlanningHumanAnswered",
-    "PlanningHumanRequested",
-    "PlanningHumanStale"
-   ],
    "rebuild": "fold"
   },
   "planning_lane_grants": {
@@ -1611,12 +1114,6 @@
     "expires_at_ms",
     "content_hash",
     "grant_json"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_grant"
-   ],
-   "events": [
-    "TaskGraphSourceChanged"
    ],
    "rebuild": "immutable_source"
   },
@@ -1644,16 +1141,6 @@
     "link_hash",
     "link_json"
    ],
-   "writers": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore.put_operation_action_link"
-   ],
-   "events": [
-    "ActionProposed",
-    "ActionRefused",
-    "ActionSuperseded",
-    "ApprovalRequested",
-    "ApprovalSuperseded"
-   ],
    "rebuild": "immutable_source"
   },
   "planning_request_authority_bindings": {
@@ -1669,12 +1156,6 @@
     "grant_hash",
     "binding_hash",
     "binding_json"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/planning_admission_store.py:PlanningAdmissionStore._insert_binding"
-   ],
-   "events": [
-    "TaskGraphSourceChanged"
    ],
    "rebuild": "immutable_source"
   },
@@ -1695,14 +1176,6 @@
     "prompt_hash",
     "intent_id",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.insert_planning_request",
-    "agent_orchestrator/storage/planning_decision_store.py:PlanningDecisionStore.rebind_planning_request_intent"
-   ],
-   "events": [
-    "BudgetReserved",
-    "PlanningDeploymentBound"
    ],
    "rebuild": "fold"
   },
@@ -1772,14 +1245,6 @@
     "revision_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_requirements_revision"
-   ],
-   "events": [
-    "AssuranceProfileActivated",
-    "MissionCreated",
-    "ObligationDemandAdmitted"
-   ],
    "rebuild": "immutable_source"
   },
   "results": {
@@ -1796,25 +1261,6 @@
     "json",
     "received_at",
     "updated_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_result",
-    "agent_orchestrator/storage/store.py:Store.set_result_verification"
-   ],
-   "events": [
-    "ApprovalGranted",
-    "ApprovalRejected",
-    "ApprovalRequested",
-    "AttemptCancelled",
-    "AttemptSuperseded",
-    "OutcomeRecorded",
-    "PreparationAccepted",
-    "ResultSubmitted",
-    "TaskCompleted",
-    "VerificationFailed",
-    "VerificationPassed",
-    "VerificationStarted",
-    "VerificationSuspended"
    ],
    "rebuild": "fold"
   },
@@ -1835,18 +1281,6 @@
     "package_json",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_package"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "AssuranceReservationLinked",
-    "BudgetReserved",
-    "OperationIntentSubmitted",
-    "OperationOutcomeReviewPrepared",
-    "OperationProposalReviewed",
-    "VerificationPassed"
-   ],
    "rebuild": "immutable_source"
   },
   "review_records": {
@@ -1864,15 +1298,6 @@
     "record_hash",
     "record_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_review_record"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "AssuranceReviewImported",
-    "OperationProposalReviewed",
-    "VerificationPassed"
    ],
    "rebuild": "immutable_source"
   },
@@ -1900,16 +1325,6 @@
     "revoked",
     "revision"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.put_source"
-   ],
-   "events": [
-    "ApprovalRequested",
-    "AssuranceReviewTurnImported",
-    "SourceRegistered",
-    "SourceRevoked",
-    "SourceSuperseded"
-   ],
    "rebuild": "fold"
   },
   "task_semantics": {
@@ -1929,13 +1344,6 @@
     "content_hash",
     "binding_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.put_task_semantics"
-   ],
-   "events": [
-    "ObligationDemandAdmitted",
-    "PlanRevisionCommitted"
    ],
    "rebuild": "immutable_source"
   },
@@ -1960,12 +1368,6 @@
     "origin_hash",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/taskgraph_attempt_inputs.py:TaskGraphAttemptInputStore.insert_attempt_inputs"
-   ],
-   "events": [
-    "TaskGraphDispatchBound"
-   ],
    "rebuild": "immutable_source"
   },
   "taskgraph_convergence_jobs": {
@@ -1984,14 +1386,6 @@
     "created_at",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore._transition",
-    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore.begin_convergence"
-   ],
-   "events": [
-    "TaskGraphConvergenceAdvanced",
-    "TaskGraphConvergenceRequested"
-   ],
    "rebuild": "fold"
   },
   "taskgraph_convergence_targets": {
@@ -2004,12 +1398,6 @@
     "task_id",
     "expected_generation",
     "target_kind"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/taskgraph_convergence.py:TaskGraphConvergenceStore.begin_convergence"
-   ],
-   "events": [
-    "TaskGraphConvergenceRequested"
    ],
    "rebuild": "immutable_source"
   },
@@ -2086,12 +1474,6 @@
     "enabling_receipt_hash",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/orchestrator/taskgraph_policy.py:TaskGraphPolicyService.enable_taskgraph_contract"
-   ],
-   "events": [
-    "TaskGraphContractEnabled"
-   ],
    "rebuild": "immutable_source"
   },
   "taskgraph_revision_records": {
@@ -2112,12 +1494,6 @@
     "command_id",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/taskgraph_store.py:TaskGraphStore.insert_revision_record"
-   ],
-   "events": [
-    "TaskGraphRevisionRecorded"
-   ],
    "rebuild": "immutable_source"
   },
   "tasks": {
@@ -2131,31 +1507,6 @@
     "json",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.insert_task",
-    "agent_orchestrator/storage/store.py:Store.update_task"
-   ],
-   "events": [
-    "AttemptChargeReleased",
-    "AttemptCreated",
-    "HumanOverride",
-    "MissionCompleted",
-    "MissionFailed",
-    "MissionSuccessJudged",
-    "OperationOutcomeAccepted",
-    "PlanOccurrencesMaterialised",
-    "PreparationAccepted",
-    "ResultSubmitted",
-    "TaskCancelled",
-    "TaskCommitted",
-    "TaskCompleted",
-    "TaskFailed",
-    "TaskPaused",
-    "TaskResumed",
-    "TaskVerificationAbandoned",
-    "VerificationFailed",
-    "VerificationPassed"
-   ],
    "rebuild": "fold"
   },
   "tool_calls": {
@@ -2168,10 +1519,6 @@
     "outcome",
     "created_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.record_tool_call"
-   ],
-   "events": [],
    "rebuild": "immutable_source",
    "silent_ok": "工具调用行按执行侧调用编号记，是消费回执；没有消费者等这条事件，结果与验证由各自事件告诉消费者"
   },
@@ -2199,156 +1546,6 @@
     "bumped_by",
     "updated_at"
    ],
-   "writers": [
-    "agent_orchestrator/storage/assurance_store.py:AssuranceStore.bind_profile_locked",
-    "agent_orchestrator/storage/htn_store.py:HtnStore.bump_epoch",
-    "trigger:assurance_source_acceptance_commit_receipts_delete",
-    "trigger:assurance_source_acceptance_commit_receipts_insert",
-    "trigger:assurance_source_acceptance_commit_receipts_update",
-    "trigger:assurance_source_acceptance_outputs_delete",
-    "trigger:assurance_source_acceptance_outputs_insert",
-    "trigger:assurance_source_acceptance_outputs_update",
-    "trigger:assurance_source_acceptances_delete",
-    "trigger:assurance_source_acceptances_insert",
-    "trigger:assurance_source_acceptances_update",
-    "trigger:assurance_source_actions_delete",
-    "trigger:assurance_source_actions_insert",
-    "trigger:assurance_source_actions_update",
-    "trigger:assurance_source_approvals_delete",
-    "trigger:assurance_source_approvals_insert",
-    "trigger:assurance_source_approvals_update",
-    "trigger:assurance_source_artifacts_delete",
-    "trigger:assurance_source_artifacts_insert",
-    "trigger:assurance_source_artifacts_update",
-    "trigger:assurance_source_assurance_check_bindings_delete",
-    "trigger:assurance_source_assurance_check_bindings_insert",
-    "trigger:assurance_source_assurance_check_bindings_update",
-    "trigger:assurance_source_assurance_criterion_policies_delete",
-    "trigger:assurance_source_assurance_criterion_policies_insert",
-    "trigger:assurance_source_assurance_criterion_policies_update",
-    "trigger:assurance_source_assurance_review_record_bindings_delete",
-    "trigger:assurance_source_assurance_review_record_bindings_insert",
-    "trigger:assurance_source_assurance_review_record_bindings_update",
-    "trigger:assurance_source_bound_inputs_delete",
-    "trigger:assurance_source_bound_inputs_insert",
-    "trigger:assurance_source_bound_inputs_update",
-    "trigger:assurance_source_claims_delete",
-    "trigger:assurance_source_claims_insert",
-    "trigger:assurance_source_claims_update",
-    "trigger:assurance_source_criterion_assessments_delete",
-    "trigger:assurance_source_criterion_assessments_insert",
-    "trigger:assurance_source_criterion_assessments_update",
-    "trigger:assurance_source_criterion_evaluations_delete",
-    "trigger:assurance_source_criterion_evaluations_insert",
-    "trigger:assurance_source_criterion_evaluations_update",
-    "trigger:assurance_source_data_requirements_delete",
-    "trigger:assurance_source_data_requirements_insert",
-    "trigger:assurance_source_data_requirements_update",
-    "trigger:assurance_source_delivery_receipts_delete",
-    "trigger:assurance_source_delivery_receipts_insert",
-    "trigger:assurance_source_delivery_receipts_update",
-    "trigger:assurance_source_events_delete",
-    "trigger:assurance_source_events_insert",
-    "trigger:assurance_source_events_update",
-    "trigger:assurance_source_goal_resolutions_delete",
-    "trigger:assurance_source_goal_resolutions_insert",
-    "trigger:assurance_source_goal_resolutions_update",
-    "trigger:assurance_source_input_manifest_bindings_delete",
-    "trigger:assurance_source_input_manifest_bindings_insert",
-    "trigger:assurance_source_input_manifest_bindings_update",
-    "trigger:assurance_source_input_manifests_delete",
-    "trigger:assurance_source_input_manifests_insert",
-    "trigger:assurance_source_input_manifests_update",
-    "trigger:assurance_source_method_child_occurrences_delete",
-    "trigger:assurance_source_method_child_occurrences_insert",
-    "trigger:assurance_source_method_child_occurrences_update",
-    "trigger:assurance_source_method_instances_delete",
-    "trigger:assurance_source_method_instances_insert",
-    "trigger:assurance_source_method_instances_update",
-    "trigger:assurance_source_mission_policies_delete",
-    "trigger:assurance_source_mission_policies_insert",
-    "trigger:assurance_source_mission_policies_update",
-    "trigger:assurance_source_obligation_relations_delete",
-    "trigger:assurance_source_obligation_relations_insert",
-    "trigger:assurance_source_obligation_relations_update",
-    "trigger:assurance_source_obligations_delete",
-    "trigger:assurance_source_obligations_insert",
-    "trigger:assurance_source_obligations_update",
-    "trigger:assurance_source_observations_delete",
-    "trigger:assurance_source_observations_insert",
-    "trigger:assurance_source_observations_update",
-    "trigger:assurance_source_operation_acceptance_scopes_delete",
-    "trigger:assurance_source_operation_acceptance_scopes_insert",
-    "trigger:assurance_source_operation_acceptance_scopes_update",
-    "trigger:assurance_source_operation_bindings_delete",
-    "trigger:assurance_source_operation_bindings_insert",
-    "trigger:assurance_source_operation_bindings_update",
-    "trigger:assurance_source_operation_completion_scopes_delete",
-    "trigger:assurance_source_operation_completion_scopes_insert",
-    "trigger:assurance_source_operation_completion_scopes_update",
-    "trigger:assurance_source_operation_completion_specs_delete",
-    "trigger:assurance_source_operation_completion_specs_insert",
-    "trigger:assurance_source_operation_completion_specs_update",
-    "trigger:assurance_source_operation_identities_delete",
-    "trigger:assurance_source_operation_identities_insert",
-    "trigger:assurance_source_operation_identities_update",
-    "trigger:assurance_source_operation_intent_bindings_delete",
-    "trigger:assurance_source_operation_intent_bindings_insert",
-    "trigger:assurance_source_operation_intent_bindings_update",
-    "trigger:assurance_source_operation_outcome_review_bindings_delete",
-    "trigger:assurance_source_operation_outcome_review_bindings_insert",
-    "trigger:assurance_source_operation_outcome_review_bindings_update",
-    "trigger:assurance_source_operation_payload_objects_delete",
-    "trigger:assurance_source_operation_payload_objects_insert",
-    "trigger:assurance_source_operation_payload_objects_update",
-    "trigger:assurance_source_order_constraints_delete",
-    "trigger:assurance_source_order_constraints_insert",
-    "trigger:assurance_source_order_constraints_update",
-    "trigger:assurance_source_plan_memberships_delete",
-    "trigger:assurance_source_plan_memberships_insert",
-    "trigger:assurance_source_plan_memberships_update",
-    "trigger:assurance_source_plan_revisions_delete",
-    "trigger:assurance_source_plan_revisions_insert",
-    "trigger:assurance_source_plan_revisions_update",
-    "trigger:assurance_source_planning_lane_grants_delete",
-    "trigger:assurance_source_planning_lane_grants_insert",
-    "trigger:assurance_source_planning_lane_grants_update",
-    "trigger:assurance_source_planning_operation_action_links_delete",
-    "trigger:assurance_source_planning_operation_action_links_insert",
-    "trigger:assurance_source_planning_operation_action_links_update",
-    "trigger:assurance_source_planning_request_authority_bindings_delete",
-    "trigger:assurance_source_planning_request_authority_bindings_insert",
-    "trigger:assurance_source_planning_request_authority_bindings_update",
-    "trigger:assurance_source_requirements_revisions_delete",
-    "trigger:assurance_source_requirements_revisions_insert",
-    "trigger:assurance_source_requirements_revisions_update",
-    "trigger:assurance_source_results_delete",
-    "trigger:assurance_source_results_insert",
-    "trigger:assurance_source_results_update",
-    "trigger:assurance_source_review_packages_delete",
-    "trigger:assurance_source_review_packages_insert",
-    "trigger:assurance_source_review_packages_update",
-    "trigger:assurance_source_review_records_delete",
-    "trigger:assurance_source_review_records_insert",
-    "trigger:assurance_source_review_records_update",
-    "trigger:assurance_source_sources_delete",
-    "trigger:assurance_source_sources_insert",
-    "trigger:assurance_source_sources_update",
-    "trigger:assurance_source_task_semantics_delete",
-    "trigger:assurance_source_task_semantics_insert",
-    "trigger:assurance_source_task_semantics_update",
-    "trigger:assurance_source_validity_epochs_delete",
-    "trigger:assurance_source_validity_epochs_insert",
-    "trigger:assurance_source_validity_epochs_update",
-    "trigger:assurance_source_verifications_delete",
-    "trigger:assurance_source_verifications_insert",
-    "trigger:assurance_source_verifications_update"
-   ],
-   "events": [
-    "AssuranceEvidenceChanged",
-    "AssuranceProfileActivated",
-    "MissionCreated"
-   ],
    "rebuild": "fold",
    "silent_ok": "保证通道那一行只由屏障触发器跟着源表的那一笔改；作用域纪元由 bump_epoch 改、同事务另有领域事件"
   },
@@ -2373,15 +1570,6 @@
     "created_at",
     "subject_digest"
    ],
-   "writers": [
-    "agent_orchestrator/storage/htn_store.py:HtnStore.insert_validity_witness"
-   ],
-   "events": [
-    "AcceptanceCommitted",
-    "OperationOutcomeAccepted",
-    "TaskGraphSourceChanged",
-    "VerificationPassed"
-   ],
    "rebuild": "immutable_source"
   },
   "verifications": {
@@ -2394,12 +1582,6 @@
     "status",
     "detail_json",
     "created_at"
-   ],
-   "writers": [
-    "agent_orchestrator/storage/store.py:Store.upsert_verification"
-   ],
-   "events": [
-    "VerificationLayerRecorded"
    ],
    "rebuild": "fold",
    "owner": {

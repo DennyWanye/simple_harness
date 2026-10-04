@@ -219,6 +219,16 @@ class ProtectedTailCommitsMixin:
                 task_revision=row["task_revision"],
                 reason="protected_subject_terminal",
             )
+            # The release is its own fact: the caller's event may be a replay of an earlier
+            # settlement (same subject key), so the hold says it was released (HTN 补齐阶段 G：
+            # 业务行不许静默改动).
+            self._emit(
+                "BudgetTailReleased",
+                mission_id,
+                key=row["hold_id"],
+                task_id=origin_id,
+                payload={"hold_id": row["hold_id"], "reason": "protected_subject_terminal"},
+            )
             released.append(row["hold_id"])
         return released
 

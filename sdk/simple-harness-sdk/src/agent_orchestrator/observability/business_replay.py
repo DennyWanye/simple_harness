@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """全业务事件重放 v3（HTN 补齐阶段 G）。
 
-覆盖清单 ``business_replay_inventory.json``（第 3 版）把库里每张表归成五类：
+覆盖清单 ``business_replay_inventory.json``（第 4 版；偏差裁决 2 删去 ``writers``、``events`` 两栏）把库里每张表归成五类：
 
 * ``business`` —— 任务的业务事实，必须能由事件重建。存储层在每个事务提交前按任务各写一条
   ``RowsWritten``（见 :mod:`agent_orchestrator.storage.source_records`），二选一：
@@ -53,7 +53,7 @@ from ..storage.source_records import (
 from ..storage.store import Store
 
 REPLAY_VERSION = "business-replay-v3"
-INVENTORY_VERSION = 3
+INVENTORY_VERSION = 4
 CLASSES = ("business", "derived", "runtime", "global", "log")
 REBUILDS = ("immutable_source", "fold")
 
@@ -80,9 +80,9 @@ def inventory() -> Mapping[str, Any]:
         if kind not in CLASSES or "fields" not in entry:
             problems.append(f"{name}: class and fields are required")
         elif kind == "business":
-            allowed = {"class", "fields", "note", "writers", "events", "rebuild", "owner", "silent_ok"}
-            if not set(entry) <= allowed or not {"writers", "events", "rebuild"} <= set(entry):
-                problems.append(f"{name}: a business table lists writers, events and rebuild")
+            allowed = {"class", "fields", "note", "rebuild", "owner", "silent_ok"}
+            if not set(entry) <= allowed or "rebuild" not in entry:
+                problems.append(f"{name}: a business table says how it is rebuilt")
             elif entry["rebuild"] not in REBUILDS:
                 problems.append(f"{name}: rebuild must be one of {REBUILDS}")
             elif "mission_id" not in entry["fields"] and not isinstance(entry.get("owner"), dict):

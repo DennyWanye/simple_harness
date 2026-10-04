@@ -14,7 +14,14 @@ G（全业务事件重放）与联测（F2）共用，只此一份：
 怎么跑（都在本目录下）：
 
 - 改坏：`uv run --frozen python scripts/acceptance/run_mutations.py [编号 ...]`——备份 → 改 → 重生成部署清单 → 只跑绑定用例 → 从备份恢复并核哈希；只认断言失败为"抓到"。结果写仓库根 `.local-test-evidence/<日期>/mutations/results-<时刻>.json`。
-- 随机动作序列：`RANDOM_SEQ_SEEDS=1,2,3 RANDOM_SEQ_STEPS=500 uv run --frozen pytest tests/orchestrator/product_world/test_random_sequences.py`（默认 1 个种子 50 步）；反例缩小后写 `.local-test-evidence/<日期>/random-sequences/`。
+- 随机动作序列：`RANDOM_SEQ_SEEDS=1,2,3 RANDOM_SEQ_STEPS=500 uv run --frozen pytest tests/orchestrator/product_world/test_random_sequences.py`（默认 1 个种子 50 步）；`RANDOM_SEQ_REOPEN_EVERY=25` 每 25 步关库重开，`RANDOM_SEQ_PROGRESS=文件` 每步一行心跳（长跑给看门狗看）；反例缩小后写 `.local-test-evidence/<日期>/random-sequences/`。
+
+## 全业务事件重放 v3（HTN 补齐阶段 G，2026-10-04）
+
+- **记录**（`src/agent_orchestrator/storage/source_records.py`）：存储层每个最外层事务提交前，按任务各写一条 `RowsWritten{named, changed, with_events}`——只增表与回执账按主键 + 内容哈希点名；会改的表（业务 + 全局）记每个被改的键的改前 / 改后整行哈希与改后整行；`with_events` 是本事务里本任务的领域事件。归属：行的 `mission_id`，或清单 `owner` 写明的关联；全局表一律归部署时间线；找不到归属就抛错回滚。写连接只有存储层一处，绕过它的写会让链断。
+- **清单**（`src/agent_orchestrator/observability/business_replay_inventory.json`，第 3 版）：每张表归业务 / 派生 / 运行 / 全局 / 日志；业务表写 `rebuild`（只增源记录 / 折叠）、没有 `mission_id` 的写 `owner`、确属内部记账的写 `silent_ok` 与理由；新表新字段不登记守护用例就红。
+- **核对**（`src/agent_orchestrator/observability/business_replay.py`）：`verify_mission`（一个通用折叠：接链、逐列精确比对、报"静默改动"；按别的口径建的任务报"范围外"）、`verify_library`（每行恰好被点名一次 + "全局"一节 `verify_global`）、`verify_execution_ledgers`（两库对照：编排导入的每条用量回执在执行库里恰好一条、已知用量一致）。全部只读。
+- **怎么用**：命令行 `python -m agent_orchestrator replay --evidence-dir DIR MISSION_ID`（不一致退出 1）；Host 诊断"重建结果"一节；审计插件 `PYTHONPATH=tests/orchestrator/product_world uv run --frozen pytest -p replay_v3_audit --replay-v3-audit=报告.json [--replay-v3-audit-strict] ...`——每条用例结束后只读核它临时目录里的编排库与同目录执行库。
 - 屏障开销：`uv run --frozen python scripts/acceptance/measure_method_barrier.py 1 10 50`。
 - 新注入点（`orchestrator/event_handler.py` `FAULT_POINTS`）：`before_goal_resolution`、`after_handoff_before_call`、`after_external_effect`，触发用例 `tests/orchestrator/product_world/test_fault_points.py`。
 

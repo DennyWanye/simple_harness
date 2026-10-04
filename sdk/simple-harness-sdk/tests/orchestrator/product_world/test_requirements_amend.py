@@ -441,6 +441,11 @@ def test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result
             assert race["fired"] and str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
             assert [e.payload["detail"]["error"] for e in events if e.type == "ResultRejected"
                     and e.payload.get("reason") == "superseded"][:1] == ["completion_scope_stale"]
+            # 归档后再结清：尝试已关、它名下预留给审阅的尾部额度随之释放，必须留事件（阶段 G 收尾
+            # 随机序列发现的静默改动）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+            report = verify_mission(world.store, mission_id)
+            assert report["status"] == CONSISTENT, report["silent_changes"]
 
     asyncio.run(case())
 

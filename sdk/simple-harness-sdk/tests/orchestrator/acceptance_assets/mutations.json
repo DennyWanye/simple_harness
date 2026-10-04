@@ -558,6 +558,28 @@
    "note": "两库对照不比已知用量的数"
   },
   {
+   "id": "G-25",
+   "source": "阶段 G 偏差裁决 2",
+   "file": "src/agent_orchestrator/runtime/assembly.py",
+   "original": "    with sqlite3.connect(database.resolve().as_uri() + \"?mode=ro\", uri=True) as connection:",
+   "replacement": "    with sqlite3.connect(database.resolve().as_uri(), uri=True) as connection:",
+   "tests": [
+    "tests/orchestrator/full_target/test_business_replay_inventory.py::test_only_the_store_opens_a_writable_connection"
+   ],
+   "note": "存储层之外多出一个可写连接（编排库的后门写）"
+  },
+  {
+   "id": "G-26",
+   "source": "阶段 G 收尾大语料（随机序列发现）",
+   "file": "src/agent_orchestrator/orchestrator/protected_tail_commits.py",
+   "original": "            self._emit(\n                \"BudgetTailReleased\",",
+   "replacement": "            (lambda *a, **k: None)(\n                \"BudgetTailReleased\",",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result_aside"
+   ],
+   "note": "释放审阅尾部额度不留事件（结清事件按尝试去重后，这次改动成了静默改动）"
+  },
+  {
    "id": "M01",
    "source": "TaskGraph 代码级计划 §15",
    "file": null,

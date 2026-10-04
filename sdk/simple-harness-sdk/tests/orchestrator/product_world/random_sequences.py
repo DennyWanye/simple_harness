@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
 import tempfile
 from collections.abc import Sequence
@@ -250,10 +251,16 @@ def snapshots(world: Any) -> str:
 
 # ----------------------------------------------------------------------------- the driver
 
-def plan_actions(seed: int, steps: int) -> list[str]:
+def plan_actions(seed: int, steps: int, reopen_every: int = 0) -> list[str]:
+    """``reopen_every`` > 0 also closes and reopens the library at every that many steps
+    (阶段 G 验收：每 25 步关库重开)."""
     rng = random.Random(seed)
     names = list(WEIGHTS)
-    return ["new"] + rng.choices(names, weights=[WEIGHTS[name] for name in names], k=max(0, steps - 1))
+    actions = ["new"] + rng.choices(names, weights=[WEIGHTS[name] for name in names], k=max(0, steps - 1))
+    if reopen_every > 0:
+        actions = [("restart" if step % reopen_every == reopen_every - 1 else action)
+                   for step, action in enumerate(actions)]
+    return actions
 
 
 async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str]:
@@ -263,6 +270,7 @@ async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str
     log: list[str] = []
     scratch = Path(tempfile.mkdtemp(prefix="random-replay-"))
     counter = 0
+    progress = Path(os.environ["RANDOM_SEQ_PROGRESS"]) if os.environ.get("RANDOM_SEQ_PROGRESS") else None
     world_cm = product_world(root, LayeredScriptedProvider(planner=script.planner, reviewer=script.reviewer))
     world = await world_cm.__aenter__()
     try:
@@ -319,6 +327,9 @@ async def run_actions(root: Path, seed: int, actions: Sequence[str]) -> list[str
                     raise InvariantBroken(f"step {step}: a snapshot or a why-not-ready changed across close and reopen")
                 log.append(f"{step}:restart")
             check_invariants(world.store, scratch, step)
+            if progress is not None:  # 长跑时给看门狗看的心跳
+                with progress.open("a", encoding="utf-8") as handle:
+                    handle.write(f"{seed} {step} {log[-1] if log else action}\n")
     except InvariantBroken:
         raise
     except Exception as error:  # 主循环崩了（异常冲出 drain）同样是反例，交给缩小与留档
