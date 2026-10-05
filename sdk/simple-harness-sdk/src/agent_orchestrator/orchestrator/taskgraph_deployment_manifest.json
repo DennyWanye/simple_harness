@@ -1,5 +1,5 @@
 {
-  "deployment_id": "ec771ea4df32dcbcaf89db2ca1b695bda35b1d69901c653201c5a86c2839956f",
+  "deployment_id": "604650e9734a811fd7fd16d3527a4a7b6c988fa81b6dea2d9361187b32d15207",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -358,7 +358,7 @@
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
     "agent_orchestrator/runtime/provider_budget_guard.py": "bf3e37aa5c8da0343b5c83a67263d19ac261e9e51dd013a2fee7fd1b3a6b6d1f",
-    "agent_orchestrator/runtime/role_templates.py": "3f9b25370a52fac6916948c95fd3625f9a8d08e5d3b5e9b47f1cec5d7ad4b686",
+    "agent_orchestrator/runtime/role_templates.py": "01af77bd89178ebca7295efbf84e2f86ec70f45bc3dbfc42009eaa52f904c800",
     "agent_orchestrator/runtime/sandbox.py": "9a257d133a5b54da66649e23cbbe6af11d91027126e0c9cecb8200d97bd87f89",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",

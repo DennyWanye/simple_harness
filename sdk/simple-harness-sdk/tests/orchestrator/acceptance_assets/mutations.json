@@ -1033,6 +1033,17 @@
     "tests/orchestrator/product_world/test_clock_writes.py"
    ],
    "note": "不用进程内水位：10 秒内的回拨只和库里的旧水位比，发现不了"
+  },
+  {
+   "id": "PRM-01",
+   "source": "F2 联测真机（规划器等待决定缺字段）",
+   "file": "src/agent_orchestrator/runtime/role_templates.py",
+   "original": "        \"\\\"reason\\\":\\\"一句话说明在等什么\\\"}，两个字段都必填。\\n\"",
+   "replacement": "        \"}。\\n\"",
+   "tests": [
+    "tests/orchestrator/product_world/test_planner_prompt_fields.py"
+   ],
+   "note": "规划器提示词讲\"等待\"时不提必填的 reason"
   }
  ]
 }

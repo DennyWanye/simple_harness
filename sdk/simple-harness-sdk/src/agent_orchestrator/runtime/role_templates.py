@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v24"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v25"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -288,7 +288,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "options（每项 key、label；让用户自由回答就写 []）、blocking（要等回答才能继续就写 true）。"
         "用户回答后会再开一轮规划，你按回答补步骤或调整计划。不要编造证据，不要假设没观察到的事实，"
         "也不要直接宣布任务失败。\n"
-        "  - WAIT：已有工作在推进、你只是等它返回；payload.wait_for 列出要等的引用。\n"
+        "  - WAIT：已有工作在推进、你只是等它返回；payload 为 {\"wait_for\":[要等的引用, …], "
+        "\"reason\":\"一句话说明在等什么\"}，两个字段都必填。\n"
         "  - NO_CHANGE：当前计划仍然有效、不需要改动；payload 只写一句 reason。\n"
         "  - READ_METHOD_LIBRARY：读全库做法的原文。payload 为 {\"entries\":[entry_id, …]}，1 到 3 个，"
         "只能是 views.method_library 里列出的 entry_id；subject_key 写你正在为它找做法的那个目标。"
