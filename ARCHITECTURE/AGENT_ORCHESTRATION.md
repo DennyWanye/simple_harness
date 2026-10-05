@@ -172,6 +172,7 @@
 - **审阅不再交白卷**：审阅循环上限 = 查看上限 32 + 余量 8，剩余 ≤8 次时查看结果附"尽快作答"，查满后工具拒绝并要求立即作答。
 - **重启打断后不再挂住**（opt.74～76）：执行者一轮挂在"工具结果未知"（执行层上报工具阻塞时带上工具操作的持久状态，只认 `unknown`，正在执行的工具不误伤）与"模型调用结果未知"同样处理（等满时限按被打断放弃、不扣次数、换新尝试）；单轮墙钟超时与执行层内部异常（`base_agent_driver_exception`，重启后调用已交出、结果未知）归为被打断（原地重做、不问规划器）；发布结果审阅重试用完后不再算合法等待，交给卡死检测停下并在停止说明写 `operation_outcome_review`。
 - **主 Agent 入口**：`mission_start` 结果在主对话（`PrimaryChatView`）里显示为任务卡片（进度、完成要求确认、发布批准，走任务页同一连接与消息，人亲手点）；新增只读工具 `mission_status`（进度 / 等谁 / 已发布 / 停止原因，不能代批）。确认完成要求默认预填（普通要求算内容、每条发布各配一个"哈希一致"效果），一般一次点击。
+- **主 Agent 的资料与任务列表（2026-10-05，opt.160）**：`mission_start` 可带 `sources`（走任务页同一个"任务 + 资料"原子批次）；`mission_list` 列最近任务；`mission_source_update` 先核对 `mission_status` 给出的现行版本号再提交替换，变更生成一条等人批准的申请，对话任务卡片可直接批准。资料换版后的处理见 `orchestrator/planning_repair_requests.py::source_change_triggers`：挂旧版的已通过步骤连同差异交规划器判，`NO_CHANGE` 可了结，终审经 `source_change_open` 等这件事问完；审查包 `source_versions` 一节与现行版资料证据让审阅员按现行版本判。
 - **合成器看得懂每条要求**（opt.77、opt.80）：方法合成请求的 `criterion_evidence` 原先给每个 `c-user-N` 配同一句总目标，模型只能按描述猜编号（真机把"写出 README.md"挂到写模块那步）；现在每个编号带任务要求里自己的原文（`HierarchicalDispatch.synthesis_request`）。`file:`/`action:` 原文后附谁负责（`synthesis_statement`：操作由系统在内容通过后执行、不设步骤、证据要求不写发布目录/落点；写文件在工作区写出即满足），只改请求数据、不改提示模板。
 - **接力步骤交出全部文件**（opt.78）：输入与输出端口相同的续写步骤（如 `desktop.continue-delivery`）把通过核验的全部文件交给下一步（`overlay_attempt_inputs`，操作申请单除外）；此前只交端口文件 + 原工作区文件 + 测试文件，一步写三个文件时新写的模块被丢。
 - **端口规则只有一条**（opt.79）：完成协议下"这一步有哪些输出端口"，接受侧（`read_review_origin` → `declared_output_ports(own_ports=True)`）与核对侧（`output_ports_in_revision`）都算上这一步自己声明的端口；此前没下游、没被链接的最后一步两边算法不同，验收永远被拒。
