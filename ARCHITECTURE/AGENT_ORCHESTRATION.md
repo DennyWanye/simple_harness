@@ -1,4 +1,8 @@
-最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.154）。**沿用步骤重审通过后再修复；共用核对没过退回规划器。**
+最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.155）。**时钟水位落库规则；重审的验证记录事件。**
+- `orchestrator/assurance_clock.observe_assurance_clock`：最高水位在进程内精确保存（`CommitService._assurance_clock_seen`），库里那一行与回执只在发现回拨、恢复、正常前进累计满 `CLOCK_PERSIST_STEP_MS`（10 秒）时写。原来每前进 1 毫秒写一条（真机两小时 8.6 万条回执、库 162 MB）。重启后以库值为准，最多少记 10 秒。裁决见 `plans/2026-09-27-desktop-next/HTN补齐-阶段F2-联测记录.md`。
+- `commit_service.record_verification_layer`：`VerificationLayerRecorded` 的键带要求版本——按新版重审时与旧版一字不差的一层也有自己的事件，从事件重建与库一致。
+
+（上一条）最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.154）。**沿用步骤重审通过后再修复；共用核对没过退回规划器。**
 - `SharedGoalEntry.earlier_acceptance_refs`（`taskgraph_plan_sources.eligible_sharing` 填）：一份结果在旧版要求下的验收。`taskgraph_sharing.validate_sharing` 把它们与现行验收同等看待——点名沿用时引的是旧版那条，重审通过后仍是同一次沿用。
 - `event_handler._collect_plan_decision`：冻结执行图候选时共用秩序核对没过（`TASKGRAPH_SHARED_*` / `TASKGRAPH_REUSE_*`），记为这份决定被退回（`REUSE_NOT_ALLOWED`，说明里带原代码），不再当一轮故障原地重试。
 - Host `orchestration/chat_tool.py`：`mission_start` / `mission_amend` 的说明写明 `file:` 后面只写路径。
