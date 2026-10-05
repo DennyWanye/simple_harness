@@ -681,8 +681,12 @@ class AssuranceStore:
             is not None
         )
 
-    def observe_clock(self, now_ms: int, *, receipt: AssuranceRef) -> ClockState:
-        """Original tick owns the receipt and TimeDiscontinuity event in the same UoW."""
+    def observe_clock(self, now_ms: int, *, receipt: AssuranceRef, seen_high_ms: int = 0) -> ClockState:
+        """Original tick owns the receipt and TimeDiscontinuity event in the same UoW.
+
+        ``seen_high_ms`` is the high-water mark the process has seen since the row was last
+        written (the row is written on a rollback, a recovery, or every
+        ``CLOCK_PERSIST_STEP_MS`` of ordinary advance)."""
         integer(now_ms)
         with atomic(self.store) as connection:
             body = self._receipt(receipt)
@@ -691,7 +695,8 @@ class AssuranceStore:
             ).fetchone()
             if row is None:
                 raise AssuranceError("ASSURANCE_ENVIRONMENT_UNINITIALIZED")
-            old = ClockState(row["clock_generation"], row["wall_high_ms"], row["clock_state"])
+            stored = ClockState(row["clock_generation"], row["wall_high_ms"], row["clock_state"])
+            old = ClockState(stored.generation, max(stored.wall_high_ms, int(seen_high_ms)), stored.state)
             new = old.observe(now_ms)
             original = connection.execute(
                 "SELECT kind,subject_id,base_version FROM commit_receipts WHERE commit_id=?",
@@ -713,7 +718,7 @@ class AssuranceStore:
                 }
             ):
                 raise AssuranceError("CLOCK_OBSERVATION_RECEIPT_MISMATCH")
-            if new != old:
+            if new != stored:
                 connection.execute(
                     "UPDATE assurance_environment_state SET clock_generation=?,wall_high_ms=?,"
                     "clock_state=?,row_version=row_version+1,change_receipt_id=? "

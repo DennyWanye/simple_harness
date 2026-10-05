@@ -1000,6 +1000,39 @@
     "tests/orchestrator/product_world/test_carried_redo.py::test_a_later_repair_commits_after_the_kept_step_passed_again"
    ],
    "note": "共用核对只认现行那一条验收：留下的步骤重审通过后，再提修复时旧版验收对不上，提交不了"
+  },
+  {
+   "id": "TG4-08",
+   "source": "F2 联测真机库重建核对",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "                key=f\"{result_id}:{layer}:r{revision}:{sha256_hex([status, dict(detail)])[:16]}\",",
+   "replacement": "                key=f\"{result_id}:{layer}:{sha256_hex([status, dict(detail)])[:16]}\",",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
+   ],
+   "note": "验证记录事件的键不带要求版本：按新版重审时与旧版一字不差的那一层没有自己的事件（静默改动）"
+  },
+  {
+   "id": "CLK-01",
+   "source": "F2 联测裁决（时钟水位落库）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_clock.py",
+   "original": "                current.wall_high_ms - stored.wall_high_ms < CLOCK_PERSIST_STEP_MS):",
+   "replacement": "                current.wall_high_ms - stored.wall_high_ms < 1):",
+   "tests": [
+    "tests/orchestrator/product_world/test_clock_writes.py"
+   ],
+   "note": "正常前进不设门槛：每次观察都落库写回执（真机两小时 8.6 万条的原样）"
+  },
+  {
+   "id": "CLK-02",
+   "source": "F2 联测裁决（时钟水位落库）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_clock.py",
+   "original": "        seen_high = seen.wall_high_ms if seen is not None and seen.generation == stored.generation else 0",
+   "replacement": "        seen_high = 0",
+   "tests": [
+    "tests/orchestrator/product_world/test_clock_writes.py"
+   ],
+   "note": "不用进程内水位：10 秒内的回拨只和库里的旧水位比，发现不了"
   }
  ]
 }

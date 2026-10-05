@@ -263,6 +263,8 @@ class CommitService(ProtectedTailCommitsMixin,
         #: ``deployment.assembly.UserMissionDeployment``.  Every creation door ends here.
         self._mission_completer: Callable[[Mission], None] | None = None
         self._assurance_factory: Any = None
+        #: the clock high-water mark this process has seen (see ``assurance_clock``)
+        self._assurance_clock_seen: Any = None
         self._assurance_root_gate: Any = None
         self._assurance_read_authority: Any = None
         self._assurance_check_importer: Any = None
@@ -2723,8 +2725,9 @@ class CommitService(ProtectedTailCommitsMixin,
                 "VerificationLayerRecorded",
                 stored.envelope.mission_id,
                 # 同一结果同一层再验一次、结论或明细变了，要有自己的事件（阶段 G）；一模一样的重放
-                # 仍是同一条
-                key=f"{result_id}:{layer}:{sha256_hex([status, dict(detail)])[:16]}",
+                # 仍是同一条。键里带要求版本：改要求后按新版重审同一份结果，某一层的结论与明细可能
+                # 和旧版一字不差，那也是新的一行，要有自己的事件（联测真机库重建核对发现的静默改动）
+                key=f"{result_id}:{layer}:r{revision}:{sha256_hex([status, dict(detail)])[:16]}",
                 task_id=stored.envelope.task_id,
                 attempt_id=stored.envelope.attempt_id,
                 payload={
@@ -2732,6 +2735,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     "status": status,
                     "summary": detail.get("summary"),
                     "verifier_version": detail.get("verifier_version"),
+                    "requirements_revision": revision,
                 },
             )
 
