@@ -7124,7 +7124,29 @@ class Orchestrator:
                 source={"intent_id": intent.intent_id, "agent_id": intent.agent_id,
                     "preview_compilation_hash": preview.compilation_hash,
                     "preview_source_snapshot_hash": preview.source_snapshot_hash})
-            frozen_graph = new_mode._taskgraph_preview.freeze(preview_command, preview, taskgraph_sources)
+            try:
+                frozen_graph = new_mode._taskgraph_preview.freeze(preview_command, preview, taskgraph_sources)
+            except ContractError as error:
+                # 共用的秩序核对没过（规划器提示词里说的"TaskGraph 开头的原因代码"）：是这份决定的
+                # 问题，退回规划器；不是库故障，原地重试多少次结果都一样（联测真机第三局）。
+                if not str(error).startswith(("TASKGRAPH_SHARED_", "TASKGRAPH_REUSE_",
+                                              "TASKGRAPH_ACCEPTED_PRODUCER_")):
+                    raise
+                codes = [str(PlanningDecisionRejectionCode.REUSE_NOT_ALLOWED)]
+                detail = {"problems": [{"code": codes[0], "detail": str(error),
+                                        "field_path": "/payload", "subject_ref": None}]}
+                record_decision(
+                    request_id=request_id, attempt_ordinal=attempt_ordinal, raw_output_hash=raw_hash,
+                    raw_artifact_ref=raw_artifact_ref, decision_id=decision_id, status=refusal_status,
+                    rejection_codes=codes, detail=detail, canonical_json=canonical_json,
+                    canonical_hash=canonical_hash, decision_type=str(decision.decision_type))
+                evaluated(refusal_status, decision_type=str(decision.decision_type),
+                          rejection_codes=codes, detail=detail)
+                self._settle_intent(intent, "FAILED")
+                self._settle_service_if_known(intent.subject_id, mission.id)
+                await reject_planning(intent, reason="proposal_not_grounded",
+                                      detail={"rejection_codes": codes, **detail})
+                return
             planning_commit_admission = replace(planning_commit_admission, taskgraph_candidate=frozen_graph)
             from ..graph.planning_scope import planning_convergence_scope
             context = replace(context, taskgraph_scope=planning_convergence_scope(

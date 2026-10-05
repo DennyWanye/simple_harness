@@ -123,7 +123,10 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
         if demand.mode == "reuse_accepted":
             # ``carried``: accepted under earlier requirements and kept — the same result is
             # reviewed again under the current ones after the commit (TaskGraph 补全第四批).
-            if (entry.acceptance_ref is None or child.acceptance_ref != entry.acceptance_ref
+            # A slot that named the step while it was carried quotes the earlier acceptance of
+            # the same result; after the re-review passed it is still that reuse.
+            if (entry.acceptance_ref is None
+                    or child.acceptance_ref not in (entry.acceptance_ref, *entry.earlier_acceptance_refs)
                     or (sources.outcomes.get(entry.occurrence_id) is not OccurrenceOutcome.ACCEPTED
                         and not entry.carried)):
                 raise ContractError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT")

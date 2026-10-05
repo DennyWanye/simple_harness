@@ -28,7 +28,7 @@ from agent_orchestrator.orchestrator.assurance_validity import acceptance_id_for
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import decision, planner_reply
+from agent_orchestrator.testing.scripted_replies import decision, planner_reply, review_input, review_reply
 
 
 def _load(name: str, file: str) -> Any:
@@ -252,5 +252,98 @@ def test_replacing_a_kept_step_alone_is_refused_when_its_downstream_already_pass
             [judged] = [e.payload for e in world.store.list_events(mission_id) if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:c2.md"]
             assert judged["met"]
+
+    asyncio.run(case())
+
+
+def test_a_later_repair_commits_after_the_kept_step_passed_again(tmp_path):
+    """联测真机第三局的缺陷：改要求后留下的那一步按新版重审通过（它现在有旧版、新版两条验收），
+    之后别的步骤被打回、规划器再提一次修复——计划里沿用那一步的位置引的还是旧版那条验收，
+    系统拿它和新版验收比，报"沿用的验收不是现行的"，任务被停。两条验收是同一份结果的，仍是同一次沿用：
+    修复照常提交，任务完成。
+
+    **改坏检验**（TG4-07）：共用核对只认现行那一条验收 → 第二次修复提交不了 → 变红。"""
+    state: dict[str, Any] = {"again": False}
+    seen: dict[str, bool] = {}
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        package = data.get("package") or {}
+        if (str(package.get("purpose")) == "TASK_CONTENT" and not seen.get("rejected")
+                and "b2.md" in json.dumps(package, ensure_ascii=False)):
+            seen["rejected"] = True
+            return review_reply(data, verdict="REWORK", grade="FAIL", reason="脚本化审阅：b2.md 不够。")
+        return review_reply(data)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        contexts = package.get("method_proposal_contexts") or []
+        requests = [entry["request"] for entry in package.get("repair_requests") or ()]
+        sources = {item.get("trigger_source") for item in requests}
+        steps = [item for item in package["views"]["goals"] if item["form"] == "primitive"]
+        done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
+        if contexts and not state.get("root"):
+            state["root"] = True
+            return decision(contexts[0]["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": relay_script.relay(contexts[0]), "rationale": "先写 a.md，再接着写 b.md。"}}, "两步接力。")
+        if "REQUIREMENTS_UPDATE" in sources and not state.get("replaced"):
+            # 真机上规划器的走法：提一个新版本的做法，用它替换，并点名沿用已经做完的那一步
+            [goal] = [item for item in package["views"]["goals"]
+                      if item.get("under_repair") and item.get("adopted_method")]
+            subject = next(item["subject_key"] for item in package["planning_subjects"]
+                           if item["occurrence_id"] == goal["occurrence_id"])
+            if state.get("second_method") is None:
+                [context] = [item for item in contexts if item["subject_key"] == subject]
+                method = relay_script.relay(context)
+                state["second_method"] = (method["method_id"], method["method_version"])
+                return decision(subject, "PROPOSE_METHOD", {"method_proposal": {
+                    "method": method, "rationale": "要求改了：换一个新版本的做法。"}}, "换做法。")
+            alternatives = [item["method_ref"] for item in package["views"]["methods"]
+                            if (item["method_ref"]["id"], item["method_ref"]["semantic_revision"])
+                            == state["second_method"]
+                            and any(report["verdict"] == "APPLICABLE"
+                                    and report["goal_occurrence_id"] == goal["occurrence_id"]
+                                    for report in item.get("applicability", ()))]
+            if not alternatives:
+                return None
+            instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
+                            and item["id"] == goal["adopted_method"]["method_instance_id"])
+            [kept] = [item for item in steps if item["occurrence_id"] in done or item.get("task_id") == state["kept"]]
+            state["replaced"] = True
+            return decision(subject, "REPAIR", {
+                "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+                "replacement_method_ref": dict(alternatives[0]), "bindings": goal["params"],
+                "reuse": {"write": kept["occurrence_id"]}}, "换成新做法，写 a.md 那一步沿用。")
+        if state.get("replaced") and requests and not state["again"]:
+            rejected_tasks = {ref for item in requests for ref in item.get("trigger_refs") or ()}
+            unfinished = [item for item in steps if item["occurrence_id"] not in done
+                          and (item.get("task_id") in rejected_tasks or not rejected_tasks)]
+            if unfinished:
+                state["again"] = True
+                return carried.successor(package, unfinished[-1], "被打回：换掉这一步重做。")
+        if requests:
+            return None
+        return planner_reply(request)
+
+    async def case():
+        provider = carried.HeldStep("b.md", planner=planner, reviewer=reviewer)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 再写 b.md", "idempotency_key": "redo-later-repair",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            first = await _until_first_acceptance(world, mission_id)
+            state["kept"] = str(first.task_id)
+            amend_script.amend(world, mission_id,
+                               [{"op": "rewrite", "criterion_id": "c-user-2", "statement": "file:b2.md"}])
+            provider.go.set()
+            mission = await _settled(world, mission_id, state)
+            events = list(world.store.list_events(mission_id))
+            faults = [e.payload for e in events if e.type == "MissionRoundFault"]
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state, faults[-2:])
+            assert seen.get("rejected") and state["again"]
+            assert not faults
+            assert len(world.store.list_attempts(str(first.task_id))) == 1  # 留下的那一步始终没重做
+            assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
 
     asyncio.run(case())

@@ -989,6 +989,17 @@
     "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
    ],
    "note": "按旧做法批量取消（场景 R01）：被退休做法的孩子一律离开计划，连留下的做法还持有的共用步骤也带走"
+  },
+  {
+   "id": "TG4-07",
+   "source": "F2 联测真机第三局",
+   "file": "src/agent_orchestrator/graph/taskgraph_sharing.py",
+   "original": "                    or child.acceptance_ref not in (entry.acceptance_ref, *entry.earlier_acceptance_refs)",
+   "replacement": "                    or child.acceptance_ref != entry.acceptance_ref",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_redo.py::test_a_later_repair_commits_after_the_kept_step_passed_again"
+   ],
+   "note": "共用核对只认现行那一条验收：留下的步骤重审通过后，再提修复时旧版验收对不上，提交不了"
   }
  ]
 }

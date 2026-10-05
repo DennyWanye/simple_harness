@@ -112,9 +112,13 @@ def eligible_sharing(reader: Any, local: Any, world: Any,
         elif outcome is not OccurrenceOutcome.RUNNING:
             continue
         if accepted is not None:
-            entry = replace(entry, carried=carried, acceptance_ref=TypedRef(kind=TypedRefKind.ACCEPTANCE,
-                id=str(accepted.acceptance_id), revision=accepted.contract_revision,
-                content_hash=sha256_hex(accepted.to_json())))
+            def ref(item: Any) -> TypedRef:
+                return TypedRef(kind=TypedRefKind.ACCEPTANCE, id=str(item.acceptance_id),
+                                revision=item.contract_revision, content_hash=sha256_hex(item.to_json()))
+
+            earlier = () if carried else tuple(
+                ref(item) for item in _earlier_acceptances(reader.store, acceptances, entry, binding, requirement))
+            entry = replace(entry, carried=carried, acceptance_ref=ref(accepted), earlier_acceptance_refs=earlier)
         proof = read_shared_inputs(reader, local, entry, accepted)
         if proof is None:
             continue
@@ -128,14 +132,26 @@ def _kept_acceptance(store: Store, acceptances: Any, entry: SharedGoalEntry, bin
     """The one acceptance a step's accepted result holds under an earlier requirements
     revision, when the step may be kept across the amendment: same Task contract, not
     yet judged under the current revision (the reviewer's rejection ends the candidacy)."""
-    from .assurance_validity import acceptance_id_for
     from .carried_review import rejected
 
     task = store.get_task(str(entry.task_id))
     result_id = None if task is None else task.accepted_result_id
     if not result_id or rejected(store, result_id, int(requirement.revision)):
         return None
-    kept = [item for item in acceptances
+    kept = _earlier_acceptances(store, acceptances, entry, binding, requirement)
+    return max(kept, key=lambda item: int(item.requirements_revision)) if kept else None
+
+
+def _earlier_acceptances(store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any,
+                         requirement: Any) -> list[Any]:
+    """The acceptances the step's accepted result holds under earlier requirements revisions."""
+    from .assurance_validity import acceptance_id_for
+
+    task = store.get_task(str(entry.task_id))
+    result_id = None if task is None else task.accepted_result_id
+    if not result_id:
+        return []
+    return [item for item in acceptances
             if str(item.task_id) == str(entry.task_id)
             and item.obligation_id == entry.obligation_id
             and item.contract_revision == int(binding.contract_revision)
@@ -143,7 +159,6 @@ def _kept_acceptance(store: Store, acceptances: Any, entry: SharedGoalEntry, bin
             and str(item.validity) == "CURRENT"
             and str(item.acceptance_id) == acceptance_id_for(
                 entry.task_id, result_id, int(item.requirements_revision))]
-    return max(kept, key=lambda item: int(item.requirements_revision)) if kept else None
 
 
 class TaskGraphPlanSourceReader:

@@ -237,8 +237,13 @@ class SharedGoalEntry:
     #: The acceptance is of an earlier requirements revision: the step is kept and the
     #: same result is reviewed again under the current ones (TaskGraph 补全第四批).
     carried: bool = False
+    #: The acceptances the same accepted result holds under earlier requirements revisions.
+    #: A slot that named the step while it was carried still quotes one of these after the
+    #: reviewer passed the result again under the current revision; it is the same reuse.
+    earlier_acceptance_refs: tuple[TypedRef, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "earlier_acceptance_refs", tuple(self.earlier_acceptance_refs))
         if self.carried and self.acceptance_ref is None:
             raise ContractError("a carried shared step names the acceptance it was kept with")
         if self.acceptance_ref is not None and not isinstance(self.acceptance_ref, TypedRef):
