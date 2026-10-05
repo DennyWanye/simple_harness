@@ -1,5 +1,5 @@
 {
-  "deployment_id": "a004c0d1e412c0abb9e7ecf1fb85db76639d557a924152c8d64dd800e4a22695",
+  "deployment_id": "e2dd596e68ff2d3a9e303a016de9445fa2cb94954bd2d1589fb5fbf5bb198281",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -426,7 +426,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "4191778a36e699f26a8c09857b1521abb62f21e8db72d7730bf8aa88d926f322",
     "agent_orchestrator/verification/scoped_composition.py": "1f3734a3b0a02364526b2f298939e9dffff54c92a7dbf4bec3cde7f458dec42d",
     "agent_orchestrator/verification/verifier_router.py": "c7729cfc4981c361d2434dc68fe6dc0b9abf3be328058aac1448cd84fdb9499b",
-    "agent_orchestrator/version.py": "2d114794549a7c0a407fb099b88596c2e84562159ba7eeb23ffbf26bae303d28",
+    "agent_orchestrator/version.py": "96e3e533252f5a24a8093cfc09e6b134ed28cc82cd250f43d970d8c2ec240c88",
     "simple_harness/__init__.py": "27bdb10ed441a6b231520cf222a009c75af3635a51b73db54251de6fcec2dd1b",
     "simple_harness/agents/__init__.py": "19ec48c922870a37bc0ad0580c75f97eacc98c59980bab62cd16d96839a03ca6",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -653,7 +653,7 @@
     "simple_harness/tools/runtime_catalog.py": "d5b69cf5bfe81df82cb936e0c6085a2e66e4c597413159ced974b15afb2fbcd2",
     "simple_harness/tools/schema.py": "c582e7b9e9da66428580a2c8495e32a0bd39a6cd250fc42a2aae48d0bdfe39fb",
     "simple_harness/tools/sidecar.py": "40248ff1e49bc3d410bbc852f62591890f358c4fcef80f15cd5c67ed51230393",
-    "simple_harness/version.py": "90b89795406507381e4bd29223be55c251a89304bbc02e318f48ea656b892a0f",
+    "simple_harness/version.py": "92158dde9d49ce9f235ad6d0e9fb5ca0e52670a965fb9cddc622084c8ef5f0df",
     "simple_harness/workflow/__init__.py": "a94748ba3dc727c9f4cbdb78c21afc356ec4fc4272161dbc291db30af12e8025",
     "simple_harness/workflow/adapters.py": "a412322b8575638206cb03410a1cea2b1c14a30bb6c21f5579c65faa33359032",
     "simple_harness/workflow/checkpoint.py": "df380364085afc819e047998355978c6f2e18c6943ebddace481c722e5298886",
