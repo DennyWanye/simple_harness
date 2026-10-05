@@ -597,6 +597,7 @@ class LeafAcceptanceAssembly:
             claims_to_confirm=claims_to_confirm,
             related_entries=related_entries,
             summary_to_confirm=self._summary_section(result_id, package_id),
+            source_versions=self._source_versions_section(mission_id, result_id, package_id),
         )
         if not persist:
             # Assurance freezes the same original package before the reserve/
@@ -611,6 +612,28 @@ class LeafAcceptanceAssembly:
         if stored is None:
             raise StoreError(f"result {result_id} is not recorded")
         return fingerprint(stored.envelope.to_json())
+
+    def _source_versions_section(
+        self, mission_id: str, result_id: str, package_id: str
+    ) -> tuple[dict[str, Any], ...]:
+        """The package's source-versions section (2026-10-05): for each piece of the Mission's
+        reference material the reviewed attempt was dispatched with, the version it held and
+        the version in force now.  Two facts read from the records — whether the difference
+        matters to a criterion is the reviewer's judgement.  Frozen at the first cut."""
+        from ..verification.evidence_resolver import in_source_roots
+
+        try:
+            return tuple(dict(row) for row in self.semantics.get_review_package(package_id).source_versions)
+        except StoreError:
+            pass
+        stored = self.store.get_result(result_id)
+        intent = None if stored is None else self.store.get_intent_for_subject(stored.envelope.attempt_id)
+        used = {} if intent is None else dict(intent.config.get("source_versions") or {})
+        roots = tuple(self.commit.domain_for(mission_id).source_roots)
+        current = {str(row["path"]): str(row["version_hash"])
+                   for row in self.store.list_sources(mission_id, active_only=True)}
+        return tuple({"path": path, "used_version": str(used[path]), "current_version": current.get(path)}
+                     for path in sorted(used) if in_source_roots(path, roots))
 
     def _summary_section(self, result_id: str, package_id: str) -> dict[str, Any] | None:
         """The package's summary section (阶段 C3): the Worker's ``summary`` of the reviewed

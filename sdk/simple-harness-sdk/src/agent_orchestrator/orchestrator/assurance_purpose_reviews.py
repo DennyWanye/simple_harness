@@ -762,10 +762,25 @@ def mission_final_subject(
         output_manifest_hash=output_manifest_hash(
             "MISSION_FINAL", {"contributions": list(contributions)}
         ),
-        material_refs=frozenset(_acceptance_refs(store, contributions) | effects),
+        material_refs=frozenset(
+            _acceptance_refs(store, contributions) | effects | _sources_in_force(store, mission_id, dispatch)
+        ),
         scope_id=scope_ref.pin.id,
     )
     return subject, requirements
+
+
+def _sources_in_force(store: Any, mission_id: str, dispatch: Any) -> set[AssuranceRef]:
+    """The Mission's reference material as it stands now (2026-10-05): the final reviewer judges
+    the delivery against the current version, so it has to be in front of it."""
+    from ..verification.evidence_resolver import in_source_roots
+
+    roots = tuple(dispatch.commit.domain_for(mission_id).source_roots)
+    return {
+        AssuranceRef("source", Pin(str(row["path"]), int(row["revision"]), str(row["version_hash"])))
+        for row in store.list_sources(mission_id, active_only=True)
+        if in_source_roots(str(row["path"]), roots)
+    }
 
 
 def _root_effect_materials(store: Any, mission_id: str, scope_id: str) -> set[AssuranceRef]:

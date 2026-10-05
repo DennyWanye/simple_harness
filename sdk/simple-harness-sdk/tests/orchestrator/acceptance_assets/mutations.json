@@ -1055,6 +1055,39 @@
     "tests/orchestrator/product_world/test_no_planner_round_during_method_review.py"
    ],
    "note": "做法送审、结论没入库时照样开规划轮：规划器只能看到\"审阅中\"，白丢一轮"
+  },
+  {
+   "id": "SRC-01",
+   "source": "联测后补做（2026-10-05 资料换版本裁决）",
+   "file": "src/agent_orchestrator/orchestrator/planning_repair_requests.py",
+   "original": "        refs = tuple(str(step[\"result_id\"]) for step in steps if step[\"status\"] == \"ACCEPTED\")",
+   "replacement": "        refs = tuple(str(step[\"result_id\"]) for step in steps if step[\"status\"] == \"ACCEPTED\" and step[\"cited\"])",
+   "tests": [
+    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits"
+   ],
+   "note": "资料换版后只把引用过它的已通过结果算受影响"
+  },
+  {
+   "id": "SRC-02",
+   "source": "联测后补做（2026-10-05 资料换版本裁决）",
+   "file": "src/agent_orchestrator/orchestrator/root_review.py",
+   "original": "        if source_change_open(self.store, mission_id):",
+   "replacement": "        if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits"
+   ],
+   "note": "终审不等资料变更问完"
+  },
+  {
+   "id": "SRC-03",
+   "source": "联测后补做（2026-10-05 资料换版本裁决）",
+   "file": "src/agent_orchestrator/orchestrator/planning_repair_requests.py",
+   "original": "    kept = status == \"NO_STATE_CHANGE\" and decision_type == \"NO_CHANGE\"",
+   "replacement": "    kept = False",
+   "tests": [
+    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits"
+   ],
+   "note": "规划器答不改不能了结资料变更的请求"
   }
  ]
 }

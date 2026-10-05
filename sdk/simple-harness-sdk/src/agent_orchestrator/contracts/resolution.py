@@ -785,6 +785,7 @@ _CLAIM_TO_CONFIRM_KEYS = ("claim_id", "content", "content_sha256", "evidence")
 _METHOD_TO_JUDGE_KEYS = ("method_ref", "goal", "based_on", "method")
 _SUMMARY_TO_CONFIRM_KEYS = ("result_ref", "summary", "summary_sha256")
 _RELATED_ENTRY_KEYS = ("kind", "id", "version", "content_sha256", "content", "status", "source_task")
+_SOURCE_VERSION_KEYS = ("path", "used_version", "current_version")
 
 
 def _package_rows(value: object, name: str, keys: tuple[str, ...]) -> tuple[Mapping[str, Any], ...]:
@@ -847,6 +848,10 @@ class ReviewPackage:
     #: 本步待核对摘要（阶段 C3，只在步骤内容审查包里）：``result_ref``（结果指纹）/ ``summary``
     #: （执行者写的摘要原文）/ ``summary_sha256``。审阅员在回复的 ``summary`` 里说它是否忠实。
     summary_to_confirm: Mapping[str, Any] | None = None
+    #: 资料版本（只在步骤内容审查包里，任务带了资料时）：每份资料一行——``path`` / ``used_version``
+    #: （执行者这次尝试派发时拿到的版本）/ ``current_version``（切包时的现行版本；资料已撤销为 None）。
+    #: 两个版本不同，说明资料在执行期间或之后换过；现行版本的正文在证据里。
+    source_versions: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -860,6 +865,8 @@ class ReviewPackage:
             self.related_entries, "package.related_entries", _RELATED_ENTRY_KEYS))
         object.__setattr__(self, "methods_to_judge", _package_rows(
             self.methods_to_judge, "package.methods_to_judge", _METHOD_TO_JUDGE_KEYS))
+        object.__setattr__(self, "source_versions", _package_rows(
+            self.source_versions, "package.source_versions", _SOURCE_VERSION_KEYS))
         if self.summary_to_confirm is not None:
             [row] = _package_rows([self.summary_to_confirm], "package.summary_to_confirm",
                                   _SUMMARY_TO_CONFIRM_KEYS)
@@ -990,6 +997,8 @@ class ReviewPackage:
                if self.methods_to_judge else {}),
             **({"summary_to_confirm": dict(self.summary_to_confirm)}
                if self.summary_to_confirm is not None else {}),
+            **({"source_versions": [dict(row) for row in self.source_versions]}
+               if self.source_versions else {}),
         }
 
     def content_hash(self) -> str:
@@ -1017,6 +1026,7 @@ class ReviewPackage:
                 "related_entries",
                 "methods_to_judge",
                 "summary_to_confirm",
+                "source_versions",
             ),
         )
 
@@ -1063,6 +1073,7 @@ class ReviewPackage:
             related_entries=tuple(data.get("related_entries", ())),
             methods_to_judge=tuple(data.get("methods_to_judge", ())),
             summary_to_confirm=data.get("summary_to_confirm"),
+            source_versions=tuple(data.get("source_versions", ())),
         )
 
 

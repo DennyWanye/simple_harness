@@ -160,6 +160,16 @@ def ensure_task_content_review(
             AssuranceRef("artifact", Pin(item.id, item.revision, item.content_hash))
             for item in projection.artifacts
         )
+        # 资料的现行版本进初始证据（2026-10-05 真机：资料换版后审阅员手里没有资料正文，旧版内容照样
+        # 判通过）。只带这次尝试派发时挂过的那几份；用的版本与现行版本各是什么写在审查包里。
+        in_force = {str(row["path"]): row for row in store.list_sources(mission_id, active_only=True)}
+        refs.update(
+            AssuranceRef("source", Pin(row["path"], int(in_force[row["path"]]["revision"]),
+                                       str(row["current_version"])))
+            for row in package.source_versions
+            if row["current_version"] is not None and row["path"] in in_force
+            and str(in_force[row["path"]]["version_hash"]) == row["current_version"]
+        )
         for document in policies:
             policy_contract = CriterionPolicy.from_json(document)
             refs.update(ref for group in policy_contract.any_check_sets for ref in group)

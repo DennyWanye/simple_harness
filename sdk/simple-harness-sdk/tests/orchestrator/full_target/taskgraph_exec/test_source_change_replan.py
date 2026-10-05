@@ -1,11 +1,9 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""架构方案 B（2026-09-30）：资料换版本 / 撤销 → 重新规划；修复请求由系统消费。
+"""资料换版本 / 撤销 → 什么时候问规划器、什么时候只记一笔（2026-09-30 方案 B，2026-10-05 裁决改写）。
 
-此前 ``SourceSuperseded`` / ``SourceRevoked`` 编排器里无人听：换了资料，已排好的计划不动；
-用到旧版的步骤要等跑到验收才失败。现在：换版本后，只对**有证据**的受影响对象（正在跑、
-冻结了旧版的尝试；引用了旧版的已通过结果）发一条"证据失效"修复请求；新登记资料不发请求；
-影响范围里的叶子步骤都在请求之后重新验收通过时，系统记"已处理"，不再逼规划器开新轮。
+拿着旧版还在跑的尝试：等它跑完再评估。跑完后：有已通过的步骤是拿旧版做的 → 一条请求交给规划器
+（见 ``product_world/test_source_change.py``）；没有 → 只记一条评估，不发请求。新登记资料不发请求。
 
 产品同形部署上的真实编排器、执行图与执行者派发；只有模型回复是脚本。
 """
@@ -55,7 +53,7 @@ def _source_requests(loop, mission_id: str):  # type: ignore[no-untyped-def]
     return [e for e in _events(loop, mission_id, REQUESTED) if str(e.payload["source_key"]).startswith("source:")]
 
 
-def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_system_settles_it_after_reacceptance(tmp_path):
+def test_a_superseded_source_waits_for_the_running_attempt_and_is_only_noted_when_no_step_passed_on_it(tmp_path):
     async def case():  # type: ignore[no-untyped-def]
         async with enabled_world(tmp_path, key="tg-source-replan", worker=_worker(), hold_worker=True) as world:
             loop, mission = world.loop, world.mission
@@ -69,7 +67,7 @@ def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_sy
             assert collect_triggers(loop, mission) is False and not _events(loop, mission.id, REQUESTED)
 
             # 换版本（经一次批准）。尝试还在跑：**先不评估**（2026-09-30 真机：当轮发请求，规划器只会
-            # 回 WAIT 等它跑完，修复轮又拒绝 WAIT，白花两轮；跑完后验收本来就对照当前资料）。
+            # 回 WAIT 等它跑完，修复轮又拒绝 WAIT，白花两轮）。
             proposal = control.supersede_source({"mission_id": mission.id, "path": PATH, "content": "region,amount\n华东,2\n",
                                                  "kind": "text", "idempotency_key": "sup-data-1",
                                                  "expected_version_hash": first["version_hash"]})
@@ -88,11 +86,12 @@ def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_sy
             await world.run_worker()
             assert loop.store.get_attempt(attempt.id).status in TERMINAL_ATTEMPT
             collect_triggers(loop, mission)
-            # 现在评估：拿着旧版跑过的尝试记在案，通过的结果没有引用它 → 只记评估、不发资料请求
+            # 现在评估：拿着旧版跑过的这一步没有通过验收 → 只记评估、不发资料请求
             [assessed] = _events(loop, mission.id, SOURCE_CHANGE_ASSESSED)
             assert assessed.payload["reason"] == "source_superseded"
             assert assessed.payload["old_version"] == first["version_hash"]
-            assert assessed.payload["affected"] == {"attempts_on_old_version": [attempt.id], "accepted_results": []}
+            [step] = assessed.payload["steps_on_old_version"]
+            assert (step["attempt_id"], step["cited"]) == (attempt.id, False) and step["status"] != "ACCEPTED"
             assert not _source_requests(loop, mission.id)
             assert [e.payload["source_key"] for e in _events(loop, mission.id, REQUESTED)] == [
                 "event:" + next(e.idempotency_key for e in _events(loop, mission.id, "VerificationFailed"))]
@@ -107,8 +106,7 @@ def test_a_superseded_source_reopens_planning_for_the_running_attempt_and_the_sy
             control.decide(second["request_id"], "approve", nonce="approve-sup-2")
             collect_triggers(loop, mission)
             assert not _source_requests(loop, mission.id)
-            assert [e.payload["affected"] for e in _events(loop, mission.id, SOURCE_CHANGE_ASSESSED)][-1] == {
-                "attempts_on_old_version": [], "accepted_results": []}
+            assert [e.payload["steps_on_old_version"] for e in _events(loop, mission.id, SOURCE_CHANGE_ASSESSED)][-1] == []
             assert len(_events(loop, mission.id, SOURCE_CHANGE_ASSESSED)) == 2
 
     asyncio.run(case())

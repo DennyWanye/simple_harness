@@ -705,6 +705,15 @@ class RootReviewCoordinator:
                 task_id=str(binding.task_id),
                 obligation_id=str(binding.obligation_id),
             )
+        from .planning_repair_requests import source_change_open
+
+        if source_change_open(self.store, mission_id):
+            return RootReviewState(
+                status=RootReviewStatus.NOT_READY,
+                detail="a source change is still being assessed or awaits the planner's answer",
+                task_id=str(binding.task_id),
+                obligation_id=str(binding.obligation_id),
+            )
         latest = semantics.latest_requirements_revision(mission_id)
         current = 0 if latest is None else int(latest.revision)
         contributions = self.contributions(mission_id)
