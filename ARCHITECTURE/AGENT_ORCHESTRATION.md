@@ -1,6 +1,7 @@
-最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.156）。**时钟水位落库规则；重审的验证记录事件。**
+最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.157）。**时钟水位落库规则；重审的验证记录事件。**
 - `orchestrator/assurance_clock.observe_assurance_clock`：最高水位在进程内精确保存（`CommitService._assurance_clock_seen`），库里那一行与回执只在发现回拨、恢复、正常前进累计满 `CLOCK_PERSIST_STEP_MS`（10 秒）时写。原来每前进 1 毫秒写一条（真机两小时 8.6 万条回执、库 162 MB）。重启后以库值为准，最多少记 10 秒。裁决见 `plans/2026-09-27-desktop-next/HTN补齐-阶段F2-联测记录.md`。
 - `commit_service.record_verification_layer`：`VerificationLayerRecorded` 的键带要求版本——按新版重审时与旧版一字不差的一层也有自己的事件，从事件重建与库一致。
+- 规划器提示词 `planner-hierarchical-v25`：讲“等待”这种决定时写明 payload 的两个必填字段（`wait_for`、`reason`）；守护用例 `tests/orchestrator/product_world/test_planner_prompt_fields.py`。
 - 说明：opt.155 是一次空发版（合并没成功就跑了发版脚本，内容与 opt.154 相同），以 opt.156 为准。
 
 （上一条）最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.155）。**时钟水位落库规则；重审的验证记录事件。**
