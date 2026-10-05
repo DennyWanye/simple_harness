@@ -3101,6 +3101,12 @@ class Orchestrator:
             pending = [e for e in events if e.type in service_types and needs_resume(e)]
             if not pending:
                 return False
+            # 本任务有做法正在送审、结论还没入库：这时开一轮规划，规划器看到的只能是"审阅中"，
+            # 采用不了、也没有别的可做（联测真机：它只好选等待，等待又被退回，白丢一轮）。等结论
+            # 入库（PlanningMethodReviewed）再开，别的待处理请求那时一并交给它。
+            from .method_plan_reviews import awaiting as method_review_awaiting
+            if method_review_awaiting(self.store, mission.id):
+                return False
             if self._planning_ladder_spent(mission.id):
                 self._stop_planning_round(mission.id, reason="planning_bound_reached",
                     detail={"phase": "planning_service_resume"}, stop_reason=MissionStopReason.PLANNING_FAILED)

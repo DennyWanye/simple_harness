@@ -1044,6 +1044,17 @@
     "tests/orchestrator/product_world/test_planner_prompt_fields.py"
    ],
    "note": "规划器提示词讲\"等待\"时不提必填的 reason"
+  },
+  {
+   "id": "PLN-01",
+   "source": "F2 联测真机（做法在审时又开规划轮）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            if method_review_awaiting(self.store, mission.id):\n                return False\n            if self._planning_ladder_spent(mission.id):",
+   "replacement": "            if False and method_review_awaiting(self.store, mission.id):\n                return False\n            if self._planning_ladder_spent(mission.id):",
+   "tests": [
+    "tests/orchestrator/product_world/test_no_planner_round_during_method_review.py"
+   ],
+   "note": "做法送审、结论没入库时照样开规划轮：规划器只能看到\"审阅中\"，白丢一轮"
   }
  ]
 }

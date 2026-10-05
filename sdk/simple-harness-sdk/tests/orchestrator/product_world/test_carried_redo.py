@@ -343,6 +343,14 @@ def test_a_later_repair_commits_after_the_kept_step_passed_again(tmp_path):
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state, faults[-2:])
             assert seen.get("rejected") and state["again"]
             assert not faults
+            # 做法送审到结论入库之间不开规划轮（那一轮规划器只能看到"审阅中"，无事可做）
+            proposed = {e.payload["decision_id"]: e.seq for e in events
+                        if e.type == "PlanningMethodProposed" and e.payload.get("assurance_review_key")}
+            reviewed = {e.payload["decision_id"]: e.seq for e in events if e.type == "PlanningMethodReviewed"}
+            assert len(proposed) == 2 and set(proposed) == set(reviewed)
+            resumed = [e.seq for e in events if e.type == "PlanningServiceResumed"]
+            for decision_id, start in proposed.items():
+                assert not [seq for seq in resumed if start < seq < reviewed[decision_id]], decision_id
             assert len(world.store.list_attempts(str(first.task_id))) == 1  # 留下的那一步始终没重做
             assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
 
