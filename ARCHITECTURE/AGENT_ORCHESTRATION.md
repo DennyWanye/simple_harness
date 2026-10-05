@@ -1,4 +1,9 @@
-最后更新：2026-10-05 CST（联合测试修补，SDK opt.153）。**改要求后重审的人裁决：裁决回执的对象是那份结果。**
+最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.154）。**沿用步骤重审通过后再修复；共用核对没过退回规划器。**
+- `SharedGoalEntry.earlier_acceptance_refs`（`taskgraph_plan_sources.eligible_sharing` 填）：一份结果在旧版要求下的验收。`taskgraph_sharing.validate_sharing` 把它们与现行验收同等看待——点名沿用时引的是旧版那条，重审通过后仍是同一次沿用。
+- `event_handler._collect_plan_decision`：冻结执行图候选时共用秩序核对没过（`TASKGRAPH_SHARED_*` / `TASKGRAPH_REUSE_*`），记为这份决定被退回（`REUSE_NOT_ALLOWED`，说明里带原代码），不再当一轮故障原地重试。
+- Host `orchestration/chat_tool.py`：`mission_start` / `mission_amend` 的说明写明 `file:` 后面只写路径。
+
+（上一条）最后更新：2026-10-05 CST（联合测试修补，SDK opt.153）。**改要求后重审的人裁决：裁决回执的对象是那份结果。**
 - `event_handler._ask_carried_ruling`：沿用步骤按新要求重审判不下来时请人裁决，裁决回执（`AssuranceReviewAdjudicated`）的对象写结果编号——内容审阅判的是结果，写新版验收时使用凭证只认对象一致的裁决。人判通过 → 新版验收；判打回 → 修复请求交规划器。
 - 验收资产：`tests/orchestrator/acceptance_assets/`（来源表 24 行、崩溃切点 18 行、改坏清单 89 条），执行器 `scripts/acceptance/run_mutations.py`；联测记录 `plans/2026-09-27-desktop-next/HTN补齐-阶段F2-联测记录.md`。
 
