@@ -163,6 +163,9 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         "mission_amend",
         # 阶段 C3：查看 / 退役全库做法——用户开口就要能用，三个字段。
         "method_library",
+        # 2026-10-05：查有哪些后台任务（只读，一个可选字段）；把任务的资料换成新版本（四个字段，仍等人批准）。
+        "mission_list",
+        "mission_source_update",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose
@@ -1958,6 +1961,10 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return f"在任务编排里新建后台任务「{_clip(args.get('goal'), 60)}」"
     if tool_name == "mission_status":
         return "查看后台任务的进度"
+    if tool_name == "mission_list":
+        return "查看有哪些后台任务"
+    if tool_name == "mission_source_update":
+        return f"把后台任务的资料 {_clip(args.get('path'), 60)} 换成新版本（提交后仍需你批准）"
     if tool_name == "mission_amend":
         changes = [c for c in args.get("changes") or () if isinstance(c, dict)]
         count = {op: sum(1 for c in changes if c.get("op") == op) for op in ("add", "rewrite", "remove")}

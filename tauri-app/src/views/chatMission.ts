@@ -6,10 +6,10 @@ import { asRecord as record, asText as text, type MissionsChannel } from "../sto
 /** App 把任务页用的那条连接放进来；对话卡片与任务页同路。 */
 export const MissionsChannelContext = createContext<MissionsChannel | null>(null);
 
-/** 结果会在对话里显示成任务卡片的工具：发起后台任务、改后台任务的要求。 */
-export const MISSION_CARD_TOOLS = new Set(["mission_start", "mission_amend"]);
+/** 结果会在对话里显示成任务卡片的工具：发起后台任务、改后台任务的要求、换后台任务的资料。 */
+export const MISSION_CARD_TOOLS = new Set(["mission_start", "mission_amend", "mission_source_update"]);
 
-/** mission_start / mission_amend 的工具结果（JSON 文本，可能包一层）里的 mission_id。 */
+/** 这些工具的结果（JSON 文本，可能包一层）里的 mission_id。 */
 export function missionIdFromToolResult(raw: string | undefined): string {
   if (!raw) return "";
   try {

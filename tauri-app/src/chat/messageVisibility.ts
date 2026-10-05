@@ -1,5 +1,6 @@
 import { extractArtifactsFromResult } from "../code-panel/ArtifactCard";
 import type { Message } from "../stores/sessionsStore";
+import { MISSION_CARD_TOOLS } from "../views/chatMission";
 
 /** Message page policy: tool execution trace is visible on every open. */
 export const DEFAULT_HIDE_TOOL_TRACE = false;
@@ -31,6 +32,6 @@ export function shouldHideToolTrace(message: Message, hideTools: boolean): boole
   if (message.role !== "tool_result") return false;
   if (message.tool_ok === false || !message.tool_result) return true;
   // 后台任务卡片是给人看的（进度与待确认/批准），不是执行痕迹
-  if (message.tool_name === "mission_start" || message.tool_name === "mission_amend") return false;
+  if (message.tool_name && MISSION_CARD_TOOLS.has(message.tool_name)) return false;
   return extractArtifactsFromResult(message.tool_result).length === 0;
 }

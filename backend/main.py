@@ -8759,6 +8759,79 @@ async def _build_product_sdk_runtime_stack(
             },
         ),
     )
+    # 2026-10-05：主 Agent 查有哪些后台任务（任务页建的它也要找得到）。
+    from deskpet.orchestration.chat_tool import (
+        MISSION_LIST_DESCRIPTION,
+        MISSION_LIST_SCHEMA,
+        MISSION_LIST_TOOL_NAME,
+        mission_list,
+    )
+
+    async def mission_list_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = mission_list(lambda: service_context.get("orchestration"), arguments)
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=MISSION_LIST_TOOL_NAME,
+            description=MISSION_LIST_DESCRIPTION,
+            input_schema=MISSION_LIST_SCHEMA,
+            handler=mission_list_handler,
+            dispatch_kind="async",
+            permission_category="mission_list",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-mission-list",
+                "version": "1",
+                "stable_handler_id": "core.mission_list.v1",
+            },
+        ),
+    )
+    # 2026-10-05：主 Agent 替用户把任务的资料换成新版本（变更仍等人批准）。
+    from deskpet.orchestration.chat_tool import (
+        MISSION_SOURCE_UPDATE_DESCRIPTION,
+        MISSION_SOURCE_UPDATE_SCHEMA,
+        MISSION_SOURCE_UPDATE_TOOL_NAME,
+        update_mission_source,
+    )
+
+    async def mission_source_update_handler(arguments, _context):
+        from simple_harness.tools import ToolResult
+
+        try:
+            value = update_mission_source(
+                lambda: service_context.get("orchestration"),
+                arguments,
+                run_id=str(_context.run_id),
+                call_id=str(_context.call_id or _context.request_id),
+            )
+        except MissionStartRefused as refused:
+            return ToolResult.failed(_context.call_id, refused.code, str(refused), retryable=refused.retryable)
+        return ToolResult.succeeded(_context.call_id, value)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name=MISSION_SOURCE_UPDATE_TOOL_NAME,
+            description=MISSION_SOURCE_UPDATE_DESCRIPTION,
+            input_schema=MISSION_SOURCE_UPDATE_SCHEMA,
+            handler=mission_source_update_handler,
+            dispatch_kind="async",
+            permission_category="mission_source_update",
+            projectless_admission="safe",
+            metadata={
+                "source": "product-mission-source-update",
+                "version": "1",
+                "stable_handler_id": "core.mission_source_update.v1",
+            },
+        ),
+    )
     # 阶段 C3：主 Agent 替用户查看全库做法、按用户的话退役一条。
     from deskpet.orchestration.chat_tool import (
         METHOD_LIBRARY_DESCRIPTION,

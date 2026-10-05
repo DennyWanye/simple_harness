@@ -22,6 +22,8 @@ from typing import Any
 MISSION_START_TOOL_NAME = "mission_start"
 MAX_CRITERIA = 12
 MAX_TEXT = 4000
+MAX_SOURCES = 8
+MAX_SOURCE_TEXT = 200_000
 
 MISSION_START_DESCRIPTION = (
     "Start a background task (Mission) on the task orchestration page. Use it only when the user "
@@ -30,7 +32,10 @@ MISSION_START_DESCRIPTION = (
     "must achieve; success_criteria are checkable completion conditions, one per item. An item is "
     "plain text, or 'file:<relative path>' when that file must be delivered: after 'file:' write the "
     "path only (for example 'file:report.md') and say what the file must contain in goal or in a "
-    "separate plain-text item, never inside the 'file:' item. The result "
+    "separate plain-text item, never inside the 'file:' item. sources (optional) attaches reference "
+    "material the task must work from: each is {path, content} — a file name such as "
+    "'requirements.md' and the full text; pass it when the user gives or points to material the "
+    "task should read, and use mission_source_update later if that material changes. The result "
     "gives the mission_id; progress, approvals and results are on the task orchestration page. "
     "Publishing or other external actions still wait for the user's confirmation there. "
     "To have a produced file published into the user's authorized publish directory, add one criterion "
@@ -46,6 +51,10 @@ MISSION_START_SCHEMA: dict[str, Any] = {
         "goal": {"type": "string"},
         "success_criteria": {"type": "array", "items": {"type": "string"}, "minItems": 1,
                              "maxItems": MAX_CRITERIA},
+        "sources": {"type": "array", "maxItems": MAX_SOURCES, "items": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"], "additionalProperties": False}},
     },
     "required": ["goal", "success_criteria"],
     "additionalProperties": False,
@@ -58,23 +67,49 @@ class MissionStartRefused(ValueError):
         super().__init__(message)
 
 
-def _request(arguments: Mapping[str, Any], *, run_id: str, call_id: str) -> dict[str, Any]:
+def _source_path(value: Any) -> str:
+    """资料路径与任务页同一写法：统一放在 ``sources/`` 下。"""
+    if not isinstance(value, str) or not value.strip().strip("/"):
+        raise MissionStartRefused("invalid_arguments", "资料的 path 必须是文件名，例如 requirements.md")
+    path = value.strip().lstrip("/")
+    return path if path.startswith("sources/") else "sources/" + path
+
+
+def _source_kind(path: str) -> str:
+    return "markdown" if path.lower().endswith(".md") else "text"
+
+
+def _source_content(value: Any) -> str:
+    if not isinstance(value, str) or not value or len(value) > MAX_SOURCE_TEXT:
+        raise MissionStartRefused("invalid_arguments", f"资料的 content 必须是非空文字（最多 {MAX_SOURCE_TEXT} 字）")
+    return value
+
+
+def _request(arguments: Mapping[str, Any], *, run_id: str, call_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     goal = arguments.get("goal")
     criteria = arguments.get("success_criteria")
-    if set(arguments) - {"goal", "success_criteria"}:
-        raise MissionStartRefused("invalid_arguments", "只接受 goal 与 success_criteria")
+    sources = arguments.get("sources", [])
+    if set(arguments) - {"goal", "success_criteria", "sources"}:
+        raise MissionStartRefused("invalid_arguments", "只接受 goal、success_criteria 与 sources")
     if not isinstance(goal, str) or not goal.strip() or len(goal) > MAX_TEXT:
         raise MissionStartRefused("invalid_arguments", "goal 必须是非空文字")
     if (not isinstance(criteria, list) or not 1 <= len(criteria) <= MAX_CRITERIA
             or not all(isinstance(c, str) and c.strip() and len(c) <= MAX_TEXT for c in criteria)):
         raise MissionStartRefused("invalid_arguments", f"success_criteria 需要 1～{MAX_CRITERIA} 条非空文字")
-    return {"goal": goal.strip(), "success_criteria": [c.strip() for c in criteria],
-            "idempotency_key": f"chat-mission:{run_id}:{call_id}"}
+    if (not isinstance(sources, list) or len(sources) > MAX_SOURCES
+            or not all(isinstance(s, Mapping) and set(s) == {"path", "content"} for s in sources)):
+        raise MissionStartRefused("invalid_arguments", f"sources 最多 {MAX_SOURCES} 份，每份是 path 与 content")
+    attached = [{"path": _source_path(s["path"]), "content": _source_content(s["content"]),
+                 "kind": _source_kind(str(s["path"]))} for s in sources]
+    if len({s["path"] for s in attached}) != len(attached):
+        raise MissionStartRefused("invalid_arguments", "sources 里的 path 不能重复")
+    return ({"goal": goal.strip(), "success_criteria": [c.strip() for c in criteria],
+             "idempotency_key": f"chat-mission:{run_id}:{call_id}"}, attached)
 
 
 def start_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any], *,
                   run_id: str, call_id: str) -> dict[str, Any]:
-    request = _request(arguments, run_id=run_id, call_id=call_id)
+    request, sources = _request(arguments, run_id=run_id, call_id=call_id)
     service = service_getter()
     if service is None:
         raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
@@ -85,7 +120,8 @@ def start_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
     from .service import OrchestrationRequestError
 
     try:
-        receipt = service.create_mission(request)
+        receipt = (service.create_mission_with_sources({"mission": request, "sources": sources})
+                   if sources else service.create_mission(request))
     except OrchestrationRequestError as error:
         raise MissionStartRefused(str(error.code), str(error)) from error
     mission_id = str(receipt["mission_id"])
@@ -99,6 +135,7 @@ def start_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
         "mission_id": mission_id,
         "created": bool(receipt.get("created")),
         "status": state,
+        "sources": [s["path"] for s in sources],
         "where": "任务编排页",
         "note": ("已在后台创建任务；进度、需要你确认的完成要求与发布批准都在任务编排页。"
                  if receipt.get("created") else "这次调用对应的任务早已创建，没有重复创建。"),
@@ -114,8 +151,10 @@ MISSION_STATUS_TOOL_NAME = "mission_status"
 MISSION_STATUS_DESCRIPTION = (
     "Read the current state of a background task (Mission) started with mission_start: its status, "
     "what it is waiting for (for example the user confirming completion requirements or approving "
-    "a publish), how many steps are done, which files were published, and its current requirements "
-    "(revision number and each entry's id — read them before mission_amend). Read-only: you cannot "
+    "a publish), how many steps are done, which files were published, its current requirements "
+    "(revision number and each entry's id — read them before mission_amend) and its reference "
+    "material (each path with its current version_hash — read it before mission_source_update). "
+    "If you do not know the mission_id, call mission_list first. Read-only: you cannot "
     "confirm or approve anything with it — the user does that themselves on the task card in this "
     "chat or on the task orchestration page."
 )
@@ -138,6 +177,9 @@ def _approval_line(approval: Mapping[str, Any]) -> str:
     target = str(summary.get("target") or action.get("target") or "")
     if (summary.get("connector") or action.get("connector")) == "file_publish":
         return f"等用户批准发布 {target}"
+    if approval.get("kind") == "source_change":
+        change = approval.get("source_change") if isinstance(approval.get("source_change"), Mapping) else {}
+        return f"等用户批准资料变更 {change.get('path') or ''}"
     return f"等用户处理审批（{approval.get('kind') or '未知'}{'：' + target if target else ''}）"
 
 
@@ -177,6 +219,10 @@ def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, An
             "revision": (workspace.get("requirements_ref") or {}).get("revision"),
             "criteria": [{"id": c.get("id"), "statement": c.get("statement")}
                          for c in workspace.get("criteria") or ()]}),
+        # 现行资料（换资料前先读这里：路径与当前版本号）
+        "sources": [{"path": s.get("path"), "version_hash": s.get("version_hash")}
+                    for s in detail.get("sources") or ()
+                    if s.get("revoked") is not True and not s.get("superseded_by")],
         "waiting_for": waiting,
         "steps": {"total": len(work), "done": sum(1 for t in work if t.get("status") in _DONE_TASKS)},
         "published": published,
@@ -267,6 +313,114 @@ def amend_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
     }
 
 
+# ------------------------------------------------------------------ mission_list
+# 2026-10-05 用户决定：任务不一定是主 Agent 自己建的（任务页也能建），它要能查到有哪些任务。
+
+MISSION_LIST_TOOL_NAME = "mission_list"
+
+MISSION_LIST_DESCRIPTION = (
+    "List the user's recent background tasks (Missions), newest first: mission_id, goal, status and "
+    "how many approvals are waiting for the user. Use it when the user refers to a background task "
+    "whose mission_id you do not have (for example one they created on the task orchestration page), "
+    "then use mission_status with the id. Read-only."
+)
+
+MISSION_LIST_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}},
+    "additionalProperties": False,
+}
+
+
+def mission_list(service_getter: Callable[[], Any], arguments: Mapping[str, Any]) -> dict[str, Any]:
+    limit = arguments.get("limit", 10)
+    if set(arguments) - {"limit"} or type(limit) is not int or not 1 <= limit <= 50:
+        raise MissionStartRefused("invalid_arguments", "只接受 limit（1～50 的整数，可不填）")
+    service = service_getter()
+    if service is None:
+        raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
+    from .service import OrchestrationRequestError
+
+    try:
+        rows = service.list_missions(limit=limit)
+    except OrchestrationRequestError as error:
+        raise MissionStartRefused(str(error.code), str(error)) from error
+    return {"missions": [
+        {"mission_id": row.get("mission_id"), "goal": row.get("goal"), "status": row.get("status"),
+         "status_zh": _STATUS_ZH.get(str(row.get("status")), str(row.get("status") or "未知")),
+         "created_at": row.get("created_at"), "pending_approvals": row.get("pending_approvals")}
+        for row in rows],
+        "note": "按创建时间从新到旧；用 mission_status 看某一个任务的进度、要求与资料。"}
+
+
+# ------------------------------------------------------------------ mission_source_update
+# 2026-10-05 用户决定：任务跑到一半资料出了新版本，用户在对话里说一声就行。主 Agent 只是把新正文
+# 交上去；变更照旧生成一条等人批准的申请（任务卡片 / 任务编排页），批准后系统让用到旧版的步骤失效重做。
+
+MISSION_SOURCE_UPDATE_TOOL_NAME = "mission_source_update"
+
+MISSION_SOURCE_UPDATE_DESCRIPTION = (
+    "Replace one piece of a background task's reference material with a new version. Use it only "
+    "when the user says material a running task works from has changed and gives the new text. "
+    "First call mission_status to read the task's sources (each path and its current version_hash), "
+    "then pass that path, expected_version_hash and the full new content. The change does not take "
+    "effect by itself: it becomes a request the user approves on the task card or the task "
+    "orchestration page; after approval the task re-plans, and steps done from the old version may be "
+    "redone. You cannot approve it."
+)
+
+MISSION_SOURCE_UPDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "mission_id": {"type": "string"},
+        "path": {"type": "string"},
+        "expected_version_hash": {"type": "string"},
+        "content": {"type": "string"},
+    },
+    "required": ["mission_id", "path", "expected_version_hash", "content"],
+    "additionalProperties": False,
+}
+
+
+def update_mission_source(service_getter: Callable[[], Any], arguments: Mapping[str, Any], *,
+                          run_id: str, call_id: str) -> dict[str, Any]:
+    mission_id, expected = arguments.get("mission_id"), arguments.get("expected_version_hash")
+    if (set(arguments) != {"mission_id", "path", "expected_version_hash", "content"}
+            or not isinstance(mission_id, str) or not mission_id.strip()
+            or not isinstance(expected, str) or not expected.strip()):
+        raise MissionStartRefused(
+            "invalid_arguments", "需要 mission_id、path、expected_version_hash（mission_status 给出的）与 content")
+    path, content = _source_path(arguments.get("path")), _source_content(arguments.get("content"))
+    service = service_getter()
+    if service is None:
+        raise MissionStartRefused("orchestration_unavailable", "任务编排服务没有启动", retryable=True)
+    from .service import OrchestrationRequestError
+
+    try:
+        detail = service.mission_detail(mission_id.strip())
+        current = [s for s in detail.get("sources") or ()
+                   if s.get("path") == path and s.get("revoked") is not True and not s.get("superseded_by")]
+        if not current:
+            raise MissionStartRefused("SOURCE_UNKNOWN", f"这个任务没有现行资料 {path}；先用 mission_status 看它有哪些资料")
+        if current[0].get("version_hash") != expected.strip():
+            raise MissionStartRefused(
+                "SOURCE_VERSION_STALE", f"{path} 的现行版本已不是你读到的那一版；先用 mission_status 读最新的再换")
+        receipt = service.source_command("supersede", {
+            "mission_id": mission_id.strip(), "path": path, "content": content,
+            "kind": str(current[0].get("kind") or _source_kind(path)),
+            "expected_version_hash": expected.strip(),
+            "idempotency_key": f"chat-source:{run_id}:{call_id}"})
+    except OrchestrationRequestError as error:
+        raise MissionStartRefused(str(error.code), str(error)) from error
+    return {
+        "mission_id": mission_id.strip(), "path": path,
+        "new_version_hash": receipt.get("version_hash"), "state": receipt.get("state"),
+        "approval_request_id": receipt.get("request_id"),
+        "where": "任务编排页",
+        "note": "资料变更已提交，等用户在任务卡片或任务编排页批准；批准后任务会按新版资料重新规划。你不能代为批准。",
+    }
+
+
 # ------------------------------------------------------------------ method_library
 # 阶段 C3：全库做法（以前的任务交付成功、审阅员判为可复用的做法，给以后的任务当先例）。
 # 主 Agent 可以替用户列出来、按用户的话退役一条；确认规矩与建任务、改要求相同。
@@ -330,7 +484,10 @@ def method_library(service_getter: Callable[[], Any], arguments: Mapping[str, An
             "note": "这条全库做法已退役，之后不再列给新任务；已经在跑的任务不受影响。"}
 
 
-__all__ = ("MISSION_AMEND_DESCRIPTION", "MISSION_AMEND_SCHEMA", "MISSION_AMEND_TOOL_NAME", "amend_mission",
+__all__ = ("MISSION_LIST_DESCRIPTION", "MISSION_LIST_SCHEMA", "MISSION_LIST_TOOL_NAME", "mission_list",
+           "MISSION_SOURCE_UPDATE_DESCRIPTION", "MISSION_SOURCE_UPDATE_SCHEMA",
+           "MISSION_SOURCE_UPDATE_TOOL_NAME", "update_mission_source",
+           "MISSION_AMEND_DESCRIPTION", "MISSION_AMEND_SCHEMA", "MISSION_AMEND_TOOL_NAME", "amend_mission",
            "METHOD_LIBRARY_DESCRIPTION", "METHOD_LIBRARY_SCHEMA", "METHOD_LIBRARY_TOOL_NAME", "method_library",
            "MISSION_START_DESCRIPTION", "MISSION_START_SCHEMA", "MISSION_START_TOOL_NAME",
            "MISSION_STATUS_DESCRIPTION", "MISSION_STATUS_SCHEMA", "MISSION_STATUS_TOOL_NAME",

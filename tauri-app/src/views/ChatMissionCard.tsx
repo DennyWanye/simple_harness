@@ -158,10 +158,15 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
           <div key={approvalId} style={{ ...box, borderColor: tokens.color.surface.hairline }} data-testid={`chat-approval-${approvalId}`}>
             {text(approval.kind) === "action" ? (
               <ActionApprovalSummary summary={approval.summary} action={approval.action} />
+            ) : text(approval.kind) === "source_change" ? (
+              <div>
+                {text(record(approval.source_change).operation) === "revoke" ? "撤销资料" : "把资料换成新版本"}：
+                {text(record(approval.source_change).path)}。批准后，用到旧版的步骤会重新规划。
+              </div>
             ) : (
               <div>有一项审批等你处理（{text(approval.kind) || "未知"}），请到任务编排页处理。</div>
             )}
-            {text(approval.kind) === "action" ? (
+            {text(approval.kind) === "action" || text(approval.kind) === "source_change" ? (
               <>
                 <input aria-label="拒绝理由" placeholder="拒绝时写一句理由" value={reason}
                   onChange={(event) => setReasons({ ...reasons, [approvalId]: event.target.value })}

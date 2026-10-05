@@ -89,4 +89,17 @@ describe("对话里的后台任务卡片", () => {
     mount({ ...DETAIL, operation_workspace: { state: "APPROVED", requirements_ref: { id: "r", revision: 2, content_hash: "h" } } });
     expect(screen.getByTestId("chat-mission-requirements-revision").textContent).toBe("要求第 2 版");
   });
+
+  it("换资料的工具结果也出任务卡片；资料变更在卡片上用一句话说明，由人批准", () => {
+    expect(MISSION_CARD_TOOLS.has("mission_source_update")).toBe(true);
+    expect(shouldHideToolTrace({ role: "tool_result", tool_name: "mission_source_update", tool_ok: true,
+      tool_result: JSON.stringify({ mission_id: "m-1", state: "PENDING" }) } as never, true)).toBe(false);
+    const fake = mount({ ...DETAIL, approvals: [{ request_id: "approval-s", state: "PENDING", kind: "source_change",
+      source_change: { operation: "supersede", path: "sources/requirements.md" } }] });
+    expect(screen.getByTestId("chat-approval-approval-s").textContent)
+      .toContain("把资料换成新版本：sources/requirements.md。批准后，用到旧版的步骤会重新规划。");
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(fake.sent.find((m) => m.type === "mission_approval_decide")!.payload)
+      .toEqual({ approval_id: "approval-s", decision: "approve" });
+  });
 });
