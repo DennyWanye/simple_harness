@@ -115,11 +115,6 @@ def _expression(criteria: Iterable[Any]) -> Any:
     return AllExpr(tuple(CriterionExpr(name) for name in ids))
 
 
-def _exact_pin(reader: AssuranceReader, ref: AssuranceRef) -> AssuranceRef:
-    reader.read_exact_metadata(ref)
-    return ref
-
-
 def _acceptance_refs(store: Any, acceptance_ids: Iterable[str]) -> set[AssuranceRef]:
     htn = HtnStore(store)
     refs: set[AssuranceRef] = set()

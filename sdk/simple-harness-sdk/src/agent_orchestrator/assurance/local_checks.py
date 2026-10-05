@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from .checks import CheckResult, Grade, grade
+from .checks import Grade, grade
 from .codec import AssuranceError, array, canonical, digest, fields, integer, one_of, text
 from .refs import AssuranceRef
 
@@ -203,25 +203,3 @@ def validate_local_check(
     )
     return state, result
 
-
-def normalize_local_check(
-    value: object,
-    *,
-    expected_spec: AssuranceRef,
-    expected_subject_hash: str,
-    expected_mission_id: str,
-    receipt_ref: AssuranceRef,
-    assertion_key: str,
-    source_valid: bool,
-) -> CheckResult:
-    """Called only AFTER exact event issuer/access/current-source verification."""
-    if receipt_ref.kind != "local_check_receipt":
-        raise AssuranceError("CHECK_SOURCE_IDENTITY")
-    state, result = validate_local_check(
-        value,
-        expected_spec=expected_spec,
-        expected_subject_hash=expected_subject_hash,
-        expected_mission_id=expected_mission_id,
-        assertion_key=assertion_key,
-    )
-    return CheckResult(expected_spec, receipt_ref, state, result, source_valid)

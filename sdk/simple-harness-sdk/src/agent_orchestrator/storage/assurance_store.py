@@ -670,16 +670,6 @@ class AssuranceStore:
             )
             return True
 
-    def has_live_pin(self, blob_hash: str) -> bool:
-        digest(blob_hash)
-        return (
-            self.store.connection.execute(
-                "SELECT 1 FROM assurance_blob_pins WHERE blob_hash=? "
-                "AND state IN ('PREPARING','BOUND') LIMIT 1",
-                (blob_hash,),
-            ).fetchone()
-            is not None
-        )
 
     def observe_clock(self, now_ms: int, *, receipt: AssuranceRef, seen_high_ms: int = 0) -> ClockState:
         """Original tick owns the receipt and TimeDiscontinuity event in the same UoW.

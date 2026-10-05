@@ -28,6 +28,8 @@ from ..storage.store import _event_from_row
 from .assurance_final_writer import recorded_judgment
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
+#: 收尾原因：有资料变更还没问完规划器。
+SOURCE_CHANGE_OPEN = "SOURCE_CHANGE_OPEN"
 NOTIFICATION_EVENT = "AssuranceStatusNotificationRequested"
 VALIDITY_CHECKED_EVENT = "AssuranceUseValidityChecked"
 CLOSEOUT_EVENT = "AssuranceCloseoutEvaluated"
@@ -462,6 +464,13 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         body["stale_certificates"] = stale
         if stale:
             reasons.append(EVIDENCE_STALE)
+        # 2026-10-05（原计划 §7.2"最终事务重读"）：资料不在证书钉住的对象里，换版本 / 撤销由
+        # 规划器判现有成果还作不作数。终审等这件事问完才开；终审之后、完成之前才换的，同一个
+        # 判断在这里再拦一次——问完之前不收尾。
+        from .planning_repair_requests import source_change_open
+
+        if source_change_open(self.store, mission.id):
+            reasons.append(SOURCE_CHANGE_OPEN)
         unknown_effects: list[str] = []
         unmet: list[str] = []
         for root in roots:

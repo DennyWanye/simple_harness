@@ -3085,11 +3085,8 @@ class CommitService(ProtectedTailCommitsMixin,
             # before this transaction was opened so that its refusal event survives the
             # refusal).  See :meth:`_require_accepted_work`.
             network = self._judgment_network(mission)
-            if network is not None:
-                self._require_accepted_work(mission, network, tasks)
-                tasks = self._drop_compound_rows(network, tasks)
-            elif not tasks or any(task.status is not TaskStatus.COMPLETED for task in tasks):
-                raise CommitRejected("mission judgment requires every live Task to be COMPLETED")
+            self._require_accepted_work(mission, network, tasks)
+            tasks = self._drop_compound_rows(network, tasks)
             mutable_judgments = [dict(item) for item in judgments]
             judgments = mutable_judgments
             for task in all_tasks:  # a paused READY route ends with the Mission as not needed
@@ -3134,28 +3131,22 @@ class CommitService(ProtectedTailCommitsMixin,
                 payload={"met": met, "judgments": [dict(item) for item in judgments]},
             )
             if met:
-                from .assurance_final_writer import is_assured, request_assured_closeout
+                from ..assurance.codec import AssuranceError
+                from ..storage.assurance_store import AssuranceStore
+                from .assurance_final_writer import request_assured_closeout
 
                 report.update(self._ledger.usage_flags(mission_id))
-                if is_assured(self._store, mission_id):
-                    # Handoff item 7: an assured Mission is completed only by the
-                    # unique final writer out of a READY closeout (spec §7.1); the
-                    # judge records that the criteria are met and requests it.
-                    return request_assured_closeout(self, mission, report=report, judged=judged)
-                done = next_mission(
-                    mission,
-                    MissionStatus.COMPLETED,
-                    stop_reason=str(MissionStopReason.VERIFICATION_PASSED),
-                    final_report=report,
-                )
-                self._store.update_mission(done, expected_version=mission.version)
-                self._emit(
-                    "MissionCompleted",
-                    mission_id,
-                    key=mission_id,
-                    payload={"stop_reason": done.stop_reason, "final_report": report},
-                )
-                return done
+                # The judge never completes a Mission (spec §7.1): it records that the
+                # criteria are met and requests the closeout; COMPLETED is written only
+                # by the unique final writer out of a READY closeout.  A Mission whose
+                # creation contract does not read back as assured is refused by name —
+                # there is no other path to COMPLETED (2026-10-05).
+                try:
+                    AssuranceStore(self._store).require_assured(mission_id)
+                except AssuranceError as error:
+                    raise CommitRejected(
+                        f"mission {mission_id} cannot be judged complete: {error.code}") from error
+                return request_assured_closeout(self, mission, report=report, judged=judged)
             self._note_unresolved_actions(mission_id, report)
             failed = next_mission(
                 mission,
@@ -3175,7 +3166,7 @@ class CommitService(ProtectedTailCommitsMixin,
             return failed
 
     def _judgment_network(self, mission: Mission) -> Any:
-        """The hierarchical plan ``judge_mission`` reads, or None for a legacy Mission.
+        """The hierarchical plan ``judge_mission`` reads.
 
         Review P2-15: a plan whose bindings are damaged used to leave here as a
         ``PlanIntegrityError`` — a ``RuntimeError`` — which ``judge_mission`` does not

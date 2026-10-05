@@ -222,3 +222,74 @@ def test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reaso
                 "AND work_key LIKE 'review-import:assurance-content:%'", (mission_id,))] == [("DONE", 0)]
 
     asyncio.run(case())
+
+
+def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers(tmp_path, monkeypatch):
+    """终审已通过、任务还没正式完成时资料换了版本（Assurance 原计划 §7.2"最终事务重读"）。
+
+    终审等资料变更问完才开；终审之后才换的，收尾同样等：收尾记"资料变更还没问完"，规划器被问到时
+    任务没有完成；它答"不改"之后才完成。
+
+    **改坏检验**：收尾不看资料变更（SRC-05）→ 规划器还没被问到任务就完成了 → 变红。"""
+    from agent_orchestrator.assurance.codec import decode
+    from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitsMixin as ResolutionCommits
+
+    seen: dict[str, Any] = {"asked_while": None, "world": None, "first": None, "mission": None, "replaced": False}
+
+    def planner(request: Any):  # type: ignore[no-untyped-def]
+        package = package_of(request)
+        sourced = [entry for entry in package.get("repair_requests") or ()
+                   if str(entry.get("source_key")).startswith("source:")]
+        if not sourced:
+            return planner_reply(request)
+        world = seen["world"]
+        closeout = world.store.connection.execute(
+            "SELECT state, check_body_json FROM assurance_closeouts WHERE mission_id=?", (seen["mission"],)).fetchone()
+        seen["asked_while"] = (str(world.store.get_mission(seen["mission"]).status.value),
+                               None if closeout is None else closeout["state"],
+                               [] if closeout is None else decode(closeout["check_body_json"])["reasons"])
+        step = sourced[0]["request"]["context"]["steps_on_old_version"][0]["task_id"]
+        subject = next(s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step)
+        return decision(subject, "NO_CHANGE", {"reason": "这一步没有用到价格。"}, "资料只改了价格。")
+
+    original = ResolutionCommits.commit_goal_resolution
+
+    def commit_then_replace(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        out = original(self, *args, **kwargs)
+        world = seen["world"]
+        if not seen["replaced"] and _events(world, seen["mission"], "GoalResolutionCommitted"):
+            seen["replaced"] = True
+            _supersede(world, seen["mission"], seen["first"]["version_hash"])
+        return out
+
+    monkeypatch.setattr(ResolutionCommits, "commit_goal_resolution", commit_then_replace)
+
+    async def case():
+        provider = LayeredScriptedProvider(planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
+                                       "idempotency_key": "source-change-late"})["mission_id"]
+            seen.update(world=world, mission=mission_id)
+            seen["first"] = world.control.register_source({
+                "mission_id": mission_id, "path": PATH, "content": OLD, "kind": "markdown",
+                "idempotency_key": "reg-spec-late"})
+            status = ""
+            for _ in range(40):
+                await world.drain(timeout=20)
+                status = str(world.store.get_mission(mission_id).status.value)
+                if status in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    break
+            assert seen["replaced"]
+            assert seen["asked_while"] is not None, "任务完成前规划器没有被问到资料变更"
+            asked_status, closeout_state, reasons = seen["asked_while"]
+            assert asked_status == "ACTIVE"
+            assert closeout_state == "NOT_READY" and "SOURCE_CHANGE_OPEN" in reasons
+            assert status == "COMPLETED"
+            [asked] = _source_requests(world, mission_id)
+            [addressed] = [e for e in _events(world, mission_id, ADDRESSED)
+                           if asked.payload["request_id"] in e.payload["repair_request_ids"]]
+            [completed] = _events(world, mission_id, "MissionCompleted")
+            [resolved] = _events(world, mission_id, "GoalResolutionCommitted")
+            assert resolved.seq < asked.seq < addressed.seq < completed.seq
+
+    asyncio.run(case())

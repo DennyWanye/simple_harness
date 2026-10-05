@@ -175,18 +175,6 @@ class MissionControlV1:
         except AssuranceError as error:
             raise FacadeError(error.code, "check policy approval refused") from error
 
-    def install_assurance_root(self, command: Mapping[str, Any]) -> dict[str, Any]:
-        """Authenticated native installation; caller identity never comes from the body."""
-        from ..assurance.codec import AssuranceError, fields
-
-        try:
-            body = fields(dict(command), {"command_id"})
-            ref = self._orchestrator.commit.install_assurance_root(
-                principal=self._principal, tenant_id=self._tenant, command_id=body["command_id"],
-            )
-            return {"state": "NATIVE", "receipt_ref": ref.to_json(), "restart_required": True}
-        except AssuranceError as error:
-            raise FacadeError(error.code, "native root installation refused") from error
 
 
     # ------------------------------------------------------ assurance reads

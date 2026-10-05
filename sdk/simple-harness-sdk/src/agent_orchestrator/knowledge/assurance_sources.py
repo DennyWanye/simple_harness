@@ -99,11 +99,6 @@ SYSTEM_PREDICATES: Mapping[str, PredicateSignature] = {
 }
 
 
-def _is_system_key(proposition: str) -> bool:
-    predicate_id, _, _ = proposition.partition("@")
-    return predicate_id in SYSTEM_PREDICATES
-
-
 def review_accepted_key(mission_id: str, record_id: str) -> str:
     return proposition_key(
         REVIEW_ACCEPTED, {"mission_id": text(mission_id), "record_id": text(record_id)}

@@ -143,3 +143,22 @@ def test_cancel_mission_writes_usage_flags_on_a_hierarchical_report(tmp_path) ->
     assert outcome["report"]["budget_conserved"] is True
     assert outcome["costs"]["usage_fully_known"] is True
     assert outcome["costs"]["budget_conserved"] is True
+
+
+def test_only_the_final_writer_writes_completed() -> None:
+    """"完成"只有一个写方（Assurance 原计划 §7.1）：全包里把任务状态写成 COMPLETED 的只有收尾的
+    唯一完成写方；判定只记"要求已满足"并请求收尾。
+
+    **改坏检验**：判定里再加一条直接写完成的路（FIN-01）→ 变红。"""
+    import re
+    from pathlib import Path
+
+    import agent_orchestrator
+
+    root = Path(agent_orchestrator.__file__).parent
+    writers = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        for _ in re.finditer(r"next_mission\(\s*[^()]*?MissionStatus\.COMPLETED", path.read_text(encoding="utf-8"))
+    )
+    assert writers == ["orchestrator/assurance_final_writer.py"]

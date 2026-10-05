@@ -1099,6 +1099,28 @@
     "tests/orchestrator/product_world/test_source_change.py::test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reason"
    ],
    "note": "审阅在途时证据里的资料换版不作废这次审阅"
+  },
+  {
+   "id": "SRC-05",
+   "source": "Assurance 原计划对照后补改（2026-10-05）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_consumers.py",
+   "original": "        if source_change_open(self.store, mission.id):",
+   "replacement": "        if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers"
+   ],
+   "note": "终审之后、完成之前资料换版本，收尾不等规划器问完"
+  },
+  {
+   "id": "FIN-01",
+   "source": "Assurance 原计划对照后补改（2026-10-05）",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "                return request_assured_closeout(self, mission, report=report, judged=judged)",
+   "replacement": "                return self._store.update_mission(next_mission(mission, MissionStatus.COMPLETED, final_report=report), expected_version=mission.version)",
+   "tests": [
+    "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed"
+   ],
+   "note": "判定直接把任务写成完成，绕过收尾与唯一完成写方（原计划 F-M05）"
   }
  ]
 }
