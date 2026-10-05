@@ -144,10 +144,10 @@
    "from": "TG⑦",
    "method": "构造场景",
    "injection": [
-    "（复用 full_target/_unknown_outcome_world.py 的世界）"
+    "（full_target/h1h_stage_runner.py 的发布局，unknown_outcome=True）"
    ],
    "tests": [
-    "tests/orchestrator/full_target/test_after_handoff_unknown_bounded.py::test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent"
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision"
    ],
    "run_in": "F2（已执行 2026-10-05）"
   },
