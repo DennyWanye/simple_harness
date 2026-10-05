@@ -119,4 +119,9 @@ describe("对话里的后台任务卡片", () => {
     fake.push({ type: "mission_planning_answer_response", payload: { ok: true, request_id: sent.request_id } });
     expect(fake.sent.filter((m) => m.type === "mission_get").length).toBe(before + 1);
   });
+
+  it("规划阶段的状态写成中文", () => {
+    mount({ ...DETAIL, mission: { ...DETAIL.mission, status: "PLANNING" }, approvals: [] });
+    expect(screen.getByText("后台任务：规划中")).toBeTruthy();
+  });
 });

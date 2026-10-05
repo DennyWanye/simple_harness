@@ -24,6 +24,7 @@ type Json = Record<string, unknown>;
 
 const STATUS_LABEL: Record<string, string> = {
   CREATED: "已创建，等你确认完成要求",
+  PLANNING: "规划中",
   ACTIVE: "进行中",
   COMPLETED: "已完成",
   FAILED: "未完成（已停止）",
