@@ -164,6 +164,50 @@ def test_content_acceptance_is_preparation_only_until_the_publish_completes(tmp_
     asyncio.run(run())
 
 
+def test_a_delivery_receipt_written_past_the_handoff_completes_nothing(tmp_path):
+    """Assurance 原计划 E07：等人批准发布时，绕过交接直接往库里写交付回执（"已发出""已落盘"各一张，
+    挂在已有的内容验收上）——效果不算完成、根不完成、没有根结论、什么都没发布；批准之后照常只发布一次，
+    证明链上的那张回执是系统自己写的，不是伪造的那两张。"""
+    from agent_orchestrator.contracts.resolution import DeliveryReceipt
+
+    async def run() -> None:
+        async with publishing(tmp_path) as case:
+            approval = await case.until_approval()
+            scope = root_scope(case)["document"]
+            htn = HtnStore(case.store)
+            [acceptance_id] = [row[0] for row in case.store.connection.execute(
+                "SELECT acceptance_id FROM acceptances WHERE mission_id=?", (case.mission_id,))]
+            with case.store.transaction():
+                for stage, operation in ((DeliveryStage.SENT, "op-forged"), (DeliveryStage.PERSISTED, None)):
+                    htn.record_delivery_receipt(
+                        case.mission_id,
+                        DeliveryReceipt(receipt_id=f"forged-{stage.value}", mission_id=case.mission_id,
+                                        acceptance_id=acceptance_id, stage=stage, observed_at_ms=1,
+                                        operation_id=operation),
+                        command_id=f"forged-{stage.value}", intent_hash="f" * 64)
+            forged = {r.receipt_id for r in htn.list_delivery_receipts(case.mission_id)}
+            assert forged == {"forged-SENT", "forged-PERSISTED"}
+
+            rows = _rows(case)
+            for _ in range(3):
+                await case.world.drain()
+            effect = read_current_effect(case.store, case.mission_id, scope.spec_hash, "publish-weekly")
+            assert effect["state"] == "AWAITING_APPROVAL" and effect["complete"] is False
+            root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
+            assert not root.effects_ready and not root.complete
+            assert case.status() == "ACTIVE" and _count(case, "goal_resolutions") == 0 and _rows(case) == rows
+            assert case.published_files() == []
+
+            case.approve(approval)
+            mission = await case.world.run_until_settled(case.mission_id, rounds=20)
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
+            assert len(case.published_files()) == 1 and [a["handoffs"] for a in case.actions()] == [1]
+            [real] = [r for r in htn.list_delivery_receipts(case.mission_id) if r.receipt_id not in forged]
+            assert real.stage is DeliveryStage.PERSISTED and real.operation_id not in (None, "op-forged")
+
+    asyncio.run(run())
+
+
 def test_a_lost_reply_is_reconciled_and_never_resent(tmp_path):
     """服务端已发布但回执丢了、核对又连不上：只核对不重发，期间全任务的操作总闸关着。"""
 

@@ -1121,6 +1121,298 @@
     "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed"
    ],
    "note": "判定直接把任务写成完成，绕过收尾与唯一完成写方（原计划 F-M05）"
+  },
+  {
+   "id": "AS-M08",
+   "source": "Assurance 原计划 M08（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_reads.py",
+   "original": "                if count > maximum_rows or size > maximum_bytes:",
+   "replacement": "                if False:",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_complete_collection_not_topk"
+   ],
+   "note": "查询超出上限当成完整结果（失败查询返回完整空集）"
+  },
+  {
+   "id": "AS-M09",
+   "source": "Assurance 原计划 M09 / 用例 V07（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_barrier_v26.sql",
+   "original": "CREATE TRIGGER assurance_source_observations_insert AFTER INSERT ON observations WHEN 1 BEGIN",
+   "replacement": "CREATE TRIGGER assurance_source_observations_insert AFTER INSERT ON observations WHEN 0 BEGIN",
+   "tests": [
+    "tests/orchestrator/product_world/test_desktop_preconditions.py::test_file_change_flips_observation_and_moves_epoch"
+   ],
+   "note": "新观察（反证）落库不推保证通道纪元"
+  },
+  {
+   "id": "AS-M11",
+   "source": "Assurance 原计划 M11（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/assurance/grounding.py",
+   "original": "        excluded_keys=frozenset(conflicts),",
+   "replacement": "        excluded_keys=frozenset(),",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_conflicted_paths"
+   ],
+   "note": "有冲突的依据照样算干净可用"
+  },
+  {
+   "id": "AS-M13",
+   "source": "Assurance 原计划 M13（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "            self._store.fault(\"after_accept_before_supersede\", \"attempt\")",
+   "replacement": "            self._store.connection.execute(\"COMMIT\")\n            self._store.connection.execute(\"BEGIN IMMEDIATE\")\n            self._store.fault(\"after_accept_before_supersede\", \"attempt\")",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_acceptance_atomic_faults"
+   ],
+   "note": "验收写到一半先提交一次"
+  },
+  {
+   "id": "AS-M15",
+   "source": "Assurance 原计划 M15（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/runtime/provider_budget_guard.py",
+   "original": "        if require_live_lease and (",
+   "replacement": "        if False and (",
+   "tests": [
+    "tests/orchestrator/p35/test_provider_accounting_restart.py::test_a_restart_frees_the_dead_calls_slot_and_redoes_the_queued_turn_as_lease_lost"
+   ],
+   "note": "租约丢了照样把请求交出去"
+  },
+  {
+   "id": "AS-M16",
+   "source": "Assurance 原计划 M16（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/governance/budgets.py",
+   "original": "        tokens = max(int(reservation[\"reserved_tokens\"]), int(known_tokens))",
+   "replacement": "        tokens = int(known_tokens)",
+   "tests": [
+    "tests/orchestrator/p35/test_provider_accounting_loop.py::test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout"
+   ],
+   "note": "未知用量按已知的（可能是 0）结清"
+  },
+  {
+   "id": "AS-FM01",
+   "source": "Assurance 原计划 F-M01（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/assurance/evidence.py",
+   "original": "            \"ref\": ref.to_json(),",
+   "replacement": "            \"ref\": ref.pin.id,",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_labels_exact_disclosure"
+   ],
+   "note": "证据标签只按编号算"
+  },
+  {
+   "id": "AS-FM02",
+   "source": "Assurance 原计划 F-M02（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/assurance/checks.py",
+   "original": "            if self.source_valid and self.execution_state == \"SUCCEEDED\"",
+   "replacement": "            if self.source_valid and self.execution_state in (\"SUCCEEDED\", \"ERROR\")",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_check_receipt_scope"
+   ],
+   "note": "检查跑出错也按它自报的结论算"
+  },
+  {
+   "id": "AS-FM03",
+   "source": "Assurance 原计划 F-M03（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/assurance/checks.py",
+   "original": "        return CheckGate(None, (), \"CHECK_NOT_APPLICABLE\")",
+   "replacement": "        return CheckGate(Grade.UNKNOWN, (), \"CHECK_EVIDENCE_INCOMPLETE\")",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_formula_truth_tables",
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_any_branch_not_mandatory"
+   ],
+   "note": "只凭审阅判断的要求也硬要一张检查回执"
+  },
+  {
+   "id": "AS-FM04",
+   "source": "Assurance 原计划 F-M04（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_transport.py",
+   "original": "    subject_id = f\"{mission_id}:assurance:{review_key}:{ordinal}\"",
+   "replacement": "    subject_id = f\"{mission_id}:assurance:{body['subject']['owner_task_ref']['id']}\"",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_turn_retry_e2e.py::test_failed_first_turn_is_retried_once_and_imported"
+   ],
+   "note": "审阅的每次调用都记在同一个任务主体上"
+  },
+  {
+   "id": "AS-FM07",
+   "source": "Assurance 原计划 F-M07（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_barrier_v26.sql",
+   "original": "CREATE TRIGGER assurance_source_sources_insert AFTER INSERT ON sources WHEN 1 BEGIN",
+   "replacement": "CREATE TRIGGER assurance_source_sources_insert AFTER INSERT ON sources WHEN 0 BEGIN",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_all_writers_barrier_and_expiry"
+   ],
+   "note": "登记资料不推保证通道纪元"
+  },
+  {
+   "id": "AS-FM08",
+   "source": "Assurance 原计划 F-M08（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_work.py",
+   "original": "                for target in classify(event, consumer):",
+   "replacement": "                try:\n                    targets = classify(event, consumer)\n                except OSError:\n                    break\n                for target in targets:",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_event_cursor_atomicity"
+   ],
+   "note": "分类出错时吞掉、游标照推，待办丢了"
+  },
+  {
+   "id": "AS-FM09",
+   "source": "Assurance 原计划 F-M09（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_schema.sql",
+   "original": "BEGIN SELECT CASE WHEN NEW.state<>'NOT_READY' OR NEW.row_version<>1",
+   "replacement": "BEGIN SELECT CASE WHEN 0",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_sql_bypass_initial_and_delete"
+   ],
+   "note": "收尾行可以一出生就是已定稿"
+  },
+  {
+   "id": "AS-FM10A",
+   "source": "Assurance 原计划 F-M10（删除）（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_schema.sql",
+   "original": "BEGIN SELECT RAISE(ABORT,'retain closeout history'); END;",
+   "replacement": "BEGIN SELECT 1; END;",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_sql_bypass_initial_and_delete"
+   ],
+   "note": "已定稿的收尾行可以删"
+  },
+  {
+   "id": "AS-FM10B",
+   "source": "Assurance 原计划 F-M10（整行替换）（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_schema.sql",
+   "original": "CREATE TRIGGER assurance_closeouts_no_replace BEFORE INSERT ON assurance_closeouts\nWHEN EXISTS(",
+   "replacement": "CREATE TRIGGER assurance_closeouts_no_replace BEFORE INSERT ON assurance_closeouts\nWHEN 0 AND EXISTS(",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_sql_bypass_initial_and_delete"
+   ],
+   "note": "收尾行可以整行替换"
+  },
+  {
+   "id": "AS-FM11",
+   "source": "Assurance 原计划 F-M11（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_schema.sql",
+   "original": "CREATE TRIGGER assurance_blob_pin_bound_review BEFORE UPDATE ON assurance_blob_pins\nWHEN NEW.state='BOUND'",
+   "replacement": "CREATE TRIGGER assurance_blob_pin_bound_review BEFORE UPDATE ON assurance_blob_pins\nWHEN 0",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_sql_bypass_initial_and_delete"
+   ],
+   "note": "没有同任务审阅的钉子也能标已绑定"
+  },
+  {
+   "id": "AS-E02",
+   "source": "Assurance 原计划 用例 E02（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/runtime/operation_profiles.py",
+   "original": "        if effect.required_milestone not in self.supported_milestones:",
+   "replacement": "        if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_operation.py::test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach"
+   ],
+   "note": "档案做不到的完成标准也收下"
+  },
+  {
+   "id": "AS-F10",
+   "source": "Assurance 原计划 审查意见 F10（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/storage/assurance_store.py",
+   "original": "        if row is None:\n            raise AssuranceError(\"CREATION_CONTRACT_UNRESOLVED\")",
+   "replacement": "        if row is None:\n            return \"ASSURANCE_1_1\"",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_real_migration_and_legacy"
+   ],
+   "note": "没有建任务合同的任务当成保证通道任务"
+  },
+  {
+   "id": "AS-A18",
+   "source": "Assurance 原计划 用例 A18 / M04（2026-10-05 对照后登记）",
+   "file": "src/agent_orchestrator/orchestrator/resolution_commits.py",
+   "original": "            or candidate.identity.consumer_id != command.acceptance_id",
+   "replacement": "            or False",
+   "tests": [
+    "tests/orchestrator/full_target/test_resolution_commits.py::test_tampered_accept_and_root_commands_are_refused_by_name_and_write_nothing"
+   ],
+   "note": "为别的验收备的许可拿来写这次验收"
+  },
+  {
+   "id": "AS-M06",
+   "source": "Assurance 原计划 M06（2026-10-05 对照后登记）",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "交付回执只校操作号非空：效果完成判定不读交付回执表（用例 test_publish_variants.py::test_a_delivery_receipt_written_past_the_handoff_completes_nothing），结果绑定被改先在存储哈希处拦下（test_a_tampered_outcome_binding_is_never_accepted）；身份比对那一道没有产品路径能单独碰到，不绑用例"
+  },
+  {
+   "id": "AS-FM06",
+   "source": "Assurance 原计划 F-M06（2026-10-05 对照后登记）",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "不适用：受管恢复已删（HTN 补齐计划阶段 A″）"
+  },
+  {
+   "id": "AS-FM12",
+   "source": "Assurance 原计划 F-M12（2026-10-05 对照后登记）",
+   "file": null,
+   "original": null,
+   "replacement": null,
+   "tests": [],
+   "note": "不适用：内部结构改由 Python 校验，SDK 不随包带 schema 哈希"
+  },
+  {
+   "id": "OPA-01",
+   "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
+   "file": "src/agent_orchestrator/orchestrator/system_operations.py",
+   "original": "        if earlier is not None:",
+   "replacement": "        if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_requirements_amended_after_the_publish_never_publish_again"
+   ],
+   "note": "系统不看台账，改要求后照样为已发布的目标再准备一份申请单"
+  },
+  {
+   "id": "OPA-02",
+   "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
+   "file": "src/agent_orchestrator/orchestrator/operation_outcomes.py",
+   "original": "            or original[\"document\"].task_ref.id != owner.task_ref.id",
+   "replacement": "            or original[\"document\"].task_ref != owner.task_ref",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_requirements_amended_after_the_publish_never_publish_again"
+   ],
+   "note": "结果审查要求归属任务的合同版本不变，改要求后原来那次发布重审不了"
+  },
+  {
+   "id": "OPA-03",
+   "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
+   "file": "src/agent_orchestrator/orchestrator/system_operations.py",
+   "original": "            if earlier[\"state\"] == \"SUCCEEDED\" and earlier[\"content_hash\"] != artifact.content_hash:",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_changed_content_after_the_publish_goes_to_the_planner_and_is_never_published_again"
+   ],
+   "note": "要发布的内容变了也拿旧发布去重审，不告诉规划器"
+  },
+  {
+   "id": "OPA-04",
+   "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
+   "file": "src/agent_orchestrator/orchestrator/operation_runtime.py",
+   "original": "                    if record.verdict in {ReviewVerdict.REJECTED, ReviewVerdict.REWORK}:",
+   "replacement": "                    if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_the_publish_reviewed_again_and_not_passed_goes_to_the_planner"
+   ],
+   "note": "结果审查没通过只是不验收，任务挂着"
+  },
+  {
+   "id": "OPA-05",
+   "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "        if self._materialization_refusals(mission.id):\n            return False",
+   "replacement": "        if False:\n            return False",
+   "tests": [
+    "tests/orchestrator/product_world/test_requirements_amend.py::test_a_request_whose_materialisation_is_always_refused_is_not_a_legitimate_wait"
+   ],
+   "note": "物化一直被拒的申请单仍算合法等待"
   }
  ]
 }

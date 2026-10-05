@@ -80,6 +80,26 @@
 - **验收**：补 F01～F15 反例（可并入现有用例，但要登记映射）；对 M06/M08/M11/M13/M15/M16 与 F-M05、F-M09～11 补变异；补 E06、E07 与"绕过有效性闸直调最终提交"用例；X 组 18 条做映射或登记不做。真实模型四场景×3 局和保证视图点击等用户定时间。
 - **记录**：把第一节未记录的偏离、状态化规模、变异替换、分诊表 3 处相反写进记录；更新 `ARCHITECTURE/ASSURANCE.md` 与 `index.md`。
 
+## 五、对照后的处理（2026-10-05，SDK opt.162）
+
+**代码**
+| 第一节条目 | 处理 |
+|---|---|
+| 1 收尾不核资料变更 | 已改：收尾评估多查一条"资料变更还没问完规划器"（`SOURCE_CHANGE_OPEN`），与终审用同一个判断。用例 `T/product_world/test_source_change.py::test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers`，改坏 SRC-05 |
+| 2 判定里直接写完成的旧路 | 已删：`judge_mission` 只请求收尾，读不到保证合同按名拒绝；`network is None` 旧分支一并删。用例 `T/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed`（把"完成"补进写方枚举）、`T/full_target/assurance_exec/test_review_findings.py::test_direct_judge_waits_closeout`，改坏 FIN-01。`is_assured` 仍把读错当"不是保证任务"：它只剩循环入口按名停老任务、通知、收尾判定三处用，不再通向完成 |
+| 10 残留 | 删 5 个无调用者函数与门面上重复的 `install_assurance_root`；隔离诊断与隔离只读分支保留（连着在用的根闸门） |
+| 3～9 | 未改，属记录项（见 `ARCHITECTURE/ASSURANCE.md` 顶部"仍没做"） |
+
+**补验收时发现并修掉的新缺陷**：发布已生效后用户改要求，任务永远挂着（原计划用例 E06）。独立裁决见 `Assurance-补改-偏差裁决-发布后改要求.md`，按其施工清单修：准备申请单前先读操作台账；原来那次发布由结果审阅员按新要求重审（不重发、不出新卡）；内容变了 / 重审没通过各交规划器一次、仍没解决具名停下；物化一直被拒不算合法等待。用例 `T/product_world/test_requirements_amend.py` 新增 4 条，改坏 OPA-01～05。有意的写法：改要求后同一次发布有两张交付回执（每版要求一份效果验收各一张），指向同一个操作。
+
+**验收**
+- 审查意见 F01～F15：新写反例 7 条（`test_review_findings.py`：F01、F02、F03、F04、F06、F08、F11），对应表 `T/acceptance_assets/assurance_findings.json`（守护测试核对）。现状：有用例守着 F01～F06、F08、F10、F11；F09、F12、F13 有缺口并写明；F07 不适用；F14、F15 为记录项。
+- 用例：E07（绕过交接直写交付回执）新写；V07 在真实任务用例里补了"观察落库同事务推保证通道纪元"的断言；A18、E02 登记到现有用例；E06 见上。
+- 计划点名的改坏：现行清单登记 `AS-*` 22 条（19 条绑用例，3 条写明不绑的原因：M06 没有产品路径能单独碰到、F-M06 与 F-M12 对应的机制已不在）。
+- **执行结果**：受影响的用例文件 420 条全过；改坏 26 条（SRC-05、FIN-01、OPA-01～05、`AS-*` 19 条）全部被绑定用例抓到，结果文件 `.local-test-evidence/2026-10-05/mutations/results-185642.json`。
+
+**仍没做**：真实模型四场景各 3 局、保证视图非主流程的真机点击（用户定排在最后）；继承用例 X 组 18 条映射；F09"卡在预算上的审阅不挡后面的事件入箱"专门用例；覆盖清单（sdk-cases / occ / 继承）里失效的旧用例名没有回写计划包。
+
 ---
 
 # 附：明细

@@ -2489,9 +2489,28 @@ class Orchestrator:
                 if self._handoff_ground_gone(str(a["action_key"]))]
         return {"handoff_refused": rows} if rows else {}
 
+    def _materialization_refusals(self, mission_id: str) -> dict[str, Any]:
+        """For the stall record: reviewed operation requests whose materialisation is refused
+        (every round the same refusal) — an effect waiting on one of these will never move."""
+        from ..storage.operation_intent_store import OperationIntentStore
+
+        intents = OperationIntentStore(self.store).for_mission(mission_id)
+        replaced = {item["supersedes_intent_id"] for item in intents if item["supersedes_intent_id"]}
+        heads = {item["intent_id"]: item for item in intents
+                 if item["intent_id"] not in replaced
+                 and self.store.get_receipt("materialize:" + item["intent_id"]) is None}
+        rows = [{"intent_id": str(e.payload.get("intent_id")), "reason": str(e.payload.get("reason")),
+                 "effect_key": heads[e.payload["intent_id"]]["binding"].get("completion", {}).get("effect_key")}
+                for e in self.store.list_events(mission_id)
+                if e.type == "OperationMaterializationDeferred" and e.payload.get("intent_id") in heads] if heads else []
+        return {"materialization_refused": rows} if rows else {}
+
     def _has_pending_operation_completion(self, mission: Mission) -> bool:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
         from .operation_outcomes import outcome_exhaustion_is_final
+
+        if self._materialization_refusals(mission.id):
+            return False  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测
 
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
                for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")):
@@ -2885,7 +2904,7 @@ class Orchestrator:
                         "withheld": [item.to_json() for item in admissions.refusals],
                         "admitted_not_dispatched": [],
                         "outstanding_obligations": outstanding,
-                        **self._handoff_refusals(mission.id),
+                        **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
                         "fingerprint": after,
                         "confirmed_after_one_more_cycle": True,
                         **self._root_review_stop_detail(mission, new_mode),
@@ -2912,7 +2931,7 @@ class Orchestrator:
                     detail={"withheld": withheld[:32], "withheld_count": len(withheld),
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
                             "outstanding_obligations": outstanding,
-                            **self._handoff_refusals(mission.id),
+                            **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
                             # 最终审查没给出结论（回复用完仍无法采用）或被打回，是事实，一并交给规划器。
                             **self._root_review_stop_detail(mission, new_mode)})
             except (GraphIntegrityError, ContractError, StoreError, SourceUnavailable) as error:
@@ -2942,7 +2961,7 @@ class Orchestrator:
                     "withheld": withheld,
                     "admitted_not_dispatched": sorted(admissions.readiness),
                     "outstanding_obligations": outstanding,
-                    **self._handoff_refusals(mission.id),
+                    **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
                     "fingerprint": after,
                     "confirmed_after_one_more_cycle": True,
                     # P2.3j: a Mission that idles *because* its root review rejected the

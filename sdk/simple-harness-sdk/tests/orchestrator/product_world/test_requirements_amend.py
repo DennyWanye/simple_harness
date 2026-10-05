@@ -878,3 +878,304 @@ def test_amend_refused_while_closing_out_and_after_the_end(tmp_path, monkeypatch
             assert written(world.store, mission_id) == before
 
     asyncio.run(case())
+
+
+class _HoldFinalReview(LayeredScriptedProvider):
+    """终审停在半路（审阅员还在读），直到 ``release`` 置位。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.entered, self.release = asyncio.Event(), asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        from agent_orchestrator.testing.scripted_replies import review_input
+
+        review = review_input(request)
+        if review and review["package"]["purpose"] == "MISSION_FINAL" and not self.release.is_set():
+            self.entered.set()
+            await self.release.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def _reconfirm(world: Any, mission_id: str, workspace: dict[str, Any], command_id: str) -> None:
+    """确认页对新一版要求做的事：与第一次同样的选择（发布是必须完成的效果，其余是内容要求）。"""
+    actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
+    content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
+    [obligation] = workspace["obligations"]
+    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    ref = workspace["requirements_ref"]
+    world.control.approve_operation_completion_spec({
+        "mission_id": mission_id, "command_id": command_id, "expected_requirements_ref": ref,
+        "proposal": {
+            "schema_version": 1, "mission_id": mission_id,
+            "requirements_ref": {"id": ref["id"], "revision": ref["revision"], "content_hash": ref["content_hash"]},
+            "mode": "REQUIRED_EFFECTS", "content_criterion_ids": content,
+            "effects": [{
+                "effect_key": "publish-weekly", "source_slot_key": "publish-weekly",
+                "obligation_id": obligation["id"], "criterion_ids": actions,
+                "required_milestone": milestone["id"],
+                "milestone_policy_ref": milestone["milestone_policy_ref"],
+                "evidence_policy_ref": milestone["evidence_policy_ref"]}]}})
+
+
+def test_requirements_amended_after_the_publish_never_publish_again(tmp_path):
+    """Assurance 原计划 E06：发布已经发生、效果已验收，终审还在读的时候用户加了一条内容要求。
+
+    原来那次发布的事实与花费都留着；按旧要求得到的结论不顶新要求（任务不凭旧终审完成，判定按新要求
+    逐条判）；补做新要求的那一步；新要求下由结果审阅员重审原来那次发布；全程不为"凑证据"再发布一次
+    ——发布目录里始终只有一份、动作只交接一次、申请单与审批卡都只有原来那一份。
+
+    **改坏检验**：系统不看台账、照样再交一份申请单（OPA-01）→ 变红；结果审查仍要求归属任务的合同
+    版本不变（OPA-02）→ 任务完成不了 → 变红。"""
+    from agent_orchestrator.governance.policies import DeploymentPolicy
+    from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+
+    operation = _script("test_operation")
+    seen: dict[str, Any] = {}
+    extra = "file:reports/extra.md"
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        provider = _HoldFinalReview(planner=replanning_planner(seen))
+        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + operation.TARGET, operation.PUBLISH],
+                                       "idempotency_key": "amend-after-publish"})["mission_id"]
+            await world.drain()
+            operation._confirm_completion(world, mission_id)
+
+            def files() -> list[str]:
+                return sorted(p.name for p in published.rglob("*") if p.is_file())
+
+            def handoffs() -> list[int]:
+                return [int(a["handoffs"]) for a in world.store.list_actions(mission_id)]
+
+            approved = 0
+            for _ in range(40):
+                try:
+                    await world.drain(timeout=10)
+                except AssertionError:
+                    pass
+                for approval in world.control.approvals(mission_id):
+                    if approval.get("state") == "PENDING":
+                        world.control.decide(approval["request_id"], "approve")
+                        approved += 1
+                if provider.entered.is_set():
+                    break
+            assert provider.entered.is_set(), world.store.get_mission(mission_id).status
+            once = files()
+            assert len(once) == 1 and handoffs() == [1] and approved == 1
+            deliveries = HtnStore(world.store).list_delivery_receipts(mission_id)
+            assert len(deliveries) == 1
+
+            amend(world, mission_id, [{"op": "add", "statement": extra}])
+            provider.release.set()
+            status, asked_again = "", 0
+            for _ in range(60):
+                try:
+                    await world.drain(timeout=20)
+                except AssertionError:
+                    pass
+                workspace = operation._workspace(world, mission_id)
+                if workspace["state"] == "CONFIRMATION_REQUIRED":  # 带操作的新一版要求：人再确认一次
+                    seen["reconfirm"] = seen.get("reconfirm", 0) + 1
+                    _reconfirm(world, mission_id, workspace, f"confirm-again-{seen['reconfirm']}")
+                    continue
+                asked_again += len([a for a in world.control.approvals(mission_id) if a.get("state") == "PENDING"])
+                status = str(world.store.get_mission(mission_id).status.value)
+                if status in {"COMPLETED", "FAILED", "CANCELLED"} or asked_again:
+                    break
+            events = list(world.store.list_events(mission_id))
+            mission = world.store.get_mission(mission_id)
+            assert files() == once and handoffs() == [1], (files(), handoffs())  # 没有再发布
+            assert not asked_again, "系统又出了一张发布审批卡"
+            assert status == "COMPLETED", (status, mission.final_report, seen.get("reconfirm"),
+                                           [e.type for e in events][-25:])
+            judged = [e.payload for e in events if e.type == "MissionSuccessJudged"][-1]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:" + operation.TARGET, operation.PUBLISH, extra]
+            # 同一次发布，两版要求各有一份效果验收（各带一张回执，指向同一个操作）；申请单、审批卡、
+            # 交接都只有原来那一份，新一版下的验收来自原申请单
+            deliveries = HtnStore(world.store).list_delivery_receipts(mission_id)
+            assert len(deliveries) == 2 and len({d.operation_id for d in deliveries}) == 1
+            count = {kind: len([e for e in events if e.type == kind]) for kind in (
+                "OperationIntentSubmitted", "ApprovalRequested", "OperationOutcomeAccepted",
+                "OperationMaterializationDeferred")}
+            assert count == {"OperationIntentSubmitted": 1, "ApprovalRequested": 1, "OperationOutcomeAccepted": 2,
+                             "OperationMaterializationDeferred": 0}, count
+            assert seen.get("reconfirm") == 1
+
+    asyncio.run(case())
+
+
+def _amend_after_publish_variant(tmp_path, *, changed_bytes: bool = False, reject_second_outcome: bool = False):
+    """发布生效、终审在读时加一条要求（同上一条用例），再按变体走到底；规划器对"操作"类请求回"不改"。
+    返回（任务、事件、发布目录里的文件、各动作的交接次数、规划器收到的操作类请求）。"""
+    from agent_orchestrator.governance.policies import DeploymentPolicy
+    from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+    from agent_orchestrator.testing.scripted_replies import (
+        decision,
+        review_input,
+        review_reply,
+        reviewer_reply,
+        worker_reply,
+    )
+
+    operation = _script("test_operation")
+    seen: dict[str, Any] = {"amended": False, "outcomes": 0, "asked": []}
+    replan = replanning_planner(seen)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        mine = [entry for entry in package.get("repair_requests") or ()
+                if str(entry.get("source_key")).startswith("operation-")
+                or entry["request"].get("trigger_source") == "NO_DISPATCHABLE_WORK"]
+        if not mine:
+            return replan(request)
+        seen["asked"].append(mine[0])
+        refs = set(mine[0]["request"]["trigger_refs"])
+        subject = next((s["subject_key"] for s in package["planning_subjects"] if s["task_id"] in refs),
+                       package["planning_subjects"][0]["subject_key"])
+        return decision(subject, "NO_CHANGE", {"reason": "这件事要用户来定。"}, "不改计划。")
+
+    def worker(request: Any) -> Any:
+        reply = worker_reply(request)
+        if (changed_bytes and seen["amended"] and isinstance(reply, tuple)
+                and reply[1].get("path") == operation.TARGET):
+            return (reply[0], dict(reply[1], content="# 要点（按新要求重写）\n\n- 甲\n- 乙\n"))
+        return reply
+
+    def reviewer(request: Any) -> Any:
+        review = review_input(request)
+        if review and review["package"]["purpose"] == "OPERATION_OUTCOME":
+            seen["outcomes"] += 1
+            if reject_second_outcome and seen["outcomes"] >= 2:
+                return review_reply(review, verdict="REJECTED", grade="FAIL", reason="新要求下这次发布的内容不够。")
+        return reviewer_reply(request)
+
+    out: dict[str, Any] = {}
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        provider = _HoldFinalReview(planner=planner, worker=worker, reviewer=reviewer)
+        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布",
+                                       "success_criteria": ["file:" + operation.TARGET, operation.PUBLISH],
+                                       "idempotency_key": "amend-after-publish-variant"})["mission_id"]
+            await world.drain()
+            operation._confirm_completion(world, mission_id)
+            for _ in range(40):
+                try:
+                    await world.drain(timeout=10)
+                except AssertionError:
+                    pass
+                for approval in world.control.approvals(mission_id):
+                    if approval.get("state") == "PENDING":
+                        world.control.decide(approval["request_id"], "approve")
+                if provider.entered.is_set():
+                    break
+            assert provider.entered.is_set()
+            amend(world, mission_id, [{"op": "add", "statement": "file:reports/extra.md"}])
+            seen["amended"] = True
+            provider.release.set()
+            status, confirmed = "", 0
+            for _ in range(60):
+                try:
+                    await world.drain(timeout=20)
+                except AssertionError:
+                    pass
+                workspace = operation._workspace(world, mission_id)
+                if workspace["state"] == "CONFIRMATION_REQUIRED":
+                    confirmed += 1
+                    _reconfirm(world, mission_id, workspace, f"confirm-again-{confirmed}")
+                    continue
+                status = str(world.store.get_mission(mission_id).status.value)
+                if status in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    break
+            out.update(mission=world.store.get_mission(mission_id), events=list(world.store.list_events(mission_id)),
+                       files=sorted(p.name for p in published.rglob("*") if p.is_file()),
+                       handoffs=[int(a["handoffs"]) for a in world.store.list_actions(mission_id)
+                                 if a["state"] != "REFUSED"], asked=seen["asked"])
+
+    asyncio.run(case())
+    return out
+
+
+def _count(events: list[Any], kind: str) -> int:
+    return len([e for e in events if e.type == kind])
+
+
+def test_changed_content_after_the_publish_goes_to_the_planner_and_is_never_published_again(tmp_path):
+    """发布之后改要求，写周报的那一步按新计划重写出了不同的内容：这个目标在本任务里已经发布过，不能再
+    发一次，也不能拿旧发布顶新内容——两份内容的事实交给规划器一次；它不改，任务具名停下。
+
+    **改坏检验**：内容不同也照样准备新申请单（OPA-03）→ 没有这条请求、任务不是这样停的 → 变红。"""
+    out = _amend_after_publish_variant(tmp_path, changed_bytes=True)
+    events, mission = out["events"], out["mission"]
+    assert len(out["files"]) == 1 and out["handoffs"] == [1]
+    assert _count(events, "ApprovalRequested") == 1 and _count(events, "OperationIntentSubmitted") == 1
+    assert len(out["asked"]) == 1, [item.get("source_key") for item in out["asked"]]
+    [asked] = out["asked"]
+    context = asked["request"]["context"]
+    assert str(asked["source_key"]).startswith("operation-published-earlier:")
+    assert context["reason"] == "published_under_earlier_requirements"
+    assert context["published_content_hash"] != context["current_content_hash"]
+    assert str(mission.status.value) == "FAILED", mission.final_report
+    assert json.dumps(mission.final_report, ensure_ascii=False).count("published_under_earlier_requirements") >= 1
+
+
+def test_the_publish_reviewed_again_and_not_passed_goes_to_the_planner(tmp_path):
+    """发布之后改要求，结果审阅员按新要求重审原来那次发布、判不通过：不重发、不出新卡；它的结论交给
+    规划器一次；它不改，任务具名停下，不挂着。
+
+    **改坏检验**：结果审查没通过就只是不验收（OPA-04）→ 没有这条请求、任务一直在进行 → 变红。"""
+    out = _amend_after_publish_variant(tmp_path, reject_second_outcome=True)
+    events, mission = out["events"], out["mission"]
+    assert len(out["files"]) == 1 and out["handoffs"] == [1]
+    assert _count(events, "ApprovalRequested") == 1 and _count(events, "OperationIntentSubmitted") == 1
+    assert _count(events, "OperationOutcomeAccepted") == 1  # 只有第 1 版要求下的那一份
+    assert len(out["asked"]) == 1, (str(mission.status.value), [item.get("source_key") for item in out["asked"]])
+    [asked] = out["asked"]
+    context = asked["request"]["context"]
+    assert str(asked["source_key"]).startswith("operation-outcome-rejected:")
+    assert (context["reason"], context["verdict"], context["requirements_revision"]) == (
+        "operation_outcome_rejected", "REJECTED", 2)
+    assert str(mission.status.value) == "FAILED", mission.final_report
+    assert json.dumps(mission.final_report, ensure_ascii=False).count("operation_outcome_rejected") >= 1
+
+
+def test_a_request_whose_materialisation_is_always_refused_is_not_a_legitimate_wait(tmp_path, monkeypatch):
+    """兜底：一份审过的申请单每轮物化都被拒、这项效果也没有别的路能完成（这里把"先读台账"那一步拿掉，
+    让系统再交一份注定被台账拒绝的申请单；并让改要求之后的结果审查一直准备不出来），任务不当它是
+    "合法等待"一直挂着——卡死检测接手，具名停下，停机详情里列出被拒的申请单；全程没有再发布。
+
+    **改坏检验**：物化被拒仍算合法等待（OPA-05）→ 任务一直在进行 → 变红。"""
+    import agent_orchestrator.orchestrator.operation_outcomes as operation_outcomes
+    import agent_orchestrator.orchestrator.system_operations as system_operations
+
+    real = operation_outcomes.prepare_operation_outcome_review
+
+    def prepare(store, **kwargs):  # type: ignore[no-untyped-def]
+        if store.connection.execute("SELECT 1 FROM events WHERE type='RequirementsAmended' LIMIT 1").fetchone():
+            raise operation_outcomes.OperationOutcomeError("OP_EFFECT_SCOPE_STALE", "held by the test")
+        return real(store, **kwargs)
+
+    monkeypatch.setattr(operation_outcomes, "prepare_operation_outcome_review", prepare)
+    monkeypatch.setattr(system_operations, "_earlier_operation_fact", lambda *args, **kwargs: None)
+    out = _amend_after_publish_variant(tmp_path)
+    events, mission = out["events"], out["mission"]
+    assert len(out["files"]) == 1 and out["handoffs"] == [1] and _count(events, "ApprovalRequested") == 1
+    assert _count(events, "OperationMaterializationDeferred") >= 1
+    assert len(out["asked"]) == 1, [item.get("source_key") for item in out["asked"]]
+    [asked] = out["asked"]  # 先问规划器一次，事实里带着被拒的申请单
+    assert asked["request"]["trigger_source"] == "NO_DISPATCHABLE_WORK"
+    assert "materialization_refused" in json.dumps(asked["request"]["context"], ensure_ascii=False)
+    assert str(mission.status.value) == "FAILED", mission.final_report
+    assert "materialization_refused" in json.dumps(mission.final_report, ensure_ascii=False)

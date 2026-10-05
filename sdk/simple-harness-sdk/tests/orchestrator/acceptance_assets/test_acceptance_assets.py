@@ -101,3 +101,20 @@ def test_every_mutation_anchors_exactly_once(row: dict) -> None:
     assert row["tests"], row["id"]
     for nodeid in row["tests"]:
         assert _test_exists(nodeid), nodeid
+
+
+FINDINGS = _load("assurance_findings.json")["rows"]
+
+
+@pytest.mark.parametrize("row", FINDINGS, ids=lambda row: row["id"])
+def test_every_assurance_finding_names_real_tests_and_mutations(row: dict) -> None:
+    """Assurance 原计划审查意见的对应表：点名的用例都在、点名的改坏条目都在清单里；标"有用例守着"的
+    至少挂一条用例，有缺口的要写明缺什么。"""
+    missing = [nodeid for nodeid in row["tests"] if not _test_exists(nodeid)]
+    assert not missing, missing
+    known = {item["id"] for item in MUTATIONS}
+    assert set(row["mutations"]) <= known, sorted(set(row["mutations"]) - known)
+    if row["status"] in {"COVERED", "COVERED_AS_DECIDED", "SEE_TEST"}:
+        assert row["tests"]
+    if row["status"] in {"PARTIAL", "NOT_APPLICABLE", "RECORD_ONLY"}:
+        assert row["gap"]

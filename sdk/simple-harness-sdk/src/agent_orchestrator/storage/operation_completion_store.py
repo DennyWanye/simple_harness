@@ -696,7 +696,10 @@ class OperationCompletionStore:
             str(completion.get("effect_key")) not in old_scope_document.owned_effect_keys
             or effect_key not in current_scope_document.owned_effect_keys
             or old_scope_document.obligation_id != current_scope_document.obligation_id
-            or old_scope_document.task_ref != current_scope_document.task_ref
+            # 同一个任务、要求版本只往前走（改要求会换归属任务的合同版本，见结果审查准备处）
+            or old_scope_document.task_ref.id != current_scope_document.task_ref.id
+            or int(old_scope_document.requirements_ref.revision)
+            > int(current_scope_document.requirements_ref.revision)
         ):
             raise StoreConflict(
                 "operation outcome fact is not valid for the current completion slot"

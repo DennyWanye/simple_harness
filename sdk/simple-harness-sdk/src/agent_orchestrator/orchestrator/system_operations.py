@@ -330,6 +330,19 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
             completion = json.loads(item["binding_json"]).get("completion", {})
             if completion.get("effect_key") == effect.effect_key and completion.get("spec_hash") == spec_hash:
                 mine.append(item)
+        earlier = _earlier_operation_fact(store, mission_id, operation, mine)
+        if earlier is not None:
+            # 这个操作在本任务里已经交出去过（按更早一版要求）：不再准备第二份申请单。
+            if earlier["state"] == "SUCCEEDED" and earlier["content_hash"] != artifact.content_hash:
+                plans.append({"effect_key": effect.effect_key, "published_earlier": {
+                    "effect_key": effect.effect_key, "target": operation[2], "action_key": earlier["action_key"],
+                    "published_content_hash": earlier["content_hash"],
+                    "current_content_hash": artifact.content_hash,
+                    "current_requirements_revision": int(requirements.revision)}})
+            else:
+                # 同一份内容已经发布（或结果还没核清）：原事实由结果审查按现行要求重审 / 对账接手
+                plans.append({"effect_key": effect.effect_key, "skip": "earlier_operation_fact"})
+            continue
         heads = [item for item in mine if item["intent_id"] not in superseded]
         supersedes = None
         if heads:
@@ -385,6 +398,41 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
         plans.append(_resubmit_plan(effect, operation, supersedes, mission_id, spec_hash,
                                     row, acceptance, artifact, len(mine), authority))
     return plans
+
+
+def _earlier_operation_fact(store: Any, mission_id: str, operation: tuple[str, str, str],
+                            mine: list[Any]) -> dict[str, Any] | None:
+    """这个操作（同一任务、同一连接器、同一操作、同一目标）在台账里最新的一版，如果它已经交出去过、
+    而现行完成映射下还没有任何一份申请单进入执行链——也就是它是按更早一版要求做的（用户后来改了
+    要求）。台账本来就不许同一目标在一个任务里再发生一次；这里只是提前读到这件事实，不去准备一份
+    注定被拒的申请单。"""
+    from .action_commits import business_action_id
+
+    if any(store.get_receipt("materialize:" + item["intent_id"]) is not None for item in mine):
+        return None
+    versions = [v for v in store.list_action_versions(business_action_id(mission_id, *operation))
+                if v["state"] != "REFUSED"]
+    if not versions or versions[-1]["state"] not in {"SUCCEEDED", "HANDED_OFF", "UNKNOWN"}:
+        return None
+    latest = versions[-1]
+    return {"state": str(latest["state"]), "action_key": str(latest["action_key"]),
+            "content_hash": str((latest.get("params") or {}).get("content_hash") or latest.get("artifact_hash"))}
+
+
+def _ask_planner_about_earlier_publish(orch: Any, mission: Any, facts: dict[str, Any]) -> bool:
+    """用户改要求后要发布的内容变了，而这个目标在本任务里已经发布过一次（台账不许再发）：把两份内容
+    的事实交给规划器一次（问用户、改回原内容、不改由它判断）；它回应过仍没解决就具名停下。"""
+
+    explanation = (f"本任务已发布过 {facts['target']}（内容哈希 {facts['published_content_hash'][:12]}）；"
+                   f"按第 {facts['current_requirements_revision']} 版要求现在要发布的内容不同"
+                   f"（{facts['current_content_hash'][:12]}），同一目标在一个任务里不能再发布一次")
+    return _ask_planner_once(
+        orch, mission,
+        key=f"operation-published-earlier:{facts['effect_key']}:r{facts['current_requirements_revision']}",
+        event_type="OperationNotApplied",
+        stop=lambda why: _stop(orch, mission.id, {"reason": "published_under_earlier_requirements", **facts,
+                                                   "explanation": explanation + why}),
+        detail={"reason": "published_under_earlier_requirements", **facts, "explanation": explanation})
 
 
 def _materialized_action(store: Any, intent_id: str) -> Any:
@@ -459,6 +507,11 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
             return True
         if "rejected" in plan:
             if _ask_planner_after_rejection(orch, orch.store.get_mission(mission_id), plan["rejected"]):
+                return True
+            continue
+        if "published_earlier" in plan:
+            if _ask_planner_about_earlier_publish(orch, orch.store.get_mission(mission_id),
+                                                  plan["published_earlier"]):
                 return True
             continue
         if plan.get("ask"):

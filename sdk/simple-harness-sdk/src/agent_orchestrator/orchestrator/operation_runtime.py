@@ -271,6 +271,23 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                                 store.get_mission(mission_id), record, existing["document"])):
                         # 判不下来（含审阅员两次回复都无法采用）→ 问人；答复被消费后下一轮验收。
                         return True
+                    if record.verdict in {ReviewVerdict.REJECTED, ReviewVerdict.REWORK}:
+                        # 结果审阅员判这次操作的结果不满足要求：操作不能重发，把它的结论交给规划器
+                        # 一次（问用户、改计划由它判断）；它回应过仍没解决就具名停下，不挂着等。
+                        from .system_operations import _ask_planner_once, _stop
+
+                        facts = {"reason": "operation_outcome_rejected", "binding_id": existing["binding_id"],
+                                 "effect_key": row["binding"]["completion"]["effect_key"],
+                                 "verdict": str(record.verdict), "review_record_id": str(record.record_id),
+                                 "requirements_revision": int(owner.requirements_ref.revision),
+                                 "criteria": [dict(item) for item in record.to_json().get("criteria") or ()]}
+                        if _ask_planner_once(
+                                orchestrator, store.get_mission(mission_id),
+                                key="operation-outcome-rejected:" + existing["binding_id"],
+                                event_type="VerifierAcceptanceRejected", detail=facts,
+                                stop=lambda why, facts=facts: _stop(orchestrator, mission_id, {
+                                    **facts, "explanation": "操作的结果没有通过审阅" + why})):
+                            return True
                 # 2026-09-29：唯一一份审阅被重启打断而用完（不是审阅员的结论）——重审一次。
                 if not outcome_retake_due(store, mission_id, current):
                     continue

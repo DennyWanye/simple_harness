@@ -1,3 +1,5 @@
+最后更新：2026-10-05 CST（Assurance 原计划对照后的补改，SDK `opt.162`）。**对外操作在用户改要求之后**：`system_operations.pending_system_operations` 准备申请单前先读操作台账（`_earlier_operation_fact`）——同一任务、同一连接器、同一操作、同一目标已经交出去过、而现行完成映射下还没有申请单进入执行链时，不再准备新申请单：内容相同交结果审查按现行要求重审原事实（`operation_runtime.advance_operation_outcomes`），内容不同交规划器一次（`OperationNotApplied`，`published_under_earlier_requirements`）。结果审查判不通过交规划器一次（`VerifierAcceptanceRejected`，`operation_outcome_rejected`）。停滞判断：物化被拒的申请单不算合法等待（`event_handler._materialization_refusals`，停滞与停机详情里列出）。**任务判定**：`judge_mission` 只请求收尾，不写完成。详见 [ASSURANCE.md](ASSURANCE.md) 顶部。
+
 最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.158）。**时钟水位落库规则；重审的验证记录事件。**
 - `orchestrator/assurance_clock.observe_assurance_clock`：最高水位在进程内精确保存（`CommitService._assurance_clock_seen`），库里那一行与回执只在发现回拨、恢复、正常前进累计满 `CLOCK_PERSIST_STEP_MS`（10 秒）时写。原来每前进 1 毫秒写一条（真机两小时 8.6 万条回执、库 162 MB）。重启后以库值为准，最多少记 10 秒。裁决见 `plans/2026-09-27-desktop-next/HTN补齐-阶段F2-联测记录.md`。
 - `commit_service.record_verification_layer`：`VerificationLayerRecorded` 的键带要求版本——按新版重审时与旧版一字不差的一层也有自己的事件，从事件重建与库一致。

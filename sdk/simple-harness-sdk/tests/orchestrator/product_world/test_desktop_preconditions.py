@@ -272,6 +272,11 @@ def test_file_change_flips_observation_and_moves_epoch(tmp_path):
             [bumped_by] = [row[0] for row in store.connection.execute(
                 "SELECT bumped_by FROM validity_epochs WHERE mission_id=? AND scope_id='mission'", (mission_id,))]
             assert bumped_by == f"observation:{second.observation_id}"
+            # 每条观察落库的同一事务里，保证通道的纪元也推了、记了"证据变了"（Assurance 原计划 V07：
+            # 新增反证与屏障同事务；改坏 AS-M09：观察落库不推保证通道纪元 → 变红）
+            moved = [e for e in events if e.type == "AssuranceEvidenceChanged"
+                     and e.payload.get("source_table") == "observations"]
+            assert len(moved) >= 2 and len({e.payload["epoch"] for e in moved}) == len(moved)
 
             rereads = [e.payload for e in events if e.type == "EvidenceReread"]
             assert [r["changed"] for r in rereads if r["changed"]] == [[first.proposition_key]]

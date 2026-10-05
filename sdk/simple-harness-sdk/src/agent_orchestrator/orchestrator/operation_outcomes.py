@@ -150,9 +150,12 @@ def prepare_operation_outcome_review(
             resolved.proposal.plan_revision,
             resolved.proposal.completion_owner_occurrence_id,
         )
+        # 用户改要求会让效果的归属（根目标）换合同版本：同一个任务、要求版本只往前走，就是
+        # "按新范围审原来那次操作的事实"（Assurance 原计划 E06）；算不算数由结果审阅员按新要求判。
         if (
             original is None
-            or original["document"].task_ref != owner.task_ref
+            or original["document"].task_ref.id != owner.task_ref.id
+            or int(original["document"].requirements_ref.revision) > int(owner.requirements_ref.revision)
             or owner.obligation_id != resolved.envelope.obligation_id
         ):
             raise OperationOutcomeError("OP_EFFECT_SCOPE_STALE", "executed owner differs")
