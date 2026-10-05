@@ -771,15 +771,19 @@ def mission_final_subject(
 
 
 def _sources_in_force(store: Any, mission_id: str, dispatch: Any) -> set[AssuranceRef]:
-    """The Mission's reference material as it stands now (2026-10-05): the final reviewer judges
-    the delivery against the current version, so it has to be in front of it."""
+    """Reference material that was replaced during the Mission, as it stands now (2026-10-05):
+    the final reviewer judges the delivery against the current version, so that text has to be in
+    front of it.  Material that never changed stays on demand through the evidence tools."""
     from ..verification.evidence_resolver import in_source_roots
 
     roots = tuple(dispatch.commit.domain_for(mission_id).source_roots)
+    rows = store.list_sources(mission_id)
+    replaced = {str(row["path"]) for row in rows if row["superseded_by"] is not None}
     return {
         AssuranceRef("source", Pin(str(row["path"]), int(row["revision"]), str(row["version_hash"])))
-        for row in store.list_sources(mission_id, active_only=True)
-        if in_source_roots(str(row["path"]), roots)
+        for row in rows
+        if row["superseded_by"] is None and not row["revoked"] and str(row["path"]) in replaced
+        and in_source_roots(str(row["path"]), roots)
     }
 
 

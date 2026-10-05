@@ -28,6 +28,27 @@ from .assurance_review_pins import ensure_review_blob_pins
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 
+#: 一次审阅作废的原因：它开始之后，证据里的一份资料换了版本或被撤销（2026-10-05 真机）。
+REVIEW_SOURCE_REPLACED = "REVIEW_SOURCE_REPLACED"
+
+
+def replaced_review_source(store: Any, binding: Any) -> str | None:
+    """The path of a source in this review's evidence that is no longer the one in force
+    (superseded or revoked since the review was cut), or None.  A fact read from the source
+    rows: the reviewer judged against text that is not the current reference material."""
+    body = binding.to_json()
+    for item in body["evidence_catalogue"]:
+        ref = AssuranceRef.from_json(item["ref"])
+        if ref.kind != "source":
+            continue
+        row = store.connection.execute(
+            "SELECT superseded_by, revoked FROM sources WHERE mission_id=? AND path=? AND version_hash=?",
+            (body["mission_id"], ref.pin.id, ref.pin.content_hash)).fetchone()
+        if row is None or row["superseded_by"] is not None or row["revoked"]:
+            return str(ref.pin.id)
+    return None
+
+
 class AssuranceReviewConsumer:
     def __init__(
         self,
@@ -164,6 +185,9 @@ class AssuranceReviewConsumer:
                 return PreparedAssuranceWork(replay)
             if review_subject_stopped(self.store, imported.binding):
                 return self._prepare_late(reader, imported, "REVIEW_SUBJECT_STOPPED")
+            if replaced_review_source(self.store, imported.binding) is not None:
+                # 审阅在途时它证据里的资料换了版本 / 被撤销：这次审阅看的不是现行资料，作废。
+                return self._prepare_late(reader, imported, REVIEW_SOURCE_REPLACED)
             scope = body["subject"]["completion_scope_ref"]
             identity = UseIdentity(
                 claim.mission_id,
@@ -357,6 +381,9 @@ class AssuranceReviewConsumer:
                     or read_official_review_binding_locked(self.commit, self.tenant_id, record)
                     != official
                 ):
+                    raise AssuranceError("RECHECK_REQUIRED")
+            elif reason == REVIEW_SOURCE_REPLACED:
+                if replaced_review_source(self.store, imported.binding) is None:
                     raise AssuranceError("RECHECK_REQUIRED")
             elif not review_subject_stopped(self.store, imported.binding):
                 raise AssuranceError("RECHECK_REQUIRED")

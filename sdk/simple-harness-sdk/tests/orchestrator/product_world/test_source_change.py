@@ -49,11 +49,11 @@ def _source_requests(world: Any, mission_id: str) -> list[Any]:
     return [e for e in _events(world, mission_id, REQUESTED) if str(e.payload["source_key"]).startswith("source:")]
 
 
-def _supersede(world: Any, mission_id: str, expected: str) -> dict[str, Any]:
+def _supersede(world: Any, mission_id: str, expected: str, content: str = NEW, key: str = "1") -> dict[str, Any]:
     proposal = world.control.supersede_source({
-        "mission_id": mission_id, "path": PATH, "content": NEW, "kind": "markdown",
-        "idempotency_key": "sup-spec-1", "expected_version_hash": expected})
-    world.control.decide(proposal["request_id"], "approve", nonce="approve-sup-1")
+        "mission_id": mission_id, "path": PATH, "content": content, "kind": "markdown",
+        "idempotency_key": "sup-spec-" + key, "expected_version_hash": expected})
+    world.control.decide(proposal["request_id"], "approve", nonce="approve-sup-" + key)
     return proposal
 
 
@@ -155,5 +155,70 @@ def test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_
             assert len(_source_requests(world, mission_id)) == 1
             final = [r for r in seen["reviews"] if r and r["package"]["purpose"] == "MISSION_FINAL"]
             assert final and all(_source_evidence(r) == [NEW] for r in final)
+
+    asyncio.run(case())
+
+
+class _HoldLeafReview(LayeredScriptedProvider):
+    """这一步的内容审查停在半路（模拟审阅员还在读），直到 ``review_release`` 置位。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.review_entered, self.review_release = asyncio.Event(), asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        review = review_input(request)
+        if review and review["package"]["purpose"] == "TASK_CONTENT" and not self.review_release.is_set():
+            self.review_entered.set()
+            await self.review_release.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reason(tmp_path):
+    """审阅员手里有现行版资料（执行者用的是更早一版），审阅进行中资料又换了一版：这次审阅看的已不是
+    现行资料，作废；失败说明里写的是真正的原因，导入不空转。
+
+    **改坏检验**（SRC-04）：不认"审阅证据里的资料已换版" → 导入空转重试到放弃，说明变成
+    "需要人工处理" → 变红。"""
+
+    async def case():
+        provider = _HoldLeafReview()
+        provider.held.add("worker")
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "按规格写一份说明", "success_criteria": ["file:notes/a.md"],
+                                       "idempotency_key": "source-change-2"})["mission_id"]
+            first = world.control.register_source({"mission_id": mission_id, "path": PATH, "content": OLD,
+                                                   "kind": "markdown", "idempotency_key": "reg-spec-1"})
+            for _ in range(30):
+                await world.drain(timeout=5)
+                if provider.entered.is_set():
+                    break
+            assert provider.entered.is_set()
+            second = _supersede(world, mission_id, first["version_hash"])  # 执行期间换成第 2 版
+            provider.release.set()
+            for _ in range(30):
+                await world.drain(timeout=5)
+                if provider.review_entered.is_set():
+                    break
+            assert provider.review_entered.is_set()  # 审阅员拿着第 2 版在审
+            _supersede(world, mission_id, second["version_hash"], "# 规格\n价格：每月 30 元\n", "2")
+            provider.review_release.set()
+            for _ in range(30):
+                try:
+                    await world.drain(timeout=10)
+                except AssertionError:
+                    pass
+                if _events(world, mission_id, "VerificationFailed") or _events(world, mission_id, "AcceptanceCommitted"):
+                    break
+            [failed] = _events(world, mission_id, "VerificationFailed")
+            [layer] = failed.payload["failures"]
+            assert layer["layer"] == "critic_review" and "资料换了版本或被撤销" in layer["summary"]
+            assert not _events(world, mission_id, "AcceptanceCommitted")
+            [late] = _events(world, mission_id, "AssuranceReviewLateTurn")
+            assert late.payload["reason"] == "REVIEW_SOURCE_REPLACED"
+            # 作废是一次了结，不是空转：导入这件事没有重试过
+            assert [tuple(row) for row in world.store.connection.execute(
+                "SELECT state, rechecks FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW' "
+                "AND work_key LIKE 'review-import:assurance-content:%'", (mission_id,))] == [("DONE", 0)]
 
     asyncio.run(case())

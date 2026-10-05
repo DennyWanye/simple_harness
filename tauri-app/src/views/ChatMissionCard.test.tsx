@@ -102,4 +102,21 @@ describe("对话里的后台任务卡片", () => {
     expect(fake.sent.find((m) => m.type === "mission_approval_decide")!.payload)
       .toEqual({ approval_id: "approval-s", decision: "approve" });
   });
+
+  it("规划器问用户的问题在卡片上就能回答，走任务页同一条消息；已回答的不再显示", () => {
+    const question = { decision_id: "pd-1", state: "PENDING", version: 1, question: "资料换了版本，以哪一份为准？",
+      options: [{ key: "follow-new-source", label: "以新版资料为准" }, { key: "keep", label: "维持现行要求" }] };
+    const fake = mount({ ...DETAIL, approvals: [], planning_questions: [question,
+      { decision_id: "pd-0", state: "ANSWERED", version: 2, question: "早先的问题", answer: "x", options: [] }] });
+    expect(screen.getByText("资料换了版本，以哪一份为准？")).toBeTruthy();
+    expect(screen.queryByText("早先的问题")).toBeNull();
+    fireEvent.change(screen.getByLabelText("选择规划问题回答"), { target: { value: "follow-new-source" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交回答" }));
+    const sent = fake.sent.find((m) => m.type === "mission_planning_answer")!;
+    expect(sent.payload).toMatchObject({ decision_id: "pd-1", answer: "follow-new-source", expected_version: 1,
+      attach_as_source: false });
+    const before = fake.sent.filter((m) => m.type === "mission_get").length;
+    fake.push({ type: "mission_planning_answer_response", payload: { ok: true, request_id: sent.request_id } });
+    expect(fake.sent.filter((m) => m.type === "mission_get").length).toBe(before + 1);
+  });
 });

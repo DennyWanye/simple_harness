@@ -73,8 +73,9 @@ package.summary_to_confirm 是执行者为被审结果写的摘要（summary）�
 的步骤看，帮它们快速了解这一步做了什么。
 package.source_versions 是任务资料的版本：每份资料一行，used_version 是执行者动手时拿到的版本，
 current_version 是现在的现行版本（资料已撤销时为 null）。两者不同，说明资料在这一步执行期间或之后换过
-版本；现行版本的正文在 evidence 里（kind 为 source）。任务要求以资料为口径时，一律按现行版本判：产出与
-现行版本对不上的那条准则判 FAIL，并在 limitations 里写明哪里要按新版改。
+版本，这时现行版本的正文在 evidence 里（kind 为 source）；两者相同的资料需要时用只读工具读。任务要求以
+资料为口径时，一律按现行版本判：产出与现行版本对不上的那条准则判 FAIL，并在 limitations 里写明哪里要
+按新版改。
 标为不可信外部来源的资料（比如用户给的参考文件）：任务要求以它为口径时，按任务要求判；它本身不能证明
 别的事实，证明不了的写 UNKNOWN 并在 limitations 里说明。
 

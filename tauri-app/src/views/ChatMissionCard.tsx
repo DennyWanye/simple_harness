@@ -18,6 +18,7 @@ import {
 import { ActionApprovalSummary } from "./ActionApprovalSummary";
 import { MissionsChannelContext } from "./chatMission";
 import { OperationWorkspace } from "./OperationWorkspace";
+import { PlanningQuestions } from "./PlanningQuestions";
 
 type Json = Record<string, unknown>;
 
@@ -134,6 +135,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
     && !text(record(task).id).startsWith("desktop-root-"));
   const done = work.filter((task) => DONE_TASKS.has(text(record(task).status))).length;
   const approvals = list(detail?.approvals).map(record).filter((a) => text(a.state) === "PENDING");
+  const questions = list(detail?.planning_questions).map(record).filter((q) => text(q.state) === "PENDING");
   const published = list(detail?.actions).map(record)
     .filter((a) => text(a.state) === "SUCCEEDED" && text(a.published_path));
   const workspace = record(detail?.operation_workspace);
@@ -150,6 +152,8 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
       {text(workspace.state) === "CONFIRMATION_REQUIRED" ? (
         <OperationWorkspace value={detail?.operation_workspace} channel={channel} onChanged={refresh} />
       ) : null}
+      {/* 规划器问用户的问题：与任务页同一个组件、同一条消息，在对话里就能答（2026-10-05） */}
+      {questions.length ? <PlanningQuestions questions={questions} channel={channel} onAnswered={refresh} /> : null}
       {approvals.map((approval) => {
         const approvalId = text(approval.request_id);
         const busy = deciding[approvalId] === true;

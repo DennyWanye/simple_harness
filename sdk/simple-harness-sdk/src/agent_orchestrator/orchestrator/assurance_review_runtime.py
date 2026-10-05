@@ -546,11 +546,18 @@ class AssuranceReviewRuntime:
         if failed is not None:
             raise ContractError("Assurance review cannot be imported: " + failed[0])
         row = self.store.connection.execute(
-            "SELECT kind FROM commit_receipts WHERE subject_id=? AND kind IN "
+            "SELECT kind, json_extract(receipt_json,'$.reason') FROM commit_receipts WHERE subject_id=? AND kind IN "
             "('AssuranceReviewImportRejected','AssuranceReviewFormatExhausted','AssuranceReviewLateTurn') LIMIT 1",
             (review_key,),
         ).fetchone()
         if row is not None:
+            from .assurance_review_consumer import REVIEW_SOURCE_REPLACED
+
+            if row[1] == REVIEW_SOURCE_REPLACED:
+                # 说出真正的原因（2026-10-05 真机：规划器只看到"审阅准备需要人工处理"）
+                raise ContractError(
+                    "这次审阅作废：审阅进行期间，任务的资料换了版本或被撤销，审阅员看的不是现行资料"
+                    "（这一步是拿旧版资料做的）")
             raise ContractError("Assurance review stopped: " + row[0])
         row = self.store.connection.execute(
             "SELECT wait_reason FROM assurance_pending_work WHERE consumer='REVIEW' "

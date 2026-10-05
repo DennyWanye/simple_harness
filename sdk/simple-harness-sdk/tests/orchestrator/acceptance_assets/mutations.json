@@ -1088,6 +1088,17 @@
     "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_under_an_accepted_step_is_put_to_the_planner_and_the_final_review_waits"
    ],
    "note": "规划器答不改不能了结资料变更的请求"
+  },
+  {
+   "id": "SRC-04",
+   "source": "联测后补做（2026-10-05 审阅在途时资料换版）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
+   "original": "            if replaced_review_source(self.store, imported.binding) is not None:",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/product_world/test_source_change.py::test_a_review_in_flight_when_its_source_is_replaced_is_voided_with_the_reason"
+   ],
+   "note": "审阅在途时证据里的资料换版不作废这次审阅"
   }
  ]
 }
