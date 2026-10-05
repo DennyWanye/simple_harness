@@ -616,6 +616,10 @@ def test_kept_old_step_is_reviewed_again_not_rerun(tmp_path):
             assert [e.payload["requirements_revision"] for e in events if e.type == "CarriedResultAccepted"] == [2]
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b2.md"] and judged["met"]
+            # 按新版重审写下的每一层验证记录都有自己的事件：从事件重建与库一致（改坏 TG4-08）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+            report = verify_mission(world.store, mission_id)
+            assert report["status"] == CONSISTENT, report["silent_changes"]
 
     asyncio.run(case())
 

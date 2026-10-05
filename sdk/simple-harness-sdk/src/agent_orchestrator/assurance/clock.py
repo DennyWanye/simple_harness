@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from .codec import integer, one_of
 
 
+#: 正常前进时，最高水位每多走这么久才落一次库（联测裁决 2026-10-05）。进程内的水位是精确的，
+#: 进程内的回拨照样发现；落库只防重启后丢水位，重启后最多少记这么多。小于最短的默认时限
+#: （准备超时 20 秒），漏掉一次更小的跨重启回拨只让租约晚回收不到这么久。
+CLOCK_PERSIST_STEP_MS = 10_000
+
+
 @dataclass(frozen=True, slots=True)
 class ClockState:
     generation: int
