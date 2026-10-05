@@ -42,18 +42,14 @@ class InstalledHtnWiringAcceptance:
                     or not _digest(value["deployment_id"])):
                 raise ValueError("invalid deployment manifest")
             upstream = value["upstream"]
-            # 全业务重放 v3（HTN 补齐阶段 G）：上游局要么还没跑 v3（NOT_RUN，读取方永远不当通过），
-            # 要么一致并带 v3 报告文件的哈希
-            replay_keys = ({"business_replay_receipt_sha256"}
-                           if isinstance(upstream, dict) and upstream.get("business_replay") == "CONSISTENT"
-                           else set())
+            # 全业务重放 v3：上游局必须重放一致，并带 v3 报告文件的哈希
             if (not isinstance(upstream, dict) or set(upstream) != {
                     "status", "scope", "wheel_sha256", "manifest_sha256", "source_inputs_sha256",
                     "mission_id", "mission_receipt_sha256", "cold_replay_receipt_sha256",
-                    "business_replay", *replay_keys}
+                    "business_replay", "business_replay_receipt_sha256"}
                     or upstream["status"] != "READY_FOR_TASKGRAPH_WIRING"
                     or upstream["scope"] != "CORE_INTEGRATION_E2E"
-                    or upstream["business_replay"] not in {"NOT_RUN", "CONSISTENT"}
+                    or upstream["business_replay"] != "CONSISTENT"
                     or not isinstance(upstream["mission_id"], str) or not upstream["mission_id"]
                     or any(not _digest(v) for k, v in upstream.items() if k.endswith("_sha256"))):
                 raise ValueError("actual HTN wiring evidence is missing")

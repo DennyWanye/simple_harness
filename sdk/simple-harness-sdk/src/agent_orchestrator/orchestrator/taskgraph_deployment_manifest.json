@@ -1,5 +1,5 @@
 {
-  "deployment_id": "5e71700ab716ddef225677de337550a70416068105cd1a72ab774853a0ade377",
+  "deployment_id": "9ba7820956710f30b8724df7eb4d6ffc01551da819ea05663845079ed692dc12",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -248,7 +248,7 @@
     "agent_orchestrator/orchestrator/taskgraph_convergence.py": "7c321cf0c550353896a35f58b319cf3f4bb03fafadf958f5e9d7c1682a507a35",
     "agent_orchestrator/orchestrator/taskgraph_convergence_authority.py": "41dea693d65a6ffe1295f62730209889c3fef13b4ab2a178dbee4b6992d68ed5",
     "agent_orchestrator/orchestrator/taskgraph_demands.py": "24d839c0a9775ca6be81124496ba7d285d159f0ab7a1f105f58d368536d069b6",
-    "agent_orchestrator/orchestrator/taskgraph_deployment.py": "3f7e6a0053b45103adca1f987730405f53184ced3a21f7e028777ee3ed55f682",
+    "agent_orchestrator/orchestrator/taskgraph_deployment.py": "5beaaa17f4bbd7dcc011eda7c33d9552e0dc92d2c43486a368132cab37689d7b",
     "agent_orchestrator/orchestrator/taskgraph_dispatch.py": "5eb9d57a131f199ee8125e202b91483db1d6e529b1c6605c038a3c9b92cef328",
     "agent_orchestrator/orchestrator/taskgraph_epochs.py": "ef5c1619a18e844c1dda1fa36c6c757b2972d70ef33ad73df25cf634105df1a9",
     "agent_orchestrator/orchestrator/taskgraph_execution_policy.py": "20c5857abb330215d62d8a368592141f7d5f1d80e9ca709ee5a0ddcaa6f55ada",
@@ -691,14 +691,15 @@
   },
   "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
-    "business_replay": "NOT_RUN",
-    "cold_replay_receipt_sha256": "017726443988d0f9dc9bb9d61ce2210560c82b1f397ac192c3c825af3befd45a",
-    "manifest_sha256": "14a637568cc55c1c90818c0b6b18647e2b8c48681e99bf6edfd08b5686b46833",
-    "mission_id": "mission-a22c9fc39b8abed8",
-    "mission_receipt_sha256": "69edb8614ceaa08c12f1056fd99e2dd8430afa049c93a76644067f46a2966fa0",
+    "business_replay": "CONSISTENT",
+    "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",
+    "cold_replay_receipt_sha256": "30f030f176a1d51ca445b35205757b62b01aeca63c6fa67b097f3700d5d34651",
+    "manifest_sha256": "2d275a81db31964c78dfd53ecfcac85420b16f6ba8efe9b67b3b747e595c4885",
+    "mission_id": "mission-02c87a4cb95c074a",
+    "mission_receipt_sha256": "1a9b9730d1d7ae76cbd8f760aecbe23f5482c9fe4ba467d37232581f77e46ee7",
     "scope": "CORE_INTEGRATION_E2E",
-    "source_inputs_sha256": "d0e47090897123f302349addfc87b20b894b9b79bf8907af64492172dc8e465f",
+    "source_inputs_sha256": "027b101628afb65ebb13a6e641f5144d355e4c42c88bca9db5ec0392cad4a388",
     "status": "READY_FOR_TASKGRAPH_WIRING",
-    "wheel_sha256": "58c7307a294f020ba71d9301c3915f1567dc1f9bcbe8b14765ee4870ff17414a"
+    "wheel_sha256": "89052e7156b2deec3eaef054f6d4a2f1c8401a3e44d63c5ce6b068ecbe5066b6"
   }
 }

@@ -23,7 +23,8 @@ from and exactly which files it installs.  It is a build product, not a test ver
     missing upstream evidence.
 
 The evidence file is JSON: ``{"mission_id", "wheel", "candidate_manifest",
-"mission_receipt", "cold_replay_receipt"}`` with paths to the actual files.
+"mission_receipt", "cold_replay_receipt", "business_replay_receipt"}`` with paths to
+the actual files.
 """
 
 from __future__ import annotations
@@ -60,7 +61,8 @@ def upstream_from(evidence_path: Path) -> dict[str, str]:
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     base = evidence_path.parent
     files = {key: (base / evidence[key]).resolve()
-             for key in ("wheel", "candidate_manifest", "mission_receipt", "cold_replay_receipt")}
+             for key in ("wheel", "candidate_manifest", "mission_receipt", "cold_replay_receipt",
+                         "business_replay_receipt")}
     for key, path in files.items():
         if not path.is_file():
             raise SystemExit(f"upstream evidence missing: {key} -> {path}")
@@ -79,6 +81,10 @@ def upstream_from(evidence_path: Path) -> dict[str, str]:
     if (replay.get("mission_id") != mission_id or replay.get("unchanged") is not True
             or replay.get("mission_receipt_sha256") != _sha(receipt_bytes)):
         raise SystemExit("cold-replay receipt does not prove this Mission receipt unchanged")
+    business = json.loads(files["business_replay_receipt"].read_text(encoding="utf-8"))
+    if (business.get("mission_id") != mission_id or business.get("version") != "business-replay-v3"
+            or business.get("status") != "CONSISTENT" or business.get("silent_changes")):
+        raise SystemExit("business-replay receipt does not show this Mission consistent")
     return {
         "status": "READY_FOR_TASKGRAPH_WIRING",
         "scope": "CORE_INTEGRATION_E2E",
@@ -88,9 +94,8 @@ def upstream_from(evidence_path: Path) -> dict[str, str]:
         "mission_id": mission_id,
         "mission_receipt_sha256": _sha(receipt_bytes),
         "cold_replay_receipt_sha256": _sha(files["cold_replay_receipt"].read_bytes()),
-        # 全业务重放 v3 还没在这次上游局上跑过（09-27 的库在迁移 38～41 之前）；联测用新的真实
-        # 上游局跑 v3 后改成 CONSISTENT 并带报告哈希。读取方永远不把 NOT_RUN 当成通过。
-        "business_replay": "NOT_RUN",
+        "business_replay": "CONSISTENT",
+        "business_replay_receipt_sha256": _sha(files["business_replay_receipt"].read_bytes()),
     }
 
 
@@ -182,7 +187,7 @@ def verify(wheel: Path) -> dict[str, object]:
 
         def unproven_replay(root: Path) -> None:  # 说一致却没带 v3 报告的哈希
             value = json.loads((root / MANIFEST_REL).read_text(encoding="utf-8"))
-            value["upstream"]["business_replay"] = "CONSISTENT"
+            del value["upstream"]["business_replay_receipt_sha256"]
             (root / MANIFEST_REL).write_text(json.dumps(value), encoding="utf-8")
 
         counterexample("changed_manifest", changed_manifest)

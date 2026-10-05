@@ -17,7 +17,7 @@ OLD=${1:?旧 opt 号}; NEW=${2:?新 opt 号}; MSG=${3:?SDK 提交说明}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SDK=$REPO/sdk/simple-harness-sdk
 PREFIX="0.13.0.dev20260925+opt"
-UPSTREAM=$REPO/.local-test-evidence/2026-09-27/batch2a-upstream/evidence.json
+UPSTREAM=$REPO/.local-test-evidence/2026-10-05/f2-upstream/evidence.json
 
 cd "$SDK"
 sed -i '' "s/+opt\\.$OLD\"/+opt.$NEW\"/" src/agent_orchestrator/version.py src/simple_harness/version.py

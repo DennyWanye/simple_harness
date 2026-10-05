@@ -32,7 +32,7 @@ SDK = Path(__file__).resolve().parents[2]
 REPO = SDK.parents[1]
 CATALOGUE = SDK / "tests/orchestrator/acceptance_assets/mutations.json"
 DEFAULT_UPSTREAM = Path("/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/"
-                        "2026-09-27/batch2a-upstream/evidence.json")
+                        "2026-10-05/f2-upstream/evidence.json")
 
 
 def _sha(path: Path) -> str:

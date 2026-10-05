@@ -453,7 +453,7 @@
    "id": "G-15",
    "source": "阶段 G 第 7 批",
    "file": "src/agent_orchestrator/orchestrator/taskgraph_deployment.py",
-   "original": "                    or upstream[\"business_replay\"] not in {\"NOT_RUN\", \"CONSISTENT\"}",
+   "original": "                    or upstream[\"business_replay\"] != \"CONSISTENT\"",
    "replacement": "                    or False",
    "tests": [
     "tests/orchestrator/full_target/test_business_replay_inventory.py::test_deployment_identity_never_takes_an_unproven_replay"
