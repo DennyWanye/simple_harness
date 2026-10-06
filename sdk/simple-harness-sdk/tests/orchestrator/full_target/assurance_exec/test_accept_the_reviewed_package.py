@@ -7,6 +7,11 @@ its Critic (criteria from the approved check policy), the acceptance reader rebu
 from the layers that ran (a different criteria spelling, sorted), and the second insert
 of the same package id conflicted.  The reviewed package is accepted when its subject is
 the same; a different subject is still refused by the store.
+
+夜间 N1 2026-10-07：A′ 删除批三（eb749104，10-03，用户 10-02 决定"不走保证通道的旧审阅路径
+删"）起叶子验收只剩保证通道一条路，``_stored_package`` 去掉了 ``reviewed`` 开关。三条按现行签名
+改调用；原"保证通道之外、包不同仍算冲突"一条守的是被删掉的那条路径，随之删除——"主体不同
+一律不接管、交给存储拒绝"仍由 ``test_a_different_subject_is_never_taken_over`` 守。
 """
 
 from __future__ import annotations
@@ -61,25 +66,19 @@ def _packages():  # type: ignore[no-untyped-def]
 def test_assured_acceptance_takes_the_reviewed_package() -> None:
     frozen, rebuilt = _packages()
     semantics = Semantics(stored=frozen)
-    assert _assembly(semantics)._stored_package(rebuilt, reviewed=True) == frozen
+    assert _assembly(semantics)._stored_package(rebuilt) == frozen
     assert semantics.inserted == []
-
-
-def test_outside_the_assured_lane_a_differing_package_is_still_a_conflict() -> None:
-    frozen, rebuilt = _packages()
-    with pytest.raises(StoreConflict):
-        _assembly(Semantics(stored=frozen))._stored_package(rebuilt, reviewed=False)
 
 
 def test_a_different_subject_is_never_taken_over() -> None:
     frozen, rebuilt = _packages()
     other = replace(rebuilt, binding=replace(rebuilt.binding, input_manifest_hash="e" * 64))
     with pytest.raises(StoreConflict):
-        _assembly(Semantics(stored=frozen))._stored_package(other, reviewed=True)
+        _assembly(Semantics(stored=frozen))._stored_package(other)
 
 
 def test_a_first_acceptance_inserts_its_package() -> None:
     _, rebuilt = _packages()
     semantics = Semantics()
-    assert _assembly(semantics)._stored_package(rebuilt, reviewed=True) == rebuilt
+    assert _assembly(semantics)._stored_package(rebuilt) == rebuilt
     assert semantics.inserted == [rebuilt]

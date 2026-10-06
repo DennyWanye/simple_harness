@@ -162,18 +162,51 @@ def test_two_inconclusive_method_reviews_ask_the_person_and_the_ruling_decides(
     asyncio.run(case())
 
 
-def test_a_method_review_that_ends_without_a_verdict_is_reported_to_the_planner(tmp_path):
+def test_a_method_review_without_a_usable_reply_asks_the_person_and_is_never_adoptable(tmp_path):
+    """审阅员两次回复都无法采用（格式不对）：按"没有可采用的回复"记成判不下来，问人裁决；
+    人答之前规划器不被叫醒、做法不可采用；人答"打回"后规划器被叫醒，再去采用仍被提交闸门
+    按 METHOD_NOT_AUTHORIZED 具名拒绝。
+
+    2026-10-07 夜间 N1 改写：原用例"…ends_without_a_verdict_is_reported_to_the_planner"等两次格式
+    错后直接给规划器报 NO_VERDICT。阶段 C（09657376，10-03）按用户 09-30 决定"判不下来 → 同模型
+    新会话复审 1 次 → 仍不行问用户裁决"，把第 2 次仍不可用的回复导入成判不下来记录并问人，
+    产品行为对、用例口径过时。原用例守的两件事仍在：
+    * "没有结论不是通过、不能采用"——本条经提交闸门再守一次；
+    * "审阅调用两次都没回来 → 给规划器报 NO_VERDICT"——由
+      ``test_service_intent_provider_blocker.py::test_a_method_review_that_never_answers_is_reported_as_no_verdict`` 守。"""
+
     async def case():
         scripted = provider(planner=[propose(), adopt(1)],
                             reviewer=["this is not a verdict", "still not a verdict"])
         async with assured_loop(tmp_path, scripted) as world:
+            questions = PlanningHumanStore(world.store)
+            assert await run_until(world, lambda w: questions.pending(w.mission.id))
+            [question] = [row for row in questions.list(world.mission.id) if row["state"] == "PENDING"]
+            assert question["decision_id"].startswith("adjudicate-method:")
+            # the reply and its one repair, never a third (the reviewer counts as "unknown" here)
+            assert scripted.by_role.get("unknown") == 2
+            from agent_orchestrator.storage.htn_store import HtnStore
+            record = HtnStore(world.store).get_review_record(
+                question["decision_id"].partition(":")[2]).record
+            assert record.verdict.value == "INCONCLUSIVE"
+            assert all(str(item.verdict) == "UNKNOWN"
+                       and item.limitations[0].startswith("REVIEW_NO_USABLE_REPLY:")
+                       for item in record.criteria)
+            await spin(world, 10)
+            assert scripted.by_role.get("planner") == 1  # nobody is woken while the person decides
+            assert not events_of(world, "PlanningMethodReviewed")
+            assert _versions(world) == []
+
+            world.control.answer_planning_question({
+                "decision_id": question["decision_id"], "answer": "fail",
+                "expected_version": question["version"], "nonce": "n-1"})
             assert await run_until(world, lambda w: events_of(w, "PlanningMethodReviewed"))
             [reviewed] = events_of(world, "PlanningMethodReviewed")
-            assert reviewed.payload["outcome"] == "NO_VERDICT"
-            assert reviewed.payload["record_id"] is None and reviewed.payload["reason"]
+            assert reviewed.payload["outcome"] == "REJECTED"
+            assert reviewed.payload["human_ruling"]["decision"] == "fail"
             assert await run_until(world, lambda w: w.provider.asked.count("planner") == 2)
             await spin(world, 10)
-            # reported, and still not adoptable: no verdict is not a pass
+            # reported, and still not adoptable: no usable verdict is not a pass
             assert _versions(world) == []
             refused = [event.payload for event in events_of(world, "PlanningDecisionEvaluated")
                        if event.payload.get("status") == "COMMIT_REJECTED"]

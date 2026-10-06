@@ -72,17 +72,25 @@ def test_cas_and_idempotent_events(tmp_path):
     store.update_mission(updated, expected_version=1)
     with pytest.raises(StoreConflict):
         store.update_mission(updated, expected_version=1)
+    # HTN 补齐阶段 G（1c442b82/061f1e29，10-04）起存储层在每个最外层事务提交前给业务行写入
+    # 记一条 RowsWritten（上面建任务、改任务各一条），序号不再从 1 起；本条守的是"同键追加
+    # 返回同一条、只存一条""事务中途崩溃全部回滚"，与序号起点无关（夜间 N1 2026-10-07）。
+    before = store.last_event_seq("mission-1")
+    total = store.count_events("mission-1")
     first = store.append_event(_event("MissionCreated:mission-1"))
     second = store.append_event(_event("MissionCreated:mission-1"))
-    assert first.seq == second.seq == 1
-    assert store.count_events("mission-1") == 1
-    # a crash inside a transaction rolls everything back
+    assert first.seq == second.seq == before + 1
+    assert second == first
+    assert store.count_events("mission-1", "Probe") == 1
+    assert store.count_events("mission-1") == total + 1  # the repeat wrote nothing at all
+    # a crash inside a transaction rolls everything back (its RowsWritten included)
     store.arm("probe")
     with pytest.raises(InjectedCrash):
         with store.transaction():
             store.append_event(_event("Second"))
             store.fault("probe")
-    assert store.count_events("mission-1") == 1
+    assert store.count_events("mission-1") == total + 1
+    assert store.last_event_seq("mission-1") == first.seq
     assert store.fired == ["probe"]
 
 
