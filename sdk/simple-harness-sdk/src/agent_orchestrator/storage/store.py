@@ -1044,9 +1044,12 @@ class Store:
     def upsert_knowledge(self, record: KnowledgeRecord) -> None:
         with self.transaction() as connection:
             connection.execute(
-                "INSERT INTO knowledge(knowledge_id,mission_id,claim_id,key,status,version,source_task,json,created_at,updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(knowledge_id) DO UPDATE SET status = excluded.status,"
-                " version = excluded.version, json = excluded.json, updated_at = excluded.updated_at",
+                "INSERT INTO knowledge(knowledge_id,mission_id,claim_id,key,status,version,source_task,json,created_at,updated_at,"
+                "validity_interval,permitted_uses,assurance_level)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(knowledge_id) DO UPDATE SET status = excluded.status,"
+                " version = excluded.version, json = excluded.json, updated_at = excluded.updated_at,"
+                " validity_interval = excluded.validity_interval, permitted_uses = excluded.permitted_uses,"
+                " assurance_level = excluded.assurance_level",
                 (
                     record.id,
                     record.mission_id,
@@ -1058,6 +1061,10 @@ class Store:
                     canonical_json(record.to_json()),
                     record.created_at,
                     self.now,
+                    # 第 2 批 K02：三列与 JSON 同一次写入；None 落成 NULL，不猜
+                    None if record.validity_interval is None else canonical_json(dict(record.validity_interval)),
+                    None if record.permitted_uses is None else canonical_json(list(record.permitted_uses)),
+                    record.assurance_level,
                 ),
             )
 

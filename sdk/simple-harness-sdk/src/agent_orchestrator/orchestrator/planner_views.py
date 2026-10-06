@@ -20,6 +20,7 @@ from ..planning.htn.planner_package import (
     _network_authorities,
     assemble_planner_package,
     fact_rows,
+    knowledge_rows,
     failure_index,
     failure_outline,
     goal_rows,
@@ -166,6 +167,14 @@ def read_planner_package(
         htn.list_observations(mission.id), state_of=state_of,
         read_item=SemanticReadSetChecker(store, htn, mission_id=mission.id).read_item)
 
+    # knowledge (第 2 批 K03) -----------------------------------------------------------
+    # 黑板给规划器看的两层：现在仍然当前的已验证知识（与读工具、推送上下文、审查包同一个判定）
+    # 和审阅员核对过忠实的步骤摘要；按任务范围、按有效性过滤、有上限。
+    from ..context.knowledge_tools import current_knowledge, step_summaries
+
+    knowledge, omitted_knowledge = knowledge_rows(
+        current_knowledge(store, mission.id), step_summaries(store, mission.id))
+
     # obligations --------------------------------------------------------------------
     obligations = []
     duty_refs = []
@@ -246,6 +255,7 @@ def read_planner_package(
         "method_library": directory(store, mission, catalog_digest(world),
                                     method_signatures(network, under_repair)),
         "library_reads": library_reads(store, mission.id),
+        "knowledge": list(knowledge),
     }
 
     # what the Planner is asked about, and what its decisions may name ----------------
@@ -289,7 +299,7 @@ def read_planner_package(
         sections=sections, previous_feedback=previous_feedback,
         authorities=[*_network_authorities(network), *duty_refs],
         extra_refs=list(instance_refs),
-        omitted={"methods": omitted_methods, "facts": omitted_facts})
+        omitted={"methods": omitted_methods, "facts": omitted_facts, "knowledge": omitted_knowledge})
 
 
 def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
-"""规划包只组装一层：九个视图，每件事只说一次（HTN 精简 片 C）。
+"""规划包只组装一层：十二个视图，每件事只说一次（HTN 精简 片 C；第 2 批 K03 加第十二个视图 knowledge）。
 
 此前规划请求是三层拼出来的：旧收集器先生成一份映射（``plan``、``method_library``、
 ``applicability``、``facts``、``operators``、``planning_rejected``……），转换层再从这份映射
@@ -76,12 +76,12 @@ def _first_request(tmp_path: Path, key: str) -> dict[str, Any]:
     return asyncio.run(case())
 
 
-def test_the_request_is_eleven_views_and_nothing_twice(tmp_path: Path) -> None:
+def test_the_request_is_twelve_views_and_nothing_twice(tmp_path: Path) -> None:
     package = _first_request(tmp_path, "single-layer-shape")["package"]
     assert set(package) == TOP_LEVEL
     assert not GONE & set(package)
     # (the package is read back from the stored intent, whose JSON keys are canonical)
-    assert sorted(package["views"]) == sorted(VIEW_NAMES) and len(VIEW_NAMES) == 11
+    assert sorted(package["views"]) == sorted(VIEW_NAMES) and len(VIEW_NAMES) == 12
     assert package["package_version"] == PLANNING_DECISION_PACKAGE_VERSION
 
     # the open root goal is said once, in views.goals, with its parameters
@@ -118,6 +118,8 @@ def test_the_prompt_names_only_fields_the_package_has(tmp_path: Path) -> None:
     # 阶段 C3：全库做法的目录与读过的原文是规划包里真实的两个视图
     for view in ("method_library", "library_reads"):
         assert f"views.{view}：" in prompt and view in package["views"], view
+    # 第 2 批 K03：黑板（已验证知识与核对过的步骤摘要）是规划包里真实的第十二个视图
+    assert "views.knowledge：" in prompt and isinstance(package["views"]["knowledge"], list)
 
 
 def test_a_failure_is_indexed_in_the_view_and_detailed_only_in_its_repair_request() -> None:
@@ -174,8 +176,8 @@ def _assemble(**views: Any) -> dict[str, Any]:
                                     views=rows, sections={"repair_requests": []})
 
 
-def test_the_assembler_needs_exactly_the_eleven_views() -> None:
-    with pytest.raises(PlannerPackageError, match="eleven views"):
+def test_the_assembler_needs_exactly_the_twelve_views() -> None:
+    with pytest.raises(PlannerPackageError, match="twelve views"):
         assemble_planner_package(package_version=10, mission=_Mission(), network=_Network(),
                                  views={"goals": ()})
     assert not hasattr(planner_package, "hierarchical_planner_package")

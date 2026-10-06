@@ -56,6 +56,14 @@ class KnowledgeRecord:
     #: Whether the knowledge is still current is read from this and nothing else
     #: (``knowledge_standing``); empty means nothing vouches for it.
     support: Mapping[str, Any] = field(default_factory=dict)
+    #: 原计划 §11.2 / §25.1 第 5 条的三个登记项（第 2 批 K02，迁移 45）。写方只在审阅通过入库时
+    #: 从验收用的证书与任务的保证通道取值；取不到就是 None，不猜：
+    #: ``validity_interval`` —— ``{"valid_from_ms", "valid_until_ms", "mission_epoch"}``，证书签发时刻、
+    #: 失效时刻（None＝未定）与签发时的任务纪元；``permitted_uses`` —— 允许的用途清单；
+    #: ``assurance_level`` —— 确认这条知识的审阅所在的保证通道（如 ``ASSURANCE_1_1``）。
+    validity_interval: Mapping[str, Any] | None = None
+    permitted_uses: tuple[str, ...] | None = None
+    assurance_level: str | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -89,6 +97,13 @@ class KnowledgeRecord:
         ):
             object.__setattr__(self, name, _texts(getattr(self, name), f"knowledge.{name}"))
         object.__setattr__(self, "support", _support(self.support))
+        object.__setattr__(self, "validity_interval", _validity_interval(self.validity_interval))
+        if self.permitted_uses is not None:
+            object.__setattr__(
+                self, "permitted_uses", _texts(self.permitted_uses, "knowledge.permitted_uses"))
+        if self.assurance_level is not None:
+            object.__setattr__(
+                self, "assurance_level", _text(self.assurance_level, "knowledge.assurance_level", limit=128))
 
     def to_json(self) -> dict[str, Any]:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
@@ -132,6 +147,28 @@ def _support(value: object) -> dict[str, Any]:
         out[name] = sorted(({"id": str(row["id"]), "version": row["version"],
                              "content_hash": str(row["content_hash"])} for row in rows),
                            key=lambda row: row["id"])
+    return out
+
+
+_VALIDITY_KEYS = ("mission_epoch", "valid_from_ms", "valid_until_ms")
+
+
+def _validity_interval(value: object) -> dict[str, Any] | None:
+    """``KnowledgeRecord.validity_interval``: None, or exactly the three keys; ``valid_until_ms``
+    may be None (no expiry was certified), the other two are integers."""
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or tuple(sorted(value)) != _VALIDITY_KEYS:
+        raise ContractError(f"knowledge.validity_interval must carry exactly {list(_VALIDITY_KEYS)}")
+    out: dict[str, Any] = {}
+    for name in _VALIDITY_KEYS:
+        item = value[name]
+        if item is None and name == "valid_until_ms":
+            out[name] = None
+        elif type(item) is int:
+            out[name] = item
+        else:
+            raise ContractError(f"knowledge.validity_interval.{name} must be an integer")
     return out
 
 

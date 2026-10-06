@@ -3,7 +3,7 @@
 
 """The package a hierarchical Planner is given, assembled in one layer.
 
-What the model reads is facts, in eleven views, plus the things it is asked to act on:
+What the model reads is facts, in twelve views, plus the things it is asked to act on:
 
 ``views``
     ``goals`` (every goal and step on the board, with its state), ``obligations``,
@@ -11,7 +11,10 @@ What the model reads is facts, in eleven views, plus the things it is asked to a
     ``methods`` (the library rows for the goals that can take a method, each with its
     applicability reports and — for a method proposed in this Mission — its review),
     ``facts``, ``accepted_results``, ``failures`` (an index of what failed; no
-    details), ``capabilities`` and ``planning_budgets``.
+    details), ``capabilities``, ``planning_budgets``, ``method_library``, ``library_reads``
+    and ``knowledge`` (第 2 批 K03: the blackboard as the Planner sees it — verified knowledge
+    that is current right now and the reviewer-checked step summaries, newest first, bounded;
+    原计划 §11 / §24 第 12 步 "重新判断方向要看到全局视图").
 ``repair_requests`` / ``human_answers``
     what happened that the Planner is asked about, and what the user already said.
     **The details of a failure live here and nowhere else**: the pending request
@@ -72,6 +75,7 @@ from ...graph.task_network import TaskNetworkSnapshot
 VIEW_NAMES = (
     "goals", "obligations", "plans", "methods", "facts", "accepted_results",
     "failures", "capabilities", "planning_budgets", "method_library", "library_reads",
+    "knowledge",
 )
 
 #: The whole provider envelope is bounded, not just the views: the package is a prompt.
@@ -83,7 +87,7 @@ MAX_FAILURES = 16
 
 #: The views size pressure may shorten, in the order it does so.  Goals, the plan and
 #: the budgets are mandatory and are never dropped.
-_SHRINKABLE = ("accepted_results", "failures", "facts", "methods", "library_reads")
+_SHRINKABLE = ("accepted_results", "failures", "facts", "knowledge", "methods", "library_reads")
 
 
 class PlannerPackageError(ContractError):
@@ -119,6 +123,10 @@ MAX_APPLICABILITY_REPORTS = 12
 #: more: the section exists so the Planner can *cite* a fact, not so it can browse
 #: the Mission's whole evidence history.
 MAX_FACTS = 24
+#: How many blackboard rows (verified knowledge, then checked step summaries) one package
+#: carries.  Same reason: the Planner reads them to judge direction, not to browse the
+#: Mission's whole memory; the catalogue stays readable by the Workers' tools.
+MAX_KNOWLEDGE = 16
 
 def _ref_key(reference: Any) -> tuple[str, int, str]:
     to_json = getattr(reference, "to_json", None)
@@ -417,6 +425,46 @@ def fact_rows(
             "times": {name: getattr(record, name, None) for name in (
                 "observed_at_ms", "recorded_at_ms", "valid_from_ms", "valid_until_ms",
                 "query_watermark_ms")},
+        })
+    kept = tuple(rows[: max(0, limit)])
+    return kept, len(rows) - len(kept)
+
+
+def knowledge_rows(
+    records: Sequence[Any], summaries: Sequence[Mapping[str, Any]], *, limit: int = MAX_KNOWLEDGE,
+) -> tuple[tuple[dict[str, Any], ...], int]:
+    """``views.knowledge`` (第 2 批 K03): the blackboard's two layers a Planner judges
+    direction from, and how many rows were left out.
+
+    ``records`` are the Mission's knowledge records that are current *right now* — the
+    caller filters them with the one judgement every reader shares
+    (``context.knowledge_tools.current_knowledge``); nothing here re-decides validity.
+    ``summaries`` are the reviewer-checked step summaries (``step_summaries``), already
+    newest first.  Verified knowledge leads, newest first, because it is what a decision
+    may treat as fact; a summary tells what a step did.  Each row says which layer it is
+    and carries the ``ref`` a Worker would cite — it is *not* a planning reference
+    quadruple, so none of these rows enters ``visible_refs``.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for record in sorted(records, key=lambda item: (-float(item.created_at), str(item.id))):
+        rows.append({
+            "layer": "verified",
+            "ref": f"{record.id}@{int(record.version)}",
+            "id": str(record.id), "version": int(record.version), "key": record.key,
+            "stance": record.stance,
+            "basis": str(record.verifier.get("basis") or "test_observation"),
+            "content": record.content, "source_task": record.source_task,
+            "assurance_level": record.assurance_level,
+            "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
+            "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
+        })
+    for row in summaries:
+        rows.append({
+            "layer": "summary", "id": str(row["id"]), "source_task": row["source_task"],
+            "summary": row["summary"],
+            "artifacts": [{"path": a["path"], "version": a["version"]} for a in row.get("artifacts", ())],
+            "checked_by": row["checked_by"],
         })
     kept = tuple(rows[: max(0, limit)])
     return kept, len(rows) - len(kept)
@@ -881,7 +929,7 @@ def assemble_planner_package(
 ) -> dict[str, Any]:
     """The whole package, as a plain mapping the context builder can seal.
 
-    ``views`` is the eleven views, row for row as the model will read them; ``sections``
+    ``views`` is the twelve views, row for row as the model will read them; ``sections``
     is everything else the reader gathered (repair requests, candidate lists, …).
     This function adds the protocol fields, computes ``visible_refs`` from the rows
     actually shown, applies the count caps and the size bound, and records what it
@@ -894,7 +942,7 @@ def assemble_planner_package(
 
     if set(views) != set(VIEW_NAMES):
         raise PlannerPackageError(
-            f"the package needs exactly the eleven views; got {sorted(views)}")
+            f"the package needs exactly the twelve views; got {sorted(views)}")
     omitted_counts = {str(key): int(value) for key, value in dict(omitted or {}).items() if int(value) > 0}
     shown: dict[str, list[Any]] = {name: [dict(row) for row in views[name]] for name in VIEW_NAMES}
     for name, limit in (("accepted_results", MAX_ACCEPTED_RESULTS), ("failures", MAX_FAILURES)):

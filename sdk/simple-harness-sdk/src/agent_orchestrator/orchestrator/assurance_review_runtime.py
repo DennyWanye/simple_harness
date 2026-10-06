@@ -18,10 +18,10 @@ from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
 
 from ..assurance.codec import AssuranceError, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
-from ..assurance.review_input import REVIEW_INSTRUCTIONS
+from ..assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
 from ..assurance.reviews import REVIEW_CODEC_VERSION
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ContractError
-from ..runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.htn_store import HtnStore
 from ..verification.critics import CriticVerdict
@@ -237,14 +237,13 @@ class AssuranceReviewRuntime:
             raise AssuranceError(REVIEW_ROUTE_UNAVAILABLE, unavailable.profile_id) from unavailable
         config = {
             **orch._service_config(decision),
-            "prompt_version": REVIEW_CODEC_VERSION,
+            "prompt_version": REVIEW_INSTRUCTIONS_VERSION,
             "agent_config": AgentConfig(
                 name=name,
                 instructions=REVIEW_INSTRUCTIONS,
                 model_profile_ref=decision.profile_id,
-                # §4: this profile's template explicitly carries the two read-only
-                # evidence tools; the legacy root reviewer keeps tool_names=().
-                tool_names=ASSURANCE_EVIDENCE_TOOLS,
+                # §4: the two read-only evidence tools, plus the blackboard readers (K01).
+                tool_names=ASSURANCE_REVIEWER_TOOLS,
                 limits=AgentLimits(
                     max_model_calls_per_turn=REVIEW_MODEL_CALLS,
                     max_tool_calls_per_turn=REVIEW_TOOL_CALLS,
@@ -441,12 +440,12 @@ class AssuranceReviewRuntime:
                 **orch._service_config(decision),
                 **fields,
                 "attempt_id": attempt_id,
-                "prompt_version": REVIEW_CODEC_VERSION,
+                "prompt_version": REVIEW_INSTRUCTIONS_VERSION,
                 "agent_config": AgentConfig(
                     name="assurance-content-review",
                     instructions=REVIEW_INSTRUCTIONS,
                     model_profile_ref=decision.profile_id,
-                    tool_names=ASSURANCE_EVIDENCE_TOOLS,
+                    tool_names=ASSURANCE_REVIEWER_TOOLS,
                     limits=AgentLimits(
                         max_model_calls_per_turn=REVIEW_MODEL_CALLS,
                         max_tool_calls_per_turn=REVIEW_TOOL_CALLS,

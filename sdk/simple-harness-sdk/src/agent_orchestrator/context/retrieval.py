@@ -343,6 +343,10 @@ def knowledge_view(record: KnowledgeRecord, scored: Scored | None = None) -> dic
                          for item in record.support.get("knowledge", ())],
         "used_by": list(record.used_by),
         "disputed_by": list(record.disputed_by),
+        # 第 2 批 K02：原计划 §11.2 的三个登记项，没登记的就是 None
+        "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
+        "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
+        "assurance_level": record.assurance_level,
         "score": None if scored is None else round(scored.score, 4),
     }
     return view

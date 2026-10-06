@@ -36,7 +36,7 @@ from ..runtime.assembly import OWNER_SCOPE, resolve_profile_context_policy
 from ..runtime.mission_sources import MissionSourceReader
 from ..runtime.model_router import RuntimeProfile
 from ..runtime.native_plane import NativePlaneAssembly, intent_caller
-from ..runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +69,14 @@ class DeploymentToolAuthorization:
 
     It is not ``AllowAll``: a tool outside ``DeploymentPolicy.allowed_tools`` is denied
     with the policy named, and the policy identity is part of the port.  The Assurance
-    reviewers' two read-only evidence tools are part of the policy: every role of a
-    Mission runs on the Mission's pool, and a reviewer that cannot read evidence can only
-    answer INCONCLUSIVE (the tool gateway still confines them to the reviewer role).
+    reviewers' read-only tools (two evidence tools and, since K01, the two blackboard
+    readers) are part of the policy: every role of a Mission runs on the Mission's pool,
+    and a reviewer that cannot read evidence can only answer INCONCLUSIVE (the tool
+    gateway still confines them to the reviewer role).
     """
 
     def __init__(self, allowed_tools: Sequence[str]) -> None:
-        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(ASSURANCE_EVIDENCE_TOOLS)
+        self._allowed = frozenset(str(name) for name in allowed_tools) | frozenset(ASSURANCE_REVIEWER_TOOLS)
         self.policy_id = "host-deployment-policy:" + digest(sorted(self._allowed))[:16]
 
     async def request_authorization(self, request: Any) -> AuthorizationResult:

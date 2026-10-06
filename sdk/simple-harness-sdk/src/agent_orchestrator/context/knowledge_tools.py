@@ -12,8 +12,12 @@
 
 The rule-truncated summary layer is not offered.  ``knowledge_read`` returns the original
 text of one verified or candidate entry with its provenance; knowledge that is superseded
-or out of date is refused, never served as if it were current.  The tool names, arguments
+or out of date is never served as if it were current.  The tool names, arguments
 and descriptions are unchanged (they are part of every pool's identity).
+
+读取后复核（第 2 批 K05，原计划 §11.3 的第二道）：目录是检索前的过滤；``knowledge_read`` 把一条
+已验证知识的正文取出之后、交给读者之前，用同一个判定（:func:`knowledge_standing`）再判一次。
+不再当前的不返回正文，如实写明它的现状（SUPERSEDED / STALE:<原因>）；只有编号对不上的才拒绝。
 """
 
 from __future__ import annotations
@@ -122,6 +126,10 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
             "version": record.version, "key": record.key, "basis": knowledge_basis(record),
             "preview": record.content[:200], "source_task": record.source_task,
             "evidence": list(record.evidence),
+            # 第 2 批 K02：目录里就能看到保障等级与有效期；None＝没登记
+            "assurance_level": record.assurance_level,
+            "validity_interval": None if record.validity_interval is None else dict(record.validity_interval),
+            "permitted_uses": None if record.permitted_uses is None else list(record.permitted_uses),
             "_text": record.content, "_record": record,
             "_stamp": f"{record.id}:{record.version}:{_digest(record.content)}",
         })
@@ -151,6 +159,19 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
 
 def _public(row: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in row.items() if not key.startswith("_")}
+
+
+def not_current_reply(record: Any, standing: str) -> dict[str, Any]:
+    """``knowledge_read`` 对一条不再当前的已验证知识的回答：没有正文，只有它的现状。"""
+    return {
+        "layer": VERIFIED_LAYER, "id": record.id, "version": record.version,
+        "ref": knowledge_ref(record.id, record.version), "standing": standing,
+        "content": None, "sha256": None, "offset": 0, "next_offset": None,
+        "notice": (
+            f"读取后复核：这条知识已不再当前（{standing}），不返回正文，也不能引用。"
+            "用 knowledge_list 重新取现行目录。"
+        ),
+    }
 
 
 def read_knowledge_tool(
@@ -189,6 +210,11 @@ def read_knowledge_tool(
         raise ValueError("unknown knowledge tool")
     row = next((row for row in rows if row["id"] == args.get("id")), None)
     if row is None:
+        # 编号是本任务的一条知识、只是不再当前：如实说明现状，不当成"没有这条"
+        wanted = args.get("id")
+        record = store.get_knowledge(wanted) if isinstance(wanted, str) else None
+        if record is not None and record.mission_id == mission_id:
+            return not_current_reply(record, knowledge_standing(store, record))
         raise ValueError("knowledge is not current or not available in this Mission")
     if row["layer"] == RAW_REF_LAYER:
         if offset:
@@ -201,6 +227,11 @@ def read_knowledge_tool(
     if offset > len(text):
         raise ValueError("offset is outside original knowledge")
     end = min(offset + 2048, len(text))
+    if row["layer"] == VERIFIED_LAYER:
+        # 读取后复核（K05）：正文已取出，交出去之前再判一次；目录那次判定不替这一次作数
+        standing = knowledge_standing(store, row["_record"])
+        if standing != CURRENT:
+            return not_current_reply(row["_record"], standing)
     head = (
         {**knowledge_view(row["_record"], None), "layer": VERIFIED_LAYER, "ref": row["ref"],
          "basis": row["basis"]}

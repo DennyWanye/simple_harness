@@ -1560,6 +1560,33 @@ CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inpu
 END;
 """
 
+# 第 2 批 K02（2026-10-06）：知识记录补原计划 §11.2 / §25.1 第 5 条的三个登记项——有效期
+# （validity_interval，JSON 对象或 NULL）、允许用途（permitted_uses，JSON 数组或 NULL）、保障等级
+# （assurance_level，文本或 NULL）。表重建照迁移 43 的做法：新表、整行搬过去、删旧表、改名、索引原样
+# 重建。旧行三列一律 NULL（开发期不兼容旧数据，不从旧 JSON 里猜）；这张表没有触发器。
+DDL_V45 = """
+CREATE TABLE knowledge_v45 (
+ knowledge_id TEXT PRIMARY KEY,
+ mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+ claim_id TEXT NOT NULL,
+ key TEXT,
+ status TEXT NOT NULL,
+ version INTEGER NOT NULL,
+ source_task TEXT NOT NULL,
+ json TEXT NOT NULL,
+ created_at REAL NOT NULL,
+ updated_at REAL NOT NULL,
+ validity_interval TEXT,
+ permitted_uses TEXT,
+ assurance_level TEXT
+) STRICT;
+INSERT INTO knowledge_v45(knowledge_id,mission_id,claim_id,key,status,version,source_task,json,created_at,updated_at,validity_interval,permitted_uses,assurance_level)
+ SELECT knowledge_id,mission_id,claim_id,key,status,version,source_task,json,created_at,updated_at,NULL,NULL,NULL FROM knowledge;
+DROP TABLE knowledge;
+ALTER TABLE knowledge_v45 RENAME TO knowledge;
+CREATE INDEX knowledge_mission_idx ON knowledge(mission_id, status, created_at);
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1605,6 +1632,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(42, "orchestrator-verifications-per-requirements", DDL_V42),
     Migration(43, "orchestrator-data-requirements-drop-revision-policy", DDL_V43),
     Migration(44, "orchestrator-manifest-binding-per-input-revision", DDL_V44),
+    Migration(45, "orchestrator-knowledge-validity-uses-level", DDL_V45),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name
