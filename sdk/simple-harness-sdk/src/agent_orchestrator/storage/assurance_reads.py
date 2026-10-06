@@ -198,7 +198,7 @@ class AssuranceReader:
                 raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
             if ref.kind == "result":
                 body = body["envelope"]  # exclude the mutable verification wrapper
-            if fingerprint(body) != ref.pin.content_hash:
+            if fingerprint(body, limit=limit) != ref.pin.content_hash:
                 raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
             # The lifecycle part is the row's own columns without the body column: the
             # body is carried (and hash-checked) once, not again as an escaped string that

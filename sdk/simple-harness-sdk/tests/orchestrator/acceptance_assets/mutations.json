@@ -1413,6 +1413,17 @@
     "tests/orchestrator/product_world/test_requirements_amend.py::test_a_request_whose_materialisation_is_always_refused_is_not_a_legitimate_wait"
    ],
    "note": "物化一直被拒的申请单仍算合法等待"
+  },
+  {
+   "id": "AS-M17",
+   "source": "真实模型验收 2026-10-06（编程题终审导入撞 256 KB 上限）",
+   "file": "src/agent_orchestrator/storage/assurance_reads.py",
+   "original": "            if fingerprint(body, limit=limit) != ref.pin.content_hash:",
+   "replacement": "            if fingerprint(body) != ref.pin.content_hash:",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_exact_metadata_large_body.py::test_a_manifest_past_the_json_limit_is_hashed_under_the_record_limit"
+   ],
+   "note": "核对精确引用的哈希时按默认 256 KB 上限重编码，超过的输入清单每次导入都被拒"
   }
  ]
 }

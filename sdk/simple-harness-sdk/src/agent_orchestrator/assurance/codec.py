@@ -145,5 +145,9 @@ def canonical(value: Any, *, limit: int = MAX_BYTES) -> str:
         raise AssuranceError("JSON_INVALID") from exc
 
 
-def fingerprint(value: Any) -> str:
-    return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
+def fingerprint(value: Any, *, limit: int = MAX_BYTES) -> str:
+    """The hash of the canonical encoding; ``limit`` is the same record limit the caller
+    decoded the value under (2026-10-06 real-model run: a reviewer input manifest stored as
+    254 KB of UTF-8 re-encodes to 276 KB of escaped canonical JSON, so hashing it under
+    the default limit refused every import of that review)."""
+    return hashlib.sha256(canonical(value, limit=limit).encode("utf-8")).hexdigest()

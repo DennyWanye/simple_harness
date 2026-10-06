@@ -1,3 +1,5 @@
+最后更新：2026-10-06 CST（真实模型验收中修掉的缺陷，SDK `opt.163`）。**精确引用的哈希核对按解码时的记录上限算**：`storage/assurance_reads.read_exact_metadata` 对输入清单按 8 MiB 记录上限解码，但核对哈希时 `fingerprint` 又按 256 KB 默认上限重编码，276 KB 的审阅员输入清单（编程题，5 份验收）每次导入终审都报 `JSON_BYTES_LIMIT`，重查 33 次转人工，任务以"没有可派发的工作"失败。`codec.fingerprint` 加 `limit`，读取器按同一上限核；编码与哈希值不变。用例 `T/full_target/assurance_exec/test_exact_metadata_large_body.py::test_a_manifest_past_the_json_limit_is_hashed_under_the_record_limit`，改坏 AS-M17。真实模型验收（原计划 §15 四场景 + 编程题，各 3 局）的记录见 `plans/2026-09-27-desktop-next/Assurance-真实模型验收-2026-10-06.md`。
+
 最后更新：2026-10-05 CST（Assurance 原计划对照后的补改，SDK `opt.162`）。对照见 [`plans/2026-09-27-desktop-next/Assurance-现状对照-2026-10-05.md`](../plans/2026-09-27-desktop-next/Assurance-现状对照-2026-10-05.md)（第 2 版，逐条对原计划 1.1 与它自带的接线、用例、改坏清单）。本次改动：
 
 - **收尾也等资料变更问完**：收尾评估在"依据已变"之外再查一条——有资料换版本 / 撤销还没问完规划器（`planning_repair_requests.source_change_open`，与终审用的是同一个判断），收尾记 `NOT_READY` + `SOURCE_CHANGE_OPEN`，规划器答复后才定稿（`orchestrator/assurance_consumers.py` `_evaluate_locked`）。此前只有终审等这件事，终审通过之后、正式完成之前换资料拦不住完成。
