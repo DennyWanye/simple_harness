@@ -56,6 +56,9 @@ KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 #: 第 2 批 A02：保证通道根隔离时服务状态里的说明（原计划 §10.1：标记缺失 / 不符 → 隔离，只开非披露诊断）
 QUARANTINE_REASON = "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
+#: 第 2～4 批补齐评估处置（H01）：SDK 重启恢复协议降级时，服务不当"可用"——不派发、不收新任务与改要求，
+#: 只开读取与诊断；失败的那一步写在 ``status().recovery`` 里，界面照实显示。
+DEGRADED_RECOVERY_REASON = "重启恢复没有完成（降级恢复）：任务不派发，只开读取与诊断"
 FACADE_CODES = {
     "invalid_request": "invalid_request",
     "conflict": "conflict",
@@ -198,6 +201,8 @@ class OrchestrationService:
         # 第 2 批 A02 / A40：保证通道根隔离时 SDK 的非披露诊断（原计划 §10.1 / §10.3）；NATIVE 时为 None。
         # 隔离的编排只开管理模式：这里不绑职责、不开驱动、不当"可用"。
         self._quarantine: dict[str, Any] | None = None
+        # H01：SDK 恢复协议的只读诊断（state / failed_step / 八步结果）；降级时服务进 degraded_recovery
+        self._recovery: dict[str, Any] | None = None
         # HTN 补齐阶段 B 第 1 条：任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
         from .notices import MissionNotices
 
@@ -589,6 +594,8 @@ class OrchestrationService:
                 if self._quarantine is not None:
                     return  # 根隔离：不派发任何任务（第 2 批 A02）
                 await self._orchestrator.run()
+                if self._degraded_recovery():
+                    return  # 降级恢复：SDK 不进周期，这里也不再驱动（H01）
                 await self._host_duties()
                 self._note_quiet_round()
                 self._storage.schedule_if_stale()
@@ -903,10 +910,42 @@ class OrchestrationService:
 
         try:
             await asyncio.wait_for(self._orchestrator.run(), timeout=timeout)
+            if self._degraded_recovery():
+                return True
             await self._host_duties()
             return True
         except TimeoutError:
             return False
+
+    def _recovery_status(self) -> dict[str, Any] | None:
+        """``status().recovery``：降级后用记下的那份；否则现读 SDK（读不到为 None）。"""
+        if self._recovery is not None:
+            return dict(self._recovery)
+        if self._orchestrator is None or self._state not in ("available", "degraded"):
+            return None
+        try:
+            return dict(self._orchestrator.recovery_status())
+        except Exception:  # noqa: BLE001 - the status view never raises
+            logger.exception("recovery status unreadable")
+            return None
+
+    def _degraded_recovery(self) -> bool:
+        """H01：读 SDK 的恢复状态；DEGRADED_RECOVERY 时把服务置成 ``degraded_recovery`` 并记下失败步骤。"""
+        if self._orchestrator is None:
+            return False
+        try:
+            recovery = dict(self._orchestrator.recovery_status())
+        except Exception:  # noqa: BLE001 - 诊断读不到不改变服务状态
+            logger.exception("recovery status unreadable")
+            return False
+        self._recovery = recovery
+        if recovery.get("state") != "DEGRADED_RECOVERY":
+            return False
+        latest = recovery.get("latest")
+        step = latest.get("failed_step") if isinstance(latest, Mapping) else None
+        self._state = "degraded_recovery"
+        self._reason = f"{DEGRADED_RECOVERY_REASON}（失败步骤：{step or '未知'}）"
+        return True
 
     # ------------------------------------------------------------ status
     def _context_profiles(self) -> list[dict[str, Any]]:
@@ -996,7 +1035,7 @@ class OrchestrationService:
         import simple_harness
 
         active = 0
-        if self._orchestrator is not None and self._state in ("available", "degraded"):
+        if self._orchestrator is not None and self._state in ("available", "degraded", "degraded_recovery"):
             try:
                 active = sum(
                     1 for m in self._orchestrator.store.list_missions() if str(m.status) not in TERMINAL
@@ -1023,6 +1062,8 @@ class OrchestrationService:
             "assurance_available": self._assurance is not None,
             # 第 2 批 A40：保证通道根的非披露诊断；隔离时如实写明，上面的 available 为 False
             "assurance_root": self._assurance_root_status(),
+            # H01：SDK 重启恢复协议的只读诊断；降级恢复时上面的 state 为 degraded_recovery
+            "recovery": self._recovery_status(),
             "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),
             "native_plane": (
@@ -1061,9 +1102,16 @@ class OrchestrationService:
 
     # ------------------------------------------------------------ helpers
     def _require(self) -> Any:
-        if self._state not in ("available", "degraded") or self._control is None:
+        if self._state not in ("available", "degraded", "degraded_recovery") or self._control is None:
             raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
         return self._control
+
+    def _refuse_new_work(self, message: str) -> None:
+        """review P2-1 / H01：循环异常或降级恢复时，停与接管可以，新工作不可以。"""
+        if self._state == "degraded":
+            raise OrchestrationRequestError("orchestration_degraded", message)
+        if self._state == "degraded_recovery":
+            raise OrchestrationRequestError("orchestration_degraded_recovery", self._reason or DEGRADED_RECOVERY_REASON)
 
     def _deploy(self, method: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """Create through the SDK's one user-Mission deployment (root and TaskGraph binding in
@@ -1196,18 +1244,14 @@ class OrchestrationService:
     # ------------------------------------------------------------ commands
     def create_mission(self, request: Mapping[str, Any]) -> dict[str, Any]:
         self._require()
-        if self._state == "degraded":  # review P2-1: stop and take over yes, new work no
-            raise OrchestrationRequestError(
-                "orchestration_degraded", "编排循环目前不正常，暂不接受新的 Mission；已有的仍可取消或接管"
-            )
+        self._refuse_new_work("编排循环目前不正常，暂不接受新的 Mission；已有的仍可取消或接管")
         receipt = self._deploy("create_mission", self._door(request))
         return {"mission_id": receipt["mission_id"], "created": receipt["created"], "spec_hash": receipt["spec_hash"]}
 
     def create_mission_with_sources(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """The UI's atomic batch; never create and then register in separate transactions."""
         self._require()
-        if self._state == "degraded":
-            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受新 Mission")
+        self._refuse_new_work("编排循环异常，暂不接受新 Mission")
         if set(request) != {"mission", "sources"} or not isinstance(request["mission"], Mapping):
             raise OrchestrationRequestError("invalid_request", "需要 mission 与 sources 原子批次")
         self._refuse_secrets(request)
@@ -1237,8 +1281,7 @@ class OrchestrationService:
         """The user amends a running Mission's requirements (add / rewrite / remove entries).
         The same door checks as creating a Mission; one transaction in the SDK facade."""
         self._require()
-        if self._state == "degraded":
-            raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受改要求")
+        self._refuse_new_work("编排循环异常，暂不接受改要求")
         self._refuse_secrets(request)
         changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
         # 第 2 批车道 L（H19）：``{op: "goal", statement}`` 换的是任务目标文本，不是一条要求，不按要求格式查

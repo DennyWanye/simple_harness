@@ -77,6 +77,19 @@ QUARANTINE_READS = frozenset({
     "mission_assurance_use_check",
 })
 
+#: 降级恢复（H01，SDK 恢复协议没走完）时仍开着的动词：只读与诊断。新任务、改要求、裁决、取消都不开——
+#: SDK 这时禁副作用，循环不进周期；人先看 ``orchestration_status.recovery`` 里失败的那一步。
+DEGRADED_RECOVERY_READS = QUARANTINE_READS | frozenset({
+    "mission_list",
+    "mission_get",
+    "mission_events",
+    "mission_notices",
+    "mission_approval_list",
+    "mission_operation_intent_status",
+    "mission_artifact_read",
+    "mission_diagnostics",
+})
+
 
 def _ok(msg_type: str, request_id: Any, data: Any) -> dict[str, Any]:
     return {
@@ -121,7 +134,11 @@ async def handle(
     # person can stop the damage; the service itself refuses new Missions while degraded.
     # 第 2 批 A02 / A40：保证通道根隔离时只开非披露诊断与隔离只读分支（原计划 §10.1 / §10.3），
     # 任务列表、通知等一律不开——不披露任务标题与正文。
-    open_states = ("available", "degraded", "quarantined") if msg_type in QUARANTINE_READS else ("available", "degraded")
+    open_states = ("available", "degraded")
+    if msg_type in QUARANTINE_READS:
+        open_states += ("quarantined",)
+    if msg_type in DEGRADED_RECOVERY_READS:
+        open_states += ("degraded_recovery",)
     if status.get("state") not in open_states:
         reason = str(status.get("reason") or "编排服务不可用")
         return _error(msg_type, request_id, "orchestration_unavailable", reason)
