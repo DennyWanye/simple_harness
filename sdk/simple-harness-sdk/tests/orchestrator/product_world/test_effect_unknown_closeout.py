@@ -186,6 +186,13 @@ async def _publish_with_an_unknown_result(world: Any, published: Any, key: str) 
     return mission_id, action
 
 
+def _rounds_and_intents(world: Any, mission_id: str) -> tuple[int, int]:
+    """这个任务的尝试数（回合）与系统操作意图数。"""
+    attempts = world.store.connection.execute(
+        "SELECT COUNT(*) FROM attempts WHERE mission_id=?", (mission_id,)).fetchone()[0]
+    return int(attempts), len(OperationIntentStore(world.store).for_mission(mission_id))
+
+
 def _assert_held_open(world: Any, mission_id: str) -> None:
     """结果不明期间该成立的事：任务 ACTIVE、没有"任务完成"事件、收尾没定稿、没有完成通知（Host 一条也没收到）。"""
     mission = world.store.get_mission(mission_id)
@@ -218,9 +225,13 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
         async with product_world(tmp_path / "root", LayeredScriptedProvider(), connectors={"file_publish": connector},
                                  deployment_policy=policy) as world:
             mission_id, action = await _publish_with_an_unknown_result(world, published, "unknown-holds")
+            before = _rounds_and_intents(world, mission_id)
+            assert before[0] >= 1 and before[1] == 1, before  # 结果不明：只有原来那一份申请单，没有重交
             for _ in range(5):  # 结果不明期间再空转几轮：一样不完成
                 await world.drain(timeout=5)
             _assert_held_open(world, mission_id)
+            # 夜间 N3-22：空转期间不开新回合、不出新意图（效果在途时不判定、不重交）
+            assert _rounds_and_intents(world, mission_id) == before
             # 终审开了、根结论成了、判定记了（原计划 §7.2：根结论先于效果收敛）；收尾点名这项效果
             assert [k for k in world.store.connection.execute(
                 "SELECT review_key FROM assurance_review_bindings WHERE mission_id=?", (mission_id,))
@@ -233,9 +244,9 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
             assert judgment is not None and judgment["met"] is True
             [publish] = [j for j in world.store.get_mission(mission_id).final_report["success_criteria"]
                          if j["criterion"] == PUBLISH]
-            # 判定在根结论形成的那一轮就记下，动作那时可能还在等批准：记的是判定时的动作状态
+            # 判定记的是判定时的动作状态：效果在途（已批准 / 已交接）时不判定，所以只能是结果不明（夜间 N3-22）
             assert publish["judge"] == "assurance_closeout" and publish["met"] is True
-            assert publish["action_state"] in {"AWAITING_APPROVAL", "APPROVED", "HANDED_OFF", "UNKNOWN"}
+            assert publish["action_state"] == "UNKNOWN"
             assert _closeout(world, mission_id) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"], ["publish-weekly"])
             # 终审包只判内容判据，效果状态作为事实在包里
             [package] = HtnStore(world.store).list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)

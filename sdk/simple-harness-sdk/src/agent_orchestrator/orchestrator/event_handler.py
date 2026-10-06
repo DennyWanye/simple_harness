@@ -9363,8 +9363,9 @@ class Orchestrator:
                 # reason forever.
                 return False
             if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
-                # 2026-10-06（Assurance §7.2，车道 O）：带动作的任务判定之后每轮仍走这里——动作被拒 /
-                # 失败照样停任务，该交接的照样交接；判定已记、收尾待收敛时它自己答"没进展"。
+                # 2026-10-06（Assurance §7.2，车道 O）：带动作的任务判定之后每轮仍走这里——批准被撤销 /
+                # 过期在这里停任务，该交接的照样交接；动作被拒绝 / 没生效归系统操作线（``system_operations``：
+                # 重交、问规划器或具名停），不在这里停。判定已记、收尾待收敛时它自己答"没进展"。
                 return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             if self.commit.assured_closeout_pending(current.id):
                 # Handoff item 7: the assured Mission's success is judged and its
@@ -10972,9 +10973,11 @@ class Orchestrator:
         resolution; whether an effect really took hold is the closeout's to converge
         (UNKNOWN → BLOCKED_UNKNOWN, in flight → root scope unmet), and only the unique
         final writer completes the Mission.  Once judged, this method keeps running every
-        cycle so a later rejection / failure still stops the Mission and a handoff-ready
-        action is still handed off; with nothing to do it answers "no progress" and
-        ``run()`` goes idle (never a no-progress FAILED)."""
+        cycle so a later revocation / expiry of an approval still stops the Mission here and
+        a handoff-ready action is still handed off; a later rejection / failure of the action
+        is the operation line's (``system_operations``: resubmit, ask the planner or a named
+        stop), not stopped here.  With nothing to do it answers "no progress" and ``run()``
+        goes idle (never a no-progress FAILED)."""
 
         progressed = False
         key = judgment_key(tasks)
