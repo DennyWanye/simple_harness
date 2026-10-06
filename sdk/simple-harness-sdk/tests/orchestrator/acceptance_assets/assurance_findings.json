@@ -4,14 +4,16 @@
  "rows": [
   {
    "id": "F01",
-   "what": "一次通知只建一个审阅和一笔预留；终态写方各有其主",
+   "what": "一次通知只建一个审阅和一笔预留（含组合审阅；同一通知重送回来的是同一次调用）；终态写方各有其主（全部写点与入口列白名单）",
    "status": "COVERED",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_no_parallel_scoped_review",
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_review_dispatch_atomic",
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_review_source_binding",
     "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_every_mission_terminal_writer_goes_through_the_ledger_hook",
-    "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed"
+    "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed",
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_every_purpose_including_composition_is_cut_once_even_when_its_notice_is_resent",
+    "tests/orchestrator/full_target/test_terminal_writers_whitelist.py::test_every_terminal_write_point_is_on_the_whitelist"
    ],
    "mutations": [
     "FIN-01"
@@ -20,28 +22,30 @@
   },
   {
    "id": "F02",
-   "what": "精确引用读取器按名拒绝；已结清的预留不能开新调用",
-   "status": "COVERED",
+   "what": "精确引用读取器按名拒绝；已结清的预留开不了新调用（REVIEW_RESERVATION_NOT_ACTIVE）、旧费用照记；回合换个采集身份认领被拒（REVIEW_RUNTIME_SOURCE_MISMATCH）",
+   "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_internal_ref_resolvers",
     "tests/orchestrator/full_target/assurance_exec/test_evidence_recheck.py::test_a_tampered_accepted_review_is_named_stale_and_reaches_the_planner",
-    "tests/orchestrator/full_target/assurance_exec/test_review_turn_retry_e2e.py::test_provider_server_error_first_turn_is_retried_once_and_imported"
+    "tests/orchestrator/full_target/assurance_exec/test_review_turn_retry_e2e.py::test_provider_server_error_first_turn_is_retried_once_and_imported",
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_a_settled_reservation_cannot_fund_a_new_review_call_and_a_foreign_collector_is_refused"
    ],
    "mutations": [],
-   "gap": "工具回执、策略、权限、能力四类引用读取器不认（REF_KIND_UNSUPPORTED），生产里没人构造"
+   "gap": "工具回执、策略、权限、能力四类引用读取器不认（REF_KIND_UNSUPPORTED），生产里没人构造；'六 purpose 结构可编码'没有用例"
   },
   {
    "id": "F03",
-   "what": "证据标签可逆定位精确引用；没给审阅员看过的不能引用",
-   "status": "COVERED",
+   "what": "证据标签可逆定位精确引用；没给审阅员看过的不能引用；曝光批次按号追加：同号异体被库拒、同体重放不新增、链不连续冷读拒",
+   "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_labels_exact_disclosure",
-    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_extra_evidence_exposure"
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_extra_evidence_exposure",
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_an_appended_disclosure_batch_that_conflicts_is_refused"
    ],
    "mutations": [
     "AS-FM01"
    ],
-   "gap": ""
+   "gap": "'旧 raw 冷重放'（原始模型文本重放不得当作新曝光）没有用例；冷恢复只在纯函数层"
   },
   {
    "id": "F04",
@@ -76,20 +80,22 @@
   },
   {
    "id": "F06",
-   "what": "直接调判定不提前完成、不放预留；收尾定稿只一次",
-   "status": "COVERED",
+   "what": "直接调判定不提前完成、不放预留；收尾定稿只一次；危险效果结果不明时不收尾（四档策略 + 产品同形世界）",
+   "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_direct_judge_waits_closeout",
     "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed",
     "tests/orchestrator/p35/test_provider_accounting_restart.py::test_a_review_whose_call_died_with_the_process_does_not_hold_the_closeout",
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_closeout_and_notification",
-    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers"
+    "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers",
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_the_default_success_policy_blocks_on_an_unknown_effect",
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_an_unknown_publish_result_holds_the_mission_open"
    ],
    "mutations": [
     "FIN-01",
     "SRC-05"
    ],
-   "gap": ""
+   "gap": "BLOCKED_UNKNOWN 这个状态词在现有代码里到不了（终审等效果齐备；效果不明先落 ROOT_SCOPE_UNMET）——test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown 为 xfail(strict)；人裁定结果不明的发布'已生效'后任务不完成（动作无回执、结果审阅每轮延后）——test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete 为 xfail(strict)，见 第1批-车道C-记录.md"
   },
   {
    "id": "F07",
@@ -103,20 +109,21 @@
   },
   {
    "id": "F08",
-   "what": "每类依据写入同事务推屏障、旧证明被拒；到期与时钟回拨",
-   "status": "COVERED",
+   "what": "每类依据写入同事务推屏障、旧证明被拒（登记 / 换版本资料、改要求、确认完成映射各做一次真实写入）；到期与时钟回拨",
+   "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_all_writers_barrier_and_expiry",
     "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_a_concurrent_source_change_is_an_insert_barrier",
     "tests/orchestrator/product_world/test_desktop_preconditions.py::test_file_change_flips_observation_and_moves_epoch",
     "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_authority_and_expiry",
-    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_review_cold_resume"
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_review_cold_resume",
+    "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_each_product_writer_class_moves_the_barrier_in_its_own_transaction"
    ],
    "mutations": [
     "AS-FM07",
     "AS-M09"
    ],
-   "gap": ""
+   "gap": "全局表（method_contracts / policy_versions / policy_activations）只核触发器存在，没有行为级写入用例；'无缓存 oracle 一致'没有用例"
   },
   {
    "id": "F09",
