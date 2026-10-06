@@ -276,8 +276,15 @@ def test_event_cursor_atomicity(tmp_path):
 # --------------------------------------------------------------------------- C04′（F09 后半）
 class _UnknownChargeReviewer:
     """审阅员第一次内容审查回了一段不是 JSON 的话，而且这次调用中转站没报用量（真机见过的
-    两件外界的事）。格式修复要先把第一次调用结清，用量说不清就结不清——这次审阅卡在预算上
-    （BUDGET_WAIT），别的照常。"""
+    两件外界的事）。第一次调用的预留按上限挂着计数（多算不少算），格式修复的第二次调用要用
+    它自己的预留开出来；任务预算（``TIGHT_BUDGET``）装得下一次审阅、装不下两次——第二次开不出来，
+    这次审阅卡在预算上（BUDGET_WAIT，等用户加预算），别的照常。
+
+    （第 2 批车道 S 起：用量说不清本身不再让格式修复等结清——那会成环永远卡住；
+    这里的"卡在预算上"改由预算真的不够造出。）"""
+
+    #: 装得下第一次内容审阅的预留（约 29.5 万）加上其余几次小额度，装不下第二次
+    TIGHT_BUDGET = {"max_tokens": 400_000, "max_attempts": 12}
 
     def __init__(self) -> None:
         from agent_orchestrator.testing.scripted_replies import (
@@ -324,7 +331,7 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
 
     script = _UnknownChargeReviewer()
     path = "sources/spec.md"
-    state: dict = {"armed": None, "fired": None, "ticks": 0, "settled": []}
+    state: dict = {"armed": None, "fired": None, "ticks": 0, "settled": [], "kinds": set()}
     settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
 
     def snapshot(store, mission_id):
@@ -337,6 +344,8 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
 
     def watched_settle(self, claim, error):  # type: ignore[no-untyped-def]
         # 只看不改：卡在预算上的那次审阅被放回去的那一刻，箱子里已经有什么
+        if claim.consumer == "REVIEW" and isinstance(error, BudgetError):
+            state["kinds"].add(type(error).__name__)
         if claim.consumer == "REVIEW" and isinstance(error, BudgetError) and state["fired"] is not None:
             state["settled"].append(snapshot(self.store, claim.mission_id))
         return settle(self, claim, error)
@@ -369,7 +378,8 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
         async with product_world(tmp_path / "root", script.provider) as product:
             store = product.store
             mission_id = product.create({"goal": "按规格写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                         "idempotency_key": "assured-f09"})["mission_id"]
+                                         "idempotency_key": "assured-f09",
+                                         "budget": _UnknownChargeReviewer.TIGHT_BUDGET})["mission_id"]
             first = product.control.register_source({"mission_id": mission_id, "path": path, "content": "# 规格\n一\n",
                                                      "kind": "markdown", "idempotency_key": "reg-f09"})
             blocked = None
@@ -403,6 +413,14 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
             assert rows_now[("REVIEW", blocked["work_key"])] == ("WAITING", "BUDGET_WAIT", review[2]), rows_now
             assert all(value[2] <= head for value in rows_now.values()), rows_now
             assert all(seq >= head for seq in cursors_now.values())
+            # 造局本身：卡住是因为预算真的装不下第二次调用，第一次调用的预留仍按上限挂着
+            assert state["kinds"] == {"BudgetExhausted"}, state["kinds"]
+            [first] = [row[0] for row in store.connection.execute(
+                "SELECT subject_id FROM budget_reservations WHERE mission_id=? AND state='RESERVED'"
+                " AND subject_id LIKE '%:assurance:assurance-content:%:1'", (mission_id,))]
+            assert store.connection.execute(
+                "SELECT count(*) FROM assurance_review_invocations WHERE mission_id=?"
+                " AND review_key LIKE 'assurance-content:%'", (mission_id,)).fetchone()[0] == 1, first
 
     asyncio.run(body())
 

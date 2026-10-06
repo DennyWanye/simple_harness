@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "133578ff506fcc09e8806218a4fb5dc01416d574a0bf15f8bb3f436b03da6fa7",
+  "deployment_id": "6404e72e5aafd13f17fd3b65234caa5ddadc42872e6fb7fa261739182aa13859",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -195,7 +195,7 @@
     "agent_orchestrator/orchestrator/assurance_review_import.py": "1f094338a3f6a04b3726fabcd710b0032cbbcd413cfe808cc4e00bf22c0e5cd3",
     "agent_orchestrator/orchestrator/assurance_review_pins.py": "4498cfdca5bfa38f71701f2a3f067ae5326429381ff038c9eeec7aa08d263bf1",
     "agent_orchestrator/orchestrator/assurance_review_runtime.py": "99f07c1fe520aa4a2eefcc8f5790ddad8b8c685c901136274235082421792489",
-    "agent_orchestrator/orchestrator/assurance_review_transport.py": "ac8f282542eb47ba6131fcf84b4883dd7ad4a0c2f619a79e5b7a452a20cb5460",
+    "agent_orchestrator/orchestrator/assurance_review_transport.py": "d8287e52105c39a6fdf8a3aac91260e6b7b29fa34f8891249743eeac8817c925",
     "agent_orchestrator/orchestrator/assurance_review_wait.py": "59682ddfb2f12a5de79000f7aa4220d842cbfa7a384798724ae36d7ce06b73b3",
     "agent_orchestrator/orchestrator/assurance_root_commits.py": "74b9072fa307d2479cec95f170f582e9169822b08616c98279e889085da127cf",
     "agent_orchestrator/orchestrator/assurance_settlement.py": "8f47cc0807060b6848c15c6bc575d02fe49659a7a0d0fb0f872f92a4f7d7d204",

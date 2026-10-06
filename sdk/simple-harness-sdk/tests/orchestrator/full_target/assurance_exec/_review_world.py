@@ -33,7 +33,7 @@ CRITERIA = ("file:NOTES.md",)
 TERMINAL = {"COMPLETED", "FAILED", "STOPPED", "CANCELLED"}
 
 #: 判断不了 / 打回 / 不认可 的脚本化回复（每条准则的结论随总结论）；"EMPTY" 是一段空的最终回答
-#: （比如模型只给了思考没给正文）。
+#: （比如模型只给了思考没给正文）；"PROSE" 是一段不是 JSON 的话（审阅员没按格式回答）。
 GRADES = {"ACCEPT": "PASS", "INCONCLUSIVE": "UNKNOWN", "REWORK": "FAIL", "REJECTED": "FAIL"}
 
 
@@ -77,6 +77,8 @@ class ReviewScript(LayeredScriptedProvider):
             verdict = queue.pop(0) if queue else "ACCEPT"
             if verdict == "EMPTY":
                 return ""
+            if verdict == "PROSE":
+                return "我看过了，这份内容可以。"
             return review_reply(data, verdict=verdict, grade=GRADES[verdict],
                                 reason=f"脚本化审阅：{verdict}。")
 

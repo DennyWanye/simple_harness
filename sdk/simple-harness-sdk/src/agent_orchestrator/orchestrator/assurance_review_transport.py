@@ -765,19 +765,25 @@ def _require_format_repair(
         raise AssuranceError("REVIEW_FORMAT_REPAIR_ACCOUNTING_UNAVAILABLE")
     # Absence of imported UNKNOWN is insufficient: an invocation or effect may
     # still be missing from that ledger. Read the complete original inventories
-    # before funding the only permitted second invocation.
+    # before funding the only permitted second invocation; when they cannot prove
+    # the first charge, its reservation stays held instead (below).
     try:
         if commit.ledger.has_unknown_usage(intent.subject_id):
             raise BudgetError("unknown provider charge on the first review invocation")
         commit._assurance_settlement.require_settled_locked(intent.subject_id, reader.mission_id)
     except BudgetError:
         # Count rule (user, 2026-09-24): overcount, never undercount, never freeze.
-        # A turn that failed before committing (e.g. provider 5xx, no usage fact)
-        # keeps its whole reservation held — counted at its upper bound, visible —
-        # and the one second invocation is funded by its own reservation.  A
-        # malformed reply was a completed call: it must settle first, as before.
+        # The first call is closed (its intent is SETTLED/FAILED, checked above), but
+        # its charge cannot be proven yet: a turn that failed before committing
+        # (provider 5xx, no usage fact), or a completed call whose reply was malformed
+        # and whose relay reported no usage.  Either way the whole first reservation
+        # stays held — counted at its upper bound, visible on the account — and the one
+        # second invocation is funded by its own reservation.  Waiting for settlement
+        # here would never end: an unknown charge is only counted at its upper bound at
+        # closeout (user, 2026-09-26), and closeout waits for this review (车道 S，
+        # 2026-10-06).  Only a first reservation that is no longer held fails closed.
         reservation = commit.ledger.reservation(intent.subject_id)
-        if classification != "TURN_FAILED" or reservation is None or reservation.get("state") != "RESERVED":
+        if reservation is None or reservation.get("state") != "RESERVED":
             raise
     package = commit.store.connection.execute(
         "SELECT package_id FROM assurance_review_bindings WHERE review_key=?", (review_key,)
