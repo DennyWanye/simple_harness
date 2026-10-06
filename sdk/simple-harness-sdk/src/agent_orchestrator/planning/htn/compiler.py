@@ -373,6 +373,12 @@ def compile_refinement_bundle(
     )
 
     # -- steps 6 and 8: the structural checks, on the merged network --------------
+    # TG §5.3 / impl design §8.2: retiring a method retires the membership it created
+    # all the way down — a sub-goal only that membership held leaves, and so does the
+    # method adopted under it (and its own children), unless a remaining demand still
+    # holds them.  The delta names every instance that goes, so the commit retires,
+    # revokes and withdraws demands for exactly that set.
+    retire_instance_ids = _retirement_closure(current, retire_instance_ids, draft=draft)
     merged = _merge(
         current,
         draft=draft,
@@ -1310,6 +1316,50 @@ def _edge_names_any(
         if kind == "method_instance" and MethodInstanceId(side.id) in instances:
             return True
     return False
+
+
+def _retirement_closure(
+    current: TaskNetworkSnapshot,
+    retire_instance_ids: Sequence[MethodInstanceId],
+    *,
+    draft: MethodInstanceDraft,
+) -> tuple[MethodInstanceId, ...]:
+    """The named retirements plus the refinements of the goals they orphan, to a fixpoint.
+
+    ``retired_targets = removed_or_changed - producers_required_by_remaining_demands -
+    independently_required_work`` (TaskGraph code plan §5.3): a compound occurrence
+    that only retiring memberships held leaves the plan, and the method adopted over
+    it has nothing left to refine, so it retires too and its own children are judged
+    by the same rule.  An occurrence a surviving adopted instance — or the
+    replacement, by naming it — still binds is not orphaned, and nothing under it
+    moves (§8.3: one consumer leaving must not cancel another's work).
+    """
+
+    retired = list(dict.fromkeys(retire_instance_ids))
+    if not retired:
+        return ()
+    kept_by_share = {
+        child.occurrence_id
+        for child in draft.child_bindings
+        if child.reuse_policy is not ReusePolicy.NEW_WORK
+    }
+    while True:
+        gone = set(retired)
+        keep = [item for item in current.adopted_instance_ids if item not in gone]
+        orphaned = _orphaned_occurrences(current, gone, keep=keep) - kept_by_share
+        nested = sorted(
+            (
+                instance.instance_id
+                for instance in current.method_instances
+                if instance.instance_id not in gone
+                and instance.instance_id != draft.instance_id
+                and instance.effective_goal_occurrence_id in orphaned
+            ),
+            key=str,
+        )
+        if not nested:
+            return tuple(retired)
+        retired.extend(nested)
 
 
 def _orphaned_occurrences(

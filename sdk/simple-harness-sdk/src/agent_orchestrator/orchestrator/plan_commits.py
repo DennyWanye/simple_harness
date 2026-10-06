@@ -420,9 +420,17 @@ class PlanCommitsMixin:
             if any(str(row.task_id) == str(changed.task_id) and str(row.validity) == "CURRENT"
                    for row in semantics.list_acceptances(command.mission_id)):
                 raise PlanCommitRejected("REPAIR_NOT_ALLOWED", "accepted dependent requires an explicit successor")
+            # 夜间 N6：这是秩序约束，不是缺陷——结论是不可变的事实，原地改它的成员会让现行结论说的
+            # 不再是它当时审过的那组步骤。目标要换，就换掉持有它的上级做法：被换下的做法细化出的
+            # 子目标连同它下面采用的做法一起退役（compiler._retirement_closure），新子目标重新形成结论。
             if any(str(row.goal_task_id) == str(changed.task_id) and str(row.validity) == "CURRENT"
                    for row in semantics.list_goal_resolutions(command.mission_id)):
-                raise PlanCommitRejected("REPAIR_NOT_ALLOWED", "resolved dependent requires an explicit successor")
+                raise PlanCommitRejected(
+                    "REPAIR_NOT_ALLOWED",
+                    # 规划器看到的拒绝理由截在 300 字以内：能做的那一步写在前面
+                    f"resolved dependent requires an explicit successor: {changed.task_id} has a current "
+                    "goal resolution; replace the method of the goal holding it (REPLACE_METHOD) "
+                    "instead of changing it in place")
         if input_changes:
             from ..planning.htn.graph_repair import affected_occurrences
             from .repair_impact import read_repair_impact_indexes

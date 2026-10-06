@@ -2783,10 +2783,16 @@ class HierarchicalDispatch:
                                           if item["id"] in statements else item["evidence_requirement"])}
                 for item in request.criterion_evidence))
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
-        from .assurance_check_policy import assigned_criterion_ids
+        # 夜间 N6：读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
+        from .assurance_check_policy import goal_share
+        from .operation_completion import OperationCompletionError
         listed = {item["id"] for item in request.criterion_evidence}
-        handed = [item for item in assigned_criterion_ids(self.store, mission_id, str(goal_task_id))
-                  if item in statements and item not in listed]
+        unreadable: dict[str, str] | None = None
+        try:
+            share = goal_share(self.store, mission_id, goal)
+        except OperationCompletionError as error:
+            share, unreadable = (), {"code": str(error.code), "detail": str(error)}
+        handed = [item for item in share if item in statements and item not in listed]
         if handed:
             request = replace(request, criterion_evidence=tuple(request.criterion_evidence) + tuple(
                 {"id": item, "evidence_requirement": criterion_statement(statements[item])}
@@ -2797,6 +2803,8 @@ class HierarchicalDispatch:
         document = replace(
             request, new_method_identity=(fresh_id, max(occupied, default=0) + 1)).to_json()
         document["subgoal_types"] = self._subgoal_types(world, signature)
+        if unreadable is not None:
+            document["criterion_share_unreadable"] = unreadable
         return document
 
     @staticmethod
