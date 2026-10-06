@@ -3150,6 +3150,7 @@ class Orchestrator:
                 or (intent.kind == "critic" and self._critic_subject_stopped(intent))
             )
             and self.profile_of(intent) in self.assembled.pools
+            and not self.recovery_isolated(intent.mission_id)  # 已隔离：没人会收它，不是在途
             for intent in self.store.list_intents(
                 "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED"
             )

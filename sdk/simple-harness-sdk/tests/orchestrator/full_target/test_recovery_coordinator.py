@@ -176,6 +176,8 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
                     break
             for _ in range(3):
                 await world.drain(timeout=5)  # 健康任务做完后再跑几轮：被隔离的仍不能被任何人动
+            # 被隔离任务留着的在途意图 / 待办不让主循环永远不空闲（否则所有任务的卡死检测都失效）
+            assert await world.drain(timeout=10) is True
             status = world.loop.recovery_status()
             assert status["state"] == str(RecoveryState.READY) and status["side_effects_disabled"] is False
             assert list(status["isolated_missions"]) == [damaged]
@@ -188,6 +190,10 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
             assert str(world.store.get_mission(damaged).status.value) not in TERMINAL
             # 隔离是完整的：在途回合不当"已结束任务"收掉、保证通道不替它入箱或收尾、不导入用量
             assert footprint(world.store.connection, damaged) == before
+            # 用户取消被隔离的任务：取消走提交服务照样成功；之后主循环仍能空闲
+            world.control.cancel(damaged)
+            assert str(world.store.get_mission(damaged).status.value) == "CANCELLED"
+            assert await world.drain(timeout=10) is True
 
     asyncio.run(case())
 

@@ -135,15 +135,14 @@ class AssuranceTick:
     def has_pending(self) -> bool:
         # Future deadlines are durable. MANUAL_REQUIRED alone does not spin the
         # run-until-idle loop; a real new event can reopen the same logical work.
-        return (
-            self.store.connection.execute(
-                "SELECT 1 FROM assurance_pending_work w JOIN missions m USING(mission_id) "
-                "WHERE m.tenant_id=? AND w.state IN ('PENDING','RUNNING','WAITING') "
-                "AND (w.wait_reason IS NULL OR w.wait_reason<>'MANUAL_REQUIRED') LIMIT 1",
-                (self.tenant_id,),
-            ).fetchone()
-            is not None
-        )
+        # 已隔离的任务（重启核对没通过）不替它做事，它的待办也不让主循环一直不空闲
+        rows = self.store.connection.execute(
+            "SELECT DISTINCT w.mission_id FROM assurance_pending_work w JOIN missions m USING(mission_id) "
+            "WHERE m.tenant_id=? AND w.state IN ('PENDING','RUNNING','WAITING') "
+            "AND (w.wait_reason IS NULL OR w.wait_reason<>'MANUAL_REQUIRED')",
+            (self.tenant_id,),
+        ).fetchall()
+        return any(not self.orchestrator.recovery_isolated(str(row[0])) for row in rows)
 
     def _settlement_time(self, claim: WorkClaim) -> int | None:
         """Re-observe after every await, before committing or moving deadlines."""

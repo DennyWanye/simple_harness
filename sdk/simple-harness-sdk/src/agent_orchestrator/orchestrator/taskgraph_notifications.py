@@ -253,17 +253,19 @@ class TaskGraphNotifications:
         # tick at that deadline; no new Host automation is involved. A BLOCKED
         # convergence delivery, however, awaits explicit repair and gets no fresh
         # automatic retry budget merely because its job remains fenced.
-        return self.store.connection.execute(
-            "SELECT 1 FROM taskgraph_followups "
+        # 已隔离的任务（重启核对没通过）不算待办：本进程不替它做事，也不让主循环因它不空闲
+        rows = self.store.connection.execute(
+            "SELECT mission_id FROM taskgraph_followups "
             "WHERE delivery_state IN ('PENDING','LEASED') AND (? IS NULL OR mission_id=?) "
-            "UNION ALL SELECT 1 FROM taskgraph_convergence_jobs j "
+            "UNION ALL SELECT j.mission_id FROM taskgraph_convergence_jobs j "
             "WHERE j.state IN ('FENCED','WAITING','READY') AND (? IS NULL OR j.mission_id=?) "
             # an ended Mission's job is never woken again (taskgraph_wakeups), so it is not pending work
             "AND EXISTS (SELECT 1 FROM missions m WHERE m.mission_id=j.mission_id "
             "AND m.status NOT IN ('COMPLETED','FAILED','CANCELLED')) "
             "AND NOT EXISTS (SELECT 1 FROM taskgraph_followups f WHERE f.mission_id=j.mission_id "
-            "AND f.kind='CONVERGE' AND f.subject_key=j.job_id AND f.delivery_state='BLOCKED') LIMIT 1",
-            (mission_id, mission_id, mission_id, mission_id)).fetchone() is not None
+            "AND f.kind='CONVERGE' AND f.subject_key=j.job_id AND f.delivery_state='BLOCKED')",
+            (mission_id, mission_id, mission_id, mission_id)).fetchall()
+        return any(not self.orchestrator.recovery_isolated(str(row[0])) for row in rows)
 
     def awaiting_sources(self, mission_id: str) -> bool:
         """A durable blocked notification or active fence is not an idle failure."""
