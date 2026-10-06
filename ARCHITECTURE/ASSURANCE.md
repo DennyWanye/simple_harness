@@ -8,7 +8,9 @@
 - **完成范围与规格经 OCC 读者**（A13，车道 I2）：`OperationCompletionStore.get_spec_by_id / get_scope_by_id`，解析器改走它；`StoreConflict` → `REF_BODY_CONFLICT`。
 - **审阅轮次按复审递增**（A15，车道 I2）：`next_review_round` = 同任务 × 用途 × 出现的已有绑定最大轮次 + 1，PR/CR 两处不再写常量 1。**待用户定**：第二意见按原计划仍是同一轮的 ordinal 2。
 - **死代码**（A24，车道 I2）：删 `CommitService.finalize_assured_mission` 包装、两处 `network is None` 不可达分支、`RootReviewCoordinator.request()`、燃料（`consume_fuel` 等）、血缘（`reevaluate_consumer` 等）、去重（`find_duplicates` 等，`normalise_goal` 保留）、`versioning.py` 四函数；`REVIEW_PURPOSE_ACCOUNTS` 组合 → `MISSION`、删 `PARENT_COMPOUND_TASK`。留：`review_packages.review_account` 的 CHECK 文本仍含 `'parent_compound_task'`（改已发布 DDL 会动迁移校验和）、`obligation_expansions` 死存储层。
-- 车道 N（收尾重读权限 / closeout-v1 / 交接中动作挡收尾）合并后补。
+- **收尾最后一次事务重读"权限"**（A01 补全，车道 N，原计划 §7.3）："权限" = 当前权威对每张所依赖证书的身份就根结论重新签的 ACCESS/POLICY 见证（`assurance_recheck.closeout_authorization`）；依据读取时记一份，定稿事务再读一份，连同整个 `read_set` 一起比，不一致 → `RECHECK_REQUIRED`；没到 READY 不比。
+- **收尾正文过 closeout-v1**（A17 补全，车道 N）：`assurance/schemas/closeout-v1.schema.json` 原样进 SDK 包；14 字段文档写进收尾行 / 最终报告 / 事件，内部核对字段只进评估回执（`check_body_hash` 等于文档指纹）；`root_resolution_ref` 改 pin；`read_set` 如实写根结论、要求版本、每个根的完成范围（OBJECT，经读取器真重读）与 ACCESS/POLICY 见证。没有根结论时的评估不是 closeout-v1 记录（只留回执投影）。
+- **交接中的动作挡收尾**（A07 补全，车道 N）：有 HANDED_OFF 动作 → `DRAINING` / 原因 `OPEN_OPERATIONS`（收尾原因，不进错误码表），不走上限结清；收敛后再评原因消失。接缝脚本 `final-writer-seam.py` / `four-consumer-seam.py` 的源码哈希变了，C04/C05 接缝证据待重跑。
 
 最后更新：2026-10-06 CST（严格评估后补齐第 1 批：收尾正确性，SDK `opt.165`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/第1批-车道B-记录.md`、`第1批-车道C-记录.md`）。
 - **收尾最终事务重读纪元、证书到期、时钟**（A01，原计划 §7.2）：`AssuranceCloseoutConsumer.prepare` 保留完整预览依据，定稿事务重评为 READY 时 `require_final_consistency` 要求任务纪元 / 环境纪元 / 时钟代次三元组与依据读取时相同、`as_of_ms` 不早于读取时刻、时钟 STABLE，否则 `RECHECK_REQUIRED` 退回重算；`assurance_recheck.stale_certificates(now_ms)` 把到期证书记成 `VALIDITY/EXPIRED` 走原有 `EVIDENCE_STALE` 路径；`storage/assurance_reads.clock_discontinuous` 与证书最终锁共用。没有独立吊销表：同身份新证书顶掉旧的，`live_usable_certificates` 只取最新。

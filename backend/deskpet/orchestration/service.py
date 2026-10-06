@@ -1241,7 +1241,9 @@ class OrchestrationService:
             raise OrchestrationRequestError("orchestration_degraded", "编排循环异常，暂不接受改要求")
         self._refuse_secrets(request)
         changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
-        statements = [str(item.get("statement") or "").strip() for item in changes if item.get("statement")]
+        # 第 2 批车道 L（H19）：``{op: "goal", statement}`` 换的是任务目标文本，不是一条要求，不按要求格式查
+        statements = [str(item.get("statement") or "").strip() for item in changes
+                      if item.get("statement") and item.get("op") != "goal"]
         self._check_criteria(statements)
         # 新增"发布某文件"时，先得有一条"写出这个文件"的要求（与建任务同一条规矩）
         detail = self._call("snapshot", str(request.get("mission_id") or ""))

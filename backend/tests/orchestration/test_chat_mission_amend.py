@@ -114,3 +114,21 @@ def test_host_reads_the_charter_only_at_the_door():
         if pattern.search(path.read_text(encoding="utf-8"))
         and path.relative_to(BACKEND).as_posix() not in allowed)
     assert offenders == [], f"这些文件读了建任务时的章程，应改读现行要求（确认页）：{offenders}"
+
+
+def test_the_goal_op_passes_the_door_and_comes_back_in_the_receipt():
+    """第 2 批车道 L（H19）：改要求时允许改目标。目标文本不是一条要求：不按 pytest:/action: 查，
+    Host 把 SDK 回执里的 goal {previous, current} 原样带回。"""
+    class _GoalService(_Service):
+        def amend_requirements(self, request):
+            [change] = request["changes"]
+            assert change == {"op": "goal", "statement": "改写一份更短的说明"}
+            self.commands.append(dict(request))
+            return {"requirements_revision": 2, "changes": {"added": [], "rewritten": [], "removed": []},
+                    "goal": {"previous": "写文件", "current": "改写一份更短的说明"}}
+    service = _GoalService()
+    result = amend_mission(lambda: service, _args(changes=[{"op": "goal", "statement": "改写一份更短的说明"}]),
+                           run_id="run-1", call_id="call-2", permission_mode="auto")
+    assert result["goal"] == {"previous": "写文件", "current": "改写一份更短的说明"}
+    assert describe_call_zh("mission_amend", _args(changes=[{"op": "goal", "statement": "x"}])) == \
+        "修改后台任务的要求：新增 0 条、改写 0 条、删除 0 条、并换任务目标"

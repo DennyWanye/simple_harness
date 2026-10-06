@@ -246,12 +246,12 @@ MISSION_AMEND_DESCRIPTION = (
     "requirement entries. Use it only when the user explicitly asks to change what a background task "
     "must deliver. First call mission_status to read the current requirements (their revision number "
     "and each entry's id), then pass expected_revision and the changes: "
-    "{op:'add', statement}, {op:'rewrite', criterion_id, statement} or {op:'remove', criterion_id}. "
+    "{op:'add', statement}, {op:'rewrite', criterion_id, statement}, {op:'remove', criterion_id} or "
+    "{op:'goal', statement} (replace the task's goal text with the new statement). "
     "A statement is plain text, or 'file:<relative path>' when a file must be delivered: after 'file:' "
     "write the path only (for example 'file:pr-template.md') and put what the file must contain in a "
     "separate plain-text statement, never inside the 'file:' one. "
-    "The task's goal itself cannot be changed (start a new task for that), and a task that is already "
-    "finishing cannot be amended. After the amendment the task re-plans for the new requirements; "
+    "A task that is already finishing cannot be amended. After the amendment the task re-plans for the new requirements; "
     "steps already done under the old requirements may be redone. Requirements with 'action:' still "
     "wait for the user's confirmation on the task card."
 )
@@ -263,7 +263,7 @@ MISSION_AMEND_SCHEMA: dict[str, Any] = {
         "expected_revision": {"type": "integer", "minimum": 1},
         "changes": {"type": "array", "minItems": 1, "maxItems": MAX_CRITERIA, "items": {
             "type": "object",
-            "properties": {"op": {"type": "string", "enum": ["add", "rewrite", "remove"]},
+            "properties": {"op": {"type": "string", "enum": ["add", "rewrite", "remove", "goal"]},
                            "criterion_id": {"type": "string"}, "statement": {"type": "string"}},
             "required": ["op"], "additionalProperties": False}},
         "reason": {"type": "string"},
@@ -311,6 +311,7 @@ def amend_mission(service_getter: Callable[[], Any], arguments: Mapping[str, Any
         "requirements_revision": receipt.get("requirements_revision"),
         "added": list(changed.get("added") or ()), "rewritten": list(changed.get("rewritten") or ()),
         "removed": list(changed.get("removed") or ()),
+        "goal": dict(receipt.get("goal") or {}) or None,
         "where": "任务编排页",
         "note": "要求已改为新一版；任务会按新要求重新规划。带 action: 的要求需要用户在任务卡片上确认。",
     }

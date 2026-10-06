@@ -1967,9 +1967,10 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return f"把后台任务的资料 {_clip(args.get('path'), 60)} 换成新版本（提交后仍需你批准）"
     if tool_name == "mission_amend":
         changes = [c for c in args.get("changes") or () if isinstance(c, dict)]
-        count = {op: sum(1 for c in changes if c.get("op") == op) for op in ("add", "rewrite", "remove")}
+        count = {op: sum(1 for c in changes if c.get("op") == op) for op in ("add", "rewrite", "remove", "goal")}
+        goal = "、并换任务目标" if count["goal"] else ""
         return (f"修改后台任务的要求：新增 {count['add']} 条、改写 {count['rewrite']} 条、"
-                f"删除 {count['remove']} 条")
+                f"删除 {count['remove']} 条{goal}")
     if tool_name == "method_library":
         if args.get("action") == "retire":
             return (f"把全库做法 {_clip(args.get('entry_id'), 40)} 退役（理由：{_clip(args.get('reason'), 60)}），"
