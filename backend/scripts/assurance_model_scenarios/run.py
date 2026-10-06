@@ -5,11 +5,21 @@
 用后台的控制通道建任务、按场景触发事实、批准该人批的卡，任务结束后只读库和产物文件核对。
 模型自己说了什么一概不算；每局的判定、用量、模型请求数都写进证据目录。
 
+口径（原计划 §15 与 ``implementation/model-scenarios.json``，脚本不另写数字）：
+
+* 每局预算只从 ``plans/Assurance/specs/1.1/implementation/model-scenarios.json`` 的 ``limits`` 读
+  （token 总量、模型调用数、工具调用数、墙钟秒数），五个场景同一份预算。
+* 通过 = 任务 COMPLETED + 判定全部成立 + 没超预算。超预算的局判 FAIL，``fail_reasons`` 写明超了哪项、
+  实际多少、上限多少。环境故障记 INVALID_ENV，不算通过。
+* 不补抽。同一局号再跑写成新的 ``trial-N/attempt-K/``，旧 attempt 目录原样保留；``summary.jsonl``
+  只追加，每次尝试一行，跑完按局号把历次尝试都列出来。
+
 用法（在仓库根）::
 
     backend/.venv/bin/python backend/scripts/assurance_model_scenarios/run.py <场景…> [--trials 3] [--out 目录]
 
 场景名：accurate-report / bad-draft-rework / source-replaced-midway / publish-lost-reply / billing-tool。
+证据：``<out>/<场景>/trial-N/attempt-K/record.json`` 与 ``<out>/summary.jsonl``。
 """
 from __future__ import annotations
 
@@ -35,8 +45,19 @@ REPO = Path(__file__).resolve().parents[3]
 BACKEND = REPO / "backend"
 HOOKS = Path(__file__).resolve().parent / "hooks"
 TEMPLATE = REPO / ".local-test-evidence/2026-10-05/f2-ui/userdata"
+PLAN_SCENARIOS = REPO / "plans/Assurance/specs/1.1/implementation/model-scenarios.json"
 PORT = int(os.environ.get("ASSURANCE_SCENARIO_PORT", "8100"))
 WS = f"ws://127.0.0.1:{PORT}/ws/control"
+
+
+def plan_limits(path: Path = PLAN_SCENARIOS) -> dict[str, int]:
+    """每局预算，只从原计划的 model-scenarios.json 读；脚本里不写数字。"""
+    body = json.loads(path.read_text(encoding="utf-8"))["limits"]
+    return {"tokens": int(body["total_model_tokens"]), "model_calls": int(body["model_calls"]),
+            "tool_calls": int(body["tool_calls"]), "wall": int(body["wall_time_seconds"])}
+
+
+LIMITS = plan_limits()
 
 FACTS_V1 = "item,quantity,unit_cost\nA,10,12\nB,4,25\n"
 FACTS_V2 = "item,quantity,unit_cost\nA,11,12\nB,4,25\n"
@@ -61,7 +82,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "criteria": ["file:report.json", REPORT_RULE,
                      "report.json 里每一项的 cost、total_cost 都与 sources/facts.csv 的数据一致，source_sha256 与资料文件一致"],
         "sources": {"sources/facts.csv": FACTS_V1},
-        "limits": {"model_calls": 16, "tool_calls": 32, "tokens": 300_000, "wall": 900},
         "oracle": "report",
         "expect": {"A": 120, "B": 100, "total": 220, "hash": sha(FACTS_V1), "actions": 0},
     },
@@ -72,7 +92,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                      "report.json 里每一项的 cost、total_cost 都与 sources/facts.csv 的数据一致，source_sha256 与资料文件一致"],
         "sources": {"sources/facts.csv": FACTS_V1},
         "hook": "swap_first_report",
-        "limits": {"model_calls": 16, "tool_calls": 32, "tokens": 300_000, "wall": 900},
         "oracle": "report",
         "expect": {"A": 120, "B": 100, "total": 220, "hash": sha(FACTS_V1), "actions": 0, "bad_draft": True},
     },
@@ -85,7 +104,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         # 执行者交回结果（ResultSubmitted）之后、内容审阅的调用已发出（InputSubmitted：审阅材料已冻结、
         # 审阅员正在读）时换资料。证据披露事件是审阅回复导入时才记的，那时验收紧随其后，赶不上。
         "supersede_on": ("ResultSubmitted", "InputSubmitted"),
-        "limits": {"model_calls": 24, "tool_calls": 48, "tokens": 450_000, "wall": 1200},
         "oracle": "report",
         "expect": {"A": 132, "B": 100, "total": 232, "hash": sha(FACTS_V2), "actions": 0, "superseded": True},
     },
@@ -95,7 +113,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "criteria": ["file:report.json", REPORT_RULE, "action:file_publish.publish:report.json"],
         "sources": {"sources/facts.csv": FACTS_V1},
         "hook": "lose_first_publish_reply",
-        "limits": {"model_calls": 24, "tool_calls": 48, "tokens": 450_000, "wall": 1200},
         "oracle": "publish",
         "expect": {"A": 120, "B": 100, "total": 220, "hash": sha(FACTS_V1)},
     },
@@ -110,8 +127,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
                      "billing 包分成读取、计算、命令行至少三个模块；命令行按题目规则输出 JSON，数量 ≥ 10 的项打九折；"
                      "坏数据时退出码 2、stdout 为空、stderr 含行号"],
         "sources": {"sources/facts.csv": FACTS_V1, "sources/facts-discount.csv": FACTS_DISCOUNT, "sources/facts-bad.csv": FACTS_BAD},
-        # 2026-10-06 金丝雀：一次返工（终审打回"没分三个模块"）后 30 分钟不够走完，上限改为 45 分钟
-        "limits": {"model_calls": 48, "tool_calls": 96, "tokens": 900_000, "wall": 2700},
+        # 预算同样只用 model-scenarios.json 的 limits；这题不在计划 JSON 里，要另给预算就改 JSON，不在这里写数
         "oracle": "billing",
         "expect": {"hash": sha(FACTS_V1)},
     },
@@ -275,14 +291,45 @@ def _after(events: list[Any], first: str, second: str) -> bool:
     return False
 
 
-async def run_trial(name: str, trial: int, out_root: Path) -> dict[str, Any]:
+def new_attempt_dir(out_root: Path, name: str, trial: int) -> tuple[Path, int]:
+    """同一局号再跑开一个新的 attempt 目录；旧 attempt 原样保留（计划 §15：新尝试留历史，不覆盖）。"""
+    trial_dir = out_root / name / f"trial-{trial}"
+    existing = [int(m.group(1)) for p in trial_dir.glob("attempt-*")
+                if (m := re.fullmatch(r"attempt-(\d+)", p.name)) and p.is_dir()]
+    attempt = max(existing, default=0) + 1
+    run_dir = trial_dir / f"attempt-{attempt}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir, attempt
+
+
+def verdict(final_status: str, oracle: dict[str, Any], usage: dict[str, Any], wall_seconds: float,
+            limits: dict[str, int]) -> dict[str, Any]:
+    """一局通过与否（计划 §15）：任务 COMPLETED、判定全部成立、没超预算，三者缺一判 FAIL。
+
+    超预算的项写进 ``fail_reasons``（实际值 / 上限）；``within_budget`` 单独给出便于统计。
+    工具调用数后台库里没有现成计数，这里不核（和改前一样），记录里如实不写。"""
+    reasons: list[str] = []
+    if final_status != "COMPLETED":
+        reasons.append(f"任务终态是 {final_status or '未知'}，不是 COMPLETED")
+    reasons.extend(f"判定 {key} 未成立：{value!r}" for key, value in oracle.items() if value is not True)
+    over: list[str] = []
+    checks = (("tokens", "token 总量", usage.get("tokens")), ("model_calls", "模型调用数", usage.get("model_calls")),
+              ("wall", "墙钟秒数", wall_seconds))
+    for key, label, actual in checks:
+        if actual is None:
+            over.append(f"{label}无法核对（没有用量数据），按超预算处理")
+        elif actual > limits[key]:
+            over.append(f"{label} {actual:.0f} > 上限 {limits[key]}")
+    reasons.extend(f"超预算：{item}" for item in over)
+    return {"passed": not reasons, "within_budget": not over, "fail_reasons": reasons}
+
+
+async def run_trial(name: str, trial: int, attempt: int, run_dir: Path) -> dict[str, Any]:
     spec = SCENARIOS[name]
-    run_dir = out_root / name / f"trial-{trial}"
-    if run_dir.exists():
-        shutil.rmtree(run_dir)
     backend = Backend(run_dir, hook=spec.get("hook"))
     backend.prepare()
-    record: dict[str, Any] = {"scenario": name, "title": spec["title"], "trial": trial, "started_at": time.time(),
+    record: dict[str, Any] = {"scenario": name, "title": spec["title"], "trial": trial, "attempt": attempt,
+                              "limits": dict(LIMITS), "started_at": time.time(),
                               "events_seen": [], "approvals": [], "triggers": [], "notes": []}
     control = Control()
     backend.start()
@@ -291,8 +338,8 @@ async def run_trial(name: str, trial: int, out_root: Path) -> dict[str, Any]:
         key = f"assurance-model:{name}:{trial}:{uuid.uuid4().hex[:8]}"
         sources = [{"path": path, "content": content, "kind": "text"} for path, content in spec["sources"].items()]
         created = await control.call("mission_create_with_sources", {
-            # 预算用部署默认值（产品的预留是按上下文窗口上限预留的，拿计划里的 30 万实际用量上限去当
-            # 预算会在第一次派发就耗尽）；计划里的用量上限在局后按实际结算用量核。
+            # 任务预算用部署默认值（产品的预留是按上下文窗口上限预留的，拿计划里的 30 万实际用量上限去当
+            # 预算会在第一次派发就耗尽）；计划里的用量上限在局后按实际结算用量核，超了判 FAIL。
             "mission": {"goal": spec["goal"], "success_criteria": list(spec["criteria"]), "idempotency_key": key},
             "sources": sources})
         mission_id = created["mission_id"]
@@ -303,7 +350,7 @@ async def run_trial(name: str, trial: int, out_root: Path) -> dict[str, Any]:
         superseded = False
         confirmed: set[str] = set()
         status = ""
-        while time.time() - started < spec["limits"]["wall"]:
+        while time.time() - started < LIMITS["wall"]:
             await asyncio.sleep(1)
             # 事件（只记类型，用来触发资料换版本与记录过程）
             batch = await control.call("mission_events", {"mission_id": mission_id, "after_seq": seen_seq, "limit": 200})
@@ -350,11 +397,8 @@ async def run_trial(name: str, trial: int, out_root: Path) -> dict[str, Any]:
     except Exception as error:  # noqa: BLE001 - 判定本身出错也要留下记录，不冒充环境故障
         record["oracle"] = {"oracle_error": f"{type(error).__name__}: {error}"}
     record["usage"] = usage(backend, record.get("mission_id"))
-    # 通过 = 任务完成 + 判定全部成立；计划里的用量上限单独记（within_budget），不并进通过与否——
-    # 产品真实用量（含思考）比计划写那几个数时估的高得多，超了如实报，由人看
-    record["passed"] = record["final_status"] == "COMPLETED" and all(v is True for v in record["oracle"].values())
-    record["within_budget"] = (record["usage"]["model_calls"] <= spec["limits"]["model_calls"]
-                               and record["usage"]["tokens"] <= spec["limits"]["tokens"])
+    # 通过 = 任务完成 + 判定全部成立 + 没超计划预算（计划 §15"任一超预算/跑不完保留 FAIL"）
+    record.update(verdict(record["final_status"], record["oracle"], record["usage"], record["wall_seconds"], LIMITS))
     (run_dir / "record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     return record
 
@@ -565,22 +609,41 @@ async def main() -> None:
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     summary_path = args.out / "summary.jsonl"
+    print(f"每局预算（{PLAN_SCENARIOS.relative_to(REPO)}）：{LIMITS}", flush=True)
     for name in args.scenarios:
         for trial in range(args.start_trial, args.start_trial + args.trials):
-            print(f"== {SCENARIOS[name]['title']} 第 {trial} 局 {time.strftime('%H:%M:%S')}", flush=True)
+            run_dir, attempt = new_attempt_dir(args.out, name, trial)
+            print(f"== {SCENARIOS[name]['title']} 第 {trial} 局 第 {attempt} 次尝试 {time.strftime('%H:%M:%S')}", flush=True)
             try:
-                record = await run_trial(name, trial, args.out)
+                record = await run_trial(name, trial, attempt, run_dir)
             except Exception as error:  # noqa: BLE001
-                record = {"scenario": name, "trial": trial, "final_status": "INVALID_ENV",
-                          "error": f"{type(error).__name__}: {error}", "passed": False}
-            line = {k: record.get(k) for k in ("scenario", "title", "trial", "mission_id", "final_status", "passed",
-                                                "within_budget", "wall_seconds", "usage", "oracle", "error")}
+                record = {"scenario": name, "title": SCENARIOS[name]["title"], "trial": trial, "attempt": attempt,
+                          "final_status": "INVALID_ENV", "error": f"{type(error).__name__}: {error}",
+                          "passed": False, "within_budget": None,
+                          "fail_reasons": [f"环境故障（INVALID_ENV）：{type(error).__name__}: {error}"]}
+                (run_dir / "record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1, default=str),
+                                                     encoding="utf-8")
+            line = {k: record.get(k) for k in ("scenario", "title", "trial", "attempt", "mission_id", "final_status",
+                                                "passed", "within_budget", "fail_reasons", "wall_seconds", "usage",
+                                                "oracle", "error")}
+            line["run_dir"] = str(run_dir)
             with summary_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(line, ensure_ascii=False, default=str) + "\n")
-            failed = [k for k, v in (record.get("oracle") or {}).items() if v is not True]
             print(f"   结果 {record.get('final_status')} 通过={record.get('passed')} 在计划预算内={record.get('within_budget')} "
-                  f"用量={record.get('usage')} 未过={failed}",
+                  f"用量={record.get('usage')} 未过原因={record.get('fail_reasons')}",
                   flush=True)
+    print_history(summary_path, args.scenarios)
+
+
+def print_history(summary_path: Path, scenarios: list[str]) -> None:
+    """按局号列出历次尝试（含以前跑过的），不只给最后一次。"""
+    rows = [json.loads(line) for line in summary_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    print("\n== 历次尝试（同一局号多次尝试全部列出）", flush=True)
+    for name in scenarios:
+        for row in sorted((r for r in rows if r.get("scenario") == name),
+                          key=lambda r: (int(r.get("trial") or 0), int(r.get("attempt") or 0))):
+            print(f"   {name} 第 {row.get('trial')} 局 第 {row.get('attempt') or '?'} 次尝试：{row.get('final_status')} "
+                  f"通过={row.get('passed')} 预算内={row.get('within_budget')} 未过原因={row.get('fail_reasons')}", flush=True)
 
 
 if __name__ == "__main__":
