@@ -58,5 +58,6 @@ def test_the_tick_contains_one_work_items_data_errors() -> None:
     assert set(MISSION_DATA_ERRORS) == {ContractError, GraphIntegrityError, StoreError}
     source = inspect.getsource(AssuranceTick.tick)
     assert "except (AssuranceError, BudgetError, *MISSION_DATA_ERRORS) as error:" in source
-    assert 'else "MISSION_DATA_UNREADABLE"' in source
+    # 第 2 批 A05 起，放回去的决定在 ``_settle_failure`` 里（预算等待分开记）
+    assert 'else "MISSION_DATA_UNREADABLE"' in inspect.getsource(AssuranceTick._settle_failure)
     assert AssuranceError not in MISSION_DATA_ERRORS
