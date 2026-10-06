@@ -307,8 +307,6 @@ def account(
         has_admitted_demand=has_admitted_demand,
         fuel_limit=3,
         fuel_used=0,
-        expansions=0,
-        shape_changes=0,
         lifecycle=lifecycle,
     )
 

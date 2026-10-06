@@ -87,6 +87,7 @@ _GONE = (
     "PARENT_COMPOUND_TASK", "parent_compound_task",                 # 合同账户名与实际一致
     "CLOSEOUT_ROOT_NETWORK_UNAVAILABLE",                            # 不可达分支的码
     "merge_accepted", "collect_upstream_inputs", "materialise_inputs",  # 全祖先扫描（主会话补派）
+    "ShapeChange", "note_shape_change", "expansion_keys", "shape_changes",  # 义务账本死存储层（夜间 N3-10）
 )
 
 

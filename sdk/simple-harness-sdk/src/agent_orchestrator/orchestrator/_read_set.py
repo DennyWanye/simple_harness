@@ -383,9 +383,9 @@ class SemanticReadSetChecker:
             return None
         duty = obligations.obligation(mission_id, duty_id)
         account = obligations.account(mission_id, duty_id)
-        # A duty's *shape* history is its semantic revision: re-planning it is exactly
-        # what a plan that read it needs to hear about (§8.4).
-        return account.shape_changes, content_hash_of(
+        # 义务账本不记形状历史（夜间 N3-10 删了从未有生产写方的那一层，库里恒为 0）：语义版本
+        # 固定为 0，读过它的计划靠下面的内容哈希（义务本身、生命周期、结论引用）发现变化（§8.4）。
+        return 0, content_hash_of(
             {
                 "obligation": duty.to_json(),
                 "lifecycle": str(account.lifecycle),

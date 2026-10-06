@@ -24,7 +24,6 @@ from agent_orchestrator.contracts.obligations import (
     Obligation,
     ObligationLedger,
     ObligationLifecycle,
-    ShapeChange,
     funding_owner_conflicts,
 )
 from agent_orchestrator.contracts.semantic_base import (
@@ -183,18 +182,6 @@ def test_a_refused_lifecycle_value_changes_nothing() -> None:
         ledger.set_lifecycle(target, "DONE")  # type: ignore[arg-type]
 
     assert ledger.account(target) == before
-
-
-def test_a_refused_shape_change_is_not_recorded() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=2)
-    target = duty().obligation_id
-
-    with pytest.raises(ContractError, match="must not be blank"):
-        ledger.note_shape_change(target, ShapeChange.METHOD_SWITCHED, detail="")
-
-    assert ledger.shape_changes(target) == ()
-    assert ledger.account(target).shape_changes == 0
 
 
 # --------------------------------------------------------------------------------------
@@ -402,7 +389,7 @@ def test_opening_against_a_stale_parent_view_is_refused() -> None:
     ledger.register(duty(), recursion_fuel=5)
     parent = duty().obligation_id
     stale = ledger.account(parent)
-    ledger.note_shape_change(parent, ShapeChange.METHOD_SWITCHED, detail="method-b")
+    ledger.admit_demand(parent)  # 读完之后父义务的账变了
 
     with pytest.raises(ContractError, match="has changed since"):
         ledger.open_from(_opening(), stale)

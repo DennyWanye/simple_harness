@@ -24,7 +24,6 @@ from agent_orchestrator.contracts.htn import ObligationId, Requiredness
 from agent_orchestrator.contracts.obligations import (
     Obligation,
     ObligationLifecycle,
-    ShapeChange,
 )
 from agent_orchestrator.storage.obligation_store import ObligationStore
 from agent_orchestrator.storage.store import Store, StoreConflict
@@ -159,10 +158,6 @@ def test_persist_writes_a_memory_ledger_back_unchanged(ledger: ObligationStore) 
     memory.set_lifecycle(target, ObligationLifecycle.SATISFIED, resolution_ref="resolution-1")
     assert ledger.persist(memory) == (target,)
     assert ledger.account(MISSION, target).lifecycle is ObligationLifecycle.SATISFIED
-    # 按义务扣燃料与形状变化没有表（阶段 G 删）：带着它们的内存账本不许静默丢掉
-    memory.note_shape_change(target, ShapeChange.PARAMETERS_REBOUND, detail="subject=beta")
-    with pytest.raises(StoreConflict, match="not stored"):
-        ledger.persist(memory)
 
 
 def test_persisting_an_untouched_ledger_leaves_every_axis_alone(ledger: ObligationStore) -> None:
