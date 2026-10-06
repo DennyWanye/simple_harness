@@ -105,6 +105,8 @@ class RecoveryBoundaryCode(StrEnum):
     DEGRADED_RECOVERY = "DEGRADED_RECOVERY"
     #: 恢复到 READY 之前请求了新动作（派发、交接、通知）
     SIDE_EFFECTS_DISABLED = "SIDE_EFFECTS_DISABLED"
+    #: 这个任务的库与它自己的历史对不上、重启时被隔离（恢复第 3 步）：只接受取消，推进它的写入一律拒绝
+    MISSION_RECOVERY_ISOLATED = "MISSION_RECOVERY_ISOLATED"
 
 
 S = SharingRefusalCode
@@ -330,7 +332,7 @@ def round_fault_handling(error: BaseException) -> tuple[RoundFaultHandling, str 
 
 
 # 第 2 批车道 J：调度死锁与恢复协议的码。死锁是"合法候选、但互相等着对方"——需收敛，不算规划器答错；
-# 恢复锁被别人持着是同一座库上的并发冲突；降级恢复与禁副作用都是"这一刻来源不可用"。
+# 恢复锁被别人持着是同一座库上的并发冲突；降级恢复、禁副作用与单个任务被隔离都是"这一刻来源不可用"。
 _SCHEDULING: dict[SchedulingStopCode, ErrorEntry] = {
     SchedulingStopCode.RESOURCE_WAIT_CYCLE: ErrorEntry(C.NEEDS_CONVERGENCE, charges_planner=False),
 }
@@ -338,6 +340,7 @@ _RECOVERY: dict[RecoveryBoundaryCode, ErrorEntry] = {
     RecoveryBoundaryCode.RECOVERY_LOCK_HELD: _e(C.COMMIT_CONFLICT),
     RecoveryBoundaryCode.DEGRADED_RECOVERY: _e(C.SOURCE_UNAVAILABLE),
     RecoveryBoundaryCode.SIDE_EFFECTS_DISABLED: _e(C.SOURCE_UNAVAILABLE),
+    RecoveryBoundaryCode.MISSION_RECOVERY_ISOLATED: _e(C.SOURCE_UNAVAILABLE),
 }
 
 PLANNING_ERRORS: Mapping[P, ErrorEntry] = MappingProxyType(_PLANNING)

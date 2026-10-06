@@ -10,6 +10,9 @@
 Host 的值（Host 测试钉住），改了会让已有任务重复签发。
 
 调用方（Host 或 SDK 测试世界）持有"现在是不是自动模式"这一件事，其余都在这里。
+
+重启核对没通过、已隔离的任务（``Orchestrator.recovery_isolated``，与主循环同一个判断）三样都不做：
+本进程不替被隔离任务写任何东西（N3-27）。
 """
 
 from __future__ import annotations
@@ -76,6 +79,8 @@ class DeploymentDuties:
         ).fetchall()
         unconfirmed = getattr(self.orchestrator, "_requirements_unconfirmed", None)
         for (mission_id,) in rows:
+            if self.orchestrator.recovery_isolated(str(mission_id)):
+                continue
             mission = store.get_mission(str(mission_id))
             if mission is None:
                 continue
@@ -138,7 +143,7 @@ class DeploymentDuties:
             return 0
         for row in pending:
             request_id = str(row["request_id"])
-            if request_id in self.planning_requests:
+            if request_id in self.planning_requests or self.orchestrator.recovery_isolated(str(row["mission_id"])):
                 continue
             try:
                 self.control.planning_authorization({
@@ -231,7 +236,7 @@ class DeploymentDuties:
         unassured = self.unassured_missions
         for row in rows:
             mid, scope_id = str(row[0]), str(row[1])
-            if mid in unassured:
+            if mid in unassured or orchestrator.recovery_isolated(mid):
                 continue
             if mid not in assured:
                 mission = store.get_mission(mid)
@@ -295,7 +300,7 @@ class DeploymentDuties:
         approved = 0
         for (mid,) in store.connection.execute(sql + " ORDER BY created_at, mission_id", args).fetchall():
             mid = str(mid)
-            if mid in unassured:
+            if mid in unassured or orchestrator.recovery_isolated(mid):
                 continue
             try:
                 if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":

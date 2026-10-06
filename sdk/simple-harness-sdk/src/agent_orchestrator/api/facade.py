@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ..contracts import ContractError
+from ..contracts.error_table import RecoveryBoundaryCode
 from ..governance.budgets import BudgetError
 from ..governance.permissions import Principal
 from ..observability.secrets import find_secrets
@@ -147,6 +148,7 @@ class MissionControlV1:
                 "candidate_mapping"},
                 {"completion_scope", "planning_subject", "result_ref", "purpose",
                  "approval_source", "effect_key"})
+            self._refuse_isolated(body["mission_id"])
             purpose = body.get("purpose", "CONTENT")
             # NEXT-TG-1.0 2B: the two operation reviews are approved on the effect
             # owner's Scope like the others (an assured publish was refused
@@ -217,6 +219,20 @@ class MissionControlV1:
             raise FacadeError("not_found", NOT_FOUND)
         return mission
 
+    def _refuse_isolated(self, mission_id: object) -> None:
+        """重启核对没通过、已隔离的任务只接受取消（N3-27）。
+
+        隔离判断只有一个：:meth:`Orchestrator.recovery_isolated`，主循环、保证通道、执行图通知与
+        部署职责读的都是它。推进这个任务的写入（改要求、确认完成要求、规划授权、回答提问、审批、
+        接管、裁定、换资料、评论、提交操作、检查策略）在这里一律具名拒绝；取消不走这里。
+        别人的任务照样读作 ``not_found``，不因隔离泄露它在不在。"""
+        mid = str(mission_id)
+        if not self._orchestrator.recovery_isolated(mid):
+            return
+        self._mission(mid)
+        raise FacadeError(str(RecoveryBoundaryCode.MISSION_RECOVERY_ISOLATED),
+                          "this Mission failed its restart check and is isolated; it can only be cancelled")
+
     def _owner_of(self, target_id: object) -> Any:
         target = str(target_id)
         store = self._store
@@ -270,6 +286,7 @@ class MissionControlV1:
             elif not isinstance(value, str) or not value.strip():
                 raise FacadeError("invalid_request", "planning authorization identifiers must be nonempty strings")
         self._clean(*(v for v in body.values() if isinstance(v, str)))
+        self._refuse_isolated_grant(operation, body)
         api = PlanningAuthorizationApi(self._orchestrator.commit, tenant_id=self._tenant,
             principal=self._principal, deployment=self._orchestrator.config.deployment_policy)
         try:
@@ -281,6 +298,23 @@ class MissionControlV1:
             return receipt.to_json()
         except (ContractError, ValueError, StoreError) as error:
             raise FacadeError("refused", str(error)) from error
+
+    def _refuse_isolated_grant(self, operation: str, body: Mapping[str, Any]) -> None:
+        """签发、绑定、续期都推进规划；撤销是收回，照常（与取消同向）。"""
+        from ..storage.planning_admission_store import PlanningAdmissionStore
+        from ..storage.planning_decision_store import PlanningDecisionStore
+
+        mission_id: object = None
+        if operation == "issue":
+            mission_id = body["mission_id"]
+        elif operation == "bind":
+            request = PlanningDecisionStore(self._store).get_planning_request(str(body["request_id"]))
+            mission_id = None if request is None else request.mission_id
+        elif operation == "renew":
+            grant = PlanningAdmissionStore(self._store).get_grant(str(body["grant_id"]))
+            mission_id = None if grant is None else grant["mission_id"]
+        if mission_id is not None:
+            self._refuse_isolated(mission_id)
 
     def pending_planning_authorizations(self) -> list[dict[str, Any]]:
         """Every planning request of this caller's Missions still awaiting authority.
@@ -329,6 +363,11 @@ class MissionControlV1:
         if type(attach) is not bool:
             raise FacadeError("invalid_request", "attach_as_source must be a boolean")
         self._clean(command["answer"])
+        from ..storage.planning_human_store import PlanningHumanStore
+
+        question = PlanningHumanStore(self._store).get(command["decision_id"])
+        if question is not None:
+            self._refuse_isolated(question["mission_id"])
         try:
             return answer_planning_question(
                 self._orchestrator, tenant_id=self._tenant, principal=self._principal,
@@ -344,6 +383,8 @@ class MissionControlV1:
     def submit_operation_intent(self, command: Mapping[str, Any]) -> dict[str, Any]:
         from .operation_intents import OperationIntentApi
 
+        if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
+            self._refuse_isolated(command["mission_id"])
         try:
             return OperationIntentApi(
                 self._orchestrator, tenant_id=self._tenant, principal=self._principal,
@@ -389,6 +430,8 @@ class MissionControlV1:
         from .operation_completion import OperationCompletionApi
         from ..orchestrator.operation_completion import OperationCompletionError
 
+        if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
+            self._refuse_isolated(command["mission_id"])
         try:
             self._require_effects_supported(command)
             receipt = OperationCompletionApi(
@@ -419,6 +462,7 @@ class MissionControlV1:
                 or not all(isinstance(item, Mapping) for item in command["changes"])):
             raise FacadeError("invalid_request", "amend_requirements fields have the wrong shape")
         self._clean(command["reason"], *(str(item.get("statement") or "") for item in command["changes"]))
+        self._refuse_isolated(command["mission_id"])
         try:
             return amend_requirements(
                 self._orchestrator, mission_id=command["mission_id"], tenant_id=self._tenant,
@@ -533,6 +577,7 @@ class MissionControlV1:
         if any(not isinstance(command[name], str) for name in required):
             raise FacadeError("invalid_request", "source command fields must be strings")
         self._mission(command["mission_id"])
+        self._refuse_isolated(command["mission_id"])
         # A reopened Mission uses today's physical publication roots. Only the
         # Orchestrator knows these; the low-level CommitService does not guess them.
         try:
@@ -646,6 +691,7 @@ class MissionControlV1:
         if request is None:
             raise FacadeError("not_found", NOT_FOUND)
         self._mission(request.get("mission_id"))
+        self._refuse_isolated(request.get("mission_id"))
         try:
             if request["kind"] == "source_change" and decision == "approve":
                 self._orchestrator.validate_source_storage(str(request["mission_id"]))
@@ -685,6 +731,7 @@ class MissionControlV1:
         if task is None:
             raise FacadeError("not_found", NOT_FOUND)
         self._mission(task.mission_id)
+        self._refuse_isolated(task.mission_id)
         try:
             return dict(
                 self._approvals.takeover(str(task_id), action=action, basis=basis, note=note)
@@ -707,6 +754,7 @@ class MissionControlV1:
         if action is None:
             raise FacadeError("not_found", NOT_FOUND)
         self._mission(str(action["mission_id"]))
+        self._refuse_isolated(action["mission_id"])
         from ..orchestrator.operation_runtime import ensure_operation_runtime
 
         try:
@@ -723,7 +771,7 @@ class MissionControlV1:
         if not str(text).strip():
             raise FacadeError("invalid_request", "a comment needs text")
         self._clean(text)
-        self._owner_of(target_id)
+        self._refuse_isolated(self._owner_of(target_id).id)
         try:
             return dict(self._approvals.comment(str(target_id), text))
         except ApprovalRequestError as error:

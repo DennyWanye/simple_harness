@@ -9,9 +9,10 @@
 3. ``reducer_rebuild`` —— 重建一致：每个没结束的任务用全业务重放 v3（阶段 G）由事件重建业务表并与库
    比对；不一致就是这个任务的库和它自己的历史对不上，不能在它上面恢复新动作。按 AER 附件恢复协议
    第 3、8 条"隔离该流、只为核对可继续的范围开放执行"：**只隔离这个任务**（本进程主循环不再处理它，
-   不派发、不判停、不发通知；库里照样可读、可取消），其余任务照常恢复。范围外的任务如实记，不算。
-4. ``inbox_outbox`` —— 启动绑定的故障结算；冻结的派发意图（出站）与它们的执行侧回合（入站）重新绑上，
-   不新开回合。
+   不派发、不判停、不发通知；部署职责不替它签；门面对它只接受取消，推进类写入报
+   ``MISSION_RECOVERY_ISOLATED``；库里照样可读），其余任务照常恢复。范围外的任务如实记，不算。
+4. ``inbox_outbox`` —— 启动绑定的故障结算（已隔离任务的只记进这一步的结果，不写故障、不停它）；
+   冻结的派发意图（出站）与它们的执行侧回合（入站）重新绑上，不新开回合。
 5. ``pending_reconcile`` —— 未决核对：交出去的对外操作（HANDED_OFF / UNKNOWN、未证实的 FAILED）只问
    结果，**不重交接**。
 6. ``fence_converge`` —— 围栏收敛：每个活动任务 ``heal_mission``（前沿重算、终态任务下的孤儿尝试关掉）、
@@ -319,15 +320,24 @@ class RecoveryCoordinator:
 
     async def _step_inbox_outbox(self) -> dict[str, Any]:
         orch = self._orch
-        faults = len(orch._startup_faults)
+        faults = 0
+        isolated: list[dict[str, str]] = []
         for mission_id, where, error in orch._startup_faults:
+            if orch.recovery_isolated(mission_id):
+                # 第 3 步已隔离：本进程不替它写故障、不停它（N3-27），只在这一步的结果里记一笔
+                isolated.append({"mission_id": mission_id, "where": where, "error": type(error).__name__})
+                continue
             await orch._round_fault(mission_id, where, error)
+            faults += 1
         orch._startup_faults.clear()
         intents = orch.store.list_intents("AGENT_CREATED", "SUBMITTED")
         for intent in intents:
             await orch._mission_round(intent.mission_id, f"recover_intent:{intent.intent_id}",
                                       lambda intent=intent: orch._recover_intent(intent))
-        return {"startup_faults_settled": faults, "frozen_intents": len(intents)}
+        detail: dict[str, Any] = {"startup_faults_settled": faults, "frozen_intents": len(intents)}
+        if isolated:
+            detail["startup_faults_isolated"] = isolated
+        return detail
 
     async def _step_pending(self) -> dict[str, Any]:
         """未决核对：只问已交出去的操作结果，不重交接、不发通知（那两样是新动作，READY 之后才有）。"""
