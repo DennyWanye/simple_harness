@@ -17,6 +17,7 @@ from ..graph.notification_contracts import TaskGraphErrorV1, _integer, _text
 from ..contracts.models import ContractError
 from ..graph.network_codec import decode
 from ..graph.structural_diff import diff_documents
+from ..graph.view_contracts import TaskGraphConvergenceViewV2, TaskGraphExplanationV1, TaskGraphViewV1
 from ..orchestrator.hierarchical_dispatch import NetworkView, next_compound_phase
 from ..storage.store import Store
 from ..storage.taskgraph_store import TaskGraphStore
@@ -38,6 +39,17 @@ def _fail(code: str, detail: str, *, retry: str = "NONE") -> NoReturn:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _contract(codec: Any, body: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """三个只读视图出门前过各自的严格合同（原计划 §4.3 / 附录 E；第 2 批 T06）。
+
+    组装出不合规的文档是本模块自己的错，不是来源变了：按 GRAPH_INTEGRITY 报给操作员修，
+    不把半成品发给界面。"""
+    try:
+        return codec.from_json(dict(body)).to_json()
+    except ContractError as error:
+        _fail("GRAPH_INTEGRITY", f"{name} violates its published contract: {error}", retry="OPERATOR_REPAIR")
 
 
 EXECUTION_PAGE_DEFAULT, EXECUTION_PAGE_MAX = 100, 200
@@ -329,7 +341,7 @@ class TaskGraphReadApi:
             tokenless = {**body, "read_token": {key: value for key, value in body["read_token"].items()
                                                 if key != "snapshot_hash"}}
             body["read_token"]["snapshot_hash"] = _hash(tokenless)
-            return body, explanation_sources
+            return _contract(TaskGraphViewV1, body, "taskgraph-view-v1"), explanation_sources
 
     # ------------------------------------------------------------ execution process (§8)
     def _principal_digest(self) -> str:
@@ -445,10 +457,11 @@ class TaskGraphReadApi:
                     refs.append(ref)
         if len(refs) > 64:
             _fail("BOUND_REACHED", "explanation source references exceed their public bound")
-        return {"schema_version": 1, "mission_id": mission_id, "occurrence_id": occurrence_id,
-                "read_token": view["read_token"], "readiness": node["readiness"],
-                "reason_codes": node["reason_codes"], "source_refs": refs,
-                "details": [f"phase={node['phase']}", *completion_details]}
+        return _contract(TaskGraphExplanationV1, {
+            "schema_version": 1, "mission_id": mission_id, "occurrence_id": occurrence_id,
+            "read_token": view["read_token"], "readiness": node["readiness"],
+            "reason_codes": node["reason_codes"], "source_refs": refs,
+            "details": [f"phase={node['phase']}", *completion_details]}, "taskgraph-explanation-v1")
 
     def diff(self, mission_id: str, from_revision: int, to_revision: int) -> dict[str, Any]:
         with self._store.read_view() as connection:
@@ -487,14 +500,16 @@ class TaskGraphReadApi:
                     "impact_hash": row["impact_hash"], "state": row["state"],
                     "row_version": row["row_version"], "targets": targets, "diagnostic_refs": diagnostics})
             # 阶段 B 第 2 条：连败被挡住的通知（§10.2 三类被挡通知都在运维查询里可见），带重发要的行版本。
+            # 合同 taskgraph-convergence-view-v2（第 2 批 T07）：v1 不许这个字段，界面在读它，所以升版。
             blocked = [dict(row) for row in connection.execute(
                 "SELECT message_id,row_version,kind,subject_key,last_error_code AS error_code,attempts "
                 "FROM taskgraph_followups WHERE mission_id=? AND delivery_state='BLOCKED' ORDER BY message_id",
                 (mission_id,))]
             if len(jobs) > 4096 or any(len(job["targets"]) > 4096 for job in jobs) or len(blocked) > 4096:
                 _fail("BOUND_REACHED", "convergence view exceeds its public bound")
-            return {"schema_version": 1, "mission_id": mission_id, "through_seq": through,
-                    "jobs": jobs, "blocked_notifications": blocked, "complete": True}
+            return _contract(TaskGraphConvergenceViewV2, {
+                "schema_version": 2, "mission_id": mission_id, "through_seq": through,
+                "jobs": jobs, "blocked_notifications": blocked, "complete": True}, "taskgraph-convergence-view-v2")
 
 
 __all__ = ["TaskGraphReadApi", "TaskGraphReadError"]
