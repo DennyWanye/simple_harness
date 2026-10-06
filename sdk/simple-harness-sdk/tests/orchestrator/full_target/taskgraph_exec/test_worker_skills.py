@@ -64,14 +64,15 @@ def test_a_deployment_declares_the_skill_tools_its_pools_serve():
 
 def test_the_hierarchical_worker_lists_the_skill_tools():
     current = roles.WORKER_HIERARCHICAL
-    assert current.prompt_version == "worker-hierarchical-v6"
+    assert current.prompt_version == roles.WORKER_HIERARCHICAL_VERSION  # 只钉"当前这一版"，版本号随模板走
     base = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests",
             "knowledge_list", "knowledge_read")
     assert current.tool_names == (*base, *SKILLS)
     assert SKILL_DISCOVER_TOOL_NAME in current.instructions
     assert current.prompt_version in roles.HIERARCHICAL_WORKER_VERSIONS
     # the drone-sim Worker has its own tools and none of the Skill ones
-    drone = roles.TEMPLATE_VERSIONS["worker"]["worker-drone-sim-hierarchical-v2"]
+    drone = roles.DRONE_SIM_WORKER  # 当前这一版，版本号随模板走
+    assert roles.TEMPLATE_VERSIONS["worker"][drone.prompt_version] is drone
     assert drone.tool_names == (*base, "drone_sim_telemetry", "drone_sim_command")
     assert SKILL_DISCOVER_TOOL_NAME not in drone.instructions
     # the original intersection: offered by the deployment → the Worker gets them

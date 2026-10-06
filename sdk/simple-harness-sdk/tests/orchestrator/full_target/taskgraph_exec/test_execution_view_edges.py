@@ -56,11 +56,12 @@ def _world(tmp_path):
         db.execute("INSERT INTO results VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                    (result, attempt, T, M, "turn", "h", "DONE", verdict,
                     json.dumps({"envelope": {"summary": f"try {ordinal}", "outcome": "candidate"}}), at + 1, at + 1))
-        db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?)",
-                   (f"{result}:rule_check", result, attempt, "rule_check", verdict,
+        # 迁移 42 起核对记录按要求版本分行（第 8 列 requirements_revision）
+        db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?,?)",
+                   (f"{result}:rule_check", result, attempt, 0, "rule_check", verdict,
                     json.dumps({"summary": "artifact_not_in_result: NOTES.md"}), at + 1))
-        db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?)",
-                   (f"{result}:human_review", result, attempt, "human_review", "NOT_REQUIRED", "{}", at + 1))
+        db.execute("INSERT INTO verifications VALUES(?,?,?,?,?,?,?,?)",
+                   (f"{result}:human_review", result, attempt, 0, "human_review", "NOT_REQUIRED", "{}", at + 1))
     for request, ordinal, decision, kind, at in (("req-plan", 1, "pd-refine", "REFINE", 1.0),
                                                  ("req-repair", 2, "pd-repair", "REPAIR", 15.0)):
         intent(request, "plan", f"{M}:planner:{ordinal}", {"planning_package": {}}, f"agent-p{ordinal}", at)
