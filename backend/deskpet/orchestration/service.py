@@ -367,7 +367,7 @@ class OrchestrationService:
         )
         await self._orchestrator.__aenter__()
         self._bind_host_duties(self._orchestrator)
-        self._notices.backfill(self._orchestrator.store)
+        self._notices.catch_up(self._orchestrator.store)  # U04: from the last read seq
         self._taskgraph = self._user_missions.taskgraph
         self._assurance = self._user_missions.assurance
         self._control = MissionControlV1(
@@ -846,7 +846,7 @@ class OrchestrationService:
         # candidate leaves no runnable object; the existing driver retries rebuild.
         self._orchestrator = candidate
         self._bind_host_duties(candidate)
-        self._notices.backfill(candidate.store)
+        self._notices.catch_up(candidate.store)  # U04: a rebuild is a reconnect; resume from seq
         self._control = control
         self._user_missions.bind(candidate, control)
         self._diagnostics_available = self._detect_diagnostics()
@@ -1288,6 +1288,8 @@ class OrchestrationService:
 
         from .chat_tool import _STATUS_ZH
 
+        # 第 2 批 U04：每次拉列表（前端重连后会重新拉）先从已读序号续读，断线期间丢的推送补回来
+        self._notices.catch_up(self._orchestrator.store)
         rows = []
         for notice in self._notices.pending():
             mission = self._orchestrator.store.get_mission(notice["mission_id"])
