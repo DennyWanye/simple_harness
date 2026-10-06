@@ -61,6 +61,10 @@ class MissionStopReason(StrEnum):
     #: 把事实交给规划器一次，这一版计划没有改动才用这两个名字停。
     NO_NEW_KNOWLEDGE = "no_new_knowledge"
     RESULT_DUPLICATION = "result_duplication"
+    #: 第 2 批车道 J H03（原计划 §10.5、§24.1 第 10 条）：执行图的等待关系（先后边、数据边、共用围栏、
+    #: 交接等待）成了环——互相等着对方先动，谁也动不了。先把环的事实交规划器一次（片 D 第 1 项），
+    #: 规划器不改才按这个名字停。不借"没有可派发的工作"：那个说的是没人在等任何东西。
+    DEADLOCK = "deadlock"
 
 
 class TaskStatus(StrEnum):

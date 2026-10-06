@@ -265,6 +265,20 @@
     "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_writes_everything_in_one_transaction"
    ],
    "run_in": "已有"
+  },
+  {
+   "id": "K19",
+   "cut": "重启恢复协议中途：某一步记完结果之后进程没了（恢复锁留在库里）",
+   "recovery": "下一次启动按进程身份核对锁的持有者：不在了就标 SUPERSEDED 接管，重走八步到 READY；还活着就拒绝",
+   "from": "车道 J H01（原计划 §25.1 第 11 条、§16.4）",
+   "method": "进程内抛错（InjectedCrash）",
+   "injection": [
+    "after_recovery_step（recovery_coordinator.py，kind=步骤名）"
+   ],
+   "tests": [
+    "tests/orchestrator/full_target/test_recovery_coordinator.py::test_a_crash_after_a_recovery_step_leaves_the_lock_and_the_next_start_takes_over"
+   ],
+   "run_in": "第 2 批车道 J（已执行 2026-10-06）"
   }
  ]
 }

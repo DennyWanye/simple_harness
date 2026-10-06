@@ -1560,6 +1560,51 @@ CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inpu
 END;
 """
 
+DDL_V46 = """
+-- 第 2 批车道 J（H01 重启恢复协议、H04 子进程身份与回收材料落库；迁移 45 归车道 G）。
+-- 三张都是运行态表：恢复锁与恢复结果、恢复每一步的结果、沙箱子进程的身份与回收材料。
+-- 重放 v3 不重建它们（清单归 runtime）。
+CREATE TABLE recovery_runs (
+ recovery_id TEXT PRIMARY KEY NOT NULL,
+ owner TEXT NOT NULL,
+ owner_pid INTEGER NOT NULL,
+ owner_process_started_at TEXT NOT NULL,
+ state TEXT NOT NULL CHECK(state IN ('RECOVERY_LOCKED','READY','DEGRADED_RECOVERY','SUPERSEDED')),
+ failed_step TEXT,
+ detail_json TEXT NOT NULL CHECK(json_valid(detail_json)),
+ started_at REAL NOT NULL,
+ finished_at REAL
+) STRICT;
+CREATE INDEX recovery_runs_state_idx ON recovery_runs(state, started_at);
+CREATE TABLE recovery_obligations (
+ recovery_id TEXT NOT NULL REFERENCES recovery_runs(recovery_id),
+ step_no INTEGER NOT NULL CHECK(step_no BETWEEN 1 AND 8),
+ step TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('DONE','FAILED','SKIPPED')),
+ detail_json TEXT NOT NULL CHECK(json_valid(detail_json)),
+ created_at REAL NOT NULL,
+ PRIMARY KEY(recovery_id, step_no)
+) STRICT;
+CREATE TABLE sandbox_executions (
+ execution_id TEXT PRIMARY KEY NOT NULL,
+ kind TEXT NOT NULL,
+ root_pid INTEGER NOT NULL,
+ process_group INTEGER,
+ session_id INTEGER,
+ process_started_at TEXT,
+ command_json TEXT NOT NULL CHECK(json_valid(command_json)),
+ cwd TEXT NOT NULL,
+ scratch TEXT NOT NULL,
+ mission_id TEXT,
+ task_id TEXT,
+ attempt_id TEXT,
+ started_at REAL NOT NULL,
+ finished_at REAL,
+ outcome TEXT CHECK(outcome IS NULL OR outcome IN ('exited','residual','reclaimed','gone','identity_mismatch','unverifiable'))
+) STRICT;
+CREATE INDEX sandbox_executions_open_idx ON sandbox_executions(finished_at, started_at);
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1605,6 +1650,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(42, "orchestrator-verifications-per-requirements", DDL_V42),
     Migration(43, "orchestrator-data-requirements-drop-revision-policy", DDL_V43),
     Migration(44, "orchestrator-manifest-binding-per-input-revision", DDL_V44),
+    # 迁移 45 归第 2 批车道 G（知识记录三字段），合并时排在这里之前。
+    Migration(46, "orchestrator-recovery-protocol-and-sandbox-identity", DDL_V46),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

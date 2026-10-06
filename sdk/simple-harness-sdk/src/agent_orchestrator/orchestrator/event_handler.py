@@ -204,6 +204,7 @@ from .occurrence_tasks import (
 )
 from .plan_commits import PlanCommitRejected, PlanPrincipal
 from .progress import IdleFacts, Route, idle_verdict
+from .recovery_coordinator import RecoveryCoordinator
 
 #: Events that observe the world without changing it (NEXT-TG-1.0 §3.6): a cycle
 #: that wrote only these made no progress.
@@ -613,6 +614,9 @@ class Orchestrator:
         #: Faults caught while binding frozen tool authority at startup, handed to the
         #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
         self._startup_faults: list[tuple[str, str, Exception]] = []
+        #: 重启恢复协议的协调者（车道 J H01，§25.1 第 11 条）：``__aenter__`` 建，``recover()`` 跑；
+        #: 降级恢复时主循环只开只读与诊断。
+        self._recovery: RecoveryCoordinator | None = None
         #: planning intents already noted as waiting for their TaskGraph binding.
         self._creation_refusals_noted: set[str] = set()
         # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
@@ -659,6 +663,11 @@ class Orchestrator:
             from ..assurance.root_gate import AssuranceRootGate
             from ..assurance.codec import AssuranceError
 
+            # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
+            if self._executor is not None:
+                from ..storage.recovery_store import StoreSandboxLedger
+
+                self._executor.ledger = StoreSandboxLedger(self._store)
             if (self._assurance_root_setup is not None
                     or AssuranceRootGate.required(self._store, self._config.evidence_root)):
                 self._assurance_root_gate = AssuranceRootGate(self._store, self._config.evidence_root)
@@ -2134,34 +2143,26 @@ class Orchestrator:
             self._bind_critic(intent.agent_id, intent.config)
 
     async def recover(self) -> None:
-        """§16.4 recovery (D3-6'): rebind the workspaces of in-flight turns, let the
-        Commit Service heal each active Mission (frontier recompute, orphan candidates
-        closed), re-import the usage of settled-but-unpaid Attempts, wake the SDK
-        turns, then let the loop re-drive the remaining intents (review P1-3)."""
+        """重启恢复协议（原计划 §25.1 第 11 条、§16.4；车道 J H01）：RECOVERY_LOCKED → 清单核对 →
+        reducer 重建 → inbox/outbox → 未决核对 → fence 收敛 → 孤儿回收 → READY / DEGRADED_RECOVERY。
+        顺序与每步的事实在 :mod:`.recovery_coordinator`；这里只建协调者、跑一遍。READY 之前不派发、
+        不交接、不发通知、不唤醒执行池；降级后本进程只开只读与诊断（``run()`` 不进周期）。"""
 
         self._require_assurance_execution_root()
-        if isinstance(self._deferred_planning, DeferredPlanning):
-            self._deferred_planning.bind(self.store)
-        # 2026-10-03 收尾裁决第 3 张：恢复按意图、按任务各包进"一个任务一轮"的边界——一个任务的
-        # 坏数据只是它自己的故障，别的任务照常恢复，服务照常起来。
-        for mission_id, where, error in self._startup_faults:
-            await self._round_fault(mission_id, where, error)
-        self._startup_faults.clear()
-        for intent in self.store.list_intents("AGENT_CREATED", "SUBMITTED"):
-            await self._mission_round(intent.mission_id, f"recover_intent:{intent.intent_id}",
-                                      lambda intent=intent: self._recover_intent(intent))
-        for mission in self._active_missions():
-            await self._recover_mission_round(mission)
-        for pool in self.assembled.pools.values():  # D6-5': each pool recovers only its own library
-            try:
-                await pool.bridge.recover()
-            except ProviderAdmissionDenied as error:
-                if error.detail.get("reason_code") != "bound_overrun":
-                    raise
-                # SDK/guard have committed the actual overrun. Import its original
-                # cost before leaving recovery; new admission remains fail-closed.
-                self._note(f"recovered actual provider overrun: {error}")
-        import_late_accounting(self)
+        if self._recovery is None:
+            self._recovery = RecoveryCoordinator(self)
+        await self._recovery.run()
+
+    def recovery_status(self) -> dict[str, Any]:
+        """只读诊断：恢复状态（RECOVERY_LOCKED / READY / DEGRADED_RECOVERY）、是否禁副作用、
+        库里最近一次恢复的八步结果。还没恢复过时 ``state`` 为 ``RECOVERY_LOCKED``、``latest`` 是库里的记录。"""
+
+        if self._recovery is not None:
+            return self._recovery.status()
+        from ..storage.recovery_store import RecoveryStore
+
+        return {"state": "RECOVERY_LOCKED", "side_effects_disabled": True, "recovery_id": None,
+                "latest": RecoveryStore(self.store).latest()}
 
     async def _recover_intent(self, intent: DispatchIntent) -> bool:
         if intent.agent_id is None:
@@ -2284,6 +2285,8 @@ class Orchestrator:
         many minutes and must not end the run early (step 4 real-run finding)."""
 
         await self.recover()
+        if self._recovery is not None and self._recovery.degraded:
+            return  # DEGRADED_RECOVERY：只开只读与诊断（``recovery_status()``），不进周期
         await self._reconcile_actions()  # D7-5': every run() first asks about UNKNOWN actions
         cycles = 0
         idle_rounds = 0

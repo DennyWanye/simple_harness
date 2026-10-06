@@ -90,6 +90,23 @@ class SharingRefusalCode(StrEnum):
     TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED = "TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED"
 
 
+class SchedulingStopCode(StrEnum):
+    """调度秩序对外报出的码（第 2 批车道 J H03）：资源等待成环。停机报告与交给规划器的事实里用它。"""
+
+    RESOURCE_WAIT_CYCLE = "resource_wait_cycle"
+
+
+class RecoveryBoundaryCode(StrEnum):
+    """重启恢复协议对界面/操作员报出的码（第 2 批车道 J H01，§25.1 第 11 条、§16.4）。"""
+
+    #: 另一个还活着的实例持着这座库的恢复锁
+    RECOVERY_LOCK_HELD = "RECOVERY_LOCK_HELD"
+    #: 恢复在某一步失败，编排只开只读与诊断
+    DEGRADED_RECOVERY = "DEGRADED_RECOVERY"
+    #: 恢复到 READY 之前请求了新动作（派发、交接、通知）
+    SIDE_EFFECTS_DISABLED = "SIDE_EFFECTS_DISABLED"
+
+
 S = SharingRefusalCode
 _SHARING_PLANNER_CODE: dict[S, P] = {
     # 保留/独立需要的工作没被这份决定覆盖：是覆盖缺口
@@ -312,8 +329,21 @@ def round_fault_handling(error: BaseException) -> tuple[RoundFaultHandling, str 
     return RoundFaultHandling.RETRY_IN_PLACE, None if code is None else str(code)
 
 
+# 第 2 批车道 J：调度死锁与恢复协议的码。死锁是"合法候选、但互相等着对方"——需收敛，不算规划器答错；
+# 恢复锁被别人持着是同一座库上的并发冲突；降级恢复与禁副作用都是"这一刻来源不可用"。
+_SCHEDULING: dict[SchedulingStopCode, ErrorEntry] = {
+    SchedulingStopCode.RESOURCE_WAIT_CYCLE: ErrorEntry(C.NEEDS_CONVERGENCE, charges_planner=False),
+}
+_RECOVERY: dict[RecoveryBoundaryCode, ErrorEntry] = {
+    RecoveryBoundaryCode.RECOVERY_LOCK_HELD: _e(C.COMMIT_CONFLICT),
+    RecoveryBoundaryCode.DEGRADED_RECOVERY: _e(C.SOURCE_UNAVAILABLE),
+    RecoveryBoundaryCode.SIDE_EFFECTS_DISABLED: _e(C.SOURCE_UNAVAILABLE),
+}
+
 PLANNING_ERRORS: Mapping[P, ErrorEntry] = MappingProxyType(_PLANNING)
 TASKGRAPH_ERRORS: Mapping[T, ErrorEntry] = MappingProxyType(_TASKGRAPH)
+SCHEDULING_ERRORS: Mapping[SchedulingStopCode, ErrorEntry] = MappingProxyType(_SCHEDULING)
+RECOVERY_ERRORS: Mapping[RecoveryBoundaryCode, ErrorEntry] = MappingProxyType(_RECOVERY)
 ROUND_FAULTS: Mapping[RoundFaultCode, RoundFaultHandling] = MappingProxyType(_ROUND_FAULT)
 
 def classify(code: object) -> ErrorEntry:
@@ -323,6 +353,11 @@ def classify(code: object) -> ErrorEntry:
         return _PLANNING[P(str(code))]
     if isinstance(code, T) or (isinstance(code, str) and code in T.__members__):
         return _TASKGRAPH[T(str(code))]
+    if isinstance(code, SchedulingStopCode) or (
+            isinstance(code, str) and code in {c.value for c in SchedulingStopCode}):
+        return _SCHEDULING[SchedulingStopCode(str(code))]
+    if isinstance(code, RecoveryBoundaryCode) or (isinstance(code, str) and code in RecoveryBoundaryCode.__members__):
+        return _RECOVERY[RecoveryBoundaryCode(str(code))]
     raise ContractError(f"ERROR_CODE_UNREGISTERED: {code!r}")
 
 
@@ -335,7 +370,11 @@ def ordered(codes: Iterable[P]) -> tuple[P, ...]:
 
 __all__ = (
     "PLANNING_ERRORS",
+    "RECOVERY_ERRORS",
     "ROUND_FAULTS",
+    "RecoveryBoundaryCode",
+    "SCHEDULING_ERRORS",
+    "SchedulingStopCode",
     "SHARING_PLANNER_CODE",
     "CodedFault",
     "RoundFaultCode",

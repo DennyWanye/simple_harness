@@ -281,13 +281,18 @@ def request_planner_for_stall(dispatch: Any, mission: Any, *, plan_revision: int
     用户还是别的，由规划器定。范围是整个计划——任何一步上的计划改动都算处理了它。每个计划
     版本只记一条；已经记过返回 False，调用方据此按"没有可派发的工作"停。
     """
+    from ..scheduling.wait_for import collect_wait_facts, deadlock_facts
+
     network = dispatch.network(mission.id)
     tasks = tuple(str(spec.task_id) for spec in network.occurrences)
     roots = tuple(str(network.occurrence(occurrence).task_id) for occurrence in network.root_occurrence_ids)
+    # 车道 J H03（§10.5、§24.1 第 10 条）：等待关系成环（死锁）也是事实的一部分，一并交给规划器一次。
+    wait_for = deadlock_facts(collect_wait_facts(dispatch.store, network))
     return record_request(
         dispatch, mission.id, event_type="NoDispatchableWork", trigger_refs=roots or (mission.id,),
         source_key=stalled_key(mission.id, plan_revision),
-        detail={"reason": "no_dispatchable_work", "plan_revision": int(plan_revision), **detail},
+        detail={"reason": "no_dispatchable_work", "plan_revision": int(plan_revision), **detail,
+                "wait_for": wait_for},
         scope=tasks + tuple(str(spec.occurrence_id) for spec in network.occurrences))
 
 

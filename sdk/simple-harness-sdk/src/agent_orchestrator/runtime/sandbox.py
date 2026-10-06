@@ -251,6 +251,112 @@ class _Tail:
         return self.data.decode("utf-8", "ignore" if truncated else "replace"), truncated
 
 
+class SandboxExecutionLedger(Protocol):
+    """子进程身份与回收材料的账本（§14.4，车道 J H04）。
+
+    ``record_start`` 在子进程起来、身份读到之后立刻调用；写不进去的运行不许继续（先把刚起的进程
+    组收掉再报错）——没有回收材料的子进程不能存在。``record_finish`` 在收尾后写结果。"""
+
+    def record_start(self, record: Mapping[str, Any]) -> None: ...
+
+    def record_finish(self, execution_id: str, outcome: str) -> None: ...
+
+
+def process_identity(pid: int) -> dict[str, Any] | None:
+    """这一刻进程号 ``pid`` 的身份（只做 macOS，用户决定 A#9）：进程组、会话、启动时间、命令行。
+    进程不在了返回 ``None``；``ps`` 本身不可用抛 :class:`SandboxUnavailable`。"""
+
+    try:
+        completed = subprocess.run(
+            [PS, "-p", str(int(pid)), "-o", "lstart=,command="],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SandboxUnavailable("process identity query unavailable") from error
+    line = completed.stdout.strip()
+    if completed.returncode != 0 or not line:
+        return None
+    parts = line.split()
+    if len(parts) < 5:
+        raise SandboxUnavailable("process identity output unreadable")
+    # macOS 的 ``ps -o sess`` 只打印 0：进程组与会话用系统调用读，进程刚没了就按"不在"算
+    try:
+        group, session = os.getpgid(int(pid)), os.getsid(int(pid))
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        group, session = None, None
+    return {
+        "process_group": group,
+        "session_id": session,
+        "process_started_at": " ".join(parts[:5]),
+        "command": " ".join(parts[5:]),
+    }
+
+
+def identity_matches(recorded: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
+    """落库的身份与此刻同一个进程号上的进程是不是同一个：启动时间必须一样，进程组/会话有记就要
+    一样。命令行只作记录（沙箱里的程序可以改自己的 argv），不参与判定。"""
+
+    if str(recorded.get("process_started_at") or "") != str(current.get("process_started_at") or ""):
+        return False
+    for key in ("process_group", "session_id"):
+        if recorded.get(key) is not None and int(recorded[key]) != int(current[key]):
+            return False
+    return True
+
+
+def reclaim_recorded_executions(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    kill: Callable[[int], None] | None = None,
+    sweeps: int = 3,
+) -> list[dict[str, Any]]:
+    """重启后的孤儿回收（恢复协议第 7 步）：对每条没记结束的子进程，先按落库身份核对此刻的进程，
+    对上了才终止它的进程组；对不上（进程号被别人复用）一个不碰；进程不在了记 ``gone``；
+    ``ps`` 不可用记 ``unverifiable``。返回每条的结果（``execution_id``、``outcome``、``pids``）。"""
+
+    reports: list[dict[str, Any]] = []
+    signal_one = kill or _sigkill
+    for row in rows:
+        execution_id = str(row["execution_id"])
+        pid = int(row["root_pid"])
+        try:
+            current = process_identity(pid)
+        except SandboxUnavailable as error:
+            reports.append({"execution_id": execution_id, "outcome": "unverifiable",
+                            "root_pid": pid, "reason": str(error), "pids": []})
+            continue
+        if current is None:
+            reports.append({"execution_id": execution_id, "outcome": "gone", "root_pid": pid, "pids": []})
+            continue
+        if not identity_matches(row, current):
+            reports.append({"execution_id": execution_id, "outcome": "identity_mismatch", "root_pid": pid,
+                            "recorded": {k: row.get(k) for k in ("process_group", "session_id", "process_started_at")},
+                            "current": current, "pids": []})
+            continue
+        group = current["process_group"]
+        signalled: set[int] = set()
+        for _ in range(max(1, sweeps)):
+            if group is not None:
+                try:
+                    os.killpg(int(group), signal.SIGKILL)
+                    signalled.add(int(group))
+                except (ProcessLookupError, PermissionError):
+                    pass
+            signal_one(pid)
+            signalled.add(pid)
+            time.sleep(0.05)
+            again = process_identity(pid)
+            if again is None or not identity_matches(row, again):
+                break
+        after = process_identity(pid)
+        alive = after is not None and identity_matches(row, after)
+        reports.append({"execution_id": execution_id, "outcome": "residual" if alive else "reclaimed",
+                        "root_pid": pid, "pids": sorted(signalled)})
+    return reports
+
+
 # ------------------------------------------------------------------ the shared engine
 class _Executor:
     kind = ""
@@ -274,6 +380,8 @@ class _Executor:
             if exec_root is not None
             else Path(tempfile.gettempdir()).resolve() / f"orch-exec-{os.getuid()}"
         )
+        #: 车道 J H04：子进程身份与回收材料的账本；编排启动时绑上（``StoreSandboxLedger``）。
+        self.ledger: SandboxExecutionLedger | None = None
 
     @property
     def environment_digest(self) -> str:
@@ -312,6 +420,8 @@ class _Executor:
         tail = _Tail(spec.max_output_bytes)
         timed_out = False
         limit: str | None = None
+        residual: set[int] = set()
+        recorded = False
         try:
             process = await asyncio.create_subprocess_exec(
                 *self._argv(command, run),
@@ -324,6 +434,7 @@ class _Executor:
                 preexec_fn=_preexec(spec.cpu_seconds, spec.max_file_bytes),
             )
             run.root_pid = process.pid
+            recorded = self._record_start(run, command, process.pid)
             assert process.stdout is not None
             reader = asyncio.ensure_future(tail.drain(process.stdout))
             waiter = asyncio.ensure_future(process.wait())
@@ -360,6 +471,8 @@ class _Executor:
                 reader.cancel()
         finally:
             run.close(clean=safe_to_delete)
+            if recorded:
+                self._record_finish(run.execution_id, "residual" if residual else "exited")
         if limit is None and returncode == -signal.SIGXCPU:
             limit = "cpu"
         output, truncated = tail.text()
@@ -378,6 +491,33 @@ class _Executor:
             residual_pids=tuple(sorted(residual)),
             status="ok" if not residual else "error",
         )
+
+    def _record_start(self, run: _Run, command: Sequence[str], pid: int) -> bool:
+        """子进程一起来就把身份与回收材料落账（§14.4）。账本写不进去：先把刚起的进程组收掉，
+        再报不可用——不留没有回收材料的子进程。没有账本（单测直接用执行器）就不记。"""
+
+        if self.ledger is None:
+            return False
+        try:
+            identity = process_identity(pid) or {}
+            self.ledger.record_start({
+                "execution_id": run.execution_id, "kind": self.kind, "root_pid": pid,
+                "process_group": identity.get("process_group"), "session_id": identity.get("session_id"),
+                "process_started_at": identity.get("process_started_at"), "command": list(command),
+                "cwd": str(run.cwd), "scratch": str(run.scratch),
+            })
+        except Exception as error:  # noqa: BLE001 - the ledger is what makes the run recoverable
+            self._reap(run, root_alive=True)
+            raise SandboxUnavailable("sandbox execution ledger unavailable") from error
+        return True
+
+    def _record_finish(self, execution_id: str, outcome: str) -> None:
+        if self.ledger is None:
+            return
+        try:
+            self.ledger.record_finish(execution_id, outcome)
+        except Exception:  # noqa: BLE001 - the run is over; an unfinished row is reclaimed at restart
+            pass
 
     def _sample(self, run: _Run) -> tuple[set[int], int]:
         members = self._members(run)
@@ -1099,10 +1239,14 @@ __all__ = (
     "ProbeReport",
     "ProcessOnlyExecutor",
     "SANDBOX_VERSION",
+    "SandboxExecutionLedger",
     "SandboxExecutorPort",
     "SandboxSpec",
     "SandboxUnavailable",
     "SeatbeltExecutor",
+    "identity_matches",
     "probe_sandbox",
+    "process_identity",
+    "reclaim_recorded_executions",
     "resolve_executor",
 )
