@@ -277,10 +277,6 @@ class ObligationStore:
         if not isinstance(ledger, ObligationLedger):
             raise StoreConflict("persist expects an ObligationLedger")
         written: list[ObligationId] = []
-        for target in ledger.obligation_ids():
-            if ledger.expansion_keys(target) or ledger.shape_changes(target):
-                raise StoreConflict(
-                    f"obligation {target!s}: expansions and shape changes are not stored")
         with self._store.transaction() as connection:
             for target in ledger.obligation_ids():
                 duty = ledger.obligation(target)

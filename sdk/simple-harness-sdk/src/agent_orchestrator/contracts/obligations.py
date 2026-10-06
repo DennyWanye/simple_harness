@@ -7,9 +7,10 @@ An :class:`Obligation` is the duty that survives re-planning.  Splitting a task,
 swapping a method, renaming a goal or handing the work to a different agent are
 all changes of *how* the duty is discharged; none of them mints a fresh retry
 allowance.  The ledger therefore keys recursion fuel and demand on
-``obligation_id`` alone, and every "the work changed shape" operation is recorded
-as history that leaves the counters where they were.  Failures and spend are not
-kept on the duty: they are recorded on the attempts and settlements themselves.
+``obligation_id`` alone, and no "the work changed shape" operation touches them
+(the ledger keeps no shape history; 夜间 N3-10 删了从未有生产写方的那一层).
+Failures and spend are not kept on the duty: they are recorded on the attempts
+and settlements themselves.
 
 Recursion fuel follows the same rule (§6.4 v1.2): it is counted per obligation,
 not per ``goal signature + parameters``, and running out is ``BOUND_REACHED`` —
@@ -40,7 +41,6 @@ from .semantic_base import (
     index,
     json_object,
     optional_identifier,
-    text,
 )
 
 
@@ -59,16 +59,6 @@ class FuelStatus(StrEnum):
     GRANTED = "GRANTED"
     BOUND_REACHED = "BOUND_REACHED"
     REPEATED_EXPANSION = "REPEATED_EXPANSION"
-
-
-class ShapeChange(StrEnum):
-    """The re-planning events that must *not* reset an obligation's counters."""
-
-    TASK_RENAMED = "task_renamed"
-    METHOD_SWITCHED = "method_switched"
-    AGENT_REASSIGNED = "agent_reassigned"
-    PARAMETERS_REBOUND = "parameters_rebound"
-    SUCCESSOR_TASK = "successor_task"
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,8 +196,6 @@ class ObligationAccountView:
     has_admitted_demand: bool = False
     fuel_limit: int = 0
     fuel_used: int = 0
-    expansions: int = 0
-    shape_changes: int = 0
     lifecycle: ObligationLifecycle = ObligationLifecycle.UNSATISFIED
     resolution_ref: str | None = None
 
@@ -222,8 +210,6 @@ class ObligationAccountView:
             "fuel_limit": self.fuel_limit,
             "fuel_used": self.fuel_used,
             "remaining_fuel": self.remaining_fuel,
-            "expansions": self.expansions,
-            "shape_changes": self.shape_changes,
             "lifecycle": str(self.lifecycle),
             "resolution_ref": self.resolution_ref,
         }
@@ -234,13 +220,11 @@ class _Account:
 
     __slots__ = (
         "demand_admitted",
-        "expansion_keys",
         "fuel_limit",
         "fuel_used",
         "lifecycle",
         "obligation",
         "resolution_ref",
-        "shape_changes",
     )
 
     def __init__(self, obligation: Obligation, fuel_limit: int) -> None:
@@ -248,8 +232,6 @@ class _Account:
         self.fuel_limit = fuel_limit
         self.fuel_used = 0
         self.demand_admitted = False
-        self.expansion_keys: list[tuple[str, str]] = []
-        self.shape_changes: list[tuple[ShapeChange, str]] = []
         self.lifecycle = obligation.lifecycle
         self.resolution_ref = obligation.resolution_ref
 
@@ -378,8 +360,6 @@ class ObligationLedger:
             has_admitted_demand=account.demand_admitted,
             fuel_limit=account.fuel_limit,
             fuel_used=account.fuel_used,
-            expansions=len(account.expansion_keys),
-            shape_changes=len(account.shape_changes),
             lifecycle=account.lifecycle,
             resolution_ref=account.resolution_ref,
         )
@@ -417,22 +397,6 @@ class ObligationLedger:
         account.demand_admitted = False
         return self.account(target)
 
-    def note_shape_change(
-        self, target: ObligationId, change: ShapeChange, *, detail: str
-    ) -> ObligationAccountView:
-        """Record that the work changed shape.  Counters are deliberately untouched.
-
-        This is the single entry point for "renamed the task", "swapped the
-        method", "handed it to another agent": it exists so that such a change is
-        *visible* in the ledger without being an opportunity to start over.
-        """
-
-        account = self._require(target)
-        account.shape_changes.append(
-            (enum_of(ShapeChange, change, "shape_change"), text(detail, "detail", limit=512))
-        )
-        return self.account(target)
-
     def set_lifecycle(
         self,
         target: ObligationId,
@@ -458,12 +422,6 @@ class ObligationLedger:
     def remaining_fuel(self, target: ObligationId) -> int:
         account = self._require(target)
         return max(account.fuel_limit - account.fuel_used, 0)
-
-    def expansion_keys(self, target: ObligationId) -> tuple[tuple[str, str], ...]:
-        return tuple(self._require(target).expansion_keys)
-
-    def shape_changes(self, target: ObligationId) -> tuple[tuple[ShapeChange, str], ...]:
-        return tuple(self._require(target).shape_changes)
 
     def _require(self, target: ObligationId) -> _Account:
         account = self._accounts.get(target)
@@ -540,7 +498,6 @@ __all__ = (
     "ObligationAccountView",
     "ObligationLedger",
     "ObligationLifecycle",
-    "ShapeChange",
     "funding_owner_conflicts",
     "obligation_refs",
 )
