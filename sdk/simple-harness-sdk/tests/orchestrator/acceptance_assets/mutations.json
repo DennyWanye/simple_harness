@@ -1435,6 +1435,18 @@
     "tests/orchestrator/product_world/test_judgment_tree_sources.py::test_the_judgment_tree_carries_the_current_sources"
    ],
    "note": "任务级判定树只放产物、不放现行资料"
+  },
+  {
+   "id": "RRF-01",
+   "source": "第 1 批车道 F（2026-10-06 终审包过期后迟到回复仍被认成正式记录）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
+   "original": "            if self.stale_root_package(body):",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/full_target/test_root_review_coordinator.py::test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once",
+    "tests/orchestrator/full_target/test_root_review_coordinator.py::test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_counts"
+   ],
+   "note": "终审回复导入前不问协调器包过没过期：过期包的迟到回复成正式记录、形成根结论"
   }
  ]
 }

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from ..assurance.certificates import UseIdentity
@@ -30,6 +31,11 @@ from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 #: 一次审阅作废的原因：它开始之后，证据里的一份资料换了版本或被撤销（2026-10-05 真机）。
 REVIEW_SOURCE_REPLACED = "REVIEW_SOURCE_REPLACED"
+#: 一次终审作废的原因：回复到达时，它审的那个 ``MISSION_FINAL`` 包已不再描述世界（纪元动了、
+#: 贡献集动了、资料版本集动了……）。过不过期只由根终审协调器的 ``stale_reasons`` 说了算——同一个
+#: 判定，协调器据它重切或判"切包用完"，导入据它作废这份迟到回复；具体的过期码记在回执
+#: ``stale_reasons`` 里（第 1 批车道 F，2026-10-06）。
+REVIEW_PACKAGE_STALE = "REVIEW_PACKAGE_STALE"
 
 
 def replaced_review_source(store: Any, binding: Any) -> str | None:
@@ -59,6 +65,7 @@ class AssuranceReviewConsumer:
         authority: CurrentAuthority,
         cas: Any,
         check_adapter: Any,
+        root_review: Callable[[str], Any] | None = None,
     ) -> None:
         self.commit = commit
         self.store = commit.store
@@ -67,6 +74,23 @@ class AssuranceReviewConsumer:
         self.authority = authority
         self.cas = cas
         self.check_adapter = check_adapter
+        #: 部署自己的根终审协调器（按 mission 建，与主循环 ``_advance_root_review`` 用的是同一个
+        #: 构造）；终审回复导入前问它这个包过没过期，不另抄一份判定。
+        self.root_review = root_review
+
+    def stale_root_package(self, body: Mapping[str, Any]) -> tuple[str, ...]:
+        """这份审阅绑定指向的 ``MISSION_FINAL`` 包为什么已不再描述世界；非终审或仍新鲜为空。
+
+        答案来自 :meth:`RootReviewCoordinator.stale_reasons`，与协调器决定重切 / 切包用完所依据
+        的是同一个函数。没有协调器可问的部署不会切出终审包；真遇到就是组装错了，报出来。
+        """
+        if body["subject"]["purpose"] != "MISSION_FINAL":
+            return ()
+        coordinator = None if self.root_review is None else self.root_review(body["mission_id"])
+        if coordinator is None:
+            raise AssuranceError("REVIEW_ROOT_COORDINATOR_UNAVAILABLE")
+        package = HtnStore(self.store).get_review_package(body["package_ref"]["id"])
+        return tuple(str(item) for item in coordinator.stale_reasons(body["mission_id"], package))
 
     def classify(self, event: Event) -> tuple[WorkTarget, ...]:
         if event.type == "AssuranceEvidenceChanged":
@@ -188,6 +212,11 @@ class AssuranceReviewConsumer:
             if replaced_review_source(self.store, imported.binding) is not None:
                 # 审阅在途时它证据里的资料换了版本 / 被撤销：这次审阅看的不是现行资料，作废。
                 return self._prepare_late(reader, imported, REVIEW_SOURCE_REPLACED)
+            if self.stale_root_package(body):
+                # 终审在途时世界动了（协调器正要重切或已判切包用完）：这份回复说的是一个已经
+                # 不存在的世界，作废；不写正式记录、不形成根结论，费用照记。随后由协调器按现状
+                # 重切（新包的回复才算数）或停在"切包用完"。
+                return self._prepare_late(reader, imported, REVIEW_PACKAGE_STALE)
             scope = body["subject"]["completion_scope_ref"]
             identity = UseIdentity(
                 claim.mission_id,
@@ -374,6 +403,7 @@ class AssuranceReviewConsumer:
             ):
                 raise AssuranceError("RECHECK_REQUIRED")
             body = imported.binding.to_json()
+            stale: tuple[str, ...] = ()
             if official is not None:
                 record = HtnStore(self.store).official_review_record(body["package_ref"]["id"])
                 if (
@@ -384,6 +414,10 @@ class AssuranceReviewConsumer:
                     raise AssuranceError("RECHECK_REQUIRED")
             elif reason == REVIEW_SOURCE_REPLACED:
                 if replaced_review_source(self.store, imported.binding) is None:
+                    raise AssuranceError("RECHECK_REQUIRED")
+            elif reason == REVIEW_PACKAGE_STALE:
+                stale = self.stale_root_package(body)
+                if not stale:
                     raise AssuranceError("RECHECK_REQUIRED")
             elif not review_subject_stopped(self.store, imported.binding):
                 raise AssuranceError("RECHECK_REQUIRED")
@@ -396,6 +430,7 @@ class AssuranceReviewConsumer:
                 "existing_official_receipt_ref": None
                 if official is None
                 else official.ref.to_json(),
+                **({"stale_reasons": list(stale)} if reason == REVIEW_PACKAGE_STALE else {}),
             }
             digest = fingerprint(receipt)
             receipt_id = "assurance-review-late:" + digest
