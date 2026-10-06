@@ -5,6 +5,10 @@
 - **预算等待与重算分开**（A05，车道 I1）：`assurance_tick` 的 `BudgetError` 走 `wait(reason=BUDGET_WAIT)`，退避 2 秒起翻倍、封顶 60 秒，不计入 `rechecks`、永不转 MANUAL_REQUIRED。
 - **通知待办同事务建**（A20，车道 I1）：`request_assured_notification` 发事件的同一事务 `seed` NOTIFY 待办；消费者用同一个 `notification_work_target`，重放合并不冲突。
 - **标记不符 / 状态文件缺失进隔离**（A02，车道 I1，原计划 §10.1）：`install_native_root` 已有回执不再写回状态文件；启动段 `root_setup` 进 `try`，`AssuranceError` → 管理模式（不装配、不派发）并记匿名阻塞码。
+- **全局预算接 Host 配置**（H11，车道 K）：`settings.global_max_tokens`（默认 20 亿，累计语义，下限为单任务默认上限）经 `service.py` 传 SDK `Budget`；`status().global_budget` 读全局账户；设置页只读段"任务全局预算"。
+- **Host 断线后按序号续读通知**（U04，车道 K）：`notices.py` 记 `last_seq`，`catch_up` 只读新序号；每次 `pending_notices` 续读；前端通道重连后作废旧请求重新拉取。
+- **结果不明的模型调用先核对再重发**（A27，车道 K）：`provider_budget_guard.check_unknown_handoff` 重读同一调用键（记录状态 / 对账结论 / http 状态）分五类；结果已知只收集不重问；`resend_record` 写替代的序号与依据。真正不明的仍按用户 2026-09-28 决定（基础设施故障原地重试，A 级 #14）走原门，记录写 `ground: outcome_unconfirmed`。
+- **Assurance 原计划 28 条改坏对齐现行清单**（V05，车道 M）：新补 7 条、2 条改绑定、F-M06 标 REMOVED（受管恢复已删）；27 KILLED；`assurance_findings.json` F04/F09/F12 口径如实。
 - **隔离只读分支接产品**（A40，车道 I1）：Host 状态 `quarantined`（`available=False`）、`status().assurance_root`、新动词 `mission_assurance_root_diagnostic`；隔离时三个保证读动词答 `ROOT_QUARANTINED`，其余动词不开。界面显示待补。
 
 最后更新：2026-10-06 CST（严格评估后补齐第 1 批：主循环秩序与收尾正确性，SDK `opt.165`）。依据 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/08-优先补齐.md` 第 1 批；分车道记录在同目录 `第1批-车道A～E-记录.md`。
