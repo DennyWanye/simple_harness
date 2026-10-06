@@ -676,7 +676,7 @@ def test_inflight_reply_and_pending_question_after_amend(tmp_path):
                                        "success_criteria": ["file:a.md"]})["mission_id"]
             holder.update(world=world, mission_id=mission_id)
             humans = PlanningHumanStore(world.store)
-            for _ in range(30):
+            for _ in range(12):
                 await world.drain(timeout=20)
                 if any(row["state"] == "PENDING" for row in humans.list(mission_id)):
                     break
@@ -1210,3 +1210,193 @@ def test_apply_changes_refuses_with_a_typed_code_not_by_slicing_text():
     assert not re.search(r"partition\(\": \"\)", text)
     root_text = Path(__import__("agent_orchestrator.deployment.root", fromlist=["x"]).__file__).read_text(encoding="utf-8")
     assert 'raise ValueError("AMEND_' not in root_text and "raise ValueError(f\"AMEND_" not in root_text
+
+
+def _root_over_a_sub_goal(context: dict[str, Any]) -> dict[str, Any]:
+    """根做法 = 一个子目标（承接前两条要求）+ 收尾一步（承接第三条）。"""
+    request = context["request"]
+    part = next(item for item in request["subgoal_types"] if item["task_type_ref"]["id"] == "sub-goal-1")
+    tail = next(item for item in request["operators"]
+                if str(item["task_type_ref"]["id"]).endswith("prepare-delivery"))
+    first, second, third = [item["id"] for item in request["criterion_evidence"]]
+    identity = request["new_method_identity"]
+    return {
+        "schema_version": 1, "method_id": identity["method_id"], "method_version": identity["method_version"],
+        "goal_type_ref": request["goal_type_ref"],
+        "parameter_schema_ref": request["goal_signature"]["parameter_schema_ref"],
+        "output_schema_ref": request["goal_signature"]["output_schema_ref"],
+        "applicable_when": [], "exploration_assumptions": [],
+        "steps": [
+            {"local_id": "part", "task_type_ref": part["task_type_ref"], "form": "compound",
+             "arguments": {"goal": {"op": "constant", "value": "写出 notes 下的两份笔记"}},
+             "required_capabilities": [], "obligation_relation": "refines_parent"},
+            {"local_id": "tail", "task_type_ref": tail["task_type_ref"], "form": "primitive", "arguments": {},
+             "required_capabilities": list(tail["required_capabilities"]), "obligation_relation": "refines_parent"},
+        ],
+        "ordering": [{"before": "part", "after": "tail"}],
+        "required_capabilities": [], "expected_effects": [],
+        "composition": {
+            "criterion_links": [
+                {"parent_criterion_id": first, "child_step": "part", "child_criterion_id": first,
+                 "evidence_requirement": "part 这个子目标完成第一条要求"},
+                {"parent_criterion_id": second, "child_step": "part", "child_criterion_id": second,
+                 "evidence_requirement": "part 这个子目标完成第二条要求"},
+                {"parent_criterion_id": third, "child_step": "tail", "child_criterion_id": third,
+                 "evidence_requirement": "tail 这一步完成第三条要求"},
+            ],
+            "outputs": {}, "finalizer_step": "tail", "independent_review_required": True,
+        },
+        "basis_refs": [],
+    }
+
+
+def _three_layer_planner(state: dict[str, Any]):
+    """根 → 子目标 → 两个叶子。收到"要求已更新"后按提示词的常规做法：为根提新做法、审阅通过后
+    REPLACE_METHOD 换上去。"""
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        contexts = package.get("method_proposal_contexts") or []
+        if "REQUIREMENTS_UPDATE" in sources and not state["replaced"]:
+            root = next(item for item in package["views"]["goals"]
+                        if str(item["occurrence_id"]).startswith("user-root-"))
+            current = root["adopted_method"]["method_ref"]
+            fresh = [item["method_ref"] for item in package["views"]["methods"]
+                     if item["method_ref"] != current and (item.get("review") or {}).get("outcome") == "PASSED"
+                     and item["method_ref"]["id"] in state["proposed"]
+                     and int(item["method_ref"]["semantic_revision"]) > int(current["semantic_revision"])]
+            if not fresh:
+                [context] = [item for item in contexts if item["subject_key"] == root["subject_key"]]
+                method = _root_over_a_sub_goal(context)
+                state["proposed"].append(method["method_id"])
+                return decision(root["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                    "method": method, "rationale": "按新要求重排。"}}, "要求改了，为根提新做法。")
+            state["replaced"] = True
+            instance = next(item for item in package["visible_refs"] if item["kind"] == "method_instance"
+                            and item["id"] == root["adopted_method"]["method_instance_id"])
+            return decision(root["subject_key"], "REPAIR", {
+                "repair_kind": "REPLACE_METHOD", "rejected_method_instance": instance,
+                "replacement_method_ref": dict(fresh[-1]), "bindings": root["params"]}, "换成按新要求写的做法。")
+        if contexts and not (package.get("method_selection") or [{}])[0].get("applicable"):
+            context = contexts[0]
+            if str((context["request"].get("goal_type_ref") or {}).get("id")) == "user-goal":
+                method = _root_over_a_sub_goal(context)
+            else:
+                method = parallel_method(context)
+            state["proposed"].append(method["method_id"])
+            return decision(context["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": method, "rationale": "按要求拆开。"}}, "按要求拆开。")
+        reply = planner_reply(request)
+        if reply is None:
+            state["unexpected"].append(sorted(str(item) for item in sources))
+        return reply
+
+    return planner
+
+
+class _HeldTail(LayeredScriptedProvider):
+    """收尾那一步（写 NOTES.md）一直在跑，直到测试放行。"""
+
+    def __init__(self, **roles: Any) -> None:
+        super().__init__(**roles)
+        self.go = asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        from agent_orchestrator.testing.fixtures import role_of
+
+        if role_of(request) == "worker" and package_of(request).get(
+                "task_contract", {}).get("outputs") == ["NOTES.md"]:
+            await self.go.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def _sub_goal_resolutions(store: Any, mission_id: str) -> list[Any]:
+    return [r for r in HtnStore(store).list_goal_resolutions(mission_id)
+            if not str(r.goal_task_id).startswith("user-root-")]
+
+
+async def _sub_goal_resolved_then_amended(world: Any) -> tuple[str, str]:
+    """建三层任务，跑到子目标按第 1 版形成目标结论（收尾还在跑），核对义务事实，再改写子目标负责的
+    第二条要求。返回（任务编号，共用的义务编号）。"""
+    mission_id = world.create({
+        "goal": "写两份笔记再收尾", "idempotency_key": "amend-sub-goal",
+        "success_criteria": ["file:notes/a.md", "file:notes/b.md", "file:NOTES.md"]})["mission_id"]
+    for _ in range(12):
+        await world.drain(timeout=20)
+        if _sub_goal_resolutions(world.store, mission_id):
+            break
+    [first] = _sub_goal_resolutions(world.store, mission_id)
+    assert int(first.requirements_version) == 1
+    duty = str(first.obligation_id)
+    # 产品路径上做法的每一步都是 refines_parent：子目标与根共用一份义务。子目标的结论照存，但不是
+    # 这份义务的采用结论（否则子目标一完成就把根也关了），义务一直开着
+    assert duty == f"user-duty-{mission_id}"
+    assert HtnStore(world.store).adopted_goal_resolution(mission_id, duty) is None
+    assert str(ObligationStore(world.store).account(mission_id, duty).lifecycle) == "UNSATISFIED"
+    receipt = amend(world, mission_id, [{"op": "rewrite", "criterion_id": "c-user-2",
+                                         "statement": "file:notes/b2.md"}])
+    assert receipt["changes"]["rewritten"] == ["c-user-2"]
+    return mission_id, duty
+
+
+def test_a_sub_goal_already_resolved_does_not_close_the_duty_an_amendment_reopens(tmp_path):
+    """夜间 N3-13（T12）守住的部分：子目标已按第 1 版形成目标结论后改要求，不会撞上
+    ``OBLIGATION_NOT_OPEN``——子目标与根共用一份义务，子目标的结论不是它的采用结论，义务一直开着；
+    根结论采用之后改要求本身按 AMEND_AFTER_CLOSEOUT 拒（``test_amend_refused_while_closing_out_and_after_the_end``）。
+    所以"复合目标已有采用结论、再提交被拒"在产品路径上走不到。
+
+    **改坏检验**：组合审查通过后不提交子目标的目标结论 → 子目标一直没有结论 → 变红。"""
+    state: dict[str, Any] = {"proposed": [], "replaced": False, "unexpected": []}
+
+    async def case():
+        provider = _HeldTail(planner=_three_layer_planner(state))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id, duty = await _sub_goal_resolved_then_amended(world)
+            await world.drain(timeout=20)
+            assert str(ObligationStore(world.store).account(mission_id, duty).lifecycle) == "UNSATISFIED"
+            events = list(world.store.list_events(mission_id))
+            assert "OBLIGATION_NOT_OPEN" not in json.dumps([e.payload for e in events], ensure_ascii=False)
+            provider.go.set()
+
+    asyncio.run(case())
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
+    "夜间 N3-13 发现的缺陷（交主会话裁决修法）：子目标已细化后改要求，规划器三条路都走不通——"
+    "①为根 REPLACE_METHOD：子目标采用的做法实例没有随之退役，合并网络报 refines unknown task"
+    "（INTERNAL_CONTRACT_ERROR）；②保留子目标、只换它的做法：改要求后子目标的完成范围读出"
+    " OP_EFFECT_SCOPE_STALE，assigned_criterion_ids 返回空，写做法用的 criterion_evidence 为空，"
+    "任何做法都因 criterion_links 为空不可读；③只给叶子提继任：子目标第 1 版的结论仍 CURRENT，"
+    "按 resolved dependent requires an explicit successor 拒。"))
+def test_a_sub_goal_already_resolved_is_resolved_again_under_the_amended_requirements(tmp_path):
+    """夜间 N3-13（T12）联测：三层计划（根 → 子目标 → 两个叶子）。子目标已按第 1 版形成目标结论、收尾
+    还在跑时，用户改写子目标负责的一条要求。规划器按提示词的常规做法为根提新做法并换上去；新的子目标
+    按第 2 版再形成目标结论，任务按新版完成。缺陷修好后去掉 xfail（strict：修好了不去掉会报红）。"""
+    state: dict[str, Any] = {"proposed": [], "replaced": False, "unexpected": []}
+
+    async def case():
+        provider = _HeldTail(planner=_three_layer_planner(state))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id, duty = await _sub_goal_resolved_then_amended(world)
+            provider.go.set()
+            try:
+                mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            except TimeoutError as error:
+                raise AssertionError(f"the mission never settled: {state}") from error
+            events = list(world.store.list_events(mission_id))
+            assert str(mission.status.value) == "COMPLETED", (
+                mission.status, mission.final_report, state,
+                [(e.type, json.dumps(e.payload, ensure_ascii=False)[:400]) for e in events
+                 if e.type in {"PlanningRejected", "MissionStalled", "HierarchicalMissionStalled"}][-6:])
+            assert state["replaced"] and not state["unexpected"], state
+            assert "OBLIGATION_NOT_OPEN" not in json.dumps([e.payload for e in events], ensure_ascii=False)
+            # 子目标按第 2 版再形成了目标结论；根结论按第 2 版采用
+            assert sorted(int(r.requirements_version) for r in _sub_goal_resolutions(world.store, mission_id)) == [1, 2]
+            assert int(HtnStore(world.store).adopted_goal_resolution(mission_id, duty).requirements_version) == 2
+            [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == [
+                "file:notes/a.md", "file:notes/b2.md", "file:NOTES.md"] and judged["met"]
+
+    asyncio.run(case())

@@ -108,3 +108,48 @@ def test_a_goal_change_is_one_requirements_amendment(tmp_path):
             assert amend_script.written(world.store, mission_id)["revisions"] == [1, 2, 3]
 
     asyncio.run(case())
+
+
+def _requirements_updates(store: Any, mission_id: str) -> dict[int, dict[str, Any]]:
+    """规划器收到的"要求已更新"请求，按新版号排（请求原样就是规划包里 repair_requests 的那一条）。"""
+    found = {}
+    for event in store.list_events(mission_id):
+        request = event.payload.get("request") or {}
+        if event.type == "PlanningRepairRequested" and request.get("trigger_source") == "REQUIREMENTS_UPDATE":
+            found[int(request["context"]["requirements"]["revision"])] = request["context"]
+    return found
+
+
+def test_the_planner_is_told_the_goal_changed(tmp_path):
+    """夜间 N3-02（H19 跟进）：只改目标时条目三列表全空；规划器收到的改要求请求如实带上
+    ``goal: {previous, current}``（照抄同一次修订的改要求事件），目标与条目一起改时两样都在，
+    只改条目时 ``goal`` 为 None。提示词说明这个字段。
+
+    **改坏检验**：请求里不带 ``goal`` → 第一条断言变红。"""
+
+    async def case():
+        provider = LayeredScriptedProvider(planner=planner_reply)
+        provider.held.add("worker")
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写三份文件", "idempotency_key": "amend-goal-told",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            await amend_script.until_first_plan(world, mission_id)
+            amend_script.amend(world, mission_id, [{"op": "goal", "statement": "写三份中文文件"}])
+            await world.drain(timeout=20)
+            amend_script.amend(world, mission_id, [
+                {"op": "goal", "statement": "写两份中文文件"},
+                {"op": "remove", "criterion_id": "c-user-2"}], command_id="amend-2")
+            await world.drain(timeout=20)
+            amend_script.amend(world, mission_id, [{"op": "add", "statement": "file:c.md"}], command_id="amend-3")
+            await world.drain(timeout=20)
+            updates = _requirements_updates(world.store, mission_id)
+            assert updates[2]["goal"] == {"previous": "写三份文件", "current": "写三份中文文件"}
+            assert updates[2]["changes"] == {"added": [], "rewritten": [], "removed": []}
+            assert updates[3]["goal"] == {"previous": "写三份中文文件", "current": "写两份中文文件"}
+            assert updates[3]["changes"]["removed"] == ["c-user-2"]
+            assert updates[4]["goal"] is None and updates[4]["changes"]["added"]
+
+    asyncio.run(case())
+    from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL
+
+    assert "context.goal" in PLANNER_HIERARCHICAL.instructions

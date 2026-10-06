@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v27"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v28"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -189,7 +189,9 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "经系统测试观察或独立审阅员逐条确认，可以当事实；ref 是「编号@版本」，content 是原文，basis 是验证来源，"
         "assurance_level / validity_interval / permitted_uses 是它登记的保障等级、有效期、允许用途（没登记的是 null）。"
         "layer=summary 是已验收步骤自己写的摘要（summary），审阅员核对过它忠实于那一步的结果，告诉你那一步做了什么、"
-        "产出了哪些文件（artifacts）。只列与现行计划、现行验收仍然一致的条目；omitted_counts.knowledge 是没列出的条数。"
+        "产出了哪些文件（artifacts）。layer=candidate 是还没验证的候选结论（marker 写着「未验证」或「有争议，不是事实」，"
+        "status 是它现在的审查状态）：candidate 层是线索不是事实，不能当已验证依据。"
+        "只列与现行计划、现行验收仍然一致的条目；omitted_counts.knowledge 是没列出的条数。"
         "这些是你重新判断方向的材料——该采用哪个做法、要不要换做法、步骤拆得对不对、哪些事实已经成立不必再做；"
         "它们不是引用四元组，不要写进 reason_refs，要引用事实用 views.facts 里的 observation_ref。\n"
         "  - method_proposal_contexts：为每个还没有做法的目标、以及 under_repair 的目标，给出写新做法要用的"
@@ -223,6 +225,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "你回应之后内容没变，或被拒次数用完，任务就按「批准被拒」结束。"
         "trigger_source 为 REQUIREMENTS_UPDATE 的请求说的是：用户改了要求。context.previous_revision 是原来第几版，"
         "context.changes 列出新增（added）、改写（rewritten）、删除（removed）的要求编号，context.requirements 是新版全文。"
+        "context.goal 不为空表示任务目标也改了：previous 是旧目标原文，current 是新目标原文（只改目标时 changes 三个列表都是空的）；"
+        "为空表示目标没改。"
         "现在的计划是按旧版定的，系统已停止按它开新工；按旧版通过的结果在新版下先不算数。"
         "按旧版通过的步骤留在新计划里（原样留在没换的做法里，或换做法时在 reuse 里点名共用它），系统会请审阅员"
         "按新版要求把同一份结果再审一次（它读的上游先算数后才审它；只做普通步骤，整个子目标换掉的话它下面的步骤"
@@ -480,8 +484,9 @@ register_template(PLANNER_HIERARCHICAL)
 #: 11 (删旧平面模式第三刀第 4 步): ``compensation_candidates`` and REQUEST_COMPENSATION
 #: are gone.  Version 14 (第 2 批 K03): the twelfth view, ``knowledge`` — the blackboard
 #: (current verified knowledge and reviewer-checked step summaries) a Planner judges
-#: direction from.
-PLANNING_DECISION_PACKAGE_VERSION = 14
+#: direction from.  Version 15 (夜间 N3-03): ``knowledge`` gains its third layer,
+#: ``candidate`` — claims not verified yet, leads and not facts.
+PLANNING_DECISION_PACKAGE_VERSION = 15
 
 #: The prompt written against that package.  One package, one prompt.
 PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_VERSION

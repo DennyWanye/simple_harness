@@ -626,13 +626,20 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         if revision.amendment_credential_ref and source_key not in seen:
             from .requirements_amendment import compare_revisions
 
+            from .requirements_amendment import EVENT as AMENDED
+
             # what changed is a comparison of the two revisions by id — a fact, not a judgment
             previous = revisions.get(number - 1)
+            # 只改目标时条目三列表全空（N3-02 / H19）：目标的新旧原文只在同一次修订的改要求事件里，
+            # 照抄过来交给规划器，不另存一份
+            amended = next((e for e in events if e.type == AMENDED
+                            and e.payload.get("requirements_revision") == number), None)
             produced |= record_request(dispatch, mission.id, event_type="RequirementsUpdated",
                 trigger_refs=(mission.id,), source_key=source_key,
                 detail={"requirements": revision.to_json(), "content_hash": content_hash_of(revision.to_json()),
                         "previous_revision": None if previous is None else int(previous.revision),
-                        "changes": {} if previous is None else compare_revisions(previous, revision)})
+                        "changes": {} if previous is None else compare_revisions(previous, revision),
+                        "goal": None if amended is None else amended.payload.get("goal")})
     for task in store.list_tasks(mission.id):
         if task.id not in active_tasks:
             continue

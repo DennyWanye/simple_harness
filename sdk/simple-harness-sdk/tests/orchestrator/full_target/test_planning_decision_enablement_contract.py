@@ -48,7 +48,7 @@ def test_internal_keys_refuse_kinds_without_repair() -> None:
 
 
 def test_the_current_package_pairs_with_the_one_prompt() -> None:
-    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 14  # 第 2 批 K03：第十二个视图 knowledge
+    assert role_templates.PLANNING_DECISION_PACKAGE_VERSION == 15  # 夜间 N3-03：knowledge 加候选结论层
     assert role_templates.PLANNING_DECISION_PROMPT_VERSION == role_templates.PLANNER_HIERARCHICAL_VERSION
     assert role_templates.hierarchical_planner_pairing_is_valid(
         role_templates.PLANNING_DECISION_PROMPT_VERSION, role_templates.PLANNING_DECISION_PACKAGE_VERSION)
