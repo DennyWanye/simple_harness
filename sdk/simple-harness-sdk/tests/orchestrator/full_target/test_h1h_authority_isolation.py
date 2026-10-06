@@ -1,9 +1,22 @@
-"""A03 real Store/API regressions for issuer and tenant isolation."""
+"""A03 real Store/API regressions for issuer and tenant isolation.
+
+任务经产品同形部署建出（建任务事务里绑定执行图，2026-10-07 夜间车道 N4 改夹具，见
+test_h1h_planning_authorization 的模块说明）；所守保证不变：外来签发人不能借重放读到原回执、
+跨租户不能重放撤销回执、外来主体不能绑定别人的授权、原签发人重放不延长有效期、
+提交事务里重查签发人、别的任务的请求拿不到本任务的授权。
+"""
 
 from __future__ import annotations
 
 import pytest
-from test_h1h_planning_authorization import _mission, _request
+from test_h1h_planning_authorization import (
+    TENANT,
+    Seeded,
+    _request,
+    foreign_tenant_mission,
+    product_db,
+    seed_product_missions,
+)
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.governance.permissions import Principal
@@ -12,15 +25,13 @@ from agent_orchestrator.storage.store import Store, StoreConflict
 
 
 @pytest.fixture
-def authority_store(tmp_path):
-    store = Store.open(tmp_path / "authority-isolation.db")
-    store.insert_mission(_mission(), spec_hash="f" * 64)
-    store.connection.execute(
-        "INSERT INTO mission_planning_protocols VALUES (?,?,?,?,?,?)",
-        ("m-auth", "planning-decision-v1", 1, "p1", "g" * 64, 2.0),
-    )
-    PlanningDecisionStore(store).insert_planning_request(_request())
-    return store
+def seeded(tmp_path):
+    root = tmp_path / "product"
+    mission = seed_product_missions(root, "m-auth")["m-auth"]
+    store = Store.open(product_db(root))
+    PlanningDecisionStore(store).insert_planning_request(_request(store, mission))
+    yield Seeded(store, mission)
+    store.close()
 
 
 def _api(store, *, tenant: str = "tenant-a", principal: str = "host"):
@@ -28,10 +39,11 @@ def _api(store, *, tenant: str = "tenant-a", principal: str = "host"):
 
 
 def test_a03_foreign_issuer_cannot_replay_issue_receipt_by_naming_original_grantee(
-    authority_store,
+    seeded,
 ) -> None:
+    authority_store, mission = seeded
     original = _api(authority_store).issue(
-        "m-auth",
+        mission,
         command_id="issue-a03",
         planner_principal_id="host",
     )
@@ -39,7 +51,7 @@ def test_a03_foreign_issuer_cannot_replay_issue_receipt_by_naming_original_grant
 
     with pytest.raises(StoreConflict) as refused:
         _api(authority_store, principal="foreign-host").issue(
-            "m-auth",
+            mission,
             command_id="issue-a03",
             planner_principal_id="host",
         )
@@ -49,9 +61,10 @@ def test_a03_foreign_issuer_cannot_replay_issue_receipt_by_naming_original_grant
     assert authority_store.connection.total_changes == before
 
 
-def test_a03_cross_tenant_caller_cannot_replay_revoke_receipt(authority_store) -> None:
+def test_a03_cross_tenant_caller_cannot_replay_revoke_receipt(seeded) -> None:
+    authority_store, mission = seeded
     issuer = _api(authority_store)
-    grant = issuer.issue("m-auth", command_id="issue-for-revoke")
+    grant = issuer.issue(mission, command_id="issue-for-revoke")
     receipt = issuer.revoke(
         grant.grant_id,
         expected_revision=grant.revision,
@@ -73,8 +86,9 @@ def test_a03_cross_tenant_caller_cannot_replay_revoke_receipt(authority_store) -
     assert authority_store.connection.total_changes == before
 
 
-def test_a03_foreign_principal_cannot_bind_another_issuers_grant(authority_store) -> None:
-    grant = _api(authority_store).issue("m-auth", command_id="issue-for-binding")
+def test_a03_foreign_principal_cannot_bind_another_issuers_grant(seeded) -> None:
+    authority_store, mission = seeded
+    grant = _api(authority_store).issue(mission, command_id="issue-for-binding")
     before = authority_store.connection.total_changes
 
     with pytest.raises(StoreConflict) as refused:
@@ -94,15 +108,16 @@ def test_a03_foreign_principal_cannot_bind_another_issuers_grant(authority_store
     )
 
 
-def test_a03_original_issuer_can_delegate_bind_and_replay_without_extending_ttl(authority_store):
+def test_a03_original_issuer_can_delegate_bind_and_replay_without_extending_ttl(seeded):
+    authority_store, mission = seeded
     issuer = _api(authority_store)
     grant = issuer.issue(
-        "m-auth", command_id="delegate-a03", planner_principal_id="planner-service"
+        mission, command_id="delegate-a03", planner_principal_id="planner-service"
     )
     issuer.bind_request("req-auth", grant_id=grant.grant_id)
     before = authority_store.connection.total_changes
     assert (
-        issuer.issue("m-auth", command_id="delegate-a03", planner_principal_id="planner-service")
+        issuer.issue(mission, command_id="delegate-a03", planner_principal_id="planner-service")
         == grant
     )
     assert authority_store.connection.total_changes == before
@@ -121,12 +136,13 @@ def test_a03_original_issuer_can_delegate_bind_and_replay_without_extending_ttl(
 
 
 def test_a03_transaction_replay_rechecks_issuer_after_stale_api_lookup(
-    authority_store, monkeypatch
+    seeded, monkeypatch
 ):
+    authority_store, mission = seeded
     from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 
     original = _api(authority_store).issue(
-        "m-auth", command_id="concurrent-issue", planner_principal_id="planner-service"
+        mission, command_id="concurrent-issue", planner_principal_id="planner-service"
     )
     # Emulate a competing issue arriving after both pre-transaction lookups.
     # The final put_grant transaction still reads the real durable row.
@@ -135,7 +151,7 @@ def test_a03_transaction_replay_rechecks_issuer_after_stale_api_lookup(
     before = authority_store.connection.total_changes
     with pytest.raises(StoreConflict) as refused:
         _api(authority_store, principal="foreign-host").issue(
-            "m-auth", command_id="concurrent-issue", planner_principal_id="planner-service"
+            mission, command_id="concurrent-issue", planner_principal_id="planner-service"
         )
     assert original.grant_id not in str(refused.value)
     assert original.issuer_receipt_hash not in str(refused.value)
@@ -145,32 +161,40 @@ def test_a03_transaction_replay_rechecks_issuer_after_stale_api_lookup(
 @pytest.mark.parametrize("foreign_tenant", ("tenant-a", "tenant-foreign"))
 @pytest.mark.parametrize("entry", ("issue", "bind"))
 def test_a03_foreign_mission_request_cannot_receive_this_missions_grant(
-    authority_store, foreign_tenant, entry
+    tmp_path, foreign_tenant, entry
 ):
-    from dataclasses import replace
-
-    other = replace(
-        _mission(), id="other-mission", idempotency_key="other", tenant_id=foreign_tenant
-    )
-    authority_store.insert_mission(other, spec_hash="b" * 64)
-    authority_store.connection.execute(
-        "INSERT INTO mission_planning_protocols VALUES (?,?,?,?,?,?)",
-        (other.id, "planning-decision-v1", 1, "p1", "g" * 64, 2.0),
-    )
-    PlanningDecisionStore(authority_store).insert_planning_request(
-        replace(
-            _request(), request_id="other-request", intent_id="other-intent", mission_id=other.id
+    # The same tenant's other Mission is created the product way next to this one; another
+    # tenant's Mission cannot be (a deployment is single tenant), so it is written straight in.
+    root = tmp_path / "product"
+    keys = ("m-auth", "other") if foreign_tenant == TENANT else ("m-auth",)
+    missions = seed_product_missions(root, *keys)
+    authority_store = Store.open(product_db(root))
+    mission = missions["m-auth"]
+    if foreign_tenant == TENANT:
+        other = missions["other"]
+    else:
+        other = "other-mission"
+        authority_store.insert_mission(
+            foreign_tenant_mission(other, foreign_tenant), spec_hash="b" * 64
         )
+        authority_store.connection.execute(
+            "INSERT INTO mission_planning_protocols SELECT ?,protocol_version,"
+            "package_version,prompt_version,binding_hash,created_at "
+            "FROM mission_planning_protocols WHERE mission_id=?",
+            (other, mission),
+        )
+    PlanningDecisionStore(authority_store).insert_planning_request(
+        _request(authority_store, other, request_id="other-request", intent_id="other-intent")
     )
     api = _api(authority_store)
-    grant = api.issue("m-auth", command_id="valid-grant") if entry == "bind" else None
+    grant = api.issue(mission, command_id="valid-grant") if entry == "bind" else None
     before = authority_store.connection.total_changes
     with pytest.raises(StoreConflict) as refused:
         if entry == "issue":
-            api.issue("m-auth", command_id="cross-mission", request_id="other-request")
+            api.issue(mission, command_id="cross-mission", request_id="other-request")
         else:
             api.bind_request("other-request", grant_id=grant.grant_id)
-    assert "other-mission" not in str(refused.value)
+    assert other not in str(refused.value)
     assert authority_store.connection.total_changes == before
     assert (
         authority_store.connection.execute(
@@ -179,3 +203,4 @@ def test_a03_foreign_mission_request_cannot_receive_this_missions_grant(
         ).fetchone()
         is None
     )
+    authority_store.close()

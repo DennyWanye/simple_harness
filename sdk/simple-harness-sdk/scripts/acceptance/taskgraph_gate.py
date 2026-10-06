@@ -9,7 +9,9 @@ TASKGRAPH_REAL_MODEL、TASKGRAPH_HOST_SEAM、INDEPENDENT_REVIEW。这个脚本�
 四道自动关口（任一失败整体 FAIL）：
 
 - SQL：数据表守护用例 ``tests/orchestrator/product_world/test_table_guards.py``。
-- CORE：执行图产品同形用例 ``tests/orchestrator/full_target/taskgraph_exec/`` + 随机动作序列
+- CORE：执行图产品同形用例 ``tests/orchestrator/full_target/taskgraph_exec/`` + H1-H 门禁用例
+  ``tests/orchestrator/full_target/test_h1h_*.py``（规划授权、提交守卫、操作准入、预览等执行图的上游
+  接缝；按目录 glob 收，一个都没收到就判 FAIL）+ 随机动作序列
   ``tests/orchestrator/product_world/test_random_sequences.py``（默认规模）+ 12 条定点改坏 M01～M12
   全部 KILLED（用 ``scripts/acceptance/run_mutations.py`` 的判定）。
 - HOST_SEAM：Host 执行图接缝用例 ``backend/tests/orchestration/test_*taskgraph*.py``。它们对着 Host
@@ -51,7 +53,15 @@ MANIFEST = SDK / "src/agent_orchestrator/orchestrator/taskgraph_deployment_manif
 DEFAULT_UPSTREAM = REPO / ".local-test-evidence/2026-10-05/f2-upstream/evidence.json"
 MUTATIONS = tuple(f"M{n:02d}" for n in range(1, 13))
 SQL_TESTS = ("tests/orchestrator/product_world/test_table_guards.py",)
+#: H1-H 门禁用例按目录 glob 收，不写显式清单（2026-10-07 夜间车道 N4）。
+#: opt.166 的门只收 ``taskgraph_exec/``：``test_h1h_commit_guard.py::test_o03``
+#: 从那一版起红却没被门拦下，13 条授权用例也红了好几版没人发现。
+#: 用 glob，以后新加的 h1h 用例自动进门、不会再从清单漏掉；删改名不需同步清单。
+#: 代价是"文件被误删"不会让门变红：由 H1H_TESTS 非空检查和门自测里的锚点核对兜住。
+H1H_TESTS = tuple(sorted(str(path.relative_to(SDK)) for path in
+                         (SDK / "tests/orchestrator/full_target").glob("test_h1h_*.py")))
 CORE_TESTS = ("tests/orchestrator/full_target/taskgraph_exec",
+              *H1H_TESTS,
               "tests/orchestrator/product_world/test_random_sequences.py")
 PRODUCER_MAP_TESTS = ("tests/orchestrator/acceptance_assets/test_acceptance_assets.py",)
 REVIEW_SCHEMA = "taskgraph-independent-review-v1"
@@ -131,7 +141,8 @@ def run_gate(upstream: Path, *, with_host: bool, review: Path | None = None) -> 
     gates = {
         "PRODUCER_MAP_COMPLETE": "PASS" if _passed(producer_map) else "FAIL",
         "TASKGRAPH_SQL_PASS": "PASS" if _passed(sql) else "FAIL",
-        "TASKGRAPH_CORE_PASS": "PASS" if _passed(core) and mutations["all_killed"] else "FAIL",
+        "TASKGRAPH_CORE_PASS": ("PASS" if H1H_TESTS and _passed(core) and mutations["all_killed"]
+                                else "FAIL"),
         "TASKGRAPH_HOST_SEAM": ("PASS" if _passed(host) else "FAIL") if with_host else "DEFERRED_TO_HOST_PIN",
         "TASKGRAPH_REAL_MODEL": "PENDING",
         "INDEPENDENT_REVIEW": review_status,
