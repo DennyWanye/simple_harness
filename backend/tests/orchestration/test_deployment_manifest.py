@@ -81,3 +81,43 @@ async def test_a_version_that_differs_from_the_pin_never_opens_the_library(
         assert manifest["distributions"]["consistent"] is False
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_whose_taskgraph_gate_is_not_validated_is_refused_before_the_library_opens(
+    orchestration_root, principal, monkeypatch
+):
+    """执行图原计划 §0.3 / §16（补齐第 1 批 V12）：部署验收门不是 VALIDATED 就不开生产开关。
+
+    **改坏检验**：启动时不看 ``acceptance_status`` → NOT_RUN 的部署照样可用 → 变红。"""
+
+    monkeypatch.setattr(OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "NOT_RUN"))
+    service = OrchestrationService(
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
+    await service.start()
+    try:
+        status = service.status()
+        assert status["available"] is False and status["state"] == "unavailable"
+        assert "验收门" in (status["reason"] or "") and "NOT_RUN" in (status["reason"] or "")
+        assert not (orchestration_root / "orchestrator.db").exists()  # nothing was migrated
+        manifest = json.loads((orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+        assert manifest["refused"] == "taskgraph_acceptance_not_validated"
+        assert manifest["taskgraph_acceptance"] == "NOT_RUN"
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_validated_taskgraph_gate_lets_the_deployment_start(orchestration_root, principal, monkeypatch):
+    monkeypatch.setattr(OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED"))
+    service = OrchestrationService(
+        orchestration_root, OrchestrationSettings(), provider=notes_provider(), principal=principal, drive=False,
+        native_test_counter=FixtureWordCounter(),
+    )
+    await service.start()
+    try:
+        assert service.status()["state"] == "available"
+    finally:
+        await service.close()

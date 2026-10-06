@@ -23,6 +23,12 @@ cd "$SDK"
 sed -i '' "s/+opt\\.$OLD\"/+opt.$NEW\"/" src/agent_orchestrator/version.py src/simple_harness/version.py
 grep -q "+opt.$NEW\"" src/agent_orchestrator/version.py || { echo "版本号没有改成 opt.$NEW（当前不是 opt.$OLD？）"; exit 1; }
 uv run --frozen python scripts/build/taskgraph_manifest.py generate --upstream "$UPSTREAM" >/dev/null
+# 执行图部署验收门（原计划 §0.3 / §16，补齐第 1 批 V12）：改坏 M01～M12 + 数据表守护 + 执行图用例 +
+# 随机序列全过才把清单写成 VALIDATED；Host 启动只认 VALIDATED。Host 接缝用例在下面钉版后跑。
+GATE_OUT=$(uv run --frozen python scripts/acceptance/taskgraph_gate.py --upstream "$UPSTREAM" | tail -1)
+GATE=$(printf '%s' "$GATE_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["gate"] if d["status"]=="PASS" else "")')
+[ -n "$GATE" ] || { echo "执行图验收门没通过，不发版："; echo "$GATE_OUT"; exit 1; }
+uv run --frozen python scripts/build/taskgraph_manifest.py validate --gate "$GATE" >/dev/null
 find src tests -name __pycache__ -prune -exec rm -rf {} +
 
 cd "$REPO"
@@ -56,7 +62,10 @@ uv lock --offline >/dev/null 2>&1
 uv sync --inexact --offline >/dev/null 2>&1
 uv run --frozen python -m pytest -q -p no:cacheprovider tests/sdk_adapters/test_sdk_source_identity.py \
   tests/sdk_adapters/test_sdk_candidate.py tests/orchestration/test_deployment_manifest.py \
-  tests/sdk_adapters/test_composition.py 2>&1 | tail -1
+  tests/sdk_adapters/test_composition.py \
+  tests/orchestration/test_taskgraph_bound_at_creation.py tests/orchestration/test_taskgraph_execution_reads.py \
+  tests/orchestration/test_taskgraph_operator_verbs.py tests/orchestration/test_ws_taskgraph_routing.py \
+  tests/orchestration/test_support_export_taskgraph_history.py 2>&1 | tail -1
 
 cd "$REPO"
 git add -A backend/pyproject.toml backend/uv.lock backend/deskpet/sdk_adapters/sdk_candidate.py backend/vendor

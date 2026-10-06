@@ -1,5 +1,6 @@
 {
-  "deployment_id": "8643a4286ed67bb25f2ca5f558aaae6b47f7e09d21a1f5b7ad05cc6ce38a8a93",
+  "acceptance_evidence": null,
+  "deployment_id": "be7b37a7fa2d83ec928d830a053d3ec39534605a093b7da5037478318c804445",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -248,7 +249,7 @@
     "agent_orchestrator/orchestrator/taskgraph_convergence.py": "7c321cf0c550353896a35f58b319cf3f4bb03fafadf958f5e9d7c1682a507a35",
     "agent_orchestrator/orchestrator/taskgraph_convergence_authority.py": "41dea693d65a6ffe1295f62730209889c3fef13b4ab2a178dbee4b6992d68ed5",
     "agent_orchestrator/orchestrator/taskgraph_demands.py": "24d839c0a9775ca6be81124496ba7d285d159f0ab7a1f105f58d368536d069b6",
-    "agent_orchestrator/orchestrator/taskgraph_deployment.py": "5beaaa17f4bbd7dcc011eda7c33d9552e0dc92d2c43486a368132cab37689d7b",
+    "agent_orchestrator/orchestrator/taskgraph_deployment.py": "3ed03b197613c78730f38c63b3917cee88097a06e3489f37693880c85a18caf8",
     "agent_orchestrator/orchestrator/taskgraph_dispatch.py": "5eb9d57a131f199ee8125e202b91483db1d6e529b1c6605c038a3c9b92cef328",
     "agent_orchestrator/orchestrator/taskgraph_epochs.py": "ef5c1619a18e844c1dda1fa36c6c757b2972d70ef33ad73df25cf634105df1a9",
     "agent_orchestrator/orchestrator/taskgraph_execution_policy.py": "20c5857abb330215d62d8a368592141f7d5f1d80e9ca709ee5a0ddcaa6f55ada",

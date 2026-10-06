@@ -27,17 +27,23 @@ def _digest(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+#: 清单自己在安装目录里的位置；盘点安装文件时按这个相对路径排除它（与构建脚本同一条规则），
+#: 不按读取方当前指向的文件排除——测试把读取方指到别的文件时，盘点结果不能因此变化。
+MANIFEST_REL = "agent_orchestrator/orchestrator/taskgraph_deployment_manifest.json"
+
+
 class InstalledHtnWiringAcceptance:
     """Fixed package-owned source; no IPC argument or environment bypass."""
     def __init__(self) -> None:
         self.root = Path(__file__).resolve().parents[2]
-        self.manifest = Path(__file__).resolve().with_name("taskgraph_deployment_manifest.json")
+        self.manifest = self.root / MANIFEST_REL
 
     def _read(self) -> dict[str, Any]:
         try:
             value = json.loads(self.manifest.read_text(encoding="utf-8"))
             if (not isinstance(value, dict) or set(value) != {
-                    "schema", "deployment_id", "upstream", "source_files", "taskgraph_acceptance"}
+                    "schema", "deployment_id", "upstream", "source_files", "taskgraph_acceptance",
+                    "acceptance_evidence"}
                     or value["schema"] != "taskgraph-htn-wiring-derivation-v1"
                     or not _digest(value["deployment_id"])):
                 raise ValueError("invalid deployment manifest")
@@ -59,7 +65,8 @@ class InstalledHtnWiringAcceptance:
             actual_names = {p.relative_to(self.root).as_posix()
                 for namespace in ("agent_orchestrator", "simple_harness")
                 for p in (self.root / namespace).rglob("*")
-                if p.is_file() and "__pycache__" not in p.parts and p != self.manifest
+                if p.is_file() and "__pycache__" not in p.parts
+                and p.relative_to(self.root).as_posix() != MANIFEST_REL
                 and p.suffix not in {".pyc", ".pyo"}}
             if actual_names != set(sources):
                 raise ValueError("installed source inventory changed")
@@ -72,13 +79,32 @@ class InstalledHtnWiringAcceptance:
             identity = {k: v for k, v in value.items() if k != "deployment_id"}
             if _hash(canonical_json(identity).encode()) != value["deployment_id"]:
                 raise ValueError("deployment identity changed")
-            # This source explicitly allows validation of the derived TaskGraph
-            # package. It never converts NOT_RUN into an acceptance PASS.
+            # 执行图验收门（原计划 §0.3 / §16，补齐第 1 批 V12）：清单里的验收结论只有两种取值。
+            # NOT_RUN 时不得带任何证据；VALIDATED 时必须带门报告的哈希，且门报告是对着**这一份**源码
+            # 清单跑的（source_files_sha256 相等）。读取方从不把 NOT_RUN 当成通过；生产开关由 Host 按
+            # :meth:`acceptance_status` 决定开不开（SDK 测试世界允许 NOT_RUN，门本身就是这些测试）。
             if value["taskgraph_acceptance"] not in {"NOT_RUN", "VALIDATED"}:
                 raise ValueError("invalid TaskGraph validation scope")
+            evidence = value["acceptance_evidence"]
+            if value["taskgraph_acceptance"] == "NOT_RUN":
+                if evidence is not None:
+                    raise ValueError("TaskGraph acceptance evidence without a validation")
+            else:
+                if (not isinstance(evidence, dict) or set(evidence) != {
+                        "gate_sha256", "gate_status", "gate_run_at", "source_files_sha256"}
+                        or evidence["gate_status"] != "PASS"
+                        or not _digest(evidence["gate_sha256"])
+                        or not isinstance(evidence["gate_run_at"], str) or not evidence["gate_run_at"]
+                        or evidence["source_files_sha256"] != _hash(canonical_json(sources).encode())):
+                    raise ValueError("TaskGraph acceptance evidence does not match this package")
             return value
         except (OSError, UnicodeError, ValueError, TypeError, KeyError) as error:
             raise SourceUnavailable("taskgraph_deployed_source_unverified") from error
+
+    def acceptance_status(self) -> str:
+        """``NOT_RUN`` or ``VALIDATED`` from a manifest that verifies; refusals propagate."""
+
+        return str(self._read()["taskgraph_acceptance"])
 
     def __call__(self, store: Store, mission_id: str, policy: InstalledGraphPolicy) -> SourceRef:
         if not store.connection.in_transaction or store.get_mission(mission_id) is None:

@@ -243,6 +243,17 @@ class OrchestrationService:
                     {"schema": MANIFEST_SCHEMA, "distributions": imported, "refused": "pin_mismatch"},
                 )
                 raise RuntimeError("实际导入的 SDK 与钉版不一致（见 deployment-manifest.json）")
+            # 执行图原计划 §0.3 / §16（补齐第 1 批 V12）：部署验收门没通过就不开生产开关。安装包里的
+            # 部署清单只有带门报告哈希的 VALIDATED 才算通过；NOT_RUN 不是通过，这里不替它放行。
+            acceptance = self._taskgraph_acceptance_status()
+            if acceptance != "VALIDATED":
+                write_manifest(
+                    self.root,
+                    {"schema": MANIFEST_SCHEMA, "distributions": imported,
+                     "refused": "taskgraph_acceptance_not_validated", "taskgraph_acceptance": acceptance},
+                )
+                raise RuntimeError(f"执行图部署验收门没有通过（清单记为 {acceptance}），不开生产开关；"
+                                   "先跑 scripts/acceptance/taskgraph_gate.py 并用 taskgraph_manifest.py validate 写入")
             await self._open()
             self._manifest = build_manifest(
                 root=self.root,
@@ -263,6 +274,17 @@ class OrchestrationService:
         except Exception as error:
             logger.exception("orchestration service failed to start")
             await self._fail(f"启动失败：{type(error).__name__}: {error}"[:300])
+
+    @staticmethod
+    def _taskgraph_acceptance_status() -> str:
+        """``VALIDATED`` / ``NOT_RUN`` from the installed SDK's package-owned manifest; a manifest
+        that does not verify reads as ``UNVERIFIED`` (refused the same way)."""
+        from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+        from agent_orchestrator.runtime.planning_operations import SourceUnavailable
+        try:
+            return InstalledHtnWiringAcceptance().acceptance_status()
+        except SourceUnavailable:
+            return "UNVERIFIED"
 
     async def _fail(self, reason: str) -> None:
         self._state, self._reason = "unavailable", reason

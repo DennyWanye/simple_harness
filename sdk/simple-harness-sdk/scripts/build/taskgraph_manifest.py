@@ -14,7 +14,15 @@ from and exactly which files it installs.  It is a build product, not a test ver
     ``agent_orchestrator/`` and ``simple_harness/`` (the reader's own rule: no
     ``__pycache__``, no ``.pyc/.pyo``, not the manifest itself), and writes the manifest
     with ``deployment_id`` = sha256 of the canonical manifest without that field.
-    ``taskgraph_acceptance`` stays ``NOT_RUN``; this script never writes ``VALIDATED``.
+    ``taskgraph_acceptance`` stays ``NOT_RUN`` and ``acceptance_evidence`` is ``null``;
+    ``generate`` never writes ``VALIDATED``.
+
+``validate --gate GATE.json``
+    Reads a gate report written by ``scripts/acceptance/taskgraph_gate.py``.  Only a
+    report whose ``status`` is ``PASS`` and whose ``source_files_sha256`` equals the
+    sha256 of this manifest's canonical ``source_files`` (the gate ran against exactly
+    these bytes) flips ``taskgraph_acceptance`` to ``VALIDATED`` and records the
+    report's hash as ``acceptance_evidence``.  Any other report is refused.
 
 ``verify --wheel W``
     Unpacks W into a fresh directory, imports the package from there (not from
@@ -125,12 +133,41 @@ def generate(evidence: Path) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="tg-manifest-") as raw:
         sources = wheel_inventory(build_wheel(Path(raw)))
     identity = {"schema": "taskgraph-htn-wiring-derivation-v1", "upstream": upstream,
-                "source_files": sources, "taskgraph_acceptance": "NOT_RUN"}
+                "source_files": sources, "taskgraph_acceptance": "NOT_RUN", "acceptance_evidence": None}
     value = {**identity, "deployment_id": _sha(_canonical(identity).encode())}
     target = ROOT / "src" / MANIFEST_REL
     target.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"manifest": str(target), "deployment_id": value["deployment_id"], "source_files": len(sources),
             "upstream_mission": upstream["mission_id"], "upstream_wheel_sha256": upstream["wheel_sha256"]}
+
+
+def source_files_sha256(manifest: dict[str, object]) -> str:
+    """The hash the gate report must carry: the canonical installed inventory."""
+    return _sha(_canonical(manifest["source_files"]).encode())
+
+
+def validate(gate: Path, manifest_path: Path | None = None) -> dict[str, object]:
+    """Flip the installed manifest to VALIDATED from a passing gate report; refuse anything else."""
+    target = manifest_path or (ROOT / "src" / MANIFEST_REL)
+    manifest = json.loads(target.read_text(encoding="utf-8"))
+    gate_bytes = gate.read_bytes()
+    report = json.loads(gate_bytes)
+    if not isinstance(report, dict) or report.get("status") != "PASS":
+        raise SystemExit(f"gate report {gate} is not a PASS: {report.get('status') if isinstance(report, dict) else report!r}")
+    expected = source_files_sha256(manifest)
+    if report.get("source_files_sha256") != expected:
+        raise SystemExit("gate report was produced against a different source inventory: "
+                         f"{report.get('source_files_sha256')} != {expected}")
+    if not isinstance(report.get("run_at"), str) or not report["run_at"]:
+        raise SystemExit("gate report has no run_at")
+    identity = {k: v for k, v in manifest.items() if k != "deployment_id"}
+    identity["taskgraph_acceptance"] = "VALIDATED"
+    identity["acceptance_evidence"] = {"gate_sha256": _sha(gate_bytes), "gate_status": "PASS",
+                                       "gate_run_at": report["run_at"], "source_files_sha256": expected}
+    value = {**identity, "deployment_id": _sha(_canonical(identity).encode())}
+    target.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"manifest": str(target), "deployment_id": value["deployment_id"],
+            "taskgraph_acceptance": "VALIDATED", "gate": str(gate), "gate_sha256": _sha(gate_bytes)}
 
 
 _READ = (
@@ -190,9 +227,16 @@ def verify(wheel: Path) -> dict[str, object]:
             del value["upstream"]["business_replay_receipt_sha256"]
             (root / MANIFEST_REL).write_text(json.dumps(value), encoding="utf-8")
 
+        def unproven_acceptance(root: Path) -> None:  # 说验收通过却没带门报告的哈希
+            value = json.loads((root / MANIFEST_REL).read_text(encoding="utf-8"))
+            value["taskgraph_acceptance"] = "VALIDATED"
+            value["acceptance_evidence"] = None
+            (root / MANIFEST_REL).write_text(json.dumps(value), encoding="utf-8")
+
         counterexample("changed_manifest", changed_manifest)
         counterexample("missing_evidence", missing_evidence)
         counterexample("unproven_replay", unproven_replay)
+        counterexample("unproven_acceptance", unproven_acceptance)
     return results
 
 
@@ -203,8 +247,15 @@ def main() -> None:
     make.add_argument("--upstream", type=Path, required=True)
     check = commands.add_parser("verify")
     check.add_argument("--wheel", type=Path, required=True)
+    accept = commands.add_parser("validate")
+    accept.add_argument("--gate", type=Path, required=True)
     args = parser.parse_args()
-    result = generate(args.upstream.resolve()) if args.command == "generate" else verify(args.wheel.resolve())
+    if args.command == "generate":
+        result = generate(args.upstream.resolve())
+    elif args.command == "validate":
+        result = validate(args.gate.resolve())
+    else:
+        result = verify(args.wheel.resolve())
     print(json.dumps(result, indent=2))
 
 
