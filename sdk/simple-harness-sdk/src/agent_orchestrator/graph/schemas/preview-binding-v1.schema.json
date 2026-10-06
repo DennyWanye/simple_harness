@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:taskgraph:preview-binding:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "decision_id",
+    "request_id",
+    "mission_id",
+    "base_revision",
+    "decision_hash",
+    "network_hash",
+    "candidate_hash",
+    "delta_hash",
+    "read_set_hash",
+    "validator_id",
+    "validator_version",
+    "source_reads",
+    "pending_compound_ids",
+    "required_convergence_ids"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "base_revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "decision_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "network_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "delta_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "read_set_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "validator_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "validator_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "source_reads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel",
+          "identity",
+          "digest",
+          "coverage"
+        ],
+        "properties": {
+          "channel": {
+            "enum": [
+              "request",
+              "authorization",
+              "network",
+              "methods",
+              "evidence",
+              "capabilities",
+              "operations",
+              "running_work",
+              "acceptances",
+              "demand",
+              "budget",
+              "inputs"
+            ]
+          },
+          "identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "coverage": {
+            "const": "COMPLETE"
+          }
+        }
+      },
+      "maxItems": 64,
+      "minItems": 12,
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "request"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "authorization"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "network"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "methods"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "evidence"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "capabilities"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "operations"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "running_work"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "acceptances"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "demand"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "budget"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "const": "inputs"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "pending_compound_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    },
+    "required_convergence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    }
+  }
+}

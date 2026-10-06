@@ -1,0 +1,288 @@
+{
+  "network-document-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "revision": 1,
+    "codec_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "requirements_ref": {
+      "kind": "requirements",
+      "id": "reqrev1",
+      "revision": 1,
+      "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "root_occurrence_ids": [
+      "occ-r"
+    ],
+    "adopted_instance_ids": [
+      "mi1"
+    ],
+    "required_obligation_ids": [
+      "obl1"
+    ],
+    "objects": [
+      {
+        "kind": "occurrence",
+        "identity": "occ-r",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "canonical_json": "{}"
+      }
+    ]
+  },
+  "preview-binding-v1": {
+    "schema_version": 1,
+    "decision_id": "d1",
+    "request_id": "r1",
+    "mission_id": "m1",
+    "base_revision": 1,
+    "decision_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "network_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "candidate_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "delta_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "read_set_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "validator_id": "validator",
+    "validator_version": "1",
+    "source_reads": [
+      {
+        "channel": "request",
+        "identity": "request-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "authorization",
+        "identity": "authorization-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "network",
+        "identity": "network-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "methods",
+        "identity": "methods-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "evidence",
+        "identity": "evidence-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "capabilities",
+        "identity": "capabilities-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "operations",
+        "identity": "operations-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "running_work",
+        "identity": "running_work-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "acceptances",
+        "identity": "acceptances-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "demand",
+        "identity": "demand-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "budget",
+        "identity": "budget-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      },
+      {
+        "channel": "inputs",
+        "identity": "inputs-source",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverage": "COMPLETE"
+      }
+    ],
+    "pending_compound_ids": [],
+    "required_convergence_ids": []
+  },
+  "followup-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "source_event_id": "e1",
+    "kind": "REEVALUATE",
+    "subject_key": "occ1",
+    "source_revision": 1,
+    "cause_ref": {
+      "kind": "event",
+      "id": "e1",
+      "revision": 1,
+      "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "taskgraph-view-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "view_mode": "CURRENT",
+    "read_token": {
+      "plan_revision": 1,
+      "through_seq": 5,
+      "validity_epochs": [
+        {
+          "scope_id": "mission",
+          "epoch": 1
+        }
+      ],
+      "snapshot_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "nodes": [
+      {
+        "occurrence_id": "o1",
+        "task_id": "t1",
+        "obligation_id": "ob1",
+        "form": "primitive",
+        "contract_revision": 1,
+        "dispatch_generation": 1,
+        "phase": "ACTIVE",
+        "readiness": "WAITING_DATA",
+        "reason_codes": [
+          "producer_pending"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "kind": "order",
+        "source": "o1",
+        "target": "o2",
+        "identity": "e1"
+      }
+    ],
+    "planning_frontier": [],
+    "execution_frontier": [],
+    "root_resolution_refs": [
+      {
+        "kind": "resolution",
+        "id": "res-1",
+        "revision": 1,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "next_cursor": null,
+    "complete": true
+  },
+  "taskgraph-error-v1": {
+    "schema_version": 1,
+    "origin": "SYSTEM",
+    "stage": "SOURCE",
+    "code": "SOURCE_UNAVAILABLE",
+    "detail": "authoritative source could not be read",
+    "retry_kind": "OPERATOR_REPAIR",
+    "source_identity": "operation-ledger"
+  },
+  "taskgraph-explanation-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "occurrence_id": "o1",
+    "read_token": {
+      "plan_revision": 1,
+      "through_seq": 5,
+      "validity_epochs": [
+        {
+          "scope_id": "mission",
+          "epoch": 1
+        }
+      ],
+      "snapshot_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "readiness": "WAITING_DATA",
+    "reason_codes": [
+      "producer_pending"
+    ],
+    "source_refs": [
+      {
+        "kind": "network_document",
+        "id": "m1",
+        "revision": 1,
+        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "details": [
+      "input producer is not yet accepted"
+    ]
+  },
+  "taskgraph-diff-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "from_revision": 1,
+    "to_revision": 2,
+    "from_manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "to_manifest_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "changes": [
+      {
+        "kind": "occurrence",
+        "identity": "o2",
+        "before_hash": null,
+        "after_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "complete": true
+  },
+  "taskgraph-convergence-view-v2": {
+    "schema_version": 2,
+    "mission_id": "m1",
+    "through_seq": 9,
+    "jobs": [
+      {
+        "job_id": "job-1",
+        "decision_id": "d1",
+        "source_revision": 1,
+        "candidate_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "impact_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "state": "READY",
+        "row_version": 2,
+        "targets": [
+          {
+            "occurrence_id": "o1",
+            "task_id": "t1",
+            "expected_generation": 1,
+            "target_kind": "RETIRING"
+          }
+        ],
+        "diagnostic_refs": [
+          {
+            "kind": "event",
+            "id": "e9",
+            "revision": 1,
+            "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      }
+    ],
+    "blocked_notifications": [
+      {
+        "message_id": "msg-1",
+        "row_version": 3,
+        "kind": "CONVERGE",
+        "subject_key": "job-1",
+        "error_code": "FOLLOWUP_HANDLER_FAILED",
+        "attempts": 5
+      }
+    ],
+    "complete": true
+  }
+}

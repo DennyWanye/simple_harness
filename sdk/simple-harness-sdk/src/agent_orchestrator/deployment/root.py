@@ -93,6 +93,36 @@ class AmendmentRefused(ValueError):
         super().__init__(f"{code}: {detail}")
 
 
+def split_goal_change(changes: Any, *, current_goal: str) -> tuple[str | None, tuple[Mapping[str, Any], ...]]:
+    """Take the one ``{op: "goal", statement}`` change out of an amendment (第 2 批 H19).
+
+    Returns ``(new goal or None, the entry changes)``.  A goal change is at most one per
+    amendment, is ``{op, statement}`` with a nonempty statement, and must say something other
+    than the current goal — otherwise :class:`AmendmentRefused` (``AMEND_EMPTY`` /
+    ``AMEND_DUPLICATE``).  Entry changes are left for :func:`apply_changes`; an amendment that
+    only changes the goal has none."""
+
+    goals = [item for item in (changes or ()) if isinstance(item, Mapping) and item.get("op") == "goal"]
+    entries = tuple(item for item in (changes or ()) if not (isinstance(item, Mapping) and item.get("op") == "goal"))
+    if not goals:
+        return None, entries
+    if len(goals) > 1:
+        raise AmendmentRefused("AMEND_EMPTY", "the goal is changed at most once per amendment")
+    [change] = goals
+    statement = str(change.get("statement") or "").strip()
+    if set(change) != {"op", "statement"} or not statement:
+        raise AmendmentRefused("AMEND_EMPTY", "a goal change is {op: goal, statement}")
+    if statement == str(current_goal):
+        raise AmendmentRefused("AMEND_DUPLICATE", "the goal already says exactly that")
+    return statement, entries
+
+
+def unchanged_entries(previous: RequirementsRevision) -> tuple[tuple[str, int, str], ...]:
+    """The previous revision's entries carried as they are (an amendment that only changes
+    the goal still writes the next requirements revision, with the same entries)."""
+    return tuple((str(item.criterion_id), int(item.revision), str(item.statement)) for item in previous.criteria)
+
+
 def apply_changes(previous: RequirementsRevision, changes: Any, *,
                   highest_used: int) -> tuple[tuple[str, int, str], ...]:
     """The entries of the next revision: untouched entries carried as they are, a rewrite
@@ -243,4 +273,4 @@ def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> Non
     loop.install_hierarchical_deployment(lambda mission: world_factory(loop, mission), start_gate=ready)
 
 
-__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "root_binding", "user_requirements")
+__all__ = ("ROOT_RECURSION_FUEL", "apply_changes", "build_requirements", "criterion_ids", "current_criteria", "current_statements", "goal_parameters", "initialize_root", "install_planning", "root_binding", "split_goal_change", "unchanged_entries", "user_requirements")

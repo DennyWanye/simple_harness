@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:taskgraph:network-document:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "revision",
+    "codec_manifest_hash",
+    "requirements_ref",
+    "root_occurrence_ids",
+    "adopted_instance_ids",
+    "required_obligation_ids",
+    "objects"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "codec_manifest_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "requirements_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "content_hash"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "root_occurrence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 256
+    },
+    "adopted_instance_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    },
+    "required_obligation_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "identity",
+          "sha256",
+          "canonical_json"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "occurrence",
+              "task_semantics",
+              "method_instance",
+              "order_constraint",
+              "data_requirement",
+              "typed_edge",
+              "obligation_coverage"
+            ]
+          },
+          "identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "canonical_json": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 8388608
+          }
+        }
+      },
+      "maxItems": 16384
+    }
+  }
+}

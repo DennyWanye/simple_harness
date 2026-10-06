@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:taskgraph:error:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "origin",
+    "stage",
+    "code",
+    "detail",
+    "retry_kind",
+    "source_identity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "origin": {
+      "enum": [
+        "MODEL",
+        "SYSTEM",
+        "RUNTIME"
+      ]
+    },
+    "stage": {
+      "enum": [
+        "SOURCE",
+        "PREVIEW",
+        "ADMISSION",
+        "CONVERGENCE",
+        "COMMIT",
+        "DISPATCH",
+        "REPLAY",
+        "READ"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "retry_kind": {
+      "enum": [
+        "NONE",
+        "REQUERY",
+        "RECONCILE",
+        "NEW_PLANNER_REQUEST",
+        "OPERATOR_REPAIR"
+      ]
+    },
+    "source_identity": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

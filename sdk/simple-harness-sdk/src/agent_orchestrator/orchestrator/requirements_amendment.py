@@ -6,7 +6,11 @@
 ``RequirementsAmended`` 事件；任何一步失败全部回滚。计划、在跑的尝试、已通过的验收一样都不动：
 旧验收按"按哪一版要求通过，就只在那一版下算数"这条现有秩序自然不再算数，重做什么由规划器定。
 
-只能增、改、删要求条目；改目标本身是新任务。根目标已有结论、收尾已开始的任务不再接受改要求。
+改要求条目（增、改、删）之外也可以改目标（第 2 批 H19，原计划 §9.x）：目标变更就是一次要求修订——
+``{op: "goal", statement}`` 让任务的目标文本换成新的，要求书照样写第 n+1 版（条目不变也写），根合同
+换新版本、根目标语义绑定的目标陈述随之换版、作用域纪元动一次。现有计划要不要重做，由规划器在
+按新版要求重新规划时判（``REQUIREMENTS_UPDATE`` 修复请求，阶段 D 已有的路径），这里不替它判。
+根目标已有结论、收尾已开始的任务不再接受改要求。
 """
 from __future__ import annotations
 
@@ -60,9 +64,17 @@ def amend_requirements(
     expected_requirements_ref: Mapping[str, Any], changes: Sequence[Mapping[str, Any]],
     reason: str, source: Mapping[str, Any], principal: Any,
 ) -> dict[str, Any]:
-    from ..deployment.root import AmendmentRefused, apply_changes, build_requirements, root_binding
+    from ..deployment.root import (
+        AmendmentRefused,
+        apply_changes,
+        build_requirements,
+        root_binding,
+        split_goal_change,
+        unchanged_entries,
+    )
     from .assurance_final_writer import assured_closeout_pending
     from .hierarchical_dispatch import append_hierarchical_event
+    from .state_machine import next_mission
 
     store = orchestrator.store
     proposal = {"mission_id": mission_id, "expected": dict(expected_requirements_ref),
@@ -99,7 +111,9 @@ def amend_requirements(
             raise RequirementsAmendmentError(
                 "AMEND_AFTER_CLOSEOUT", "the Mission is already closing out; start a new one for new requirements")
         try:
-            entries = apply_changes(previous, changes, highest_used=_highest_number(revisions))
+            new_goal, entry_changes = split_goal_change(changes, current_goal=mission.goal)
+            entries = (apply_changes(previous, entry_changes, highest_used=_highest_number(revisions))
+                       if entry_changes else unchanged_entries(previous))
         except AmendmentRefused as error:  # 按属性取码，不切异常文字（第 1 批 T02）
             raise RequirementsAmendmentError(error.code, error.detail) from error
 
@@ -108,6 +122,15 @@ def amend_requirements(
         except ContractError as error:
             raise RequirementsAmendmentError("AMEND_REQUIREMENT_REFUSED", str(error)) from error
 
+        # 0 the goal, when it changes (H19): the Mission's own text and the root parameter that
+        #   carried the old goal verbatim (``goal_parameters``) both say the new one
+        parameters = dict(root.typed_parameters)
+        previous_goal = str(mission.goal)
+        if new_goal is not None:
+            updated = next_mission(mission, goal=new_goal)
+            store.update_mission(updated, expected_version=mission.version)
+            parameters = {key: (new_goal if value == mission.goal else value) for key, value in parameters.items()}
+            mission = updated
         # 1 the next revision of the requirements, carrying its credential
         revision = build_requirements(mission_id, int(previous.revision) + 1, entries,
                                       str(principal.principal_id), credential=command_id)
@@ -117,24 +140,26 @@ def amend_requirements(
                           if item.goal_signature.signature_id == root.goal_signature.signature_id)
         htn.put_task_semantics(mission_id, root_binding(
             store, mission, definition, task_id=str(root.task_id), duty_id=str(root.obligation_id),
-            contract_revision=int(root.contract_revision) + 1, parameters=root.typed_parameters))
+            contract_revision=int(root.contract_revision) + 1, parameters=parameters))
         # 3 the root duty answers for the new set
         ObligationStore(store).revise_requirement_refs(
             mission_id, root.obligation_id, [name for name, _, _ in entries])
         # 4 every licence issued under the old requirements is stale
         epoch = htn.bump_epoch(mission_id, "mission", bumped_by=f"requirements:{revision.revision_id}")
         changed = compare_revisions(previous, revision)
+        goal = None if new_goal is None else {"previous": previous_goal, "current": new_goal}
         receipt = {
             "kind": RECEIPT_KIND, "command_id": command_id, "mission_id": mission_id,
             "proposal_hash": proposal_hash, "source": dict(source), "reason": str(reason),
             "previous_requirements_ref": requirements_ref(previous),
             "requirements_ref": requirements_ref(revision),
-            "requirements_revision": int(revision.revision), "changes": changed, "scope_epoch": int(epoch),
+            "requirements_revision": int(revision.revision), "changes": changed, "goal": goal,
+            "scope_epoch": int(epoch),
         }
         append_hierarchical_event(store, EVENT, mission_id, key=command_id, payload={
             "command_id": command_id, "previous_revision": int(previous.revision),
             "requirements_revision": int(revision.revision),
-            "requirements_content_hash": revision.content_hash(), **changed})
+            "requirements_content_hash": revision.content_hash(), "goal": goal, **changed})
         store.insert_receipt(commit_id=command_id, kind=RECEIPT_KIND, subject_id=mission_id,
                              base_version=int(previous.revision), proposal_hash=proposal_hash, receipt=receipt)
     return receipt

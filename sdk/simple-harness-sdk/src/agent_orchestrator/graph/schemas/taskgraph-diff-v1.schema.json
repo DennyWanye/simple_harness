@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:taskgraph:diff:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "from_revision",
+    "to_revision",
+    "from_manifest_hash",
+    "to_manifest_hash",
+    "changes",
+    "complete"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "from_revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "to_revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "from_manifest_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "to_manifest_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "identity",
+          "before_hash",
+          "after_hash"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "before_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 16384
+    },
+    "complete": {
+      "const": true
+    }
+  }
+}

@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:simpleharness:taskgraph:view:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "read_token",
+    "nodes",
+    "edges",
+    "planning_frontier",
+    "execution_frontier",
+    "root_resolution_refs",
+    "next_cursor",
+    "complete",
+    "view_mode"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "read_token": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_revision",
+        "through_seq",
+        "validity_epochs",
+        "snapshot_hash",
+        "manifest_hash"
+      ],
+      "properties": {
+        "plan_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "through_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "validity_epochs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scope_id",
+              "epoch"
+            ],
+            "properties": {
+              "scope_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "epoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "maxItems": 256
+        },
+        "snapshot_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "manifest_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occurrence_id",
+          "task_id",
+          "obligation_id",
+          "form",
+          "contract_revision",
+          "dispatch_generation",
+          "phase",
+          "readiness",
+          "reason_codes"
+        ],
+        "properties": {
+          "occurrence_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "task_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "obligation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "form": {
+            "enum": [
+              "compound",
+              "primitive"
+            ]
+          },
+          "contract_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "dispatch_generation": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "readiness": {
+            "enum": [
+              "NOT_SELECTED",
+              "NEEDS_REFINEMENT",
+              "WAITING_ORDER",
+              "WAITING_DATA",
+              "WAITING_EVIDENCE",
+              "WAITING_APPROVAL",
+              "STALE_BINDING",
+              "READY_CANDIDATE",
+              "WAITING_OPERATION_UNKNOWN",
+              "OBSERVER_UNAVAILABLE",
+              "GRAPH_INTEGRITY",
+              "VALIDITY_RECHECK_PENDING"
+            ]
+          },
+          "reason_codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 32
+          }
+        }
+      },
+      "maxItems": 4096
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "source",
+          "target",
+          "identity"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "refinement",
+              "order",
+              "data"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "maxItems": 8192
+    },
+    "planning_frontier": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    },
+    "execution_frontier": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4096
+    },
+    "root_resolution_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "revision",
+          "content_hash"
+        ],
+        "properties": {
+          "kind": {
+            "const": "resolution"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "maxItems": 256
+    },
+    "next_cursor": {
+      "type": "null"
+    },
+    "complete": {
+      "const": true
+    },
+    "view_mode": {
+      "enum": [
+        "CURRENT",
+        "HISTORICAL_STRUCTURE"
+      ]
+    }
+  }
+}
