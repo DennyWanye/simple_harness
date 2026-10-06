@@ -7,7 +7,8 @@
     "bad_candidate": "implementation/model-inputs/bad-candidate.json"
   },
   "limits": {
-    "total_model_tokens": 300000,
+    "total_model_tokens": 1200000,
+    "total_model_tokens_decision": "2026-10-07 用户裁决：每局 token 上限 30 万改为 120 万（原值按四个短场景定，与真实模型实际用量不匹配；10-06 内容通过的局 21 万～114 万）。其余上限不变。",
     "model_calls": 16,
     "tool_calls": 32,
     "wall_time_seconds": 900,
