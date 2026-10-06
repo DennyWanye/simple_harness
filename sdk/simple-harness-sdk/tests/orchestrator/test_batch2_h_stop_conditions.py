@@ -102,6 +102,19 @@ def test_the_streak_counts_closed_planning_rounds_with_no_new_knowledge_or_accep
     assert sc.knowledge_streak([commit, _event("KnowledgeCommitted"), commit]) == 0
 
 
+def test_the_streak_ignores_the_systems_own_infrastructure_retries() -> None:
+    """2026-09-28 用户决定：非模型原因失败由系统原地重试、不计次数。这种"决定"不是规划器的一轮：
+    既不把连续空轮往上数，也不把计数清零。主会话合并时发现：执行者连续结果不明时，五次系统重试
+    把"连续多轮没有新知识"数满，任务没按"非模型原因失败到上限"停，反而去问了规划器。"""
+    from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN
+    assert sc.SYSTEM_RETRY_ORIGIN == SYSTEM_RETRY_ORIGIN  # 两处常量必须同名同值
+    commit = _event("PlanningDecisionEvaluated", status="COMMITTED")
+    retry = _event("PlanningDecisionEvaluated", status="COMMITTED", decision_origin=SYSTEM_RETRY_ORIGIN)
+    assert sc.knowledge_streak([retry] * 6) == 0
+    assert sc.knowledge_streak([commit, retry, retry, commit]) == 1          # 两次重试夹在中间不算轮
+    assert sc.knowledge_streak([commit, commit, retry, retry, retry]) == 1   # 重试不把已数的清零、也不加
+
+
 def test_duplicates_are_counted_by_content_hash() -> None:
     assert sc.duplicate_count(["a", "b", "a", "a"]) == (2, 4)
     assert sc.duplicate_count([]) == (0, 0)

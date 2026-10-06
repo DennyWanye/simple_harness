@@ -86,14 +86,23 @@ def parse_stop_conditions(conditions: Iterable[str], deployment: Any) -> dict[st
     return parsed
 
 
+#: 系统自己对"非模型原因失败"的原地重试（2026-09-28 用户决定，不计次数）：它不是规划器的一轮。
+SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
+
+
 def knowledge_streak(events: Iterable[Any]) -> int:
-    """连续多少个已关上的规划轮没有新知识、没有新验收。只数事件，不读内容。"""
+    """连续多少个已关上的规划轮没有新知识、没有新验收。只数事件，不读内容。
+
+    系统自己做的原地重试决定（``decision_origin == SYSTEM_RETRY_ORIGIN``）不算一轮：既不往上数，
+    也不清零——执行者连续结果不明只走"非模型原因失败到上限"那条路。
+    """
     streak = 0
     open_round = False
     fresh = 0
     for event in events:
         kind = event.type
-        if kind == ROUND_EVENT and event.payload.get("status") == "COMMITTED":
+        if (kind == ROUND_EVENT and event.payload.get("status") == "COMMITTED"
+                and event.payload.get("decision_origin") != SYSTEM_RETRY_ORIGIN):
             if open_round:
                 streak = 0 if fresh else streak + 1
             open_round, fresh = True, 0
@@ -189,6 +198,7 @@ __all__ = (
     "RESULT_DUPLICATION",
     "ROUND_EVENT",
     "STOP_PREFIX",
+    "SYSTEM_RETRY_ORIGIN",
     "duplicate_count",
     "knowledge_streak",
     "parse_stop_conditions",
