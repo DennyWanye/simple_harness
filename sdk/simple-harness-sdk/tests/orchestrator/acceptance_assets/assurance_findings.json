@@ -50,7 +50,7 @@
   {
    "id": "F04",
    "what": "检查与审阅的真值表",
-   "status": "COVERED",
+   "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_checked_policy_truth_table",
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_formula_truth_tables",
@@ -59,9 +59,10 @@
    ],
    "mutations": [
     "AS-FM02",
-    "AS-FM03"
+    "AS-FM03",
+    "AS-M01"
    ],
-   "gap": "“全局安全问题必须挂到必须项”没有实现（或交审阅员按原话判）"
+   "gap": "真值表、检查回执范围、必须项不被任一分支绕过都有用例守着（改坏 AS-FM02 / AS-FM03 / AS-M01 抓到）。缺的是原计划\"全局安全问题必须挂到必须项\"：现行回复格式里每条 finding 必须点名一条准则（assurance/checks.py ReviewReply.from_json：不在目录里的 criterion_id 拒 FINDING_SCOPE），没有\"全局\"finding 这个形态，也就没有把它挂到必须项的实现和用例。2026-10-06 车道 M 核对，未补齐（第 1 批车道 C 记录第四节偏差单 3 已提）"
   },
   {
    "id": "F05",
@@ -137,7 +138,7 @@
    "mutations": [
     "AS-FM08"
    ],
-   "gap": "“一个卡在预算上的审阅不挡后面的事件入箱”只有代码结构保证（先全部入箱再准备），没有专门用例"
+   "gap": "事件游标与待办同事务、两连接并发、有界可重启重放都有用例守着（改坏 AS-FM08 抓到）。缺的是原计划\"一个卡在预算上的审阅不挡后面的事件入箱\"：现行只有代码结构保证（orchestrator/assurance_tick.py：先把每个消费者的事件全部入箱，再做昂贵的准备），test_c_assurance 里没有一条用例造\"审阅被预算卡住、随后的撤权事件照样入箱\"的局面。2026-10-06 车道 M 核对，未补齐（第 1 批车道 C 记录第四节偏差单 3 已提）"
   },
   {
    "id": "F10",
@@ -173,13 +174,15 @@
    "status": "PARTIAL",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_strict_boundary",
+    "tests/orchestrator/full_target/assurance_exec/test_batch4_mutation_bindings.py::test_fm12_a_query_set_read_item_changes_with_the_schema_hash",
     "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_bounded_restartable_evaluation",
     "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_complete_collection_not_topk"
    ],
    "mutations": [
+    "AS-FM12",
     "AS-M08"
    ],
-   "gap": "计划包的检查器只对计划资产跑；SDK 内部结构改由 Python 校验，没有对应的漂移检查"
+   "gap": "计划包的检查器只对计划资产跑；SDK 内部结构改由 Python 校验，没有对应的漂移检查；SDK 侧的库结构漂移由查询集指纹里的迁移表哈希担着（2026-10-06 车道 M 补用例并绑定改坏 AS-FM12）"
   },
   {
    "id": "F13",
