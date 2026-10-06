@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v26"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v27"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -144,7 +144,7 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "  - mission.requirements：任务的现行要求——revision 是第几版，criteria 每条有编号 id、条目版本 revision、"
         "原文 statement。用户可以中途改要求（增、改、删条目），这里永远是最新一版。\n"
         "  - planning_subjects：这次可以处理的目标与步骤，subject_key 从这里照抄。\n"
-        "  - views：九类事实视图，每件事只在一处出现。truncated / omitted_counts 表示有内容被裁剪，"
+        "  - views：各类事实视图，每件事只在一处出现。truncated / omitted_counts 表示有内容被裁剪，"
         "不表示被裁掉的对象不存在。\n"
         "      goals：计划里的每个目标和步骤（form 为 compound 是目标、primitive 是步骤）。"
         "open=true 是还没有做法的目标，params 是它的参数；adopted_method 是已采用的做法实例；"
@@ -185,6 +185,13 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "method_id、method_version 照抄 new_method_identity，步骤参数按本任务的目标写，"
         "链接按本任务 criterion_evidence 里的编号写，并在 method_proposal 里写 based_on（那条的 entry_id）。"
         "新做法照常要过本任务的独立审阅。\n"
+        "  - views.knowledge：团队黑板里现在仍然当前的内容，最新的在前。layer=verified 是已验证知识——"
+        "经系统测试观察或独立审阅员逐条确认，可以当事实；ref 是「编号@版本」，content 是原文，basis 是验证来源，"
+        "assurance_level / validity_interval / permitted_uses 是它登记的保障等级、有效期、允许用途（没登记的是 null）。"
+        "layer=summary 是已验收步骤自己写的摘要（summary），审阅员核对过它忠实于那一步的结果，告诉你那一步做了什么、"
+        "产出了哪些文件（artifacts）。只列与现行计划、现行验收仍然一致的条目；omitted_counts.knowledge 是没列出的条数。"
+        "这些是你重新判断方向的材料——该采用哪个做法、要不要换做法、步骤拆得对不对、哪些事实已经成立不必再做；"
+        "它们不是引用四元组，不要写进 reason_refs，要引用事实用 views.facts 里的 observation_ref。\n"
         "  - method_proposal_contexts：为每个还没有做法的目标、以及 under_repair 的目标，给出写新做法要用的"
         "全部材料（见下面的 PROPOSE_METHOD）。\n"
         "  - repair_requests：真实发生的失败和程序算出的影响范围，失败的完整记录只在这里。"
@@ -471,8 +478,10 @@ register_template(PLANNER_HIERARCHICAL)
 #: package changes in a way the prompt can be wrong about.  Version 10 (HTN 精简 片 C)
 #: is the single-layer package: nine views, a failure's details in one place.  Version
 #: 11 (删旧平面模式第三刀第 4 步): ``compensation_candidates`` and REQUEST_COMPENSATION
-#: are gone.
-PLANNING_DECISION_PACKAGE_VERSION = 13
+#: are gone.  Version 14 (第 2 批 K03): the twelfth view, ``knowledge`` — the blackboard
+#: (current verified knowledge and reviewer-checked step summaries) a Planner judges
+#: direction from.
+PLANNING_DECISION_PACKAGE_VERSION = 14
 
 #: The prompt written against that package.  One package, one prompt.
 PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_VERSION

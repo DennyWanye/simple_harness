@@ -28,7 +28,7 @@ from ..assurance.review_input import (
 from ..assurance.reviews import AssuranceReviewBinding
 from ..contracts import TERMINAL_MISSION
 from ..contracts.models import ContractError
-from ..runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS, EvidenceToolRefusal, WorkspaceBinding
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, EvidenceToolRefusal, WorkspaceBinding
 from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
@@ -75,16 +75,17 @@ class ReviewerEvidenceTools:
         gateway.assurance_review_refusal = self.refusal
 
     def bind(self, agent_id: str, config: Any) -> None:
-        """Bind the assured reviewer agent to exactly the read-only evidence tools.
+        """Bind the assured reviewer agent to exactly the read-only reviewer tools.
 
-        The legacy verify-workspace authority is never inherited: a review whose
-        template lists no tools stays unbound, and any other tool name is refused.
+        Those are the two evidence tools and the two blackboard readers (K01).  The
+        legacy verify-workspace authority is never inherited: a review whose template
+        lists no tools stays unbound, and any other tool name is refused.
         """
         names = tuple(config.get("agent_config", {}).get("tool_names", ()))
         if not names:
             return
-        if set(names) - set(ASSURANCE_EVIDENCE_TOOLS):
-            raise ContractError("Assurance review may only bind the read-only evidence tools")
+        if set(names) - set(ASSURANCE_REVIEWER_TOOLS):
+            raise ContractError("Assurance review may only bind the read-only reviewer tools")
         if config.get("assurance_protocol") != ASSURANCE_PROTOCOL:
             raise ContractError("Assurance evidence tools require the assured review protocol")
         review_key = text(config["review_key"])

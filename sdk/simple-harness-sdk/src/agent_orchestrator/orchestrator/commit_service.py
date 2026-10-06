@@ -1030,6 +1030,7 @@ class CommitService(ProtectedTailCommitsMixin,
         attempt: Attempt,
         stored: StoredResult,
         review: Any = None,
+        certificate: Any = None,
     ) -> list[dict[str, Any]]:
         """D4-2/D4-3/D4-4/D4-5 inside the accept transaction: grade every claim of the
         accepted result from the verification that ran, project the VERIFIED ones into
@@ -1038,10 +1039,14 @@ class CommitService(ProtectedTailCommitsMixin,
 
         阶段 C：一条结论成为"已验证"有两个来源——系统自己跑过的测试观察，或独立审阅员在
         正式审阅记录（``review``）里逐条确认。每条入库的知识自带它的依据（``support``：
-        来源验收、确认时引用的证据产物、本步用过的知识），之后是否仍然当前只读它。"""
+        来源验收、确认时引用的证据产物、本步用过的知识），之后是否仍然当前只读它。
+
+        第 2 批 K02：审阅确认入库的知识另带三个登记项（有效期、允许用途、保障等级），从这次验收
+        用的使用证书（``certificate``）与任务的保证通道取；取不到就是 None。"""
 
         envelope = stored.envelope
         confirmed = self._review_confirmations(mission, envelope.id, review)
+        registration = self._knowledge_registration(mission, certificate) if confirmed else {}
         used = {knowledge_id: version
                 for knowledge_id, version in map(parse_knowledge_ref, envelope.used_knowledge)}
         domain = self.domain_for(mission.id)
@@ -1184,6 +1189,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     evidence_trust=grade.evidence_trust,
                     support=self._knowledge_support(
                         mission, task, stored, updated.id, updated.evidence, confirmation),
+                    **(registration if confirmation is not None else {}),
                 )
                 self._store.upsert_knowledge(record)
                 self._emit(
@@ -1270,6 +1276,26 @@ class CommitService(ProtectedTailCommitsMixin,
                 "content_sha256": row["content_sha256"],
             }
         return found
+
+    def _knowledge_registration(self, mission: Mission, certificate: Any) -> dict[str, Any]:
+        """第 2 批 K02：审阅确认入库的知识的三个登记项，只从已有记录取——有效期取这次验收用的
+        使用证书的签发/失效时刻与任务纪元；保障等级取任务的保证通道；允许用途没有任何记录写它
+        （审阅回复与证书都没有这一项），一律 None。取不到的就是 None，不猜。"""
+        from ..assurance.codec import AssuranceError
+        from ..storage.assurance_store import AssuranceStore
+
+        out: dict[str, Any] = {"validity_interval": None, "permitted_uses": None, "assurance_level": None}
+        if certificate is not None:
+            out["validity_interval"] = {
+                "valid_from_ms": int(certificate.issued_at_ms),
+                "valid_until_ms": None if certificate.not_after_ms is None else int(certificate.not_after_ms),
+                "mission_epoch": int(certificate.mission_epoch),
+            }
+        try:
+            out["assurance_level"] = AssuranceStore(self._store).lane(mission.id)
+        except AssuranceError:
+            out["assurance_level"] = None
+        return out
 
     def _knowledge_support(
         self, mission: Mission, task: Task, stored: StoredResult, knowledge_id: str,
@@ -2979,6 +3005,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 attempt,
                 stored,
                 review=None if licensed is None else licensed.record,
+                certificate=None if licensed is None else licensed.certificate,
             )
             self._store.update_attempt(
                 next_attempt(attempt, AttemptStatus.COMPLETED), expected_version=attempt.version

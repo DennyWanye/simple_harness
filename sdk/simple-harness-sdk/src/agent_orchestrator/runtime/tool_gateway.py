@@ -152,6 +152,9 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 TOOL_NAMES = tuple(TOOL_SCHEMAS)
 ASSURANCE_EVIDENCE_TOOLS = ("assurance_find_evidence", "assurance_read_evidence")
+#: 第 2 批 K01：审阅员的四件工具——两件只读证据工具，加上执行者那一套黑板读工具（同一个读器，
+#: 按审阅所在任务的范围、只列当前有效；用户 10-02："审阅员通过黑板自己去取"）。
+ASSURANCE_REVIEWER_TOOLS = (*ASSURANCE_EVIDENCE_TOOLS, "knowledge_list", "knowledge_read")
 WORKER_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
 CRITIC_TOOLS = ("workspace_read_file", "workspace_list")
 #: P2.3u P2-2: consecutive ``read_only_existing_file`` refusals on one Attempt
@@ -651,9 +654,11 @@ class WorkspaceToolGateway:
         # 3. risk and policy: containment, denied prefixes, read-only upstream inputs
         try:
             # An assured reviewer binding has no Attempt workspace and must not
-            # fabricate one; its tools read pinned Store/CAS evidence only.
+            # fabricate one; its tools read pinned Store/CAS evidence and the Mission's
+            # blackboard only (K01: the knowledge tools on a review binding too).
             workspace = (
-                None if call.name in ASSURANCE_EVIDENCE_TOOLS else self._workspace(binding)
+                None if call.name in ASSURANCE_EVIDENCE_TOOLS or binding.review_key is not None
+                else self._workspace(binding)
             )
             # External tool parameters called path refer to the original environment,
             # never the SDK report workspace.
@@ -823,6 +828,13 @@ class WorkspaceToolGateway:
             elif call.name in {"knowledge_list", "knowledge_read"}:
                 if self.knowledge_reader is None or binding.mission_id is None:
                     raise WorkspaceError("knowledge tools are unavailable for this binding")
+                if binding.review_key is not None:
+                    # K01: a reviewer reads the blackboard under its live review only
+                    record["review_key"] = binding.review_key
+                    refusal = (None if self.assurance_review_refusal is None
+                               else self.assurance_review_refusal(run_id, binding))
+                    if refusal is not None:
+                        raise WorkspaceError(refusal)
                 try:
                     value = self.knowledge_reader(binding.mission_id, call.name, arguments)
                 except ValueError as error:
@@ -999,6 +1011,7 @@ def _schema_problem(name: str, arguments: Mapping[str, Any], *, large: bool = Fa
 
 __all__ = (
     "ASSURANCE_EVIDENCE_TOOLS",
+    "ASSURANCE_REVIEWER_TOOLS",
     "CRITIC_TOOLS",
     "EvidenceToolRefusal",
     "MAX_READ_ONLY_EXISTING_REJECTIONS",
