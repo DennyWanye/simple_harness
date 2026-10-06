@@ -5,13 +5,21 @@
 * 停止原因 ``deadlock`` 与码 ``resource_wait_cycle`` 登记（需收敛，不算规划器答错）；恢复协议三个码登记；
 * 停滞交规划器那一条请求带上环的事实（``wait_for``）。
 
+* 夜间 N3-01：行为用例跑到"死锁"停止分支——问过规划器、它不改、等待成环 → 以 ``deadlock`` 停，停机详情带
+  ``wait_for``；对照：图没有环时仍按 ``no_dispatchable_work`` 停。
+
 **改坏检验**：``cycles()`` 把"大小 ≥ 2 或自环"改成全部分量 → 第 1 条红（孤立节点也算环）；
-``wait_for_graph`` 不看 ``completed`` → 第 2 条红。
+``wait_for_graph`` 不看 ``completed`` → 第 2 条红；``event_handler`` 停止处的三元式两支对调（或固定写
+``NO_DISPATCHABLE_WORK``）→ 死锁行为用例红。
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 
+import pytest
+
+from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.contracts.error_table import (
     RECOVERY_ERRORS,
     SCHEDULING_ERRORS,
@@ -84,3 +92,63 @@ def test_the_stall_request_hands_the_wait_for_facts_to_the_planner_once():
     source = inspect.getsource(planning_repair_requests.request_planner_for_stall)
     assert "collect_wait_facts(dispatch.store, network)" in source
     assert '"wait_for": wait_for' in source
+
+
+# ------------------------------------------------------------------ 夜间 N3-01：行为用例
+# 借 ``test_stall_asks_planner_first.stalled`` 那个产品同形停滞局面（唯一一步做完被验收、最终审查一直没
+# 结论、规划器被问到时答"不改"）；等待图用 monkeypatch 换成注入的图（``event_handler`` 在函数里导入
+# ``collect_wait_facts``，替换模块属性即生效）。只加用例，不改产品代码。
+
+from test_stall_asks_planner_first import _stall_requests, stalled  # noqa: E402
+
+import agent_orchestrator.scheduling.wait_for as wait_for_module  # noqa: E402
+
+
+@pytest.fixture
+def _quick(monkeypatch):
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+
+    monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+
+
+def _stop_with_graph(tmp_path, monkeypatch, graph: WaitForGraph, key: str):
+    monkeypatch.setattr(wait_for_module, "collect_wait_facts", lambda store, network: graph)
+
+    async def case():
+        async with stalled(tmp_path, key=key) as world:
+            loop = world.loop
+            await loop._record_hierarchical_stall()
+            assert await loop._confirm_and_stop_stalled() is True  # 第一次：先问规划器
+            await loop._record_hierarchical_stall()  # 同一版计划又停在原地（规划器不改）
+            carried = await loop._confirm_and_stop_stalled()
+            return carried, world.mission(), world.events()
+
+    return asyncio.run(case())
+
+
+def test_a_wait_cycle_after_the_planner_changed_nothing_stops_as_deadlock(tmp_path, monkeypatch, _quick):
+    cyclic = wait_for_graph(order=[("occ-a", "occ-b")], data=[("occ-b", "occ-a", "req-1")])
+    carried, mission, events = _stop_with_graph(tmp_path, monkeypatch, cyclic, "deadlock-stop")
+    assert carried is False
+    assert len(_stall_requests(events)) == 1, "先问过规划器一次"
+    assert mission.status is MissionStatus.FAILED
+    report = mission.final_report
+    assert report["stop_reason"] == "deadlock"
+    detail = report["detail"]
+    assert detail["planner_asked"] is not None
+    assert detail["planner_asked"]["request_id"] == _stall_requests(events)[0].payload["request_id"]
+    assert detail["wait_for"]["code"] == "resource_wait_cycle"
+    assert [c["members"] for c in detail["wait_for"]["cycles"]] == [["occ-a", "occ-b"]]
+    assert detail["wait_for"] == deadlock_facts(cyclic)
+    # 交给规划器的那条请求也带着同一份环的事实
+    assert _stall_requests(events)[0].payload["request"]["context"]["wait_for"]["code"] == "resource_wait_cycle"
+
+
+def test_without_a_wait_cycle_the_same_stop_is_no_dispatchable_work(tmp_path, monkeypatch, _quick):
+    calm = wait_for_graph(order=[("occ-a", "occ-b")])
+    carried, mission, events = _stop_with_graph(tmp_path, monkeypatch, calm, "deadlock-calm")
+    assert carried is False and mission.status is MissionStatus.FAILED
+    assert mission.final_report["stop_reason"] == "no_dispatchable_work"
+    detail = mission.final_report["detail"]
+    assert detail["planner_asked"] is not None
+    assert detail["wait_for"]["code"] is None and detail["wait_for"]["cycles"] == []
