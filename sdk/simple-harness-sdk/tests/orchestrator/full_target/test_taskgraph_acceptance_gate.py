@@ -161,3 +161,25 @@ def test_the_gate_only_passes_independent_review_with_a_matching_pass_receipt(tm
         assert gate._review(receipt, manifest)[0] == "PENDING"
     receipt.write_text("not json")
     assert gate._review(receipt, manifest)[0] == "PENDING"
+
+
+def test_the_core_gate_runs_every_h1h_gate_test_file():
+    """CORE 收 ``taskgraph_exec/``、随机动作序列和目录里**每一个** ``test_h1h_*.py``。
+
+    2026-10-07 夜间车道 N4。
+
+    **改坏检验**：CORE 退回只收 ``taskgraph_exec/`` 与随机序列（opt.166 的口径）→ 本条变红。
+    """
+    gate = _gate_module()
+    present = sorted(str(path.relative_to(SDK))
+                     for path in (SDK / "tests/orchestrator/full_target").glob("test_h1h_*.py"))
+    assert len(present) >= 26  # 2026-10-07 时有 26 个
+    assert set(present) <= set(gate.CORE_TESTS)
+    for anchor in ("tests/orchestrator/full_target/taskgraph_exec",
+                   "tests/orchestrator/product_world/test_random_sequences.py",
+                   "tests/orchestrator/full_target/test_h1h_commit_guard.py",
+                   "tests/orchestrator/full_target/test_h1h_authority_isolation.py",
+                   "tests/orchestrator/full_target/test_h1h_planning_authorization.py",
+                   "tests/orchestrator/full_target/test_h1h_process_recovery.py"):
+        assert anchor in gate.CORE_TESTS
+        assert (SDK / anchor).exists()

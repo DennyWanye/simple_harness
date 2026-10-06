@@ -1,16 +1,21 @@
+"""I03 进程在签发中途 / 签发之后退出：恢复不凭空生出授权，重放给回原回执、不重签。
+
+任务经产品同形部署建出（建任务事务里绑定执行图与规划协议，2026-10-07 夜间车道 N4 改夹具，
+见 test_h1h_planning_authorization 的模块说明）；子进程只直接调规划授权接口。
+"""
+
 from __future__ import annotations
 
 import subprocess
 import sys
 from pathlib import Path
 
-from test_h1h_planning_authorization import _mission, _request
+from test_h1h_planning_authorization import _request, product_db, seed_product_missions
 
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import Store
-
 
 _CHILD = r"""
 import os
@@ -20,7 +25,7 @@ from agent_orchestrator.api.planning_authorization import PlanningAuthorizationA
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.storage.store import Store
 
-db_path, mode = sys.argv[1:]
+db_path, mode, mission_id = sys.argv[1:]
 store = Store.open(db_path)
 if mode == "inside":
     store.connection.create_function("process_abort", 0, lambda: os._exit(87))
@@ -31,26 +36,24 @@ if mode == "inside":
     )
 PlanningAuthorizationApi(
     store, tenant_id="tenant-a", principal=Principal("host")
-).issue("m-auth", command_id="cmd-process", request_id="req-auth")
+).issue(mission_id, command_id="cmd-process", request_id="req-auth")
 os._exit(88)
 """
 
 
-def _seed(path: Path) -> None:
+def _seed(root: Path) -> tuple[Path, str]:
+    mission = seed_product_missions(root, "m-auth")["m-auth"]
+    path = product_db(root)
     store = Store.open(path)
     store.connection.execute("PRAGMA journal_mode = WAL")
-    store.insert_mission(_mission(), spec_hash="f" * 64)
-    store.connection.execute(
-        "INSERT INTO mission_planning_protocols VALUES (?,?,?,?,?,?)",
-        ("m-auth", "planning-decision-v1", 1, "p1", "g" * 64, 2.0),
-    )
-    PlanningDecisionStore(store).insert_planning_request(_request())
+    PlanningDecisionStore(store).insert_planning_request(_request(store, mission))
     store.close()
+    return path, mission
 
 
-def _run_child(path: Path, mode: str) -> subprocess.CompletedProcess[str]:
+def _run_child(path: Path, mode: str, mission: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-c", _CHILD, str(path), mode],
+        [sys.executable, "-c", _CHILD, str(path), mode, mission],
         check=False,
         capture_output=True,
         text=True,
@@ -71,10 +74,9 @@ def _authority_rows(store: Store) -> tuple[list[tuple], list[tuple]]:
 
 
 def test_i03_process_exit_between_grant_and_side_binding_recovers_neither(tmp_path: Path) -> None:
-    path = tmp_path / "i03-inside.db"
-    _seed(path)
+    path, mission = _seed(tmp_path / "i03-inside")
 
-    child = _run_child(path, "inside")
+    child = _run_child(path, "inside", mission)
     assert child.returncode == 87, (child.stdout, child.stderr)
 
     recovered = Store.open(path)
@@ -89,10 +91,9 @@ def test_i03_process_exit_between_grant_and_side_binding_recovers_neither(tmp_pa
 def test_i03_process_exit_after_issue_replays_original_receipt_without_resigning(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "i03-after.db"
-    _seed(path)
+    path, mission = _seed(tmp_path / "i03-after")
 
-    child = _run_child(path, "after")
+    child = _run_child(path, "after", mission)
     assert child.returncode == 88, (child.stdout, child.stderr)
 
     recovered = Store.open(path)
@@ -103,7 +104,7 @@ def test_i03_process_exit_after_issue_replays_original_receipt_without_resigning
 
     replay = PlanningAuthorizationApi(
         recovered, tenant_id="tenant-a", principal=Principal("host")
-    ).issue("m-auth", command_id="cmd-process", request_id="req-auth")
+    ).issue(mission, command_id="cmd-process", request_id="req-auth")
 
     assert replay.issuer_receipt_hash == receipt_hash
     assert recovered.connection.total_changes == changes_before
