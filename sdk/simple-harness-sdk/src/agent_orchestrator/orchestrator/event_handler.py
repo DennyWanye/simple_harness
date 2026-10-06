@@ -3000,11 +3000,17 @@ class Orchestrator:
                     "the Planner is asked once for this plan revision before the Mission is stopped"
                 )
                 continue
+            # 车道 J H03（原计划 §10.5、§24.1 第 10 条）：问过规划器、它不改、等待关系成环 → 按"死锁"停，
+            # 不借"没有可派发的工作"；环的事实随停止详情写出。
+            from ..scheduling.wait_for import collect_wait_facts, deadlock_facts, has_deadlock
+            wait_for = deadlock_facts(collect_wait_facts(self.store, new_mode.network(mission.id)))
             self._commit_fail_mission(
                 mission.id,
-                stop_reason=MissionStopReason.NO_DISPATCHABLE_WORK,
+                stop_reason=(MissionStopReason.DEADLOCK if has_deadlock(wait_for)
+                             else MissionStopReason.NO_DISPATCHABLE_WORK),
                 detail={
                     "plan_revision": int(admissions.plan_revision),
+                    "wait_for": wait_for,
                     # 这一版计划问过规划器（请求编号、它那一轮有没有开出来）之后仍停在原地。
                     "planner_asked": repair_requests.stall_request_asked(
                         self.store, mission.id, int(admissions.plan_revision)),
