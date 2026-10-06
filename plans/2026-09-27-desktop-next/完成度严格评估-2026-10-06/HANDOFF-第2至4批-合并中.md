@@ -6,7 +6,7 @@
 
 ## 未合并（各自分支已提交、未推送）
 - G `batch2-g` afc692b6（迁移 45，合并时 schema.py 的 MIGRATIONS 顺序要 44,45,46）。
-- I2 `batch2-i2` 52f8e382。L `batch2-l` 11ec12c2。N `batch2-n`（合并时可能仍在跑）。
+- I2 `batch2-i2` 52f8e382。L `batch2-l` 11ec12c2。N `batch2-n` 1c4d337d（已完工：A01 权限重读、A17 closeout-v1、A07 HANDED_OFF→DRAINING；与 I1 同改 assurance_final_writer.py 与 api/assurance.py，合并时对记录第三节三处；接缝脚本哈希变了，C04/C05 接缝证据要重跑）。
 - 每条车道的"留给主会话"清单在各自 `第2批-车道X-记录.md` 与子代理汇报里。
 
 ## 当前红测试（1 条，已定位到车道 H）
