@@ -87,3 +87,46 @@ async def test_an_unreadable_recovery_status_means_nothing_is_isolated(orchestra
         assert service.mission_detail(mission_id)["recovery_isolated"] is None
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_write_to_an_isolated_mission_is_refused_with_the_sdks_code_and_cancel_still_works(
+    orchestration_root, principal
+):
+    """N3-27：SDK 门面对被隔离任务的推进类写入报 ``MISSION_RECOVERY_ISOLATED``。Host 把码原样透给界面
+    （IPC 回执的 ``error_code``）与主对话（``mission_amend`` 的拒绝码），给人看的话换成同一句
+    ``RECOVERY_ISOLATED_NOTE``；取消照常。没被隔离的任务同一个请求不报这个码。
+
+    这里直接把任务放进 SDK 第 3 步写的那张隔离名单（``Orchestrator.recovery_isolated`` 只读它）。"""
+    from deskpet.orchestration.chat_tool import MissionStartRefused, amend_mission
+
+    service = OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(missions=2),
+                                   principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+    await service.start()
+    try:
+        bad = service.create_mission(notes_request("iso-write-bad"))["mission_id"]
+        good = service.create_mission(notes_request("iso-write-good"))["mission_id"]
+        service._orchestrator._recovery_isolated[bad] = {"tables": ["missions"], "silent_changes": []}
+
+        approve = {"command_id": "c-iso", "proposal": {}, "approval_source": "HUMAN",
+                   "expected_requirements_ref": {"id": "r", "revision": 1, "content_hash": "0" * 64}}
+        refused = await handle(service, "mission_operation_completion_approve",
+                               {"request_id": "a1", "mission_id": bad, **approve})
+        assert refused["payload"]["ok"] is False
+        assert refused["payload"]["error_code"] == "MISSION_RECOVERY_ISOLATED"
+        assert refused["payload"]["error"] == RECOVERY_ISOLATED_NOTE
+        other = await handle(service, "mission_operation_completion_approve",
+                             {"request_id": "a2", "mission_id": good, **approve})
+        assert other["payload"]["error_code"] != "MISSION_RECOVERY_ISOLATED"
+
+        revision = int(service.mission_detail(bad)["operation_workspace"]["requirements_ref"]["revision"])
+        with pytest.raises(MissionStartRefused) as caught:
+            amend_mission(lambda: service, {"mission_id": bad, "expected_revision": revision, "reason": "加一条",
+                                            "changes": [{"op": "add", "statement": "file:MORE.md"}]},
+                          run_id="run-iso", call_id="call-iso")
+        assert caught.value.code == "MISSION_RECOVERY_ISOLATED" and str(caught.value) == RECOVERY_ISOLATED_NOTE
+
+        cancelled = await handle(service, "mission_cancel", {"request_id": "c1", "mission_id": bad})
+        assert cancelled["payload"]["ok"] is True and cancelled["payload"]["data"]["status"] == "CANCELLED"
+    finally:
+        await service.close()

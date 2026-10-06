@@ -71,6 +71,8 @@ FACADE_CODES = {
     "integrity_error": "integrity_error",
     "refused": "sdk_refused",
 }
+#: 码原样透给界面与主对话；要给人看的话按码换成 Host 的一句（N3-27：被隔离任务的推进类写入被 SDK 拒绝）
+FACADE_MESSAGES = {"MISSION_RECOVERY_ISOLATED": RECOVERY_ISOLATED_NOTE}
 
 
 class OrchestrationRequestError(RuntimeError):
@@ -1146,7 +1148,8 @@ class OrchestrationService:
         try:
             return getattr(control, method)(*args, **kwargs)
         except FacadeError as error:
-            raise OrchestrationRequestError(FACADE_CODES.get(error.code, error.code), str(error)) from error
+            raise OrchestrationRequestError(FACADE_CODES.get(error.code, error.code),
+                                            FACADE_MESSAGES.get(error.code, str(error))) from error
 
     def _secret_values(self) -> tuple[str, ...]:
         return () if self._snapshot is None else (self._snapshot.api_key,)
