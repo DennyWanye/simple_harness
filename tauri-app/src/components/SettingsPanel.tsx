@@ -217,7 +217,7 @@ export function SettingsPanel({
         {/* ================ 任务与会话数据 (2026-09-25 条目 7：只统计、只提醒，不删除) ================ */}
         <StorageUsageSection getChannel={getChannel} />
 
-        {/* ================ 任务全局预算 (第 2 批 H11，原计划 §18.2) ================ */}
+        {/* ================ 本月全局预算 (第 2 批 H11 / 车道 P，原计划 §18.2) ================ */}
         <GlobalBudgetSection getChannel={getChannel} />
 
         {/* ================ 任务发布目录 (NEXT-TG-1.0 §9) ================ */}
@@ -1029,12 +1029,19 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
 }
 
 // ---------------------------------------------------------------------------
-// 任务全局预算（第 2 批 H11，2026-10-06；原计划 §18.2 Global Budget）：这台机器所有任务合计的
-// token 上限。只读说明：数值在 config.toml 的 [orchestration] global_max_tokens 里改，重启后生效。
+// 本月全局预算（第 2 批 H11 / 车道 P，2026-10-06；原计划 §18.2 Global Budget）：这台机器所有任务
+// 每个自然月合计的 token 上限（月配额）。只读说明：数值在 config.toml 的 [orchestration]
+// global_monthly_max_tokens 里改，重启后生效。
 
 export type GlobalBudgetData = {
-  max_tokens: number; opened: boolean; reserved_tokens: number; settled_tokens: number; remaining_tokens: number;
+  month: string; max_tokens: number; opened: boolean; used_tokens: number; reserved_tokens: number; remaining_tokens: number;
 };
+
+/** "2026-10" → "2026 年 10 月"；认不出的原样返回。 */
+export function formatMonth(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  return m ? `${m[1]} 年 ${Number(m[2])} 月` : month;
+}
 
 /** token 数按中文习惯：≥1 亿写"亿"，≥1 万写"万"，最多两位小数，整数不带小数。 */
 export function formatTokens(value: number): string {
@@ -1067,19 +1074,19 @@ export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlC
     return () => { off(); };
   }, [getChannel]);
 
-  const used = data ? data.settled_tokens : 0;
   return (
     <section style={sectionStyle} data-testid="global-budget">
-      <h3 style={h3Style}>任务全局预算</h3>
+      <h3 style={h3Style}>本月全局预算</h3>
       <p style={hintStyle}>
-        这台机器上所有后台任务合计可用的 token 上限（单个任务默认上限 2000 万、每一步 300 万不变）。
-        它是累计的：用掉的和预留中的一直加着，不随任务结束归零；用完后新任务会在第一轮规划时停下、正在跑的任务也会停下，
-        在 config.toml 的 [orchestration] 里调大 global_max_tokens 并重启即可继续。
+        这台机器上所有后台任务每个月合计可用的 token 上限（单个任务默认上限 2000 万、每一步 300 万不变）。
+        任务的用量算在它建立的那个月；每月 1 日自动换成新的一个月，额度重新是满的。
+        本月用完后新任务会在第一轮规划时停下、本月建立的任务也会停下；
+        在 config.toml 的 [orchestration] 里调大 global_monthly_max_tokens 并重启，下一个新任务建立时生效。
       </p>
       <div role="status" data-testid="global-budget-status" style={{ ...statusStyle, color: data ? dark.text : dark.textMuted }}>
         {data === null ? (error ?? "读取中…")
-          : !data.opened ? `上限 ${formatTokens(data.max_tokens)}；还没有任务用过`
-          : `上限 ${formatTokens(data.max_tokens)}；已用 ${formatTokens(used)}，预留中 ${formatTokens(data.reserved_tokens)}，剩余 ${formatTokens(data.remaining_tokens)}`}
+          : !data.opened ? `${formatMonth(data.month)}：上限 ${formatTokens(data.max_tokens)}；本月还没有任务用过`
+          : `${formatMonth(data.month)}：上限 ${formatTokens(data.max_tokens)}；已用 ${formatTokens(data.used_tokens)}，预留中 ${formatTokens(data.reserved_tokens)}，剩余 ${formatTokens(data.remaining_tokens)}`}
       </div>
     </section>
   );

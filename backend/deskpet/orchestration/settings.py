@@ -52,13 +52,14 @@ class OrchestrationSettings:
     default_mission_max_tokens: int = 20_000_000
     task_max_tokens: int = 3_000_000
     default_mission_max_attempts: int = 12
-    # 第 2 批 H11（原计划 §18.2 Global Budget、§28 "多 Mission 配额"，2026-10-06）：这台机器上
-    # 所有任务合计的 token 上限，是 SDK 全局账户（``GLOBAL_ACCOUNT``）的额度，每个任务的账户都挂
-    # 在它下面（子不超父）。全局账户是累计的：已预留 + 已结清一直加，不随任务结束归零；用完后
-    # 新任务第一轮规划就以 budget_exhausted（scope=global）停下，在跑的任务同样停下，调大这个数
-    # 即可继续。任务预算超过它的新任务按 SDK 现有拒绝路径如实报（invalid_request）。
-    # 默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 300 万不变（2026-09-26 用户决定）。
-    global_max_tokens: int = 2_000_000_000
+    # 第 2 批 H11（原计划 §18.2 Global Budget、§28 "多 Mission 配额"，2026-10-06）+ 车道 P（同日晚
+    # 用户定）：这台机器上所有任务每个自然月合计的 token 上限（月配额）。SDK 每月一个全局总账
+    # （``budget:global:YYYY-MM``，本机本地时间的月份），任务账户挂在建立当月的总账下（子不超父），
+    # 任务的全部用量按任务建立月份计，月初自然是新的空账。当月用完后新任务第一轮规划就以
+    # budget_exhausted（scope=global）停下，当月建立、在跑的任务同样停下；调大这个数并重启，
+    # 当月下一个新任务建立时当月总账的上限随之改。任务预算超过它的新任务按 SDK 现有拒绝路径如实报
+    # （invalid_request）。默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 300 万不变（2026-09-26）。
+    global_monthly_max_tokens: int = 2_000_000_000
     # New Missions' context window: 512K by default, 256K on request (user 2026-10-04);
     # an existing Mission keeps the pool it was frozen on.
     context_input_tokens: int = 524_288
@@ -141,8 +142,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
         storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
         # 下限是单任务默认上限：再小默认任务一个都建不了（§18.2 子不超父）
-        global_max_tokens=_bounded_int(
-            raw.get("global_max_tokens"), OrchestrationSettings.global_max_tokens,
+        global_monthly_max_tokens=_bounded_int(
+            raw.get("global_monthly_max_tokens"), OrchestrationSettings.global_monthly_max_tokens,
             OrchestrationSettings.default_mission_max_tokens, 10**12,
         ),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),

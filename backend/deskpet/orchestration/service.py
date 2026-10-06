@@ -24,6 +24,7 @@ import logging
 import os
 import secrets
 import sys
+import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import asdict
 from pathlib import Path
@@ -352,8 +353,9 @@ class OrchestrationService:
             deployment_policy=self._deployment,
             sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
             task_max_tokens=self.settings.task_max_tokens,  # fixed per-leaf allowance
-            # 第 2 批 H11：§18.2 Global → Mission → Task；全局账户在第一个任务建立时打开
-            global_budget=Budget(max_tokens=self.settings.global_max_tokens),
+            # 第 2 批 H11 / 车道 P：§18.2 Global → Mission → Task；全局预算是月配额，
+            # 当月总账在当月第一个任务建立时打开
+            global_budget=Budget(max_tokens=self.settings.global_monthly_max_tokens),
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
@@ -1005,24 +1007,23 @@ class OrchestrationService:
         return None
 
     def _global_budget_status(self) -> dict[str, Any]:
-        """第 2 批 H11：全局账户（所有任务合计）的上限与用量，设置页据此写说明。账户在第一个
-        任务建立时才打开；没打开时用量为 0。读不到账本（服务没起来）也只报上限。"""
-        limit = int(self.settings.global_max_tokens)
-        row = {"max_tokens": limit, "opened": False, "reserved_tokens": 0, "settled_tokens": 0,
-               "remaining_tokens": limit}
-        if self._orchestrator is None or self._state not in ("available", "degraded"):
-            return row
-        from agent_orchestrator.governance.budgets import BudgetError
-        from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT
+        """第 2 批 H11 / 车道 P：本月全局总账（所有任务按建立月份合计）的月份、上限、已用、预留中、
+        剩余，设置页据此写说明。当月总账在当月第一个任务建立时才打开；没打开时用量为 0。读不到
+        账本（服务没起来）也报月份与配置的月配额。月份与账户都由 SDK 算（``global_account_id``）。"""
+        from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_id
 
-        try:
-            with self._orchestrator.store.transaction():
-                pool = self._orchestrator.commit.ledger.account(GLOBAL_ACCOUNT)
-        except BudgetError:
+        running = self._orchestrator is not None and self._state in ("available", "degraded")
+        now = self._orchestrator.store.now if running else time.time()
+        limit = int(self.settings.global_monthly_max_tokens)
+        row = {"month": global_account_id(now).removeprefix(GLOBAL_ACCOUNT_PREFIX), "max_tokens": limit,
+               "opened": False, "used_tokens": 0, "reserved_tokens": 0, "remaining_tokens": limit}
+        pool = self._orchestrator.commit.global_account() if running else None
+        if pool is None:
             return row
         remaining = pool.remaining_tokens()
-        return {"max_tokens": int(pool.limits.max_tokens or limit), "opened": True,
-                "reserved_tokens": int(pool.reserved_tokens), "settled_tokens": int(pool.settled_tokens),
+        return {**row, "month": pool.account_id.removeprefix(GLOBAL_ACCOUNT_PREFIX),
+                "max_tokens": int(pool.limits.max_tokens or limit), "opened": True,
+                "used_tokens": int(pool.settled_tokens), "reserved_tokens": int(pool.reserved_tokens),
                 "remaining_tokens": int(limit if remaining is None else remaining)}
 
     def _mission_token_default(self, profile_id: str | None = None) -> int:

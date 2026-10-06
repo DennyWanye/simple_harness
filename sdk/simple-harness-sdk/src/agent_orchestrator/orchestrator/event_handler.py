@@ -179,12 +179,12 @@ from .action_commits import (
     parse_action_criterion,
 )
 from .commit_service import (
-    GLOBAL_ACCOUNT,
     CommitRejected,
     CommitService,
     MissionSpec,
     Reservation,
     mission_account,
+    is_global_account,
     task_account,
 )
 from ..deployment.root import current_criteria, current_statements
@@ -4101,7 +4101,7 @@ class Orchestrator:
                     "account": error.account_id,
                     "phase": phase,
                     "ordinal": ordinal,
-                    "scope": "global" if error.account_id == GLOBAL_ACCOUNT else "mission",
+                    "scope": "global" if is_global_account(error.account_id) else "mission",
                 },
                 stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
             )
@@ -4152,7 +4152,7 @@ class Orchestrator:
                 "account": error.account_id,
                 "phase": "planning",
                 # review P1-1: the Global pool is named as such — no Mission is to blame
-                "scope": "global" if error.account_id == GLOBAL_ACCOUNT else "mission",
+                "scope": "global" if is_global_account(error.account_id) else "mission",
             }
             self._commit_fail_planning(
                 mission.id,
@@ -9083,11 +9083,16 @@ class Orchestrator:
         """(reservable now, not yet spent) on the Task → Mission → Global chain."""
 
         accounts = [task_account(task.id), mission_account(mission.id)]
-        if self._config.global_budget is not None:
-            accounts.append(GLOBAL_ACCOUNT)
         reservable: int | None = None
         spent_room: int | None = None
         with self.store.transaction():
+            # the Global account of the Mission's creation month is its pool's parent (车道 P)
+            try:
+                pool_parent = self.commit.ledger.account(mission_account(mission.id)).parent_id
+            except BudgetError:
+                pool_parent = None
+            if pool_parent is not None:
+                accounts.append(pool_parent)
             for account_id in accounts:
                 try:
                     snap = self.commit.ledger.account(account_id)
@@ -10710,7 +10715,7 @@ class Orchestrator:
                 if error.dimension == "attempts"
                 else MissionStopReason.BUDGET_EXHAUSTED
             )
-            if error.account_id == GLOBAL_ACCOUNT:
+            if is_global_account(error.account_id):
                 # review P1-1 / D6-1': the deployment-wide pool ran out — no Task and no
                 # Mission is to blame; the Mission stops with the Global scope named
                 reason = MissionStopReason.BUDGET_EXHAUSTED

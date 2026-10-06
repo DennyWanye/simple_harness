@@ -140,6 +140,18 @@ class BudgetLedger:
         )
         return self.account(account_id)
 
+    def set_limits(self, account_id: str, limits: Budget) -> None:
+        """Replace an account's limits (the monthly Global quota follows the deployment's
+        configuration).  What is reserved and settled stays on the books."""
+
+        cursor = self._store.connection.execute(
+            "UPDATE budget_accounts SET limits_json = ?, version = version + 1, updated_at = ?"
+            " WHERE account_id = ?",
+            (canonical_json(limits.to_json()), self._store.now, account_id),
+        )
+        if cursor.rowcount != 1:
+            raise BudgetError(f"unknown budget account {account_id}")
+
     def account(self, account_id: str) -> AccountSnapshot:
         row = self._store.connection.execute(
             "SELECT * FROM budget_accounts WHERE account_id = ?", (account_id,)

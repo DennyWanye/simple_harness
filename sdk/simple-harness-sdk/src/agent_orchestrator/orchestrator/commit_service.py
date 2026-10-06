@@ -17,6 +17,7 @@ import hashlib
 import contextlib
 
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, TYPE_CHECKING
@@ -238,7 +239,22 @@ def mission_account(mission_id: str) -> str:
     return f"budget:{mission_id}"
 
 
-GLOBAL_ACCOUNT = "budget:global"  # step 6 (D6-1): §18.2 "Global Budget" above every Mission
+#: step 6 (D6-1): §18.2 "Global Budget" above every Mission.  第 2 批车道 P（2026-10-06 用户定）：
+#: 全局预算是按月配额——每个自然月一个全局总账 ``budget:global:YYYY-MM``，月初自然是一个新的空账。
+GLOBAL_ACCOUNT_PREFIX = "budget:global:"
+
+
+def global_account_id(at: float) -> str:
+    """The Global Budget account of the calendar month ``at`` falls in (this machine's local
+    time; ``at`` is a store-clock instant).  The one place that spells the account id."""
+
+    return GLOBAL_ACCOUNT_PREFIX + time.strftime("%Y-%m", time.localtime(at))
+
+
+def is_global_account(account_id: str) -> bool:
+    """Whether ``account_id`` is a (monthly) Global Budget account — the one test for it."""
+
+    return account_id.startswith(GLOBAL_ACCOUNT_PREFIX)
 
 
 def task_account(task_id: str) -> str:
@@ -513,13 +529,14 @@ class CommitService(ProtectedTailCommitsMixin,
                 )
 
     def global_account(self) -> AccountSnapshot | None:
-        """The deployment-wide account (§18.2 Global Budget), if this deployment set one."""
+        """This month's deployment-wide account (§18.2 Global Budget, a monthly quota), if this
+        deployment set one and a Mission was created this month (the account opens then)."""
 
         if self._global_budget is None:
             return None
         with self._store.transaction():
             try:
-                return self._ledger.account(GLOBAL_ACCOUNT)
+                return self._ledger.account(global_account_id(self._store.now))
             except BudgetError:
                 return None
 
@@ -745,14 +762,19 @@ class CommitService(ProtectedTailCommitsMixin,
             parent: str | None = None
             limits = spec.budget
             if self._global_budget is not None:  # D6-1: Global → Mission (§18.2), never the reverse
-                self._ledger.open_account(
-                    account_id=GLOBAL_ACCOUNT,
+                # 按任务建立月份计（第 2 批车道 P）：任务挂在建立当月的全局总账下，它的全部用量
+                # 都记在这个月，哪怕它跨月才跑完。当月第一个任务把这个月的账户打开；上限始终是
+                # 部署配置的月配额（配置改了，当月下一个新任务建立时随之改）。
+                parent = global_account_id(mission.created_at)
+                pool = self._ledger.open_account(
+                    account_id=parent,
                     scope="global",
                     parent_id=None,
                     mission_id="global",
                     limits=self._global_budget,
                 )
-                parent = GLOBAL_ACCOUNT
+                if pool.limits != self._global_budget:
+                    self._ledger.set_limits(parent, self._global_budget)
                 # a dimension the Mission does not name is inherited from the Global cap
                 # (review P0-2: ``fits_within`` treats an unnamed child dimension as unbounded)
                 limits = effective_budget
@@ -3549,9 +3571,12 @@ class CommitService(ProtectedTailCommitsMixin,
 __all__ = (
     "CommitRejected",
     "CommitService",
+    "GLOBAL_ACCOUNT_PREFIX",
     "MissionConflict",
     "MissionSpec",
     "Reservation",
+    "global_account_id",
+    "is_global_account",
     "mission_account",
     "task_account",
 )
