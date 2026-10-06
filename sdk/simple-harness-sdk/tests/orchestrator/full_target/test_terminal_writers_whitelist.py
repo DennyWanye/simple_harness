@@ -186,8 +186,6 @@ WHITELIST: dict[Site, str] = {
         "主循环两段判定（带动作的任务）",
     ("entry", "orchestrator/commit_service.py", "CommitService.judge_mission", "request_assured_closeout"):
         "判定'满足'→请求收尾，不写完成",
-    ("entry", "orchestrator/commit_service.py", "CommitService.finalize_assured_mission", "finalize_assured_mission"):
-        "唯一完成写方的提交服务包装（生产只经收尾消费者的 finalizer 调用）",
 }
 
 

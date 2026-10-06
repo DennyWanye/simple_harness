@@ -86,6 +86,7 @@ _GONE = (
     "RootReviewRequest", "REQUIREMENTS_REVISION_SEMANTICS", "excerpt_of",  # 旧根审阅请求
     "PARENT_COMPOUND_TASK", "parent_compound_task",                 # 合同账户名与实际一致
     "CLOSEOUT_ROOT_NETWORK_UNAVAILABLE",                            # 不可达分支的码
+    "merge_accepted", "collect_upstream_inputs", "materialise_inputs",  # 全祖先扫描（主会话补派）
 )
 
 

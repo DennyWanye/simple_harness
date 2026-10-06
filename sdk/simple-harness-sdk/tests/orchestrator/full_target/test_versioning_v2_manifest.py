@@ -9,19 +9,17 @@ Five properties (plan §24.1 decisions 3, 4 and 11; annex TG §10.1-10.3):
    declared ``DataRequirement`` rows and nothing else, and ``materialise_v2``
    places exactly the entries the manifest resolved to.
 2. **ORDER grants no read.**  A predecessor connected only by an ``OrderConstraint``
-   contributes no file however many artifacts it accepted — the same world run
-   through the *legacy* ``collect_upstream_inputs`` does hand that file over, which
-   is what makes the two modes' difference a fact and not a claim (T015 / T066).
+   contributes no file however many artifacts it accepted (T015 / T066).  The old
+   all-ancestors sweep that did hand that file over is deleted (2026-10-06).
 3. **One path, two hashes, no merge.**  A collision is ``ArtifactConflict`` with
    both candidates named; the same hash at one place is one file two bindings agree
    on and is not a conflict.  The old exact-path protection is therefore not
    relaxed by the new path existing.
 4. **A damaged projection stops the work.**  On the execution and materialisation
    path an unorderable projection raises ``GraphIntegrityError``; the diagnostic
-   readers keep calling the legacy functions and keep tolerating it.
-5. **The legacy functions did not move.**  The source text of ``merge_accepted``,
-   ``collect_upstream_inputs`` and ``topological`` is hash-locked, and their
-   behaviour is re-checked against the step-3 / step-4 shapes.
+   reader (``graph/terminal.py``) keeps calling ``topological`` and keeps tolerating it.
+5. **``topological`` did not move.**  Its source text is hash-locked (the other two
+   legacy functions it was locked with are gone, see the digest's note).
 """
 
 from __future__ import annotations
@@ -48,10 +46,8 @@ from agent_orchestrator.artifacts.input_bindings import (
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.artifacts.versioning import (
     ArtifactConflict,
-    collect_upstream_inputs,
     manifest_upstream_inputs,
     materialise_v2,
-    merge_accepted,
     resolve_input_manifest,
     topological,
 )
@@ -394,55 +390,6 @@ def test_an_order_only_predecessor_contributes_no_file() -> None:
     )
     result = resolve(snapshot, index_of(produced, stranger), witness_for(produced, stranger))
     assert [item.artifact_id for item in result.manifest.bindings] == ["art-1"]
-
-
-def test_the_same_world_does_hand_that_file_over_through_the_legacy_sweep() -> None:
-    """The contrast that makes the property above a fact rather than a claim."""
-
-    def task(task_id: str, *, deps: tuple[str, ...], artifact_ids: tuple[str, ...]) -> Task:
-        return Task(
-            id=task_id,
-            mission_id=str(MISSION),
-            parent_task_ids=(),
-            dependency_ids=deps,
-            goal=f"goal {task_id}",
-            rationale="legacy shape",
-            success_criteria=("file:report.md",),
-            verification_policy=("format_check",),
-            allowed_tools=("workspace_read_file",),
-            budget=Budget(max_tokens=1_000, max_attempts=1),
-            priority=1.0,
-            status=TaskStatus.COMPLETED,
-            version=1,
-            accepted_artifacts=artifact_ids,
-        )
-
-    def artifact(artifact_id: str, task_id: str, path: str, content: bytes) -> Artifact:
-        return Artifact(
-            id=artifact_id,
-            mission_id=str(MISSION),
-            task_id=task_id,
-            attempt_id=f"{task_id}:attempt-1",
-            type="file",
-            path=path,
-            version=1,
-            content_hash=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content),
-            produced_by="worker",
-        )
-
-    tasks = {
-        "task-1": task("task-1", deps=(), artifact_ids=("art-1",)),
-        "task-2": task("task-2", deps=(), artifact_ids=("art-2",)),
-        "task-3": task("task-3", deps=("task-1", "task-2"), artifact_ids=()),
-    }
-    artifacts = {
-        "task-1": [artifact("art-1", "task-1", "report.md", b"# report\n")],
-        "task-2": [artifact("art-2", "task-2", "other.md", b"# other\n")],
-    }
-    legacy = collect_upstream_inputs(tasks["task-3"], tasks, artifacts)
-    # The ORDER-only predecessor (task-2) *is* swept in by the old semantics…
-    assert sorted(item.path for item in legacy) == ["other.md", "report.md"]
 
 
 def test_an_order_edge_does_not_add_a_requirement_to_the_manifest() -> None:
@@ -805,115 +752,23 @@ def test_the_workspace_entry_point_refuses_a_read_only_copy(tmp_path) -> None:
         read_only.materialise_manifest((), {})
 
 
-# ================================================== the legacy functions did not move
-#: sha256 of the source text of the three legacy functions, in this order:
-#: ``topological``, ``merge_accepted``, ``collect_upstream_inputs``.  §18.2 asks for
-#: them byte for byte; a diff of one character changes this digest.
-LEGACY_SOURCE_DIGEST = "fe215c0d89c025dd70e79542b918adef67fafd62ba372e461f810cbfc438fea4"
+# ================================================== the one remaining legacy function
+#: sha256 of the source text of ``topological`` (§18.2 asks for it byte for byte; a diff of
+#: one character changes this digest).  2026-10-06 第 2 批车道 I2：``merge_accepted`` /
+#: ``collect_upstream_inputs`` / ``ancestors`` / ``materialise_inputs`` 的全祖先扫描没有生产调用方
+#: 了（车道 H 把归因与派发的依赖删掉），随之删除，基线按剩下的这一个函数重生成，不留旧版本。
+LEGACY_SOURCE_DIGEST = "a7c2135fa1d72f75cbd7456f0d724ea884a081fcc02b9b5c7f2168b949dbdcd2"
 
 
-def _legacy_source() -> str:
-    return "".join(
-        inspect.getsource(function)
-        for function in (topological, merge_accepted, collect_upstream_inputs)
-    )
+def test_topological_is_byte_for_byte_unchanged() -> None:
+    assert hashlib.sha256(inspect.getsource(topological).encode()).hexdigest() == LEGACY_SOURCE_DIGEST
 
 
-def test_the_three_legacy_functions_are_byte_for_byte_unchanged() -> None:
-    assert hashlib.sha256(_legacy_source().encode()).hexdigest() == LEGACY_SOURCE_DIGEST
-
-
-def test_the_new_entry_points_are_additions_and_not_rewrites() -> None:
+def test_the_all_ancestors_sweep_is_gone_and_the_manifest_path_is_exported() -> None:
     exported = set(versioning.__all__)
-    assert {"merge_accepted", "collect_upstream_inputs", "topological"} <= exported
+    assert "topological" in exported
+    assert not {"merge_accepted", "collect_upstream_inputs", "ancestors", "materialise_inputs"} & set(dir(versioning))
     assert {"resolve_input_manifest", "manifest_upstream_inputs", "materialise_v2"} <= exported
-
-
-def test_the_legacy_merge_still_overrides_along_a_dependency_chain() -> None:
-    def task(task_id: str, deps: tuple[str, ...], artifact_ids: tuple[str, ...]) -> Task:
-        return Task(
-            id=task_id,
-            mission_id=str(MISSION),
-            parent_task_ids=(),
-            dependency_ids=deps,
-            goal=f"goal {task_id}",
-            rationale="chain",
-            success_criteria=("file:a.md",),
-            verification_policy=("format_check",),
-            allowed_tools=("workspace_read_file",),
-            budget=Budget(max_tokens=1_000, max_attempts=1),
-            priority=1.0,
-            status=TaskStatus.COMPLETED,
-            version=1,
-            accepted_artifacts=artifact_ids,
-        )
-
-    def artifact(artifact_id: str, task_id: str, content: bytes) -> Artifact:
-        return Artifact(
-            id=artifact_id,
-            mission_id=str(MISSION),
-            task_id=task_id,
-            attempt_id=f"{task_id}:attempt-1",
-            type="file",
-            path="a.md",
-            version=1,
-            content_hash=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content),
-            produced_by="worker",
-        )
-
-    tasks = {
-        "task-1": task("task-1", (), ("art-1",)),
-        "task-2": task("task-2", ("task-1",), ("art-2",)),
-    }
-    artifacts = {
-        "task-1": [artifact("art-1", "task-1", b"first\n")],
-        "task-2": [artifact("art-2", "task-2", b"second\n")],
-    }
-    merged = merge_accepted(list(tasks.values()), artifacts, tasks_by_id=tasks)
-    assert [item.task_id for item in merged] == ["task-2"]  # the downstream wins
-
-
-def test_the_legacy_merge_still_refuses_two_independent_branches() -> None:
-    def task(task_id: str, artifact_ids: tuple[str, ...]) -> Task:
-        return Task(
-            id=task_id,
-            mission_id=str(MISSION),
-            parent_task_ids=(),
-            dependency_ids=(),
-            goal=f"goal {task_id}",
-            rationale="branches",
-            success_criteria=("file:a.md",),
-            verification_policy=("format_check",),
-            allowed_tools=("workspace_read_file",),
-            budget=Budget(max_tokens=1_000, max_attempts=1),
-            priority=1.0,
-            status=TaskStatus.COMPLETED,
-            version=1,
-            accepted_artifacts=artifact_ids,
-        )
-
-    def artifact(artifact_id: str, task_id: str, content: bytes) -> Artifact:
-        return Artifact(
-            id=artifact_id,
-            mission_id=str(MISSION),
-            task_id=task_id,
-            attempt_id=f"{task_id}:attempt-1",
-            type="file",
-            path="a.md",
-            version=1,
-            content_hash=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content),
-            produced_by="worker",
-        )
-
-    tasks = {"task-1": task("task-1", ("art-1",)), "task-2": task("task-2", ("art-2",))}
-    artifacts = {
-        "task-1": [artifact("art-1", "task-1", b"one\n")],
-        "task-2": [artifact("art-2", "task-2", b"two\n")],
-    }
-    with pytest.raises(ArtifactConflict):
-        merge_accepted(list(tasks.values()), artifacts, tasks_by_id=tasks)
 
 
 # 2026-10-06 第 2 批车道 H（T10）：原"决定 11：traces 不搬到新路径"的钉子删了——归因改为按根结论的

@@ -1721,9 +1721,4 @@ def test_the_module_imports_nothing_that_touches_the_filesystem() -> None:
         assert name.split(".")[0] not in {"os", "io", "pathlib", "shutil", "sqlite3"}, name
 
 
-def test_the_legacy_versioning_helpers_are_untouched_by_this_module() -> None:
-    from agent_orchestrator.artifacts import versioning
 
-    assert hasattr(versioning, "collect_upstream_inputs")
-    assert hasattr(versioning, "merge_accepted")
-    assert hasattr(versioning, "ArtifactConflict")

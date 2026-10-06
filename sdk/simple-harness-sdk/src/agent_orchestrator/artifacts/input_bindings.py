@@ -23,7 +23,7 @@ P2.3b wires them together:
 
 * it never reads a file, a workspace or a content-addressed store — the plan it
   produces says *where* bytes should go, and something else puts them there;
-* it never touches :mod:`.versioning`; the legacy all-ancestors merge keeps its
+* it never touches :mod:`.versioning`; the former all-ancestors merge kept its
   bytes and its ``ArtifactConflict`` semantics (plan §18.2, §24.1 decision 4);
 * it never propagates ORDER.  An ORDER-only predecessor has no DataRequirement,
   so it cannot appear in a manifest however many artifacts it accepted — which
@@ -852,9 +852,8 @@ def resolve_declared_inputs(
     different consumer would be absorbed silently as one of this task's inputs.
 
     Only the declared requirements are consulted.  An ORDER-only predecessor has
-    none, so it contributes nothing however many artifacts it accepted — the
-    all-ancestors sweep of :func:`.versioning.collect_upstream_inputs` is not
-    reached from here and is not changed by this module (TG §10.1, §10.3).
+    none, so it contributes nothing however many artifacts it accepted (TG §10.1,
+    §10.3); the all-ancestors sweep that used to live in :mod:`.versioning` is gone.
     """
 
     ports = {spec.port_key: spec for spec in consumer.input_ports}

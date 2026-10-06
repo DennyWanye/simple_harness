@@ -113,8 +113,8 @@ from .source_commits import SourceCommitsMixin
 from .state_machine import next_attempt, next_claim, next_mission, next_task
 
 #: P2.3k / defect N3.  Appended once per hierarchical Mission when the Mission Judge
-#: builds its integrated tree: the legacy ``merge_accepted`` (override legal only along
-#: ``Task.dependency_ids``, anything else an ``ArtifactConflict``) is not applied, because
+#: builds its integrated tree: the former all-ancestors merge (override legal only along
+#: ``Task.dependency_ids``, anything else an ``ArtifactConflict``; removed 2026-10-06) is not applied, because
 #: in this mode ``dependency_ids`` is empty by design (§18.5 constraint 4) and the rule
 #: read every pair of leaves that wrote the same path as "independent branches".  The
 #: Grok C3 episodes lost a root ``GoalResolution`` that already stood to exactly that
@@ -2541,8 +2541,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 "artifacts": int(artifacts),
                 "superseded": [dict(item) for item in superseded],
                 "detail": (
-                    "this Mission runs under the hierarchical semantics; the legacy "
-                    "merge_accepted reads 'independent branches' off Task.dependency_ids, "
+                    "this Mission runs under the hierarchical semantics; an all-ancestors "
+                    "merge would read 'independent branches' off Task.dependency_ids, "
                     "which the materialised occurrences leave empty by design, so two leaves "
                     "writing one path would be an artifact_conflict overturning a root "
                     "GoalResolution that already stands. The judgment tree is built from "
