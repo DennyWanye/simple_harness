@@ -35,11 +35,16 @@ def test_the_example_in_the_instructions_is_a_reply_the_decoder_accepts() -> Non
 def test_the_example_shows_every_field_and_nothing_else() -> None:
     example = _example()
     # 做法表态、摘要核对只对带对应一节的审查包；示例里给空，免得照抄成"范围错误"（阶段 C3）
-    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "claims", "methods"}
-    assert example["methods"] == []
+    assert set(example) == {"schema_version", "verdict", "assessments", "findings", "global_findings", "claims",
+                            "methods"}
+    assert example["methods"] == [] and example["global_findings"] == []
     for shape in ('{"method_ref": "做法编号@版本", "reusable": true, "purpose": "一句用途", "at_fault": false, '
-                  '"reason": "为什么这样判"}', '{"faithful": true, "reason": "为什么这样判"}'):
+                  '"reason": "为什么这样判"}', '{"faithful": true, "reason": "为什么这样判"}',
+                  '{"severity": "BLOCKER", "reason": "问题在哪、应当怎么改"}'):
         assert shape in REVIEW_INSTRUCTIONS
+    # 全局问题的形状示例原样放进回复，解码器照收（2026-10-06 晚，F04）
+    shown = json.loads('{"severity": "BLOCKER", "reason": "问题在哪、应当怎么改"}')
+    assert ReviewReply.from_json({**example, "global_findings": [shown]}).global_findings[0].severity == "BLOCKER"
     assert set(example["assessments"][0]) == {
         "criterion_id", "verdict", "evidence_ids", "reason", "limitations"
     }
@@ -51,7 +56,7 @@ def test_the_example_shows_every_field_and_nothing_else() -> None:
 @pytest.mark.parametrize("word", (
     # 字段
     "schema_version", "verdict", "assessments", "findings", "criterion_id", "evidence_ids",
-    "reason", "limitations", "severity", "claims", "methods", "summary", "reusable", "purpose",
+    "reason", "limitations", "severity", "global_findings", "claims", "methods", "summary", "reusable", "purpose",
     "at_fault", "faithful",
     # 取值
     "ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED", "PASS", "FAIL", "UNKNOWN",

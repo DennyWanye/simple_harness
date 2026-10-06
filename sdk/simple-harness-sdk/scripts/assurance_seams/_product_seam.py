@@ -58,7 +58,7 @@ class StepReviewer(ReviewScript):
 
 
 def cite(data: dict[str, Any], labels: list[str], *, verdict: str = "ACCEPT") -> str:
-    return json.dumps({"schema_version": 4, "verdict": verdict, "assessments": [
+    return json.dumps({"schema_version": 5, "verdict": verdict, "assessments": [
         {"criterion_id": c, "verdict": "PASS", "evidence_ids": list(labels), "reason": "cites the read evidence",
          "limitations": []} for c in data["criterion_ids"]], "findings": []}, ensure_ascii=False)
 

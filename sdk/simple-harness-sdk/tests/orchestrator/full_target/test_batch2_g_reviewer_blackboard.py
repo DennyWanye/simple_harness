@@ -7,7 +7,7 @@
 照旧保留——那是系统摆事实，与审阅员自取不是同一件事。
 
 * 工具常量：审阅员的四件工具 = 两件证据工具 + 两件知识工具；绑定只收这四件，别的拒绝；
-* 提示词：说明两件知识工具与"不是证据、不能写进 evidence_ids"；提示词版本升到 v2；
+* 提示词：说明两件知识工具与"不是证据、不能写进 evidence_ids"；提示词版本升到 v2（10-06 晚全局问题再升到 v3）；
 * 产品路径：内容审阅里审阅员调 ``knowledge_list`` 能拿到目录，审阅照常给结论、任务完成；
   审阅意图的 tool_names 带知识工具、prompt_version 是新版本；审查包仍带 related_entries。
 
@@ -33,7 +33,7 @@ KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 
 def test_the_reviewer_tool_set_is_the_evidence_tools_plus_the_blackboard_readers() -> None:
     assert ASSURANCE_REVIEWER_TOOLS == (*ASSURANCE_EVIDENCE_TOOLS, *KNOWLEDGE_TOOLS)
-    assert REVIEW_INSTRUCTIONS_VERSION == "assurance-review-instructions-v2"
+    assert REVIEW_INSTRUCTIONS_VERSION == "assurance-review-instructions-v3"
     for name in KNOWLEDGE_TOOLS:
         assert name in REVIEW_INSTRUCTIONS, name
     # 查到的知识不是证据：不能写进 evidence_ids；审查包里的相关条目仍然在提示词里

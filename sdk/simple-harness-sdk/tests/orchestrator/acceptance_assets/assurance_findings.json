@@ -50,19 +50,24 @@
   {
    "id": "F04",
    "what": "检查与审阅的真值表",
-   "status": "PARTIAL",
+   "status": "COVERED",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_checked_policy_truth_table",
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_formula_truth_tables",
     "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_check_receipt_scope",
-    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_any_branch_not_mandatory"
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_any_branch_not_mandatory",
+    "tests/orchestrator/full_target/assurance_exec/test_global_findings.py::test_the_decoder_takes_global_findings_and_refuses_a_wrong_shape",
+    "tests/orchestrator/full_target/assurance_exec/test_global_findings.py::test_a_blocker_global_finding_fails_the_mandatory_criteria_and_nothing_less",
+    "tests/orchestrator/full_target/assurance_exec/test_global_findings.py::test_a_blocker_global_finding_on_an_accept_reply_sends_the_step_back",
+    "tests/orchestrator/full_target/assurance_exec/test_global_findings.py::test_a_warning_global_finding_does_not_block"
    ],
    "mutations": [
     "AS-FM02",
     "AS-FM03",
-    "AS-M01"
+    "AS-M01",
+    "AS-F04G"
    ],
-   "gap": "真值表、检查回执范围、必须项不被任一分支绕过都有用例守着（改坏 AS-FM02 / AS-FM03 / AS-M01 抓到）。缺的是原计划\"全局安全问题必须挂到必须项\"：现行回复格式里每条 finding 必须点名一条准则（assurance/checks.py ReviewReply.from_json：不在目录里的 criterion_id 拒 FINDING_SCOPE），没有\"全局\"finding 这个形态，也就没有把它挂到必须项的实现和用例。2026-10-06 车道 M 核对，未补齐（第 1 批车道 C 记录第四节偏差单 3 已提）"
+   "gap": "2026-10-06 晚第 2 批车道 Q 补齐全局问题：审阅回复第 5 版多了 global_findings（severity + reason，三档沿用）；BLOCKER 的全局问题把必须项（没有必须项时全部准则）判为不成立，这次审阅不形成接受、走现有打回路径，审阅员原话写进这些准则的说明随打回交出；WARNING / INFO 不挡。是不是安全问题由审阅员判断，系统不做关键词匹配。改坏 AS-F04G 抓到。"
   },
   {
    "id": "F05",
@@ -129,16 +134,18 @@
   {
    "id": "F09",
    "what": "事件不丢、不重复、自己的事件不循环",
-   "status": "PARTIAL",
+   "status": "COVERED",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_event_cursor_atomicity",
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_two_connection_concurrency",
-    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_bounded_restartable_replay"
+    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_bounded_restartable_replay",
+    "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_a_budget_blocked_review_does_not_hold_back_later_events"
    ],
    "mutations": [
-    "AS-FM08"
+    "AS-FM08",
+    "AS-F09B"
    ],
-   "gap": "事件游标与待办同事务、两连接并发、有界可重启重放都有用例守着（改坏 AS-FM08 抓到）。缺的是原计划\"一个卡在预算上的审阅不挡后面的事件入箱\"：现行只有代码结构保证（orchestrator/assurance_tick.py：先把每个消费者的事件全部入箱，再做昂贵的准备），test_c_assurance 里没有一条用例造\"审阅被预算卡住、随后的撤权事件照样入箱\"的局面。2026-10-06 车道 M 核对，未补齐（第 1 批车道 C 记录第四节偏差单 3 已提）"
+   "gap": "2026-10-06 晚第 2 批车道 Q 补齐：产品同形世界里一次内容审阅卡在预算上（首次回复格式错且用量说不清，格式修复要先结清 → BUDGET_WAIT），它又到点的那一轮开始前用户换资料版本；断言准备它时资料变更已全部入箱、它被同一事件唤醒合并成同一项、之后几轮不重复入箱也不为自身状态事件生新工作。改坏 AS-F09B（入箱挪到准备之后）抓到。"
   },
   {
    "id": "F10",

@@ -17,6 +17,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from ..assurance.checks import REVIEW_REPLY_SCHEMA_VERSION
 from .fixtures import RoleScriptedProvider, package_of, role_of
 
 #: 保证通道的审阅请求不带 ``[role:…]`` 标记，脚本化提供者把它归在这个名字下。
@@ -178,9 +179,9 @@ def review_input(request: Any) -> dict[str, Any] | None:
 
 def review_reply(
     package: dict[str, Any], *, verdict: str = "ACCEPT", grade: str = "PASS", reason: str = "脚本化审阅：材料满足这条要求。",
-    methods: Any = None, summary: Any = None,
+    methods: Any = None, summary: Any = None, global_findings: Any = None,
 ) -> str:
-    """``methods`` / ``summary`` (回复第 4 版)：给了就写进回复；``methods`` 可以是一个函数，拿审查包里
+    """``methods`` / ``summary`` (回复第 4 版)、``global_findings``（第 5 版）：给了就写进回复；``methods`` 可以是一个函数，拿审查包里
     ``methods_to_judge`` 的每一行、回一项（或 None 不写）。"""
     labels = [item["label"] for item in package.get("evidence", ())][:64]
     inner = package.get("package") or {}
@@ -194,10 +195,12 @@ def review_reply(
         summary = summary(inner.get("summary_to_confirm")) if inner.get("summary_to_confirm") else None
     if summary is not None:
         extra["summary"] = dict(summary)
+    if global_findings is not None:
+        extra["global_findings"] = [dict(item) for item in global_findings]
     return json.dumps(
         {
             **extra,
-            "schema_version": 4,
+            "schema_version": REVIEW_REPLY_SCHEMA_VERSION,
             "verdict": verdict,
             "assessments": [
                 {

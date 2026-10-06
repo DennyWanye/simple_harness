@@ -255,6 +255,18 @@ class Finding:
 
 
 @dataclass(frozen=True, slots=True)
+class GlobalFinding:
+    """A problem the reviewer found that belongs to no single criterion (原计划 F04 后半；2026-10-06 晚补).
+
+    Whether it is a security problem, or a problem at all, is the reviewer's judgement; the
+    Harness only keeps the order: a BLOCKER one fails the mandatory criteria, see
+    :func:`global_blocker_targets`."""
+
+    severity: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
 class ClaimConfirmation:
     """The reviewer's word on one claim of the reviewed result (知识进库, 阶段 C)."""
 
@@ -285,13 +297,19 @@ class SummaryCheck:
 
 #: The reply's shape, level by level: the keys each object may carry.  One table, read
 #: by the strict parser below and by :func:`decode_review_reply`'s tolerance.
-_REPLY_KEYS = frozenset({"schema_version", "verdict", "assessments", "findings", "claims", "methods", "summary"})
+_REPLY_KEYS = frozenset({"schema_version", "verdict", "assessments", "findings", "global_findings", "claims",
+                         "methods", "summary"})
 _ASSESSMENT_KEYS = frozenset({"criterion_id", "verdict", "evidence_ids", "reason", "limitations"})
 _FINDING_KEYS = frozenset({"criterion_id", "severity", "reason"})
+_GLOBAL_FINDING_KEYS = frozenset({"severity", "reason"})
+#: The three severities, one table for criterion and global findings alike.
+SEVERITIES = frozenset({"BLOCKER", "WARNING", "INFO"})
 _CLAIM_KEYS = frozenset({"claim_id", "confirmed", "evidence_ids", "reason"})
 _METHOD_KEYS = frozenset({"method_ref", "reusable", "purpose", "at_fault", "reason"})
 _SUMMARY_KEYS = frozenset({"faithful", "reason"})
-REVIEW_REPLY_SCHEMA_VERSION = 4
+REVIEW_REPLY_SCHEMA_VERSION = 5
+#: At most this many global findings in one reply.
+MAX_GLOBAL_FINDINGS = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,12 +323,14 @@ class ReviewReply:
     methods: tuple[MethodJudgement, ...] = ()
     #: None when the reviewer did not speak about the summary (it then counts as unchecked).
     summary: SummaryCheck | None = None
+    #: Problems belonging to no single criterion; none written means none found.
+    global_findings: tuple[GlobalFinding, ...] = ()
 
     @classmethod
     def from_json(cls, value: object) -> ReviewReply:
         canonical(value)
         row = fields(value, {"schema_version", "verdict", "assessments", "findings"},
-                     {"claims", "methods", "summary"})
+                     {"global_findings", "claims", "methods", "summary"})
         if integer(row["schema_version"]) != REVIEW_REPLY_SCHEMA_VERSION:
             raise AssuranceError("REVIEW_SCHEMA_VERSION")
         verdict = one_of(row["verdict"], {"ACCEPT", "REWORK", "INCONCLUSIVE", "REJECTED"})
@@ -340,10 +360,14 @@ class ReviewReply:
             findings.append(
                 Finding(
                     name,
-                    one_of(f["severity"], {"BLOCKER", "WARNING", "INFO"}),
+                    one_of(f["severity"], SEVERITIES),
                     text(f["reason"], limit=2000),
                 )
             )
+        global_findings = []
+        for item in array(row.get("global_findings", []), maximum=MAX_GLOBAL_FINDINGS):
+            g = fields(item, set(_GLOBAL_FINDING_KEYS))
+            global_findings.append(GlobalFinding(one_of(g["severity"], SEVERITIES), text(g["reason"], limit=2000)))
         claims = []
         claim_ids = set()
         for item in array(row.get("claims", []), maximum=256):
@@ -376,7 +400,8 @@ class ReviewReply:
             if type(s["faithful"]) is not bool:
                 raise AssuranceError("ENUM_INVALID")
             summary = SummaryCheck(s["faithful"], text(s["reason"], limit=1000))
-        return cls(verdict, tuple(assessments), tuple(findings), tuple(claims), tuple(methods), summary)
+        return cls(verdict, tuple(assessments), tuple(findings), tuple(claims), tuple(methods), summary,
+                   tuple(global_findings))
 
 
 _FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\Z", re.DOTALL)
@@ -407,7 +432,8 @@ def decode_review_reply(raw: str | bytes) -> ReviewReply:
     value = decode(fenced.group(1)) if fenced else decode(raw)
     if isinstance(value, dict):
         value = _drop_empty_extras(value, _REPLY_KEYS)
-        for key, allowed in (("assessments", _ASSESSMENT_KEYS), ("findings", _FINDING_KEYS), ("claims", _CLAIM_KEYS),
+        for key, allowed in (("assessments", _ASSESSMENT_KEYS), ("findings", _FINDING_KEYS),
+                             ("global_findings", _GLOBAL_FINDING_KEYS), ("claims", _CLAIM_KEYS),
                              ("methods", _METHOD_KEYS)):
             if isinstance(value.get(key), list):
                 value[key] = [_drop_empty_extras(item, allowed) for item in value[key]]
@@ -423,6 +449,20 @@ class ReviewDecision:
     success_witness: frozenset[str]
     consumed_receipts: tuple[AssuranceRef, ...]
     reasons: tuple[str, ...]
+
+
+def global_blocker_targets(
+    reply: ReviewReply, mandatory: tuple[str, ...], catalogue: frozenset[str] | set[str]
+) -> tuple[str, ...]:
+    """The criteria a BLOCKER global finding fails: the mandatory ones, or every criterion when
+    there are none (原计划 F04："全局安全 finding 必须映射 mandatory"；用户 2026-10-06 晚定).
+
+    One rule of order, no reading of the words: a reply carrying one cannot be accepted, and no
+    branch of the formula can route around it.  Empty when there is no BLOCKER global finding."""
+
+    if not any(item.severity == "BLOCKER" for item in reply.global_findings):
+        return ()
+    return tuple(sorted(mandatory)) if mandatory else tuple(sorted(catalogue))
 
 
 def decide_review(
@@ -457,6 +497,8 @@ def decide_review(
             raise AssuranceError("FINDING_SCOPE")
         if finding.severity == "BLOCKER":
             grades[finding.criterion_id] = Grade.FAIL
+    for name in global_blocker_targets(reply, mandatory, set(grades)):
+        grades[name] = Grade.FAIL
     result, witness = formula.evaluate(grades)
     if mandatory:
         result = tri_all((result, *(grades[name] for name in mandatory)))

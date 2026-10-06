@@ -29,6 +29,7 @@ from ..assurance.checks import (
     CriterionPolicy,
     Finding,
     Formula,
+    GlobalFinding,
     ReviewReply,
     decide_review,
     grade,
@@ -670,6 +671,9 @@ class AssuranceValidity:
             tuple(
                 Finding(item["criterion_id"], item["severity"], item["reason"])
                 for item in manifest["findings"]
+            ),
+            global_findings=tuple(
+                GlobalFinding(item["severity"], item["reason"]) for item in manifest["global_findings"]
             ),
         )
         decision = decide_review(
