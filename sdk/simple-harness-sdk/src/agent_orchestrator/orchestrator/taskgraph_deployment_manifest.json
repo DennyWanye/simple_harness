@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "3da8d5bb4a3224264dfc74cea2a2ef09636fd12b0bf25cd0d90471711e50eb67",
+  "deployment_id": "983e172c0b19de8969e723e91d672cf1d7693256194dff51b263fdf7e312935e",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -165,7 +165,7 @@
     "agent_orchestrator/orchestrator/accepted_outputs.py": "4b2ae492f97f1ca29c9ebe6b893e85c63ee10ca181421daf52f16dacea8d89dd",
     "agent_orchestrator/orchestrator/accounting_recovery.py": "b96645844d4a0f7e688cf43c2eaa79a7a4e072b6a604a5b15033d7152651d808",
     "agent_orchestrator/orchestrator/action_commits.py": "9eb0e32d262492a87b5bf4189e0fe93d3a6a1d0edeefad009b870dab4c0d10b7",
-    "agent_orchestrator/orchestrator/assurance_assembly.py": "65a325a3525db2a1c5261f552c95fe2b82bd143d953f4b4658bf557e63321396",
+    "agent_orchestrator/orchestrator/assurance_assembly.py": "164b97335bdcae1ea8cfc5a4c0bbe9d50364513331d7e362c77a1efe6777f3e5",
     "agent_orchestrator/orchestrator/assurance_check_import.py": "af85049bd1898126c768e4ed826d8a19854281c6645b5d566e808a2eba632962",
     "agent_orchestrator/orchestrator/assurance_check_policy.py": "ef138d7bfec24868e6c49c9561a8d7d57437295aa6d0b186275ed69c892f6314",
     "agent_orchestrator/orchestrator/assurance_check_use.py": "630461b08b30272e40675f2961eb69c45d60df30801287f65a54b8e8948cc9d0",
@@ -178,7 +178,7 @@
     "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "1f0abff77cae07e7152bc70d20fd9f4c1005cb80caa633daf985bb34bb7fe12c",
     "agent_orchestrator/orchestrator/assurance_recheck.py": "43f5cbe3c4e44cb883606fed9c9fe5170df41cb2d2f417e5d75b2aef3446a406",
     "agent_orchestrator/orchestrator/assurance_review_collect.py": "bf4880d1201b44547bf2d5e4a377ee0ef81cc4e302f48978423c0d429f1ffad1",
-    "agent_orchestrator/orchestrator/assurance_review_consumer.py": "518dce5ae656c33d6cfee0173955689b6553956fbf119d831d6498d83737ed56",
+    "agent_orchestrator/orchestrator/assurance_review_consumer.py": "40dc3fc58aca6d5f5754b25770ac4fa58cb9848af3dab5790bd3c131ff6549c5",
     "agent_orchestrator/orchestrator/assurance_review_handoff.py": "e675fb4af62ccce351da7d84fc56c4bf77e8b4029ad5129bfdcf5fb7afbf0fbe",
     "agent_orchestrator/orchestrator/assurance_review_import.py": "59a31aab4874140d6417439de8a05016919230aab5dd51b7a3c9f6d9c6aab69b",
     "agent_orchestrator/orchestrator/assurance_review_pins.py": "4498cfdca5bfa38f71701f2a3f067ae5326429381ff038c9eeec7aa08d263bf1",

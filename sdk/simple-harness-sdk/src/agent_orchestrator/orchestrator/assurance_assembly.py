@@ -346,6 +346,16 @@ class InstalledAssurance:
     api: Any = None
 
 
+def _root_review_for(orchestrator: Any, mission_id: str) -> Any:
+    """The deployment's root-review coordinator for this Mission — the very one the main
+    loop's ``_advance_root_review`` builds, so the review import and the coordinator read
+    "has this package gone stale" off one function.  None when this deployment installed
+    no hierarchical assembly (it then cuts no ``MISSION_FINAL`` package either)."""
+    mission = orchestrator.store.get_mission(mission_id)
+    new_mode = None if mission is None else orchestrator._new_mode(mission)
+    return None if new_mode is None else orchestrator._root_review(mission, new_mode)
+
+
 def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> InstalledAssurance:
     """Bind the four consumers, factory, authority and tick on this Orchestrator.
 
@@ -398,6 +408,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         authority=authority,
         cas=cas,
         check_adapter=local_checks,
+        root_review=partial(_root_review_for, orchestrator),
     )
     review_runtime = AssuranceReviewRuntime(
         orchestrator, review, check_policy_projector=ports.check_policy_projector

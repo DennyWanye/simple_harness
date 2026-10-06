@@ -317,6 +317,10 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
                 provider.final_release.set()
                 await run_until(world, lambda: bool(events(store, mission_id, ROOT_REVIEW_CUT_BUDGET_SPENT)),
                                 timeout=40)
+                # 等旧包的回复被处理掉（作废，或——改坏时——被写成正式记录），再看它成了什么。
+                await run_until(world, lambda: bool(events(store, mission_id, "AssuranceReviewLateTurn"))
+                                or any(semantics.official_review_record(cut.payload["package_id"]) is not None
+                                       for cut in events(store, mission_id, ROOT_REVIEW_CUT)), timeout=40)
                 await run_for(world, 1.0)  # later cycles do not record it again
             finally:
                 provider.close()
@@ -329,11 +333,108 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
             assert spent.payload["requirements_revision"] == cut.payload["requirements_revision"]
             assert events(store, mission_id, ROOT_REVIEW_SUPERSEDED) == []
             assert provider.final_calls == 1
+            # 第 1 批车道 F（2026-10-06）：对这个过期包的迟到回复作废，原因具名、过期码就是协调器说的那个；
+            # 不写正式记录、不形成根结论。协调器与导入对"包过期了"只有一个说法。
+            late_turns = events(store, mission_id, "AssuranceReviewLateTurn")
+            assert len(late_turns) == 1, "the reply to the stale package is voided, exactly once"
+            [late] = late_turns
+            assert late.payload["reason"] == "REVIEW_PACKAGE_STALE"
+            assert late.payload["stale_reasons"] == ["SCOPE_EPOCH_MOVED"]
+            assert semantics.official_review_record(cut.payload["package_id"]) is None
             # 2026-10-03 阶段 B 收尾裁决（实施记录"根终审切包用完如实写"）：切包用完不再沉默——停滞路径
             # 把事实交给规划器，再按停止规则收口。所以这里可以有一条根结论，但绝不能是通过；任务不得完成。
             resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
             assert resolution is None or resolution.verdict is not ReviewVerdict.ACCEPT
             assert _status(world, mission_id) != "COMPLETED"
+
+    asyncio.run(case())
+
+
+# ======================================================================================
+# RD′：包只是过期（还有切包额度）时的迟到回复同样作废；新包切出后，只有新包的回复算数
+# ======================================================================================
+
+
+SPEC_PATH, SPEC_OLD, SPEC_NEW = "sources/spec.md", "# 规格\n价格：每月 18 元\n", "# 规格\n价格：每月 25 元\n"
+
+
+def test_a_late_reply_to_a_stale_package_is_voided_and_only_the_recut_package_counts(tmp_path) -> None:
+    """第 1 批车道 F（2026-10-06）：终审挂着时资料换了版本——两步都是拿旧版做的，系统把这件事交给
+    规划器，终审在它答复前不重切（``source_change_open``）。就在这个窗口里，旧包的终审回复到了。
+    回复作废（原因 ``REVIEW_PACKAGE_STALE``，过期码 ``SOURCES_MOVED`` 与协调器一致），不成为正式记录；
+    规划器答"都不受影响"之后协调器重切，新包的回复才形成根结论。
+
+    **改坏检验**：导入处不问协调器"包过没过期" → 旧包回复成了正式记录、没有作废回执 → 变红。"""
+
+    class PlannerWaitsForTheLateTurn(FinalReviewProvider):
+        """规划器对资料变更的答复扣到旧包的迟到回复被作废之后——固定"回复先到、重切在后"的次序。"""
+
+        def __init__(self) -> None:
+            super().__init__(hold_final_first=True, repair=self._no_change)
+            self.late_recorded = asyncio.Event()
+
+        @staticmethod
+        def _no_change(request: Any) -> Any:
+            package = package_of(request)
+            [sourced] = [entry for entry in open_repairs(package) if str(entry.get("source_key")).startswith("source:")]
+            step = sourced["request"]["context"]["steps_on_old_version"][0]["task_id"]
+            subject = next(s["subject_key"] for s in package["planning_subjects"] if s["task_id"] == step)
+            from agent_orchestrator.testing.scripted_replies import decision
+            return decision(subject, "NO_CHANGE", {"reason": "两步写的都是结构，没有用到价格。"}, "资料只改了价格。")
+
+        async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+            if role_of(request) == "planner" and open_repairs(package_of(request)):
+                await self.late_recorded.wait()
+            return await super().invoke(request, cancel=cancel)
+
+    async def case() -> None:
+        provider = PlannerWaitsForTheLateTurn()
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = _create(world, "late-reply-stale")
+            store, semantics = world.store, HtnStore(world.store)
+            first_source = world.control.register_source({"mission_id": mission_id, "path": SPEC_PATH, "content": SPEC_OLD,
+                                                          "kind": "markdown", "idempotency_key": "reg-spec-1"})
+            try:
+                await run_until(world, provider.final_held.is_set, timeout=40)
+                proposal = world.control.supersede_source({
+                    "mission_id": mission_id, "path": SPEC_PATH, "content": SPEC_NEW, "kind": "markdown",
+                    "idempotency_key": "sup-spec-1", "expected_version_hash": first_source["version_hash"]})
+                world.control.decide(proposal["request_id"], "approve", nonce="approve-sup-1")
+                provider.final_release.set()
+                [first_cut] = events(store, mission_id, ROOT_REVIEW_CUT)
+                # 等旧包的回复被处理掉（作废，或——改坏时——被写成正式记录），再看它成了什么。
+                await run_until(world, lambda: bool(events(store, mission_id, "AssuranceReviewLateTurn"))
+                                or semantics.official_review_record(first_cut.payload["package_id"]) is not None,
+                                timeout=40)
+                # 迟到回复作废时还没有重切：世界动了，但资料变更这件事还没问完。
+                assert len(events(store, mission_id, ROOT_REVIEW_CUT)) == 1
+                assert semantics.official_review_record(first_cut.payload["package_id"]) is None
+                assert len(events(store, mission_id, "AssuranceReviewLateTurn")) == 1
+                provider.late_recorded.set()
+                await run_until(world, lambda: _status(world, mission_id) in DONE, timeout=60)
+            finally:
+                provider.close()
+
+            first, second = events(store, mission_id, ROOT_REVIEW_CUT)
+            first_id, second_id = first.payload["package_id"], second.payload["package_id"]
+            [late] = events(store, mission_id, "AssuranceReviewLateTurn")
+            assert late.payload["reason"] == "REVIEW_PACKAGE_STALE"
+            assert late.payload["stale_reasons"] == ["SOURCES_MOVED"]
+            assert late.seq < second.seq
+            [superseded] = events(store, mission_id, ROOT_REVIEW_SUPERSEDED)
+            assert superseded.payload["package_id"] == first_id and superseded.payload["reasons"] == ["SOURCES_MOVED"]
+            assert second.payload["superseded"] == first_id and second.payload["recut_reasons"] == ["SOURCES_MOVED"]
+            # 旧包没有正式记录；根结论只从新包的终审记录形成；终审员被问了两次（旧包一次、新包一次）。
+            assert semantics.official_review_record(first_id) is None
+            record = semantics.official_review_record(second_id)
+            resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
+            assert record is not None and resolution is not None and resolution.verdict is ReviewVerdict.ACCEPT
+            assert str(resolution.review_receipt_id) == str(record.record_id)
+            [imported] = [item for item in events(store, mission_id, "AssuranceReviewImported")
+                          if item.payload.get("record_id") == str(record.record_id)]
+            assert imported.seq > second.seq
+            assert provider.final_calls == 2
+            assert _status(world, mission_id) == "COMPLETED"
 
     asyncio.run(case())
 
