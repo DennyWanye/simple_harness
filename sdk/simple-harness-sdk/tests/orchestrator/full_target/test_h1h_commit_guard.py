@@ -78,13 +78,14 @@ def test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_chang
 
 def test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision(
         tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mission-wide UNKNOWN stays authoritative: the plan change waits for the operation to be
-    reconciled and never commits on its own.
+    """Mission-wide UNKNOWN stays authoritative: a plan change never commits on its own while the
+    publish outcome is unknown, and the outcome is only ever settled by asking the publisher.
 
-    While the publishing service cannot be asked, the change waits.  Once the service answers
-    that the publish never happened (阶段 B：登记的对账器给出"确实没发生"的证明), that answer is a
-    fact the waiting change was not made on: it is refused back to the Planner, still without a
-    revision."""
+    2026-10-06 第 2～4 批车道 O（A48，原计划 Assurance §7.2）起：发布结果不明时根结论先形成、收尾
+    以 BLOCKED_UNKNOWN 等效果收敛，根职责已了结。原先"修复提交等对账、对账说没发生再退回规划器"
+    的局面不再出现：对这个根的修复提交当场按职责已了结被拒（OBLIGATION_NOT_OPEN），不编修订；
+    发布服务恢复、登记的对账器给出"确实没发生"之后，计划仍只有第 1 版——没生效的发布由系统操作线
+    处理（重交 / 问规划器 / 具名停下），不是这次被拒的修复。"""
     from agent_orchestrator.runtime import operation_reconciliation_file_publish as reconciliation
 
     down = {"on": True}
@@ -97,30 +98,22 @@ def test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_rev
 
     monkeypatch.setattr(reconciliation.FilePublishReconciliationAdapter, "observe", unreachable)
 
-    def advanced(round_) -> list[str]:  # type: ignore[no-untyped-def]
-        return [event.payload["to_state"] for event in round_.loop.store.list_events(round_.mission_id)
-                if event.type == "TaskGraphConvergenceAdvanced"]
-
     async def case() -> None:
         async with publishing_round(tmp_path, key="h1h-o03", unknown_outcome=True) as round_:
-            row = await run_rounds(round_, rounds=10)
-            assert row["status"] == "COMPILED", row
+            store = round_.loop.store
+            assert any(event.type == "GoalResolutionCommitted" and event.payload.get("is_mission_root")
+                       for event in store.list_events(round_.mission_id)), "根结论先于效果形成（§7.2）"
             assert round_.plan_revision() == 1
             assert _committed_revisions(round_.loop, round_.mission_id) == [1]
             assert round_.action_states() == ["UNKNOWN"]
-            events = round_.loop.store.list_events(round_.mission_id)
-            assert [event.payload["kind"] for event in events
-                    if event.type == "TaskGraphConvergenceCommandRequested"] == ["RECONCILE_OPERATION"]
-            assert advanced(round_)[-1] == "WAITING"
+            await run_rounds(round_, rounds=5)
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]  # 结果不明期间不编修订
             down["on"] = False
-            [action] = round_.loop.store.list_actions(round_.mission_id)
-            # the same question the waiting change asked, asked again now that the service answers
+            [action] = store.list_actions(round_.mission_id)
             await round_.loop._actions.reconcile_one(str(action["action_key"]), allow_rehandoff=False)
-            row = await run_rounds(round_, rounds=10)
-            assert row["status"] == "COMMIT_REJECTED", row
-            assert "TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED" in json.dumps(row["detail"]), row
-            assert advanced(round_)[-1] == "ABANDONED"
-            assert _committed_revisions(round_.loop, round_.mission_id) == [1]
+            await run_rounds(round_, rounds=5)
+            assert round_.decision()["status"] == "REJECTED"
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]  # 对账之后也没有修订
 
     asyncio.run(case())
 

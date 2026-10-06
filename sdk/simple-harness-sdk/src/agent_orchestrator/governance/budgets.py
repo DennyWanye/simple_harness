@@ -452,8 +452,12 @@ class BudgetLedger:
             "SELECT * FROM budget_reservations WHERE mission_id = ? ORDER BY created_at",
             (mission_id,),
         ).fetchall()
+        # 按月配额（2026-10-06 车道 P）：这个任务挂在它建立当月的全局总账下，报告就读那一个，
+        # 不是库里随便第一个全局账户
         global_row = self._store.connection.execute(
-            "SELECT account_id FROM budget_accounts WHERE scope = 'global'"
+            "SELECT g.account_id FROM budget_accounts m JOIN budget_accounts g ON g.account_id = m.parent_id"
+            " WHERE m.mission_id = ? AND m.scope = 'mission' AND g.scope = 'global' LIMIT 1",
+            (mission_id,),
         ).fetchone()
         report: dict[str, Any] = {
             "accounts": [self.account(row["account_id"]).to_json() for row in rows],

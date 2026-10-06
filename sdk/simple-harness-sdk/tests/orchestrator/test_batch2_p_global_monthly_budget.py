@@ -103,6 +103,9 @@ def test_missions_of_one_month_share_one_pool_and_a_new_month_starts_full(tmp_pa
             with world.store.transaction():
                 assert commit.ledger.account(october).reserved_tokens == 12_000_000
                 assert commit.ledger.account("budget:global:2026-11").reserved_tokens == 8_000_000
+                # 夜间（N3c 发现）：费用报告的全局一栏读这个任务建立当月的总账，不是库里第一个全局账户
+                assert commit.ledger.costs_report(second)["global"]["account_id"] == october
+                assert commit.ledger.costs_report(third)["global"]["account_id"] == "budget:global:2026-11"
 
     asyncio.run(case())
 

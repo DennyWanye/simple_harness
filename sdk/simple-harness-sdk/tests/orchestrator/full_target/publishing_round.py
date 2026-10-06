@@ -165,7 +165,13 @@ async def publishing_round(root: Path, *, key: str, unknown_outcome: bool = Fals
                                           "<planning_decision>" + json.dumps(body, ensure_ascii=False)
                                           + "</planning_decision>", dispatch)
         round_ = PublishingRound(world, mission_id, approval["request_id"], intent, dispatch)
-        assert round_.decision()["status"] == "COMPILED", round_.decision()
+        if unknown_outcome:
+            # 2026-10-06 第 2～4 批车道 O（A48，原计划 Assurance §7.2）：发布结果不明时根结论照常先形成，
+            # 根职责随之了结；对这个根的修复提交按"职责已了结"被拒（OBLIGATION_NOT_OPEN），不编修订。
+            assert round_.decision()["status"] == "REJECTED", round_.decision()
+            assert round_.decision()["rejection_codes"] == ["OBLIGATION_NOT_OPEN"], round_.decision()
+        else:
+            assert round_.decision()["status"] == "COMPILED", round_.decision()
         yield round_
 
 

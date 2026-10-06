@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "3b6e9e56fe8192ea04cfc86b4fcc0a4743f88d54d8ed795e5a3fe8a96a10b680",
+  "deployment_id": "9e32092b63b5ed9cdd011fdbe755001e37707fd1e68f63e454140887361c0658",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -109,7 +109,7 @@
     "agent_orchestrator/governance/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/governance/budget_limits.py": "9db41e25e4ebce1ecc39daa71f60abc8eb154c49eea87f60988258bc7a738c19",
     "agent_orchestrator/governance/budget_tail_schema.py": "22f44deea809683b1b351f9e8bdc454ad15eb298fef14a26dea8aaae7efb5ffd",
-    "agent_orchestrator/governance/budgets.py": "c4053550e4e54f4892763ba1c95fe4c602114271b724145f7732915d70144c8c",
+    "agent_orchestrator/governance/budgets.py": "43a78ecb8444b48364053b8e0dd0b254f6584f25fb8c89192ab9636b7be3728d",
     "agent_orchestrator/governance/domains.py": "b9210aa953f6437c2e1e5c4e420a3ee4ffb216d44cfaf82f9a510bca6aede332",
     "agent_orchestrator/governance/mission_system_tail_schema.py": "dd3bacc7519a8ba05dd852b4dc0cab3aa239ffda74e7d25740396f241bd88060",
     "agent_orchestrator/governance/permissions.py": "c19b39be295b2788f876e6c9f2f8b25b00b42cc36a43eee4f912f01958a594c8",
