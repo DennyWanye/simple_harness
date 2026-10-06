@@ -59,7 +59,7 @@ def _loop(*, closeout: bool, actions=(), approvals=()):
     fake = SimpleNamespace(
         _new_mode=lambda mission: SimpleNamespace(
             admissions=lambda mission_id: SimpleNamespace(refusals=("withheld",), readiness=()),
-            network=lambda mission_id: SimpleNamespace(root_occurrence_ids=()),
+            network=lambda mission_id: SimpleNamespace(root_occurrence_ids=(), occurrences=()),
         ),
         store=SimpleNamespace(
             list_tasks=lambda mission_id: [SimpleNamespace(status="READY")],
@@ -73,6 +73,9 @@ def _loop(*, closeout: bool, actions=(), approvals=()):
         _has_pending_planning_waits=lambda mission_id: False,
         _taskgraph_notifications=None,
         _note=notes.append,
+        _unrecovered=set(),  # 阶段 B：恢复失败的任务这一轮不判空闲（假编排器要带这张表）
+        _handoff_ground_gone=lambda action_key: False,  # 阶段 C 核验：地基没了的交接拒绝不算等人
+        _requirements_unconfirmed=lambda mission: False,  # 阶段 E：现行要求在等人确认
     )
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission
@@ -88,7 +91,7 @@ def test_a_judged_mission_converging_its_closeout_is_not_a_stall_candidate():
 def test_an_unknown_action_or_a_pending_approval_waits():
     for state, reason in (("UNKNOWN", "OPERATION_RECONCILIATION"),
                           ("AWAITING_APPROVAL", "APPROVAL_PENDING")):
-        fake, mission = _loop(closeout=False, actions=[{"state": state}])
+        fake, mission = _loop(closeout=False, actions=[{"state": state, "action_key": "a1"}])
         facts, _, _ = Orchestrator._idle_facts(fake, mission)
         assert idle_verdict(facts).reason_code == reason
 
