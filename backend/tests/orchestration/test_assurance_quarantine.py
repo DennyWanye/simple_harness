@@ -6,8 +6,9 @@
 不派发任务、不披露任务标题、不开驱动循环。
 
 隔离本身由 SDK 判（状态文件缺失 / 标记不符 → 管理模式），SDK 侧用例在
-``tests/orchestrator/full_target/assurance_exec/test_batch2_root_quarantine.py``。这里装的是 opt.164
-轮子，还没有那一步，所以 Host 用例把 SDK 的非披露诊断答案钉成 QUARANTINED，只测 Host 怎么接。
+``tests/orchestrator/full_target/assurance_exec/test_batch2_root_quarantine.py``。第一条用例把 SDK 的
+非披露诊断答案钉成 QUARANTINED，只测 Host 怎么接；最后一条（夜间 N3-07）不替身：用装好的 SDK 轮子
+（opt.166 起有隔离判定与 VALIDATED 部署清单）真装根、真删状态文件、重启 Host。
 """
 
 from __future__ import annotations
@@ -22,13 +23,6 @@ from ._support import mission_count, notes_provider, notes_request
 
 QUARANTINED = {"state": "QUARANTINED", "execution_allowed": False,
                "current_authentication_required": True, "blocking_code": "ROOT_QUARANTINED"}
-
-
-@pytest.fixture(autouse=True)
-def _validated_gate(monkeypatch):
-    # 装的 opt.164 轮子没有 ``acceptance_status``（Host 启动要 VALIDATED 清单）；按
-    # test_deployment_manifest.py 的做法钉成 VALIDATED，只测本条。
-    monkeypatch.setattr(OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED"))
 
 
 def _quarantine(monkeypatch):
@@ -109,3 +103,58 @@ async def test_a_native_root_reports_itself_and_the_diagnostic_verb_is_read_only
         assert mission_count(orchestration_root) == 0  # 诊断不写
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_really_deleted_root_state_file_restarts_the_host_in_quarantine(orchestration_root, principal):
+    """夜间 N3-07（A40 真实场景）：不替身诊断。真 SDK 装好保证根 → 停服务 → 真删
+    ``assurance-root-state.json`` → 重启 Host。SDK 自己判隔离，Host 只开非披露诊断，状态文件不被写回。"""
+    from agent_orchestrator.assurance.root_gate import STATE_FILE
+
+    def make() -> OrchestrationService:
+        return OrchestrationService(orchestration_root, OrchestrationSettings(), provider=notes_provider(),
+                                    principal=principal, drive=False, native_test_counter=FixtureWordCounter())
+
+    first = make()
+    await first.start()
+    try:
+        assert first.status()["state"] == "available"
+        assert first.status()["assurance_root"]["state"] == "NATIVE"
+    finally:
+        await first.close()
+    state_file = orchestration_root / STATE_FILE
+    assert state_file.is_file()  # 第一次启动真装了根
+    state_file.unlink()
+
+    second = make()
+    await second.start()
+    try:
+        status = second.status()
+        assert status["available"] is False and status["state"] == "quarantined", status
+        assert "隔离" in (status["reason"] or "")
+        assert status["assurance_available"] is False
+        root = status["assurance_root"]
+        assert root["state"] == "QUARANTINED" and root["execution_allowed"] is False
+        assert root["current_authentication_required"] is True and root["blocking_code"] == "ROOT_QUARANTINED"
+        assert second._driver is None
+
+        diagnostic = await handle(second, "mission_assurance_root_diagnostic", {"request_id": "d1"})
+        assert diagnostic["payload"]["ok"] is True, diagnostic
+        data = diagnostic["payload"]["data"]
+        assert data["state"] == "QUARANTINED" and data["execution_allowed"] is False
+        assert data["blocking_code"] == root["blocking_code"] and data["host_state"] == "quarantined"
+        # 非披露：只有这几项，没有路径、任务、对象 id
+        assert set(data) <= {"state", "execution_allowed", "current_authentication_required",
+                             "blocking_code", "host_state"}, data
+
+        for msg_type, body in (("mission_create", notes_request("q-real")), ("mission_list", {}),
+                               ("mission_notices", {}), ("orchestration_policy_status", {})):
+            answer = await handle(second, msg_type, {"request_id": "r", **body})
+            assert answer["payload"]["ok"] is False, (msg_type, answer)
+            assert answer["payload"]["error_code"] == "orchestration_unavailable", (msg_type, answer)
+            assert "隔离" in answer["payload"]["error"]
+        assert mission_count(orchestration_root) == 0
+        assert not state_file.exists() and not state_file.is_symlink()  # 隔离不自动写回状态文件
+    finally:
+        await second.close()
+    assert not state_file.exists()
