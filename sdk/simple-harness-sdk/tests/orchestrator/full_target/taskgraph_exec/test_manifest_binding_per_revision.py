@@ -76,7 +76,9 @@ def test_the_attempt_identity_guard_requires_the_exact_binding_revision(store: S
     HtnStore(store).insert_input_manifest(MISSION, "task-1", DOCUMENT, input_binding_revision=0)
     with pytest.raises(Exception, match="immutable source record"):
         store.connection.execute("DELETE FROM input_manifest_bindings")
-    assert schema.SCHEMA_VERSION == 44 and schema.MIGRATIONS[-1].name == "orchestrator-manifest-binding-per-input-revision"
+    # 迁移 44 是这条规则的来源；之后的迁移（45 知识三字段、46 恢复协议）不改它
+    assert schema.SCHEMA_VERSION == 46
+    assert [m.name for m in schema.MIGRATIONS if m.version == 44] == ["orchestrator-manifest-binding-per-input-revision"]
     assert "input_binding_revision=NEW.input_binding_revision" in schema.DDL_V44
 
 

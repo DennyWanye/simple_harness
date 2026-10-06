@@ -52,7 +52,7 @@ def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
                         lambda self, uow, missions=None: recovered.append(missions))
     pool = SimpleNamespace(bridge=SimpleNamespace(runtime=SimpleNamespace(
         ports=SimpleNamespace(provider_admission=guard), uow=None)))
-    orch = SimpleNamespace(store=SimpleNamespace(has_table=lambda name: True),
+    orch = SimpleNamespace(store=SimpleNamespace(has_table=lambda name: True), recovery_isolated=lambda mission_id: False,
                            assembled=SimpleNamespace(pools={"p": pool}), _note=lambda text: None,
                            _round_boundary=lambda mission_id, where: contextlib.nullcontext())
     monkeypatch.setattr(accounting_recovery.time, "monotonic", lambda: clock[0])

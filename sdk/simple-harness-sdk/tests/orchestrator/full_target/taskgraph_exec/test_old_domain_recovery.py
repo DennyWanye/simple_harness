@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """删旧平面模式第三刀第 4 步：库里一条旧档案结构的任务停在执行轮次中途（进程在执行者
-交回结果后退出），编排器照样能启动、恢复，第一轮由门按名停掉它。
+交回结果后退出），编排器照样能启动、恢复。
+
+2026-10-06 第 2～4 批起：用例直接改库造出的"旧档案"与这个任务自己的事件历史对不上，重启恢复第 3 步
+（reducer 重建）先发现，按 AER 恢复第 3、8 条只隔离这个任务（不再推进、不问模型），别的照常；
+不再等到第一轮由门按名停掉。启动不被它卡住这一点不变。
 
 核验员 2026-10-02 复现过：启动时 ``_bind_startup_tools`` → ``_bind_agent`` 读冻结档案
 抛 ``CommitRejected``，``__aenter__`` 直接失败、门根本跑不到，开发库里只要有一个这样的
@@ -52,9 +56,10 @@ def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):
             loop = product.loop
             await loop.recover()
             await loop._cycle()
-            stopped = loop.store.get_mission(source['mission_id'])
-            assert stopped.status is MissionStatus.FAILED
-            failed = [e for e in loop.store.list_events(stopped.id) if e.type == 'MissionFailed']
-            assert len(failed) == 1 and 'unsupported_domain_profile' in json.dumps(failed[0].payload)
+            mission = loop.store.get_mission(source['mission_id'])
+            assert loop.recovery_isolated(mission.id)
+            assert "mission_domains" in loop.recovery_status()["isolated_missions"][mission.id]["tables"]
+            assert loop.recovery_status()["state"] == "READY"
+            assert mission.status is not MissionStatus.FAILED  # 隔离不是判停：库里原样，可取消
             assert provider.calls == 0
     asyncio.run(recover())
