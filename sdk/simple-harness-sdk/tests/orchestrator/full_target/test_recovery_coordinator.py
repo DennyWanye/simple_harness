@@ -146,6 +146,16 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
                     (mission_id,)).fetchone()[0]
             damaged_attempts = attempts_of(world.store, damaged)
             db = world.store.path
+
+        def footprint(connection, mission_id):
+            """被隔离任务在库里的全部可见痕迹：事件、派发意图的状态、保证通道待办。"""
+            events = connection.execute("SELECT count(*) FROM events WHERE mission_id=?",
+                                              (mission_id,)).fetchone()[0]
+            intents = sorted(tuple(r) for r in connection.execute(
+                "SELECT intent_id, state FROM dispatch_intents WHERE mission_id=?", (mission_id,)))
+            work = sorted(tuple(r) for r in connection.execute(
+                "SELECT * FROM assurance_pending_work WHERE mission_id=?", (mission_id,)))
+            return events, intents, work
         connection = sqlite3.connect(db)
         try:
             connection.execute("UPDATE missions SET json=json_set(json,'$.goal','改坏的目标') WHERE mission_id=?",
@@ -153,12 +163,19 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
             connection.commit()
         finally:
             connection.close()
+        reader = sqlite3.connect(db)
+        try:
+            before = footprint(reader, damaged)
+        finally:
+            reader.close()
         second = LayeredScriptedProvider()
         async with product_world(root, second) as world:
             for _ in range(20):
                 await world.drain(timeout=10)
                 if str(world.store.get_mission(healthy).status.value) in TERMINAL:
                     break
+            for _ in range(3):
+                await world.drain(timeout=5)  # 健康任务做完后再跑几轮：被隔离的仍不能被任何人动
             status = world.loop.recovery_status()
             assert status["state"] == str(RecoveryState.READY) and status["side_effects_disabled"] is False
             assert list(status["isolated_missions"]) == [damaged]
@@ -169,6 +186,8 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
             assert str(world.store.get_mission(healthy).status.value) == "COMPLETED"
             assert attempts_of(world.store, damaged) == damaged_attempts
             assert str(world.store.get_mission(damaged).status.value) not in TERMINAL
+            # 隔离是完整的：在途回合不当"已结束任务"收掉、保证通道不替它入箱或收尾、不导入用量
+            assert footprint(world.store.connection, damaged) == before
 
     asyncio.run(case())
 

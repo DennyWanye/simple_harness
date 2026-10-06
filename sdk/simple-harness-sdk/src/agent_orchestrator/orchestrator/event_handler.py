@@ -2259,6 +2259,8 @@ class Orchestrator:
             "SELECT mission_id FROM missions WHERE status IN ('CANCELLED','FAILED')"
             " AND json_extract(json, '$.final_report.unresolved_actions') IS NOT NULL").fetchall()
         for (mission_id,) in rows:
+            if self.recovery_isolated(str(mission_id)):
+                continue
             # one Mission's fault is that Mission's; the scan goes on (阻断核验 2026-10-04)
             with self._round_boundary(str(mission_id), "notice:settled-actions"):
                 mission = self.store.get_mission(str(mission_id))
@@ -3060,6 +3062,12 @@ class Orchestrator:
         return carry_on
 
     # ---------------------------------------------------------------- cycle
+    def recovery_isolated(self, mission_id: str) -> bool:
+        """重启恢复第 3 步核对没通过、已隔离的任务（AER 恢复第 3、8 条"隔离该流、只为核对可继续的
+        范围开放执行"）。按任务干活的每个入口都读这一个判断：主循环的任务列表、``_mission_round``、
+        保证通道四个消费者、执行图通知、迟到用量导入、已结束任务的通知扫描。"""
+        return mission_id in self._recovery_isolated
+
     def _active_missions(self) -> list[Mission]:
         # 2026-09-29（第 4 批）：每轮要调好几次；先按状态列筛，只解码未结束的任务，
         # 不再每次把几十个已结束任务整份解码一遍。
@@ -3070,7 +3078,7 @@ class Orchestrator:
             ended,
         ).fetchall()
         missions = (self.store.get_mission(str(row[0])) for row in rows
-                    if str(row[0]) not in self._recovery_isolated)
+                    if not self.recovery_isolated(str(row[0])))
         return [m for m in missions if m is not None and m.status not in TERMINAL_MISSION]
 
     def _event_cursor(self) -> int:
@@ -3617,6 +3625,8 @@ class Orchestrator:
 
         if mission_id in self._unrecovered and not where.startswith(("recover", "startup_bind")):
             return False  # its restart recovery has not held yet; retried first next round
+        if self.recovery_isolated(mission_id):
+            return False  # 重启核对没通过、已隔离：本进程不替它做任何事（AER 恢复第 3、8 条）
         progressed = False
         with self._round_boundary(mission_id, where):
             progressed = bool(await step())

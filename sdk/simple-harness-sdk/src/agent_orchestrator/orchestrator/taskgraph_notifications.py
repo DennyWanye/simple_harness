@@ -238,7 +238,7 @@ class TaskGraphNotifications:
         consumed = 0
         for row in rows:
             mission_id = str(row[0])
-            if mission_id in self.orchestrator._unrecovered:
+            if mission_id in self.orchestrator._unrecovered or self.orchestrator.recovery_isolated(mission_id):
                 continue
             # 这个任务的这一份在"一个任务一轮"的边界里：下面只接得住来源读不了，别的错
             # （库读写故障等）由边界接住、按同一张表计数，不冲出主循环（阶段 C 第 0′ 条）

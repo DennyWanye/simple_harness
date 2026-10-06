@@ -198,6 +198,8 @@ def import_late_accounting(orch) -> bool:
         rows = [row for row in rows if row[1] in live]
     progressed = False
     for row in rows:
+        if orch.recovery_isolated(str(row[1])):
+            continue  # 已隔离的任务：不往它的库里导入任何东西
         # one hold is one Mission's: its fault is that Mission's round fault, never the loop's
         with orch._round_boundary(str(row[1]), "late_accounting"):
             progressed = _import_hold(orch, row[0]) or progressed

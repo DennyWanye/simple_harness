@@ -128,6 +128,8 @@ class AssuranceTick:
         missions = tuple(row[0] for row in rows)
         if missions:
             self._after_mission = missions[-1]
+        # 重启核对没通过、已隔离的任务：四个消费者都不替它入箱、准备、提交（含收尾写方与通知）
+        missions = tuple(m for m in missions if not self.orchestrator.recovery_isolated(str(m)))
         return missions
 
     def has_pending(self) -> bool:
