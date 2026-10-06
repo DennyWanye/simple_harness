@@ -69,7 +69,10 @@ uv run --frozen python -m pytest -q -p no:cacheprovider tests/sdk_adapters/test_
   tests/sdk_adapters/test_composition.py \
   tests/orchestration/test_taskgraph_bound_at_creation.py tests/orchestration/test_taskgraph_execution_reads.py \
   tests/orchestration/test_taskgraph_operator_verbs.py tests/orchestration/test_ws_taskgraph_routing.py \
-  tests/orchestration/test_support_export_taskgraph_history.py 2>&1 | tail -1
+  tests/orchestration/test_support_export_taskgraph_history.py \
+  tests/orchestration/test_recovery_degraded_host.py tests/orchestration/test_recovery_isolated_host.py \
+  tests/orchestration/test_global_budget_setting.py tests/orchestration/test_chat_mission_amend.py \
+  tests/orchestration/test_assurance_quarantine.py 2>&1 | tail -1
 
 cd "$REPO"
 $GIT add -A backend/pyproject.toml backend/uv.lock backend/deskpet/sdk_adapters/sdk_candidate.py backend/vendor
