@@ -51,7 +51,6 @@ from ..artifacts.store import ArtifactStoreError, read_nofollow, read_verified
 from ..artifacts.versioning import (
     ArtifactConflict,
     UpstreamInput,
-    ancestors,
     next_versions,
 )
 from ..artifacts.workspace import WorkspaceError
@@ -9105,6 +9104,77 @@ class Orchestrator:
                 return True
         return False
 
+    async def _stop_conditions_reached(self, mission: Mission, new_mode: HierarchicalDispatch) -> bool:
+        """第 2 批车道 H（H06，原计划 §5 ``stop_conditions`` / §19.1）：任务自带的两种计数型停止。
+
+        Harness 只数：规划轮之间知识库 / 验收记录有没有新增、结果内容哈希重复了多少（``stop_conditions``
+        模块）。达到上限不直接停——与"没有可派发的工作"同一条路，先把事实交给规划器一次（每个计划版本
+        每个条件一条请求，跨版本累计问满 ``max_planning_attempts`` 次不再问）；规划器了结了请求、这一
+        版计划没有改动（计划改了版本号就变，这条请求随之过时），才按条件的名字停。规划器还没答、或在
+        等人时不停。返回 True 表示这一轮写了事件（记了请求或停了任务）。
+        """
+        from . import planning_repair_requests as repair_requests
+        from . import stop_conditions as stop_rules
+
+        policy = self._config.deployment_policy
+        if not stop_rules.parse_stop_conditions(mission.stop_conditions, policy):
+            return False
+        events = tuple(self.store.iter_events(mission.id))
+        reached = stop_rules.reached_stop_conditions(
+            mission, policy, streak=stop_rules.knowledge_streak(events),
+            hashes=stop_rules.result_hashes(self.store, mission.id))
+        if not reached:
+            return False
+        try:
+            network = new_mode.network(mission.id)
+        except (GraphIntegrityError, ContractError, StoreError) as error:
+            self._note(f"mission {mission.id}: stop conditions reached but the plan is unreadable ({error})")
+            return False
+        plan_revision = int(network.plan_revision)
+        first = reached[0]
+        name = str(first["condition"])
+        source_key = stop_rules.stop_condition_key(mission.id, name, plan_revision)
+        state = stop_rules.stop_request_state(events, source_key)
+        if state is None:
+            cap = int(self._config.max_planning_attempts)
+            asked_before = stop_rules.stop_condition_asks(events, name)
+            if asked_before < cap:
+                tasks = tuple(str(spec.task_id) for spec in network.occurrences)
+                roots = tuple(str(network.occurrence(item).task_id) for item in network.root_occurrence_ids)
+                try:
+                    recorded = repair_requests.record_request(
+                        new_mode, mission.id, event_type="NoDispatchableWork",
+                        trigger_refs=roots or (mission.id,), source_key=source_key,
+                        detail={"reason": "stop_condition_reached", "conditions": reached,
+                                "plan_revision": plan_revision,
+                                "explanation": ("任务自带的停止条件已达上限（只是计数）；这一版计划不改动，"
+                                                "任务就按该条件停止"),
+                                repair_requests.NO_CHANGE_SETTLES: True},
+                        scope=tasks + tuple(str(spec.occurrence_id) for spec in network.occurrences))
+                except (GraphIntegrityError, ContractError, StoreError) as error:
+                    self._note(f"mission {mission.id}: stop condition could not be handed to the Planner ({error})")
+                    return False
+                if recorded:
+                    self._note(f"mission {mission.id}: stop condition {name} reached; the Planner is asked "
+                               "once for this plan revision before the Mission is stopped")
+                return recorded
+            planner_asked: dict[str, Any] | None = {"request_id": None, "asked_before": asked_before, "cap": cap}
+        else:
+            if not state["addressed"]:
+                return False  # 规划器还没答：等
+            planner_asked = dict(state)
+        if (self._has_pending_planning_waits(mission.id)
+                or self.store.list_approvals(mission.id, "PENDING")):
+            return False  # 在等人或等规划器的别的事：不是停的时候
+        self._commit_fail_mission(
+            mission.id,
+            stop_reason=stop_rules.reason_for(name),
+            detail={"conditions": reached, "plan_revision": plan_revision, "planner_asked": planner_asked,
+                    "stop_conditions": list(mission.stop_conditions)},
+        )
+        self._note(f"mission {mission.id}: stop condition {name} reached and the plan stayed; stopped")
+        return True
+
     async def _decide(self, mission: Mission) -> bool:
         # Review F1, before anything else: on a deployment with no assembly a Mission is
         # not scheduled and not judged.
@@ -9208,6 +9278,9 @@ class Orchestrator:
                 return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)
+            return True
+        # 第 2 批车道 H（H06）：任务自带的计数型停止条件——达到上限先问规划器一次，停在原地才停
+        if await self._stop_conditions_reached(mission, new_mode):
             return True
         if any(task.status is TaskStatus.FAILED for task in tasks):
             return False  # the stop cascade already ended the Mission
@@ -10195,7 +10268,6 @@ class Orchestrator:
         # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
         # so an ORDER-only predecessor contributes nothing.
         all_tasks = {t.id: t for t in self.store.list_tasks(mission.id)}
-        upstream_tasks = ancestors(task.id, all_tasks)
         try:
             inputs = new_mode.attempt_inputs(mission.id, task.id)
             # P2.3o: a patch (or any DATA) binding names the port document; the
@@ -10299,6 +10371,21 @@ class Orchestrator:
                 if path in source_paths
                 or not _under_source_root(path, source_binding["source_roots"])
             ]
+        # 第 2 批车道 H（K04，原计划 §10 第 3 项）：父目标与直接上游从分层网络读——这一步所在做法
+        # 细化的目标（原文、它负责的要求原文），与数据边上把产出交给它的生产者（目标、状态、已验收
+        # 结论的摘要、交到这一步的产物）。``Task.dependency_ids`` 在分层下恒空，不再按它过滤。
+        from .worker_context import parent_goal as read_parent_goal
+        from .worker_context import upstream_steps
+
+        try:
+            network = new_mode.network(mission.id)
+            step_parent = read_parent_goal(self.store, network, mission, task)
+            upstream = upstream_steps(self.store, network, mission, task, inputs)
+        except (GraphIntegrityError, ContractError, StoreError) as error:
+            # 读不到网络时如实说"读不到"，不编一个空的"没有上游"
+            self._note(f"task {task.id}: hierarchical context unreadable ({error})")
+            step_parent = {"data_not_instruction": True, "unavailable": str(error)[:300]}
+            upstream = [{"unavailable": str(error)[:300]}]
         try:
             package = build_worker_package(
                 mission,
@@ -10308,18 +10395,7 @@ class Orchestrator:
                 previous_attempts=attempts,
                 verifier_feedback=verifier_feedback,
                 workspace_files=previous_files,
-                dependencies=[
-                    {
-                        "task_id": dep.id,
-                        "goal": dep.goal,
-                        "status": str(dep.status),
-                        "accepted_artifacts": [
-                            item.to_json() for item in inputs if item.task_id == dep.id
-                        ],
-                    }
-                    for dep in upstream_tasks
-                    if dep.id in set(task.dependency_ids)
-                ],
+                dependencies=upstream,
                 knowledge=knowledge,
                 untrusted_sources=untrusted,
                 role=role.name,
@@ -10336,6 +10412,11 @@ class Orchestrator:
             await self._release_mission(mission.id)
             self._note(f"task {task.id} stopped: worker package refused ({error})")
             return True
+        if step_parent is not None:
+            from ..context.context_builder import _seal
+
+            # §10 第 3 项的另一半：父目标。与 dependencies（直接上游）一样是数据，不是指令。
+            package = _seal({**dict(package.package), "parent_goal": step_parent})
         # P2.3c part 2d, decision 4: tell the leaf which output ports its own
         # occurrence declares.  The names are the plan's, not the model's — the
         # model supplies the *local key* (which file) and nothing else (TG design

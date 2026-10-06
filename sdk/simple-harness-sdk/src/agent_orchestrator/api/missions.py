@@ -66,6 +66,12 @@ def spec_from_request(
             isinstance(value, str) or not all(isinstance(item, str) for item in value)
         ):
             raise MissionRequestError(f"{name} must be a list of strings")
+    # 第 2 批车道 H（H06）：两种计数型停止条件的阈值写法在建任务时就校验，不留到主循环里才发现
+    from ..orchestrator.stop_conditions import parse_stop_conditions
+    try:
+        parse_stop_conditions(request.get("stop_conditions") or (), None)
+    except ContractError as error:
+        raise MissionRequestError(str(error)) from error
     seed = request.get("workspace_seed", {})
     if not isinstance(seed, Mapping) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in seed.items()
@@ -97,7 +103,7 @@ def spec_from_request(
             tenant_id=tenant_id,
             idempotency_key=str(request.get("idempotency_key", "")),
             stop_conditions=tuple(
-                request.get("stop_conditions", ("verification_passed", "budget_exhausted"))
+                request.get("stop_conditions", MissionSpec.__dataclass_fields__["stop_conditions"].default)
             ),
             allowed_tools=tuple(request.get("allowed_tools", default_tools)),
             risk_level=str(request.get("risk_level", "sandbox")),

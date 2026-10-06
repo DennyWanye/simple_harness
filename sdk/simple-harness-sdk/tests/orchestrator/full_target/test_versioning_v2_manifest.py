@@ -916,10 +916,6 @@ def test_the_legacy_merge_still_refuses_two_independent_branches() -> None:
         merge_accepted(list(tasks.values()), artifacts, tasks_by_id=tasks)
 
 
-def test_the_diagnostic_reader_still_calls_the_legacy_function() -> None:
-    """Decision 11: ``traces`` is not moved onto the new path."""
-
-    from agent_orchestrator.observability import traces
-
-    assert "merge_accepted" in inspect.getsource(traces)
-    assert "materialise_v2" not in inspect.getsource(traces)
+# 2026-10-06 第 2 批车道 H（T10）：原"决定 11：traces 不搬到新路径"的钉子删了——归因改为按根结论的
+# 贡献清单算（``observability/traces.py``），不再调 ``merge_accepted``；用例见 tests/orchestrator/
+# test_batch2_h_context_attribution.py。
