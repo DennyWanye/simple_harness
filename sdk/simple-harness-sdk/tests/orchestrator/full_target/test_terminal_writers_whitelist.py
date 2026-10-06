@@ -147,6 +147,8 @@ WHITELIST: dict[Site, str] = {
         "同上一组 stop_task 落库",
     ("update_mission", "orchestrator/plan_commits.py", "PlanCommitsMixin._activate_for_work", ""):
         "PLANNING→ACTIVE（非终态）",
+    ("update_mission", "orchestrator/requirements_amendment.py", "amend_requirements", ""):
+        "第 2 批车道 L（H19）：改要求时换任务目标文本，状态与停止原因不动（非终态）",
     # ---- 直接写 missions 表的 SQL（只有存储层自己）
     ("sql", "storage/store.py", "Store.insert_mission", "INTO missions"):
         "建任务：出生态 CREATED，不是终态",

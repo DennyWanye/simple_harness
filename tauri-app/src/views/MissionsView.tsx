@@ -162,6 +162,10 @@ const STOP_REASON_LABEL: Record<string, string> = {
   human_override: "人工接管后停止",
   no_dispatchable_work: "没有可继续执行的工作",
   store_fault: "任务数据读写反复出错，已停止",
+  no_new_knowledge: "连续多轮没有新知识，已停止",
+  result_duplication: "结果重复率过高，已停止",
+  deadlock: "步骤之间互相等待成环（死锁），已停止",
+  runtime_unavailable: "运行环境或模型服务不可用，已停止",
 };
 const TASK_STATUS_LABEL: Record<string, string> = {
   PENDING: "等待", READY: "就绪", ACTIVE: "执行中", RUNNING: "执行中", BLOCKED: "等待前置步骤",
