@@ -431,9 +431,10 @@ def fact_rows(
 
 
 def knowledge_rows(
-    records: Sequence[Any], summaries: Sequence[Mapping[str, Any]], *, limit: int = MAX_KNOWLEDGE,
+    records: Sequence[Any], summaries: Sequence[Mapping[str, Any]],
+    candidates: Sequence[Mapping[str, Any]] = (), *, limit: int = MAX_KNOWLEDGE,
 ) -> tuple[tuple[dict[str, Any], ...], int]:
-    """``views.knowledge`` (第 2 批 K03): the blackboard's two layers a Planner judges
+    """``views.knowledge`` (第 2 批 K03): the blackboard's three layers a Planner judges
     direction from, and how many rows were left out.
 
     ``records`` are the Mission's knowledge records that are current *right now* — the
@@ -441,7 +442,10 @@ def knowledge_rows(
     (``context.knowledge_tools.current_knowledge``); nothing here re-decides validity.
     ``summaries`` are the reviewer-checked step summaries (``step_summaries``), already
     newest first.  Verified knowledge leads, newest first, because it is what a decision
-    may treat as fact; a summary tells what a step did.  Each row says which layer it is
+    may treat as fact; a summary tells what a step did.  ``candidates`` (夜间 N3-03) are
+    the claims not verified yet (``context.knowledge_tools.candidate_claims``): leads, not
+    facts, each with its ``marker``; they come last so the cap drops them first and never
+    crowds out verified knowledge.  Each row says which layer it is
     and carries the ``ref`` a Worker would cite — it is *not* a planning reference
     quadruple, so none of these rows enters ``visible_refs``.
     """
@@ -465,6 +469,12 @@ def knowledge_rows(
             "summary": row["summary"],
             "artifacts": [{"path": a["path"], "version": a["version"]} for a in row.get("artifacts", ())],
             "checked_by": row["checked_by"],
+        })
+    for row in candidates:
+        rows.append({
+            "layer": "candidate", "id": str(row["id"]), "status": str(row["status"]),
+            "marker": str(row["marker"]), "key": row["key"], "content": row["content"],
+            "source_task": row["source_task"],
         })
     kept = tuple(rows[: max(0, limit)])
     return kept, len(rows) - len(kept)

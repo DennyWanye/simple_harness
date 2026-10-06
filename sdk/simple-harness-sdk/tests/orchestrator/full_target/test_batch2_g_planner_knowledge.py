@@ -48,11 +48,11 @@ def _summary(sid: str) -> dict[str, Any]:
 
 def test_knowledge_is_the_twelfth_view_and_the_prompt_is_the_new_pair() -> None:
     assert VIEW_NAMES[-1] == "knowledge" and len(VIEW_NAMES) == 12
-    # 改了包就换版本号：包 14 配提示词 v27，旧对不再合法
-    assert PLANNING_DECISION_PACKAGE_VERSION == 14
-    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v27"
-    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v27", 14)
-    assert not hierarchical_planner_pairing_is_valid("planner-hierarchical-v26", 13)
+    # 改了包就换版本号：包 15 配提示词 v28（夜间 N3-02 目标改了、N3-03 候选层），旧对不再合法
+    assert PLANNING_DECISION_PACKAGE_VERSION == 15
+    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v28"
+    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v28", 15)
+    assert not hierarchical_planner_pairing_is_valid("planner-hierarchical-v27", 14)
     prompt = PLANNER_HIERARCHICAL.instructions
     assert "views.knowledge：" in prompt and "layer=verified" in prompt and "layer=summary" in prompt
     assert "omitted_counts.knowledge" in prompt and "不要写进 reason_refs" in prompt
@@ -82,6 +82,28 @@ def test_rows_lead_with_verified_knowledge_newest_first_then_summaries_and_are_c
     rows, omitted = knowledge_rows(many, [_summary("sum:r1")])
     assert len(rows) == MAX_KNOWLEDGE and omitted == 4
     assert rows[0]["id"] == f"k-{MAX_KNOWLEDGE + 2:02d}"  # the newest survive the cap
+
+
+def _candidate(cid: str, status: str = "PROPOSED", marker: str = "未验证") -> dict[str, Any]:
+    return {"id": cid, "status": status, "marker": marker, "key": f"k.{cid}", "content": f"线索 {cid}",
+            "source_task": "t1", "evidence": ["e1"]}
+
+
+def test_candidates_come_last_marked_as_leads_and_the_cap_drops_them_first() -> None:
+    """夜间 N3-03：候选结论是第三层，排在已验证与摘要之后；16 行上限先裁掉候选。"""
+    rows, omitted = knowledge_rows([_record("k-1", 1.0)], [_summary("sum:r1")],
+                                   [_candidate("c-1"), _candidate("c-2", "DISPUTED", "有争议，不是事实")])
+    assert omitted == 0
+    assert [(row["layer"], row["id"]) for row in rows] == [
+        ("verified", "k-1"), ("summary", "sum:r1"), ("candidate", "c-1"), ("candidate", "c-2")]
+    assert rows[3] == {"layer": "candidate", "id": "c-2", "status": "DISPUTED", "marker": "有争议，不是事实",
+                       "key": "k.c-2", "content": "线索 c-2", "source_task": "t1"}
+    assert "ref" not in rows[2]  # 候选不可引用
+    many = [_record(f"k-{i:02d}", float(i)) for i in range(MAX_KNOWLEDGE)]
+    rows, omitted = knowledge_rows(many, [], [_candidate("c-1")])
+    assert omitted == 1 and all(row["layer"] == "verified" for row in rows)
+    prompt = PLANNER_HIERARCHICAL.instructions
+    assert "layer=candidate" in prompt and "candidate 层是线索不是事实，不能当已验证依据" in prompt
 
 
 # --------------------------------------------------------------------- the real package
@@ -148,8 +170,24 @@ def test_the_planner_package_of_a_mission_with_knowledge_lists_it_and_the_checke
             for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"):
                 if intent.mission_id == mission_id and isinstance(intent.config.get("planning_package"), dict):
                     assert "knowledge" in intent.config["planning_package"]["views"]
-            # 过时的知识不进包：把唯一一条的依据抹掉后再组包，verified 层为空
+            # 夜间 N3-03 候选层：已验证的那条只以 verified 出现一次——它的结论行即使还停在
+            # SUPPORTED（候选状态），也不再作为候选列出；另留一条未验证的结论、一条被驳回的结论
             from dataclasses import replace
+            from agent_orchestrator.contracts.state_machines import ClaimStatus
+
+            [claim] = [c for c in store.list_mission_claims(mission_id) if c.id == records[0].id]
+            store.upsert_claim(replace(claim, status=ClaimStatus.SUPPORTED))
+            store.upsert_claim(replace(claim, id="claim-lead", content="可能还要一份索引", status=ClaimStatus.PROPOSED))
+            store.upsert_claim(replace(claim, id="claim-rejected", content="被驳回的说法", status=ClaimStatus.REJECTED))
+            leads = loop._hierarchical_planner_package(loop._new_mode(mission), mission, ordinal=98).package
+            rows = leads["views"]["knowledge"]
+            assert [row["layer"] for row in rows if row["id"] == records[0].id] == ["verified"]
+            [lead] = [row for row in rows if row["layer"] == "candidate"]
+            assert (lead["id"], lead["status"], lead["marker"], lead["content"]) == (
+                "claim-lead", "PROPOSED", "未验证", "可能还要一份索引")
+            assert not any(row["id"] == "claim-rejected" for row in rows)
+            assert not any(item.get("id") == "claim-lead" for item in leads["visible_refs"])
+            # 过时的知识不进包：把唯一一条的依据抹掉后再组包，verified 层为空
             store.upsert_knowledge(replace(records[0], support={}))
             again = loop._hierarchical_planner_package(loop._new_mode(mission), mission, ordinal=100).package
             assert [row for row in again["views"]["knowledge"] if row["layer"] == "verified"] == []

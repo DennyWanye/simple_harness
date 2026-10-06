@@ -65,6 +65,23 @@ def current_knowledge(store: Store, mission_id: str) -> list[Any]:
     )
 
 
+def candidate_claims(store: Store, mission_id: str, *, verified_ids: set[str]) -> list[dict[str, Any]]:
+    """The candidate layer: this Mission's claims that are not verified (proposed, under
+    review, supported, disputed), each with the ``marker`` saying it is a lead and not a
+    fact.  A claim whose id is already current verified knowledge (``verified_ids``) is
+    listed only there.  The one reading the catalogue and the planning view share
+    (夜间 N3-03)."""
+    rows: list[dict[str, Any]] = []
+    for claim in store.list_mission_claims(mission_id):
+        marker = _CANDIDATE_MARKERS.get(claim.status)
+        if marker is None or claim.id in verified_ids:
+            continue
+        rows.append({"id": claim.id, "status": str(claim.status), "marker": marker, "key": claim.key,
+                     "content": claim.content, "source_task": claim.source_task,
+                     "evidence": list(claim.evidence)})
+    return rows
+
+
 def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
     """The summary layer (阶段 C3): one row per accepted step whose summary the reviewer
     confirmed faithful — newest acceptance first.  The summary is the Worker's own ``summary``
@@ -133,15 +150,13 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
             "_text": record.content, "_record": record,
             "_stamp": f"{record.id}:{record.version}:{_digest(record.content)}",
         })
-    for claim in store.list_mission_claims(mission_id):
-        marker = _CANDIDATE_MARKERS.get(claim.status)
-        if marker is None or claim.id in verified_ids:
-            continue
+    for claim in candidate_claims(store, mission_id, verified_ids=verified_ids):
         rows.append({
-            "layer": CANDIDATE_LAYER, "id": claim.id, "status": str(claim.status), "marker": marker,
-            "key": claim.key, "preview": claim.content[:200], "source_task": claim.source_task,
-            "evidence": list(claim.evidence),
-            "_text": claim.content, "_stamp": f"{claim.id}:{claim.status}:{_digest(claim.content)}",
+            "layer": CANDIDATE_LAYER, "id": claim["id"], "status": claim["status"], "marker": claim["marker"],
+            "key": claim["key"], "preview": claim["content"][:200], "source_task": claim["source_task"],
+            "evidence": claim["evidence"],
+            "_text": claim["content"],
+            "_stamp": f"{claim['id']}:{claim['status']}:{_digest(claim['content'])}",
         })
     for row in step_summaries(store, mission_id):
         rows.append({**row, "_text": row["summary"], "_stamp": f"{row['id']}:{row['summary_sha256']}"})
