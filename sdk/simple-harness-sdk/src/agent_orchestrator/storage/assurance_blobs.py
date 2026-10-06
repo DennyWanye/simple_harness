@@ -22,7 +22,7 @@ from ..contracts.operation_payloads import decode_operation_payload
 from .assurance_pins import require_live_pin_locked
 from .assurance_reads import (
     EpochSnapshot,
-    ExactMetadata,
+    ResolvedRef,
     read_epochs_locked,
     require_epochs_locked,
 )
@@ -31,12 +31,15 @@ if TYPE_CHECKING:
     from .assurance_reads import AssuranceReader
 
 
-def read_blob_metadata(reader: AssuranceReader, ref: AssuranceRef) -> ExactMetadata:
+def read_blob_metadata(
+    reader: AssuranceReader, ref: AssuranceRef, *, now_ms: int | None = None
+) -> ResolvedRef:
     """Blob pins use the ORIGINAL byte hash and revision, never latest metadata.
 
     Source id is the original source.path, pinned by its version_hash and exact
     lifecycle revision. Artifacts use their existing id/version/content_hash;
-    operation payloads retain their original fixed revision 1.
+    operation payloads retain their original fixed revision 1. 身份找得到、生命周期版本
+    已不是钉住的那个，是当前性错误 ``SOURCE_NOT_CURRENT``（第 2 批 A08）。
     """
     with reader.store.read_view() as connection:
         reader._mission_locked(connection)
@@ -50,8 +53,8 @@ def read_blob_metadata(reader: AssuranceReader, ref: AssuranceRef) -> ExactMetad
             if row["tenant_id"] != reader.tenant_id:
                 raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
             if row["revision"] != ref.pin.revision:
-                raise AssuranceError("REF_REVISION_MISMATCH", ref.pin.id)
-            return ExactMetadata(ref, canonical(dict(row)), canonical(dict(row)))
+                raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
+            return reader._resolved(ref, canonical(dict(row)), "sources", dict(row), now_ms)
         if ref.kind != "artifact":
             raise AssuranceError("REF_KIND_UNSUPPORTED", ref.kind)
         artifact = connection.execute(
@@ -69,7 +72,7 @@ def read_blob_metadata(reader: AssuranceReader, ref: AssuranceRef) -> ExactMetad
             raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
         revision = row["version"] if artifact is not None else row["object_revision"]
         if revision != ref.pin.revision:
-            raise AssuranceError("REF_REVISION_MISMATCH", ref.pin.id)
+            raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
         if row["content_hash"] != ref.pin.content_hash:
             raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
         if artifact is not None:
@@ -84,7 +87,8 @@ def read_blob_metadata(reader: AssuranceReader, ref: AssuranceRef) -> ExactMetad
                 raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
         else:
             body = dict(row)
-        return ExactMetadata(ref, canonical(body), canonical(dict(row)))
+        issuer = "artifacts" if artifact is not None else "operation_payload_objects"
+        return reader._resolved(ref, canonical(body), issuer, dict(row), now_ms)
 
 
 def _require_pin(reader: AssuranceReader, ref: AssuranceRef, pin_id: str, review_key: str) -> None:
@@ -99,7 +103,7 @@ def _require_pin(reader: AssuranceReader, ref: AssuranceRef, pin_id: str, review
 
 @dataclass(frozen=True, slots=True)
 class PreparedBlob:
-    metadata: ExactMetadata
+    metadata: ResolvedRef
     pin_id: str
     review_key: str
     epochs: EpochSnapshot
@@ -167,7 +171,7 @@ def read_pinned_blob(
         _require_pin(reader, ref, pin_id, review_key)
         epochs = read_epochs_locked(connection, reader.mission_id)
     body = decode(metadata.body_json)
-    lifecycle = decode(metadata.lifecycle_json)
+    lifecycle = decode(metadata.state_witness_json)
     path = cas.path_for(ref.pin.content_hash)
     if ref.kind == "artifact" and body.get("storage_uri") != str(path):
         raise AssuranceError("CAS_STORAGE_IDENTITY_MISMATCH", ref.pin.id)

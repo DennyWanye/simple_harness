@@ -180,19 +180,17 @@ def review_budget_subject(store: Any, mission_id: str, package: Any, owner_task_
     One definition for the two readers that must agree — the invocation writer below and
     the accounting recovery that later re-binds the reservation.
 
-    * MISSION / MISSION_PLANNING purposes: the Mission.
-    * COMPOSITION (``PARENT_COMPOUND_TASK``): the Mission as well.  A compound goal holds no
-      tokens of its own by design — its share is handed to its steps when it is refined —
-      so reserving on the compound's Task account can never succeed (片 B 真机第 4 局：
-      ``BudgetExhausted … remaining 0``，中间目标永远出不了结论).  The root's final review
-      is funded the same way.
+    * MISSION / MISSION_PLANNING purposes: the Mission.  COMPOSITION is a MISSION account
+      by contract (``REVIEW_PURPOSE_ACCOUNTS``): a compound goal holds no tokens of its own
+      by design — its share is handed to its steps when it is refined — so reserving on
+      the compound's Task account can never succeed (片 B 真机第 4 局：``BudgetExhausted …
+      remaining 0``，中间目标永远出不了结论).  The root's final review is funded the same way.
     * OPERATION_TASK: the operation's own Task — the leaf that prepared it.  The subject's
       owner Task is the effect owner's Scope Task, usually the root compound, whose budget
       is 0 by design (real run 2026-09-27: BudgetExhausted on the root account, every round).
     * everything else: the review's owner Task.
     """
-    if package.account in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING,
-                           ReviewAccount.PARENT_COMPOUND_TASK}:
+    if package.account in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
         return mission_id
     if package.account is ReviewAccount.OPERATION_TASK:
         return operation_task_id(store, mission_id, package)
@@ -521,8 +519,12 @@ def read_review_invocation_locked(
     ):
         raise AssuranceError("REVIEW_BINDING_SOURCE_MISMATCH")
     intent = commit.store.get_intent(intent_id)
-    source = reader.read_exact_metadata(AssuranceRef.from_json(body["source_receipt_ref"]))
-    source_row, receipt = decode(source.lifecycle_json), decode(source.body_json)
+    # 回执的写者与对象由解析器核（第 2 批 A09）
+    source = reader.read_exact_metadata(
+        AssuranceRef.from_json(body["source_receipt_ref"]),
+        receipt_kind="AssuranceReviewInvocationEnsured", receipt_subject=intent_id,
+    )
+    source_row, receipt = decode(source.state_witness_json), decode(source.body_json)
     reservation_ref = AssuranceRef.from_json(body["reservation_fact_ref"])
     fact = decode(reader.read_exact_metadata(reservation_ref).body_json)["payload"]
     if (
@@ -551,8 +553,6 @@ def read_review_invocation_locked(
         or intent.config.get("role") != ROLES[prepared["subject"]["purpose"]]
         or intent.config.get("task_id") != prepared["subject"]["owner_task_ref"]["id"]
         or body["catalogue_hash"] != prepared["catalogue_hash"]
-        or source_row["kind"] != "AssuranceReviewInvocationEnsured"
-        or source_row["subject_id"] != intent_id
         or source_row["base_version"] != 0
         or source_row["proposal_hash"] != fingerprint(receipt)
         or receipt.get("intent_id") != intent_id
@@ -718,7 +718,7 @@ def _require_format_repair(
     if prior.kind != "commit_receipt":
         raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
     metadata = reader.read_exact_metadata(prior)
-    row, body = decode(metadata.lifecycle_json), decode(metadata.body_json)
+    row, body = decode(metadata.state_witness_json), decode(metadata.body_json)
     previous = commit.store.connection.execute(
         "SELECT invocation_json FROM assurance_review_invocations WHERE review_key=? AND ordinal=1",
         (review_key,),

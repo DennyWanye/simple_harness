@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
+from ..assurance.certificates import UseIdentity
 from ..assurance.codec import MAX_BYTES, MAX_RECORD_BYTES, AssuranceError, canonical, decode, fingerprint, text
 from ..assurance.event_kinds import EVENT_REF_KINDS, SOURCE_EVENT_SQL
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef
+from ..assurance.root_gate import CurrentReadPermission
 from .assurance_source_inventory import GLOBAL_TABLES, MISSION_TABLES, SOURCE_PRIMARY_KEYS
-from .store import Store
+from .store import Store, StoreConflict
 
 MISSION_EPOCH_SCOPE = "assurance:mission"
 READER_VERSION = "assurance-store-read-v1"
@@ -89,13 +92,63 @@ def require_epochs_locked(
         raise AssuranceError("TIME_DISCONTINUITY")
 
 
+CurrentAuthority = Callable[[UseIdentity, AssuranceRef], CurrentReadPermission]
+
+
+def _permission(
+    authority: CurrentAuthority, identity: UseIdentity, ref: AssuranceRef, now_ms: int
+) -> CurrentReadPermission:
+    """The one judgment of "may this identity read this reference now" (计划 §3.1：解析时核用途
+    与访问）。解析器带授权时在解析时调它；最终屏障 :func:`_require_same_permission` 也调它。"""
+    permission = authority(identity, ref)
+    if not isinstance(permission, CurrentReadPermission):
+        raise AssuranceError("ACCESS_POLICY_WITNESS_REQUIRED")
+    if now_ms >= permission.not_after_ms:
+        raise AssuranceError("CHECK_USE_EXPIRED")
+    return permission
+
+
+def _require_same_permission(
+    authority: CurrentAuthority,
+    identity: UseIdentity,
+    ref: AssuranceRef,
+    captured: CurrentReadPermission,
+    now_ms: int,
+) -> None:
+    """Final barrier: the captured grant is still in force and CURRENT authority
+    still grants the same access under the same policy.
+
+    ``not_after_ms`` is a lease on the captured grant, not part of its identity: a
+    production authority re-issues it relative to *now*, so comparing it would
+    fail every re-check that is not in the same millisecond (Host real model run
+    10, 2026-09-23). The captured lease is enforced; the fresh one is checked by
+    ``_permission``.
+    """
+    if now_ms >= captured.not_after_ms:
+        raise AssuranceError("CHECK_USE_EXPIRED")
+    current = _permission(authority, identity, ref, now_ms)
+    if (current.access, current.policy) != (captured.access, captured.policy):
+        raise AssuranceError("RECHECK_REQUIRED")
+
+
 @dataclass(frozen=True, slots=True)
-class ExactMetadata:
+class ResolvedRef:
+    """计划 §3.1 的 ``ResolvedRef(body, pin, tenant, mission, issuer, state_witness)``。
+
+    ``ref`` 是 kind + pin；``body_json`` 是按哈希核过的不可变正文（canonical）；``tenant_id`` /
+    ``mission_id`` 来自真实查询（任务行），不是调用参数；``issuer`` 是写者身份：原 typed writer 的表、
+    回执行上的 ``kind``、事件的 ``actor_type``；``state_witness_json`` 是行上除正文之外的列（可变生命
+    周期），不参与正文哈希，使用点仍要按用途核它。``permission`` 只在读取器带现行授权时填，是解析时
+    核过的访问见证；它的租期按"现在"重发，所以不进相等比较。
+    """
+
     ref: AssuranceRef
     body_json: str
-    # Entire original row, including mutable lifecycle. It is not hashed as the
-    # immutable body and must still be checked for the particular use.
-    lifecycle_json: str
+    tenant_id: str
+    mission_id: str
+    issuer: str
+    state_witness_json: str
+    permission: CurrentReadPermission | None = field(default=None, compare=False)
 
     @property
     def read_item(self) -> ReadItem:
@@ -122,8 +175,6 @@ _EXACT = {
     "review_package": ("review_packages", "package_id", "package_json", None),
     "acceptance": ("acceptances", "acceptance_id", "acceptance_json", None),
     "resolution": ("goal_resolutions", "resolution_id", "resolution_json", None),
-    "completion_spec": ("operation_completion_specs", "spec_id", "document_json", None),
-    "completion_scope": ("operation_completion_scopes", "scope_id", "document_json", None),
     "result": ("results", "result_id", "json", None),
     "check_binding": ("assurance_check_bindings", "check_binding_id", "binding_json", None),
     "check_policy": ("assurance_criterion_policies", "policy_id", "policy_json", None),
@@ -138,11 +189,33 @@ _EXACT = {
 # canonical body; payload-only hashes are not interchangeable with event refs.
 
 
+# 完成规格 / 完成范围经原 OCC 读者读（第 2 批 A13）：合同解码、行身份与批准回执 / 任务绑定的
+# 校验都是它的；这里只核归属、哈希并整形。
+_COMPLETION = {
+    "completion_spec": ("get_spec_by_id", "operation_completion_specs"),
+    "completion_scope": ("get_scope_by_id", "operation_completion_scopes"),
+}
+
+
 class AssuranceReader:
-    def __init__(self, store: Store, *, tenant_id: str, mission_id: str) -> None:
+    def __init__(
+        self,
+        store: Store,
+        *,
+        tenant_id: str,
+        mission_id: str,
+        authority: CurrentAuthority | None = None,
+        identity: UseIdentity | None = None,
+    ) -> None:
         self.store = store
         self.tenant_id = text(tenant_id)
         self.mission_id = text(mission_id)
+        if (authority is None) != (identity is None):
+            raise AssuranceError("CURRENT_READ_AUTHORITY_REQUIRED")
+        if identity is not None and identity.mission_id != self.mission_id:
+            raise AssuranceError("REF_SCOPE_MISMATCH", identity.mission_id)
+        self.authority = authority
+        self.identity = identity
 
     def _mission_locked(self, connection: sqlite3.Connection) -> None:
         row = connection.execute(
@@ -151,14 +224,38 @@ class AssuranceReader:
         if row is None or row[0] != self.tenant_id:
             raise AssuranceError("REF_SCOPE_MISMATCH")
 
-    def read_exact_metadata(self, ref: AssuranceRef) -> ExactMetadata:
-        """Exact body identity only: no latest lookup and no assertion of current usability."""
+    def _resolved(
+        self, ref: AssuranceRef, body_json: str, issuer: str, witness: dict[str, Any], now_ms: int | None
+    ) -> ResolvedRef:
+        permission = None
+        if self.authority is not None and self.identity is not None:
+            at = int(self.store.now * 1000) if now_ms is None else now_ms
+            permission = _permission(self.authority, self.identity, ref, at)
+        return ResolvedRef(
+            ref, body_json, self.tenant_id, self.mission_id, issuer, canonical(witness), permission
+        )
+
+    def read_exact_metadata(
+        self,
+        ref: AssuranceRef,
+        *,
+        now_ms: int | None = None,
+        receipt_kind: str | None = None,
+        receipt_subject: str | None = None,
+    ) -> ResolvedRef:
+        """Exact body identity only: no latest lookup and no assertion of current usability.
+
+        ``receipt_kind`` / ``receipt_subject`` 只对 ``commit_receipt`` 有意义：调用方说出期望的写者
+        （回执种类）与写的对象，行上不符按 ``REF_ISSUER_MISMATCH`` / ``REF_SUBJECT_MISMATCH`` 拒绝。
+        """
         if ref.kind in EVENT_REF_KINDS:
-            return self._event_metadata(ref)
+            return self._event_metadata(ref, now_ms)
         if ref.kind in {"artifact", "source"}:
             from .assurance_blobs import read_blob_metadata
 
-            return read_blob_metadata(self, ref)
+            return read_blob_metadata(self, ref, now_ms=now_ms)
+        if ref.kind in _COMPLETION:
+            return self._completion_metadata(ref, now_ms)
         if ref.kind not in _EXACT:
             raise AssuranceError("REF_KIND_UNSUPPORTED", ref.kind)
         table, identity, body_column, revision = _EXACT[ref.kind]
@@ -167,16 +264,22 @@ class AssuranceReader:
         with self.store.read_view() as connection:
             self._mission_locked(connection)
             if ref.kind in {"method", "input_manifest", "commit_receipt"}:
-                query = f"SELECT * FROM {table} WHERE {identity}=?"
+                where = f"{identity}=?"
                 params: tuple[Any, ...] = (ref.pin.id,)
             else:
-                query = f"SELECT * FROM {table} WHERE mission_id=? AND {identity}=?"
+                where = f"mission_id=? AND {identity}=?"
                 params = (self.mission_id, ref.pin.id)
+            query = f"SELECT * FROM {table} WHERE {where}"
             if revision is not None:
                 query += f" AND {revision}=?"
                 params += (ref.pin.revision,)
             rows = connection.execute(query + " LIMIT 2", params).fetchall()
             if not rows:
+                # A08：身份还在、钉住的版本不是来源现在持有的 → 当前性错误，按资产用自己的名字报。
+                if revision is not None and connection.execute(
+                    f"SELECT 1 FROM {table} WHERE {where}", params[: len(params) - 1]
+                ).fetchone():
+                    raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
                 raise AssuranceError("SOURCE_UNAVAILABLE", ref.pin.id)
             if len(rows) != 1:
                 raise AssuranceError("REF_LOCATOR_AMBIGUOUS", ref.pin.id)
@@ -194,8 +297,16 @@ class AssuranceReader:
                     is None
                 ):
                     raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
-            if ref.kind == "commit_receipt" and body.get("mission_id") != self.mission_id:
-                raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
+            issuer = table
+            if ref.kind == "commit_receipt":
+                if body.get("mission_id") != self.mission_id:
+                    raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
+                # A09：真实 Commit writer 写的行，kind 是写者身份、subject_id 是它写的对象。
+                issuer = text(row["kind"])
+                if receipt_kind is not None and row["kind"] != receipt_kind:
+                    raise AssuranceError("REF_ISSUER_MISMATCH", ref.pin.id)
+                if receipt_subject is not None and row["subject_id"] != receipt_subject:
+                    raise AssuranceError("REF_SUBJECT_MISMATCH", ref.pin.id)
             if (
                 ref.kind == "method"
                 and row["registry_status"] == "TRIAL_ADMITTED"
@@ -206,13 +317,33 @@ class AssuranceReader:
                 body = body["envelope"]  # exclude the mutable verification wrapper
             if fingerprint(body, limit=limit) != ref.pin.content_hash:
                 raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
-            # The lifecycle part is the row's own columns without the body column: the
+            # The state witness is the row's own columns without the body column: the
             # body is carried (and hash-checked) once, not again as an escaped string that
             # pushed a 230 KB reviewer manifest past the 256 KB limit (2026-09-25 desktop run).
-            lifecycle = {key: value for key, value in row.items() if key != body_column}
-            return ExactMetadata(ref, canonical(body, limit=limit), canonical(lifecycle))
+            witness = {key: value for key, value in row.items() if key != body_column}
+            return self._resolved(ref, canonical(body, limit=limit), issuer, witness, now_ms)
 
-    def _event_metadata(self, ref: AssuranceRef) -> ExactMetadata:
+    def _completion_metadata(self, ref: AssuranceRef, now_ms: int | None) -> ResolvedRef:
+        from .operation_completion_store import OperationCompletionStore
+
+        if ref.pin.revision != 0:
+            raise AssuranceError("REF_REVISION_MISMATCH", ref.kind)
+        method, table = _COMPLETION[ref.kind]
+        with self.store.read_view():
+            self._mission_locked(self.store.connection)
+            try:
+                row = getattr(OperationCompletionStore(self.store), method)(self.mission_id, ref.pin.id)
+            except StoreConflict as error:
+                raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id) from error
+            if row is None:
+                raise AssuranceError("SOURCE_UNAVAILABLE", ref.pin.id)
+            body = decode(row.pop("document_json"))
+            row.pop("document", None)
+            if fingerprint(body) != ref.pin.content_hash:
+                raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
+            return self._resolved(ref, canonical(body), table, row, now_ms)
+
+    def _event_metadata(self, ref: AssuranceRef, now_ms: int | None) -> ResolvedRef:
         if ref.pin.revision != 0:
             raise AssuranceError("REF_REVISION_MISMATCH", ref.kind)
         with self.store.read_view() as connection:
@@ -236,7 +367,7 @@ class AssuranceReader:
             # System attribution is necessary, not proof of the original
             # execution/Provider/ledger input chain. The use-specific importer
             # still verifies those exact bindings before accepting this bridge.
-            return ExactMetadata(ref, canonical(body), canonical(dict(row)))
+            return self._resolved(ref, canonical(body), text(row["actor_type"]), dict(row), now_ms)
 
 
 @dataclass(frozen=True, slots=True)

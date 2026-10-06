@@ -21,7 +21,6 @@ from agent_orchestrator.contracts.htn import (
 )
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.obligations import (
-    ExpansionRecord,
     Obligation,
     ObligationLedger,
     ObligationLifecycle,
@@ -55,10 +54,8 @@ def duty(
 def test_a_genuinely_new_duty_needs_a_new_obligation_id() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
-    ledger.consume_fuel(
-        duty().obligation_id,
-        expansion=ExpansionRecord(method_id="method-a", parameters_digest="a" * 64),
-    )
+    # 燃料只在开子义务时转份额（第 2 批 A24：按次扣燃料的 consume_fuel 无生产调用方，已删）
+    ledger.open_from(_opening(fuel_share=1), ledger.account(duty().obligation_id))
 
     with pytest.raises(ContractError, match="new obligation_id"):
         ledger.register(duty())
@@ -66,24 +63,7 @@ def test_a_genuinely_new_duty_needs_a_new_obligation_id() -> None:
     child = duty("obligation-2")
     ledger.register(child, recursion_fuel=2)
     assert ledger.account(child.obligation_id).fuel_used == 0
-    assert ledger.account(duty().obligation_id).fuel_used == 1
-
-
-def test_expansion_history_is_kept_across_method_changes() -> None:
-    ledger = ObligationLedger()
-    ledger.register(duty(), recursion_fuel=3)
-    target = duty().obligation_id
-
-    ledger.consume_fuel(
-        target, expansion=ExpansionRecord(method_id="method-a", parameters_digest="d1")
-    )
-    ledger.note_shape_change(target, ShapeChange.METHOD_SWITCHED, detail="method-b")
-    ledger.consume_fuel(
-        target, expansion=ExpansionRecord(method_id="method-b", parameters_digest="d2")
-    )
-
-    assert ledger.expansion_keys(target) == (("method-a", "d1"), ("method-b", "d2"))
-    assert ledger.account(target).expansions == 2
+    assert ledger.remaining_fuel(duty().obligation_id) == 1  # 转给子义务的那一份不再属于父
 
 
 def test_the_ledger_refuses_to_read_an_unregistered_duty() -> None:
@@ -264,19 +244,6 @@ def test_a_demand_may_not_be_admitted_against_a_closed_duty() -> None:
         ledger.admit_demand(target)
 
 
-def test_an_expansion_record_round_trips_through_its_codec() -> None:
-    record = ExpansionRecord(method_id="method-a", parameters_digest="digest-1", task_id="task-7")
-    assert ExpansionRecord.from_json(record.to_json()) == record
-    assert ExpansionRecord.from_json({"method_id": "m", "parameters_digest": "d"}).task_id is None
-
-
-def test_an_expansion_record_refuses_an_unknown_field() -> None:
-    payload = ExpansionRecord(method_id="method-a", parameters_digest="digest-1").to_json()
-    payload["fuel_refunded"] = True
-    with pytest.raises(ContractError, match="unknown fields"):
-        ExpansionRecord.from_json(payload)
-
-
 # --------------------------------------------------------------------------------------
 # Contract round 6 (CR#6): opening a duty says where its authority and fuel come from
 # --------------------------------------------------------------------------------------
@@ -380,9 +347,7 @@ def test_a_parent_cannot_hand_over_fuel_it_no_longer_has() -> None:
     ledger = ObligationLedger()
     ledger.register(duty(), recursion_fuel=2)
     parent = duty().obligation_id
-    ledger.consume_fuel(
-        parent, expansion=ExpansionRecord(method_id="method-a", parameters_digest="d1")
-    )
+    ledger.open_from(_opening(obligation_id="obligation-first", fuel_share=1), ledger.account(parent))
     before = ledger.account(parent)
 
     with pytest.raises(ContractError, match="cannot hand over"):

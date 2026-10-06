@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import Artifact, Task
@@ -72,29 +71,6 @@ class UpstreamInput:
         )
 
 
-def ancestors(task_id: str, tasks_by_id: Mapping[str, Task]) -> list[Task]:
-    """All transitive dependencies of ``task_id`` in topological order (step 5 D5-3': a
-    BLOCKED Task rewired to a later-created dependency keeps its ordinal, so the order
-    is computed from the edges; ordinal only breaks ties)."""
-
-    seen: set[str] = set()
-
-    def visit(current: str) -> None:
-        task = tasks_by_id.get(current)
-        if task is None:
-            return
-        for dep in task.dependency_ids:
-            if dep not in seen:
-                seen.add(dep)
-                visit(dep)
-
-    visit(task_id)
-    # review P2-2 / D5-4: a superseded (CANCELLED) ancestor contributes nothing — its
-    # accepted artifacts belong to the plan the Manager retired
-    live = [tasks_by_id[t] for t in seen if str(tasks_by_id[t].status) != "CANCELLED"]
-    return topological(live, tasks_by_id)
-
-
 def topological(tasks: Sequence[Task], tasks_by_id: Mapping[str, Task]) -> list[Task]:
     """Kahn over the given tasks' dependency edges (restricted to the set), ordinal as
     the deterministic tie-break."""
@@ -126,73 +102,6 @@ def _ordinal(task_id: str) -> int:
         return 0
 
 
-def merge_accepted(
-    producers: Sequence[Task],
-    artifacts_by_task: Mapping[str, Sequence[Artifact]],
-    *,
-    tasks_by_id: Mapping[str, Task],
-) -> list[UpstreamInput]:
-    """Accepted artifacts of ``producers`` (topological order) merged by path.
-
-    Override is legal only along a dependency chain; independent producers with
-    different content for one path raise ``ArtifactConflict``.
-    """
-
-    closure = {task.id: {t.id for t in ancestors(task.id, tasks_by_id)} for task in producers}
-    inputs: dict[str, UpstreamInput] = {}
-    for task in topological(list(producers), tasks_by_id):
-        accepted = set(task.accepted_artifacts)
-        for artifact in artifacts_by_task.get(task.id, ()):
-            if artifact.id not in accepted:
-                continue
-            existing = inputs.get(artifact.path)
-            if existing is not None and existing.content_hash != artifact.content_hash:
-                if existing.task_id not in closure.get(task.id, set()):
-                    raise ArtifactConflict(
-                        f"{artifact.path} is produced by both {existing.task_id} and {task.id}"
-                        " (independent branches) with different content"
-                    )
-            inputs[artifact.path] = UpstreamInput(
-                task.id, artifact.path, artifact.content_hash, artifact.id
-            )
-    return [inputs[path] for path in sorted(inputs)]
-
-
-def collect_upstream_inputs(
-    task: Task, tasks_by_id: Mapping[str, Task], artifacts_by_task: Mapping[str, Sequence[Artifact]]
-) -> list[UpstreamInput]:
-    """What a new Attempt of ``task`` starts from: every ancestor's accepted artifacts."""
-
-    return merge_accepted(
-        ancestors(task.id, tasks_by_id), artifacts_by_task, tasks_by_id=tasks_by_id
-    )
-
-
-def materialise_inputs(
-    workspace_root: Path, inputs: Sequence[UpstreamInput], artifacts_by_id: Mapping[str, Artifact]
-) -> list[str]:
-    """Copy each upstream artifact file into the workspace (verifying its hash first)."""
-
-    from .store import ArtifactStoreError, read_verified
-
-    written = []
-    for item in inputs:
-        artifact = artifacts_by_id[item.artifact_id]
-        try:  # P3.2 D3: the stored bytes, hash re-checked, never through a symlink
-            data = read_verified(artifact) if artifact.content_hash == item.content_hash else None
-        except ArtifactStoreError:
-            data = None
-        if data is None:
-            raise ArtifactConflict(
-                f"upstream artifact {item.artifact_id} ({item.path}) is missing or changed"
-            )
-        target = workspace_root / item.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        written.append(item.path)
-    return written
-
-
 def next_versions(existing: Sequence[Artifact]) -> dict[str, int]:
     """Highest recorded version per path (Mission-wide lineage, D3-8')."""
 
@@ -206,12 +115,13 @@ def next_versions(existing: Sequence[Artifact]) -> dict[str, int]:
 # P2.3b: the hierarchical mode's path (§24.1 decisions 3, 4 and 11; TG §10.1-10.3)
 # ======================================================================================
 #
-# Everything above this line is the legacy mode and stays exactly as it was: §18.2 asks
-# for ``merge_accepted`` / ``collect_upstream_inputs`` / ``topological`` byte-for-byte
-# unchanged, and the suite hashes their source to hold that.  The diagnostic readers
-# (``observability/traces.py``, ``observability/evaluation.py``) keep calling those
-# three and therefore keep tolerating a damaged graph, which is the whole point of
-# decision 11: an operator's view of a broken Mission must still render.
+# Above this line only ``topological`` remains of the legacy mode (§18.2: byte-for-byte
+# unchanged, the suite hashes its source to hold that).  The all-ancestors sweep (four
+# helpers that merged every ancestor's accepted files into a new Attempt's inputs)
+# lost its last production caller when attribution moved to the root resolution's
+# contribution list (2026-10-06 第 2 批车道 H) and was deleted with it (车道 I2).
+# ``graph/terminal.py`` still orders by ``topological`` and keeps tolerating a damaged
+# graph: an operator's view of a broken Mission must still render (decision 11).
 #
 # Below the line is the new mode, and it differs in three ways that are not details:
 #
@@ -383,13 +293,9 @@ def materialise_v2(
 __all__ = (
     "ArtifactConflict",
     "UpstreamInput",
-    "ancestors",
     "topological",
-    "collect_upstream_inputs",
     "manifest_upstream_inputs",
-    "materialise_inputs",
     "materialise_v2",
-    "merge_accepted",
     "next_versions",
     "resolve_input_manifest",
 )

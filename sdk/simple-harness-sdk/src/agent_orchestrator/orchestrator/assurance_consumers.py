@@ -435,8 +435,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             # 读不回来有两种：原判定拒绝，或这个任务的执行图文档 / 计划本身读不了（比如按
             # 旧编解码清单存的旧任务）。都是"根网络不可用"，如实记下，不往外抛。
             return None, [], [], "ROOT_NETWORK_UNAVAILABLE: " + str(error)[:200]
-        if network is None:
-            raise AssuranceError("CLOSEOUT_ROOT_NETWORK_UNAVAILABLE")
         semantics = HtnStore(self.store)
         resolutions, missing = [], []
         for duty in dict.fromkeys(network.required_obligations):

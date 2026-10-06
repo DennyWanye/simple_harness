@@ -18,9 +18,13 @@ from ..assurance.reviews import REVIEW_CODEC_VERSION
 from ..contracts import TERMINAL_ATTEMPT
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 from ..storage.assurance_pins import require_live_pin_locked
-from ..storage.assurance_reads import AssuranceReader, read_epochs_locked, require_epochs_locked
+from ..storage.assurance_reads import (
+    AssuranceReader,
+    _permission,
+    read_epochs_locked,
+    require_epochs_locked,
+)
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import _permission
 from .assurance_review_import import review_scope_id, review_subject_stopped
 from .assurance_review_transport import _validate_package
 

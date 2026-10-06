@@ -50,7 +50,7 @@ from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
     EpochSnapshot,
-    ExactMetadata,
+    ResolvedRef,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
@@ -58,13 +58,8 @@ from ..storage.assurance_reads import (
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import (
-    CurrentAuthority,
-    PreparedCheckUse,
-    _merge_reads,
-    _permission,
-    _require_same_permission,
-)
+from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
+from .assurance_check_use import PreparedCheckUse, _merge_reads
 from .assurance_review_transport import read_review_invocation_locked
 
 
@@ -72,11 +67,11 @@ from .assurance_review_transport import read_review_invocation_locked
 class ImportedReview:
     invocation: ReviewInvocation
     binding: AssuranceReviewBinding
-    classification: ExactMetadata
-    turn: ExactMetadata
-    provider_manifest: ExactMetadata
+    classification: ResolvedRef
+    turn: ResolvedRef
+    provider_manifest: ResolvedRef
     disclosures: tuple[DisclosureBatch, ...]
-    disclosure_metadata: tuple[ExactMetadata, ...]
+    disclosure_metadata: tuple[ResolvedRef, ...]
     catalogue: tuple[CatalogueEntry, ...]
     exposed: frozenset[str]
 
@@ -189,7 +184,7 @@ def read_imported_review_locked(
     if classification_ref.kind != "commit_receipt":
         raise AssuranceError("REVIEW_CLASSIFICATION_SOURCE_INVALID")
     classified = reader.read_exact_metadata(classification_ref)
-    source, meta = decode(classified.body_json), decode(classified.lifecycle_json)
+    source, meta = decode(classified.body_json), decode(classified.state_witness_json)
     intent_id = source.get("intent_id")
     invocation, binding = read_review_invocation_locked(commit, reader, intent_id)
     value, bound = invocation.to_json(), binding.to_json()
@@ -546,7 +541,7 @@ class PreparedOfficialReview:
     authority: CurrentAuthority
     imported: ImportedReview
     epochs: EpochSnapshot
-    metadata: tuple[ExactMetadata, ...]
+    metadata: tuple[ResolvedRef, ...]
     permissions: tuple[tuple[AssuranceRef, CurrentReadPermission], ...]
     blobs: tuple[PreparedBlob, ...]
     check_uses: tuple[PreparedCheckUse, ...]
@@ -795,13 +790,16 @@ def prepare_official_review(
             refs.add(AssuranceRef("completion_scope", Pin.from_json(scope)))
         refs.update(item.ref for item in imported.catalogue)
         refs.update(item.ref for item in imported.disclosure_metadata)
-        metadata = tuple(
-            reader.read_exact_metadata(ref) for ref in sorted(refs, key=lambda ref: ref.key)
+        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        reader = AssuranceReader(
+            store, tenant_id=reader.tenant_id, mission_id=reader.mission_id,
+            authority=authority, identity=identity,
         )
-        permissions = tuple(
-            (ref, _permission(authority, identity, ref, now_ms))
+        metadata = tuple(
+            reader.read_exact_metadata(ref, now_ms=now_ms)
             for ref in sorted(refs, key=lambda ref: ref.key)
         )
+        permissions = tuple((item.ref, item.permission) for item in metadata)
         complete = read_complete_evidence_snapshot(reader, scope_id=identity.scope_id)
         checks = _consume_checks(check_uses, check_adapter, identity, authority, now_ms)
         allowed = {
@@ -866,7 +864,7 @@ def prepare_official_review(
 
 def read_official_review_binding_locked(
     commit: Any, tenant_id: str, record: ReviewRecord
-) -> ExactMetadata:
+) -> ResolvedRef:
     """Authenticate historical transport and sidecar; this grants no current use."""
     reader = AssuranceReader(
         commit.store, tenant_id=tenant_id, mission_id=record.binding.mission_id
@@ -874,7 +872,7 @@ def read_official_review_binding_locked(
     original = reader.read_exact_metadata(
         AssuranceRef("review", Pin(str(record.record_id), 0, fingerprint(record.to_json())))
     )
-    if not decode(original.lifecycle_json)["official"]:
+    if not decode(original.state_witness_json)["official"]:
         raise AssuranceError("REVIEW_NOT_OFFICIAL")
     row = commit.store.connection.execute(
         "SELECT * FROM assurance_review_record_bindings WHERE record_id=?", (str(record.record_id),)
@@ -889,8 +887,11 @@ def read_official_review_binding_locked(
     receipt_ref = AssuranceRef(
         "commit_receipt", Pin(row["import_receipt_id"], 0, fingerprint(dict(receipt)))
     )
-    metadata = reader.read_exact_metadata(receipt_ref)
-    lifecycle = decode(metadata.lifecycle_json)
+    # 回执的写者与对象由解析器核（第 2 批 A09）
+    metadata = reader.read_exact_metadata(
+        receipt_ref, receipt_kind="AssuranceReviewImported", receipt_subject=str(record.record_id)
+    )
+    lifecycle = decode(metadata.state_witness_json)
     imported = read_imported_review_locked(
         commit,
         reader,
@@ -898,8 +899,6 @@ def read_official_review_binding_locked(
     )
     if (
         row["binding_hash"] != binding.content_hash
-        or lifecycle["kind"] != "AssuranceReviewImported"
-        or lifecycle["subject_id"] != str(record.record_id)
         or lifecycle["base_version"] != 0
         or lifecycle["proposal_hash"] != binding.content_hash
         or receipt.get("binding_hash") != binding.content_hash

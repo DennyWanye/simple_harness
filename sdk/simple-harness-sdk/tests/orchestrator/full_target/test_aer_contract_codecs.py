@@ -233,7 +233,7 @@ def review_record(*outcomes: CriterionOutcome) -> ReviewRecord:
     [
         (ReviewPurpose.TASK_CONTENT, ReviewAccount.TASK),
         (ReviewPurpose.METHOD_PLAN, ReviewAccount.MISSION_PLANNING),
-        (ReviewPurpose.COMPOSITION, ReviewAccount.PARENT_COMPOUND_TASK),
+        (ReviewPurpose.COMPOSITION, ReviewAccount.MISSION),
         (ReviewPurpose.ACTION_PROPOSAL, ReviewAccount.OPERATION_TASK),
         (ReviewPurpose.OPERATION_OUTCOME, ReviewAccount.OPERATION_TASK),
         (ReviewPurpose.MISSION_FINAL, ReviewAccount.MISSION),

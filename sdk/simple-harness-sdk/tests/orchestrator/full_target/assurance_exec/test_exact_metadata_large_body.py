@@ -2,7 +2,7 @@
 """2026-09-25 desktop run (ledger.py + pytest + README): the reviewer turn's input
 manifest was 230 KB, under the 256 KB JSON limit, but read_exact_metadata also
 serialised the whole row — which carries the same body again as an escaped string —
-into lifecycle_json (275 KB), so every review import raised JSON_BYTES_LIMIT, the
+into state_witness_json (275 KB), so every review import raised JSON_BYTES_LIMIT, the
 recheck budget ran out and the leaf went to manual resolution.  The lifecycle part
 now excludes the body column; the body is still checked against its hash on its own.
 """
@@ -36,7 +36,7 @@ def test_a_large_manifest_body_under_the_limit_reads_exactly(tmp_path):
         reader = AssuranceReader(store, tenant_id=TENANT, mission_id=MISSION)
         metadata = reader.read_exact_metadata(AssuranceRef("input_manifest", Pin(digest, 0, digest)))
         assert decode(metadata.body_json) == body
-        lifecycle = decode(metadata.lifecycle_json)
+        lifecycle = decode(metadata.state_witness_json)
         assert "manifest_json" not in lifecycle  # the body is never carried twice
         assert lifecycle["manifest_hash"] == digest and lifecycle["origin_mission_id"] == MISSION
     finally:

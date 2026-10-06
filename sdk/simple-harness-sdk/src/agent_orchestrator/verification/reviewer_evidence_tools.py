@@ -30,7 +30,7 @@ from ..contracts import TERMINAL_MISSION
 from ..contracts.models import ContractError
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, EvidenceToolRefusal, WorkspaceBinding
 from ..storage.assurance_blobs import read_pinned_blob
-from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_reads import AssuranceReader, _permission
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 
@@ -226,7 +226,6 @@ class ReviewerEvidenceTools:
         return [rows[label] for label in sorted(rows)]
 
     def _context(self, run_id: str, mission_id: str):  # type: ignore[no-untyped-def]
-        from ..orchestrator.assurance_check_use import _permission
 
         mission = self.store.get_mission(mission_id)
         if mission is None or mission.tenant_id != self.consumer.tenant_id:
@@ -286,7 +285,6 @@ class ReviewerEvidenceTools:
         return result
 
     def _find(self, reader, binding, identity, arguments) -> dict:  # type: ignore[no-untyped-def]
-        from ..orchestrator.assurance_check_use import _permission
 
         query = arguments.get("query")
         offset = integer(arguments.get("offset", 0), minimum=0)
@@ -341,7 +339,6 @@ class ReviewerEvidenceTools:
         }
 
     def _read(self, reader, binding, identity, authorize, arguments) -> dict:  # type: ignore[no-untyped-def]
-        from ..orchestrator.assurance_check_use import _permission
         from ..orchestrator.assurance_review_pins import ensure_review_blob_pins
 
         label = text(arguments.get("label", ""))

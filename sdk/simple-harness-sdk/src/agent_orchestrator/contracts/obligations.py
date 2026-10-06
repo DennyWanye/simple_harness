@@ -192,48 +192,6 @@ class Obligation:
 
 
 @dataclass(frozen=True, slots=True)
-class ExpansionRecord:
-    """One refinement of an obligation, identified for repeat detection (§6.4)."""
-
-    method_id: str
-    parameters_digest: str
-    task_id: str | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "method_id", identifier(self.method_id, "expansion.method_id"))
-        object.__setattr__(
-            self,
-            "parameters_digest",
-            identifier(self.parameters_digest, "expansion.parameters_digest"),
-        )
-        object.__setattr__(self, "task_id", optional_identifier(self.task_id, "expansion.task_id"))
-
-    @property
-    def key(self) -> tuple[str, str]:
-        """Repeat detection ignores which task carried the expansion."""
-
-        return (self.method_id, self.parameters_digest)
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "method_id": self.method_id,
-            "parameters_digest": self.parameters_digest,
-            "task_id": self.task_id,
-        }
-
-    @classmethod
-    def from_json(cls, value: object, name: str = "expansion_record") -> ExpansionRecord:
-        data = fields_of(
-            value, name, required=("method_id", "parameters_digest"), optional=("task_id",)
-        )
-        return cls(
-            method_id=data["method_id"],
-            parameters_digest=data["parameters_digest"],
-            task_id=data.get("task_id"),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class ObligationAccountView:
     """An immutable read of one obligation's standing and remaining fuel.
 
@@ -269,17 +227,6 @@ class ObligationAccountView:
             "lifecycle": str(self.lifecycle),
             "resolution_ref": self.resolution_ref,
         }
-
-
-@dataclass(frozen=True, slots=True)
-class FuelDecision:
-    status: FuelStatus
-    remaining_fuel: int
-    reason: str
-
-    @property
-    def granted(self) -> bool:
-        return self.status is FuelStatus.GRANTED
 
 
 class _Account:
@@ -508,37 +455,6 @@ class ObligationLedger:
 
     # -- recursion fuel -------------------------------------------------------------
 
-    def consume_fuel(self, target: ObligationId, *, expansion: ExpansionRecord) -> FuelDecision:
-        """Spend one unit of the obligation's recursion fuel.
-
-        Changing method, parameters or agent does not refill anything: the fuel
-        belongs to the duty.  Exhaustion yields ``BOUND_REACHED`` together with the
-        expansions already made, never ``UNSOLVABLE`` (ADR-08).
-        """
-
-        if not isinstance(expansion, ExpansionRecord):
-            raise ContractError("consume_fuel expects an ExpansionRecord")
-        account = self._require(target)
-        if expansion.key in account.expansion_keys:
-            return FuelDecision(
-                FuelStatus.REPEATED_EXPANSION,
-                max(account.fuel_limit - account.fuel_used, 0),
-                "this obligation was already expanded with the same method and parameters",
-            )
-        if account.fuel_used >= account.fuel_limit:
-            return FuelDecision(
-                FuelStatus.BOUND_REACHED,
-                0,
-                "recursion fuel for this obligation is exhausted",
-            )
-        account.fuel_used += 1
-        account.expansion_keys.append(expansion.key)
-        return FuelDecision(
-            FuelStatus.GRANTED,
-            max(account.fuel_limit - account.fuel_used, 0),
-            "expansion admitted",
-        )
-
     def remaining_fuel(self, target: ObligationId) -> int:
         account = self._require(target)
         return max(account.fuel_limit - account.fuel_used, 0)
@@ -619,8 +535,6 @@ def obligation_refs(value: object, name: str) -> tuple[ObligationId, ...]:
 
 __all__ = (
     "BoundReachedReport",
-    "ExpansionRecord",
-    "FuelDecision",
     "FuelStatus",
     "Obligation",
     "ObligationAccountView",

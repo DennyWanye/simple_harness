@@ -10,7 +10,7 @@ certificate. This component proves only the registered layer assertion.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -27,8 +27,11 @@ from ..storage.assurance_blobs import PreparedBlob, read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
+    CurrentAuthority,
     EpochSnapshot,
-    ExactMetadata,
+    ResolvedRef,
+    _permission,
+    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
@@ -38,43 +41,6 @@ from .assurance_check_import import read_local_check_binding_locked
 
 if TYPE_CHECKING:
     from .assurance_local_checks import AssuranceLocalChecks
-
-CurrentAuthority = Callable[[UseIdentity, AssuranceRef], CurrentReadPermission]
-
-
-def _permission(
-    authority: CurrentAuthority, identity: UseIdentity, ref: AssuranceRef, now_ms: int
-) -> CurrentReadPermission:
-    permission = authority(identity, ref)
-    if not isinstance(permission, CurrentReadPermission):
-        raise AssuranceError("ACCESS_POLICY_WITNESS_REQUIRED")
-    if now_ms >= permission.not_after_ms:
-        raise AssuranceError("CHECK_USE_EXPIRED")
-    return permission
-
-
-def _require_same_permission(
-    authority: CurrentAuthority,
-    identity: UseIdentity,
-    ref: AssuranceRef,
-    captured: CurrentReadPermission,
-    now_ms: int,
-) -> None:
-    """Final barrier: the captured grant is still in force and CURRENT authority
-    still grants the same access under the same policy.
-
-    ``not_after_ms`` is a lease on the captured grant, not part of its identity: a
-    production authority re-issues it relative to *now*, so comparing it would
-    fail every re-check that is not in the same millisecond (Host real model run
-    10, 2026-09-23). The captured lease is enforced; the fresh one is checked by
-    ``_permission``.
-    """
-    if now_ms >= captured.not_after_ms:
-        raise AssuranceError("CHECK_USE_EXPIRED")
-    current = _permission(authority, identity, ref, now_ms)
-    if (current.access, current.policy) != (captured.access, captured.policy):
-        raise AssuranceError("RECHECK_REQUIRED")
-
 
 def _merge_reads(rows: list[ReadItem]) -> tuple[ReadItem, ...]:
     # A source used twice is one read. Conflicting observations never collapse.
@@ -93,7 +59,7 @@ class PreparedCheckUse:
     binding: CheckBinding
     binding_ref: AssuranceRef
     epochs: EpochSnapshot
-    metadata: tuple[ExactMetadata, ...]
+    metadata: tuple[ResolvedRef, ...]
     permissions: tuple[tuple[AssuranceRef, CurrentReadPermission], ...]
     blobs: tuple[PreparedBlob, ...]
     complete_reads: tuple[CompleteRead, ...]
@@ -215,12 +181,16 @@ def prepare_local_check_use(
     gate = adapter.commit._assurance_root_gate
     if gate is None or gate.require_execution().root_incarnation_id != identity.root_incarnation_id:
         raise AssuranceError("CHECK_USE_IDENTITY")
-    reader = AssuranceReader(store, tenant_id=adapter.tenant_id, mission_id=identity.mission_id)
+    # 解析时就核用途与访问（第 2 批 A10）：这个读取器读到的每份精确引用都经现行授权。
+    reader = AssuranceReader(
+        store, tenant_id=adapter.tenant_id, mission_id=identity.mission_id,
+        authority=authority, identity=identity,
+    )
     now_ms = integer(int(store.now * 1000))
     with store.read_view() as connection:
         epochs = read_epochs_locked(connection, identity.mission_id)
         require_epochs_locked(connection, identity.mission_id, epochs, now_ms=now_ms)
-        binding_metadata = reader.read_exact_metadata(binding_ref)
+        binding_metadata = reader.read_exact_metadata(binding_ref, now_ms=now_ms)
         binding = CheckBinding.from_json(decode(binding_metadata.body_json))
         scope_metadata = reader.read_exact_metadata(completion_scope)
         scope = OccurrenceCompletionScopeV1.from_json(decode(scope_metadata.body_json))
@@ -252,7 +222,7 @@ def prepare_local_check_use(
         )
         manifest_metadata = reader.read_exact_metadata(manifest_ref)
         manifest = decode(manifest_metadata.body_json)
-        source_row = decode(binding_metadata.lifecycle_json)
+        source_row = decode(binding_metadata.state_witness_json)
         receipt_id = source_row["import_receipt_id"]
         receipt_row = connection.execute(
             "SELECT * FROM commit_receipts WHERE commit_id=?", (receipt_id,)
@@ -305,11 +275,10 @@ def prepare_local_check_use(
         if len(required) > 512:
             raise AssuranceError("CHECK_USE_DEPENDENCY_LIMIT")
         metadata = tuple(
-            reader.read_exact_metadata(ref) for ref in sorted(required, key=lambda r: r.key)
+            reader.read_exact_metadata(ref, now_ms=now_ms)
+            for ref in sorted(required, key=lambda r: r.key)
         )
-        permissions = tuple(
-            (row.ref, _permission(authority, identity, row.ref, now_ms)) for row in metadata
-        )
+        permissions = tuple((row.ref, row.permission) for row in metadata)
         complete = read_complete_evidence_snapshot(reader, scope_id=identity.scope_id)
     # No writer calls above: complete snapshot and sources refer to one read view.
     remaining = maximum_blob_bytes

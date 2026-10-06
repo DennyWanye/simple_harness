@@ -52,7 +52,7 @@ from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
     EpochSnapshot,
-    ExactMetadata,
+    ResolvedRef,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
@@ -60,14 +60,8 @@ from ..storage.assurance_reads import (
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.assurance_work import atomic
-from .assurance_check_use import (
-    CurrentAuthority,
-    PreparedCheckUse,
-    _merge_reads,
-    _permission,
-    _require_same_permission,
-    prepare_local_check_use,
-)
+from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
+from .assurance_check_use import PreparedCheckUse, _merge_reads, prepare_local_check_use
 from .assurance_review_import import (
     read_imported_review_locked,
     read_official_review_binding_locked,
@@ -119,7 +113,7 @@ class CandidateUseCertificate:
     record: ReviewRecord
     subject_hash: str
     epochs: EpochSnapshot
-    metadata: tuple[ExactMetadata, ...]
+    metadata: tuple[ResolvedRef, ...]
     permissions: tuple[tuple[AssuranceRef, CurrentReadPermission], ...]
     check_uses: tuple[PreparedCheckUse, ...]
     check_grades: tuple[tuple[AssuranceRef, str], ...]
@@ -487,13 +481,16 @@ class AssuranceValidity:
             }
             if adjudication_ref is not None:
                 required.add(adjudication_ref)
+            # 解析时就核用途与访问（第 2 批 A10）
+            authorized = AssuranceReader(
+                store, tenant_id=self.tenant_id, mission_id=mission_id,
+                authority=self.authority, identity=identity,
+            )
             metadata = tuple(
-                reader.read_exact_metadata(ref) for ref in sorted(required, key=lambda r: r.key)
+                authorized.read_exact_metadata(ref, now_ms=now_ms)
+                for ref in sorted(required, key=lambda r: r.key)
             )
-            permissions = tuple(
-                (row.ref, _permission(self.authority, identity, row.ref, now_ms))
-                for row in metadata
-            )
+            permissions = tuple((row.ref, row.permission) for row in metadata)
             checks: dict[AssuranceRef, CheckResult] = {}
             check_grades = []
             for use in check_uses:
