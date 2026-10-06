@@ -89,6 +89,9 @@ async def test_completed_diagnostics_and_exports_preserve_state_calls_and_artifa
         assert response["payload"]["ok"] is True, response
         report = response["payload"]["data"]
         assert report["attribution"]["mission_status"] == "COMPLETED"
+        # 夜间 N3-11（T10）：钉 opt.166 后归因报告是 attribution-v2。目标链与产物的验收编号 Host 白名单
+        # 还没放行（diagnostics._attribution），已记缺陷交主会话，这里先不断言。
+        assert report["attribution"]["version"] == "attribution-v2"
         assert report["replay"]["status"] == "CONSISTENT" and "library" not in report["replay"]
         assert report["verification"]["results"]
         assert report["verification"]["artifacts"]
