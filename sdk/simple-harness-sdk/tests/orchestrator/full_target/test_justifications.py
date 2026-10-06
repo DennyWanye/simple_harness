@@ -11,13 +11,12 @@ no store, no epoch barrier, no dirty queue (those are P3.5 / P3.6).
 from __future__ import annotations
 
 import pytest
-from full_target_world import HASH_A, HASH_B, World, tref
+from full_target_world import HASH_A, World, tref
 
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     ObservationRecord,
     QueryCompleteness,
-    RecheckOutcome,
     TemporalUse,
     TruthValue,
     Validity,
@@ -27,7 +26,6 @@ from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.semantic_base import (
     EvidenceRef,
     EvidenceRefKind,
-    TypedRef,
     TypedRefKind,
 )
 from agent_orchestrator.knowledge.justifications import (
@@ -43,10 +41,8 @@ from agent_orchestrator.knowledge.justifications import (
     AnchorSelector,
     Atom,
     ClosureStatus,
-    ConsumerUse,
     EvidencePremise,
     JustificationSet,
-    LineageRecord,
     Polarity,
     PropositionPremise,
     RuleCondition,
@@ -55,7 +51,6 @@ from agent_orchestrator.knowledge.justifications import (
     WitnessKind,
     grounded_closure,
     parse_polarity,
-    reevaluate_consumer,
 )
 from agent_orchestrator.knowledge.predicates import WorldAssumption
 
@@ -727,54 +722,6 @@ def test_k10_a_predicted_effect_is_never_an_observation() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# AER-K11 — was_used and supports_for_use cannot rewrite each other
-# --------------------------------------------------------------------------- #
-
-
-def lineage() -> LineageRecord:
-    return LineageRecord(
-        tref(TypedRefKind.ARTIFACT, "report-1"),
-        (evidence_ref("e1"),),
-        ("signature-old",),
-    )
-
-
-def test_k11_rebinding_supports_leaves_the_literal_citation_alone() -> None:
-    record = lineage().with_supports(("signature-e2",))
-    assert record.supports_for_use == ("signature-e2",)
-    assert record.was_used == (evidence_ref("e1"),)
-    assert record.cites(evidence_ref("e1"))
-
-
-def test_k11_recording_a_new_read_leaves_the_current_reasons_alone() -> None:
-    record = lineage().with_recorded_use(evidence_ref("e2"))
-    assert record.was_used == (evidence_ref("e1"), evidence_ref("e2"))
-    assert record.supports_for_use == ("signature-old",)
-
-
-def test_k11_history_cannot_be_adopted_as_a_current_reason() -> None:
-    with pytest.raises(ContractError, match="historical lineage"):
-        lineage().adopt_history_as_support()
-
-
-def test_k11_a_current_reason_cannot_rewrite_history() -> None:
-    with pytest.raises(ContractError, match="must not rewrite was_used"):
-        lineage().rewrite_history_from_supports()
-
-
-def test_k11_lineage_fields_are_not_assignable() -> None:
-    record = lineage()
-    with pytest.raises(ContractError, match="immutable"):
-        record._was_used = ()  # type: ignore[misc]
-
-
-def test_k11_withdrawn_citations_are_reported_against_the_admitted_set() -> None:
-    record = lineage().with_recorded_use(evidence_ref("e2"))
-    assert record.withdrawn_citations([evidence_ref("e2")]) == (evidence_ref("e1"),)
-    assert record.withdrawn_citations([evidence_ref("e1"), evidence_ref("e2")]) == ()
-
-
-# --------------------------------------------------------------------------- #
 # EVALUATION_INCOMPLETE blocks release
 # --------------------------------------------------------------------------- #
 
@@ -907,111 +854,6 @@ def test_a_falsified_assumption_blocks_the_rule() -> None:
         _assumption_graph(world), anchors, assumptions={"no-open-incident": False}
     )
     assert result.truth_for(world.keys["b"]) is TruthValue.UNKNOWN
-
-
-# --------------------------------------------------------------------------- #
-# §11.5 / AER §10.3 — the five re-evaluation outcomes
-# --------------------------------------------------------------------------- #
-
-
-CONSUMER = TypedRef(kind=TypedRefKind.REVIEW, id="review-1", revision=1, content_hash=HASH_B)
-
-
-def use(**kwargs: object) -> ConsumerUse:
-    base: dict[str, object] = {
-        "consumer_ref": CONSUMER,
-        "purpose": WitnessPurpose.ACCEPT,
-        "conclusion": "pred-safe@1#abc",
-        "truth": TruthValue.TRUE,
-        "support_signatures": ("signature-e1",),
-        "requirements_digest": "requirements-v1",
-        "inputs_digest": "inputs-v1",
-    }
-    base.update(kwargs)
-    return ConsumerUse(**base)  # type: ignore[arg-type]
-
-
-def test_recheck_unchanged_when_the_same_supports_still_hold() -> None:
-    assert reevaluate_consumer(use(), use()) is RecheckOutcome.UNCHANGED
-
-
-def test_recheck_rebound_support_when_only_the_reason_changed() -> None:
-    after = use(support_signatures=("signature-e2",))
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.REBOUND_SUPPORT
-
-
-def test_recheck_needs_review_when_a_literal_citation_was_withdrawn() -> None:
-    after = use(
-        support_signatures=("signature-e2",),
-        literal_citations=(evidence_ref("e1"),),
-        withdrawn_citations=(evidence_ref("e1"),),
-    )
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.NEEDS_REVIEW
-
-
-def test_recheck_rebound_support_when_the_conclusion_is_not_byte_bound() -> None:
-    after = use(
-        support_signatures=("signature-e2",),
-        literal_citations=(evidence_ref("e1"),),
-        withdrawn_citations=(evidence_ref("e1"),),
-        citation_binding_required=False,
-    )
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.REBOUND_SUPPORT
-
-
-def test_recheck_needs_review_when_rebinding_is_not_permitted() -> None:
-    after = use(support_signatures=("signature-e2",), rebinding_allowed=False)
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.NEEDS_REVIEW
-
-
-def test_recheck_needs_review_when_the_inputs_actually_changed() -> None:
-    after = use(support_signatures=("signature-e2",), inputs_digest="inputs-v2")
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.NEEDS_REVIEW
-
-
-def test_recheck_needs_review_when_support_disappeared() -> None:
-    after = use(truth=TruthValue.UNKNOWN, support_signatures=())
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.NEEDS_REVIEW
-
-
-def test_recheck_needs_review_when_the_support_is_no_longer_current() -> None:
-    after = use(validity=Validity.STALE)
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.NEEDS_REVIEW
-
-
-def test_recheck_invalid_when_the_premise_was_refuted() -> None:
-    after = use(truth=TruthValue.FALSE, support_signatures=())
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.INVALID
-
-
-def test_recheck_invalid_on_a_conflict() -> None:
-    after = use(truth=TruthValue.CONFLICT)
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.INVALID
-
-
-def test_recheck_invalid_when_the_requirement_itself_changed() -> None:
-    after = use(requirements_digest="requirements-v2")
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.INVALID
-
-
-def test_recheck_unavailable_never_asserts_the_content_is_wrong() -> None:
-    after = use(availability=Availability.UNAVAILABLE, truth=TruthValue.UNKNOWN)
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.UNAVAILABLE
-
-
-def test_recheck_unavailable_wins_over_a_missing_requirement_digest() -> None:
-    after = use(availability=Availability.REDACTED, requirements_digest="requirements-v2")
-    assert reevaluate_consumer(use(), after) is RecheckOutcome.UNAVAILABLE
-
-
-def test_recheck_refuses_to_compare_two_different_conclusions() -> None:
-    with pytest.raises(ContractError, match="one conclusion"):
-        reevaluate_consumer(use(), use(conclusion="pred-other@1#abc"))
-
-
-def test_recheck_refuses_to_compare_two_different_purposes() -> None:
-    with pytest.raises(ContractError, match="one consumer and purpose"):
-        reevaluate_consumer(use(), use(purpose=WitnessPurpose.DISCLOSE))
 
 
 # --------------------------------------------------------------------------- #

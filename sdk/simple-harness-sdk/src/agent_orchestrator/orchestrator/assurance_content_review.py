@@ -23,8 +23,9 @@ from ..storage.assurance_reads import (
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import CurrentAuthority, _merge_reads, _permission, _require_same_permission
-from .assurance_purpose_reviews import output_manifest_hash
+from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
+from .assurance_check_use import _merge_reads
+from .assurance_purpose_reviews import next_review_round, output_manifest_hash
 from .assurance_review_pins import ensure_review_blob_pins
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
 from .completion_inputs import load_completion_result_inputs
@@ -68,7 +69,6 @@ def ensure_task_content_review(
         mission_id, task_id = result.envelope.mission_id, result.envelope.task_id
         if AssuranceStore(store).lane(mission_id) != "ASSURANCE_1_1":
             raise AssuranceError("ASSURANCE_PROFILE_REQUIRED")
-        reader = AssuranceReader(store, tenant_id=tenant_id, mission_id=mission_id)
         projection = read_task_content_candidate(store, mission_id, task_id, result_id)
         semantics = HtnStore(store)
         task = semantics.task_semantics_of(mission_id, task_id)
@@ -90,6 +90,19 @@ def ensure_task_content_review(
         review_key = "assurance-content:" + fingerprint(
             {"mission_id": mission_id, "package": str(package.package_id)}
         )
+        identity = UseIdentity(
+            mission_id,
+            "REVIEW",
+            review_key,
+            projection.scope.scope_id,
+            principal_id,
+            "DISCLOSE",
+            root.root_incarnation_id,
+        )
+        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        reader = AssuranceReader(
+            store, tenant_id=tenant_id, mission_id=mission_id, authority=authority, identity=identity
+        )
         existing = store.connection.execute(
             "SELECT dispatch_intent_id FROM assurance_review_invocations WHERE mission_id=? AND review_key=? AND ordinal=1",
             (mission_id, review_key),
@@ -101,18 +114,9 @@ def ensure_task_content_review(
                 != Pin(str(package.package_id), 0, fingerprint(package.to_json())).to_json()
             ):
                 raise AssuranceError("REVIEW_PACKAGE_BINDING_MISMATCH")
-            prior_identity = UseIdentity(
-                mission_id,
-                "REVIEW",
-                review_key,
-                projection.scope.scope_id,
-                principal_id,
-                "DISCLOSE",
-                root.root_incarnation_id,
-            )
             _permission(
                 authority,
-                prior_identity,
+                identity,
                 AssuranceRef.from_json(prior_binding.to_json()["subject"]["target"]),
                 int(store.now * 1000),
             )
@@ -174,23 +178,16 @@ def ensure_task_content_review(
             policy_contract = CriterionPolicy.from_json(document)
             refs.update(ref for group in policy_contract.any_check_sets for ref in group)
         epochs = read_epochs_locked(store.connection, mission_id)
+        now_ms = int(store.now * 1000)
         metadata = tuple(
-            reader.read_exact_metadata(ref) for ref in sorted(refs, key=lambda ref: ref.key)
+            reader.read_exact_metadata(ref, now_ms=now_ms)
+            for ref in sorted(refs, key=lambda ref: ref.key)
         )
         complete = read_complete_evidence_snapshot(reader, scope_id=projection.scope.scope_id)
-        identity = UseIdentity(
-            mission_id,
-            "REVIEW",
-            review_key,
-            projection.scope.scope_id,
-            principal_id,
-            "DISCLOSE",
-            root.root_incarnation_id,
-        )
-        now_ms = int(store.now * 1000)
-        permissions = tuple(
-            (ref, _permission(authority, identity, ref, now_ms))
-            for ref in sorted(refs, key=lambda ref: ref.key)
+        permissions = tuple((item.ref, item.permission) for item in metadata)
+        round_no = next_review_round(
+            store.connection, mission_id=mission_id, review_key=review_key, purpose="TASK_CONTENT",
+            owner_task_id=task_id, occurrence_id=projection.scope.occurrence_id,
         )
         reads = [item.read_item for item in metadata] + [item.read_item for item in complete]
         for _, permission in permissions:
@@ -204,7 +201,7 @@ def ensure_task_content_review(
                 "package_ref": Pin(
                     str(package.package_id), 0, fingerprint(package.to_json())
                 ).to_json(),
-                "round_no": 1,
+                "round_no": round_no,
                 "subject": {
                     "purpose": "TASK_CONTENT",
                     "target": target.to_json(),

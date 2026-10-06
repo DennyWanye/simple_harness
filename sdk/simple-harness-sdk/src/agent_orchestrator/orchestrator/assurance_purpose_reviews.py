@@ -48,7 +48,8 @@ from ..storage.assurance_reads import (
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
-from .assurance_check_use import CurrentAuthority, _merge_reads, _permission, _require_same_permission
+from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
+from .assurance_check_use import _merge_reads
 from .assurance_review_pins import ensure_review_blob_pins, release_failed_preparation
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
 
@@ -138,6 +139,25 @@ def _scope_ref_for(store: Any, mission_id: str, occurrence_id: str) -> Assurance
     return AssuranceRef("completion_scope", Pin(row["scope_id"], 0, row["scope_hash"]))
 
 
+def next_review_round(
+    connection: Any, *, mission_id: str, review_key: str, purpose: str, owner_task_id: str,
+    occurrence_id: str | None,
+) -> int:
+    """同一个审阅对象（任务 × 用途 × 出现）再准备一份新审阅包就是新一轮（第 2 批 A15）。
+
+    计划 #144 / #176：一个 review_key/round 一个包，格式修复与复审调用（ordinal 2）不是新 round；
+    返工后的新包、显式独立二审是新 round/package。轮次 = 这个对象已有绑定（不含本 review_key 的
+    重放）的最大轮次 + 1。
+    """
+    row = connection.execute(
+        "SELECT MAX(round_no) FROM assurance_review_bindings WHERE mission_id=? AND owner_task_id=? "
+        "AND review_key<>? AND json_extract(binding_json,'$.subject.purpose')=? "
+        "AND json_extract(binding_json,'$.subject.occurrence_id') IS ?",
+        (mission_id, owner_task_id, review_key, purpose, occurrence_id),
+    ).fetchone()
+    return 1 if row is None or row[0] is None else int(row[0]) + 1
+
+
 def _method_instance_pin(store: Any, mission_id: str, instance_id: str) -> Pin:
     row = store.connection.execute(
         "SELECT plan_revision,draft_json FROM method_instances WHERE mission_id=? AND instance_id=?",
@@ -192,14 +212,8 @@ def prepare_purpose_review(
     with store.read_view():
         if AssuranceStore(store).lane(mission_id) != "ASSURANCE_1_1":
             raise AssuranceError("ASSURANCE_PROFILE_REQUIRED")
-        reader = AssuranceReader(store, tenant_id=tenant_id, mission_id=mission_id)
         review_key = purpose_review_key(purpose, mission_id, str(package.package_id))
         package_ref = Pin(str(package.package_id), 0, fingerprint(package.to_json()))
-        existing = store.connection.execute(
-            "SELECT dispatch_intent_id FROM assurance_review_invocations "
-            "WHERE mission_id=? AND review_key=? AND ordinal=1",
-            (mission_id, review_key),
-        ).fetchone()
         identity = UseIdentity(
             mission_id,
             "REVIEW",
@@ -209,6 +223,15 @@ def prepare_purpose_review(
             "DISCLOSE",
             root.root_incarnation_id,
         )
+        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        reader = AssuranceReader(
+            store, tenant_id=tenant_id, mission_id=mission_id, authority=authority, identity=identity
+        )
+        existing = store.connection.execute(
+            "SELECT dispatch_intent_id FROM assurance_review_invocations "
+            "WHERE mission_id=? AND review_key=? AND ordinal=1",
+            (mission_id, review_key),
+        ).fetchone()
         if existing is not None:
             invocation, prior_binding = read_review_invocation_locked(commit, reader, existing[0])
             if prior_binding.to_json()["package_ref"] != package_ref.to_json():
@@ -261,14 +284,16 @@ def prepare_purpose_review(
             policy_contract = CriterionPolicy.from_json(document)
             refs.update(ref for group in policy_contract.any_check_sets for ref in group)
         epochs = read_epochs_locked(store.connection, mission_id)
+        now_ms = int(store.now * 1000)
         metadata = tuple(
-            reader.read_exact_metadata(ref) for ref in sorted(refs, key=lambda ref: ref.key)
+            reader.read_exact_metadata(ref, now_ms=now_ms)
+            for ref in sorted(refs, key=lambda ref: ref.key)
         )
         complete = read_complete_evidence_snapshot(reader, scope_id=subject.scope_id)
-        now_ms = int(store.now * 1000)
-        permissions = tuple(
-            (ref, _permission(authority, identity, ref, now_ms))
-            for ref in sorted(refs, key=lambda ref: ref.key)
+        permissions = tuple((item.ref, item.permission) for item in metadata)
+        round_no = next_review_round(
+            store.connection, mission_id=mission_id, review_key=review_key, purpose=purpose,
+            owner_task_id=subject.owner_task.id, occurrence_id=subject.occurrence_id,
         )
         reads = [item.read_item for item in metadata] + [item.read_item for item in complete]
         for _, permission in permissions:
@@ -280,7 +305,7 @@ def prepare_purpose_review(
                 "mission_id": mission_id,
                 "review_key": review_key,
                 "package_ref": package_ref.to_json(),
-                "round_no": 1,
+                "round_no": round_no,
                 "subject": {
                     "purpose": purpose,
                     "target": subject.target.to_json(),

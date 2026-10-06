@@ -11,11 +11,9 @@ from .justifications import (
     ClosureResult,
     ClosureStatus,
     JustificationSet,
-    LineageRecord,
     Polarity,
     SupportGraph,
     grounded_closure,
-    reevaluate_consumer,
 )
 from .predicates import PredicateRegistry, PredicateSignature, WorldAssumption, proposition_key
 
@@ -26,7 +24,6 @@ __all__ = (
     "ClosureResult",
     "ClosureStatus",
     "JustificationSet",
-    "LineageRecord",
     "Polarity",
     "PredicateRegistry",
     "PredicateSignature",
@@ -36,5 +33,4 @@ __all__ = (
     "justifications",
     "predicates",
     "proposition_key",
-    "reevaluate_consumer",
 )

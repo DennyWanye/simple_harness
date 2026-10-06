@@ -33,6 +33,7 @@ def test_which_account_a_review_is_charged_to(purpose, subject):
     assert review_budget_subject(None, MISSION, _package(purpose), TASK) == subject
 
 
-def test_the_composition_account_is_still_named_as_the_compounds_in_the_contract():
-    """契约里的账户名不变（它说的是"这笔花费属于谁"）；变的只是实际从哪个账户预留。"""
-    assert account_for_purpose(ReviewPurpose.COMPOSITION) is ReviewAccount.PARENT_COMPOUND_TASK
+def test_the_contract_names_the_account_the_composition_review_is_really_charged_to():
+    """第 2 批 A24：合同文字与实际一致——组合审阅记在任务总账，合同里不再另有一个"父复合任务"账户。"""
+    assert account_for_purpose(ReviewPurpose.COMPOSITION) is ReviewAccount.MISSION
+    assert not hasattr(ReviewAccount, "PARENT_COMPOUND_TASK")

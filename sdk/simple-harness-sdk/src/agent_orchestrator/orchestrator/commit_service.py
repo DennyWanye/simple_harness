@@ -3278,17 +3278,6 @@ class CommitService(ProtectedTailCommitsMixin,
 
         return assured_closeout_pending(self._store, self._store.get_mission(mission_id))
 
-    def finalize_assured_mission(self, mission_id: str, evaluation: Mapping[str, Any]) -> Any:
-        """The unique final writer: READY closeout → COMPLETED (spec §7.1, item 7).
-
-        Called by the CLOSEOUT consumer inside its own commit transaction; see
-        :func:`assurance_final_writer.finalize_assured_mission`.
-        """
-
-        from .assurance_final_writer import finalize_assured_mission
-
-        return finalize_assured_mission(self, mission_id, evaluation)
-
     def _require_root_resolution(self, mission_id: str) -> None:
         """A hierarchical Mission is completed out of its root resolution (review F6).
 
@@ -3307,8 +3296,6 @@ class CommitService(ProtectedTailCommitsMixin,
         if mission is None:
             return
         network = self._judgment_network(mission)
-        if network is None:
-            return
         from .completion_status import read_occurrence_completion
         if not all(read_occurrence_completion(self._store, mission_id, str(root)).complete
                    for root in network.root_occurrence_ids):

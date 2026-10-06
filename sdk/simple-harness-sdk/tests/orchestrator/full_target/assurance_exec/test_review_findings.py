@@ -286,9 +286,10 @@ def test_internal_ref_resolvers(tmp_path):
             assert decode(reader.read_exact_metadata(good).body_json)["mission_id"] == mine
             _refused(lambda: reader.read_exact_metadata(
                 AssuranceRef("requirements", Pin(good.pin.id, good.pin.revision, OTHER_HASH))), "REF_BODY_CONFLICT")
+            # 身份还在、钉的版本不是现在这版：当前性错误（第 2 批 A08）
             _refused(lambda: reader.read_exact_metadata(
                 AssuranceRef("requirements", Pin(good.pin.id, good.pin.revision + 1, good.pin.content_hash))),
-                "SOURCE_UNAVAILABLE")
+                "SOURCE_NOT_CURRENT")
             # 别的任务的要求书：这个任务的读取器读不到
             _refused(lambda: reader.read_exact_metadata(requirements(other)), "SOURCE_UNAVAILABLE")
             # 不可变的种类带了版本号

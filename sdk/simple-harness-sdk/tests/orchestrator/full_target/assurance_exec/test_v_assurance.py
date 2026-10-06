@@ -243,29 +243,6 @@ def test_alternate_support():
     fired = [w for w in without_a.clean.witnesses_for(Atom(K)) if w.kind is WitnessKind.DERIVED]
     assert [w.rule_version for w in fired] == ["rule-c"]
     assert not without_a.clean.satisfies_independence(K, required=2)
-    # A report that literally cites A cannot be repaired by swapping the support.
-    from agent_orchestrator.contracts.evidence_state import RecheckOutcome
-    from agent_orchestrator.knowledge.justifications import (
-        ConsumerUse,
-        LineageRecord,
-        reevaluate_consumer,
-    )
-
-    cite_a = EvidenceRef(kind=EvidenceRefKind.OBSERVATION, id="obs-a", revision=1, content_hash=rows["a"].content_hash)
-    report = TypedRef(kind=TypedRefKind.ARTIFACT, id="report-1", revision=1, content_hash=HASH)
-    lineage = LineageRecord(report, was_used=(cite_a,), supports_for_use=("rule-a-b",))
-    assert lineage.withdrawn_citations(without_a.clean.admitted_signatures) == (cite_a,)
-    with pytest.raises(ContractError):
-        lineage.rewrite_history_from_supports()
-    before = ConsumerUse(report, WitnessPurpose.ACCEPT, K, truth=TruthValue.TRUE, support_signatures=("rule-a-b",),
-                         literal_citations=(cite_a,))
-    rebound = ConsumerUse(report, WitnessPurpose.ACCEPT, K, truth=TruthValue.TRUE, support_signatures=("rule-c",),
-                          literal_citations=(cite_a,), withdrawn_citations=(cite_a,))
-    assert reevaluate_consumer(before, rebound) is RecheckOutcome.NEEDS_REVIEW
-    # An artifact that never cited A is simply rebound to C: no Worker rerun.
-    clean_before = ConsumerUse(report, WitnessPurpose.ACCEPT, K, truth=TruthValue.TRUE, support_signatures=("rule-a-b",))
-    clean_after = ConsumerUse(report, WitnessPurpose.ACCEPT, K, truth=TruthValue.TRUE, support_signatures=("rule-c",))
-    assert reevaluate_consumer(clean_before, clean_after) is RecheckOutcome.REBOUND_SUPPORT
 
 
 # --------------------------------------------------------------------------- V05

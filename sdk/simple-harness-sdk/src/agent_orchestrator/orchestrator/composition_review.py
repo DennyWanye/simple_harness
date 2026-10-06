@@ -20,8 +20,7 @@ This assembly is the missing trigger.  It does **not** ask a model and it does
 Why not reuse the root-reviewer service intent: §6.3 / ``leaf_acceptance`` already
 say a compound is satisfied out of its children's acceptances, never by a review
 of its own.  Those children already had independent TASK_CONTENT reviews.  A
-second model call would charge ``PARENT_COMPOUND_TASK`` against a 0-token
-compound budget, and M3's assess compound has no root requirements to judge.
+second model call would charge a review against a 0-token compound budget, and M3's assess compound has no root requirements to judge.
 """
 
 from __future__ import annotations

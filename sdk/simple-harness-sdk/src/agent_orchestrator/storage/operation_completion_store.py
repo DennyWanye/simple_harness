@@ -398,6 +398,31 @@ class OperationCompletionStore:
         ).fetchone()
         return self._decoded(row, spec_kind, "stored_completion_spec")
 
+    def get_spec_by_id(self, mission_id: str, spec_id: str) -> dict[str, Any] | None:
+        """保证通道按精确引用（spec_id）读规格（第 2 批 A13）：同一套合同解码与行身份校验，
+        另带原始 ``document_json`` 供引用哈希核对。"""
+        spec_kind, _, _, _ = _completion_contracts()
+        row = self._store.connection.execute(
+            "SELECT * FROM operation_completion_specs WHERE mission_id=? AND spec_id=?",
+            (str(mission_id), str(spec_id)),
+        ).fetchone()
+        value = self._decoded(row, spec_kind, "stored_completion_spec")
+        if value is not None:
+            value["document_json"] = row["document_json"]
+        return value
+
+    def get_scope_by_id(self, mission_id: str, scope_id: str) -> dict[str, Any] | None:
+        """保证通道按精确引用（scope_id）读完成范围（第 2 批 A13）；同 :meth:`get_spec_by_id`。"""
+        _, scope_kind, _, _ = _completion_contracts()
+        row = self._store.connection.execute(
+            "SELECT * FROM operation_completion_scopes WHERE mission_id=? AND scope_id=?",
+            (str(mission_id), str(scope_id)),
+        ).fetchone()
+        value = self._decoded(row, scope_kind, "stored_completion_scope")
+        if value is not None:
+            value["document_json"] = row["document_json"]
+        return value
+
     def insert_scope(
         self,
         scope_id: str,

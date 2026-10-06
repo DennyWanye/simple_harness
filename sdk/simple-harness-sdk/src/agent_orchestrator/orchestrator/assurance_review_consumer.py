@@ -12,11 +12,11 @@ from ..assurance.codec import AssuranceError, decode, fingerprint, text
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Artifact, Event
 from ..contracts.resolution import ReviewVerdict
-from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_reads import AssuranceReader, CurrentAuthority
 from ..storage.assurance_work import WorkClaim, WorkTarget
 from ..storage.htn_store import HtnStore
 from ..storage.store import _event_from_row
-from .assurance_check_use import CurrentAuthority, prepare_local_check_use
+from .assurance_check_use import prepare_local_check_use
 from .assurance_review_import import (
     prepare_official_review,
     REPAIRABLE_INTERPRETATION_ERRORS,
@@ -553,7 +553,7 @@ class AssuranceReviewConsumer:
         from .assurance_review_transport import read_review_invocation_locked
 
         metadata = reader.read_exact_metadata(ref)
-        source, row = decode(metadata.body_json), decode(metadata.lifecycle_json)
+        source, row = decode(metadata.body_json), decode(metadata.state_witness_json)
         invocation, binding = read_review_invocation_locked(
             self.commit, reader, source.get("intent_id")
         )

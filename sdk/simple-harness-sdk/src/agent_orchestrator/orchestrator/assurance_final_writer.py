@@ -8,9 +8,8 @@ GoalResolution, current evidence, root Scope met, effects known, no open
 intents / reservations / unknown usage, success judgment recorded) and, when
 READY, calls :func:`finalize_assured_mission` inside its own commit
 transaction. That call is the only place an assured Mission becomes
-COMPLETED: it moves the original missions row, releases the terminal pools,
-emits the original ``MissionCompleted``, moves the closeout row READY →
-FINALIZED and requests the NOTIFY transport with the final event identity.
+COMPLETED: it moves the original missions row, emits the original
+``MissionCompleted``, moves the closeout row READY → FINALIZED and requests the NOTIFY transport with the final event identity.
 
 Every terminal write on the assured lane — this one and the original failure /
 cancellation writers — ends with :func:`request_assured_notification`, so the

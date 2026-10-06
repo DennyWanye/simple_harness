@@ -18,9 +18,6 @@ load-bearing and are pinned by tests rather than left to the implementer:
 * **Running out of budget is not an answer about the world.**  Exceeding the
   deployment limit yields :attr:`ClosureStatus.EVALUATION_INCOMPLETE`, which
   blocks release; it is never reported as an UNKNOWN world fact.
-* **History is not current reason.**  :class:`LineageRecord` keeps ``was_used``
-  (what the artifact really read) and ``supports_for_use`` (why it may be used
-  now) in two compartments that cannot rewrite each other (AER §9.3).
 
 Out of scope here (P3.5 / P3.6): epoch barriers, durable dirty queues and
 persistence.  This module is pure, in-memory and imports no store.
@@ -31,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .bounded_closure import ClosureLimits
@@ -39,7 +36,6 @@ if TYPE_CHECKING:
 from ..contracts.evidence_state import (
     Availability,
     ObservationRecord,
-    RecheckOutcome,
     SupportCount,
     TemporalUse,
     TruthValue,
@@ -1166,228 +1162,6 @@ def _assumption_backed(
     return frozenset(atom for atom in witnesses if atom not in clean)
 
 
-@dataclass(frozen=True, slots=True)
-class ConsumerUse:
-    """One consumer's use of one conclusion, before and after a re-evaluation.
-
-    ``literal_citations`` are byte-bound references the artifact really makes;
-    ``support_signatures`` are the reasons currently offered for using it.  The
-    two move independently, which is exactly why swapping a support does not
-    repair a report that quotes a withdrawn source (AER §9.3).
-    """
-
-    consumer_ref: TypedRef
-    purpose: WitnessPurpose
-    conclusion: str
-    polarity: Polarity = Polarity.POSITIVE
-    truth: TruthValue = TruthValue.UNKNOWN
-    validity: Validity = Validity.CURRENT
-    availability: Availability = Availability.READABLE
-    support_signatures: tuple[str, ...] = ()
-    literal_citations: tuple[EvidenceRef, ...] = ()
-    withdrawn_citations: tuple[EvidenceRef, ...] = ()
-    citation_binding_required: bool = True
-    rebinding_allowed: bool = True
-    requirements_digest: str | None = None
-    inputs_digest: str | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.consumer_ref, TypedRef):
-            raise ContractError("use.consumer_ref must be a TypedRef")
-        object.__setattr__(self, "purpose", enum_of(WitnessPurpose, self.purpose, "use.purpose"))
-        object.__setattr__(self, "conclusion", identifier(self.conclusion, "use.conclusion"))
-        object.__setattr__(self, "polarity", parse_polarity(self.polarity, "use.polarity"))
-        object.__setattr__(self, "truth", enum_of(TruthValue, self.truth, "use.truth"))
-        object.__setattr__(self, "validity", enum_of(Validity, self.validity, "use.validity"))
-        object.__setattr__(
-            self, "availability", enum_of(Availability, self.availability, "use.availability")
-        )
-        object.__setattr__(
-            self,
-            "support_signatures",
-            sequence_of(
-                self.support_signatures,
-                "use.support_signatures",
-                lambda item, where: identifier(item, where),
-            ),
-        )
-        for label in ("literal_citations", "withdrawn_citations"):
-            for item in getattr(self, label):
-                if not isinstance(item, EvidenceRef):
-                    raise ContractError(f"use.{label} entries must be EvidenceRef")
-        object.__setattr__(
-            self,
-            "citation_binding_required",
-            flag(self.citation_binding_required, "use.citation_binding_required"),
-        )
-        object.__setattr__(
-            self, "rebinding_allowed", flag(self.rebinding_allowed, "use.rebinding_allowed")
-        )
-        object.__setattr__(
-            self,
-            "requirements_digest",
-            optional_identifier(self.requirements_digest, "use.requirements_digest"),
-        )
-        object.__setattr__(
-            self, "inputs_digest", optional_identifier(self.inputs_digest, "use.inputs_digest")
-        )
-
-    @property
-    def effective_truth(self) -> TruthValue:
-        """Support that is no longer CURRENT stops supporting; it does not flip."""
-
-        if self.validity is not Validity.CURRENT:
-            return TruthValue.UNKNOWN
-        return self.truth
-
-
-def reevaluate_consumer(before: ConsumerUse, after: ConsumerUse) -> RecheckOutcome:
-    """§11.5 / AER §10.3: classify a consumer's re-evaluation into five outcomes.
-
-    The order of the checks is the substance.  Unreadability is tested first so a
-    permission loss never reports as "the content is wrong"; a contradicted or
-    changed requirement is INVALID; missing current grounds is NEEDS_REVIEW, not
-    INVALID; and REBOUND_SUPPORT is reachable only when nothing the artifact
-    actually contains has changed.
-    """
-
-    if not isinstance(before, ConsumerUse) or not isinstance(after, ConsumerUse):
-        raise ContractError("reevaluate_consumer compares two ConsumerUse snapshots")
-    if before.conclusion != after.conclusion or before.polarity is not after.polarity:
-        raise ContractError("reevaluate_consumer compares one conclusion with itself")
-    if before.consumer_ref.id != after.consumer_ref.id or before.purpose is not after.purpose:
-        raise ContractError("reevaluate_consumer compares one consumer and purpose with itself")
-
-    if after.availability is not Availability.READABLE:
-        # Not being allowed to read the material says nothing about its content.
-        return RecheckOutcome.UNAVAILABLE
-    if before.requirements_digest != after.requirements_digest:
-        return RecheckOutcome.INVALID
-
-    truth = after.effective_truth
-    if truth in (TruthValue.FALSE, TruthValue.CONFLICT):
-        return RecheckOutcome.INVALID
-    if truth is not TruthValue.TRUE:
-        return RecheckOutcome.NEEDS_REVIEW
-    if before.inputs_digest != after.inputs_digest:
-        return RecheckOutcome.NEEDS_REVIEW
-    if after.withdrawn_citations and after.citation_binding_required:
-        # The artifact quotes a retracted source.  Rebinding the reason does not
-        # change what the bytes say: revise, re-hash, re-review.
-        return RecheckOutcome.NEEDS_REVIEW
-    if set(before.support_signatures) == set(after.support_signatures):
-        return RecheckOutcome.UNCHANGED
-    if not after.rebinding_allowed:
-        return RecheckOutcome.NEEDS_REVIEW
-    return RecheckOutcome.REBOUND_SUPPORT
-
-
-class LineageRecord:
-    """Two compartments that may not rewrite each other (AER §9.3).
-
-    ``was_used`` is append-only history: it records that the artifact really read
-    those bytes.  ``supports_for_use`` is the current reason for using the
-    conclusion, and it may be re-chosen.  Every method here moves exactly one of
-    the two; the crossing operations exist only to raise, so that an attempt to
-    launder history into a reason (or a reason into history) fails loudly instead
-    of silently.
-    """
-
-    __slots__ = ("_artifact_ref", "_frozen", "_supports_for_use", "_was_used")
-
-    def __init__(
-        self,
-        artifact_ref: TypedRef,
-        was_used: Sequence[EvidenceRef] = (),
-        supports_for_use: Sequence[str] = (),
-    ) -> None:
-        object.__setattr__(self, "_frozen", False)
-        if not isinstance(artifact_ref, TypedRef):
-            raise ContractError("lineage.artifact_ref must be a TypedRef")
-        self._artifact_ref = artifact_ref
-        history = sequence_of(
-            tuple(was_used),
-            "lineage.was_used",
-            lambda item, where: _evidence_ref(item, where),
-        )
-        if len(set(history)) != len(history):
-            raise ContractError("lineage.was_used must not repeat a reference")
-        self._was_used = history
-        self._supports_for_use = sequence_of(
-            tuple(supports_for_use),
-            "lineage.supports_for_use",
-            lambda item, where: identifier(item, where),
-        )
-        object.__setattr__(self, "_frozen", True)
-
-    def __setattr__(self, name: str, value: object) -> None:
-        if getattr(self, "_frozen", False):
-            raise ContractError("LineageRecord is immutable; use with_recorded_use / with_supports")
-        object.__setattr__(self, name, value)
-
-    def __delattr__(self, name: str) -> None:
-        raise ContractError("LineageRecord is immutable")
-
-    @property
-    def artifact_ref(self) -> TypedRef:
-        return self._artifact_ref
-
-    @property
-    def was_used(self) -> tuple[EvidenceRef, ...]:
-        return self._was_used
-
-    @property
-    def supports_for_use(self) -> tuple[str, ...]:
-        return self._supports_for_use
-
-    def with_recorded_use(self, ref: EvidenceRef) -> LineageRecord:
-        """Append one more thing the artifact really read.  Reasons are untouched."""
-
-        entry = _evidence_ref(ref, "lineage.was_used[]")
-        if entry in self._was_used:
-            return self
-        return LineageRecord(self._artifact_ref, (*self._was_used, entry), self._supports_for_use)
-
-    def with_supports(self, signatures: Sequence[str]) -> LineageRecord:
-        """Re-choose the current reasons.  History is untouched."""
-
-        return LineageRecord(self._artifact_ref, self._was_used, tuple(signatures))
-
-    def cites(self, ref: EvidenceRef) -> bool:
-        return ref in self._was_used
-
-    def withdrawn_citations(self, admitted: Iterable[EvidenceRef]) -> tuple[EvidenceRef, ...]:
-        """Which historical citations are no longer admitted evidence."""
-
-        live = frozenset(admitted)
-        return tuple(ref for ref in self._was_used if ref not in live)
-
-    def adopt_history_as_support(self) -> NoReturn:
-        raise ContractError(
-            "was_used is historical lineage, not a current reason; "
-            "produce supports_for_use from a fresh validity check (AER §9.3)"
-        )
-
-    def rewrite_history_from_supports(self) -> NoReturn:
-        raise ContractError(
-            "supports_for_use must not rewrite was_used; the artifact really read "
-            "what it read — revise the artifact instead (AER §9.3)"
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "artifact_ref": self._artifact_ref.to_json(),
-            "was_used": [ref.to_json() for ref in self._was_used],
-            "supports_for_use": list(self._supports_for_use),
-        }
-
-
-def _evidence_ref(value: object, name: str) -> EvidenceRef:
-    if isinstance(value, EvidenceRef):
-        return value
-    return EvidenceRef.from_json(value, name)
-
-
 __all__ = (
     "CONFLICTING_EVIDENCE",
     "DEFAULT_NODE_BUDGET",
@@ -1406,10 +1180,8 @@ __all__ = (
     "Atom",
     "ClosureResult",
     "ClosureStatus",
-    "ConsumerUse",
     "EvidencePremise",
     "JustificationSet",
-    "LineageRecord",
     "Polarity",
     "Premise",
     "PropositionPremise",
@@ -1421,5 +1193,4 @@ __all__ = (
     "grounded_closure",
     "parse_polarity",
     "parse_premise",
-    "reevaluate_consumer",
 )
