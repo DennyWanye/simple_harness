@@ -1123,6 +1123,86 @@
    "note": "判定直接把任务写成完成，绕过收尾与唯一完成写方（原计划 F-M05）"
   },
   {
+   "id": "AS-M01",
+   "source": "Assurance 原计划 M01 mandatory_bypass（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/assurance/checks.py",
+   "original": "        result = tri_all((result, *(grades[name] for name in mandatory)))",
+   "replacement": "        result = result",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_formula_truth_tables",
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_any_branch_not_mandatory"
+   ],
+   "note": "必须项不再 AND 在公式之上：任一分支通过就算通过，必须项失败 / 未评估都挡不住"
+  },
+  {
+   "id": "AS-M02",
+   "source": "Assurance 原计划 M02 fake_official（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_import.py",
+   "original": "        or payload.get(\"exposure_error\") is not None\n    ):\n        raise AssuranceError(\"REVIEW_TURN_SOURCE_MISMATCH\")",
+   "replacement": "        or payload.get(\"exposure_error\") is not None\n    ):\n        pass",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_batch4_mutation_bindings.py::test_m02_a_review_turn_from_another_session_than_dispatched_is_not_official"
+   ],
+   "note": "导入正式审阅不核回合回执与派发记录（会话、回合号、原始输出哈希）一致：模型自报的回合就当正式审阅"
+  },
+  {
+   "id": "AS-M03",
+   "source": "Assurance 原计划 M03 wrong_subject_check（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/assurance/checks.py",
+   "original": "            raise AssuranceError(\"CHECK_RESULT_IDENTITY\")",
+   "replacement": "            pass",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_a_assurance.py::test_check_receipt_scope"
+   ],
+   "note": "检查回执不核对象：别的检查规格的回执拿来满足这一条"
+  },
+  {
+   "id": "AS-M05",
+   "source": "Assurance 原计划 M05 empty_effect_catalog（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/orchestrator/completion_status.py",
+   "original": "                for effect_key in scope.required_effect_keys",
+   "replacement": "                for effect_key in ()",
+   "tests": [
+    "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_content_acceptance_is_preparation_only_until_the_publish_completes"
+   ],
+   "note": "还没有操作意图时效果目录当空：内容验收一过、根就算完成（原计划 A17：没有 intent 仍欠效果）"
+  },
+  {
+   "id": "AS-M07",
+   "source": "Assurance 原计划 M07 latest_input（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/orchestrator/carried_review.py",
+   "original": "            if frozen_requirements_revision(store, stored) >= revision:\n                continue",
+   "replacement": "            if frozen_requirements_revision(store, stored) <= revision:\n                continue",
+   "tests": [
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_downstream_step_is_not_reviewed_while_its_upstream_does_not_count",
+    "tests/orchestrator/product_world/test_carried_review.py::test_a_replacing_method_may_name_the_kept_step_and_it_is_reviewed_again"
+   ],
+   "note": "沿用的那一步按旧版要求通过的审阅就当成现行版本的审阅：待办筛选把\"冻结版本比现行旧\"也当作\"已是现行\"，改要求后沿用的结果不再按新版重审（旧审阅批新版）。第一次锚在完成读者 _official_accept_review 的版本比对上（单独去掉 acceptance.requirements_revision / 包版本与哈希的比对）SURVIVED：同函数里还有别的守卫同时挡着，单改那一处不改变行为，故改锚在这里"
+  },
+  {
+   "id": "AS-M10",
+   "source": "Assurance 原计划 M10 cached_anchor_cycle（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/knowledge/justifications.py",
+   "original": "        if candidate.validity is not Validity.CURRENT:\n            return AnchorRejection.NOT_CURRENT, False",
+   "replacement": "        if False:\n            return AnchorRejection.NOT_CURRENT, False",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_bounded_restartable_evaluation",
+    "tests/orchestrator/full_target/test_justifications.py::test_k06_a_revoked_anchor_is_no_longer_selected"
+   ],
+   "note": "不再是当前的（已撤回 / 过期的旧 VERIFIED）候选照样当闭包的锚；\"拿上一次的结果当下一次的锚\"那一半由类型与令牌检查挡着（V03 test_cycle_without_anchor），不是行为分支，改不成改坏"
+  },
+  {
+   "id": "AS-M12",
+   "source": "Assurance 原计划 M12 purpose_ignored（2026-10-06 第 4 批车道 M 登记）",
+   "file": "src/agent_orchestrator/assurance/certificates.py",
+   "original": "        raise AssuranceError(\"CERTIFICATE_USE_IDENTITY\")",
+   "replacement": "        pass",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_v_assurance.py::test_read_certificate_context"
+   ],
+   "note": "使用证书不核使用者 / 用途 / 范围身份：别的任务、别的消费者、别的用途拿来都能用"
+  },
+  {
    "id": "AS-M08",
    "source": "Assurance 原计划 M08（2026-10-05 对照后登记）",
    "file": "src/agent_orchestrator/storage/assurance_reads.py",
@@ -1334,12 +1414,14 @@
   },
   {
    "id": "AS-M06",
-   "source": "Assurance 原计划 M06（2026-10-05 对照后登记）",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "交付回执只校操作号非空：效果完成判定不读交付回执表（用例 test_publish_variants.py::test_a_delivery_receipt_written_past_the_handoff_completes_nothing），结果绑定被改先在存储哈希处拦下（test_a_tampered_outcome_binding_is_never_accepted）；身份比对那一道没有产品路径能单独碰到，不绑用例"
+   "source": "Assurance 原计划 M06 effect_receipt_nonempty（2026-10-05 登记不绑；2026-10-06 第 4 批车道 M 绑定）",
+   "file": "src/agent_orchestrator/orchestrator/completion_status.py",
+   "original": "    if owner is None or owner.obligation_id != effect.obligation_id:\n        return False",
+   "replacement": "    if any(receipt.operation_id for receipt in htn.list_delivery_receipts(mission_id)):\n        return True\n    if owner is None or owner.obligation_id != effect.obligation_id:\n        return False",
+   "tests": [
+    "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_delivery_receipt_written_past_the_handoff_completes_nothing"
+   ],
+   "note": "效果完成只看交付回执表里有没有带操作号的回执：绕过交接直接写进库的回执（操作号非空）就让根完成。原登记说\"身份比对没有产品路径能单独碰到\"——是对的，但原计划的改坏是\"只校非空\"，照它写进完成判定就抓得到"
   },
   {
    "id": "AS-FM06",
@@ -1348,16 +1430,19 @@
    "original": null,
    "replacement": null,
    "tests": [],
-   "note": "不适用：受管恢复已删（HTN 补齐计划阶段 A″）"
+   "note": "已删除（HTN 补齐计划阶段 A″：受管恢复整条线删，03 对照 A 级排除 #4）：现行代码没有\"恢复出来的绑定\"，无处改坏",
+   "status": "REMOVED"
   },
   {
    "id": "AS-FM12",
-   "source": "Assurance 原计划 F-M12（2026-10-05 对照后登记）",
-   "file": null,
-   "original": null,
-   "replacement": null,
-   "tests": [],
-   "note": "不适用：内部结构改由 Python 校验，SDK 不随包带 schema 哈希"
+   "source": "Assurance 原计划 F-M12 drop resolved schema hashes（2026-10-05 自判不适用；2026-10-06 第 4 批车道 M 纠正并绑定）",
+   "file": "src/agent_orchestrator/storage/assurance_reads.py",
+   "original": "                    \"schema_hash\": self.schema_hash,",
+   "replacement": "                    \"schema_hash\": \"\",",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_batch4_mutation_bindings.py::test_fm12_a_query_set_read_item_changes_with_the_schema_hash"
+   ],
+   "note": "查询集读数的指纹里丢掉库结构（迁移表）哈希：迁移后同一份行集合仍算同一次读，证书比不出结构漂移。原登记\"SDK 不随包带 schema 哈希\"只说对了计划包那一半：SDK 自己在 assurance_reads 里解析并记着迁移表哈希"
   },
   {
    "id": "OPA-01",
