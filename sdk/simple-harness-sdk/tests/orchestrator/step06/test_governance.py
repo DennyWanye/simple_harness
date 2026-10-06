@@ -189,7 +189,12 @@ def test_s6_05_the_gateway_checks_in_the_21_1_order_and_reports_every_refusal(tm
 
 
 def test_a_reviewer_at_the_cap_is_told_to_conclude_now(tmp_path):
-    """2026-09-29 第六局：审阅员查满次数时，拒绝理由明确叫它别再查、马上按格式作答。"""
+    """2026-09-29 第六局：审阅员查满次数时，拒绝理由明确叫它别再查、马上按格式作答。
+
+    2026-10-07 夜间 N1：10-06 车道 G（afc692b6，K01）起审阅绑定不再有任务工作区，审阅员只用
+    两件证据工具与黑板读工具（ASSURANCE_REVIEWER_TOOLS）；用例原先用 workspace_list 走不到
+    查满检查。改用审阅员真实工具 assurance_find_evidence，守的保证不变；另加执行者对照：
+    非审阅绑定查满仍是通用提示，不会被叫去"给结论"。"""
 
     from agent_orchestrator.artifacts.workspace import WorkspaceManager
     from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
@@ -199,15 +204,26 @@ def test_a_reviewer_at_the_cap_is_told_to_conclude_now(tmp_path):
     workspaces = WorkspaceManager(tmp_path / "ws")
     workspaces.create("m:task-1:attempt-1", seed={"a.md": "x"})
     gateway = WorkspaceToolGateway(workspaces)
-    gateway.bind("run-1", WorkspaceBinding("m:task-1:attempt-1", "work", True,
-                                           ("workspace_list",), max_tool_calls=1, review_key="rk"))
+    gateway.bind("run-1", WorkspaceBinding("m:task-1:attempt-1", "verify", False,
+                                           ("assurance_find_evidence",), max_tool_calls=1,
+                                           mission_id="m", review_key="rk"))
+    gateway.bind("run-2", WorkspaceBinding("m:task-1:attempt-1", "work", True,
+                                           ("workspace_list",), max_tool_calls=1))
     gateway.assurance_review_refusal = lambda _run, _binding: None  # 审阅权限在别处测
+    gateway.assurance_evidence_reader = lambda _run, _mission, _name, _args: {"items": []}
 
-    async def case():
-        return [await gateway.execute(ToolCall(call_id=CallId(f"c{n}"), name="workspace_list",
-                                               arguments={}), {"run_id": "run-1"}) for n in range(2)]
+    def text(result):
+        return str(result.to_json() if hasattr(result, "to_json") else result)
 
-    first, second = asyncio.run(case())
+    async def case(run_id, name):
+        return [await gateway.execute(ToolCall(call_id=CallId(f"{run_id}-c{n}"), name=name,
+                                               arguments={}), {"run_id": run_id}) for n in range(2)]
+
+    first, second = asyncio.run(case("run-1", "assurance_find_evidence"))
     assert first.error_code is None
     assert second.error_code == "tool_rate_limited"
-    assert "立即根据已经看到的证据" in str(second.to_json() if hasattr(second, "to_json") else second)
+    assert "立即根据已经看到的证据" in text(second)
+    worker_first, worker_second = asyncio.run(case("run-2", "workspace_list"))
+    assert worker_first.error_code is None
+    assert worker_second.error_code == "tool_rate_limited"
+    assert "立即根据已经看到的证据" not in text(worker_second)

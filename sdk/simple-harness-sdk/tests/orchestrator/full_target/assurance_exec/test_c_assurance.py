@@ -16,6 +16,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import signal
 import sqlite3
 import subprocess
@@ -504,10 +505,24 @@ def test_real_migration_and_legacy(tmp_path):
     dropped = {"selection_candidates", "selection_rounds", "search_bindings", "fragment_validations",
                "conflicts", "graph_changes", "mission_system_tail_pools", "mission_system_tail_tasks",
                "criterion_assessments", "taskgraph_requirements", "planning_repair_continuations"}
+    # Later migrations deliberately reshape or drop more legacy tables: 38/39 (2026-10-03)
+    # drop the money and duty-spend columns and add one, 39～41 drop further mechanism tables,
+    # 42～45 (2026-10-04/06) rebuild four tables with a new column / unique key (开发期不做旧数据
+    # 兼容).  The exempt set is read from the migrations themselves — only a table a later
+    # migration names in ``DROP TABLE x``, ``ALTER TABLE x ADD/DROP/RENAME COLUMN`` or
+    # ``RENAME TO x`` — and each such table must end up exactly as in a fresh library
+    # (gone, or the fresh DDL).  夜间 N1 2026-10-07：此前逐字比对把 38 起的有意改表当成意外。
+    touched = {name for m in later for pair in re.findall(
+        r"ALTER TABLE (\w+) (?:(?:ADD|DROP|RENAME) COLUMN|RENAME TO (\w+))|DROP TABLE (?:IF EXISTS )?(\w+)",
+        m.ddl) for name in (pair[1] or pair[0] or pair[2],)}
+    touched_state = {}
     for name, ddl in ddl_before.items():
         current = upgraded.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
         if name in dropped:
             assert current is None, name
+            continue
+        if name in touched:
+            touched_state[name] = None if current is None else current[0]
             continue
         assert current is not None and current[0] == ddl, name  # legacy DDL untouched
     backup = legacy_path.with_name(f"{legacy_path.name}.pre-schema-{schema.SCHEMA_VERSION}.backup")
@@ -525,6 +540,10 @@ def test_real_migration_and_legacy(tmp_path):
     assert _dump(reopened.connection, ("missions", "events")) == after
     fresh = Store.open(tmp_path / "fresh.db")
     assert _ddl_hash(fresh.connection) == ddl_after
+    for name, ddl in touched_state.items():  # a reshaped legacy table is exactly the fresh one
+        row = fresh.connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                                       (name,)).fetchone()
+        assert (None if row is None else row[0]) == ddl, name
     # Triggers: an inventoried source table refuses REPLACE-style rewrites of Assurance events.
     from agent_orchestrator.assurance.event_kinds import EVENT_REF_KINDS
     source_kind = sorted(EVENT_REF_KINDS.values())[0]
