@@ -9178,7 +9178,7 @@ class Orchestrator:
         events = tuple(self.store.iter_events(mission.id))
         reached = stop_rules.reached_stop_conditions(
             mission, policy, streak=stop_rules.knowledge_streak(events),
-            hashes=stop_rules.result_hashes(self.store, mission.id))
+            hashes=stop_rules.result_hashes(self.store, mission.id, events=events))
         if not reached:
             return False
         try:

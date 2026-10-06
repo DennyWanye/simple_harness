@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "c816e82ef8aa33038a2c4280835b1259ea0622c72a347922de065826703e8918",
+  "deployment_id": "63e270411df820861380dc56e769c1235286ef955c34215acc8b25f65ec2195e",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -208,7 +208,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "0e5230f54979677b73caf6927da2f089d3b5414a8f5e099d023f3f734ff9b03c",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "f9d06172af99df717475fba57dc4c096088e2a9bb75eca6c34dfb9ac6c82daad",
-    "agent_orchestrator/orchestrator/event_handler.py": "9f2ed91fd0749d9557baea5452e86a7dd781c3014b46166c3b7cfd6c37fefd58",
+    "agent_orchestrator/orchestrator/event_handler.py": "43c5e63995a753b9b7f5d7eeb0393e186db2b5529f8afdbfb62ef70e5e67bef0",
     "agent_orchestrator/orchestrator/failure_classes.py": "91d78fca56d60ef65dedb0d7654d23b682d6f692368aadc6cd9219d0f5363fdf",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "6b593fbc1adf2460506e4364d3f3519cc67de5f070ec02718fd40b7a80e4ca10",
     "agent_orchestrator/orchestrator/human_commits.py": "8098653638a0bd14cd2c4e88f204bcc6f60f820077d79206e2f26877fde318cb",
@@ -252,7 +252,7 @@
     "agent_orchestrator/orchestrator/scoped_content_review.py": "4a34e39582c5447acfd9423b1c1e11ff7e08d25aa0aab298b98e90818c338dda",
     "agent_orchestrator/orchestrator/source_commits.py": "7e52dfd488e9b6251ce586cd27959e0bf5f556bdc686624eb97155510b7b50d8",
     "agent_orchestrator/orchestrator/state_machine.py": "3a6cd8c2657939121657eacc4444df072ac312ae679a607cd54c5031cb5b20ef",
-    "agent_orchestrator/orchestrator/stop_conditions.py": "59b4c30c9bf6f76f565be1ab30e0409676b06426083010df9e213442f00da123",
+    "agent_orchestrator/orchestrator/stop_conditions.py": "9200ad175c29738c8f6ad98151552905231563d5744ef57c7a14fcbfcc0b4069",
     "agent_orchestrator/orchestrator/system_operations.py": "7b46bb8468632ab645384df2e545335bd907c6f8ab54c7626f9327441ce693fa",
     "agent_orchestrator/orchestrator/tail_revision.py": "d749f7e3862901cab16e13243eb8b7eae2b603d1d582b9aa0792df6da0a22563",
     "agent_orchestrator/orchestrator/taskgraph_action_settlement.py": "e155dea240e51c0a178ba9b6a12027634f0e4cbabf93fe7a7b359db573280b51",

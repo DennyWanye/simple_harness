@@ -117,6 +117,31 @@ def test_the_streak_ignores_the_systems_own_infrastructure_retries() -> None:
 
 def test_duplicates_are_counted_by_content_hash() -> None:
     assert sc.duplicate_count(["a", "b", "a", "a"]) == (2, 4)
+    # 主会话合并时定的口径（原计划 §18/§19.1 讲的是搜索原地打转）：只有同一版要求之内的重复才算。
+    # 用户改要求后被重做的步骤产出同样的内容，是在回答新问题，不是打转。
+    assert sc.duplicate_count([(1, "a"), (2, "a"), (3, "a"), (4, "a")]) == (0, 4)
+    assert sc.duplicate_count([(1, "a"), (1, "a"), (2, "a"), (2, "b"), (2, "a")]) == (2, 5)
+
+
+def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_landed() -> None:
+    """同一份内容在第 1 版要求下交了两次、改要求（第 2 版）后又交了一次：前两份是重复，第三份不是。"""
+    class _Store:
+        def list_tasks(self, mission_id):
+            return [SimpleNamespace(id="t")]
+
+        def list_attempts(self, task_id):
+            return [SimpleNamespace(id=f"a{i}") for i in range(3)]
+
+        def find_result_for_attempt(self, attempt_id):
+            at = {"a0": 10.0, "a1": 20.0, "a2": 40.0}[attempt_id]
+            return SimpleNamespace(received_at=at, envelope=SimpleNamespace(artifacts=(), summary="同一句话"))
+
+    amended = _event("RequirementsAmended", requirements_revision=2)
+    amended.created_at = 30.0
+    rows = sc.result_hashes(_Store(), "m", events=[amended])
+    assert [revision for revision, _ in rows] == [1, 1, 2]
+    assert len({digest for _, digest in rows}) == 1
+    assert sc.duplicate_count(rows) == (1, 3)
     assert sc.duplicate_count([]) == (0, 0)
     assert sc.duplicate_count(["a", "b"]) == (0, 2)
     hashed = sc.result_content_hash(["h2", "h1"], "x")
