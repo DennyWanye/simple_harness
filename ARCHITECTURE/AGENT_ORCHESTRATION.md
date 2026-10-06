@@ -1,4 +1,5 @@
 最后更新：2026-10-07 CST（夜间清遗留，待发版 SDK `opt.167`）。
+- **Host 诊断放行归因 v2 的内容**（夜间 N3d 发现）：`backend/deskpet/orchestration/diagnostics._attribution` 白名单原来丢了 v2 新加的 `goal_chain`（根结论贡献链，行里全是编号与布尔）与产物行的 `acceptance_id`，报告写着 v2 却没有 v2 的内容；现在放行，`test_diagnostics_contract.py` 断言目标链只有一个根、字段集合固定、每个产物带验收编号，改坏被抓。Host 真删保证根状态文件后重启进隔离的真实场景用例补上（`test_assurance_quarantine.py`）；两份 Host 诊断用例加进发版脚本钉版后列表。
 - **执行图跟进的投递泵不认领被隔离任务的跟进**（夜间 N2，终核 8.5 建议）：`TaskGraphFollowupStore.claim_followup(excluded_missions=…)`，投递泵每次认领传本进程的隔离集合（`Orchestrator._recovery_isolated`），被隔离任务的跟进原样留在库里（状态、次数不变）、不写见证、不写新计划版本、不开审阅工作。用例 `taskgraph_exec/test_convergence_wake_terminal_mission.py::test_an_isolated_missions_followups_are_left_exactly_as_they_are`，改坏"泵不传隔离集合"被抓。
 
 最后更新：2026-10-06 CST（补齐第 2～4 批并行车道，合并中，待发版 SDK `opt.166`）。依据 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/10-第2至4批-车道说明.md`；分车道记录 `第2批-车道G～N-记录.md`。本条随各车道合并逐段补。

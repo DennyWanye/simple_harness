@@ -158,8 +158,20 @@ def _attribution(value: object, snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
     return {
         **_pick(source, ("version", "mission_id", "mission_status", "success_path")),
+        # attribution-v2（第 2 批车道 H，T10）：根结论贡献链。行里全是编号与布尔，没有自由文本。
+        "goal_chain": [
+            {**_pick(row, ("resolution_id", "goal_task_id", "obligation_id", "is_mission_root")),
+             "child_resolution_ids": [item for item in row.get("child_resolution_ids") or ()
+                                      if isinstance(item, str)],
+             "contributing_acceptances": {
+                 str(occurrence): [item for item in ids if isinstance(item, str)]
+                 for occurrence, ids in _mapping(row.get("contributing_acceptances")).items()
+                 if isinstance(ids, (list, tuple))}}
+            for row in _rows(source.get("goal_chain"))
+        ],
         "final_products": [
             {**_pick(row, ("content_hash", "artifact_id", "task_id", "result_id", "attempt_id",
+                           "acceptance_id",
                            "agent_id", "role", "model", "runtime_profile_id", "prompt_version")),
              "path_sha256": _hash(row.get("path")),
              "verified_by": [_pick(layer, ("layer", "status", "verifier_version"))
