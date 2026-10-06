@@ -37,14 +37,46 @@ NOTIFICATION_EVENT = "AssuranceStatusNotificationRequested"
 CLOSEOUT_REQUESTED_EVENT = "AssuranceCloseoutRequested"
 JUDGMENT_KEY = "assurance_judgment"
 CLOSEOUT_KEY = "assurance_closeout"
+#: closeout-v1（``plans/Assurance/specs/1.1/contracts/closeout-v1.schema.json``）的字段；收尾记录、
+#: 定稿回执、任务最终报告里的收尾记录都按它写（第 1 批 A17）。``read_set`` 不写：收尾没有自己的读集，
+#: 它依赖的证书各自带读集。
+CLOSEOUT_V1_FIELDS = (
+    "schema_version", "mission_id", "root_resolution_ref", "requirements_ref", "completion_spec_hash",
+    "state", "pending_effect_keys", "unsettled_operation_refs", "accounting_pending_refs",
+    "dangerous_work_refs", "report_ref", "as_of_ms", "reasons",
+)
+
+
+def closeout_document(evaluation: Mapping[str, Any], **overrides: Any) -> dict[str, Any]:
+    """收尾评估正文里的 closeout-v1 文档部分（内部核对字段不带）。"""
+    document = {name: evaluation.get(name) for name in CLOSEOUT_V1_FIELDS}
+    document.update(overrides)
+    return document
+
+
+ASSURED = "ASSURED"
+NOT_ASSURED = "NOT_ASSURED"
+READ_FAILED = "READ_FAILED"
+
+
+def assurance_lane_status(store: Any, mission_id: str) -> tuple[str, str | None]:
+    """保证通道状态：``ASSURED`` / ``NOT_ASSURED``（没有建任务合同，或合同不是保证通道）/
+    ``READ_FAILED``（合同在、绑定却读不回来等），连同出错的码。
+
+    第 1 批 A06（2026-10-06）：读错和"不是保证通道"是两回事——前者不能让终态通知静默不发。
+    """
+    try:
+        lane = AssuranceStore(store).lane(mission_id)
+    except AssuranceError as error:
+        if error.code == "CREATION_CONTRACT_UNRESOLVED":
+            return NOT_ASSURED, error.code
+        return READ_FAILED, error.code
+    return (ASSURED if lane == "ASSURANCE_1_1" else NOT_ASSURED), None
 
 
 def is_assured(store: Any, mission_id: str) -> bool:
-    """Whether this Mission runs on the assured lane; a missing contract is not."""
-    try:
-        return AssuranceStore(store).lane(mission_id) == "ASSURANCE_1_1"
-    except AssuranceError:
-        return False
+    """Whether this Mission runs on the assured lane; a missing or unreadable contract is not."""
+    return assurance_lane_status(store, mission_id)[0] == ASSURED
 
 
 def recorded_judgment(mission: Mission) -> Mapping[str, Any] | None:
@@ -106,19 +138,25 @@ def request_assured_notification(
 ) -> Event | None:
     """Emit the NOTIFY request for a terminal event of an assured Mission.
 
-    Idempotent per final event (the event key); a legacy Mission gets nothing.
+    Idempotent per final event (the event key); a Mission that is not assured gets
+    nothing.  A Mission whose assurance state cannot be read (A06) still gets its
+    terminal notice — the request says so in ``note`` instead of staying silent.
     """
-    if not is_assured(commit._store, mission_id):
+    status, code = assurance_lane_status(commit._store, mission_id)
+    if status == NOT_ASSURED:
         return None
+    payload: dict[str, Any] = {
+        "final_event_id": final.id,
+        "state_version": integer(state_version),
+        "final_event_type": final.type,
+    }
+    if status == READ_FAILED:
+        payload["note"] = f"保证状态读取失败：{code}"
     return commit._emit(
         NOTIFICATION_EVENT,
         mission_id,
         key=f"{mission_id}:{final.id}",
-        payload={
-            "final_event_id": final.id,
-            "state_version": integer(state_version),
-            "final_event_type": final.type,
-        },
+        payload=payload,
     )
 
 
@@ -131,6 +169,9 @@ def finalize_assured_mission(
     READY under this same lock. Everything it says is re-read here from the
     rows before anything is written; a disagreement refuses (the work is
     rechecked, never repaired).
+
+    第 1 批 A17：定稿回执正文 = closeout-v1 文档（state FINALIZED）+ 判定 / 版本字段；收尾行与任务最终
+    报告里的收尾记录是同一份文档，``report_ref`` 指向这张回执。
     """
     store = commit._store
     mission_id = text(mission_id)
@@ -146,7 +187,8 @@ def finalize_assured_mission(
     ).fetchone()
     if row is None or row["state"] != "READY":
         raise AssuranceError("CLOSEOUT_NOT_READY")
-    if row["resolution_id"] != evaluation.get("resolution_id"):
+    resolution_ref = evaluation.get("root_resolution_ref")
+    if resolution_ref is None or row["resolution_id"] != resolution_ref["pin"]["id"]:
         raise AssuranceError("RECHECK_REQUIRED", "closeout resolution")
     mission = commit._require_mission(mission_id)
     if mission.status is not MissionStatus.ACTIVE:
@@ -165,13 +207,20 @@ def finalize_assured_mission(
         raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", "commit_receipts")
     now_ms = int(store.now * 1000)
     row_version = int(row["row_version"]) + 1
-    report = dict(mission.final_report or {})
-    report[CLOSEOUT_KEY] = {
-        "resolution_id": str(resolution.resolution_id),
+    state_version = int(mission.version) + 1
+    # 定稿回执正文：closeout-v1 文档（它自己就是收尾记录，report_ref 为空）+ 判定与版本字段。
+    document = closeout_document(evaluation, state="FINALIZED", as_of_ms=now_ms, report_ref=None)
+    body = {
+        **document,
         "closeout_row_version": row_version,
-        "check_body_hash": row["check_body_hash"],
-        "finalized_receipt_id": receipt_id,
+        "previous_check_body_hash": row["check_body_hash"],
+        "judged_event_id": judgment["judged_event_id"],
+        "state_version": state_version,
     }
+    digest = fingerprint(body)
+    ref = AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest))
+    report = dict(mission.final_report or {})
+    report[CLOSEOUT_KEY] = {**document, "report_ref": ref.to_json()}
     report.update(commit._ledger.usage_flags(mission_id))
     done = next_mission(
         mission,
@@ -179,6 +228,8 @@ def finalize_assured_mission(
         stop_reason=str(MissionStopReason.VERIFICATION_PASSED),
         final_report=report,
     )
+    if int(done.version) != state_version:
+        raise AssuranceError("RECHECK_REQUIRED", "mission version")
     store.update_mission(done, expected_version=mission.version)
     final = commit._emit(
         "MissionCompleted",
@@ -187,19 +238,6 @@ def finalize_assured_mission(
         payload={"stop_reason": done.stop_reason, "final_report": report},
     )
     _promote_methods(store, mission_id, resolution)
-    body = {
-        "schema_version": 1,
-        "mission_id": mission_id,
-        "resolution_id": str(resolution.resolution_id),
-        "closeout_row_version": row_version,
-        "previous_check_body_hash": row["check_body_hash"],
-        "judged_event_id": judgment["judged_event_id"],
-        "final_event_id": final.id,
-        "final_event_type": final.type,
-        "state_version": int(done.version),
-        "finalized_at_ms": now_ms,
-    }
-    digest = fingerprint(body)
     store.insert_receipt(
         commit_id=receipt_id,
         kind=FINALIZED_KIND,
@@ -208,7 +246,7 @@ def finalize_assured_mission(
         proposal_hash=digest,
         receipt=body,
     )
-    check = {**dict(evaluation), "state": "FINALIZED", "finalized": body}
+    check = {**dict(evaluation), "state": "FINALIZED", "as_of_ms": now_ms, "report_ref": ref.to_json()}
     moved = connection.execute(
         "UPDATE assurance_closeouts SET state='FINALIZED',row_version=?,check_body_hash=?,"
         "check_body_json=?,last_receipt_id=?,updated_at_ms=? WHERE mission_id=? AND row_version=?",
@@ -224,12 +262,12 @@ def finalize_assured_mission(
     ).rowcount
     if moved != 1:
         raise AssuranceError("RECHECK_REQUIRED", "closeout row")
-    ref = AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest))
     commit._emit(
         FINALIZED_KIND,
         mission_id,
         key=receipt_id,
-        payload={**body, "receipt_ref": ref.to_json()},
+        payload={**body, "final_event_id": final.id, "final_event_type": final.type,
+                 "receipt_ref": ref.to_json()},
     )
     request_assured_notification(commit, mission_id, final, state_version=done.version)
     return ref
@@ -255,12 +293,18 @@ def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
     store.connection.execute("RELEASE method_promotion")
 
 __all__ = (
+    "ASSURED",
     "CLOSEOUT_KEY",
     "CLOSEOUT_REQUESTED_EVENT",
+    "CLOSEOUT_V1_FIELDS",
     "FINALIZED_KIND",
     "JUDGMENT_KEY",
     "NOTIFICATION_EVENT",
+    "NOT_ASSURED",
+    "READ_FAILED",
+    "assurance_lane_status",
     "assured_closeout_pending",
+    "closeout_document",
     "finalize_assured_mission",
     "is_assured",
     "recorded_judgment",

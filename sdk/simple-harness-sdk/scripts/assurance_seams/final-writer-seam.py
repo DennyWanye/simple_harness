@@ -100,7 +100,9 @@ async def main() -> None:
             receipt = store.get_receipt("assurance-finalized:" + mission_id)
             assert receipt and receipt["state_version"] == completed.version, receipt
             assert row["last_receipt_id"] == "assurance-finalized:" + mission_id
-            assert completed.final_report["assurance_closeout"]["finalized_receipt_id"] == row["last_receipt_id"]
+            closeout_record = completed.final_report["assurance_closeout"]
+            assert closeout_record["report_ref"]["pin"]["id"] == row["last_receipt_id"]
+            assert closeout_record["requirements_ref"]["revision"] == 1 and closeout_record["state"] == "FINALIZED"
             assert completed.final_report["assurance_judgment"]["met"] is True
             requests = [e.payload for e in events(store, mission_id, NOTIFICATION_EVENT)]
             assert requests == [{"final_event_id": done.id, "state_version": completed.version,
@@ -112,8 +114,9 @@ async def main() -> None:
             assert not commit.assured_closeout_pending(mission_id)
             # 定稿以后：再交一次 READY 评估（比如重启后重放）按名拒绝，什么都不写。
             before = store.connection.total_changes
-            stale = {"mission_id": mission_id, "state": "READY", "resolution_id": row["resolution_id"],
-                     "mission_version": completed.version, "reasons": []}
+            stale = {"mission_id": mission_id, "state": "READY", "mission_version": completed.version, "reasons": [],
+                     "root_resolution_ref": {"kind": "resolution", "pin": {"id": row["resolution_id"], "revision": 0,
+                                                                            "content_hash": "0" * 64}}}
             with store.transaction():
                 try:
                     finalize_assured_mission(commit, mission_id, stale)

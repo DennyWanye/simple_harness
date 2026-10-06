@@ -235,6 +235,8 @@ class AssuranceApi:
         self, rows: list[Any], *, now_ms: int, epochs: EpochSnapshot, root: str
     ) -> tuple[str, list[str]]:
         """Classify the newest committed certificate under the current epochs."""
+        from ..orchestrator.assurance_recheck import certificate_expired
+
         if not rows:
             return "UNAVAILABLE", ["NO_COMMITTED_CERTIFICATE"]
         row = max(rows, key=lambda r: r["rowid"])
@@ -252,7 +254,7 @@ class AssuranceApi:
             reasons.append("SOURCE_CHANGED")
         if epochs.clock_state != "STABLE":
             reasons.append("TIME_DISCONTINUITY")
-        if row["not_after_ms"] is not None and now_ms >= row["not_after_ms"]:
+        if certificate_expired(row, now_ms=now_ms):
             reasons.append("EXPIRED")
         if body["decision"] != "USABLE":
             reasons.append("CERTIFICATE_" + str(body["decision"]))
@@ -759,10 +761,10 @@ class AssuranceApi:
         elif subject.kind not in ("result", "task"):
             reasons.append("SUBJECT_KIND_UNSUPPORTED:" + subject.kind)
         else:
-            candidate = None
+            # 第 1 批 A04：诊断走纯算路径——不写、不清共用候选缓存（原计划：use_check 只读）。
             try:
                 if subject.kind == "result":
-                    candidate = self._validity.prepare_accept_use_for_result(mission.id, subject.pin.id)
+                    candidate = self._validity.diagnose_accept_use_for_result(mission.id, subject.pin.id)
                 else:
                     with self._store.read_view():
                         record, _ = self._root_review(mission.id, HtnStore(self._store))
@@ -770,7 +772,7 @@ class AssuranceApi:
                         raise AssuranceError("REVIEW_NOT_OFFICIAL")
                     if str(record.binding.subject_ref.id) != subject.pin.id:
                         raise AssuranceError("USE_SUBJECT_INVALID")
-                    candidate = self._validity.prepare_root_use(record, resolution_id="host-diagnostic:" + request_id)
+                    candidate = self._validity.diagnose_root_use(record, resolution_id="host-diagnostic:" + request_id)
                 certificate = candidate.certificate
                 decision = {"USABLE": "USABLE", "NEEDS_REVIEW": "RECHECK_REQUIRED", "BLOCKED": "BLOCKED"}.get(
                     certificate.decision, "UNAVAILABLE",
@@ -784,12 +786,6 @@ class AssuranceApi:
                 reasons.append(str(error.code))
                 if error.code in _QUARANTINE_CODES:
                     _fail("ROOT_QUARANTINED", "assurance root is quarantined; only management reads are open")
-            finally:
-                if candidate is not None:
-                    try:
-                        self._validity.forget(mission.id, str(candidate.record.record_id))
-                    except Exception:  # noqa: BLE001 - a diagnostic leaves no cached candidate
-                        pass
         return {
             **self._envelope(request_id, mission.id, view, head, root),
             "subject_ref": subject.to_json(),
