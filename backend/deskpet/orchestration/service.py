@@ -295,6 +295,7 @@ class OrchestrationService:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
         from agent_orchestrator.governance.policies import DeploymentPolicy
+        from agent_orchestrator.contracts import Budget
         from agent_orchestrator.orchestrator.event_handler import Orchestrator
         from agent_orchestrator.runtime.assembly import OrchestratorConfig
 
@@ -337,6 +338,8 @@ class OrchestrationService:
             deployment_policy=self._deployment,
             sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
             task_max_tokens=self.settings.task_max_tokens,  # fixed per-leaf allowance
+            # 第 2 批 H11：§18.2 Global → Mission → Task；全局账户在第一个任务建立时打开
+            global_budget=Budget(max_tokens=self.settings.global_max_tokens),
             **knobs,
         )
         self._effective_provider = provider  # kept for a rebuild after repeated failures
@@ -919,6 +922,27 @@ class OrchestrationService:
                 return selected
         return None
 
+    def _global_budget_status(self) -> dict[str, Any]:
+        """第 2 批 H11：全局账户（所有任务合计）的上限与用量，设置页据此写说明。账户在第一个
+        任务建立时才打开；没打开时用量为 0。读不到账本（服务没起来）也只报上限。"""
+        limit = int(self.settings.global_max_tokens)
+        row = {"max_tokens": limit, "opened": False, "reserved_tokens": 0, "settled_tokens": 0,
+               "remaining_tokens": limit}
+        if self._orchestrator is None or self._state not in ("available", "degraded"):
+            return row
+        from agent_orchestrator.governance.budgets import BudgetError
+        from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT
+
+        try:
+            with self._orchestrator.store.transaction():
+                pool = self._orchestrator.commit.ledger.account(GLOBAL_ACCOUNT)
+        except BudgetError:
+            return row
+        remaining = pool.remaining_tokens()
+        return {"max_tokens": int(pool.limits.max_tokens or limit), "opened": True,
+                "reserved_tokens": int(pool.reserved_tokens), "settled_tokens": int(pool.settled_tokens),
+                "remaining_tokens": int(limit if remaining is None else remaining)}
+
     def _mission_token_default(self, profile_id: str | None = None) -> int:
         selected = profile_id or self._context_default()
         return next((p["mission_max_tokens"] for p in self._context_profiles()
@@ -965,6 +989,7 @@ class OrchestrationService:
                 "max_tokens": self._mission_token_default(),
                 "max_attempts": self.settings.default_mission_max_attempts,
             },
+            "global_budget": self._global_budget_status(),
             "deployment_manifest": self._manifest,
             "owner": self.owner,
         }

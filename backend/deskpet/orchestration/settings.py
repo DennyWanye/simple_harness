@@ -52,6 +52,13 @@ class OrchestrationSettings:
     default_mission_max_tokens: int = 20_000_000
     task_max_tokens: int = 3_000_000
     default_mission_max_attempts: int = 12
+    # 第 2 批 H11（原计划 §18.2 Global Budget、§28 "多 Mission 配额"，2026-10-06）：这台机器上
+    # 所有任务合计的 token 上限，是 SDK 全局账户（``GLOBAL_ACCOUNT``）的额度，每个任务的账户都挂
+    # 在它下面（子不超父）。全局账户是累计的：已预留 + 已结清一直加，不随任务结束归零；用完后
+    # 新任务第一轮规划就以 budget_exhausted（scope=global）停下，在跑的任务同样停下，调大这个数
+    # 即可继续。任务预算超过它的新任务按 SDK 现有拒绝路径如实报（invalid_request）。
+    # 默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 300 万不变（2026-09-26 用户决定）。
+    global_max_tokens: int = 2_000_000_000
     # New Missions' context window: 512K by default, 256K on request (user 2026-10-04);
     # an existing Mission keeps the pool it was frozen on.
     context_input_tokens: int = 524_288
@@ -133,6 +140,11 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",
         storage_warn_bytes=_bounded_int(raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5),
+        # 下限是单任务默认上限：再小默认任务一个都建不了（§18.2 子不超父）
+        global_max_tokens=_bounded_int(
+            raw.get("global_max_tokens"), OrchestrationSettings.global_max_tokens,
+            OrchestrationSettings.default_mission_max_tokens, 10**12,
+        ),
         deepseek_compatible_hosts=_compatible_hosts(raw.get("deepseek_compatible_hosts")),
         thinking=_thinking(raw.get("thinking")),
         response_model_aliases=_aliases(raw.get("response_model_aliases")),
