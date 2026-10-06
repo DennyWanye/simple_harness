@@ -59,18 +59,20 @@ async def _completed(world: Any, key: str) -> str:
 def test_a01_final_consistency_rule_rechecks_epoch_and_clock_only_when_ready():
     """定稿那一次事务：纪元动了 / 时钟回拨了 → RECHECK_REQUIRED；没 READY 的评估只是投影，不比。"""
     epochs = {"mission": 7, "environment": 1, "clock_generation": 0, "wall_high_ms": 100, "clock_state": "STABLE"}
-    preview = {"state": "READY", "epochs": epochs, "as_of_ms": 1000}
-    same = {"state": "READY", "epochs": dict(epochs), "as_of_ms": 1005}
+    # 第 2 批车道 N：权限见证与读集也是定稿要比的项（见 test_batch2_closeout_authorization_readset_draining）
+    basis = {"authorization": [], "read_set": []}
+    preview = {"state": "READY", "epochs": epochs, "as_of_ms": 1000, **basis}
+    same = {"state": "READY", "epochs": dict(epochs), "as_of_ms": 1005, **basis}
     AssuranceCloseoutConsumer.require_final_consistency(preview, same)  # 一致：放行
-    moved = {"state": "READY", "epochs": {**epochs, "mission": 8}, "as_of_ms": 1005}
+    moved = {"state": "READY", "epochs": {**epochs, "mission": 8}, "as_of_ms": 1005, **basis}
     with pytest.raises(AssuranceError) as raised:
         AssuranceCloseoutConsumer.require_final_consistency(preview, moved)
     assert raised.value.code == "RECHECK_REQUIRED"
-    rolled_back = {"state": "READY", "epochs": dict(epochs), "as_of_ms": 999}
+    rolled_back = {"state": "READY", "epochs": dict(epochs), "as_of_ms": 999, **basis}
     with pytest.raises(AssuranceError) as raised:
         AssuranceCloseoutConsumer.require_final_consistency(preview, rolled_back)
     assert raised.value.code == "RECHECK_REQUIRED"
-    generation = {"state": "READY", "epochs": {**epochs, "clock_generation": 1}, "as_of_ms": 1005}
+    generation = {"state": "READY", "epochs": {**epochs, "clock_generation": 1}, "as_of_ms": 1005, **basis}
     with pytest.raises(AssuranceError):
         AssuranceCloseoutConsumer.require_final_consistency(preview, generation)
     # 没到 READY：纪元照常在动，不拦
@@ -264,24 +266,29 @@ def test_a17_the_closeout_record_is_written_as_closeout_v1_and_pins_the_requirem
             assert row["state"] == "FINALIZED"
             fields = ("schema_version", "mission_id", "root_resolution_ref", "requirements_ref",
                       "completion_spec_hash", "state", "pending_effect_keys", "unsettled_operation_refs",
-                      "accounting_pending_refs", "dangerous_work_refs", "report_ref", "as_of_ms", "reasons")
-            assert all(name in body for name in fields), sorted(body)
+                      "accounting_pending_refs", "dangerous_work_refs", "read_set", "report_ref", "as_of_ms", "reasons")
+            assert set(body) == set(fields), sorted(body)  # 第 2 批车道 N：正文只有 closeout-v1 的字段
             # 旧的 id 列表 / id 外键不再出现
             assert not {"resolution_id", "unknown_effects", "open_reservations", "evaluated_at_ms"} & set(body)
             assert body["schema_version"] == 1 and body["mission_id"] == mission_id
             htn = HtnStore(store)
             resolution = htn.get_goal_resolution(row["resolution_id"])
-            assert body["root_resolution_ref"]["kind"] == "resolution"
-            assert body["root_resolution_ref"]["pin"]["id"] == row["resolution_id"]
-            assert HEX64.match(body["root_resolution_ref"]["pin"]["content_hash"])
+            # 第 2 批车道 N：root_resolution_ref 是 pin（schema），种类由字段名定
+            assert set(body["root_resolution_ref"]) == {"id", "revision", "content_hash"}
+            assert body["root_resolution_ref"]["id"] == row["resolution_id"]
+            assert HEX64.match(body["root_resolution_ref"]["content_hash"])
             expected = requirements_ref(htn.get_requirements_revision(mission_id, int(resolution.requirements_version)))
             assert body["requirements_ref"] == expected  # 与改要求同一种引用：revision + content_hash
-            [root] = body["root_occurrences"]
+            [ready] = [decode(r[0]) for r in store.connection.execute(
+                "SELECT receipt_json FROM commit_receipts WHERE subject_id=? AND kind='AssuranceCloseoutEvaluated' "
+                "AND json_extract(receipt_json,'$.state')='READY'", (mission_id,)).fetchall()]
+            [root] = ready["root_occurrences"]  # 内部字段在那次评估的回执里，不在正文里
             assert body["completion_spec_hash"] == read_occurrence_completion(store, mission_id, root).scope.spec_hash
             assert (body["pending_effect_keys"], body["unsettled_operation_refs"],
                     body["accounting_pending_refs"], body["dangerous_work_refs"]) == ([], [], [], [])
             receipt_id = "assurance-finalized:" + mission_id
             assert body["report_ref"]["kind"] == "commit_receipt" and body["report_ref"]["pin"]["id"] == receipt_id
+            assert body["read_set"] and all(item["coverage"] == "COMPLETE" for item in body["read_set"])
             assert isinstance(body["as_of_ms"], int) and body["reasons"] == []
             # 任务最终报告里的收尾记录与收尾行同一份结构
             report = store.get_mission(mission_id).final_report["assurance_closeout"]

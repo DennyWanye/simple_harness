@@ -20,19 +20,21 @@ from .assurance_recheck import (
     EVIDENCE_STALE,
     certificate_expired,
     changed_items,
+    closeout_authorization,
     live_usable_certificates,
     stale_certificates,
 )
+from ..assurance.evidence import ReadItem, canonical_read_set
 from ..assurance.expiry import EXPIRY_EVENT, classify_expiry, validity_work_key
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Event
 from ..contracts.semantic_base import content_hash_of
-from ..storage.assurance_reads import clock_discontinuous, read_epochs_locked
+from ..storage.assurance_reads import AssuranceReader, clock_discontinuous, read_epochs_locked
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import WorkClaim, WorkTarget, atomic
 from ..storage.htn_store import HtnStore
 from ..storage.store import _event_from_row
-from .assurance_final_writer import recorded_judgment
+from .assurance_final_writer import closeout_document, recorded_judgment
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 #: 收尾原因：有资料变更还没问完规划器。
@@ -121,6 +123,15 @@ def _trigger(store: Any, claim: WorkClaim) -> Event:
 
 def _trigger_json(event: Event) -> dict:
     return {"event_id": event.id, "seq": event.seq, "hash": fingerprint(event.to_json())}
+
+
+def _unique_reads(rows: list[ReadItem]) -> list[ReadItem]:
+    """同一处依据读两遍算一条；同一键两种指纹是矛盾，按 RECHECK_REQUIRED 退回（与证书读集同一规则）。"""
+    unique: dict[tuple[str, str], ReadItem] = {}
+    for row in rows:
+        if unique.setdefault((row.channel, row.key), row) != row:
+            raise AssuranceError("RECHECK_REQUIRED", "closeout read set")
+    return list(unique.values())
 
 
 class _ConsumerBase:
@@ -386,18 +397,34 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
     ``dangerous_work_refs`` / ``report_ref`` / ``as_of_ms``，不再写裸 id 列表（A17）；未收敛判定把任务
     下所有 HELD 的审阅员尾部预留和所有结果不明（UNKNOWN）的已交出动作算进去，不限根范围（A07）；
     定稿那一次事务重读纪元与时钟、证书到期走 EVIDENCE_STALE（A01，原计划 §7.2）。
+
+    第 2 批车道 N（2026-10-06，第 1 批评估处置）：
+    * 评估结果分两层——closeout-v1 **文档**（``closeout_document``，字段集与 schema 相等、无多余键）写进
+      收尾行正文、任务最终报告与收尾事件；**内部核对字段**（任务版本、纪元、根化身、权限见证、依据过期
+      清单、开着的调用、上限结清……）只进评估回执（``assurance-closeout:*``）。``root_resolution_ref`` /
+      ``requirements_ref`` 都是 pin；``read_set`` 如实写：根结论、要求版本、每个根的完成范围（OBJECT）
+      加当前权威重新签的 ACCESS / POLICY 见证（A17）。
+    * 定稿事务重读"权限"：依据读取时与定稿时各算一遍 ``closeout_authorization``，连同 ``read_set`` 一起
+      比，不一致 → RECHECK_REQUIRED（A01，原计划 §7.2"重读当前 epoch/权限/effect/运行集合"）。
+    * 已交出还没收敛的动作（HANDED_OFF）→ DRAINING / ``OPEN_OPERATIONS``，收敛后再评（A07，原计划 §7.2
+      "实际写者未收敛 → DRAINING"）。
     """
 
-    VOLATILE = frozenset({"as_of_ms", "epochs"})
+    #: 预览与定稿之间允许自然变化、只在定稿（READY）那次按 ``require_final_consistency`` 显式比的字段。
+    VOLATILE = frozenset({"as_of_ms", "epochs", "authorization", "read_set"})
 
     def __init__(
         self,
         commit: Any,
         *,
         tenant_id: str,
+        authority: Callable[..., Any],
         finalizer: Callable[[str, Mapping[str, Any]], AssuranceRef | None] | None = None,
     ) -> None:
         super().__init__(commit, tenant_id=tenant_id, consumer="CLOSEOUT")
+        if authority is None:
+            raise AssuranceError("CURRENT_READ_AUTHORITY_REQUIRED")
+        self.authority = authority
         self.finalizer = finalizer
 
     @staticmethod
@@ -471,6 +498,8 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             "unsettled_operation_refs": [],
             "accounting_pending_refs": [],
             "dangerous_work_refs": [],
+            "read_set": [],
+            "authorization": [],
             "report_ref": None,
         }
         reasons: list[str] = []
@@ -489,13 +518,25 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             )
             body.update(state="NOT_READY", reasons=reasons)
             return body
-        body["root_resolution_ref"] = AssuranceRef(
+        root_ref = AssuranceRef(
             "resolution", Pin(str(resolution.resolution_id), 0, content_hash_of(resolution.to_json()))
-        ).to_json()
+        )
+        body["root_resolution_ref"] = root_ref.pin.to_json()  # closeout-v1：pin，种类由字段名定
         # 钉住根结论是按哪一版要求形成的（与改要求同一种引用：revision + content_hash）。
         body["requirements_ref"] = requirements_ref(
             HtnStore(self.store).get_requirements_revision(mission.id, int(resolution.requirements_version))
         )
+        # A17 读集 / A01 权限：真的按引用重读根结论与要求版本（读不到或正文不符就在这里拒绝，不猜），
+        # 再让当前权威对每张所依赖证书的身份就根结论重新签 ACCESS / POLICY 见证。
+        reader = AssuranceReader(self.store, tenant_id=self.tenant_id, mission_id=mission.id)
+        reads: list[ReadItem] = [
+            reader.read_exact_metadata(root_ref).read_item,
+            reader.read_exact_metadata(
+                AssuranceRef("requirements", Pin.from_json(body["requirements_ref"]))).read_item,
+        ]
+        authorization = closeout_authorization(
+            self.authority, self.store, mission_id=mission.id, root_ref=root_ref, now_ms=now_ms)
+        body["authorization"] = [item.to_json() for item in authorization]
         # The Mission judge's own verdict on ``Mission.success_criteria`` is part of
         # the root business requirement; the unique final writer completes from it.
         judgment = recorded_judgment(mission)
@@ -527,6 +568,8 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         for root in roots:
             status = read_occurrence_completion(self.store, mission.id, root)
             spec_hashes.append(str(status.scope.spec_hash))
+            reads.append(reader.read_exact_metadata(AssuranceRef(
+                "completion_scope", Pin(str(status.scope.scope_id), 0, status.scope.content_hash()))).read_item)
             states = {
                 str(effect_key): str(read_current_effect(
                     self.store, mission.id, status.scope.spec_hash, str(effect_key))["state"])
@@ -539,18 +582,21 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             # 走下面的 BLOCKED_UNKNOWN（原计划 §7.2），不落 ROOT_SCOPE_UNMET。
             (blocked if unmet_only_by_unknown_effects(status, states) else unmet).append(root)
         body["completion_spec_hash"] = spec_hashes[0] if spec_hashes else None
+        body["read_set"] = [item.to_json() for item in canonical_read_set(_unique_reads([*reads, *authorization]))]
         body["unmet_root_occurrences"] = unmet
         body["blocked_root_occurrences"] = blocked
         body["pending_effect_keys"] = pending_effects
         if unmet:
             reasons.append("ROOT_SCOPE_UNMET")
-        # A07：已交出的动作，不限根范围——结果不明（UNKNOWN）的是危险工作，交出去还没结算的也记下。
+        # A07：已交出的动作，不限根范围——结果不明（UNKNOWN）的是危险工作；交出去还没收敛（HANDED_OFF）
+        # 的是没收敛的写者，让收尾 DRAINING，收敛后再评（原计划 §7.2）。
         unknown_actions = self.store.list_actions(mission.id, "UNKNOWN")
         handed_off = self.store.list_actions(mission.id, "HANDED_OFF")
         body["dangerous_work_refs"] = [self._action_ref(action) for action in unknown_actions]
         body["unsettled_operation_refs"] = [
             self._action_ref(action) for action in (*unknown_actions, *handed_off)
         ]
+        open_operations = [str(action["action_key"]) for action in handed_off]
         open_intents = sorted(
             intent.intent_id
             for intent in self.store.list_intents(
@@ -576,6 +622,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         body.update(self._drain_decision(
             mission.id, reasons=reasons,
             unknown=[*pending_effects, *(ref["pin"]["id"] for ref in body["dangerous_work_refs"])],
+            open_operations=open_operations,
             open_intents=open_intents, open_reservations=open_reservations,
             usage_fully_known=bool(usage["usage_fully_known"]),
         ))
@@ -622,8 +669,8 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         return subjects, refs
 
     def _drain_decision(
-        self, mission_id: str, *, reasons: list[str], unknown: list[str], open_intents: list[str],
-        open_reservations: list[str], usage_fully_known: bool,
+        self, mission_id: str, *, reasons: list[str], unknown: list[str], open_operations: list[str],
+        open_intents: list[str], open_reservations: list[str], usage_fully_known: bool,
     ) -> dict[str, Any]:
         """The closeout state once the root facts are read (NOT_READY / BLOCKED_UNKNOWN /
         DRAINING / READY) and, when READY by the upper-bound rule, what it counts.
@@ -631,6 +678,9 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         ``unknown``: the required effect keys in RECONCILIATION_REQUIRED plus the handed-off
         actions whose outcome is UNKNOWN anywhere in the Mission (A07) — the spec's
         "危险/必需效果 UNKNOWN → BLOCKED_UNKNOWN".
+        ``open_operations``: actions handed off and not yet converged (HANDED_OFF) — the
+        spec's "实际写者未收敛 → DRAINING" (``OPEN_OPERATIONS``); never counted at an upper
+        bound, the Mission waits for the outcome.
 
         User decision 2026-09-26: a judged Mission whose only remaining drain is the
         UNKNOWN charge of work that will never run again closes with that charge counted
@@ -645,7 +695,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         draining_intents = [i for i in open_intents if i not in awaiting]
         out: dict[str, Any] = {}
         upper = self._upper_bound_plan(mission_id, open_reservations) if (
-            not reasons and not unknown and not draining_intents
+            not reasons and not unknown and not open_operations and not draining_intents
             and (open_reservations or not usage_fully_known)
         ) else None
         if upper is not None:
@@ -656,8 +706,10 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             out.update(state="BLOCKED_UNKNOWN", reasons=["EFFECT_UNKNOWN"])
         elif upper is not None:
             out.update(state="READY", reasons=[])
-        elif draining_intents or open_reservations or not usage_fully_known:
+        elif open_operations or draining_intents or open_reservations or not usage_fully_known:
             draining = []
+            if open_operations:
+                draining.append("OPEN_OPERATIONS")
             if draining_intents:
                 draining.append("OPEN_INTENTS")
             if open_reservations:
@@ -671,9 +723,10 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
 
     @staticmethod
     def require_final_consistency(preview: Mapping[str, Any], evaluation: Mapping[str, Any]) -> None:
-        """A01（原计划 §7.2"最终事务重读当前 epoch…才 READY→FINALIZED"）：要定稿（READY）的那次评估，
-        任务 / 环境纪元与时钟代次必须等于收尾依据读取时的，现在不能早于读取时刻，时钟要 STABLE；
-        任一不成立 → RECHECK_REQUIRED，退回重算，不定稿。没到 READY 的评估只是投影，纪元照常在动，不比。"""
+        """A01（原计划 §7.2"最终事务重读当前 epoch/权限/effect/运行集合才 READY→FINALIZED"）：要定稿（READY）
+        的那次评估，任务 / 环境纪元与时钟代次必须等于收尾依据读取时的，现在不能早于读取时刻，时钟要
+        STABLE；当前权威重新签的权限见证（``authorization``）与整个读集（``read_set``）也必须与依据读取时
+        一致；任一不成立 → RECHECK_REQUIRED，退回重算，不定稿。没到 READY 的评估只是投影，不比。"""
         if evaluation.get("state") != "READY":
             return
         before, now = preview["epochs"], evaluation["epochs"]
@@ -681,6 +734,10 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             raise AssuranceError("RECHECK_REQUIRED", "closeout epochs moved")
         if now["clock_state"] != "STABLE" or int(evaluation["as_of_ms"]) < int(preview["as_of_ms"]):
             raise AssuranceError("RECHECK_REQUIRED", "closeout clock")
+        if evaluation["authorization"] != preview["authorization"]:
+            raise AssuranceError("RECHECK_REQUIRED", "closeout authorization")
+        if evaluation["read_set"] != preview["read_set"]:
+            raise AssuranceError("RECHECK_REQUIRED", "closeout read set")
 
     def _awaiting_original_reconciliation(self, open_intents: list[str]) -> set[str]:
         """Open review intents whose only wait is an unanswerable original provider call:
@@ -746,12 +803,14 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             # History never rolls back. Re-evaluations after finalisation are
             # recorded as receipts only; the row keeps its final identity.
             evaluation = {**evaluation, "state": "FINALIZED", "reasons": ["ALREADY_FINALIZED"]}
-        check_hash = fingerprint(evaluation)
-        check_json = canonical(evaluation)
+        # 收尾行正文 = closeout-v1 文档；内部核对字段只进这次评估的回执（第 2 批车道 N，A17）。
+        document = closeout_document(evaluation)
+        check_hash = fingerprint(document)
+        check_json = canonical(document)
         now_ms = evaluation["as_of_ms"]
         state = evaluation["state"]
         resolution_ref = evaluation.get("root_resolution_ref")
-        resolution_id = None if resolution_ref is None else str(resolution_ref["pin"]["id"])
+        resolution_id = None if resolution_ref is None else str(resolution_ref["id"])
         writes_row = resolution_id is not None and not finalized
         row_version = None if row is None else row["row_version"]
         changed = False
@@ -832,7 +891,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
                     "counted_tokens": settled["settled_tokens"],
                     "closeout_receipt_ref": ref.to_json()})
         if state == "READY" and self.finalizer is not None:
-            final = self.finalizer(mission_id, evaluation)
+            final = self.finalizer(mission_id, evaluation)  # 完整评估：定稿写入器要核内部字段
             if final is not None and not isinstance(final, AssuranceRef):
                 raise AssuranceError("WORK_COMMIT_RECEIPT_REQUIRED")
         return ref

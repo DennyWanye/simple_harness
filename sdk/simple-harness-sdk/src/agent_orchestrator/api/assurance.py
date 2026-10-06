@@ -436,13 +436,14 @@ class AssuranceApi:
                     "EFFECT", f"{scope['scope_id']}:{effect_key}", state, "NOT_APPLICABLE", reasons,
                 ))
         # CLOSEOUT: the consumer's projected row.
-        closeout = store.connection.execute(
-            "SELECT * FROM assurance_closeouts WHERE mission_id=?", (mission_id,)
-        ).fetchone()
-        if closeout is None:
+        # 收尾行正文只有 closeout-v1 字段；根化身与纪元在那次评估的回执里（第 2 批车道 N，A17）。
+        from ..orchestrator.assurance_recheck import closeout_detail
+
+        found = closeout_detail(store, mission_id)
+        if found is None:
             items.append(self._item("CLOSEOUT", mission_id, "NOT_EVALUATED", "UNAVAILABLE", ["NO_CLOSEOUT_ROW"]))
         else:
-            body = decode(closeout["check_body_json"])
+            closeout, body = found
             reasons = [str(r) for r in body.get("reasons", ())]
             use = "USABLE"
             if body.get("root_incarnation_id") != root:
