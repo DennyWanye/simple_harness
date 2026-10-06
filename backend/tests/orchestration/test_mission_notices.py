@@ -7,7 +7,7 @@
 * "已收到"走控制通道，重复点不改第一次的时间；没有的通知按名拒绝；
 * 重启后已收到的不再出现；Host 记录丢了，也能从 SDK 的持久回执补回来。
 
-**改坏检验**：启动时不补回（删 ``backfill`` 调用）→ 第三段变红。
+**改坏检验**：启动时不补回（删 ``catch_up`` 调用；第 2 批 U04 起按序号续读）→ 第三段变红。
 """
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def _host_with(final_report: dict, events: list[tuple[str, str, dict]], notices:
     mission = SimpleNamespace(status=SimpleNamespace(value="CANCELLED"), goal="写周报并发布",
                               stop_reason="CANCELLED", final_report=final_report)
     host = SimpleNamespace(
-        _notices=SimpleNamespace(pending=lambda: [
+        _notices=SimpleNamespace(catch_up=lambda _store: 0, pending=lambda: [
             {"notice_id": nid, "mission_id": "m1", "state_version": 3, "notified_at": float(n), "acked_at": None}
             for n, nid in enumerate(notices)]),
         _orchestrator=SimpleNamespace(store=SimpleNamespace(get_mission=lambda _id: mission, connection=connection)))

@@ -111,8 +111,15 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         }
       }
     });
+    // 第 2 批 U04：通道断开再连上就重新拉一次（Host 会从已读序号续读）；断线前没应答的请求作废，
+    // 不然 listRequest 一直占着，重连后永远不再拉。
+    const offState = channel.onStateChange?.((state) => {
+      if (state !== "connected") return;
+      listRequest.current = null;
+      refresh();
+    });
     refresh();
-    return off;
+    return () => { off(); offState?.(); };
   }, [channel, refresh]);
 
   const acknowledge = (noticeId: string) => {

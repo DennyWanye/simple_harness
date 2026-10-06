@@ -9,13 +9,16 @@ type Sent = { type: string; request_id: string; payload: Record<string, unknown>
 function fakeChannel() {
   const sent: Sent[] = [];
   const handlers = new Set<(m: unknown) => void>();
+  const stateHandlers = new Set<(s: string) => void>();
   return {
     sent,
     channel: {
       send: (message: unknown) => { sent.push(message as Sent); return true; },
       onMessage: (handler: (m: unknown) => void) => { handlers.add(handler); return () => handlers.delete(handler); },
+      onStateChange: (handler: (s: string) => void) => { stateHandlers.add(handler); return () => stateHandlers.delete(handler); },
     },
     push: (message: unknown) => act(() => { handlers.forEach((h) => h(message)); }),
+    connection: (state: string) => act(() => { stateHandlers.forEach((h) => h(state)); }),
   };
 }
 
@@ -107,5 +110,25 @@ describe("主对话里的后台任务结束通知", () => {
     expect(ack.payload).toEqual({ all: true });
     fake.push({ type: "mission_notice_ack_response", payload: { ok: true, request_id: ack.request_id, data: { acked: 5 } } });
     expect(screen.queryByText("后台任务已完成：任务 4")).toBeNull();
+  });
+
+  it("连接断开又连上后重新拉取通知，断线前没应答的请求不挡住这次拉取（第 2 批 U04）", () => {
+    const fake = fakeChannel();
+    render(
+      <MissionsChannelContext.Provider value={fake.channel as never}>
+        <ChatMissionNotices />
+      </MissionsChannelContext.Provider>,
+    );
+    expect(fake.sent.filter((m) => m.type === "mission_notices").length).toBe(1);
+    // 第一次请求没有应答（通道掉了）；断开本身不发请求
+    fake.connection("disconnected");
+    expect(fake.sent.filter((m) => m.type === "mission_notices").length).toBe(1);
+    fake.connection("connected");
+    const pulls = fake.sent.filter((m) => m.type === "mission_notices");
+    expect(pulls.length).toBe(2);
+    expect(pulls[1].request_id).not.toBe(pulls[0].request_id);
+    // 重连后的应答按新请求号接收
+    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: pulls[1].request_id, data: NOTICES.slice(0, 1) } });
+    expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
   });
 });

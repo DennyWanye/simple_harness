@@ -68,6 +68,8 @@ export interface OrchestrationStatus {
   allowed_tools?: string[];
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
   mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
+  /** 第 2 批 H11：所有任务合计的 token 上限与用量（SDK 全局账户，累计不归零）。 */
+  global_budget?: { max_tokens: number; opened: boolean; reserved_tokens: number; settled_tokens: number; remaining_tokens: number } | null;
   context_profiles?: { profile_id: string; max_input_tokens: number; max_total_tokens?: number; output_reserve?: number; safety_margin?: number; default_max_output_tokens: number; max_output_tokens_ceiling: number; mission_max_tokens: number }[];
   default_context_profile_id?: string | null;
   diagnostics_available?: boolean;

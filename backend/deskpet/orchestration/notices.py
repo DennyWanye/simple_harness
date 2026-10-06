@@ -8,13 +8,16 @@ Mission reaches a terminal event (``AssuranceStatusNotified`` is its durable rec
 This ledger is the Host's one record of those notices and of the person's "已收到":
 
 * ``record`` keeps a notice (de-duplicated by the final event id the SDK sends);
-* ``backfill`` re-reads the SDK's durable receipts once at startup, so a notice sent just
-  before a crash or a restart is not lost;
+* ``catch_up`` re-reads the SDK's durable receipts **from the last event sequence number
+  this Host has read** (第 2 批 U04，Assurance 原计划 §7.3 "Host 按 event_id 去重、重连从
+  seq 补读"): at startup, after a runtime rebuild, and every time the main conversation
+  pulls the list (the front end re-pulls after its channel reconnects), so a push that
+  was lost while the Host was disconnected is read back without scanning the whole table;
 * ``ack`` is written only when the person clicks "已收到" on the card in the main
   conversation — the model can read the notices, never acknowledge them.
 
 The file lives under the orchestration root, is replaced atomically and holds ids,
-versions and times only (no goal text, no payloads).
+versions, times and the last read sequence number only (no goal text, no payloads).
 """
 
 from __future__ import annotations
@@ -41,10 +44,14 @@ class MissionNotices:
         self._clock = clock
         self._lock = threading.Lock()
         self._rows: dict[str, dict[str, Any]] = {}
+        #: the highest ``events.seq`` this Host has read; 0 = nothing read yet (a lost file
+        #: starts over and re-reads the whole table, which only re-adds what was lost)
+        self.last_seq = 0
         try:
             loaded = json.loads(self._path.read_text(encoding="utf-8"))
             for row in loaded.get("notices", []):
                 self._rows[str(row["notice_id"])] = dict(row)
+            self.last_seq = max(0, int(loaded.get("last_seq") or 0))
         except FileNotFoundError:
             pass
 
@@ -52,7 +59,8 @@ class MissionNotices:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         rows = sorted(self._rows.values(), key=lambda row: (row["notified_at"], row["notice_id"]))
         temporary = self._path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"version": 1, "notices": rows}, ensure_ascii=False), encoding="utf-8")
+        temporary.write_text(json.dumps({"version": 2, "last_seq": self.last_seq, "notices": rows}, ensure_ascii=False),
+                             encoding="utf-8")
         os.replace(temporary, self._path)
 
     def _add(self, payload: Mapping[str, Any], *, at: float) -> bool:
@@ -74,16 +82,27 @@ class MissionNotices:
             if self._add(payload, at=self._clock()):
                 self._save()
 
-    def backfill(self, store: Any) -> None:
-        rows = store.connection.execute(
-            "SELECT payload_json, created_at FROM events WHERE type=? ORDER BY seq", (NOTIFIED_EVENT,)
-        ).fetchall()
+    def catch_up(self, store: Any) -> int:
+        """Read the terminal-notice events newer than ``last_seq`` and remember where the
+        table ends.  Returns how many notices were new (a live push that already arrived is
+        de-duplicated by event id).  Nothing is written when nothing moved."""
         with self._lock:
-            added = False
-            for payload_json, created_at in rows:
-                added = self._add(json.loads(payload_json), at=float(created_at)) or added
-            if added:
+            since = self.last_seq
+            tail = store.connection.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
+            end = int(tail[0] if tail is not None else 0)
+            rows = store.connection.execute(
+                "SELECT seq, payload_json, created_at FROM events WHERE type=? AND seq>? AND seq<=? ORDER BY seq",
+                (NOTIFIED_EVENT, since, end),
+            ).fetchall()
+            added = 0
+            for _seq, payload_json, created_at in rows:
+                if self._add(json.loads(payload_json), at=float(created_at)):
+                    added += 1
+            if end > since:
+                self.last_seq = end
+            if added or end > since:
                 self._save()
+            return added
 
     def pending(self) -> list[dict[str, Any]]:
         with self._lock:

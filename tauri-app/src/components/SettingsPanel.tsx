@@ -23,6 +23,7 @@ import { formatUpdaterError } from "./updaterError";
 import { dark, titleText, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import type {
+  ControlMessage,
   DailyBudgetStatus,
   IncomingMessage,
 } from "../types/messages";
@@ -215,6 +216,9 @@ export function SettingsPanel({
 
         {/* ================ 任务与会话数据 (2026-09-25 条目 7：只统计、只提醒，不删除) ================ */}
         <StorageUsageSection getChannel={getChannel} />
+
+        {/* ================ 任务全局预算 (第 2 批 H11，原计划 §18.2) ================ */}
+        <GlobalBudgetSection getChannel={getChannel} />
 
         {/* ================ 任务发布目录 (NEXT-TG-1.0 §9) ================ */}
         <PublishDirSection getChannel={getChannel} />
@@ -1019,6 +1023,63 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
           {busy ? "统计中…" : "重新统计"}
         </button>
         {error && data ? <span style={{ ...hintStyle, marginLeft: 8 }}>{error}</span> : null}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 任务全局预算（第 2 批 H11，2026-10-06；原计划 §18.2 Global Budget）：这台机器所有任务合计的
+// token 上限。只读说明：数值在 config.toml 的 [orchestration] global_max_tokens 里改，重启后生效。
+
+export type GlobalBudgetData = {
+  max_tokens: number; opened: boolean; reserved_tokens: number; settled_tokens: number; remaining_tokens: number;
+};
+
+/** token 数按中文习惯：≥1 亿写"亿"，≥1 万写"万"，最多两位小数，整数不带小数。 */
+export function formatTokens(value: number): string {
+  const fixed = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ""));
+  if (value >= 100_000_000) return `${fixed(Math.round(value / 1_000_000) / 100)} 亿`;
+  if (value >= 10_000) return `${fixed(Math.round(value / 100) / 100)} 万`;
+  return String(value);
+}
+
+export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
+  const [data, setData] = useState<GlobalBudgetData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef<string | null>(null);
+
+  useEffect(() => {
+    const ch = getChannel();
+    if (!ch) { setError("连接不可用"); return; }
+    const off = ch.onMessage((raw: IncomingMessage) => {
+      const msg = raw as unknown as { type?: string; payload?: unknown };
+      if (msg.type !== "orchestration_status_response") return;
+      const payload = (msg.payload ?? {}) as { ok?: boolean; request_id?: unknown; data?: { global_budget?: GlobalBudgetData | null }; error?: string };
+      if (payload.request_id !== pending.current) return;
+      if (payload.ok === false || !payload.data) { setError(payload.error ?? "读取失败"); return; }
+      setData(payload.data.global_budget ?? null);
+      setError(payload.data.global_budget ? null : "后台没有报全局预算");
+    });
+    const id = `global-budget-${Date.now()}`;
+    pending.current = id;
+    if (!ch.send({ type: "orchestration_status", request_id: id, payload: {} } as unknown as ControlMessage)) setError("连接不可用，请求未发送");
+    return () => { off(); };
+  }, [getChannel]);
+
+  const used = data ? data.settled_tokens : 0;
+  return (
+    <section style={sectionStyle} data-testid="global-budget">
+      <h3 style={h3Style}>任务全局预算</h3>
+      <p style={hintStyle}>
+        这台机器上所有后台任务合计可用的 token 上限（单个任务默认上限 2000 万、每一步 300 万不变）。
+        它是累计的：用掉的和预留中的一直加着，不随任务结束归零；用完后新任务会在第一轮规划时停下、正在跑的任务也会停下，
+        在 config.toml 的 [orchestration] 里调大 global_max_tokens 并重启即可继续。
+      </p>
+      <div role="status" data-testid="global-budget-status" style={{ ...statusStyle, color: data ? dark.text : dark.textMuted }}>
+        {data === null ? (error ?? "读取中…")
+          : !data.opened ? `上限 ${formatTokens(data.max_tokens)}；还没有任务用过`
+          : `上限 ${formatTokens(data.max_tokens)}；已用 ${formatTokens(used)}，预留中 ${formatTokens(data.reserved_tokens)}，剩余 ${formatTokens(data.remaining_tokens)}`}
       </div>
     </section>
   );
