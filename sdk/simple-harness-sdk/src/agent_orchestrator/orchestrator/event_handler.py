@@ -545,6 +545,9 @@ class Orchestrator:
         #: bound is a *wait*, and a restarted process starting the wait again costs at
         #: most one more window; the re-hand-off itself is durable (the event).
         self._service_blocked_since: dict[str, float] = {}
+        #: 第 2 批 A27: blocked keys whose same-call-key re-read found a result at the bound;
+        #: they get exactly one more window for the collector before the round's own door.
+        self._handoff_known_waits: set[str] = set()
         #: P2.3p: consecutive after-handoff 0-token UNKNOWNs per Mission, and the
         #: invocation ids already counted so a poll does not increment twice.
         self._after_handoff_zero_streak: dict[str, int] = {}
@@ -5846,6 +5849,21 @@ class Orchestrator:
         overdue = self._review_call_overdue(intent, liveness)
         if overdue is None:
             return False
+        if overdue["shape"] == "blocked" and self._provider_blocked(liveness):
+            # 第 2 批 A27 (§6.2): before the call is written off and reopened in a fresh
+            # session, its own call key is re-read.  A result that turned up is collected,
+            # not re-asked (one more window); otherwise the record says what the check found
+            # and which call the fresh session stands in for.
+            from ..runtime.provider_budget_guard import resend_record
+            check = self._unknown_handoff_check(intent)
+            if check.verdict == "result_known" and intent.intent_id not in self._handoff_known_waits:
+                self._handoff_known_waits.add(intent.intent_id)
+                self._review_call_marks[intent.intent_id] = (("blocked",), self.store.now)
+                self._note(f"{intent.subject_id}: the lost review call has a result; collecting instead of reopening")
+                return False
+            self._handoff_known_waits.discard(intent.intent_id)
+            overdue = {**overdue, "handoff_check": check.to_json(),
+                       "resend": resend_record(check, ordinal=None)}
         from .assurance_review_collect import abandon_assurance_review
 
         await abandon_assurance_review(self, intent, detail=overdue)
@@ -8855,7 +8873,19 @@ class Orchestrator:
         waited = self.store.now - since
         if waited < self._service_blocker_limit:
             return None  # still waiting: not progress (阶段 B 裁决第 6 类)
+        # 第 2 批 A27 (§6.2 "原 intent 由 runtime 核对"): the bound passed — re-read this
+        # hand-off's own call key before the round is ended and the ladder asks again.
+        from ..runtime.provider_budget_guard import resend_record
+        check = self._unknown_handoff_check(intent)
+        if check.verdict == "result_known" and key not in self._handoff_known_waits:
+            # the same call has a result now: nothing is asked again; the ordinary collector
+            # imports it.  One more window only, so a turn that never wakes still ends.
+            self._handoff_known_waits.add(key)
+            self._service_blocked_since[key] = self.store.now
+            self._note(f"{intent.subject_id}: the lost call has a result; collecting instead of re-asking")
+            return None
         self._service_blocked_since.pop(key, None)
+        self._handoff_known_waits.discard(key)
         await self._give_up_blocked_plan_intent(
             intent,
             mission,
@@ -8866,9 +8896,21 @@ class Orchestrator:
                 "blocker": dict(liveness.blocker or {}),
                 "rehandoffs": 0,
                 "assurance_lane": True,
+                "handoff_check": check.to_json(),
+                "resend": resend_record(check, ordinal=int(intent.config.get("ordinal", 1))),
             },
         )
         return "give_up"
+    def _unknown_handoff_check(self, intent: DispatchIntent):  # type: ignore[no-untyped-def]
+        """第 2 批 A27: re-read the intent's latest hand-off (same invocation, same ordinal)
+        in the pool's own runtime ledger.  No runtime to read from leaves it unresolved."""
+        from ..runtime.provider_budget_guard import check_unknown_handoff
+
+        try:
+            uow = self.bridge_for(intent).runtime.uow
+        except Exception:  # noqa: BLE001 - the pool is gone: nothing can be re-read
+            uow = None
+        return check_unknown_handoff(self.store, uow, intent_id=intent.intent_id)
     async def _give_up_blocked_plan_intent(
         self,
         intent: DispatchIntent,

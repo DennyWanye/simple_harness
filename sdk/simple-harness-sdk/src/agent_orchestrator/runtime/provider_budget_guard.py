@@ -15,7 +15,7 @@ import json
 import time
 from collections.abc import Mapping
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Any
@@ -55,6 +55,114 @@ _HELD_GRANTS_SQL = (
     "g.state='UNKNOWN' AND EXISTS(SELECT 1 FROM " + WIRE_TERMINAL_TABLE + " w"
     " WHERE w.invocation_id=g.invocation_id AND w.handoff_ordinal=g.handoff_ordinal))"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class HandoffOutcomeCheck:
+    """One hand-off's own call key, re-read before anything is asked again (第 2 批 A27，
+    Assurance 原计划 §6.2：原 Provider UNKNOWN 由 runtime 核对，不能靠 ordinal2 重复请求).
+
+    ``verdict``:
+
+    * ``no_handoff`` — the intent never handed a request off through this guard (or the
+      SDK never claimed it): nothing is on the wire, nothing to replace;
+    * ``result_known`` — the same invocation is now ``succeeded`` / ``failed`` (or reconciled
+      ``completed``): the ordinary collector imports it, nobody asks again;
+    * ``confirmed_not_started`` — the SDK's reconciliation says the request never went out;
+    * ``refused_on_wire`` — the call ended ``unknown`` but the provider answered with an
+      HTTP status (``http_status`` on the record): the request was received and refused,
+      no answer was produced (2026-09-28 用户决定：服务端报错原地重试)；
+    * ``unresolved`` — ``unknown`` with no server verdict, still ``handed_off``, or the
+      runtime cannot be read: the outcome is genuinely unknown.
+    """
+
+    verdict: str
+    invocation_id: str | None = None
+    handoff_ordinal: int | None = None
+    record_state: str | None = None
+    error_code: str | None = None
+    http_status: int | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "verdict": self.verdict,
+            "invocation_id": self.invocation_id,
+            "handoff_ordinal": self.handoff_ordinal,
+            "record_state": self.record_state,
+            "error_code": self.error_code,
+            "http_status": self.http_status,
+        }
+
+
+#: what a resend's record says it stands on, per verdict
+RESEND_GROUNDS = MappingProxyType({
+    "no_handoff": "nothing_sent",
+    "result_known": "result_known_import_pending",
+    "confirmed_not_started": "confirmed_not_started",
+    "refused_on_wire": "provider_refused_on_wire",
+    "unresolved": "outcome_unconfirmed",
+})
+
+
+def check_unknown_handoff(store, uow, *, intent_id: str) -> HandoffOutcomeCheck:
+    """Re-read the SDK record of ``intent_id``'s latest hand-off (same invocation, same
+    handoff ordinal) and its reconciliation resolution.  Reads only; the grant itself is
+    settled by ``observe`` / ``recover`` as before."""
+
+    row = store.connection.execute(
+        "SELECT invocation_id, handoff_ordinal FROM provider_token_grants WHERE intent_id=?"
+        " ORDER BY handoff_ordinal DESC, created_at DESC LIMIT 1",
+        (intent_id,),
+    ).fetchone()
+    if row is None:
+        return HandoffOutcomeCheck("no_handoff")
+    invocation_id, ordinal = str(row[0]), int(row[1])
+    if uow is None:
+        return HandoffOutcomeCheck("unresolved", invocation_id, ordinal)
+    record = uow.read_effective_provider_invocation(invocation_id)
+    if record is None:
+        return HandoffOutcomeCheck("unresolved", invocation_id, ordinal)
+    state = str(record.state)
+    usage = record.usage_json if isinstance(record.usage_json, Mapping) else {}
+    status = usage.get("http_status")
+    http_status = status if isinstance(status, int) and not isinstance(status, bool) else None
+    found = HandoffOutcomeCheck(
+        "unresolved", invocation_id, ordinal, state, record.error_code, http_status
+    )
+    if state in {"succeeded", "failed"}:
+        return replace(found, verdict="result_known")
+    if state == "claimed":  # never handed off: nothing reached the wire
+        return replace(found, verdict="no_handoff")
+    if state != "unknown":  # handed_off: the call is still on the wire
+        return found
+    resolution = uow.read_reconciliation_resolution(
+        kind="provider",
+        ledger_identity=record.invocation_id,
+        handoff_attempt=int(record.handoff_attempt),
+    )
+    if resolution is not None:
+        outcome = str(resolution.outcome)
+        if outcome == "confirmed_not_started":
+            return replace(found, verdict="confirmed_not_started")
+        if outcome == "completed":
+            return replace(found, verdict="result_known")
+    if http_status is not None:
+        return replace(found, verdict="refused_on_wire")
+    return found
+
+
+def resend_record(check: HandoffOutcomeCheck, *, ordinal: int | None) -> dict[str, Any]:
+    """What the next ask replaces: the round ordinal that is being left behind, the call
+    key it handed off, and the ground the check gives.  Written into the round's rejection
+    (``PlanningRejected``) or the review's abandonment record, so a later reader can tell
+    which earlier call a resend stood in for."""
+
+    return {
+        "replaces_ordinal": ordinal,
+        "replaces_invocation_id": check.invocation_id,
+        "replaces_handoff_ordinal": check.handoff_ordinal,
+        "ground": RESEND_GROUNDS[check.verdict],
+    }
 
 
 def _deny(
@@ -887,4 +995,10 @@ class ProviderBudgetGuard:
             )
 
 
-__all__ = ("ProviderBudgetGuard", "ProviderBudgetCommitAdapter")
+__all__ = (
+    "HandoffOutcomeCheck",
+    "ProviderBudgetCommitAdapter",
+    "ProviderBudgetGuard",
+    "check_unknown_handoff",
+    "resend_record",
+)
