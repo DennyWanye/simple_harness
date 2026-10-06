@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "8ce4cb4eff145c45caadb47d672bac3028dc0ce4244dc5b176d1eeb1eec1985d",
+  "deployment_id": "610f1c156ba8edbf1354a14e2fa8e12f05ccc443a61e023d392ea1927f298db0",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -401,7 +401,7 @@
     "agent_orchestrator/storage/planning_decision_store.py": "25e795c0ca35709a819b932efba647d0151b4e6ce078b5cfcc1ece841924b4ee",
     "agent_orchestrator/storage/planning_human_store.py": "329829623b8a95a6c7f6359d948d34311df1d69eb75ea02f58db1726fbc0d95a",
     "agent_orchestrator/storage/recovery_store.py": "e7e8c49768739f300a74fa278b0451de2ffd1f02a2fa73464b71c65692bc8cf4",
-    "agent_orchestrator/storage/schema.py": "f956ab25cf40c2c9dd749584f80ea40a55d3199b50c0450e1b70200df5dbfbad",
+    "agent_orchestrator/storage/schema.py": "ea4bb9eefe713854c4151297498835d5d70679b2447889746960a0870a85e57a",
     "agent_orchestrator/storage/source_records.py": "b61573dcc395f370c43b82ed2ad05ad6cca6f8577587d2fb118d6458f6325a4f",
     "agent_orchestrator/storage/store.py": "c4ccd2f69c8e3534d0b8610c839c0fa17c547d410f65f33ddc44f6cb656bc940",
     "agent_orchestrator/storage/taskgraph_attempt_inputs.py": "db3e51ef6b1e24d294e1d8cc1cd061a200acd860004b1d2ad1774975b87cb6e5",

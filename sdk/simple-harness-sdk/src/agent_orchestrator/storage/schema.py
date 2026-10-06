@@ -1585,6 +1585,7 @@ INSERT INTO knowledge_v45(knowledge_id,mission_id,claim_id,key,status,version,so
 DROP TABLE knowledge;
 ALTER TABLE knowledge_v45 RENAME TO knowledge;
 CREATE INDEX knowledge_mission_idx ON knowledge(mission_id, status, created_at);
+"""
 
 DDL_V46 = """
 -- 第 2 批车道 J（H01 重启恢复协议、H04 子进程身份与回收材料落库；迁移 45 归车道 G）。
