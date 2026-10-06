@@ -33,6 +33,12 @@ GATE_OUT=$(uv run --frozen python scripts/acceptance/taskgraph_gate.py --upstrea
 GATE=$(printf '%s' "$GATE_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["gate"] if d["status"]=="PASS" else "")')
 [ -n "$GATE" ] || { echo "执行图验收门没通过，不发版："; echo "$GATE_OUT"; exit 1; }
 uv run --frozen python scripts/build/taskgraph_manifest.py validate --gate "$GATE" >/dev/null
+# 保证通道三份接缝（收尾写方、四个消费者、重启恢复）：改过收尾与消费者后证据要重跑（2026-10-07 夜间 N3-16）
+for seam in final-writer four-consumer recovery; do
+  SEAM_OUT=$(uv run --frozen scripts/assurance_seams/$seam-seam.py 2>&1 | tail -1)
+  printf '%s' "$SEAM_OUT" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("status")=="PASS" else 1)' \
+    || { echo "接缝 $seam 没通过，不发版："; echo "$SEAM_OUT"; exit 1; }
+done
 find src tests -name __pycache__ -prune -exec rm -rf {} +
 
 cd "$REPO"
