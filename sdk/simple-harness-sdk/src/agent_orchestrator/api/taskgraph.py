@@ -9,6 +9,7 @@ from typing import Any, NoReturn
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.error_table import classify
 from ..contracts.htn import GraphStructureBudget, TaskForm
 from ..contracts.semantic_base import TypedRef
 from ..graph.eligibility import ReadinessReason
@@ -29,6 +30,8 @@ class TaskGraphReadError(ContractError):
 
 
 def _fail(code: str, detail: str, *, retry: str = "NONE") -> NoReturn:
+    # 对外发出的码必须在错误码表里登记并归类（§12；第 1 批 T03）：没登记的码在这里就拒绝。
+    classify(code)
     raise TaskGraphReadError(TaskGraphErrorV1(origin="SYSTEM", stage="READ", code=code,
         detail=detail[:2000], retry_kind=retry, source_identity=None))
 
