@@ -60,6 +60,9 @@ QUARANTINE_REASON = "保证通道根已隔离（库标记不符或状态文件�
 #: 第 2～4 批补齐评估处置（H01）：SDK 重启恢复协议降级时，服务不当"可用"——不派发、不收新任务与改要求，
 #: 只开读取与诊断；失败的那一步写在 ``status().recovery`` 里，界面照实显示。
 DEGRADED_RECOVERY_REASON = "重启恢复没有完成（降级恢复）：任务不派发，只开读取与诊断"
+#: 重启恢复第 3 步把"库与自己历史对不上"的任务单独隔离（SDK ``recovery_status().isolated_missions``）；
+#: 列表、详情、主对话都用这一句告诉人（第 2 批车道 R）。
+RECOVERY_ISOLATED_NOTE = "重启核对没通过，已隔离，不再推进；可以取消"
 FACADE_CODES = {
     "invalid_request": "invalid_request",
     "conflict": "conflict",
@@ -412,7 +415,8 @@ class OrchestrationService:
     def assurance_root_diagnostic(self) -> dict[str, Any]:
         """非披露诊断（原计划 §10.3，第 2 批 A40）：状态、能否执行、是否要当前认证、匿名阻塞码，加 Host
         自己的状态。没有任务标题、路径、对象 id、通知正文。隔离时也开。"""
-        if self._state not in ("available", "degraded", "quarantined") or self._control is None:
+        if (self._state not in ("available", "degraded", "degraded_recovery", "quarantined")
+                or self._control is None):
             raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
         report = self._quarantine if self._quarantine is not None else self._control.assurance_root_diagnostic()
         return {**dict(report), "host_state": self._state}
@@ -931,6 +935,16 @@ class OrchestrationService:
             logger.exception("recovery status unreadable")
             return None
 
+    def _recovery_isolated(self) -> dict[str, dict[str, Any]]:
+        """重启恢复隔离的任务：``{mission_id: {"tables": [...]}}``。唯一来源是 SDK 的
+        ``recovery_status()["isolated_missions"]``；读不到当作没有隔离，不抛。"""
+        try:
+            isolated = dict(self._orchestrator.recovery_status()).get("isolated_missions") or {}
+            return {str(mission_id): {"tables": [str(name) for name in (item or {}).get("tables") or ()]}
+                    for mission_id, item in dict(isolated).items()}
+        except Exception:  # noqa: BLE001 - 读不到当作没有隔离
+            return {}
+
     def _degraded_recovery(self) -> bool:
         """H01：读 SDK 的恢复状态；DEGRADED_RECOVERY 时把服务置成 ``degraded_recovery`` 并记下失败步骤。"""
         if self._orchestrator is None:
@@ -1084,7 +1098,7 @@ class OrchestrationService:
     def _assurance_root_status(self) -> dict[str, Any] | None:
         if self._quarantine is not None:
             return dict(self._quarantine)
-        if self._control is None or self._state not in ("available", "degraded"):
+        if self._control is None or self._state not in ("available", "degraded", "degraded_recovery"):
             return None
         try:
             return dict(self._control.assurance_root_diagnostic())
@@ -1318,6 +1332,7 @@ class OrchestrationService:
     def retire_library_entry(self, request: Mapping[str, Any]) -> dict[str, Any]:
         """Retire one library entry on the user's word; one transaction in the SDK facade."""
         self._require()
+        self._refuse_new_work("编排循环异常，暂不接受改方法库")
         self._refuse_secrets(request)
         return dict(self._call("retire_library_entry", dict(request)))
 
@@ -1348,6 +1363,8 @@ class OrchestrationService:
         methods = {"register": "register_source", "supersede": "supersede_source", "revoke": "revoke_source"}
         if operation not in methods:
             raise OrchestrationRequestError("invalid_request", "未知来源操作")
+        self._require()
+        self._refuse_new_work("编排循环异常，暂不接受换资料")
         self._refuse_secrets(request)
         result = self._call(methods[operation], dict(request))
         self.wake()
@@ -1453,6 +1470,7 @@ class OrchestrationService:
     def list_missions(self, *, limit: int = 50) -> list[dict[str, Any]]:
         rows = []
         planning_waits = self._planning_waits()
+        isolated = self._recovery_isolated()
         for mission in self._call("missions", limit=limit):
             mission_id = mission["mission_id"]
             # NEXT-TG-1.0 §9 (2026-09-28): a finished Mission's word is fixed by its status;
@@ -1466,6 +1484,8 @@ class OrchestrationService:
                     **mission,
                     "id": mission_id,
                     "blocked": blocked,
+                    # 重启核对没通过、被隔离的任务（结束了的不再标）；没隔离为 None
+                    "recovery_isolated": None if terminal else isolated.get(mission_id),
                     # 2026-09-26 列表进度条：子任务完成数（含分层任务的根复合任务）
                     "task_counts": {
                         "completed": sum(status.endswith("COMPLETED") for status in task_statuses),
@@ -1540,6 +1560,8 @@ class OrchestrationService:
             view = self._call("snapshot", mission_id)
             detail = project_detail(view, blocked=self._blocked(mission_id))
             raw = view["snapshot"].get("mission", {})
+            detail["recovery_isolated"] = (None if str(raw.get("status")) in TERMINAL
+                                           else self._recovery_isolated().get(mission_id))
             identifier = (raw.get("final_report") or {}).get("runtime_profile_id")
             profile = self._runtime_options.get("profiles", {}).get(identifier)
             if profile is not None and profile.context_policy is not None:

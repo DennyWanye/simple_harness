@@ -115,7 +115,8 @@ def test_list_gives_ids_goals_and_states_newest_first():
     assert [(m["mission_id"], m["goal"], m["status_zh"], m["pending_approvals"]) for m in listing["missions"]] == [
         ("m-2", "按需求写方案", "进行中", 1), ("m-1", "写笔记", "已完成", 0)]
     assert set(listing["missions"][0]) == {"mission_id", "goal", "status", "status_zh", "created_at",
-                                           "pending_approvals"}
+                                           "pending_approvals", "recovery_isolated"}
+    assert listing["missions"][0]["recovery_isolated"] is None  # 没被重启核对隔离
     assert [m["mission_id"] for m in mission_list(lambda: _Service(), {"limit": 1})["missions"]] == ["m-2"]
     for bad in ({"limit": 0}, {"limit": 51}, {"limit": "3"}, {"mission_id": "m"}):
         with pytest.raises(MissionStartRefused) as refused:

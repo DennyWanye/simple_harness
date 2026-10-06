@@ -33,6 +33,8 @@ export interface MissionRow {
   ui_state?: string;
   /** 2026-09-26 列表进度条：子任务完成数。 */
   task_counts?: { completed: number; total: number };
+  /** 重启核对没通过、被隔离（不再推进）的任务：对不上的表名；没被隔离就不带。 */
+  recovery_isolated?: { tables: string[] };
 }
 
 export interface MissionEvent {
@@ -140,6 +142,10 @@ function toRow(value: unknown): MissionRow {
   const counts = asRecord(raw.task_counts);
   if (Number.isSafeInteger(counts.completed) && Number.isSafeInteger(counts.total))
     row.task_counts = { completed: Number(counts.completed), total: Number(counts.total) };
+  if (raw.recovery_isolated && typeof raw.recovery_isolated === "object") {
+    const tables = asRecord(raw.recovery_isolated).tables;
+    row.recovery_isolated = { tables: Array.isArray(tables) ? tables.map(asText) : [] };
+  }
   return row;
 }
 
