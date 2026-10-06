@@ -5,8 +5,9 @@
 完成的效果）→ 内容步骤写出文件 → 系统按已批准效果准备申请单、审阅通过 → 人批准 → 真实的
 ``FilePublishConnector`` 发布 → 读回核对、结果审阅 → 任务完成。这里守它的各个岔路口：
 
-1. 内容验收只是"准备好了"：等人批准期间，内容可读、顺序与终结仍关着；根不完成、没有根结论、
-   不重派、不卡死；批准后效果的证明链（效果验收 + 交付回执）才把根补完整。
+1. 内容验收只是"准备好了"：等人批准期间，内容可读、顺序与终结仍关着；根不完成、没有根结论（效果
+   在途时根终审不开，Assurance §7.2 车道 O：只在效果不在途——已验收或结果不明——时开）、不重派、
+   不卡死；批准后效果的证明链（效果验收 + 交付回执）才把根补完整。
 2. 服务端已发布但回执丢了、核对时服务又连不上：动作停在"结果未知"，全任务的操作读侧把它当作
    未决，计划变更的总闸关着；整个过程不重发；服务恢复后核对成成功，任务完成，始终只有一次发布。
 3. 人在审批卡上拒绝：什么都不发布，任务不会完成。部署的"每个任务最多交接几个动作"为 0 时：
@@ -17,7 +18,8 @@
    HumanOverride，只裁这一次）。
 4. 审阅员不认可系统准备的申请单：停给人判断（不重交）；判断不了：替代重交两次后停下。
 5. 计划里没有任何步骤写出要发布的文件：系统把事实交给规划器（修复请求点名缺的文件），不建申请单。
-6. 最终审查看得到根自己已验收的发布效果和读回核对。
+6. 最终审查只判根范围的内容判据（效果判据由结果审阅判一次、读回核对是它的材料）；效果的状态作为
+   事实随终审包给最终审查看，根自己已验收的发布效果材料也在。
 7. 两个必须完成的发布各走各的证明链：先批准的那个发布、验收了，另一个仍等批准，根不完成。
 8. 结果审阅进行中，磁盘上那份结果审阅绑定被改坏（字节损坏，裁决①b1）：效果验收被推迟，不写交付
    回执，不重发，任务不完成。
@@ -426,11 +428,14 @@ def test_a_publish_no_step_produces_asks_the_planner(tmp_path):
     asyncio.run(run())
 
 
-def test_the_final_review_sees_the_accepted_root_effect_and_its_readback(tmp_path):
-    """真机 2026-09-28：发布跑完、读回核对、结果验收都在根上，最终审查却只拿到子步骤的验收，判
-    UNKNOWN 让任务失败。现在根自己已验收的效果和读回核对都是最终审查的材料。"""
+def test_the_final_review_judges_the_content_and_the_outcome_review_judges_the_effect(tmp_path):
+    """真机 2026-09-28：发布的效果判据在最终审查里拿不到材料，审阅员判 UNKNOWN 让任务失败。
+    Assurance §7.2（2026-10-06 车道 O）的分工：根终审只判根范围的内容判据（发布那条判据不在它的
+    criterion_ids 里），效果的状态作为事实随终审包给它看，根自己已验收的效果和读回核对仍是它的材料；
+    发布有没有真的生效由结果审阅判一次——读回核对的观察回执是结果审阅的材料。"""
 
     finals: list[dict[str, Any]] = []
+    outcomes: list[dict[str, Any]] = []
 
     def reviewer(request: Any) -> Any:
         package = review_input(request)
@@ -438,7 +443,16 @@ def test_the_final_review_sees_the_accepted_root_effect_and_its_readback(tmp_pat
             return None
         if package["package"].get("purpose") == "MISSION_FINAL":
             finals.append(package)
+        if package["package"].get("purpose") == "OPERATION_OUTCOME":
+            outcomes.append(package)
         return review_reply(package)
+
+    def _kinds(review: dict[str, Any]) -> dict[str, set[str]]:
+        kinds: dict[str, set[str]] = {}
+        for item in review["evidence"]:
+            ref = item["ref"]
+            kinds.setdefault(ref["kind"], set()).add(ref["pin"]["id"])
+        return kinds
 
     async def run() -> None:
         provider = LayeredScriptedProvider(reviewer=reviewer)
@@ -446,17 +460,27 @@ def test_the_final_review_sees_the_accepted_root_effect_and_its_readback(tmp_pat
             case.approve(await case.until_approval())
             mission = await case.world.run_until_settled(case.mission_id, rounds=20)
             assert str(mission.status.value) == "COMPLETED", mission.final_report
-            [final] = finals
-            kinds: dict[str, set[str]] = {}
-            for item in final["evidence"]:
-                ref = item["ref"]
-                kinds.setdefault(ref["kind"], set()).add(ref["pin"]["id"])
+            scope = root_scope(case)["document"]
             outcome = case.store.connection.execute(
                 "SELECT binding_id, document_json FROM operation_outcome_review_bindings WHERE mission_id=?",
                 (case.mission_id,)).fetchone()
-            assert "acc-" + outcome["binding_id"] in kinds.get("acceptance", set()), kinds
             observations = {str(ref["id"]) for ref in json.loads(outcome["document_json"])["source_receipt_refs"]}
-            assert observations and observations <= kinds.get("commit_receipt", set()), kinds
+            [final] = finals
+            assert final["criterion_ids"] == sorted(scope.content_criterion_ids)
+            [fact] = final["package"]["effect_facts"]
+            assert (fact["effect_key"], fact["state"], fact["complete"]) == ("publish-weekly", "ACCEPTED", True)
+            final_kinds = _kinds(final)
+            assert "acc-" + outcome["binding_id"] in final_kinds.get("acceptance", set()), final_kinds
+            assert observations and observations <= final_kinds.get("commit_receipt", set()), final_kinds
+            [outcome_review] = outcomes
+            assert outcome_review["criterion_ids"] and not (
+                set(outcome_review["criterion_ids"]) & set(scope.content_criterion_ids))
+            assert observations <= _kinds(outcome_review).get("commit_receipt", set()), _kinds(outcome_review)
+            # 根结论只复述内容判据；效果判据的证明是效果验收（根 complete 要它）
+            [resolution] = HtnStore(case.store).list_goal_resolutions(case.mission_id)
+            assert [c.criterion_id for c in resolution.criteria] == list(scope.content_criterion_ids)
+            root = read_occurrence_completion(case.store, case.mission_id, scope.occurrence_id)
+            assert root.content_ready and root.effects_ready and root.complete
 
     asyncio.run(run())
 

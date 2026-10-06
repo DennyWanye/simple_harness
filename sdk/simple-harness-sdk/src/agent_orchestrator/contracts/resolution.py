@@ -787,6 +787,7 @@ _METHOD_TO_JUDGE_KEYS = ("method_ref", "goal", "based_on", "method")
 _SUMMARY_TO_CONFIRM_KEYS = ("result_ref", "summary", "summary_sha256")
 _RELATED_ENTRY_KEYS = ("kind", "id", "version", "content_sha256", "content", "status", "source_task")
 _SOURCE_VERSION_KEYS = ("path", "used_version", "current_version")
+_EFFECT_FACT_KEYS = ("effect_key", "state", "complete")
 
 
 def _package_rows(value: object, name: str, keys: tuple[str, ...]) -> tuple[Mapping[str, Any], ...]:
@@ -853,6 +854,10 @@ class ReviewPackage:
     #: （执行者这次尝试派发时拿到的版本）/ ``current_version``（切包时的现行版本；资料已撤销为 None）。
     #: 两个版本不同，说明资料在执行期间或之后换过；现行版本的正文在证据里。
     source_versions: tuple[Mapping[str, Any], ...] = ()
+    #: 根终审包里根范围必需效果的状态（Assurance §7.2，2026-10-06）：每项效果一行——``effect_key`` /
+    #: ``state``（切包时 ``read_current_effect`` 读到的状态）/ ``complete``。**是事实不是判据**：效果由
+    #: 它自己的结果审阅判，根终审不判第二遍；收敛与否由收尾核对。
+    effect_facts: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -868,6 +873,8 @@ class ReviewPackage:
             self.methods_to_judge, "package.methods_to_judge", _METHOD_TO_JUDGE_KEYS))
         object.__setattr__(self, "source_versions", _package_rows(
             self.source_versions, "package.source_versions", _SOURCE_VERSION_KEYS))
+        object.__setattr__(self, "effect_facts", _package_rows(
+            self.effect_facts, "package.effect_facts", _EFFECT_FACT_KEYS))
         if self.summary_to_confirm is not None:
             [row] = _package_rows([self.summary_to_confirm], "package.summary_to_confirm",
                                   _SUMMARY_TO_CONFIRM_KEYS)
@@ -1000,6 +1007,8 @@ class ReviewPackage:
                if self.summary_to_confirm is not None else {}),
             **({"source_versions": [dict(row) for row in self.source_versions]}
                if self.source_versions else {}),
+            **({"effect_facts": [dict(row) for row in self.effect_facts]}
+               if self.effect_facts else {}),
         }
 
     def content_hash(self) -> str:
@@ -1028,6 +1037,7 @@ class ReviewPackage:
                 "methods_to_judge",
                 "summary_to_confirm",
                 "source_versions",
+                "effect_facts",
             ),
         )
 
@@ -1075,6 +1085,7 @@ class ReviewPackage:
             methods_to_judge=tuple(data.get("methods_to_judge", ())),
             summary_to_confirm=data.get("summary_to_confirm"),
             source_versions=tuple(data.get("source_versions", ())),
+            effect_facts=tuple(data.get("effect_facts", ())),
         )
 
 

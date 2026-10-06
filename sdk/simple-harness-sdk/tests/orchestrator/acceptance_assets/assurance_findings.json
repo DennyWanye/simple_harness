@@ -86,8 +86,8 @@
   },
   {
    "id": "F06",
-   "what": "直接调判定不提前完成、不放预留；收尾定稿只一次；危险效果结果不明时不收尾（四档策略 + 产品同形世界）",
-   "status": "PARTIAL",
+   "what": "直接调判定不提前完成、不放预留；收尾定稿只一次；root 满足与 closeout 分开——根结论先成、危险效果结果不明时收尾 BLOCKED_UNKNOWN 不收尾（四档策略 + 产品同形世界）",
+   "status": "COVERED",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_findings.py::test_direct_judge_waits_closeout",
     "tests/orchestrator/full_target/test_terminal_unknown_release.py::test_only_the_final_writer_writes_completed",
@@ -95,13 +95,16 @@
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_closeout_and_notification",
     "tests/orchestrator/product_world/test_source_change.py::test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_planner_answers",
     "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_the_default_success_policy_blocks_on_an_unknown_effect",
-    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_an_unknown_publish_result_holds_the_mission_open"
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_an_unknown_publish_result_holds_the_mission_open",
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown",
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete",
+    "tests/orchestrator/product_world/test_effect_unknown_closeout.py::test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_deferral"
    ],
    "mutations": [
     "FIN-01",
     "SRC-05"
    ],
-   "gap": "BLOCKED_UNKNOWN 这个状态词在现有代码里到不了（终审等效果齐备；效果不明先落 ROOT_SCOPE_UNMET）——test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown 为 xfail(strict)；人裁定结果不明的发布'已生效'后任务不完成（动作无回执、结果审阅每轮延后）——test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete 为 xfail(strict)，见 第1批-车道C-记录.md"
+   "gap": "两处缺口已补：人裁定结果不明的发布'已生效'后完成（第 1 批车道 E）；根终审只判内容、终审与判定不等效果齐备，首次发布结果不明时收尾到 BLOCKED_UNKNOWN（第 2 批车道 O，A48，见 第2批-车道O-记录.md）。效果判据由各自结果审阅判一次，根终审不判第二遍。"
   },
   {
    "id": "F07",

@@ -2556,28 +2556,40 @@ class Orchestrator:
                 and e.payload.get("reason") == "OP_OUTCOME_SOURCE_UNAVAILABLE"] if heads else []
         return {"outcome_source_unavailable": rows} if rows else {}
 
-    def _has_pending_operation_completion(self, mission: Mission) -> bool:
-        """Accepted preparation with real unmet effects is work, not an idle failure."""
+    def _operation_dead_end(self, mission: Mission) -> bool:
+        """An effect of this Mission that the operation path has named as never converging.
+
+        Each of these is a named finding, not a wait: it does not get better on its own, so
+        it is handed to the stall check (which tells the planner once and then stops by
+        name).  Read by :meth:`_has_pending_operation_completion` and, since the judgment no
+        longer waits for the effects (Assurance §7.2, 2026-10-06 车道 O), by the idle facts:
+        a judged Mission waits for its closeout only while the closeout can still converge.
+        """
         from .operation_outcomes import outcome_exhaustion_is_final
 
         if self._materialization_refusals(mission.id):
-            return False  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测
+            return True  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测
         if self._outcome_source_refusals(mission.id):
-            return False  # 2026-10-06：成功了却读不出回执的操作，结果审阅永远准备不出来，同样交给卡死检测
-
+            return True  # 2026-10-06：成功了却读不出回执的操作，结果审阅永远准备不出来，同样交给卡死检测
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
                for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")):
             # 2026-09-29 真机第七局：一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
             # 再把它当合法等待，任务就一直挂着。交给卡死检测明确停下。被重启打断而用完的
             # 还有一次重审（outcome_retake_due），重审没用完前仍是合法等待。
-            return False
+            return True
         if self._handoff_refusals(mission.id):
             # 这项效果的交接因为所属步骤的地基没了而一直被拒：同样不会自己好，不当合法等待。
-            return False
+            return True
         if any(item["kind"] == "outcome" and item["ruling"] in {"stale", "fail"}
                for item in self._inconclusive_reviews(mission.id)):
             # 阶段 C 第 3 条：结果审查判不下来，人打回了或裁决题在回答前过期——不会再有放行，
             # 同样交给卡死确认（如实告诉规划器），不当合法等待。裁决题待答仍是合法等待。
+            return True
+        return False
+
+    def _has_pending_operation_completion(self, mission: Mission) -> bool:
+        """Accepted preparation with real unmet effects is work, not an idle failure."""
+        if self._operation_dead_end(mission):
             return False
         from ..storage.htn_store import HtnStore
         from .completion_status import read_occurrence_completion
@@ -2652,10 +2664,16 @@ class Orchestrator:
             planned = {str(spec.task_id) for spec in new_mode.network(mission.id).occurrences}
         except (GraphIntegrityError, ContractError, StoreError):
             planned = {task.id for task in rows}
+        # 2026-10-06（Assurance §7.2，车道 O）：判定不再等效果收敛，所以"判定已记、等收尾"只在收尾还能
+        # 收敛时才是合法等待——操作那条线已具名判死的效果（成功却无回执、物化一直被拒、结果审阅用完、
+        # 交接被拒、裁决打回）让它回到卡死检测：先问规划器一次，再具名停下，不会永远挂着。
+        judged = self.commit.assured_closeout_pending(mission.id)
+        dead_end = self._operation_dead_end(mission)
         waits = {
-            "all_rows_terminal": bool(rows) and all(task.status in TERMINAL_TASK for task in rows),
-            "closeout_pending": self.commit.assured_closeout_pending(mission.id),
-            "root_resolved": self._root_resolved(mission, new_mode),
+            "all_rows_terminal": bool(rows) and not dead_end
+            and all(task.status in TERMINAL_TASK for task in rows),
+            "closeout_pending": judged and not dead_end,
+            "root_resolved": not judged and self._root_resolved(mission, new_mode),
             "running_rows": any(
                 task.status is TaskStatus.ACTIVE
                 and task.id in planned
@@ -9329,14 +9347,16 @@ class Orchestrator:
                 # idle instead of re-offering a resolution that is refused for the same
                 # reason forever.
                 return False
+            if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
+                # 2026-10-06（Assurance §7.2，车道 O）：带动作的任务判定之后每轮仍走这里——动作被拒 /
+                # 失败照样停任务，该交接的照样交接；判定已记、收尾待收敛时它自己答"没进展"。
+                return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             if self.commit.assured_closeout_pending(current.id):
                 # Handoff item 7: the assured Mission's success is judged and its
                 # closeout is the CLOSEOUT consumer's to converge (DRAINING /
                 # BLOCKED_UNKNOWN keep it ACTIVE); the unique final writer completes
                 # it.  Nothing to re-judge and nothing to dispatch: idle, not stalled.
                 return False
-            if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
-                return await self._decide_actions(current, live)  # D7-7' two-stage judgment
             return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)
             return True
@@ -10929,8 +10949,17 @@ class Orchestrator:
         """D7-7' / D7-5': judgment in two stages.  ① The non-action criteria are judged once
         per integrated tree and put on the books.  ② Only then are the actions looked at: an
         approved (or L0/L1) action is handed off as the *last* step of the judgment, a
-        rejected / revoked / expired one fails the Mission, and one that waits for a person
-        leaves the Mission ACTIVE without progress, so ``run()`` goes idle."""
+        revoked / expired one fails the Mission (a rejected or failed system-prepared action
+        is the operation line's: ``system_operations`` resubmits, asks the planner or stops).
+
+        Assurance 1.1 §7.2（2026-10-06 车道 O）: the judgment does **not** wait for every
+        required action to be SUCCEEDED.  The business requirement is judged by the root
+        resolution; whether an effect really took hold is the closeout's to converge
+        (UNKNOWN → BLOCKED_UNKNOWN, in flight → root scope unmet), and only the unique
+        final writer completes the Mission.  Once judged, this method keeps running every
+        cycle so a later rejection / failure still stops the Mission and a handoff-ready
+        action is still handed off; with nothing to do it answers "no progress" and
+        ``run()`` goes idle (never a no-progress FAILED)."""
 
         progressed = False
         key = judgment_key(tasks)
@@ -10960,7 +10989,7 @@ class Orchestrator:
         }
         for criterion, action in actions.items():
             state = None if action is None else str(action["state"])
-            if action is not None and state in {"REJECTED", "REVOKED", "EXPIRED"}:
+            if action is not None and state in {"REVOKED", "EXPIRED"}:
                 self._commit_fail_mission(
                     mission.id,
                     stop_reason=MissionStopReason.APPROVAL_REJECTED,
@@ -10972,31 +11001,17 @@ class Orchestrator:
                 )
                 await self._release_mission(mission.id)
                 return True
-            if action is not None and state == "FAILED":
-                self._commit_fail_mission(
-                    mission.id,
-                    stop_reason=MissionStopReason.ACTION_FAILED,
-                    detail={
-                        "criterion": criterion,
-                        "action_key": action["action_key"],
-                        "error": action.get("error"),
-                    },
-                )
-                await self._release_mission(mission.id)
-                return True
-            if action is None or state == "CANCELLED":
-                self._judge_with_actions(
-                    mission, plain, summary, unmet="no candidate reached the action ledger"
-                )
-                return True
-        if any(
+            # 2026-10-06（Assurance §7.2，车道 O）：系统准备的动作被人拒绝（REJECTED）、没生效（FAILED）、
+            # 还没产生（申请单在等审阅 / 批准 / 物化）或被撤销后待重交，都归系统操作那条线
+            # （``system_operations`` / ``operation_runtime``：内容换了就替代重交、证实没生效按原内容重交到
+            # 上限、否则交规划器一次或具名停下）；判定不再等效果，这里就不第二次判它们，也不判"没有候选"。
+            # 撤销 / 过期的批准没有别的接手方，仍在这里停任务。
+        waiting = any(
             a is not None and a["state"] not in HANDOFF_READY_STATES | {"SUCCEEDED"}
             for a in actions.values()
-        ):  # review P2-1: nothing is handed off while another action of the Mission waits
-            return progressed
+        )  # review P2-1: nothing is handed off while another action of the Mission waits
         for criterion, action in actions.items():
-            assert action is not None
-            if action["state"] not in HANDOFF_READY_STATES:
+            if waiting or action is None or action["state"] not in HANDOFF_READY_STATES:
                 continue
             key_ = str(action["action_key"])
             done = await self.actions.hand_off(key_)
@@ -11023,10 +11038,16 @@ class Orchestrator:
             progressed = True
         if progressed:
             return True
-        if all(a is not None and a["state"] == "SUCCEEDED" for a in actions.values()):
-            self._judge_with_actions(mission, plain, summary, unmet=None)
-            return True
-        return False  # waiting for a person or a reconciliation: no progress, run() goes idle
+        if self.commit.assured_closeout_pending(mission.id):
+            # Handoff item 7 / §7.2: judged; the CLOSEOUT consumer converges the effects
+            # (BLOCKED_UNKNOWN / DRAINING keep the Mission ACTIVE) and the unique final
+            # writer completes it.  Nothing to re-judge: idle, not stalled.
+            return False
+        # 2026-10-06（Assurance §7.2，车道 O）：判定不等每个要求动作 SUCCEEDED——业务要求由根结论判定，
+        # 效果（发布有没有真的生效）由收尾核对：结果不明 → BLOCKED_UNKNOWN、在途 → 范围未满足，
+        # 收敛后才 READY → 完成。
+        self._judge_with_actions(mission, plain, summary, unmet=None)
+        return True
 
     def _judge_with_actions(
         self,
@@ -11043,17 +11064,18 @@ class Orchestrator:
                 judgments.append(by_criterion[criterion])
                 continue
             action = self.commit.action_for_criterion(mission.id, criterion, self._connectors)
-            met = unmet is None and action is not None and action["state"] == "SUCCEEDED"
-            receipt = {} if action is None else dict(action.get("receipt") or {})
+            state = None if action is None else str(action["state"])
+            # 2026-10-06（Assurance §7.2，车道 O）：业务要求由根结论判定；这项效果有没有真的生效由
+            # 收尾核对（结果不明 → BLOCKED_UNKNOWN、在途 → 范围未满足），完成只由唯一的收尾写方写。
+            # 这一行记的是判定时动作走到了哪一步，不是"效果已生效"。
             judgments.append(
                 {
                     "criterion": criterion,
-                    "met": met,
-                    "judge": "action_ledger",
-                    "reason": f"receipt {receipt.get('receipt_hash')}"
-                    if met
-                    else (unmet or "the action did not succeed"),
+                    "met": unmet is None,
+                    "judge": "assurance_closeout",
+                    "reason": unmet or f"效果由收尾核对后才完成；判定时动作状态：{state or '尚未产生'}",
                     "action_key": None if action is None else action["action_key"],
+                    "action_state": state,
                 }
             )
         judged = self.commit.judge_mission(mission.id, judgments=judgments, summary=summary)

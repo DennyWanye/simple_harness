@@ -53,7 +53,7 @@ def test_finished_work_is_the_finalizers_business():
     assert decision.route is Route.FAST and decision.action == "FINALIZE"
 
 
-def _loop(*, closeout: bool, actions=(), approvals=()):
+def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
     notes = []
     mission = SimpleNamespace(id="m1")
     fake = SimpleNamespace(
@@ -69,6 +69,8 @@ def _loop(*, closeout: bool, actions=(), approvals=()):
         commit=SimpleNamespace(assured_closeout_pending=lambda mission_id: closeout),
         _awaiting_retry_decision=lambda mission_id, task: False,
         _has_pending_operation_completion=lambda mission: False,
+        # 2026-10-06 车道 O（Assurance §7.2）：操作那条线具名判死的效果——已判定的任务不再算"等收尾"
+        _operation_dead_end=lambda mission: dead_end,
         _has_pending_assurance_work=lambda mission_id: False,
         _has_pending_planning_waits=lambda mission_id: False,
         _taskgraph_notifications=None,
@@ -86,6 +88,16 @@ def test_a_judged_mission_converging_its_closeout_is_not_a_stall_candidate():
     facts, admissions, _rows = Orchestrator._idle_facts(fake, mission)
     assert idle_verdict(facts).reason_code == "CLOSEOUT_CONVERGING"
     assert admissions is None  # the plan is not even read
+
+
+def test_a_judged_mission_whose_effect_can_never_converge_is_a_stall_candidate():
+    """2026-10-06 车道 O（Assurance §7.2）：判定不再等效果收敛，所以"已判定、等收尾"只在收尾还能收敛时
+    才是合法等待。操作那条线已具名判死的效果（成功却无回执、物化一直被拒、结果审阅用完……）让它回到
+    卡死检测：读计划、按"没有可派发的工作"候选停下，而不是永远 CLOSEOUT_CONVERGING。"""
+    fake, mission = _loop(closeout=True, actions=[{"state": "SUCCEEDED"}], dead_end=True)
+    facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
+    assert not facts.closeout_pending and not facts.root_resolved and not facts.all_rows_terminal
+    assert admissions is not None and idle_verdict(facts).route is Route.STOP
 
 
 def test_an_unknown_action_or_a_pending_approval_waits():

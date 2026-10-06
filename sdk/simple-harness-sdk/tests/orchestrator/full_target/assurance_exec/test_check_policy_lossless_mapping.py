@@ -122,7 +122,10 @@ def test_operation_reviews_are_projected_on_the_effect_owner_and_approved(tmp_pa
         requirements_ref, _, final = lossless_scope_mapping(commit, mission_id=case.mission_id, scope_id=scope_id,
                                                             purpose="MISSION_FINAL")
         requirements = HtnStore(case.store).get_requirements_revision(case.mission_id, requirements_ref.pin.revision)
-        assert {row.criterion_id for row in final} == {c.criterion_id for c in requirements.criteria}
+        # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据（这里的发布）由结果
+        # 审阅判，不在根终审的策略里。
+        assert {row.criterion_id for row in final} == set(scope_row["document"].content_criterion_ids)
+        assert {row.criterion_id for row in final} < {c.criterion_id for c in requirements.criteria}
         for purpose, effect_key, code in (
             ("OPERATION_OUTCOME", "effect-x", "CHECK_POLICY_UNRESOLVED"),  # 不归这一步管
             ("OPERATION_OUTCOME", None, "CHECK_POLICY_APPROVAL_INVALID"),  # 结果审阅要指明效果

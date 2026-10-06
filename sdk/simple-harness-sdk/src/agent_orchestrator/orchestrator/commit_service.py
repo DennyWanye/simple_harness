@@ -3349,9 +3349,11 @@ class CommitService(ProtectedTailCommitsMixin,
             return
         network = self._judgment_network(mission)
         from .completion_status import read_occurrence_completion
-        if not all(read_occurrence_completion(self._store, mission_id, str(root)).complete
+        # Assurance §7.2（2026-10-06 车道 O）：判定读的是根的内容是否满足（根结论据此形成）；根的
+        # 必需效果由收尾核对收敛（结果不明 → BLOCKED_UNKNOWN），不是判定的前置。
+        if not all(read_occurrence_completion(self._store, mission_id, str(root)).content_ready
                    for root in network.root_occurrence_ids):
-            raise CommitRejected("approved completion Scope still has unmet content or effects")
+            raise CommitRejected("approved completion Scope still has unmet content")
         semantics = HtnStore(self._store)
         unresolved = sorted(
             str(duty)

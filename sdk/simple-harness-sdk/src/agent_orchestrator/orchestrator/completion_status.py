@@ -31,6 +31,12 @@ from .operation_completion import OperationCompletionReader
 from .review_adjudication import accepted_or_adjudicated
 
 
+#: 效果"不在途"的两种状态（Assurance §7.2，2026-10-06 车道 O）：已验收，或结果不明等人 / 对账。
+#: 根终审只在根范围每项必需效果都不在途时开门；收尾把"只差结果不明的效果"记 BLOCKED_UNKNOWN。
+#: 其余状态（等申请单 / 审阅 / 批准 / 执行 / 结果审阅、被拒、没生效）都是在途或归系统操作那条线处理。
+EFFECT_SETTLED_STATES = frozenset({"ACCEPTED", "RECONCILIATION_REQUIRED"})
+
+
 @dataclass(frozen=True, slots=True)
 class OccurrenceCompletionStatus:
     scope: OccurrenceCompletionScopeV1
@@ -301,13 +307,16 @@ def _compound_content(
         from ..verification.acceptance_rules import evaluate_success_expression, outcomes_by_id
 
         requirements = htn.get_requirements_revision(mission_id, scope.requirements_ref.revision)
+        # Assurance §7.2（2026-10-06 车道 O）：根终审判的是根的内容投影；效果另由 ``effects_ready`` 读
+        # 效果验收。与切包 / 根结论提交读同一个投影。
+        from .scoped_composition_review import root_content_projection
+
+        projection = root_content_projection(requirements, scope)
         if (
-            package.criteria != requirements.criteria
-            or package.success_expression != requirements.success_expression
+            package.criteria != projection.criteria
+            or package.success_expression != projection.expression
         ):
             return False
-        # The approved root formula may contain ANY. The Scope catalogue is a
-        # coverage boundary, not a replacement ALL expression over every ID.
         outcomes = record.criteria
 
         # The V1 record cannot carry SEMANTIC PASS + NOT_RUN losslessly: the
@@ -327,9 +336,7 @@ def _compound_content(
             )
             for item in resolution.criteria
         )
-        return evaluate_success_expression(
-            requirements.success_expression, outcomes_by_id(outcomes)
-        ).passed
+        return evaluate_success_expression(projection.expression, outcomes_by_id(outcomes)).passed
     passed = {
         item.criterion_id for item in resolution.criteria if item.verdict is CriterionVerdict.PASS
     }
@@ -655,4 +662,4 @@ def read_occurrence_completion(
         )
 
 
-__all__ = ("OccurrenceCompletionStatus", "read_occurrence_completion")
+__all__ = ("EFFECT_SETTLED_STATES", "OccurrenceCompletionStatus", "read_occurrence_completion")

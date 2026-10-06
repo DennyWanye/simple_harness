@@ -1049,11 +1049,15 @@ class ResolutionCommitsMixin:
             from ..storage.assurance_store import AssuranceStore
 
             AssuranceStore(self._store).require_assured(command.mission_id)
+            root_projection = None
             if command.is_mission_root:
                 # Handoff item 7: the root is licensed by the current UseCertificate
                 # over the bound MISSION_FINAL manifest, committed in this same
                 # transaction.
                 assured, licence_id = self._require_assured_root_use(command)
+                # Assurance §7.2（2026-10-06 车道 O）：根按它的内容投影验收——效果判据由各自的
+                # 结果审阅判，在收尾里收敛，不在这里第二次判。
+                root_projection = self._root_projection(semantics, command)
             elif command.purpose is ReviewPurpose.COMPOSITION:
                 # 2026-10-01（第 3 项）：中间目标的结论由组合审阅证书许可，同根终审。
                 assured, licence_id = self._require_assured_compound_use(command)
@@ -1066,9 +1070,11 @@ class ResolutionCommitsMixin:
                 command,
                 binding,
                 required_criterion_ids=(
-                    None
-                    if scoped_projection is None
-                    else tuple(item.criterion_id for item in scoped_projection.criteria)
+                    tuple(item.criterion_id for item in scoped_projection.criteria)
+                    if scoped_projection is not None
+                    else tuple(item.criterion_id for item in root_projection.criteria)
+                    if root_projection is not None
+                    else None
                 ),
                 reviewed_verdicts=(
                     None
@@ -1111,8 +1117,11 @@ class ResolutionCommitsMixin:
             else:
                 from ..verification.scoped_acceptance import acceptable_assured_root
 
+                assert root_projection is not None  # the root branch above read it
                 decision = acceptable_assured_root(
                     subject,
+                    projected_criteria=root_projection.criteria,
+                    projected_expression=root_projection.expression,
                     now_ms=int(command.decided_at_ms),
                     purpose=command.purpose,
                     assured=assured,
@@ -1123,47 +1132,35 @@ class ResolutionCommitsMixin:
                     "the AER §6.2 formula refused: "
                     + ", ".join(str(reason) for reason in decision.reasons),
                 )
-            from .completion_status import read_occurrence_completion
+            if not command.is_mission_root:
+                # An inner goal's required effects converge before its successors run:
+                # nothing downstream waits for them otherwise.  The Mission root's effects
+                # are the closeout's to converge (Assurance §7.2: the root resolution
+                # records that the business requirement is met while the Mission stays
+                # ACTIVE in BLOCKED_UNKNOWN / DRAINING until they do).
+                from .completion_status import read_occurrence_completion
 
-            active = semantics.active_plan_revision(command.mission_id)
-            members = (
-                []
-                if active is None
-                else [
-                    member
-                    for member in semantics.list_plan_memberships(
-                        command.mission_id, active.revision
-                    )
-                    if str(member.task_id) == str(resolution.goal_task_id)
-                ]
-            )
-            if (
-                len(members) != 1
-                or not read_occurrence_completion(
-                    self._store, command.mission_id, str(members[0].occurrence_id)
-                ).effects_ready
-            ):
-                raise ResolutionCommitRejected(
-                    "OP_REQUIRED_EFFECTS_INCOMPLETE", "Goal still has required effects"
+                active = semantics.active_plan_revision(command.mission_id)
+                members = (
+                    []
+                    if active is None
+                    else [
+                        member
+                        for member in semantics.list_plan_memberships(
+                            command.mission_id, active.revision
+                        )
+                        if str(member.task_id) == str(resolution.goal_task_id)
+                    ]
                 )
-            if command.is_mission_root:
-                from .completion_status import current_effect_proofs
-
-                anchors = {ref.id for ref in command.package.child_acceptance_refs}
-                for proof in current_effect_proofs(self._store, command.mission_id):
-                    if proof["acceptance_id"] not in anchors:
-                        raise ResolutionCommitRejected("OP_OUTCOME_SOURCE_UNAVAILABLE",
-                            "root review did not include current effect acceptance")
-                    for criterion_id in proof["criterion_ids"]:
-                        # The V1 record and its resolution carry no evidence refs
-                        # (they live in the certified manifest): the review above
-                        # included the current effect acceptance, and the
-                        # certificate's re-decided grade must be PASS (real run
-                        # 2026-09-27: every root with an effect was refused here).
-                        if assured.effective_grades.get(criterion_id) != "PASS":
-                            raise ResolutionCommitRejected(
-                                "OP_OUTCOME_SOURCE_UNAVAILABLE",
-                                "root effect criterion is not certified PASS")
+                if (
+                    len(members) != 1
+                    or not read_occurrence_completion(
+                        self._store, command.mission_id, str(members[0].occurrence_id)
+                    ).effects_ready
+                ):
+                    raise ResolutionCommitRejected(
+                        "OP_REQUIRED_EFFECTS_INCOMPLETE", "Goal still has required effects"
+                    )
             delivery = self._check_delivery(semantics, command)
             withdrawn = bool(account.has_admitted_demand)
             shared = (not command.is_mission_root) and _duty_has_other_occurrences(
@@ -1805,6 +1802,38 @@ class ResolutionCommitsMixin:
             ),
             candidate.certificate_id,
         )
+
+    def _root_projection(self, semantics: HtnStore, command: CommitGoalResolutionCommand) -> Any:
+        """The Mission root's content projection, read from the active plan's frozen root Scope
+        (Assurance §7.2, 2026-10-06): what the MISSION_FINAL review was cut over and what the
+        root resolution restates.  Callers cannot supply it."""
+        from ..contracts.operation_completion import PlanRevisionPinV1
+        from .operation_completion import OperationCompletionReader
+        from .scoped_composition_review import root_content_projection
+
+        active = semantics.active_plan_revision(command.mission_id)
+        members = (
+            []
+            if active is None
+            else [
+                member
+                for member in semantics.list_plan_memberships(command.mission_id, active.revision)
+                if str(member.task_id) == str(command.resolution.goal_task_id)
+            ]
+        )
+        if active is None or len(members) != 1:
+            raise ResolutionCommitRejected(
+                "OP_COMPLETION_SCOPE_UNRESOLVED", "no exact planned root occurrence"
+            )
+        try:
+            scope = OperationCompletionReader(self._store).read_scope(
+                command.mission_id,
+                PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
+                str(members[0].occurrence_id),
+            )
+            return root_content_projection(command.requirements, scope)
+        except (ContractError, StoreError) as error:
+            raise ResolutionCommitRejected("OP_COMPLETION_SCOPE_UNRESOLVED", str(error)) from error
 
     def _require_assured_root_use(self, command: CommitGoalResolutionCommand) -> tuple[Any, str]:
         """Handoff item 7: commit the root's current UseCertificate inside this UoW.

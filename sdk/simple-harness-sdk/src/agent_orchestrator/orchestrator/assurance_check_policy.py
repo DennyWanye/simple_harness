@@ -175,9 +175,15 @@ def approve_check_policy(
                 planning_subject_criteria(commit.store, mission_id, binding, requirements),
             )
         elif purpose == "MISSION_FINAL":
-            # The root review judges the whole root requirements, not only the
-            # root Scope's content projection; the Scope names the root Task.
-            projection = _PlanningProjection(requirements, tuple(requirements.criteria))
+            # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的
+            # 结果审阅判，根终审不判第二遍。与切包、根结论提交读的是同一个投影。
+            from .scoped_composition_review import root_content_projection
+
+            if scope is None:
+                raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", purpose)
+            projection = _PlanningProjection(
+                requirements, tuple(root_content_projection(requirements, scope).criteria)
+            )
         elif purpose == "ACTION_PROPOSAL":
             from .operation_proposal_review import _criteria as proposal_criteria
 
@@ -329,9 +335,10 @@ def lossless_scope_mapping(
     Host caller under its own command; this only spells out the original.
 
     ``purpose="MISSION_FINAL"`` spells out the root review's domain on the root
-    Scope: the whole root requirements (as :func:`approve_check_policy` checks),
-    with the same lossless per-criterion rule (Host real model run 15/16,
-    2026-09-23: the root review had no approved policy and the Mission stalled).
+    Scope: the root's content projection (``root_content_projection``, as
+    :func:`approve_check_policy` checks), with the same lossless per-criterion rule
+    (Host real model run 15/16, 2026-09-23: the root review had no approved policy
+    and the Mission stalled).
 
     ``purpose="ACTION_PROPOSAL"`` / ``"OPERATION_OUTCOME"`` (with ``effect_key``) spell
     out the two operation reviews on the effect owner's Scope, from exactly the
@@ -339,7 +346,7 @@ def lossless_scope_mapping(
     criteria, and the effect slot's criteria.  A Scope that owns no effect (or not
     this one) is ``CHECK_POLICY_UNRESOLVED``.
     """
-    from .scoped_composition_review import read_compound_projection
+    from .scoped_composition_review import read_compound_projection, root_content_projection
     from .scoped_content_review import read_task_check_policy_projection
 
     text(mission_id)
@@ -392,9 +399,12 @@ def lossless_scope_mapping(
         )
     elif purpose == "MISSION_FINAL":
         criteria_source = tuple(
-            HtnStore(store)
-            .get_requirements_revision(mission_id, int(scope.requirements_ref.revision))
-            .criteria
+            root_content_projection(
+                HtnStore(store).get_requirements_revision(
+                    mission_id, int(scope.requirements_ref.revision)
+                ),
+                scope,
+            ).criteria
         )
     elif binding.form is TaskForm.PRIMITIVE:
         criteria_source = tuple(

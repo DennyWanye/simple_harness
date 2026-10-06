@@ -370,10 +370,12 @@ def unmet_only_by_unknown_effects(status: Any, effect_states: Mapping[str, str])
     ``RECONCILIATION_REQUIRED``.  Anything else that keeps the scope open (content not
     ready, an effect still awaiting its intent / review) is ``ROOT_SCOPE_UNMET`` as before.
     """
+    from .completion_status import EFFECT_SETTLED_STATES
+
     if not bool(getattr(status, "content_ready", False)) or not effect_states:
         return False
     states = set(effect_states.values())
-    return "RECONCILIATION_REQUIRED" in states and states <= {"ACCEPTED", "RECONCILIATION_REQUIRED"}
+    return "RECONCILIATION_REQUIRED" in states and states <= EFFECT_SETTLED_STATES
 
 
 class AssuranceCloseoutConsumer(_ConsumerBase):

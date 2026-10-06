@@ -1,17 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
-"""危险效果结果不明时不收尾（Assurance 原计划 §7.2 默认成功策略；补齐清单 V01 / 保证 C-30）。
+"""危险效果结果不明时不收尾（Assurance 原计划 §7.2 默认成功策略；补齐清单 V01 / 保证 C-30 / A48）。
 
-原计划：危险 / 必需效果 UNKNOWN → 收尾态 ``BLOCKED_UNKNOWN``；任务仍 ACTIVE，不写完成、不发完成通知；
-结果核对出来（人裁定或对账）之后才收尾。此前全测试库没有一处断言这一条。
+原计划：根结论（业务要求已满足）可以先形成，任务仍 ACTIVE；危险 / 必需效果 UNKNOWN → 收尾态
+``BLOCKED_UNKNOWN``，不写完成、不发完成通知；结果核对出来（人裁定或对账）之后才收尾。
 
-四条用例：
+第 2 批车道 O（2026-10-06，A48 按原计划重排）：根终审只判根范围的内容判据（效果判据由各自的结果审阅判、
+效果状态作为事实进终审包）；终审开门与判定不等效果验收，只等效果不在途（已验收或结果不明）；效果由
+收尾核对收敛。
+
+用例：
 * 收尾四档策略本身（纯函数）：效果不明一档排在"预留未结 / 用量不明"之前，也不被"按上限结清"吞掉。
-* 产品同形世界：发布交出去、链接其实成功但回执丢了 → 动作结果不明 → 任务不完成、没有"任务完成"
-  事件、Host 没收到完成通知、终审没开、文件没有再发一次。
+* 收尾评估里"只差结果不明的效果"不算范围未满足（纯函数）。
+* 产品同形世界：发布交出去、链接其实成功但回执丢了 → 动作结果不明 → 终审已开、根结论已成、判定已记，
+  任务仍不完成、没有"任务完成"事件、Host 没收到完成通知、收尾 ``BLOCKED_UNKNOWN``、文件没有再发一次。
 * 人裁定"已生效"后才完成，且只完成一次、通知一次（第 1 批车道 E 修复缺陷 1 后转绿）。
-* 没有人裁定、回执也空的"成功"动作：结果审阅不无限推迟，卡死检测具名停下（车道 E 新增）。
-* 收尾行上的状态词必须是 ``BLOCKED_UNKNOWN``（原计划的字面要求）——**现为 xfail(strict)**：现有代码到不了
-  这个状态词，见车道 C 记录的偏差单。
+* 没有人裁定、回执也空的"成功"动作：结果审阅不无限推迟，判定已记也不算合法等待，卡死检测具名停下。
+* 收尾行上的状态词必须是 ``BLOCKED_UNKNOWN``、理由 ``EFFECT_UNKNOWN``、点名那项效果（原计划的字面要求）。
 """
 from __future__ import annotations
 
@@ -24,10 +28,13 @@ from typing import Any
 import pytest
 
 from agent_orchestrator.assurance.codec import decode
+from agent_orchestrator.contracts.resolution import ReviewPurpose
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
+from agent_orchestrator.orchestrator.assurance_final_writer import recorded_judgment
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
+from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_intent_store import OperationIntentStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
@@ -194,11 +201,13 @@ def _assert_held_open(world: Any, mission_id: str) -> None:
 
 
 def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch):
-    """发布的结果不明 → 任务不完成（ACTIVE）、没有"任务完成"事件、收尾没定稿、Host 没收到完成通知，
-    再空转几轮也一样；发布出去的那份文件也没有被再发一次。
+    """发布的结果不明 → 终审照开、根结论照成、判定照记（业务要求已满足），但任务不完成（ACTIVE）、
+    没有"任务完成"事件、收尾停在 ``BLOCKED_UNKNOWN``、Host 没收到完成通知，再空转几轮也一样；
+    发布出去的那份文件也没有被再发一次。
 
     **改坏检验**：收尾不看效果状态（``_evaluate_locked`` 里把 ``unknown`` 当空、``unmet`` 当空）→
-    结果不明时也评成就绪 → 变红；``root_review_ready`` 不等效果 → 终审提前开 → 变红。"""
+    结果不明时也评成就绪 → 变红；``_judge_with_actions`` 把效果判成已满足并由判定直接完成 → 变红；
+    ``root_review_ready`` 又等 ``effects_ready`` → 根结论不成 → 变红。"""
     _lose_the_first_reply(monkeypatch)
 
     async def case():
@@ -212,10 +221,27 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
             for _ in range(5):  # 结果不明期间再空转几轮：一样不完成
                 await world.drain(timeout=5)
             _assert_held_open(world, mission_id)
-            # 终审没有开（根结论要等效果齐备）；效果仍记为"待核对"
-            assert not [k for k in world.store.connection.execute(
+            # 终审开了、根结论成了、判定记了（原计划 §7.2：根结论先于效果收敛）；收尾点名这项效果
+            assert [k for k in world.store.connection.execute(
                 "SELECT review_key FROM assurance_review_bindings WHERE mission_id=?", (mission_id,))
                 if str(k[0]).startswith("assurance-mission-final:")]
+            [resolution] = HtnStore(world.store).list_goal_resolutions(mission_id)
+            assert str(resolution.verdict) == "ACCEPT" and str(resolution.validity) == "CURRENT"
+            # 根结论只复述内容判据；效果判据由结果审阅判、收尾核对，不在根结论里
+            assert [c.criterion_id for c in resolution.criteria] == ["c-user-1"]
+            judgment = recorded_judgment(world.store.get_mission(mission_id))
+            assert judgment is not None and judgment["met"] is True
+            [publish] = [j for j in world.store.get_mission(mission_id).final_report["success_criteria"]
+                         if j["criterion"] == PUBLISH]
+            # 判定在根结论形成的那一轮就记下，动作那时可能还在等批准：记的是判定时的动作状态
+            assert publish["judge"] == "assurance_closeout" and publish["met"] is True
+            assert publish["action_state"] in {"AWAITING_APPROVAL", "APPROVED", "HANDED_OFF", "UNKNOWN"}
+            assert _closeout(world, mission_id) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"], ["publish-weekly"])
+            # 终审包只判内容判据，效果状态作为事实在包里
+            [package] = HtnStore(world.store).list_review_packages(mission_id, purpose=ReviewPurpose.MISSION_FINAL)
+            assert [c.criterion_id for c in package.criteria] == ["c-user-1"]
+            [fact] = [dict(row) for row in package.effect_facts]  # 切包时的状态快照（事实，不是判据）
+            assert (fact["effect_key"], fact["complete"]) == ("publish-weekly", False) and fact["state"]
             [still] = world.store.list_actions(mission_id)
             assert still["action_key"] == action["action_key"] and still["state"] == "UNKNOWN"
             assert len(list(published.rglob("*.md"))) == 1  # 没有再发一次
@@ -338,16 +364,14 @@ def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_def
     asyncio.run(case())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="第 1 批车道 E 偏差单（偏差 2 B 口径做了一半）：收尾评估现在已对'只差结果不明效果'的根不记 ROOT_SCOPE_UNMET"
-           "（unmet_only_by_unknown_effects），但这个局面——首次发布结果不明、终审还没开——收尾根本拿不到根结论："
-           "root_review_ready 要每个根 effects_ready 才开终审，_decide_actions 又要每个要求动作 SUCCEEDED 才判定；"
-           "原计划 §7.2 要的是'根结论可先于效果形成、收尾 BLOCKED_UNKNOWN 等效果收敛'。要不要重排终态顺序由主会话 / 用户定。",
-)
 def test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown(tmp_path, monkeypatch):
     """原计划 §7.2 的字面要求：危险 / 必需效果 UNKNOWN → ``assurance_closeouts.state='BLOCKED_UNKNOWN'``，
-    理由 ``EFFECT_UNKNOWN``，收尾行里列出那个效果。"""
+    理由 ``EFFECT_UNKNOWN``，收尾行里列出那个效果；``BLOCKED_UNKNOWN`` 不是终态——任务仍 ACTIVE、没有
+    "任务完成"。
+
+    **改坏检验**：``_drain_decision`` 去掉 ``elif unknown`` 一档 → 评成 DRAINING / READY → 变红；
+    ``_require_root_resolution`` 改回要求根 ``complete``（含效果）→ 判定不成、收尾 ``MISSION_JUDGMENT_MISSING``
+    → 变红。"""
     _lose_the_first_reply(monkeypatch)
 
     async def case():
@@ -364,5 +388,8 @@ def test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown(tmp_path, 
                            for e in _events(world, mission_id, "AssuranceCloseoutEvaluated")]
             state, reasons, unknown = _closeout(world, mission_id)
             assert (state, reasons, unknown) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"], ["publish-weekly"]), evaluations
+            assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"
+            assert not _events(world, mission_id, "MissionCompleted")
+            assert "BLOCKED_UNKNOWN" in {s for s, _ in evaluations} and not {s for s, _ in evaluations} & {"READY", "FINALIZED"}
 
     asyncio.run(case())
