@@ -54,6 +54,8 @@ export interface MissionsViewProps {
 type Json = Record<string, unknown>;
 
 const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+/** 重启恢复把"库与自己历史对不上"的任务单独隔离（后端 recovery_isolated）；列表与详情都用这一句。 */
+const RECOVERY_ISOLATED_TEXT = "重启核对没通过，已隔离，不再推进；可以取消";
 /** P3.1 §3.4 界面状态词汇；ui_state 由后端投影给出，界面不自己推断，缺失时回退原始 status。 */
 const UI_STATE_LABEL: Record<string, string> = {
   received: "请求已接收",
@@ -335,6 +337,8 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   const ws = record(detail.operation_workspace);
   // 已结束的任务：留下的提问、授权请求都不再需要人处理（2026-09-29 取消后仍提示"去回答"）。
   const ended = ["COMPLETED", "FAILED", "CANCELLED"].includes(status);
+  // 被隔离的任务不会再推进：别的"下一步"都不成立，先说这一句
+  if (!ended && detail.recovery_isolated) return { text: RECOVERY_ISOLATED_TEXT };
   if (!ended && text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
     return { text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。", target: "mission-step-requirements", action: "去确认" };
   if (!ended && list(detail.planning_authorization_requests).length)
@@ -982,6 +986,12 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {row.blocked && row.ui_state !== "unknown" ? " · 结果未知" : ""}
                 {stalled[row.id] ? ` · ${stalled[row.id]} 个步骤可能卡住` : ""}
               </span>
+              {row.recovery_isolated && !TERMINAL.has(row.status) && (
+                <span data-testid={`mission-isolated-${row.id}`} style={{ color: dark.warning }}
+                  title={`对不上的表：${row.recovery_isolated.tables.join("、") || "未知"}`}>
+                  {RECOVERY_ISOLATED_TEXT}
+                </span>
+              )}
               <MissionProgress status={row.status} uiState={row.ui_state} counts={row.task_counts} />
             </button>
           ))

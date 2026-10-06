@@ -1118,6 +1118,34 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
   });
 });
 
+describe("重启核对隔离的任务（第 2 批车道 R）", () => {
+  const ISOLATED = "重启核对没通过，已隔离，不再推进；可以取消";
+
+  it("列表行带隔离标记的显示那一句；没带的不显示；已结束的不显示", () => {
+    const channel = renderAvailable();
+    channel.reply("mission_list", {
+      missions: [
+        { ...MISSION_ROW, id: "m-iso", status: "ACTIVE", ui_state: "running", recovery_isolated: { tables: ["tasks"] } },
+        { ...MISSION_ROW, id: "m-ok", status: "ACTIVE", ui_state: "running", recovery_isolated: null },
+        { ...MISSION_ROW, id: "m-gone", status: "CANCELLED", ui_state: "cancelled", recovery_isolated: { tables: ["tasks"] } },
+      ],
+    });
+    expect(screen.getByTestId("mission-row-m-iso").textContent).toContain(ISOLATED);
+    expect(screen.getByTestId("mission-isolated-m-iso").getAttribute("title")).toMatch(/tasks/);
+    expect(screen.getByTestId("mission-row-m-ok").textContent).not.toContain(ISOLATED);
+    expect(screen.getByTestId("mission-row-m-gone").textContent).not.toContain(ISOLATED);
+  });
+
+  it("详情的下一步提示先说隔离，盖过等审批等提示；取消按钮仍在", () => {
+    openMission({ ...DETAIL, recovery_isolated: { tables: ["tasks"] } });
+    expect(screen.getByTestId("mission-next-step").textContent).toBe(ISOLATED);
+    expect(screen.getByRole("button", { name: "取消任务" })).toBeTruthy();
+    cleanup();
+    openMission({ ...DETAIL, recovery_isolated: null });
+    expect(screen.getByTestId("mission-next-step").textContent).not.toContain(ISOLATED);
+  });
+});
+
 describe("结束态与产物排序（2026-09-25 真机点击）", () => {
   it("任务结束后不再显示取消；停止原因与 Task 状态显示中文", () => {
     openMission({ ...DETAIL, approvals: [], mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED", stop_reason: "verification_passed" },

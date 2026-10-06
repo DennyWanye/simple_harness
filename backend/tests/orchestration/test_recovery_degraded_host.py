@@ -20,8 +20,8 @@ from deskpet.orchestration.service import OrchestrationRequestError, Orchestrati
 from ._support import notes_provider, notes_request
 
 DEGRADED = {"state": "DEGRADED_RECOVERY", "side_effects_disabled": True, "recovery_id": "rec-1",
-            "latest": {"recovery_id": "rec-1", "state": "DEGRADED_RECOVERY", "failed_step": "reclaim_orphans",
-                       "steps": [{"step_no": 3, "step": "reclaim_orphans", "status": "FAILED"}]}}
+            "latest": {"recovery_id": "rec-1", "state": "DEGRADED_RECOVERY", "failed_step": "orphan_reclaim",
+                       "steps": [{"step_no": 7, "step": "orphan_reclaim", "status": "FAILED"}]}}
 
 
 @pytest.mark.asyncio
@@ -42,7 +42,7 @@ async def test_a_degraded_recovery_turns_the_service_read_only_and_names_the_fai
 
         status = service.status()
         assert status["available"] is False and status["state"] == "degraded_recovery"
-        assert "reclaim_orphans" in (status["reason"] or "")
+        assert "orphan_reclaim" in (status["reason"] or "")
         assert status["recovery"] == DEGRADED
 
         # 新工作不收：建任务、改要求都是具名拒绝；只读动词照答
@@ -57,5 +57,19 @@ async def test_a_degraded_recovery_turns_the_service_read_only_and_names_the_fai
         assert created["payload"]["ok"] is False and created["payload"]["error_code"] == "orchestration_unavailable"
         cancelled = await handle(service, "mission_cancel", {"request_id": "x1", "mission_id": "mission-x"})
         assert cancelled["payload"]["ok"] is False and cancelled["payload"]["error_code"] == "orchestration_unavailable"
+
+        # 主对话的另两个写入口（换资料、退役方法库条目）同样具名拒绝
+        with pytest.raises(OrchestrationRequestError) as refused:
+            service.source_command("supersede", {"mission_id": "mission-x", "path": "a.md"})
+        assert refused.value.code == "orchestration_degraded_recovery"
+        with pytest.raises(OrchestrationRequestError) as refused:
+            service.retire_library_entry({"entry_id": "e-1", "reason": "过时"})
+        assert refused.value.code == "orchestration_degraded_recovery"
+
+        # 非披露诊断在降级恢复里照开（DEGRADED_RECOVERY_READS 含它），状态里的保证通道根也照读
+        diagnostic = await handle(service, "mission_assurance_root_diagnostic", {"request_id": "d1"})
+        assert diagnostic["payload"]["ok"] is True, diagnostic
+        assert diagnostic["payload"]["data"]["host_state"] == "degraded_recovery"
+        assert status["assurance_root"] is not None
     finally:
         await service.close()

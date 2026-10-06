@@ -212,6 +212,7 @@ def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, An
     published = [{"target": a.get("target"), "published_path": a.get("published_path")}
                  for a in detail.get("actions") or ()
                  if a.get("state") == "SUCCEEDED" and a.get("published_path")]
+    isolated = _isolation(detail.get("recovery_isolated"))
     return {
         "mission_id": mission_id.strip(),
         "status": status,
@@ -230,9 +231,21 @@ def mission_status(service_getter: Callable[[], Any], arguments: Mapping[str, An
         "steps": {"total": len(work), "done": sum(1 for t in work if t.get("status") in _DONE_TASKS)},
         "published": published,
         "stop_reason": mission.get("stop_reason") if status in {"FAILED", "CANCELLED"} else None,
-        "note": ("需要用户亲手确认/批准的事项在对话里的任务卡片和任务编排页上；你不能代为确认或批准。"
-                 if waiting else "目前不需要用户操作。"),
+        # 重启核对没通过、被隔离（不再推进）：带对不上的表名与一句给用户的话；没隔离为 None
+        "recovery_isolated": isolated,
+        "note": isolated["note"] if isolated else (
+            "需要用户亲手确认/批准的事项在对话里的任务卡片和任务编排页上；你不能代为确认或批准。"
+            if waiting else "目前不需要用户操作。"),
     }
+
+
+def _isolation(value: Any) -> dict[str, Any] | None:
+    """服务给的 ``recovery_isolated``（``{"tables": [...]}`` 或 None）→ 主对话回执：加上同一句话。"""
+    if not isinstance(value, Mapping):
+        return None
+    from .service import RECOVERY_ISOLATED_NOTE
+
+    return {"tables": list(value.get("tables") or ()), "note": RECOVERY_ISOLATED_NOTE}
 
 
 # ------------------------------------------------------------------ mission_amend
@@ -352,7 +365,8 @@ def mission_list(service_getter: Callable[[], Any], arguments: Mapping[str, Any]
     return {"missions": [
         {"mission_id": row.get("mission_id"), "goal": row.get("goal"), "status": row.get("status"),
          "status_zh": _STATUS_ZH.get(str(row.get("status")), str(row.get("status") or "未知")),
-         "created_at": row.get("created_at"), "pending_approvals": row.get("pending_approvals")}
+         "created_at": row.get("created_at"), "pending_approvals": row.get("pending_approvals"),
+         "recovery_isolated": _isolation(row.get("recovery_isolated"))}
         for row in rows],
         "note": "按创建时间从新到旧；用 mission_status 看某一个任务的进度、要求与资料。"}
 
