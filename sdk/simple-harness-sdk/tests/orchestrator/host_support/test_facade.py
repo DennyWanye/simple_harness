@@ -24,9 +24,8 @@ import pytest
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.orchestrator.event_handler import Orchestrator
-from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import product_world
 
 TOOLS3 = ("workspace_read_file", "workspace_write_file", "workspace_list")
 OFF = DeploymentPolicy(allowed_tools=TOOLS3, local_code_execution=False)
@@ -51,13 +50,17 @@ def _command(key: str, **overrides):
 
 
 def _with(tmp_path, body, provider=None):  # type: ignore[no-untyped-def]
+    # 编排器只接受部署给的原生执行池（A′ 第 4 步删旧执行池），夹具因此走产品同形的装配：
+    # ``product_world`` 用的就是产品那一份部署组装 + 原生执行池。``auto=False``：门面测试只建
+    # 任务、读快照、取消，不让部署职责代签确认/授权去推进规划。门面就是部署绑定的那一个
+    # （``world.control``），租户/主体照旧是 local/我。
     async def run():
-        config = OrchestratorConfig(
-            evidence_root=Path(tmp_path) / "evidence", max_concurrency=1, deployment_policy=OFF
-        )
-        async with Orchestrator(config, provider or _provider()) as orchestrator:
-            control = MissionControlV1(orchestrator, tenant_id="local", principal=ME)
-            result = body(orchestrator, control)
+        async with product_world(
+            Path(tmp_path) / "evidence", provider or _provider(), auto=False,
+            tenant_id="local", principal=ME, max_concurrency=1, deployment_policy=OFF,
+        ) as world:
+            orchestrator = world.loop
+            result = body(orchestrator, world.control)
             if asyncio.iscoroutine(result):
                 result = await result
             return result
