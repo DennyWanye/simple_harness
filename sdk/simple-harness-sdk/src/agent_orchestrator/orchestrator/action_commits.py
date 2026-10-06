@@ -30,7 +30,7 @@ from ..governance.permissions import (
     decision_receipt_hash,
 )
 from ..governance.policies import ActionDecision, DeploymentPolicy, action_decision
-from ..runtime.connectors import Receipt, level_rank, params_hash
+from ..runtime.connectors import Receipt, human_ruling_receipt, level_rank, params_hash
 from ..runtime.planning_operations import BoundPlanningOperationOrigin
 from ..storage.planning_admission_store import PlanningAdmissionStore
 
@@ -1368,13 +1368,19 @@ class ActionCommitsMixin:
                 **actor,
             )
             if action["state"] == "UNKNOWN":
+                # 裁"已生效"：同事务给动作一份人裁定回执（谁、何时、凭什么），结果审阅读到的就是它，
+                # 不再是空；人已经出面了，动作不再标"等人"。裁"没生效"没有回执可言。
+                ruling = (human_ruling_receipt(action, record) if outcome == "succeeded" else None)
                 action = self._resolve_action(
                     action,
                     "SUCCEEDED" if outcome == "succeeded" else "FAILED",
+                    receipt=ruling,
                     error="" if outcome == "succeeded" else "human_ruled_failed",
                     extra={"resolved_by": principal.principal_id, "override_id": override_id},
                     actor=actor,
                 )
+                if ruling is not None:
+                    action = self._update_action(action_key, needs_human=False)
             if outcome == "failed" and linked:
                 # The ruling is the proof, in this same transaction: the operation gate
                 # opens and the effect can be offered again (阶段 B 裁决第 3 类).

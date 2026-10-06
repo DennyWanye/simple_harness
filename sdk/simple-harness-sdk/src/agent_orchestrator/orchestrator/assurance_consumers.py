@@ -350,6 +350,21 @@ class AssuranceValidityConsumer(_ConsumerBase):
 
 
 # ------------------------------------------------------------------ CLOSEOUT
+def unmet_only_by_unknown_effects(status: Any, effect_states: Mapping[str, str]) -> bool:
+    """A root scope that is not complete only because a required effect's result is unknown
+    (第 1 批偏差 2，B 口径；原计划 §7.2 "危险/必需效果 UNKNOWN → BLOCKED_UNKNOWN").
+
+    True when the root's content is ready, it has required effects, at least one is
+    ``RECONCILIATION_REQUIRED`` and every one is either ``ACCEPTED`` or
+    ``RECONCILIATION_REQUIRED``.  Anything else that keeps the scope open (content not
+    ready, an effect still awaiting its intent / review) is ``ROOT_SCOPE_UNMET`` as before.
+    """
+    if not bool(getattr(status, "content_ready", False)) or not effect_states:
+        return False
+    states = set(effect_states.values())
+    return "RECONCILIATION_REQUIRED" in states and states <= {"ACCEPTED", "RECONCILIATION_REQUIRED"}
+
+
 class AssuranceCloseoutConsumer(_ConsumerBase):
     """Derived closeout readiness of an assured Mission (spec §7.2).
 
@@ -507,20 +522,25 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             reasons.append(SOURCE_CHANGE_OPEN)
         pending_effects: list[str] = []
         unmet: list[str] = []
+        blocked: list[str] = []
         spec_hashes: list[str] = []
         for root in roots:
             status = read_occurrence_completion(self.store, mission.id, root)
             spec_hashes.append(str(status.scope.spec_hash))
-            if not status.complete:
-                unmet.append(root)
-            for effect_key in status.scope.required_effect_keys:
-                current = read_current_effect(
-                    self.store, mission.id, status.scope.spec_hash, str(effect_key)
-                )
-                if current["state"] == "RECONCILIATION_REQUIRED":
-                    pending_effects.append(str(effect_key))
+            states = {
+                str(effect_key): str(read_current_effect(
+                    self.store, mission.id, status.scope.spec_hash, str(effect_key))["state"])
+                for effect_key in status.scope.required_effect_keys
+            }
+            pending_effects.extend(k for k, state in states.items() if state == "RECONCILIATION_REQUIRED")
+            if status.complete:
+                continue
+            # 第 1 批偏差 2（B 口径）：根范围只差结果不明的效果时不是"范围未满足"，是"效果不明"——
+            # 走下面的 BLOCKED_UNKNOWN（原计划 §7.2），不落 ROOT_SCOPE_UNMET。
+            (blocked if unmet_only_by_unknown_effects(status, states) else unmet).append(root)
         body["completion_spec_hash"] = spec_hashes[0] if spec_hashes else None
         body["unmet_root_occurrences"] = unmet
+        body["blocked_root_occurrences"] = blocked
         body["pending_effect_keys"] = pending_effects
         if unmet:
             reasons.append("ROOT_SCOPE_UNMET")
