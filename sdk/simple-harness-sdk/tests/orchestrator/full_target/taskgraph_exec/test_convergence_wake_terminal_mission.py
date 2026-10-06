@@ -148,3 +148,35 @@ def test_a_waiting_job_of_a_cancelled_mission_is_not_woken_and_keeps_its_fence(t
             assert tuple(_job(store, mission_id)) == fence
 
     asyncio.run(case())
+
+
+def _followup_states(store: Any, mission_id: str) -> list[tuple[str, int]]:
+    return [tuple(row) for row in store.connection.execute(
+        "SELECT delivery_state, attempts FROM taskgraph_followups WHERE mission_id=? ORDER BY message_id",
+        (mission_id,))]
+
+
+def test_an_isolated_missions_followups_are_left_exactly_as_they_are(tmp_path):
+    """夜间 N2（终核 8.5 建议）：重启核对没通过、已隔离的任务，执行图跟进的投递泵不认领它的跟进
+    ——不写见证、不写新计划版本、不开审阅工作，跟进原样留在库里（状态与次数都不变）。
+
+    **改坏检验**：投递泵不传 ``excluded_missions`` → 跟进被认领（次数 +1 或已投递）→ 本条失败。"""
+
+    async def case() -> None:
+        async with waiting_convergence(tmp_path, key="followup-isolated") as waiting:
+            loop, mission_id = waiting.world.loop, waiting.mission_id
+            store = loop.store
+            wakeups = TaskGraphConvergenceWakeups(TaskGraphFollowupStore(store), interval_ms=5_000)
+            assert wakeups.schedule(mission_id, now_ms=int(store.now * 1000) + 10 * MINUTE_MS) == 1
+            notifications = loop._taskgraph_notifications
+            assert notifications._consume_one(mission_id) >= 1  # 唤醒事件已派生成待投递的跟进
+            before = _followup_states(store, mission_id)
+            assert any(state == "PENDING" for state, _ in before), before
+            loop._recovery_isolated[mission_id] = {"tables": ["fixture"], "silent_changes": []}
+            delivered = await notifications.pump.pump_taskgraph_followups(limit=16)
+            assert all(item.message_id not in {m for m, in store.connection.execute(
+                "SELECT message_id FROM taskgraph_followups WHERE mission_id=?", (mission_id,))}
+                       for item in delivered)
+            assert _followup_states(store, mission_id) == before
+
+    asyncio.run(case())

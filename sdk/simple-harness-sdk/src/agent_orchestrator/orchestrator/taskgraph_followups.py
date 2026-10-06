@@ -46,8 +46,11 @@ class TaskGraphFollowupPump:
         clock_ms: Callable[[], int] | None = None,
         lease_ms: int = 30_000,
         require_execution_root: Callable[[], None] | None = None,
+        excluded_missions: Callable[[], frozenset[str]] | None = None,
     ) -> None:
         self.notifications = notifications
+        # 重启核对没通过、已隔离的任务：投递泵不认领它们的跟进（AER 恢复第 3、8 条）
+        self._excluded_missions = excluded_missions or (lambda: frozenset())
         self.owner = owner
         # Fixed three consumers: never a user-supplied tool name or tool argument.
         self._handlers = {
@@ -71,7 +74,8 @@ class TaskGraphFollowupPump:
         if self.notifications.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_FOLLOWUP_PUMP_INSIDE_TRANSACTION")
         claim = self.notifications.claim_followup(
-            self.owner, now_ms=self.clock_ms(), lease_ms=self.lease_ms
+            self.owner, now_ms=self.clock_ms(), lease_ms=self.lease_ms,
+            excluded_missions=frozenset(self._excluded_missions()),
         )
         if claim is None:
             return None

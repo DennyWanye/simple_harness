@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-06T16:15:09+00:00",
-    "gate_sha256": "e3a4d76c2bbb7b1ca323a866a53fcdbcc9c00dcd2fea7ce9be8cf38be328ae55",
-    "gate_status": "PASS",
-    "source_files_sha256": "3cc28386a4b73d202d3a9be84dd5cd80b3958894999223b63c7f5e1a0914e806"
-  },
-  "deployment_id": "ccdde0984e05fbc5862208f2e7e0904ef3156697821a1bf0f98f98af71b3b714",
+  "acceptance_evidence": null,
+  "deployment_id": "ea0389956ef2179ca5151350315c72a95b643d6867583e87a8d5a77d874ff687",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -274,9 +269,9 @@
     "agent_orchestrator/orchestrator/taskgraph_execution_policy.py": "20c5857abb330215d62d8a368592141f7d5f1d80e9ca709ee5a0ddcaa6f55ada",
     "agent_orchestrator/orchestrator/taskgraph_execution_sources.py": "7f86168f25d95cfca6905bd51fecc8665de0dfb341e275565301f7acaf937974",
     "agent_orchestrator/orchestrator/taskgraph_execution_view.py": "b4715e0755c54476e1920bd56c8b7e888612293d522814a8cac22ba9ffba299b",
-    "agent_orchestrator/orchestrator/taskgraph_followups.py": "be92c8ae50622584a2b3971c1c7620232db13f23dbf11c15f74041a055219c33",
+    "agent_orchestrator/orchestrator/taskgraph_followups.py": "4327cbfac5a586671c2713354b4d418d2d71d3236ab1a40dacbfc749ef641b7e",
     "agent_orchestrator/orchestrator/taskgraph_materialization.py": "1f9a28ae0e116388dfe8ee54379cf368ffaa66068173633d34ce7cd8751fd036",
-    "agent_orchestrator/orchestrator/taskgraph_notifications.py": "aeafb429acf919eafb2676b14574bbf5c5bc558dfcaa76123d361fd7ce3c8022",
+    "agent_orchestrator/orchestrator/taskgraph_notifications.py": "f80b4f5f0b7ce40cfa73022a19c4d4f8a81e7ec168d01b474cdfe25cf0c5e781",
     "agent_orchestrator/orchestrator/taskgraph_operator.py": "b1b2c5bed401f06247fc3cfdda2108b1a84179cd80e147630d9557219ac8ed1d",
     "agent_orchestrator/orchestrator/taskgraph_outcomes.py": "def12c37973940d20a771f6e350293ed112b9a1d698355452aee5a2556031ea1",
     "agent_orchestrator/orchestrator/taskgraph_plan_commit.py": "7a65b550f0ddf15c1a5a8e23c5c18dc50863fae08566e2d9699be018e565e828",
@@ -423,7 +418,7 @@
     "agent_orchestrator/storage/store.py": "c4ccd2f69c8e3534d0b8610c839c0fa17c547d410f65f33ddc44f6cb656bc940",
     "agent_orchestrator/storage/taskgraph_attempt_inputs.py": "db3e51ef6b1e24d294e1d8cc1cd061a200acd860004b1d2ad1774975b87cb6e5",
     "agent_orchestrator/storage/taskgraph_convergence.py": "505a7556bcb90826dc43cb8a50a278f40ed16db611b4c60cd8734b9ec3b6aadf",
-    "agent_orchestrator/storage/taskgraph_followups.py": "fe128d21c870afcc2cf0062d7fd69a0c19a44a6551d6f22b7013bd0f583352dd",
+    "agent_orchestrator/storage/taskgraph_followups.py": "255b12a31f2fbbbf42ce9fffca65a28848cf2b58d01ce8caf32f2ab5bfd6cc40",
     "agent_orchestrator/storage/taskgraph_history_sources.py": "b1757f027f5d586bba948bd351f8ca85be801ef929e6527717261dc2b2ff8824",
     "agent_orchestrator/storage/taskgraph_schema.py": "1c94f1e44bbf8d064ab5ac162e306c205a465d3a51dac1f99de2033e37ed1b54",
     "agent_orchestrator/storage/taskgraph_source_events.py": "fc65102410efa32dee0204c799b38c13290a75dddd0ab383b37387ecd1202b25",
@@ -713,7 +708,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

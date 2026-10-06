@@ -147,18 +147,23 @@ class TaskGraphFollowupStore:
         return identity
 
     def claim_followup(
-        self, owner: str, *, now_ms: int, lease_ms: int = 30_000
+        self, owner: str, *, now_ms: int, lease_ms: int = 30_000,
+        excluded_missions: frozenset[str] = frozenset(),
     ) -> ClaimedFollowup | BlockedFollowup | None:
+        """``excluded_missions``：本进程不替它们做事的任务（重启核对没通过、已隔离）；它们的跟进
+        原样留在库里，不认领、不计次数。"""
         _text(owner, "owner")
         _integer(now_ms, "now_ms")
         _integer(lease_ms, "lease_ms", minimum=1)
         until = _integer(now_ms + lease_ms, "lease_until_ms")
+        excluded = sorted(str(item) for item in excluded_missions)
+        skip = f" AND mission_id NOT IN ({','.join('?' * len(excluded))})" if excluded else ""
         with self.store.transaction() as db:
             row = db.execute(
                 "SELECT message_id,row_version FROM taskgraph_followups WHERE "
-                "(delivery_state='PENDING' AND next_attempt_ms<=?) OR "
-                "(delivery_state='LEASED' AND lease_until_ms<=?) ORDER BY next_attempt_ms,message_id LIMIT 1",
-                (now_ms, now_ms),
+                "((delivery_state='PENDING' AND next_attempt_ms<=?) OR "
+                f"(delivery_state='LEASED' AND lease_until_ms<=?)){skip} ORDER BY next_attempt_ms,message_id LIMIT 1",
+                (now_ms, now_ms, *excluded),
             ).fetchone()
             if row is None:
                 return None

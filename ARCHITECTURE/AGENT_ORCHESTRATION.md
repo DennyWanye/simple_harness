@@ -1,3 +1,6 @@
+最后更新：2026-10-07 CST（夜间清遗留，待发版 SDK `opt.167`）。
+- **执行图跟进的投递泵不认领被隔离任务的跟进**（夜间 N2，终核 8.5 建议）：`TaskGraphFollowupStore.claim_followup(excluded_missions=…)`，投递泵每次认领传本进程的隔离集合（`Orchestrator._recovery_isolated`），被隔离任务的跟进原样留在库里（状态、次数不变）、不写见证、不写新计划版本、不开审阅工作。用例 `taskgraph_exec/test_convergence_wake_terminal_mission.py::test_an_isolated_missions_followups_are_left_exactly_as_they_are`，改坏"泵不传隔离集合"被抓。
+
 最后更新：2026-10-06 CST（补齐第 2～4 批并行车道，合并中，待发版 SDK `opt.166`）。依据 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/10-第2至4批-车道说明.md`；分车道记录 `第2批-车道G～N-记录.md`。本条随各车道合并逐段补。
 - **执行者上下文按分层给父目标与直接上游**（K04，车道 H）：新模块 `orchestrator/worker_context.py`；任务包多 `parent_goal` 段（目标原文、负责的要求原文、做法），`dependencies` 改为数据边生产者的目标、状态、已验收摘要与核对记录编号、交付产物；不再按平面 `dependency_ids`。
 - **归因按根结论贡献链**（T10，车道 H）：`observability/traces.py` 从 `GoalResolutionCommitted` 载荷递归读贡献链（`attribution-v2`，新增 `goal_chain`，产物带 `acceptance_id`）；不再沿 `dependency_ids` 合并、不再报集成树冲突。
