@@ -1492,8 +1492,8 @@
    "id": "OPA-05",
    "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
    "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-   "original": "        if self._materialization_refusals(mission.id):\n            return False",
-   "replacement": "        if False:\n            return False",
+   "original": "        if self._materialization_refusals(mission.id):\n            return True  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测",
+   "replacement": "        if False:\n            return True",
    "tests": [
     "tests/orchestrator/product_world/test_requirements_amend.py::test_a_request_whose_materialisation_is_always_refused_is_not_a_legitimate_wait"
    ],
