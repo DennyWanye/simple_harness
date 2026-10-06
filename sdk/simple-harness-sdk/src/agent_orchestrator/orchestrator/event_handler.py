@@ -10437,7 +10437,7 @@ class Orchestrator:
             network = new_mode.network(mission.id)
             step_parent = read_parent_goal(self.store, network, mission, task)
             upstream = upstream_steps(self.store, network, mission, task, inputs)
-        except (GraphIntegrityError, ContractError, StoreError) as error:
+        except (GraphIntegrityError, ContractError, StoreError, LookupError) as error:
             # 读不到网络时如实说"读不到"，不编一个空的"没有上游"
             self._note(f"task {task.id}: hierarchical context unreadable ({error})")
             step_parent = {"data_not_instruction": True, "unavailable": str(error)[:300]}

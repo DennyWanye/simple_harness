@@ -34,8 +34,18 @@ def parent_goal(store: Any, network: Any, mission: Mission, task: Task) -> dict[
     placement = binding.occurrence_binding
     if placement is None:
         return None
-    draft = network.instance(placement.method_instance_id)
-    goal_binding = network.binding_for_task(draft.goal_id)
+    try:
+        draft = network.instance(placement.method_instance_id)
+        goal_binding = network.binding_for_task(draft.goal_id)
+    except LookupError:
+        # 改要求后沿用的步骤可能仍指向旧计划的做法实例；当前快照里查不到就如实说，不编、不抛
+        return {
+            "data_not_instruction": True,
+            "version": PARENT_GOAL_VERSION,
+            "unavailable": (f"method instance {placement.method_instance_id} is not in the current plan "
+                            "snapshot (the step was kept from an earlier plan)"),
+            "slot_key": placement.slot_key,
+        }
     goal_row = store.get_task(str(draft.goal_id))
     statements = dict(current_criteria(store, mission))
     return {

@@ -124,12 +124,13 @@ def result_content_hash(artifact_hashes: Sequence[str], summary: str) -> str:
 AMENDMENT_EVENT = "RequirementsAmended"
 
 
-def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) -> list[tuple[int, str]]:
-    """任务里每份已提交结果的 ``(交到时生效的要求版本, 内容哈希)``，按收到的先后。
+def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) -> list[tuple[int, str, bool]]:
+    """任务里每份已提交结果的 ``(交到时生效的要求版本, 内容哈希, 判过且没通过)``，按收到的先后。
 
     要求版本只按顺序算（第 1 版起，每个改要求事件之后换成它写的版本号），不读内容：
-    原计划 §18 / §19.1 说的"结果重复率"是搜索原地打转；用户改要求后被重做的步骤交出同样的
-    内容，是在回答新问题，不与旧版要求下的结果比。
+    原计划 §18 / §19.1 说的"结果重复率"是搜索原地打转——被判不通过之后又交出同样的东西。
+    用户改要求后被重做的步骤、因改要求落在核查中途而被搁置重做的结果，交出同样的内容是在回答
+    新问题或补一次程序，不是打转，所以只有"判过且没通过"的结果才作为后来者的比较基准。
     """
     landed = sorted((float(event.created_at), int(event.payload.get("requirements_revision") or 0))
                     for event in events if event.type == AMENDMENT_EVENT)
@@ -141,7 +142,7 @@ def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) ->
                 current = revision
         return current
 
-    rows: list[tuple[float, int, str]] = []
+    rows: list[tuple[float, int, str, bool]] = []
     for task in store.list_tasks(mission_id):
         for attempt in store.list_attempts(task.id):
             stored = store.find_result_for_attempt(attempt.id)
@@ -153,20 +154,28 @@ def result_hashes(store: Any, mission_id: str, *, events: Iterable[Any] = ()) ->
                 if artifact is not None:
                     hashes.append(artifact.content_hash)
             received = float(stored.received_at)
-            rows.append((received, revision_at(received), result_content_hash(hashes, stored.envelope.summary)))
-    return [(revision, digest) for _, revision, digest in sorted(rows, key=lambda item: item[0])]
+            judged_not_passed = (getattr(stored, "verification_state", None) == "DONE"
+                                 and getattr(stored, "verdict", None) != "PASS")
+            rows.append((received, revision_at(received),
+                         result_content_hash(hashes, stored.envelope.summary), bool(judged_not_passed)))
+    return [(revision, digest, judged) for _, revision, digest, judged in sorted(rows, key=lambda item: item[0])]
 
 
 def duplicate_count(hashes: Sequence[Any]) -> tuple[int, int]:
-    """(与同一版要求下更早结果内容相同的结果数, 结果总数)。元素是 ``(要求版本, 哈希)``；
-    只给哈希时当作同一版。"""
-    seen: set[tuple[int, str]] = set()
+    """(与同一版要求下更早的、判过且没通过的结果内容相同的结果数, 结果总数)。
+    元素是 ``(要求版本, 哈希, 判过且没通过)``；只给哈希或二元组时当作同一版、都算基准。"""
+    baseline: set[tuple[int, str]] = set()
     duplicates = 0
     for item in hashes:
-        key = (int(item[0]), str(item[1])) if isinstance(item, tuple) else (0, str(item))
-        if key in seen:
+        if isinstance(item, tuple):
+            key = (int(item[0]), str(item[1]))
+            judged = bool(item[2]) if len(item) > 2 else True
+        else:
+            key, judged = (0, str(item)), True
+        if key in baseline:
             duplicates += 1
-        seen.add(key)
+        if judged:
+            baseline.add(key)
     return duplicates, len(hashes)
 
 

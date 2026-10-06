@@ -104,6 +104,27 @@ def test_k04_the_first_step_has_the_parent_goal_but_no_upstream(chain: dict[str,
     assert package["dependencies"] == []
 
 
+def test_k04_a_step_kept_from_an_older_plan_says_its_parent_is_unreadable_instead_of_raising() -> None:
+    """主会话合并后发现（改要求的世界用例）：改要求后沿用的步骤，绑定仍指向旧计划的做法实例；
+    网络快照里按编号查不到（KeyError）。这不是 GraphIntegrityError，原先一路抛到循环边界，整轮派发
+    中断，任务以"没有可派发的工作"停。父目标读不到就如实说读不到，派发照常。"""
+    from types import SimpleNamespace
+
+    from agent_orchestrator.orchestrator import worker_context
+
+    class _Network:
+        def binding_for_task(self, task_id):
+            return SimpleNamespace(occurrence_binding=SimpleNamespace(method_instance_id="mi-old", slot_key="s"))
+
+        def instance(self, instance_id):
+            raise KeyError(instance_id)
+
+    parent = worker_context.parent_goal(SimpleNamespace(), _Network(), SimpleNamespace(id="m"), SimpleNamespace(id="t"))
+    assert parent["data_not_instruction"] is True
+    assert parent["unavailable"].startswith("method instance mi-old")
+    assert "goal" not in parent
+
+
 # ---------------------------------------------------------------- T10 成功路径与归因
 
 def test_t10_the_success_path_is_the_root_resolution_contribution_chain(chain: dict[str, Any]) -> None:

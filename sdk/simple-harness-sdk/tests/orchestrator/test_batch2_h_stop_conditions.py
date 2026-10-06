@@ -121,6 +121,9 @@ def test_duplicates_are_counted_by_content_hash() -> None:
     # 用户改要求后被重做的步骤产出同样的内容，是在回答新问题，不是打转。
     assert sc.duplicate_count([(1, "a"), (2, "a"), (3, "a"), (4, "a")]) == (0, 4)
     assert sc.duplicate_count([(1, "a"), (1, "a"), (2, "a"), (2, "b"), (2, "a")]) == (2, 5)
+    # 只有"判过且没通过"的结果才作比较基准：被搁置（没判）或已通过的结果之后再交同样内容不算打转
+    assert sc.duplicate_count([(2, "a", False), (2, "a", False), (2, "a", False)]) == (0, 3)
+    assert sc.duplicate_count([(2, "a", True), (2, "a", False), (2, "a", False)]) == (2, 3)
 
 
 def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_landed() -> None:
@@ -134,13 +137,14 @@ def test_result_rows_carry_the_requirements_revision_in_force_when_each_result_l
 
         def find_result_for_attempt(self, attempt_id):
             at = {"a0": 10.0, "a1": 20.0, "a2": 40.0}[attempt_id]
-            return SimpleNamespace(received_at=at, envelope=SimpleNamespace(artifacts=(), summary="同一句话"))
+            return SimpleNamespace(received_at=at, envelope=SimpleNamespace(artifacts=(), summary="同一句话"),
+                                   verification_state="DONE", verdict="FAIL")
 
     amended = _event("RequirementsAmended", requirements_revision=2)
     amended.created_at = 30.0
     rows = sc.result_hashes(_Store(), "m", events=[amended])
-    assert [revision for revision, _ in rows] == [1, 1, 2]
-    assert len({digest for _, digest in rows}) == 1
+    assert [revision for revision, _, _ in rows] == [1, 1, 2]
+    assert len({digest for _, digest, _ in rows}) == 1 and all(judged for _, _, judged in rows)
     assert sc.duplicate_count(rows) == (1, 3)
     assert sc.duplicate_count([]) == (0, 0)
     assert sc.duplicate_count(["a", "b"]) == (0, 2)
