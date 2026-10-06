@@ -309,6 +309,8 @@ def _acceptable_scoped(
 def acceptable_assured_root(
     subject: AcceptanceSubject,
     *,
+    projected_criteria: tuple[Criterion, ...],
+    projected_expression: SuccessExpression,
     now_ms: int,
     purpose: ReviewPurpose,
     assured: AssuredAcceptance,
@@ -321,6 +323,13 @@ def acceptable_assured_root(
     re-decision of the bound review manifest (``assured.effective_grades``) and the
     licence is the committed UseCertificate (``assured.licence_reasons``), never the
     legacy ``CriterionOutcome`` projection or a self-issued witness.
+
+    ``projected_criteria`` / ``projected_expression`` (Assurance §7.2, 2026-10-06): the
+    root's **content** projection (``scoped_composition_review.root_content_projection``).
+    The root requirements' effect criteria are judged once, by their OPERATION_OUTCOME
+    reviews, and converge in the closeout; the root review and this formula judge the
+    content slice.  The package must carry exactly that slice, as a scoped Task-content
+    acceptance must carry its Scope's.
     """
 
     if not isinstance(assured, AssuredAcceptance):
@@ -329,6 +338,12 @@ def acceptable_assured_root(
     package = subject.package
     record = subject.record
     reasons: list[AcceptReason] = []
+    if package.criteria != projected_criteria:
+        reasons.append(AcceptReason.CRITERIA_NOT_MATCHED)
+    if success_expression_digest(package.success_expression) != success_expression_digest(
+        projected_expression
+    ):
+        reasons.append(AcceptReason.SUCCESS_EXPRESSION_MISMATCH)
 
     if record.package_id != package.package_id or record.binding != package.binding:
         reasons.append(AcceptReason.IDENTITY_MISMATCH)
@@ -339,35 +354,32 @@ def acceptable_assured_root(
         or package.binding.mission_id != revision.mission_id
     ):
         reasons.append(AcceptReason.REQUIREMENTS_REVISION_MISMATCH)
-    if package.requirements_content_hash is not None:
-        if package.requirements_content_hash != revision.content_hash():
-            reasons.append(AcceptReason.REQUIREMENTS_CONTENT_MISMATCH)
-    elif success_expression_digest(package.success_expression) != success_expression_digest(
-        revision.success_expression
-    ):
-        reasons.append(AcceptReason.SUCCESS_EXPRESSION_MISMATCH)
-    structure_violations = package.hard_constraint_violations()
+    if package.requirements_content_hash != revision.content_hash():
+        reasons.append(AcceptReason.REQUIREMENTS_CONTENT_MISMATCH)
+    structure_violations = hard_constraints_not_independent(
+        projected_expression, projected_criteria
+    )
     if structure_violations:
         reasons.append(AcceptReason.HARD_CONSTRAINT_STRUCTURE)
     catalogue = set(package.criterion_catalogue())
     missing_root = tuple(
-        criterion_id
-        for criterion_id in revision.required_criterion_ids()
-        if criterion_id not in catalogue
+        criterion.criterion_id
+        for criterion in projected_criteria
+        if criterion.criterion_id not in catalogue
     )
     if missing_root:
         reasons.append(AcceptReason.ROOT_CRITERION_MISSING)
 
-    gate = _assured_hard_gate(revision.criteria, assured)
+    gate = _assured_hard_gate(projected_criteria, assured)
     if gate.failed_ids:
         reasons.append(AcceptReason.HARD_CONSTRAINT_FAILED)
     if gate.unknown_ids or gate.missing_ids:
         reasons.append(AcceptReason.HARD_CONSTRAINT_UNKNOWN)
-    expression = _assured_expression(revision.criteria, revision.success_expression, assured)
+    expression = _assured_expression(projected_criteria, projected_expression, assured)
     if not expression.passed:
         reasons.append(AcceptReason.SUCCESS_EXPRESSION_NOT_PASS)
     completeness = _assured_completeness(subject, assured)
-    if not completeness.match.matched:
+    if not completeness.match.matched and AcceptReason.CRITERIA_NOT_MATCHED not in reasons:
         reasons.append(AcceptReason.CRITERIA_NOT_MATCHED)
     if not completeness.complete:
         reasons.append(AcceptReason.REQUIRED_CHECKS_INCOMPLETE)

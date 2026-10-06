@@ -1945,6 +1945,18 @@ class HierarchicalDispatch:
         Every gating child of every adopted root method needs an accepted outcome
         first.  The parent's own state is deliberately not consulted: a review that
         waits for the parent it is supposed to conclude does not terminate.
+
+        The root's required effects are not waited for to be *accepted* (Assurance 1.1
+        §7.2, 2026-10-06 车道 O): the root review judges the content, the root resolution
+        records that the business requirement is met, and the closeout converges the
+        effects (UNKNOWN → BLOCKED_UNKNOWN) before anything completes.  Each effect is
+        judged once, by its own OPERATION_OUTCOME review.  What *is* waited for is an
+        effect still **in flight** (awaiting its intent, review, approval, execution or
+        outcome review; rejected or failed and so the operation line's to resubmit): a
+        root resolution formed then would freeze the content while the operation line
+        may still have the planner rewrite it (a rejected publish), and a resolved duty
+        admits no new work.  Settled = accepted or result unknown
+        (``completion_status.EFFECT_SETTLED_STATES``, the closeout's own vocabulary).
         """
 
         view = self.read(mission_id)
@@ -1953,10 +1965,17 @@ class HierarchicalDispatch:
         roots = view.network.root_occurrence_ids
         if not roots:
             return False
+        from .completion_status import (
+            EFFECT_SETTLED_STATES,
+            read_current_effect,
+            read_occurrence_completion,
+        )
         for root in roots:
-            from .completion_status import read_occurrence_completion
-            if not read_occurrence_completion(self.store, mission_id, str(root)).effects_ready:
-                return False
+            scope = read_occurrence_completion(self.store, mission_id, str(root)).scope
+            for effect_key in scope.required_effect_keys:
+                effect = read_current_effect(self.store, mission_id, scope.spec_hash, str(effect_key))
+                if str(effect["state"]) not in EFFECT_SETTLED_STATES:
+                    return False
             spec = view.network.occurrence(root)
             if spec.form is not TaskForm.COMPOUND:
                 if view.outcomes.get(root) is not OccurrenceOutcome.ACCEPTED:
@@ -1985,16 +2004,22 @@ class HierarchicalDispatch:
 
     # --------------------------------------------------------- the root acceptance gate
     def root_contributions(self, mission_id: str) -> dict[str, tuple[str, ...]]:
-        """Which occurrences of the adopted root method have a **CURRENT** Acceptance.
+        """Which occurrences of the adopted root method have a **CURRENT** content Acceptance.
 
         Read from the ``acceptances`` rows and not from the outcome projection.  They
         usually agree, and where they do not the store is right: an Acceptance that was
         superseded or revoked since the projection was computed is history, and a root
         resolution quoting it would be declaring the Mission complete on the strength
         of work nobody accepts any more (§21.5 "wrongly declared complete = 0").
+
+        Effect acceptances are not contributions to the root review (Assurance §7.2,
+        2026-10-06): an effect is judged by its own OPERATION_OUTCOME review and
+        converges in the closeout; the root review is cut over the content, and an
+        effect landing while it runs does not re-cut it.  The accepted effects' facts
+        still reach the reviewer as materials (``_root_effect_materials``).
         """
 
-        from .completion_status import current_effect_proofs, read_occurrence_completion
+        from .completion_status import read_occurrence_completion
 
         network = self.network(mission_id)
         scoped: dict[str, tuple[str, ...]] = {}
@@ -2002,9 +2027,6 @@ class HierarchicalDispatch:
             status = read_occurrence_completion(self.store, mission_id, str(spec.occurrence_id))
             if status.preparation_acceptance_ids:
                 scoped[str(spec.occurrence_id)] = tuple(sorted(status.preparation_acceptance_ids))
-        for proof in current_effect_proofs(self.store, mission_id):
-            occurrence = proof["occurrence_id"]
-            scoped[occurrence] = tuple(sorted({*scoped.get(occurrence, ()), proof["acceptance_id"]}))
         return scoped
 
     def root_resolution_inputs(self, mission_id: str) -> RootResolutionInputs:
@@ -2218,6 +2240,20 @@ class HierarchicalDispatch:
         manifest_hash = input_manifest_hash or inputs.package.binding.input_manifest_hash
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
         from .review_adjudication import accepted_or_adjudicated
+        # Assurance §7.2（2026-10-06 车道 O）：根结论复述的是根的内容投影——根终审判的那一份；
+        # 效果判据由各自的结果审阅判、收尾核对收敛，不写进根结论。
+        from ..contracts.models import ContractError
+        from .completion_status import read_occurrence_completion
+        from .scoped_composition_review import root_content_projection
+
+        try:
+            root_scope = read_occurrence_completion(self.store, mission_id, inputs.occurrence_id).scope
+            projection = root_content_projection(requirements, root_scope)
+        except (ContractError, StoreError) as error:
+            return self._refuse_root_resolution(
+                mission_id, inputs, command_id=command_id, reason="OP_COMPLETION_SCOPE_UNRESOLVED",
+                detail="the root content projection could not be read: " + str(error),
+            )
         # Handoff item 7: on the assured lane the licence is the current
         # UseCertificate over the bound MISSION_FINAL manifest, prepared here outside
         # the write lock and committed by ``commit_goal_resolution`` under it. The
@@ -2262,7 +2298,7 @@ class HierarchicalDispatch:
             # UNKNOWN and the AER §6.2 formula answers for it, instead of the trigger
             # answering on the reviewer's behalf.
             criteria=_root_criteria(
-                requirements, inputs.record, effective_grades=effective_grades,
+                projection.criteria, inputs.record, effective_grades=effective_grades,
             ),
             review_receipt_id=str(inputs.record.record_id),
             verdict=ReviewVerdict.ACCEPT,
@@ -3766,15 +3802,16 @@ class HierarchicalDispatch:
 
 
 def _root_criteria(
-    requirements: Any,
+    criteria: Sequence[Any],
     record: Any,
     *,
     effective_grades: Mapping[str, str] | None = None,
 ) -> tuple[ResolutionCriterion, ...]:
     """The root resolution's criteria, restated from the review record (review F4).
 
-    The *set* of criteria is the requirements revision's — that is what the goal owes
-    — and each verdict is the record's own.  ``UNKNOWN`` where the reviewer said
+    The *set* of criteria is the root's content projection (Assurance §7.2: the effect
+    criteria are judged by their own outcome reviews and converge in the closeout) —
+    that is what the root review judged — and each verdict is the record's own.  ``UNKNOWN`` where the reviewer said
     nothing: it is the enum's word for "not judged", and it is the only honest thing a
     trigger that decides nothing can write.
 
@@ -3803,7 +3840,7 @@ def _root_criteria(
                 if str(ref.kind) in {str(kind) for kind in EvidenceRefKind}
             ),
         )
-        for item in requirements.criteria
+        for item in criteria
     )
 
 

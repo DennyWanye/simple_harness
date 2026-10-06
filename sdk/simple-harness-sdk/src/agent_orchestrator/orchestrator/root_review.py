@@ -682,7 +682,12 @@ class RootReviewCoordinator:
         previous = state.package
         if previous is not None:
             self._supersede(mission_id, previous, reasons=state.stale_reasons)
-        requirements = self._requirements(mission_id, binding)
+        requirements, scope = self._requirements(mission_id, binding)
+        # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的结果审阅判、
+        # 收尾核对收敛。效果的现状作为事实随包交给审阅员。
+        from .scoped_composition_review import root_content_projection
+
+        projection = root_content_projection(requirements, scope)
         contributions = self.contributions(mission_id)
         producers = self.producer_agent_ids(mission_id, contributions)
         manifest = self._manifest_hash(mission_id, str(binding.task_id))
@@ -718,8 +723,9 @@ class RootReviewCoordinator:
                     content_hash=content_hash_of(ROOT_REVIEW_POLICY),
                 ),
             ),
-            criteria=requirements.criteria,
-            success_expression=requirements.success_expression,
+            criteria=projection.criteria,
+            success_expression=projection.expression,
+            effect_facts=self._effect_facts(mission_id, scope),
             # The candidate of a composition review is the children's accepted work,
             # and it is named in both places the annex has for it: ``candidate_refs``
             # is what the reviewer is shown, ``child_acceptance_refs`` is what the
@@ -806,10 +812,24 @@ class RootReviewCoordinator:
             },
         )
 
+    def _effect_facts(self, mission_id: str, scope: Any) -> tuple[dict[str, Any], ...]:
+        """根范围每项必需效果切包时的状态（Assurance §7.2）：事实，不是判据。
+
+        效果由它自己的结果审阅判、由收尾核对收敛；这里只让根终审员知道发布之类的效果走到了哪一步。
+        """
+        from .completion_status import read_current_effect
+
+        rows = []
+        for effect_key in scope.required_effect_keys:
+            effect = read_current_effect(self.store, mission_id, scope.spec_hash, str(effect_key))
+            rows.append({"effect_key": str(effect_key), "state": str(effect["state"]),
+                         "complete": bool(effect["complete"])})
+        return tuple(rows)
+
     def _requirements(
         self, mission_id: str, binding: TaskSemanticBindingV1
-    ) -> RequirementsRevision:
-        """The requirements revision the root's frozen completion scope names.
+    ) -> tuple[RequirementsRevision, Any]:
+        """The requirements revision the root's frozen completion scope names, and that scope.
 
         Nothing is published here: the revision was confirmed before the plan was
         committed and the scope pins it.  A re-cut that changes nothing binds the same
@@ -855,7 +875,7 @@ class RootReviewCoordinator:
             raise OperationCompletionError(
                 "OP_EFFECT_SCOPE_STALE", "root Requirements differ from the frozen Scope"
             )
-        return requirements
+        return requirements, scope
 
     def _manifest_hash(self, mission_id: str, task_id: str) -> str:
         """Freeze what the root consumed, and return the library's own digest.

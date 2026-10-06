@@ -105,4 +105,34 @@ def read_compound_projection(
         return ScopedCompositionProjection(requirements, scope, frozen_criteria, expression)
 
 
-__all__ = ("ScopedCompositionProjection", "read_compound_projection")
+def root_content_projection(
+    requirements: RequirementsRevision, scope: OccurrenceCompletionScopeV1
+) -> ScopedCompositionProjection:
+    """任务根的**内容**投影：根终审（MISSION_FINAL）判的就是它（Assurance 1.1 §7.2，2026-10-06 车道 O）。
+
+    根要求经人确认的完成映射分成两份：内容判据与效果判据。每项效果只判一次——由它自己的结果审阅
+    （OPERATION_OUTCOME）判，效果验收就是它的证明——所以根终审只判内容判据，效果的状态随审查包
+    作为事实给审阅员看，收敛与否由收尾核对。公式是内容判据的 ALL（部署给任务要求的也是 ALL）。
+    完成映射一条内容判据都没有（只有动作的任务）时，根终审仍判整份要求——根绑定对这种任务也是
+    "全部判据都算内容"（``deployment/root.root_binding``）。
+    """
+    catalogue = {item.criterion_id: item for item in requirements.criteria}
+    content_ids = tuple(scope.content_criterion_ids)
+    missing = [criterion_id for criterion_id in content_ids if criterion_id not in catalogue]
+    if missing:
+        raise OperationCompletionError(
+            "OP_COMPLETION_SCOPE_UNRESOLVED",
+            "root Scope names content criteria the requirements do not hold: " + ", ".join(missing),
+        )
+    if not content_ids:
+        return ScopedCompositionProjection(
+            requirements, scope, tuple(requirements.criteria), requirements.success_expression
+        )
+    criteria = tuple(catalogue[criterion_id] for criterion_id in content_ids)
+    expression: CriterionExpr | AllExpr = CriterionExpr(criteria[0].criterion_id)
+    if len(criteria) > 1:
+        expression = AllExpr(children=tuple(CriterionExpr(item.criterion_id) for item in criteria))
+    return ScopedCompositionProjection(requirements, scope, criteria, expression)
+
+
+__all__ = ("ScopedCompositionProjection", "read_compound_projection", "root_content_projection")

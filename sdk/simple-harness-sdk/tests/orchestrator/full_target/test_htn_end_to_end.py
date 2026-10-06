@@ -863,7 +863,7 @@ def test_a_criterion_the_review_never_judged_is_restated_unknown() -> None:
         criteria=(_final_criterion("c-root"), _final_criterion("c-side-note")),
         success_expression=AllExpr(children=(CriterionExpr("c-root"), CriterionExpr("c-side-note"))),
     )
-    restated = {item.criterion_id: item.verdict for item in _root_criteria(widened, _stub_record())}
+    restated = {item.criterion_id: item.verdict for item in _root_criteria(widened.criteria, _stub_record())}
     assert restated == {"c-root": CriterionVerdict.PASS, "c-side-note": CriterionVerdict.UNKNOWN}
 
 
@@ -1273,7 +1273,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
 
     * 子步骤验收之前（R5，§8）：根终审不就绪、任务不算终结、根结论的输入报出缺什么、根结论试 3 次
       都以 ROOT_REVIEW_NOT_READY 拒且一条都不形成（"缺根要求时根结论形成 0 次"）、没有贡献；
-      判定入口在根结论之前被调就拒（"unmet content or effects"），任务状态不动（R6 之一）。
+      判定入口在根结论之前被调就拒（"unmet content"；效果由收尾核对，Assurance §7.2），任务状态不动（R6 之一）。
     * 直接派发入口（F11/M17）：等数据的消费者没有准入，直接入口不派；冒充准入的对象也不派。
     * 叶子验收（R11，§15）：主循环每次验收同一个结果时再递交一次（重放）——同一个验收号、
       一条验收、输出索引只写一次；验收许可按它占的键命名（不含时钟）；索引里的 schema 取自边、
@@ -1357,7 +1357,7 @@ def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, mon
             assert semantics.list_goal_resolutions(mission_id) == ()
             assert dispatch.root_contributions(mission_id) == {}
             judgments = [{"criterion": item, "met": True} for item in world.mission.success_criteria]
-            with pytest.raises(CommitRejected, match="unmet content or effects"):
+            with pytest.raises(CommitRejected, match="unmet content"):
                 real_judge(loop.commit, mission_id, judgments=judgments, summary="too early")
             assert store.get_mission(mission_id).status is MissionStatus.ACTIVE
 

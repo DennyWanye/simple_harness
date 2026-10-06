@@ -60,6 +60,7 @@ def _orch(payloads):
 
     fake = SimpleNamespace(store=_exhausted_store(payloads))
     fake._exhausted_reviews = Orchestrator._exhausted_reviews.__get__(fake)
+    fake._operation_dead_end = Orchestrator._operation_dead_end.__get__(fake)  # 2026-10-06 车道 O：具名死路抽成一处
     fake._inconclusive_reviews = lambda mission_id: []
     fake._materialization_refusals = lambda mission_id: {}
     fake._outcome_source_refusals = lambda mission_id: {}
