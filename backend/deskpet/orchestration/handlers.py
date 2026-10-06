@@ -42,6 +42,7 @@ MESSAGE_TYPES = (
     "mission_assurance_snapshot",
     "mission_assurance_review",
     "mission_assurance_use_check",
+    "mission_assurance_root_diagnostic",
     "mission_events",
     "mission_cancel",
     "mission_approval_list",
@@ -66,6 +67,15 @@ MESSAGE_TYPES = (
     "orchestration_skill_evaluate",
     "orchestration_skill_admit",
 )
+
+
+#: 根隔离时仍开着的读动词：非披露诊断，以及三个保证读动词的隔离分支（答 ROOT_QUARANTINED）。
+QUARANTINE_READS = frozenset({
+    "mission_assurance_root_diagnostic",
+    "mission_assurance_snapshot",
+    "mission_assurance_review",
+    "mission_assurance_use_check",
+})
 
 
 def _ok(msg_type: str, request_id: Any, data: Any) -> dict[str, Any]:
@@ -108,8 +118,11 @@ async def handle(
         return _ok(msg_type, request_id, service.status())
     status = {} if service is None else service.status()
     # review P2-1: a degraded loop still answers reads, cancel, decisions and takeovers so a
-    # person can stop the damage; the service itself refuses new Missions while degraded
-    if status.get("state") not in ("available", "degraded"):
+    # person can stop the damage; the service itself refuses new Missions while degraded.
+    # 第 2 批 A02 / A40：保证通道根隔离时只开非披露诊断与隔离只读分支（原计划 §10.1 / §10.3），
+    # 任务列表、通知等一律不开——不披露任务标题与正文。
+    open_states = ("available", "degraded", "quarantined") if msg_type in QUARANTINE_READS else ("available", "degraded")
+    if status.get("state") not in open_states:
         reason = str(status.get("reason") or "编排服务不可用")
         return _error(msg_type, request_id, "orchestration_unavailable", reason)
     action = _ACTIONS.get(msg_type)
@@ -244,6 +257,15 @@ def _support_export(service: Any, body: Mapping[str, Any]) -> Any:
     return service.mission_diagnostics(dict(body), export=True)
 
 
+def _root_diagnostic(service: Any, body: Mapping[str, Any]) -> Any:
+    # 非披露诊断不接任何字段（保证动词的 request_id 留在正文里，见 handle）：没有任务号可带，
+    # 也没有可按名字查的东西
+    if set(body) - {"request_id"}:
+        from .service import OrchestrationRequestError
+        raise OrchestrationRequestError("invalid_request", "根诊断不接受任何字段")
+    return service.assurance_root_diagnostic()
+
+
 _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = {
     "taskgraph.snapshot": lambda service, body: service.taskgraph_read("snapshot", body),
     "taskgraph.why_not_ready": lambda service, body: service.taskgraph_read("why_not_ready", body),
@@ -257,6 +279,8 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
+    # 第 2 批 A40：保证通道根的非披露诊断（原计划 §10.3），根隔离时也开
+    "mission_assurance_root_diagnostic": _root_diagnostic,
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
     "mission_operation_completion_approve": _completion_approve,

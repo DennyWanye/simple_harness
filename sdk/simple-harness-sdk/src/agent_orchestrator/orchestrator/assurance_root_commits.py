@@ -170,7 +170,10 @@ def install_native_root(
                     raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT")
             ref = AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(body)))
             _initialize_clock(commit, body["root_incarnation_id"], int(commit.store.now * 1000))
-        _publish(gate, ref, body["root_incarnation_id"])
+        if old is None:
+            _publish(gate, ref, body["root_incarnation_id"])
+        # 已有回执的根不按部署身份把状态文件写回（第 2 批 A02，原计划 §10.1）：状态文件缺失 /
+        # 不符就是隔离，读门说了算；这里只核对，不修。
         gate.require_execution()
         return ref
 

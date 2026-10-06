@@ -20,7 +20,14 @@ from ..contracts import ContractError, Event
 from ..governance.budgets import BudgetError
 from ..graph.projection_validation import GraphIntegrityError
 from ..storage.assurance_store import AssuranceStore
-from ..storage.assurance_work import CONSUMERS, AssuranceWorkStore, WorkClaim, WorkTarget
+from ..storage.assurance_work import (
+    BUDGET_WAIT,
+    CONSUMERS,
+    AssuranceWorkStore,
+    WorkClaim,
+    WorkTarget,
+    budget_wait_delay_ms,
+)
 from ..storage.store import StoreConflict, StoreError
 from .assurance_clock import observe_assurance_clock
 
@@ -288,31 +295,43 @@ class AssuranceTick:
                         # A new target or elapsed lease owns the work now. Never
                         # ACK it with a stale computation or duplicate reservation.
                         continue
-                    except TimeoutError:
+                    except TimeoutError as error:
                         # Repeated incomplete preparation shares the durable
                         # 32/300s cap. Never reset the budget by creating a job.
-                        try:
-                            now_ms = self._settlement_time(claim)
-                            if now_ms is not None:
-                                self.work.recheck(claim, now_ms=now_ms)
-                        except StoreConflict:
-                            pass
+                        self._settle_failure(claim, error)
                     except (AssuranceError, BudgetError, *MISSION_DATA_ERRORS) as error:
                         # One unavailable source/reservation, or one Mission whose own
                         # data does not read back, must not starve the other consumers
                         # or prevent later revocation ingestion.
-                        # The same persistent work budget bounds all retries.
-                        reason = (
-                            error.code
-                            if isinstance(error, AssuranceError)
-                            else "BUDGET_UNAVAILABLE"
-                            if isinstance(error, BudgetError)
-                            else "MISSION_DATA_UNREADABLE"
-                        )
-                        try:
-                            now_ms = self._settlement_time(claim)
-                            if now_ms is not None:
-                                self.work.recheck(claim, now_ms=now_ms, reason=reason)
-                        except StoreConflict:
-                            pass
+                        self._settle_failure(claim, error)
         return progressed
+
+    def _settle_failure(self, claim: WorkClaim, error: BaseException) -> None:
+        """一项工作准备失败后怎么放回去（第 2 批 A05，原计划 §9 第 5 步）。
+
+        预算不够（``BudgetError``）是外界条件：记成 WAITING + ``BUDGET_WAIT``，按自己的退避再看，
+        不计入重算次数。其余（来源不可用、准备超时、本任务数据读不回来）都是"再算一遍"：进
+        ``recheck``，同一个持久的 32 次 / 300 秒上限管着所有重算。
+        """
+        try:
+            now_ms = self._settlement_time(claim)
+            if now_ms is None:
+                return
+            if isinstance(error, BudgetError):
+                self.work.wait(
+                    claim,
+                    now_ms=now_ms,
+                    reason=BUDGET_WAIT,
+                    not_before_ms=now_ms + budget_wait_delay_ms(claim.tries),
+                )
+                return
+            reason = (
+                "RECHECK_REQUIRED"
+                if isinstance(error, TimeoutError)
+                else error.code
+                if isinstance(error, AssuranceError)
+                else "MISSION_DATA_UNREADABLE"
+            )
+            self.work.recheck(claim, now_ms=now_ms, reason=reason)
+        except StoreConflict:
+            pass  # a newer target or an elapsed lease owns the row; nothing to move

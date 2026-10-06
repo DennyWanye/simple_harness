@@ -24,11 +24,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..assurance.codec import AssuranceError, canonical, fingerprint, integer, text
+from ..assurance.codec import AssuranceError, canonical, fields, fingerprint, integer, text
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Event, Mission, MissionStatus
 from ..contracts.state_machines import MissionStopReason
 from ..storage.assurance_store import AssuranceStore
+from ..storage.assurance_work import AssuranceWorkStore, WorkTarget
 from ..storage.htn_store import HtnStore
 from .state_machine import next_mission
 
@@ -133,6 +134,21 @@ def request_assured_closeout(
     return pending
 
 
+def notification_body(event: Event) -> dict[str, Any]:
+    """通知请求事件的正文：``note`` 是终态写入时保证状态读取失败的如实说明（A06）；送往 Host 的仍只有
+    ``{mission_id, event_id, state_version}``。"""
+    return fields(dict(event.payload), {"final_event_id", "state_version"}, {"final_event_type", "note"})
+
+
+def notification_work_target(event: Event) -> WorkTarget:
+    """这条通知请求对应的 NOTIFY 待办目标：终态写入（同事务建）与游标摄取（重放）算出同一个。"""
+    body = notification_body(event)
+    return WorkTarget(
+        "notify:" + event.mission_id + ":" + text(body["final_event_id"]),
+        fingerprint({"type": event.type, "payload": body}),
+    )
+
+
 def request_assured_notification(
     commit: Any, mission_id: str, final: Event, *, state_version: int
 ) -> Event | None:
@@ -141,8 +157,13 @@ def request_assured_notification(
     Idempotent per final event (the event key); a Mission that is not assured gets
     nothing.  A Mission whose assurance state cannot be read (A06) still gets its
     terminal notice — the request says so in ``note`` instead of staying silent.
+
+    第 2 批 A20（原计划 §7.3）：NOTIFY 待办与终态事件在同一事务里建，不等下一轮游标摄取；之后游标
+    摄取到同一事件按同目标（同 seq、同指纹）合并。读取失败的任务没有可用的绑定行（待办表外键指它），
+    只发事件，待办仍由游标摄取建。
     """
-    status, code = assurance_lane_status(commit._store, mission_id)
+    store = commit._store
+    status, code = assurance_lane_status(store, mission_id)
     if status == NOT_ASSURED:
         return None
     payload: dict[str, Any] = {
@@ -152,12 +173,17 @@ def request_assured_notification(
     }
     if status == READ_FAILED:
         payload["note"] = f"保证状态读取失败：{code}"
-    return commit._emit(
+    event = commit._emit(
         NOTIFICATION_EVENT,
         mission_id,
         key=f"{mission_id}:{final.id}",
         payload=payload,
     )
+    if status == ASSURED:
+        AssuranceWorkStore(store).seed(
+            mission_id, "NOTIFY", event, (notification_work_target(event),), now_ms=int(store.now * 1000)
+        )
+    return event
 
 
 def finalize_assured_mission(
@@ -307,6 +333,8 @@ __all__ = (
     "closeout_document",
     "finalize_assured_mission",
     "is_assured",
+    "notification_body",
+    "notification_work_target",
     "recorded_judgment",
     "request_assured_closeout",
     "request_assured_notification",

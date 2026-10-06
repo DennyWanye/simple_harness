@@ -123,9 +123,18 @@ class MissionControlV1:
                 raise FacadeError(error.code, "root requires current authorization") from error
 
     def assurance_root_diagnostic(self) -> dict[str, Any]:
+        """非披露诊断（原计划 §10.3）：只有状态、能否执行、是否要当前认证、匿名阻塞码。"""
         gate = self._orchestrator.commit._assurance_root_gate
-        return ({"state": "NOT_INSTALLED", "execution_allowed": False,
-                 "current_authentication_required": True} if gate is None else gate.diagnostic())
+        if gate is None:
+            return {"state": "NOT_INSTALLED", "execution_allowed": False,
+                    "current_authentication_required": True}
+        report = gate.diagnostic()
+        # 第 2 批 A02：启动时安装 / 核对根失败 → 编排只开管理模式（隔离）；诊断如实说隔离，带阻塞码。
+        code = getattr(self._orchestrator, "_assurance_quarantine_code", None)
+        if code is not None:
+            report = {**report, "state": "QUARANTINED", "execution_allowed": False,
+                      "current_authentication_required": True, "blocking_code": str(code)}
+        return report
 
     @_native_root
     def approve_assurance_check_policy(self, command: Mapping[str, Any]) -> dict[str, Any]:

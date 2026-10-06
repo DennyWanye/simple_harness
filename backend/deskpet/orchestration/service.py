@@ -54,6 +54,8 @@ TENANT = "local-desktop"
 WORKSPACE_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
+#: 第 2 批 A02：保证通道根隔离时服务状态里的说明（原计划 §10.1：标记缺失 / 不符 → 隔离，只开非披露诊断）
+QUARANTINE_REASON = "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
 FACADE_CODES = {
     "invalid_request": "invalid_request",
     "conflict": "conflict",
@@ -193,6 +195,9 @@ class OrchestrationService:
         # Assurance 1.1 (plan §13): the SDK deployment installed on the current
         # Orchestrator lifetime.
         self._assurance: Any = None
+        # 第 2 批 A02 / A40：保证通道根隔离时 SDK 的非披露诊断（原计划 §10.1 / §10.3）；NATIVE 时为 None。
+        # 隔离的编排只开管理模式：这里不绑职责、不开驱动、不当"可用"。
+        self._quarantine: dict[str, Any] | None = None
         # HTN 补齐阶段 B 第 1 条：任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
         from .notices import MissionNotices
 
@@ -264,6 +269,10 @@ class OrchestrationService:
                 publish=self._publish,
             )
             write_manifest(self.root, self._manifest)
+            if self._quarantine is not None:
+                # 根隔离：服务起来了，但不是"可用"——只开非披露诊断与隔离只读分支，不驱动循环
+                self._state, self._reason = "quarantined", QUARANTINE_REASON
+                return
             self._state, self._reason = "available", None
             if self._drive_enabled:
                 self._driver = asyncio.get_running_loop().create_task(
@@ -363,16 +372,40 @@ class OrchestrationService:
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
+        control = MissionControlV1(
+            self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
+        )
+        self._quarantine = self._root_quarantine(control)
+        if self._quarantine is not None:
+            # 只留门面给非披露诊断用：不绑职责、不回填通知、不开策略读
+            self._control = control
+            return
         self._bind_host_duties(self._orchestrator)
         self._notices.backfill(self._orchestrator.store)
         self._taskgraph = self._user_missions.taskgraph
         self._assurance = self._user_missions.assurance
-        self._control = MissionControlV1(
-            self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
-        )
+        self._control = control
         self._user_missions.bind(self._orchestrator, self._control)
         self._diagnostics_available = self._detect_diagnostics()
         self._policy = PolicyApi(self._orchestrator.commit, self._principal)
+
+    @staticmethod
+    def _root_quarantine(control: Any) -> dict[str, Any] | None:
+        """SDK 的非披露诊断不是 NATIVE 就是隔离（状态文件缺失 / 标记不符 / 安装身份冲突；原计划 §10.1）。"""
+        report = dict(control.assurance_root_diagnostic())
+        return None if report.get("state") == "NATIVE" else report
+
+    @property
+    def quarantined(self) -> bool:
+        return self._quarantine is not None
+
+    def assurance_root_diagnostic(self) -> dict[str, Any]:
+        """非披露诊断（原计划 §10.3，第 2 批 A40）：状态、能否执行、是否要当前认证、匿名阻塞码，加 Host
+        自己的状态。没有任务标题、路径、对象 id、通知正文。隔离时也开。"""
+        if self._state not in ("available", "degraded", "quarantined") or self._control is None:
+            raise OrchestrationRequestError("orchestration_unavailable", self._reason or "编排服务不可用")
+        report = self._quarantine if self._quarantine is not None else self._control.assurance_root_diagnostic()
+        return {**dict(report), "host_state": self._state}
 
     def _publish_connector(self) -> Any:
         """The file publish connector, but only for a directory the user really authorised.
@@ -456,6 +489,7 @@ class OrchestrationService:
         self._policy = None
         self._taskgraph = None
         self._assurance = None
+        self._quarantine = None
         if orchestrator is not None:
             try:
                 await orchestrator.__aexit__(None, None, None)
@@ -549,6 +583,8 @@ class OrchestrationService:
             try:
                 if self._orchestrator is None:
                     await self._rebuild()
+                if self._quarantine is not None:
+                    return  # 根隔离：不派发任何任务（第 2 批 A02）
                 await self._orchestrator.run()
                 await self._host_duties()
                 self._note_quiet_round()
@@ -802,6 +838,7 @@ class OrchestrationService:
         self._policy = None
         self._taskgraph = None
         self._assurance = None
+        self._quarantine = None
         if old is not None:
             try:
                 await old.__aexit__(None, None, None)
@@ -842,6 +879,12 @@ class OrchestrationService:
         # Publish only after enter and facade construction succeeded. A failed
         # candidate leaves no runnable object; the existing driver retries rebuild.
         self._orchestrator = candidate
+        self._quarantine = self._root_quarantine(control)
+        if self._quarantine is not None:
+            # 重建时发现根隔离：同启动时一样，只留门面给非披露诊断，驱动循环就此停下
+            self._control = control
+            self._state, self._reason = "quarantined", QUARANTINE_REASON
+            return
         self._bind_host_duties(candidate)
         self._notices.backfill(candidate.store)
         self._control = control
@@ -954,6 +997,8 @@ class OrchestrationService:
             "publish": dict(self._publish),
             "diagnostics_available": self._diagnostics_available,
             "assurance_available": self._assurance is not None,
+            # 第 2 批 A40：保证通道根的非披露诊断；隔离时如实写明，上面的 available 为 False
+            "assurance_root": self._assurance_root_status(),
             "storage_over_warn": bool(self._storage.over_warn),
             "context_profiles": self._context_profiles(),
             "native_plane": (
@@ -968,6 +1013,17 @@ class OrchestrationService:
             "deployment_manifest": self._manifest,
             "owner": self.owner,
         }
+
+    def _assurance_root_status(self) -> dict[str, Any] | None:
+        if self._quarantine is not None:
+            return dict(self._quarantine)
+        if self._control is None or self._state not in ("available", "degraded"):
+            return None
+        try:
+            return dict(self._control.assurance_root_diagnostic())
+        except Exception:  # noqa: BLE001 - the status view never raises
+            logger.exception("assurance root diagnostic failed")
+            return None
 
     def note_authorization_mode(self, mode: str) -> None:
         """The Host's auto / manual mode governs chat tool effects only (plan §3.7); it is

@@ -662,15 +662,20 @@ class Orchestrator:
                 self._assurance_root_gate = AssuranceRootGate(self._store, self._config.evidence_root)
                 self._commit._assurance_root_gate = self._assurance_root_gate
                 self._store._assurance_root_gate = self._assurance_root_gate
-                # This callback has only Store/Commit, never live runtime pools.
-                # The Host may bind its CURRENT authenticated management authority.
-                if self._assurance_root_setup is not None:
-                    self._assurance_root_setup(self)
+                #: 根进隔离时的匿名阻塞码（原计划 §10.3 允许披露的一项）；NATIVE 时为 None
+                self._assurance_quarantine_code: str | None = None
                 try:
+                    # This callback has only Store/Commit, never live runtime pools.
+                    # The Host may bind its CURRENT authenticated management authority.
+                    if self._assurance_root_setup is not None:
+                        self._assurance_root_setup(self)
                     self._assurance_root_gate.require_execution()
-                except AssuranceError:
+                except AssuranceError as error:
+                    # 原计划 §10.1（第 2 批 A02）：标记缺失 / 不符、安装身份冲突 → 根进隔离：服务起来，
+                    # 只开非披露诊断与隔离只读分支；不装配、不派发、不自动写回状态文件。
                     # Keep the authenticated management API available. No SDK
                     # pools, recovery, workspace cleanup, Context or dispatch runs.
+                    self._assurance_quarantine_code = error.code
                     self._assurance_management_only = True
                     return self
             if self._provider_token_estimator is not None:

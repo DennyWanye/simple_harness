@@ -56,9 +56,21 @@ def _invalid(message: str = "Assurance 请求的字段或版本无效") -> None:
     raise OrchestrationRequestError("invalid_request", message)
 
 
+def quarantined_read(request: Mapping[str, Any]) -> AssuranceRequestError:
+    """隔离只读分支（原计划 §10.1 / §10.3，第 2 批 A40）：根隔离时三个读动词一律答 SDK 的
+    ``ROOT_QUARANTINED``（host-error-v1），不看对象存不存在、不披露任何正文。"""
+    from agent_orchestrator.api.assurance import AssuranceReadError
+
+    request_id = request.get("request_id") if isinstance(request, Mapping) else None
+    error = AssuranceReadError("ROOT_QUARANTINED", "assurance root is quarantined; only the non-disclosing diagnostic is open")
+    return AssuranceRequestError(error.to_json(request_id if isinstance(request_id, str) and request_id else "unknown"))
+
+
 def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
     if verb not in ASSURANCE_VERBS or not isinstance(request, Mapping):
         _invalid()
+    if service.quarantined:
+        raise quarantined_read(request)
     mission_id = request.get("mission_id")
     if not isinstance(mission_id, str) or not mission_id.strip() or len(mission_id) > 2048:
         _invalid("只接受当前任务的 mission_id")

@@ -32,7 +32,7 @@ from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import WorkClaim, WorkTarget, atomic
 from ..storage.htn_store import HtnStore
 from ..storage.store import _event_from_row
-from .assurance_final_writer import recorded_judgment
+from .assurance_final_writer import notification_body, notification_work_target, recorded_judgment
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 #: 收尾原因：有资料变更还没问完规划器。
@@ -884,17 +884,13 @@ class AssuranceNotifyConsumer(_ConsumerBase):
 
     @staticmethod
     def _body(event: Event) -> dict:
-        # ``note``：终态写入时保证状态读取失败的如实说明（A06）；送往 Host 的仍只有三个字段。
-        return fields(
-            dict(event.payload), {"final_event_id", "state_version"}, {"final_event_type", "note"}
-        )
+        return notification_body(event)
 
     def classify(self, event: Event) -> tuple[WorkTarget, ...]:
         if event.type != NOTIFICATION_EVENT:
             return ()
-        body = self._body(event)
-        key = "notify:" + event.mission_id + ":" + text(body["final_event_id"])
-        return (WorkTarget(key, fingerprint({"type": event.type, "payload": body})),)
+        # 与终态写入同事务建的那条待办是同一个目标（第 2 批 A20）：重放只合并，不冲突
+        return (notification_work_target(event),)
 
     async def prepare(self, claim: WorkClaim) -> PreparedAssuranceWork | AssuranceWait:
         if self.store.connection.in_transaction:
