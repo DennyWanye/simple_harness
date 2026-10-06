@@ -37,18 +37,18 @@ NOTIFICATION_EVENT = "AssuranceStatusNotificationRequested"
 CLOSEOUT_REQUESTED_EVENT = "AssuranceCloseoutRequested"
 JUDGMENT_KEY = "assurance_judgment"
 CLOSEOUT_KEY = "assurance_closeout"
-#: closeout-v1（``plans/Assurance/specs/1.1/contracts/closeout-v1.schema.json``）的字段；收尾记录、
-#: 定稿回执、任务最终报告里的收尾记录都按它写（第 1 批 A17）。``read_set`` 不写：收尾没有自己的读集，
-#: 它依赖的证书各自带读集。
+#: closeout-v1（``assurance/schemas/closeout-v1.schema.json``，与 ``plans/Assurance/specs/1.1/contracts`` 同一份）
+#: 的字段，与 schema 的 ``required`` 相等；收尾行正文、定稿回执的文档部分、任务最终报告里的收尾记录都只有
+#: 这些键（第 1 批 A17；第 2 批车道 N 补 ``read_set``：收尾自己读了根结论 / 要求版本 / 完成范围 / 权限）。
 CLOSEOUT_V1_FIELDS = (
     "schema_version", "mission_id", "root_resolution_ref", "requirements_ref", "completion_spec_hash",
     "state", "pending_effect_keys", "unsettled_operation_refs", "accounting_pending_refs",
-    "dangerous_work_refs", "report_ref", "as_of_ms", "reasons",
+    "dangerous_work_refs", "read_set", "report_ref", "as_of_ms", "reasons",
 )
 
 
 def closeout_document(evaluation: Mapping[str, Any], **overrides: Any) -> dict[str, Any]:
-    """收尾评估正文里的 closeout-v1 文档部分（内部核对字段不带）。"""
+    """收尾评估里的 closeout-v1 文档部分（内部核对字段不带；字段集与 schema 相等）。"""
     document = {name: evaluation.get(name) for name in CLOSEOUT_V1_FIELDS}
     document.update(overrides)
     return document
@@ -212,8 +212,8 @@ def finalize_assured_mission(
     ).fetchone()
     if row is None or row["state"] != "READY":
         raise AssuranceError("CLOSEOUT_NOT_READY")
-    resolution_ref = evaluation.get("root_resolution_ref")
-    if resolution_ref is None or row["resolution_id"] != resolution_ref["pin"]["id"]:
+    resolution_ref = evaluation.get("root_resolution_ref")  # closeout-v1：pin
+    if resolution_ref is None or row["resolution_id"] != resolution_ref["id"]:
         raise AssuranceError("RECHECK_REQUIRED", "closeout resolution")
     mission = commit._require_mission(mission_id)
     if mission.status is not MissionStatus.ACTIVE:
@@ -241,6 +241,11 @@ def finalize_assured_mission(
         "previous_check_body_hash": row["check_body_hash"],
         "judged_event_id": judgment["judged_event_id"],
         "state_version": state_version,
+        # 内部核对字段随回执走（第 2 批车道 N）：Host 诊断按根化身 / 纪元判 ROOT_CHANGED / SOURCE_CHANGED。
+        "mission_version": int(mission.version),
+        "root_incarnation_id": evaluation["root_incarnation_id"],
+        "epochs": dict(evaluation["epochs"]),
+        "authorization": list(evaluation["authorization"]),
     }
     digest = fingerprint(body)
     ref = AssuranceRef("commit_receipt", Pin(receipt_id, 0, digest))
@@ -271,7 +276,8 @@ def finalize_assured_mission(
         proposal_hash=digest,
         receipt=body,
     )
-    check = {**dict(evaluation), "state": "FINALIZED", "as_of_ms": now_ms, "report_ref": ref.to_json()}
+    # 收尾行正文就是任务最终报告里的那份 closeout-v1 文档（内部核对字段在定稿回执里）。
+    check = report[CLOSEOUT_KEY]
     moved = connection.execute(
         "UPDATE assurance_closeouts SET state='FINALIZED',row_version=?,check_body_hash=?,"
         "check_body_json=?,last_receipt_id=?,updated_at_ms=? WHERE mission_id=? AND row_version=?",

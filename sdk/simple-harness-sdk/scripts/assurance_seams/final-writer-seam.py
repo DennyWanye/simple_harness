@@ -115,8 +115,7 @@ async def main() -> None:
             # 定稿以后：再交一次 READY 评估（比如重启后重放）按名拒绝，什么都不写。
             before = store.connection.total_changes
             stale = {"mission_id": mission_id, "state": "READY", "mission_version": completed.version, "reasons": [],
-                     "root_resolution_ref": {"kind": "resolution", "pin": {"id": row["resolution_id"], "revision": 0,
-                                                                            "content_hash": "0" * 64}}}
+                     "root_resolution_ref": {"id": row["resolution_id"], "revision": 0, "content_hash": "0" * 64}}
             with store.transaction():
                 try:
                     finalize_assured_mission(commit, mission_id, stale)

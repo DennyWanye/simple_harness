@@ -47,7 +47,7 @@ def _quick(monkeypatch):
 def _decide(**overrides: Any) -> dict[str, Any]:
     consumer = object.__new__(AssuranceCloseoutConsumer)  # 只用 _drain_decision，不碰库
     consumer.store = SimpleNamespace(get_intent=lambda _intent_id: None)  # 开着的调用都不是"等不到的原调用"
-    facts: dict[str, Any] = {"reasons": [], "unknown": [], "open_intents": [],
+    facts: dict[str, Any] = {"reasons": [], "unknown": [], "open_operations": [], "open_intents": [],
                              "open_reservations": [], "usage_fully_known": True}
     facts.update(overrides)
     return consumer._drain_decision("mission-x", **facts)
