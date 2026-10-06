@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""真实模型验收：Assurance 原计划 §15 的四个场景 + 2026-10-06 用户加的编程题，每题 3 局。
+"""真实模型验收：Assurance 原计划 §15 的四个场景 + 2026-10-06 用户加的编程题 + 补齐清单 V28
+"两条线共用一步、其中一条换做法"，每题 3 局。
 
 跑法（产品同形）：每局起一个隔离的开发模式后台（独立数据目录、DeepSeek 线路经本机闸口），
 用后台的控制通道建任务、按场景触发事实、批准该人批的卡，任务结束后只读库和产物文件核对。
@@ -18,7 +19,11 @@
 
     backend/.venv/bin/python backend/scripts/assurance_model_scenarios/run.py <场景…> [--trials 3] [--out 目录]
 
-场景名：accurate-report / bad-draft-rework / source-replaced-midway / publish-lost-reply / billing-tool。
+场景名：accurate-report / bad-draft-rework / source-replaced-midway / publish-lost-reply / billing-tool /
+shared-step-switch-method。
+
+V28 那一局另有"观察项"（``observed``：点名共用、换做法），只记不判，单列在 record 与 summary 里，
+供如实报告"观察到 / 没观察到"；通过与否只看任务完成、判定、预算。
 证据：``<out>/<场景>/trial-N/attempt-K/record.json`` 与 ``<out>/summary.jsonl``。
 """
 from __future__ import annotations
@@ -66,8 +71,11 @@ FACTS_DISCOUNT = "item,quantity,unit_cost\nA,12,12\nB,4,25\n"
 BAD_CANDIDATE = json.dumps({"total_cost": 290, "rows": [{"item": "A", "cost": 120}, {"item": "B", "cost": 100}],
                             "source_version": 1}, ensure_ascii=False, indent=2) + "\n"
 
+BAD_SUMMARY = "| item | cost |\n| --- | --- |\n| A | 120 |\n| B | 100 |\n\n合计：290 元\n"
+
 REPORT_RULE = ("report.json 是一个 JSON 对象：rows 为列表，每项含 item 与 cost（cost = quantity × unit_cost）；"
                "total_cost 为各项 cost 之和；source_sha256 为资料 sources/facts.csv 文件内容的 SHA-256（十六进制小写）。")
+COSTS_RULE = REPORT_RULE.replace("report.json", "costs.json")
 
 
 def sha(data: bytes | str) -> str:
@@ -131,18 +139,41 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "oracle": "billing",
         "expect": {"hash": sha(FACTS_V1)},
     },
+    # 补齐清单 V28：两条线共用一步、其中一条换做法。题目只给出结构上的共用机会（一份两条线都要依据的
+    # 明细文件 + 两份彼此独立的交付），不提"共用"二字；换做法的理由是客户线第一次交的 summary.md 被
+    # 钩子换成合计写错的草稿（同 bad-draft-rework 的造法），审阅打回后由规划器自己判：重做、换做法还是别的。
+    "shared-step-switch-method": {
+        "title": "两份交付依据同一份明细，其中一份第一次交错了",
+        "goal": ("根据资料 sources/facts.csv 先算出费用明细文件 costs.json（rows 为列表，每项含 item 与 cost，"
+                 "cost = quantity × unit_cost；total_cost 为各项 cost 之和；source_sha256 为资料文件内容的 SHA-256）。"
+                 "再以 costs.json 为依据出两份彼此独立的交付：给财务的 finance.csv（表头 item,cost，每项一行，"
+                 "最后一行 TOTAL,<合计>），给客户的 summary.md（Markdown 表格列出每一项的费用，表格后一行写"
+                 "“合计：<合计> 元”）。两份交付里的数字都必须与 costs.json 一致。只出文件，不要写测试代码，不发送。"),
+        "criteria": ["file:costs.json", "file:finance.csv", "file:summary.md", COSTS_RULE,
+                     "finance.csv 表头为 item,cost，每项一行费用，最后一行为 TOTAL,<合计>，数字与 costs.json 一致",
+                     "summary.md 用 Markdown 表格列出每一项的费用，表格后一行为“合计：<合计> 元”，数字与 costs.json 一致"],
+        "sources": {"sources/facts.csv": FACTS_V1},
+        "hook": "swap_first_report",
+        "hook_target": "summary.md",
+        "bad_content": BAD_SUMMARY,
+        "oracle": "shared",
+        "shared_path": "costs.json",
+        "expect": {"A": 120, "B": 100, "total": 220, "hash": sha(FACTS_V1)},
+    },
 }
 
 
 # ------------------------------------------------------------------ 后台
 class Backend:
-    def __init__(self, run_dir: Path, *, hook: str | None, hook_target: str = "report.json") -> None:
+    def __init__(self, run_dir: Path, *, hook: str | None, hook_target: str = "report.json",
+                 bad_content: str = BAD_CANDIDATE) -> None:
         self.run_dir = run_dir
         self.userdata = run_dir / "userdata"
         self.published = run_dir / "published"
         self.hook_log = run_dir / "hooks.jsonl"
         self.hook = hook
         self.hook_target = hook_target
+        self.bad_content = bad_content
         self.process: subprocess.Popen[bytes] | None = None
 
     def prepare(self) -> None:
@@ -181,7 +212,7 @@ class Backend:
         if self.hook:
             env["ASSURANCE_SCENARIO_HOOK"] = self.hook
             bad = self.run_dir / "bad-candidate.json"
-            bad.write_text(BAD_CANDIDATE, encoding="utf-8")
+            bad.write_text(self.bad_content, encoding="utf-8")
             env["ASSURANCE_HOOK_BAD_FILE"] = str(bad)
         (self.run_dir / "logs").mkdir(exist_ok=True)
         out = open(self.run_dir / "backend.out", "ab")
@@ -326,7 +357,8 @@ def verdict(final_status: str, oracle: dict[str, Any], usage: dict[str, Any], wa
 
 async def run_trial(name: str, trial: int, attempt: int, run_dir: Path) -> dict[str, Any]:
     spec = SCENARIOS[name]
-    backend = Backend(run_dir, hook=spec.get("hook"))
+    backend = Backend(run_dir, hook=spec.get("hook"), hook_target=spec.get("hook_target", "report.json"),
+                      bad_content=spec.get("bad_content", BAD_CANDIDATE))
     backend.prepare()
     record: dict[str, Any] = {"scenario": name, "title": spec["title"], "trial": trial, "attempt": attempt,
                               "limits": dict(LIMITS), "started_at": time.time(),
@@ -596,7 +628,160 @@ def oracle_billing(backend: Backend, record: dict[str, Any], spec: dict[str, Any
     return checks
 
 
-ORACLES = {"report": oracle_report, "publish": oracle_publish, "billing": oracle_billing}
+def live_tasks(connection: sqlite3.Connection, mission_id: str) -> set[str] | None:
+    """现行计划版本（最新的 ACTIVE 版本）里被采用的普通步骤的 task_id；库里没有计划版本时返回 None（不过滤）。
+
+    换做法 / 接替之后，旧步骤的验收可能仍是 CURRENT，但它已不在现行计划里——"只有一份被验收的结果"
+    只数现行计划里的步骤，旧步骤是历史，不算重复执行。"""
+    row = connection.execute("SELECT max(revision) FROM plan_revisions WHERE mission_id=? AND state='ACTIVE'",
+                             (mission_id,)).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return {str(r[0]) for r in connection.execute(
+        "SELECT DISTINCT task_id FROM plan_memberships WHERE mission_id=? AND revision=? AND adopted=1"
+        " AND form='primitive'", (mission_id, row[0]))}
+
+
+def live_accepted(connection: sqlite3.Connection, mission_id: str) -> dict[str, list[tuple[str, str]]]:
+    """现行验收（CURRENT）里、现行计划步骤交的产物：path → [(task_id, content_hash)…]，一条路径可能有几个步骤。"""
+    live = live_tasks(connection, mission_id)
+    out: dict[str, list[tuple[str, str]]] = {}
+    for row in connection.execute("SELECT task_id, acceptance_json FROM acceptances WHERE mission_id=? AND validity='CURRENT'",
+                                  (mission_id,)):
+        if live is not None and str(row[0]) not in live:
+            continue
+        for ref in json.loads(row[1]).get("artifact_refs") or ():
+            art = connection.execute("SELECT path, content_hash FROM artifacts WHERE artifact_id=?", (ref["id"],)).fetchone()
+            if art is not None and (str(row[0]), art["content_hash"]) not in out.get(art["path"], []):
+                out.setdefault(art["path"], []).append((str(row[0]), art["content_hash"]))
+    return out
+
+
+def sharing_observations(connection: sqlite3.Connection, mission_id: str) -> tuple[dict[str, bool], dict[str, Any]]:
+    """V28 的两个观察项，只读产品库里的计划事实（不读模型说了什么）：
+
+    * ``named_sharing``：某个步骤被**两个不同目标**的做法实例同时当作子步骤持有，且至少一方是点名共用
+      （``method_child_occurrences.reuse_policy`` 为 ``share_active`` / ``reuse_accepted``）。同一目标换做法时
+      沿用旧步骤（新旧实例属于同一个目标）不算两条线共用。
+    * ``method_switched``：某个分支目标（它本身是别的做法的子步骤，不是根）有一个已退休（RETIRED）的做法
+      实例，且之后的计划版本里同一目标换上了不同的做法（做法 id / 版本 / 内容哈希有一项不同）。
+
+    返回 (观察项, 细节)；细节里列出每个点名共用的步骤、每次换做法（含根目标的，``is_branch`` 标明）。"""
+    holders: dict[str, list[dict[str, Any]]] = {}
+    for row in connection.execute(
+            "SELECT c.occurrence_id, c.reuse_policy, i.instance_id, i.goal_occurrence_id, i.state"
+            " FROM method_child_occurrences c JOIN method_instances i"
+            " ON i.mission_id=c.mission_id AND i.instance_id=c.instance_id WHERE c.mission_id=?", (mission_id,)):
+        holders.setdefault(str(row[0]), []).append({"policy": str(row[1]), "instance": str(row[2]),
+                                                    "goal": str(row[3]), "state": str(row[4])})
+    tasks = {str(r[0]): str(r[1]) for r in connection.execute(
+        "SELECT DISTINCT occurrence_id, task_id FROM plan_memberships WHERE mission_id=?", (mission_id,))}
+    shared = []
+    for occurrence, rows in sorted(holders.items()):
+        goals = sorted({r["goal"] for r in rows})
+        named = sorted({r["policy"] for r in rows if r["policy"] in ("share_active", "reuse_accepted")})
+        if named and len(goals) >= 2:
+            shared.append({"occurrence_id": occurrence, "task_id": tasks.get(occurrence), "held_by_goals": goals,
+                           "reuse_policy": named,
+                           "adopted_holders": len({r["instance"] for r in rows if r["state"] == "ADOPTED"})})
+    children = set(holders)
+    instances = [dict(r) for r in connection.execute(
+        "SELECT instance_id, goal_occurrence_id, method_id, method_version, method_content_hash, plan_revision, state"
+        " FROM method_instances WHERE mission_id=? ORDER BY plan_revision, created_at", (mission_id,))]
+    shared_ids = {item["occurrence_id"] for item in shared}
+    switches = []
+    for old in instances:
+        if old["state"] != "RETIRED":
+            continue
+        ref = (old["method_id"], old["method_version"], old["method_content_hash"])
+        for new in instances:
+            if (new["goal_occurrence_id"] == old["goal_occurrence_id"] and new["plan_revision"] > old["plan_revision"]
+                    and (new["method_id"], new["method_version"], new["method_content_hash"]) != ref):
+                keeps = sorted(o for o, rows in holders.items() if o in shared_ids
+                               and any(r["instance"] == new["instance_id"] for r in rows))
+                switches.append({"goal_occurrence_id": old["goal_occurrence_id"],
+                                 "is_branch": old["goal_occurrence_id"] in children,
+                                 "retired": f"{old['method_id']}@{old['method_version']}",
+                                 "replacement": f"{new['method_id']}@{new['method_version']}",
+                                 "at_plan_revision": new["plan_revision"], "keeps_shared_steps": keeps})
+                break
+    observed = {"named_sharing": bool(shared), "method_switched": any(item["is_branch"] for item in switches)}
+    return observed, {"named_shared_steps": shared, "method_switches": switches}
+
+
+def _summary_ok(text: str, expect: dict[str, Any]) -> bool:
+    """summary.md：有 Markdown 表格，每一项一行带它的费用，另有一行"合计"写对合计。"""
+    def num(value: Any) -> str:
+        return rf"(?<![0-9.]){value}(?:\.0+)?(?![0-9.])"
+
+    lines = text.splitlines()
+    table = [line for line in lines if line.strip().startswith("|")]
+    items = all(any(re.search(rf"(?<![A-Za-z0-9]){item}(?![A-Za-z0-9])", line) and re.search(num(expect[item]), line)
+                    for line in table) for item in ("A", "B"))
+    total = any("合计" in line and re.search(num(expect["total"]), line) for line in lines)
+    return bool(table) and items and total
+
+
+def _finance_ok(text: str, expect: dict[str, Any]) -> bool:
+    import csv
+    import io
+
+    rows = [[cell.strip() for cell in row] for row in csv.reader(io.StringIO(text)) if any(c.strip() for c in row)]
+    if not rows or [c.lower() for c in rows[0]] != ["item", "cost"] or any(len(r) != 2 for r in rows[1:]):
+        return False
+    try:
+        body = {r[0]: float(r[1]) for r in rows[1:]}
+    except ValueError:
+        return False
+    return (rows[-1][0] == "TOTAL" and body == {"A": expect["A"], "B": expect["B"], "TOTAL": expect["total"]})
+
+
+def oracle_shared(backend: Backend, record: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
+    """V28 一局的判定。通过条件（进 checks）：根结论 / 收尾 / 两次正式审阅、三个文件都被验收且内容对、
+    没有任何操作、钩子确实造了错稿且错稿没被验收、**共用的明细文件在现行计划里只有一份被验收的结果**
+    （两条线各算一遍 costs.json 判 FAIL）。观察项（点名共用 / 换做法）写进 ``record["observed"]``，不进 checks。"""
+    expect = spec["expect"]
+    connection = db(backend)
+    mission_id = record.get("mission_id")
+    checks = _common(connection, mission_id)
+    accepted = live_accepted(connection, mission_id)
+    shared_path = spec.get("shared_path", "costs.json")
+    record["shared_output_acceptances"] = accepted.get(shared_path, [])
+    checks["shared_step_accepted_once"] = len({task for task, _ in accepted.get(shared_path, [])}) == 1
+
+    def body(path: str) -> list[str]:
+        return [artifact_bytes(backend, h).decode("utf-8") for _, h in accepted.get(path, [])]
+
+    for path in ("costs.json", "finance.csv", "summary.md"):
+        checks[f"{path}_accepted"] = path in accepted
+    try:
+        costs = [json.loads(text) for text in body("costs.json")]
+        ok = bool(costs)
+        for item in costs:
+            rows = {str(r.get("item")): r.get("cost") for r in item.get("rows") or ()}
+            ok = ok and float(rows.get("A", -1)) == expect["A"] and float(rows.get("B", -1)) == expect["B"] \
+                and float(item.get("total_cost", -1)) == expect["total"] \
+                and str(item.get("source_sha256", "")).lower() == expect["hash"]
+        checks["costs_content"] = ok
+        finance = body("finance.csv")
+        checks["finance_content"] = bool(finance) and all(_finance_ok(text, expect) for text in finance)
+        summary = body("summary.md")
+        checks["summary_content"] = bool(summary) and all(_summary_ok(text, expect) for text in summary)
+        record["deliverables"] = {"costs.json": costs, "finance.csv": finance, "summary.md": summary}
+    except Exception as error:  # noqa: BLE001
+        checks["deliverables_readable"] = f"{type(error).__name__}: {error}"
+    checks["no_operations"] = connection.execute("SELECT count(*) FROM actions WHERE mission_id=?",
+                                                 (mission_id,)).fetchone()[0] == 0
+    checks["bad_draft_was_written"] = any(h.get("path") for h in record.get("hooks") or ())
+    bad_hash = sha(spec.get("bad_content", BAD_SUMMARY))
+    checks["bad_draft_never_accepted"] = all(h != bad_hash for _, h in accepted.get("summary.md", []))
+    observed, detail = sharing_observations(connection, mission_id)
+    record["observed"] = observed
+    record["observed_detail"] = detail
+    return checks
+
+
+ORACLES = {"report": oracle_report, "publish": oracle_publish, "billing": oracle_billing, "shared": oracle_shared}
 
 
 # ------------------------------------------------------------------ 入口
@@ -623,16 +808,33 @@ async def main() -> None:
                           "fail_reasons": [f"环境故障（INVALID_ENV）：{type(error).__name__}: {error}"]}
                 (run_dir / "record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1, default=str),
                                                      encoding="utf-8")
-            line = {k: record.get(k) for k in ("scenario", "title", "trial", "attempt", "mission_id", "final_status",
-                                                "passed", "within_budget", "fail_reasons", "wall_seconds", "usage",
-                                                "oracle", "error")}
-            line["run_dir"] = str(run_dir)
+            line = summary_line(record, run_dir)
             with summary_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(line, ensure_ascii=False, default=str) + "\n")
             print(f"   结果 {record.get('final_status')} 通过={record.get('passed')} 在计划预算内={record.get('within_budget')} "
-                  f"用量={record.get('usage')} 未过原因={record.get('fail_reasons')}",
+                  f"用量={record.get('usage')} 未过原因={record.get('fail_reasons')}"
+                  + (f" 观察项={observed_text(record['observed'])}" if record.get("observed") is not None else ""),
                   flush=True)
     print_history(summary_path, args.scenarios)
+
+
+def summary_line(record: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+    """summary.jsonl 的一行。有观察项的场景（V28）把 ``observed`` 单列，不混进通过与否。"""
+    line = {k: record.get(k) for k in ("scenario", "title", "trial", "attempt", "mission_id", "final_status",
+                                       "passed", "within_budget", "fail_reasons", "wall_seconds", "usage",
+                                       "oracle", "error")}
+    if "observed" in record or SCENARIOS.get(str(record.get("scenario")), {}).get("oracle") == "shared":
+        line["observed"] = record.get("observed")  # 环境故障 / 判定出错时是 None：如实写"没有记录"
+    line["run_dir"] = str(run_dir)
+    return line
+
+
+def observed_text(observed: dict[str, bool] | None) -> str:
+    """观察项的中文写法："点名共用：观察到 / 换做法：没观察到"。"""
+    names = {"named_sharing": "点名共用", "method_switched": "换做法"}
+    if observed is None:
+        return "没有记录（本局没跑到判定）"
+    return " / ".join(f"{names.get(k, k)}：{'观察到' if v else '没观察到'}" for k, v in observed.items())
 
 
 def print_history(summary_path: Path, scenarios: list[str]) -> None:
@@ -643,7 +845,8 @@ def print_history(summary_path: Path, scenarios: list[str]) -> None:
         for row in sorted((r for r in rows if r.get("scenario") == name),
                           key=lambda r: (int(r.get("trial") or 0), int(r.get("attempt") or 0))):
             print(f"   {name} 第 {row.get('trial')} 局 第 {row.get('attempt') or '?'} 次尝试：{row.get('final_status')} "
-                  f"通过={row.get('passed')} 预算内={row.get('within_budget')} 未过原因={row.get('fail_reasons')}", flush=True)
+                  f"通过={row.get('passed')} 预算内={row.get('within_budget')} 未过原因={row.get('fail_reasons')}"
+                  + (f" 观察项={observed_text(row.get('observed'))}" if "observed" in row else ""), flush=True)
 
 
 if __name__ == "__main__":

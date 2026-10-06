@@ -6,7 +6,8 @@
 ``ASSURANCE_SCENARIO_HOOK`` 指定要装的钩子；产品源码一行不动。
 
 * ``swap_first_report``：第一次尝试交回结果、工作区拍快照之前，把 ``ASSURANCE_HOOK_TARGET``（默认
-  report.json）在磁盘上换成事先准备好的错误报告（``ASSURANCE_HOOK_BAD_FILE``）——场景二"错误的草稿"。
+  report.json）在磁盘上换成事先准备好的错误报告（``ASSURANCE_HOOK_BAD_FILE``）——场景二"错误的草稿"；
+  V28"两条线共用一步、其中一条换做法"用同一个钩子，目标换成 summary.md（合计写错的客户摘要）。
 * ``lose_first_publish_reply``：第一次发布，连接器真的把文件放到了接收目录，但回执在路上丢了
   （抛传输错误）——场景四"回执丢了，不能重发"。
 
