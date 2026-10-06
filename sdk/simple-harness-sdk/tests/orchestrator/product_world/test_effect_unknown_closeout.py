@@ -47,7 +47,7 @@ def _quick(monkeypatch):
 def _decide(**overrides: Any) -> dict[str, Any]:
     consumer = object.__new__(AssuranceCloseoutConsumer)  # 只用 _drain_decision，不碰库
     consumer.store = SimpleNamespace(get_intent=lambda _intent_id: None)  # 开着的调用都不是"等不到的原调用"
-    facts: dict[str, Any] = {"reasons": [], "unknown_effects": [], "open_intents": [],
+    facts: dict[str, Any] = {"reasons": [], "unknown": [], "open_intents": [],
                              "open_reservations": [], "usage_fully_known": True}
     facts.update(overrides)
     return consumer._drain_decision("mission-x", **facts)
@@ -58,22 +58,43 @@ def test_the_default_success_policy_blocks_on_an_unknown_effect():
     其余→READY。效果不明时即使没有别的欠账也不就绪，而且不走"按上限结清"（2026-09-26 的上限规则只
     结费用，不结效果）。
 
-    **改坏检验**：去掉 ``_drain_decision`` 里 ``elif unknown_effects`` 这一档 → 效果不明被当成就绪 → 变红。"""
+    **改坏检验**：去掉 ``_drain_decision`` 里 ``elif unknown`` 这一档 → 效果不明被当成就绪 → 变红。"""
     assert _decide() == {"state": "READY", "reasons": []}
     assert _decide(reasons=["ROOT_RESOLUTION_NOT_ACCEPT"]) == {
         "state": "NOT_READY", "reasons": ["ROOT_RESOLUTION_NOT_ACCEPT"]}
-    blocked = _decide(unknown_effects=["publish-weekly"])
+    blocked = _decide(unknown=["publish-weekly"])
     assert (blocked["state"], blocked["reasons"]) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"])
     assert "usage_counted_at_upper_bound" not in blocked
     # 效果不明优先于"预留未结 / 用量不明"，不会被按上限结清
-    with_money = _decide(unknown_effects=["publish-weekly"], open_reservations=["m:assurance:k:1"],
+    with_money = _decide(unknown=["publish-weekly"], open_reservations=["m:assurance:k:1"],
                          usage_fully_known=False)
     assert (with_money["state"], with_money["reasons"]) == ("BLOCKED_UNKNOWN", ["EFFECT_UNKNOWN"])
     assert "usage_counted_at_upper_bound" not in with_money
     # 依据失效比效果不明更靠前
-    assert _decide(reasons=["EVIDENCE_STALE"], unknown_effects=["publish-weekly"])["state"] == "NOT_READY"
+    assert _decide(reasons=["EVIDENCE_STALE"], unknown=["publish-weekly"])["state"] == "NOT_READY"
     # 效果已知、只剩开着的调用：排水
     assert _decide(open_intents=["intent-1"]) == {"state": "DRAINING", "reasons": ["OPEN_INTENTS"]}
+
+
+def test_a_root_short_only_of_an_unknown_effect_is_blocked_unknown_not_scope_unmet():
+    """第 1 批偏差 2（B 口径）：收尾评估里，根范围没满足但**只差结果不明的效果**（内容已就绪、每项必需效果
+    不是已验收就是结果不明）→ 不记 ``ROOT_SCOPE_UNMET``，由 ``_drain_decision`` 报 ``BLOCKED_UNKNOWN``；
+    内容没好、效果还在等申请单 / 审阅的，照旧是 ``ROOT_SCOPE_UNMET``。
+
+    **改坏检验**：``unmet_only_by_unknown_effects`` 恒 False（所有未满足的根都落 ROOT_SCOPE_UNMET）→ 变红。"""
+    from agent_orchestrator.orchestrator.assurance_consumers import unmet_only_by_unknown_effects as only_unknown
+
+    ready = SimpleNamespace(content_ready=True, effects_ready=False, complete=False)
+    assert only_unknown(ready, {"publish-weekly": "RECONCILIATION_REQUIRED"})
+    assert only_unknown(ready, {"a": "ACCEPTED", "b": "RECONCILIATION_REQUIRED"})
+    # 内容没好：范围未满足，不是效果不明
+    assert not only_unknown(SimpleNamespace(content_ready=False), {"publish-weekly": "RECONCILIATION_REQUIRED"})
+    # 效果在等审阅 / 申请单 / 执行：不是"结果不明"
+    for state in ("AWAITING_OUTCOME_REVIEW", "AWAITING_INTENT", "EXECUTING", "AWAITING_APPROVAL", "SCOPE_STALE"):
+        assert not only_unknown(ready, {"publish-weekly": state}), state
+        assert not only_unknown(ready, {"a": "RECONCILIATION_REQUIRED", "b": state}), state
+    # 没有必需效果、或全部已验收：没有不明可言
+    assert not only_unknown(ready, {}) and not only_unknown(ready, {"a": "ACCEPTED"})
 
 
 # ------------------------------------------------------------------ 产品同形世界
@@ -130,7 +151,7 @@ def _closeout(world: Any, mission_id: str) -> tuple[str | None, list[str], list[
     if row is None:
         return None, [], []
     body = decode(row["check_body_json"])
-    return str(row["state"]), list(body.get("reasons") or []), list(body.get("unknown_effects") or [])
+    return str(row["state"]), list(body.get("reasons") or []), list(body.get("pending_effect_keys") or [])
 
 
 async def _publish_with_an_unknown_result(world: Any, published: Any, key: str) -> tuple[str, dict[str, Any]]:
@@ -176,7 +197,7 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
     """发布的结果不明 → 任务不完成（ACTIVE）、没有"任务完成"事件、收尾没定稿、Host 没收到完成通知，
     再空转几轮也一样；发布出去的那份文件也没有被再发一次。
 
-    **改坏检验**：收尾不看效果状态（``_evaluate_locked`` 里把 ``unknown_effects`` 当空、``unmet`` 当空）→
+    **改坏检验**：收尾不看效果状态（``_evaluate_locked`` 里把 ``unknown`` 当空、``unmet`` 当空）→
     结果不明时也评成就绪 → 变红；``root_review_ready`` 不等效果 → 终审提前开 → 变红。"""
     _lose_the_first_reply(monkeypatch)
 
@@ -319,9 +340,10 @@ def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_def
 
 @pytest.mark.xfail(
     strict=True,
-    reason="与原计划 §7.2 的偏差（车道 C 记录 V01-偏差 2）：BLOCKED_UNKNOWN 在现有代码里到不了——终审要等效果齐备"
-           "（root_review_ready 查 effects_ready），效果不明时根结论尚未形成，收尾评估记 NOT_READY/ROOT_RESOLUTION_MISSING"
-           "且不写收尾行；即使根结论已有，效果不明也先落 ROOT_SCOPE_UNMET → NOT_READY。'不收尾'这条保证成立，状态词不是计划写的那个。",
+    reason="第 1 批车道 E 偏差单（偏差 2 B 口径做了一半）：收尾评估现在已对'只差结果不明效果'的根不记 ROOT_SCOPE_UNMET"
+           "（unmet_only_by_unknown_effects），但这个局面——首次发布结果不明、终审还没开——收尾根本拿不到根结论："
+           "root_review_ready 要每个根 effects_ready 才开终审，_decide_actions 又要每个要求动作 SUCCEEDED 才判定；"
+           "原计划 §7.2 要的是'根结论可先于效果形成、收尾 BLOCKED_UNKNOWN 等效果收敛'。要不要重排终态顺序由主会话 / 用户定。",
 )
 def test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown(tmp_path, monkeypatch):
     """原计划 §7.2 的字面要求：危险 / 必需效果 UNKNOWN → ``assurance_closeouts.state='BLOCKED_UNKNOWN'``，
