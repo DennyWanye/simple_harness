@@ -252,7 +252,18 @@ class AssuranceValidity:
         return self.prepare_accept_use(
             self.official_record_for_result(mission_id, result_id, requirements_revision))
 
-    def prepare_accept_use(self, record: ReviewRecord) -> CandidateUseCertificate:
+    # ------------------------------------------------------------ diagnostics
+    def diagnose_accept_use_for_result(self, mission_id: str, result_id: str) -> CandidateUseCertificate:
+        """纯算（第 1 批 A04）：Host 诊断 ``use_check`` 用——同一套计算，但不记入共用候选缓存、不动
+        锁表，所以一次诊断顶不掉、也清不掉正在进行的真实验收候选。"""
+        return self.prepare_accept_use(
+            self.official_record_for_result(mission_id, result_id), remember=False)
+
+    def diagnose_root_use(self, record: ReviewRecord, *, resolution_id: str) -> CandidateUseCertificate:
+        """纯算（第 1 批 A04）：根结论诊断用，同上。"""
+        return self.prepare_root_use(record, resolution_id=resolution_id, remember=False)
+
+    def prepare_accept_use(self, record: ReviewRecord, *, remember: bool = True) -> CandidateUseCertificate:
         """Bounded read/compute outside the write lock; nothing is written.
 
         The leaf ACCEPT use of an official ``TASK_CONTENT`` record: consumer is the
@@ -265,7 +276,7 @@ class AssuranceValidity:
             return ACCEPTANCE_CONSUMER, acceptance_id_for(
                 owner_task, target.pin.id, int(record.binding.requirements_revision))
 
-        return self._prepare_use(record, consumer)
+        return self._prepare_use(record, consumer, remember=remember)
 
     def prepare_outcome_use(
         self, record: ReviewRecord, *, acceptance_id: str
@@ -287,7 +298,7 @@ class AssuranceValidity:
         return self._prepare_use(record, consumer)
 
     def prepare_root_use(
-        self, record: ReviewRecord, *, resolution_id: str
+        self, record: ReviewRecord, *, resolution_id: str, remember: bool = True
     ) -> CandidateUseCertificate:
         """The ACCEPT use of an official ``MISSION_FINAL`` record for one root resolution.
 
@@ -304,7 +315,7 @@ class AssuranceValidity:
                 raise AssuranceError("USE_PURPOSE_UNSUPPORTED", purpose)
             return ROOT_RESOLUTION_CONSUMER, resolution
 
-        return self._prepare_use(record, consumer)
+        return self._prepare_use(record, consumer, remember=remember)
 
     def prepare_composition_use(
         self, record: ReviewRecord, *, resolution_id: str
@@ -327,6 +338,8 @@ class AssuranceValidity:
         self,
         record: ReviewRecord,
         consumer: Callable[[str, str, AssuranceRef], tuple[str, str]],
+        *,
+        remember: bool = True,
     ) -> CandidateUseCertificate:
         store = self.store
         if store.connection.in_transaction:
@@ -615,7 +628,8 @@ class AssuranceValidity:
         )
         with store.read_view():
             self.require_current_locked(candidate, now_ms=int(store.now * 1000))
-        self._remember(candidate)
+        if remember:
+            self._remember(candidate)
         return candidate
 
     def _bound_pins(

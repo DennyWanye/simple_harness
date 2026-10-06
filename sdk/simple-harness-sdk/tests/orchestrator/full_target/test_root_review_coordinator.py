@@ -301,7 +301,7 @@ def test_a_world_that_moves_under_the_final_review_supersedes_the_package_and_re
 
 
 # ======================================================================================
-# RD：同一版要求重切有上限；用完停下，只记一次，不形成根结论
+# RD：同一版要求重切有上限；用完停下，只记一次，不以通过的根结论收尾
 # ======================================================================================
 
 
@@ -329,8 +329,10 @@ def test_a_spent_recut_budget_stops_the_final_review_and_is_recorded_once(tmp_pa
             assert spent.payload["requirements_revision"] == cut.payload["requirements_revision"]
             assert events(store, mission_id, ROOT_REVIEW_SUPERSEDED) == []
             assert provider.final_calls == 1
-            assert events(store, mission_id, "GoalResolutionCommitted") == []
-            assert semantics.adopted_goal_resolution(mission_id, root_duty(mission_id)) is None
+            # 2026-10-03 阶段 B 收尾裁决（实施记录"根终审切包用完如实写"）：切包用完不再沉默——停滞路径
+            # 把事实交给规划器，再按停止规则收口。所以这里可以有一条根结论，但绝不能是通过；任务不得完成。
+            resolution = semantics.adopted_goal_resolution(mission_id, root_duty(mission_id))
+            assert resolution is None or resolution.verdict is not ReviewVerdict.ACCEPT
             assert _status(world, mission_id) != "COMPLETED"
 
     asyncio.run(case())

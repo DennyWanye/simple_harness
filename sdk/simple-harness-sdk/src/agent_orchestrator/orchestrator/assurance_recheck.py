@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..assurance.codec import AssuranceError, decode, fingerprint
+from ..assurance.codec import AssuranceError, decode, fingerprint, integer
 from ..assurance.refs import AssuranceRef, Pin
 from ..storage.assurance_reads import AssuranceReader
 
@@ -38,6 +38,11 @@ def live_usable_certificates(connection: Any, mission_id: str, *, limit: int) ->
         "ORDER BY c.rowid LIMIT ?",
         (mission_id, limit),
     ).fetchall()
+
+
+def certificate_expired(row: Any, *, now_ms: int) -> bool:
+    """已签证书是否到期（``not_after_ms`` 已过）。有效性观察者、收尾复查、Host 诊断同一判定。"""
+    return row["not_after_ms"] is not None and int(now_ms) >= int(row["not_after_ms"])
 
 
 def changed_items(store: Any, *, tenant_id: str, certificate: dict[str, Any]) -> list[dict[str, str]]:
@@ -62,14 +67,20 @@ def stale_source_key(certificate_id: str, changed: list[dict[str, str]]) -> str:
     return "evidence-stale:" + fingerprint({"certificate_id": certificate_id, "changed_items": changed})
 
 
-def stale_certificates(store: Any, *, tenant_id: str, mission_id: str, limit: int = 4096) -> list[dict[str, Any]]:
-    """收尾要看的证书里依据已变、且还没被规划器处理掉的那些。须在一致读或写事务里调用。
+def stale_certificates(
+    store: Any, *, tenant_id: str, mission_id: str, now_ms: int, limit: int = 4096
+) -> list[dict[str, Any]]:
+    """收尾要看的证书里依据已变**或已到期**、且还没被规划器处理掉的那些。须在一致读或写事务里调用。
 
     * 只看消费方还**现行**的证书（验收 validity=CURRENT；目标结论 adopted=1 且 CURRENT）：
-      重做后新验收是新的消费方身份，旧证书自然不再算；
+      重做后新验收是新的消费方身份，旧证书自然不再算；同一身份更新的证书顶掉旧的
+      （``live_usable_certificates`` 只取最新一张），所以"被顶掉"从来不是依据；
+    * 到期（第 1 批 A01，原计划 §7.2 最终事务重读到期）：按 ``certificate_expired`` 判，记成
+      ``{"channel": "VALIDITY", "reason": "EXPIRED"}`` 一项，走同一条 EVIDENCE_STALE 路径；
     * 由它记的修复请求已被处理（``PlanningRepairAddressed``：系统复核过或计划改过）也不再算，
       否则后继步骤那条路上旧证书会永远拦着收尾。
     """
+    integer(now_ms)
     connection = store.connection
     handled: set[str] = set()
     requested: dict[str, str] = {}
@@ -95,6 +106,8 @@ def stale_certificates(store: Any, *, tenant_id: str, mission_id: str, limit: in
             continue
         certificate = decode(row["certificate_json"])
         changed = changed_items(store, tenant_id=tenant_id, certificate=certificate)
+        if certificate_expired(row, now_ms=now_ms):
+            changed = [*changed, {"channel": "VALIDITY", "key": str(row["certificate_id"]), "reason": "EXPIRED"}]
         if not changed:
             continue
         source_key = stale_source_key(str(row["certificate_id"]), changed)
@@ -118,5 +131,5 @@ def closeout_stale_findings(store: Any, mission_id: str) -> list[dict[str, Any]]
     return [dict(item) for item in body.get("stale_certificates") or ()]
 
 
-__all__ = ("closeout_stale_findings", "CLOSEOUT_CONSUMER_KINDS", "EVIDENCE_STALE", "changed_items",
-           "live_usable_certificates", "stale_certificates", "stale_source_key")
+__all__ = ("closeout_stale_findings", "CLOSEOUT_CONSUMER_KINDS", "EVIDENCE_STALE", "certificate_expired",
+           "changed_items", "live_usable_certificates", "stale_certificates", "stale_source_key")
