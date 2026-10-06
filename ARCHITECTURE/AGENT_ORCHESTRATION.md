@@ -1,3 +1,12 @@
+最后更新：2026-10-06 CST（补齐第 2～4 批并行车道，合并中，待发版 SDK `opt.166`）。依据 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/10-第2至4批-车道说明.md`；分车道记录 `第2批-车道G～N-记录.md`。本条随各车道合并逐段补。
+- **执行者上下文按分层给父目标与直接上游**（K04，车道 H）：新模块 `orchestrator/worker_context.py`；任务包多 `parent_goal` 段（目标原文、负责的要求原文、做法），`dependencies` 改为数据边生产者的目标、状态、已验收摘要与核对记录编号、交付产物；不再按平面 `dependency_ids`。
+- **归因按根结论贡献链**（T10，车道 H）：`observability/traces.py` 从 `GoalResolutionCommitted` 载荷递归读贡献链（`attribution-v2`，新增 `goal_chain`，产物带 `acceptance_id`）；不再沿 `dependency_ids` 合并、不再报集成树冲突。
+- **停止条件有读方，补两种停止**（H06，车道 H）：新模块 `orchestrator/stop_conditions.py`；`MissionStopReason.NO_NEW_KNOWLEDGE` / `RESULT_DUPLICATION`；`DeploymentPolicy` 三个默认阈值（5 轮无新知识、重复率 0.5、最少 4 份结果），默认开；达上限先按现有停滞通道问规划器一次，同一版计划了结又没改才停。"规划轮"以一次提交成功的规划决定为界。
+- **预算等待与重算分开**（A05，车道 I1）：`assurance_tick` 的 `BudgetError` 走 `wait(reason=BUDGET_WAIT)`，退避 2 秒起翻倍、封顶 60 秒，不计入 `rechecks`、永不转 MANUAL_REQUIRED。
+- **通知待办同事务建**（A20，车道 I1）：`request_assured_notification` 发事件的同一事务 `seed` NOTIFY 待办；消费者用同一个 `notification_work_target`，重放合并不冲突。
+- **标记不符 / 状态文件缺失进隔离**（A02，车道 I1，原计划 §10.1）：`install_native_root` 已有回执不再写回状态文件；启动段 `root_setup` 进 `try`，`AssuranceError` → 管理模式（不装配、不派发）并记匿名阻塞码。
+- **隔离只读分支接产品**（A40，车道 I1）：Host 状态 `quarantined`（`available=False`）、`status().assurance_root`、新动词 `mission_assurance_root_diagnostic`；隔离时三个保证读动词答 `ROOT_QUARANTINED`，其余动词不开。界面显示待补。
+
 最后更新：2026-10-06 CST（严格评估后补齐第 1 批：主循环秩序与收尾正确性，SDK `opt.165`）。依据 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/08-优先补齐.md` 第 1 批；分车道记录在同目录 `第1批-车道A～E-记录.md`。
 - **执行图秩序只按类型码**（T01～T03）：共用核对的拒绝改为带码异常 `contracts/error_table.SharingRefused`（22 个 `SharingRefusalCode`，表 `SHARING_PLANNER_CODE` 全集映射到规划器拒绝码：独立需要仍在 / 保留生产者需求缺失 → `COVERAGE_GAP`，其余 → `REUSE_NOT_ALLOWED`）；`event_handler` 冻结候选图那段 `except SharingRefused`，不再读异常文字前缀。原先 11 个 `TASKGRAPH_SHARE_ACTIVE_*` 与两个覆盖缺口码按文字不被接、当库故障原地重试，现在退回规划器。改要求的拒绝码由 `deployment/root.AmendmentRefused` 带在对象上；操作员五个拒绝码改 `storage/store.CodedStoreConflict`，Host 读 `.code` 不切文字。执行图只读接口对外 9 个码登记进 `TaskGraphBoundaryCode`，`api/taskgraph._fail` 先 `classify`。
 - **清单绑定按输入版本号各记一行**（T08，迁移 44 `orchestrator-manifest-binding-per-input-revision`）：`input_manifest_bindings` 主键加 `input_binding_revision`；`tg_attempt_identity_guard` 恢复原计划的 `b.input_binding_revision = NEW.input_binding_revision`（迁移 30 放宽成 `<=` 的原因消除）；`taskgraph_attempt_inputs` 读冻结输入按确切版本查。
