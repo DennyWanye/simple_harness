@@ -87,7 +87,7 @@ def test_an_empty_extra_field_in_summary_is_ignored():
     """格式口径（用户 2026-10-02）同样适用于第 4 版的 summary 对象：多写一个值为空的字段照收。"""
     from agent_orchestrator.assurance.checks import decode_review_reply
 
-    reply = {"schema_version": 4, "verdict": "ACCEPT", "findings": [], "assessments": [
+    reply = {"schema_version": 5, "verdict": "ACCEPT", "findings": [], "assessments": [
         {"criterion_id": "c", "verdict": "PASS", "evidence_ids": [], "reason": "r", "limitations": []}],
         "summary": {"faithful": True, "reason": "r", "note": ""}}
     assert decode_review_reply(json.dumps(reply)).summary.faithful is True

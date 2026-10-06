@@ -12,6 +12,7 @@ test_c07_host_api.py）。
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import json
 import os
@@ -270,6 +271,140 @@ def test_event_cursor_atomicity(tmp_path):
     assert report["expiry"]["due_events"] >= 1 and report["expiry"]["expired_observations"] >= report["expiry"]["due_events"]
     assert report["restart"]["cursor_rebuild"]["missions"] == 1 and len(report["restart"]["cursor_rebuild"]["cursors_rebuilt"]) == 1
     assert report["restart"]["notices_after_restart"] == 0
+
+
+# --------------------------------------------------------------------------- C04′（F09 后半）
+class _UnknownChargeReviewer:
+    """审阅员第一次内容审查回了一段不是 JSON 的话，而且这次调用中转站没报用量（真机见过的
+    两件外界的事）。格式修复要先把第一次调用结清，用量说不清就结不清——这次审阅卡在预算上
+    （BUDGET_WAIT），别的照常。"""
+
+    def __init__(self) -> None:
+        from agent_orchestrator.testing.scripted_replies import (
+            LayeredScriptedProvider,
+            review_input,
+            review_reply,
+        )
+
+        outer = self
+        self.malformed = 0
+
+        def reviewer(request):  # type: ignore[no-untyped-def]
+            data = review_input(request)
+            if data is None:
+                return None
+            if data["package"]["purpose"] == "TASK_CONTENT" and outer.malformed == 0:
+                outer.malformed = 1
+                return "我看过了，这份内容可以。"
+            return review_reply(data)
+
+        class Provider(LayeredScriptedProvider):
+            async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+                before = outer.malformed
+                response = await super().invoke(request, cancel=cancel)
+                if before == 0 and outer.malformed == 1:
+                    response = dataclasses.replace(response, usage=None)
+                return response
+
+        self.provider = Provider(reviewer=reviewer)
+
+
+def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monkeypatch):
+    """原计划 §9 第 3 步、F09 具名反例"预算堵塞阻后续撤回"（用户 2026-10-06 晚定补）。
+
+    一次内容审阅卡在预算上（WAITING / BUDGET_WAIT），产品照常一轮轮轮询。就在它又一次到点的那一轮
+    开始前，用户换了任务资料的版本（资料变更事件）。这一轮里：这几条事件先全部入箱（每个消费者的
+    游标都走过它们），**然后**才去准备那次卡住的审阅；卡住的审阅被同一事件唤醒、按更高的目标合并成
+    同一项工作（不另起一项），仍卡在预算上；之后几轮不重复入箱、不为自己的状态事件生出新工作。
+
+    **改坏检验**（AS-F09B）：轮询先准备、后入箱（把入箱挪到准备之后）→ 准备卡住的那次审阅时资料
+    变更还没进箱 → 变红。"""
+    from agent_orchestrator.governance.budgets import BudgetError
+    from agent_orchestrator.orchestrator.assurance_tick import AssuranceTick
+
+    script = _UnknownChargeReviewer()
+    path = "sources/spec.md"
+    state: dict = {"armed": None, "fired": None, "ticks": 0, "settled": []}
+    settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
+
+    def snapshot(store, mission_id):
+        cursors = {row[0]: row[1] for row in store.connection.execute(
+            "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (mission_id,))}
+        rows = {(row[0], row[1]): tuple(row[2:]) for row in store.connection.execute(
+            "SELECT consumer,work_key,state,wait_reason,target_epoch FROM assurance_pending_work WHERE mission_id=?",
+            (mission_id,))}
+        return cursors, rows
+
+    def watched_settle(self, claim, error):  # type: ignore[no-untyped-def]
+        # 只看不改：卡在预算上的那次审阅被放回去的那一刻，箱子里已经有什么
+        if claim.consumer == "REVIEW" and isinstance(error, BudgetError) and state["fired"] is not None:
+            state["settled"].append(snapshot(self.store, claim.mission_id))
+        return settle(self, claim, error)
+
+    async def timed_tick(self):  # type: ignore[no-untyped-def]
+        # 外界的时机：卡住的审阅又到点了，这一轮开始之前用户换了资料版本（走产品的换资料入口）
+        armed = state["armed"]
+        if armed is not None and state["fired"] is None and int(self.store.now * 1000) > armed["not_before_ms"]:
+            store, mission_id = self.store, armed["mission_id"]
+            before = max(e.seq for e in store.list_events(mission_id))
+            proposal = armed["control"].supersede_source({
+                "mission_id": mission_id, "path": path, "content": "# 规格\n二\n", "kind": "markdown",
+                "idempotency_key": "sup-f09", "expected_version_hash": armed["version_hash"]})
+            armed["control"].decide(proposal["request_id"], "approve", nonce="approve-f09")
+            events = store.list_events(mission_id)
+            state["fired"] = {"before": before, "head": max(e.seq for e in events),
+                              "changes": [e.seq for e in events
+                                          if e.type == "AssuranceEvidenceChanged" and e.seq > before]}
+        if state["fired"] is not None:
+            state["ticks"] += 1
+        return await tick(self)
+
+    monkeypatch.setattr(AssuranceTick, "_settle_failure", watched_settle)
+    monkeypatch.setattr(AssuranceTick, "tick", timed_tick)
+
+    async def body():
+        import agent_orchestrator.orchestrator.event_handler as event_handler
+
+        monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
+        async with product_world(tmp_path / "root", script.provider) as product:
+            store = product.store
+            mission_id = product.create({"goal": "按规格写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                         "idempotency_key": "assured-f09"})["mission_id"]
+            first = product.control.register_source({"mission_id": mission_id, "path": path, "content": "# 规格\n一\n",
+                                                     "kind": "markdown", "idempotency_key": "reg-f09"})
+            blocked = None
+            for _ in range(40):
+                await product.drain(timeout=3)
+                blocked = store.connection.execute(
+                    "SELECT work_key,not_before_ms FROM assurance_pending_work WHERE mission_id=? AND consumer='REVIEW'"
+                    " AND state='WAITING' AND wait_reason='BUDGET_WAIT'", (mission_id,)).fetchone()
+                if blocked is not None:
+                    break
+            assert blocked is not None, snapshot(store, mission_id)
+            state["armed"] = {"mission_id": mission_id, "control": product.control,
+                              "version_hash": first["version_hash"], "not_before_ms": blocked["not_before_ms"]}
+            # 产品照常转（审阅那边的等待也在一轮轮轮询），直到换资料之后又过了三轮
+            async with asyncio.timeout(60):
+                while state["ticks"] < 3 or not state["settled"]:
+                    await product.drain(timeout=1)
+            fired = state["fired"]
+            head, changes = fired["head"], fired["changes"]
+            assert changes, fired
+            # 准备卡住的审阅时，资料变更已经进箱：每个消费者的游标都走过了它们，收尾那一项按它重算
+            cursors, rows = state["settled"][0]
+            assert all(seq >= head for seq in cursors.values()), (cursors, fired)
+            assert rows[("CLOSEOUT", f"closeout:{mission_id}")][2] in changes, (rows, fired)
+            # 卡住的审阅被资料变更唤醒、按更高的目标合并成同一项（不另起一项）——这一轮准备的就是它
+            review = rows[("REVIEW", blocked["work_key"])]
+            assert review[0] == "RUNNING" and review[2] in changes, review
+            # 之后几轮：仍卡在预算上；同样这几项工作，没有为自己的状态事件生出新工作，目标不再变
+            cursors_now, rows_now = snapshot(store, mission_id)
+            assert set(rows_now) == set(rows), (rows, rows_now)
+            assert rows_now[("REVIEW", blocked["work_key"])] == ("WAITING", "BUDGET_WAIT", review[2]), rows_now
+            assert all(value[2] <= head for value in rows_now.values()), rows_now
+            assert all(seq >= head for seq in cursors_now.values())
+
+    asyncio.run(body())
 
 
 # --------------------------------------------------------------------------- C05

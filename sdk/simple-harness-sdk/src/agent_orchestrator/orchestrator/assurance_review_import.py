@@ -24,6 +24,7 @@ from ..assurance.checks import (
     decode_review_reply,
     decide_review,
     evaluate_check_gate,
+    global_blocker_targets,
 )
 from ..assurance.codec import MAX_RECORD_BYTES, AssuranceError, canonical, decode, fingerprint
 from ..assurance.disclosure import DisclosureBatch, disclosed_to_turn
@@ -369,6 +370,11 @@ def _interpret_reply(
         policies,
         checks,
     )
+    # 全局问题（F04）：BLOCKER 的那几条挂到哪些准则上由 decide_review 同一个规则定；审阅员的原话
+    # 写进这些准则的说明，随打回交到后面——不然被打回的一方只看到"不成立"，不知道为什么。
+    blocked = set(global_blocker_targets(reply, tuple(bound["mandatory_ids"]), set(policies)))
+    blocker_notes = [f"全局问题（BLOCKER）：{item.reason}" for item in reply.global_findings
+                     if item.severity == "BLOCKER"]
     outcomes, details = [], []
     for assessment in sorted(reply.assessments, key=lambda item: item.criterion_id):
         name = assessment.criterion_id
@@ -402,6 +408,8 @@ def _interpret_reply(
         # Assured acceptance must consume that manifest, not the legacy projection.
         projected = effective
         limitations = list(assessment.limitations)
+        if name in blocked:
+            limitations.extend(blocker_notes)
         if effective is Grade.PASS and execution is not CheckExecution.SUCCEEDED:
             projected = Grade.UNKNOWN
             limitations.append("ASSURANCE_SEMANTIC_GRADE_IN_BOUND_MANIFEST")
@@ -485,6 +493,7 @@ def _interpret_reply(
             {"criterion_id": item.criterion_id, "severity": item.severity, "reason": item.reason}
             for item in reply.findings
         ],
+        "global_findings": [{"severity": item.severity, "reason": item.reason} for item in reply.global_findings],
         "claims": confirmations,
         "methods": methods,
         "summary": summary,
