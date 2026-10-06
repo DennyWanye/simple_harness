@@ -9,7 +9,8 @@
   只由 :func:`global_account_id` 算出；
 * 任务建立时挂到"建立当月"的全局账户（没有就开），这个任务的全部用量都记在建立当月
   （**按任务建立月份计**）；
-* 当月账户的上限 = 部署配置的月配额，配置改了，下一个新任务建立时当月账户随之改；
+* 全局账户的上限 = 部署配置的月配额，配置改了，服务启动时（账本里已有的全部全局账户，不分月份）
+  与新任务建立时随之改（夜间 N3-24：调大配额重启即生效，在跑的任务不用等新任务建立）；
 * "是不是全局账户"只有一种判法（:func:`is_global_account`），全局预算用完的停止仍写 scope=global。
 """
 from __future__ import annotations
@@ -106,19 +107,63 @@ def test_missions_of_one_month_share_one_pool_and_a_new_month_starts_full(tmp_pa
     asyncio.run(case())
 
 
-def test_a_changed_monthly_quota_reaches_this_months_pool_on_the_next_new_mission(tmp_path: Path) -> None:
-    at = _local(2026, 10, 20)
+def test_a_changed_monthly_quota_reaches_every_global_pool_on_start(tmp_path: Path) -> None:
+    """夜间 N3-24：小配额下任务把本月总账用满 → 调大配额重启（同一个库）→ 不建新任务，账本里已有的
+    全局账户（本月和上月）上限都已是新值，原任务能接着花；配额调小同样在启动时跟上（多算方向）。
+
+    改坏检验：删掉 ``CommitService.__init__`` 里启动同步那一行，本条变红。"""
+
+    september, october = _local(2026, 9, 15), _local(2026, 10, 20)
 
     async def case() -> None:
         async with _world(tmp_path / "root", 12_000_000) as world:
-            world.store._clock = lambda: at
-            create(world, "p-q-1", max_tokens=8_000_000)
+            clock = [september]
+            world.store._clock = lambda: clock[0]
+            create(world, "p-q-sep", max_tokens=8_000_000)
+            clock[0] = october
+            first = create(world, "p-q-1", max_tokens=8_000_000)
+            second = create(world, "p-q-2", max_tokens=8_000_000)
+            _reserve(world, first, "p-q-1:a", 8_000_000)
+            _reserve(world, second, "p-q-2:a", 4_000_000)
+            with pytest.raises(BudgetExhausted) as refused:  # 本月总账用满：原任务被旧上限挡住
+                _reserve(world, second, "p-q-2:b", 3_000_000)
+            assert refused.value.account_id == "budget:global:2026-10"
         async with _world(tmp_path / "root", 30_000_000) as world:  # 用户调大月配额后重启
-            world.store._clock = lambda: at
-            assert world.loop.commit.global_account().limits.max_tokens == 12_000_000  # 还没有新任务：照旧
-            create(world, "p-q-2", max_tokens=8_000_000)
+            world.store._clock = lambda: october
+            commit = world.loop.commit
+            pool = commit.global_account()
+            assert pool is not None and pool.account_id == "budget:global:2026-10"
+            assert pool.limits.max_tokens == 30_000_000  # 没有新任务建立，启动时已跟上
+            with world.store.transaction():
+                assert commit.ledger.account("budget:global:2026-09").limits.max_tokens == 30_000_000
+                assert pool.reserved_tokens == commit.ledger.account("budget:global:2026-10").reserved_tokens == 12_000_000
+            _reserve(world, second, "p-q-2:b", 3_000_000)  # 原任务接着花（在它自己 800 万的任务上限内）
+            assert commit.global_account().remaining_tokens() == 30_000_000 - 15_000_000
+            assert world.store.connection.execute("SELECT COUNT(*) FROM missions").fetchone()[0] == 3  # 没建新任务
+        async with _world(tmp_path / "root", 12_000_000) as world:  # 调小也在启动时跟上：余额为负，后续预留被拒
+            world.store._clock = lambda: october
             pool = world.loop.commit.global_account()
-            assert pool.limits.max_tokens == 30_000_000 and pool.account_id == "budget:global:2026-10"
+            assert pool is not None and pool.limits.max_tokens == 12_000_000
+            assert pool.remaining_tokens() == 12_000_000 - 15_000_000
+            with pytest.raises(BudgetExhausted):
+                _reserve(world, second, "p-q-2:c", 1)
+
+    asyncio.run(case())
+
+
+def test_a_new_mission_still_brings_this_months_pool_to_the_configured_quota(tmp_path: Path) -> None:
+    """建任务那处同步保留（与启动同步调同一个小函数）：账上上限与配置不一致时，新任务建立把它拉回。"""
+
+    at = _local(2026, 10, 20)
+
+    async def case() -> None:
+        async with _world(tmp_path / "root", 30_000_000) as world:
+            world.store._clock = lambda: at
+            create(world, "p-n-1", max_tokens=8_000_000)
+            with world.store.transaction():  # 模拟账上上限与配置不一致
+                world.loop.commit.ledger.set_limits("budget:global:2026-10", Budget(max_tokens=12_000_000))
+            create(world, "p-n-2", max_tokens=8_000_000)
+            assert world.loop.commit.global_account().limits.max_tokens == 30_000_000
 
     asyncio.run(case())
 

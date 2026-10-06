@@ -298,6 +298,7 @@ class CommitService(ProtectedTailCommitsMixin,
             self._source_artifact_store = ArtifactStore(store.path.parent / "artifacts")
         self._ledger = BudgetLedger(store)
         self._global_budget = global_budget  # D6-1: None = no deployment-wide cap
+        self._follow_global_quota_on_start()
         if task_max_tokens is not None and int(task_max_tokens) < 1:
             raise ValueError("task_max_tokens must be a positive token count")
         # fixed per-leaf allowance (None = even share of the pool); see plan_commits
@@ -309,6 +310,32 @@ class CommitService(ProtectedTailCommitsMixin,
         # D6-8: the orchestrator installs the gateway's executed-call counter (subject → count)
         # so every settlement path books the tool-call fact without threading it through
         self.tool_calls_for: Callable[[str], int] | None = None
+
+    # ------------------------------------------------------- global quota
+    def _follow_global_quota(self, account_id: str) -> None:
+        """The one rule for a Global account's limits (N3-24): they equal the deployment's
+        configured monthly quota.  Must run inside a transaction."""
+
+        if self._global_budget is not None and self._ledger.account(account_id).limits != self._global_budget:
+            self._ledger.set_limits(account_id, self._global_budget)
+
+    def _follow_global_quota_on_start(self) -> None:
+        """夜间 N3-24：服务启动时，账本里已有的每个全局账户（不分月份）上限都跟上当前配置的月配额。
+
+        不只同步当月：按任务建立月份计（车道 P），上月建立、仍在跑的任务还在上月的总账里花；
+        "全局账户上限 = 当前配置的月配额"只留这一条规则，不按月份分两种对待。已用、已预留的数字
+        照旧留在账上（配额调小时余额可能为负，之后的预留会被拒——多算方向）。"""
+
+        if self._global_budget is None:
+            return
+        with self._store.transaction():
+            rows = self._store.connection.execute(
+                "SELECT account_id FROM budget_accounts WHERE account_id LIKE ? ORDER BY account_id",
+                (GLOBAL_ACCOUNT_PREFIX + "%",),
+            ).fetchall()
+            for row in rows:
+                if is_global_account(str(row[0])):
+                    self._follow_global_quota(str(row[0]))
 
     # ----------------------------------------------------------- backpressure
     def backpressure_state(self) -> BackpressureState:
@@ -764,17 +791,16 @@ class CommitService(ProtectedTailCommitsMixin,
             if self._global_budget is not None:  # D6-1: Global → Mission (§18.2), never the reverse
                 # 按任务建立月份计（第 2 批车道 P）：任务挂在建立当月的全局总账下，它的全部用量
                 # 都记在这个月，哪怕它跨月才跑完。当月第一个任务把这个月的账户打开；上限始终是
-                # 部署配置的月配额（配置改了，当月下一个新任务建立时随之改）。
+                # 部署配置的月配额（配置改了，服务启动时与新任务建立时随之改，夜间 N3-24）。
                 parent = global_account_id(mission.created_at)
-                pool = self._ledger.open_account(
+                self._ledger.open_account(
                     account_id=parent,
                     scope="global",
                     parent_id=None,
                     mission_id="global",
                     limits=self._global_budget,
                 )
-                if pool.limits != self._global_budget:
-                    self._ledger.set_limits(parent, self._global_budget)
+                self._follow_global_quota(parent)
                 # a dimension the Mission does not name is inherited from the Global cap
                 # (review P0-2: ``fits_within`` treats an unnamed child dimension as unbounded)
                 limits = effective_budget

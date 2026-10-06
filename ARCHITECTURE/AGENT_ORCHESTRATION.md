@@ -8,7 +8,7 @@
 - **预算等待与重算分开**（A05，车道 I1）：`assurance_tick` 的 `BudgetError` 走 `wait(reason=BUDGET_WAIT)`，退避 2 秒起翻倍、封顶 60 秒，不计入 `rechecks`、永不转 MANUAL_REQUIRED。
 - **通知待办同事务建**（A20，车道 I1）：`request_assured_notification` 发事件的同一事务 `seed` NOTIFY 待办；消费者用同一个 `notification_work_target`，重放合并不冲突。
 - **标记不符 / 状态文件缺失进隔离**（A02，车道 I1，原计划 §10.1）：`install_native_root` 已有回执不再写回状态文件；启动段 `root_setup` 进 `try`，`AssuranceError` → 管理模式（不装配、不派发）并记匿名阻塞码。
-- **全局预算按月配额**（H11，车道 K 接 Host、车道 P 改按月，用户 2026-10-06 晚定）：全局总账每个自然月一个，编号 `budget:global:YYYY-MM`（本机本地时间，取库时钟），由 `commit_service.global_account_id(at)` 一处算、`is_global_account` 一处判；任务建立时挂到建立当月的总账，用量全记在建立当月；配额改了，当月下一个新任务建立时 `BudgetLedger.set_limits` 跟上。Host 设置 `global_monthly_max_tokens`（默认 20 亿，旧名 `global_max_tokens` 删除不认），`status().global_budget` 报月份、上限、已用、预留、剩余；设置页只读段"本月全局预算"。
+- **全局预算按月配额**（H11，车道 K 接 Host、车道 P 改按月，用户 2026-10-06 晚定）：全局总账每个自然月一个，编号 `budget:global:YYYY-MM`（本机本地时间，取库时钟），由 `commit_service.global_account_id(at)` 一处算、`is_global_account` 一处判；任务建立时挂到建立当月的总账，用量全记在建立当月；配额改了，服务启动时（账本里已有的全部全局账户，不分月份）与新任务建立时 `BudgetLedger.set_limits` 跟上（夜间 N3-24，两处调同一个 `_follow_global_quota`）。Host 设置 `global_monthly_max_tokens`（默认 20 亿，旧名 `global_max_tokens` 删除不认），`status().global_budget` 报月份、上限、已用、预留、剩余；设置页只读段"本月全局预算"。
 - **Host 断线后按序号续读通知**（U04，车道 K）：`notices.py` 记 `last_seq`，`catch_up` 只读新序号；每次 `pending_notices` 续读；前端通道重连后作废旧请求重新拉取。
 - **结果不明的模型调用先核对再重发**（A27，车道 K）：`provider_budget_guard.check_unknown_handoff` 重读同一调用键（记录状态 / 对账结论 / http 状态）分五类；结果已知只收集不重问；`resend_record` 写替代的序号与依据。真正不明的仍按用户 2026-09-28 决定（基础设施故障原地重试，A 级 #14）走原门，记录写 `ground: outcome_unconfirmed`。
 - **Assurance 原计划 28 条改坏对齐现行清单**（V05，车道 M）：新补 7 条、2 条改绑定、F-M06 标 REMOVED（受管恢复已删）；27 KILLED；`assurance_findings.json` F04/F09/F12 口径如实。

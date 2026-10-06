@@ -106,3 +106,26 @@ async def test_a_mission_budget_above_the_global_pool_is_refused_on_the_existing
         assert len(service.list_missions()) == 1
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+async def test_a_raised_monthly_quota_reaches_the_open_pool_on_restart(orchestration_root, principal, monkeypatch):
+    """夜间 N3-24：调大月配额后重启编排服务（设置页提示"改 config.toml 并重启"；重启 = 新建服务），
+    不建新任务，本月已打开的总账上限就是新值，状态里报的上限与账上一致。"""
+    service = await _service(orchestration_root, principal, monkeypatch, global_monthly_max_tokens=30_000_000)
+    try:
+        service.create_mission(notes_request("global-restart", budget={"max_tokens": 20_000_000}))
+        assert service.status()["global_budget"]["max_tokens"] == 30_000_000
+    finally:
+        await service.close()
+    service = await _service(orchestration_root, principal, monkeypatch, global_monthly_max_tokens=90_000_000)
+    try:
+        month = global_account_id(service._orchestrator.store.now)
+        with service._orchestrator.store.transaction():
+            pool = service._orchestrator.commit.ledger.account(month)
+        assert pool.limits.max_tokens == 90_000_000
+        status = service.status()["global_budget"]
+        assert status["opened"] is True and status["max_tokens"] == pool.limits.max_tokens
+        assert len(service.list_missions()) == 1  # 没有新任务建立
+    finally:
+        await service.close()
