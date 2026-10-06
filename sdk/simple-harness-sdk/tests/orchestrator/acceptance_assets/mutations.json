@@ -1424,6 +1424,17 @@
     "tests/orchestrator/full_target/assurance_exec/test_exact_metadata_large_body.py::test_a_manifest_past_the_json_limit_is_hashed_under_the_record_limit"
    ],
    "note": "核对精确引用的哈希时按默认 256 KB 上限重编码，超过的输入清单每次导入都被拒"
+  },
+  {
+   "id": "JDG-01",
+   "source": "真实模型验收 2026-10-06（编程题：判定树没有资料，模型写的测试全红）",
+   "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+   "original": "            for path, data in self._current_source_files(mission).items():\n                files.setdefault(path, data)",
+   "replacement": "            pass",
+   "tests": [
+    "tests/orchestrator/product_world/test_judgment_tree_sources.py::test_the_judgment_tree_carries_the_current_sources"
+   ],
+   "note": "任务级判定树只放产物、不放现行资料"
   }
  ]
 }

@@ -1,4 +1,4 @@
-最后更新：2026-10-06 CST（Assurance 真实模型验收，SDK opt.163）。五个场景（原计划四场景 + 编程题）各 3 局在隔离后台、DeepSeek 线路上跑；修掉终审导入撞 256 KB 上限的缺陷；记录 `plans/2026-09-27-desktop-next/Assurance-真实模型验收-2026-10-06.md`。
+最后更新：2026-10-06 CST（Assurance 真实模型验收，SDK opt.164）。五个场景（原计划四场景 + 编程题）各 3 局在隔离后台、DeepSeek 线路上跑；修掉两处缺陷：终审导入撞 256 KB 上限、任务级判定树没有资料；记录 `plans/2026-09-27-desktop-next/Assurance-真实模型验收-2026-10-06.md`。
 
 最后更新：2026-10-05 CST（Assurance 原计划对照与补改，SDK opt.162）。
 

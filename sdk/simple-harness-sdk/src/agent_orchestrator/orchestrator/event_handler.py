@@ -5050,6 +5050,27 @@ class Orchestrator:
             "source_roots": list(intent.config.get("source_roots", ())),
         }
 
+    def _current_source_files(self, mission: Mission) -> dict[str, bytes]:
+        """The Mission's registered sources at their current versions, read back from the
+        CAS: what the judgment tree carries alongside the accepted outputs."""
+        from ..verification.evidence_resolver import EvidenceResolver, in_source_roots
+
+        roots = tuple(self.commit.domain_for(mission.id).source_roots)
+        rows = [row for row in self.store.list_sources(mission.id, active_only=True)
+                if roots and in_source_roots(str(row["path"]), roots)]
+        if not rows:
+            return {}
+        self.validate_source_storage(mission.id)
+        resolver = EvidenceResolver(self.store, self.assembled.workspaces.artifact_store)
+        files: dict[str, bytes] = {}
+        for row in rows:
+            source = resolver.read_source(tenant_id=mission.tenant_id, mission_id=mission.id, path=str(row["path"]),
+                                          version=str(row["version_hash"]), source_roots=roots)
+            if source.status != "resolved" or source.data is None:
+                raise ArtifactConflict(f"current source {row['path']} is {source.status}")
+            files[str(row["path"])] = source.data
+        return files
+
     def _source_files(self, attempt: Attempt) -> dict[str, bytes]:
         from ..verification.evidence_resolver import EvidenceResolver
 
@@ -10587,6 +10608,11 @@ class Orchestrator:
                     continue
                 files[item.path] = read_verified(artifact)  # P3.2 D3: hash re-checked
                 artifacts.append(artifact)
+            # 2026-10-06 真实模型验收（编程题）：每次尝试的工作区都带着任务的资料，模型写的测试读它们；
+            # 任务级判定树却只有产物，pytest 在这里找不到 sources/ 就全红，任务被判"要求未满足"。
+            # 判定树同样带现行版本的资料（产物从不写在资料根下，不会覆盖）。
+            for path, data in self._current_source_files(mission).items():
+                files.setdefault(path, data)
         except ArtifactStoreError as error:
             self._commit_fail_mission(
                 mission.id,

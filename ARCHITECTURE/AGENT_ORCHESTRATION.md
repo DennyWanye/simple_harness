@@ -1,3 +1,5 @@
+最后更新：2026-10-06 CST（真实模型验收中修掉的缺陷，SDK `opt.164`）。**任务级判定树带着现行资料**：每次尝试的工作区都带登记的资料（`_source_files`），模型写的测试把它们当测试数据；任务判定时另起的整合副本（`integrated_copy`）原来只放产物，`pytest:` 判据在这棵树上全红、任务被判"要求未满足"（编程题 2 局）。现在判定树同样放现行版本的资料（`event_handler._current_source_files`，产物不写在资料根下、不会覆盖）。用例 `T/product_world/test_judgment_tree_sources.py`，改坏 JDG-01。
+
 最后更新：2026-10-05 CST（Assurance 原计划对照后的补改，SDK `opt.162`）。**对外操作在用户改要求之后**：`system_operations.pending_system_operations` 准备申请单前先读操作台账（`_earlier_operation_fact`）——同一任务、同一连接器、同一操作、同一目标已经交出去过、而现行完成映射下还没有申请单进入执行链时，不再准备新申请单：内容相同交结果审查按现行要求重审原事实（`operation_runtime.advance_operation_outcomes`），内容不同交规划器一次（`OperationNotApplied`，`published_under_earlier_requirements`）。结果审查判不通过交规划器一次（`VerifierAcceptanceRejected`，`operation_outcome_rejected`）。停滞判断：物化被拒的申请单不算合法等待（`event_handler._materialization_refusals`，停滞与停机详情里列出）。**任务判定**：`judge_mission` 只请求收尾，不写完成。详见 [ASSURANCE.md](ASSURANCE.md) 顶部。
 
 最后更新：2026-10-05 CST（联合测试真机修补，SDK opt.158）。**时钟水位落库规则；重审的验证记录事件。**
