@@ -120,3 +120,44 @@ def test_validate_flips_only_on_a_passing_report_for_the_same_sources(tmp_path):
     reader = InstalledHtnWiringAcceptance()
     reader.manifest = target
     assert reader.acceptance_status() == "VALIDATED"
+
+
+# ---- 第 1 批评估处置：§16 的 INDEPENDENT_REVIEW 与 PRODUCER_MAP_COMPLETE 进门 ----
+
+
+def _gate_module():
+    spec = importlib.util.spec_from_file_location("taskgraph_gate", SDK / "scripts/acceptance/taskgraph_gate.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_review_hash_ignores_only_the_two_version_files():
+    script = _script()
+    manifest = _installed()
+    bumped = {**manifest, "source_files": {**manifest["source_files"],
+                                           "agent_orchestrator/version.py": "f" * 64,
+                                           "simple_harness/version.py": "e" * 64}}
+    assert script.review_source_sha256(bumped) == script.review_source_sha256(manifest)
+    other = {**manifest, "source_files": {**manifest["source_files"], "agent_orchestrator/__init__.py": "d" * 64}}
+    assert script.review_source_sha256(other) != script.review_source_sha256(manifest)
+
+
+def test_the_gate_only_passes_independent_review_with_a_matching_pass_receipt(tmp_path):
+    """**Mutation**: `_review` 不比 review_source_sha256 → 别的源码的回执也算 → 变红。"""
+    gate, script = _gate_module(), _script()
+    manifest = _installed()
+    good = {"schema": "taskgraph-independent-review-v1", "verdict": "PASS", "reviewer": "r",
+            "review_source_sha256": script.review_source_sha256(manifest), "report": "x.md",
+            "reviewed_at": "2026-10-06T00:00:00+00:00"}
+    receipt = tmp_path / "r.json"
+    receipt.write_text(json.dumps(good))
+    assert gate._review(receipt, manifest)[0] == "PASS"
+    assert gate._review(None, manifest)[0] == "PENDING"
+    for bad in ({**good, "verdict": "FAIL"}, {**good, "review_source_sha256": "0" * 64},
+                {**good, "schema": "other"}):
+        receipt.write_text(json.dumps(bad))
+        assert gate._review(receipt, manifest)[0] == "PENDING"
+    receipt.write_text("not json")
+    assert gate._review(receipt, manifest)[0] == "PENDING"

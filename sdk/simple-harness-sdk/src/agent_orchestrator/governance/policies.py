@@ -66,8 +66,19 @@ class DeploymentPolicy:
     # not isolated; the SDK default so every earlier deployment keeps running as it did).
     # None = derived from ``local_code_execution`` (True → process_only, False → off).
     code_execution: str | None = None
+    # 第 2 批车道 H（H06）：任务停止条件 ``no_new_knowledge`` / ``result_duplication`` 的默认阈值。
+    # 任务建立时可在条件名后带 ``=值`` 覆盖；只是上限，不判语义。
+    no_new_knowledge_rounds: int = field(default=5, kw_only=True)
+    result_duplication_rate: float = field(default=0.5, kw_only=True)
+    result_duplication_min_results: int = field(default=4, kw_only=True)
 
     def __post_init__(self) -> None:
+        if type(self.no_new_knowledge_rounds) is not int or self.no_new_knowledge_rounds < 1:
+            raise ValueError("no_new_knowledge_rounds must be an integer >= 1")
+        if not isinstance(self.result_duplication_rate, (int, float)) or not 0 < self.result_duplication_rate <= 1:
+            raise ValueError("result_duplication_rate must be within (0, 1]")
+        if type(self.result_duplication_min_results) is not int or self.result_duplication_min_results < 2:
+            raise ValueError("result_duplication_min_results must be an integer >= 2")
         if type(self.require_operator_tool_policy) is not bool:
             raise ValueError("operator tool policy requirement must be boolean")
         operator_ids = [name for name, _ in self.operator_tool_allowlists]
@@ -128,6 +139,13 @@ class DeploymentPolicy:
             "connector_timeout_seconds": self.connector_timeout_seconds,
             "local_code_execution": self.local_code_execution,
             "code_execution": self.code_execution,
+            # 停止条件默认阈值只在改过默认值时写出：政策字节（准入身份）对未改的部署保持不变
+            **({"no_new_knowledge_rounds": self.no_new_knowledge_rounds}
+               if self.no_new_knowledge_rounds != 5 else {}),
+            **({"result_duplication_rate": self.result_duplication_rate}
+               if self.result_duplication_rate != 0.5 else {}),
+            **({"result_duplication_min_results": self.result_duplication_min_results}
+               if self.result_duplication_min_results != 4 else {}),
             "version": POLICY_VERSION,
         }
 

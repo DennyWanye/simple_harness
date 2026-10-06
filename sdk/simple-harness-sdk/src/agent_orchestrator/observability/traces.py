@@ -5,28 +5,100 @@
 theory 12 §16 / 13 §17 Credit Assignment; ORCH §10.2 ``observability/traces.py``; plan
 D8-4 / D8-4').
 
-From the Mission's final products — the integrated tree the judgment used, i.e. every
-completed Task's accepted artifacts merged along the dependency chain — to the Task,
-Attempt, Agent, role, model and prompt version that produced them, the verification
-layers that let them through, the knowledge path (``lineage``) and the actions and
-people on the way.  Everything that did not reach the success path is listed as
-exploration spending with its reason, and the Mission's imported usage is split row by
-row into path / exploration / services with an "unclassified" bucket that must stay
-empty.  A record that is missing is reported as a break — never bridged."""
+From the Mission's final products — what the root ``GoalResolution`` was formed out of:
+its contribution list (the CURRENT acceptances of the adopted plan) and, recursively, the
+contribution lists of its child resolutions — to the Task, Attempt, Agent, role, model and
+prompt version that produced them, the verification layers that let them through, the
+knowledge path (``lineage``) and the actions and people on the way.  Everything that did
+not reach the success path is listed as exploration spending with its reason, and the
+Mission's imported usage is split row by row into path / exploration / services with an
+"unclassified" bucket that must stay empty.  A record that is missing is reported as a
+break — never bridged.
+
+第 2 批车道 H（T10，原计划 §18.4 / §23.3 / §30.5；v1.4 R51）：分层计划下 ``Task.dependency_ids``
+恒空，成功路径不再沿平面依赖链合并（被换掉做法下完成的步骤会被算进去；先后两步写同一文件会报
+"集成树冲突"断点），改为以根结论的贡献清单为起点递归取贡献链。"""
 
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ..artifacts.versioning import ArtifactConflict, ancestors, merge_accepted
 from .lineage import lineage
 from .metrics import _service_role
 
 if TYPE_CHECKING:
     from ..storage.store import Store
 
-ATTRIBUTION_VERSION = "attribution-v1"
+ATTRIBUTION_VERSION = "attribution-v2"
+#: 根结论与子结论的提交事件（``resolution_commits``）：贡献清单就记在它的载荷里。
+GOAL_RESOLUTION_COMMITTED = "GoalResolutionCommitted"
+
+
+@dataclass(frozen=True, slots=True)
+class ContributionChain:
+    """根结论往下递归读出的贡献链：验收记录编号（根先、子后，去重）、每级目标结论、断点。"""
+
+    acceptance_ids: tuple[str, ...]
+    goal_chain: tuple[dict[str, Any], ...]
+    breaks: tuple[dict[str, Any], ...]
+
+
+def contribution_chain(resolutions: Mapping[str, Mapping[str, Any]]) -> ContributionChain:
+    """``resolution_id → GoalResolutionCommitted 载荷`` → 贡献链。
+
+    起点是 ``is_mission_root`` 的那条（最后提交的一条）；没有就是 ``root_resolution`` 断点。每条结论
+    的 ``contributing_acceptances``（出现 → 验收记录编号）进链，再沿 ``child_resolution_ids`` 递归；
+    载荷里没有的子结论是 ``resolution_commit`` 断点，不补。贡献清单之外的结论与验收不在链上。
+    """
+    roots = [key for key, payload in resolutions.items() if payload.get("is_mission_root")]
+    if not roots:
+        return ContributionChain((), (), ({"missing": "root_resolution"},))
+    acceptances: list[str] = []
+    chain: list[dict[str, Any]] = []
+    breaks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def visit(resolution_id: str) -> None:
+        if resolution_id in seen:
+            return
+        seen.add(resolution_id)
+        payload = resolutions.get(resolution_id)
+        if payload is None:
+            breaks.append({"missing": "resolution_commit", "id": resolution_id})
+            return
+        contributions = payload.get("contributing_acceptances") or {}
+        listed = {str(occurrence): [str(item) for item in contributions[occurrence]]
+                  for occurrence in sorted(contributions)}
+        chain.append({
+            "resolution_id": resolution_id,
+            "goal_task_id": payload.get("goal_task_id"),
+            "obligation_id": payload.get("obligation_id"),
+            "is_mission_root": bool(payload.get("is_mission_root")),
+            "child_resolution_ids": [str(item) for item in payload.get("child_resolution_ids") or ()],
+            "contributing_acceptances": listed,
+        })
+        for ids in listed.values():
+            for acceptance_id in ids:
+                if acceptance_id not in acceptances:
+                    acceptances.append(acceptance_id)
+        for child in payload.get("child_resolution_ids") or ():
+            visit(str(child))
+
+    visit(roots[-1])
+    return ContributionChain(tuple(acceptances), tuple(chain), tuple(breaks))
+
+
+def read_contribution_chain(store: Store, mission_id: str) -> ContributionChain:
+    """从任务的事件里读根结论及其子结论的提交载荷，再算贡献链。"""
+    resolutions = {
+        str(event.payload["resolution_id"]): dict(event.payload)
+        for event in store.iter_events(mission_id)
+        if event.type == GOAL_RESOLUTION_COMMITTED and event.payload.get("resolution_id")
+    }
+    return contribution_chain(resolutions)
 
 
 def _bucket() -> dict[str, Any]:
@@ -64,39 +136,41 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
             return None
         return str(stored.envelope.attempt_id)
 
-    # -- the final products and the success path (plan D8-4' rules)
+    # -- the final products and the success path: the root resolution's contribution chain
     products: list[dict[str, Any]] = []
     path_tasks: set[str] = set()
+    goal_chain: list[dict[str, Any]] = []
+    final_ids: set[str] = set()
     if success:
-        live = [t for t in tasks if str(t.status) == "COMPLETED"]
-        artifacts_by_task: dict[str, list[Any]] = {}
-        for task in live:
-            found = []
-            for artifact_id in task.accepted_artifacts:
-                artifact = store.get_artifact(artifact_id)
-                if artifact is None:
-                    breaks.append({"missing": "artifact", "id": artifact_id, "task_id": task.id})
-                    continue
-                found.append(artifact)
-            artifacts_by_task[task.id] = found
-        try:
-            merged = merge_accepted(live, artifacts_by_task, tasks_by_id=by_id)
-        except ArtifactConflict as error:
-            breaks.append({"missing": "integrated_tree", "error": str(error)})
-            merged = []
-        for item in merged:
-            path_tasks.add(item.task_id)
-            path_tasks.update(
-                t.id for t in ancestors(item.task_id, by_id) if str(t.status) == "COMPLETED"
-            )
-        final_ids = {item.artifact_id for item in merged}
-        for item in merged:
-            producer = by_id.get(item.task_id)
-            attempt_id = None if producer is None else accepted_attempt(producer)
+        from ..storage.htn_store import HtnStore
+        from ..storage.store import StoreError
+
+        chain = read_contribution_chain(store, mission_id)
+        goal_chain = [dict(row) for row in chain.goal_chain]
+        breaks.extend(dict(row) for row in chain.breaks)
+        semantics = HtnStore(store)
+        # 验收记录 → 产出它的步骤；一个步骤几条验收记录只算一次，顺序按贡献链
+        producers: list[tuple[str, str]] = []
+        for acceptance_id in chain.acceptance_ids:
+            try:
+                acceptance = semantics.get_acceptance(acceptance_id)
+            except StoreError:
+                breaks.append({"missing": "acceptance", "id": acceptance_id})
+                continue
+            task_id = str(acceptance.task_id)
+            if task_id not in by_id:
+                breaks.append({"missing": "task", "id": task_id, "acceptance_id": acceptance_id})
+                continue
+            path_tasks.add(task_id)
+            if task_id not in {item for item, _ in producers}:
+                producers.append((task_id, acceptance_id))
+        for task_id, acceptance_id in producers:
+            producer = by_id[task_id]
+            attempt_id = accepted_attempt(producer)
             attempt = None if attempt_id is None else store.get_attempt(attempt_id)
             layers = (
                 []
-                if producer is None or not producer.accepted_result_id
+                if not producer.accepted_result_id
                 else [
                     {
                         "layer": v["layer"],
@@ -107,24 +181,29 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
                     if v["status"] in {"PASS", "NEEDS_HUMAN"}
                 ]
             )
-            products.append(
-                {
-                    "path": item.path,
-                    "content_hash": item.content_hash,
-                    "artifact_id": item.artifact_id,
-                    "task_id": item.task_id,
-                    "result_id": None if producer is None else producer.accepted_result_id,
-                    "attempt_id": attempt_id,
-                    "agent_id": None if attempt is None else attempt.agent_id,
-                    "role": None if attempt is None else attempt.role,
-                    "model": None if attempt is None else attempt.model,
-                    "runtime_profile_id": None if attempt is None else attempt.runtime_profile_id,
-                    "prompt_version": None if attempt is None else attempt.prompt_version,
-                    "verified_by": layers,
-                }
-            )
-    else:
-        final_ids = set()
+            for artifact_id in producer.accepted_artifacts:
+                artifact = store.get_artifact(artifact_id)
+                if artifact is None:
+                    breaks.append({"missing": "artifact", "id": artifact_id, "task_id": task_id})
+                    continue
+                final_ids.add(artifact.id)
+                products.append(
+                    {
+                        "path": artifact.path,
+                        "content_hash": artifact.content_hash,
+                        "artifact_id": artifact.id,
+                        "task_id": task_id,
+                        "acceptance_id": acceptance_id,
+                        "result_id": producer.accepted_result_id,
+                        "attempt_id": attempt_id,
+                        "agent_id": None if attempt is None else attempt.agent_id,
+                        "role": None if attempt is None else attempt.role,
+                        "model": None if attempt is None else attempt.model,
+                        "runtime_profile_id": None if attempt is None else attempt.runtime_profile_id,
+                        "prompt_version": None if attempt is None else attempt.prompt_version,
+                        "verified_by": layers,
+                    }
+                )
     path_task_view = [
         {
             "task_id": tid,
@@ -319,6 +398,7 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         "mission_status": str(mission.status),
         "success_path": success,
         "final_products": products,
+        "goal_chain": goal_chain,
         "path_tasks": path_task_view,
         "knowledge_path": {
             "knowledge": [k.get("id") for k in knowledge.get("knowledge", [])],
@@ -390,4 +470,13 @@ def failure_timeline(store: Store, mission_id: str) -> list[dict[str, Any]]:
     return lines
 
 
-__all__ = ("ATTRIBUTION_VERSION", "TIMELINE_TYPES", "attribution", "failure_timeline")
+__all__ = (
+    "ATTRIBUTION_VERSION",
+    "GOAL_RESOLUTION_COMMITTED",
+    "TIMELINE_TYPES",
+    "ContributionChain",
+    "attribution",
+    "contribution_chain",
+    "failure_timeline",
+    "read_contribution_chain",
+)

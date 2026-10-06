@@ -20,6 +20,18 @@ from .store import Store, StoreConflict
 CONSUMERS = frozenset({"REVIEW", "VALIDITY", "CLOSEOUT", "NOTIFY"})
 T = TypeVar("T")
 
+#: 预算等待（原计划 §9 第 5 步 BUDGET_WAIT；第 2 批 A05）：一项工作的准备因预算不够（``BudgetError``）
+#: 停下，记成 WAITING + 这个原因，按自己的退避再看；不进 ``recheck``、不计入 32 次 / 300 秒的重算上限。
+#: 预算是外界条件（结算、用户加预算都是新事件，会把目标升上来重开），不是"再算一遍就好"的事。
+BUDGET_WAIT = "BUDGET_WAIT"
+#: 预算等待退避的上限：2 秒起翻倍，封顶 60 秒；永远不转 MANUAL_REQUIRED。
+BUDGET_WAIT_MAX_MS = 60_000
+
+
+def budget_wait_delay_ms(tries: int) -> int:
+    """第 ``tries`` 次领取后预算仍不够，下一次再看之前等多久。"""
+    return min(2_000 << max(0, min(int(tries) - 1, 5)), BUDGET_WAIT_MAX_MS)
+
 
 @contextmanager
 def atomic(store: Store) -> Iterator[sqlite3.Connection]:
@@ -358,7 +370,8 @@ class AssuranceWorkStore:
         """
         integer(now_ms)
         text(reason)
-        if reason == "MANUAL_REQUIRED":
+        if reason in ("MANUAL_REQUIRED", BUDGET_WAIT):
+            # 预算等待走 ``wait``，不计入重算次数（第 2 批 A05）
             raise AssuranceError("WORK_RECHECK_REASON_INVALID")
         with atomic(self.store) as connection:
             self._assert_claim(connection, claim, now_ms)

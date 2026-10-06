@@ -66,9 +66,16 @@ def test_every_sharing_refusal_code_maps_to_exactly_one_planner_code():
     assert set(SHARING_PLANNER_CODE) == set(SharingRefusalCode)
     coverage = {SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED,
                 SharingRefusalCode.TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING}
+    # 第 1 批评估：刚失效 / 未决属 §12 的"请求过期 / 需收敛"，不是规划器答错，不扣次数
+    stale = {SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT}
+    unsettled = {SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET,
+                 SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED}
+    from agent_orchestrator.contracts.error_table import refusal_charges_planner
     for code in SharingRefusalCode:
-        expected = P.COVERAGE_GAP if code in coverage else P.REUSE_NOT_ALLOWED
+        expected = (P.COVERAGE_GAP if code in coverage else P.REQUEST_BINDING_STALE if code in stale
+                    else P.RUNNING_WORK_NOT_RECONCILED if code in unsettled else P.REUSE_NOT_ALLOWED)
         assert SHARING_PLANNER_CODE[code] is expected, code
+        assert refusal_charges_planner([str(expected)]) is (code not in stale), code
         refused = SharingRefused(code)
         assert refused.code is code and refused.planner_code is expected
         assert str(refused) == code.value  # 现有用例按文字匹配码

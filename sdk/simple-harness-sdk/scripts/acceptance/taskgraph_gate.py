@@ -16,15 +16,19 @@ TASKGRAPH_REAL_MODEL、TASKGRAPH_HOST_SEAM、INDEPENDENT_REVIEW。这个脚本�
   **已安装**的 SDK 轮子跑，而门要验的是**这一份**源码；所以默认记 ``DEFERRED_TO_HOST_PIN``，由发版脚本在
   Host 钉上新轮子之后跑（``scripts/release_sdk_opt.sh`` 的钉版测试清单里有这五个文件）。手工排查可加
   ``--with-host`` 当场跑，跑了就参与判定。
-- REAL_MODEL、INDEPENDENT_REVIEW：按原计划允许标 PENDING；报告里如实写 PENDING 并指向现有证据目录，
-  不参与 PASS/FAIL 判定。
+- PRODUCER_MAP：来源表守护用例 ``tests/orchestrator/acceptance_assets/test_acceptance_assets.py``（每条接缝的
+  生产者真实可导入、崩溃切点与改坏锚点真实）。原计划 §16 的 PRODUCER_MAP_COMPLETE。
+- INDEPENDENT_REVIEW：原计划 §16 不豁免它。``--review 回执.json`` 传入独立核验回执（由
+  ``scripts/acceptance/write_review_receipt.py`` 在核验员写完评估后生成，绑定去掉两个版本文件后的源码清单哈希
+  ``review_source_sha256``）；回执缺、哈希不符或结论不是 PASS → 记 PENDING，整体 FAIL。
+- REAL_MODEL：按原计划允许标 PENDING；报告里如实写 PENDING 并指向现有证据目录，不参与 PASS/FAIL 判定。
 
 顺序：先跑改坏（它会反复重生成部署清单），再重生成一次清单取得 ``source_files_sha256``，再跑用例。
 用例对着这一份源码跑，报告里带这个哈希，``validate`` 只认哈希相同的报告。
 
 用法（在 ``sdk/simple-harness-sdk`` 下）::
 
-    uv run --frozen python scripts/acceptance/taskgraph_gate.py [--upstream 上游证据.json] [--with-host]
+    uv run --frozen python scripts/acceptance/taskgraph_gate.py --review 回执.json [--upstream 上游证据.json] [--with-host]
 
 报告写到 ``<仓库>/.local-test-evidence/<日期>/taskgraph-gate/gate-<时刻>.json``，最后一行打印 ``{"gate": 路径, "status": ...}``。
 """
@@ -49,6 +53,8 @@ MUTATIONS = tuple(f"M{n:02d}" for n in range(1, 13))
 SQL_TESTS = ("tests/orchestrator/product_world/test_table_guards.py",)
 CORE_TESTS = ("tests/orchestrator/full_target/taskgraph_exec",
               "tests/orchestrator/product_world/test_random_sequences.py")
+PRODUCER_MAP_TESTS = ("tests/orchestrator/acceptance_assets/test_acceptance_assets.py",)
+REVIEW_SCHEMA = "taskgraph-independent-review-v1"
 HOST_TESTS = ("tests/orchestration/test_taskgraph_bound_at_creation.py",
               "tests/orchestration/test_taskgraph_execution_reads.py",
               "tests/orchestration/test_taskgraph_operator_verbs.py",
@@ -84,7 +90,27 @@ def _passed(result: dict[str, object]) -> bool:
     return result["returncode"] == 0 and int(result["tests"]) > 0 and not result["failed"]
 
 
-def run_gate(upstream: Path, *, with_host: bool) -> dict[str, object]:
+def _review(receipt: Path | None, manifest: dict[str, object]) -> tuple[str, dict[str, object]]:
+    """(PASS | PENDING, 事实)。只认绑定这一份源码（去版本文件）且结论 PASS 的回执。"""
+    if receipt is None:
+        return "PENDING", {"reason": "no review receipt given"}
+    try:
+        body = json.loads(receipt.read_bytes())
+    except (OSError, ValueError) as error:
+        return "PENDING", {"reason": f"receipt unreadable: {error}", "receipt": str(receipt)}
+    expected = taskgraph_manifest.review_source_sha256(manifest)
+    facts = {"receipt": str(receipt), "receipt_sha256": hashlib.sha256(receipt.read_bytes()).hexdigest(),
+             "expected_review_source_sha256": expected}
+    if not isinstance(body, dict) or body.get("schema") != REVIEW_SCHEMA:
+        return "PENDING", {**facts, "reason": "not an independent-review receipt"}
+    if body.get("review_source_sha256") != expected:
+        return "PENDING", {**facts, "reason": "receipt binds other sources", "receipt_hash": body.get("review_source_sha256")}
+    if body.get("verdict") != "PASS":
+        return "PENDING", {**facts, "reason": f"review verdict {body.get('verdict')!r}", "report": body.get("report")}
+    return "PASS", {**facts, "report": body.get("report"), "reviewer": body.get("reviewer"), "reviewed_at": body.get("reviewed_at")}
+
+
+def run_gate(upstream: Path, *, with_host: bool, review: Path | None = None) -> dict[str, object]:
     started = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
     # 1 改坏（每条都会重生成清单、清字节码）
     mutation_rows = run_mutations.run(list(MUTATIONS), upstream)
@@ -98,23 +124,28 @@ def run_gate(upstream: Path, *, with_host: bool) -> dict[str, object]:
     sdk_cmd = ["uv", "run", "--frozen", "--group", "dev", "--extra", "local-capacity", "pytest"]
     sql = _pytest(SDK, sdk_cmd, SQL_TESTS)
     core = _pytest(SDK, sdk_cmd, CORE_TESTS)
+    producer_map = _pytest(SDK, sdk_cmd, PRODUCER_MAP_TESTS)
+    review_status, review_facts = _review(review, manifest)
     host = (_pytest(BACKEND, ["uv", "run", "--frozen", "python", "-m", "pytest"], HOST_TESTS) if with_host
             else {"deferred": "Host 接缝用例对着已安装轮子跑，由发版脚本在钉上新轮子后执行", "targets": list(HOST_TESTS)})
     gates = {
+        "PRODUCER_MAP_COMPLETE": "PASS" if _passed(producer_map) else "FAIL",
         "TASKGRAPH_SQL_PASS": "PASS" if _passed(sql) else "FAIL",
         "TASKGRAPH_CORE_PASS": "PASS" if _passed(core) and mutations["all_killed"] else "FAIL",
         "TASKGRAPH_HOST_SEAM": ("PASS" if _passed(host) else "FAIL") if with_host else "DEFERRED_TO_HOST_PIN",
         "TASKGRAPH_REAL_MODEL": "PENDING",
-        "INDEPENDENT_REVIEW": "PENDING",
+        "INDEPENDENT_REVIEW": review_status,
     }
-    status = "PASS" if "FAIL" not in gates.values() else "FAIL"
+    # §16：只有 REAL_MODEL（与钉版后才能跑的 HOST_SEAM）允许不是 PASS；独立核验缺了就不通过。
+    status = "PASS" if ("FAIL" not in gates.values() and gates["INDEPENDENT_REVIEW"] == "PASS") else "FAIL"
     return {
         "schema": "taskgraph-acceptance-gate-v1", "status": status, "run_at": started,
         "source_files_sha256": source_hash, "deployment_id_at_run": manifest["deployment_id"],
-        "gates": gates, "sql": sql, "core": core, "host": host, "mutations": mutations,
+        "gates": gates, "sql": sql, "core": core, "producer_map": producer_map, "host": host,
+        "mutations": mutations, "independent_review": review_facts,
         "pending": {"TASKGRAPH_REAL_MODEL": "真实模型局证据：.local-test-evidence/2026-10-05/f2-ui（资料换版本局通过）；"
                                             "'分支共用并换做法'一局待补（补齐清单 V28）",
-                    "INDEPENDENT_REVIEW": "独立核验按六道关口重做待补（补齐清单 V29）"},
+                    },
     }
 
 
@@ -122,8 +153,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--upstream", type=Path, default=DEFAULT_UPSTREAM)
     parser.add_argument("--with-host", action="store_true", help="当场也跑 Host 接缝用例（对着已安装轮子）")
+    parser.add_argument("--review", type=Path, default=None, help="独立核验回执（write_review_receipt.py 生成）")
     args = parser.parse_args(argv)
-    report = run_gate(args.upstream.resolve(), with_host=args.with_host)
+    report = run_gate(args.upstream.resolve(), with_host=args.with_host,
+                      review=None if args.review is None else args.review.resolve())
     out = REPO / ".local-test-evidence" / datetime.date.today().isoformat() / "taskgraph-gate"
     out.mkdir(parents=True, exist_ok=True)
     target = out / f"gate-{datetime.datetime.now().strftime('%H%M%S')}.json"  # 每次一份，不覆盖
