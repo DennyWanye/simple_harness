@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-06T09:13:27+00:00",
-    "gate_sha256": "d20125ee3e47082bcd3730c3ad8619c856211e09268329416a388dd00958bd78",
-    "gate_status": "PASS",
-    "source_files_sha256": "0b69b6e68b1ce4491902a9216895fe8f9ef115b4de2fd9f6d4ec42f09cd23cd0"
-  },
-  "deployment_id": "0585f2c19a6f917655ecaf725b5fc3983b1bc5b2b172a317bdb94c0399c9e749",
+  "acceptance_evidence": null,
+  "deployment_id": "f5f92a3582f97f76c95748a21eb086beff29519f3dc77524f2471756e6b43a76",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -74,7 +69,7 @@
     "agent_orchestrator/context/knowledge_tools.py": "4f7cfbbd8d9f4682086e99d68863c93a14b1d3d161947f69340741764b24d5ae",
     "agent_orchestrator/context/retrieval.py": "cfb94be68dfe64bd875ec8eeec3ed62af4b40dfdc215acefddfd3d8675feb382",
     "agent_orchestrator/contracts/__init__.py": "5345c68d365488c86c425bc0e47e4ee6e5efc4c67a5d109ae15b24e58ea48490",
-    "agent_orchestrator/contracts/error_table.py": "64e9d14e0ff151486d1832398d05fafa519e8e0063f80b9e61ede794e3d941dc",
+    "agent_orchestrator/contracts/error_table.py": "3b91c4615554fbe77c7d21c74ec2c39a7bca3fa4ee240c4baa1875b19503b83a",
     "agent_orchestrator/contracts/evidence_state.py": "c8e77432dddcbaa8dda7b6b05b0e30944d597ea18125ac01df03c71598cb4f59",
     "agent_orchestrator/contracts/htn.py": "592faecefa90968834a3162a6bb76c3520af1f759fb5330987ab3d4c6c16cc9d",
     "agent_orchestrator/contracts/ids.py": "5b048365c5cd02a64e41776e09880585757183d174ee81a2ff29ed556064b358",
@@ -695,7 +690,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

@@ -146,6 +146,17 @@ def source_files_sha256(manifest: dict[str, object]) -> str:
     return _sha(_canonical(manifest["source_files"]).encode())
 
 
+VERSION_FILES = ("agent_orchestrator/version.py", "simple_harness/version.py")
+
+
+def review_source_sha256(manifest: dict[str, object]) -> str:
+    """The hash an independent-review receipt binds to: the installed inventory **without the two
+    version files**, so a review done before the release bumps the opt number still names these
+    bytes.  Anything else changing between review and release invalidates the receipt."""
+    sources = {k: v for k, v in dict(manifest["source_files"]).items() if k not in VERSION_FILES}
+    return _sha(_canonical(sources).encode())
+
+
 def validate(gate: Path, manifest_path: Path | None = None) -> dict[str, object]:
     """Flip the installed manifest to VALIDATED from a passing gate report; refuse anything else."""
     target = manifest_path or (ROOT / "src" / MANIFEST_REL)
