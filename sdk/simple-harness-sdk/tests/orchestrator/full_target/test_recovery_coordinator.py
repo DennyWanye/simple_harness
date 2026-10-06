@@ -4,10 +4,12 @@
 * 迁移 46 的三张表在、重放清单归类齐全；
 * 恢复锁：死掉的持有者被接管，活着的被拒；
 * 产品同形世界重开：八步按序 DONE、READY、禁副作用解除；
-* 库与它自己的历史对不上（重建不一致）→ DEGRADED_RECOVERY，写明停在第 3 步，主循环不进周期、不问模型；
+* 一个任务的库与它自己的历史对不上（重建不一致）→ 只隔离这个任务（AER 恢复第 3、8 条"隔离该流、只为
+  核对可继续的范围开放执行"），恢复照样 READY，别的任务照常推进；
+* 某一步的事实不成立（这里用替身让"未决核对"失败）→ DEGRADED_RECOVERY，写明停在哪一步，主循环不进周期、不问模型；
 * 崩溃切点 K19：某一步记完结果后进程没了 → 锁留在库里 → 下一次启动按进程身份接管锁、重走八步。
 
-**改坏检验**：协调者里把"一步失败就降级"改成继续 → 第 4 条红；``acquire`` 里不核对持有者 → 第 2 条红。
+**改坏检验**：协调者里把"一步失败就降级"改成继续 → 降级那条红；重建不一致时不隔离 → 隔离那条红；``acquire`` 里不核对持有者 → 第 2 条红。
 """
 from __future__ import annotations
 
@@ -123,11 +125,64 @@ def test_a_restart_runs_the_eight_steps_in_order_and_ends_ready(tmp_path):
 
 
 @pytest.mark.replay_audit_exempt("用例故意另开连接改坏一行，造'库与自己的历史对不上'")
-def test_an_inconsistent_library_degrades_recovery_and_opens_read_only(tmp_path):
+def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
     async def case():
         root = tmp_path / "root"
         first = LayeredScriptedProvider()
-        first.held.add("worker")  # 执行者的回合一直不回：任务停在活动态
+        first.held.add("worker")  # 执行者的回合一直不回：两个任务都停在活动态
+        async with product_world(root, first) as world:
+            damaged = world.create({**NOTE, "idempotency_key": "recover-damaged"})["mission_id"]
+            healthy = world.create({**NOTE, "goal": "写另一份笔记", "idempotency_key": "recover-healthy"})["mission_id"]
+            for _ in range(20):
+                await world.drain(timeout=5)
+                if first.asked.count("worker") >= 2:
+                    break
+            assert first.asked.count("worker") >= 2
+            for mission_id in (damaged, healthy):
+                assert str(world.store.get_mission(mission_id).status.value) not in TERMINAL
+            def attempts_of(store, mission_id):
+                return store.connection.execute(
+                    "SELECT count(*) FROM attempts a JOIN tasks t ON t.task_id=a.task_id WHERE t.mission_id=?",
+                    (mission_id,)).fetchone()[0]
+            damaged_attempts = attempts_of(world.store, damaged)
+            db = world.store.path
+        connection = sqlite3.connect(db)
+        try:
+            connection.execute("UPDATE missions SET json=json_set(json,'$.goal','改坏的目标') WHERE mission_id=?",
+                               (damaged,))
+            connection.commit()
+        finally:
+            connection.close()
+        second = LayeredScriptedProvider()
+        async with product_world(root, second) as world:
+            for _ in range(20):
+                await world.drain(timeout=10)
+                if str(world.store.get_mission(healthy).status.value) in TERMINAL:
+                    break
+            status = world.loop.recovery_status()
+            assert status["state"] == str(RecoveryState.READY) and status["side_effects_disabled"] is False
+            assert list(status["isolated_missions"]) == [damaged]
+            assert "missions" in status["isolated_missions"][damaged]["tables"]
+            rebuild = {o["step"]: o for o in status["latest"]["obligations"]}["reducer_rebuild"]
+            assert rebuild["status"] == "DONE" and damaged in rebuild["detail"]["isolated"]
+            # 健康的任务照常推进到底；被隔离的任务原样：不派发、不判停
+            assert str(world.store.get_mission(healthy).status.value) == "COMPLETED"
+            assert attempts_of(world.store, damaged) == damaged_attempts
+            assert str(world.store.get_mission(damaged).status.value) not in TERMINAL
+
+    asyncio.run(case())
+
+
+def test_a_step_whose_facts_do_not_hold_degrades_recovery_and_opens_read_only(tmp_path, monkeypatch):
+    from agent_orchestrator.orchestrator import recovery_coordinator
+
+    async def failing(self):
+        raise recovery_coordinator.RecoveryStepFailed("pending_reconcile", {"problems": ["fixture"]})
+
+    async def case():
+        root = tmp_path / "root"
+        first = LayeredScriptedProvider()
+        first.held.add("worker")
         async with product_world(root, first) as world:
             mission_id = world.create({**NOTE, "idempotency_key": "recover-degraded"})["mission_id"]
             for _ in range(10):
@@ -135,16 +190,8 @@ def test_an_inconsistent_library_degrades_recovery_and_opens_read_only(tmp_path)
                 if "worker" in first.asked:
                     break
             assert "worker" in first.asked
-            assert str(world.store.get_mission(mission_id).status.value) not in TERMINAL
             attempts = world.store.connection.execute("SELECT count(*) FROM attempts").fetchone()[0]
-            db = world.store.path
-        connection = sqlite3.connect(db)
-        try:
-            connection.execute("UPDATE missions SET json=json_set(json,'$.goal','改坏的目标') WHERE mission_id=?",
-                               (mission_id,))
-            connection.commit()
-        finally:
-            connection.close()
+        monkeypatch.setattr(recovery_coordinator.RecoveryCoordinator, "_step_pending", failing)
         second = LayeredScriptedProvider()
         async with product_world(root, second) as world:
             assert await world.drain(timeout=20) is True
@@ -152,11 +199,8 @@ def test_an_inconsistent_library_degrades_recovery_and_opens_read_only(tmp_path)
             assert status["state"] == str(RecoveryState.DEGRADED_RECOVERY)
             assert status["side_effects_disabled"] is True
             latest = status["latest"]
-            assert latest["state"] == "DEGRADED_RECOVERY" and latest["failed_step"] == "reducer_rebuild"
-            assert _obligations(status) == [(1, "recovery_locked", "DONE"), (2, "manifest_check", "DONE"),
-                                            (3, "reducer_rebuild", "FAILED")]
-            failed = latest["obligations"][2]["detail"]
-            assert mission_id in failed["inconsistent"] and "missions" in failed["inconsistent"][mission_id]["tables"]
+            assert latest["state"] == "DEGRADED_RECOVERY" and latest["failed_step"] == "pending_reconcile"
+            assert _obligations(status)[-1] == (5, "pending_reconcile", "FAILED")
             # 只读与诊断：不问模型、不派发、不唤醒执行池；任务原样
             assert second.asked == []
             assert world.store.connection.execute("SELECT count(*) FROM attempts").fetchone()[0] == attempts

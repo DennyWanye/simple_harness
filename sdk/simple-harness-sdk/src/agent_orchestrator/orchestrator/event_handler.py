@@ -609,6 +609,9 @@ class Orchestrator:
         #: Missions whose restart recovery faulted: each round retries the recovery first,
         #: inside the boundary, and skips the rest of that Mission's round until it holds.
         self._unrecovered: set[str] = set()
+        # 重启恢复第 3 步（reducer 重建）对不上的任务：本进程主循环不再处理（隔离该流），
+        # 值是对不上的事实（哪些表）。下次启动重新核对。
+        self._recovery_isolated: dict[str, Any] = {}
         #: faults caught by ``_round_boundary`` inside a global scan, settled right after it
         self._parked_faults: list[tuple[str, str, Exception]] = []
         #: Faults caught while binding frozen tool authority at startup, handed to the
@@ -3066,7 +3069,8 @@ class Orchestrator:
             " ORDER BY created_at, mission_id",
             ended,
         ).fetchall()
-        missions = (self.store.get_mission(str(row[0])) for row in rows)
+        missions = (self.store.get_mission(str(row[0])) for row in rows
+                    if str(row[0]) not in self._recovery_isolated)
         return [m for m in missions if m is not None and m.status not in TERMINAL_MISSION]
 
     def _event_cursor(self) -> int:

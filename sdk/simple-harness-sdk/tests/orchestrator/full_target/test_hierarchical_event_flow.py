@@ -338,6 +338,9 @@ def test_a_mission_whose_root_meaning_does_not_read_back_stops_through_the_plann
             mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
                                        "idempotency_key": "orch-damaged"})["mission_id"]
             root_task = str(HtnStore(world.store).list_task_semantics(mission_id)[0].task_id)
+            # 先让重启恢复走完（它在这一刻看到的库与历史一致）；损坏发生在恢复之后、第一轮规划之前。
+            # 恢复时就对不上的任务由恢复协议隔离，见 test_recovery_coordinator.py。
+            await world.loop.recover()
             _damage_binding(world.store, mission_id, root_task, to_mission="mission-elsewhere")
             mission = await world.run_until_settled(mission_id, rounds=4, timeout=15)
             return mission, list(world.store.list_events(mission_id)), list(provider.asked)

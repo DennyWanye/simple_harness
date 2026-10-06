@@ -631,7 +631,10 @@
     "source_task",
     "json",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "validity_interval",
+    "permitted_uses",
+    "assurance_level"
    ],
    "rebuild": "fold"
   },
