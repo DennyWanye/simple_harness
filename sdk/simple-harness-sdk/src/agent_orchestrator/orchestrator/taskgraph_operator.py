@@ -10,7 +10,7 @@ from ..contracts.models import Event, sha256_hex
 from ..governance.permissions import Principal
 from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1, _integer, _text
 from ..planning.htn.grounding import derive_id
-from ..storage.store import Store, StoreConflict, StoreError
+from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
 from .taskgraph_policy import KERNEL_VERSION, read_installed_graph_policy
 
@@ -124,7 +124,7 @@ class TaskGraphOperatorService:
             row = self.store.connection.execute(
                 "SELECT * FROM taskgraph_followups WHERE mission_id=? AND message_id=?", (mission_id, message_id)).fetchone()
             if row is None or row["delivery_state"] != "BLOCKED" or row["row_version"] != expected_version:
-                raise StoreConflict("TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT")
+                raise CodedStoreConflict("TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT")
             message = FollowupV1.from_json(json.loads(row["payload_json"]))
             if sha256_hex(message.to_json()) != row["payload_hash"] or message.mission_id != mission_id:
                 raise StoreError("TASKGRAPH_FOLLOWUP_CORRUPT")

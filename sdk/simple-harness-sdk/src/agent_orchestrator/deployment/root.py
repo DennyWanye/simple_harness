@@ -82,28 +82,39 @@ def current_statements(store: Any, mission: Any) -> tuple[str, ...]:
     return tuple(statement for _, statement in current_criteria(store, mission))
 
 
+class AmendmentRefused(ValueError):
+    """An amendment refused by :func:`apply_changes`: ``code`` is the stable name
+    (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` / ``AMEND_DUPLICATE``), ``detail`` says what
+    is wrong.  Callers read the attributes; the message is ``code: detail`` for logs."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        self.code = code
+        self.detail = detail
+        super().__init__(f"{code}: {detail}")
+
+
 def apply_changes(previous: RequirementsRevision, changes: Any, *,
                   highest_used: int) -> tuple[tuple[str, int, str], ...]:
     """The entries of the next revision: untouched entries carried as they are, a rewrite
     keeps its id and raises the entry revision, a removal drops the entry, an addition gets
     ``c-user-<highest_used + 1>`` — ``highest_used`` is the highest number any revision of this
-    Mission ever used, so an id is never reused.  Raises ``ValueError``
-    naming what is wrong (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` / ``AMEND_DUPLICATE``)."""
+    Mission ever used, so an id is never reused.  Raises :class:`AmendmentRefused` with the
+    code (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` / ``AMEND_DUPLICATE``) and detail."""
 
     if not changes:
-        raise ValueError("AMEND_EMPTY: no change was given")
+        raise AmendmentRefused("AMEND_EMPTY", "no change was given")
     entries = {str(item.criterion_id): (int(item.revision), str(item.statement)) for item in previous.criteria}
     order = [str(item.criterion_id) for item in previous.criteria]
     touched: set[str] = set()
     highest = int(highest_used)
     for change in changes:
         if not isinstance(change, Mapping) or change.get("op") not in {"add", "rewrite", "remove"}:
-            raise ValueError("AMEND_EMPTY: each change is {op: add|rewrite|remove, ...}")
+            raise AmendmentRefused("AMEND_EMPTY", "each change is {op: add|rewrite|remove, ...}")
         operation = change["op"]
         statement = str(change.get("statement") or "").strip()
         if operation == "add":
             if set(change) != {"op", "statement"} or not statement:
-                raise ValueError("AMEND_EMPTY: an addition is {op, statement}")
+                raise AmendmentRefused("AMEND_EMPTY", "an addition is {op, statement}")
             highest += 1
             name = f"c-user-{highest}"
             entries[name] = (1, statement)
@@ -111,25 +122,25 @@ def apply_changes(previous: RequirementsRevision, changes: Any, *,
             continue
         name = str(change.get("criterion_id") or "")
         if name not in entries or name in touched:
-            raise ValueError(f"AMEND_UNKNOWN_CRITERION: {name!r} is not a current requirement"
-                             " (or is changed twice)")
+            raise AmendmentRefused("AMEND_UNKNOWN_CRITERION",
+                                   f"{name!r} is not a current requirement (or is changed twice)")
         touched.add(name)
         if operation == "remove":
             if set(change) != {"op", "criterion_id"}:
-                raise ValueError("AMEND_EMPTY: a removal is {op, criterion_id}")
+                raise AmendmentRefused("AMEND_EMPTY", "a removal is {op, criterion_id}")
             del entries[name]
             order.remove(name)
         else:
             if set(change) != {"op", "criterion_id", "statement"} or not statement:
-                raise ValueError("AMEND_EMPTY: a rewrite is {op, criterion_id, statement}")
+                raise AmendmentRefused("AMEND_EMPTY", "a rewrite is {op, criterion_id, statement}")
             if statement == entries[name][1]:
-                raise ValueError(f"AMEND_DUPLICATE: {name!r} already says exactly that")
+                raise AmendmentRefused("AMEND_DUPLICATE", f"{name!r} already says exactly that")
             entries[name] = (entries[name][0] + 1, statement)
     if not order:
-        raise ValueError("AMEND_EMPTY: a Mission keeps at least one requirement")
+        raise AmendmentRefused("AMEND_EMPTY", "a Mission keeps at least one requirement")
     statements = [entries[name][1] for name in order]
     if len(set(statements)) != len(statements):
-        raise ValueError("AMEND_DUPLICATE: two requirements would say the same thing")
+        raise AmendmentRefused("AMEND_DUPLICATE", "two requirements would say the same thing")
     return tuple((name, entries[name][0], entries[name][1]) for name in order)
 
 

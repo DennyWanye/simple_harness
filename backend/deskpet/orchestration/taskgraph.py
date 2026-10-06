@@ -134,8 +134,12 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
             receipt = operator.retry_notification(mission_id, request["message_id"], expected_version=version,
                                                   command_id=command_id, reason=request["reason"])
     except StoreError as error:  # StoreConflict is a StoreError
-        code = str(error).split(":", 1)[0].strip()
-        logger.info("taskgraph %s refused for %s: %s", verb, mission_id, error)
+        # 只读异常上的类型码，不从文字里切（第 1 批 T02）；没带码的拒绝如实说"原因未具名"并记日志。
+        code = getattr(error, "code", None)
+        if not isinstance(code, str) or not code:
+            logger.warning("taskgraph %s refused for %s without a typed code: %s", verb, mission_id, error)
+            raise OrchestrationRequestError("taskgraph_refused", "没有做成：原因未具名") from error
+        logger.info("taskgraph %s refused for %s: %s", verb, mission_id, code)
         raise OrchestrationRequestError("taskgraph_refused", _OPERATOR_REFUSALS.get(code, f"没有做成：{code}")) from error
     service.wake()
     return dict(receipt)

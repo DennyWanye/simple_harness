@@ -60,7 +60,7 @@ def amend_requirements(
     expected_requirements_ref: Mapping[str, Any], changes: Sequence[Mapping[str, Any]],
     reason: str, source: Mapping[str, Any], principal: Any,
 ) -> dict[str, Any]:
-    from ..deployment.root import apply_changes, build_requirements, root_binding
+    from ..deployment.root import AmendmentRefused, apply_changes, build_requirements, root_binding
     from .assurance_final_writer import assured_closeout_pending
     from .hierarchical_dispatch import append_hierarchical_event
 
@@ -100,9 +100,8 @@ def amend_requirements(
                 "AMEND_AFTER_CLOSEOUT", "the Mission is already closing out; start a new one for new requirements")
         try:
             entries = apply_changes(previous, changes, highest_used=_highest_number(revisions))
-        except ValueError as error:
-            code, _, detail = str(error).partition(": ")
-            raise RequirementsAmendmentError(code, detail) from error
+        except AmendmentRefused as error:  # 按属性取码，不切异常文字（第 1 批 T02）
+            raise RequirementsAmendmentError(error.code, error.detail) from error
 
         try:  # the same door a new Mission's requirements pass
             orchestrator.check_requirement_statements([statement for _, _, statement in entries])
