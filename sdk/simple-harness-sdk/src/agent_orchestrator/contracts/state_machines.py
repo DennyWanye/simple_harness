@@ -56,6 +56,11 @@ class MissionStopReason(StrEnum):
     #: 2026-10-03 阶段 B 裁决第 9 类：这个任务的库读写在同一处连续出错，原地重试到上限仍不行。
     #: 不借"规划失败""运行环境不可用"——那两个各有含义。
     STORE_FAULT = "store_fault"
+    #: 第 2 批车道 H（H06，原计划 §5 / §19.1）：任务自带的两种停止条件。只是计数达上限——
+    #: 连续若干个规划轮之间知识库与验收记录都没有新增；结果内容哈希的重复率过高。达到上限先
+    #: 把事实交给规划器一次，这一版计划没有改动才用这两个名字停。
+    NO_NEW_KNOWLEDGE = "no_new_knowledge"
+    RESULT_DUPLICATION = "result_duplication"
 
 
 class TaskStatus(StrEnum):

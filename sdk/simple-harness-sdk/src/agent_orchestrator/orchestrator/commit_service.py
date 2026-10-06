@@ -174,7 +174,10 @@ class MissionSpec:
     success_criteria: tuple[str, ...]
     tenant_id: str
     idempotency_key: str
-    stop_conditions: tuple[str, ...] = ("verification_passed", "budget_exhausted")
+    # 第 2 批车道 H（H06）：两种计数型停止默认开启，阈值取部署政策（``stop_conditions`` 模块）
+    stop_conditions: tuple[str, ...] = (
+        "verification_passed", "budget_exhausted", "no_new_knowledge", "result_duplication",
+    )
     allowed_tools: tuple[str, ...] = ()
     risk_level: str = "sandbox"
     budget: Budget = field(default_factory=Budget)
