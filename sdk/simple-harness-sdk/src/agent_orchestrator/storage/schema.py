@@ -1373,6 +1373,193 @@ CREATE TRIGGER data_requirements_immutable_delete BEFORE DELETE ON data_requirem
  BEGIN SELECT RAISE(ABORT,'immutable source record: data_requirements'); END;
 """
 
+# 第 1 批 T08（2026-10-06）：迁移 30 把尝试身份守卫的"清单绑定版本 = 本次输入版本"放宽成 <=，原因是
+# input_manifest_bindings 主键 (mission_id, task_id, manifest_hash) 让换代后同一份内容只留首次绑定那一行。
+# 这里把 input_binding_revision 加进主键（每个输入版本各记一行），守卫恢复原计划（V25 文本）的相等。
+# 表重建，三个索引与五条触发器原文照抄重建；正文引用这张表的四条触发器（input_manifests 三条
+# 保证触发器与尝试身份守卫）也先删后建——不然重命名时 SQLite 解析整库 schema 会报"no such table"。
+DDL_V44 = """
+DROP TRIGGER tg_attempt_identity_guard;
+DROP TRIGGER assurance_source_input_manifest_bindings_insert;
+DROP TRIGGER assurance_source_input_manifest_bindings_update;
+DROP TRIGGER assurance_source_input_manifest_bindings_delete;
+DROP TRIGGER input_manifest_bindings_immutable_update;
+DROP TRIGGER input_manifest_bindings_immutable_delete;
+DROP TRIGGER assurance_source_input_manifests_insert;
+DROP TRIGGER assurance_source_input_manifests_update;
+DROP TRIGGER assurance_source_input_manifests_delete;
+CREATE TABLE input_manifest_bindings_v44 (
+ mission_id TEXT NOT NULL REFERENCES missions(mission_id),
+ task_id TEXT NOT NULL,
+ manifest_hash TEXT NOT NULL REFERENCES input_manifests(manifest_hash),
+ attempt_id TEXT,
+ request_id TEXT,
+ input_binding_revision INTEGER NOT NULL CHECK(input_binding_revision>=0),
+ created_at REAL NOT NULL,
+ PRIMARY KEY(mission_id, task_id, manifest_hash, input_binding_revision)
+) STRICT;
+INSERT INTO input_manifest_bindings_v44(mission_id,task_id,manifest_hash,attempt_id,request_id,input_binding_revision,created_at)
+ SELECT mission_id,task_id,manifest_hash,attempt_id,request_id,input_binding_revision,created_at FROM input_manifest_bindings;
+DROP TABLE input_manifest_bindings;
+ALTER TABLE input_manifest_bindings_v44 RENAME TO input_manifest_bindings;
+CREATE INDEX input_manifest_bindings_task_idx
+ ON input_manifest_bindings(mission_id, task_id, input_binding_revision);
+CREATE INDEX input_manifest_bindings_hash_idx
+ ON input_manifest_bindings(manifest_hash, mission_id);
+CREATE UNIQUE INDEX input_manifest_bindings_request_idx
+ ON input_manifest_bindings(mission_id, task_id, request_id) WHERE request_id IS NOT NULL;
+CREATE TRIGGER assurance_source_input_manifest_bindings_insert AFTER INSERT ON input_manifest_bindings WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifest_bindings',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifest_bindings'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id);
+ END;
+CREATE TRIGGER assurance_source_input_manifest_bindings_update AFTER UPDATE ON input_manifest_bindings WHEN (NEW.mission_id IS NOT OLD.mission_id OR NEW.task_id IS NOT OLD.task_id OR NEW.manifest_hash IS NOT OLD.manifest_hash OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.request_id IS NOT OLD.request_id OR NEW.input_binding_revision IS NOT OLD.input_binding_revision OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (NEW.mission_id,OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifest_bindings',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (NEW.mission_id,OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifest_bindings'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (NEW.mission_id,OLD.mission_id);
+ END;
+CREATE TRIGGER assurance_source_input_manifest_bindings_delete AFTER DELETE ON input_manifest_bindings WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (OLD.mission_id)
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifest_bindings',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (OLD.mission_id)
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifest_bindings'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (OLD.mission_id);
+ END;
+CREATE TRIGGER assurance_source_input_manifests_insert AFTER INSERT ON input_manifests WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT NEW.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifests',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT NEW.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifests'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT NEW.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash));
+ END;
+CREATE TRIGGER assurance_source_input_manifests_update AFTER UPDATE ON input_manifests WHEN (NEW.manifest_hash IS NOT OLD.manifest_hash OR NEW.origin_mission_id IS NOT OLD.origin_mission_id OR NEW.manifest_json IS NOT OLD.manifest_json OR NEW.created_at IS NOT OLD.created_at) BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT NEW.origin_mission_id UNION SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash,OLD.manifest_hash))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifests',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT NEW.origin_mission_id UNION SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash,OLD.manifest_hash))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifests'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT NEW.origin_mission_id UNION SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (NEW.manifest_hash,OLD.manifest_hash));
+ END;
+CREATE TRIGGER assurance_source_input_manifests_delete AFTER DELETE ON input_manifests WHEN 1 BEGIN 
+ SELECT CASE WHEN EXISTS(
+  SELECT 1 FROM assurance_mission_bindings b WHERE b.mission_id IN (SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (OLD.manifest_hash))
+   AND NOT EXISTS(SELECT 1 FROM validity_epochs e
+     WHERE e.mission_id=b.mission_id AND e.scope_id='assurance:mission'))
+ THEN RAISE(ABORT,'ASSURANCE_MISSION_EPOCH_UNINITIALIZED') END;
+ UPDATE validity_epochs SET epoch=epoch+1,bumped_by='assurance-source:input_manifests',
+  updated_at=CAST(strftime('%s','now') AS REAL)
+ WHERE scope_id='assurance:mission' AND mission_id IN (SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (OLD.manifest_hash))
+ AND mission_id IN (SELECT mission_id FROM assurance_mission_bindings);
+ INSERT INTO events(event_id,idempotency_key,type,trace_id,mission_id,task_id,attempt_id,
+  actor_type,actor_id,payload_json,created_at,schema_version)
+ SELECT 'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,'AssuranceEvidenceChanged',
+  'assurance-mission-epoch:'||e.mission_id||':'||e.epoch,e.mission_id,NULL,NULL,
+  'system','assurance-source-v1',
+  json_object('scope','MISSION','epoch',e.epoch,'source_table','input_manifests'),
+  CAST(strftime('%s','now') AS REAL),1
+ FROM validity_epochs e JOIN assurance_mission_bindings b ON b.mission_id=e.mission_id
+ WHERE e.scope_id='assurance:mission' AND e.mission_id IN (SELECT OLD.origin_mission_id UNION SELECT mission_id FROM input_manifest_bindings WHERE manifest_hash IN (OLD.manifest_hash));
+ END;
+CREATE TRIGGER input_manifest_bindings_immutable_update BEFORE UPDATE ON input_manifest_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifest_bindings'); END;
+CREATE TRIGGER input_manifest_bindings_immutable_delete BEFORE DELETE ON input_manifest_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable source record: input_manifest_bindings'); END;
+CREATE TRIGGER tg_attempt_identity_guard BEFORE INSERT ON taskgraph_attempt_inputs BEGIN
+ SELECT CASE WHEN NOT EXISTS (
+  SELECT 1 FROM attempts a JOIN dispatch_intents d ON d.subject_id=a.attempt_id
+  JOIN plan_memberships m ON m.mission_id=a.mission_id AND m.task_id=a.task_id
+  JOIN task_semantics s ON s.task_id=a.task_id AND s.binding_revision=NEW.binding_revision
+  JOIN taskgraph_revision_records rr ON rr.mission_id=NEW.mission_id AND rr.revision=NEW.source_revision
+  JOIN planning_admission_checks c ON c.check_id=NEW.admission_check_id
+  JOIN planning_requests r ON r.request_id=c.request_id
+  JOIN input_manifest_bindings b ON b.mission_id=a.mission_id AND b.task_id=a.task_id
+   AND b.manifest_hash=NEW.manifest_hash AND b.input_binding_revision=NEW.input_binding_revision
+  WHERE a.attempt_id=NEW.attempt_id AND a.mission_id=NEW.mission_id AND a.task_id=NEW.task_id
+   AND d.intent_id=NEW.intent_id AND d.mission_id=NEW.mission_id
+   AND d.creation_key=NEW.creation_key AND d.input_id=NEW.input_id AND d.input_hash=NEW.frozen_input_hash
+   AND m.revision=NEW.source_revision AND m.occurrence_id=NEW.occurrence_id AND m.form='primitive'
+   AND s.mission_id=NEW.mission_id AND s.form='primitive'
+   AND s.input_binding_revision=NEW.input_binding_revision AND s.dispatch_generation=NEW.dispatch_generation
+   AND rr.admission_check_id=NEW.admission_check_id
+   AND r.mission_id=NEW.mission_id AND c.phase='APPLIED'
+ ) THEN RAISE(ABORT,'TG_ATTEMPT_IDENTITY_MISMATCH') END;
+END;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1417,6 +1604,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(41, "orchestrator-g-replay-v3", DDL_V41),
     Migration(42, "orchestrator-verifications-per-requirements", DDL_V42),
     Migration(43, "orchestrator-data-requirements-drop-revision-policy", DDL_V43),
+    Migration(44, "orchestrator-manifest-binding-per-input-revision", DDL_V44),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

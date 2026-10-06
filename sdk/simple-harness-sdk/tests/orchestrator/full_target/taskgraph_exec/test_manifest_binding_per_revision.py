@@ -73,6 +73,7 @@ def test_the_attempt_identity_guard_requires_the_exact_binding_revision(store: S
         "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='input_manifest_bindings'")}
     assert {"input_manifest_bindings_task_idx", "input_manifest_bindings_hash_idx",
             "input_manifest_bindings_request_idx"} <= indexes
+    HtnStore(store).insert_input_manifest(MISSION, "task-1", DOCUMENT, input_binding_revision=0)
     with pytest.raises(Exception, match="immutable source record"):
         store.connection.execute("DELETE FROM input_manifest_bindings")
     assert schema.SCHEMA_VERSION == 44 and schema.MIGRATIONS[-1].name == "orchestrator-manifest-binding-per-input-revision"

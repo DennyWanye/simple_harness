@@ -656,7 +656,7 @@ SOURCE_PRIMARY_KEYS = {
     "data_requirements": ("mission_id", "plan_revision", "requirement_id"),
     "delivery_receipts": ("mission_id", "command_id"),
     "goal_resolutions": ("resolution_id",),
-    "input_manifest_bindings": ("mission_id", "task_id", "manifest_hash"),
+    "input_manifest_bindings": ("mission_id", "task_id", "manifest_hash", "input_binding_revision"),
     "input_manifests": ("manifest_hash",),
     "method_child_occurrences": ("instance_id", "slot_key"),
     "method_contracts": ("method_id", "method_version"),
