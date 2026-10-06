@@ -194,7 +194,10 @@ def test_c_composition_without_coverage_does_not_form_accept(tmp_path) -> None:
     refusals, active, resolutions, packages = asyncio.run(case())
     detail = json.dumps(refusals[0].payload, ensure_ascii=False)
     assert refusals[0].payload["reason"] == "proposal_not_grounded"
-    assert "success_criteria must not be empty" in detail, detail
+    # 被拒的位置随产品演进前后移过（10-03 A′ 在落任务行时、之后又回到冻结完成范围时）；要守的是
+    # "这个子目标证明不了对完成有贡献，整份计划被拒、什么都不写"，所以认这两种具名原因之一。
+    assert ("OP_COMPLETION_SCOPE_UNRESOLVED" in detail and "no provable completion contribution" in detail) \
+        or "success_criteria must not be empty" in detail, detail
     assert active is None, "the whole plan is refused"
     assert resolutions == ()
     assert packages == []
