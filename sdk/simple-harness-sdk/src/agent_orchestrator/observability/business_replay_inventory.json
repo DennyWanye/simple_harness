@@ -1643,6 +1643,54 @@
    ],
    "note": "全库做法的归因（阶段 C3）；归部署时间线，由整行变化折叠。写方 MethodLibraryStore.add_attribution/clear；归因随换做法的计划提交或根终审记录导入写，同一事务里有它们的领域事件",
    "rebuild": "fold"
+  },
+  "recovery_runs": {
+   "class": "runtime",
+   "fields": [
+    "recovery_id",
+    "owner",
+    "owner_pid",
+    "owner_process_started_at",
+    "state",
+    "failed_step",
+    "detail_json",
+    "started_at",
+    "finished_at"
+   ],
+   "note": "重启恢复协议的恢复锁与结果（车道 J，H01）：谁在恢复、停在哪一步、READY 还是 DEGRADED_RECOVERY；运行态，重建时不恢复"
+  },
+  "recovery_obligations": {
+   "class": "runtime",
+   "fields": [
+    "recovery_id",
+    "step_no",
+    "step",
+    "status",
+    "detail_json",
+    "created_at"
+   ],
+   "note": "恢复协议八步每一步的结果（RecoveryObligation，车道 J，H01）：诊断材料，运行态，重建时不恢复"
+  },
+  "sandbox_executions": {
+   "class": "runtime",
+   "fields": [
+    "execution_id",
+    "kind",
+    "root_pid",
+    "process_group",
+    "session_id",
+    "process_started_at",
+    "command_json",
+    "cwd",
+    "scratch",
+    "mission_id",
+    "task_id",
+    "attempt_id",
+    "started_at",
+    "finished_at",
+    "outcome"
+   ],
+   "note": "沙箱子进程的身份与回收材料（车道 J，H04，§14.4）：进程组/会话/启动时间/命令行/沙箱根/归属；重启后孤儿回收按它核对身份再终止；运行态，重建时不恢复"
   }
  },
  "rebuild_rule": "业务表二选一（偏差裁决 1）：immutable_source = 只增、库层不许改删，每行被同事务的 RowsWritten 事件 named 一栏按主键与内容哈希点名；fold = 会改，每个事务里每个被改的键在 RowsWritten 的 changed 一栏记改前/改后整行哈希与改后整行，重放按序号接链、通用折叠、逐列精确比对。没有 mission_id 的业务表用 owner 写明经哪张表找任务。改了业务行的事务必须有本任务的领域事件，确属内部记账的表写 silent_ok 与理由。"
