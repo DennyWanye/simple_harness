@@ -125,6 +125,47 @@ class Receipt:
         )
 
 
+#: ``Receipt.after["kind"]`` of a receipt that stands for a person's ruling, not a connector's reply.
+HUMAN_RULING = "human_ruling"
+
+
+def human_ruling_receipt(action: Mapping[str, Any], override: Mapping[str, Any]) -> Receipt:
+    """人裁定一个结果不明的动作"已生效"时写进动作行的回执（2026-10-06 第 1 批车道 E）。
+
+    外部系统没有回话，回话的是去看过的人：``after`` 如实写明是谁、何时、凭什么裁定，不写任何
+    连接器没有说过的事（没有路径、没有内容哈希）。身份字段抄动作行，所以它过的是和连接器回执
+    同一道 ``receipt_mismatch`` 门；结果审阅读到的就是这份裁定，够不够由审阅员判。
+    """
+    principal = override.get("principal") or {}
+    return Receipt(
+        idempotency_key=str(action["idempotency_key"]),
+        connector=str(action["connector"]),
+        operation=str(action["operation"]),
+        target=str(action["target"]),
+        params_hash=str(action["params_hash"]),
+        applied=True,
+        before=None,
+        after={
+            "kind": HUMAN_RULING,
+            "override_id": str(override["override_id"]),
+            "principal_id": str(principal.get("principal_id", "")),
+            "basis": str(override.get("basis", "")),
+            "evidence": dict(override.get("evidence") or {}),
+            "ruled_at": float(override.get("at") or 0.0),
+        },
+        service_ref=str(override["override_id"]),
+        applied_at=float(override.get("at") or 0.0),
+    )
+
+
+def human_ruling_in(receipt: Receipt) -> Mapping[str, Any] | None:
+    """The ruling a receipt claims to stand for (its ``after``), or None for a connector receipt."""
+    after = receipt.after
+    if isinstance(after, Mapping) and after.get("kind") == HUMAN_RULING:
+        return after
+    return None
+
+
 class Connector(Protocol):
     """``supports_reconciliation`` says a ``lookup`` can be asked at all; how much its
     answer is worth is ``lookup_authority`` (P3.2 plan v3 D7, review round 2 P2-6):

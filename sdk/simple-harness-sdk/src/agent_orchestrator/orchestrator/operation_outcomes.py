@@ -27,8 +27,8 @@ from ..contracts.resolution import (
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
-from ..runtime.connectors import Receipt, params_hash
-from ..runtime.operation_outcomes import resolve_receipt_adapter
+from ..runtime.connectors import Receipt, human_ruling_in, human_ruling_receipt, params_hash
+from ..runtime.operation_outcomes import ObservedOperationMilestone, resolve_receipt_adapter
 from ..runtime.operation_payloads import require_connector_profile
 from ..runtime.operation_ref_resolver import OperationReferenceResolver
 from ..storage.htn_store import HtnStore
@@ -83,13 +83,14 @@ def _execution_sources(store: Store, intent_id: str, profiles: Any):
         raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "no T0/T1 source")
     action = store.get_action(materialized["action_key"])
     link = PlanningAdmissionStore(store).get_operation_action_link(materialized["operation_id"])
-    if (
-        action is None
-        or link is None
-        or action["state"] != "SUCCEEDED"
-        or not action.get("receipt")
-    ):
+    if action is None or link is None:
+        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "materialized without action or link")
+    if action["state"] != "SUCCEEDED":
         raise OperationOutcomeError("OP_OUTCOME_PENDING")
+    if not action.get("receipt"):
+        # 2026-10-06 第 1 批车道 E：动作已成功却没有回执——不会再有回执来。读不出回执不是
+        # "等一等"，是具名的来源缺失；卡死检测按它停下（event_handler._outcome_source_refusals）。
+        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "succeeded without a receipt")
     if any(
         link.get(key) != value
         for key, value in {
@@ -121,6 +122,53 @@ def _execution_sources(store: Store, intent_id: str, profiles: Any):
     ):
         raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "action parameters differ")
     return row, materialized, action, resolved
+
+
+def human_ruling_of(store: Store, action: Any) -> dict[str, Any] | None:
+    """The person's ruling this action's receipt stands for, checked against the override on the
+    books; None for a connector receipt.  A ruling receipt nobody recorded is a missing source."""
+    receipt = Receipt.from_json(action["receipt"])
+    claim = human_ruling_in(receipt)
+    if claim is None:
+        return None
+    overrides = [
+        item for item in store.list_overrides(str(action["mission_id"]))
+        if item.get("override_id") == claim.get("override_id")
+    ]
+    if (
+        len(overrides) != 1
+        or overrides[0].get("action") != "resolve_unknown_action"
+        or overrides[0].get("subject") != action["action_key"]
+        or overrides[0].get("outcome") != "succeeded"
+        or human_ruling_receipt(action, overrides[0]).to_json() != receipt.to_json()
+    ):
+        raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "ruling receipt has no matching override")
+    return dict(overrides[0])
+
+
+HUMAN_RULING_SOURCE = "HUMAN_RULING"
+
+
+def _ruling_observation(ruling: dict[str, Any], receipt: Receipt, *, milestone: str,
+                        handoffs: tuple[Any, ...]) -> ObservedOperationMilestone:
+    """人裁定"已生效"的观察事实：外部系统没有回话，连接器的解读器无从核对，事实就是这份裁定本身
+    （谁、何时、依据）。不执行任何登记检查，也不假装执行过（``executed_check_ids`` 为空）；它够不够
+    这项效果的要求，由结果审阅员判——和连接器回执走同一条审阅、验收路径。"""
+    return ObservedOperationMilestone(
+        milestone,
+        {"receipt": receipt.to_json(), "ruling": ruling, "milestone_source": HUMAN_RULING_SOURCE,
+         "executed_check_ids": []},
+        tuple(str(event.id) for event in handoffs),
+    )
+
+
+def _facts_differ(facts: Any, *, ruling: dict[str, Any] | None, resolved: Any) -> bool:
+    """Whether a stored observation's facts no longer match their source (the ruling on the books,
+    or the frozen parameters the connector receipt was checked against)."""
+    if ruling is not None:
+        return facts.get("ruling") != ruling or facts.get("milestone_source") != HUMAN_RULING_SOURCE
+    return (facts.get("content_hash") != resolved.parameters.effective_params.get("content_hash")
+            or facts.get("bytes") != resolved.parameters.effective_params.get("size"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,13 +241,17 @@ def prepare_operation_outcome_review(
         attempt = store.get_attempt(row["source_attempt_id"])
         if attempt is None or not attempt.agent_id:
             raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "producer missing")
-    observed = resolve_receipt_adapter(profile, connectors.get(action["connector"]), profiles=profiles).interpret(
-        receipt,
-        action=action,
-        parameters=resolved.parameters,
-        handoff_events=handoffs,
-        required_milestone=slot.required_milestone,
-    )
+        ruling = human_ruling_of(store, action)
+    if ruling is not None:
+        observed = _ruling_observation(ruling, receipt, milestone=slot.required_milestone, handoffs=handoffs)
+    else:
+        observed = resolve_receipt_adapter(profile, connectors.get(action["connector"]), profiles=profiles).interpret(
+            receipt,
+            action=action,
+            parameters=resolved.parameters,
+            handoff_events=handoffs,
+            required_milestone=slot.required_milestone,
+        )
     if (observed.milestone != slot.required_milestone
             or len(set(observed.covered_handoff_ids)) != len(handoffs)
             or set(observed.covered_handoff_ids) != {str(event.id) for event in handoffs}):
@@ -460,6 +512,7 @@ def validate_scoped_outcome_command(
         slot.evidence_policy_ref.content_hash,
     ):
         raise OperationOutcomeError("OP_REVIEW_BINDING_MISMATCH", "evidence policy differs")
+    ruling = human_ruling_of(store, action)
     for ref in binding.source_receipt_refs:
         receipt = store.get_receipt(ref.id)
         if (
@@ -489,8 +542,7 @@ def validate_scoped_outcome_command(
             or tuple(sorted(event.id for event in handoffs)) != binding.covered_handoff_ids
             or len(handoffs) != action["handoffs"]
             or facts.get("receipt") != action["receipt"]
-            or facts.get("content_hash") != resolved.parameters.effective_params.get("content_hash")
-            or facts.get("bytes") != resolved.parameters.effective_params.get("size")
+            or _facts_differ(facts, ruling=ruling, resolved=resolved)
             or any(not set(c.required_evidence_policy.required_check_ids).issubset(
                 facts.get("executed_check_ids", ())) for c in criteria)):
             raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "original runtime evidence differs")

@@ -8,13 +8,15 @@
 * 收尾四档策略本身（纯函数）：效果不明一档排在"预留未结 / 用量不明"之前，也不被"按上限结清"吞掉。
 * 产品同形世界：发布交出去、链接其实成功但回执丢了 → 动作结果不明 → 任务不完成、没有"任务完成"
   事件、Host 没收到完成通知、终审没开、文件没有再发一次。
-* 人裁定"已生效"后才完成，且只完成一次、通知一次——**现为 xfail(strict)**：产品缺陷，见车道 C 记录。
+* 人裁定"已生效"后才完成，且只完成一次、通知一次（第 1 批车道 E 修复缺陷 1 后转绿）。
+* 没有人裁定、回执也空的"成功"动作：结果审阅不无限推迟，卡死检测具名停下（车道 E 新增）。
 * 收尾行上的状态词必须是 ``BLOCKED_UNKNOWN``（原计划的字面要求）——**现为 xfail(strict)**：现有代码到不了
   这个状态词，见车道 C 记录的偏差单。
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from types import SimpleNamespace
 from typing import Any
@@ -25,6 +27,8 @@ from agent_orchestrator.assurance.codec import decode
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
+from agent_orchestrator.storage.operation_intent_store import OperationIntentStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -198,15 +202,15 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
     asyncio.run(case())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="产品缺陷（车道 C 记录 V01-缺陷 1）：人裁定结果不明的发布'已生效'后，动作写成 SUCCEEDED 但没有回执，"
-           "结果审阅每轮都 OperationOutcomeDeferred（Receipt.from_json({}) 出错），效果永远停在 AWAITING_OUTCOME_REVIEW，"
-           "任务永远 ACTIVE 且没有卡死判定——'结果核对出来后才收尾'的后半句走不通。",
-)
 def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(tmp_path, monkeypatch):
     """结果核对出来（人去发布目录看过，裁定"已生效"）之后，任务才完成：只完成一次、收尾行定稿、Host 收到
-    恰好一条完成通知（通知的事件就是那条"任务完成"）。"""
+    恰好一条完成通知（通知的事件就是那条"任务完成"）。
+
+    第 1 批车道 E（缺陷 1 修复）：裁定写进动作行一份"人裁定回执"（谁、何时、依据），结果审阅读到的是这份
+    回执，观察事实里写明来源是人裁定、没有执行过任何登记检查；审阅员判它够不够，验收走和连接器回执同一条
+    使用证书路径。动作不再标"等人"。
+
+    **改坏检验**：``override_action_outcome`` 裁"已生效"时不写回执 → 结果审阅拒绝（来源缺失）→ 任务不完成 → 变红。"""
     _lose_the_first_reply(monkeypatch)
 
     async def case():
@@ -227,6 +231,87 @@ def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(t
             assert _closeout(world, mission_id) == ("FINALIZED", [], [])
             notices = [n for n in world.notices if n.get("mission_id") == mission_id]
             assert [n.get("event_id") for n in notices] == [completed.id]
+            assert len(list(published.rglob("*.md"))) == 1
+            # 动作行上是人裁定回执（谁、凭什么），不再标"等人"；裁定本身在册
+            [settled] = world.store.list_actions(mission_id)
+            [override] = world.store.list_overrides(mission_id)
+            after = settled["receipt"]["after"]
+            assert settled["state"] == "SUCCEEDED" and not settled["needs_human"]
+            assert (after["kind"], after["override_id"], after["basis"]) == (
+                "human_ruling", override["override_id"], "我去发布目录看过，周报在")
+            # 结果审阅读到的观察事实就是这份裁定：来源写明是人裁定、没有执行过任何登记检查；验收走同一条路
+            [intent] = OperationIntentStore(world.store).for_mission(mission_id)
+            [binding] = OperationCompletionStore(world.store).list_outcome_bindings_for_intent(
+                mission_id, intent["intent_id"])
+            observation = world.store.get_receipt(binding["document"].source_receipt_refs[0].id)
+            facts = observation["facts"]
+            assert observation["receipt"] == settled["receipt"]
+            assert (facts["milestone_source"], facts["executed_check_ids"]) == ("HUMAN_RULING", [])
+            assert facts["ruling"]["override_id"] == override["override_id"]
+            [accepted] = _events(world, mission_id, "OperationOutcomeAccepted")
+            assert accepted.payload["outcome_binding_id"] == binding["binding_id"]
+            assert not [e for e in _events(world, mission_id, "OperationOutcomeDeferred")
+                        if e.payload.get("reason") == "OP_OUTCOME_SOURCE_UNAVAILABLE"]
+
+    asyncio.run(case())
+
+
+def _no_change_planner(asked: list[dict[str, Any]]):
+    """规划器：卡死确认交来的"没有可派发的工作"请求记下来、回"不改"；别的照常。"""
+    from agent_orchestrator.testing.fixtures import package_of
+    from agent_orchestrator.testing.scripted_replies import decision, planner_reply
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        mine = [entry for entry in package.get("repair_requests") or ()
+                if entry["request"].get("trigger_source") == "NO_DISPATCHABLE_WORK"]
+        if not mine:
+            return planner_reply(request)
+        asked.append(mine[0])
+        refs = set(mine[0]["request"]["trigger_refs"])
+        subject = next((s["subject_key"] for s in package["planning_subjects"] if s["task_id"] in refs),
+                       package["planning_subjects"][0]["subject_key"])
+        return decision(subject, "NO_CHANGE", {"reason": "这件事要用户来定。"}, "不改计划。")
+
+    return planner
+
+
+@pytest.mark.replay_audit_exempt("用例直接改动作行（成功却没有回执）造'回执读不出来'的局面")
+def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_deferral(tmp_path, monkeypatch):
+    """没有人裁定、回执也空的"成功"动作（写方出错或库被改过）：结果审阅不能每轮 ``OperationOutcomeDeferred``
+    "等一等"地无限推迟——读不出回执是具名的来源缺失（``OP_OUTCOME_SOURCE_UNAVAILABLE``），不算合法等待，
+    卡死检测接手，具名停下（``no_dispatchable_work``），停机报告里 ``outcome_source_unavailable`` 点名那份申请单；
+    全程没有再发布、没有"任务完成"。
+
+    **改坏检验**：``_execution_sources`` 对无回执的成功动作仍报 ``OP_OUTCOME_PENDING``（或
+    ``_has_pending_operation_completion`` 不看 ``_outcome_source_refusals``）→ 任务一直 ACTIVE → 变红。"""
+    _lose_the_first_reply(monkeypatch)
+    asked: list[dict[str, Any]] = []
+
+    async def case():
+        published = tmp_path / "published"
+        published.mkdir()
+        connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+        policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
+        provider = LayeredScriptedProvider(planner=_no_change_planner(asked))
+        async with product_world(tmp_path / "root", provider, connectors={"file_publish": connector},
+                                 deployment_policy=policy) as world:
+            mission_id, action = await _publish_with_an_unknown_result(world, published, "unknown-no-receipt")
+            _assert_held_open(world, mission_id)
+            with world.store.transaction():  # 一个出错的写方：成功了，回执却没写
+                world.store.put_action({**world.store.get_action(action["action_key"]),
+                                        "state": "SUCCEEDED", "receipt": None, "needs_human": False})
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            reasons = {e.payload.get("reason") for e in _events(world, mission_id, "OperationOutcomeDeferred")}
+            assert "OP_OUTCOME_SOURCE_UNAVAILABLE" in reasons and "OP_OUTCOME_PENDING" not in reasons, reasons
+            assert str(mission.status.value) == "FAILED", (mission.status, reasons, mission.final_report)
+            detail = mission.final_report["detail"]
+            [row] = detail["outcome_source_unavailable"]
+            assert (row["reason"], row["effect_key"]) == ("OP_OUTCOME_SOURCE_UNAVAILABLE", "publish-weekly")
+            # 规划器这次问不成：它那边读操作台账，一个"成功却没有匹配回执"的动作读不出来（planning_operations
+            # ``success_without_matching_receipt``），按现有规则"读不了时问不成、照旧判停"——停机报告如实写明没问过。
+            assert asked == [] and detail["planner_asked"] is None, (asked, detail)
+            assert not _events(world, mission_id, "MissionCompleted")
             assert len(list(published.rglob("*.md"))) == 1
 
     asyncio.run(case())

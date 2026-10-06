@@ -61,6 +61,8 @@ def _orch(payloads):
     fake = SimpleNamespace(store=_exhausted_store(payloads))
     fake._exhausted_reviews = Orchestrator._exhausted_reviews.__get__(fake)
     fake._inconclusive_reviews = lambda mission_id: []
+    fake._materialization_refusals = lambda mission_id: {}
+    fake._outcome_source_refusals = lambda mission_id: {}
     return fake
 
 

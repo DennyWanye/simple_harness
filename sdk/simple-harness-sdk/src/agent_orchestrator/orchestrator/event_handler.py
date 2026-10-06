@@ -2516,12 +2516,44 @@ class Orchestrator:
                 if e.type == "OperationMaterializationDeferred" and e.payload.get("intent_id") in heads] if heads else []
         return {"materialization_refused": rows} if rows else {}
 
+    def _outcome_source_refusals(self, mission_id: str) -> dict[str, Any]:
+        """For the stall record: executed operations whose result review cannot be prepared because
+        its source is missing for good (a SUCCEEDED action without a receipt, a ruling receipt nobody
+        recorded, a broken T1 link) — refused the same way every round; the effect waiting on it
+        will never move (2026-10-06 第 1 批车道 E)."""
+        from ..storage.operation_completion_store import OperationCompletionStore
+        from ..storage.operation_intent_store import OperationIntentStore
+
+        intents = OperationIntentStore(self.store).for_mission(mission_id)
+        replaced = {item["supersedes_intent_id"] for item in intents if item["supersedes_intent_id"]}
+        completion = OperationCompletionStore(self.store)
+        heads: dict[str, Any] = {}
+        for item in intents:
+            if item["intent_id"] in replaced:
+                continue
+            materialized = self.store.get_receipt("materialize:" + item["intent_id"])
+            action = None if materialized is None else self.store.get_action(materialized["action_key"])
+            if action is None or action["state"] != "SUCCEEDED":
+                continue
+            if any(completion.get_acceptance_scope_exact(mission_id, "acc-" + row["binding_id"])
+                   for row in completion.list_outcome_bindings_for_intent(mission_id, item["intent_id"])):
+                continue  # its result was accepted; nothing is waiting on it
+            heads[item["intent_id"]] = item
+        rows = [{"intent_id": str(e.payload.get("intent_id")), "reason": str(e.payload.get("reason")),
+                 "effect_key": heads[e.payload["intent_id"]]["binding"].get("completion", {}).get("effect_key")}
+                for e in self.store.list_events(mission_id)
+                if e.type == "OperationOutcomeDeferred" and e.payload.get("intent_id") in heads
+                and e.payload.get("reason") == "OP_OUTCOME_SOURCE_UNAVAILABLE"] if heads else []
+        return {"outcome_source_unavailable": rows} if rows else {}
+
     def _has_pending_operation_completion(self, mission: Mission) -> bool:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
         from .operation_outcomes import outcome_exhaustion_is_final
 
         if self._materialization_refusals(mission.id):
             return False  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测
+        if self._outcome_source_refusals(mission.id):
+            return False  # 2026-10-06：成功了却读不出回执的操作，结果审阅永远准备不出来，同样交给卡死检测
 
         if any(outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
                for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")):
@@ -2916,6 +2948,7 @@ class Orchestrator:
                         "admitted_not_dispatched": [],
                         "outstanding_obligations": outstanding,
                         **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
+                        **self._outcome_source_refusals(mission.id),
                         "fingerprint": after,
                         "confirmed_after_one_more_cycle": True,
                         **self._root_review_stop_detail(mission, new_mode),
@@ -2943,6 +2976,7 @@ class Orchestrator:
                             "admitted_not_dispatched": sorted(admissions.readiness)[:32],
                             "outstanding_obligations": outstanding,
                             **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
+                            **self._outcome_source_refusals(mission.id),
                             # 最终审查没给出结论（回复用完仍无法采用）或被打回，是事实，一并交给规划器。
                             **self._root_review_stop_detail(mission, new_mode)})
             except (GraphIntegrityError, ContractError, StoreError, SourceUnavailable) as error:
@@ -2973,6 +3007,7 @@ class Orchestrator:
                     "admitted_not_dispatched": sorted(admissions.readiness),
                     "outstanding_obligations": outstanding,
                     **self._handoff_refusals(mission.id), **self._materialization_refusals(mission.id),
+                    **self._outcome_source_refusals(mission.id),
                     "fingerprint": after,
                     "confirmed_after_one_more_cycle": True,
                     # P2.3j: a Mission that idles *because* its root review rejected the
