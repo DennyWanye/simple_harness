@@ -80,6 +80,7 @@ def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any
     任务无关，阶段 C3）：每一条都要有链接；中间目标的要求是上级做法分下来的。
     """
     from .assurance_check_policy import assigned_criterion_ids
+    from .operation_completion import OperationCompletionError
 
     if binding.goal_signature.coverage_criteria:
         linked = {str(link.parent_criterion_id) for link in method.composition.criterion_links}
@@ -87,12 +88,25 @@ def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any
         return [] if not missing else [
             f"ROOT_COVERAGE_GAP: the composition covers none of criteria {', '.join(missing)} of the "
             "goal; every requirement of the goal needs a criterion link"]
-    assigned = set(assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
+    try:
+        assigned = set(assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
+    except OperationCompletionError as error:
+        return [share_unreadable_problem(error)]
     if not assigned:
         return []
     return subgoal_coverage_problems(
         assigned, [(link.parent_criterion_id, link.child_step) for link in method.composition.criterion_links],
         [step.local_id for step in method.steps])
+
+
+def share_unreadable_problem(error: Any) -> str:
+    """读不出上级做法分给这个中间目标的要求时，退回给规划器的那一句（夜间 N6：此前当成空）。"""
+
+    return (f"SUBGOAL_SHARE_UNREADABLE: the requirements handed to this goal cannot be read "
+            f"({error.code}: {error}), so a method for it cannot be checked against them. When the "
+            "requirements changed after the plan above it was fixed, its share is set again only when "
+            "that plan is committed again under the current requirements: replace the method of the "
+            "goal that holds it (usually the root)")
 
 
 def subgoal_coverage_problems(assigned: Any, links: Any, steps: Any) -> list[str]:
@@ -137,10 +151,13 @@ def prepare_method(dispatch: Any, mission_id: str, payload: Any, subject: Any) -
             "GOAL_MISMATCH: method.goal_type_ref must be the goal type of the planning subject "
             f"({binding.goal_signature.signature_id})",))
     problems = _identity_problems(dispatch, mission_id, proposal.method)
-    from .assurance_check_policy import assigned_criterion_ids
-    # 发布来源唯一只查这个目标自己负责的要求：类型声明的，加上上级做法分给这个实例的。
-    share = set(binding.goal_signature.coverage_criteria) | set(
-        assigned_criterion_ids(dispatch.store, mission_id, str(binding.task_id)))
+    from .assurance_check_policy import goal_share
+    from .operation_completion import OperationCompletionError
+    # 发布来源唯一只查这个目标自己负责的要求：类型声明的；中间目标是上级做法分给这个实例的。
+    try:
+        share = set(goal_share(dispatch.store, mission_id, binding))
+    except OperationCompletionError as error:
+        raise MethodProposalRefused((share_unreadable_problem(error),)) from error
     problems += ["PUBLISH_SOURCE_AMBIGUOUS: " + item + "；每个要发布的文件对应的 file: 要求必须恰好"
                  "链接到一个步骤（写出这个文件的那一步），发布本身由系统完成"
                  for item in dispatch._publish_source_steps(mission_id, proposal.method, share)]

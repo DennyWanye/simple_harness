@@ -1363,17 +1363,17 @@ def test_a_sub_goal_already_resolved_does_not_close_the_duty_an_amendment_reopen
     asyncio.run(case())
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "夜间 N3-13 发现的缺陷（交主会话裁决修法）：子目标已细化后改要求，规划器三条路都走不通——"
-    "①为根 REPLACE_METHOD：子目标采用的做法实例没有随之退役，合并网络报 refines unknown task"
-    "（INTERNAL_CONTRACT_ERROR）；②保留子目标、只换它的做法：改要求后子目标的完成范围读出"
-    " OP_EFFECT_SCOPE_STALE，assigned_criterion_ids 返回空，写做法用的 criterion_evidence 为空，"
-    "任何做法都因 criterion_links 为空不可读；③只给叶子提继任：子目标第 1 版的结论仍 CURRENT，"
-    "按 resolved dependent requires an explicit successor 拒。"))
 def test_a_sub_goal_already_resolved_is_resolved_again_under_the_amended_requirements(tmp_path):
     """夜间 N3-13（T12）联测：三层计划（根 → 子目标 → 两个叶子）。子目标已按第 1 版形成目标结论、收尾
     还在跑时，用户改写子目标负责的一条要求。规划器按提示词的常规做法为根提新做法并换上去；新的子目标
-    按第 2 版再形成目标结论，任务按新版完成。缺陷修好后去掉 xfail（strict：修好了不去掉会报红）。"""
+    按第 2 版再形成目标结论，任务按新版完成。
+
+    夜间 N6 修好：换掉根做法时，被换掉的做法实例细化出的子目标没有别人持有，它下面采用的做法实例
+    随之一起退役（TaskGraph 代码级计划 §5.3 ``retired_targets``）；此前留在网络里，合并报
+    ``refines unknown task``。
+
+    **改坏检验**：``compiler._retirement_closure`` 只返回点名的那一个（不往下级联）→ 换做法被拒、
+    任务按规划次数用完失败 → 变红。"""
     state: dict[str, Any] = {"proposed": [], "replaced": False, "unexpected": []}
 
     async def case():
@@ -1392,11 +1392,131 @@ def test_a_sub_goal_already_resolved_is_resolved_again_under_the_amended_require
                  if e.type in {"PlanningRejected", "MissionStalled", "HierarchicalMissionStalled"}][-6:])
             assert state["replaced"] and not state["unexpected"], state
             assert "OBLIGATION_NOT_OPEN" not in json.dumps([e.payload for e in events], ensure_ascii=False)
+            assert not [e for e in events if e.type == "PlanningRejected"], [
+                json.dumps(e.payload, ensure_ascii=False)[:400] for e in events if e.type == "PlanningRejected"]
+            # 换根做法那一次提交：旧根做法实例与旧子目标下采用的做法实例一起退役，二者都记为 RETIRED
+            htn = HtnStore(world.store)
+            [old_sub] = [r for r in _sub_goal_resolutions(world.store, mission_id) if int(r.requirements_version) == 1]
+            old_sub_instances = [str(item.instance_id) for item in htn.list_method_instances(mission_id)
+                                 if str(item.goal_id) == str(old_sub.goal_task_id)]
+            assert len(old_sub_instances) == 1, old_sub_instances
+            [replacing] = [e.payload for e in events if e.type == "PlanRevisionCommitted"
+                           and len(e.payload["retired_method_instances"]) > 0]
+            assert old_sub_instances[0] in replacing["retired_method_instances"], replacing
+            assert len(replacing["retired_method_instances"]) == 2, replacing
+            for instance_id in replacing["retired_method_instances"]:
+                assert htn.method_instance_state(mission_id, instance_id) == "RETIRED"
             # 子目标按第 2 版再形成了目标结论；根结论按第 2 版采用
             assert sorted(int(r.requirements_version) for r in _sub_goal_resolutions(world.store, mission_id)) == [1, 2]
             assert int(HtnStore(world.store).adopted_goal_resolution(mission_id, duty).requirements_version) == 2
             [judged] = [e.payload for e in events if e.type == "MissionSuccessJudged"]
             assert [j["criterion"] for j in judged["judgments"]] == [
                 "file:notes/a.md", "file:notes/b2.md", "file:NOTES.md"] and judged["met"]
+
+    asyncio.run(case())
+
+
+def test_after_an_amendment_a_sub_goal_whose_share_cannot_be_read_says_so(tmp_path):
+    """夜间 N6（N3-13 第②条）：子目标已细化、用户改了要求之后，计划还没按新版重新提交，子目标负责
+    哪些要求读不出来（它的完成范围按第 1 版定，``OP_EFFECT_SCOPE_STALE``）。系统如实写出来，不当成
+    "没有"：写做法的材料里带 ``criterion_share_unreadable``（原因码与说明），规划器仍按旧那一份为它写
+    做法时被退回，退回理由是 ``SUBGOAL_SHARE_UNREADABLE``、带着原因——而不是材料里要求是空的、做法
+    一律"criterion_links 为空"不可读。随后规划器走常规修法（为根换做法），任务按新版完成。
+
+    **改坏检验**：``assigned_criterion_ids`` 改回吞掉错误返回空 → 材料里没有这一项 → 变红。"""
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    state: dict[str, Any] = {"proposed": [], "replaced": False, "unexpected": [], "sub_context": None,
+                             "feedback": None}
+    usual = _three_layer_planner(state)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        if "REQUIREMENTS_UPDATE" in sources and state["sub_context"] is None:
+            [context] = [item for item in package.get("method_proposal_contexts") or ()
+                         if str(item["request"]["goal_type_ref"]["id"]) == "sub-goal-1"]
+            state["sub_context"] = context
+            # 规划器若照旧那一份（第一、二条要求）为子目标写做法
+            stale = {**context, "request": {**context["request"], "criterion_evidence": [
+                {"id": "c-user-1", "evidence_requirement": "file:notes/a.md"},
+                {"id": "c-user-2", "evidence_requirement": "file:notes/b2.md"}]}}
+            return decision(context["subject_key"], "PROPOSE_METHOD", {"method_proposal": {
+                "method": parallel_method(stale), "rationale": "保留子目标，只换它的做法。"}}, "只换子目标的做法。")
+        if state["sub_context"] is not None and state["feedback"] is None:
+            state["feedback"] = json.dumps(package.get("previous_feedback"), ensure_ascii=False)
+        return usual(request)
+
+    async def case():
+        provider = _HeldTail(planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id, _duty = await _sub_goal_resolved_then_amended(world)
+            provider.go.set()
+            mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            events = list(world.store.list_events(mission_id))
+            context = state["sub_context"]
+            assert context is not None
+            unreadable = context["request"].get("criterion_share_unreadable")
+            assert unreadable is not None and unreadable["code"] == "OP_EFFECT_SCOPE_STALE", context["request"]
+            assert "requirements have changed" in unreadable["detail"]
+            assert context["request"]["criterion_evidence"] == []
+            refused = [json.dumps(e.payload, ensure_ascii=False) for e in events if e.type == "PlanningRejected"]
+            assert any("SUBGOAL_SHARE_UNREADABLE" in item and "OP_EFFECT_SCOPE_STALE" in item for item in refused), refused
+            assert not any("criterion_links must have at least 1 entries" in item for item in refused), refused
+            assert "SUBGOAL_SHARE_UNREADABLE" in (state["feedback"] or ""), state["feedback"]
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, refused[-4:])
+            assert state["replaced"] and not state["unexpected"], state
+
+    asyncio.run(case())
+
+
+def test_after_an_amendment_a_step_under_a_resolved_sub_goal_is_replaced_through_the_goal_above(tmp_path):
+    """夜间 N6（N3-13 第③条）：子目标已形成结论、用户改了要求，规划器只给子目标下面的一步提继任
+    （PROPOSE_SUCCESSOR）——被拒，这是秩序约束：结论是不可变的事实，原地换它的成员会让现行结论说的
+    不再是它审过的那组步骤。拒绝理由写明是哪个目标有现行结论、该怎么换（换持有它的上级做法）；规划器
+    照做（为根换做法），任务按新版完成。
+
+    **改坏检验**：拒绝理由改回只有"resolved dependent requires an explicit successor" → 变红。"""
+    from agent_orchestrator.testing.scripted_replies import decision
+
+    state: dict[str, Any] = {"proposed": [], "replaced": False, "unexpected": [], "tried": False}
+    usual = _three_layer_planner(state)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        sources = {entry["request"].get("trigger_source") for entry in package.get("repair_requests") or ()}
+        if "REQUIREMENTS_UPDATE" in sources and not state["tried"]:
+            state["tried"] = True
+            done = {row["producer_occurrence"] for row in package["views"]["accepted_results"]}
+            step = next(item for item in package["views"]["goals"]
+                        if item["form"] == "primitive" and item["occurrence_id"] in done)
+            subject = next(row for row in package["planning_subjects"] if row["task_id"] == step["task_id"])
+
+            def visible(kind: str, identity: str) -> Any:
+                return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == identity)
+
+            [task_type] = [row for row in package["successor_types"]
+                           if row["statement"] == step["statement"] and row["form"] == "primitive"]
+            return decision(subject["subject_key"], "REPAIR", {
+                "repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", step["task_id"]),
+                "obligation_ref": visible("obligation", step["obligation_id"]),
+                "goal_type_ref": task_type["task_type_ref"], "bindings": dict(step["params"])},
+                "只换子目标下面的这一步。")
+        return usual(request)
+
+    async def case():
+        provider = _HeldTail(planner=planner)
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id, _duty = await _sub_goal_resolved_then_amended(world)
+            provider.go.set()
+            mission = await asyncio.wait_for(world.run_until_settled(mission_id, rounds=60), 240)
+            events = list(world.store.list_events(mission_id))
+            refused = [json.dumps(e.payload, ensure_ascii=False) for e in events if e.type == "PlanningRejected"]
+            [sub] = [r for r in _sub_goal_resolutions(world.store, mission_id) if int(r.requirements_version) == 1]
+            assert any("resolved dependent requires an explicit successor" in item
+                       and f"{sub.goal_task_id} has a current goal resolution" in item
+                       and "REPLACE_METHOD" in item for item in refused), refused
+            assert state["tried"] and state["replaced"] and not state["unexpected"], state
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, refused[-4:])
 
     asyncio.run(case())

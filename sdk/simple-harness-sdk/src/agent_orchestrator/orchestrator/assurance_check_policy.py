@@ -453,19 +453,45 @@ def planning_subject_criteria(store: Any, mission_id: str, binding: Any, require
 
     One definition for the three readers that must agree — the policy approval, the
     lossless mapping a deployment derives for it, and the METHOD_PLAN review package:
-    the requirements criteria this goal's signature covers, plus the ones the current
-    plan handed to this goal instance (a sub-goal's type declares none of its own).
+    the requirements criteria this goal's signature covers or, for a sub-goal (whose
+    type declares none of its own), the ones the current plan handed to this goal
+    instance (:func:`goal_share`).  A share that cannot be read is ``SOURCE_UNAVAILABLE``.
     """
-    covered = set(binding.goal_signature.coverage_criteria)
-    covered.update(assigned_criterion_ids(store, mission_id, str(binding.task_id)))
+    from .operation_completion import OperationCompletionError
+
+    try:
+        covered = set(goal_share(store, mission_id, binding))
+    except OperationCompletionError as error:
+        # 读不出不是"没有"（TaskGraph 代码级计划 R06）：按读失败报，审阅包与批准都不按空范围做
+        raise AssuranceError(
+            "SOURCE_UNAVAILABLE", f"requirements handed to {binding.task_id}: {error.code}: {error}"
+        ) from error
     return tuple(item for item in requirements.criteria if item.criterion_id in covered)
+
+
+def goal_share(store: Any, mission_id: str, binding: Any) -> tuple[str, ...]:
+    """这个目标负责的要求编号：目标自己声明了判据（根目标）就是这些；否则（中间目标）是上级
+    做法分给这个实例的那一份（:func:`assigned_criterion_ids`）。读不出时抛
+    ``OperationCompletionError``，不当成空。"""
+
+    declared = tuple(str(item) for item in binding.goal_signature.coverage_criteria)
+    if declared:
+        return declared
+    return assigned_criterion_ids(store, mission_id, str(binding.task_id))
 
 
 def assigned_criterion_ids(store: Any, mission_id: str, task_id: str) -> tuple[str, ...]:
     """分给这个目标实例的要求：它在当前计划完成范围里的内容要求（HTN 精简 片 B）。
 
     中间目标的类型不声明判据——它负责哪几条要求，是上级做法用链接分给它的，记在当前计划
-    为它推导的完成范围里。目标不在当前计划里（还没有计划、或它不是计划成员）就是空。
+    为它推导的完成范围里。目标不在当前计划里（还没有计划、或它不是计划成员）就是空：
+    没有任何做法分给它，这是事实。
+
+    范围在、却读不出来时（最常见：用户改了要求，范围是按旧版定的，计划还没按新版重新提交——
+    Operation 完成合同补遗：要求变了要新 Spec/新 Scope，旧范围只归档），原样抛
+    ``OperationCompletionError``（夜间 N6）。此前这里吞掉错误返回空，写做法的材料
+    ``criterion_evidence`` 因而是空的，规划器写出的做法一律因 criterion_links 为空不可读，
+    却不知道为什么。
     """
     active = HtnStore(store).active_plan_revision(mission_id)
     if active is None:
@@ -476,14 +502,10 @@ def assigned_criterion_ids(store: Any, mission_id: str, task_id: str) -> tuple[s
     if len(rows) != 1:
         return ()
     from ..contracts.operation_completion import PlanRevisionPinV1
-    from .operation_completion import OperationCompletionError
 
-    try:
-        scope = OperationCompletionReader(store).read_scope(
-            mission_id, PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
-            str(rows[0][0]))
-    except OperationCompletionError:
-        return ()
+    scope = OperationCompletionReader(store).read_scope(
+        mission_id, PlanRevisionPinV1(revision=int(active.revision), snapshot_hash=active.snapshot_hash),
+        str(rows[0][0]))
     return tuple(scope.content_criterion_ids)
 
 

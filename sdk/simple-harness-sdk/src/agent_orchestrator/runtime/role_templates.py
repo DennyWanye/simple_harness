@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v28"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v29"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -230,7 +230,8 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "现在的计划是按旧版定的，系统已停止按它开新工；按旧版通过的结果在新版下先不算数。"
         "按旧版通过的步骤留在新计划里（原样留在没换的做法里，或换做法时在 reuse 里点名共用它），系统会请审阅员"
         "按新版要求把同一份结果再审一次（它读的上游先算数后才审它；只做普通步骤，整个子目标换掉的话它下面的步骤"
-        "就沿用不了——想沿用就保留子目标、只换子目标的做法）：通过就按新版算数，不用重做；没过会以修复请求告诉你"
+        "就沿用不了；改要求之后、计划按新版再提交之前，中间目标负责哪些要求读不出来（见 criterion_share_unreadable），"
+        "这时不能单为中间目标写做法）：通过就按新版算数，不用重做；没过会以修复请求告诉你"
         "（context.reason_code 是 CARRIED_RESULT_REJECTED，findings 是不通过的要求与审阅员的理由），由你换掉这一步"
         "（PROPOSE_SUCCESSOR）或换做法。不想沿用就直接换掉它。停滞请求 withheld 里，等重审的步骤原因代码是"
         " CARRIED_REVIEW_PENDING，重审没过的是 CARRIED_RESULT_REJECTED。"
@@ -323,7 +324,10 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "  goal_type_ref：目标类型，method.goal_type_ref 照抄它；\n"
         "  goal_signature：目标签名，其中 parameter_schema_ref、output_schema_ref、coverage_criteria 要照抄；\n"
         "  criterion_evidence：这个目标要负责的每条要求的编号和原文——做法必须让每一条要求都落到某个步骤上。"
-        "中间目标的 coverage_criteria 是空的，它负责的就是这里列出的、上级做法交给它的要求；\n"
+        "中间目标的 coverage_criteria 是空的，它负责的就是这里列出的、上级做法交给它的要求。"
+        "request 里有 criterion_share_unreadable（code、detail 是原因）表示系统读不出上级做法交给这个中间目标的要求，"
+        "criterion_evidence 因此不全：不要为它写做法，先为上级目标（通常是根目标）换做法——用户改了要求、"
+        "计划还没按新版重新提交时就是这样；\n"
         "  operators：这台机器上真实可用的步骤类型（task_type_ref、参数、输入输出端口、required_capabilities）；\n"
         "  subgoal_types：这个目标的做法里可以放的子目标类型（没有就是 []）。子目标是一个 form 为 compound 的"
         "步骤：一组步骤合起来才算完成一部分要求、值得先单独审一次再往下做时，可以把这部分交给一个子目标，"
@@ -485,8 +489,10 @@ register_template(PLANNER_HIERARCHICAL)
 #: are gone.  Version 14 (第 2 批 K03): the twelfth view, ``knowledge`` — the blackboard
 #: (current verified knowledge and reviewer-checked step summaries) a Planner judges
 #: direction from.  Version 15 (夜间 N3-03): ``knowledge`` gains its third layer,
-#: ``candidate`` — claims not verified yet, leads and not facts.
-PLANNING_DECISION_PACKAGE_VERSION = 15
+#: ``candidate`` — claims not verified yet, leads and not facts.  Version 16 (夜间 N6):
+#: a method proposal context may carry ``criterion_share_unreadable`` — the requirements
+#: handed to an intermediate goal could not be read (before, that read as "none").
+PLANNING_DECISION_PACKAGE_VERSION = 16
 
 #: The prompt written against that package.  One package, one prompt.
 PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_VERSION

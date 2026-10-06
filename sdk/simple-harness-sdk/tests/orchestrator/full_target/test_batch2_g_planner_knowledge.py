@@ -48,11 +48,11 @@ def _summary(sid: str) -> dict[str, Any]:
 
 def test_knowledge_is_the_twelfth_view_and_the_prompt_is_the_new_pair() -> None:
     assert VIEW_NAMES[-1] == "knowledge" and len(VIEW_NAMES) == 12
-    # 改了包就换版本号：包 15 配提示词 v28（夜间 N3-02 目标改了、N3-03 候选层），旧对不再合法
-    assert PLANNING_DECISION_PACKAGE_VERSION == 15
-    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v28"
-    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v28", 15)
-    assert not hierarchical_planner_pairing_is_valid("planner-hierarchical-v27", 14)
+    # 改了包就换版本号：包 16 配提示词 v29（夜间 N6 中间目标的要求读不出时如实写出），旧对不再合法
+    assert PLANNING_DECISION_PACKAGE_VERSION == 16
+    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v29"
+    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v29", 16)
+    assert not hierarchical_planner_pairing_is_valid("planner-hierarchical-v28", 15)
     prompt = PLANNER_HIERARCHICAL.instructions
     assert "views.knowledge：" in prompt and "layer=verified" in prompt and "layer=summary" in prompt
     assert "omitted_counts.knowledge" in prompt and "不要写进 reason_refs" in prompt

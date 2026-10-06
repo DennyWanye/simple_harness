@@ -457,6 +457,77 @@ def test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_bran
     assert validate_execution_projection(after.execution_projection(), BUDGET).ok
 
 
+def _three_levels(env: Env, *, share_inner_read: bool):
+    """root one → outer（一个子目标 part）→ part 采用 inner（shared 读 + a）；root two 的做法
+    second 在 share_inner_read 时点名共用 inner 的 shared 那一步。返回（网络, outer 实例, inner 实例,
+    part 出现, inner 的 shared 出现, root one）。"""
+
+    env.register_type("demo.part", form=TaskForm.COMPOUND, parameters=(("subject", "string"),), domain="demo")
+    env.say("demo.primary-ready", {"subject": "alpha"}, TruthValue.TRUE)
+    env.say("demo.fallback-ready", {"subject": "alpha"}, TruthValue.TRUE)
+    outer = method("demo.outer", "demo.goal", parameter_schema="demo.goal.params",
+                   steps=(step("part", "demo.part", TaskForm.COMPOUND, {"subject": param("subject")}),),
+                   links=(("c-done", "part", "c-done"),))
+    inner = alternative("demo.inner", "demo.primary-ready", "a", goal="demo.part", criterion="c-done")
+    second = alternative("demo.second", "demo.fallback-ready", "b", goal="demo.goal2", criterion="c-done2")
+    for contract in (outer, inner, second):
+        env.admit(contract)
+    root_one = task_binding(env, "demo.goal", task_id="task-one", obligation="obl-one", parameters={"subject": "alpha"})
+    root_two = task_binding(env, "demo.goal2", task_id="task-two", obligation="obl-two", parameters={"subject": "alpha"})
+    draft_outer, bundle = _refine(env, root_one, outer, two_root_network(env, root_one, root_two))
+    [part] = [item.occurrence_id for item in draft_outer.child_bindings]
+    sub_goal = bundle.network.binding_for_occurrence(part)
+    report = assess_method(sub_goal, inner, env.snapshot(), env.capabilities(), registry=env.predicates)
+    draft_inner = ground_method(sub_goal, inner, {}, report, catalog=env.catalog, schemas=env.schemas,
+                                plan_revision=bundle.network.plan_revision, goal_occurrence_id=part)
+    bundle = compile_refinement_bundle(draft_inner, bundle.network, method=inner, catalog=env.catalog,
+                                       schemas=env.schemas, registry=env.registry)
+    shared = next(item.occurrence_id for item in draft_inner.child_bindings if item.slot_key == "shared")
+    reuse = {"shared": _entry(bundle.network, shared, env)} if share_inner_read else None
+    _, bundle = _refine(env, root_two, second, bundle.network, reuse=reuse)
+    return bundle.network, draft_outer.instance_id, draft_inner.instance_id, part, shared, root_one
+
+
+@pytest.mark.parametrize("share_inner_read", [False, True])
+def test_replacing_a_method_retires_the_refinement_of_the_sub_goal_it_orphans(share_inner_read: bool) -> None:
+    """夜间 N6（TaskGraph 代码级计划 §5.3 ``retired_targets``）：上级换做法时，被换掉的做法实例细化出
+    的子目标没有别人持有，就离开计划；它下面采用的做法实例随之退役（写进增量的 retired_instance_ids，
+    提交据此记 RETIRED、收回执行权）。此前它留在网络里，合并报 ``refines unknown task``。
+    子目标下面被另一个分支点名共用的步骤照"共用保留"留下，连同它到那个分支的数据边。
+
+    **改坏检验**：``_retirement_closure`` 只返回点名的那一个 → 合并被拒 → 变红。"""
+
+    env = or_env()
+    network, outer, inner, part, shared, root_one = _three_levels(env, share_inner_read=share_inner_read)
+    replacement = method(
+        "demo.replacement-outer", "demo.goal", parameter_schema="demo.goal.params",
+        steps=(step("solo", "demo.private-read", TaskForm.PRIMITIVE, {"subject": param("subject")},
+                    capabilities=("demo.read",)),),
+        links=(("c-done", "solo", "c-solo"),), finalizer="solo")
+    env.admit(replacement)
+    _, bundle = _refine(env, root_one, replacement, network, retire=(outer,))
+    assert set(bundle.delta.retired_instance_ids) == {outer, inner}
+    after = bundle.network
+    live = {spec.occurrence_id for spec in after.occurrences}
+    assert part not in live
+    assert {draft.instance_id for draft in after.method_instances}.isdisjoint({outer, inner})
+    inner_a = [spec.occurrence_id for spec in network.occurrences
+               if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id) == "demo.a"]
+    assert inner_a and not set(inner_a) & live
+    assert (shared in live) is share_inner_read
+    if share_inner_read:
+        staying = next(spec.occurrence_id for spec in after.occurrences
+                       if str(after.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id) == "demo.b")
+        assert len(after.refinement_view().parents_of[shared]) == 1
+        assert any(item.producer_occurrence == shared and item.consumer_occurrence == staying
+                   for item in after.data_requirements)
+    assert all(item.before in live and item.after in live for item in after.order_constraints)
+    assert all(item.producer_occurrence in live and item.consumer_occurrence in live
+               for item in after.data_requirements)
+    assert validate_execution_projection(after.execution_projection(), BUDGET).ok
+    assert validate_refinement_acyclic(after).ok
+
+
 def test_an_edge_into_a_replaced_method_from_another_branch_leaves_with_it() -> None:
     """TaskGraph 补全第三批（合并规则①：任一端离开网络的边就删；改坏 TG3-08 → 变红）：别的分支
     的步骤连到本分支某一步的边（改接过输入、跨分支连线就是这种形状），本分支换做法后那一步不在了，
