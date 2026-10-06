@@ -1179,3 +1179,34 @@ def test_a_request_whose_materialisation_is_always_refused_is_not_a_legitimate_w
     assert "materialization_refused" in json.dumps(asked["request"]["context"], ensure_ascii=False)
     assert str(mission.status.value) == "FAILED", mission.final_report
     assert "materialization_refused" in json.dumps(mission.final_report, ensure_ascii=False)
+
+
+def test_apply_changes_refuses_with_a_typed_code_not_by_slicing_text():
+    """第 1 批 T02：``apply_changes`` 抛 ``AmendmentRefused``，码和说明是属性；上层按属性取，不切文字。
+
+    **改坏检验**：``requirements_amendment`` 改回 ``str(error).partition(": ")`` → 变红。"""
+    import re
+    from pathlib import Path
+
+    import agent_orchestrator.orchestrator.requirements_amendment as amendment
+    from agent_orchestrator.deployment.root import AmendmentRefused, apply_changes, build_requirements
+
+    previous = build_requirements("m-1", 1, (("c-user-1", 1, "file:a.md"),), "local-user")
+    with pytest.raises(AmendmentRefused) as refused:
+        apply_changes(previous, [{"op": "remove", "criterion_id": "c-user-9"}], highest_used=1)
+    assert refused.value.code == "AMEND_UNKNOWN_CRITERION"
+    assert refused.value.detail.startswith("'c-user-9' is not a current requirement")
+    assert str(refused.value) == f"{refused.value.code}: {refused.value.detail}"
+    assert isinstance(refused.value, ValueError)
+    with pytest.raises(AmendmentRefused) as refused:
+        apply_changes(previous, [], highest_used=1)
+    assert (refused.value.code, refused.value.detail) == ("AMEND_EMPTY", "no change was given")
+    with pytest.raises(AmendmentRefused) as refused:
+        apply_changes(previous, [{"op": "rewrite", "criterion_id": "c-user-1", "statement": "file:a.md"}],
+                      highest_used=1)
+    assert refused.value.code == "AMEND_DUPLICATE"
+    text = Path(amendment.__file__).read_text(encoding="utf-8")
+    assert "except AmendmentRefused as error:" in text
+    assert not re.search(r"partition\(\": \"\)", text)
+    root_text = Path(__import__("agent_orchestrator.deployment.root", fromlist=["x"]).__file__).read_text(encoding="utf-8")
+    assert 'raise ValueError("AMEND_' not in root_text and "raise ValueError(f\"AMEND_" not in root_text

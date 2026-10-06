@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from ..contracts.evidence_state import EvidenceSnapshot, ValidityWitness
 from ..contracts.htn import MethodContract, OccurrenceId, ReleaseCondition
+from ..contracts.error_table import SharingRefusalCode, SharingRefused
 from ..contracts.models import ContractError
 from ..knowledge.predicates import PredicateRegistry, PredicateSignature
 from ..planning.htn.applicability import authorization_gate, evaluate_condition
@@ -67,10 +68,10 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
     # 执行图开着时任何改任务根目标方法的结构修复都提交不了。
     if sources.independent_required & {target.occurrence_id for target in impact.targets
                                        if target.target_kind == "RETIRING"}:
-        raise ContractError("TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED")
+        raise SharingRefused(SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED)
     for identity in old_demanded & set(new_members):
         if identity not in remaining and identity not in candidate.root_occurrence_ids and identity not in sources.independent_required:
-            raise ContractError("TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING)
 
     new_shared = [item for item in new_pins.demand_refs if item.mode in {"share_active", "reuse_accepted"}
              and ((item.consumer_instance_id, item.slot_key) not in old_slots
@@ -86,17 +87,17 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
         entry = indexed.get(demand.producer_occurrence_id)
         child = children.get((demand.consumer_instance_id, demand.slot_key))
         if entry is None or child is None or demand.producer_occurrence_id in changed:
-            raise ContractError("TASKGRAPH_SHARED_PRODUCER_SOURCE_CHANGED")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_PRODUCER_SOURCE_CHANGED)
         proof = sources.input_proofs.get(demand.producer_occurrence_id)
         binding = old.binding_for_occurrence(entry.occurrence_id)
         if (proof is None or not proof.origins or proof.occurrence_id != demand.producer_occurrence_id
                 or (proof.contract_revision, proof.input_binding_revision, proof.dispatch_generation) !=
                    (int(binding.contract_revision), int(binding.input_binding_revision), int(binding.dispatch_generation))):
-            raise ContractError("TASKGRAPH_SHARED_INPUT_VERSIONS_UNPROVEN")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_INPUT_VERSIONS_UNPROVEN)
         draft = adopted.get(demand.consumer_instance_id)
         contract = None if draft is None else methods.get(draft.method_ref)
         if draft is None or contract is None:
-            raise ContractError("TASKGRAPH_SHARED_METHOD_SOURCE_MISSING")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_METHOD_SOURCE_MISSING)
         by_slot = {item.slot_key: item for item in draft.child_bindings}
         expected_inputs = set()
         for source_slot, output_port, consumer_slot, input_port in data_flows(contract):
@@ -104,14 +105,14 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                 continue
             source_child = by_slot.get(source_slot)
             if source_child is None:
-                raise ContractError("TASKGRAPH_SHARED_DATA_SLOT_MISSING")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_DATA_SLOT_MISSING)
             expected_inputs.add((str(source_child.goal_occurrence_id or source_child.occurrence_id),
                                  output_port, input_port))
         actual_inputs = [item for item in old.data_requirements
                          if str(item.consumer_occurrence) == demand.producer_occurrence_id]
         if expected_inputs != {(str(item.producer_occurrence), item.output_port, item.input_port)
                                for item in actual_inputs}:
-            raise ContractError("TASKGRAPH_SHARED_DATA_DECLARATION_DIFFERS")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_DATA_DECLARATION_DIFFERS)
         # The original compiler emits these exact policies for a method DATA
         # flow. An old edge with stronger/different terms cannot silently stand
         # in for the prospective slot's declaration, even when merge retains it.
@@ -119,7 +120,7 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
         # input since 阶段 D; either is what the compiler emits, so it is not compared here.)
         if any(item.assurance_policy_ref != DEFAULT_ASSURANCE_POLICY
                or item.freshness_policy_ref != DEFAULT_FRESHNESS_POLICY for item in actual_inputs):
-            raise ContractError("TASKGRAPH_SHARED_DATA_POLICY_DIFFERS")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_DATA_POLICY_DIFFERS)
         if demand.mode == "reuse_accepted":
             # ``carried``: accepted under earlier requirements and kept — the same result is
             # reviewed again under the current ones after the commit (TaskGraph 补全第四批).
@@ -129,9 +130,9 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                     or child.acceptance_ref not in (entry.acceptance_ref, *entry.earlier_acceptance_refs)
                     or (sources.outcomes.get(entry.occurrence_id) is not OccurrenceOutcome.ACCEPTED
                         and not entry.carried)):
-                raise ContractError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT)
         elif entry.acceptance_ref is not None:
-            raise ContractError("TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_ACCEPTED_PRODUCER_REQUIRES_EXACT_REUSE)
     added = [item for item in new_shared if item.mode == "share_active"]
     if not added:
         return
@@ -146,7 +147,7 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
         producer = demand.producer_occurrence_id
         previous_member = old_members.get(producer)
         if previous_member is None:
-            raise ContractError("TASKGRAPH_SHARE_ACTIVE_PRODUCER_NOT_EXISTING")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_PRODUCER_NOT_EXISTING)
         before_binding = old.binding_for_occurrence(OccurrenceId(producer))
         after_binding = new.binding_for_occurrence(OccurrenceId(producer))
         if (previous_member.task_id != new_members[producer].task_id
@@ -154,15 +155,15 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                 or before_binding.contract_revision != after_binding.contract_revision
                 or before_binding.input_binding_revision != after_binding.input_binding_revision
                 or before_binding.dispatch_generation != after_binding.dispatch_generation):
-            raise ContractError("TASKGRAPH_SHARE_ACTIVE_PRODUCER_CHANGED")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_PRODUCER_CHANGED)
         if any(target.occurrence_id == producer for target in impact.targets):
-            raise ContractError("TASKGRAPH_SHARE_ACTIVE_INPUTS_CHANGED")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_INPUTS_CHANGED)
         # Existing work's own START licence is consumer- and purpose-bound. A
         # method's stored PLAN witness is not an alternative licence here.
         for digest in start_preconditions(before_binding):
             if _witness_verdict(sources.starts.get(str(before_binding.task_id), {}).get(digest), digest,
                     consumer_task=before_binding.task_id, scope_epochs=sources.epochs, now_ms=sources.now_ms) is not None:
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT)
 
         # Also visit the new consumer's enclosing method path. A shared producer
         # must not bypass an ORDER into the new parent just because another parent
@@ -177,13 +178,13 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
             visited.add(identity)
             draft = adopted.get(identity)
             if draft is None:
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_CONSUMER_MISSING")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_CONSUMER_MISSING)
             parent = str(draft.effective_goal_occurrence_id)
             path_occurrences.add(parent)
             pending.extend(parent_methods.get(parent, ()))
             contract = methods.get(draft.method_ref)
             if contract is None:
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_METHOD_SOURCE_MISSING")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_METHOD_SOURCE_MISSING)
             parameters = {item.name: item.value for item in draft.grounded_parameters}
             # This is a fresh prospective-consumer restriction using the original
             # evidence interpreter. It creates no witness or execution permission.
@@ -192,16 +193,16 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                 evaluation = evaluate_condition(condition, registry=registry, snapshot=sources.evidence,
                     parameters=parameters, now_ms=sources.now_ms)
                 if not authorization_gate(evaluation).allowed:
-                    raise ContractError("TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET")
+                    raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_CONSUMER_PRECONDITION_UNMET)
         for edge in new.order_constraints:
             if str(edge.after) not in path_occurrences:
                 continue
             outcome = sources.outcomes.get(edge.before)
             if outcome is None or not order_released(outcome, edge.release_condition):
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNMET)
             original = old_members.get(str(edge.before))
             if original is None:
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_ORDER_SOURCE_MISSING")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_SOURCE_MISSING)
             current_binding = old.binding_for_occurrence(edge.before)
             candidate_binding = new.binding_for_occurrence(edge.before)
             if (current_binding.task_id != candidate_binding.task_id
@@ -209,11 +210,11 @@ def validate_sharing(before: NetworkDocumentV1, candidate: NetworkDocumentV1,
                     or current_binding.contract_revision != candidate_binding.contract_revision
                     or current_binding.input_binding_revision != candidate_binding.input_binding_revision
                     or current_binding.dispatch_generation != candidate_binding.dispatch_generation):
-                raise ContractError("TASKGRAPH_SHARE_ACTIVE_ORDER_BINDING_CHANGED")
+                raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_BINDING_CHANGED)
             if edge.release_condition is ReleaseCondition.SETTLED_TERMINAL:
                 fact = sources.settlements.get(edge.before)
                 if (fact is None or fact.mission_id != before.mission_id or fact.plan_revision != before.revision
                         or fact.occurrence_id != str(edge.before) or fact.outcome != str(outcome)
                         or fact.contract_revision != int(current_binding.contract_revision)
                         or fact.dispatch_generation != int(current_binding.dispatch_generation)):
-                    raise ContractError("TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED")
+                    raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARE_ACTIVE_ORDER_UNSETTLED)

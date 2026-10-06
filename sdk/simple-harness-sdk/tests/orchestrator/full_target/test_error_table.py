@@ -6,8 +6,11 @@ import pytest
 
 from agent_orchestrator.contracts.error_table import (
     PLANNING_ERRORS,
+    SHARING_PLANNER_CODE,
     TASKGRAPH_ERRORS,
     ErrorCategory,
+    SharingRefusalCode,
+    SharingRefused,
     TaskGraphBoundaryCode,
     classify,
     ordered,
@@ -53,3 +56,106 @@ def test_a_stored_refusal_with_an_unknown_code_is_refused_not_relabelled():
     row["rejection_codes"] = ["BUDGET_INSUFFICIENT", "UNKNOWN_FIELD"]
     feedback = feedback_from_decision(row, budgets=budgets)
     assert feedback.rejection_codes == (P.UNKNOWN_FIELD, P.BUDGET_INSUFFICIENT)
+
+
+# ---- 第 1 批 T01：共享核对的拒绝按类型码退回规划器 ----
+
+
+def test_every_sharing_refusal_code_maps_to_exactly_one_planner_code():
+    """**Mutation**: drop a row from ``SHARING_PLANNER_CODE`` → red."""
+    assert set(SHARING_PLANNER_CODE) == set(SharingRefusalCode)
+    coverage = {SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED,
+                SharingRefusalCode.TASKGRAPH_RETAINED_PRODUCER_DEMAND_MISSING}
+    for code in SharingRefusalCode:
+        expected = P.COVERAGE_GAP if code in coverage else P.REUSE_NOT_ALLOWED
+        assert SHARING_PLANNER_CODE[code] is expected, code
+        refused = SharingRefused(code)
+        assert refused.code is code and refused.planner_code is expected
+        assert str(refused) == code.value  # 现有用例按文字匹配码
+        assert isinstance(refused, ContractError)
+    # 库故障码不在表里：来源与旧图不一致不是规划器的错
+    assert "TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID" not in SharingRefusalCode.__members__
+
+
+def test_sharing_refused_only_accepts_registered_codes():
+    with pytest.raises(ContractError, match="ERROR_CODE_UNREGISTERED"):
+        SharingRefused("TASKGRAPH_SHARED_PRODUCER_SOURCE_CHANGED")  # type: ignore[arg-type]
+
+
+def test_every_sharing_raise_site_uses_the_typed_refusal():
+    """源码扫描：共享核对两个文件里再没有以 ``TASKGRAPH_SHARED_``/``SHARE_ACTIVE_``/``REUSE_``/
+    ``ACCEPTED_PRODUCER_``/``INDEPENDENT_WORK``/``RETAINED_PRODUCER`` 开头的普通 ``ContractError``。"""
+    import re
+    from pathlib import Path
+
+    import agent_orchestrator.graph.taskgraph_sharing as sharing
+    import agent_orchestrator.graph.convergence as convergence
+
+    for module in (sharing, convergence):
+        text = Path(module.__file__).read_text(encoding="utf-8")
+        plain = re.findall(r'raise ContractError\("(TASKGRAPH_[A-Z_]+)"\)', text)
+        assert not any(code in SharingRefusalCode.__members__ for code in plain), plain
+        typed = re.findall(r"raise SharingRefused\(SharingRefusalCode\.([A-Z_]+)\)", text)
+        assert all(code in SharingRefusalCode.__members__ for code in typed), typed
+    assert "TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID" in Path(sharing.__file__).read_text(encoding="utf-8")
+
+
+def test_the_main_loop_judges_a_sharing_refusal_by_type_not_by_text():
+    """**Mutation**: ``event_handler`` 那段改回 ``str(error).startswith("TASKGRAPH_SHARED_")`` → red。"""
+    from pathlib import Path
+
+    import agent_orchestrator.orchestrator.event_handler as handler
+
+    refused = SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED)
+    assert handler._sharing_refusal_codes(refused) == [str(P.REUSE_NOT_ALLOWED)]
+    gap = SharingRefused(SharingRefusalCode.TASKGRAPH_INDEPENDENT_WORK_STILL_REQUIRED)
+    assert handler._sharing_refusal_codes(gap) == [str(P.COVERAGE_GAP)]
+    # 同样的文字、普通类型：不是规划器被拒
+    assert handler._sharing_refusal_codes(ContractError("TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED")) is None
+    assert handler._sharing_refusal_codes(RuntimeError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT")) is None
+    text = Path(handler.__file__).read_text(encoding="utf-8")
+    assert "except SharingRefused as error:" in text
+    assert 'startswith(("TASKGRAPH_SHARED_"' not in text
+
+
+# ---- 第 1 批 T03：只读接口对外发出的码全部登记并经分类 ----
+
+
+def test_read_api_codes_are_registered_and_categorised():
+    expected = {
+        "BOUND_REACHED": ErrorCategory.BUDGET,
+        "INVALID_CURSOR": ErrorCategory.IDENTITY_PROTOCOL,
+        "INVALID_REQUEST": ErrorCategory.IDENTITY_PROTOCOL,
+        "INVALID_REVISION": ErrorCategory.IDENTITY_PROTOCOL,
+        "NOT_ENABLED": ErrorCategory.IDENTITY_PROTOCOL,
+        "NOT_FOUND": ErrorCategory.SOURCE_UNAVAILABLE,
+        "REVISION_NOT_FOUND": ErrorCategory.SOURCE_UNAVAILABLE,
+        "SNAPSHOT_CHANGED": ErrorCategory.REQUEST_STALE,
+        "SOURCE_CHANGED": ErrorCategory.REQUEST_STALE,
+    }
+    for code, category in expected.items():
+        assert code in TaskGraphBoundaryCode.__members__
+        assert classify(code).category is category, code
+
+
+def test_every_code_the_read_api_emits_is_registered():
+    """源码扫描：``api/taskgraph.py`` 里每个 ``_fail("…")`` 的码都在 ``TaskGraphBoundaryCode`` 里。"""
+    import re
+    from pathlib import Path
+
+    import agent_orchestrator.api.taskgraph as api
+
+    text = Path(api.__file__).read_text(encoding="utf-8")
+    emitted = set(re.findall(r'_fail\("([A-Z_]+)"', text))
+    assert emitted and emitted <= set(TaskGraphBoundaryCode.__members__), emitted - set(TaskGraphBoundaryCode.__members__)
+
+
+def test_read_api_fail_refuses_an_unregistered_code():
+    """**Mutation**: ``_fail`` 不先 ``classify`` → red。"""
+    from agent_orchestrator.api.taskgraph import TaskGraphReadError, _fail
+
+    with pytest.raises(ContractError, match="ERROR_CODE_UNREGISTERED"):
+        _fail("NO_SUCH_READ_CODE", "x")
+    with pytest.raises(TaskGraphReadError) as caught:
+        _fail("NOT_FOUND", "Mission was not found")
+    assert caught.value.code == "NOT_FOUND" and caught.value.error.retry_kind == "NONE"

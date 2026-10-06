@@ -88,7 +88,7 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
-from ..contracts.error_table import CodedFault, RoundFaultCode
+from ..contracts.error_table import CodedFault, RoundFaultCode, SharingRefused
 from ..contracts.models import jsonable, sha256_hex
 from ..contracts.planning_decisions import (
     PlanningRefKind,
@@ -219,6 +219,17 @@ OBSERVATION_EVENTS = frozenset({
 })
 HOLLOW_CYCLES_NOTED = 100
 WAIT_BACKOFF_MAX = 1.0
+def _sharing_refusal_codes(error: BaseException) -> list[str] | None:
+    """共享核对的拒绝换成给规划器的码；只认 :class:`SharingRefused` 这个类型，不读异常文字。
+
+    别的异常（哪怕消息以 ``TASKGRAPH_SHARED_`` 开头）返回 ``None``——那是库故障，不归规划器。
+    """
+
+    if not isinstance(error, SharingRefused):
+        return None
+    return [str(error.planner_code)]
+
+
 class ServiceTurnIdentityMismatch(ContractError, CodedFault):
     """The Critic turn bound at start differs from the frozen intent: retrying meets the same row."""
 
@@ -7172,14 +7183,15 @@ class Orchestrator:
                     "preview_source_snapshot_hash": preview.source_snapshot_hash})
             try:
                 frozen_graph = new_mode._taskgraph_preview.freeze(preview_command, preview, taskgraph_sources)
-            except ContractError as error:
+            except SharingRefused as error:
                 # 共用的秩序核对没过（规划器提示词里说的"TaskGraph 开头的原因代码"）：是这份决定的
                 # 问题，退回规划器；不是库故障，原地重试多少次结果都一样（联测真机第三局）。
-                if not str(error).startswith(("TASKGRAPH_SHARED_", "TASKGRAPH_REUSE_",
-                                              "TASKGRAPH_ACCEPTED_PRODUCER_")):
+                # 按异常类型码判（错误码表 SharingRefusalCode → 规划器码），不读异常文字；其它
+                # ContractError 不在这里接，照旧往上抛当库故障原地重试（第 1 批 T01）。
+                codes = _sharing_refusal_codes(error)
+                if codes is None:
                     raise
-                codes = [str(PlanningDecisionRejectionCode.REUSE_NOT_ALLOWED)]
-                detail = {"problems": [{"code": codes[0], "detail": str(error),
+                detail = {"problems": [{"code": codes[0], "detail": str(error.code),
                                         "field_path": "/payload", "subject_ref": None}]}
                 record_decision(
                     request_id=request_id, attempt_ordinal=attempt_ordinal, raw_output_hash=raw_hash,

@@ -8,7 +8,7 @@ from typing import Protocol
 
 from ..graph.notification_contracts import _text
 from ..planning.htn.grounding import derive_id
-from ..storage.store import Store, StoreConflict, StoreError
+from ..storage.store import CodedStoreConflict, Store, StoreError
 from ..storage.taskgraph_convergence import ConvergenceJob, TaskGraphConvergenceStore
 from ..runtime.taskgraph_local_work import read_local_work
 
@@ -106,7 +106,7 @@ class TaskGraphConvergence:
                 with self.jobs.store.read_view():
                     current = self.jobs.get_job(mission_id, job_id)
                     if current.row_version != job.row_version:
-                        raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+                        raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
                 if action.kind is ConvergenceActionKind.CANCEL_ATTEMPT:
                     await self.runtime.cancel_attempt(job, action, command_key=action.command_key(job_id))
                 elif action.kind is ConvergenceActionKind.CANCEL_SERVICE_INTENT:
@@ -116,7 +116,7 @@ class TaskGraphConvergence:
         with self.jobs.store.transaction():
             current = self.jobs.get_job(mission_id, job_id)
             if current.row_version != job.row_version:
-                raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+                raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
             latest = self._observe(current)
             # Store independently re-reads the real quiescence/command proof before CAS.
             # READY retains its fence until actual Commit or authorized abandonment.

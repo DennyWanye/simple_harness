@@ -12,7 +12,7 @@ from ..graph.execution_contracts import PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1
 from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1
 from ..planning.htn.grounding import derive_id
-from .store import Store, StoreConflict, StoreError
+from .store import CodedStoreConflict, Store, StoreConflict, StoreError
 from .taskgraph_followups import TaskGraphFollowupStore
 
 
@@ -233,7 +233,7 @@ class TaskGraphConvergenceStore:
         with self.store.transaction():
             job = self._current(mission_id, job_id, expected_version)
             if job.state not in ("FENCED", "WAITING", "READY"):
-                raise StoreConflict("TASKGRAPH_CONVERGENCE_TERMINAL")
+                raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_TERMINAL")
             if ready:
                 self.authority.require_quiescence(self.store, job)
                 if job.state == "READY":
@@ -294,7 +294,7 @@ class TaskGraphConvergenceStore:
         with self.store.transaction():
             job = self._current(mission_id, job_id, expected_version)
             if job.state not in ("FENCED", "WAITING", "READY"):
-                raise StoreConflict("TASKGRAPH_CONVERGENCE_TERMINAL")
+                raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_TERMINAL")
             self.authority.require_safe_abandonment(self.store, job, caller, command_id)
             self._transition(job, "ABANDONED", now_ms)
             return self.get_job(mission_id, job_id)
@@ -302,7 +302,7 @@ class TaskGraphConvergenceStore:
     def _current(self, mission: str, identity: str, version: int) -> ConvergenceJob:
         job = self.get_job(mission, identity)
         if job.row_version != version:
-            raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+            raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
         return job
 
     def release_for_decision(self, mission_id: str, decision_id: str, *, reason: str, now_ms: int) -> bool:
@@ -335,7 +335,7 @@ class TaskGraphConvergenceStore:
             (state, now_ms / 1000, job.job_id, job.mission_id, job.state, job.row_version),
         )
         if changed.rowcount != 1:
-            raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+            raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
         if state in ("APPLIED", "ABANDONED"):
             # 阶段 B 第 2 条（2026-10-03）：推进这个作业的通知连败被挡住后，作业结束了（人放弃、
             # 决定被拒或被新决定替代）。被挡的通知仍算"在等执行图来源"，任务就永远挂着。放回待发：

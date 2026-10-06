@@ -56,8 +56,25 @@ class StoredResultCorrupt(StoreError, CodedFault):
     code = RoundFaultCode.STORED_RESULT_CORRUPT
 
 
+class CodedStoreError(StoreError):
+    """A refusal that carries its stable code as an attribute (第 1 批 T02).
+
+    Callers across a boundary (the Host) read ``code``; nobody slices it out of the message.
+    The message stays ``code`` or ``code: detail`` so logs read the same as before.
+    """
+
+    def __init__(self, code: str, detail: str | None = None) -> None:
+        self.code = code
+        self.detail = detail
+        super().__init__(code if detail is None else f"{code}: {detail}")
+
+
 class StoreConflict(StoreError):
     """A CAS write found a different version than expected (§17.3)."""
+
+
+class CodedStoreConflict(StoreConflict, CodedStoreError):
+    """A CAS/ordering conflict with a typed code (the operator refusals the Host explains to people)."""
 
 
 class StoreBusy(StoreError):

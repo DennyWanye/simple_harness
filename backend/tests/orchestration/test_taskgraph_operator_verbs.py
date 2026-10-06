@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from agent_orchestrator.storage.store import StoreConflict
+from agent_orchestrator.storage.store import CodedStoreConflict, StoreConflict
 
 from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.orchestration.taskgraph import operate_taskgraph
@@ -27,13 +27,13 @@ class _Operator:
     def abandon_convergence(self, mission_id, job_id, *, expected_version, command_id, reason):  # type: ignore[no-untyped-def]
         self.calls.append(("abandon", mission_id, job_id, expected_version, command_id, reason))
         if self.refuse:
-            raise StoreConflict(self.refuse)
+            raise CodedStoreConflict(self.refuse)
         return {"kind": "TaskGraphConvergenceAbandoned", "command_id": command_id}
 
     def retry_notification(self, mission_id, message_id, *, expected_version, command_id, reason):  # type: ignore[no-untyped-def]
         self.calls.append(("retry", mission_id, message_id, expected_version, command_id, reason))
         if self.refuse:
-            raise StoreConflict(self.refuse)
+            raise CodedStoreConflict(self.refuse)
         return {"kind": "TaskGraphNotificationRetryAuthorized", "command_id": command_id}
 
 
@@ -67,6 +67,24 @@ def test_a_refused_click_says_why_and_is_not_retried():
         operate_taskgraph(_service(operator), "abandon_convergence",
                           {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"})
     assert caught.value.code == "taskgraph_refused" and "刷新" in str(caught.value)
+    assert len(operator.calls) == 1
+
+
+def test_a_refusal_without_a_typed_code_is_not_read_from_its_text():
+    """第 1 批 T02：Host 只读 ``error.code``。没带码的 ``StoreConflict``，哪怕文字就是那个码，也不翻成"刷新"。
+
+    **改坏检验**：Host 改回 ``str(error).split(":")`` 切码 → 变红。"""
+    class _Plain(_Operator):
+        def abandon_convergence(self, mission_id, job_id, *, expected_version, command_id, reason):  # type: ignore[no-untyped-def]
+            self.calls.append(("abandon",))
+            raise StoreConflict("TASKGRAPH_CONVERGENCE_CAS_CONFLICT")
+
+    operator = _Plain()
+    with pytest.raises(OrchestrationRequestError) as caught:
+        operate_taskgraph(_service(operator), "abandon_convergence",
+                          {"mission_id": M, "job_id": "job-1", "expected_version": 3, "reason": "放弃"})
+    assert caught.value.code == "taskgraph_refused"
+    assert "刷新" not in str(caught.value) and "原因未具名" in str(caught.value)
     assert len(operator.calls) == 1
 
 

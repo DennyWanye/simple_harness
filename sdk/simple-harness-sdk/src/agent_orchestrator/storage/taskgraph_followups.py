@@ -18,7 +18,7 @@ from ..contracts.models import ContractError
 from ..graph.notification_contracts import FollowupCauseRef, FollowupV1, _hash, _integer, _text
 from ..planning.htn.grounding import derive_id
 from .htn_store import HtnStore
-from .store import Store, StoreConflict, StoreError
+from .store import CodedStoreConflict, Store, StoreConflict, StoreError
 
 
 class ReceiptKind(StrEnum):
@@ -342,4 +342,4 @@ class TaskGraphFollowupStore:
                 (now_ms, message_id, mission_id, expected_version),
             )
             if changed.rowcount != 1:
-                raise StoreConflict("TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT")
+                raise CodedStoreConflict("TASKGRAPH_FOLLOWUP_REPAIR_CONFLICT")

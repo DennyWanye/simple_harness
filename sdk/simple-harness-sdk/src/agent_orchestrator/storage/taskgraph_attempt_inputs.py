@@ -142,11 +142,9 @@ class TaskGraphAttemptInputStore:
                 _fail("InputManifest consumer differs from the actual Attempt")
             manifest_binding = connection.execute(
                 "SELECT input_binding_revision FROM input_manifest_bindings WHERE mission_id=? "
-                "AND task_id=? AND manifest_hash=?",
-                (attempt.mission_id, attempt.task_id, manifest_hash),).fetchone()
-            # bound at this input revision or earlier to the same bytes (schema v30); the exact
-            # revision is the Task semantics row checked above and the per-attempt record
-            if manifest_binding is None or manifest_binding[0] > int(binding.input_binding_revision):
+                "AND task_id=? AND manifest_hash=? AND input_binding_revision=?",
+                (attempt.mission_id, attempt.task_id, manifest_hash, int(binding.input_binding_revision)),).fetchone()
+            if manifest_binding is None:
                 _fail("InputManifest is not bound to the exact Task input revision")
             record = connection.execute(
                 "SELECT source_kind,admission_check_id FROM taskgraph_revision_records "
@@ -242,10 +240,10 @@ class TaskGraphAttemptInputStore:
                 _fail("frozen manifest consumer disagrees with the Attempt binding")
             manifest_binding = connection.execute(
                 "SELECT input_binding_revision FROM input_manifest_bindings WHERE mission_id=? "
-                "AND task_id=? AND manifest_hash=?",
-                (mission_id, binding.task_id, binding.manifest_hash),
+                "AND task_id=? AND manifest_hash=? AND input_binding_revision=?",
+                (mission_id, binding.task_id, binding.manifest_hash, binding.input_binding_revision),
             ).fetchone()
-            if manifest_binding is None or manifest_binding[0] > binding.input_binding_revision:
+            if manifest_binding is None:
                 _fail("stored manifest association no longer matches the Attempt binding")
             if (canonical_json(manifest) != row["manifest_json"] or _hash(manifest) != binding.manifest_hash
                     or _hash(binding.identity_json()) != binding.origin_hash):

@@ -17,7 +17,7 @@ from ..graph.taskgraph_validation import validate_taskgraph_structure
 from ..runtime.taskgraph_local_work import read_local_work
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
-from ..storage.store import Store, StoreConflict, StoreError
+from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import ConvergenceJob
 from ..storage.taskgraph_store import TaskGraphStore
 from .plan_commits import PlanPrincipal
@@ -96,7 +96,7 @@ class VerifiedConvergenceAuthority:
         observed = self._observe(store, job)
         if (not observed.quiescent or observed.actions
                 or read_local_work(store, job.mission_id).blocking_subjects(frozenset(item.task_id for item in job.targets))):
-            raise StoreConflict("TASKGRAPH_CONVERGENCE_NOT_QUIESCENT")
+            raise CodedStoreConflict("TASKGRAPH_CONVERGENCE_NOT_QUIESCENT")
 
     def require_reconciliation_started(self, store: Store, job: ConvergenceJob) -> None:
         self._observe(store, job)
@@ -112,7 +112,7 @@ class VerifiedConvergenceAuthority:
         original = self.history.read_revision(job.mission_id, job.source_revision).record
         if (current.document.revision != job.source_revision
                 or current.document.to_json() != original.document.to_json()):
-            raise StoreConflict("TASKGRAPH_ABANDONMENT_OLD_DEMAND_CHANGED")
+            raise CodedStoreConflict("TASKGRAPH_ABANDONMENT_OLD_DEMAND_CHANGED")
         # Pins/demands were never removed by the fence. The explicit operator
         # command may restore their execution eligibility only after quiescence;
         # it cannot revive a stopped Turn, overwrite effects or grant new rights.

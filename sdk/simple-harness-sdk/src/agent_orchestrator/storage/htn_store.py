@@ -800,7 +800,7 @@ class HtnStore:
                 connection,
                 "INSERT INTO input_manifest_bindings(mission_id,task_id,manifest_hash,attempt_id,"
                 "request_id,input_binding_revision,created_at) VALUES (?,?,?,?,?,?,?)"
-                " ON CONFLICT(mission_id,task_id,manifest_hash) DO NOTHING",
+                " ON CONFLICT(mission_id,task_id,manifest_hash,input_binding_revision) DO NOTHING",
                 (mission, task, digest, attempt_id, request_id, revision, now),
                 f"task {task} could not be bound to input manifest {digest}",
             )

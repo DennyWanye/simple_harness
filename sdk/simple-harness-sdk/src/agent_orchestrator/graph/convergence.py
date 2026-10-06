@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.error_table import SharingRefusalCode, SharingRefused
 from ..contracts.models import ContractError
 from .network_codec import NetworkDocumentV1, decode
 from .revision_pins import build_revision_pins
@@ -127,7 +128,7 @@ def compute_convergence_impact(
             changed = changed or old_inputs != new_inputs
         if identity in shared_demands and (retiring or changed) and identity in affected_producers:
             # Sharing cannot preserve old work while silently changing its meaning.
-            raise ContractError("TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED")
+            raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED)
         if retiring or changed:
             targets.append(
                 ConvergenceTarget(
