@@ -13,25 +13,40 @@ from __future__ import annotations
 import asyncio
 import inspect
 
-from agent_orchestrator.assurance.policy import AssurancePolicy
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.orchestrator import assurance_review_runtime as runtime_module
 from agent_orchestrator.orchestrator.assurance_assembly import (
     AssuranceDeploymentPorts,
     install_assurance,
 )
+from agent_orchestrator.deployment.native_pools import NativePools, pool_options
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from agent_orchestrator.testing.product_world import DEFAULT_TOOLS
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 TENANT = "tenant-projector"
 PRINCIPAL = Principal("projector-user")
 
 
+def _native(cfg, provider, assembly):
+    """2026-10-03 起执行池只有原生一种，编排器必须带部署的执行池（照 product_assembly 的拼法）。"""
+    counter = FixtureWordCounter()
+    native = NativePools(tenant_id=TENANT, principal_id=PRINCIPAL.principal_id, allowed_tools=DEFAULT_TOOLS,
+                         meter_factory=counter.meter_factory)
+    options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")
+
+    def startup(orch):
+        assembly(orch)
+        native.bind_orchestrator(orch)
+
+    return {"startup_assembly": startup, **options}
+
+
 def _install(orch, calls):
     install_assurance(orch, AssuranceDeploymentPorts(
         tenant_id=TENANT, principal=PRINCIPAL,
-        select_profile=lambda spec: AssurancePolicy(),
         check_policy_projector=calls.append, host_fingerprint="cd" * 32,
     ))
 
@@ -45,8 +60,9 @@ def test_projector_is_threaded_to_the_review_runtime(tmp_path):
         def root_setup(orch):
             orch.commit.install_assurance_root(principal=PRINCIPAL, tenant_id=TENANT, command_id="install")
 
-        async with Orchestrator(cfg, RoleScriptedProvider({}), assurance_root_setup=root_setup,
-                                startup_assembly=lambda orch: _install(orch, calls)) as orch:
+        provider = RoleScriptedProvider({})
+        async with Orchestrator(cfg, provider, assurance_root_setup=root_setup,
+                                **_native(cfg, provider, lambda orch: _install(orch, calls))) as orch:
             runtime = orch._assurance_reviews
             assert isinstance(runtime, runtime_module.AssuranceReviewRuntime)
             assert runtime._check_policy_projector == calls.append
@@ -69,11 +85,12 @@ def test_without_a_projector_the_runtime_keeps_the_human_verb_as_the_only_source
 
         def assembly(orch):
             install_assurance(orch, AssuranceDeploymentPorts(
-                tenant_id=TENANT, principal=PRINCIPAL, select_profile=lambda spec: AssurancePolicy(),
+                tenant_id=TENANT, principal=PRINCIPAL,
                 host_fingerprint="cd" * 32))
 
-        async with Orchestrator(cfg, RoleScriptedProvider({}), assurance_root_setup=root_setup,
-                                startup_assembly=assembly) as orch:
+        provider = RoleScriptedProvider({})
+        async with Orchestrator(cfg, provider, assurance_root_setup=root_setup,
+                                **_native(cfg, provider, assembly)) as orch:
             assert orch._assurance_reviews._check_policy_projector is None
 
     asyncio.run(scenario())
