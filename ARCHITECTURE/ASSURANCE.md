@@ -1,3 +1,15 @@
+最后更新：2026-10-06 CST（严格评估后补齐第 2～4 批，合并中，待发版 SDK `opt.166`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/``第2批-车道I1-记录.md`、`第2批-车道I2-记录.md`、`第2批-车道N-记录.md`）。
+- **预算等待与"需重算"分开**（A05，车道 I1）：`assurance_tick` 里 `BudgetError` 走 `wait(reason=BUDGET_WAIT)`，退避 2 秒起翻倍、封顶 60 秒；不计入 `rechecks`，永不转 `MANUAL_REQUIRED`。
+- **通知待办与完成事件同事务**（A20，车道 I1）：`request_assured_notification` 发事件的同一事务里 `seed` NOTIFY 待办；消费者与重放用同一个 `notification_work_target`。
+- **库标记不符进隔离**（A02，车道 I1，原计划 §10.1）：`install_native_root` 已有回执不再写回状态文件；启动段 `root_setup` 出 `AssuranceError` → 管理模式（不装配、不派发）、记匿名阻塞码；Host 状态 `quarantined`，三个保证读动词答 `ROOT_QUARANTINED`，新动词 `mission_assurance_root_diagnostic`（A40）。
+- **来源过期有自己的码**（A08，车道 I2）：带版本列的种类 `(id, revision)` 找不到时探 id 是否仍在：在 → `SOURCE_NOT_CURRENT`，不在 → `SOURCE_UNAVAILABLE`；资料/产物生命周期版本不符同样报前者。不可变种类带非 0 版本仍 `REF_REVISION_MISMATCH`。内部码，不进错误码表。
+- **回执核写者与种类**（A09，车道 I2）：`read_exact_metadata(ref, receipt_kind=, receipt_subject=)`，写者不符 `REF_ISSUER_MISMATCH`、对象不符 `REF_SUBJECT_MISMATCH`；运输层与导入两处手工核删掉，只交解析器。
+- **解析时核访问**（A10，车道 I2）：`ResolvedRef(ref, body_json, tenant_id, mission_id, issuer, state_witness_json, permission)`；`_permission` / `_require_same_permission` / `CurrentAuthority` 只留 `storage/assurance_reads.py` 一处，五处"读一遍再逐个核"的使用点改为许可随解析返回。字段名保留 `body_json` / `state_witness_json`。
+- **完成范围与规格经 OCC 读者**（A13，车道 I2）：`OperationCompletionStore.get_spec_by_id / get_scope_by_id`，解析器改走它；`StoreConflict` → `REF_BODY_CONFLICT`。
+- **审阅轮次按复审递增**（A15，车道 I2）：`next_review_round` = 同任务 × 用途 × 出现的已有绑定最大轮次 + 1，PR/CR 两处不再写常量 1。**待用户定**：第二意见按原计划仍是同一轮的 ordinal 2。
+- **死代码**（A24，车道 I2）：删 `CommitService.finalize_assured_mission` 包装、两处 `network is None` 不可达分支、`RootReviewCoordinator.request()`、燃料（`consume_fuel` 等）、血缘（`reevaluate_consumer` 等）、去重（`find_duplicates` 等，`normalise_goal` 保留）、`versioning.py` 四函数；`REVIEW_PURPOSE_ACCOUNTS` 组合 → `MISSION`、删 `PARENT_COMPOUND_TASK`。留：`review_packages.review_account` 的 CHECK 文本仍含 `'parent_compound_task'`（改已发布 DDL 会动迁移校验和）、`obligation_expansions` 死存储层。
+- 车道 N（收尾重读权限 / closeout-v1 / 交接中动作挡收尾）合并后补。
+
 最后更新：2026-10-06 CST（严格评估后补齐第 1 批：收尾正确性，SDK `opt.165`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/第1批-车道B-记录.md`、`第1批-车道C-记录.md`）。
 - **收尾最终事务重读纪元、证书到期、时钟**（A01，原计划 §7.2）：`AssuranceCloseoutConsumer.prepare` 保留完整预览依据，定稿事务重评为 READY 时 `require_final_consistency` 要求任务纪元 / 环境纪元 / 时钟代次三元组与依据读取时相同、`as_of_ms` 不早于读取时刻、时钟 STABLE，否则 `RECHECK_REQUIRED` 退回重算；`assurance_recheck.stale_certificates(now_ms)` 把到期证书记成 `VALIDITY/EXPIRED` 走原有 `EVIDENCE_STALE` 路径；`storage/assurance_reads.clock_discontinuous` 与证书最终锁共用。没有独立吊销表：同身份新证书顶掉旧的，`live_usable_certificates` 只取最新。
 - **诊断只读**（A04）：`AssuranceValidity.diagnose_accept_use_for_result` / `diagnose_root_use` 纯算不记缓存；`AssuranceApi.use_check` 改用它们，删掉清共用缓存的 `forget`。
