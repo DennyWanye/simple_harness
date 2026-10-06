@@ -68,6 +68,12 @@ def read_epochs_locked(connection: sqlite3.Connection, mission_id: str) -> Epoch
     )
 
 
+def clock_discontinuous(current: EpochSnapshot, *, now_ms: int) -> bool:
+    """时钟不可信：环境时钟不在 STABLE，或"现在"落在已见的高水位之前（回拨）。证书最终锁与收尾
+    最终事务用同一个判定（第 1 批 A01）。"""
+    return current.clock_state != "STABLE" or now_ms < current.wall_high_ms
+
+
 def require_epochs_locked(
     connection: sqlite3.Connection, mission_id: str, captured: EpochSnapshot, *, now_ms: int
 ) -> None:
@@ -79,7 +85,7 @@ def require_epochs_locked(
         captured.clock_generation,
     ):
         raise AssuranceError("RECHECK_REQUIRED")
-    if current.clock_state != "STABLE" or now_ms < current.wall_high_ms:
+    if clock_discontinuous(current, now_ms=now_ms):
         raise AssuranceError("TIME_DISCONTINUITY")
 
 
