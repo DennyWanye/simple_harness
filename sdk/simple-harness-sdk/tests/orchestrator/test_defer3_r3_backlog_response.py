@@ -87,8 +87,15 @@ def test_other_dimensions_do_not_trigger_the_backlog_responses() -> None:
 def test_the_defaults_and_the_admission_caps_are_unchanged(tmp_path: Path) -> None:
     config = OrchestratorConfig(evidence_root=tmp_path, model="m")
     assert (config.verifier_workers, config.max_concurrency, config.max_concurrent_model_calls) == (2, 2, 2)
-    assert config.verifier_workers_ceiling == 4 and config.decomposition_pause_seconds == 600.0
-    assert config.to_json()["backpressure"]["verifier_workers_ceiling"] == 4
+    # 裁决 2026-10-07 第 6 件 B（偏离 #53）：默认上限受模型调用名额约束——
+    # max(审阅数, min(2 × 审阅数, 模型名额))；桌面默认 2/2 时为 2，默认路径上审阅并发不变
+    assert config.verifier_workers_ceiling == 2 and config.decomposition_pause_seconds == 600.0
+    assert config.to_json()["backpressure"]["verifier_workers_ceiling"] == 2
+    for slots, ceiling in ((1, 2), (3, 3), (4, 4), (8, 4)):
+        assert OrchestratorConfig(evidence_root=tmp_path, model="m",
+                                  max_concurrent_model_calls=slots).verifier_workers_ceiling == ceiling
+    assert OrchestratorConfig(evidence_root=tmp_path, model="m",
+                              verifier_workers_ceiling=5).verifier_workers_ceiling == 5  # 显式值照用
     with pytest.raises(ValueError):
         OrchestratorConfig(evidence_root=tmp_path, model="m", verifier_workers=3, verifier_workers_ceiling=2)
     from agent_orchestrator.governance.policies import SNAPSHOT_FIELDS
@@ -109,7 +116,9 @@ def test_a_real_backlog_is_recorded_on_the_timeline_and_the_mission_still_comple
 
     async def case() -> tuple[Any, list[dict[str, Any]], dict[str, Any]]:
         # 待审上限设 1：一份结果待审就到高水位，审完回落到 0（低水位）
-        async with enabled_world(tmp_path, key="r3-backlog", max_pending_verifications=1) as world:
+        # 显式给上限 4，看"升到上限、回落恢复"的整条时间线
+        async with enabled_world(tmp_path, key="r3-backlog", max_pending_verifications=1,
+                                 verifier_workers_ceiling=4) as world:
             await world.until(lambda: str(world.store.get_mission(world.mission.id).status) in
                               {"COMPLETED", "FAILED", "CANCELLED"}, timeout=60)
             changes = [dict(e.payload) for e in world.store.iter_events(world.mission.id)
@@ -123,6 +132,26 @@ def test_a_real_backlog_is_recorded_on_the_timeline_and_the_mission_still_comple
         (4, True, "raised"), (2, False, "normal")]
     assert changes[0]["verifier_ceiling"] == 4 and changes[0]["base_verifier_workers"] == 2
     assert state["verifier_workers"] == 2 and state["decomposition_paused"] is False
+
+
+def test_with_the_default_config_a_backlog_never_adds_verifiers_beyond_the_model_slots(tmp_path: Path) -> None:
+    """默认配置（产品世界模型名额 1、审阅 2）下积压照样升起、暂停新拆分，但审阅并发不加：
+    多开的审阅只会排队等名额、按回合墙钟超时，改变结局（裁决第 6 件 B）。"""
+    from production_fixture import enabled_world
+
+    async def case() -> tuple[Any, list[dict[str, Any]], int]:
+        async with enabled_world(tmp_path, key="r3-backlog-default", max_pending_verifications=1) as world:
+            await world.until(lambda: str(world.store.get_mission(world.mission.id).status) in
+                              {"COMPLETED", "FAILED", "CANCELLED"}, timeout=60)
+            changes = [dict(e.payload) for e in world.store.iter_events(world.mission.id)
+                       if e.type == "BacklogResponseChanged"]
+            return world.store.get_mission(world.mission.id), changes, world.loop._config.max_concurrent_model_calls
+
+    mission, changes, slots = asyncio.run(case())
+    assert str(mission.status) == "COMPLETED", mission.final_report
+    assert changes and changes[0]["decomposition_paused"] is True
+    assert all(c["verifier_workers"] <= max(c["base_verifier_workers"], slots) for c in changes), changes
+    assert all(c["verifier_ceiling"] == c["base_verifier_workers"] for c in changes), changes
 
 
 def test_while_paused_a_mission_with_a_plan_opens_no_new_planner_round(tmp_path: Path) -> None:

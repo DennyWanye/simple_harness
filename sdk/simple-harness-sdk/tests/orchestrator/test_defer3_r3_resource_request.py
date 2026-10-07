@@ -221,3 +221,37 @@ def test_a_grant_without_a_matching_checked_request_is_refused() -> None:
         rr.verified_grant_amount([ok], task_id="t1", grant=grant, base_cap=4)
     with pytest.raises(rr.GrantUnverified):  # 别的步骤的申请
         rr.verified_grant_amount([ok], task_id="t2", grant=grant, base_cap=48)
+
+
+
+# ---------------------------------------------------------------- 裁决第 4 件：用完工具次数时从拒绝话得知可申请
+
+def test_the_tool_cap_refusal_tells_an_executor_how_to_ask_for_more(tmp_path: Any) -> None:
+    """裁决 2026-10-07 第 4 件（偏离 #52）：不改模板、工具说明、上下文包；网关"工具次数用完"的拒绝话
+    说明可在 blocked 结果里附 ``resource_request``，并给出上限数。审阅员那一支不变。
+
+    注意（偏差单 R3-3）：产品路径上 SDK 的单回合上限与网关上限相同，回合在第 N+1 次调用前就被 SDK
+    结束，执行者看不到这句话；这里在网关上直接核这句话本身。"""
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+    from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
+    from simple_harness.contracts import CallId
+    from simple_harness.tools import ToolCall
+
+    workspaces = WorkspaceManager(tmp_path / "ws")
+    workspaces.create("m:task-1:attempt-1", seed={"a.md": "x"})
+    gateway = WorkspaceToolGateway(workspaces)
+    gateway.bind("run-1", WorkspaceBinding("m:task-1:attempt-1", "work", True, ("workspace_list",),
+                                           max_tool_calls=2))
+
+    async def case() -> Any:
+        result = None
+        for n in range(3):
+            result = await gateway.execute(ToolCall(call_id=CallId(f"c{n}"), name="workspace_list",
+                                                    arguments={}), {"run_id": "run-1"})
+        return result
+
+    third = asyncio.run(case())
+    assert third.error_code == "tool_rate_limited"
+    text = str(third.public_message)
+    assert rr.FIELD in text and "blocked" in text and "tool_calls" in text and "2" in text, text
+    assert "规划器" in text, text  # 给不给由规划器决定

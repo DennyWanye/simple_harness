@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "67158d46104cf195a13f2bde36bc3d3df564029043043cd2eb103141442cd067",
+  "deployment_id": "bc0f89e13dedc9aacedb9d97978aa795ce0327458d2c740fde63e069cc3b1a49",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -354,7 +354,7 @@
     "agent_orchestrator/runtime/actions.py": "0bec685231e86881a756ded72e59c8fce6c3a8177b4325525df0320dc8a09da3",
     "agent_orchestrator/runtime/agent_worker.py": "3f07f0883dc59566bcf2f3c5cd7975cc20e861fe3fae7afcb03a43e3c6534edb",
     "agent_orchestrator/runtime/appworld_templates.py": "b7356272e2677aa806adac12134b4e1237905492ec6b3fc2cb155e9b7e3f7d47",
-    "agent_orchestrator/runtime/assembly.py": "05a31a45b9a891a0fdd85c0c30bbd1dfbda3683572b664dbe548b91eb143ec3b",
+    "agent_orchestrator/runtime/assembly.py": "36de6b556bb9c1bfecb9f018fa90de91e71ea4c102596f56ff04c5c4a28d7515",
     "agent_orchestrator/runtime/assurance_turn_sources.py": "5500b5d69b35e3107c1efa903dffd8fa23515a05ef788c691c58692d36d7bfea",
     "agent_orchestrator/runtime/connectors.py": "5c695ba3df23316d0a9d913480b1db42be136766a6c8868ce1927902f29ad8dd",
     "agent_orchestrator/runtime/connectors_publish.py": "5c305b99a41ab9856e1ef82356d18390f17ca54fcceaeb6be56b2df6f3478a2d",
@@ -381,7 +381,7 @@
     "agent_orchestrator/runtime/sandbox.py": "b64160f775556c8507068634e3133db8c5d8210127216abf89b9dcbbacea11e8",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",
-    "agent_orchestrator/runtime/tool_gateway.py": "8647abacfe9c137d16e0ff362af6b46646f4d3517bab75ed8c99a41bbada78ee",
+    "agent_orchestrator/runtime/tool_gateway.py": "0c1e234055c33bbd75db486395416e1af2acc6426d4327e2d00538ad121cbb96",
     "agent_orchestrator/scheduling/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/scheduling/allocator.py": "d76a5be8a7b877211e9206f399aa5c422327f4c5fb4b30e26c3c0fcde7811332",
     "agent_orchestrator/scheduling/backpressure.py": "ee105bad2d764635ca43c603dc8b15be1452a662acf0a718cc8e02d2a81f7da0",

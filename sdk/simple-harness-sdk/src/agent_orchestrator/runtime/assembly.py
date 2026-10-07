@@ -117,8 +117,9 @@ class OrchestratorConfig:
     exploration_slots: int = 1
     verifier_workers: int = 2  # §29.1 "2 个 Verifier Worker" as the verification concurrency
     # 推后第 3 批 H12（§18.5"提高 Verifier 资源""禁止新任务继续分裂"）：待审结果积压时审阅并发
-    # 升到这个上限（None = 2 × verifier_workers），回落后恢复；已有计划的任务暂停开新规划轮，
-    # 最长这么多秒。都不改并发上限默认值、不进准入身份。
+    # 升到这个上限，回落后恢复；已有计划的任务暂停开新规划轮，最长这么多秒。都不改并发上限默认值、
+    # 不进准入身份。None = max(审阅数, min(2 × 审阅数, 模型调用名额))：多开的审阅拿不到模型名额只会
+    # 排队、按回合墙钟超时（裁决 2026-10-07 第 6 件 B，偏离 #53），桌面默认 2/2 时不加。
     verifier_workers_ceiling: int | None = None
     decomposition_pause_seconds: float = 600.0
     deployment_policy: DeploymentPolicy = field(default_factory=DeploymentPolicy)  # D6-7
@@ -150,10 +151,6 @@ class OrchestratorConfig:
             object.__setattr__(self, "max_running_attempts", self.max_concurrency * 4)
         if self.max_running_attempts < 1 or self.verifier_workers < 1:  # type: ignore[operator]
             raise ValueError("max_running_attempts and verifier_workers must be >= 1")
-        if self.verifier_workers_ceiling is None:
-            object.__setattr__(self, "verifier_workers_ceiling", 2 * self.verifier_workers)
-        if self.verifier_workers_ceiling < self.verifier_workers:  # type: ignore[operator]
-            raise ValueError("verifier_workers_ceiling must be >= verifier_workers")
         if not self.decomposition_pause_seconds > 0:
             raise ValueError("decomposition_pause_seconds must be > 0")
         if self.sdk_lease_ttl_seconds is None:
@@ -169,6 +166,11 @@ class OrchestratorConfig:
                 or not isinstance(self.max_concurrent_model_calls, int)
                 or self.max_concurrent_model_calls < 1):
             raise ValueError("max_concurrent_model_calls must be a positive integer")
+        if self.verifier_workers_ceiling is None:
+            object.__setattr__(self, "verifier_workers_ceiling", max(
+                self.verifier_workers, min(2 * self.verifier_workers, self.max_concurrent_model_calls)))
+        if self.verifier_workers_ceiling < self.verifier_workers:  # type: ignore[operator]
+            raise ValueError("verifier_workers_ceiling must be >= verifier_workers")
 
     def backpressure_limits(self) -> BackpressureLimits:
         """The §18.5 caps as one registry (D6-2)."""

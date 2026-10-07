@@ -778,7 +778,13 @@ class WorkspaceToolGateway:
                     f"查看次数已用完（最多 {binding.max_tool_calls} 次）：不要再调用任何工具，"
                     "立即根据已经看到的证据，按要求的格式给出结论。"
                     if binding.review_key is not None
-                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls"
+                    # 推后第 3 批 H10（裁决 2026-10-07 第 4 件，偏离 #52）：执行者只在工具次数用完时
+                    # 从这句话得知可申请；模板、工具说明、上下文包都不改
+                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
+                    "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
+                    '并在结果块里加 "resource_request": {"dimension": "tool_calls", '
+                    f'"amount": 正整数（不超过 {binding.max_tool_calls}）, "reason": "为什么需要"}}；'
+                    "给不给由规划器决定。"
                 ),
             )
         # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
