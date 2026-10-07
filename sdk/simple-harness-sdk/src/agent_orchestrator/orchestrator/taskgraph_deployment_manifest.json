@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-07T08:48:31+00:00",
-    "gate_sha256": "d8b9d177c8a2879e7949b064132889aa4e9be7f4d33fa8701cd7fe24028ec93f",
-    "gate_status": "PASS",
-    "source_files_sha256": "e7065e53c4f66b810613c0cf9d2c8f5fd24bc5f4033b257384c9e83925a9cc32"
-  },
-  "deployment_id": "1b286789956dd2c45e46177fa177f4dbad0fa427d9b613e8f82d4fa8ef98d184",
+  "acceptance_evidence": null,
+  "deployment_id": "8d8e35b029c9ecde197fa217c691dbd8b810d9f3bae484bac02c051c5a297ce9",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -193,7 +188,7 @@
     "agent_orchestrator/orchestrator/assurance_final_writer.py": "8e05d8d1ae725103337e9684d618b2892b8cff838f1a0217a2504cc70caa9539",
     "agent_orchestrator/orchestrator/assurance_local_checks.py": "95a7e5e797e77876220816e26c854ad1b30cae98f83528fed46822ea4a2cffae",
     "agent_orchestrator/orchestrator/assurance_point_use.py": "204897eb1cfd43a2afc4f755fd2964263296e773095653b48e64c587ed4bc48c",
-    "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "ed11f6c26bb1f61814eec4d45c0b7b20ea1169289142edb31b2852b3cdae0eee",
+    "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "8700c4445b7587ca3ff33eecfc88fbb8b966bfc3fad0d438472ee05bf76e21bd",
     "agent_orchestrator/orchestrator/assurance_recheck.py": "50b178b768617ba3fa6a8cb18d6561f7883568f7ef52a923b418ea6efbb70b30",
     "agent_orchestrator/orchestrator/assurance_review_collect.py": "bf4880d1201b44547bf2d5e4a377ee0ef81cc4e302f48978423c0d429f1ffad1",
     "agent_orchestrator/orchestrator/assurance_review_consumer.py": "4d50921f80ef7364d8fe9d72f27699b4d62c5c07c45d4c1c73a518218e2f7d82",
@@ -715,7 +710,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

@@ -590,7 +590,7 @@ def action_proposal_subject(
     # The proposal names the effect owner's Scope; the review's owner Task is that
     # Scope's Task (the producer may be another occurrence of the same plan).
     scope_row = store.connection.execute(
-        "SELECT scope_hash, document_json FROM operation_completion_scopes "
+        "SELECT scope_hash, spec_id, spec_hash, document_json FROM operation_completion_scopes "
         "WHERE mission_id=? AND scope_id=?",
         (mission_id, proposal.completion_scope_id),
     ).fetchone()
@@ -615,6 +615,11 @@ def action_proposal_subject(
             proposal.candidate_artifact_ref,
         )
     }
+    # 原计划 §2（:41）申请单审查"接实际 payload/spec/owner"：范围钉住的那一份已批准完成规格
+    # （范围表外键指向它），经原 OCC 读者读（推后第 3 批 A11）。
+    materials.add(
+        AssuranceRef("completion_spec", Pin(str(scope_row["spec_id"]), 0, str(scope_row["spec_hash"])))
+    )
     # The accepted file the frozen parameters publish (the reviewer judges
     # "parameters and candidate" against it; the freeze already refused any other
     # id or hash, so this only exposes it — NEXT-TG-1.0, 2026-09-27).
