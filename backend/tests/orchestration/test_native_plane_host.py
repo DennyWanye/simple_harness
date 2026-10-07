@@ -67,7 +67,8 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         # 2026-09-25 条目 6：每个池带后台循环健康行（建好即为 5 个循环，全部 0 次失败）
         assert all({row["loop"] for row in p["background"]} == {"index", "draining", "recall", "tool_probe", "reap"} for p in native["profiles"])
         assert all(row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"])
-        assert status["default_context_profile_id"] == "deepseek-native-256k-v1"
+        # 2026-10-04 用户定（H-9 bbce635bd）：默认窗口 512K，256K 可选
+        assert status["default_context_profile_id"] == "deepseek-native-512k-v1"
         rows = {p["profile_id"]: p for p in status["context_profiles"]}
         # 2026-09-30 用户决定：旧式执行池已删除，只列原生池；指名非原生池新建任务被拒。
         assert set(rows) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
@@ -132,9 +133,11 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         reused = dict(submit); reused["payload"] = {**submit["payload"], "policy": {**policy, "max_recall_items": 16}}
         conflict = (await handle(service, "agent_runtime_request", reused))["payload"]["data"]
         assert conflict["error"]["code"] == "EXPECTED_REVISION_MISMATCH"
-        # The submission is on the native pool's own library, not the legacy one.
+        # The submission is on the native pool's own library, not the legacy one: a request
+        # without ``profile_id`` goes to the default pool (512K since H-9 bbce635bd).
         from simple_harness.agents.arp import store as arp_store
-        assert arp_store.latest_policy_revision(pool.runtime.uow.database.connection, "host-test-policy") == 1
+        default_pool = service._orchestrator.assembled.pool(status["default_context_profile_id"])
+        assert arp_store.latest_policy_revision(default_pool.runtime.uow.database.connection, "host-test-policy") == 1
     finally:
         await service.close()
 
@@ -207,7 +210,7 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         await service._host_duties()  # binds the strict TaskGraph the granted request waits for
         await asyncio.wait_for(loop.run(max_cycles=40), timeout=240)
         assert loop.store.get_mission(mission_id).status.value == "PLANNING"
-        pool = loop.assembled.pool("deepseek-native-256k-v1")
+        pool = loop.assembled.pool("deepseek-native-512k-v1")  # 默认窗口建的任务在 512K 池（H-9）
         connection = pool.runtime.uow.database.connection
         sessions = connection.execute("SELECT agent_id, state FROM arp_agent_sessions").fetchall()
         assert len(sessions) == 1 and sessions[0][1] == "ACTIVE"

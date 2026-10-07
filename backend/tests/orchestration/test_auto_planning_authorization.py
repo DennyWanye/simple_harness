@@ -31,7 +31,9 @@ def _service(tmp_path, mode, control):
     from types import SimpleNamespace
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE missions(mission_id, status, created_at)")
-    service._duties.bind(SimpleNamespace(store=SimpleNamespace(connection=db)), control)
+    # opt.169 起部署职责逐任务先问"是否被重启恢复隔离"（SDK 3466f6e38）；桩照真编排器给出这个判断
+    service._duties.bind(SimpleNamespace(store=SimpleNamespace(connection=db),
+                                         recovery_isolated=lambda _mission_id: False), control)
     return service
 
 

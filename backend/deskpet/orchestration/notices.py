@@ -23,6 +23,7 @@ versions, times and the last read sequence number only (no goal text, no payload
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -32,6 +33,8 @@ from typing import Any
 
 NOTIFIED_EVENT = "AssuranceStatusNotified"
 NOTICES_FILE = "mission-notices.json"
+
+logger = logging.getLogger(__name__)
 
 
 class NoticeNotFound(ValueError):
@@ -54,6 +57,12 @@ class MissionNotices:
             self.last_seq = max(0, int(loaded.get("last_seq") or 0))
         except FileNotFoundError:
             pass
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            # 读不了或读坏了：从空开始（last_seq=0 会把整张表重读一遍，只补回丢的通知），
+            # 不让一个通知文件把整个编排服务拖垮；目录本身不可用由 start() 如实报不可用。
+            self._rows.clear()
+            self.last_seq = 0
+            logger.warning("mission notices unreadable, starting empty: %s: %s", type(exc).__name__, exc)
 
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

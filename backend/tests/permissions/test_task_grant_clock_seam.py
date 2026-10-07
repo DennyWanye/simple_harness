@@ -272,14 +272,5 @@ def test_t3_clock_is_threaded_through_the_host_composition() -> None:
         assert not node.keywords, "生产调用点不得注入 clock"
 
 
-def test_t3_corpus_runway_injects_the_scenario_clock() -> None:
-    """跑道两侧（铸造 + 激活）都必须注入同一个场景时钟。"""
-
-    from deskpet.quality import corpus_scoring_session
-
-    source = Path(inspect.getfile(corpus_scoring_session)).read_text(encoding="utf-8")
-    for callee in ("_initialize_capability_runtime", "_activate_product_sdk_runtime"):
-        calls = _call_keywords(source, "run", callee)
-        assert calls, f"跑道未调用 {callee}"
-        for keywords in calls:
-            assert "clock" in keywords, f"跑道调用 {callee} 时未注入场景时钟"
+# 原 test_t3_corpus_runway_injects_the_scenario_clock 已删：语料跑道 deskpet/quality/corpus_scoring_session
+# 随记忆 SDK 切片一（4b4dfba23，2026-09-10）整体删除，按"开发期旧路径直接删"不再保留跑道侧断言。

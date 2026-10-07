@@ -123,3 +123,17 @@ def test_a_stopped_mission_with_unsettled_actions_and_their_later_result_are_bot
     text = service_class.notice_context_text(host)
     assert "unresolved_actions=1 (outcome unknown; the system keeps checking)" in text
     assert "action_checked=publish reports/weekly.md result=applied" in text
+
+
+@pytest.mark.parametrize("content", ['{"notices": [', '{"notices": [{"no_id": 1}]}', '[]'])
+def test_an_unreadable_notices_file_starts_empty_instead_of_taking_orchestration_down(tmp_path, content):
+    """试用前全量回归（2026-10-07）：通知文件读坏时构造抛错，编排服务整个不注册。
+
+    **改坏检验**：构造里只接 ``FileNotFoundError`` → 三种坏文件全红。"""
+    from deskpet.orchestration.notices import MissionNotices
+
+    (tmp_path / NOTICES_FILE).write_text(content, encoding="utf-8")
+    notices = MissionNotices(tmp_path)
+    assert notices.last_seq == 0
+    notices.record({"event_id": "e-1", "mission_id": "m-1", "state_version": 1})
+    assert '"notice_id": "e-1"' in (tmp_path / NOTICES_FILE).read_text(encoding="utf-8")

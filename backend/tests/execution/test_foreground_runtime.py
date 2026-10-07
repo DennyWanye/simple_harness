@@ -370,6 +370,20 @@ class _Ingress:
         return self.records.get(run_id)
 
 
+class _LiveIngress(_Ingress):
+    """SDK Run still running after start.
+
+    2026-09-06 起（提交 9d48465fd）``_observe_with_heartbeats`` 见 SDK 记录已是
+    终态就直接观察终态、不再起控制泵——已结束的 Run 不该再收信号。测"控制实时
+    投递"的用例必须让 SDK 记录停在 running，泵才会起来。
+    """
+
+    async def start(self, **kwargs):  # type: ignore[no-untyped-def]
+        receipt = await super().start(**kwargs)
+        self.records[receipt.run_id].state = type("State", (), {"value": "running"})()
+        return receipt
+
+
 class _Terminal:
     async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
         return AuthenticatedTerminalObservation(
@@ -830,7 +844,7 @@ async def test_durable_control_commit_wakes_active_runtime_immediately() -> None
             )
 
     store = _Store([_candidate(1)])
-    ingress = _Ingress()
+    ingress = _LiveIngress()
     terminal = BlockedTerminal()
     runtime = ForegroundRuntimeExecutionAuthority(
         store=store,  # type: ignore[arg-type]
@@ -969,7 +983,7 @@ async def test_superseding_stop_during_pause_ack_is_still_delivered_live() -> No
             return await super().acknowledge_signal(**kwargs)
 
     store = SupersedingStore([_candidate(1)])
-    ingress = _Ingress()
+    ingress = _LiveIngress()
     terminal = _BlockedTerminal()
     runtime = _live_runtime(store, ingress, terminal)
     await runtime.after_enqueue(subject=SUBJECT)
@@ -1024,7 +1038,7 @@ async def test_pause_outcome_race_with_stop_keeps_pump_alive() -> None:
             return await super().record_pause_outcome(**kwargs)
 
     store = RacingStore([_candidate(1)])
-    ingress = _Ingress()
+    ingress = _LiveIngress()
     terminal = _BlockedTerminal()
     runtime = _live_runtime(store, ingress, terminal)
     await runtime.after_enqueue(subject=SUBJECT)
@@ -1054,7 +1068,7 @@ async def test_pause_outcome_race_with_stop_keeps_pump_alive() -> None:
 @pytest.mark.asyncio
 async def test_durable_cancel_commit_is_delivered_live() -> None:
     store = _Store([_candidate(1)])
-    ingress = _Ingress()
+    ingress = _LiveIngress()
     terminal = _BlockedTerminal()
     runtime = _live_runtime(store, ingress, terminal)
     await runtime.after_enqueue(subject=SUBJECT)

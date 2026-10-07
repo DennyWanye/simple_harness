@@ -199,8 +199,14 @@ def sdk_062_python(tmp_path: Path) -> Path:
         site.getsitepackages()[0] + "\n", encoding="utf-8"
     )
     wheel = Path(__file__).resolve().parents[2] / "vendor/simple_harness_sdk-0.6.2-py3-none-any.whl"
+    # --no-config: pytest runs from backend/, where pyproject.toml's
+    # [tool.uv] override-dependencies pins the current SDK (opt.N) and would
+    # make resolving the legacy 0.6.2 wheel unsatisfiable offline.
     subprocess.run(
-        [uv, "pip", "install", "--offline", "--python", str(python), "--no-deps", str(wheel)],
+        [
+            uv, "pip", "install", "--no-config", "--offline",
+            "--python", str(python), "--no-deps", str(wheel),
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -279,17 +285,22 @@ def test_exact_pinned_sdk_062_rejects_recoverable_v6_run_without_mutation(
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
 
 
-def test_exact_pinned_sdk_062_rejects_current_fresh_v7_without_mutation(
+def test_exact_pinned_sdk_062_rejects_current_fresh_schema_without_mutation(
     tmp_path: Path, sdk_062_python: Path,
 ) -> None:
     from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 
-    path = tmp_path / "sdk-v7.sqlite3"
+    path = tmp_path / "sdk-current.sqlite3"
     database = Database.open(path)
     try:
-        assert [tuple(row) for row in database.connection.execute(
+        # The current SDK writes one fresh-schema row newer than 0.6.2's v6
+        # (v7 when written; later SDK schema bumps keep the same shape).
+        rows = [tuple(row) for row in database.connection.execute(
             "SELECT version,name FROM sdk_schema_migrations"
-        )] == [(7, "0007_fresh")]
+        )]
+        assert len(rows) == 1
+        version, name = rows[0]
+        assert version > 6 and name == f"{version:04d}_fresh"
         uow = SqliteExecutionUnitOfWork(database)
         assert not uow.list_recoverable_root_runs()
         assert not uow.list_recoverable_child_runs()

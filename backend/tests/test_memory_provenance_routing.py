@@ -34,8 +34,14 @@ async def test_harness_and_product_provenance_have_one_authority(tmp_path):
         ids = [row[0] for row in db.execute(
             "SELECT message_id FROM product_memory_outbox ORDER BY message_id"
         )]
-    assert ids == [product_id]
-    assert harness_id not in ids
+        bindings = db.execute(
+            "SELECT count(*) FROM memory_user_bindings"
+        ).fetchone()
+    # 2026-09-10 认知记忆 SDK 移除（4b4dfba23）：outbox 没有消费者，product
+    # 权威也不再产生新行；只保留 product 权威的用户绑定，harness 权威不绑定。
+    assert ids == []
+    assert bindings == (1,)
+    assert harness_id != product_id
     await session.close()
 
 

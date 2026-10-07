@@ -29,13 +29,22 @@ async def test_dev_reset_rebuilds_three_databases_and_removes_sidecars(tmp_path,
     await reset_storage_set(
         state_db=str(state), execution_db=str(execution), memory_db=str(memory)
     )
-    assert all(path.is_file() for path in (state, execution, memory))
+    assert all(path.is_file() for path in (state, execution))
+    # 2026-09-10 认知记忆 SDK 移除（4b4dfba23）：memory.db 只清空不重建。
+    assert not memory.exists()
     assert all(not Path(f"{path}-shm").exists() for path in (state, execution, memory))
+    assert all(not Path(f"{path}-wal").exists() for path in (memory,))
     with sqlite3.connect(state) as db:
         assert db.execute("SELECT count(*) FROM product_memory_outbox").fetchone()[0] == 0
         assert db.execute("PRAGMA user_version").fetchone()[0] == 34
+    from simple_harness.execution.sqlite.schema import SCHEMA_VERSION
+
     with sqlite3.connect(execution) as db:
-        assert db.execute("SELECT max(version) FROM sdk_schema_migrations").fetchone()[0] == 6
+        # Fresh rebuild lands on the pinned SDK's current fresh schema.
+        assert (
+            db.execute("SELECT max(version) FROM sdk_schema_migrations").fetchone()[0]
+            == SCHEMA_VERSION
+        )
 
 
 @pytest.mark.asyncio

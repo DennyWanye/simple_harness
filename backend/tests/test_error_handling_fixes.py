@@ -1,6 +1,7 @@
 # Test error handling fixes for stuck status bug
 import pytest
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from deskpet.agent.run_presenter import _present_final, _present_error
 from agent.agent_loop import FinalEvent, ErrorEvent
@@ -108,7 +109,13 @@ async def test_health_check_timeout_values():
     """Verify health check timeout constants are set correctly."""
 
     # Read the controlWs.ts file
-    with open('/Users/denny/projects/simple_harness/tauri-app/src/code-panel/controlWs.ts', 'r') as f:
+    # Repository-relative: the original absolute path only existed on the
+    # authoring machine (/Users/denny/...).
+    control_ws = (
+        Path(__file__).resolve().parents[2]
+        / "tauri-app" / "src" / "code-panel" / "controlWs.ts"
+    )
+    with open(control_ws, 'r', encoding='utf-8') as f:
         content = f.read()
 
     # Check timeout values

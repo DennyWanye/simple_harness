@@ -561,11 +561,15 @@ async def test_runtime_reconcile_keeps_other_runs_inflight_response(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_unscoped_reconcile_would_discard_inflight_response(tmp_path):
-    """T5b: 对照组——没有在途闸门（启动路径的全量 reconcile）确实会丢弃 B 的正常响应。
+async def test_unscoped_reconcile_spares_inprocess_inflight_response(tmp_path):
+    """T5b: 全量 reconcile（启动路径口径）也不再丢弃本进程在途调用的正常响应。
 
-    这就是闸门存在的理由；启动路径 ``_start_once`` 因为静默期（本进程无在途调用）
-    仍然必须保持全量语义，所以 ``reconcile()`` 不加闸。
+    原对照组（2026-09-08）证明"无闸门的全量 reconcile 会把在途 handoff 判 UNKNOWN、
+    丢弃 B 的正常响应"。SDK 2026-09-23 起（Host 内嵌源码导入提交 0c3abfdb2）
+    ``reconcile_incomplete`` 自己跳过 ``_active_provider_calls`` 中的本进程在途调用，
+    该缺陷在 SDK 层已不可复现。这里改为锁住新行为：全量 reconcile 对在途调用
+    一行账本都不动，B 的响应照常返回、物理只发一次。Host 的在途闸门
+    （``reconcile_for_run``）仍保留，作为跨实现的第二道防线（见 T5）。
     """
     gate = asyncio.Event()
     live_provider = ScriptedProvider(gate=gate)
@@ -580,15 +584,19 @@ async def test_unscoped_reconcile_would_discard_inflight_response(tmp_path):
         cancel=CancelToken(), execution_lease=_lease("run-live"),
     ))
     await asyncio.wait_for(live_provider.entered.wait(), 5)
+    assert len(provider_invocations_in_flight(uow)) == 1
 
-    # 全量口径：在途 handoff 被判 UNKNOWN（+1），retry-once 策略随即写下重发授权（+1）。
-    assert await runtime_reconciliation.reconcile() == 2
-    assert [r.outcome for r in uow.resolutions.values()] == [
-        ResolutionOutcome.CONFIRMED_NOT_STARTED]
+    assert await runtime_reconciliation.reconcile() == 0
+    assert uow.resolutions == {}
+    live_record = next(r for r in uow.records.values() if r.run_id.value == "run-live")
+    assert live_record.state is ProviderInvocationState.HANDED_OFF
     gate.set()
-    with pytest.raises(ProviderInvocationUnknownError):
-        await asyncio.wait_for(live, 5)  # 一次完全正常的模型响应被丢弃
+    response = await asyncio.wait_for(live, 5)
+    assert response.request_id.value == "request-b"
     assert live_provider.calls == ["request-b"]
+    live_record = next(r for r in uow.records.values() if r.run_id.value == "run-live")
+    assert (live_record.state, live_record.handoff_attempt, live_record.rehandoff_count) == (
+        ProviderInvocationState.SUCCEEDED, 1, 0)
 
 
 @pytest.mark.asyncio

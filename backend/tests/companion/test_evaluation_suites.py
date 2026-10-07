@@ -103,8 +103,10 @@ def test_evaluation_suite_resources_are_declared_for_both_packagers() -> None:
         "deskpet.companion.eval_suites"
     ] == ["*.json"]
     spec = (backend_root / "deskpet-backend.spec").read_text("utf-8")
+    # Since 304a57a73 the spec collects startup resources relative to the
+    # repository root (``backend/...`` source, package-relative destination).
     assert (
-        '("deskpet/companion/eval_suites", '
+        '("backend/deskpet/companion/eval_suites", '
         '"deskpet/companion/eval_suites")'
     ) in spec
     assert '"deskpet.companion.eval_suites"' in spec

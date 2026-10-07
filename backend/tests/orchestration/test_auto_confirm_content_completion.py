@@ -41,7 +41,9 @@ def _service(*, mode="auto", criteria=("file:a.md", "file:b.md"), state="CONFIRM
             calls.append(("approve_operation_completion_spec", (command,)))
             return {}
 
-    orchestrator = SimpleNamespace(store=SimpleNamespace(connection=db, get_mission=lambda _id: mission))
+    # opt.169 起部署职责逐任务先问"是否被重启恢复隔离"（SDK 3466f6e38）；桩照真编排器给出这个判断
+    orchestrator = SimpleNamespace(store=SimpleNamespace(connection=db, get_mission=lambda _id: mission),
+                                   recovery_isolated=lambda _mission_id: False)
     duties = DeploymentDuties(orchestrator, Control(), tenant_id="t", principal=SimpleNamespace(principal_id="p"),
                               wake=lambda: calls.append(("wake", ())))
     return (duties, mode), calls

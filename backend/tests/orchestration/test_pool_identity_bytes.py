@@ -4,7 +4,9 @@
 """执行池身份逐字节不变（HTN 补齐阶段 A′ 第 1 步：原生执行池拼装从 Host 搬进 SDK）。
 
 基准 ``pool_identity_baseline.json`` 是搬迁前用 Host 当时的代码、同样的输入拼出来的（提交
-8b656b2c）。执行池身份只要变一个字节，已有执行池就起不来，所以这里逐字节比对，不允许"差不多"。
+8b656b2c）；2026-10-07 试用前全量回归按现值重生成：K01（afc692b66）给审阅员加了知识库两个工具，
+授权政策编号与主人合同哈希随之变；启动只核对上下文旁文件、在途意图准入指纹、执行池配置行，
+三样都没变（调查见 完成度严格评估-2026-10-06/试用前-执行池身份调查.md）。执行池身份只要变一个字节，已有执行池就起不来，所以这里逐字节比对，不允许"差不多"。
 """
 
 from __future__ import annotations
@@ -29,11 +31,12 @@ def test_every_pool_identity_byte_is_unchanged(tmp_path, models, snapshot):
     assert json.dumps(actual, ensure_ascii=False, sort_keys=True) == json.dumps(expected, ensure_ascii=False, sort_keys=True)
 
 
-#: 搬迁前 Host ``hierarchical.root_requirements`` 对同样输入算出的要求书哈希（1、2、3 条成功条件）。
+#: 要求书对同样输入的哈希（1、2、3 条成功条件）。原值是搬迁前 Host 算的；2026-10-07 试用前全量回归按
+#: 现值重钉：H-3（99788b2fa）删了准则的 ``phase`` 字段（补回 ``"phase": null`` 正好得原值）。
 ROOT_REQUIREMENTS = {
-    1: "41f2ce29fb7bb15e608073449c7ec834f619e7dcf865124717eddd706de5317f",
-    2: "d515a9cf0f441ab8d2980e3f23d02ed8dfd4a92a4f637b2a9741dc4fceabf61f",
-    3: "2aef926296394320519f0e990f9bd8ca309b31cac5dc5c614a075aa16222a305",
+    1: "123275716fb0b9de766e237efedc598d14d3c05de36679de534d17da3e083877",
+    2: "905a9e83e6af963eafc3dfb7d714c173f081cb667eb797aae1cfe8b0f1bc4999",
+    3: "aef382457d00a44a167126311fff97399791611c021f9920fd92ac0c2e1ae7ca",
 }
 
 

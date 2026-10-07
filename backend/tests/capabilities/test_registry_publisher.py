@@ -21,6 +21,7 @@ from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,
 )
+from deskpet.tools.build_identity import ExecutionBuildIdentity
 from deskpet.tools.registry import PreparedToolCallStale, ToolRegistry
 
 
@@ -128,6 +129,26 @@ class _SpecFactory:
             parameters = json.loads(
                 (install_root / tool.schema).read_text(encoding="utf-8")
             )
+            # The Run catalog only advertises tools with a durable execution
+            # build identity (hub.ToolRegistryCatalogSource); the product pack
+            # factory (capabilities/platform.py) always stamps one.
+            handler_id = f"capability:{manifest.id}:{tool.provider_name}"
+            sources_hash = hashlib.sha256(
+                f"{source}:{tool.provider_name}:sources".encode()
+            ).hexdigest()
+            build = ExecutionBuildIdentity(
+                provider="deskpet-capability-pack",
+                handler_id=handler_id,
+                build_digest=hashlib.sha256(
+                    f"{source}:{tool.provider_name}:build".encode()
+                ).hexdigest(),
+                sources_manifest_hash=sources_hash,
+                artifacts=(
+                    (f"pack:{tool.schema}", hashlib.sha256(
+                        (install_root / tool.schema).read_bytes()
+                    ).hexdigest()),
+                ),
+            )
             candidate.register(
                 tool.provider_name,
                 f"capability:{manifest.id}",
@@ -143,6 +164,8 @@ class _SpecFactory:
                 runtime_provenance_ref=hashlib.sha256(
                     f"{source}:{tool.provider_name}:runtime".encode()
                 ).hexdigest(),
+                stable_handler_id=build.handler_id,
+                execution_build_identity=build,
             )
         return candidate.catalog_snapshot().specs
 

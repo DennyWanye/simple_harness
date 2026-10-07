@@ -60,16 +60,26 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
     provider._pre_invoke_guard = guard
     try:
         progressed = await asyncio.wait_for(runtime._drive_once(), 15)
-        assert progressed is late_deny
-        assert len(requests) == 1
+        # sent_unknown：2026-09-08 F06（提交 4601610a2）起，发出后结果不明的调用不再让
+        # 前台停在 waiting——Host 对同一 request 授权重发一次，二次仍不明就 cancel 收尾。
+        # 所以本轮有进展、同一 request 物理发送 2 次、前台终态 CANCELLED；
+        # 但"已发出的不明"仍须记 unknown，绝不能被改写成 failed（本用例原意）。
+        assert progressed is True
+        assert len(requests) == (1 if late_deny else 2)
+        assert len({item for item in requests}) == 1  # same SDK run + same request id
         sdk_run_id, request_id = requests[0]
         record = stack._uow.read_provider_invocation(provider_invocation_id(RunId(sdk_run_id), RequestId(request_id)))
         assert record.state.value == ("failed" if late_deny else "unknown")
-        assert len(sends) == (0 if late_deny else 1)
+        assert len(sends) == (0 if late_deny else 2)
         if late_deny:
             assert record.error_code == "primary_history_disclosure_rejected"
             assert not await runtime._drive_once()
             assert len(requests) == 1 and sends == []
+        else:
+            with sqlite3.connect(state) as db:
+                assert db.execute(
+                    "SELECT terminal_state FROM foreground_terminal_receipts"
+                ).fetchall() == [("CANCELLED",)]
     finally:
         await runtime.close()
         await stack.close()

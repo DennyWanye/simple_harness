@@ -9,7 +9,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -28,7 +28,7 @@
    "revision": 1
   },
   "owner_contract": {
-   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
    "id": "host-owner:tenant-pool-identity",
    "kind": "policy",
    "revision": 1
@@ -115,7 +115,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": null,
     "embedding_resource_ref": null,
     "files": [
@@ -226,7 +226,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": null,
     "files": [
@@ -265,7 +265,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -278,7 +278,7 @@
    }
   },
   "status": {
-   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
    "available": true,
    "embedding": "lexical-only",
    "embedding_reason": "模型目录未配置",
@@ -324,7 +324,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -343,7 +343,7 @@
    "revision": 1
   },
   "owner_contract": {
-   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
    "id": "host-owner:tenant-pool-identity",
    "kind": "policy",
    "revision": 1
@@ -430,7 +430,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": null,
     "files": [
@@ -541,7 +541,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": null,
     "embedding_resource_ref": null,
     "files": [
@@ -652,7 +652,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": null,
     "files": [
@@ -763,7 +763,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": null,
     "files": [
@@ -802,7 +802,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -815,7 +815,7 @@
    }
   },
   "status": {
-   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
    "available": true,
    "embedding": "lexical-only",
    "embedding_reason": "模型目录未配置",
@@ -887,7 +887,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -906,7 +906,7 @@
    "revision": 1
   },
   "owner_contract": {
-   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
    "id": "host-owner:tenant-pool-identity",
    "kind": "policy",
    "revision": 1
@@ -993,7 +993,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": null,
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1109,7 +1109,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1153,7 +1153,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -1166,7 +1166,7 @@
    }
   },
   "status": {
-   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
    "available": true,
    "embedding": "bge-m3-int8",
    "embedding_reason": null,
@@ -1212,7 +1212,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -1231,7 +1231,7 @@
    "revision": 1
   },
   "owner_contract": {
-   "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+   "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
    "id": "host-owner:tenant-pool-identity",
    "kind": "policy",
    "revision": 1
@@ -1318,7 +1318,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1434,7 +1434,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": null,
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1550,7 +1550,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1666,7 +1666,7 @@
      },
      "schema_version": 1
     },
-    "authorization_policy": "host-deployment-policy:c38c398452440b12",
+    "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
     "catalogue_authority": "shared",
     "embedding_resource_ref": {
      "content_hash": "d545453687e0ae964ef4ba8dbfd198191b0e6dbc5b21b98698ea05411ec5457a",
@@ -1710,7 +1710,7 @@
     "revision": 0
    },
    "owner_contract_ref": {
-    "content_hash": "45dadaae7dbfa4e7442730914d48036fcbc1ae691773fc11d962d142d2028d35",
+    "content_hash": "0f51f4ace7527d46b825cc31f8aba26317a34f0571bde9323859137d140a647d",
     "id": "host-owner:tenant-pool-identity",
     "kind": "policy",
     "revision": 1
@@ -1723,7 +1723,7 @@
    }
   },
   "status": {
-   "authorization_policy": "host-deployment-policy:c38c398452440b12",
+   "authorization_policy": "host-deployment-policy:4ff130fb2a3fd60f",
    "available": true,
    "embedding": "bge-m3-int8",
    "embedding_reason": null,

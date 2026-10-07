@@ -6,6 +6,26 @@ import pytest
 from deskpet.memory import migrator, schema
 
 
+@pytest.fixture(autouse=True)
+def frozen_v47_migration_lane(tmp_path):
+    """Keep the original v46->v47 AC exact as newer default migrations arrive.
+
+    040 (v48, eefc87629) and 041 (v49, f3675064c) landed after this test;
+    freeze the chain at v47 the same way test_effect_closure_migration_v46
+    freezes v46.
+    """
+    directory = tmp_path / 'frozen-v47-migrations'
+    directory.mkdir()
+    for source in migrator.DEFAULT_MIGRATIONS_DIR.glob('*.sql'):
+        if migrator.MIGRATION_STEPS.get(source.name, 0) <= 47:
+            shutil.copy2(source, directory / source.name)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(migrator, 'DEFAULT_MIGRATIONS_DIR', directory)
+        patch.setattr(migrator, 'HUMAN_MEMORY_TARGET_SCHEMA_VERSION', 47)
+        patch.setattr(schema, 'HUMAN_MEMORY_TARGET_SCHEMA_VERSION', 47)
+        yield
+
+
 async def v46(tmp_path, monkeypatch):
     path = tmp_path / 'state.db'
     directory = tmp_path / 'v46-migrations'

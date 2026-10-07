@@ -79,8 +79,12 @@ def test_pyinstaller_spec_has_no_removed_framework_hooks() -> None:
 
 def test_pyinstaller_keeps_workflow_definition_source_for_stable_manifests() -> None:
     spec_text = (BACKEND_DIR / "deskpet-backend.spec").read_text(encoding="utf-8")
-    assert 'module_collection_mode={"deskpet.workflows.definitions": "py"}' in spec_text
-    assert '("uv.lock", ".")' in spec_text
+    # c41bfc14a widened module_collection_mode into a multi-entry dict and
+    # 304a57a73 made resource sources repository-relative (backend/uv.lock).
+    mode_block = spec_text[spec_text.index("module_collection_mode={") :]
+    mode_block = mode_block[: mode_block.index("}")]
+    assert '"deskpet.workflows.definitions": "py"' in mode_block
+    assert '("backend/uv.lock", ".")' in spec_text
 
 
 def test_eval_adapter_uses_native_json_interrupt_contract() -> None:

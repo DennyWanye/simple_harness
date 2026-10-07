@@ -105,8 +105,14 @@ async def test_configuration_commit_during_checker_blocks_physical_send(env, cha
             assert second["policy_generation"] == 2
         release.set()
         await asyncio.wait_for(task, 10)
-        assert len(checked) == 1 and first["source_ref"] in checked[0].authority_ref
-        assert len(sends) == (0 if change else 1), "G2 committed while checker held G1; physical send must be zero"
+        # Without a G2 commit the physical send happens; the mock transport
+        # raises, the SDK records the outcome UNKNOWN and the Host F06
+        # retry-once reconciliation (4601610a2) re-sends exactly once.  Every
+        # attempt is re-checked against the still-current G1 authority.
+        attempts = 1 if change else 2
+        assert len(checked) == attempts
+        assert all(first["source_ref"] in item.authority_ref for item in checked)
+        assert len(sends) == (0 if change else attempts), "G2 committed while checker held G1; physical send must be zero"
         if change:
             with sqlite3.connect(env.path) as db:
                 assert db.execute("SELECT current_state FROM foreground_run_heads").fetchone()[0] == "FAILED"

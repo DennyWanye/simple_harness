@@ -112,11 +112,13 @@ def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
         "await _companion_runtime_service.close(timeout=5.0)"
     )
     sdk_close = source.index("await _sdk_runtime_stack.close()")
-    launcher_close = source.index("await _workflow_launcher.shutdown()")
-    uow_close = source.index(
-        "await asyncio.wait_for(_execution_uow.close(), timeout=5.0)"
+    # Since ab36b6a52 the workflow service owns launcher + execution UoW
+    # shutdown (WorkflowService.close joins the launcher, then the runner,
+    # then releases its owned UoW); main.py closes that one owner.
+    workflow_close = source.index(
+        "await asyncio.wait_for(_workflow_service.close(), timeout=5.0)"
     )
-    assert runtime_close < sdk_close < launcher_close < uow_close
+    assert runtime_close < sdk_close < workflow_close
     coordinator_block = source[
         source.index("profile_coordinator = ProfileBindingCoordinator(") :
         source.index("_companion_runtime = companion_runtime")

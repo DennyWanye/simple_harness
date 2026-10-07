@@ -26,7 +26,10 @@ async def test_a_library_frozen_under_one_slot_starts_under_two(orchestration_ro
     try:
         mission_id = service.create_mission(notes_request("slots-1"))["mission_id"]
         loop = service._orchestrator
-        await loop._try_planner_intent(mission_id, ordinal=1)
+        # 2026-10-03（SDK 3f34b51e8）起规划闸门：现行要求未确认不开规划轮。按自动权限模式，
+        # 由 Host 职责确认纯内容要求（同产品每轮职责），再冻结第一条规划请求。
+        assert service._duties.auto_confirm_content_completion(auto=True) == 1
+        assert await loop._try_planner_intent(mission_id, ordinal=1)
         frozen = [i for i in loop.store.list_intents("PENDING", "CLAIMED") if i.mission_id == mission_id]
         assert frozen and frozen[0].config.get("provider_admission_fingerprint")
         before = frozen[0].config["provider_admission_fingerprint"]

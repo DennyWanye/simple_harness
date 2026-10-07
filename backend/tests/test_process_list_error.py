@@ -31,7 +31,19 @@ async def test_process_list_with_query():
 
     payload = json.loads(result)
     assert payload["ok"] is True
-    assert all("python" in item["name"].casefold() for item in payload["processes"])
+    # The query matches name, executable or command line (process_tools.py
+    # searchable text), not the name alone: a zsh running a python script
+    # is a legitimate hit.
+    def searchable(item):
+        return " ".join(
+            (
+                str(item.get("name") or ""),
+                str(item.get("executable") or ""),
+                " ".join(item.get("command_line") or []),
+            )
+        ).casefold()
+
+    assert all("python" in searchable(item) for item in payload["processes"])
 
 
 @pytest.mark.asyncio

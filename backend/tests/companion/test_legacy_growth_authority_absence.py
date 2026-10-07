@@ -231,11 +231,21 @@ def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> N
 def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None:
     source = _source(BACKEND / "main.py")
     control = source[source.index('if msg_type == "companion_profile_bind":') :]
-    bind_branch = control[: control.index(
-        'elif msg_type == "companion_profile_unbind":'
+    # The first bind branch only records the human-memory control binding;
+    # the identity freeze / inbox projection branch is the next one.
+    settle = control.index(
+        'if msg_type == "companion_profile_bind":',
+        len('if msg_type == "companion_profile_bind":'),
+    )
+    bind_branch = control[settle : control.index(
+        'elif msg_type == "companion_profile_unbind":', settle
     )]
-    provision = control.index("await _ensure_companion_inbox_route(")
-    response = control.index('"session_id": _inbox_session_id')
+    # Since 00b2d0829 (事件 AK) provisioning is bounded inside
+    # _settle_companion_bind_projection, which receives the inbox-route
+    # provisioner; the routed session id is then folded into the response.
+    provision = control.index("await _settle_companion_bind_projection(")
+    assert "ensure_route=_ensure_companion_inbox_route" in bind_branch
+    response = control.index('_bind_payload["session_id"] = _inbox_session_id')
     send = control.index("await ws.send_json(response)")
     broadcast = control.index('"type": "companion_identity_status"')
 

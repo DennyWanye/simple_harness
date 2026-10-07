@@ -17,6 +17,7 @@ from deskpet.capabilities.contracts import (
     canonical_json,
 )
 from deskpet.capabilities.store import (
+    CAPABILITY_SCHEMA_VERSION,
     CapabilityStore,
     CapabilityStoreConflict,
     CapabilityVersionRecord,
@@ -202,7 +203,7 @@ async def test_capability_v1_to_v2_migration_preserves_binding_and_repeats(
 
 
 @pytest.mark.asyncio
-async def test_workflow_fresh_schema_installs_capability_v2_idempotently(
+async def test_workflow_fresh_schema_installs_current_capability_schema_idempotently(
     tmp_path,
 ) -> None:
     path = tmp_path / "workflow.db"
@@ -221,7 +222,9 @@ async def test_workflow_fresh_schema_installs_capability_v2_idempotently(
             await db.execute("PRAGMA table_info(capability_bindings)")
         ).fetchall()
     assert workflow_version == (WORKFLOW_SCHEMA_VERSION,)
-    assert capability_version == (2,)
+    # Fresh installs land on the current capability schema (v4 since
+    # a1e5d96b4); the v2 owner columns must still be present.
+    assert capability_version == (CAPABILITY_SCHEMA_VERSION,)
     assert {
         "owner_key",
         "management_policy",

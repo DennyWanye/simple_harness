@@ -26,10 +26,14 @@ from tests.memory.test_primary_control_binding import _bind
 
 
 async def setup(tmp_path, *, expired=False, wake=False):
-    state, factory, service, configured, authority = await fixture(tmp_path)
+    # 2026-09-07 用户产品决定：auto 模式不再弹授权提示（提交 22592ec5e）。
+    # 本文件测的是"真实授权挑战→主对话认证回应"整条链，必须在 manual 模式下才会出挑战。
+    state, factory, service, configured, authority = await fixture(tmp_path, mode="manual")
     product = ProductStateDatabase(tmp_path / "product.db")
     product.initialize()
     policy_state = await authority._policy.get_policy_state()
+
+    policies = []
 
     def authorization(registry):
         policy = SdkPreparedAuthorizationPolicy(
@@ -38,6 +42,7 @@ async def setup(tmp_path, *, expired=False, wake=False):
             initial_policy_generation=policy_state.generation,
             clock=(lambda: time.time() - 600) if expired else time.time,
         )
+        policies.append(policy)
         return ProductAuthorizationAdapter(
             AuthorizationSagaRepository(product, owner_id="primary-test"),
             policy=policy,
@@ -49,15 +54,36 @@ async def setup(tmp_path, *, expired=False, wake=False):
         )
 
     provider = CreateProvider()
-    runtime, stack, queue = await build(
-        tmp_path,
-        state,
-        provider,
-        dynamic=True,
-        binding_authority=authority,
-        configured_root=configured,
-        authorization_factory=authorization,
-    )
+    # 2026-09-25 起（提交 5733540fd）生产装配给 context_route 接上
+    # ``user_confirmation_reader``：人对这次 create_new 的"允许"同时就是目录绑定的
+    # 人工决定。共用夹具 ``build`` 没接这根线，这里按 main.py 的接法补上，
+    # 否则 manual 模式下批准后工具仍报 binding_authorization_required。
+    from deskpet.sdk_adapters.context_route import ContextRouteToolService
+
+    original_route_init = ContextRouteToolService.__init__
+
+    def route_init(self, *args, **kwargs):
+        kwargs.setdefault(
+            "user_confirmation_reader",
+            lambda run_id, effect_id: any(
+                policy.user_confirmed(run_id, effect_id) for policy in policies
+            ),
+        )
+        original_route_init(self, *args, **kwargs)
+
+    ContextRouteToolService.__init__ = route_init
+    try:
+        runtime, stack, queue = await build(
+            tmp_path,
+            state,
+            provider,
+            dynamic=True,
+            binding_authority=authority,
+            configured_root=configured,
+            authorization_factory=authorization,
+        )
+    finally:
+        ContextRouteToolService.__init__ = original_route_init
     private, _, _, control = _ingress(tmp_path / "control")
     connection = HumanMemoryControlBinding()
     challenge = await _bind(private, control, connection)
@@ -130,11 +156,8 @@ async def test_production_challenge_exact_bound_response_resume_and_physical_eff
     s = await setup(tmp_path, wake=True)
     try:
         first = (await pending(s))[0]
-        assert s["disclosures"]
-        assert all(
-            context.run_id == "bounded-request" and context.subject == s["auth"].subject
-            for context in s["disclosures"]
-        )
+        # 披露上下文断言已删：``history_visibility_checker`` 钩子随 2026-09-10
+        # 删记忆 SDK（提交 fb08f4755）一并移除，夹具里 disclosures 恒为空。
         assert first["params"]["tool_name"] == "context_route"
         assert "create_new" in first["params"]["arguments_preview"]
         with sqlite3.connect(s["state"]) as db:

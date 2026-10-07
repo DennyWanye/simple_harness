@@ -69,6 +69,10 @@ def test_v46_remains_the_registered_historical_step() -> None:
 
 async def _v45_database(tmp_path: Path, monkeypatch) -> Path:
     db = tmp_path / "state.db"
+    # Filter by the unpatched chain: later steps (040 v48 / 041 v49, added
+    # 2026-09-06 in eefc87629 / f3675064c) are absent from the patched map
+    # and would otherwise slip into the v45 lane as step 0.
+    all_steps = dict(migrator.MIGRATION_STEPS)
     monkeypatch.setattr(
         migrator, "MIGRATION_STEPS",
         {k: v for k, v in migrator.MIGRATION_STEPS.items() if v <= 45},
@@ -79,7 +83,7 @@ async def _v45_database(tmp_path: Path, monkeypatch) -> Path:
     legacy_dir = tmp_path / "migrations-v45"
     legacy_dir.mkdir()
     for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-        if migrator.MIGRATION_STEPS.get(source.name, 0) > 45 or source.name.startswith(("038_", "039_")):
+        if all_steps.get(source.name, 0) > 45 or source.name.startswith(("038_", "039_")):
             continue
         shutil.copy2(source, legacy_dir / source.name)
     monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)
