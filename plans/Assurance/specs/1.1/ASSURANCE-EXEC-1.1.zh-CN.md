@@ -275,7 +275,7 @@ Store服务clock wrapper维护持久wall_high_ms；now<high且clock_state=STABLE
 2. 短事务核cursor CAS；无关/自己状态通知只推进；相关事件稳定work_key插入或合并到pending（REVIEW按review slot，VALIDITY按consumer/use，CLOSEOUT按mission/root要求，NOTIFY按最终event）。同事务推进cursor。禁止先ack再内存future。
 3. tick以row-version/lease claim due work，事务外准备CAS/check/closure。原authority来源变更事件仍继续摄取，预算堵住一个review不会卡后续撤权/取消。
 4. 提交事务重读work target epoch/fingerprint/caller/source；有效则原效果writer+receipt+DONE同事务。已存在command receipt时仍执行幂等工作ACK，不early-return让cursor死循环。
-5. BUDGET_WAIT/CHECK_PENDING/RECHECK_REQUIRED保存WAITING+next_due/reason；永久非法保存REJECTED和receipt；profile未绑定/restore隔离保存等待来源，不触发模型格式重试。
+5. BUDGET_WAIT/CHECK_PENDING/RECHECK_REQUIRED保存WAITING+next_due/reason；永久非法保存REJECTED和receipt；profile未绑定/restore隔离保存等待来源，不触发模型格式重试。（2026-10-07 补注，偏离 #50）profile 未绑定不会产生待办（待办外键指向绑定表；根闸门不过时轮询不装配），不另记。restore 隔离：本进程不替被隔离任务写任何东西，它的保证待办保持原样、不领取、不触发格式重试；等待来源记在恢复第 3 步的结果明细里（逐项：consumer、work_key、当时状态、原因 RECOVERY_ISOLATED），经 `recovery_status()` 读出。
 6. 准备后source变化→原事务无业务变更，row若已被更高target epoch合并则旧worker不能ACK；由同work下一轮处理。不用新event ID创建重复预算。
 
 新lane激活同事务cursor=activation_event.seq，同时枚举当前已存在可审Result、Review回流、dirty证据、未收尾root入pending，形成reconciliation manifest/hash；因此不会漏激活前任务，也不用再次跑所有历史事件。cursor丢失：恢复为0重新ingest，依据稳定workkey/原receipts去重；已完成同target保持完成，不重新预留。源记录也缺则SOURCE_UNAVAILABLE，不“从最后seq继续”漏活跃工作。

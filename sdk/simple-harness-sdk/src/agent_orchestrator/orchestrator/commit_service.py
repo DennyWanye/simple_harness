@@ -69,7 +69,7 @@ from ..memory.claims import grade_claim
 from ..memory.knowledge_standing import CURRENT as KNOWLEDGE_CURRENT
 from .review_adjudication import accepted_or_adjudicated, adjudication_of
 from ..memory.knowledge_standing import knowledge_standing
-from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord, parse_knowledge_ref
+from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord, modified, parse_knowledge_ref
 from ..observability.lineage import lineage
 from ..governance.budget_limits import inherit_limits
 from ..graph.terminal import terminal_task
@@ -1254,7 +1254,7 @@ class CommitService(ProtectedTailCommitsMixin,
                     },
                 )
                 if supersedes is not None:
-                    self._supersede_knowledge(supersedes, by=record.id)
+                    self._supersede_knowledge(supersedes, by=record)
         for observation, record in observations:
             record = replace(
                 record, verifier={**dict(record.verifier), "basis": "test_observation"},
@@ -1394,9 +1394,11 @@ class CommitService(ProtectedTailCommitsMixin,
                 )
             record = self._store.get_knowledge(other.id)
             if record is not None and claim.id not in record.disputed_by:
-                self._store.upsert_knowledge(
-                    replace(record, disputed_by=(*record.disputed_by, claim.id))
-                )
+                # K07：谁改了它，与这次改动同一次写入
+                self._store.upsert_knowledge(modified(
+                    replace(record, disputed_by=(*record.disputed_by, claim.id)),
+                    change="DISPUTED", by=claim.id, task_id=claim.source_task,
+                    attempt_id=claim.source_attempt, proposed_by=claim.proposed_by, at=self._store.now))
         elif other.status is not ClaimStatus.DISPUTED:
             self._store.upsert_claim(
                 next_claim(other, ClaimStatus.DISPUTED, disputed_by=(*other.disputed_by, claim.id))
@@ -1448,25 +1450,27 @@ class CommitService(ProtectedTailCommitsMixin,
             )
             return count
 
-    def _supersede_knowledge(self, knowledge_id: str, *, by: str) -> None:
+    def _supersede_knowledge(self, knowledge_id: str, *, by: KnowledgeRecord) -> None:
         """VERIFIED → SUPERSEDED (§25.3, the one legal edge out of VERIFIED) on both the
-        claim and its knowledge projection, pointing at the newer version."""
+        claim and its knowledge projection, pointing at the newer version ``by`` (whose
+        Task / Attempt / proposer are noted as the modifier, K07)."""
 
         record = self._store.get_knowledge(knowledge_id)
         if record is None or record.status != "VERIFIED":
             return
-        self._store.upsert_knowledge(
-            replace(record, status="SUPERSEDED", superseded_by=by)  # P2-13: version = identity
-        )
+        self._store.upsert_knowledge(modified(
+            replace(record, status="SUPERSEDED", superseded_by=by.id),  # P2-13: version = identity
+            change="SUPERSEDED", by=by.id, task_id=by.source_task, attempt_id=by.source_attempt,
+            proposed_by=by.proposed_by, at=self._store.now))
         claim = self._store.get_claim(record.claim_id)
         if claim is not None and claim.status is ClaimStatus.VERIFIED:
-            self._store.upsert_claim(next_claim(claim, ClaimStatus.SUPERSEDED, superseded_by=by))
+            self._store.upsert_claim(next_claim(claim, ClaimStatus.SUPERSEDED, superseded_by=by.id))
         self._emit(
             "KnowledgeSuperseded",
             record.mission_id,
-            key=f"{knowledge_id}:{by}",
+            key=f"{knowledge_id}:{by.id}",
             task_id=record.source_task,
-            payload={"knowledge_id": knowledge_id, "superseded_by": by, "key": record.key},
+            payload={"knowledge_id": knowledge_id, "superseded_by": by.id, "key": record.key},
         )
 
     def record_planning_rejected(
