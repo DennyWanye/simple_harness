@@ -191,14 +191,38 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
             for mission_id in sorted(isolated):
                 connection.execute("UPDATE missions SET json=json_set(json,'$.goal','改坏的目标') WHERE mission_id=?",
                                    (mission_id,))
+            # 外界时机：进程停下时 damaged 有两项保证待办还没做完——一项刚被新事件重开（PENDING），一项卡在
+            # 预算上（WAITING + BUDGET_WAIT）。按待办表允许的转移摆出来。
+            done = connection.execute(
+                "SELECT consumer, work_key FROM assurance_pending_work WHERE mission_id=? AND state='DONE' "
+                "ORDER BY consumer, work_key LIMIT 2", (damaged,)).fetchall()
+            assert len(done) == 2, done
+            where = " WHERE mission_id=? AND consumer=? AND work_key=?"
+            reopen = ("UPDATE assurance_pending_work SET state='PENDING', target_epoch=target_epoch+1, "
+                      "row_version=row_version+1" + where)
+            for consumer, key in done:
+                connection.execute(reopen, (damaged, consumer, key))
+            consumer, key = done[1]
+            for sql in ("UPDATE assurance_pending_work SET state='RUNNING', owner='fixture', lease_until_ms=1, "
+                        "row_version=row_version+1", "UPDATE assurance_pending_work SET state='WAITING', owner=NULL, "
+                        "lease_until_ms=NULL, wait_reason='BUDGET_WAIT', row_version=row_version+1"):
+                connection.execute(sql + where, (damaged, consumer, key))
             connection.commit()
         finally:
             connection.close()
         reader = sqlite3.connect(db)
         try:
             before = {mission_id: footprint(reader, mission_id) for mission_id in isolated}
+            # A21（推后第 3 批，偏离 #50）：被隔离任务未完成的保证待办，按 consumer、work_key 排
+            open_work = {mission_id: [
+                {"consumer": c, "work_key": k, "state": st, "wait_reason": wr, "reason": "RECOVERY_ISOLATED"}
+                for c, k, st, wr in reader.execute(
+                    "SELECT consumer, work_key, state, wait_reason FROM assurance_pending_work WHERE mission_id=? "
+                    "AND state IN ('PENDING','RUNNING','WAITING') ORDER BY consumer, work_key", (mission_id,))]
+                for mission_id in isolated}
         finally:
             reader.close()
+        assert [item["state"] for item in open_work[damaged]] == ["PENDING", "WAITING"], open_work
         second = LayeredScriptedProvider()
         async with product_world(root, second) as world:  # 自动模式：部署职责会替没隔离的任务签
             from agent_orchestrator.api.facade import FacadeError
@@ -232,6 +256,11 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
             steps = {o["step"]: o for o in status["latest"]["obligations"]}
             assert steps["reducer_rebuild"]["status"] == "DONE"
             assert set(steps["reducer_rebuild"]["detail"]["isolated"]) == isolated
+            # 恢复第 3 步逐项记下被隔离任务在等的保证待办（只记在这一步的结果里，任务自己的行不写）
+            for mission_id in isolated:
+                detail = status["isolated_missions"][mission_id]
+                assert detail.get("assurance_waiting") == open_work[mission_id], (mission_id, detail)
+                assert "assurance_waiting_omitted" not in detail
             # 恢复第 4 步：被隔离任务的启动绑定故障只记进这一步的结果
             assert steps["inbox_outbox"]["detail"]["startup_faults_isolated"] == [
                 {"mission_id": damaged, "where": "startup_bind:fixture", "error": "ServiceTurnIdentityMismatch"}]

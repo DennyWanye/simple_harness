@@ -1665,6 +1665,17 @@
     "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_the_knowledge_records_who_modified_it"
    ],
    "note": "反驳已核实知识时不记是谁改的"
+  },
+  {
+   "id": "A21-01",
+   "source": "推后第 3 批车道 R2（A21：被隔离任务的逐项等待来源，偏离 #50）",
+   "file": "src/agent_orchestrator/orchestrator/recovery_coordinator.py",
+   "original": "                    \"silent_changes\": list(report.get(\"silent_changes\") or ())[:5],\n                    **_assurance_waiting(orch.store, mission.id)}\n",
+   "replacement": "                    \"silent_changes\": list(report.get(\"silent_changes\") or ())[:5]}\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_recovery_coordinator.py::test_an_inconsistent_mission_is_isolated_and_the_others_go_on"
+   ],
+   "note": "恢复第 3 步不列被隔离任务在等的保证待办：排查看不出哪项在等"
   }
  ]
 }

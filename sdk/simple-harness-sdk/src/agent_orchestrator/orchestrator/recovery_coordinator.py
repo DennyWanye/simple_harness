@@ -120,6 +120,27 @@ def _owner_alive(pid: int, started_at: str) -> bool:
     return identity is not None and str(identity["process_started_at"]) == started_at
 
 
+#: 恢复第 3 步逐项列出的被隔离任务保证待办上限（推后第 3 批 A21，偏离 #50）。
+ISOLATED_WAITING_LIMIT = 64
+
+
+def _assurance_waiting(store: Any, mission_id: str) -> dict[str, Any]:
+    """A21（原计划 §9 第 5 步，偏离 #50）：被隔离任务在等的保证待办，逐项记进恢复第 3 步的结果。
+
+    只读、只取四列（不解码 JSON 列），每项原因 ``RECOVERY_ISOLATED``；任务自己的行一律不写
+    （本进程不替被隔离任务写任何东西）。超过上限只记省略了几项。"""
+    rows = store.connection.execute(
+        "SELECT consumer, work_key, state, wait_reason FROM assurance_pending_work WHERE mission_id=? "
+        "AND state IN ('PENDING','RUNNING','WAITING') ORDER BY consumer, work_key", (mission_id,)).fetchall()
+    waiting = [{"consumer": str(row[0]), "work_key": str(row[1]), "state": str(row[2]),
+                "wait_reason": None if row[3] is None else str(row[3]), "reason": "RECOVERY_ISOLATED"}
+               for row in rows[:ISOLATED_WAITING_LIMIT]]
+    detail: dict[str, Any] = {"assurance_waiting": waiting}
+    if len(rows) > ISOLATED_WAITING_LIMIT:
+        detail["assurance_waiting_omitted"] = len(rows) - ISOLATED_WAITING_LIMIT
+    return detail
+
+
 class RecoveryCoordinator:
     """一个编排实例一份；``run()`` 第一次走完整八步并落账，之后每次只做重入的三步。"""
 
@@ -307,7 +328,8 @@ class RecoveryCoordinator:
                 inconsistent[mission.id] = {
                     "tables": sorted(name for name, item in report["tables"].items()
                                      if item["status"] == INCONSISTENT),
-                    "silent_changes": list(report.get("silent_changes") or ())[:5]}
+                    "silent_changes": list(report.get("silent_changes") or ())[:5],
+                    **_assurance_waiting(orch.store, mission.id)}
         detail = {"missions": statuses,
                   "consistent": sum(1 for s in statuses.values() if s == CONSISTENT),
                   "out_of_scope": sum(1 for s in statuses.values() if s not in (CONSISTENT, INCONSISTENT))}
