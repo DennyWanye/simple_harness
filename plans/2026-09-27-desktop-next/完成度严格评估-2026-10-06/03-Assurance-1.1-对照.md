@@ -434,9 +434,9 @@ F 小结：按计划在用 2（F10、F11）；部分 10（F01、F02、F03、F04�
 | 行 | 判定 | 证据 | 差距 / 记录 |
 |---|---|---|---|
 | ACTUAL_REVIEW_TURN_AVAILABLE→REVIEW；SOURCE_OR_AUTHORITY_CHANGED→VALIDITY,CLOSEOUT；NotificationRequested→NOTIFY；DIAGNOSTIC_ONLY；activation 规则；missing_source 规则 | 按计划在用 | COL:114-125、CON:113-129；ACON:43-75；FW:36,104-122；ACON:77；`assurance_store.py:182-199`；WORK:329-339 | NOTIFY 在 `is_assured` 读错时静默不发（新-2） |
-| CANDIDATE_READY→REVIEW | 做法不同 | 原入口直接 `ensure_*`，靠 review_key 幂等 | 无记录 |
-| ACTUAL_CHECK_AVAILABLE→REVIEW,VALIDITY | 部分 | VALIDITY 收检查事件；REVIEW 不收（检查在准备时同步跑，EH:8065-8085） | 无记录 |
-| BUSINESS_OR_RUNTIME_SETTLED→REVIEW,CLOSEOUT | 部分 | CLOSEOUT 在用；REVIEW 侧由 `composition_review.py:221` 直接触发 | 无记录 |
+| CANDIDATE_READY→REVIEW | 做法不同（B 级，计划已按裁决改写，#39） | 原入口直接 `ensure_*`，靠 review_key 幂等（附录 C.1 原文即如此） | `推后第1批-P1a-偏差裁决.md` |
+| ACTUAL_CHECK_AVAILABLE→REVIEW,VALIDITY | 按计划在用（2026-10-07 A25） | 三个消费者都经屏障写的资料变更事件收检查；内容审阅缺必检检查时导入先等（CHECK_PENDING）；原登记的两个检查事件名无写方，已删 | `推后第1批-车道P1a-记录.md` |
+| BUSINESS_OR_RUNTIME_SETTLED→REVIEW,CLOSEOUT | 按计划在用（计划已按裁决改写，#40；REVIEW 侧唤醒预算等待由 A25 补上） | CLOSEOUT 在用；组合审阅与终审仍由主循环每轮扫描触发 | `推后第1批-P1a-偏差裁决.md` |
 
 条数：要求 9，按计划在用 6，做法不同 1，部分 2。
 
@@ -664,7 +664,7 @@ F 小结：按计划在用 2（F10、F11）；部分 10（F01、F02、F03、F04�
 | C-24 | HISTORY_UNAVAILABLE 挂在 SOURCE_UNAVAILABLE 码下（#312） | C.6 | 消息里带名 | 计划本身与 host-error 枚举矛盾，需计划修订 |
 | C-25 | 反向依赖索引只写不读（新-12） | queries Q09 | `assurance_store.py:544` | 死写入 |
 | C-26 | 残留不可达分支与死代码（新-16、#26、#132） | 旧路径直接删（用户口径） | CS:3310-3311、ACON:409-410、`root_review.py:1072`、CS:3281-3290；FW:11 说明仍写"releases the terminal pools" | 误导后来者；opt.162 自称已删 |
-| C-27 | 事件消费表 REVIEW 侧三行不经事件（CANDIDATE_READY、ACTUAL_CHECK_AVAILABLE、BUSINESS_OR_RUNTIME_SETTLED） | event-consumer-map | 原入口直接触发；检查在准备时同步跑 | 晚到的检查不会唤醒审阅（当前无此场景） |
+| C-27 | 事件消费表 REVIEW 侧三行 | event-consumer-map | 已处理（2026-10-07）：第 2 行补做，第 1、3 行计划改写（B 级 #39、#40） | — |
 | C-28 | 五种使用用途从不签发（BW10） | PLAN/START/CONTEXT/RECOVERY/MAINTAIN 证书 | `certificates.py:14` 定义无签发 | 与 #164 MAINTAIN 一并 |
 | C-29 | 计划写错的文件位置（S20、S22） | — | `operation_completion.py:302`、`planning_operations.py:567` | 只影响按资产找代码 |
 
