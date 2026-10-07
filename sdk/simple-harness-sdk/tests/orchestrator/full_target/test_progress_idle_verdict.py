@@ -80,6 +80,7 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         _unrecovered=set(),  # 阶段 B：恢复失败的任务这一轮不判空闲（假编排器要带这张表）
         _handoff_ground_gone=lambda action_key: False,  # 阶段 C 核验：地基没了的交接拒绝不算等人
         _requirements_unconfirmed=lambda mission: False,  # 阶段 E：现行要求在等人确认
+        _decomposition_paused=lambda mission: False,  # 推后第 3 批 H12：审阅积压时暂停新拆分
     )
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission

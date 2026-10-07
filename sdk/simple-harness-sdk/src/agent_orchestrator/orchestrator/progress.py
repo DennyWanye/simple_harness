@@ -54,6 +54,8 @@ class IdleFacts:
     assurance_work: bool = False
     unknown_actions: bool = False
     approvals_pending: bool = False
+    #: 推后第 3 批 H12：审阅积压中，已有计划的任务暂停开新规划轮（有时限）
+    backlog_paused: bool = False
     #: the plan withholds or admits something; ``None`` when it was not read
     plan_has_work: bool | None = None
 
@@ -68,6 +70,7 @@ _WAITS: tuple[tuple[str, str, str], ...] = (
     ("approvals_pending", "APPROVAL_PENDING", "a person's approval"),
     ("operation_completion", "OPERATION_OUTCOME_PENDING", "operation outcome"),
     ("assurance_work", "ASSURANCE_WORK_QUEUED", "assurance work"),
+    ("backlog_paused", "VERIFICATION_BACKLOG", "verification backlog cleared"),
     ("planning_wait", "PLANNING_WAIT", "planning wait target"),
     ("taskgraph_sources", "TASKGRAPH_SOURCES_PENDING", "taskgraph notification"),
 )

@@ -153,7 +153,7 @@ from ..scheduling.allocator import (
     OPEN_ATTEMPT_STATES,
     allocate_v2,
 )
-from ..scheduling.backpressure import BackpressureState, Observation
+from ..scheduling.backpressure import BacklogResponse, BackpressureState, Observation, backlog_response
 from ..storage.store import (
     DispatchIntent,
     InjectedCrash,
@@ -641,6 +641,8 @@ class Orchestrator:
         self._contract_checked: set[str] = set()
         self._verifying: dict[str, asyncio.Task[bool]] = {}  # D6-9': bounded verification set
         self._pressure = BackpressureState()  # D6-2: the current backpressure signal
+        # 推后第 3 批 H12：积压时的两种应对（审阅并发、暂停新拆分），每轮观测后重算
+        self._backlog = self._backlog_response(self._pressure)
         self._connectors: dict[str, Any] = dict(
             connectors or {}
         )  # D7-6: only the executor calls them
@@ -865,6 +867,7 @@ class Orchestrator:
             self.cleanup_workspaces()  # P3.2 D4: finished Missions past their retention
             self._bridge = self._assembled.pool(self._default_profile).bridge
             self._pressure = self._commit.backpressure_state()
+            self._backlog = self._backlog_response(self._pressure)
             return self
         except BaseException as error:
             # Enter failures do not trigger async-with's exit. Preserve the startup
@@ -2731,6 +2734,7 @@ class Orchestrator:
                 self._taskgraph_notifications is not None
                 and self._taskgraph_notifications.awaiting_sources(mission.id)
             ),
+            "backlog_paused": self._decomposition_paused(mission),
         }
         if any(waits.values()):
             return IdleFacts(mission.id, **waits), None, rows
@@ -3188,6 +3192,8 @@ class Orchestrator:
         runtime_block = pending_block(self.store, mission.id)
         if runtime_block is not None and last_wake(self.store, mission.id, runtime_block) is None:
             return False
+        if self._decomposition_paused(mission):
+            return False  # 推后第 3 批 H12：积压消退或暂停到时限后再开
         questions = PlanningHumanStore(self.store)
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
@@ -3946,14 +3952,14 @@ class Orchestrator:
                 or stored.envelope.id in self._verifying
             ):
                 continue
-            if len(self._verifying) >= self._config.verifier_workers:
+            if len(self._verifying) >= self._verifier_capacity():
                 break
             task = asyncio.create_task(self._verify(stored.envelope.id))
             self._verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
         # TaskGraph 补全第四批：改要求后沿用的叶子按新要求重审，与验证共用同一组名额
         for mission_id in sorted(active):
-            if len(self._verifying) >= self._config.verifier_workers:
+            if len(self._verifying) >= self._verifier_capacity():
                 break
             new_mode = self._new_mode(self.store.get_mission(mission_id))
             if new_mode is None:
@@ -3961,7 +3967,7 @@ class Orchestrator:
             for item in carried_reviews(self.store, new_mode, mission_id):
                 if item.key in self._verifying:
                     continue
-                if len(self._verifying) >= self._config.verifier_workers:
+                if len(self._verifying) >= self._verifier_capacity():
                     break
                 self._verifying[item.key] = asyncio.create_task(self._carried_review(item))
                 await asyncio.sleep(0)
@@ -9218,6 +9224,38 @@ class Orchestrator:
                 f"backpressure {transition.to_level.lower()} on {transition.dimension}: "
                 f"{transition.observed} (high {transition.high} / low {transition.low})"
             )
+        self._backlog = self._backlog_response(state)
+        if self.commit.record_backlog_response(self._backlog, mission_ids=sorted(active)):
+            self._note(
+                f"backlog response: verifiers {self._backlog.verifier_workers}"
+                f" (ceiling {self._backlog.verifier_ceiling}), new planning rounds "
+                f"{'paused' if self._backlog.decomposition_paused else 'open'} ({self._backlog.reason})"
+            )
+
+    def _backlog_response(self, state: BackpressureState) -> BacklogResponse:
+        """推后第 3 批 H12：这一轮的积压应对（纯计算，见 ``backlog_response``）。"""
+
+        return backlog_response(
+            state,
+            verifier_workers=self._config.verifier_workers,
+            verifier_ceiling=int(self._config.verifier_workers_ceiling or self._config.verifier_workers),
+            now=self._store.now if self._store is not None else 0.0,
+            pause_seconds=self._config.decomposition_pause_seconds,
+        )
+
+    def _verifier_capacity(self) -> int:
+        """D6-9' 的审阅名额：平时是 ``verifier_workers``，积压时升到上限（推后第 3 批 H12）。"""
+
+        return self._backlog.verifier_workers
+
+    def _decomposition_paused(self, mission: Mission) -> bool:
+        """推后第 3 批 H12：审阅积压中，已有计划的任务先不开新规划轮（首次规划不受影响）。"""
+
+        if not self._backlog.decomposition_paused:
+            return False
+        from ..storage.htn_store import HtnStore
+
+        return HtnStore(self.store).active_plan_revision(mission.id) is not None
 
     @property
     def pressure(self) -> BackpressureState:

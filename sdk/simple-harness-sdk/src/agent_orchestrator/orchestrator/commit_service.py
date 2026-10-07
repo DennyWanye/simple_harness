@@ -75,7 +75,9 @@ from ..governance.budget_limits import inherit_limits
 from ..graph.terminal import terminal_task
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..scheduling.backpressure import (
+    BACKLOG_KEY,
     STATE_KEY,
+    BacklogResponse,
     BackpressureLimits,
     BackpressureState,
     Observation,
@@ -384,6 +386,34 @@ class CommitService(ProtectedTailCommitsMixin,
                         payload={**transition.to_json(), "since": state.since},
                     )
             return state, transitions
+
+    def record_backlog_response(
+        self, response: BacklogResponse, *, mission_ids: Sequence[str]
+    ) -> bool:
+        """推后第 3 批 H12：积压应对一变（升起、回落、暂停到期），状态与每个在跑任务时间线上的
+        ``BacklogResponseChanged`` 同一个事务落库；没变什么也不写。第一次记录且没有积压时只存状态。"""
+
+        document = response.to_json()
+        with self._store.transaction():
+            previous = self._store.get_scheduler_state(BACKLOG_KEY)
+            if previous is not None and {key: previous.get(key) for key in document} == document:
+                return False
+            changes = 0 if previous is None else int(previous.get("changes", 0))
+            if previous is None and response.reason == "normal":
+                self._store.put_scheduler_state(BACKLOG_KEY, {**document, "changes": 0})
+                return False
+            changes += 1
+            self._store.put_scheduler_state(BACKLOG_KEY, {**document, "changes": changes})
+            before = None if previous is None else {
+                key: previous.get(key) for key in ("verifier_workers", "decomposition_paused", "reason")}
+            for mission_id in mission_ids:
+                self._emit(
+                    "BacklogResponseChanged",
+                    mission_id,
+                    key=f"backlog:{changes}:{mission_id}",
+                    payload={**document, "previous": before},
+                )
+            return True
 
     # ------------------------------------------------------------ tool audit
     def record_tool_rejected(

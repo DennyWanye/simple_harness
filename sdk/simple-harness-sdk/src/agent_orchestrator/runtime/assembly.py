@@ -116,6 +116,11 @@ class OrchestratorConfig:
     reduced_reserve_ratio: float = 0.5
     exploration_slots: int = 1
     verifier_workers: int = 2  # §29.1 "2 个 Verifier Worker" as the verification concurrency
+    # 推后第 3 批 H12（§18.5"提高 Verifier 资源""禁止新任务继续分裂"）：待审结果积压时审阅并发
+    # 升到这个上限（None = 2 × verifier_workers），回落后恢复；已有计划的任务暂停开新规划轮，
+    # 最长这么多秒。都不改并发上限默认值、不进准入身份。
+    verifier_workers_ceiling: int | None = None
+    decomposition_pause_seconds: float = 600.0
     deployment_policy: DeploymentPolicy = field(default_factory=DeploymentPolicy)  # D6-7
     # P3.2 (plan D2): the executor model-written code runs through — required (a probed
     # SeatbeltExecutor) when the deployment says code_execution="sandboxed"
@@ -145,6 +150,12 @@ class OrchestratorConfig:
             object.__setattr__(self, "max_running_attempts", self.max_concurrency * 4)
         if self.max_running_attempts < 1 or self.verifier_workers < 1:  # type: ignore[operator]
             raise ValueError("max_running_attempts and verifier_workers must be >= 1")
+        if self.verifier_workers_ceiling is None:
+            object.__setattr__(self, "verifier_workers_ceiling", 2 * self.verifier_workers)
+        if self.verifier_workers_ceiling < self.verifier_workers:  # type: ignore[operator]
+            raise ValueError("verifier_workers_ceiling must be >= verifier_workers")
+        if not self.decomposition_pause_seconds > 0:
+            raise ValueError("decomposition_pause_seconds must be > 0")
         if self.sdk_lease_ttl_seconds is None:
             object.__setattr__(self, "sdk_lease_ttl_seconds", self.lease_seconds / 2)
         elif self.lease_seconds < 2 * self.sdk_lease_ttl_seconds:
@@ -214,6 +225,8 @@ class OrchestratorConfig:
                 "reduced_reserve_ratio": self.reduced_reserve_ratio,
                 "exploration_slots": self.exploration_slots,
                 "verifier_workers": self.verifier_workers,
+                "verifier_workers_ceiling": self.verifier_workers_ceiling,
+                "decomposition_pause_seconds": self.decomposition_pause_seconds,
             },
             "knowledge": {
                 "knowledge_sharing": self.knowledge_sharing,
