@@ -2179,6 +2179,21 @@ class Orchestrator:
             return False  # stopped by name by the contract gate in the first round
         if intent.kind == "attempt":
             attempt = self.store.get_attempt(intent.subject_id)
+            if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
+                # 推后第 1 批 A26（AER §12.2）：冻结的请求不静默替换上下文。恢复前按它开工时装进
+                # 上下文的证据重签 RECOVERY；签不出就不恢复：按"被打断"记丢失（不扣次数），失败明细
+                # 写明哪一项、为什么；这一步下一轮拿当前上下文重做。
+                from .assurance_point_use import certify_recovery_locked
+
+                with self.store.transaction():
+                    use = certify_recovery_locked(self.commit, attempt)
+                if not use.usable:
+                    self.commit.mark_attempt_lost(attempt.id, reason="recovery_use_refused",
+                                                  detail={"refusals": list(use.refusals)})
+                    self.commit.settle_intent(intent.intent_id, "FAILED")
+                    await self._release_attempt(attempt.id, cancel=True)
+                    self._note(f"attempt {attempt.id} not resumed: {'; '.join(use.refusals)}")
+                    return True
             if attempt is not None:
                 self._bind_workspace(attempt)
                 self._bind_agent(intent.agent_id, intent.config)
@@ -4015,8 +4030,14 @@ class Orchestrator:
             return False
         if mission is not None and self._requirements_unconfirmed(mission):
             return False
+        from .assurance_point_use import PointUseRefused
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
+        except PointUseRefused as refused:
+            # 推后第 1 批 A26：要给规划器的证据此刻签不出 PLAN 证书——这一轮不开（事务已回滚），
+            # 原因写进进度记录，下一轮按当时的世界重新组包再签。
+            self._note(f"mission {mission_id}: planning round waits ({'; '.join(refused.use.refusals)})")
+            return False
         except UnsupportedPlanningPackage as error:
             # 2026-09-25: a Mission bound to a package this build no longer serves stops
             # here, by itself — it must not take the orchestrator loop (and every other
@@ -4472,6 +4493,7 @@ class Orchestrator:
             SourceUnavailable as AuthoritySourceUnavailable,
         )
         from ..orchestrator.plan_commits import PlanPrincipal
+        from .assurance_point_use import planning_evidence_stale
         from ..planning.decision_admission import (
             AdmissionContext,
             AuthorizationView,
@@ -4778,6 +4800,8 @@ class Orchestrator:
                 root_review_repairs_remaining=max(0, int(self._config.max_root_review_repairs)),
                 repeated_failure_before_escalation_remaining=None,
             ),
+            # 推后第 1 批 A26：这个请求签过 PLAN 证书的证据，此刻还当前吗（只核不落库）
+            planning_evidence_stale=planning_evidence_stale(self.commit, mission.id, request.request_id),
         )
 
     def _hierarchical_planner_template(self, mission_id: str) -> Any:
@@ -4967,6 +4991,19 @@ class Orchestrator:
             template=template,
             request_id=retry_request_id,
         )
+        if retry_request_id is None:
+            # 推后第 1 批 A26：把知识与核对过的摘要当事实交给规划器，就是一次 PLAN 使用——同一事务里
+            # 签证书；签不出（证据此刻不当前、时钟不可信、授权变了）这一轮不开，回滚后下一轮重来。
+            # 格式重试沿用开头那次请求冻结的包，它的回复照样在准入时复核这张证书的证据。
+            from .assurance_point_use import (
+                PLANNING_REQUEST_CONSUMER,
+                planning_claims,
+                require_point_use_locked,
+            )
+            require_point_use_locked(
+                self.commit, mission_id=mission_id, purpose="PLAN",
+                consumer_kind=PLANNING_REQUEST_CONSUMER, consumer_id=intent.intent_id,
+                claims=planning_claims(package.package), subject=("requirements", mission_id))
         return intent
 
     # -------------------------------------------------------------- dispatch
@@ -10472,6 +10509,7 @@ class Orchestrator:
         # 第 2 批车道 H（K04，原计划 §10 第 3 项）：父目标与直接上游从分层网络读——这一步所在做法
         # 细化的目标（原文、它负责的要求原文），与数据边上把产出交给它的生产者（目标、状态、已验收
         # 结论的摘要、交到这一步的产物）。``Task.dependency_ids`` 在分层下恒空，不再按它过滤。
+        from .assurance_point_use import context_claims
         from .worker_context import parent_goal as read_parent_goal
         from .worker_context import upstream_steps
 
@@ -10722,6 +10760,7 @@ class Orchestrator:
                     int(bound["mission_concurrency"]), self._config.max_concurrency
                 ),
                 max_running_attempts=self._config.max_running_attempts,
+                context_evidence=context_claims(knowledge, upstream),
             )
         except CommitRejected as error:
             from .commit_service import NonModelFailuresExhausted

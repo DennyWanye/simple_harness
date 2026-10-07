@@ -415,6 +415,9 @@ class AdmissionContext:
     taskgraph_scope: PlanningConvergenceScope | None = None
     evidence_observers: frozenset[str] = frozenset()
     evidence_authorized_predicates: frozenset[str] = frozenset()
+    #: 推后第 1 批 A26：这个请求签过 PLAN 使用证书的证据里，此刻已不当前的那几项（具名原因）；
+    #: None = 仍当前或这个请求没用证据。由调用方复核后填，这里不判。
+    planning_evidence_stale: str | None = None
 
     def __post_init__(self) -> None:
         if self.taskgraph_scope is not None and not isinstance(self.taskgraph_scope, PlanningConvergenceScope):
@@ -812,6 +815,17 @@ def _check_binding_revisions(context: AdmissionContext, stage: _Stage) -> None:
                 expected=str(bound),
                 observed=str(current),
             )
+    # 推后第 1 批 A26：请求时当作事实给规划器的知识 / 摘要，作答期间不再当前——这份回复依据的世界
+    # 变了，与上面三项同属请求过期（不扣规划器次数），新请求拿新包。
+    if context.planning_evidence_stale is not None:
+        stage.refuse(
+            REJECTION.REQUEST_BINDING_STALE,
+            ("evidence shown to the Planner as current is no longer current: "
+             + context.planning_evidence_stale)[:2000],
+            field_path="/planning_evidence",
+            expected="CURRENT",
+            observed=context.planning_evidence_stale[:500],
+        )
 
 
 def _check_subject(

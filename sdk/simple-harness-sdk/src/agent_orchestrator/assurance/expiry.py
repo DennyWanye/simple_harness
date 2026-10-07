@@ -7,6 +7,7 @@ from __future__ import annotations
 from ..contracts import Event
 from ..storage.assurance_work import WorkTarget, atomic
 from ..storage.store import Store
+from .certificates import POINT_PURPOSES_SQL
 from .codec import AssuranceError, decode, fields, fingerprint, integer, text
 
 EXPIRY_EVENT = "AssuranceUseExpiryDue"
@@ -62,7 +63,8 @@ class AssuranceExpiry:
         """Append one original event per usable certificate boundary.
 
         Only the most recently inserted certificate for an exact consumer/root
-        can schedule. Comparing row insertion order also works after wall-clock
+        can schedule. A point-use certificate (PLAN/START/CONTEXT/RECOVERY) was used up
+        in the transaction that issued it and has no boundary to wake (A26). Comparing row insertion order also works after wall-clock
         rollback. The root id must come from the authenticated root gate.
         Cursor recovery handles a crash after event append but before ingestion.
         """
@@ -75,6 +77,7 @@ class AssuranceExpiry:
                 "SELECT c.* FROM assurance_use_certificates c WHERE c.mission_id=? "
                 "AND c.not_after_ms IS NOT NULL AND c.not_after_ms>c.issued_at_ms "
                 "AND c.not_after_ms<=? AND json_extract(c.certificate_json,'$.decision')='USABLE' "
+                f"AND c.purpose NOT IN ({POINT_PURPOSES_SQL}) "
                 "AND json_extract(c.certificate_json,'$.root_incarnation_id')=? "
                 "AND NOT EXISTS(SELECT 1 FROM assurance_use_certificates newer "
                 "WHERE newer.mission_id=c.mission_id AND newer.consumer_kind=c.consumer_kind "

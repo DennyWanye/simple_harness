@@ -37,6 +37,8 @@ _INTERRUPTED_TURN_CODES = frozenset({"react_wall_clock_exceeded", "base_agent_dr
 _INTERRUPTED_REASONS = frozenset({
     "executor_stalled", "executor_turn_missing", "executor_agent_missing",
     "provider_outcome_unknown",
+    # 推后第 1 批 A26：重启后在途尝试开工时装进上下文的证据已不当前，不恢复、拿当前上下文重做
+    "recovery_use_refused",
 })
 
 

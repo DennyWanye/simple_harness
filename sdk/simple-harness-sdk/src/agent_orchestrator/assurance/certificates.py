@@ -12,6 +12,11 @@ from .evidence import ReadItem, canonical_read_set
 from .refs import AssuranceRef, Pin
 
 PURPOSES = frozenset({"PLAN", "START", "MAINTAIN", "ACCEPT", "CONTEXT", "DISCLOSE", "RECOVERY"})
+#: 时点用途（推后第 1 批 A26）：证书在消费方自己的事务里签发、当场用掉，之后是历史——不进有效性
+#: 观察、不排到期唤醒（``orchestrator/assurance_point_use.py``）。
+POINT_PURPOSES = frozenset({"PLAN", "START", "CONTEXT", "RECOVERY"})
+#: 同一组的 SQL 字面，供 ``purpose NOT IN (...)`` 用。
+POINT_PURPOSES_SQL = ",".join("'" + value + "'" for value in sorted(POINT_PURPOSES))
 
 
 @dataclass(frozen=True, slots=True)
