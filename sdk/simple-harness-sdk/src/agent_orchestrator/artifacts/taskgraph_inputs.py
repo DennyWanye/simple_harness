@@ -52,8 +52,7 @@ def require_current_manifest_use(manifest: InputManifest, network: TaskNetworkSn
             raise ContractError("TASKGRAPH_FROZEN_PROVISIONAL_INPUT_NOT_AUTHORIZED")
         # An Attempt's inputs are frozen: "follow" is about the *next* Attempt, so a frozen
         # input is never re-compared with the revision authorised now (TG §5.5).
-        converter, schema_problem = _check_schema(requirement, ports[frozen.input_port], candidate, policy)
-        if schema_problem is not None or converter != frozen.converter_ref:
+        if _check_schema(requirement, ports[frozen.input_port], candidate, policy) is not None:
             raise ContractError("TASKGRAPH_FROZEN_INPUT_SCHEMA_PERMISSION_CHANGED")
         _, witness_problem = _check_witness(requirement, candidate, manifest.consumer_task_ref, witnesses, policy)
         if witness_problem is not None:
@@ -115,7 +114,6 @@ def decode_frozen_manifest(value: Mapping[str, Any]) -> InputManifest:
                 produced_schema_ref=VersionedRef.from_json(item["produced_schema_ref"]),
                 read_policy=_text(item["read_policy"]), freshness_policy=_text(item["freshness_policy"]),
                 disclosure_scope=_text(item["disclosure_scope"]),
-                converter_ref=None if item["converter_ref"] is None else _text(item["converter_ref"]),
                 requires_reacceptance=_boolean(item["requires_reacceptance"]),
                 provisional=_boolean(item["provisional"]),
                 witness_id=None if item["witness_id"] is None else _text(item["witness_id"]),

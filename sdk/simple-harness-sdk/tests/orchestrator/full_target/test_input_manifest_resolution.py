@@ -631,7 +631,7 @@ def test_exact_schema_identity_binds() -> None:
         index_of(output(producer="occ-a", out_schema=REPORT_SCHEMA)),
     )
     assert result.ok
-    assert only(result).converter_ref is None
+    assert only(result).produced_schema_ref == REPORT_SCHEMA
 
 
 def test_a_newer_schema_version_without_a_declaration_is_a_mismatch() -> None:
@@ -644,7 +644,10 @@ def test_a_newer_schema_version_without_a_declaration_is_a_mismatch() -> None:
     assert ResolutionProblemKind.SCHEMA_MISMATCH in result.kinds
 
 
-def test_a_registered_compatibility_declaration_binds_and_records_the_converter() -> None:
+def test_a_declaration_that_needs_a_converter_is_refused_by_name() -> None:
+    """TG §5.5 (T04): no converter is deployed, so the raw bytes may not be bound
+    under the new schema label; the refusal names the declaration and converter."""
+
     registry = SchemaCompatibilityRegistry(
         rules=(
             SchemaCompatibilityRule(
@@ -661,11 +664,48 @@ def test_a_registered_compatibility_declaration_binds_and_records_the_converter(
         index_of(output(producer="occ-a", out_schema=REPORT_SCHEMA_V2)),
         policy=default_policy(schema_registry=registry),
     )
+    assert result.manifest is None
+    assert ResolutionProblemKind.CONVERTER_NOT_DEPLOYED in result.kinds
+    [problem] = [p for p in result.problems if p.kind is ResolutionProblemKind.CONVERTER_NOT_DEPLOYED]
+    assert "decl-report-v2-to-v1" in problem.detail
+    assert "converter-report-downgrade" in problem.detail
+    assert problem.requirement_ids == ("req-1",)
+
+
+def test_a_declaration_without_a_converter_binds_the_bytes_as_they_are() -> None:
+    registry = SchemaCompatibilityRegistry(
+        rules=(
+            SchemaCompatibilityRule(
+                produced=REPORT_SCHEMA_V2,
+                required=REPORT_SCHEMA,
+                declaration_ref="decl-report-v2-reads-as-v1",
+            ),
+        )
+    )
+    result = resolve(
+        consumer_binding(port("report")),
+        [requirement("req-1", producer="occ-a")],
+        index_of(output(producer="occ-a", out_schema=REPORT_SCHEMA_V2)),
+        policy=default_policy(schema_registry=registry),
+    )
     assert result.ok
     binding = only(result)
-    assert binding.converter_ref == "converter-report-downgrade"
     assert binding.produced_schema_ref == REPORT_SCHEMA_V2
     assert binding.schema_ref == REPORT_SCHEMA
+
+
+def test_a_binding_carries_no_converter_field_any_more() -> None:
+    """The converter path is refused, so a binding never names one (T04)."""
+
+    binding = only(
+        resolve(
+            consumer_binding(port("report")),
+            [requirement("req-1", producer="occ-a")],
+            index_of(output(producer="occ-a")),
+        )
+    )
+    assert "converter_ref" not in binding.to_json()
+    assert not hasattr(binding, "converter_ref")
 
 
 def test_a_declaration_in_the_other_direction_does_not_bind() -> None:

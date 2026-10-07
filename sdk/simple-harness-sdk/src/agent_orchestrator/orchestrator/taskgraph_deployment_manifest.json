@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-07T08:48:31+00:00",
-    "gate_sha256": "d8b9d177c8a2879e7949b064132889aa4e9be7f4d33fa8701cd7fe24028ec93f",
-    "gate_status": "PASS",
-    "source_files_sha256": "e7065e53c4f66b810613c0cf9d2c8f5fd24bc5f4033b257384c9e83925a9cc32"
-  },
-  "deployment_id": "1b286789956dd2c45e46177fa177f4dbad0fa427d9b613e8f82d4fa8ef98d184",
+  "acceptance_evidence": null,
+  "deployment_id": "8b34644d6a0685706ae0bdea0f5cd906c3fca53461fe5e2dc7583e09e035d452",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -24,10 +19,10 @@
     "agent_orchestrator/api/taskgraph.py": "b5e68f2d528c11830d4a42100deb0b9f4d91c0fa8b3835196d855e0b22118f0c",
     "agent_orchestrator/artifacts/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/artifacts/bound_workspace.py": "542f7413eaaf8ea177b49fc89fe4bd0d0ca44f319b935b90e1cbfc66372de888",
-    "agent_orchestrator/artifacts/input_bindings.py": "16cd6546d53f20fefaa6d396ce89cad58f6c500a50e071dbcb1c6747b4b37f2f",
+    "agent_orchestrator/artifacts/input_bindings.py": "3d079dcbd52cbb73d23460ce1dc1564aba112396509f3c3b23e8891f57e504a2",
     "agent_orchestrator/artifacts/paths.py": "d62a5a9fafbda5577b240c5401eeebc08cb113b4fe4e741ef4a7156008601f5a",
     "agent_orchestrator/artifacts/store.py": "eff6aa9a492917faa271af88d90292a26a5da4ec2553ddd076ce5b77d5aa6571",
-    "agent_orchestrator/artifacts/taskgraph_inputs.py": "ecc30dbac48292b7d3da1ec34a69cf18bf21718b29f2ea5e7bbc1a3177174e6e",
+    "agent_orchestrator/artifacts/taskgraph_inputs.py": "090957e1a0206e21fb9240a4b1131bd53bd505ad04c7f99e610567be650b7096",
     "agent_orchestrator/artifacts/versioning.py": "d85a166cbf8a1b248c4ef972a7b858a613d3a48bfda88b3799aa394d9398543b",
     "agent_orchestrator/artifacts/workspace.py": "afb985827e69dce077e8d2aaf363093bd26624175fa6972386d88eff038e0a55",
     "agent_orchestrator/assurance/__init__.py": "c4a392cea6590f6e36af3948f5813b3027bd365c2a3ba7df474c1853c1a57c17",
@@ -715,7 +710,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

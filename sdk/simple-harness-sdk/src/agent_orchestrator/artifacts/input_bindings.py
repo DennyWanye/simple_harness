@@ -84,6 +84,7 @@ class ResolutionProblemKind(StrEnum):
     FOREIGN_REQUIREMENT = "foreign_requirement"
     UNBOUND_REQUIRED_PORT = "unbound_required_port"
     SCHEMA_MISMATCH = "schema_mismatch"
+    CONVERTER_NOT_DEPLOYED = "converter_not_deployed"
     NOT_DISCLOSABLE = "not_disclosable"
     WITNESS_MISSING = "witness_missing"
     WITNESS_NOT_USABLE = "witness_not_usable"
@@ -365,7 +366,6 @@ class ResolvedInputBinding:
     read_policy: str
     freshness_policy: str
     disclosure_scope: str
-    converter_ref: str | None = None
     requires_reacceptance: bool = False
     provisional: bool = False
     witness_id: str | None = None
@@ -427,7 +427,6 @@ class ResolvedInputBinding:
             "read_policy": self.read_policy,
             "freshness_policy": self.freshness_policy,
             "disclosure_scope": self.disclosure_scope,
-            "converter_ref": self.converter_ref,
             "requires_reacceptance": self.requires_reacceptance,
             "provisional": self.provisional,
             "witness_id": self.witness_id,
@@ -628,10 +627,17 @@ def _check_schema(
     port_spec: PortSpec,
     candidate: AcceptedOutput,
     policy: ResolutionPolicy,
-) -> tuple[str | None, ResolutionProblem | None]:
+) -> ResolutionProblem | None:
+    """Exact identity, or a registered declaration that needs no conversion.
+
+    TG §5.5: a declaration that needs a converter has to produce a new artifact and
+    have it accepted; no conversion path is deployed, so such a declaration is
+    refused by name rather than binding the original bytes under the new label.
+    """
+
     required = requirement.schema_ref
     if required != port_spec.schema_ref:
-        return None, ResolutionProblem(
+        return ResolutionProblem(
             kind=ResolutionProblemKind.SCHEMA_MISMATCH,
             detail=(
                 f"requirement {requirement.requirement_id!r} declares schema "
@@ -642,11 +648,24 @@ def _check_schema(
             requirement_ids=(requirement.requirement_id,),
         )
     if candidate.schema_ref == required:
-        return None, None
+        return None
     rule = policy.schema_registry.match(candidate.schema_ref, required)
+    if rule is not None and rule.converter_ref is None:
+        return None
     if rule is not None:
-        return rule.converter_ref, None
-    return None, ResolutionProblem(
+        return ResolutionProblem(
+            kind=ResolutionProblemKind.CONVERTER_NOT_DEPLOYED,
+            detail=(
+                f"declaration {rule.declaration_ref!r} maps {candidate.schema_ref.id!r} "
+                f"v{candidate.schema_ref.version} onto {required.id!r} v{required.version} "
+                f"through converter {rule.converter_ref!r}, and no conversion path is deployed; "
+                f"the bytes of {candidate.artifact_id} are not bound under the new schema"
+            ),
+            input_port=requirement.input_port,
+            requirement_ids=(requirement.requirement_id,),
+            candidates=(candidate.artifact_id,),
+        )
+    return ResolutionProblem(
         kind=ResolutionProblemKind.SCHEMA_MISMATCH,
         detail=(
             f"{candidate.artifact_id} carries schema {candidate.schema_ref.id!r} "
@@ -760,7 +779,7 @@ def _check_witness(
 
 def _order_entries(
     port_spec: PortSpec,
-    entries: Sequence[tuple[DataRequirement, AcceptedOutput, str | None, str | None]],
+    entries: Sequence[tuple[DataRequirement, AcceptedOutput, str | None]],
     policy: ResolutionPolicy,
 ) -> tuple[tuple[int, ...], ResolutionProblem | None]:
     """Give each entry of a set port its ordinal, or say why it cannot be ordered."""
@@ -859,8 +878,8 @@ def resolve_declared_inputs(
     ports = {spec.port_key: spec for spec in consumer.input_ports}
     problems: list[ResolutionProblem] = []
     pending: list[SymbolicBinding] = []
-    # input_port -> (requirement, candidate, converter_ref, witness_id)
-    per_port: dict[str, list[tuple[DataRequirement, AcceptedOutput, str | None, str | None]]]
+    # input_port -> (requirement, candidate, witness_id)
+    per_port: dict[str, list[tuple[DataRequirement, AcceptedOutput, str | None]]]
     per_port = {}
 
     for requirement in sorted(requirements, key=lambda item: item.requirement_id):
@@ -936,7 +955,7 @@ def resolve_declared_inputs(
                     )
                 )
                 continue
-            converter_ref, schema_problem = _check_schema(requirement, port_spec, candidate, policy)
+            schema_problem = _check_schema(requirement, port_spec, candidate, policy)
             if schema_problem is not None:
                 problems.append(schema_problem)
                 continue
@@ -961,7 +980,7 @@ def resolve_declared_inputs(
                 problems.append(witness_problem)
                 continue
             per_port.setdefault(requirement.input_port, []).append(
-                (requirement, candidate, converter_ref, witness_id)
+                (requirement, candidate, witness_id)
             )
 
     bindings: list[ResolvedInputBinding] = []
@@ -989,7 +1008,7 @@ def resolve_declared_inputs(
                 continue
         else:
             ordinals = (0,) * len(entries)
-        for ordinal, (requirement, candidate, converter_ref, witness_id) in zip(
+        for ordinal, (requirement, candidate, witness_id) in zip(
             ordinals, entries, strict=True
         ):
             bindings.append(
@@ -1016,7 +1035,6 @@ def resolve_declared_inputs(
                     read_policy=requirement.assurance_policy_ref,
                     freshness_policy=requirement.freshness_policy_ref,
                     disclosure_scope=candidate.disclosure_scope,
-                    converter_ref=converter_ref,
                     # Every binding follows the authorised revision, so each one is an
                     # input this consumer has not been accepted against yet.
                     requires_reacceptance=True,
@@ -1271,8 +1289,12 @@ _REMEDIES: Mapping[ResolutionProblemKind, str] = {
         "Add a data requirement for the port, mark the port optional, or plan a producer for it."
     ),
     ResolutionProblemKind.SCHEMA_MISMATCH: (
-        "Register an explicit compatibility declaration with a converter, insert a conversion "
-        "task, or align the schemas."
+        "Register an explicit compatibility declaration, insert a conversion task, or align "
+        "the schemas."
+    ),
+    ResolutionProblemKind.CONVERTER_NOT_DEPLOYED: (
+        "Register a declaration that needs no conversion, plan a conversion task whose output "
+        "is accepted on its own, or align the schemas."
     ),
     ResolutionProblemKind.NOT_DISCLOSABLE: (
         "Obtain a current permission for the source, or plan the work around a source that may "
@@ -1327,6 +1349,9 @@ _SUMMARIES: Mapping[ResolutionProblemKind, str] = {
     ResolutionProblemKind.FOREIGN_REQUIREMENT: "a requirement belongs to another consumer",
     ResolutionProblemKind.UNBOUND_REQUIRED_PORT: "a required input port has no binding",
     ResolutionProblemKind.SCHEMA_MISMATCH: "the produced schema is not the required schema",
+    ResolutionProblemKind.CONVERTER_NOT_DEPLOYED: (
+        "the declared compatibility needs a converter that is not deployed"
+    ),
     ResolutionProblemKind.NOT_DISCLOSABLE: "the source may not be read right now",
     ResolutionProblemKind.WITNESS_MISSING: "no validity witness covers the acceptance",
     ResolutionProblemKind.WITNESS_NOT_USABLE: "the validity witness does not permit this use",
