@@ -211,10 +211,21 @@ class ObligationRelation(StrEnum):
 
 
 class PortCardinality(StrEnum):
-    """TG §4.3: a single-valued port has exactly one binding; a set port is ordered."""
+    """TG §4.3 / §5.5: how many bindings a port takes and how they are told apart.
+
+    ``SINGLE`` takes exactly one.  ``SET`` and ``LIST`` take several, ordered by the
+    port's declared :class:`PortOrdering`.  ``MAP`` takes several, each under the key
+    its :class:`DataRequirement` declares; two bindings under one key are refused.
+    """
 
     SINGLE = "single"
     SET = "set"
+    LIST = "list"
+    MAP = "map"
+
+
+#: The multi-valued cardinalities whose bindings are ordered by a declared rule.
+ORDERED_CARDINALITIES = frozenset({PortCardinality.SET, PortCardinality.LIST})
 
 
 class PortOrdering(StrEnum):
@@ -1224,6 +1235,10 @@ class PortSpec:
             raise ContractError(
                 "a single-valued port has exactly one binding and therefore no ordering"
             )
+        if self.cardinality is PortCardinality.MAP and self.ordering is not None:
+            raise ContractError(
+                "a map port is keyed by the keys its data requirements declare, not ordered"
+            )
         if self.ordering is PortOrdering.BY_KEY and self.order_key is None:
             raise ContractError("port.ordering BY_KEY needs an order_key to sort on")
         if self.ordering is not PortOrdering.BY_KEY and self.order_key is not None:
@@ -1231,9 +1246,9 @@ class PortSpec:
 
     @property
     def set_order_declared(self) -> bool:
-        """TG §4.3: a set port needs a declared order; this says whether it has one."""
+        """TG §4.3: a set or list port needs a declared order; this says whether it has one."""
 
-        return self.cardinality is not PortCardinality.SET or self.ordering is not None
+        return self.cardinality not in ORDERED_CARDINALITIES or self.ordering is not None
 
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -1380,11 +1395,14 @@ class DataRequirement:
     schema_ref: VersionedRef
     assurance_policy_ref: str
     freshness_policy_ref: str
+    #: TG §5.5: the key this input is bound under when the consumer port is a MAP.
+    map_key: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "requirement_id", identifier(self.requirement_id, "data.requirement_id")
         )
+        object.__setattr__(self, "map_key", optional_identifier(self.map_key, "data.map_key"))
         object.__setattr__(
             self,
             "producer_occurrence",
@@ -1422,6 +1440,8 @@ class DataRequirement:
             "schema_ref": self.schema_ref.to_json(),
             "assurance_policy_ref": self.assurance_policy_ref,
             "freshness_policy_ref": self.freshness_policy_ref,
+            # Omitted when unset, so a requirement without a key keeps its bytes.
+            **({} if self.map_key is None else {"map_key": self.map_key}),
         }
 
     @classmethod
@@ -1439,6 +1459,7 @@ class DataRequirement:
                 "assurance_policy_ref",
                 "freshness_policy_ref",
             ),
+            optional=("map_key",),
         )
         return cls(
             requirement_id=data["requirement_id"],
@@ -1449,6 +1470,7 @@ class DataRequirement:
             schema_ref=VersionedRef.from_json(data["schema_ref"], f"{name}.schema_ref"),
             assurance_policy_ref=data["assurance_policy_ref"],
             freshness_policy_ref=data["freshness_policy_ref"],
+            map_key=data.get("map_key"),
         )
 
 
@@ -3388,6 +3410,7 @@ __all__ = (
     "PlanProposal",
     "PlanRevision",
     "PolicyRef",
+    "ORDERED_CARDINALITIES",
     "PortCardinality",
     "PortOrdering",
     "PortSpec",

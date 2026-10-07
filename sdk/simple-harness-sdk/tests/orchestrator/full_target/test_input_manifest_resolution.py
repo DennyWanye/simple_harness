@@ -77,6 +77,7 @@ from agent_orchestrator.contracts.htn import (
     TaskForm,
     TaskRef,
     TaskSemanticBindingV1,
+    undeclared_set_ports,
 )
 from agent_orchestrator.contracts.models import sha256_hex
 from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef
@@ -150,7 +151,9 @@ def requirement(
     input_port: str = "report",
     req_schema: VersionedRef = REPORT_SCHEMA,
     consumer: OccurrenceId = CONSUMER_OCC,
+    map_key: str | None = None,
 ) -> DataRequirement:
+    extra: dict[str, str] = {} if map_key is None else {"map_key": map_key}
     return DataRequirement(
         requirement_id=rid,
         producer_occurrence=OccurrenceId(producer),
@@ -160,6 +163,7 @@ def requirement(
         schema_ref=req_schema,
         assurance_policy_ref="assurance-standard",
         freshness_policy_ref="freshness-standard",
+        **extra,  # type: ignore[arg-type]
     )
 
 
@@ -617,6 +621,192 @@ def test_a_single_port_may_not_declare_an_ordering_at_all() -> None:
 
     with pytest.raises(Exception):
         port("report", ordering=PortOrdering.BY_PRODUCER_ORDINAL)
+
+
+# --------------------------------------------------------------------------------------
+# 2b. LIST and MAP ports (TG §5.5, T05)
+# --------------------------------------------------------------------------------------
+
+
+def list_port_case(
+    ordering: PortOrdering | None,
+    *,
+    outputs: Sequence[AcceptedOutput],
+    requirements: Sequence[DataRequirement],
+    policy: ResolutionPolicy | None = None,
+) -> ResolutionResult:
+    return resolve(
+        consumer_binding(port("reports", cardinality=PortCardinality.LIST, ordering=ordering)),
+        list(requirements),
+        index_of(*outputs),
+        policy=policy,
+    )
+
+
+def two_reports() -> tuple[list[AcceptedOutput], list[DataRequirement]]:
+    return (
+        [
+            output(producer="occ-b", content="b", producer_ordinal=2),
+            output(producer="occ-a", content="a", producer_ordinal=1),
+        ],
+        [
+            requirement("req-b", producer="occ-b", input_port="reports"),
+            requirement("req-a", producer="occ-a", input_port="reports"),
+        ],
+    )
+
+
+def test_a_list_port_is_ordered_by_its_declared_producer_ordinal() -> None:
+    outputs, requirements = two_reports()
+    result = list_port_case(
+        PortOrdering.BY_PRODUCER_ORDINAL, outputs=outputs, requirements=requirements
+    )
+    assert result.ok, result.problems
+    assert result.manifest is not None
+    assert [b.requirement_id for b in result.manifest.bindings] == ["req-a", "req-b"]
+    assert [b.port_ordinal for b in result.manifest.bindings] == [0, 1]
+
+
+def test_a_list_port_follows_an_explicit_order_list() -> None:
+    outputs, requirements = two_reports()
+    result = list_port_case(
+        PortOrdering.EXPLICIT,
+        outputs=outputs,
+        requirements=requirements,
+        policy=default_policy(
+            explicit_orders=(
+                ExplicitPortOrder(input_port="reports", ordered_requirement_ids=("req-b", "req-a")),
+            )
+        ),
+    )
+    assert result.ok, result.problems
+    assert result.manifest is not None
+    ordered = sorted(result.manifest.bindings, key=lambda b: b.port_ordinal)
+    assert [b.requirement_id for b in ordered] == ["req-b", "req-a"]
+
+
+def test_a_list_port_without_a_declared_order_is_refused() -> None:
+    outputs, requirements = two_reports()
+    result = list_port_case(None, outputs=outputs, requirements=requirements)
+    assert result.manifest is None
+    assert ResolutionProblemKind.SET_PORT_UNORDERED in result.kinds
+    unordered = port("reports", cardinality=PortCardinality.LIST)
+    assert not unordered.set_order_declared
+    assert undeclared_set_ports((unordered,)) == ("reports",)
+
+
+def map_case(*requirements: DataRequirement, outputs: Sequence[AcceptedOutput]) -> ResolutionResult:
+    return resolve(
+        consumer_binding(port("by_region", cardinality=PortCardinality.MAP)),
+        list(requirements),
+        index_of(*outputs),
+    )
+
+
+def test_a_map_port_binds_each_input_under_its_declared_key() -> None:
+    result = map_case(
+        requirement("req-s", producer="occ-s", input_port="by_region", map_key="south"),
+        requirement("req-n", producer="occ-n", input_port="by_region", map_key="north"),
+        outputs=[output(producer="occ-s", content="s"), output(producer="occ-n", content="n")],
+    )
+    assert result.ok, result.problems
+    assert result.manifest is not None
+    bindings = sorted(result.manifest.bindings, key=lambda b: b.port_ordinal)
+    assert [(b.map_key, b.requirement_id, b.port_ordinal) for b in bindings] == [
+        ("north", "req-n", 0),
+        ("south", "req-s", 1),
+    ]
+    assert bindings[0].to_json()["map_key"] == "north"
+
+
+def test_a_map_port_refuses_a_duplicate_key() -> None:
+    result = map_case(
+        requirement("req-1", producer="occ-a", input_port="by_region", map_key="north"),
+        requirement("req-2", producer="occ-b", input_port="by_region", map_key="north"),
+        outputs=[output(producer="occ-a", content="a"), output(producer="occ-b", content="b")],
+    )
+    assert result.manifest is None
+    assert ResolutionProblemKind.MAP_KEY_DUPLICATE in result.kinds
+    [problem] = [p for p in result.problems if p.kind is ResolutionProblemKind.MAP_KEY_DUPLICATE]
+    assert problem.requirement_ids == ("req-1", "req-2")
+    assert "north" in problem.detail
+    assert explain(result.problems)
+
+
+def test_a_duplicate_declared_key_is_refused_before_the_second_producer_finishes() -> None:
+    """The key is part of the plan, so the clash is refused as soon as it is declared."""
+
+    result = map_case(
+        requirement("req-1", producer="occ-a", input_port="by_region", map_key="north"),
+        requirement("req-2", producer="occ-b", input_port="by_region", map_key="north"),
+        outputs=[output(producer="occ-a", content="a")],
+    )
+    assert result.manifest is None
+    assert ResolutionProblemKind.MAP_KEY_DUPLICATE in result.kinds
+
+
+def test_a_map_port_refuses_an_input_without_a_key() -> None:
+    result = map_case(
+        requirement("req-1", producer="occ-a", input_port="by_region", map_key="north"),
+        requirement("req-2", producer="occ-b", input_port="by_region"),
+        outputs=[output(producer="occ-a", content="a"), output(producer="occ-b", content="b")],
+    )
+    assert result.manifest is None
+    assert ResolutionProblemKind.MAP_KEY_MISSING in result.kinds
+    assert explain(result.problems)
+
+
+def test_a_key_on_a_port_that_is_not_a_map_is_refused() -> None:
+    result = resolve(
+        consumer_binding(port("report")),
+        [requirement("req-1", producer="occ-a", map_key="north")],
+        index_of(output(producer="occ-a")),
+    )
+    assert result.manifest is None
+    assert ResolutionProblemKind.MAP_KEY_MISPLACED in result.kinds
+    assert explain(result.problems)
+
+
+def test_a_map_port_may_not_declare_an_ordering() -> None:
+    with pytest.raises(Exception):
+        port("by_region", cardinality=PortCardinality.MAP, ordering=PortOrdering.BY_PRODUCER_ORDINAL)
+    with pytest.raises(Exception):
+        port(
+            "by_region",
+            cardinality=PortCardinality.MAP,
+            ordering=PortOrdering.BY_KEY,
+            order_key="region",
+        )
+    assert port("by_region", cardinality=PortCardinality.MAP).set_order_declared
+
+
+def test_a_frozen_map_manifest_round_trips_with_its_keys() -> None:
+    from agent_orchestrator.artifacts.taskgraph_inputs import decode_frozen_manifest
+
+    result = map_case(
+        requirement("req-n", producer="occ-n", input_port="by_region", map_key="north"),
+        outputs=[output(producer="occ-n", content="n")],
+    )
+    assert result.manifest is not None
+    decoded = decode_frozen_manifest(result.manifest.to_json())
+    assert decoded == result.manifest
+    assert [b.map_key for b in decoded.bindings] == ["north"]
+
+
+def test_a_frozen_binding_that_still_names_a_converter_is_refused() -> None:
+    from agent_orchestrator.artifacts.taskgraph_inputs import decode_frozen_manifest
+    from agent_orchestrator.contracts.models import ContractError
+
+    result = resolve(
+        consumer_binding(port("report")),
+        [requirement("req-1", producer="occ-a")],
+        index_of(output(producer="occ-a")),
+    )
+    assert result.manifest is not None
+    raw = result.manifest.to_json()
+    raw["bindings"][0]["converter_ref"] = "converter-x"
+    with pytest.raises(ContractError):
+        decode_frozen_manifest(raw)
 
 
 # --------------------------------------------------------------------------------------

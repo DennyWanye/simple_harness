@@ -46,6 +46,7 @@ from typing import Any
 
 from ..contracts.evidence_state import ValidityWitness, WitnessDecision, WitnessPurpose
 from ..contracts.htn import (
+    ORDERED_CARDINALITIES,
     BoundInput,
     DataRequirement,
     OccurrenceId,
@@ -97,6 +98,9 @@ class ResolutionProblemKind(StrEnum):
     REVISION_NOT_AVAILABLE = "revision_not_available"
     TARGET_PATH_CONFLICT = "target_path_conflict"
     TARGET_PATH_INVALID = "target_path_invalid"
+    MAP_KEY_MISSING = "map_key_missing"
+    MAP_KEY_DUPLICATE = "map_key_duplicate"
+    MAP_KEY_MISPLACED = "map_key_misplaced"
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +370,8 @@ class ResolvedInputBinding:
     read_policy: str
     freshness_policy: str
     disclosure_scope: str
+    #: TG §5.5: the declared key of this binding on a MAP port; ``None`` elsewhere.
+    map_key: str | None = None
     requires_reacceptance: bool = False
     provisional: bool = False
     witness_id: str | None = None
@@ -427,6 +433,7 @@ class ResolvedInputBinding:
             "read_policy": self.read_policy,
             "freshness_policy": self.freshness_policy,
             "disclosure_scope": self.disclosure_scope,
+            "map_key": self.map_key,
             "requires_reacceptance": self.requires_reacceptance,
             "provisional": self.provisional,
             "witness_id": self.witness_id,
@@ -777,6 +784,56 @@ def _check_witness(
     return witness.witness_id, None
 
 
+def _check_map_key(requirement: DataRequirement, port_spec: PortSpec) -> ResolutionProblem | None:
+    """A MAP port needs a declared key on every input; no other port takes one."""
+
+    if port_spec.cardinality is PortCardinality.MAP and requirement.map_key is None:
+        return ResolutionProblem(
+            kind=ResolutionProblemKind.MAP_KEY_MISSING,
+            detail=(
+                f"requirement {requirement.requirement_id!r} feeds map port "
+                f"{port_spec.port_key!r} without declaring a key"
+            ),
+            input_port=requirement.input_port,
+            requirement_ids=(requirement.requirement_id,),
+        )
+    if port_spec.cardinality is not PortCardinality.MAP and requirement.map_key is not None:
+        return ResolutionProblem(
+            kind=ResolutionProblemKind.MAP_KEY_MISPLACED,
+            detail=(
+                f"requirement {requirement.requirement_id!r} declares key "
+                f"{requirement.map_key!r} but port {port_spec.port_key!r} is "
+                f"{port_spec.cardinality!s}, not a map"
+            ),
+            input_port=requirement.input_port,
+            requirement_ids=(requirement.requirement_id,),
+        )
+    return None
+
+
+def _order_by_map_key(
+    port_spec: PortSpec,
+    entries: Sequence[tuple[DataRequirement, AcceptedOutput, str | None]],
+) -> tuple[tuple[int, ...], ResolutionProblem | None]:
+    """Ordinal = rank of the declared key; one key with two live candidates is refused."""
+
+    keys = [str(entry[0].map_key) for entry in entries]
+    if len(set(keys)) != len(keys):
+        shared = sorted({key for key in keys if keys.count(key) > 1})
+        return (), ResolutionProblem(
+            kind=ResolutionProblemKind.MAP_KEY_DUPLICATE,
+            detail=(
+                f"map port {port_spec.port_key!r} has more than one live candidate under "
+                f"key(s) {shared}"
+            ),
+            input_port=port_spec.port_key,
+            requirement_ids=tuple(sorted({entry[0].requirement_id for entry in entries})),
+            candidates=tuple(sorted(entry[1].artifact_id for entry in entries)),
+        )
+    ranked = sorted(keys)
+    return tuple(ranked.index(key) for key in keys), None
+
+
 def _order_entries(
     port_spec: PortSpec,
     entries: Sequence[tuple[DataRequirement, AcceptedOutput, str | None]],
@@ -882,6 +939,30 @@ def resolve_declared_inputs(
     per_port: dict[str, list[tuple[DataRequirement, AcceptedOutput, str | None]]]
     per_port = {}
 
+    # TG §5.5: a MAP port takes each input under the key its requirement declares;
+    # two requirements declaring one key is a refusal, never a pick.
+    declared_keys: dict[tuple[str, str], list[str]] = {}
+    for requirement in requirements:
+        spec = ports.get(requirement.input_port)
+        if (requirement.consumer_occurrence == consumer_occurrence and spec is not None
+                and spec.cardinality is PortCardinality.MAP and requirement.map_key is not None):
+            declared_keys.setdefault((requirement.input_port, requirement.map_key), []).append(
+                requirement.requirement_id
+            )
+    duplicate_keys = {key: sorted(ids) for key, ids in declared_keys.items() if len(ids) > 1}
+    for (input_port, map_key), requirement_ids in sorted(duplicate_keys.items()):
+        problems.append(
+            ResolutionProblem(
+                kind=ResolutionProblemKind.MAP_KEY_DUPLICATE,
+                detail=(
+                    f"map port {input_port!r} has {len(requirement_ids)} inputs declared under "
+                    f"key {map_key!r}"
+                ),
+                input_port=input_port,
+                requirement_ids=tuple(requirement_ids),
+            )
+        )
+
     for requirement in sorted(requirements, key=lambda item: item.requirement_id):
         if requirement.consumer_occurrence != consumer_occurrence:
             problems.append(
@@ -910,6 +991,12 @@ def resolve_declared_inputs(
                 )
             )
             continue
+        key_problem = _check_map_key(requirement, port_spec)
+        if key_problem is not None:
+            problems.append(key_problem)
+            continue
+        if (requirement.input_port, requirement.map_key or "") in duplicate_keys:
+            continue  # already refused above, once per key
         if not accepted.is_complete(requirement.producer_occurrence):
             pending.append(
                 SymbolicBinding(
@@ -1001,10 +1088,15 @@ def resolve_declared_inputs(
                 )
             )
             continue
-        if port_spec.cardinality is PortCardinality.SET:
+        if port_spec.cardinality in ORDERED_CARDINALITIES:
             ordinals, order_problem = _order_entries(port_spec, entries, policy)
             if order_problem is not None:
                 problems.append(order_problem)
+                continue
+        elif port_spec.cardinality is PortCardinality.MAP:
+            ordinals, key_problem = _order_by_map_key(port_spec, entries)
+            if key_problem is not None:
+                problems.append(key_problem)
                 continue
         else:
             ordinals = (0,) * len(entries)
@@ -1035,6 +1127,7 @@ def resolve_declared_inputs(
                     read_policy=requirement.assurance_policy_ref,
                     freshness_policy=requirement.freshness_policy_ref,
                     disclosure_scope=candidate.disclosure_scope,
+                    map_key=requirement.map_key,
                     # Every binding follows the authorised revision, so each one is an
                     # input this consumer has not been accepted against yet.
                     requires_reacceptance=True,
@@ -1335,6 +1428,16 @@ _REMEDIES: Mapping[ResolutionProblemKind, str] = {
     ResolutionProblemKind.TARGET_PATH_INVALID: (
         "Give the binding a place inside the consumer namespace."
     ),
+    ResolutionProblemKind.MAP_KEY_MISSING: (
+        "Declare the key this input is bound under on its data requirement."
+    ),
+    ResolutionProblemKind.MAP_KEY_DUPLICATE: (
+        "Give each input of the map port its own key, or combine the inputs in a synthesis "
+        "task that is accepted on its own."
+    ),
+    ResolutionProblemKind.MAP_KEY_MISPLACED: (
+        "Remove the key, or declare the consumer port as a map."
+    ),
 }
 
 _SUMMARIES: Mapping[ResolutionProblemKind, str] = {
@@ -1372,6 +1475,9 @@ _SUMMARIES: Mapping[ResolutionProblemKind, str] = {
     ResolutionProblemKind.REVISION_NOT_AVAILABLE: "the named source revision is not accepted",
     ResolutionProblemKind.TARGET_PATH_CONFLICT: "two different contents claim one place",
     ResolutionProblemKind.TARGET_PATH_INVALID: "the computed place is outside the namespace",
+    ResolutionProblemKind.MAP_KEY_MISSING: "an input of a map port declares no key",
+    ResolutionProblemKind.MAP_KEY_DUPLICATE: "two inputs of a map port share one key",
+    ResolutionProblemKind.MAP_KEY_MISPLACED: "a key is declared for a port that is not a map",
 }
 
 

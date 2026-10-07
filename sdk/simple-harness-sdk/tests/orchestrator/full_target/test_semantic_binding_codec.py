@@ -1492,3 +1492,36 @@ def test_commit_readiness_without_a_registered_set_still_only_checks_the_shape()
 
     delta = proposed_delta()
     assert require_commit_ready(delta) is delta
+
+
+# --------------------------------------------------------------------------------------
+# T05: a data requirement may declare the key it feeds into a MAP port
+# --------------------------------------------------------------------------------------
+
+
+def _requirement(**extra: Any) -> DataRequirement:
+    return DataRequirement(
+        requirement_id="req-1",
+        producer_occurrence=OccurrenceId("occ-a"),
+        output_port="report",
+        consumer_occurrence=OccurrenceId("occ-b"),
+        input_port="by_region",
+        schema_ref=vref("report"),
+        assurance_policy_ref="assurance-standard",
+        freshness_policy_ref="freshness-standard",
+        **extra,
+    )
+
+
+def test_a_requirement_without_a_map_key_keeps_its_bytes() -> None:
+    payload = _requirement().to_json()
+    assert "map_key" not in payload
+    assert DataRequirement.from_json(payload) == _requirement()
+
+
+def test_a_requirement_with_a_map_key_round_trips() -> None:
+    keyed = _requirement(map_key="north")
+    assert keyed.to_json()["map_key"] == "north"
+    assert DataRequirement.from_json(keyed.to_json()) == keyed
+    with pytest.raises(ContractError):
+        _requirement(map_key="")

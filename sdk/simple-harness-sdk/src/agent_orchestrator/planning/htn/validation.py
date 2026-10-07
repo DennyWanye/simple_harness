@@ -332,7 +332,7 @@ def _check_ports(
 def _set_port_problem(binding: TaskSemanticBindingV1) -> DeltaProblem | None:
     for label, ports in (("input", binding.input_ports), ("output", binding.output_ports)):
         for port in ports:
-            if port.cardinality is PortCardinality.SET and port.ordering is None:
+            if not port.set_order_declared:
                 return DeltaProblem(
                     kind=DeltaProblemKind.PORT_UNBINDABLE,
                     detail=(

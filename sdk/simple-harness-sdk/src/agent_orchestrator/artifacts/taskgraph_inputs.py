@@ -114,6 +114,7 @@ def decode_frozen_manifest(value: Mapping[str, Any]) -> InputManifest:
                 produced_schema_ref=VersionedRef.from_json(item["produced_schema_ref"]),
                 read_policy=_text(item["read_policy"]), freshness_policy=_text(item["freshness_policy"]),
                 disclosure_scope=_text(item["disclosure_scope"]),
+                map_key=None if item["map_key"] is None else _text(item["map_key"]),
                 requires_reacceptance=_boolean(item["requires_reacceptance"]),
                 provisional=_boolean(item["provisional"]),
                 witness_id=None if item["witness_id"] is None else _text(item["witness_id"]),
