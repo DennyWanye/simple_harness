@@ -83,16 +83,27 @@ def test_a_tampered_enabling_receipt_is_refused_by_name(tmp_path):
     asyncio.run(case())
 
 
-def test_no_module_outside_the_store_writes_or_reads_one_policy_row_by_sql():
-    """单一路径：策略行的写、单个任务的策略读、按版本读钉，只在存储层。
+def test_bound_mission_ids_and_ever_member_read_through_the_store(tmp_path):
+    """裁决第 4 件：列出已绑定任务（可只要未结束的）、查步骤是否在任何版本当过成员，都经存储层。"""
+    async def case():
+        async with enabled_world(tmp_path, key="t09-lists", hold_worker=True) as world:
+            store, mission = world.store, world.mission.id
+            graph = TaskGraphStore(store)
+            assert mission in graph.bound_mission_ids()
+            assert mission in graph.bound_mission_ids(open_only=True)
+            await world.commit_seed()
+            [member] = graph.list_member_pins(mission, 1)[:1]
+            assert graph.ever_member(mission, member.task_id) is True
+            assert graph.ever_member(mission, "no-such-task") is False
+            with store.transaction() as db:
+                db.execute("UPDATE missions SET status='CANCELLED' WHERE mission_id=?", (mission,))
+            assert mission in graph.bound_mission_ids(), "已结束的任务仍是已绑定"
+            assert mission not in graph.bound_mission_ids(open_only=True), "只要未结束的就排除它"
+    asyncio.run(case())
 
-    剩下三处读（列出全部已绑定任务、数已绑定任务、查步骤是否在任何版本当过成员）原计划接口
-    清单里没有对应接口，本条不扩，记录第五节留给主会话。"""
-    allowed_reads = {
-        "orchestrator/taskgraph_notifications.py": "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY",
-        "orchestrator/recovery_coordinator.py": "FROM taskgraph_policy_bindings b JOIN missions",
-        "orchestrator/commit_service.py": "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=?",
-    }
+
+def test_no_module_outside_the_store_reads_or_writes_the_policy_and_pin_tables():
+    """单一路径：策略表与两张钉表在编排层没有任何直读直写（原计划 §6.2 读方一列；裁决第 4 件）。"""
     offenders = []
     for path in sorted(_SRC.rglob("*.py")):
         relative = path.relative_to(_SRC).as_posix()
@@ -102,7 +113,5 @@ def test_no_module_outside_the_store_writes_or_reads_one_policy_row_by_sql():
         for table in ("taskgraph_policy_bindings", "taskgraph_member_pins", "taskgraph_method_pins"):
             for line in text.splitlines():
                 if table in line and not line.lstrip().startswith("#"):
-                    allowed = allowed_reads.get(relative)
-                    if allowed is None or allowed not in line:
-                        offenders.append(f"{relative}: {line.strip()}")
+                    offenders.append(f"{relative}: {line.strip()}")
     assert offenders == []

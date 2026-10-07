@@ -611,13 +611,11 @@ class CommitService(ProtectedTailCommitsMixin,
         with a missing binding cannot have a terminal record written for it."""
 
         from ..storage.htn_store import HtnStore
+        from ..storage.taskgraph_store import TaskGraphStore
 
         if HtnStore(self._store).task_semantics_of(mission_id, task_id) is not None:
             return "bound"
-        member = self._store.connection.execute(
-            "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
-            (mission_id, task_id)).fetchone()
-        return "outside" if member is None else "missing"
+        return "missing" if TaskGraphStore(self._store).ever_member(mission_id, task_id) else "outside"
 
     def _unbound_open_tasks(self, mission_id: str) -> list[str]:
         """Open TaskGraph members whose binding is damaged: they end with the Mission and

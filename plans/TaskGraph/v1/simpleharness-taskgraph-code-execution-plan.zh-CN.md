@@ -336,6 +336,8 @@ ack_followup(message_id, owner, row_version, consumer_receipt)
 retry_followup(message_id, owner, row_version, failure, now_ms)
 ```
 
+> （2026-10-07 补注，推后第 2 批裁决）另有两个只读接口：`bound_mission_ids(open_only)`（通知轮询与重启核对用）、`ever_member(mission_id, task_id)`（终止门用）。两张表在编排层没有其它直读。出处：`plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第2批-Q1Q3Q4-偏差裁决.md` 第 4 件；偏离 #46（B 级）。
+
 DDL在附录A和`sql/001_taskgraph_extension.sql`；read/CAS SQL在附录B。没有动态SQL表名来自模型。`insert_*`同key不同hash是冲突，不用 `INSERT OR REPLACE`。
 
 ### 6.4 存储与API边界校验

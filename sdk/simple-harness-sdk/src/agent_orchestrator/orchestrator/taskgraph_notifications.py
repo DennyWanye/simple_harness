@@ -234,11 +234,9 @@ class TaskGraphNotifications:
 
     async def tick(self) -> bool:
         self.orchestrator._require_assurance_execution_root()
-        rows = self.store.connection.execute(
-            "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY mission_id").fetchall()
+        from ..storage.taskgraph_store import TaskGraphStore
         consumed = 0
-        for row in rows:
-            mission_id = str(row[0])
+        for mission_id in TaskGraphStore(self.store).bound_mission_ids():
             if mission_id in self.orchestrator._unrecovered or self.orchestrator.recovery_isolated(mission_id):
                 continue
             # 这个任务的这一份在"一个任务一轮"的边界里：下面只接得住来源读不了，别的错

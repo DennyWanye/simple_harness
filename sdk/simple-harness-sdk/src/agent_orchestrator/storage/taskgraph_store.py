@@ -15,6 +15,7 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.htn import GraphStructureBudget
+from ..contracts.state_machines import TERMINAL_MISSION
 from ..contracts.models import ContractError
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
@@ -245,6 +246,29 @@ class TaskGraphStore:
                 "SELECT mission_id,revision,instance_id,goal_occurrence_id,adopted,draft_hash "
                 "FROM taskgraph_method_pins WHERE mission_id=? AND revision=? ORDER BY instance_id",
                 (mission_id, revision)))
+
+    def bound_mission_ids(self, *, open_only: bool = False) -> tuple[str, ...]:
+        """Every TaskGraph-bound Mission, by id; ``open_only`` leaves out ended Missions
+        (2026-10-07 推后第 2 批裁决第 4 件：通知轮询与重启核对的一处读法)."""
+        ended = tuple(sorted(str(status) for status in TERMINAL_MISSION))
+        with self._store.read_view() as connection:
+            if not open_only:
+                rows = connection.execute(
+                    "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY mission_id").fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT b.mission_id FROM taskgraph_policy_bindings b JOIN missions m "
+                    "ON m.mission_id=b.mission_id WHERE m.status NOT IN (?,?,?) ORDER BY b.mission_id",
+                    ended).fetchall()
+            return tuple(str(row[0]) for row in rows)
+
+    def ever_member(self, mission_id: str, task_id: str) -> bool:
+        """Whether ``task_id`` was a pinned member in any revision of the Mission's graph
+        (终止门用；同一裁决)."""
+        with self._store.read_view() as connection:
+            return connection.execute(
+                "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
+                (mission_id, task_id)).fetchone() is not None
 
     def _pins(self, connection: sqlite3.Connection, mission: str, revision: int) -> RevisionPins:
         members = self.list_member_pins(mission, revision)
