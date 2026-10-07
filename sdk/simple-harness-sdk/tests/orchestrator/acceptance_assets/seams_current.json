@@ -159,7 +159,7 @@
     "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_missing_bridge_is_source_unavailable_instead_of_latest_join",
     "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_incomplete_reader_is_not_an_empty_snapshot",
     "tests/orchestrator/full_target/test_h1h_operation_admission.py::test_lease_expiry_does_not_prove_not_applied",
-    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision",
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation_then_is_handed_back",
     "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_handoff_changes_the_operation_snapshot_a_plan_preview_read"
    ],
    "difference": "与原计划同名同位置；操作到生产步骤的链接另由 runtime/taskgraph_operation_sources.py:read_operation_producers 读取",

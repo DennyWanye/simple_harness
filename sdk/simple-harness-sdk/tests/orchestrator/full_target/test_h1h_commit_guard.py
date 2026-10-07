@@ -3,8 +3,10 @@
 * 预览读集身份不符 → 预览身份闸按名拒绝、一字未写，真命令照常提交（裁决①a）；
 * O08：规划器的计划改动在收集器里、预览之后提交之前，人批准了等着的发布申请单：提交在它自己的
   事务里把操作来源整套重读，判过期、不提交；
-* O03：发布服务调用中掉线、结果未知（UNKNOWN）：碰到这个操作的计划改动只能等操作对账，
-  不提交、不出新版本。
+* O03：发布服务调用中掉线、结果未知（UNKNOWN）：根结论先形成，对根的修复当场被拒，不出新版本。
+* O03b：同样结果未知，但终审判不通过、根职责还开着：碰到这个操作的计划改动先经执行图收敛
+  "先对账未决操作"，等待；对账说"确实没发生"后放开，等着的改动按"来源已变"退回规划器，
+  规划器在新事实上重交，提交成功。
 
 两条操作用例跑在 ``publishing_round``（产品同形代表用例三走到"申请单等人批准"，再让规划器给
 写文件那一步提后继步骤）。偏离分诊表：产品上这两种情形分别由执行图参与方的来源重读
@@ -22,7 +24,7 @@ import json
 
 import pytest
 from h1i_seed import plan_reply, refuse_tampered_first, reviewed
-from publishing_round import publishing_round, run_rounds
+from publishing_round import publishing_round, refused_final_round, run_rounds
 
 from agent_orchestrator.storage.htn_store import HtnStore
 
@@ -254,3 +256,83 @@ def _setup(world, *, command=None):
 
 def _plan_revision_count(world) -> int:
     return len(HtnStore(world.store).list_plan_revisions(world.mission.id))
+
+
+def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation_then_is_handed_back(
+        tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """终审判不通过时根职责还开着，规划器换掉发布操作的生产者（写文件那一步）。
+
+    执行图收敛先问发布服务这次发布到底有没有发生（RECONCILE_OPERATION）：服务答不上来就一直等，
+    不提交、不出新版本；服务答"确实没发生"后，等着的改动是在旧事实上做的，按
+    TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED 退回规划器（收敛作业 ABANDONED）；规划器在新事实上
+    重交同样的修复，这次没有未决操作挡着，第 2 版计划提交。"""
+    from safety_facts import safety_facts
+
+    from agent_orchestrator.runtime import operation_reconciliation_file_publish as reconciliation
+
+    down = {"on": True}
+    original = reconciliation.FilePublishReconciliationAdapter.observe
+
+    def unreachable(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if down["on"]:
+            raise ConnectionError("the publishing service cannot be reached")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(reconciliation.FilePublishReconciliationAdapter, "observe", unreachable)
+
+    def events(round_, kind: str) -> list[dict]:  # type: ignore[no-untyped-def]
+        return [event.payload for event in round_.loop.store.list_events(round_.mission_id) if event.type == kind]
+
+    def held_reservations(round_) -> list[tuple]:  # type: ignore[no-untyped-def]
+        return [row for row in safety_facts(round_.loop.store, round_.mission_id)["reservations"]
+                if row[0].startswith("reservation-action:")]
+
+    async def rounds(round_, n: int) -> None:  # type: ignore[no-untyped-def]
+        for _ in range(n):
+            await round_.world.deployment.between_cycles(auto=True)
+            await round_.loop._cycle()
+            await asyncio.sleep(0.01)
+
+    async def case() -> None:
+        async with refused_final_round(tmp_path, key="h1h-o03b") as round_:
+            store = round_.loop.store
+            assert not any(item.get("is_mission_root") for item in events(round_, "GoalResolutionCommitted"))
+            assert [action["state"] for action in store.list_actions(round_.mission_id)] == ["UNKNOWN"]
+            [first] = round_.repairs()
+            assert first["status"] == "COMPILED", first
+            assert [item["kind"] for item in events(round_, "TaskGraphConvergenceCommandRequested")] == ["RECONCILE_OPERATION"]
+            assert events(round_, "TaskGraphConvergenceAdvanced")[-1]["to_state"] == "WAITING"
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]
+            held = held_reservations(round_)
+            assert held, "结果不明的发布动作有一条预留"
+
+            await rounds(round_, 5)  # 服务答不上来：一直等，不提交、不出新版本
+            assert round_.repairs()[0]["status"] == "COMPILED"
+            assert events(round_, "TaskGraphConvergenceAdvanced")[-1]["to_state"] == "WAITING"
+            assert held_reservations(round_) == held  # 等待期间原动作的预留原样保留（K10）
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1]
+
+            down["on"] = False
+            [action] = store.list_actions(round_.mission_id)
+            await round_.loop._actions.reconcile_one(str(action["action_key"]), allow_rehandoff=False)
+            assert [item["outcome"] for item in events(round_, "ActionScopedReconciled")] == ["NOT_APPLIED_FINAL"]
+            await rounds(round_, 10)
+
+            first = round_.repairs()[0]
+            assert first["status"] == "COMMIT_REJECTED", first
+            assert "TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED" in json.dumps(first["detail"]), first
+            by_job: dict[str, list[str]] = {}
+            for item in events(round_, "TaskGraphConvergenceAdvanced"):
+                by_job.setdefault(item["job_id"], []).append(item["to_state"])
+            [refused, committed] = by_job.values()
+            assert refused[-1] == "ABANDONED" and "WAITING" in refused, by_job
+            assert "WAITING" not in committed, by_job  # 重交时操作已了结，不再等
+            assert len(round_.answered) == 2  # 规划器被退回后在新事实上重交了一次
+            assert round_.repairs()[-1]["status"] == "COMMITTED", round_.repairs()[-1]
+            assert _committed_revisions(round_.loop, round_.mission_id) == [1, 2]
+            assert events(round_, "PlanningRepairAddressed")
+            # 原动作保留原身份，没有被再交出一次（K10：替代动作不重复执行原发布）
+            assert store.list_actions(round_.mission_id)[0]["action_key"] == action["action_key"]
+            assert [item["action_key"] for item in events(round_, "ActionHandedOff")].count(action["action_key"]) == 1
+
+    asyncio.run(case())

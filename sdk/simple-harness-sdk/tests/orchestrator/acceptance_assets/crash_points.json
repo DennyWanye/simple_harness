@@ -144,12 +144,12 @@
    "from": "TG⑦",
    "method": "构造场景",
    "injection": [
-    "（full_target/h1h_stage_runner.py 的发布局，unknown_outcome=True）"
+    "（full_target/publishing_round.py 的 refused_final_round：发布服务调用中掉线、终审判不通过，规划器换掉发布操作的生产步骤）"
    ],
    "tests": [
-    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision"
+    "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation_then_is_handed_back"
    ],
-   "run_in": "F2（已执行 2026-10-05）"
+   "run_in": "F2（已执行 2026-10-05）；2026-10-07 改绑 o03b（A48 之后 o03 只证明根已了结时拒绝）"
   },
   {
    "id": "K11",

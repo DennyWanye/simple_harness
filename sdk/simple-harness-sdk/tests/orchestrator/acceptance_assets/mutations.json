@@ -985,10 +985,9 @@
    "original": "    return frozenset(dropped - surviving)\n",
    "replacement": "    return frozenset(dropped)\n",
    "tests": [
-    "tests/orchestrator/product_world/test_shared_steps.py::test_the_branch_that_reuses_a_step_can_change_its_method_and_keep_sharing_it",
     "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
    ],
-   "note": "按旧做法批量取消（场景 R01）：被退休做法的孩子一律离开计划，连留下的做法还持有的共用步骤也带走"
+   "note": "按旧做法批量取消（场景 R01）：被退休做法的孩子一律离开计划，连留下的做法还持有的共用步骤也带走。2026-10-07 换绑定：原登记的 product_world/test_shared_steps 在基线上就杀不死它（新做法点名共用的步骤由 _merge 的 kept_by_share 保住，不经过 surviving），删去这条；仍由 test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges 两个参数以断言杀死（2026-10-07 复跑 KILLED）。N6 的纯编译用例在 M07b 下也失败，但失败方式是编译抛出异常、不是断言，按改坏执行器的口径不算杀死，不登记"
   },
   {
    "id": "TG4-07",

@@ -31,6 +31,18 @@ from ..contracts.planning_decisions import (
     PlanningRetryBudgetView,
 )
 
+#: How much of one refusal's text the Planner is shown, end to end (stored detail
+#: and the §39 problem detail).  A long reason's second half is usually what the
+#: Planner can do next; a bound remains so the package stays small.
+REFUSAL_TEXT_LIMIT = 2000
+
+
+def refusal_text(error: object) -> str:
+    """The text of one refusal as stored for, and shown to, the Planner."""
+
+    return str(error)[:REFUSAL_TEXT_LIMIT]
+
+
 #: Decision rows the Planner is told about: the reply was refused.
 REFUSED_STATUSES = frozenset({"UNREADABLE", "REJECTED", "COMMIT_REJECTED"})
 
@@ -96,17 +108,17 @@ def _problems(codes: list[PlanningDecisionRejectionCode], detail: Mapping[str, A
         # earlier refusal happened to be written down.
         return [PlanningProblemDetailV1.from_json(row, "feedback.problem") if isinstance(row, Mapping)
                 else PlanningProblemDetailV1(code=code, subject_ref=None, field_path=None,
-                                             detail=str(row)[:600])
+                                             detail=refusal_text(row))
                 for row in rows]
     if isinstance(detail.get("error"), str) and detail["error"].strip():
         text = detail["error"]
         return [PlanningProblemDetailV1(code=code, subject_ref=None,
-                                        field_path=codec_field_path(text), detail=text[:600])]
+                                        field_path=codec_field_path(text), detail=refusal_text(text))]
     words = [str(detail[key]) for key in ("reason", "detail") if str(detail.get(key) or "").strip()]
     if not words:
         return []
     return [PlanningProblemDetailV1(code=code, subject_ref=None, field_path=None,
-                                    detail="; ".join(words)[:600])]
+                                    detail=refusal_text("; ".join(words)))]
 
 
 def feedback_from_decision(

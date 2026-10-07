@@ -127,6 +127,19 @@ MAX_FACTS = 24
 #: carries.  Same reason: the Planner reads them to judge direction, not to browse the
 #: Mission's whole memory; the catalogue stays readable by the Workers' tools.
 MAX_KNOWLEDGE = 16
+#: One candidate row's text in ``views.knowledge``: a lead, not a fact, so a bounded
+#: preview (the catalogue shows 200); a cut says so at its end (opt.167 评估建议第 5 条).
+CANDIDATE_CONTENT_LIMIT = 600
+
+
+def candidate_content(content: str) -> str:
+    """A candidate's text as the Planner sees it: whole, or the first
+    :data:`CANDIDATE_CONTENT_LIMIT` characters and a note that it was cut."""
+
+    if len(content) <= CANDIDATE_CONTENT_LIMIT:
+        return content
+    return (content[:CANDIDATE_CONTENT_LIMIT]
+            + f"（候选结论共 {len(content)} 字，这里只列前 {CANDIDATE_CONTENT_LIMIT} 字）")
 
 def _ref_key(reference: Any) -> tuple[str, int, str]:
     to_json = getattr(reference, "to_json", None)
@@ -473,7 +486,7 @@ def knowledge_rows(
     for row in candidates:
         rows.append({
             "layer": "candidate", "id": str(row["id"]), "status": str(row["status"]),
-            "marker": str(row["marker"]), "key": row["key"], "content": row["content"],
+            "marker": str(row["marker"]), "key": row["key"], "content": candidate_content(str(row["content"])),
             "source_task": row["source_task"],
         })
     kept = tuple(rows[: max(0, limit)])

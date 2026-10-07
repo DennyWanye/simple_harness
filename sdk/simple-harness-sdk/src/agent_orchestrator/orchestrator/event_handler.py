@@ -96,6 +96,7 @@ from ..contracts.planning_decisions import (
     UnsupportedPlanningPackage,
 )
 from ..contracts.resolution import DeliveryStage
+from ..planning.decision_feedback import refusal_text
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import IllegalTransition
 from ..governance.budgets import BudgetError, BudgetExhausted
@@ -6446,7 +6447,7 @@ class Orchestrator:
             await self._planning_rejected(
                 intent,
                 reason="proposal_unreadable",
-                detail=planning_failure_detail(error, {"error": str(error)[:300]}),
+                detail=planning_failure_detail(error, {"error": refusal_text(error)}),
             )
             return
         await self._collect_plan_decision(intent, result, mission, text, new_mode)
@@ -6735,7 +6736,7 @@ class Orchestrator:
             status = (
                 refusal_status if canonical_hash is not None else PlanningDecisionStatus.UNREADABLE
             )
-            detail = {"error": str(error)[:300], "internal_contract_error": True}
+            detail = {"error": refusal_text(error), "internal_contract_error": True}
             with self.store.transaction():
                 record_decision(
                     request_id=request_id,
@@ -7480,7 +7481,7 @@ class Orchestrator:
                 decision_id=decision_id,
                 status=PlanningDecisionStatus.COMMIT_REJECTED,
                 rejection_codes=(refusal_code,),
-                detail={"error": str(error)[:300]},
+                detail={"error": refusal_text(error)},
                 canonical_json=canonical_json,
                 canonical_hash=canonical_hash,
                 decision_type=str(decision.decision_type),
@@ -7489,7 +7490,7 @@ class Orchestrator:
                 PlanningDecisionStatus.COMMIT_REJECTED,
                 decision_type=str(decision.decision_type),
                 rejection_codes=[refusal_code],
-                detail=str(error)[:300],
+                detail=refusal_text(error),
             )
             self._release_refused_fence(mission.id, decision_id)
             self._settle_intent(intent, "FAILED")
@@ -7497,7 +7498,7 @@ class Orchestrator:
             await reject_planning(
                 intent,
                 reason="proposal_not_grounded",
-                detail={"error": str(error)[:300],
+                detail={"error": refusal_text(error),
                         **_stale_commit_problems(getattr(error, "reason", ""))},
             )
             return

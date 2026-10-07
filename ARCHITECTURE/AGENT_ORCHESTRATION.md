@@ -1,3 +1,10 @@
+最后更新：2026-10-07 CST（opt.167 发版评估 6 条建议，待发版 SDK `opt.168`）。
+- **"结果不明先对账"有了端到端用例**（建议 1）：`full_target/test_h1h_commit_guard.py::test_o03b_*`，夹具 `publishing_round.refused_final_round`。发布服务调用中掉线（结果不明），终审判不通过、根职责还开着；规划器换掉发布操作的生产步骤 → 执行图收敛 `RECONCILE_OPERATION` → 服务答不上来就一直 `WAITING`、不出新版本 → 服务答"确实没发生"后放开，等着的改动按 `TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED` 退回规划器（作业 `ABANDONED`）→ 规划器在新事实上重交，第 2 版提交；原发布动作保留原身份、没被再交出。改坏"不发对账动作"被抓到。证据资产 `crash_points.json` K10、`seams_current.json` P08 改绑这条。"发布其实已落地"那一支在产品里不会停在结果不明（执行器自己就查到成功），不另写用例。
+- **规划器被拒理由不再截在 300 字**（建议 4）：`planning/decision_feedback.py` 新增 `REFUSAL_TEXT_LIMIT = 2000` 与 `refusal_text()`；规划器被拒的五处入库（`event_handler.py` 规划回合失败、生产者合同错、提交被拒的决定行 / 评估事件 / 退回规划器）与 `previous_feedback` 的问题详情都走它。用例 `full_target/test_planner_refusal_text.py`（长理由的末尾一路到达规划器）。
+- **候选结论层每行正文设上限**（建议 5）：`planner_package.CANDIDATE_CONTENT_LIMIT = 600`，超长只列前 600 字并在末尾写明总字数；短的原样。不改包字段。
+- **用例与资产口径**（建议 2、3）：嵌套复合用例只认现行拒绝原因 `OP_COMPLETION_SCOPE_UNRESOLVED`；改坏 M07b 去掉原登记的 `product_world/test_shared_steps`（基线上就杀不死它），只留 `test_htn_and_or_shared_goal::test_one_branch_*`，复跑仍以断言 KILLED；N6 的纯编译用例在 M07b 下以编译异常失败、不是断言，不登记。
+- **设置页说明**（建议 6）：本月全局预算一节写明调大调小都在重启后立即生效，调小到低于本月已用量时本月建立的任务会停下（SDK 用例 `test_batch2_p_global_monthly_budget.py` 已证明调小的行为）。
+
 最后更新：2026-10-07 CST（夜间清遗留，待发版 SDK `opt.167`）。
 - **执行图提交守护用例随 A48 改口径**（opt.166 起红，夜间二分到车道 O 合并）：发布结果不明时根结论已先形成、根职责了结，对这个根的修复提交当场被拒 `OBLIGATION_NOT_OPEN`、不编修订；对账说"确实没发生"之后计划仍只有第 1 版（没生效的发布由系统操作线处理）。`publishing_round` 在结果不明时改断言被拒，`test_h1h_commit_guard.py::test_o03_…` 断言根结论先成、结果不明期间与对账后都没有修订。
 - **费用报告的全局一栏按月**（夜间，N3c 发现）：`BudgetLedger.costs_report` 读这个任务建立当月的总账（任务账户的上级），不再取库里第一个全局账户；用例与改坏。

@@ -89,6 +89,20 @@ def _candidate(cid: str, status: str = "PROPOSED", marker: str = "未验证") ->
             "source_task": "t1", "evidence": ["e1"]}
 
 
+def test_a_very_long_candidate_is_shown_as_a_bounded_preview_that_says_it_was_cut() -> None:
+    """opt.167 发版评估建议第 5 条：候选结论一行带全文，单条很长会撑大规划包。与目录一样给
+    正文设上限，截断时在末尾如实写明；短的原样不动。"""
+    from agent_orchestrator.planning.htn.planner_package import CANDIDATE_CONTENT_LIMIT
+
+    long = dict(_candidate("c-long"), content="很长的线索。" * 2000)
+    rows, _ = knowledge_rows([], [], [long, _candidate("c-short")])
+    cut, short = rows
+    assert cut["content"].startswith(long["content"][:CANDIDATE_CONTENT_LIMIT])
+    assert len(cut["content"]) < CANDIDATE_CONTENT_LIMIT + 60
+    assert cut["content"].endswith(f"（候选结论共 {len(long['content'])} 字，这里只列前 {CANDIDATE_CONTENT_LIMIT} 字）")
+    assert short["content"] == "线索 c-short"
+
+
 def test_candidates_come_last_marked_as_leads_and_the_cap_drops_them_first() -> None:
     """夜间 N3-03：候选结论是第三层，排在已验证与摘要之后；16 行上限先裁掉候选。"""
     rows, omitted = knowledge_rows([_record("k-1", 1.0)], [_summary("sum:r1")],

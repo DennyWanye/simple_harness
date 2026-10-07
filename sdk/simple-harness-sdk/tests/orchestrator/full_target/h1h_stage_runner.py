@@ -138,7 +138,7 @@ COVERAGE_NOTES = {
 # evidence for their original source snapshot, not current gate status.
 IMPLEMENTED_NODEIDS.update({
     "A06": "tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_zero_declared_approvals_and_applicable_method_do_not_replace_grant",
-    "O03": "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision",
+    "O03": "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation_then_is_handed_back",
     "O07": "tests/orchestrator/full_target/test_h1h_operation_live_boundaries.py::test_o07_real_t0_t1_success_receipt_is_applied_and_wrong_receipt_is_refused",
     "O09": "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_materialization_link_write_failure_rolls_back_and_materializes_once_after_restart",
     "P02": "tests/orchestrator/full_target/test_h1h_p02_compiler_cycles.py",
@@ -152,7 +152,8 @@ IMPLEMENTED_NODEIDS.update({
 SUPPORTING_NODEIDS.update({
     "A06": ("tests/orchestrator/full_target/test_h1h_authority_vs_action_approval.py::test_a06_unapproved_external_write_with_complete_origin_link_cannot_handoff",),
     "O02": ("tests/orchestrator/full_target/test_h1h_operation_alias.py", "tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_two_required_publishes_each_need_their_own_chain"),
-    "O03": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent",),
+    "O03": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent",
+            "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o03_an_unknown_publish_outcome_holds_the_plan_change_back_without_a_revision"),
     "O07": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_lost_reply_is_reconciled_and_never_resent",),
     "O08": ("tests/orchestrator/full_target/operation_completion/test_publish_variants.py::test_a_handoff_changes_the_operation_snapshot_a_plan_preview_read",),
     "P03": ("tests/orchestrator/full_target/test_h1h_preview_compiler_refusal.py::test_p02_p03_real_compiler_refusal_keeps_typed_reason",),
@@ -162,7 +163,7 @@ PARTIAL = frozenset()
 COVERAGE_NOTES.update({
     "A06": "observed method gate=True and exact required_approvals=0 cannot replace a grant; same-Mission planning/action authority separation covered",
     "O02": "two real T0 intents/reviews/materializations share a target with distinct occurrence/hash/action links; alias rollback covered",
-    "O03": "real retired-method mapper plus formal Commit unresolved refusal; both nodeids are required",
+    "O03": "2026-10-07: o03b — a plan change touching an UNKNOWN publish waits on TaskGraph convergence RECONCILE_OPERATION, is handed back after NOT_APPLIED_FINAL, and the resubmission commits; o03 (root already concluded under A48 refuses OBLIGATION_NOT_OPEN) supports",
     "O04": "key/version/hash/dangling-link and cross-tenant Mission corruption refuse SOURCE_UNAVAILABLE without latest fallback",
     "O07": "real T0/T1 success receipts plus registered scoped cancellation evidence and late-send fence",
     "O08": "both new action and actual new handoff after preview are checked at Commit",

@@ -26,7 +26,13 @@ from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    package_of,
+    planner_reply,
+    review_input,
+    review_reply,
+)
 
 TARGET = "reports/weekly.md"
 PUBLISH = "action:file_publish.publish:" + TARGET
@@ -175,4 +181,101 @@ async def publishing_round(root: Path, *, key: str, unknown_outcome: bool = Fals
         yield round_
 
 
-__all__ = ("POLICY", "PUBLISH", "TARGET", "PublishingRound", "confirm_completion", "publishing_round", "run_rounds")
+@dataclass
+class RefusedFinalRound:
+    """发布结果不明、根审阅判不通过之后的局面：根职责还开着，规划器被请来修复。"""
+
+    world: ProductWorld
+    mission_id: str
+    connector: FilePublishConnector
+    answered: list[str]  # 规划器为修复请求交出的决定（按次序，脚本化回复的正文）
+
+    @property
+    def loop(self) -> Any:
+        return self.world.loop
+
+    def repairs(self) -> list[dict[str, Any]]:
+        rows = self.loop.store.connection.execute(
+            "SELECT decision_id FROM planning_decisions WHERE decision_type='REPAIR' ORDER BY created_at").fetchall()
+        found = [PlanningDecisionStore(self.loop.store).get_planning_decision(row["decision_id"]) for row in rows]
+        return [row for row in found if row is not None]
+
+
+@asynccontextmanager
+async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedFinalRound]:
+    """发布服务调用中掉线（结果不明）后，任务级终审判"周报引用了旧数据"不通过。
+
+    按原计划 Assurance §7.2，终审不等结果不明的效果；判不通过时根结论不形成，根职责还开着，
+    系统请规划器修复。脚本化规划器的回答与 :func:`publishing_round` 一样：给写文件那一步提后继
+    步骤。这一步是发布操作的生产者，所以计划改动要先经执行图收敛"先对账未决操作"。"""
+
+    published = root / "published"
+    published.mkdir(parents=True)
+    connector = FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
+    seen: dict[str, Any] = {"refused": False, "write": None, "type_ref": None}
+    answered: list[str] = []
+
+    def reviewer(request: Any) -> Any:
+        data = review_input(request)
+        if data is None:
+            return None
+        if str((data.get("package") or {}).get("purpose")) == "MISSION_FINAL" and not seen["refused"]:
+            seen["refused"] = True
+            return review_reply(data, verdict="REJECTED", grade="FAIL", reason="脚本化审阅：周报引用了旧数据。")
+        return review_reply(data)
+
+    def planner(request: Any) -> Any:
+        package = package_of(request)
+        write = seen["write"]
+        if not package.get("repair_requests") or write is None:
+            return planner_reply(request)
+
+        def visible(kind: str, identity: Any) -> dict[str, Any]:
+            return next(row for row in package["visible_refs"] if row["kind"] == kind and row["id"] == str(identity))
+
+        body = {
+            "schema_version": 1, "decision_type": "REPAIR",
+            "subject_key": next(row["subject_key"] for row in package["planning_subjects"]
+                                if row["task_id"] == str(write.task_id)),
+            "rationale": "周报引用了旧数据，用同类型的后继步骤重写。", "reason_refs": [], "assumptions": [],
+            "uncertainties": [], "alternatives": [], "replan_triggers": [],
+            "payload": {"repair_kind": "PROPOSE_SUCCESSOR", "old_task_ref": visible("task", write.task_id),
+                        "obligation_ref": visible("obligation", write.obligation_id),
+                        "goal_type_ref": seen["type_ref"], "bindings": {"goal": "按最新数据重写周报。"}},
+        }
+        reply = "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+        answered.append(reply)
+        return reply
+
+    async with product_world(root / "world", LayeredScriptedProvider(planner=planner, reviewer=reviewer),
+                             connectors={"file_publish": connector}, deployment_policy=POLICY) as world:
+        store = world.store
+        mission_id = world.create({"goal": "写一份周报 reports/weekly.md 并发布", "idempotency_key": key,
+                                   "success_criteria": ["file:" + TARGET, PUBLISH]})["mission_id"]
+        await world.drain()
+        confirm_completion(world, mission_id)
+
+        def pending() -> list[dict[str, Any]]:
+            return [item for item in world.control.approvals(mission_id) if item.get("state") == "PENDING"]
+
+        await _drain_until(world, pending)
+        [approval] = pending()
+        dispatch = world.loop._dispatch_for(mission_id)
+        write = next(binding for binding in dispatch.network(mission_id).task_bindings if str(binding.form) == "primitive")
+        seen["type_ref"] = next(spec for spec in dispatch.require_planning_world().catalog.task_types()
+                                if spec.goal_signature == write.goal_signature).task_type_ref.to_json()
+        seen["write"] = write
+
+        def dropped(*_args: Any, **_kwargs: Any) -> Any:
+            raise ConnectionError("the publishing service dropped the connection mid-call")
+
+        connector.execute = dropped  # type: ignore[method-assign]
+        world.control.decide(approval["request_id"], "approve")
+        await _drain_until(world, lambda: any(a["state"] == "UNKNOWN" for a in store.list_actions(mission_id)))
+        await _drain_until(world, lambda: any(event.type == "TaskGraphConvergenceAdvanced"
+                                              for event in store.list_events(mission_id)))
+        yield RefusedFinalRound(world, mission_id, connector, answered)
+
+
+__all__ = ("POLICY", "PUBLISH", "TARGET", "PublishingRound", "RefusedFinalRound", "confirm_completion",
+           "publishing_round", "refused_final_round", "run_rounds")
