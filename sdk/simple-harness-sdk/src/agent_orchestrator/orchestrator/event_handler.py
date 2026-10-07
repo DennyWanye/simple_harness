@@ -592,6 +592,8 @@ class Orchestrator:
         #: guard against a lost claim is ``accept_review``'s ``OUTPUT_PORT_UNCLAIMED``,
         #: which refuses rather than indexing a port nobody named.
         self._port_claims: dict[str, tuple[PortClaim, ...]] = {}
+        # 推后第 3 批 H10：结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
+        self._resource_requests: dict[str, Any] = {}
         #: mission id → the fingerprint of the stall just recorded for it, handed to
         #: ``_confirm_and_stop_stalled`` so the confirmation compares *this* stall
         #: against what one more cycle produces (P2.3c part 2d, decision 2).
@@ -7860,11 +7862,14 @@ class Orchestrator:
         if envelope.outcome is not ResultOutcome.CANDIDATE:
             # D5-5: execution evidence, not a candidate — kept as history; the Attempt
             # ends in RETRY_WAIT and the Task is tried again within its allowance
+            request = self._resource_requests.pop(envelope.id, None)
             self.commit.record_outcome_result(
                 attempt.id,
                 envelope=envelope,
                 turn_id=result.turn_id,
                 usage_refs=tuple(result.usage_refs),
+                resource_request=None if request is None
+                else self._check_resource_request(mission, task, request),
             )
             self._settle_intent(intent, "SETTLED")
             # Same order as every other outcome: close the intent, then settle (an
@@ -8099,6 +8104,9 @@ class Orchestrator:
         # the files this Attempt actually wrote — so a bad claim is a bounded repair
         # on the same Attempt rather than a wrong artifact bound downstream.
         claims = self._port_claims_from(raw, attempt)
+        from . import resource_requests
+
+        resource_request = resource_requests.pop_request(raw)  # H10: shape errors are ContractError
         if isinstance(raw.get("artifacts"), list):
             from ..runtime.action_schema import with_candidate_targets
 
@@ -8127,6 +8135,12 @@ class Orchestrator:
             logger.info("orchestrator.envelope_prose", extra={"attempt_id": attempt.id})
         if claims:
             self._port_claims[result_id] = claims
+        if resource_request is not None:
+            if envelope.outcome is ResultOutcome.CANDIDATE:
+                raise ContractError(
+                    "resource_request goes with a blocked / failure / no_progress result, not a candidate"
+                )
+            self._resource_requests[result_id] = resource_request
         return envelope, client_result_id
 
     def _port_claims_from(self, raw: dict[str, Any], attempt: Attempt) -> tuple[PortClaim, ...]:
@@ -9288,6 +9302,51 @@ class Orchestrator:
                 reservable = room if reservable is None else min(reservable, room)
                 spent_room = left if spent_room is None else min(spent_room, left)
         return reservable, spent_room
+
+    def _base_tool_cap(self, task: Task) -> int:
+        """一次尝试的基础工具上限：部署的单回合上限，Task 预算有这一维时取小。"""
+
+        cap = self._config.max_tool_calls_per_turn
+        if task.budget.max_tool_calls is not None:
+            cap = min(cap, task.budget.max_tool_calls)
+        return int(cap)
+
+    def _check_resource_request(self, mission: Mission, task: Task, request: Any) -> dict[str, Any]:
+        """推后第 3 批 H10：只核数——上限（一次最多再要一份基础额度）与账户链上还没花掉的工具次数。"""
+
+        from .resource_requests import quota_check
+
+        room = self._tool_call_room(mission, task)[1] if self._tool_calls_limited(mission, task) else None
+        return {"request": request.to_json(),
+                "check": quota_check(request, base_cap=self._base_tool_cap(task), room=room)}
+
+    def _resource_grant(self, mission: Mission, task: Task) -> dict[str, Any] | None:
+        """推后第 3 批 H10：规划器的原样重试许可指向的那次失败尝试带着核过的申请 → 再核一次额度后发放。
+
+        额度这时已不够就不发放（记 ``ResourceGrantLapsed``），这次尝试按基础额度开工。"""
+
+        from . import resource_requests
+        from .planning_retry import pending_retry_permit, retry_decision_required
+
+        if not retry_decision_required(self.store, mission.id, task.id):
+            return None
+        permit = pending_retry_permit(self.store, mission.id, task.id)
+        if permit is None:
+            return None
+        failed = str(permit["failed_attempt_id"])
+        event = resource_requests.request_for_attempt(self.store.iter_events(mission.id), failed)
+        if event is None or event.payload["check"].get("fits") is not True:
+            return None
+        base = self._base_tool_cap(task)
+        amount = int(event.payload["request"]["amount"])
+        room = self._tool_call_room(mission, task)[0] if self._tool_calls_limited(mission, task) else None
+        if amount > base or (room is not None and base + amount > room):
+            self.commit.record_resource_grant_lapsed(
+                mission.id, task_id=task.id, failed_attempt_id=failed,
+                detail={"amount": amount, "base_cap": base, "reservable": room})
+            return None
+        return {"failed_attempt_id": failed, "dimension": "tool_calls", "amount": amount, "base_cap": base,
+                "decision_id": permit.get("decision_id")}
 
     def _search_call_room(self, mission: Mission, task: Task) -> int | None:
         """推后第 3 批 H08：Task → Mission → Global 链上检索次数还能预留多少（不小于 0）；
@@ -10798,6 +10857,10 @@ class Orchestrator:
                 tool_cap = min(tool_cap, reservable)
         # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
         search_cap = self._search_call_room(mission, task)
+        # 推后第 3 批 H10：规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
+        resource_grant = self._resource_grant(mission, task)
+        if resource_grant is not None:
+            tool_cap = int(resource_grant["base_cap"]) + int(resource_grant["amount"])
         config = AgentConfig(
             name=f"{role.name}-{placeholder.ordinal}",
             instructions=role.instructions,
@@ -10878,6 +10941,7 @@ class Orchestrator:
                     **self._service_config(decision),
                     "max_tool_calls": tool_cap,
                     **({} if search_cap is None else {"max_search_calls": search_cap}),
+                    **({} if resource_grant is None else {"resource_grant": resource_grant}),
                     "context_version": package.context_version,
                     "prompt_version": role.prompt_version,
                     "policy_version_id": self.policy_version_of(mission.id),

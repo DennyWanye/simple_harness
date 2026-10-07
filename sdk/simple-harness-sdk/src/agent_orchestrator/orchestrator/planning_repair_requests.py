@@ -595,11 +595,15 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
             # The authoritative failure row below produces the runtime request.
             continue
         refs = tuple(dict.fromkeys(str(x) for x in (event.attempt_id, event.task_id) if x)) or (mission.id,)
+        from .resource_requests import planner_detail
+
         produced |= record_request(dispatch, mission.id, event_type=sources[event.type],
             trigger_refs=refs, source_key=source_key,
             detail={"source_event": event.idempotency_key, "event_type": event.type,
                     "detail": dict(event.payload), **failure_class(event.attempt_id),
-                    **({"occurrence": step_failure_facts(events, event)} if event.task_id else {})})
+                    **({"occurrence": step_failure_facts(events, event)} if event.task_id else {}),
+                    # 推后第 3 批 H10：这次尝试的资源申请与核的结果——批不批由规划器判
+                    **(planner_detail(events, event.attempt_id) if event.type == "OutcomeRecorded" else {})})
     htn = dispatch.semantics()
     for state in ("PENDING", "RECHECKING"):
         for dirty in htn.list_dirty(mission.id, state=state):

@@ -184,6 +184,16 @@ class TaskGraphExecutionImports:
         tool_limit = limits["max_tool_calls_per_turn"]
         if task.budget.max_tool_calls is not None:
             tool_limit = min(tool_limit, task.budget.max_tool_calls)
+        grant = intent_config.get("resource_grant")
+        if grant is not None:
+            # 推后第 3 批 H10：冻结的资源发放只在库里有对应的、核过的申请时放宽工具上限
+            from .resource_requests import GrantUnverified, verified_grant_amount
+
+            try:
+                tool_limit += verified_grant_amount(store.iter_events(task.mission_id), task_id=task.id,
+                                                    grant=grant, base_cap=tool_limit)
+            except GrantUnverified as error:
+                raise StoreConflict("TASKGRAPH_EXECUTION_RESOURCE_GRANT_UNVERIFIED") from error
         deadline = limits["turn_deadline_seconds"]
         if task.budget.max_runtime_seconds is not None:
             deadline = min(deadline, task.budget.max_runtime_seconds)

@@ -387,6 +387,17 @@ class CommitService(ProtectedTailCommitsMixin,
                     )
             return state, transitions
 
+    def record_resource_grant_lapsed(
+        self, mission_id: str, *, task_id: str, failed_attempt_id: str, detail: Mapping[str, Any]
+    ) -> Event:
+        """推后第 3 批 H10：批准了但发放时额度已不够——如实记一条，这次尝试按基础额度开工。"""
+
+        from .resource_requests import LAPSED
+
+        with self._store.transaction():
+            return self._emit(LAPSED, mission_id, key=failed_attempt_id, task_id=task_id,
+                              payload={"failed_attempt_id": failed_attempt_id, **dict(detail)})
+
     def record_backlog_response(
         self, response: BacklogResponse, *, mission_ids: Sequence[str]
     ) -> bool:
@@ -1988,6 +1999,18 @@ class CommitService(ProtectedTailCommitsMixin,
                         **dict(routing),
                     },
                 )
+            grant = intent_config.get("resource_grant")
+            if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
+                from .resource_requests import GRANTED
+
+                self._emit(
+                    GRANTED,
+                    task.mission_id,
+                    key=attempt_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    payload=dict(grant),
+                )
             allocation = intent_config.get("allocation")
             if allocation:  # step 5 (S5-09): the §29.3 decision is on the timeline as well
                 self._emit(
@@ -2531,6 +2554,7 @@ class CommitService(ProtectedTailCommitsMixin,
         envelope: ResultEnvelope,
         turn_id: str,
         usage_refs: Sequence[str],
+        resource_request: Mapping[str, Any] | None = None,
     ) -> StoredResult:
         """A non-candidate Result Envelope (§13 blocked / failure / no_progress /
         proposed_subtasks; D5-5): kept as history (never verified), the Attempt ends in
@@ -2627,6 +2651,20 @@ class CommitService(ProtectedTailCommitsMixin,
                 attempt_id=attempt_id,
                 payload={"outcome": str(envelope.outcome), "summary": envelope.summary[:400]},
             )
+            if resource_request is not None:
+                # 推后第 3 批 H10：申请与核的结果，和这次结果同一个事务
+                from .resource_requests import REQUESTED
+
+                self._emit(
+                    REQUESTED,
+                    attempt.mission_id,
+                    key=envelope.id,
+                    task_id=attempt.task_id,
+                    attempt_id=attempt_id,
+                    payload={**dict(resource_request), "result_id": envelope.id},
+                    actor_type="agent",
+                    actor_id=attempt.agent_id or attempt_id,
+                )
             return stored
 
     def record_artifact_merge_not_applicable(
