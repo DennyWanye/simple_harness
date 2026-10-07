@@ -514,12 +514,23 @@ class AssuranceApi:
                 reviews[str(side["review_key"])] = ("OFFICIAL_" + str(record.verdict), record)
                 if str(record.purpose) == "MISSION_FINAL":
                     root_manifest = self._manifest(mission_id, record.evidence_manifest_hash)
-        # Criteria of the activated requirements revision (immutable by content hash).
-        requirements = None
-        wanted = dict(activation.payload).get("requirements_hash")
-        for revision in htn.list_requirements_revisions(mission_id):
-            if revision.content_hash() == wanted:
-                requirements = revision
+        # Criteria of the requirements revision in force at ``at_seq`` (C.6，推后第 3 批 A22): the
+        # last amendment at or before it pins revision + content hash; none means the activated one.
+        from ..orchestrator.requirements_amendment import EVENT as REQUIREMENTS_AMENDED
+
+        amended = [e for e in events if e.type == REQUIREMENTS_AMENDED]
+        if amended:
+            pinned = dict(amended[-1].payload)
+            number, wanted = pinned.get("requirements_revision"), pinned.get("requirements_content_hash")
+        else:
+            number, wanted = None, dict(activation.payload).get("requirements_hash")
+        requirements = next(
+            (revision for revision in htn.list_requirements_revisions(mission_id)
+             if revision.content_hash() == wanted and (number is None or int(revision.revision) == number)),
+            None,
+        )
+        if requirements is None:
+            _fail("SOURCE_UNAVAILABLE", "HISTORY_UNAVAILABLE: the requirements in force at this seq do not read back")
         graded = {} if root_manifest is None else {r["criterion_id"]: r for r in root_manifest["criteria"]}
         root_use, root_reasons = ("NOT_APPLICABLE", ["ROOT_REVIEW_NOT_OFFICIAL_AT_SEQ"])
         if root_manifest is not None:
@@ -527,15 +538,14 @@ class AssuranceApi:
                 self._certificates_for_consumer(mission_id, "ROOT_RESOLUTION", None),
                 now_ms=now_ms, epochs=epochs, root=root,
             )
-        if requirements is not None:
-            for criterion in requirements.criteria:
-                detail = graded.get(criterion.criterion_id)
-                items.append(self._item(
-                    "CRITERION", criterion.criterion_id,
-                    "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
-                    root_use, list(root_reasons),
-                    0 if detail is None else len(detail.get("evidence_refs", ())),
-                ))
+        for criterion in requirements.criteria:
+            detail = graded.get(criterion.criterion_id)
+            items.append(self._item(
+                "CRITERION", criterion.criterion_id,
+                "UNREVIEWED" if detail is None else str(detail["effective_grade"]),
+                root_use, list(root_reasons),
+                0 if detail is None else len(detail.get("evidence_refs", ())),
+            ))
         for review_key, (state, record) in reviews.items():
             if record is None:
                 use, reasons, count = "NOT_APPLICABLE", ["NO_OFFICIAL_RECORD_AT_SEQ"], 0

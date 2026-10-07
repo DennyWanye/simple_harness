@@ -1,13 +1,13 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "8d8e35b029c9ecde197fa217c691dbd8b810d9f3bae484bac02c051c5a297ce9",
+  "deployment_id": "7aca3c2fe7e93669282e094dd7920cce81df34e9c441c61fbc5823c06e31428c",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
     "agent_orchestrator/__main__.py": "e66d97f3c3d4b7a15d37de1a9ce8738729a6efbb57c9c13f6d9c2745f87697b9",
     "agent_orchestrator/api/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/api/approvals.py": "456359314d2ac0d2dd07000708cd2271d8b6f547346ac2c383f3ec1a19319798",
-    "agent_orchestrator/api/assurance.py": "ee0836de76657e6d6d5f2026f28a677f1e33d9e32b10b23c78a08afb80727f3f",
+    "agent_orchestrator/api/assurance.py": "3e6ce3e706afd52de1f6f954da1ac412da933aedac65783454afe56a6ca8035d",
     "agent_orchestrator/api/facade.py": "1ca1d9da3b6102e845d2d98820606b5b32e199e98fb336b450ac55ad91ea4105",
     "agent_orchestrator/api/missions.py": "94662495614097ca445acf64f45b2c4df6b538f9ed2ebe93298a36504ffa1b39",
     "agent_orchestrator/api/operation_completion.py": "a83f3902d2bf99a52b2526139370eaac192873457be936cc6432b9c6a462cf37",
