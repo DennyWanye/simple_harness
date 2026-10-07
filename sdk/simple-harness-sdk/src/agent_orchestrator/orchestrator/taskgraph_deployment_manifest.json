@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-07T05:44:38+00:00",
-    "gate_sha256": "051579ae40c2885be7949ca542fd1a7524b7365091a6e35ce19e3a1fbc6d7348",
-    "gate_status": "PASS",
-    "source_files_sha256": "642a4595e1c82c469b3f9ba7b9fca2e1c2489fa097a3f1c2c35887cc6b8f108d"
-  },
-  "deployment_id": "ee88a6c2f59e165c491dfd5df7549c067bd6852af9624d1dc9f7e21bce8302a4",
+  "acceptance_evidence": null,
+  "deployment_id": "062265f8b2a7e04afa61cae1d2900b344ea7a6bba888923ad55bbb3342b4a489",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -188,19 +183,20 @@
     "agent_orchestrator/orchestrator/assurance_check_use.py": "4dc140c20ca8d2eec58a30a226b32ab31f44045acb407ca774bd4447c6a8ba8a",
     "agent_orchestrator/orchestrator/assurance_clock.py": "a25a864f068dd18f184ea936e2ff394c6f383b45a200f6cc11feddaec58d774a",
     "agent_orchestrator/orchestrator/assurance_consumers.py": "c04554ddcd38371a7685c0d8d9789354a538c9b21368ca0f6a0d095581bcbc43",
-    "agent_orchestrator/orchestrator/assurance_content_review.py": "1c9446ecdeb49376935097b66d21fb0e7ffc5dc82d5d5a699e93d7e03bfb71ec",
+    "agent_orchestrator/orchestrator/assurance_content_review.py": "313c2c2a655094b74901e1170289e2ac34ecc63406e871830509388108926068",
     "agent_orchestrator/orchestrator/assurance_factory.py": "d28da719d6a5f74e18650a1618801d79208dad91e6cde9144cd0d0b68ca4e916",
     "agent_orchestrator/orchestrator/assurance_final_writer.py": "8e05d8d1ae725103337e9684d618b2892b8cff838f1a0217a2504cc70caa9539",
     "agent_orchestrator/orchestrator/assurance_local_checks.py": "646be5540d3edb4c0486ab36822cb3b407f38cda0c4e6af8343386822117ee5d",
     "agent_orchestrator/orchestrator/assurance_point_use.py": "08597d794e7171162386f7bdda051819b4ee015c356f5f25e8b7263b30adffe8",
-    "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "71fc2781b90d1b4583432ea4e5e1b0402d990e719a0d231a51c0f5e3b5d89942",
+    "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "ed11f6c26bb1f61814eec4d45c0b7b20ea1169289142edb31b2852b3cdae0eee",
     "agent_orchestrator/orchestrator/assurance_recheck.py": "50b178b768617ba3fa6a8cb18d6561f7883568f7ef52a923b418ea6efbb70b30",
     "agent_orchestrator/orchestrator/assurance_review_collect.py": "bf4880d1201b44547bf2d5e4a377ee0ef81cc4e302f48978423c0d429f1ffad1",
     "agent_orchestrator/orchestrator/assurance_review_consumer.py": "4d50921f80ef7364d8fe9d72f27699b4d62c5c07c45d4c1c73a518218e2f7d82",
-    "agent_orchestrator/orchestrator/assurance_review_handoff.py": "b6f35e2a35e3cb4b03d505473f84d0db20994e44386758ffe163b263ee0f96c8",
+    "agent_orchestrator/orchestrator/assurance_review_handoff.py": "87dfb996968be81ed4d01fcaa5fd9de7de1389a17d266de9c20c4332d1881943",
     "agent_orchestrator/orchestrator/assurance_review_import.py": "1f094338a3f6a04b3726fabcd710b0032cbbcd413cfe808cc4e00bf22c0e5cd3",
     "agent_orchestrator/orchestrator/assurance_review_pins.py": "4498cfdca5bfa38f71701f2a3f067ae5326429381ff038c9eeec7aa08d263bf1",
-    "agent_orchestrator/orchestrator/assurance_review_runtime.py": "99f07c1fe520aa4a2eefcc8f5790ddad8b8c685c901136274235082421792489",
+    "agent_orchestrator/orchestrator/assurance_review_policies.py": "b17cac10e4909959af080274ed19f2528e003143d0b7645ca13294c8663c581e",
+    "agent_orchestrator/orchestrator/assurance_review_runtime.py": "66186b2511f6056a1308555447e1515683d1f87413080245f04a997bab06b791",
     "agent_orchestrator/orchestrator/assurance_review_transport.py": "d8287e52105c39a6fdf8a3aac91260e6b7b29fa34f8891249743eeac8817c925",
     "agent_orchestrator/orchestrator/assurance_review_wait.py": "59682ddfb2f12a5de79000f7aa4220d842cbfa7a384798724ae36d7ce06b73b3",
     "agent_orchestrator/orchestrator/assurance_root_commits.py": "74b9072fa307d2479cec95f170f582e9169822b08616c98279e889085da127cf",
@@ -714,7 +710,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

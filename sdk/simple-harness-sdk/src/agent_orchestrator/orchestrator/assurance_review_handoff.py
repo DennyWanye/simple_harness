@@ -11,12 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from ..assurance.certificates import UseIdentity
-from ..assurance.codec import AssuranceError, canonical, fingerprint
+from ..assurance.codec import AssuranceError, canonical
 from ..assurance.refs import AssuranceRef, Pin
-from ..assurance.review_input import REVIEW_INSTRUCTIONS, read_initial_materials
-from ..assurance.reviews import REVIEW_CODEC_VERSION
+from ..assurance.review_input import read_initial_materials
 from ..contracts import TERMINAL_ATTEMPT
-from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 from ..storage.assurance_pins import require_live_pin_locked
 from ..storage.assurance_reads import (
     AssuranceReader,
@@ -26,6 +24,7 @@ from ..storage.assurance_reads import (
 )
 from ..storage.htn_store import HtnStore
 from .assurance_review_import import review_scope_id, review_subject_stopped
+from .assurance_review_policies import require_registered_policies_locked
 from .assurance_review_transport import _validate_package
 
 
@@ -63,20 +62,11 @@ class AssuranceReviewHandoff:
         reader = AssuranceReader(store, tenant_id=mission.tenant_id, mission_id=mission.id)
         package = HtnStore(store).get_review_package(body["package_ref"]["id"])
         _validate_package(reader, package, body)
-        expected_policy = Pin(
-            REVIEW_CODEC_VERSION,
-            1,
-            fingerprint({"instructions": REVIEW_INSTRUCTIONS, "codec": REVIEW_CODEC_VERSION}),
+        # 两个政策钉住只读登记正文，再与当前部署比（推后第 2 批 A18）
+        require_registered_policies_locked(
+            orch, tenant_id=mission.tenant_id, binding=body, profile_id=orch.profile_of(intent),
+            agent_config=intent.config["agent_config"],
         )
-        if (
-            body["reviewer_policy_ref"] != expected_policy.to_json()
-            or body["context_policy_ref"]
-            != self.runtime.context_pin(orch.profile_of(intent)).to_json()
-            or intent.config["agent_config"].get("instructions") != REVIEW_INSTRUCTIONS
-            or set(intent.config["agent_config"].get("tool_names", ()))
-            - set(ASSURANCE_REVIEWER_TOOLS)
-        ):
-            raise AssuranceError("REVIEW_DEPLOYMENT_IDENTITY_MISMATCH")
         if body["subject"]["purpose"] == "TASK_CONTENT":
             result = store.get_result(body["subject"]["target"]["pin"]["id"])
             attempt = None if result is None else store.get_attempt(result.envelope.attempt_id)

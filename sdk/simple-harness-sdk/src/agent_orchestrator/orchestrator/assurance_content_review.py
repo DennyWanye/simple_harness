@@ -12,7 +12,7 @@ from ..assurance.codec import AssuranceError, decode, fingerprint
 from ..assurance.evidence import build_catalogue
 from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.review_input import REVIEW_INSTRUCTIONS, render_review_input
-from ..assurance.reviews import REVIEW_CODEC_VERSION, AssuranceReviewBinding
+from ..assurance.reviews import AssuranceReviewBinding
 from ..contracts.resolution import RequirementClass
 from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import (
@@ -42,7 +42,7 @@ def ensure_task_content_review(
     authority: CurrentAuthority,
     cas: Any,
     config: Mapping[str, Any],
-    context_policy_ref: Pin,
+    policy_refs: tuple[Pin, Pin],
     reservation: Any,
     maximum_blob_bytes: int = 32 * 1024 * 1024,
 ):
@@ -237,14 +237,9 @@ def ensure_task_content_review(
                 "check_requirements": policies,
                 "evidence_catalogue": [item.to_json() for item in catalogue],
                 "producer_agent_ids": list(package.producer_agent_ids),
-                "reviewer_policy_ref": Pin(
-                    REVIEW_CODEC_VERSION,
-                    1,
-                    fingerprint(
-                        {"instructions": REVIEW_INSTRUCTIONS, "codec": REVIEW_CODEC_VERSION}
-                    ),
-                ).to_json(),
-                "context_policy_ref": context_policy_ref.to_json(),
+                # 两种政策由审阅运行时先登记，这里只钉登记回执（推后第 2 批 A18）
+                "reviewer_policy_ref": policy_refs[0].to_json(),
+                "context_policy_ref": policy_refs[1].to_json(),
                 "criterion_policy_ref": policy_ref.to_json(),
                 "read_set": [item.to_json() for item in _merge_reads(reads)],
                 "catalogue_hash": fingerprint([item.to_json() for item in catalogue]),

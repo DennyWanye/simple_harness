@@ -13,8 +13,6 @@ from collections.abc import Mapping
 from typing import Callable, Any
 
 from simple_harness.agents import AgentConfig, AgentLimits
-from simple_harness.agents.context.budget import policy_hash
-from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
 
 from ..assurance.codec import AssuranceError, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
@@ -29,6 +27,7 @@ from .assurance_content_review import ensure_task_content_review
 from .assurance_review_collect import collect_assurance_review
 from .assurance_review_consumer import AssuranceReviewConsumer
 from .assurance_review_import import carried_review_alive, read_official_review_binding_locked
+from .assurance_review_policies import register_review_policies
 
 # One review turn: the initial request plus a bounded number of tool rounds.
 # The per-call cap on the gateway binding is MAX_EVIDENCE_TOOL_CALLS; the turn's
@@ -66,17 +65,6 @@ class AssuranceReviewRuntime:
         from ..verification.reviewer_evidence_tools import ReviewerEvidenceTools
 
         self.evidence_tools = ReviewerEvidenceTools(self)
-
-    def context_pin(self, profile_id: str) -> Pin:
-        ports = self.orchestrator.assembled.pool(profile_id).bridge.runtime.ports
-        tokenizer = ports.tokenizer or UpperBoundTokenizer()
-        return Pin(
-            "base-agent-context:" + profile_id,
-            1,
-            policy_hash(
-                ports.context_policy, tokenizer_fingerprint=tokenizer.fingerprint, model=ports.model
-            ),
-        )
 
     def install(self) -> AssuranceReviewConsumer:
         """Bind original runner/handoff; caller still installs all four consumers.
@@ -279,7 +267,7 @@ class AssuranceReviewRuntime:
             authority=self.consumer.authority,
             cas=self.consumer.cas,
             config=config,
-            context_policy_ref=self.context_pin(decision.profile_id),
+            policy_refs=register_review_policies(self.orchestrator, mission.id, decision.profile_id),
             reservation=reservation,
             request_command_id=request_command_id,
             allow_in_transaction=allow_in_transaction,
@@ -468,7 +456,7 @@ class AssuranceReviewRuntime:
                 authority=self.consumer.authority,
                 cas=self.consumer.cas,
                 config=config,
-                context_policy_ref=self.context_pin(decision.profile_id),
+                policy_refs=register_review_policies(orch, mission.id, decision.profile_id),
                 reservation=reservation,
             )
         review_key = invocation.to_json()["review_key"]
