@@ -193,11 +193,11 @@
 | 161 | L250 | 一致读→事务外计算→短写事务比 epoch | 按计划在用 | VAL:686-740 → RD:71-84 | — |
 | 162 | L252 | 证书 ≤256KiB、读集 ≤20000、带根实例号 | 按计划在用 | `codec.py:15`；`evidence.py:103`；VAL:836 | — |
 | 163 | L256 | 半开区间，最早界 | 按计划在用 | `SDK/assurance/certificates.py:220-223` | — |
-| 164 | L256 | MAINTAIN 要持续监测，没有就挡 | 未做 | 生产无 MAINTAIN 证书；`knowledge/justifications.py:677-682` 返回 NO_CONTINUOUS_GUARANTEE | 实施自述 WIP:930；当前无用途 |
+| 164 | L256 | MAINTAIN 要持续监测，没有就挡 | 按计划在用（2026-10-07 A26） | 签发方唯一入口 `orchestrator/assurance_point_use.py` 缺持续监测即以 `MAINTAIN_MONITOR_UNAVAILABLE` 挡；`justifications.py` 里到不了的分支已删 | 无使用者归 A（#9） |
 | 165 | L258 | 唯一计时者：发证同事务登记最早到期唤醒，启动重建 | 做法不同 | `SDK/assurance/expiry.py` `emit_due` 每轮扫证书表（TICK:160-166），启动 `reconcile_startup` 扫 | 实施自述 WIP:34 → B′ |
 | 166 | L258 | 证书每次使用核 now | 按计划在用 | `certificates.py:220-223` | — |
 | 167 | L260 | 时钟高水位/回拨/代次/STABLE 恢复 | 做法不同 | `SDK/assurance/clock.py:29-35`；`assurance_clock.py:19-90`；高水位每 10 秒落库一次 | "联测裁决 2026-10-05"（`ARCHITECTURE/AGENT_ORCHESTRATION.md:4`，子代理裁决）→ B 级 |
-| 168 | L260 | 时钟不可信时拒时间敏感用途，raw/费用照常 | 按计划在用 | TICK:217-221；`facade.py:877` | — |
+| 168 | L260 | 时钟不可信时拒时间敏感用途，raw/费用照常 | 按计划在用；PLAN/CONTEXT/RECOVERY 也拒（B 级 #43） | TICK:217-221；`facade.py:877`；时点签发共用最终核对 | `推后第1批-P1b-偏差裁决.md` 第 4 件 |
 | 169 | L260 | lease 过期只回收协调权 | 按计划在用 | WORK:213-235 | 改坏 AS-M15 被抓 |
 | 170 | L262 | 3 次立即→500/1000/2000ms；32 次/300s→MANUAL_REQUIRED | 按计划在用 | WORK:351-401、:249 | — |
 | 171 | L262 | 新事件唤醒同一 work，累计上限保持 | 按计划在用 | WORK:141-155 | — |
@@ -446,7 +446,7 @@ F 小结：按计划在用 2（F10、F11）；部分 10（F01、F02、F03、F04�
 |---|---|---|---|
 | BW01 BW03 BW04 BW05 BW06 BW07 BW08 BW09 BW11 BW12 BW13 BW15 BW16 | 按计划在用 | CS:804→`assurance_factory.py:152-169`；CS:637→TR:202；TR:380,393-417,797；EH:8065-8085→LC:588→`assurance_check_import.py:179`；EH:5425、COL:83-143；EH:5520→COL:114→CON:296→IMP:622→`leaf_acceptance.py:519`；VAL:446-447,516,768；触发器；EH:10550→CS:3149→ACON→FW:125；TICK:156,200；TICK:84-105、`assurance_assembly.py:222-274`；Host 三 verb→`api/assurance.py`→`MissionsView.tsx`；`assurance_factory.py:165-169` + ASSUR/index/STATUS 10-05 | BW08 的恢复闸、BW15 的隔离 wheel 不在（A#4、#226） |
 | BW02 | 做法不同 | `duties.py:221,319`→`facade.py:131`→CS:632 | #78（B′） |
-| BW10 | 部分 | 接受/根/组合/披露核证书；输入用原见证合同（`artifacts/input_bindings.py:666-701`），上下文 `acceptance_is_current`（`context/knowledge_tools.py:62-92`）；PLAN/START/CONTEXT/RECOVERY/MAINTAIN 五种用途有定义（`certificates.py:14`）从不签发 | 交接/上下文复用见证合同有子代理裁决（D/HTN补齐-开工前裁决-2026-10-02.md:28）；五用途不签发无记录 |
+| BW10 | 按计划在用（2026-10-07 A26） | 接受/根/组合/披露核证书；PLAN（开规划请求、回复准入复核）、CONTEXT（装上下文与运行中 `knowledge_read`）、RECOVERY（重启恢复在途尝试）、START（对外操作交接）在 `assurance_point_use.py` 一个入口签发；执行尝试开工按 TaskGraph 见证合同（B 级 #41）；MAINTAIN 挡（A，#9） | `推后第1批-P1b-偏差裁决.md` |
 | BW14 | A 级排除（#4） | — | — |
 | （门本身）逐边登记 candidate HEAD+hash 并关闭 | 未做 | 无登记 | #233 |
 
@@ -665,7 +665,7 @@ F 小结：按计划在用 2（F10、F11）；部分 10（F01、F02、F03、F04�
 | C-25 | 反向依赖索引只写不读（新-12） | queries Q09 | `assurance_store.py:544` | 死写入 |
 | C-26 | 残留不可达分支与死代码（新-16、#26、#132） | 旧路径直接删（用户口径） | CS:3310-3311、ACON:409-410、`root_review.py:1072`、CS:3281-3290；FW:11 说明仍写"releases the terminal pools" | 误导后来者；opt.162 自称已删 |
 | C-27 | 事件消费表 REVIEW 侧三行 | event-consumer-map | 已处理（2026-10-07）：第 2 行补做，第 1、3 行计划改写（B 级 #39、#40） | — |
-| C-28 | 五种使用用途从不签发（BW10） | PLAN/START/CONTEXT/RECOVERY/MAINTAIN 证书 | `certificates.py:14` 定义无签发 | 与 #164 MAINTAIN 一并 |
+| C-28 | 五种使用用途签发 | PLAN/START/CONTEXT/RECOVERY/MAINTAIN 证书 | 已处理（2026-10-07）：四种时点用途已签发，MAINTAIN 按 §8.4 挡；时点证书不进观察（B 级 #42） | — |
 | C-29 | 计划写错的文件位置（S20、S22） | — | `operation_completion.py:302`、`planning_operations.py:567` | 只影响按资产找代码 |
 
 ### 2.2 验收（测试、改坏、试验）
@@ -721,7 +721,7 @@ C 级合计 **40 条**（代码 29、验收 11）。
 | B′-12 | §8.1 ACL/权限变化推 global（#151） | 无 ACL 表，`FixedPrincipalAuthority` | WIP:876 |
 | B′-13 | §8.2 四种 key 定义（#157） | ACCESS 加 ref、QUERY_SET 指纹不含纪元 | WIP:1318；ASSUR opt.110 条 |
 | B′-14 | §8.4 发证同事务登记到期唤醒（#165） | 每轮扫证书表 | WIP:34 |
-| B′-15 | §8.4 MAINTAIN 持续监测（#164） | 未做（无用途） | WIP:930 |
+| B′-15 | §8.4 MAINTAIN 持续监测（#164） | 归 A（命中 #9：无使用者，签发方挡住） | `推后第1批-P1b-偏差裁决.md` 第 1 件 |
 | B′-16 | §6.1 kind='plan'（#104）；提取 `_create_service_intent_locked`（#108） | TASK_CONTENT 用 critic；未提取 | WIP:337、WIP:286-287 |
 | B′-17 | §12 pin 唯一键 `UNIQUE(mission,review_key,blob_hash)`（新-3） | 迁移 27 改按对象、仅非 RELEASED | `assurance_pin_object_schema.py` 模块注释 |
 | B′-18 | §12.1 记录 ≤256KiB（新-6） | 清单/快照读 8MiB | ASSUR 09-26 第 1 项 |

@@ -3,11 +3,11 @@
   "files": [
     {
       "path": "plans/Assurance/specs/1.1/ASSURANCE-EXEC-1.1.zh-CN.md",
-      "sha256": "5af3ae76a4c07b7926ad720a2dc48c52e41e76bc91e3a80e5559799de8d8f08e"
+      "sha256": "e33186676507be7cb46f8c5bd49a89ced27df1bc0b861de929c1b06c7f49b56a"
     },
     {
       "path": "plans/Assurance/specs/1.1/DELIVERY-MANIFEST.json",
-      "sha256": "4e36c62e255c9b3c75bfc2a8f8356f6c214f1845640c56aa5cb3e100acdc8777"
+      "sha256": "90e25a557115d8ce2c32a84f054867bdfe52e2c2f7bfe8b4545cb77a89a3e965"
     },
     {
       "path": "plans/Assurance/specs/1.1/README.md",
@@ -143,7 +143,7 @@
     },
     {
       "path": "plans/Assurance/specs/1.1/implementation/event-consumer-map.json",
-      "sha256": "7447ef73326c9ae221e4a40e7ce0cca25bb63ebc33cca67f26c1b6293e1eaf85"
+      "sha256": "0f764aeab4b460fd427967d5cdecb7386bcbcd074dd173271a9099b482bb7b53"
     },
     {
       "path": "plans/Assurance/specs/1.1/implementation/field-producers.json",
@@ -175,7 +175,7 @@
     },
     {
       "path": "plans/Assurance/specs/1.1/implementation/model-scenarios.json",
-      "sha256": "7f2647625426adadab8ec901ea8805e7b8e4ebc89d9d42d6d564ca5d1746330a"
+      "sha256": "a6b523d2d84f849400ea1ea07b63907bdac0461312f49b4743750d37da133c28"
     },
     {
       "path": "plans/Assurance/specs/1.1/implementation/mutations.json",
@@ -214,11 +214,11 @@
       "sha256": "fe0ac76a2bfe8b821d27927a4c0d5901626798e92c802a58b6f0685decec4aef"
     },
     {
-      "path": "plans/Assurance/specs/1.1/inputs/V1.4-D1-D2-D3-Operation\u8865\u9057-2026-09-21.md",
+      "path": "plans/Assurance/specs/1.1/inputs/V1.4-D1-D2-D3-Operation补遗-2026-09-21.md",
       "sha256": "a2657120e1c44479a268ca19e0ab0b3da1eb65d7b3db6512df7ef2e3d1520725"
     },
     {
-      "path": "plans/Assurance/specs/1.1/inputs/V1.4-Operation\u5b8c\u6210\u5408\u540c\u8865\u9057-2026-09-21.md",
+      "path": "plans/Assurance/specs/1.1/inputs/V1.4-Operation完成合同补遗-2026-09-21.md",
       "sha256": "8bf6a1c8ee40c2ada9ab88f51806e401ba8a690ea4ac1a481154f7e9ccfcb74f"
     },
     {
