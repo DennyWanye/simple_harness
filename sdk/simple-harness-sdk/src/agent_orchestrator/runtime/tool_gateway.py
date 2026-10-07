@@ -501,9 +501,8 @@ class WorkspaceToolGateway:
         # ASSURANCE-EXEC-1.1 §4: installed by the assured review runtime. The
         # reader performs the current permission/pin/exact-bytes read itself;
         # the refusal hook re-reads the live review invocation before each call.
-        self.assurance_evidence_reader: (
-            Callable[[str, str, str, Mapping[str, Any]], Mapping[str, Any]] | None
-        ) = None
+        # ``call_id``（关键字）：这次工具调用，读一条证据交出前签的 DISCLOSE 证书以它为消费方（A03）。
+        self.assurance_evidence_reader: Callable[..., Mapping[str, Any]] | None = None
         self.assurance_review_refusal: Callable[[str, WorkspaceBinding], str | None] | None = None
 
     def bind(self, run_id: str, binding: WorkspaceBinding) -> None:
@@ -852,7 +851,8 @@ class WorkspaceToolGateway:
                     raise WorkspaceError("assurance evidence tools are unavailable for this binding")
                 record["review_key"] = binding.review_key
                 value = dict(
-                    self.assurance_evidence_reader(run_id, binding.mission_id, call.name, arguments)
+                    self.assurance_evidence_reader(run_id, binding.mission_id, call.name, arguments,
+                                                   call_id=f"{run_id}:{call.call_id}")
                 )
             elif call.name in self._domain_tools:
                 if binding.mission_id is None:

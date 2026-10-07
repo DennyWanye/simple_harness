@@ -163,18 +163,6 @@ class FixedPrincipalAuthority:
             raise AssuranceError("CURRENT_READ_AUTHORITY_REQUIRED")
         return self._grant(identity.mission_id, ref, identity.purpose)
 
-    def read(
-        self, principal: Principal, tenant_id: str, mission_id: str, ref: AssuranceRef, purpose: str
-    ) -> CurrentReadPermission:
-        """``CommitService._assurance_read_authority``: the facade's actual caller."""
-        if (
-            not isinstance(principal, Principal)
-            or principal.principal_id != self.principal.principal_id
-            or tenant_id != self.tenant_id
-        ):
-            raise AssuranceError("ROOT_READ_NOT_AUTHORIZED")
-        return self._grant(mission_id, ref, purpose)
-
 
 # --------------------------------------------------------- requirements
 def mission_requirements(principal: Principal) -> Callable[[Mission, Any], RequirementsRevision]:
@@ -376,7 +364,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
     root = gate.require_execution().root_incarnation_id
     if (
         commit._assurance_factory is not None
-        or commit._assurance_read_authority is not None
         or getattr(commit, "_assurance_validity", None) is not None
         or orchestrator._assurance_tick is not None
         or orchestrator._assurance_local_checks is not None
@@ -461,7 +448,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         validity=validity,
         host_fingerprint=ports.host_fingerprint or fingerprint({"host": "unbound"}),
     )
-    commit._assurance_read_authority = authority.read
     commit._assurance_factory = factory
     orchestrator._assurance_tick = tick
     orchestrator.install_assurance_read_api(api, tenant_id=tenant_id, principal=ports.principal)

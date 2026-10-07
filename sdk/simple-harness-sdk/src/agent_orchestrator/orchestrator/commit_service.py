@@ -285,7 +285,6 @@ class CommitService(ProtectedTailCommitsMixin,
         #: the clock high-water mark this process has seen (see ``assurance_clock``)
         self._assurance_clock_seen: Any = None
         self._assurance_root_gate: Any = None
-        self._assurance_read_authority: Any = None
         self._assurance_check_importer: Any = None
         self._assurance_review_handoff: Any = None
         self._assurance_settlement: Any = None

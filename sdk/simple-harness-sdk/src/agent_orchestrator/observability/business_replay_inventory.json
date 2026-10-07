@@ -337,7 +337,8 @@
     "issued_at_ms",
     "not_after_ms"
    ],
-   "rebuild": "immutable_source"
+   "rebuild": "immutable_source",
+   "silent_ok": "时点使用证书（规划、开工交接、装上下文、恢复、披露）是使用回执：签发当场用掉，没有消费者等事件（推后第 1 批 A26、第 2 批 A03）；持有型（ACCEPT）证书另有 AssuranceUseCertified 事件"
   },
   "attempts": {
    "class": "business",

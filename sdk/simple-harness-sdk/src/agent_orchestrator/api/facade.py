@@ -911,35 +911,27 @@ class MissionControlV1:
         mine = {m.id for m in self._store.list_missions() if m.tenant_id == self._tenant}
         return [item for item in self._approvals.list(None) if item.get("mission_id") in mine]
 
-    def _authorize_artifact_read(self, artifact: Any):
-        from ..assurance.codec import AssuranceError
+    def _disclose_artifact(self, artifact: Any) -> Any:
+        """把一个产物交给本人之前过使用证书签发方（用途 DISCLOSE，推后第 2 批 A03；附录 C.1 第 496 行
+        "原生下载"）：产物精确存在、调用者就是部署的主体、授权当前、根实例、时钟可信，签一张证书留底。
+        签不出：不给正文，原因具名。"""
         from ..assurance.refs import AssuranceRef, Pin
+        from ..orchestrator.assurance_point_use import (
+            NATIVE_READ_CONSUMER,
+            EvidenceClaim,
+            certify_point_use_locked,
+        )
 
-        commit = self._orchestrator.commit
-        gate = commit._assurance_root_gate
-        if gate is None:
-            return None
-        try:
-            try:
-                gate.require_execution()
-                return None  # Native-root ownership remains the original tenant check.
-            except AssuranceError:
-                pass
-            authority = commit._assurance_read_authority
-            if authority is None:
-                raise AssuranceError("CURRENT_READ_AUTHORITY_UNAVAILABLE")
-            ref = AssuranceRef("artifact", Pin(artifact.id, artifact.version, artifact.content_hash))
-            current = authority(self._principal, self._tenant, artifact.mission_id, ref, "DISCLOSE")
-            from ..orchestrator.assurance_clock import observe_assurance_clock
-
-            now_ms = int(self._store.now * 1000)
-            if observe_assurance_clock(commit, now_ms=now_ms).state != "STABLE":
-                raise AssuranceError("TIME_DISCONTINUITY")
-            return gate.require_read(principal=self._principal, tenant_id=self._tenant,
-                mission_id=artifact.mission_id, ref=ref, purpose="DISCLOSE", current=current,
-                now_ms=now_ms)
-        except AssuranceError as error:
-            raise FacadeError(error.code, "artifact needs current read authorization") from error
+        ref = AssuranceRef("artifact", Pin(artifact.id, artifact.version, artifact.content_hash))
+        with self._store.transaction():
+            use = certify_point_use_locked(
+                self._orchestrator.commit, mission_id=artifact.mission_id, purpose="DISCLOSE",
+                consumer_kind=NATIVE_READ_CONSUMER, consumer_id=f"{self._principal.principal_id}:{artifact.id}",
+                claims=(EvidenceClaim.exact(ref),), subject=("requirements", artifact.mission_id),
+                caller=(self._principal.principal_id, self._tenant))
+        if not use.usable:
+            raise FacadeError("USE_EVIDENCE_NOT_CURRENT", "; ".join(use.refusals)[:1000])
+        return use.certificate
 
     def artifact_read(self, artifact_id: str) -> dict[str, Any]:
         identifier = str(artifact_id)
@@ -951,7 +943,7 @@ class MissionControlV1:
         mission = self._store.get_mission(artifact.mission_id)
         if mission is None or mission.tenant_id != self._tenant:
             raise FacadeError("not_found", NOT_FOUND)
-        access = self._authorize_artifact_read(artifact)
+        certificate = self._disclose_artifact(artifact)
         # review round 2 P2-2: one streaming read hashes everything and keeps the head, so
         # the returned content is exactly the bytes whose hash was checked
         digest = hashlib.sha256()
@@ -975,7 +967,7 @@ class MissionControlV1:
                 "integrity_error", "the artifact's content no longer matches its recorded hash"
             )
         current_artifact = self._store.get_artifact(identifier)
-        if current_artifact != artifact or self._authorize_artifact_read(artifact) != access:
+        if current_artifact != artifact or int(self._store.now * 1000) >= certificate.not_after_ms:
             raise FacadeError("RECHECK_REQUIRED", "artifact authorization changed while reading")
         truncated = size > MAX_ARTIFACT_BYTES
         body = bytes(head[:MAX_ARTIFACT_BYTES])

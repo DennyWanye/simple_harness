@@ -256,20 +256,39 @@ class ReviewerEvidenceTools:
 
         return reader, binding, identity, authorize
 
-    def invoke(self, run_id: str, mission_id: str, tool: str, arguments: Any) -> dict:
-        """Gateway callback: current permission → pinned exact read → labelled content."""
+    def invoke(self, run_id: str, mission_id: str, tool: str, arguments: Any, *, call_id: str) -> dict:
+        """Gateway callback: pinned exact read → DISCLOSE use certificate → labelled content."""
         try:
             reader, binding, identity, authorize = self._context(run_id, mission_id)
             if tool == "assurance_find_evidence":
                 return self._budget_notice(run_id, self._find(reader, binding, identity, dict(arguments)))
             if tool == "assurance_read_evidence":
                 return self._budget_notice(
-                    run_id, self._read(reader, binding, identity, authorize, dict(arguments)))
+                    run_id, self._read(reader, binding, identity, authorize, dict(arguments), call_id))
         except EvidenceToolRefusal:
             raise
         except AssuranceError as error:
             raise _refuse(error.code, "evidence read refused: " + error.code) from error
         raise _refuse("unknown_tool", tool)
+
+    def _disclose(self, binding: AssuranceReviewBinding, ref: AssuranceRef, call_id: str) -> None:
+        """交给审阅模型之前过使用证书签发方（用途 DISCLOSE，消费方是这次工具调用；推后第 2 批 A03）。
+        签不出：不交，原因具名；审阅员可以换一条读或直接作答。"""
+        from ..orchestrator.assurance_point_use import (
+            TOOL_CALL_CONSUMER,
+            EvidenceClaim,
+            certify_point_use_locked,
+        )
+
+        body = binding.to_json()
+        with self.store.transaction():
+            use = certify_point_use_locked(
+                self.orchestrator.commit, mission_id=body["mission_id"], purpose="DISCLOSE",
+                consumer_kind=TOOL_CALL_CONSUMER, consumer_id=text(call_id),
+                claims=(EvidenceClaim.exact(ref),), subject=("task", body["subject"]["owner_task_ref"]["id"]))
+        if not use.usable:
+            raise _refuse("USE_EVIDENCE_NOT_CURRENT",
+                          "this evidence cannot be disclosed now: " + "; ".join(use.refusals))
 
     def _budget_notice(self, run_id: str, result: dict) -> dict:
         """快用完时在结果里提醒还剩几次（2026-09-29 第六局：查满被截断、没给结论）。"""
@@ -338,7 +357,7 @@ class ReviewerEvidenceTools:
                          "(assurance_read_evidence, complete=true) before its label is cited",
         }
 
-    def _read(self, reader, binding, identity, authorize, arguments) -> dict:  # type: ignore[no-untyped-def]
+    def _read(self, reader, binding, identity, authorize, arguments, call_id) -> dict:  # type: ignore[no-untyped-def]
         from ..orchestrator.assurance_review_pins import ensure_review_blob_pins
 
         label = text(arguments.get("label", ""))
@@ -353,8 +372,6 @@ class ReviewerEvidenceTools:
         if match is None:
             raise _refuse("EVIDENCE_LABEL_UNKNOWN", "no such evidence label for this review")
         ref = match["ref"]
-        # Current permission first; the read below re-checks it at final use.
-        _permission(self.consumer.authority, identity, ref, int(self.store.now * 1000))
         if ref.kind in {"source", "artifact"}:
             pins = ensure_review_blob_pins(
                 self.orchestrator.commit,
@@ -377,6 +394,7 @@ class ReviewerEvidenceTools:
         digest = hashlib.sha256(data).hexdigest()
         if digest != ref.pin.content_hash:
             raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
+        self._disclose(binding, ref, call_id)
         try:
             content = data.decode("utf-8", errors="strict")
         except UnicodeError:

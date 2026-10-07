@@ -606,11 +606,14 @@ def read_review_invocation_locked(
     return invocation, binding
 
 
-def require_review_handoff(commit: CommitService, intent: Any) -> None:
-    """Current-use gate at the original dispatch boundaries; never imports facts."""
+def require_review_handoff(commit: CommitService, intent: Any, *, record: bool = False) -> None:
+    """Current-use gate at the original dispatch boundaries; never imports facts.
+
+    ``record=True`` 只在真正把请求发给审阅模型的那一刻（每次模型请求前的来源复核）：那一刻签下的
+    DISCLOSE 证书落库（推后第 2 批 A03）。派发、建、交三处是前置门，同一个判定，只核不落。"""
     if intent.config.get("assurance_protocol") != "assurance-exec-v1.1":
         return
-    with commit.store.read_view():
+    with (commit.store.transaction() if record else commit.store.read_view()):
         mission = commit.store.get_mission(intent.mission_id)
         if mission is None or mission.status in TERMINAL_MISSION:
             raise AssuranceError("REVIEW_MISSION_TERMINAL")
@@ -626,7 +629,7 @@ def require_review_handoff(commit: CommitService, intent: Any) -> None:
         validator = commit._assurance_review_handoff
         if validator is None:
             raise AssuranceError("REVIEW_CURRENT_USE_UNBOUND")
-        validator.require_current_locked(intent, binding)
+        validator.require_current_locked(intent, binding, record=record)
 
 
 #: The classified first-invocation outcomes that fund the one second invocation,

@@ -120,7 +120,8 @@ class MissionSourceReader:
             raise ArpError("GENERATION_STALE", "the TaskGraph authority no longer admits this intent",
                            detail={"reason": str(error)[:200]}) from error
         try:
-            require_review_handoff(commit, intent)
+            # 每次模型请求前：这一刻把审阅材料交给模型，DISCLOSE 证书落库（推后第 2 批 A03）
+            require_review_handoff(commit, intent, record=True)
         except AssuranceError as error:
             raise ArpError("AUTHORIZATION_REQUIRED", "the Assurance review authority no longer admits this intent",
                            detail={"reason": str(getattr(error, "code", error))[:200]}) from error
