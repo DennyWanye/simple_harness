@@ -231,7 +231,9 @@ def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuatio
     })
     store.tasks["t-tests"].accepted_artifacts = ("a-tests", "a-readme", "a-mod2", "a-act")
     store.get_mission = lambda mission_id: SimpleNamespace(final_report={})
-    fake = SimpleNamespace(store=store, carried_inputs=lambda mission_id, task_id: hd.carried_inputs(
+    # 阶段 D（10-03）起开工前先查写入冲突；这里两个上游有先后、没有冲突
+    fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
+                           carried_inputs=lambda mission_id, task_id: hd.carried_inputs(
         store, mission_id, task_id), semantics=lambda: hd.HtnStore(store))
     port = [UpstreamInput("t-tests", "README.md", "3" * 64, "a-readme")]
     got = hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, port)
