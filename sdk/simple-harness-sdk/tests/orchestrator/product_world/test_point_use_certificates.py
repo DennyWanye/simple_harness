@@ -452,6 +452,11 @@ def test_a_worker_reading_knowledge_mid_run_goes_through_the_same_issuer(tmp_pat
             rolled = knowledge_tools.read_knowledge_tool(store, mission_id, "knowledge_read",
                                                          {"id": current.id}, handover=handover)
             assert rolled["content"] is None and rolled["standing"] == "TIME_DISCONTINUITY"
+            # 读知识签的证书是使用回执：按事件重建这件事仍一致（推后第 2 批 Q2 裁决第 3 件）
+            from agent_orchestrator.observability.business_replay import CONSISTENT, verify_mission
+
+            replay = verify_mission(store, mission_id)
+            assert replay["status"] == CONSISTENT, replay["silent_changes"]
 
     asyncio.run(case())
 
@@ -529,5 +534,69 @@ def test_a_planning_round_that_can_never_be_certified_stops_by_name_after_the_wa
             detail = json.dumps(report, ensure_ascii=False)
             assert "planning_evidence_uncertifiable" in detail and "TIME_DISCONTINUITY" in detail, report
             assert not [e for e in world.store.iter_events(mission_id) if e.type == "MissionRoundFault"]
+
+    asyncio.run(case())
+
+
+# ------------------------------------- 读过知识后重启（opt.169 缺陷；推后第 2 批 Q2 裁决第 3 件）
+def test_a_mission_whose_worker_read_knowledge_survives_a_restart(tmp_path, monkeypatch):
+    """执行者运行中用 ``knowledge_read`` 读过一条已验证知识（签了一张没有领域事件的 CONTEXT 证书），
+    交完结果时服务断了。重开后恢复第 3 步按事件重建这件事仍一致：不进隔离集合，任务照常完成。
+
+    **改坏检验**：去掉重放清单里证书表的 ``silent_ok`` → 重建判"静默改动"、任务被隔离 → 红。"""
+    from agent_orchestrator.storage.store import InjectedCrash
+    from test_repair_staleness import _find, _tool_results
+
+    state: dict[str, Any] = {"methods": []}
+    read: list[dict[str, Any]] = []
+    planner, worker, reviewer = scenario(state)
+    holder: dict[str, Any] = {}
+
+    def reading_worker(request: Any) -> Any:
+        package = package_of(request)
+        if list(package.get("task_contract", {}).get("outputs") or []) != ["notes/b.md"]:
+            return worker(request)
+        results = _tool_results(request)
+        write = ("workspace_write_file", {"path": "notes/b.md", "content": "# 第二份\n\n- 接着第一份\n"})
+        if not results:
+            return ("knowledge_list", {})
+        if len(results) == 1:
+            verified = [item for item in _find(json.loads(results[0]), "items") or ()
+                        if item.get("layer") == "verified"]
+            return ("knowledge_read", {"id": verified[0]["id"]}) if verified and not read else write
+        if len(results) == 2 and not read:
+            read.append(json.loads(results[1])["value"])
+            # 读完这一次：这次尝试交完结果时服务断
+            holder["world"].loop.arm_fault("after_result_submitted", kind="attempt")
+            return write
+        return worker(request)
+
+    def provider() -> LayeredScriptedProvider:
+        return LayeredScriptedProvider(planner=planner, worker=reading_worker, reviewer=reviewer)
+
+    async def case():
+        root = tmp_path / "root"
+        async with product_world(root, provider(), allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+            holder["world"] = world
+            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "point-use-read-restart",
+                                       "success_criteria": ["file:notes/a.md", "file:notes/b.md"]})["mission_id"]
+            for _ in range(40):
+                try:
+                    await world.drain(timeout=10)
+                except InjectedCrash:
+                    break
+                if "after_result_submitted:attempt" in world.store.fired:
+                    break
+            assert read and read[0]["content"], read
+            assert "after_result_submitted:attempt" in world.store.fired
+            assert [row for row in _certificates(world.store, mission_id, "CONTEXT")
+                    if row["consumer_kind"] == "TOOL_CALL"]
+            assert str(world.store.get_mission(mission_id).status.value) == "ACTIVE"
+        async with product_world(root, provider(), allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+            holder["world"] = world
+            store = world.store
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert not world.loop.recovery_isolated(mission_id)
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
 
     asyncio.run(case())

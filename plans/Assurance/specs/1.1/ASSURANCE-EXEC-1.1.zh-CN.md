@@ -255,7 +255,7 @@ closeout只能INSERT NOT_READY/version1；重评转READY；最终事务重读当
 
 `[issued_at_ms,not_after_ms)`；certificate expiry=所有必需source/policy/current authority的最早界。需MAINTAIN时必须有实际持续监测/锁/fence和coverage interval，点状采样不冒充连续；缺能力阻断MAINTAIN用途，不阻断合法历史审阅。本产品不提供持续监测：做法前提只在派发前查，执行中被推翻直接交规划器（2026-10-04 用户决定）。因此 MAINTAIN 没有使用者；签发方对 MAINTAIN 一律以 `MAINTAIN_MONITOR_UNAVAILABLE` 拒绝，不写证书。（2026-10-07 补注：推后第 1 批 A26，独立裁决 2026-10-07 第 1 件，A 级引用用户决定 #9）
 
-唯一计时owner是原Orchestrator tick的VALIDITY pending worker：发证/缓存同事务 upsert该consumer最早expiry wake（仅限持有型证书：ACCEPT，以及将来的 DISCLOSE 缓存。时点用途 PLAN、START、CONTEXT、RECOVERY 的证书在消费方自己的事务里签发并当场用掉，之后是历史：不登记到期唤醒，不进有效性观察；要再用，就当场重核——规划回复准入、重启恢复。2026-10-07 补注，独立裁决第 3 件）；启动扫描所有未过期证书/dirty对象重建due，无需等新业务事件。证书即时使用总是检查now，UI即便timer延迟也不可放行。
+唯一计时owner是原Orchestrator tick的VALIDITY pending worker：发证/缓存同事务 upsert该consumer最早expiry wake（仅限持有型证书：ACCEPT。时点用途 PLAN、START、CONTEXT、DISCLOSE、RECOVERY 的证书在消费方自己的事务里签发并当场用掉，之后是历史：不登记到期唤醒，不进有效性观察；要再用，就当场重核——规划回复准入、重启恢复、每次披露。产品没有披露缓存。2026-10-07 补注，独立裁决第 3 件；DISCLOSE 一项按推后第 2 批 Q2 裁决第 2 件加入）；启动扫描所有未过期证书/dirty对象重建due，无需等新业务事件。证书即时使用总是检查now，UI即便timer延迟也不可放行。
 
 Store服务clock wrapper维护持久wall_high_ms；now<high且clock_state=STABLE→clock_state改为ROLLBACK、clock_generation增加并记录一次TimeDiscontinuity；ROLLBACK期间不重复增代次，新用证书全部重核，绝不把deadline延后。高水位只增；now重新达到高水位且当前时间检查通过时，clock_state恢复STABLE，保留递增代次。受信修时命令也不得降低旧高水位或延长已冻结期限。直到本机时钟恢复可信，时间敏感START/MAINTAIN/ACCEPT/DISCLOSE拒绝；把证据交给模型的PLAN/CONTEXT/RECOVERY同样拒绝（与共用最终核对一致；2026-10-07 补注，独立裁决第 4 件），raw/费用和不披露诊断继续。超lease只回收协调owner，不证明外部动作停止。
 
@@ -493,7 +493,7 @@ Tauri dev自管devUrl/beforeDevCommand：https://v2.tauri.app/develop/
 | `commit_assurance_work_locked` | claim row/version+target＋准备结果/原command → effects+receipt+ACK | 同一tick；已存在receipt也ACK匹配旧work |
 | `reauthorize_restored_read` | 当前认证caller＋new root/manifest＋exact refs/用途＋当前ACL证据 → 新read grant | 现有MissionControl认证入口；只读，不恢复旧execution |
 
-四种缓存/历史读者都不得绕开共同 `read_use`：Input/Context、原生下载/summary、Acceptance/GoalResolution、工具handoff。`api/assurance.py` use_check仅诊断，不返回可被调用方当执行许可使用的签名对象。
+四种缓存/历史读者都不得绕开共同 `read_use`：Input/Context、原生下载/summary、Acceptance/GoalResolution、工具handoff。`api/assurance.py` use_check仅诊断，不返回可被调用方当执行许可使用的签名对象。（2026-10-07 补注：推后第 2 批 A03，独立裁决第 1 件。本产品"原生下载"是界面读产物 `artifact_read`，交出前签 DISCLOSE 时点证书。"原生 summary"没有单独读者：摘要当事实交给模型时走 PLAN / CONTEXT / DISCLOSE 证书；任务全量视图 `mission_get` 是本人看自己任务的历史，走原生根门与租户归属（本产品的共同 `read_use`），不签证书，时钟不可信时照常可看。出现多身份读者前，须另立项给全量视图里交出的对象签 DISCLOSE。）
 
 执行尝试的派发不是使用证书的读者：它的输入与 START 前提由 TaskGraph 见证合同在派发事务里核（TaskGraph 计划 §8.1 第 2 步），交接时按同一合同复核。START 使用证书只签在对外操作交接处。（2026-10-07 补注：推后第 1 批 A26，独立裁决 2026-10-07 第 2 件）
 
