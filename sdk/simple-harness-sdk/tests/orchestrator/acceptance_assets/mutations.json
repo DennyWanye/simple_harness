@@ -1632,6 +1632,39 @@
     "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a14_check_specs_are_written_at_creation_and_only_read_on_use"
    ],
    "note": "不跑删表迁移：新库里还留着没人读的反向依赖索引"
+  },
+  {
+   "id": "A11-01",
+   "source": "推后第 3 批车道 R2（A11：完成规格引用的产生方）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_purpose_reviews.py",
+   "original": "    materials.add(\n        AssuranceRef(\"completion_spec\", Pin(str(scope_row[\"spec_id\"]), 0, str(scope_row[\"spec_hash\"])))\n    )\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/full_target/operation_completion/test_defer3_r2_action_spec_ref.py::test_the_action_proposal_review_carries_the_approved_completion_spec"
+   ],
+   "note": "申请单审查材料不放已批准的完成规格：完成规格的读者又没人用"
+  },
+  {
+   "id": "A22-01",
+   "source": "推后第 3 批车道 R2（A22：历史切面按当时的要求版本）",
+   "file": "src/agent_orchestrator/api/assurance.py",
+   "original": "        amended = [e for e in events if e.type == REQUIREMENTS_AMENDED]\n",
+   "replacement": "        amended = []\n",
+   "tests": [
+    "tests/orchestrator/product_world/test_defer3_r2_history_requirements.py::test_a_history_slice_shows_the_criteria_of_the_requirements_in_force_at_that_seq"
+   ],
+   "note": "历史切面退回只认激活时那一版要求"
+  },
+  {
+   "id": "K07-01",
+   "source": "推后第 3 批车道 R2（K07：知识血缘记被谁改过）",
+   "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+   "original": "                self._store.upsert_knowledge(modified(\n                    replace(record, disputed_by=(*record.disputed_by, claim.id)),\n                    change=\"DISPUTED\", by=claim.id, task_id=claim.source_task,\n                    attempt_id=claim.source_attempt, proposed_by=claim.proposed_by, at=self._store.now))\n",
+   "replacement": "                self._store.upsert_knowledge(\n                    replace(record, disputed_by=(*record.disputed_by, claim.id)))\n",
+   "tests": [
+    "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_the_knowledge_records_who_modified_it"
+   ],
+   "note": "反驳已核实知识时不记是谁改的"
   }
  ]
 }

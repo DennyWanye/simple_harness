@@ -367,6 +367,7 @@ def test_the_knowledge_records_who_modified_it(world):
 
     against_knowledge = _continue_claims(world)[0]
     (record,) = world["knowledge"]
+    assert len(record.modified_by) == 1, record.modified_by
     (entry,) = record.modified_by
     assert {key: value for key, value in entry.items() if key != "at"} == {
         "change": "DISPUTED", "by": against_knowledge.id, "task_id": against_knowledge.source_task,
