@@ -3,6 +3,7 @@
 
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { withClientTurnIdentity } from "./clientTurnIdentity";
+import { guardIncoming } from "./orchestrationContracts";
 
 export type ConnectionState = "disconnected" | "connecting" | "connected";
 
@@ -100,7 +101,8 @@ export class ControlChannel {
 
     this.ws.onmessage = (event) => {
       try {
-        const msg: IncomingMessage = JSON.parse(event.data);
+        // 推后第 2 批 U02：编排回复先按公开合同核，不合合同的换成协议错再分发（唯一入口）
+        const msg: IncomingMessage = guardIncoming(JSON.parse(event.data) as IncomingMessage);
         // PRD §6.3: intercept server_hello to populate the v2 feature set.
         // This is layered ON TOP of normal listener fan-out so debug UIs that
         // listen for server_hello (S2 diagnostics) still see the message.

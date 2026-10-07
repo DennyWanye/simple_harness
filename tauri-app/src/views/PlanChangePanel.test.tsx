@@ -79,4 +79,15 @@ describe("改计划进度面板", () => {
     expect(screen.getByText(/已过期/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新发送" })).toBeTruthy();
   });
+
+  it("收到不合合同的回复（协议错）时保留上次画面，用一句大白话标已过期", () => {
+    const fake = mount();
+    fake.reply("taskgraph.convergence", STUCK);
+    fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
+    const request = [...fake.sent].reverse().find((m) => m.type === "taskgraph.convergence")!;
+    fake.push({ type: "taskgraph.convergence_response", payload: { request_id: request.request_id, ok: false,
+      error_code: "protocol_error", error: "收到的数据格式不对，没有显示，请稍后重新读取。" } });
+    expect(screen.getByText(/已过期：收到的数据格式不对，显示的是上次的情况/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新发送" })).toBeTruthy();
+  });
 });

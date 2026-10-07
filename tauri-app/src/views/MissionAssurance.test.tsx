@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ConnectionState } from "../ws/ControlChannel";
 import { MissionAssurance } from "./MissionAssurance";
-import { parseError, parseReview, parseSnapshot, parseUseCheck } from "../stores/assuranceStore";
+import { contractViolation, guardIncoming } from "../ws/orchestrationContracts";
 
 class Channel {
   sent: ControlMessage[] = [];
@@ -20,8 +20,10 @@ class Channel {
     this.states.add(listener); return () => { this.states.delete(listener); };
   };
   last() { return this.sent.at(-1)!; }
+  // 与真通道一样：先按公开合同核，再分发（ControlChannel.onmessage → guardIncoming）
   emit(type: string, payload: unknown) {
-    act(() => { this.listeners.forEach((fn) => fn({ type, payload } as IncomingMessage)); });
+    const message = guardIncoming({ type, payload } as IncomingMessage);
+    act(() => { this.listeners.forEach((fn) => fn(message)); });
   }
   reply(request: ControlMessage, data: unknown) {
     this.emit(`${request.type}_response`, { request_id: request.request_id, ok: true, data });
@@ -89,7 +91,7 @@ describe("C07 Assurance view", () => {
     expect(screen.getByText("c-user-1")).toBeTruthy();
     read(); const second = channel.last();
     channel.reply(second, { ...snapshot(second, [item("CRITERION", "c-user-2")]), tenant_id: "other" });
-    expect(screen.getByRole("alert").textContent).toMatch(/格式不符/);
+    expect(screen.getByRole("alert").textContent).toBe("收到的数据格式不对，没有显示，请稍后重新读取。");
     expect(screen.queryByText("c-user-2")).toBeNull();
     read(); const third = channel.last();
     channel.reply(third, snapshot({ ...third, request_id: "someone-else" } as ControlMessage, [item("CRITERION", "c-user-3")]));
@@ -100,6 +102,7 @@ describe("C07 Assurance view", () => {
     expect(screen.queryByText("c-user-4")).toBeNull();
     read(); const fifth = channel.last();
     channel.reply(fifth, snapshot(fifth, [item("CRITERION", "c-user-5", { current_use: "GRANTED" })]));
+    expect(screen.getByRole("alert").textContent).toMatch(/格式不对/);
     expect(screen.queryByText("c-user-5")).toBeNull();
     // The previously rendered page survives every refusal above.
     expect(screen.getByText("c-user-1")).toBeTruthy();
@@ -128,7 +131,7 @@ describe("C07 Assurance view", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/不在 Assurance 通道上/);
     read(); const malformed = channel.last();
     channel.refuse(malformed, { code: "NOT_FOUND" });
-    expect(screen.getByRole("alert").textContent).toMatch(/错误回执格式无效/);
+    expect(screen.getByRole("alert").textContent).toMatch(/格式不对/);
     read(); const plain = channel.last();
     channel.refuse(plain, undefined, "not_found");
     expect(screen.getByRole("alert").textContent).toBe("transport text");
@@ -191,7 +194,7 @@ describe("C07 Assurance view", () => {
     const second = channel.last();
     channel.reply(second, { ...body, request_id: second.request_id, decision: "USABLE",
       certificate_ref: { kind: "certificate", pin: { id: "cert", revision: 1, content_hash: HASH } } });
-    expect(screen.getByRole("alert").textContent).toMatch(/格式不符/);
+    expect(screen.getByRole("alert").textContent).toMatch(/格式不对/);
     expect(screen.getByText(/需要重新核查 · 用途 ACCEPT/)).toBeTruthy();
   });
 
@@ -207,29 +210,29 @@ describe("C07 Assurance view", () => {
   });
 });
 
-describe("assurance parsers reject drift", () => {
+describe("assurance replies are checked against the public host-*-v1 schemas", () => {
   const request = { request_id: "r", type: "x", payload: {} } as unknown as ControlMessage;
   it("snapshot", () => {
     const good = snapshot(request, [item("CRITERION", "c")]);
-    expect(parseSnapshot(good, "m1").items.length).toBe(1);
+    expect(contractViolation("host-response-v1", good)).toBeNull();
     for (const bad of [
       { ...good, schema_version: 2 }, { ...good, extra: 1 }, { ...good, items: [item("CRITERION", "c"), item("CRITERION", "c")] },
       { ...good, items: [item("CRITERION", "c", { artifact_ref: { kind: "result", pin: { id: "a", revision: 1, content_hash: HASH } } })] },
       { ...good, sdk_fingerprint: "short" }, { ...good, items: [item("OTHER", "c")] }, { ...good, snapshot_seq: -1 },
-    ]) expect(() => parseSnapshot(bad, "m1")).toThrow();
+    ]) expect(contractViolation("host-response-v1", bad)).not.toBeNull();
   });
   it("review, use check and error", () => {
     const review = envelope(request, { review_key: "k", purpose: "TASK_CONTENT", package_ref: { kind: "review_package", pin: { id: "p", revision: 1, content_hash: HASH } },
       record_ref: null, official_status: "PENDING", verdict: null, assessments: [], next_cursor: null, truncated: false, current_use: "UNAVAILABLE" });
-    expect(parseReview(review, "m1").verdict).toBeNull();
-    expect(() => parseReview({ ...review, package_ref: { kind: "artifact", pin: { id: "p", revision: 1, content_hash: HASH } } }, "m1")).toThrow();
-    expect(() => parseReview({ ...review, current_use: "NOT_APPLICABLE" }, "m1")).toThrow();
+    expect(contractViolation("host-review-response-v1", review)).toBeNull();
+    expect(contractViolation("host-review-response-v1", { ...review, package_ref: { kind: "artifact", pin: { id: "p", revision: 1, content_hash: HASH } } })).not.toBeNull();
+    expect(contractViolation("host-review-response-v1", { ...review, current_use: "NOT_APPLICABLE" })).not.toBeNull();
     const use = envelope(request, { subject_ref: { kind: "result", pin: { id: "r", revision: 0, content_hash: HASH } }, purpose: "PLAN",
       decision: "UNAVAILABLE", diagnostic_only: true, coverage: "INCOMPLETE", reason_codes: [], checked_at_ms: 1, expires_at_ms: null, certificate_ref: null });
-    expect(parseUseCheck(use, "m1").decision).toBe("UNAVAILABLE");
-    expect(() => parseUseCheck({ ...use, diagnostic_only: false }, "m1")).toThrow();
-    expect(() => parseUseCheck({ ...use, decision: "GRANTED" }, "m1")).toThrow();
-    expect(parseError({ schema_version: 1, request_id: "r", code: "LIMIT_REACHED", message: "", retryable: false }).code).toBe("LIMIT_REACHED");
-    expect(() => parseError({ schema_version: 1, request_id: "r", code: "OTHER", message: "", retryable: false })).toThrow();
+    expect(contractViolation("host-use-response-v1", use)).toBeNull();
+    expect(contractViolation("host-use-response-v1", { ...use, diagnostic_only: false })).not.toBeNull();
+    expect(contractViolation("host-use-response-v1", { ...use, decision: "GRANTED" })).not.toBeNull();
+    expect(contractViolation("host-error-v1", { schema_version: 1, request_id: "r", code: "LIMIT_REACHED", message: "", retryable: false })).toBeNull();
+    expect(contractViolation("host-error-v1", { schema_version: 1, request_id: "r", code: "OTHER", message: "", retryable: false })).not.toBeNull();
   });
 });

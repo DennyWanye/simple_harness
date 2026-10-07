@@ -13,13 +13,14 @@
  *
  * 外部动作结果不明的出口在「等待原因」里的"已生效 / 没生效"，这里不重复。
  * 两个按钮只能由人在这里点：Host 以本机用户身份执行，SDK 安全检查不满足时如实显示原因。
- * 读失败时保留上次画面并标"已过期"。
+ * 读失败时保留上次画面并标"已过期"；回复不合公开合同（控制通道换成的协议错，U02）时说"收到的数据格式不对"。
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import { asList as list, asRecord as record, asText as text, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
+import { PROTOCOL_ERROR } from "../ws/orchestrationContracts";
 
 type Job = { job_id: string; state: string; row_version: number };
 type Blocked = { message_id: string; row_version: number; subject_key: string; error_code: string; attempts: number };
@@ -55,7 +56,8 @@ function reasonOf(job: Job): string {
 
 export function PlanChangePanel({ missionId, channel }: { missionId: string; channel: MissionsChannel | null }): React.JSX.Element | null {
   const [view, setView] = useState<View | null>(null);
-  const [stale, setStale] = useState(false);
+  /** 空串 = 不过期；否则是过期原因（一句大白话） */
+  const [stale, setStale] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,7 +70,7 @@ export function PlanChangePanel({ missionId, channel }: { missionId: string; cha
     reading.current = id;
     if (!channel.send({ type: READ, request_id: id, payload: { mission_id: missionId } })) {
       reading.current = null;
-      setStale(true);
+      setStale("连接不可用");
     }
   }, [channel, missionId]);
 
@@ -84,8 +86,9 @@ export function PlanChangePanel({ missionId, channel }: { missionId: string; cha
       }
       if (type === READ + "_response" && payload.request_id === reading.current) {
         reading.current = null;
-        if (payload.ok === true) { setView(parse(payload.data)); setStale(false); }
-        else setStale(true);  // keep the last view, marked as possibly out of date
+        if (payload.ok === true) { setView(parse(payload.data)); setStale(""); }
+        // keep the last view, marked as possibly out of date
+        else setStale(payload.error_code === PROTOCOL_ERROR ? "收到的数据格式不对" : "读取失败");
         return;
       }
       if ((type === "taskgraph.abandon_convergence_response" || type === "taskgraph.retry_notification_response")
@@ -116,7 +119,7 @@ export function PlanChangePanel({ missionId, channel }: { missionId: string; cha
   if (!view || (!view.jobs.length && !view.blocked.length)) return null;
   return (
     <section aria-label="改计划进度" style={box} data-testid="plan-change-panel">
-      <strong>改计划进度{stale ? <span style={muted}>（已过期：读取失败，显示的是上次的情况）</span> : null}</strong>
+      <strong>改计划进度{stale ? <span style={muted}>（已过期：{stale}，显示的是上次的情况）</span> : null}</strong>
       {view.jobs.map((job) => (
         <div key={job.job_id} style={{ display: "grid", gap: tokens.space.xs }}>
           <div>这次改计划卡住了：{reasonOf(job)}</div>

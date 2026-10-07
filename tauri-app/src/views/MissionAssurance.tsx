@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { useEffect, useRef, useState } from "react";
 import { asRecord, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
-import { errorMessage, parseError, parseReview, parseSnapshot, parseUseCheck, KIND_LABELS, USE_LABELS,
+import { errorMessage, KIND_LABELS, USE_LABELS, type AssuranceError,
   type AssuranceItem, type AssuranceReview, type AssuranceSnapshot, type AssuranceUseCheck } from "../stores/assuranceStore";
 import "./MissionTaskGraph.css";
 
@@ -48,21 +48,24 @@ function AssuranceSession({ missionId, channel }: Props) {
       const request = pending.current;
       if (!request || body.request_id !== request.id || message.type !== request.kind + "_response") return;
       clear();
+      // 形状已由控制通道按公开合同核过（ws/orchestrationContracts.ts）；不合合同的回复到这里
+      // 已是 ok:false 的协议错，下面只核"是不是这次请求的回复"，并保留上次画面。
       if (body.ok !== true) {
         let text = typeof body.error === "string" ? body.error : "读取失败，请重试";
         if (body.assurance_error !== undefined) {
-          try {
-            const wire = parseError(body.assurance_error);
-            if (wire.request_id !== request.id) throw new Error("错误回执对应了其他请求");
+          const wire = body.assurance_error as AssuranceError;
+          if (wire.request_id !== request.id) text = "错误回执对应了其他请求，请重新读取";
+          else {
             text = errorMessage(wire);
             if (wire.code === "SNAPSHOT_CHANGED") { setPage(null); setItems([]); }
-          } catch { text = "Assurance 错误回执格式无效，请重新读取"; }
+          }
         }
         setError(text); return;
       }
       try {
+        if (asRecord(body.data).mission_id !== missionId) throw new Error("返回了其他任务的 Assurance 数据");
         if (request.kind === "mission_assurance_snapshot") {
-          const value = parseSnapshot(body.data, missionId);
+          const value = body.data as AssuranceSnapshot;
           if (value.request_id !== request.id) throw new Error("返回了其他请求的快照");
           if (request.seq === null ? value.view !== "CURRENT" : value.view !== "HISTORY" || value.snapshot_seq !== request.seq) {
             throw new Error("返回的视图与请求不符");
@@ -74,12 +77,12 @@ function AssuranceSession({ missionId, channel }: Props) {
           setPage(value); setItems(merged); setError(null);
           if (value.view === "CURRENT") setStale(request.changed);
         } else if (request.kind === "mission_assurance_review") {
-          const value = parseReview(body.data, missionId);
+          const value = body.data as AssuranceReview;
           if (value.review_key !== request.reviewKey) throw new Error("返回了其他审阅的详情");
           setReview(value); setError(null);
           if (request.changed) setStale(true);
         } else {
-          const value = parseUseCheck(body.data, missionId);
+          const value = body.data as AssuranceUseCheck;
           if (value.request_id !== request.id) throw new Error("返回了其他请求的核查结果");
           setUseCheck(value); setError(null);
           if (request.changed) setStale(true);

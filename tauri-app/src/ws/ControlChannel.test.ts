@@ -156,3 +156,23 @@ describe("primary bound connection lifecycle", () => {
     stop(); channel.disconnect();
   });
 });
+
+describe("ControlChannel checks orchestration replies against the public contracts (U02)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    FakeWebSocket.instances = [];
+  });
+
+  it("hands listeners a protocol error instead of a reply that breaks its contract", () => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const channel = new ControlChannel(8100, "secret"); channel.connect(); const socket = FakeWebSocket.instances[0]; socket.open();
+    const seen: unknown[] = [];
+    channel.onMessage((message) => seen.push(message));
+    socket.receive({ type: "taskgraph.convergence_response",
+      payload: { request_id: "r1", ok: true, data: { schema_version: 2, mission_id: "m1", debug: true } } });
+    expect(seen).toEqual([{ type: "taskgraph.convergence_response", payload: { request_id: "r1", ok: false,
+      error_code: "protocol_error", error: "收到的数据格式不对，没有显示，请稍后重新读取。" } }]);
+    expect(JSON.stringify(channel.getLatestMessage("taskgraph.convergence_response"))).not.toContain("debug");
+    channel.disconnect();
+  });
+});
