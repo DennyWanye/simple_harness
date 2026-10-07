@@ -1,4 +1,4 @@
-最后更新：2026-10-07 CST（opt.167 发版评估 6 条建议，待发版 SDK `opt.168`）。
+最后更新：2026-10-07 CST（opt.167 发版评估 6 条建议，已发版 SDK `opt.168`）。
 - **"结果不明先对账"有了端到端用例**（建议 1）：`full_target/test_h1h_commit_guard.py::test_o03b_*`，夹具 `publishing_round.refused_final_round`。发布服务调用中掉线（结果不明），终审判不通过、根职责还开着；规划器换掉发布操作的生产步骤 → 执行图收敛 `RECONCILE_OPERATION` → 服务答不上来就一直 `WAITING`、不出新版本 → 服务答"确实没发生"后放开，等着的改动按 `TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED` 退回规划器（作业 `ABANDONED`）→ 规划器在新事实上重交，第 2 版提交；原发布动作保留原身份、没被再交出。改坏"不发对账动作"被抓到。证据资产 `crash_points.json` K10、`seams_current.json` P08 改绑这条。"发布其实已落地"那一支在产品里不会停在结果不明（执行器自己就查到成功），不另写用例。
 - **规划器被拒理由不再截在 300 字**（建议 4）：`planning/decision_feedback.py` 新增 `REFUSAL_TEXT_LIMIT = 2000` 与 `refusal_text()`；规划器被拒的五处入库（`event_handler.py` 规划回合失败、生产者合同错、提交被拒的决定行 / 评估事件 / 退回规划器）与 `previous_feedback` 的问题详情都走它。用例 `full_target/test_planner_refusal_text.py`（长理由的末尾一路到达规划器）。
 - **候选结论层每行正文设上限**（建议 5）：`planner_package.CANDIDATE_CONTENT_LIMIT = 600`，超长只列前 600 字并在末尾写明总字数；短的原样。不改包字段。
