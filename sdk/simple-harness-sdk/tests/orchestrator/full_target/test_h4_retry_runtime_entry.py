@@ -262,7 +262,7 @@ def _refused_repair(request: Any) -> str:
         return seed_planner(request)
     body = {"schema_version": 1, "decision_type": "NO_CHANGE", "subject_key": "subject-not-in-this-request",
             "rationale": "nothing to change", "reason_refs": [], "assumptions": [], "uncertainties": [],
-            "alternatives": [], "replan_triggers": [], "payload": {}}
+            "alternatives": [], "replan_triggers": [], "payload": {"reason": "nothing to change"}}
     return "<planning_decision>" + json.dumps(body) + "</planning_decision>"
 
 
@@ -278,8 +278,16 @@ def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path)
     only noted and the Mission sat ACTIVE with no work and no human request."""
 
     async def case():
-        provider = LayeredScriptedProvider(planner=_refused_repair, reviewer=_rework_first_result(),
-                                           worker=worker_reply)
+        holder: dict[str, Any] = {}
+
+        def planner(request: Any) -> str:
+            reply = _refused_repair(request)
+            if package_of(request).get("repair_requests"):
+                holder["provider"].held.add("planner")  # 交出这份被拒回复后就不再答
+            return reply
+
+        provider = LayeredScriptedProvider(planner=planner, reviewer=_rework_first_result(), worker=worker_reply)
+        holder["provider"] = provider
         async with committed(tmp_path, key="h4-refused-repair", provider=provider) as seed:
             loop, mission, product = seed.loop, seed.mission, seed.product
             provider.held.discard("worker")
@@ -287,15 +295,18 @@ def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path)
             provider.release = asyncio.Event()
             released.set()  # the executor answers; its result is sent back by the reviewer
 
-            def refused() -> bool:
-                return any(e.payload.get("ordinal") for e in events(loop, mission.id, "PlanningRejected"))
+            def refusal() -> dict[str, Any] | None:
+                return next((e.payload for e in events(loop, mission.id, "PlanningRejected")
+                             if e.payload.get("ordinal")), None)
 
-            await run_until(product, refused, timeout=30)
-            provider.held.add("planner")
-            before = _planner_rounds(loop, mission.id)
-            await run_until(product, lambda: len(_planner_rounds(loop, mission.id) - before) >= 1, timeout=30)
-            assert loop.store.get_mission(mission.id).status.value == "ACTIVE"
-            assert len(_planner_rounds(loop, mission.id) - before) == 1  # the next round, not silence
+            # 规划器交出被拒回复后就停住，只看系统有没有开下一轮
+            await run_until(product, lambda: refusal() is not None, timeout=30)
+            refused = refusal()
+            assert refused["reason"] == "proposal_not_grounded", refused  # 读得懂、准入拒绝（不是格式错）
+            following = f"{mission.id}:planner:{int(refused['ordinal']) + 1}"
+            await run_until(product, lambda: any(r.endswith(following) for r in _planner_rounds(loop, mission.id)),
+                            timeout=30)
+            assert loop.store.get_mission(mission.id).status.value == "ACTIVE"  # the next round, not silence
 
     asyncio.run(case())
 
