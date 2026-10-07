@@ -653,16 +653,16 @@ F 小结：按计划在用 2（F10、F11）；部分 10（F01、F02、F03、F04�
 | C-13 | completion_scope/spec 直接读表（#50） | 经原 OCC reader | RD:119-120 | 归属/occurrence 校验与 OCC reader 可能不一致 |
 | C-14 | check_spec 每任务懒注册（#41） | registry 安装时固定系统写入 | LC:478-511 | 身份仍不可变，影响小 |
 | C-15 | 审阅绑定 `round_no` 恒为 1（#119） | 显式独立复审请求才新 round | PR:283、CR:206 | 审计时看不出第几轮 |
-| C-16 | 命题键无 namespace/scope，哈希截 32 位（#155） | canonical({predicate,typed_args,namespace,scope}) | `predicates.py:294-301` | 不同作用域同名命题算同一键；观察已不进验收公式，影响小 |
+| C-16 | 命题键无 namespace/scope，哈希截 32 位（#155） | canonical({predicate,typed_args,namespace,scope}) | 已处理（2026-10-07 A16）：全长哈希、字段名 typed_args；namespace/scope 由观察行两列与 QUERY_SET 键承担，计划条文已补注（B 级 #44，`推后第2批-Q1Q3Q4-偏差裁决.md` 第 1 件） | — |
 | C-17 | closeout 文档结构不按 closeout-v1（1.6 field-producers、pin_fields） | 收尾体含 root_resolution_ref/requirements_ref/completion_spec_hash/pending_effect_keys/unsettled_operation_refs/accounting_pending_refs/dangerous_work_refs/report_ref/as_of_ms | 用 id 列表、id 外键，不钉要求版本 | 收尾记录不能独立证明是按哪版要求收的尾 |
 | C-18 | 审阅员政策/上下文政策 Pin 无注册读者；check-spec 三 Pin 用随包文件哈希（pin_fields） | 已注册政策/SchemaCatalog/范围政策解析器 | 代码常量、运行时现算、文件 sha256 | 政策改了只要常量没变就看不出 |
-| C-19 | blob-pin 两个回执引用改为 SQL 外键列（field_contracts） | JSON `*_receipt_ref`，只收 commit_receipt | `source_receipt_id`/`last_receipt_id` | 外键+回读核 hash，等价 |
+| C-19 | blob-pin 两个回执引用改为 SQL 外键列（field_contracts） | JSON `*_receipt_ref`，只收 commit_receipt | 按计划在用（计划内两说，取 SQL 与 C.3）；合同已补注（B 级 #45，`推后第2批-Q1Q3Q4-偏差裁决.md` 第 2 件） | — |
 | C-20 | NOTIFY 待办不与完成事件同事务建；Host 断线重连不按 seq 续读（#137、#138） | §7.3 | 下一轮 tick 才入箱；Host 只在启动时 backfill | 运行中断线后通知可能晚到 |
 | C-21 | 隔离/未绑定时整轮停，不逐行存等待原因（#179） | §9 第 5 步 | TICK:201,229,251 | 排查看不到哪项在等 |
 | C-22 | Host 不经 projection、Host DTO 运行时不按 schema 校验（#224、#260、host.projection、schema_owners） | §13.1、F13 | 原样转发；校验器只在测试与前端 | SDK 回复漂移时 Host 不会拒 |
 | C-23 | 历史视图准则固定第 1 版要求（#309） | C.6 history_state 取固定 seq 的原状态 | `api/assurance.py:514-519` | 改要求后历史切面显示错的准则（仅显示） |
 | C-24 | HISTORY_UNAVAILABLE 挂在 SOURCE_UNAVAILABLE 码下（#312） | C.6 | 消息里带名 | 计划本身与 host-error 枚举矛盾，需计划修订 |
-| C-25 | 反向依赖索引只写不读（新-12） | queries Q09 | `assurance_store.py:544` | 死写入 |
+| C-25 | 反向依赖索引只写不读（新-12） | queries Q09 | 已删（B）：2026-10-07 A23 删写入，迁移 47 删表；计划 SQL 与 Q09 已补注（B 级 #47，`推后第2批-Q1Q3Q4-偏差裁决.md` 建议 1） | — |
 | C-26 | 残留不可达分支与死代码（新-16、#26、#132） | 旧路径直接删（用户口径） | CS:3310-3311、ACON:409-410、`root_review.py:1072`、CS:3281-3290；FW:11 说明仍写"releases the terminal pools" | 误导后来者；opt.162 自称已删 |
 | C-27 | 事件消费表 REVIEW 侧三行 | event-consumer-map | 已处理（2026-10-07）：第 2 行补做，第 1、3 行计划改写（B 级 #39、#40） | — |
 | C-28 | 五种使用用途签发 | PLAN/START/CONTEXT/RECOVERY/MAINTAIN 证书 | 已处理（2026-10-07）：四种时点用途已签发，MAINTAIN 按 §8.4 挡；时点证书不进观察（B 级 #42） | — |

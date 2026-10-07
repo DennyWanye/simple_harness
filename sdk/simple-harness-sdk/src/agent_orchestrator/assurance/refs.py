@@ -4,44 +4,22 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .codec import AssuranceError, digest, fields, fingerprint, integer, one_of, text
 
-REF_KINDS = frozenset(
-    {
-        "requirements",
-        "task",
-        "method",
-        "method_instance",
-        "artifact",
-        "source",
-        "observation",
-        "review",
-        "acceptance",
-        "resolution",
-        "operation",
-        "tool_receipt",
-        "policy",
-        "authority",
-        "capability",
-        "input_manifest",
-        "completion_scope",
-        "completion_spec",
-        "result",
-        "commit_receipt",
-        "reservation_fact",
-        "agent_turn_receipt",
-        "check_binding",
-        "check_spec",
-        "check_policy",
-        "local_check_receipt",
-        "execution_receipt",
-        "disclosure_receipt",
-        "review_package",
-    }
-)
+
+def _schema_kinds() -> frozenset[str]:
+    """The kinds of the one common Ref shape (§3.1, §12.1): read from the packaged
+    ``common.schema.json``, never copied here (推后第 2 批 A12)."""
+    document = json.loads((Path(__file__).parent / "schemas" / "common.schema.json").read_bytes())
+    return frozenset(document["$defs"]["ref"]["properties"]["kind"]["enum"])
+
+
+REF_KINDS = _schema_kinds()
 
 
 @dataclass(frozen=True, slots=True)

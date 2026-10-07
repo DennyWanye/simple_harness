@@ -1169,7 +1169,7 @@ ROOT_VARIANTS = (
 )
 
 #: 被拒的叶子变体里，这几条拒在"许可证书已在事务里登记"之后（姿态、公式）：产品靠外层事务整体
-#: 回滚，包装器量到的写入只许是这张许可本身（证书、它的提交回执与事件、它的依赖索引）。
+#: 回滚，包装器量到的写入只许是这张许可本身（证书、它的提交回执与事件）。
 AFTER_LICENCE = {
     "independence-defaulted-to-nobody-produced",
     "reviewer-could-edit-the-candidate",
@@ -1180,7 +1180,6 @@ LICENCE_TABLES = {
     "assurance_use_certificates",
     "commit_receipts",
     "events",
-    "assurance_dependency_index",
 }
 
 

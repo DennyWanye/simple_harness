@@ -48,7 +48,7 @@ def _obligations(status: dict) -> list[tuple[int, str, str]]:
 def test_migration_46_adds_the_three_runtime_tables_and_the_inventory_knows_them(tmp_path):
     store = Store.open(tmp_path / "o.db")
     try:
-        assert schema.SCHEMA_VERSION == 46
+        assert schema.SCHEMA_VERSION == 47  # 47 删保证通道反向依赖索引（推后第 2 批 A23）
         for table in ("recovery_runs", "recovery_obligations", "sandbox_executions"):
             assert store.has_table(table), table
         check_inventory(store)
@@ -118,7 +118,7 @@ def test_a_restart_runs_the_eight_steps_in_order_and_ends_ready(tmp_path):
                 "SELECT state FROM recovery_runs ORDER BY started_at").fetchall()
             assert [r[0] for r in runs] == ["READY", "READY"]
             by_step = {o["step"]: o["detail"] for o in status["latest"]["obligations"]}
-            assert by_step["manifest_check"]["schema_version"] == 46
+            assert by_step["manifest_check"]["schema_version"] == 47
             assert by_step["reducer_rebuild"]["missions"] == {}  # 已完成的任务不在恢复范围里
             assert by_step["ready"]["pools_woken"]
             # 再跑一次 run()：同一进程只重入三步，不再记新的恢复

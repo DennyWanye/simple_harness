@@ -22,6 +22,7 @@ from ..storage.assurance_work import CONSUMERS, WorkTarget
 from ..storage.htn_store import HtnStore
 
 if TYPE_CHECKING:
+    from .assurance_local_checks import AssuranceLocalChecks
     from .commit_service import CommitService, MissionSpec
 
 
@@ -35,10 +36,13 @@ class AssuranceMissionFactory:
         require_creation_root: Callable[[], None],
         requirements: Callable[[Mission, MissionSpec], RequirementsRevision],
         reconcile: Callable[[str], Mapping[str, Sequence[WorkTarget]]],
+        check_specs: AssuranceLocalChecks,
     ) -> None:
         if not isinstance(policy, AssurancePolicy) or not all(
             callable(value) for value in (require_creation_root, requirements, reconcile)
         ):
+            raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
+        if not callable(getattr(check_specs, "register_specs_locked", None)):
             raise AssuranceError("ASSURANCE_FACTORY_UNBOUND")
         self.commit = commit
         self.tenant_id = text(tenant_id)
@@ -46,6 +50,8 @@ class AssuranceMissionFactory:
         self.require_creation_root = require_creation_root
         self.requirements = requirements
         self.reconcile = reconcile
+        # The deployment's checker registry: its CheckSpecs are written with the lane.
+        self.check_specs = check_specs
 
     def selects(self, spec: MissionSpec) -> bool:
         """Whether this new Mission takes the assured lane (spec §11): every
@@ -132,6 +138,8 @@ class AssuranceMissionFactory:
             now_ms=int(store.now * 1000),
             reconciliation=targets,
         )
+        # 推后第 2 批 A14：检查规格随保证通道一起由系统写定，用到时只读。
+        self.check_specs.register_specs_locked(mission.id)
 
 
 def _receipt(

@@ -94,6 +94,7 @@ CREATE TABLE assurance_use_certificates (
 CREATE INDEX assurance_certificate_consumer_idx
  ON assurance_use_certificates(mission_id,consumer_kind,consumer_id,purpose,issued_at_ms);
 
+-- 2026-10-07 补注（推后第 2 批 A23，独立裁决；B 级 #47）：本表已删（SDK 迁移 47），无读方；失效判断走证书 read_set。
 -- Rebuildable reverse index from the exact certificate JSON, not independent evidence.
 CREATE TABLE assurance_dependency_index (
  mission_id TEXT NOT NULL,

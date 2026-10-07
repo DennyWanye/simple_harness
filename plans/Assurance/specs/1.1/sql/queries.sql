@@ -22,6 +22,7 @@ SELECT epoch,bumped_by FROM validity_epochs WHERE mission_id=:mission AND scope_
 UPDATE validity_epochs SET epoch=epoch+1,bumped_by=:event_id,updated_at=:now_seconds
  WHERE mission_id=:mission AND scope_id=:assurance_partition AND epoch=:expected_epoch;
 -- Q09: reverse dependencies are an optimization; missing index is not an empty universe.
+-- 2026-10-07 补注（推后第 2 批 A23，独立裁决；B 级 #47）：Q09 与其表已删，无读方；失效判断走证书 read_set。
 SELECT c.certificate_id,c.consumer_kind,c.consumer_id FROM assurance_dependency_index d
  JOIN assurance_use_certificates c ON c.certificate_id=d.certificate_id AND c.mission_id=d.mission_id
  WHERE d.mission_id=:mission AND d.dependency_kind=:kind AND d.dependency_key=:key;

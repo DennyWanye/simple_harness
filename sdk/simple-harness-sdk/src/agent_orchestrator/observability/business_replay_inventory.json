@@ -191,17 +191,6 @@
    ],
    "rebuild": "immutable_source"
   },
-  "assurance_dependency_index": {
-   "class": "derived",
-   "fields": [
-    "mission_id",
-    "certificate_id",
-    "dependency_kind",
-    "dependency_key",
-    "fingerprint"
-   ],
-   "note": "保证通道依赖索引"
-  },
   "assurance_disclosure_batches": {
    "class": "business",
    "fields": [

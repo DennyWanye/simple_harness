@@ -5,8 +5,8 @@
   "files": [
     {
       "path": "ASSURANCE-EXEC-1.1.zh-CN.md",
-      "size": 62469,
-      "sha256": "e33186676507be7cb46f8c5bd49a89ced27df1bc0b861de929c1b06c7f49b56a"
+      "size": 63393,
+      "sha256": "eb6befce57761885611585ce4c66c4a08ee43b98ab0e34db15d6c343ab26a1f1"
     },
     {
       "path": "README.md",
@@ -25,8 +25,8 @@
     },
     {
       "path": "contracts/CONTRACTS.md",
-      "size": 1165,
-      "sha256": "4fbec149406cec2bb5bb247d28c24fc2a017490ef13ff6cfe5d5f0ceafd8dfce"
+      "size": 1564,
+      "sha256": "571b0aae60547be6f3c01928328f1d6a94372342849d0daf9aeb8cf859cb1b2f"
     },
     {
       "path": "contracts/blob-pin-v1.schema.json",
@@ -390,13 +390,13 @@
     },
     {
       "path": "sql/assurance_additive.sql",
-      "size": 25578,
-      "sha256": "1b14f4cc4932b2cf83ece04b7ce8eebbbd62e6359a28f35eaa193a1d839a7ba0"
+      "size": 25733,
+      "sha256": "bede29efc6d94cf169f032922ea566096f29a264fac71341c3cdda52e7e9c4c1"
     },
     {
       "path": "sql/queries.sql",
-      "size": 8190,
-      "sha256": "2b9017eb185a63ed6367344fdd0db1aa606ab0e787f9be825b9782d75ec825a9"
+      "size": 8333,
+      "sha256": "d47e22fbb71900f2a6116251ad63dbf33d97dc41788e03ec97d01ba0279d7d33"
     },
     {
       "path": "tests/parent_fixture.sql",
