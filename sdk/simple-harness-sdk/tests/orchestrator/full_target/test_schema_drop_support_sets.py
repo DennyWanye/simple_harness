@@ -94,6 +94,6 @@ def test_a_version_38_library_opens_and_keeps_its_duties(tmp_path, monkeypatch) 
             "SELECT obligation_id,fuel_limit,fuel_used,fuel_remaining FROM obligations"
         ).fetchall() == [("o1", 3, 1, 2)]
         assert max(row[0] for row in connection.execute(
-            "SELECT version FROM orch_schema_migrations")) == 39
+            "SELECT version FROM orch_schema_migrations")) == schema.MIGRATIONS[-1].version
     finally:
         connection.close()
