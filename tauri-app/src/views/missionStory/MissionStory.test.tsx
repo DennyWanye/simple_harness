@@ -10,6 +10,7 @@ import {
 } from "./storyModel";
 import { mergePages, parseExecutionPage } from "../liveGraph/model";
 import { M, snapshot } from "../liveGraph/fixture";
+import { PROTOCOL_ERROR_TEXT, guardIncoming } from "../../ws/orchestrationContracts";
 
 const SNAP = "taskgraph.execution_snapshot";
 const DETAIL = "taskgraph.execution_detail";
@@ -186,5 +187,16 @@ describe("MissionStory", () => {
     render(<MissionStory missionId={M} channel={channel} missionStatus="ACTIVE" />);
     channel.reply(null, false);
     expect(screen.getByRole("alert").textContent).toBe("读不到");
+  });
+
+  it("U09：回合明细收到坏消息——卡片保留摘要，显示协议错那句话", () => {
+    const channel = new FakeChannel();
+    render(<MissionStory missionId={M} channel={channel} missionStatus="ACTIVE" />);
+    channel.reply(snapshot());
+    const ask = channel.all(DETAIL).at(-1)!;
+    channel.emit(guardIncoming({ type: DETAIL + "_response", payload: { request_id: ask.request_id, ok: true,
+      data: { schema_version: 1, mission_id: M, node: { node_id: "attempt:b2" }, turn: null, items: [], hidden_items: 0 } } }));
+    expect(screen.getByRole("alert").textContent).toBe(PROTOCOL_ERROR_TEXT);
+    expect(screen.getByTestId("story-card-attempt:a1").textContent).toContain("写好了 NOTES.md");
   });
 });

@@ -1632,6 +1632,18 @@
     "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a14_check_specs_are_written_at_creation_and_only_read_on_use"
    ],
    "note": "不跑删表迁移：新库里还留着没人读的反向依赖索引"
+  },
+  {
+   "id": "U09-01",
+   "source": "推后第 3 批车道 R4（U09：执行过程主画面与回合详情的严格合同）",
+   "file": "src/agent_orchestrator/graph/view_contracts.py",
+   "original": "        if not isinstance(value, Mapping) or not set(required) <= set(value) or set(value) - set(required) - set(extra):\n",
+   "replacement": "        if not isinstance(value, Mapping) or not set(required) <= set(value):\n",
+   "tests": [
+    "tests/orchestrator/full_target/test_taskgraph_schema_contracts.py::test_view_codecs_and_schemas_agree_on_every_mutant",
+    "tests/orchestrator/full_target/taskgraph_exec/test_execution_view.py::test_execution_reads_never_hand_out_a_view_outside_the_public_contract"
+   ],
+   "note": "执行过程两种视图的 codec 放过合同外的字段：Schema 拒、codec 收；SDK 把多出字段的视图交给 Host"
   }
  ]
 }

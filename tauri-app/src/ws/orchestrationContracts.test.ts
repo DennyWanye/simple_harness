@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import graphExamples from "../../../sdk/simple-harness-sdk/tests/orchestrator/acceptance_assets/taskgraph_schema_examples.json";
 import {
-  CONTRACT_SCHEMAS, PROTOCOL_ERROR, PROTOCOL_ERROR_TEXT, contractViolation, guardIncoming, supportedKeywords,
+  CONTRACT_SCHEMAS, PROTOCOL_ERROR, PROTOCOL_ERROR_TEXT, STALE_NOTE, contractViolation, guardIncoming, supportedKeywords,
 } from "./orchestrationContracts";
 
 const HASH = "a".repeat(64);
@@ -97,11 +97,65 @@ describe("U02 编排回复按公开 Schema 核", () => {
   });
 
   it("leaves messages without a public contract alone", () => {
-    const other = { type: "mission_get_response", payload: { request_id: "r1", ok: true, data: { anything: 1 } } };
+    const other = { type: "mission_events_response", payload: { request_id: "r1", ok: true, data: { anything: 1 } } };
     expect(guardIncoming(other)).toBe(other);
-    const exec = { type: "taskgraph.execution_snapshot_response", payload: { request_id: "r1", ok: true, data: { nodes: [] } } };
-    expect(guardIncoming(exec)).toBe(exec);
+    const operate = { type: "taskgraph.abandon_convergence_response", payload: { request_id: "r1", ok: true, data: { done: 1 } } };
+    expect(guardIncoming(operate)).toBe(operate);
     const push = { type: "mission_changed", payload: { mission_id: "m1" } };
     expect(guardIncoming(push)).toBe(push);
+  });
+});
+
+/** Host 任务投影的正样本，与 Host 用例 `test_contract_projection.py` 同形。 */
+const ROW = { mission_id: "m1", goal: "写一份 NOTES.md", status: "ACTIVE", stop_reason: null, created_at: 1791365208.4,
+  pending_approvals: 0, id: "m1", blocked: false, recovery_isolated: null, task_counts: { completed: 0, total: 1 }, ui_state: "running" };
+const DETAIL = {
+  mission: { id: "m1", goal: "写一份 NOTES.md", status: "ACTIVE", stop_reason: null, created_at: 1791365208.4, version: 3,
+    budget: { max_tokens: 100 }, allowed_tools: [], untrusted_sources: [], ui_state: "running" },
+  tasks: [{ id: "t1", goal: { text: "写 NOTES.md", source: "model" }, status: "READY", kind: "work", dependency_ids: [],
+    verification_policy: ["format_check"], attempt_count: 0, failure_reason: null, paused: false }],
+  attempts: [], results: [], artifacts: [], actions: [], approvals: [], planning_questions: [],
+  planning_authorization_requests: [], operation_workspace: null, budget_by_duty: [], unrefined_goals: [],
+  steps_no_longer_counting: [], waiting_on: [], blocked: [], disputes: [],
+  mission_policy: { version_id: "policy-1", source: "active" },
+  usage: { attempts: 0, reserved_tokens: 0, settled_tokens: 0, ledger_version: 1 },
+  event_count: 5, through_seq: 9, recovery_isolated: null,
+};
+
+describe("U09 执行图主画面、回合详情、任务列表、任务详情也按公开 Schema 核", () => {
+  const examples = graphExamples as Record<string, Record<string, unknown>>;
+  const view = examples["taskgraph-execution-view-v1"];
+  const detail = examples["taskgraph-execution-detail-v1"];
+  const node = (view.execution_nodes as Record<string, unknown>[])[0];
+
+  it("uses the same SDK files: two execution contracts next to the graph ones, two Host ones next to the Assurance ones", () => {
+    expect(CONTRACT_SCHEMAS["taskgraph-execution-view-v1"].$id).toBe("urn:simpleharness:taskgraph:execution-view:v1");
+    expect(CONTRACT_SCHEMAS["taskgraph-execution-detail-v1"].$id).toBe("urn:simpleharness:taskgraph:execution-detail:v1");
+    expect(CONTRACT_SCHEMAS["host-mission-list-v1"].$id).toMatch(/host\/host-mission-list-v1\.schema\.json$/);
+    expect(CONTRACT_SCHEMAS["host-mission-detail-v1"].$id).toMatch(/host\/host-mission-detail-v1\.schema\.json$/);
+    expect(contractViolation("taskgraph-execution-view-v1", view)).toBeNull();
+    expect(contractViolation("taskgraph-execution-detail-v1", detail)).toBeNull();
+    expect(contractViolation("host-mission-list-v1", { missions: [ROW] })).toBeNull();
+    expect(contractViolation("host-mission-detail-v1", DETAIL)).toBeNull();
+  });
+
+  it.each([
+    ["taskgraph.execution_snapshot", view, { ...view, execution_nodes: [{ ...node, debug_row: 1 }] }],
+    ["taskgraph.execution_snapshot", view, { ...view, execution_nodes: [{ ...node, kind: "magic" }] }],
+    ["taskgraph.execution_snapshot", view, { ...view, graph: { ...(view.graph as object), complete: "yes" } }],
+    ["taskgraph.execution_detail", detail, { ...detail, items: [{ t: "tool", tool: "x", ok: true, raw_args: {} }] }],
+    ["taskgraph.execution_detail", detail, { ...detail, hidden_items: -1 }],
+    ["mission_list", { missions: [ROW] }, { missions: [{ ...ROW, tenant_id: "other" }] }],
+    ["mission_list", { missions: [ROW] }, { missions: [{ ...ROW, ui_state: "done" }] }],
+    ["mission_get", DETAIL, { ...DETAIL, tasks: [{ ...DETAIL.tasks[0], goal: "写 NOTES.md" }] }],
+    ["mission_get", DETAIL, { ...DETAIL, internal_paths: ["/tmp/x"] }],
+  ])("%s：合格放行（同一个对象），漂移改成协议错", (verb, good, drifted) => {
+    const ok = reply(verb, { ok: true, data: good });
+    expect(guardIncoming(ok)).toBe(ok);
+    expect(guardIncoming(reply(verb, { ok: true, data: drifted }))).toEqual(protocolError(verb));
+  });
+
+  it("has one stale note for every view that keeps its last picture", () => {
+    expect(STALE_NOTE).toBe("（下面是上次读到的内容，可能已过期）");
   });
 });

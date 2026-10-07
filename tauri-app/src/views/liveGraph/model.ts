@@ -37,79 +37,51 @@ export type ExecutionPage = {
 };
 
 function fail(): never { throw new Error("执行图返回的数据不完整或格式不符"); }
-function obj(value: unknown): Obj {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Obj : fail();
-}
-function str(value: unknown): string { return typeof value === "string" && value ? value : fail(); }
 function maybeStr(value: unknown): string | null { return typeof value === "string" && value ? value : null; }
-function int(value: unknown): number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fail();
-}
-function list(value: unknown): unknown[] { return Array.isArray(value) ? value : fail(); }
-const EXEC_KINDS = new Set<string>(["attempt", "check", "review", "planning", "repair_request", "plan_revision", "operation"]);
 
-function parseSummary(value: unknown): Summary | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Obj;
-  return typeof raw.text === "string" && raw.text
-    ? { text: raw.text, source_kind: String(raw.source_kind ?? ""), source_ref: String(raw.source_ref ?? "") } : null;
-}
-function parseTurn(value: unknown): Turn | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Obj;
-  return { intent_id: str(raw.intent_id), agent_id: maybeStr(raw.agent_id), state: String(raw.state ?? ""),
-    profile_id: maybeStr(raw.profile_id), model: maybeStr(raw.model) };
-}
-
-/** 必需字段缺失就报错；多出的字段忽略（后端加字段不应让前端崩）。 */
+/**
+ * 一页 `taskgraph.execution_snapshot` 回复 → 画面数据。
+ *
+ * 形状只核一次：控制通道收到回复时已按公开合同 `taskgraph-execution-view-v1` 核过（推后第 3 批 U09，
+ * `ws/orchestrationContracts.ts`），不合合同的回复到不了这里。这里只核请求对应关系（是不是这个任务的），
+ * 再挑选、翻译。
+ */
 export function parseExecutionPage(data: unknown, missionId: string): ExecutionPage {
-  const raw = obj(data);
+  const raw = (data ?? {}) as Obj;
   if (raw.mission_id !== missionId) fail();
-  const nodes = list(raw.execution_nodes).map((item): ExecNode => {
-    const n = obj(item);
-    const kind = str(n.kind);
-    if (!EXEC_KINDS.has(kind)) fail();
-    return { node_id: str(n.node_id), kind: kind as ExecKind, at_ms: typeof n.at_ms === "number" ? n.at_ms : null,
-      summary: parseSummary(n.summary), turn: parseTurn(n.turn), raw: n };
-  });
-  const edges = list(raw.execution_edges).map((item): ExecEdge => {
-    const e = obj(item);
-    return { kind: str(e.kind), source: str(e.source), target: str(e.target),
-      target_layer: e.target_layer === "structure" ? "structure" : "execution" };
-  });
+  const nodes = (raw.execution_nodes as Obj[]).map((n): ExecNode => ({
+    node_id: n.node_id as string, kind: n.kind as ExecKind, at_ms: typeof n.at_ms === "number" ? n.at_ms : null,
+    summary: (n.summary as Summary | null) ?? null, turn: (n.turn as Turn | null) ?? null, raw: n }));
+  const edges = (raw.execution_edges as Obj[]).map((e): ExecEdge => ({
+    kind: e.kind as string, source: e.source as string, target: e.target as string,
+    target_layer: e.target_layer as ExecEdge["target_layer"] }));
   let first: ExecutionPage["first"] = null;
   if (raw.graph != null) {
-    const graph = obj(raw.graph);
-    const token = obj(raw.read_token);
-    const cut = obj(raw.execution_cut);
+    const graph = raw.graph as Obj;
+    const token = raw.read_token as Obj;
+    const cut = raw.execution_cut as Obj;
     const labels = new Map<string, { step: StepDuty; index: number | null }>();
-    for (const item of Array.isArray(raw.occurrence_labels) ? raw.occurrence_labels : []) {
-      const l = obj(item);
+    for (const l of (raw.occurrence_labels as Obj[] | null) ?? []) {
       const key = maybeStr(l.step_key);
       if (!key) continue;
-      const duties = Array.isArray(l.duties) ? l.duties.filter((d): d is string => typeof d === "string" && !!d) : [];
-      labels.set(str(l.occurrence_id), { step: { key, evidence: duties },
-        index: typeof l.step_index === "number" ? l.step_index : null });
+      labels.set(l.occurrence_id as string, { step: { key, evidence: (l.duties as string[]).filter(Boolean) },
+        index: (l.step_index as number | null) ?? null });
     }
     const parent = new Map<string, string>();
     const structureEdges: StructureEdge[] = [];
-    for (const item of list(graph.edges)) {
-      const e = obj(item);
-      if (e.kind === "refinement") parent.set(str(e.target), str(e.source));
-      else if (e.kind === "order" || e.kind === "data") structureEdges.push({ kind: e.kind, source: str(e.source), target: str(e.target) });
+    for (const e of graph.edges as Obj[]) {
+      if (e.kind === "refinement") parent.set(e.target as string, e.source as string);
+      else structureEdges.push({ kind: e.kind as StructureEdge["kind"], source: e.source as string, target: e.target as string });
     }
-    const structure = list(graph.nodes).map((item): StructureNode => {
-      const n = obj(item);
-      const id = str(n.occurrence_id);
+    const structure = (graph.nodes as Obj[]).map((n): StructureNode => {
+      const id = n.occurrence_id as string;
       const label = labels.get(id);
-      return { occurrence_id: id, task_id: str(n.task_id),
-        form: n.form === "compound" ? "compound" : n.form === "primitive" ? "primitive" : fail(),
-        phase: String(n.phase ?? ""), readiness: String(n.readiness ?? ""),
-        reason_codes: Array.isArray(n.reason_codes) ? n.reason_codes.map(String) : [],
+      return { occurrence_id: id, task_id: n.task_id as string, form: n.form as StructureNode["form"],
+        phase: n.phase as string, readiness: n.readiness as string, reason_codes: n.reason_codes as string[],
         parent: parent.get(id) ?? null, step: label?.step ?? null, step_index: label?.index ?? null };
     });
-    first = { mission_id: missionId, plan_revision: int(token.plan_revision), through_seq: int(token.through_seq),
-      execution_hash: str(cut.execution_hash), coverage: String(cut.coverage ?? ""), structure, structureEdges };
+    first = { mission_id: missionId, plan_revision: token.plan_revision as number, through_seq: token.through_seq as number,
+      execution_hash: cut.execution_hash as string, coverage: cut.coverage as string, structure, structureEdges };
   }
   return { first, nodes, edges, next_cursor: maybeStr(raw.next_cursor), complete: raw.complete === true };
 }

@@ -10,6 +10,8 @@
  * - `ControlChannel` 收到消息先过 `guardIncoming` 再分发：不合合同的回复换成协议错
  *   （`ok:false`、`error_code:"protocol_error"`、一句大白话），数据不往下传，界面保留上次画面。
  * - 只核形状（秩序），不判断内容对错。
+ * - 推后第 3 批 U09 加四个动词：执行图主画面与回合详情（`graph/schemas/` 两份）、任务列表与任务详情
+ *   （`assurance/contracts/` 里 Host DTO 合同处的 `host-mission-*-v1` 两份）。
  */
 import common from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/common.schema.json";
 import hostResponse from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-response-v1.schema.json";
@@ -21,12 +23,18 @@ import graphExplanation from "../../../sdk/simple-harness-sdk/src/agent_orchestr
 import graphDiff from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-diff-v1.schema.json";
 import graphConvergence from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-convergence-view-v2.schema.json";
 import graphError from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-error-v1.schema.json";
+import executionView from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-execution-view-v1.schema.json";
+import executionDetail from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-execution-detail-v1.schema.json";
+import missionList from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-list-v1.schema.json";
+import missionDetail from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-detail-v1.schema.json";
 
 type Schema = { [key: string]: unknown };
 
 export const PROTOCOL_ERROR = "protocol_error";
 /** Host 与前端同一句（Host 侧见 projection.PROTOCOL_ERROR_TEXT）。 */
 export const PROTOCOL_ERROR_TEXT = "收到的数据格式不对，没有显示，请稍后重新读取。";
+/** 坏消息时界面保留上次画面，跟在提示后面（HTN §17.2"保留标 stale 的旧画面"）。 */
+export const STALE_NOTE = "（下面是上次读到的内容，可能已过期）";
 
 export const CONTRACT_SCHEMAS = {
   "host-response-v1": hostResponse as Schema,
@@ -38,13 +46,21 @@ export const CONTRACT_SCHEMAS = {
   "taskgraph-diff-v1": graphDiff as Schema,
   "taskgraph-convergence-view-v2": graphConvergence as Schema,
   "taskgraph-error-v1": graphError as Schema,
+  "taskgraph-execution-view-v1": executionView as Schema,
+  "taskgraph-execution-detail-v1": executionDetail as Schema,
+  "host-mission-list-v1": missionList as Schema,
+  "host-mission-detail-v1": missionDetail as Schema,
 } as const;
 export type ContractName = keyof typeof CONTRACT_SCHEMAS;
 
-/** `$ref` 里按文件名引用的文档（Assurance 合同引用同目录的 common.schema.json）。 */
-const DOCUMENTS: Record<string, Schema> = { "common.schema.json": common as Schema };
+/** `$ref` 里按文件名引用的文档（Assurance 合同引用 common；执行过程两份引用执行图视图与主画面）。 */
+const DOCUMENTS: Record<string, Schema> = {
+  "common.schema.json": common as Schema,
+  "taskgraph-view-v1.schema.json": graphView as Schema,
+  "taskgraph-execution-view-v1.schema.json": executionView as Schema,
+};
 
-/** 动词 → 回复合同（与 Host projection.ASSURANCE_REPLIES / TASKGRAPH_REPLIES 同表）。 */
+/** 动词 → 回复合同（与 Host projection.ASSURANCE_REPLIES / TASKGRAPH_REPLIES / MISSION_REPLIES 同表）。 */
 const REPLIES: Record<string, ContractName> = {
   mission_assurance_snapshot: "host-response-v1",
   mission_assurance_review: "host-review-response-v1",
@@ -53,6 +69,10 @@ const REPLIES: Record<string, ContractName> = {
   "taskgraph.why_not_ready": "taskgraph-explanation-v1",
   "taskgraph.diff": "taskgraph-diff-v1",
   "taskgraph.convergence": "taskgraph-convergence-view-v2",
+  "taskgraph.execution_snapshot": "taskgraph-execution-view-v1",
+  "taskgraph.execution_detail": "taskgraph-execution-detail-v1",
+  mission_list: "host-mission-list-v1",
+  mission_get: "host-mission-detail-v1",
 };
 
 export const supportedKeywords: ReadonlySet<string> = new Set([
@@ -180,7 +200,7 @@ type Message = { type?: unknown; payload?: unknown };
 function verbOf(type: unknown): string | null {
   if (typeof type !== "string" || !type.endsWith("_response")) return null;
   const verb = type.slice(0, -"_response".length);
-  return verb.startsWith("mission_assurance_") || verb.startsWith("taskgraph.") ? verb : null;
+  return verb in REPLIES || verb.startsWith("mission_assurance_") || verb.startsWith("taskgraph.") ? verb : null;
 }
 
 /** 这条回复哪里不合合同；不归公开合同管的消息返回 null。 */

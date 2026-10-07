@@ -6,6 +6,15 @@ schemas. ``validate`` implements exactly the JSON Schema keywords those
 documents use, so both the SDK and the Host can assert a body against the
 approved contract without adding a runtime dependency. It is a contract
 checker, not a general JSON Schema engine.
+
+``host-mission-list-v1`` / ``host-mission-detail-v1`` (推后第 3 批 U09, HTN §17.2) are
+the Host's public task-list and task-detail replies (``mission_list``, ``mission_get``).
+They live here because this is the SDK's one home for Host DTO contracts: the Host
+checks its reply with ``validate`` before it goes out, and the TS frontend imports
+the same files. Fields the Host picks and rewrites are pinned one by one; SDK
+read-model rows the Host hands on unchanged (``budget_by_duty``, ``waiting_on``,
+``operation_workspace``, ``mission.budget`` …) are pinned only as objects — their
+inner fields belong to the SDK read model, not to the Host projection.
 """
 
 from __future__ import annotations
@@ -25,6 +34,8 @@ CONTRACTS = (
     "host-review-response-v1",
     "host-use-response-v1",
     "host-error-v1",
+    "host-mission-list-v1",
+    "host-mission-detail-v1",
 )
 
 

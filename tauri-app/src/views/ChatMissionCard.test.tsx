@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChatMissionCard } from "./ChatMissionCard";
 import { MISSION_CARD_TOOLS, MissionsChannelContext, missionIdFromToolResult } from "./chatMission";
 import { shouldHideToolTrace } from "../chat/messageVisibility";
+import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
 
 type Sent = { type: string; request_id: string; payload: Record<string, unknown> };
 
@@ -123,5 +124,15 @@ describe("对话里的后台任务卡片", () => {
   it("规划阶段的状态写成中文", () => {
     mount({ ...DETAIL, mission: { ...DETAIL.mission, status: "PLANNING" }, approvals: [] });
     expect(screen.getByText("后台任务：规划中")).toBeTruthy();
+  });
+
+  it("U09：任务详情收到坏消息——卡片保留上次内容，提示格式不对并标已过期", () => {
+    const fake = mount();
+    fake.push({ type: "mission_changed", payload: { mission_id: "m-1", status: "ACTIVE" } });
+    const again = fake.sent.filter((m) => m.type === "mission_get").at(-1)!;
+    fake.push(guardIncoming({ type: "mission_get_response", payload: { ok: true, request_id: again.request_id,
+      data: { ...DETAIL, internal_paths: ["/tmp/x"] } } }));
+    expect(screen.getByText("后台任务：进行中")).toBeTruthy();
+    expect(screen.getByText(PROTOCOL_ERROR_TEXT + STALE_NOTE)).toBeTruthy();
   });
 });

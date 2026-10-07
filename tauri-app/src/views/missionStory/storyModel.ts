@@ -7,7 +7,8 @@
  * `taskgraph.execution_snapshot` 的执行过程节点（规划、执行、检查、审阅是模型回合；计划版本、
  * 修补请求、操作是节点事件），卡片明细来自 `taskgraph.execution_detail`——SDK 只读模型回复与
  * 工具结果、去掉思考内容、不读系统提示/上下文包/系统提醒，并对全部文字做密钥脱敏。
- * 这里只挑选和翻译，不推导状态；未知字段忽略，未知取值原样显示。
+ * 这里只挑选和翻译，不推导状态；未知取值原样显示。两种回复的形状由控制通道按公开合同核过
+ * （推后第 3 批 U09，`ws/orchestrationContracts.ts`），这里不再逐字段核。
  */
 import { DECISION_TYPE, stepTitle, type ExecNode, type ExecutionView, type LiveNode } from "../liveGraph/model";
 
@@ -63,7 +64,7 @@ function parseItem(raw: unknown): StoryItem | null {
   }
 }
 
-/** `taskgraph.execution_detail` 的回复 → 这一回合的明细（未知行忽略）。 */
+/** `taskgraph.execution_detail` 的回复 → 这一回合的明细。只核请求对应关系（任务号、节点号）。 */
 export function parseTurnDetail(data: unknown, missionId: string, nodeId: string): TurnDetail {
   if (!isObj(data) || data.mission_id !== missionId || !isObj(data.node) || data.node.node_id !== nodeId) {
     throw new Error("回合明细返回的数据不完整或格式不符");

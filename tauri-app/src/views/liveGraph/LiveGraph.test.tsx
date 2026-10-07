@@ -7,6 +7,7 @@ import type { ConnectionState } from "../../ws/ControlChannel";
 import { useMissionsStore } from "../../stores/missionsStore";
 import { LiveGraph } from "./LiveGraph";
 import { M, snapshot } from "./fixture";
+import { PROTOCOL_ERROR_TEXT, guardIncoming } from "../../ws/orchestrationContracts";
 
 const SNAP = "taskgraph.execution_snapshot";
 const DETAIL = "taskgraph.execution_detail";
@@ -170,5 +171,25 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
     channel.setState("connected");
     expect(channel.all(SNAP)).toHaveLength(2);
+  });
+
+  it("U09：执行图与回合详情收到坏消息——保留上次画面并标已过期，回合详情显示协议错那句话", () => {
+    vi.useFakeTimers();
+    const channel = mount();
+    channel.reply(SNAP, snapshot());
+    expect(screen.getByText("全部步骤（3）")).toBeTruthy();
+    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 2 } });
+    act(() => { vi.advanceTimersByTime(5000); });
+    const again = channel.all(SNAP).at(-1)!;
+    channel.emit(guardIncoming({ type: SNAP + "_response", payload: { request_id: again.request_id, ok: true,
+      data: { ...snapshot(), debug_row: 1 } } }));
+    expect(screen.getByRole("alert").textContent).toBe(PROTOCOL_ERROR_TEXT + "（下面是上次读到的画面，可能已过期）");
+    expect(screen.getByText("全部步骤（3）")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "时间线" }));
+    fireEvent.click(within(screen.getByRole("list", { name: "执行过程时间线" })).getByText(/第 1 次执行 · 未通过/));
+    const ask = channel.all(DETAIL).at(-1)!;
+    channel.emit(guardIncoming({ type: DETAIL + "_response", payload: { request_id: ask.request_id, ok: true,
+      data: { mission_id: M, node: {}, items: [] } } }));
+    expect(screen.getByTestId("lg-detail-attempt:b1").textContent).toContain(PROTOCOL_ERROR_TEXT);
   });
 });

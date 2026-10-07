@@ -107,3 +107,33 @@ def test_execution_view_shares_the_graph_token_links_instances_and_reads_turns(t
                     store.connection.total_changes) == before
 
     asyncio.run(case())
+
+
+def test_execution_reads_never_hand_out_a_view_outside_the_public_contract(tmp_path, monkeypatch):
+    """推后第 3 批 U09：执行过程主画面与回合详情出门前过严格合同（与另外四个视图同一条路）。
+
+    投影多出一个合同外的字段 → 两个读法都按 GRAPH_INTEGRITY 拒绝，不把半成品交给 Host。"""
+    from agent_orchestrator.orchestrator import taskgraph_execution_view as module
+
+    async def case():
+        async with enabled_world(tmp_path, key="tg-exec-contract", worker=_worker()) as world:
+            await world.commit_seed()
+            await world.run_worker()
+            mission, reads = world.mission.id, world.graph.reads
+            node_id = reads.execution_snapshot(mission)["execution_nodes"][0]["node_id"]
+            build = module.ExecutionProjection.build
+
+            def drifted(self):  # type: ignore[no-untyped-def]
+                built = build(self)
+                for node in built.nodes.values():
+                    node["debug_row"] = {"sql": "SELECT 1"}
+                return built
+
+            monkeypatch.setattr(module.ExecutionProjection, "build", drifted)
+            for read in (lambda: reads.execution_snapshot(mission), lambda: reads.execution_detail(mission, node_id)):
+                with pytest.raises(TaskGraphReadError) as refused:
+                    read()
+                assert refused.value.code == "GRAPH_INTEGRITY"
+                assert refused.value.error.retry_kind == "OPERATOR_REPAIR"
+
+    asyncio.run(case())
