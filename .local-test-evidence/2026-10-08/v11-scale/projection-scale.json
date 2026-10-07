@@ -1,0 +1,10 @@
+{
+ "scenario": "S08-near-default-bound",
+ "nodes": 2002,
+ "edges": 5500,
+ "max_nodes": 2048,
+ "max_edges": 8192,
+ "elapsed_seconds": 0.0487,
+ "peak_memory_bytes": 3144109,
+ "sql_statements": 0
+}
