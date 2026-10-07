@@ -1554,6 +1554,40 @@
     "tests/orchestrator/full_target/assurance_exec/test_c_assurance.py::test_a_budget_blocked_review_does_not_hold_back_later_events"
    ],
    "note": "轮询先准备、后入箱（把入箱挪到准备之后）：准备卡在预算上的那次审阅时，后来的资料变更还没进箱"
+  },
+  {
+   "id": "A25-01",
+   "source": "推后第 1 批车道 P1a（A25 第 2 行：检查结果晚到）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
+   "original": "            if self.check_adapter is not None and checks_pending(body, selected):",
+   "replacement": "            if False:",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_waits_for_late_check.py::test_a_late_check_wakes_the_waiting_review_without_a_second_model_call"
+   ],
+   "note": "内容审阅导入不等必检的检查：缺检查照样导入成判不下来，再换会话调一次模型"
+  },
+  {
+   "id": "A25-02",
+   "source": "推后第 1 批车道 P1a（A25 第 2 行：检查结果晚到）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
+   "original": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT}) | SETTLED_EVENTS",
+   "replacement": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT}) | SETTLED_EVENTS",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_check_wakes_only_the_unfinished_import_it_can_complete",
+    "tests/orchestrator/full_target/assurance_exec/test_review_waits_for_late_check.py::test_a_late_check_wakes_the_waiting_review_without_a_second_model_call"
+   ],
+   "note": "检查绑定事件不唤醒在等它的审阅导入，只能等到点重看或别的事件"
+  },
+  {
+   "id": "A25-03",
+   "source": "推后第 1 批车道 P1a（A25 第 3 行：业务或运行结清）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
+   "original": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT}) | SETTLED_EVENTS",
+   "replacement": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT})",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_settlement_wakes_an_import_waiting_on_budget_before_its_due_time"
+   ],
+   "note": "调用与预算结清不唤醒卡在预算上的审阅导入，只能等退避到点"
   }
  ]
 }
