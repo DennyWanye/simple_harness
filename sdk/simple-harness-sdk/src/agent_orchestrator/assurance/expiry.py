@@ -63,8 +63,9 @@ class AssuranceExpiry:
         """Append one original event per usable certificate boundary.
 
         Only the most recently inserted certificate for an exact consumer/root
-        can schedule. A point-use certificate (PLAN/START/CONTEXT/RECOVERY) was used up
-        in the transaction that issued it and has no boundary to wake (A26). Comparing row insertion order also works after wall-clock
+        can schedule. A point-use certificate (PLAN/START/CONTEXT/RECOVERY) was
+        used up in the transaction that issued it and has no boundary to wake
+        (A26). Comparing row insertion order also works after wall-clock
         rollback. The root id must come from the authenticated root gate.
         Cursor recovery handles a crash after event append but before ingestion.
         """

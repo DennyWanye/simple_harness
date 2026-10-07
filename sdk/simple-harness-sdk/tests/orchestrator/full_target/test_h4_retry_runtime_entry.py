@@ -307,6 +307,12 @@ def test_a_refused_repair_round_opens_the_next_round_instead_of_idling(tmp_path)
             await run_until(product, lambda: any(r.endswith(following) for r in _planner_rounds(loop, mission.id)),
                             timeout=30)
             assert loop.store.get_mission(mission.id).status.value == "ACTIVE"  # the next round, not silence
+            # 规划器停住期间只开这一轮，不多开（opt.169 评估建议 3）
+            beyond = f"{mission.id}:planner:{int(refused['ordinal']) + 2}"
+            for _ in range(3):
+                await product.drain(timeout=2)
+            assert not any(r.endswith(beyond) for r in _planner_rounds(loop, mission.id)), sorted(
+                _planner_rounds(loop, mission.id))
 
     asyncio.run(case())
 

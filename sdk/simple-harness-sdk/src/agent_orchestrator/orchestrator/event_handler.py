@@ -543,7 +543,8 @@ class Orchestrator:
         self._deferred_planning: dict[str, tuple[float, int]] = DeferredPlanning()
         #: 推后第 1 批 A26（裁决 2026-10-07 建议 1）：开规划轮时证据签不出 PLAN 证书、正在等下一轮
         #: 重签的任务。这是合法等待，不判停滞；建出规划意图即清。
-        self._planning_evidence_waits: set[str] = set()
+        #: mission → (这段连续等待开始的存储时钟时刻, 最近一次签不出的时刻)；等待上限从开始时刻算
+        self._planning_evidence_waits: dict[str, tuple[float, float]] = {}
         #: P2.3f: when this process first saw a service turn blocked on an unknown
         #: Provider outcome, per ``intent_id:replays``.  In memory on purpose: the
         #: bound is a *wait*, and a restarted process starting the wait again costs at
@@ -4058,8 +4059,27 @@ class Orchestrator:
         （证据刚过时、时钟回拨、授权变了）。三条开轮的路——普通开轮、服务恢复、等待唤醒——都走这里：
         这一轮不开（开轮事务已回滚），原因写进进度记录，不算一轮故障、不停任务；下一轮按当时的世界
         重新组包再签。"""
-        self._planning_evidence_waits.add(mission_id)
-        self._note(f"mission {mission_id}: planning round waits at {path} ({'; '.join(refused.use.refusals)})")
+        now = self.store.now
+        since, last = self._planning_evidence_waits.get(mission_id, (now, now))
+        if now - last > self._config.profile_wait_seconds:
+            since = now  # 上一段等待早已断开（中间没再签不出）：重新计时，不把旧的开始时刻算进来
+        self._planning_evidence_waits[mission_id] = (since, now)
+        refusals = list(refused.use.refusals)
+        waited = now - since
+        if waited >= self._config.profile_wait_seconds:
+            # opt.169 评估建议 1：原因一直不消失时不无声地等下去——与"规划池不可用"同一个上限，
+            # 到点按名停下，明细写清哪条路、哪几条拒绝原因、等了多久。
+            self._planning_evidence_waits.pop(mission_id, None)
+            self._stop_planning_round(
+                mission_id,
+                reason="planning_evidence_uncertifiable",
+                detail={"path": path, "refusals": refusals[:16], "waited_seconds": round(waited, 3),
+                        "profile_wait_seconds": self._config.profile_wait_seconds},
+                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
+            )
+            self._note(f"mission {mission_id}: planning evidence never certifiable → stopped")
+            return False
+        self._note(f"mission {mission_id}: planning round waits at {path} ({'; '.join(refusals)})")
         return False
 
     async def _try_planner_intent(self, mission_id: str, *, ordinal: int) -> bool:
@@ -5042,7 +5062,7 @@ class Orchestrator:
                 self.commit, mission_id=mission_id, purpose="PLAN",
                 consumer_kind=PLANNING_REQUEST_CONSUMER, consumer_id=intent.intent_id,
                 claims=planning_claims(package.package), subject=("requirements", mission_id))
-        self._planning_evidence_waits.discard(mission_id)
+        self._planning_evidence_waits.pop(mission_id, None)
         return intent
 
     # -------------------------------------------------------------- dispatch

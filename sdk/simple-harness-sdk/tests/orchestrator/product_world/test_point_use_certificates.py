@@ -491,3 +491,43 @@ def test_a_planning_round_that_cannot_be_certified_waits_instead_of_stopping(tmp
             assert faults == [], [event.payload for event in faults]
 
     asyncio.run(case())
+
+
+def test_a_planning_round_that_can_never_be_certified_stops_by_name_after_the_wait_limit(tmp_path, monkeypatch):
+    """opt.169 发版前评估建议 1：签不出 PLAN 证书的原因一直不消失（例如时钟一直不可信），规划轮不能
+    无声地一直等。等待按与"规划池不可用"同一个上限（``profile_wait_seconds``，存储时钟）计时，到点按名
+    停下，明细写清哪条路、哪几条拒绝原因、等了多久。
+
+    **改坏检验**：去掉到点停下 → 任务一直挂着、等不到终态 → 变红。"""
+    import dataclasses
+
+    import agent_orchestrator.orchestrator.assurance_point_use as point_use
+
+    original = point_use.certify_point_use_locked
+
+    def certify(commit: Any, **kwargs: Any) -> Any:
+        if kwargs["purpose"] == "PLAN" and kwargs.get("record", True) and kwargs["claims"]:
+            use = point_use.PointUse("PLAN", kwargs["mission_id"], kwargs["consumer_kind"],
+                                     kwargs["consumer_id"], tuple(kwargs["claims"]))
+            return point_use._refused(use, "TIME_DISCONTINUITY")
+        return original(commit, **kwargs)
+
+    monkeypatch.setattr(point_use, "certify_point_use_locked", certify)
+    state: dict[str, Any] = {"methods": []}
+
+    async def case():
+        async with product_world(tmp_path / "root", _scenario_provider(state),
+                                 allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+            # 上限要长于重试间隔（约 0.55 秒），否则每次都算"断开"重新计时
+            world.loop._config = dataclasses.replace(world.loop._config, profile_wait_seconds=2.0)
+            mission_id = world.create({"goal": "写两份笔记", "idempotency_key": "point-use-plan-never",
+                                       "success_criteria": ["file:notes/a.md", "file:notes/b.md"]})["mission_id"]
+            mission = await world.run_until_settled(mission_id, rounds=60)
+            assert str(mission.status.value) == "FAILED", (mission.status, mission.final_report)
+            report = mission.final_report
+            assert report["stop_reason"] == "runtime_unavailable", report
+            detail = json.dumps(report, ensure_ascii=False)
+            assert "planning_evidence_uncertifiable" in detail and "TIME_DISCONTINUITY" in detail, report
+            assert not [e for e in world.store.iter_events(mission_id) if e.type == "MissionRoundFault"]
+
+    asyncio.run(case())
