@@ -67,6 +67,13 @@ describe("U02 编排回复按公开 Schema 核", () => {
     expect(contractViolation("taskgraph-convergence-view-v2", { ...convergence, schema_version: 1 })).not.toBeNull();
   });
 
+  it("turns a checker that throws into a protocol error for the same request instead of dropping it", () => {
+    // opt.170 发版前评估建议 3：核对器自己出错时，消息不能被吞掉、界面不能一直停在"读取中"
+    const exploding = { type: "mission_assurance_snapshot_response", payload: { request_id: "r1", ok: true,
+      get data(): unknown { throw new Error("boom"); } } };
+    expect(guardIncoming(exploding as never)).toEqual(protocolError("mission_assurance_snapshot"));
+  });
+
   it("passes valid replies through untouched and turns bad ones into a protocol error", () => {
     const good = reply("mission_assurance_snapshot", { ok: true, data: snapshot() });
     expect(guardIncoming(good)).toBe(good);

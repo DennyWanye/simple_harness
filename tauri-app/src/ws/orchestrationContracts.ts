@@ -200,9 +200,20 @@ function violationOf(verb: string, payload: unknown): string | null {
 export function guardIncoming<T extends Message>(message: T): T {
   const verb = verbOf(message.type);
   if (!verb) return message;
-  const violation = violationOf(verb, message.payload);
+  let violation: string | null;
+  try {
+    violation = violationOf(verb, message.payload);
+  } catch (error) {
+    // 核对器自己出错也按"不合合同"处理：回同一个请求号的协议错，界面不会一直停在"读取中"
+    violation = `核对出错：${error instanceof Error ? error.message : String(error)}`;
+  }
   if (violation === null) return message;
   console.warn(`[编排合同] ${String(message.type)} 不合合同：${violation}`);
-  const requestId = isObject(message.payload) ? message.payload.request_id : undefined;
+  let requestId: unknown;
+  try {
+    requestId = isObject(message.payload) ? message.payload.request_id : undefined;
+  } catch {
+    requestId = undefined;
+  }
   return { ...message, payload: { request_id: requestId, ok: false, error_code: PROTOCOL_ERROR, error: PROTOCOL_ERROR_TEXT } };
 }
