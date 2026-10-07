@@ -517,7 +517,7 @@ Tauri dev自管devUrl/beforeDevCommand：https://v2.tauri.app/develop/
 
 ### C.5 事件适配、时间与队列状态补充
 
-`implementation/event-consumer-map.json`定义内部事件类别与原writer/receiver对应。AS-0把当前真实event enum登记到类别adapter；不是靠字符串前缀猜所有Assurance事件。一条event可喂不同consumer，各cursor独立。MANUAL_REQUIRED采用WAITING+reason，不增加公开状态；due query排除它，当前真实新条件可以以更高事件seq合并重开，用户重试不能重置累计上限。
+`implementation/event-consumer-map.json`定义内部事件类别与原writer/receiver对应。AS-0把当前真实event enum登记到类别adapter；不是靠字符串前缀猜所有Assurance事件。一条event可喂不同consumer，各cursor独立。MANUAL_REQUIRED采用WAITING+reason，不增加公开状态；due query排除它，当前真实新条件可以以更高事件seq合并重开，用户重试不能重置累计上限。候选就绪（CANDIDATE_READY）不经游标消费：由 §6.1 六个原协调器直接确保审阅，按审阅键去重（C.1）；组合审阅槽与终审切包同样留在原协调器（B 级偏离 #39、#40，独立裁决 2026-10-07，用户可改回事件驱动）。检查到了的实际信号是检查绑定同一事务里屏障写的 AssuranceEvidenceChanged，不另登记检查事件。
 
 RUNNING lease过期只允许重新领取本地协调/计算；其原service intent仍幂等复用。新src事件把相同work升级target，旧claim的row version失效，不能ACK。通知交付也必须先查是否已有同logical notification的回执；传输可能重复，用户已读另有回执才判断。
 

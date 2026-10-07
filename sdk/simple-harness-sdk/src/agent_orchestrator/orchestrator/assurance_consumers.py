@@ -59,8 +59,6 @@ CLOSEOUT_SOURCE_EVENTS = frozenset(
         "BudgetReleased",
         "BudgetTailReleased",
         "AssuranceUseCertified",
-        "AssuranceLocalCheckImported",
-        "AssuranceExecutorCheckImported",
         "MissionCriteriaJudged",
         "MissionSuccessJudged",
         "AssuranceCloseoutRequested",
@@ -79,9 +77,10 @@ CLOSEOUT_SOURCE_EVENTS = frozenset(
         "PolicyInterpreterDrift",
     }
 )
-VALIDITY_SOURCE_EVENTS = frozenset(
-    {"AssuranceEvidenceChanged", "AssuranceLocalCheckImported", "AssuranceExecutorCheckImported"}
-)
+# 检查到了也走这一条：检查绑定写入同一事务里，屏障触发器写 ``AssuranceEvidenceChanged``
+# （source_table=assurance_check_bindings）。原先登记的两个检查事件名是回执种类、没有写方，已删
+# （推后第 1 批 P1a 偏差裁决第 3 件，2026-10-07）。
+VALIDITY_SOURCE_EVENTS = frozenset({"AssuranceEvidenceChanged"})
 # Own outputs: DIAGNOSTIC_ONLY for every consumer, never re-ingested as work.
 DIAGNOSTIC_EVENTS = frozenset({VALIDITY_CHECKED_EVENT, CLOSEOUT_EVENT, NOTIFIED_EVENT})
 

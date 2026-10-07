@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-07T02:28:13+00:00",
-    "gate_sha256": "33a45f5c368f28acd6520afe7a4ce508967a3d9eab3740f73c3f4a788c010645",
-    "gate_status": "PASS",
-    "source_files_sha256": "328754c82b41c6085f0687f344b844fa6258834d1c2d19e54cdcf015eaa520cf"
-  },
-  "deployment_id": "a460c16efca47fbf794bf2587cfc5113279e882b0ed4c5f3a94d9ab3bb88e5e8",
+  "acceptance_evidence": null,
+  "deployment_id": "77805dae378a54adbab79f89bb954117eaace6646b6f4e616435d81e15cbfe18",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -183,11 +178,11 @@
     "agent_orchestrator/orchestrator/accounting_recovery.py": "cc9b82dd879eda25aca395d78f4ac16f171ba3db26148c62b271099f1903a24e",
     "agent_orchestrator/orchestrator/action_commits.py": "a065041966069b80ee6ffbab2db25216bb29d2ac0249d70a0af7ef79ee0bc4e9",
     "agent_orchestrator/orchestrator/assurance_assembly.py": "975e86619292a9e4829dbe3f16d0ff7d3e0445bdf0eb02dc851dd7bde5f313f6",
-    "agent_orchestrator/orchestrator/assurance_check_import.py": "af85049bd1898126c768e4ed826d8a19854281c6645b5d566e808a2eba632962",
+    "agent_orchestrator/orchestrator/assurance_check_import.py": "07ca1fba22d6feb12355198e02feac6fc028dee0ffe2beccced0204c487e7ad1",
     "agent_orchestrator/orchestrator/assurance_check_policy.py": "e846d3da0f0b02d110d31db37631fda951435095886c23ba712990ed692cd65c",
     "agent_orchestrator/orchestrator/assurance_check_use.py": "4dc140c20ca8d2eec58a30a226b32ab31f44045acb407ca774bd4447c6a8ba8a",
     "agent_orchestrator/orchestrator/assurance_clock.py": "a25a864f068dd18f184ea936e2ff394c6f383b45a200f6cc11feddaec58d774a",
-    "agent_orchestrator/orchestrator/assurance_consumers.py": "ecd6574c612f4db656954d86b92bc731b7e5e7c6b3a283a563eb9fdc3a86dcb9",
+    "agent_orchestrator/orchestrator/assurance_consumers.py": "c04554ddcd38371a7685c0d8d9789354a538c9b21368ca0f6a0d095581bcbc43",
     "agent_orchestrator/orchestrator/assurance_content_review.py": "1c9446ecdeb49376935097b66d21fb0e7ffc5dc82d5d5a699e93d7e03bfb71ec",
     "agent_orchestrator/orchestrator/assurance_factory.py": "d28da719d6a5f74e18650a1618801d79208dad91e6cde9144cd0d0b68ca4e916",
     "agent_orchestrator/orchestrator/assurance_final_writer.py": "8e05d8d1ae725103337e9684d618b2892b8cff838f1a0217a2504cc70caa9539",
@@ -195,7 +190,7 @@
     "agent_orchestrator/orchestrator/assurance_purpose_reviews.py": "71fc2781b90d1b4583432ea4e5e1b0402d990e719a0d231a51c0f5e3b5d89942",
     "agent_orchestrator/orchestrator/assurance_recheck.py": "9495784a165702c2e7498e908eae1347bb3b31117d3a8990fd56126391ac367a",
     "agent_orchestrator/orchestrator/assurance_review_collect.py": "bf4880d1201b44547bf2d5e4a377ee0ef81cc4e302f48978423c0d429f1ffad1",
-    "agent_orchestrator/orchestrator/assurance_review_consumer.py": "b51f73b6e45829bf6a62575bdf186d787f6eac8a9e562e723d5d133dd184338e",
+    "agent_orchestrator/orchestrator/assurance_review_consumer.py": "4d50921f80ef7364d8fe9d72f27699b4d62c5c07c45d4c1c73a518218e2f7d82",
     "agent_orchestrator/orchestrator/assurance_review_handoff.py": "b6f35e2a35e3cb4b03d505473f84d0db20994e44386758ffe163b263ee0f96c8",
     "agent_orchestrator/orchestrator/assurance_review_import.py": "1f094338a3f6a04b3726fabcd710b0032cbbcd413cfe808cc4e00bf22c0e5cd3",
     "agent_orchestrator/orchestrator/assurance_review_pins.py": "4498cfdca5bfa38f71701f2a3f067ae5326429381ff038c9eeec7aa08d263bf1",
@@ -402,7 +397,7 @@
     "agent_orchestrator/storage/assurance_source_inventory.py": "f3ef69fc25281c58977d087cb458606a4bae47affe4328dedcb11c9eaa143d71",
     "agent_orchestrator/storage/assurance_store.py": "5fb4ba6791c96160c3c569320db84dfd64cee8fa1e24563362e70ca03eefccdf",
     "agent_orchestrator/storage/assurance_upgrade.py": "3cf492de1df1fda1e6ec31c7e21a4bd5d1fc6ee2bd64b3b2079858fcb7425db9",
-    "agent_orchestrator/storage/assurance_work.py": "1b94a974c590742bb12f26f475f07bcb2cf0d9463bbae92ad16bc7d193e570d1",
+    "agent_orchestrator/storage/assurance_work.py": "fa4ad61610b34a1e8b199ab2e5fe97242dac346789ab5c38fda2242ba31219bb",
     "agent_orchestrator/storage/fragment_schema.py": "bfd9c7fd12fa8da8ad5d3aa7a9c4b91609dbc69426a1d8b66c595ac0ae19e550",
     "agent_orchestrator/storage/htn_schema.py": "0be9e350e462af2965071c1c7ffbc82fedc43948193f3dfbb0628f8ef938b755",
     "agent_orchestrator/storage/htn_store.py": "7b4a15718f4a1a619155e40de2e2ee3a39a7c6dc8fe3c307a25234ffde521e08",
@@ -713,7 +708,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

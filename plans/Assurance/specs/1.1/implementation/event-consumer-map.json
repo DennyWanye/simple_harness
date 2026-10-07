@@ -5,11 +5,9 @@
     {
       "class": "CANDIDATE_READY",
       "source": "original result/verified-artifact writer",
-      "consumers": [
-        "REVIEW"
-      ],
+      "consumers": [],
       "work_key": "review_slot_key(mission,purpose,subject,requirements,scope,round)",
-      "action": "prepare original scoped Review once"
+      "action": "not a cursor consumer: the six §6.1 original coordinators call ensure_assurance_review directly in their own transaction; the review_key ensure receipt is the 'once' (Appendix C.1). Notification events never create or dedupe a review slot. [B-level deviation #39, independent adjudication 2026-10-07; the user may restore event-driven preparation]"
     },
     {
       "class": "ACTUAL_REVIEW_TURN_AVAILABLE",
@@ -22,13 +20,13 @@
     },
     {
       "class": "ACTUAL_CHECK_AVAILABLE",
-      "source": "AssuranceLocalCheckFinished / actual execution check importer",
+      "source": "AssuranceLocalCheckFinished / actual execution check importer. adapter: the actual signal is the §8 barrier AssuranceEvidenceChanged committed in the same transaction as the check binding (source_table=assurance_check_bindings); no separate check event is registered.",
       "consumers": [
         "REVIEW",
         "VALIDITY"
       ],
       "work_key": "existing pending review slot / current certificate consumer",
-      "action": "reevaluate exact checks; do not automatically duplicate model call"
+      "action": "reevaluate exact checks; do not automatically duplicate model call; REVIEW: an unfinished content review-import whose CHECKED criterion has no bound check group waits as CHECK_PENDING (no import, no second opinion) until that barrier event wakes the same work"
     },
     {
       "class": "SOURCE_OR_AUTHORITY_CHANGED",
@@ -47,8 +45,8 @@
         "REVIEW",
         "CLOSEOUT"
       ],
-      "work_key": "needed next composition review slot / root closeout",
-      "action": "fresh facts may unblock original pending work"
+      "work_key": "REVIEW: existing review-import work waiting on BUDGET_WAIT / CLOSEOUT: <mission>:<root_requirements>",
+      "action": "fresh facts may unblock original pending work. Creating the next composition review slot or cutting the root review stays with the §6.1 original coordinators on each tick, deduped by review_key (Appendix C.1). [B-level deviation #40, independent adjudication 2026-10-07; the user may restore event-driven composition/root review]"
     },
     {
       "class": "AssuranceStatusNotificationRequested",

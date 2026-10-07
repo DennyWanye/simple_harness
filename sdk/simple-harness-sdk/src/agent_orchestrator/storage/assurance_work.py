@@ -26,6 +26,10 @@ T = TypeVar("T")
 BUDGET_WAIT = "BUDGET_WAIT"
 #: 预算等待退避的上限：2 秒起翻倍，封顶 60 秒；永远不转 MANUAL_REQUIRED。
 BUDGET_WAIT_MAX_MS = 60_000
+#: 等检查（原计划 §9 第 5 步 CHECK_PENDING；推后第 1 批 A25）：内容审阅的回复到了，它必检的检查
+#: 还没有绑定进库。记成 WAITING + 这个原因，不导入、不复审；检查绑定事件把同一项工作唤醒。到点重看
+#: 用预算等待同一条退避，不计入重算次数。上限是审阅对象的生命期（对象停了 → 作废这次回复）。
+CHECK_PENDING = "CHECK_PENDING"
 
 
 def budget_wait_delay_ms(tries: int) -> int:
@@ -370,7 +374,7 @@ class AssuranceWorkStore:
         """
         integer(now_ms)
         text(reason)
-        if reason in ("MANUAL_REQUIRED", BUDGET_WAIT):
+        if reason in ("MANUAL_REQUIRED", BUDGET_WAIT, CHECK_PENDING):
             # 预算等待走 ``wait``，不计入重算次数（第 2 批 A05）
             raise AssuranceError("WORK_RECHECK_REASON_INVALID")
         with atomic(self.store) as connection:

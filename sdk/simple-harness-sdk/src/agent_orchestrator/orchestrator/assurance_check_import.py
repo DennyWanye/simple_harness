@@ -226,15 +226,7 @@ def import_local_check_locked(
         binding,
         receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(receipt))),
     )
-    if old is None:
-        reader = AssuranceReader(store, tenant_id=adapter.tenant_id, mission_id=mission_id)
-        event = decode(reader.read_exact_metadata(execution_ref).body_json)
-        adapter.commit._emit(
-            "AssuranceCheckBound",
-            mission_id,
-            key=binding_id,
-            task_id=event["task_id"],
-            attempt_id=event["attempt_id"],
-            payload={"check_binding_ref": ref.to_json(), "execution_ref": execution_ref.to_json()},
-        )
+    # 检查到了怎么通知读方：同一事务里屏障触发器写的 ``AssuranceEvidenceChanged``
+    # （source_table=assurance_check_bindings）。不另写检查事件——那会让同一事实叫醒读方两次
+    # （推后第 1 批 P1a 偏差裁决第 3 件，2026-10-07）。
     return ref
