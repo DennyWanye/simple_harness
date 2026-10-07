@@ -5638,6 +5638,9 @@ class Orchestrator:
                 tuple(config.get("allowed_tools", WORKER_TOOLS)),
                 tuple(str(p) for p in config.get("untrusted_sources", ())),
                 max_tool_calls=None if cap is None else int(cap),
+                # 批准过的尝试：可申请数按核额度用的基础额度说（opt.171 评估建议 2）
+                max_request_amount=(None if not isinstance(config.get("resource_grant"), Mapping)
+                                    else int(config["resource_grant"]["base_cap"])),
                 max_search_calls=(None if config.get("max_search_calls") is None
                                   else int(config["max_search_calls"])),
                 mission_id=attempt.mission_id,

@@ -322,6 +322,8 @@ class WorkspaceBinding:
     max_tool_calls: int | None = None  # step 6 (D6-7 ⑤ / D6-8): the reserved tool-call cap
     # 推后第 3 批 H08：这次尝试预留的检索次数（``SEARCH_TOOL_NAMES``）；None = 不限
     max_search_calls: int | None = None
+    # opt.171 评估建议 2：执行者一次最多可申请的工具次数（核额度用的基础额度）；None = 与 max_tool_calls 相同
+    max_request_amount: int | None = None
     protected: tuple[str, ...] = ()  # step 6 (D6-6): read-only upstream inputs of this Attempt
     denied_prefixes: tuple[str, ...] = ()  # step 6 (D6-7): the deployment's denied paths
     protected_prefixes: tuple[str, ...] = ()  # Source directories: readable, never writable.
@@ -788,7 +790,7 @@ class WorkspaceToolGateway:
                     else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
                     "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
                     '并在结果块里加 "resource_request": {"dimension": "tool_calls", '
-                    f'"amount": 正整数（不超过 {binding.max_tool_calls}）, "reason": "为什么需要"}}；'
+                    f'"amount": 正整数（不超过 {binding.max_tool_calls if binding.max_request_amount is None else binding.max_request_amount}）, "reason": "为什么需要"}}；'
                     "给不给由规划器决定。"
                 ),
             )

@@ -115,6 +115,16 @@ def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_tra
     async def case() -> dict[str, Any]:
         world_cm, packages = _world(tmp_path, retry=True)
         async with world_cm as world:
+            gateway = world.loop.assembled.gateway
+            bound: dict[str, Any] = {}
+            original_bind = gateway.bind
+
+            def recording_bind(agent_id: Any, binding: Any) -> Any:
+                if binding.view == "work":
+                    bound[binding.attempt_id] = binding
+                return original_bind(agent_id, binding)
+
+            gateway.bind = recording_bind  # type: ignore[method-assign]
             mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
                                        "idempotency_key": "r3-grant"})["mission_id"]
             mission = await world.run_until_settled(mission_id, rounds=30)
@@ -124,7 +134,7 @@ def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_tra
                               key=lambda a: a.created_at)
             configs = [store.get_intent_for_subject(a.id).config for a in attempts]
             return {"mission": mission, "events": events, "configs": configs, "packages": packages,
-                    "base": world.loop._config.max_tool_calls_per_turn}
+                    "base": world.loop._config.max_tool_calls_per_turn, "bound": bound}
 
     seen = asyncio.run(case())
     assert str(seen["mission"].status) == "COMPLETED", seen["mission"].final_report
@@ -147,6 +157,9 @@ def test_an_approved_request_raises_the_next_attempts_tool_cap_with_an_audit_tra
     assert second["max_tool_calls"] == seen["base"] + 5
     assert second["resource_grant"]["amount"] == 5
     assert granted[0].attempt_id == second["attempt_id"]
+    # 批准后的那次尝试：网关拒绝话里可申请数按核额度用的基础额度说（opt.171 评估建议 2）
+    assert seen["bound"][first["attempt_id"]].max_request_amount is None
+    assert seen["bound"][second["attempt_id"]].max_request_amount == seen["base"]
 
 
 def test_without_the_planners_retry_nothing_is_granted(tmp_path: Any) -> None:
@@ -255,6 +268,32 @@ def test_the_tool_cap_refusal_tells_an_executor_how_to_ask_for_more(tmp_path: An
     text = str(third.public_message)
     assert rr.FIELD in text and "blocked" in text and "tool_calls" in text and "2" in text, text
     assert "规划器" in text, text  # 给不给由规划器决定
+
+
+def test_after_a_grant_the_refusal_names_the_amount_the_check_will_accept(tmp_path: Any) -> None:
+    """opt.171 发版前评估建议 2：批准过一次后，本次上限 = 基础 + 批准数；核额度只认"不超过基础额度"。
+    拒绝话写的可申请数必须是核额度用的那个数，否则执行者照写的数申请会被记成放不下。"""
+    from agent_orchestrator.artifacts.workspace import WorkspaceManager
+    from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway
+    from simple_harness.contracts import CallId
+    from simple_harness.tools import ToolCall
+
+    workspaces = WorkspaceManager(tmp_path / "ws")
+    workspaces.create("m:task-1:attempt-2", seed={"a.md": "x"})
+    gateway = WorkspaceToolGateway(workspaces)
+    gateway.bind("run-2", WorkspaceBinding("m:task-1:attempt-2", "work", True, ("workspace_list",),
+                                           max_tool_calls=3, max_request_amount=2))
+
+    async def case() -> Any:
+        result = None
+        for n in range(4):
+            result = await gateway.execute(ToolCall(call_id=CallId(f"c{n}"), name="workspace_list",
+                                                    arguments={}), {"run_id": "run-2"})
+        return result
+
+    text = str(asyncio.run(case()).public_message)
+    assert "at most 3 tool calls" in text and "不超过 2）" in text, text
+    assert rr.quota_check(rr.ResourceRequest("tool_calls", 2, "x"), base_cap=2, room=None)["fits"] is True
 
 
 # ---------------------------------------------------------------- R3-3 补裁：执行者单回合上限多留一轮余量
