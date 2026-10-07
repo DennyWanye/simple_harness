@@ -5,8 +5,8 @@
   "files": [
     {
       "path": "ASSURANCE-EXEC-1.1.zh-CN.md",
-      "size": 60877,
-      "sha256": "5af3ae76a4c07b7926ad720a2dc48c52e41e76bc91e3a80e5559799de8d8f08e"
+      "size": 62469,
+      "sha256": "e33186676507be7cb46f8c5bd49a89ced27df1bc0b861de929c1b06c7f49b56a"
     },
     {
       "path": "README.md",
@@ -175,8 +175,8 @@
     },
     {
       "path": "implementation/event-consumer-map.json",
-      "size": 2790,
-      "sha256": "7447ef73326c9ae221e4a40e7ce0cca25bb63ebc33cca67f26c1b6293e1eaf85"
+      "size": 3813,
+      "sha256": "0f764aeab4b460fd427967d5cdecb7386bcbcd074dd173271a9099b482bb7b53"
     },
     {
       "path": "implementation/field-producers.json",
@@ -215,8 +215,8 @@
     },
     {
       "path": "implementation/model-scenarios.json",
-      "size": 6701,
-      "sha256": "7f2647625426adadab8ec901ea8805e7b8e4ebc89d9d42d6d564ca5d1746330a"
+      "size": 6947,
+      "sha256": "a6b523d2d84f849400ea1ea07b63907bdac0461312f49b4743750d37da133c28"
     },
     {
       "path": "implementation/mutations.json",
