@@ -1,6 +1,6 @@
 最后更新：2026-10-07 CST（推后必补第 3 批车道 R3，未发版；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第3批-车道R3-记录.md`）。
 - **预算两维（H08，迁移 48）**：`Budget.max_agents`（真起过的执行者会话数，不随非模型原因失败退还）、`max_search_calls`（检索类工具 `knowledge_list` / `assurance_find_evidence` 的执行次数，按尝试预留、网关拦、按工具调用表结清；用完只拒检索，不停任务）。GPU 时间不做（B 级 #51）。
-- **资源申请（H10）**：执行者在 blocked / failure / no_progress 结果里附 `resource_request`（只认 `tool_calls`）；Harness 只核上限（一份基础额度）与账户剩余，随修复请求交规划器；规划器原样重试即批准，下一次尝试工具上限加批准数（`ResourceRequested` / `ResourceGranted` / `ResourceGrantLapsed`）。执行者只在工具次数用完、被网关拒绝时从拒绝话得知可申请（B 级 #52）。
+- **资源申请（H10）**：执行者在 blocked / failure / no_progress 结果里附 `resource_request`（只认 `tool_calls`）；Harness 只核上限（一份基础额度）与账户剩余，随修复请求交规划器；规划器原样重试即批准，下一次尝试工具上限加批准数（`ResourceRequested` / `ResourceGranted` / `ResourceGrantLapsed`）。执行者只在工具次数用完、被网关拒绝时从拒绝话得知可申请；为让拒绝话到达，交给 SDK 的单回合上限 = 网关上限 + `TOOL_ANSWER_MARGIN`（8，与审阅员共用），派发配置与网关仍用原上限（B 级 #52，含 R3-3 补裁）。
 - **审阅积压应对（H12）**：待审结果维升起时审阅并发升到 `verifier_workers_ceiling`（默认 max(审阅数, min(2×审阅数, 模型名额))，桌面默认不加），已有计划的任务暂停开新规划轮（最长 600 秒，算合法等待 `VERIFICATION_BACKLOG`）；变化记 `BacklogResponseChanged`（B 级 #53）。
 - **监控八项（U05）**：`metrics-v2` 加新思路数、剪枝率、重复率、知识污染率、误报率、审阅积压、单任务结局与成本；全库 `deployment_outcomes` 进 Host 诊断导出。全按事件或表行计数。
 

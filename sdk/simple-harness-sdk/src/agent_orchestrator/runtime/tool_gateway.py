@@ -23,6 +23,11 @@ import re
 from .domain_tools import DomainTool
 from ..contracts.models import SEARCH_TOOL_NAMES
 
+#: 执行者与审阅员共用的一轮作答余量（2026-09-29 第六局审阅员先例；推后第 3 批 R3-3 补裁并入 B 级 #52）：
+#: 交给 SDK 的单回合工具上限 = 网关上限 + 这个余量。网关是权威——到上限就拒绝并告知（审阅员"马上作答"、
+#: 执行者"可以申请更多额度"），余量内的调用都被拒、不执行，模型还有机会作答；SDK 循环不先截断。
+TOOL_ANSWER_MARGIN = 8
+
 from bisect import bisect_right
 from collections.abc import Callable, Mapping
 from copy import deepcopy

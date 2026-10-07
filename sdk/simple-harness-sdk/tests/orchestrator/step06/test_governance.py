@@ -17,8 +17,9 @@ import pytest
 
 
 def test_s6_07_the_gateway_enforces_the_reserved_tool_call_cap_per_attempt(tmp_path):
-    """§21.1 step 4 at the gateway itself: the SDK's per-turn limit is set to the same cap
-    (so a compliant runtime never reaches it) — the gateway is the authority when it does."""
+    """§21.1 step 4 at the gateway itself: the SDK's per-turn limit is the gateway cap plus one
+    round of answer margin (``TOOL_ANSWER_MARGIN``, R3-3 补裁 / B 级 #52) — the gateway is the
+    authority: it refuses past the cap and tells the model so, and the model can still answer."""
 
     from agent_orchestrator.artifacts.workspace import WorkspaceManager
     from agent_orchestrator.runtime.tool_gateway import WorkspaceBinding, WorkspaceToolGateway

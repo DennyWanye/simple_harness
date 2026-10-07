@@ -255,3 +255,83 @@ def test_the_tool_cap_refusal_tells_an_executor_how_to_ask_for_more(tmp_path: An
     text = str(third.public_message)
     assert rr.FIELD in text and "blocked" in text and "tool_calls" in text and "2" in text, text
     assert "规划器" in text, text  # 给不给由规划器决定
+
+
+# ---------------------------------------------------------------- R3-3 补裁：执行者单回合上限多留一轮余量
+
+def _refused_then_ask(batch: bool):
+    """执行者把工具次数用完（上限 2）：``batch`` 时第二轮一次并发发 3 个调用跨过上限。
+    看到拒绝话之后交 blocked 加申请。"""
+    from agent_orchestrator.testing.fixtures import package_of
+    from simple_harness import Message, MessageRole
+    from simple_harness.contracts import CallId
+    from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
+
+    from agent_orchestrator.testing.fixtures import role_of
+    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, planner_reply, retry_same_method
+
+    seen: list[str] = []
+
+    def worker(request: Any) -> Any:
+        results = [str(m.content) for m in request.messages if "tool" in str(m.role).lower()]
+        refusals = [text for text in results if rr.FIELD in text]
+        if refusals:
+            seen.extend(refusals)
+            return _blocked(request, 2)
+        if batch and len(results) == 1:
+            # 不连续同一个工具（SDK 另有"连续同一工具"的上限，不是这里要看的）
+            return [("workspace_write_file", {"path": "b1.md", "content": "x"}), ("workspace_list", {}),
+                    ("workspace_write_file", {"path": "b2.md", "content": "x"})]
+        if not results:
+            return ("workspace_list", {})
+        return ("workspace_write_file", {"path": f"f{len(results)}.md", "content": "x"})
+
+    class Provider(LayeredScriptedProvider):
+        async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+            if role_of(request) == "worker":
+                reply = worker(request)
+                if isinstance(reply, list):
+                    package_of(request)
+                    calls = tuple(ProviderToolCall(CallId(f"batch-{len(self.requests)}-{n}"), name, dict(args))
+                                  for n, (name, args) in enumerate(reply))
+                    self.requests.append(request)
+                    return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, ""),
+                                            tool_calls=calls, model=self.model, finish_reason="tool_calls",
+                                            usage=ProviderUsage(input_tokens=10, output_tokens=5, total_tokens=15))
+            return await super().invoke(request, cancel=cancel)
+
+    provider = Provider(planner=lambda r: retry_same_method(r) or planner_reply(r), worker=worker)
+    return provider, seen
+
+
+@pytest.mark.parametrize("batch", (False, True), ids=("one-by-one", "batch-across-the-cap"))
+def test_an_executor_that_used_up_its_tool_calls_sees_the_refusal_and_can_ask(tmp_path: Any, batch: bool) -> None:
+    from agent_orchestrator.testing.product_world import product_world
+
+    provider, seen = _refused_then_ask(batch)
+
+    async def case() -> list[Any]:
+        async with product_world(tmp_path / "root", provider, max_tool_calls_per_turn=2) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": f"r3-margin-{batch}"})["mission_id"]
+            for _ in range(10):
+                await world.drain(timeout=20)
+                if any(e.type == rr.REQUESTED for e in world.loop.store.iter_events(mission_id)):
+                    break
+            store = world.loop.store
+            attempt = next(a for t in store.list_tasks(mission_id) for a in store.list_attempts(t.id))
+            config = store.get_intent_for_subject(attempt.id).config
+            return [list(store.iter_events(mission_id)), config]
+
+    events, config = asyncio.run(case())
+    assert seen, "the executor never saw the tool-call refusal"
+    assert "最多 2" in seen[0] or "at most 2" in seen[0], seen[0]
+    requested = [e for e in events if e.type == rr.REQUESTED]
+    # 规划器原样重试后后面的尝试可能再申请；看第一条
+    assert requested and requested[0].payload["request"]["amount"] == 2
+    assert requested[0].payload["check"]["fits"] is True
+    # 派发配置与网关绑定仍是原上限；只有交给 SDK 的单回合上限多留一轮余量
+    from agent_orchestrator.runtime.tool_gateway import TOOL_ANSWER_MARGIN
+
+    assert config["max_tool_calls"] == 2
+    assert config["agent_config"]["limits"]["max_tool_calls_per_turn"] == 2 + TOOL_ANSWER_MARGIN

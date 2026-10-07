@@ -148,7 +148,13 @@ from ..runtime.role_templates import (
     template_for_domain,
 )
 from ..runtime.sandbox import resolve_executor
-from ..runtime.tool_gateway import CRITIC_TOOLS, WORKER_TOOLS, WorkspaceBinding, run_pytest
+from ..runtime.tool_gateway import (
+    CRITIC_TOOLS,
+    TOOL_ANSWER_MARGIN,
+    WORKER_TOOLS,
+    WorkspaceBinding,
+    run_pytest,
+)
 from ..scheduling.allocator import (
     OPEN_ATTEMPT_STATES,
     allocate_v2,
@@ -10868,7 +10874,8 @@ class Orchestrator:
             tool_names=allowed,
             limits=AgentLimits(
                 max_model_calls_per_turn=self._config.max_model_calls_per_turn,
-                max_tool_calls_per_turn=tool_cap,
+                # R3-3 补裁（B 级 #52）：SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
+                max_tool_calls_per_turn=tool_cap + TOOL_ANSWER_MARGIN,
                 turn_deadline_seconds=min(
                     self._config.turn_deadline_seconds,
                     float(task.budget.max_runtime_seconds or self._config.turn_deadline_seconds),
