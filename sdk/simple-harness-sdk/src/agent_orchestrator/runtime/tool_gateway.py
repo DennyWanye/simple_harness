@@ -21,6 +21,12 @@ import asyncio
 import posixpath
 import re
 from .domain_tools import DomainTool
+from ..contracts.models import SEARCH_TOOL_NAMES
+
+#: 执行者与审阅员共用的一轮作答余量（2026-09-29 第六局审阅员先例；推后第 3 批 R3-3 补裁并入 B 级 #52）：
+#: 交给 SDK 的单回合工具上限 = 网关上限 + 这个余量。网关是权威——到上限就拒绝并告知（审阅员"马上作答"、
+#: 执行者"可以申请更多额度"），余量内的调用都被拒、不执行，模型还有机会作答；SDK 循环不先截断。
+TOOL_ANSWER_MARGIN = 8
 
 from bisect import bisect_right
 from collections.abc import Callable, Mapping
@@ -314,6 +320,8 @@ class WorkspaceBinding:
     allowed_tools: tuple[str, ...]
     untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes marked as data
     max_tool_calls: int | None = None  # step 6 (D6-7 ⑤ / D6-8): the reserved tool-call cap
+    # 推后第 3 批 H08：这次尝试预留的检索次数（``SEARCH_TOOL_NAMES``）；None = 不限
+    max_search_calls: int | None = None
     protected: tuple[str, ...] = ()  # step 6 (D6-6): read-only upstream inputs of this Attempt
     denied_prefixes: tuple[str, ...] = ()  # step 6 (D6-7): the deployment's denied paths
     protected_prefixes: tuple[str, ...] = ()  # Source directories: readable, never writable.
@@ -495,6 +503,7 @@ class WorkspaceToolGateway:
         # per-Attempt cap is checked against that durable count (it survives a restart)
         self.on_executed: Callable[[str, Mapping[str, Any]], None] | None = None
         self.executed_counter: Callable[[str], int] | None = None
+        self.search_counter: Callable[[str], int] | None = None  # H08: durable executed search calls
         self.execution_refusal: Callable[[str], str | None] | None = None
         self.executed_lookup: Callable[[str], Mapping[str, Any] | None] | None = None
         self.before_execute: Callable[[WorkspaceBinding], None] | None = None
@@ -774,9 +783,36 @@ class WorkspaceToolGateway:
                     f"查看次数已用完（最多 {binding.max_tool_calls} 次）：不要再调用任何工具，"
                     "立即根据已经看到的证据，按要求的格式给出结论。"
                     if binding.review_key is not None
-                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls"
+                    # 推后第 3 批 H10（裁决 2026-10-07 第 4 件，偏离 #52）：执行者只在工具次数用完时
+                    # 从这句话得知可申请；模板、工具说明、上下文包都不改
+                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
+                    "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
+                    '并在结果块里加 "resource_request": {"dimension": "tool_calls", '
+                    f'"amount": 正整数（不超过 {binding.max_tool_calls}）, "reason": "为什么需要"}}；'
+                    "给不给由规划器决定。"
                 ),
             )
+        # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
+        if call.name in SEARCH_TOOL_NAMES and binding.max_search_calls is not None:
+            searched = (
+                self.search_counter(binding.attempt_id)
+                if self.search_counter is not None and binding.view == "work"
+                else sum(1 for item in self.calls if item.get("run_id") == run_id
+                         and item.get("tool") in SEARCH_TOOL_NAMES
+                         and str(item.get("outcome", "")).startswith("succeeded"))
+            )
+            if searched >= binding.max_search_calls:
+                return self._reject(
+                    call,
+                    record,
+                    code="search_budget_exhausted",
+                    outcome="rate_limited",
+                    stage="rate",
+                    message=(
+                        f"本次尝试的检索次数已用完（最多 {binding.max_search_calls} 次）："
+                        "检索类工具不再可用，其余工具照常；请用已有信息继续。"
+                    ),
+                )
         # Re-read the original Attempt control and temporary graph fence immediately
         # before physical work. It never changes an already handed-off effect.
         if self.before_execute is not None:

@@ -362,7 +362,10 @@
     "updated_at",
     "reserved_tool_calls",
     "settled_tool_calls",
-    "reserved_attempts"
+    "reserved_attempts",
+    "agents_started",
+    "reserved_search_calls",
+    "settled_search_calls"
    ],
    "rebuild": "fold",
    "silent_ok": "预算账户的预留与追加额度是记账：行本身就是事实，消费者（预算面板、准入）读行；结账释放另有 BudgetReleased 告诉保证通道收尾"
@@ -380,7 +383,9 @@
     "created_at",
     "updated_at",
     "reserved_tool_calls",
-    "settled_tool_calls"
+    "settled_tool_calls",
+    "reserved_search_calls",
+    "settled_search_calls"
    ],
    "rebuild": "fold",
    "silent_ok": "每次调用的预留与追加（grow）是记账：行本身就是事实，准入与面板读行；结清另有 BudgetReleased / ReservationCountedAtUpperBound"

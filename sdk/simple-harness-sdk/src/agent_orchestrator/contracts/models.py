@@ -154,6 +154,11 @@ def sha256_hex(payload: object) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()  # type: ignore[arg-type]
 
 
+#: 推后第 3 批 H08：``Budget.max_search_calls`` 数的工具——按工具名查表的固定分类，不看调用内容。
+#: 查黑板目录、审阅员查证据目录算检索；读一条原文、读文件、列工作区不算。
+SEARCH_TOOL_NAMES = frozenset({"knowledge_list", "assurance_find_evidence"})
+
+
 @dataclass(frozen=True, slots=True)
 class Budget:
     """§18.1: a budget is more than tokens.  ``None`` means "not limited at this level"."""
@@ -163,6 +168,11 @@ class Budget:
     max_runtime_seconds: int | None = None
     max_concurrency: int | None = None
     max_tool_calls: int | None = None  # step 6 (D6-8): §18.1 "工具调用次数"
+    # 推后第 3 批 H08（原文 §5 ``max_agents``、§18.1"Agent 数量""搜索次数"）：执行者数 = 真起过的
+    # 执行者会话数（不随"非模型原因失败退尝试次数"退还）；搜索次数 = 检索类工具（``SEARCH_TOOL_NAMES``）
+    # 真执行的次数。
+    max_agents: int | None = None
+    max_search_calls: int | None = None
 
     def __post_init__(self) -> None:
         for name in fields(self):
@@ -1114,6 +1124,7 @@ class Artifact:
 __all__ = (
     "CLAIM_STANCES",
     "CONTRACT_SCHEMA_VERSION",
+    "SEARCH_TOOL_NAMES",
     "STEP2_IMPLEMENTED_LAYERS",
     "SYSTEM_DEFAULT_POLICY",
     "default_change_policy",

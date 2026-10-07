@@ -184,11 +184,26 @@ class TaskGraphExecutionImports:
         tool_limit = limits["max_tool_calls_per_turn"]
         if task.budget.max_tool_calls is not None:
             tool_limit = min(tool_limit, task.budget.max_tool_calls)
+        grant = intent_config.get("resource_grant")
+        if grant is not None:
+            # 推后第 3 批 H10：冻结的资源发放只在库里有对应的、核过的申请时放宽工具上限
+            from .resource_requests import GrantUnverified, verified_grant_amount
+
+            try:
+                tool_limit += verified_grant_amount(store.iter_events(task.mission_id), task_id=task.id,
+                                                    grant=grant, base_cap=tool_limit)
+            except GrantUnverified as error:
+                raise StoreConflict("TASKGRAPH_EXECUTION_RESOURCE_GRANT_UNVERIFIED") from error
         deadline = limits["turn_deadline_seconds"]
         if task.budget.max_runtime_seconds is not None:
             deadline = min(deadline, task.budget.max_runtime_seconds)
+        # R3-3 补裁（B 级 #52）：网关上限（派发配置 ``max_tool_calls``）不超过工具上限；交给 SDK 的
+        # 单回合上限恰好多一轮余量，让网关的拒绝话能到达执行者。
+        from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
+
+        gateway_cap = intent_config.get("max_tool_calls")
         if (agent.limits.max_model_calls_per_turn > limits["max_model_calls_per_turn"]
-                or agent.limits.max_tool_calls_per_turn > tool_limit
-                or intent_config.get("max_tool_calls") != agent.limits.max_tool_calls_per_turn
+                or type(gateway_cap) is not int or gateway_cap > tool_limit
+                or agent.limits.max_tool_calls_per_turn != gateway_cap + TOOL_ANSWER_MARGIN
                 or agent.limits.turn_deadline_seconds > deadline):
             raise StoreConflict("TASKGRAPH_EXECUTION_LIMITS_EXCEEDED")

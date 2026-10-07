@@ -332,6 +332,8 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "reduced_reserve_ratio",
             "exploration_slots",
             "verifier_workers",
+            "verifier_workers_ceiling",  # 推后第 3 批 H12：积压时审阅并发的上限
+            "decomposition_pause_seconds",  # 推后第 3 批 H12：积压时暂停新拆分的时限
             "deployment_policy",
             "profile_failure_threshold",
             "profile_cooldown_seconds",

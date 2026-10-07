@@ -148,12 +148,18 @@ from ..runtime.role_templates import (
     template_for_domain,
 )
 from ..runtime.sandbox import resolve_executor
-from ..runtime.tool_gateway import CRITIC_TOOLS, WORKER_TOOLS, WorkspaceBinding, run_pytest
+from ..runtime.tool_gateway import (
+    CRITIC_TOOLS,
+    TOOL_ANSWER_MARGIN,
+    WORKER_TOOLS,
+    WorkspaceBinding,
+    run_pytest,
+)
 from ..scheduling.allocator import (
     OPEN_ATTEMPT_STATES,
     allocate_v2,
 )
-from ..scheduling.backpressure import BackpressureState, Observation
+from ..scheduling.backpressure import BacklogResponse, BackpressureState, Observation, backlog_response
 from ..storage.store import (
     DispatchIntent,
     InjectedCrash,
@@ -592,6 +598,8 @@ class Orchestrator:
         #: guard against a lost claim is ``accept_review``'s ``OUTPUT_PORT_UNCLAIMED``,
         #: which refuses rather than indexing a port nobody named.
         self._port_claims: dict[str, tuple[PortClaim, ...]] = {}
+        # 推后第 3 批 H10：结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
+        self._resource_requests: dict[str, Any] = {}
         #: mission id → the fingerprint of the stall just recorded for it, handed to
         #: ``_confirm_and_stop_stalled`` so the confirmation compares *this* stall
         #: against what one more cycle produces (P2.3c part 2d, decision 2).
@@ -641,6 +649,8 @@ class Orchestrator:
         self._contract_checked: set[str] = set()
         self._verifying: dict[str, asyncio.Task[bool]] = {}  # D6-9': bounded verification set
         self._pressure = BackpressureState()  # D6-2: the current backpressure signal
+        # 推后第 3 批 H12：积压时的两种应对（审阅并发、暂停新拆分），每轮观测后重算
+        self._backlog = self._backlog_response(self._pressure)
         self._connectors: dict[str, Any] = dict(
             connectors or {}
         )  # D7-6: only the executor calls them
@@ -848,6 +858,7 @@ class Orchestrator:
                                     handover=self._knowledge_handover(mission_id, reader))
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
+            self._assembled.gateway.search_counter = self.store.count_search_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
             self._bind_startup_tools()
             try:
@@ -864,6 +875,7 @@ class Orchestrator:
             self.cleanup_workspaces()  # P3.2 D4: finished Missions past their retention
             self._bridge = self._assembled.pool(self._default_profile).bridge
             self._pressure = self._commit.backpressure_state()
+            self._backlog = self._backlog_response(self._pressure)
             return self
         except BaseException as error:
             # Enter failures do not trigger async-with's exit. Preserve the startup
@@ -2730,6 +2742,7 @@ class Orchestrator:
                 self._taskgraph_notifications is not None
                 and self._taskgraph_notifications.awaiting_sources(mission.id)
             ),
+            "backlog_paused": self._decomposition_paused(mission),
         }
         if any(waits.values()):
             return IdleFacts(mission.id, **waits), None, rows
@@ -3187,6 +3200,8 @@ class Orchestrator:
         runtime_block = pending_block(self.store, mission.id)
         if runtime_block is not None and last_wake(self.store, mission.id, runtime_block) is None:
             return False
+        if self._decomposition_paused(mission):
+            return False  # 推后第 3 批 H12：积压消退或暂停到时限后再开
         questions = PlanningHumanStore(self.store)
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
@@ -3945,14 +3960,14 @@ class Orchestrator:
                 or stored.envelope.id in self._verifying
             ):
                 continue
-            if len(self._verifying) >= self._config.verifier_workers:
+            if len(self._verifying) >= self._verifier_capacity():
                 break
             task = asyncio.create_task(self._verify(stored.envelope.id))
             self._verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
         # TaskGraph 补全第四批：改要求后沿用的叶子按新要求重审，与验证共用同一组名额
         for mission_id in sorted(active):
-            if len(self._verifying) >= self._config.verifier_workers:
+            if len(self._verifying) >= self._verifier_capacity():
                 break
             new_mode = self._new_mode(self.store.get_mission(mission_id))
             if new_mode is None:
@@ -3960,7 +3975,7 @@ class Orchestrator:
             for item in carried_reviews(self.store, new_mode, mission_id):
                 if item.key in self._verifying:
                     continue
-                if len(self._verifying) >= self._config.verifier_workers:
+                if len(self._verifying) >= self._verifier_capacity():
                     break
                 self._verifying[item.key] = asyncio.create_task(self._carried_review(item))
                 await asyncio.sleep(0)
@@ -5623,6 +5638,8 @@ class Orchestrator:
                 tuple(config.get("allowed_tools", WORKER_TOOLS)),
                 tuple(str(p) for p in config.get("untrusted_sources", ())),
                 max_tool_calls=None if cap is None else int(cap),
+                max_search_calls=(None if config.get("max_search_calls") is None
+                                  else int(config["max_search_calls"])),
                 mission_id=attempt.mission_id,
                 protected=self._read_only_inputs(str(config["attempt_id"])),
                 protected_prefixes=tuple(config.get("source_roots", ())),
@@ -7851,11 +7868,14 @@ class Orchestrator:
         if envelope.outcome is not ResultOutcome.CANDIDATE:
             # D5-5: execution evidence, not a candidate — kept as history; the Attempt
             # ends in RETRY_WAIT and the Task is tried again within its allowance
+            request = self._resource_requests.pop(envelope.id, None)
             self.commit.record_outcome_result(
                 attempt.id,
                 envelope=envelope,
                 turn_id=result.turn_id,
                 usage_refs=tuple(result.usage_refs),
+                resource_request=None if request is None
+                else self._check_resource_request(mission, task, request),
             )
             self._settle_intent(intent, "SETTLED")
             # Same order as every other outcome: close the intent, then settle (an
@@ -8090,6 +8110,9 @@ class Orchestrator:
         # the files this Attempt actually wrote — so a bad claim is a bounded repair
         # on the same Attempt rather than a wrong artifact bound downstream.
         claims = self._port_claims_from(raw, attempt)
+        from . import resource_requests
+
+        resource_request = resource_requests.pop_request(raw)  # H10: shape errors are ContractError
         if isinstance(raw.get("artifacts"), list):
             from ..runtime.action_schema import with_candidate_targets
 
@@ -8118,6 +8141,12 @@ class Orchestrator:
             logger.info("orchestrator.envelope_prose", extra={"attempt_id": attempt.id})
         if claims:
             self._port_claims[result_id] = claims
+        if resource_request is not None:
+            if envelope.outcome is ResultOutcome.CANDIDATE:
+                raise ContractError(
+                    "resource_request goes with a blocked / failure / no_progress result, not a candidate"
+                )
+            self._resource_requests[result_id] = resource_request
         return envelope, client_result_id
 
     def _port_claims_from(self, raw: dict[str, Any], attempt: Attempt) -> tuple[PortClaim, ...]:
@@ -9215,6 +9244,38 @@ class Orchestrator:
                 f"backpressure {transition.to_level.lower()} on {transition.dimension}: "
                 f"{transition.observed} (high {transition.high} / low {transition.low})"
             )
+        self._backlog = self._backlog_response(state)
+        if self.commit.record_backlog_response(self._backlog, mission_ids=sorted(active)):
+            self._note(
+                f"backlog response: verifiers {self._backlog.verifier_workers}"
+                f" (ceiling {self._backlog.verifier_ceiling}), new planning rounds "
+                f"{'paused' if self._backlog.decomposition_paused else 'open'} ({self._backlog.reason})"
+            )
+
+    def _backlog_response(self, state: BackpressureState) -> BacklogResponse:
+        """推后第 3 批 H12：这一轮的积压应对（纯计算，见 ``backlog_response``）。"""
+
+        return backlog_response(
+            state,
+            verifier_workers=self._config.verifier_workers,
+            verifier_ceiling=int(self._config.verifier_workers_ceiling or self._config.verifier_workers),
+            now=self._store.now if self._store is not None else 0.0,
+            pause_seconds=self._config.decomposition_pause_seconds,
+        )
+
+    def _verifier_capacity(self) -> int:
+        """D6-9' 的审阅名额：平时是 ``verifier_workers``，积压时升到上限（推后第 3 批 H12）。"""
+
+        return self._backlog.verifier_workers
+
+    def _decomposition_paused(self, mission: Mission) -> bool:
+        """推后第 3 批 H12：审阅积压中，已有计划的任务先不开新规划轮（首次规划不受影响）。"""
+
+        if not self._backlog.decomposition_paused:
+            return False
+        from ..storage.htn_store import HtnStore
+
+        return HtnStore(self.store).active_plan_revision(mission.id) is not None
 
     @property
     def pressure(self) -> BackpressureState:
@@ -9247,6 +9308,73 @@ class Orchestrator:
                 reservable = room if reservable is None else min(reservable, room)
                 spent_room = left if spent_room is None else min(spent_room, left)
         return reservable, spent_room
+
+    def _base_tool_cap(self, task: Task) -> int:
+        """一次尝试的基础工具上限：部署的单回合上限，Task 预算有这一维时取小。"""
+
+        cap = self._config.max_tool_calls_per_turn
+        if task.budget.max_tool_calls is not None:
+            cap = min(cap, task.budget.max_tool_calls)
+        return int(cap)
+
+    def _check_resource_request(self, mission: Mission, task: Task, request: Any) -> dict[str, Any]:
+        """推后第 3 批 H10：只核数——上限（一次最多再要一份基础额度）与账户链上还没花掉的工具次数。"""
+
+        from .resource_requests import quota_check
+
+        room = self._tool_call_room(mission, task)[1] if self._tool_calls_limited(mission, task) else None
+        return {"request": request.to_json(),
+                "check": quota_check(request, base_cap=self._base_tool_cap(task), room=room)}
+
+    def _resource_grant(self, mission: Mission, task: Task) -> dict[str, Any] | None:
+        """推后第 3 批 H10：规划器的原样重试许可指向的那次失败尝试带着核过的申请 → 再核一次额度后发放。
+
+        额度这时已不够就不发放（记 ``ResourceGrantLapsed``），这次尝试按基础额度开工。"""
+
+        from . import resource_requests
+        from .planning_retry import pending_retry_permit, retry_decision_required
+
+        if not retry_decision_required(self.store, mission.id, task.id):
+            return None
+        permit = pending_retry_permit(self.store, mission.id, task.id)
+        if permit is None:
+            return None
+        failed = str(permit["failed_attempt_id"])
+        event = resource_requests.request_for_attempt(self.store.iter_events(mission.id), failed)
+        if event is None or event.payload["check"].get("fits") is not True:
+            return None
+        base = self._base_tool_cap(task)
+        amount = int(event.payload["request"]["amount"])
+        room = self._tool_call_room(mission, task)[0] if self._tool_calls_limited(mission, task) else None
+        if amount > base or (room is not None and base + amount > room):
+            self.commit.record_resource_grant_lapsed(
+                mission.id, task_id=task.id, failed_attempt_id=failed,
+                detail={"amount": amount, "base_cap": base, "reservable": room})
+            return None
+        return {"failed_attempt_id": failed, "dimension": "tool_calls", "amount": amount, "base_cap": base,
+                "decision_id": permit.get("decision_id")}
+
+    def _search_call_room(self, mission: Mission, task: Task) -> int | None:
+        """推后第 3 批 H08：Task → Mission → Global 链上检索次数还能预留多少（不小于 0）；
+        链上都不限时为 None（不预留、网关不拦）。"""
+
+        room: int | None = None
+        with self.store.transaction():
+            accounts = [task_account(task.id), mission_account(mission.id)]
+            try:
+                parent = self.commit.ledger.account(mission_account(mission.id)).parent_id
+            except BudgetError:
+                parent = None
+            if parent is not None:
+                accounts.append(parent)
+            for account_id in accounts:
+                try:
+                    left = self.commit.ledger.account(account_id).remaining_search_calls()
+                except BudgetError:
+                    continue
+                if left is not None:
+                    room = max(0, left) if room is None else max(0, min(room, left))
+        return room
 
     def _tool_calls_limited(self, mission: Mission, task: Task) -> bool:
         """Whether any account on the Task's chain caps tool calls (only then is a
@@ -10733,6 +10861,12 @@ class Orchestrator:
                     self._note(f"task {task.id}: tool calls all reserved in flight; waiting")
                     return False
                 tool_cap = min(tool_cap, reservable)
+        # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
+        search_cap = self._search_call_room(mission, task)
+        # 推后第 3 批 H10：规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
+        resource_grant = self._resource_grant(mission, task)
+        if resource_grant is not None:
+            tool_cap = int(resource_grant["base_cap"]) + int(resource_grant["amount"])
         config = AgentConfig(
             name=f"{role.name}-{placeholder.ordinal}",
             instructions=role.instructions,
@@ -10740,7 +10874,8 @@ class Orchestrator:
             tool_names=allowed,
             limits=AgentLimits(
                 max_model_calls_per_turn=self._config.max_model_calls_per_turn,
-                max_tool_calls_per_turn=tool_cap,
+                # R3-3 补裁（B 级 #52）：SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
+                max_tool_calls_per_turn=tool_cap + TOOL_ANSWER_MARGIN,
                 turn_deadline_seconds=min(
                     self._config.turn_deadline_seconds,
                     float(task.budget.max_runtime_seconds or self._config.turn_deadline_seconds),
@@ -10801,6 +10936,7 @@ class Orchestrator:
                 reservation=replace(
                     self._reservation(tokens),
                     tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
+                    search_calls=search_cap or 0,
                 ),
                 runtime_profile_id=decision.profile_id,
                 routing=decision.to_json(),
@@ -10811,6 +10947,8 @@ class Orchestrator:
                     "allowed_tools": list(allowed),
                     **self._service_config(decision),
                     "max_tool_calls": tool_cap,
+                    **({} if search_cap is None else {"max_search_calls": search_cap}),
+                    **({} if resource_grant is None else {"resource_grant": resource_grant}),
                     "context_version": package.context_version,
                     "prompt_version": role.prompt_version,
                     "policy_version_id": self.policy_version_of(mission.id),

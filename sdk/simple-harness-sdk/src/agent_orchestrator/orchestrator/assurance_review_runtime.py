@@ -35,15 +35,16 @@ from .assurance_review_policies import register_review_policies
 # listed the catalogue and read the candidate plus five evidence items (3+2+5 = 10
 # tool calls) before concluding, and the old cap of 8 ended every such turn with
 # react_max_tool_calls_exceeded → TURN_FAILED.
+from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
 from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
 
 REVIEW_MODEL_CALLS = 10
 #: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
 REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
 #: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
-#: 结论。循环上限比查看工具上限多留一轮的余量：工具先拒绝并提示"马上作答"，模型还能作答。
-REVIEW_ANSWER_MARGIN = 8
-REVIEW_TOOL_CALLS = MAX_EVIDENCE_TOOL_CALLS + REVIEW_ANSWER_MARGIN
+#: 结论。循环上限比查看工具上限多留一轮的余量（与执行者共用 ``TOOL_ANSWER_MARGIN``）：工具先拒绝
+#: 并提示"马上作答"，模型还能作答。
+REVIEW_TOOL_CALLS = MAX_EVIDENCE_TOOL_CALLS + TOOL_ANSWER_MARGIN
 
 
 class AssuranceReviewRuntime:

@@ -156,6 +156,64 @@ class BackpressureState:
         )
 
 
+#: 推后第 3 批 H12：两种积压应对只看这一维（待审结果数）。
+BACKLOG_DIMENSION = "pending_verifications"
+#: 调度器状态里存当前应对的键。
+BACKLOG_KEY = "backlog_response"
+
+
+@dataclass(frozen=True, slots=True)
+class BacklogResponse:
+    """§18.5"提高 Verifier 资源""禁止新任务继续分裂"在这一轮的取值（推后第 3 批 H12）。
+
+    ``verifier_workers``：这一轮最多同时跑几个审阅；``decomposition_paused``：已有计划的任务
+    先不开新的规划轮。``reason``：``normal``（没积压）/ ``raised``（积压中）/ ``pause_lapsed``
+    （积压仍在，但暂停已到时限，规划轮照开）。``since``：这次积压从何时起。"""
+
+    base_verifier_workers: int
+    verifier_workers: int
+    verifier_ceiling: int
+    decomposition_paused: bool
+    reason: str
+    since: float | None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "base_verifier_workers": self.base_verifier_workers,
+            "verifier_workers": self.verifier_workers,
+            "verifier_ceiling": self.verifier_ceiling,
+            "decomposition_paused": self.decomposition_paused,
+            "reason": self.reason,
+            "since": self.since,
+            "dimension": BACKLOG_DIMENSION,
+            "version": BACKPRESSURE_VERSION,
+        }
+
+
+def backlog_response(
+    state: BackpressureState,
+    *,
+    verifier_workers: int,
+    verifier_ceiling: int,
+    now: float,
+    pause_seconds: float,
+) -> BacklogResponse:
+    """纯函数：待审结果维升起 → 审阅并发取上限、暂停新拆分（到时限自动解除）；回落 → 都恢复。
+
+    只看计数的水位与时刻，不看任何内容。上限由配置给出，不会因积压更大而再升。"""
+
+    raised = state.raised.get(BACKLOG_DIMENSION)
+    if raised is None:
+        return BacklogResponse(verifier_workers, verifier_workers, verifier_ceiling, False, "normal", None)
+    since = raised.get("since")
+    since = None if since is None else float(since)
+    paused = since is None or now - since < pause_seconds
+    return BacklogResponse(
+        verifier_workers, verifier_ceiling, verifier_ceiling, paused,
+        "raised" if paused else "pause_lapsed", since,
+    )
+
+
 def evaluate(
     previous: BackpressureState, observation: Observation, limits: BackpressureLimits
 ) -> tuple[BackpressureState, list[Transition]]:
@@ -197,7 +255,11 @@ def evaluate(
 
 
 __all__ = (
+    "BACKLOG_DIMENSION",
+    "BACKLOG_KEY",
     "BACKPRESSURE_VERSION",
+    "BacklogResponse",
+    "backlog_response",
     "NORMAL",
     "OBSERVED_DIMENSIONS",
     "RAISED",

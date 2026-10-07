@@ -75,7 +75,9 @@ from ..governance.budget_limits import inherit_limits
 from ..graph.terminal import terminal_task
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..scheduling.backpressure import (
+    BACKLOG_KEY,
     STATE_KEY,
+    BacklogResponse,
     BackpressureLimits,
     BackpressureState,
     Observation,
@@ -233,6 +235,7 @@ class MissionSpec:
 class Reservation:
     tokens: int
     tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
+    search_calls: int = 0  # 推后第 3 批 H08：这次尝试预留的检索次数
 
 
 def mission_account(mission_id: str) -> str:
@@ -383,6 +386,45 @@ class CommitService(ProtectedTailCommitsMixin,
                         payload={**transition.to_json(), "since": state.since},
                     )
             return state, transitions
+
+    def record_resource_grant_lapsed(
+        self, mission_id: str, *, task_id: str, failed_attempt_id: str, detail: Mapping[str, Any]
+    ) -> Event:
+        """推后第 3 批 H10：批准了但发放时额度已不够——如实记一条，这次尝试按基础额度开工。"""
+
+        from .resource_requests import LAPSED
+
+        with self._store.transaction():
+            return self._emit(LAPSED, mission_id, key=failed_attempt_id, task_id=task_id,
+                              payload={"failed_attempt_id": failed_attempt_id, **dict(detail)})
+
+    def record_backlog_response(
+        self, response: BacklogResponse, *, mission_ids: Sequence[str]
+    ) -> bool:
+        """推后第 3 批 H12：积压应对一变（升起、回落、暂停到期），状态与每个在跑任务时间线上的
+        ``BacklogResponseChanged`` 同一个事务落库；没变什么也不写。第一次记录且没有积压时只存状态。"""
+
+        document = response.to_json()
+        with self._store.transaction():
+            previous = self._store.get_scheduler_state(BACKLOG_KEY)
+            if previous is not None and {key: previous.get(key) for key in document} == document:
+                return False
+            changes = 0 if previous is None else int(previous.get("changes", 0))
+            if previous is None and response.reason == "normal":
+                self._store.put_scheduler_state(BACKLOG_KEY, {**document, "changes": 0})
+                return False
+            changes += 1
+            self._store.put_scheduler_state(BACKLOG_KEY, {**document, "changes": changes})
+            before = None if previous is None else {
+                key: previous.get(key) for key in ("verifier_workers", "decomposition_paused", "reason")}
+            for mission_id in mission_ids:
+                self._emit(
+                    "BacklogResponseChanged",
+                    mission_id,
+                    key=f"backlog:{changes}:{mission_id}",
+                    payload={**document, "previous": before},
+                )
+            return True
 
     # ------------------------------------------------------------ tool audit
     def record_tool_rejected(
@@ -1858,6 +1900,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 tokens=reservation.tokens,
                 counts_attempt=True,
                 tool_calls=reservation.tool_calls,
+                search_calls=reservation.search_calls,
             )
             attempt = Attempt(
                 id=attempt_id,
@@ -1959,6 +2002,18 @@ class CommitService(ProtectedTailCommitsMixin,
                         "model": model,
                         **dict(routing),
                     },
+                )
+            grant = intent_config.get("resource_grant")
+            if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
+                from .resource_requests import GRANTED
+
+                self._emit(
+                    GRANTED,
+                    task.mission_id,
+                    key=attempt_id,
+                    task_id=task_id,
+                    attempt_id=attempt_id,
+                    payload=dict(grant),
                 )
             allocation = intent_config.get("allocation")
             if allocation:  # step 5 (S5-09): the §29.3 decision is on the timeline as well
@@ -2503,6 +2558,7 @@ class CommitService(ProtectedTailCommitsMixin,
         envelope: ResultEnvelope,
         turn_id: str,
         usage_refs: Sequence[str],
+        resource_request: Mapping[str, Any] | None = None,
     ) -> StoredResult:
         """A non-candidate Result Envelope (§13 blocked / failure / no_progress /
         proposed_subtasks; D5-5): kept as history (never verified), the Attempt ends in
@@ -2599,6 +2655,20 @@ class CommitService(ProtectedTailCommitsMixin,
                 attempt_id=attempt_id,
                 payload={"outcome": str(envelope.outcome), "summary": envelope.summary[:400]},
             )
+            if resource_request is not None:
+                # 推后第 3 批 H10：申请与核的结果，和这次结果同一个事务
+                from .resource_requests import REQUESTED
+
+                self._emit(
+                    REQUESTED,
+                    attempt.mission_id,
+                    key=envelope.id,
+                    task_id=attempt.task_id,
+                    attempt_id=attempt_id,
+                    payload={**dict(resource_request), "result_id": envelope.id},
+                    actor_type="agent",
+                    actor_id=attempt.agent_id or attempt_id,
+                )
             return stored
 
     def record_artifact_merge_not_applicable(
