@@ -35,24 +35,30 @@ def test_a_new_library_has_none_of_the_dropped_tables(tmp_path) -> None:
     assert {"missions", "tasks", "claims", "policy_versions"} <= tables  # kept
 
 
-def test_a_version_30_library_opens_and_loses_exactly_those_tables(tmp_path) -> None:
-    """A version-30 library, rebuilt from a current one: the two old migrations' own
-    text creates the tables again and migrations 31 and later are not yet recorded."""
+def test_a_version_30_library_opens_and_loses_exactly_those_tables(tmp_path, monkeypatch) -> None:
+    """A real version-30 library: migrations 1..30 only, so the two old migrations' own
+    text created the tables and migrations 31 and later are not yet recorded.
+
+    2026-10-08 改造库方式：原先在当前库上重放迁移 12、14 再删 31 以后的记录，迁移 38（f64e8adbe
+    删金额列）与迁移 40（0f8d8d9fd 建全库做法表）不能在已跑过它们的库上重放。改与迁移 33 的测试同法。
+    先只升到下一版，断言这一条迁移删掉的恰好是这几张表；再升到当前版，断言迁移链走得通。"""
 
     path = tmp_path / "orchestrator.db"
-    Store.open(path).close()
-    connection = sqlite3.connect(path)
-    connection.executescript(schema.MIGRATIONS[11].ddl)  # migration 12, unchanged text
-    connection.executescript(schema.MIGRATIONS[13].ddl)  # migration 14, unchanged text
-    connection.execute("DELETE FROM orch_schema_migrations WHERE version >= 31")
-    connection.commit()
-    connection.close()
-    assert [m.version for m in schema.MIGRATIONS[11:14:2]] == [12, 14]
+    assert schema.MIGRATIONS[29].version == 30
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:30])
+        Store.open(path).close()
     before = _tables(path)
     assert DROPPED <= before
 
-    Store.open(path).close()
+    # 只升到下一版：这一条迁移删掉的恰好是这几张表，不多不少（2026-10-08）。
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:31])
+        Store.open(path).close()
+    assert _tables(path) == before - DROPPED
+    assert (tmp_path / "orchestrator.db.pre-schema-31.backup").is_file()
 
-    after = _tables(path)
-    assert after == before - DROPPED
-    assert (tmp_path / f"orchestrator.db.pre-schema-{schema.SCHEMA_VERSION}.backup").is_file()
+    # 再按当前全部迁移打开：迁移链走得通，删掉的表不会回来。
+    Store.open(path).close()
+    assert not _tables(path) & DROPPED
+    assert schema.SCHEMA_VERSION >= 31

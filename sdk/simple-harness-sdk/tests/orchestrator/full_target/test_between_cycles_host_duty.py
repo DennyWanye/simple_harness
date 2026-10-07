@@ -35,7 +35,8 @@ def _loop(inflight_rounds: int, duty, every: float = 0.0):
 
     fake = SimpleNamespace(
         recover=nothing,
-        actions=SimpleNamespace(reconcile=nothing),
+        _recovery=None,  # 第 2 批车道 J（0a10df5e0c）：run() 先看恢复是否降级
+        _reconcile_actions=nothing,  # 70fb74d85（HTN B3）：run() 改走 _reconcile_actions
         _stall_carry_ons={},
         _mission_marks={},  # 第 4 批：空闲前清掉安静标记、全量看一遍
         _cycle=cycle,

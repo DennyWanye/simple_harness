@@ -54,8 +54,14 @@ def test_a_version_32_library_opens_and_loses_exactly_that_table(tmp_path, monke
     before = _objects(path, "table")
     assert TABLE in before
 
-    Store.open(path).close()
+    # 只升到下一版：迁移 33 删掉的恰好是这一张表，不多不少。原断言"升级后表集合减去它是升级前的子集"
+    # 在迁移 40（0f8d8d9fd 全库做法表）、迁移 46（0a10df5e0c 恢复表）加表后不再成立（2026-10-08）。
+    with monkeypatch.context() as patch:
+        patch.setattr(schema, "MIGRATIONS", schema.MIGRATIONS[:33])
+        Store.open(path).close()
+    assert _objects(path, "table") == before - {TABLE}
 
-    assert _objects(path, "table") - {TABLE} <= before
+    # 再按当前全部迁移打开：迁移链走得通，这张表不会回来。
+    Store.open(path).close()
     assert TABLE not in _objects(path, "table")
     assert schema.SCHEMA_VERSION >= 33

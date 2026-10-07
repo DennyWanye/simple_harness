@@ -225,7 +225,9 @@ def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_pat
 def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it_off(tmp_path):
     """一个槽位、两步并行：a 的调用在路上（很慢），b 的调用排队等槽位。
 
-    * 排队不计费：b 的回合活着、标明在等槽位且不计费，尝试照旧在跑（不被当成卡死），也没有授权行；
+    * 排队不计费：b 的回合活着、标明在等槽位且不计费，尝试照旧在跑（不被当成卡死），排队的这次调用
+      没有授权行（b 在 a 卡住之前可能已经跑完过一次调用，那次照实结账、照算——2026-10-08 改：
+      原断言"b 一条授权都没有"假设 a 先拿到槽位，现在常是 b 的第一次调用先跑完）；
     * 用户这时取消任务：b 那次调用永远不交出去；a 那次随后返回，照实结账（不因取消丢账）；
       两步未用的首审尾款都释放、认领收干净；
     * 两次尝试的预留在取消后的几轮里就结清，不等 300 秒的全量重核（2026-10-03 阶段 B 裁决第 8 类：
@@ -269,12 +271,20 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
                 assert live.alive and live.blocked
                 assert live.blocker["kind"] == "provider_slot_wait" and live.blocker["billable"] is False
                 assert str(store.get_attempt(waiter).status.value) == "RUNNING"
-                assert grants(store, waiter) == []
+                # b 已经跑完的调用：照实结账；排队的这次：没有授权行、从没交出去
+                earlier = grants(store, waiter)
+                assert all(row["state"] == "SETTLED" and row["actual_tokens"] is not None
+                           for row in earlier), earlier
+                granted = {row["invocation_id"] for row in grants(store)}
+                pending = {invocation for invocation, (state, handoffs) in physical_calls(root).items()
+                           if invocation not in granted}
+                assert pending and all(physical_calls(root)[i][1] == 0 for i in pending), physical_calls(root)
 
                 world.control.cancel(mission_id)
                 provider.let_go.set()
                 for _ in range(500):  # 取消落地，a 那次返回后照实结账
-                    finished = [row for row in grants(store) if row["subject_id"].startswith("task-")]
+                    finished = [row for row in grants(store)
+                                if row["subject_id"].startswith("task-") and row["subject_id"] != waiter]
                     if status(store, mission_id) == "CANCELLED" and finished and finished[0]["state"] == "SETTLED":
                         break
                     await asyncio.sleep(0.02)
@@ -284,11 +294,13 @@ def test_a_call_queued_for_the_only_slot_is_unbilled_and_a_cancel_never_hands_it
                 await asyncio.wait_for(runner, 30)
 
             assert status(store, mission_id) == "CANCELLED"
-            assert provider.asked.count("worker") == 1 and provider.stuck_calls == 1
-            assert grants(store, waiter) == []
+            # 到达提供方的执行者调用 = a 那一次 + b 排队前已跑完的那几次；排队的那次没到提供方
+            assert provider.asked.count("worker") == 1 + len(earlier) and provider.stuck_calls == 1
+            assert grants(store, waiter) == earlier  # 取消后排队的那次也没拿到授权，已结的不变
             assert all(handoffs == 0 for invocation, (state, handoffs) in physical_calls(root).items()
                        if invocation not in {row["invocation_id"] for row in grants(store)}), physical_calls(root)
-            [running] = [row for row in grants(store) if row["subject_id"].startswith("task-")]
+            [running] = [row for row in grants(store)
+                         if row["subject_id"].startswith("task-") and row["subject_id"] != waiter]
             assert running["state"] == "SETTLED" and running["actual_tokens"] == 150
             assert not store.list_mission_claims(mission_id)
             assert {row[0] for row in store.connection.execute(

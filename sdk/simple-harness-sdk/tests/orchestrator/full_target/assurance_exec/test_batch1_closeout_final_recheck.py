@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from agent_orchestrator.assurance.certificates import POINT_PURPOSES_SQL
 from agent_orchestrator.assurance.codec import AssuranceError, decode
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
 from agent_orchestrator.orchestrator.assurance_recheck import EVIDENCE_STALE, stale_certificates
@@ -89,9 +90,13 @@ def test_a01_expired_certificate_and_clock_rollback_block_the_closeout(tmp_path)
             mission_id = await _completed(world, "a01-expiry")
             mission = store.get_mission(mission_id)
             consumer = _consumer(world)
+            # 推后第 1 批 A26（1eddf79f0，2026-10-07）起同一张表里还有时点使用证书（PLAN/START/CONTEXT/
+            # DISCLOSE/RECOVERY）：签发事务里就用掉了，是历史，不进有效性观察、不进收尾依据
+            # （``live_usable_certificates`` 按用途排除）。收尾要看的只是其余那些。
             rows = store.connection.execute(
                 "SELECT certificate_id, consumer_kind, not_after_ms FROM assurance_use_certificates "
-                "WHERE mission_id=? ORDER BY rowid", (mission_id,)).fetchall()
+                f"WHERE mission_id=? AND purpose NOT IN ({POINT_PURPOSES_SQL}) ORDER BY rowid",
+                (mission_id,)).fetchall()
             assert {r["consumer_kind"] for r in rows} >= {"ACCEPTANCE", "ROOT_RESOLUTION"}
             far = max(int(r["not_after_ms"]) for r in rows) + 1
             now_ms = int(store.now * 1000)

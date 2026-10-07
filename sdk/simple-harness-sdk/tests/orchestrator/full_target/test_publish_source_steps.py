@@ -10,15 +10,25 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
+from agent_orchestrator.storage.htn_store import HtnStore
 
 CRITERIA = ("写一个词频模块", "file:wordfreq.py", "action:file_publish.publish:wordfreq.py",
             "file:README.md", "action:file_publish.publish:README.md")
 
 
+@pytest.fixture(autouse=True)
+def _no_requirements_revision(monkeypatch):
+    """8fcdb00cb（HTN E，2026-10-03）：准则改读现行要求书。桩库里没有要求书修订，
+    ``current_statements`` 按产品规则回落到章程（建任务时写入第 1 版之前的情形）。"""
+    monkeypatch.setattr(HtnStore, "latest_requirements_revision", lambda self, mission_id: None)
+
+
 def _unclear(links, criteria=CRITERIA):
     fake = SimpleNamespace(store=SimpleNamespace(
-        get_mission=lambda _id: SimpleNamespace(success_criteria=criteria)))
+        get_mission=lambda _id: SimpleNamespace(id="m1", success_criteria=criteria)))
     method = SimpleNamespace(composition=SimpleNamespace(criterion_links=[
         SimpleNamespace(parent_criterion_id=parent, child_step=step) for parent, step in links]))
     return HierarchicalDispatch._publish_source_steps(fake, "m1", method)
