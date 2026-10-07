@@ -161,6 +161,8 @@ interface MissionsState {
   /** 事件分页请求在途（在途时不显示「加载更多事件」）。 */
   eventsLoading: Record<string, boolean>;
   listStale: boolean;
+  /** 最近一次列表读到了坏消息（推后第 3 批 U09）：列表保留上次的行，上方显示这句话；下一次好的列表清掉。 */
+  listError: string | null;
   listRequestId: string | null;
   selectedId: string | null;
   detail: Record<string, unknown> | null;
@@ -169,6 +171,7 @@ interface MissionsState {
   setStatus: (status: OrchestrationStatus) => void;
   setMissions: (missions: ReadonlyArray<MissionRow | Json>) => void;
   setListRequest: (requestId: string | null) => void;
+  setListError: (error: string | null) => void;
   appendEvents: (missionId: string, events: MissionEvent[], hasMore?: boolean, throughSeq?: number) => void;
   setEventsLoading: (missionId: string, loading: boolean) => void;
   clearEventsLoading: () => void;
@@ -192,6 +195,7 @@ const initial = {
   eventsHasMore: {},
   eventsLoading: {},
   listStale: false,
+  listError: null,
   listRequestId: null,
   selectedId: null,
   detail: null,
@@ -202,8 +206,9 @@ const initial = {
 export const useMissionsStore = create<MissionsState>((set, get) => ({
   ...initial,
   setStatus: (status) => set({ status }),
-  setMissions: (missions) => set({ missions: missions.map(toRow).filter((row) => row.id), listStale: false }),
+  setMissions: (missions) => set({ missions: missions.map(toRow).filter((row) => row.id), listStale: false, listError: null }),
   setListRequest: (listRequestId) => set({ listRequestId }),
+  setListError: (listError) => set({ listError }),
   appendEvents: (missionId, incoming, hasMore, throughSeq) =>
     set((state) => {
       const bySeq = new Map<number, MissionEvent>();

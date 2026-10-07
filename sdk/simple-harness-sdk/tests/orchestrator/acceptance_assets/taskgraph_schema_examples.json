@@ -284,5 +284,361 @@
       }
     ],
     "complete": true
+  },
+  "taskgraph-execution-view-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "view_mode": "CURRENT",
+    "read_token": {
+      "plan_revision": 1,
+      "through_seq": 5,
+      "validity_epochs": [
+        {
+          "scope_id": "mission",
+          "epoch": 1
+        }
+      ],
+      "snapshot_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "graph": {
+      "schema_version": 1,
+      "mission_id": "m1",
+      "view_mode": "CURRENT",
+      "read_token": {
+        "plan_revision": 1,
+        "through_seq": 5,
+        "validity_epochs": [
+          {
+            "scope_id": "mission",
+            "epoch": 1
+          }
+        ],
+        "snapshot_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "nodes": [
+        {
+          "occurrence_id": "o1",
+          "task_id": "t1",
+          "obligation_id": "ob1",
+          "form": "primitive",
+          "contract_revision": 1,
+          "dispatch_generation": 1,
+          "phase": "ACTIVE",
+          "readiness": "WAITING_DATA",
+          "reason_codes": [
+            "producer_pending"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "kind": "order",
+          "source": "o1",
+          "target": "o2",
+          "identity": "e1"
+        }
+      ],
+      "planning_frontier": [],
+      "execution_frontier": [],
+      "root_resolution_refs": [
+        {
+          "kind": "resolution",
+          "id": "res-1",
+          "revision": 1,
+          "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "next_cursor": null,
+      "complete": true
+    },
+    "occurrence_labels": [
+      {
+        "occurrence_id": "o1",
+        "step_key": "write",
+        "step_index": 0,
+        "duties": [
+          "write 这一步完成 c-user-1"
+        ]
+      },
+      {
+        "occurrence_id": "o2",
+        "step_key": "",
+        "step_index": null,
+        "duties": []
+      }
+    ],
+    "execution_cut": {
+      "observed_at_ms": 1700000006000,
+      "imported_through_seq": 5,
+      "execution_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "runtime_source_watermarks": [
+        {
+          "profile_id": "deepseek-native-512k-v1",
+          "in_flight_turns": 1
+        }
+      ],
+      "coverage": "PENDING_IMPORT"
+    },
+    "execution_nodes": [
+      {
+        "node_id": "planning:intent-plan-1",
+        "kind": "planning",
+        "at_ms": 1700000000000,
+        "role": "planner",
+        "request_id": "intent-plan-1",
+        "base_plan_revision": 0,
+        "decisions": [
+          {
+            "decision_id": "pd-1",
+            "decision_type": "REFINE",
+            "status": "COMMITTED",
+            "rejection_codes": []
+          },
+          {
+            "decision_id": "pd-0",
+            "decision_type": null,
+            "status": "REJECTED",
+            "rejection_codes": [
+              "PLAN_SCHEMA_INVALID"
+            ]
+          }
+        ],
+        "turn": {
+          "intent_id": "intent-plan-1",
+          "agent_id": null,
+          "state": "PENDING",
+          "profile_id": null,
+          "model": null
+        },
+        "summary": {
+          "text": "采用已通过独立审阅的做法。",
+          "source_kind": "planning_decision",
+          "source_ref": "pd-1"
+        }
+      },
+      {
+        "node_id": "plan_revision:1",
+        "kind": "plan_revision",
+        "at_ms": 1700000001000,
+        "plan_revision": 1,
+        "state": "ACTIVE",
+        "base_revision": null,
+        "summary": null
+      },
+      {
+        "node_id": "attempt:t1:attempt-1",
+        "kind": "attempt",
+        "at_ms": 1700000002000,
+        "attempt_id": "t1:attempt-1",
+        "task_id": "t1",
+        "occurrence_id": "o1",
+        "plan_revision": 1,
+        "ordinal": 1,
+        "status": "COMPLETED",
+        "role": "worker",
+        "turn": {
+          "intent_id": "intent-attempt-t1:attempt-1",
+          "agent_id": "agent-1",
+          "state": "SETTLED",
+          "profile_id": "deepseek-native-512k-v1",
+          "model": "deepseek-v4-flash"
+        },
+        "summary": {
+          "text": "写好了要求的文件",
+          "source_kind": "result_envelope",
+          "source_ref": "result-1"
+        },
+        "result_id": "result-1",
+        "outcome": "candidate"
+      },
+      {
+        "node_id": "check:result-1",
+        "kind": "check",
+        "at_ms": 1700000003000,
+        "result_id": "result-1",
+        "attempt_id": "t1:attempt-1",
+        "verdict": "FAIL",
+        "state": "DONE",
+        "layers": [
+          {
+            "layer": "critic_review",
+            "status": "PASS",
+            "critic_intent_id": "intent-critic-1"
+          },
+          {
+            "layer": "rule_check",
+            "status": "FAIL",
+            "summary": "artifact_not_in_result: NOTES.md"
+          }
+        ],
+        "turn": null,
+        "summary": {
+          "text": "artifact_not_in_result: NOTES.md",
+          "source_kind": "verification",
+          "source_ref": "result-1:rule_check"
+        }
+      },
+      {
+        "node_id": "repair_request:rr-1",
+        "kind": "repair_request",
+        "at_ms": null,
+        "request_id": "rr-1",
+        "trigger_refs": [
+          "t1:attempt-1"
+        ],
+        "source_event_type": "VerificationFailed",
+        "summary": {
+          "text": "候选没把 NOTES.md 列进产物",
+          "source_kind": "repair_request",
+          "source_ref": "rr-1"
+        }
+      },
+      {
+        "node_id": "review:intent-final-1",
+        "kind": "review",
+        "at_ms": 1700000004000,
+        "purpose": "MISSION_FINAL",
+        "record_id": "rec-1",
+        "verdict": "ACCEPT",
+        "turn": {
+          "intent_id": "intent-attempt-t1:attempt-1",
+          "agent_id": "agent-1",
+          "state": "SETTLED",
+          "profile_id": "deepseek-native-512k-v1",
+          "model": "deepseek-v4-flash"
+        },
+        "summary": null
+      },
+      {
+        "node_id": "operation:act-1",
+        "kind": "operation",
+        "at_ms": 1700000005000,
+        "action_key": "act-1",
+        "state": "SUCCEEDED",
+        "connector": "local_publish",
+        "operation": "publish_file",
+        "target": "NOTES.md",
+        "summary": {
+          "text": "local_publish.publish_file → NOTES.md",
+          "source_kind": "action",
+          "source_ref": "act-1"
+        }
+      }
+    ],
+    "execution_edges": [
+      {
+        "kind": "attempt_of",
+        "source": "attempt:t1:attempt-1",
+        "target": "o1",
+        "target_layer": "structure"
+      },
+      {
+        "kind": "review_of",
+        "source": "check:result-1",
+        "target": "attempt:t1:attempt-1",
+        "target_layer": "execution"
+      }
+    ],
+    "next_cursor": "eyJ2IjoxfQ==",
+    "complete": false
+  },
+  "taskgraph-execution-detail-v1": {
+    "schema_version": 1,
+    "mission_id": "m1",
+    "node": {
+      "node_id": "attempt:t1:attempt-1",
+      "kind": "attempt",
+      "at_ms": 1700000002000,
+      "attempt_id": "t1:attempt-1",
+      "task_id": "t1",
+      "occurrence_id": "o1",
+      "plan_revision": 1,
+      "ordinal": 1,
+      "status": "COMPLETED",
+      "role": "worker",
+      "turn": {
+        "intent_id": "intent-attempt-t1:attempt-1",
+        "agent_id": "agent-1",
+        "state": "SETTLED",
+        "profile_id": "deepseek-native-512k-v1",
+        "model": "deepseek-v4-flash"
+      },
+      "summary": {
+        "text": "写好了要求的文件",
+        "source_kind": "result_envelope",
+        "source_ref": "result-1"
+      },
+      "result_id": "result-1",
+      "outcome": "candidate"
+    },
+    "turn": {
+      "intent_id": "intent-attempt-t1:attempt-1",
+      "agent_id": "agent-1",
+      "state": "SETTLED",
+      "profile_id": "deepseek-native-512k-v1",
+      "model": "deepseek-v4-flash",
+      "coverage": "COMPLETE",
+      "through_journal_seq": 5
+    },
+    "items": [
+      {
+        "t": "say",
+        "text": "先看一下工作区。"
+      },
+      {
+        "t": "tool",
+        "tool": "workspace_list",
+        "ok": true,
+        "files": [
+          "NOTES.md"
+        ],
+        "file_count": 1,
+        "found": 1,
+        "count": 2
+      },
+      {
+        "t": "tool",
+        "tool": "run_tests",
+        "ok": false,
+        "error": "测试没通过",
+        "path": "tests",
+        "bytes": 10,
+        "chars": 20,
+        "passed": false,
+        "returncode": -9,
+        "tail": "1 failed"
+      },
+      {
+        "t": "decision",
+        "decision_type": "REFINE",
+        "text": "采用做法"
+      },
+      {
+        "t": "method",
+        "steps": [
+          "write",
+          "publish"
+        ],
+        "text": "两步"
+      },
+      {
+        "t": "verdict",
+        "verdict": "ACCEPT",
+        "reasons": [
+          {
+            "verdict": "PASS",
+            "text": "满足要求"
+          }
+        ]
+      },
+      {
+        "t": "submit",
+        "outcome": "candidate",
+        "text": "写好了要求的文件"
+      }
+    ],
+    "hidden_items": 0
   }
 }

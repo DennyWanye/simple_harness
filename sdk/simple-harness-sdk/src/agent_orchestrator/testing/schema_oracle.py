@@ -3,8 +3,11 @@
 
 只为"八份对外合同 Schema 与 Python 边界 codec 对同一正负样本一致"这一条用例服务：Schema 是对外
 发布的合同文本，codec 是生产代码里唯一的校验路径；两边要用同一批样本对账，就得有一个不依赖
-``jsonschema``（用户 2026-09-18 裁定不引入）的读 Schema 的一方。这里只实现八份 Schema 实际用到的
+``jsonschema``（用户 2026-09-18 裁定不引入）的读 Schema 的一方。这里只实现这些 Schema 实际用到的
 Draft 2020-12 关键字，碰到没实现的关键字直接报错，不猜。生产代码不得引用本模块。
+
+``$ref`` 只认两种（推后第 3 批 U09，执行过程两份 Schema 用到）：``#/$defs/…`` 指同一份文件里的定义；
+``<文件名>[#/指针]`` 指同目录 ``graph/schemas`` 里的另一份合同。
 """
 from __future__ import annotations
 
@@ -15,8 +18,20 @@ from typing import Any
 _SUPPORTED = {
     "$schema", "$id", "type", "const", "enum", "required", "properties", "additionalProperties",
     "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "minimum", "maximum",
-    "pattern", "anyOf", "allOf", "contains", "minContains", "maxContains",
+    "pattern", "anyOf", "allOf", "contains", "minContains", "maxContains", "$ref", "$defs",
 }
+
+
+def _resolve(ref: str, root: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """``$ref`` → (指到的那一段, 它所在的那份文件)。"""
+    from ..graph import schemas
+
+    file_part, _, pointer = ref.partition("#")
+    document = schemas.load_schema(file_part.removesuffix(".schema.json")) if file_part else root
+    node: Any = document
+    for token in (pointer.strip("/").split("/") if pointer.strip("/") else ()):
+        node = node[token.replace("~1", "/").replace("~0", "~")]
+    return node, document
 
 
 def _is_type(value: Any, name: str) -> bool:
@@ -48,12 +63,17 @@ def _equal(left: Any, right: Any) -> bool:
     return left == right
 
 
-def violations(schema: Mapping[str, Any], value: Any, path: str = "$") -> list[str]:
-    """``value`` 违反 ``schema`` 的地方（空列表即合规）。"""
+def violations(schema: Mapping[str, Any], value: Any, path: str = "$",
+               root: Mapping[str, Any] | None = None) -> list[str]:
+    """``value`` 违反 ``schema`` 的地方（空列表即合规）。``root`` 是 ``schema`` 所在的那份文件。"""
     unknown = set(schema) - _SUPPORTED
     if unknown:
         raise ValueError(f"unsupported JSON Schema keywords at {path}: {sorted(unknown)}")
+    root = schema if root is None else root
     found: list[str] = []
+    if "$ref" in schema:
+        target, document = _resolve(schema["$ref"], root)
+        found.extend(violations(target, value, path, document))
     if "type" in schema:
         names = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
         if not any(_is_type(value, name) for name in names):
@@ -81,13 +101,13 @@ def violations(schema: Mapping[str, Any], value: Any, path: str = "$") -> list[s
         properties = schema.get("properties", {})
         for name, item in value.items():
             if name in properties:
-                found.extend(violations(properties[name], item, f"{path}.{name}"))
+                found.extend(violations(properties[name], item, f"{path}.{name}", root))
             else:
                 extra = schema.get("additionalProperties", True)
                 if extra is False:
                     found.append(f"{path}: unknown property {name!r}")
                 elif isinstance(extra, Mapping):
-                    found.extend(violations(extra, item, f"{path}.{name}"))
+                    found.extend(violations(extra, item, f"{path}.{name}", root))
     if _is_type(value, "array"):
         if "minItems" in schema and len(value) < schema["minItems"]:
             found.append(f"{path}: fewer than minItems")
@@ -98,17 +118,17 @@ def violations(schema: Mapping[str, Any], value: Any, path: str = "$") -> list[s
             found.append(f"{path}: items are not unique")
         if "items" in schema:
             for index, item in enumerate(value):
-                found.extend(violations(schema["items"], item, f"{path}[{index}]"))
+                found.extend(violations(schema["items"], item, f"{path}[{index}]", root))
         if "contains" in schema:
-            matching = sum(1 for item in value if not violations(schema["contains"], item, path))
+            matching = sum(1 for item in value if not violations(schema["contains"], item, path, root))
             if matching < schema.get("minContains", 1):
                 found.append(f"{path}: contains fewer than minContains")
             if "maxContains" in schema and matching > schema["maxContains"]:
                 found.append(f"{path}: contains more than maxContains")
-    if "anyOf" in schema and all(violations(item, value, path) for item in schema["anyOf"]):
+    if "anyOf" in schema and all(violations(item, value, path, root) for item in schema["anyOf"]):
         found.append(f"{path}: matches no anyOf branch")
     for item in schema.get("allOf", ()):
-        found.extend(violations(item, value, path))
+        found.extend(violations(item, value, path, root))
     return found
 
 

@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-"""八份对外合同 Schema 与 Python 边界 codec 对同一正负样本一致（原计划 §4 / 附录 E；第 2 批 T06、T07）。
+"""执行图对外合同 Schema 与 Python 边界 codec 对同一正负样本一致（原计划 §4 / 附录 E；第 2 批 T06、T07；
+推后第 3 批 U09 加执行过程两份）。
 
-* 八份 Schema 随 SDK 包交付，按名可读，``$id`` 与文件名一致；收敛视图是 v2（多 ``blocked_notifications``）。
-* 正样本：``acceptance_assets/taskgraph_schema_examples.json``。三个只读视图的 codec 必收；其余五份
+* 十份 Schema 随 SDK 包交付，按名可读，``$id`` 与文件名一致；收敛视图是 v2（多 ``blocked_notifications``）。
+* 正样本：``acceptance_assets/taskgraph_schema_examples.json``。五个只读视图（含执行过程主画面与回合详情）的 codec 必收；其余五份
   里带占位哈希的样本只用于 Schema 侧（原计划："八份结构样例的 hash 是测试占位"），codec 可因跨字段
   核对（哈希、同值）拒收——那是 codec 比 Schema 更严，计划允许。
 * 负样本：从正样本机械变异（删必填字段、加未知字段、改类型、空串、超长、坏哈希、负数、越界整数、
-  非法枚举）。**Schema 拒绝的，codec 必须拒绝**（八份都查）；三个视图 codec 与 Schema 的收拒完全相同。
+  非法枚举）。**Schema 拒绝的，codec 必须拒绝**（十份都查）；五个视图 codec 与 Schema 的收拒完全相同。
 
 **改坏检验**：收敛视图 Schema 去掉 ``blocked_notifications`` → 正样本在 Schema 侧不合规 → 变红；
 视图 codec 放过未知字段 → 加未知字段的负样本 Schema 拒、codec 收 → 变红。
@@ -27,13 +28,16 @@ from agent_orchestrator.graph.notification_contracts import FollowupV1, TaskGrap
 from agent_orchestrator.graph.structural_diff import TaskGraphDiffV1
 from agent_orchestrator.graph.view_contracts import (
     TaskGraphConvergenceViewV2,
+    TaskGraphExecutionDetailV1,
+    TaskGraphExecutionViewV1,
     TaskGraphExplanationV1,
     TaskGraphViewV1,
 )
 from agent_orchestrator.testing.schema_oracle import conforms, violations
 
 EXAMPLES = Path(__file__).parents[1] / "acceptance_assets" / "taskgraph_schema_examples.json"
-VIEWS = ("taskgraph-view-v1", "taskgraph-explanation-v1", "taskgraph-convergence-view-v2")
+VIEWS = ("taskgraph-view-v1", "taskgraph-explanation-v1", "taskgraph-convergence-view-v2",
+         "taskgraph-execution-view-v1", "taskgraph-execution-detail-v1")
 CODECS: dict[str, Any] = {
     "followup-v1": FollowupV1.from_json,
     "taskgraph-error-v1": TaskGraphErrorV1.from_json,
@@ -43,6 +47,8 @@ CODECS: dict[str, Any] = {
     "taskgraph-view-v1": TaskGraphViewV1.from_json,
     "taskgraph-explanation-v1": TaskGraphExplanationV1.from_json,
     "taskgraph-convergence-view-v2": TaskGraphConvergenceViewV2.from_json,
+    "taskgraph-execution-view-v1": TaskGraphExecutionViewV1.from_json,
+    "taskgraph-execution-detail-v1": TaskGraphExecutionDetailV1.from_json,
 }
 
 

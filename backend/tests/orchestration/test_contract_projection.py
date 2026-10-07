@@ -9,6 +9,11 @@ HTN §17.2（L856）"后端输出权威投影；前端用同一公开 Schema 验
 假的 SDK 读接口吐出不合合同的回复（多字段、错枚举、坏错误回执），Host 必须拒绝：
 回 ``protocol_error`` 一句大白话，不带数据、不带原回执。合格回复照常出门。
 最后一条核"Host 用的包内 Schema 与仓库 SDK 源码（前端 import 的那一份）字节相同"。
+
+推后第 3 批 U09 加七个动词：执行图主画面（``taskgraph.execution_snapshot``）、回合详情
+（``taskgraph.execution_detail``）、任务列表（``mission_list``）、任务详情（``mission_get``）、事件
+（``mission_events``）、待批准列表（``mission_approval_list``）、任务结束通知（``mission_notices``）。
+另有一条产品同形：脚本化任务整圈跑完，七个动词经 ``handle`` 读出的真实数据全部合合同。
 """
 
 from __future__ import annotations
@@ -64,6 +69,12 @@ class _GraphApi:
             raise self.reply
         return self.reply
 
+    def execution_snapshot(self, mission_id: str, **_: Any) -> Any:
+        return self.convergence(mission_id)
+
+    def execution_detail(self, mission_id: str, node_id: str, **_: Any) -> Any:
+        return self.convergence(mission_id)
+
 
 class _Orchestrator:
     def __init__(self, reply: Any) -> None:
@@ -97,6 +108,21 @@ class _Service:
     def taskgraph_read(self, operation: str, request: Any) -> Any:
         from deskpet.orchestration.taskgraph import read_taskgraph
         return read_taskgraph(self, operation, request)
+
+    def list_missions(self, *, limit: int = 50) -> Any:
+        return self._control.assurance_snapshot({})["missions"]  # handlers 外面再包一层 {"missions": …}
+
+    def mission_detail(self, mission_id: str) -> Any:
+        return self._control.assurance_snapshot({})
+
+    def events(self, mission_id: str, **_: Any) -> Any:
+        return self._control.assurance_snapshot({})
+
+    def approvals(self, mission_id: Any = None) -> Any:
+        return self._control.assurance_snapshot({})["approvals"]  # handlers 外面再包一层 {"approvals": …}
+
+    def pending_notices(self, body: Any = None) -> Any:
+        return self._control.assurance_snapshot({})
 
 
 def _assurance_request() -> dict[str, Any]:
@@ -199,6 +225,154 @@ def test_host_package_schemas_are_the_repo_files_the_frontend_imports() -> None:
         "graph/schemas/taskgraph-diff-v1.schema.json",
         "graph/schemas/taskgraph-convergence-view-v2.schema.json",
         "graph/schemas/taskgraph-error-v1.schema.json",
+        # 推后第 3 批 U09
+        "graph/schemas/taskgraph-execution-view-v1.schema.json",
+        "graph/schemas/taskgraph-execution-detail-v1.schema.json",
+        "assurance/contracts/host-mission-list-v1.schema.json",
+        "assurance/contracts/host-mission-detail-v1.schema.json",
+        "assurance/contracts/host-mission-events-v1.schema.json",
+        "assurance/contracts/host-mission-approval-list-v1.schema.json",
+        "assurance/contracts/host-mission-notices-v1.schema.json",
     ]
     for name in names:
         assert (package / name).read_bytes() == (REPO_SDK / name).read_bytes(), name
+
+
+# ---------------------------------------------------------------- 推后第 3 批 U09：四个动词
+
+TOKEN = {"plan_revision": 1, "through_seq": 3, "validity_epochs": [], "snapshot_hash": HASH, "manifest_hash": HASH}
+_TURN = {"intent_id": "intent-1", "agent_id": "agent-1", "state": "SETTLED", "profile_id": None, "model": None}
+_ATTEMPT = {"node_id": "attempt:a1", "kind": "attempt", "at_ms": 1000, "attempt_id": "a1", "task_id": "t1",
+            "occurrence_id": "o1", "plan_revision": 1, "ordinal": 1, "status": "COMPLETED", "role": "worker",
+            "turn": _TURN, "summary": None, "result_id": None}
+
+
+def _execution_page(**extra: Any) -> dict[str, Any]:
+    body = {"schema_version": 1, "mission_id": "m1", "view_mode": "CURRENT", "read_token": TOKEN, "graph": None,
+            "occurrence_labels": None,
+            "execution_cut": {"observed_at_ms": 1, "imported_through_seq": 3, "execution_hash": HASH,
+                              "runtime_source_watermarks": [], "coverage": "COMPLETE"},
+            "execution_nodes": [_ATTEMPT], "execution_edges": [], "next_cursor": None, "complete": True}
+    body.update(extra)
+    return body
+
+
+def _execution_detail(**extra: Any) -> dict[str, Any]:
+    body = {"schema_version": 1, "mission_id": "m1", "node": _ATTEMPT,
+            "turn": {**_TURN, "coverage": "COMPLETE", "through_journal_seq": 4},
+            "items": [{"t": "tool", "tool": "workspace_write_file", "ok": True, "path": "NOTES.md", "bytes": 28}],
+            "hidden_items": 0}
+    body.update(extra)
+    return body
+
+
+def _row(**extra: Any) -> dict[str, Any]:
+    row = {"mission_id": "m1", "goal": "写一份 NOTES.md", "status": "ACTIVE", "stop_reason": None,
+           "created_at": 1791365208.4, "pending_approvals": 0, "id": "m1", "blocked": False,
+           "recovery_isolated": None, "task_counts": {"completed": 0, "total": 1}, "ui_state": "running"}
+    row.update(extra)
+    return row
+
+
+def _detail(**extra: Any) -> dict[str, Any]:
+    detail = {
+        "mission": {"id": "m1", "goal": "写一份 NOTES.md", "status": "ACTIVE", "stop_reason": None,
+                    "created_at": 1791365208.4, "version": 3, "budget": {"max_tokens": 100}, "allowed_tools": [],
+                    "untrusted_sources": [], "ui_state": "running"},
+        "tasks": [{"id": "t1", "goal": {"text": "写 NOTES.md", "source": "model"}, "status": "READY", "kind": "work",
+                   "dependency_ids": [], "verification_policy": ["format_check"], "attempt_count": 0,
+                   "failure_reason": None, "paused": False}],
+        "attempts": [], "results": [], "artifacts": [], "actions": [], "approvals": [], "planning_questions": [],
+        "planning_authorization_requests": [], "operation_workspace": None, "budget_by_duty": [],
+        "unrefined_goals": [], "steps_no_longer_counting": [], "waiting_on": [], "blocked": [], "disputes": [],
+        "mission_policy": {"version_id": "policy-1", "source": "active"},
+        "usage": {"attempts": 0, "reserved_tokens": 0, "settled_tokens": 0, "ledger_version": 1},
+        "event_count": 5, "through_seq": 9, "recovery_isolated": None}
+    detail.update(extra)
+    return detail
+
+
+_EVENTS = {"mission_id": "m1", "has_more": False, "through_seq": 9,
+           "events": [{"seq": 9, "type": "HumanCommentAdded", "created_at": 1791365208.4, "task_id": None,
+                       "attempt_id": None, "actor_type": "human", "summary": "看一下"}]}
+_APPROVAL = {"request_id": "ap-1", "kind": "action", "mission_id": "m1", "task_id": "t1", "state": "PENDING",
+             "level": "L2", "required_count": 1, "grant_count": 0, "expires_at": 1791369999.0, "topic": None,
+             "options": [], "summary": {"connector": "file_publish", "operation": "publish", "target": "README.md",
+                                        "params": {"artifact_path": "README.md"}, "reason": "发布",
+                                        "reason_source": "system"},
+             "created_at": 1791365208.4,
+             "action": {"connector": "file_publish", "operation": "publish", "target": "README.md",
+                        "params": {"artifact_path": "README.md"}, "params_hash": HASH, "state": "PROPOSED",
+                        "reason": {"text": "发布", "source": "model"}},
+             "comments": []}
+_NOTICE = {"notice_id": "ev-1", "mission_id": "m1", "state_version": 7, "notified_at": 1791365208.4,
+           "acked_at": None, "status": "COMPLETED", "status_zh": "已完成", "goal": "写一份 NOTES.md",
+           "stop_reason": None, "unresolved_actions": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb,request_body,good,drifted", [
+    # 裁决后续做（推后第 3 批偏差裁决第 5 件）：另三个读动词
+    ("mission_events", {"mission_id": "m1"}, _EVENTS,
+     [{**_EVENTS, "events": [{**_EVENTS["events"][0], "payload": {"text": "原始正文"}}]},   # 原始正文不出门
+      {**_EVENTS, "has_more": "no"}]),
+    ("mission_approval_list", {}, {"approvals": [_APPROVAL]},
+     [{"approvals": [{**_APPROVAL, "binding": {"secret_path": "/x"}}]},
+      {"approvals": [{**_APPROVAL, "summary": "发布"}]}]),                                  # 模型的话没标来源
+    ("mission_notices", {}, [_NOTICE],
+     [[{**_NOTICE, "acked_at": 1791365300.0}], [{**_NOTICE, "unresolved_actions": "0"}], {"notices": [_NOTICE]}]),
+    ("taskgraph.execution_snapshot", {"mission_id": "m1"}, _execution_page(),
+     [_execution_page(execution_nodes=[{**_ATTEMPT, "debug_row": 1}]),        # 节点多字段
+      _execution_page(execution_nodes=[{**_ATTEMPT, "kind": "magic"}]),       # 节点种类外
+      _execution_page(complete="yes")]),
+    ("taskgraph.execution_detail", {"mission_id": "m1", "node_id": "attempt:a1"}, _execution_detail(),
+     [_execution_detail(items=[{"t": "tool", "tool": "x", "ok": True, "raw_args": {"k": 1}}]),   # 条目带原始参数
+      _execution_detail(turn={**_TURN, "coverage": "LIVE", "through_journal_seq": 4}),
+      _execution_detail(hidden_items=-1)]),
+    ("mission_list", {}, {"missions": [_row()]},
+     [{"missions": [_row(tenant_id="other")]},                                     # 合同外的字段
+      {"missions": [_row(ui_state="done")]},                                       # 状态词表外
+      {"missions": [_row(task_counts={"completed": "1", "total": 1})]}]),
+    ("mission_get", {"mission_id": "m1"}, _detail(),
+     [_detail(tasks=[{**_detail()["tasks"][0], "goal": "写 NOTES.md"}]),            # 模型的话没标来源
+      _detail(event_count=None),
+      _detail(internal_paths=["/tmp/x"])]),
+])
+async def test_the_u09_verbs_go_out_only_inside_their_public_contract(verb, request_body, good, drifted) -> None:
+    ok = await handle(_Service(good), verb, {"request_id": "u1", **request_body})
+    assert ok["payload"]["ok"] is True, ok["payload"]
+    assert ok["payload"]["data"] == good and ok["payload"]["data"] is not good
+    for body in drifted:
+        response = await handle(_Service(body), verb, {"request_id": "u2", **request_body})
+        assert response["type"] == f"{verb}_response"
+        _refused_as_protocol_error(response)
+
+
+@pytest.mark.asyncio
+async def test_real_replies_of_a_finished_mission_fit_the_public_contracts(orchestration_root, principal, monkeypatch):
+    """产品同形：Host 默认部署（分层 + 执行图 + 保证通道）上脚本化任务整圈跑完；四个动词经 ``handle``
+    读出的真实数据全部合合同（合同不是照着假数据写的）。"""
+    import asyncio
+
+    from ._layered_lane import LayeredScriptedProvider, layered_service, notes_mission, quick_runtime, run_until_settled
+
+    quick_runtime(monkeypatch)
+    service = layered_service(orchestration_root, principal, LayeredScriptedProvider())
+    await asyncio.wait_for(service.start(), 30)
+    try:
+        mission_id = service.create_mission(notes_mission())["mission_id"]
+        await run_until_settled(service, mission_id)
+        reads = [("mission_list", {}), ("mission_get", {"mission_id": mission_id}),
+                 ("mission_events", {"mission_id": mission_id, "limit": 200}),
+                 ("mission_approval_list", {}), ("mission_notices", {}),
+                 ("taskgraph.execution_snapshot", {"mission_id": mission_id})]
+        replies = {verb: (await handle(service, verb, body))["payload"] for verb, body in reads}
+        for verb, payload in replies.items():
+            assert payload["ok"] is True, (verb, payload)
+        nodes = replies["taskgraph.execution_snapshot"]["data"]["execution_nodes"]
+        assert {node["kind"] for node in nodes} >= {"planning", "plan_revision", "attempt", "check", "review"}
+        for node in nodes:
+            detail = await handle(service, "taskgraph.execution_detail", {"mission_id": mission_id, "node_id": node["node_id"]})
+            assert detail["payload"]["ok"] is True, (node["node_id"], detail["payload"])
+    finally:
+        await asyncio.wait_for(service.close(), 30)

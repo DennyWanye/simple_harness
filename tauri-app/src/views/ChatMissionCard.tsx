@@ -19,6 +19,7 @@ import { ActionApprovalSummary } from "./ActionApprovalSummary";
 import { MissionsChannelContext } from "./chatMission";
 import { OperationWorkspace } from "./OperationWorkspace";
 import { PlanningQuestions } from "./PlanningQuestions";
+import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
 
 type Json = Record<string, unknown>;
 
@@ -62,6 +63,8 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [deciding, setDeciding] = useState<Record<string, boolean>>({});
   const getRequest = useRef<string | null>(null);
+  /** 已经显示过一份详情（坏消息时它就是"上次的内容"）。 */
+  const shown = useRef(false);
   const decisions = useRef(new Map<string, string>());
 
   const refresh = useCallback(() => {
@@ -89,10 +92,13 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
       if (type === "mission_get_response" && payload.request_id === getRequest.current) {
         getRequest.current = null;
         if (payload.ok === true) {
+          shown.current = true;
           setDetail(record(payload.data));
           setError("");
         } else {
-          setError(text(payload.error) || "读取任务失败");
+          // 推后第 3 批 U09：坏消息保留上次内容，标明下面是旧的
+          const stale = payload.error_code === PROTOCOL_ERROR && shown.current;
+          setError((text(payload.error) || "读取任务失败") + (stale ? STALE_NOTE : ""));
         }
         return;
       }

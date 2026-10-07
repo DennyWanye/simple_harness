@@ -17,6 +17,7 @@ import {
   turnGist, turnTitle, type Card, type EventCard, type StepNames, type Story, type TurnCard, type TurnDetail,
 } from "./storyModel";
 import { mergePages, parseExecutionPage, STALL_SECONDS, type ExecutionPage, type ExecutionView } from "../liveGraph/model";
+import { PROTOCOL_ERROR, PROTOCOL_ERROR_TEXT } from "../../ws/orchestrationContracts";
 import "./MissionStory.css";
 
 const SNAPSHOT_TYPE = "taskgraph.execution_snapshot";
@@ -169,7 +170,11 @@ export function MissionStory({ missionId, channel, missionStatus, onStalled }: {
         const nodeId = detailInflight.current.get(String(body.request_id));
         if (nodeId === undefined) return;
         detailInflight.current.delete(String(body.request_id));
-        if (body.ok !== true) return; // 明细读不到：卡片保留摘要，下次展开或刷新再读
+        if (body.ok !== true) {
+          // 明细读不到：卡片保留摘要，下次展开或刷新再读。坏消息（推后第 3 批 U09）要说出来，不悄悄吞掉
+          if (body.error_code === PROTOCOL_ERROR) setError(typeof body.error === "string" && body.error ? body.error : PROTOCOL_ERROR_TEXT);
+          return;
+        }
         try {
           const detail = parseTurnDetail(body.data, missionId, nodeId);
           setDetails((current) => new Map(current).set(nodeId, detail));

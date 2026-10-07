@@ -17,7 +17,13 @@ from ..graph.notification_contracts import TaskGraphErrorV1, _integer, _text
 from ..contracts.models import ContractError
 from ..graph.network_codec import decode
 from ..graph.structural_diff import diff_documents
-from ..graph.view_contracts import TaskGraphConvergenceViewV2, TaskGraphExplanationV1, TaskGraphViewV1
+from ..graph.view_contracts import (
+    TaskGraphConvergenceViewV2,
+    TaskGraphExecutionDetailV1,
+    TaskGraphExecutionViewV1,
+    TaskGraphExplanationV1,
+    TaskGraphViewV1,
+)
 from ..orchestrator.hierarchical_dispatch import NetworkView, next_compound_phase
 from ..storage.store import Store
 from ..storage.taskgraph_store import TaskGraphStore
@@ -42,7 +48,7 @@ def _hash(value: Any) -> str:
 
 
 def _contract(codec: Any, body: Mapping[str, Any], name: str) -> dict[str, Any]:
-    """三个只读视图出门前过各自的严格合同（原计划 §4.3 / 附录 E；第 2 批 T06）。
+    """只读视图出门前过各自的严格合同（原计划 §4.3 / 附录 E；第 2 批 T06；执行过程两种见推后第 3 批 U09）。
 
     组装出不合规的文档是本模块自己的错，不是来源变了：按 GRAPH_INTEGRITY 报给操作员修，
     不把半成品发给界面。"""
@@ -386,7 +392,7 @@ class TaskGraphReadApi:
             last = page[-1]
             next_cursor = _encode_cursor({**pin, "k": [last["at_ms"] or 0, last["node_id"]]})
         pending = projection.in_flight_turns()
-        return {"schema_version": 1, "mission_id": mission_id, "view_mode": "CURRENT",
+        return _contract(TaskGraphExecutionViewV1, {"schema_version": 1, "mission_id": mission_id, "view_mode": "CURRENT",
                 "read_token": graph["read_token"], "graph": graph if cursor is None else None,
                 "occurrence_labels": labels,
                 "execution_cut": {"observed_at_ms": observed,
@@ -398,10 +404,17 @@ class TaskGraphReadApi:
                                   "coverage": "PENDING_IMPORT" if pending else "COMPLETE"},
                 "execution_nodes": page,
                 "execution_edges": [e for e in projection.edges if e["source"] in ids],
-                "next_cursor": next_cursor, "complete": complete}
+                "next_cursor": next_cursor, "complete": complete}, "taskgraph-execution-view-v1")
 
     def execution_detail(self, mission_id: str, node_id: str, *,
                          through_journal_seq: int | None = None) -> dict[str, Any]:
+        """``TaskGraphExecutionDetailV1``，出门前过严格合同（推后第 3 批 U09）。"""
+        return _contract(TaskGraphExecutionDetailV1,
+                         self._execution_detail(mission_id, node_id, through_journal_seq=through_journal_seq),
+                         "taskgraph-execution-detail-v1")
+
+    def _execution_detail(self, mission_id: str, node_id: str, *,
+                          through_journal_seq: int | None = None) -> dict[str, Any]:
         """One execution node's facts and, when it was a model turn, what that turn
         visibly did — read from its own runtime pool by exact agent id, redacted and
         whitelisted (plan §8.4–§8.5). ``through_journal_seq`` re-reads a pinned cut."""

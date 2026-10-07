@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/host/host-mission-approval-list-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approvals"
+  ],
+  "properties": {
+    "approvals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/approval"
+      }
+    }
+  },
+  "$defs": {
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "kind",
+        "mission_id",
+        "task_id",
+        "state",
+        "level",
+        "required_count",
+        "grant_count",
+        "expires_at",
+        "topic",
+        "options",
+        "summary",
+        "created_at",
+        "action",
+        "comments"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "mission_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "level": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "required_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "grant_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expires_at": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "topic": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 0
+        },
+        "options": {
+          "type": "array"
+        },
+        "summary": {
+          "$ref": "host-mission-detail-v1.schema.json#/$defs/approval_summary"
+        },
+        "created_at": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "action": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "connector",
+                "operation",
+                "target",
+                "params",
+                "params_hash",
+                "state",
+                "reason"
+              ],
+              "properties": {
+                "connector": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 0
+                },
+                "operation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 0
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 600
+                },
+                "params": {},
+                "params_hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 0
+                },
+                "state": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 0
+                },
+                "reason": {
+                  "$ref": "host-mission-detail-v1.schema.json#/$defs/model_2000"
+                }
+              }
+            }
+          ]
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "host-mission-detail-v1.schema.json#/$defs/comment"
+          }
+        },
+        "source_change": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "operation": {},
+            "path": {},
+            "expected_version_hash": {},
+            "version_hash": {},
+            "old_revision": {},
+            "kind": {},
+            "reason": {}
+          }
+        }
+      }
+    }
+  }
+}

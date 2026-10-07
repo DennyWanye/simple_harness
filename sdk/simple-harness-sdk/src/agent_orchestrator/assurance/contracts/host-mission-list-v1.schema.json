@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/host/host-mission-list-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "missions"
+  ],
+  "properties": {
+    "missions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      },
+      "maxItems": 200
+    }
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mission_id",
+        "id",
+        "goal",
+        "status",
+        "stop_reason",
+        "created_at",
+        "pending_approvals",
+        "blocked",
+        "recovery_isolated",
+        "task_counts",
+        "ui_state"
+      ],
+      "properties": {
+        "mission_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "stop_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 0
+        },
+        "created_at": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pending_approvals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "recovery_isolated": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "tables"
+          ],
+          "properties": {
+            "tables": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "maxItems": 256
+            }
+          }
+        },
+        "task_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "completed",
+            "total"
+          ],
+          "properties": {
+            "completed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "ui_state": {
+          "type": "string",
+          "enum": [
+            "received",
+            "queued",
+            "running",
+            "verifying",
+            "waiting_person",
+            "unknown",
+            "delivered",
+            "failed",
+            "cancelled"
+          ]
+        }
+      }
+    }
+  }
+}

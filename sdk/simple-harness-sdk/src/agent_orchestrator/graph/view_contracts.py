@@ -5,10 +5,15 @@
 （``TaskGraphConvergenceViewV2``）三种返回在这里编解码：字段集合精确、枚举与上界同 ``graph/schemas/``
 里的三份 Schema 一致（一致性由正负样本用例守住）。只核结构，不读库、不授权；``snapshot_hash``
 是否对得上由组装方算，这里不重算。
+
+推后第 3 批 U09：执行过程主画面（``TaskGraphExecutionViewV1``）与回合详情（``TaskGraphExecutionDetailV1``）
+也在这里，对应 ``taskgraph-execution-view-v1`` / ``taskgraph-execution-detail-v1`` 两份 Schema。节点按
+``kind``、回合条目按 ``t`` 分种，每种字段集合精确；与 Schema 的收拒完全相同（同一组正负样本守住）。
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import copy
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, NoReturn, cast
 
@@ -453,6 +458,205 @@ class TaskGraphConvergenceViewV2:
         return cls(**{key: row[key] for key in row})
 
 
+# ------------------------------------------------------------------ execution process（推后第 3 批 U09）
+#
+# 字段表即合同：``_record`` 按"必有字段 / 可有字段 → 核对函数"逐个核，多一个、少一个都拒。
+# 上界取 ``orchestrator/taskgraph_execution_view.py`` 的截断长度；不定长的标识取 1024。
+
+_Check = Callable[[object, str], Any]
+
+
+def _t(minimum: int, maximum: int) -> _Check:
+    return lambda value, name: _text(value, name, minimum=minimum, maximum=maximum)
+
+
+def _nt(minimum: int, maximum: int) -> _Check:
+    return lambda value, name: None if value is None else _text(value, name, minimum=minimum, maximum=maximum)
+
+
+def _i(minimum: int = 0) -> _Check:
+    return lambda value, name: _integer(value, name, minimum=minimum)
+
+
+def _ni(minimum: int = 0) -> _Check:
+    return lambda value, name: None if value is None else _integer(value, name, minimum=minimum)
+
+
+def _signed_or_null(value: object, name: str) -> int | None:
+    if value is None:
+        return None
+    if type(value) is not int or not -_JS_MAX <= value <= _JS_MAX:
+        _invalid(f"{name} must be a safe integer or null")
+    return value
+
+
+def _bool(value: object, name: str) -> bool:
+    if type(value) is not bool:
+        _invalid(f"{name} must be a boolean")
+    return value
+
+
+def _enum(*allowed: str) -> _Check:
+    words = frozenset(allowed)
+    return lambda value, name: _one_of(value, words, name)
+
+
+def _const(expected: Any) -> _Check:
+    def check(value: object, name: str) -> Any:
+        if type(value) is not type(expected) or value != expected:
+            _invalid(f"{name} must be {expected!r}")
+        return value
+    return check
+
+
+def _list(item: _Check, maximum: int) -> _Check:
+    return lambda value, name: [item(entry, f"{name}[]") for entry in _array(value, name, maximum=maximum)]
+
+
+def _record(required: Mapping[str, _Check], optional: Mapping[str, _Check] | None = None, *,
+            nullable: bool = False) -> _Check:
+    extra = dict(optional or {})
+
+    def check(value: object, name: str) -> dict[str, Any] | None:
+        if value is None and nullable:
+            return None
+        if not isinstance(value, Mapping) or not set(required) <= set(value) or set(value) - set(required) - set(extra):
+            _invalid(f"{name} has missing or unknown fields")
+        return {key: rule(value[key], f"{name}.{key}") for key, rule in (*required.items(), *extra.items())
+                if key in value}
+    return check
+
+
+def _tagged(tag: str, kinds: Mapping[str, _Check]) -> _Check:
+    def check(value: object, name: str) -> dict[str, Any]:
+        kind = value.get(tag) if isinstance(value, Mapping) else None
+        if not isinstance(kind, str) or kind not in kinds:
+            _invalid(f"{name}.{tag} must be one of {sorted(kinds)}")
+        return kinds[kind](value, name)
+    return check
+
+
+_ID, _WORD = _t(1, 1024), _t(1, 128)
+_NID = _nt(1, 1024)
+_SUMMARY = _record({"text": _t(1, 240),
+                    "source_kind": _enum("plan_commit_receipt", "result_envelope", "verification", "planning_decision",
+                                         "repair_request", "review_record", "action"),
+                    "source_ref": _ID}, nullable=True)
+_TURN_REF = {"intent_id": _ID, "agent_id": _NID, "state": _WORD, "profile_id": _NID, "model": _nt(1, 512)}
+_TURN = _record(_TURN_REF, nullable=True)
+
+
+def _node_kind(kind: str, fields: Mapping[str, _Check], optional: Mapping[str, _Check] | None = None) -> _Check:
+    return _record({"node_id": _ID, "kind": _const(kind), "at_ms": _ni(), **fields}, optional)
+
+
+EXECUTION_NODE = _tagged("kind", {
+    "attempt": _node_kind("attempt", {
+        "attempt_id": _ID, "task_id": _ID, "occurrence_id": _NID, "plan_revision": _ni(), "ordinal": _i(1),
+        "status": _WORD, "role": _WORD, "turn": _TURN, "summary": _SUMMARY, "result_id": _NID},
+        {"outcome": _nt(1, 40)}),
+    "check": _node_kind("check", {
+        "result_id": _ID, "attempt_id": _ID, "verdict": _nt(1, 128), "state": _WORD,
+        "layers": _list(_record({"layer": _WORD, "status": _WORD},
+                                {"summary": _t(1, 400), "critic_intent_id": _ID}), 256),
+        "turn": _TURN, "summary": _SUMMARY}),
+    "review": _node_kind("review", {
+        "purpose": _enum("MISSION_FINAL", "ACTION_PROPOSAL", "OPERATION_OUTCOME", "COMPOSITION", "METHOD_PLAN",
+                         "MISSION_JUDGE"),
+        "record_id": _NID, "verdict": _nt(1, 128), "turn": _TURN, "summary": _SUMMARY}),
+    "planning": _node_kind("planning", {
+        "role": _const("planner"), "request_id": _ID, "base_plan_revision": _ni(),
+        "decisions": _list(_record({"decision_id": _ID, "decision_type": _nt(1, 128), "status": _WORD,
+                                    "rejection_codes": _list(_t(0, 256), 16)}), 1000),
+        "turn": _TURN, "summary": _SUMMARY}),
+    "repair_request": _node_kind("repair_request", {
+        "request_id": _ID, "trigger_refs": _list(_ID, 8), "source_event_type": _nt(1, 60), "summary": _SUMMARY}),
+    "plan_revision": _node_kind("plan_revision", {
+        "plan_revision": _i(), "state": _WORD, "base_revision": _ni(), "summary": _SUMMARY}),
+    "operation": _node_kind("operation", {
+        "action_key": _ID, "state": _WORD, "connector": _nt(1, 60), "operation": _nt(1, 60), "target": _nt(1, 200),
+        "summary": _SUMMARY}),
+})
+_EXECUTION_EDGE = _record({
+    "kind": _enum("attempt_of", "rework_of", "review_of", "reviews", "repair_requested", "decision_for",
+                  "retry_authorized", "committed_as", "supersedes", "operation_of"),
+    "source": _ID, "target": _ID, "target_layer": _enum("execution", "structure")})
+
+
+def _execution_hash(value: object, name: str) -> str:
+    return _hash(value, name)
+
+
+_EXECUTION_VIEW = _record({
+    "schema_version": _const(1),
+    "mission_id": _t(1, 512),
+    "view_mode": _const("CURRENT"),
+    "read_token": lambda value, name: ReadTokenV1.from_json(value).to_json(),
+    "graph": lambda value, name: None if value is None else TaskGraphViewV1.from_json(value).to_json(),
+    "occurrence_labels": lambda value, name: None if value is None else _list(_record({
+        "occurrence_id": _ID, "step_key": _t(0, 80), "step_index": _ni(),
+        "duties": _list(_t(0, 600), 12)}), 10000)(value, name),
+    "execution_cut": _record({
+        "observed_at_ms": _i(), "imported_through_seq": _i(), "execution_hash": _execution_hash,
+        "runtime_source_watermarks": _list(_record({"profile_id": _ID, "in_flight_turns": _i(1)}), 256),
+        "coverage": _enum("COMPLETE", "PENDING_IMPORT")}),
+    "execution_nodes": _list(EXECUTION_NODE, 200),
+    "execution_edges": _list(_EXECUTION_EDGE, 4096),
+    "next_cursor": _nt(1, 4096),
+    "complete": _bool,
+})
+
+_TURN_ITEM = _tagged("t", {
+    "say": _record({"t": _const("say"), "text": _t(0, 600)}),
+    "submit": _record({"t": _const("submit"), "outcome": _t(0, 40), "text": _t(0, 600)}),
+    "decision": _record({"t": _const("decision"), "decision_type": _t(0, 40), "text": _t(0, 600)}),
+    "method": _record({"t": _const("method"), "steps": _list(_t(0, 80), 40), "text": _t(0, 600)}),
+    "verdict": _record({"t": _const("verdict"), "verdict": _t(0, 40),
+                        "reasons": _list(_record({"verdict": _t(0, 20), "text": _t(0, 400)}), 8)}),
+    "tool": _record({"t": _const("tool"), "tool": _t(0, 60), "ok": _bool},
+                    {"error": _t(0, 200), "path": _t(0, 200), "bytes": _i(), "chars": _i(),
+                     "files": _list(_t(0, 120), 12), "file_count": _i(), "passed": _bool,
+                     "returncode": _signed_or_null, "tail": _t(0, 200), "found": _i(), "count": _i(2)}),
+})
+_EXECUTION_DETAIL = _record({
+    "schema_version": _const(1),
+    "mission_id": _t(1, 512),
+    "node": EXECUTION_NODE,
+    "turn": _record({**_TURN_REF, "coverage": _enum("COMPLETE", "PENDING_IMPORT", "SOURCE_UNAVAILABLE"),
+                     "through_journal_seq": _ni()}, nullable=True),
+    "items": _list(_TURN_ITEM, 120),
+    "hidden_items": _i(),
+})
+
+
+@dataclass(frozen=True, slots=True)
+class TaskGraphExecutionViewV1:
+    """``taskgraph.execution_snapshot`` 的一页：严格执行图（第一页）加执行过程节点与边。"""
+
+    body: Mapping[str, Any]
+
+    def to_json(self) -> dict[str, Any]:
+        return copy.deepcopy(dict(self.body))
+
+    @classmethod
+    def from_json(cls, value: object) -> TaskGraphExecutionViewV1:
+        return cls(body=cast(dict[str, Any], _EXECUTION_VIEW(value, "execution_view")))
+
+
+@dataclass(frozen=True, slots=True)
+class TaskGraphExecutionDetailV1:
+    """``taskgraph.execution_detail``：一个执行节点与（模型回合时）这一回合看得见的条目。"""
+
+    body: Mapping[str, Any]
+
+    def to_json(self) -> dict[str, Any]:
+        return copy.deepcopy(dict(self.body))
+
+    @classmethod
+    def from_json(cls, value: object) -> TaskGraphExecutionDetailV1:
+        return cls(body=cast(dict[str, Any], _EXECUTION_DETAIL(value, "execution_detail")))
+
+
 __all__ = ("BlockedNotificationV1", "ConvergenceJobV1", "ConvergenceTargetV1", "ReadTokenV1",
-           "TaskGraphConvergenceViewV2", "TaskGraphExplanationV1", "TaskGraphViewV1", "ValidityEpochV1",
-           "ViewEdgeV1", "ViewNodeV1", "ViewRefV1")
+           "TaskGraphConvergenceViewV2", "TaskGraphExecutionDetailV1", "TaskGraphExecutionViewV1",
+           "TaskGraphExplanationV1", "TaskGraphViewV1", "ValidityEpochV1", "ViewEdgeV1", "ViewNodeV1", "ViewRefV1")

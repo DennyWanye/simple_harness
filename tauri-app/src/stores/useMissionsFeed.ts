@@ -15,6 +15,7 @@
 import { useEffect } from "react";
 
 import type { IncomingMessage } from "../types/messages";
+import { PROTOCOL_ERROR, PROTOCOL_ERROR_TEXT } from "../ws/orchestrationContracts";
 import {
   asList,
   asRecord,
@@ -98,6 +99,8 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
         case "mission_list_response":
           if (payload.request_id !== state.listRequestId) break;
           if (payload.ok === true) state.setMissions(asList(asRecord(payload.data).missions));
+          // 推后第 3 批 U09：坏消息（通道已按公开合同换成协议错）不动上次的列表，只记下这句话给列表上方显示
+          else if (payload.error_code === PROTOCOL_ERROR) state.setListError(asText(payload.error) || PROTOCOL_ERROR_TEXT);
           break;
         case "mission_changed": {
           const missionId = asText(payload.mission_id);

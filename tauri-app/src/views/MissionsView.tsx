@@ -46,6 +46,7 @@ import {
   type MissionEvent,
   type MissionsChannel,
 } from "../stores/missionsStore";
+import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
 
 export interface MissionsViewProps {
   channel: MissionsChannel | null;
@@ -482,7 +483,7 @@ const TakeoverBox: React.FC<{ taskId: string; send: (type: string, payload?: Jso
 export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   // 2026-09-27 性能：按字段订阅。以前订阅整个 store，任何任务的每秒推送都让整页重画。
   const store = useMissionsStore(useShallow((s) => ({
-    selectedId: s.selectedId, detail: s.detail, status: s.status, policy: s.policy, missions: s.missions, error: s.error,
+    selectedId: s.selectedId, detail: s.detail, status: s.status, policy: s.policy, missions: s.missions, error: s.error, listError: s.listError,
     selectedEvents: s.selectedId ? s.events[s.selectedId] : undefined,
     selectedHasMore: s.selectedId ? s.eventsHasMore[s.selectedId] === true : false,
     selectedLoading: s.selectedId ? s.eventsLoading[s.selectedId] === true : false,
@@ -674,7 +675,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       if (tracked !== undefined) requests.current.delete(requestId);
       if (payload.ok === false && (tracked === undefined || tracked === selectedRef.current)) {
         const code = text(payload.error_code);
-        state.setError(ERROR_TEXT[code] ?? (text(payload.error) || code || "请求失败"));
+        const message = ERROR_TEXT[code] ?? (text(payload.error) || code || "请求失败");
+        // 推后第 3 批 U09：详情、事件读到坏消息时保留上次的内容，并标明下面是旧的
+        const stale = code === PROTOCOL_ERROR && ((type === "mission_get_response" && state.detail !== null)
+          || (type === "mission_events_response" && (state.events[tracked ?? ""]?.length ?? 0) > 0));
+        state.setError(stale ? message + STALE_NOTE : message);
       }
 
       switch (type) {
@@ -965,6 +970,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         <button type="button" style={{ ...button, flexShrink: 0 }} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
           新建任务
         </button>
+        {store.listError ? (
+          <div role="alert" data-testid="mission-list-error" style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}>
+            {store.listError}{store.missions.length > 0 ? STALE_NOTE : ""}
+          </div>
+        ) : null}
         {store.missions.length === 0 ? (
           <div style={{ color: dark.textMuted }}>还没有任务。点「新建任务」开始。</div>
         ) : (

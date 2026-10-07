@@ -482,6 +482,10 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
 # - 执行图：边界 codec（第 2 批 T06 定的"执行图合同在生产代码里只走 codec"；codec 与
 #   ``graph/schemas`` 里的 Schema 一致由 SDK 用例守住）。
 # 前端 ``tauri-app/src/ws/orchestrationContracts.ts`` 直接 import 同一批 Schema 文件，表与这里同名。
+#
+# 推后第 3 批 U09（HTN §17.2）补上界面会画的七个读动词：执行图主画面与回合详情（执行图合同族，
+# 走 codec），任务列表、任务详情、事件、待批准列表、任务结束通知（Host 投影，合同 ``host-mission-*-v1``
+# 放在 SDK 的 Host DTO 合同处，走同一个 ``host-`` 核对器）。
 # ---------------------------------------------------------------------------
 
 PROTOCOL_ERROR = "protocol_error"
@@ -500,9 +504,20 @@ TASKGRAPH_REPLIES = {
     "taskgraph.why_not_ready": "taskgraph-explanation-v1",
     "taskgraph.diff": "taskgraph-diff-v1",
     "taskgraph.convergence": "taskgraph-convergence-view-v2",
+    "taskgraph.execution_snapshot": "taskgraph-execution-view-v1",
+    "taskgraph.execution_detail": "taskgraph-execution-detail-v1",
 }
 TASKGRAPH_ERROR = "taskgraph-error-v1"
-CONTRACT_VERBS = frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES)
+#: 动词 → Host 任务投影的合同名（推后第 3 批 U09）
+MISSION_REPLIES = {
+    "mission_list": "host-mission-list-v1",
+    "mission_get": "host-mission-detail-v1",
+    # 推后第 3 批偏差裁决第 5 件：另三个界面会画的读回复
+    "mission_events": "host-mission-events-v1",
+    "mission_approval_list": "host-mission-approval-list-v1",
+    "mission_notices": "host-mission-notices-v1",
+}
+CONTRACT_VERBS = frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES) | frozenset(MISSION_REPLIES)
 #: 回执种类 → (回复里的字段名, 合同名)
 ERROR_WIRES = {"assurance": ("assurance_error", ASSURANCE_ERROR), "taskgraph": ("taskgraph_error", TASKGRAPH_ERROR)}
 
@@ -524,11 +539,15 @@ def _taskgraph_codec(contract: str) -> Any:
     from agent_orchestrator.graph.structural_diff import TaskGraphDiffV1
     from agent_orchestrator.graph.view_contracts import (
         TaskGraphConvergenceViewV2,
+        TaskGraphExecutionDetailV1,
+        TaskGraphExecutionViewV1,
         TaskGraphExplanationV1,
         TaskGraphViewV1,
     )
 
     return {
+        "taskgraph-execution-view-v1": TaskGraphExecutionViewV1,
+        "taskgraph-execution-detail-v1": TaskGraphExecutionDetailV1,
         "taskgraph-view-v1": TaskGraphViewV1,
         "taskgraph-explanation-v1": TaskGraphExplanationV1,
         "taskgraph-diff-v1": TaskGraphDiffV1,
@@ -558,7 +577,7 @@ def _through_contract(verb: str, contract: str, body: Any) -> dict[str, Any]:
 def project_reply(verb: str, body: Any) -> dict[str, Any]:
     """有公开合同的读动词：回复核过合同后出一份新拷贝；不合 → ``ProtocolError``。"""
 
-    contract = ASSURANCE_REPLIES.get(verb) or TASKGRAPH_REPLIES[verb]
+    contract = ASSURANCE_REPLIES.get(verb) or MISSION_REPLIES.get(verb) or TASKGRAPH_REPLIES[verb]
     return _through_contract(verb, contract, body)
 
 
@@ -574,6 +593,7 @@ __all__ = (
     "CONTRACT_VERBS",
     "ERROR_WIRES",
     "MISSION_FIELDS",
+    "MISSION_REPLIES",
     "PROTOCOL_ERROR",
     "PROTOCOL_ERROR_TEXT",
     "ProtocolError",

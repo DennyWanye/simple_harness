@@ -18,6 +18,7 @@ import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { useMissionsStore } from "../stores/missionsStore";
 import { useMissionsFeed } from "../stores/useMissionsFeed";
 import { MissionsView, STRICT_QUOTES_CRITERION } from "./MissionsView";
+import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
 
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
@@ -1248,5 +1249,44 @@ describe("2026-09-27 任务过程与性能", () => {
     expect(channel.all("taskgraph.execution_snapshot")).toHaveLength(1);
     expect(channel.all("mission_story")).toHaveLength(0);
     expect(screen.queryByTestId("mission-story")).toBeNull();
+  });
+});
+
+describe("U09 任务列表与任务详情收到坏消息", () => {
+  it("列表：保留上次的行，列表上方提示格式不对并标已过期；下一次好的列表把提示收掉", () => {
+    const channel = renderAvailable();
+    channel.reply("mission_list", { missions: [MISSION_ROW] });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 3 } });
+    const again = channel.last("mission_list")!;
+    channel.emit(guardIncoming({ type: "mission_list_response", payload: { request_id: again.request_id, ok: true,
+      data: { missions: [{ ...MISSION_ROW, tenant_id: "other" }] } } }));
+    expect(screen.getByTestId("mission-row-mission-1")).toBeTruthy();
+    expect(screen.getByTestId("mission-list-error").textContent).toBe(PROTOCOL_ERROR_TEXT + STALE_NOTE);
+    channel.reply("mission_list", { missions: [MISSION_ROW] });
+    expect(screen.queryByTestId("mission-list-error")).toBeNull();
+  });
+
+  it("详情：保留上次详情，提示格式不对并标已过期", () => {
+    const channel = openMission();
+    expect(screen.getByText("写好了 NOTES.md")).toBeTruthy();
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9,
+      from_seq: 0, events: [], truncated: true } });
+    const again = channel.last("mission_get")!;
+    channel.emit(guardIncoming({ type: "mission_get_response", payload: { request_id: again.request_id, ok: true,
+      data: { ...DETAIL, internal_paths: ["/tmp/x"] } } }));
+    expect(screen.getByText(PROTOCOL_ERROR_TEXT + STALE_NOTE)).toBeTruthy();
+    expect(screen.getByText("写好了 NOTES.md")).toBeTruthy();
+  });
+
+  it("事件：保留上次的时间线，提示格式不对并标已过期", () => {
+    const channel = openMission();
+    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9,
+      from_seq: 0, events: [], truncated: true } });
+    const again = channel.last("mission_events")!;
+    channel.emit(guardIncoming({ type: "mission_events_response", payload: { request_id: again.request_id, ok: true,
+      data: { mission_id: "mission-1", events: [{ seq: 6, type: "X", payload: {} }], through_seq: 6, has_more: false } } }));
+    expect(screen.getAllByRole("alert").some((node) => node.textContent === PROTOCOL_ERROR_TEXT + STALE_NOTE)).toBe(true);
+    expect(useMissionsStore.getState().events["mission-1"]).toHaveLength(5);
   });
 });

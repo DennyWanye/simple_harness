@@ -16,9 +16,8 @@ describe("parseExecutionPage", () => {
     expect(v.nodes.map((n) => n.kind)).toContain("repair_request");
   });
 
-  it("任务不对、种类未知就报错；后续页没有结构", () => {
+  it("任务不对就报错；后续页没有结构（种类、字段由控制通道按公开合同核，见 orchestrationContracts.test.ts U09）", () => {
     expect(() => parseExecutionPage(snapshot({ mission_id: "other" }), M)).toThrow();
-    expect(() => parseExecutionPage(snapshot({}, { nodes: [{ node_id: "x", kind: "magic" }] }), M)).toThrow();
     expect(parseExecutionPage(snapshot({ graph: null }), M).first).toBeNull();
   });
 

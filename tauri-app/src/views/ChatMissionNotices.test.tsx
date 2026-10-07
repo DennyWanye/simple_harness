@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatMissionNotices } from "./ChatMissionNotices";
 import { MissionsChannelContext } from "./chatMission";
+import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
 
 type Sent = { type: string; request_id: string; payload: Record<string, unknown> };
 
@@ -130,5 +131,26 @@ describe("主对话里的后台任务结束通知", () => {
     // 重连后的应答按新请求号接收
     fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: pulls[1].request_id, data: NOTICES.slice(0, 1) } });
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
+  });
+
+  it("U09：通知列表收到坏消息——保留上次的卡片，提示格式不对并标已过期；下一次好的列表把提示收掉", () => {
+    const fake = fakeChannel();
+    render(
+      <MissionsChannelContext.Provider value={fake.channel as never}>
+        <ChatMissionNotices />
+      </MissionsChannelContext.Provider>,
+    );
+    const first = fake.sent.find((m) => m.type === "mission_notices")!;
+    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: NOTICES } });
+    fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
+    const again = fake.sent.filter((m) => m.type === "mission_notices").at(-1)!;
+    fake.push(guardIncoming({ type: "mission_notices_response", payload: { ok: true, request_id: again.request_id,
+      data: { notices: NOTICES } } }));
+    expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(PROTOCOL_ERROR_TEXT + STALE_NOTE);
+    fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
+    const third = fake.sent.filter((m) => m.type === "mission_notices").at(-1)!;
+    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: third.request_id, data: NOTICES } });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
