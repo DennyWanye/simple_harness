@@ -49,15 +49,26 @@ class _HeldWorker(LayeredScriptedProvider):
 def _as_old_library(path: Any, mission_id: str) -> None:
     """Rewrite this Mission's rows into the shape the release review found in the real
     development library: no TaskGraph binding, and an ended dispatch whose reservation is
-    still held (older flows left such holds; the current product does not produce them)."""
+    still held (older flows left such holds; the current product does not produce them).
+
+    Such a Mission was also created under an older replay inventory, so its creation event
+    names another ``replay_scope``: restart recovery reports it out of scope instead of
+    isolating it as tampered (2026-10-07: without this the byte edits above read as silent
+    changes and the Mission is isolated — the stop-by-name path is never reached)."""
+    import json
+
     db = sqlite3.connect(path)
     db.execute("PRAGMA foreign_keys=OFF")
     for trigger in [row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name IN "
-            "('taskgraph_policy_bindings','dispatch_intents')")]:
+            "('taskgraph_policy_bindings','dispatch_intents','events')")]:
         db.execute(f"DROP TRIGGER {trigger}")
     db.execute("DELETE FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,))
     db.execute("UPDATE dispatch_intents SET state='FAILED' WHERE mission_id=? AND state='SUBMITTED'", (mission_id,))
+    [(event_id, payload)] = db.execute(
+        "SELECT event_id, payload_json FROM events WHERE mission_id=? AND type='MissionCreated'", (mission_id,)).fetchall()
+    db.execute("UPDATE events SET payload_json=? WHERE event_id=?",
+               (json.dumps({**json.loads(payload), "replay_scope": "0" * 64}), event_id))
     db.commit()
     db.close()
 
@@ -99,5 +110,6 @@ def test_an_unbound_legacy_mission_neither_blocks_startup_nor_the_loop(tmp_path)
             assert str(world.loop.store.get_mission(old).status.value) == "FAILED"
             assert any(event.type == "MissionFailed" and "unsupported_unbound_mission" in str(event.payload)
                        for event in world.loop.store.list_events(old))
+            assert old not in world.loop._recovery_isolated  # 旧口径的任务不算被改过，不隔离
 
     asyncio.run(case())
