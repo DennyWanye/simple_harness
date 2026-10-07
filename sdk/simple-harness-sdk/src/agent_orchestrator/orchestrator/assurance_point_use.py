@@ -12,6 +12,10 @@ POLICY 见证，到期取最早租期与见证期限，组一张 USABLE 证书�
 （与 ACCEPT 同一个 :func:`check_certificate_binding`），写证书表、依赖索引与一条使用回执（回执里记
 证据声明，供复核与恢复读）。有一项不当前：不签，返回具名原因（哪一项、为什么）。
 
+披露（DISCLOSE，推后第 2 批 A03；附录 C.1 第 488、496 行）：原生下载、审阅员初始材料、审阅员取证读、
+审阅员读黑板，交出前都过这里。证据是"精确对象"（``EvidenceClaim.exact``），判定就是原有的精确读者
+``read_exact_metadata``（存在、哈希、归属），再取 ACCESS / POLICY；原生下载另核调用者就是部署的主体。
+
 MAINTAIN（执行期间持续成立）要实际持续监测；产品没有，签发方直接挡住（§8.4：点状采样不冒充连续）。
 
 时点证书在签发事务里就用掉了，之后是历史：不进有效性观察、不排到期唤醒
@@ -37,19 +41,24 @@ from .assurance_validity import USE_CERTIFIED_KIND
 ACTION_CONSUMER = "ACTION"
 ATTEMPT_CONSUMER = "ATTEMPT"
 PLANNING_REQUEST_CONSUMER = "PLANNING_REQUEST"
-#: 执行者运行中一次 ``knowledge_read`` 工具调用（裁决 2026-10-07 第 5 件）
+#: 运行中一次读取工具调用：执行者 / 审阅员的 ``knowledge_read``（裁决 2026-10-07 第 5 件）、审阅员取证读
 TOOL_CALL_CONSUMER = "TOOL_CALL"
+#: 一次发给审阅模型的请求（派发意图编号）：交出初始材料（A03）
+REVIEW_INTENT_CONSUMER = "REVIEW_INTENT"
+#: 本人在界面里读一个产物（A03 原生下载）
+NATIVE_READ_CONSUMER = "NATIVE_READ"
 READER_VERSION = "assurance-point-use-v1"
 #: §8.4：需要 MAINTAIN 而没有实际持续监测 / 锁 / fence。
 MAINTAIN_MONITOR_UNAVAILABLE = "MAINTAIN_MONITOR_UNAVAILABLE"
 #: 没装保证通道的有效性组件，却要用证据：不签，也不放行。
 USE_CERTIFICATE_REQUIRED = "USE_CERTIFICATE_REQUIRED"
-CLAIM_KINDS = frozenset({"knowledge", "summary", "step_ground"})
+CLAIM_KINDS = frozenset({"knowledge", "summary", "step_ground", "exact"})
 
 
 @dataclass(frozen=True, slots=True)
 class EvidenceClaim:
-    """消费方这次用到的一项证据。``version``：知识是版本号，摘要是摘要原文的哈希，开工地基没有。"""
+    """消费方这次用到的一项证据。``version``：知识是版本号，摘要是摘要原文的哈希，开工地基与精确对象
+    没有（精确对象的 ``id`` 是它的引用原文 ``{kind, pin}``）。"""
 
     kind: str
     id: str
@@ -63,6 +72,10 @@ class EvidenceClaim:
             integer(self.version, minimum=1)
         elif self.kind == "summary":
             text(self.version)
+        elif self.kind == "exact":
+            AssuranceRef.from_json(decode(self.id))
+            if self.version is not None:
+                raise AssuranceError("EVIDENCE_CLAIM_INVALID", self.kind)
         elif self.version is not None:
             raise AssuranceError("EVIDENCE_CLAIM_INVALID", self.kind)
 
@@ -78,11 +91,23 @@ class EvidenceClaim:
     def step_ground(cls, task_id: str) -> EvidenceClaim:
         return cls("step_ground", str(task_id))
 
+    @classmethod
+    def exact(cls, ref: AssuranceRef) -> EvidenceClaim:
+        return cls("exact", canonical(ref.to_json()))
+
+    @property
+    def ref(self) -> AssuranceRef:
+        if self.kind != "exact":
+            raise AssuranceError("EVIDENCE_CLAIM_INVALID", self.kind)
+        return AssuranceRef.from_json(decode(self.id))
+
     @property
     def label(self) -> str:
         """拒绝原因里怎么称呼这一项。"""
         if self.kind == "knowledge":
             return f"knowledge:{self.id}@{self.version}"
+        if self.kind == "exact":
+            return f"{self.ref.kind}:{self.ref.pin.id}"
         return f"{self.kind}:{self.id}"
 
     def to_json(self) -> dict[str, Any]:
@@ -304,6 +329,9 @@ def _judge_all(store: Any, mission_id: str, claims: Sequence[EvidenceClaim],
 
                 summaries = step_summaries(store, mission_id)
             judged = _judge_summary(store, mission_id, claim, summaries)
+        elif claim.kind == "exact":
+            # 精确对象：存在、哈希、归属由下面钉住时的原精确读者核，这里不加判断
+            judged = _Judged(None, [claim.ref])
         else:
             judged = _judge_step_ground(store, mission_id, claim.id, now_ms)
         if judged.refusal is not None:
@@ -313,14 +341,6 @@ def _judge_all(store: Any, mission_id: str, claims: Sequence[EvidenceClaim],
         if judged.deadline is not None:
             deadlines.append(judged.deadline)
     return refusals, refs, deadlines
-
-
-def judge_claims(store: Any, mission_id: str, claims: Sequence[EvidenceClaim]) -> tuple[str, ...]:
-    """只做判定（与签发方同一套），不签证书。目前只给审阅员读黑板用：审阅员读算披露（DISCLOSE），
-    按第 2 批 A03 的定法再接签发方（裁决 2026-10-07 第 5 件第 5 点）。"""
-    with store.read_view():
-        refusals, _, _ = _judge_all(store, mission_id, _unique(tuple(claims)), integer(int(store.now * 1000)))
-    return tuple(dict.fromkeys(refusals))
 
 
 # ------------------------------------------------------------------ 签发
@@ -334,10 +354,12 @@ def certify_point_use_locked(
     claims: Sequence[EvidenceClaim],
     subject: tuple[str, str],
     record: bool = True,
+    caller: tuple[str, str] | None = None,
 ) -> PointUse:
     """在消费方自己的事务里签一张时点证书（``record=False``：只核不落库，供复核用）。
 
     没报证据：这次没用证据，不签也不拦。报了证据：全部当前才签；否则返回具名原因，什么都不写。
+    ``caller``（主体编号，租户）：调用者从外面来（原生下载）时给，须就是这个部署的主体与租户。
     """
     store = commit.store
     claims = _unique(tuple(claims))
@@ -354,6 +376,8 @@ def certify_point_use_locked(
     gate = getattr(commit, "_assurance_root_gate", None)
     if validity is None or gate is None:
         return _refused(use, USE_CERTIFICATE_REQUIRED)
+    if caller is not None and tuple(caller) != (validity.principal_id, validity.tenant_id):
+        return _refused(use, "ROOT_READ_NOT_AUTHORIZED")
     try:
         root = gate.require_execution()
         if AssuranceStore(store).lane(mission_id) != "ASSURANCE_1_1":
@@ -509,15 +533,17 @@ def planning_evidence_stale(commit: Any, mission_id: str, request_id: str) -> st
     return None if use.usable else "; ".join(use.refusals)
 
 
-def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_id: str) -> Any:
-    """执行者运行中读一条已验证知识 / 核对过的摘要：交出正文前与装上下文同一道门——签 CONTEXT 证书
-    （消费方是这次工具调用），核时钟、授权、根实例并留证书（裁决 2026-10-07 第 5 件）。返回的函数
-    对一项证据声明给出拒绝原因（空 = 可以交出）。"""
+def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_id: str,
+                       purpose: str = "CONTEXT") -> Any:
+    """运行中读一条已验证知识 / 核对过的摘要：交出正文前与装上下文同一道门——签一张证书（消费方是这次
+    工具调用），核时钟、授权、根实例并留证书（裁决 2026-10-07 第 5 件）。执行者读是 CONTEXT；审阅员
+    读黑板是披露 DISCLOSE（推后第 2 批 A03），``task_id`` 是审阅所属的那一步。返回的函数对一项证据
+    声明给出拒绝原因（空 = 可以交出）。"""
 
     def handover(claim: EvidenceClaim) -> tuple[str, ...]:
         with commit.store.transaction():
             use = certify_point_use_locked(
-                commit, mission_id=mission_id, purpose="CONTEXT", consumer_kind=TOOL_CALL_CONSUMER,
+                commit, mission_id=mission_id, purpose=purpose, consumer_kind=TOOL_CALL_CONSUMER,
                 consumer_id=consumer_id, claims=(claim,), subject=("task", task_id))
         return use.refusals
 
@@ -538,6 +564,8 @@ __all__ = (
     "ACTION_CONSUMER",
     "ATTEMPT_CONSUMER",
     "MAINTAIN_MONITOR_UNAVAILABLE",
+    "NATIVE_READ_CONSUMER",
+    "REVIEW_INTENT_CONSUMER",
     "PLANNING_REQUEST_CONSUMER",
     "TOOL_CALL_CONSUMER",
     "USE_CERTIFICATE_REQUIRED",
@@ -548,7 +576,6 @@ __all__ = (
     "certify_recovery_locked",
     "context_claims",
     "issued_claims",
-    "judge_claims",
     "knowledge_handover",
     "planning_claims",
     "planning_evidence_stale",

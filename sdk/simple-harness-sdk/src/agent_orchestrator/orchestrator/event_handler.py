@@ -4043,13 +4043,19 @@ class Orchestrator:
         return self._planning_start_gate is not None and not self._planning_start_gate(mission)
 
     def _knowledge_handover(self, mission_id: str, reader: Mapping[str, Any]) -> Any:
-        """``knowledge_read`` 交出正文前的那道门（裁决 2026-10-07 第 5 件）。执行者：与装上下文同一个
-        使用证书签发方，消费方是这次工具调用。审阅员读黑板算披露（DISCLOSE），按第 2 批 A03 定；
-        在那之前只过同一套判定、不签证书。"""
-        from .assurance_point_use import judge_claims, knowledge_handover
+        """``knowledge_read`` 交出正文前的那道门（裁决 2026-10-07 第 5 件）：同一个使用证书签发方，消费方
+        是这次工具调用。执行者是装上下文（CONTEXT）；审阅员读黑板是披露（DISCLOSE，推后第 2 批 A03），
+        钉住审阅所属的那一步。"""
+        from .assurance_point_use import knowledge_handover
 
         if reader.get("review_key") is not None:
-            return lambda claim: judge_claims(self.store, mission_id, (claim,))
+            row = self.store.connection.execute(
+                "SELECT mission_id, json_extract(binding_json,'$.subject.owner_task_ref.id') "
+                "FROM assurance_review_bindings WHERE review_key=?", (str(reader["review_key"]),)).fetchone()
+            if row is None or row[0] != mission_id:
+                return lambda claim: ("REVIEW_BINDING_SOURCE_MISMATCH",)
+            return knowledge_handover(self.commit, mission_id=mission_id, consumer_id=str(reader["call_id"]),
+                                      task_id=str(row[1]), purpose="DISCLOSE")
         attempt = self.store.get_attempt(str(reader["attempt_id"]))
         if attempt is None or attempt.mission_id != mission_id:
             return lambda claim: ("TOOL_CALL_ATTEMPT_UNKNOWN",)

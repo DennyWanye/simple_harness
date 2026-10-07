@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..artifacts.store import open_nofollow
-from ..governance.permissions import Principal
 from .codec import AssuranceError, decode, fields, fingerprint, integer, text
 from .evidence import ReadItem
 from .refs import AssuranceRef
@@ -148,49 +147,6 @@ class AssuranceRootGate:
         with self.store.read_view():
             _row, body = self._state_locked()
             return RootIdentity(body["root_incarnation_id"])
-
-    def require_read(
-        self,
-        *,
-        principal: Principal,
-        tenant_id: str,
-        mission_id: str,
-        ref: AssuranceRef,
-        purpose: str,
-        current: CurrentReadPermission,
-        now_ms: int,
-    ) -> ReadItem:
-        if (
-            not isinstance(principal, Principal)
-            or purpose not in {"DISCLOSE", "CONTEXT"}
-            or not isinstance(current, CurrentReadPermission)
-        ):
-            raise AssuranceError("CURRENT_READ_AUTHORITY_REQUIRED")
-        integer(now_ms)
-        if now_ms >= current.not_after_ms:
-            raise AssuranceError("READ_AUTHORITY_EXPIRED")
-        with self.store.read_view():
-            _row, body = self._state_locked()
-            mission = self.store.get_mission(mission_id)
-            if mission is None or mission.tenant_id != tenant_id:
-                raise AssuranceError("ROOT_READ_NOT_AUTHORIZED")
-            return ReadItem(
-                "ACCESS",
-                current.access.key,
-                fingerprint(
-                    {
-                        "current_access": current.access.to_json(),
-                        "current_policy": current.policy.to_json(),
-                        "root_receipt_hash": fingerprint(body),
-                        "root_incarnation_id": body["root_incarnation_id"],
-                        "principal": principal.principal_id,
-                        "tenant": tenant_id,
-                        "mission": mission_id,
-                        "ref": ref.to_json(),
-                        "purpose": purpose,
-                    }
-                ),
-            )
 
     def diagnostic(self) -> dict:
         # No titles, summaries, source paths, object ids or evidence contents.

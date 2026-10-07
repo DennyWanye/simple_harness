@@ -4,28 +4,24 @@
 The frozen request carries complete pinned bytes, so dispatch need not reread
 CAS under a write lock. This gate authorizes disclosure only; historical review
 evidence is not a licence to accept, execute an action, or complete a Mission.
+
+披露本身（推后第 2 批 A03）：初始材料、审阅包、审阅对象交给审阅模型之前，过使用证书签发方
+（用途 DISCLOSE，消费方是这次派发意图）；真正发出请求的那一刻落证书，其余前置门只核不落。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..assurance.certificates import UseIdentity
-from ..assurance.codec import AssuranceError, canonical, fingerprint
+from ..assurance.codec import AssuranceError, canonical
 from ..assurance.refs import AssuranceRef, Pin
-from ..assurance.review_input import REVIEW_INSTRUCTIONS, read_initial_materials
-from ..assurance.reviews import REVIEW_CODEC_VERSION
-from ..contracts import TERMINAL_ATTEMPT
-from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
+from ..assurance.review_input import read_initial_materials
 from ..storage.assurance_pins import require_live_pin_locked
-from ..storage.assurance_reads import (
-    AssuranceReader,
-    _permission,
-    read_epochs_locked,
-    require_epochs_locked,
-)
+from ..storage.assurance_reads import AssuranceReader
 from ..storage.htn_store import HtnStore
-from .assurance_review_import import review_scope_id, review_subject_stopped
+from .assurance_point_use import REVIEW_INTENT_CONSUMER, EvidenceClaim, PointUseRefused, certify_point_use_locked
+from .assurance_review_import import review_subject_stopped
+from .assurance_review_policies import require_registered_policies_locked
 from .assurance_review_transport import _validate_package
 
 
@@ -35,11 +31,11 @@ class AssuranceReviewHandoff:
         self.orchestrator = runtime.orchestrator
         self.consumer = runtime.consumer
 
-    def require_current_locked(self, intent: Any, binding: Any) -> None:
+    def require_current_locked(self, intent: Any, binding: Any, *, record: bool = False) -> None:
+        """``record``：这一刻真的把请求发给审阅模型（落 DISCLOSE 证书）；否则是前置门，只核不落。"""
         orch, store = self.orchestrator, self.consumer.store
         if not store.connection.in_transaction:
             raise AssuranceError("READ_TRANSACTION_REQUIRED")
-        root = orch.commit._assurance_root_gate.require_execution()
         body = binding.to_json()
         mission = store.get_mission(body["mission_id"])
         task = store.get_task(body["subject"]["owner_task_ref"]["id"])
@@ -51,32 +47,14 @@ class AssuranceReviewHandoff:
             or review_subject_stopped(store, binding)
         ):
             raise AssuranceError("REVIEW_SUBJECT_STOPPED")
-        identity = UseIdentity(
-            mission.id,
-            "REVIEW",
-            body["review_key"],
-            review_scope_id(body),
-            self.consumer.principal_id,
-            "DISCLOSE",
-            root.root_incarnation_id,
-        )
         reader = AssuranceReader(store, tenant_id=mission.tenant_id, mission_id=mission.id)
         package = HtnStore(store).get_review_package(body["package_ref"]["id"])
         _validate_package(reader, package, body)
-        expected_policy = Pin(
-            REVIEW_CODEC_VERSION,
-            1,
-            fingerprint({"instructions": REVIEW_INSTRUCTIONS, "codec": REVIEW_CODEC_VERSION}),
+        # 两个政策钉住只读登记正文，再与当前部署比（推后第 2 批 A18）
+        require_registered_policies_locked(
+            orch, tenant_id=mission.tenant_id, binding=body, profile_id=orch.profile_of(intent),
+            agent_config=intent.config["agent_config"],
         )
-        if (
-            body["reviewer_policy_ref"] != expected_policy.to_json()
-            or body["context_policy_ref"]
-            != self.runtime.context_pin(orch.profile_of(intent)).to_json()
-            or intent.config["agent_config"].get("instructions") != REVIEW_INSTRUCTIONS
-            or set(intent.config["agent_config"].get("tool_names", ()))
-            - set(ASSURANCE_REVIEWER_TOOLS)
-        ):
-            raise AssuranceError("REVIEW_DEPLOYMENT_IDENTITY_MISMATCH")
         if body["subject"]["purpose"] == "TASK_CONTENT":
             result = store.get_result(body["subject"]["target"]["pin"]["id"])
             attempt = None if result is None else store.get_attempt(result.envelope.attempt_id)
@@ -88,16 +66,7 @@ class AssuranceReviewHandoff:
             ):
                 raise AssuranceError("REVIEW_SUBJECT_STOPPED")
         entries = read_initial_materials(dict(intent.config["message"]), binding)
-        now_ms = int(store.now * 1000)
-        require_epochs_locked(
-            store.connection,
-            mission.id,
-            read_epochs_locked(store.connection, mission.id),
-            now_ms=now_ms,
-        )
         for entry in entries:
-            reader.read_exact_metadata(entry.ref)
-            _permission(self.consumer.authority, identity, entry.ref, now_ms)
             if entry.ref.kind in {"artifact", "source"}:
                 pins = store.connection.execute(
                     "SELECT pin_id FROM assurance_blob_pins WHERE mission_id=? AND review_key=? "
@@ -114,10 +83,17 @@ class AssuranceReviewHandoff:
                     pin_id=pin_id,
                     review_key=body["review_key"],
                 )
-        # Package and target authorization remain explicit even for an empty
-        # catalogue. A caller cannot authorize a request merely by omitting refs.
-        for ref in (
+        # Package and target are disclosed even for an empty catalogue. A caller
+        # cannot authorize a request merely by omitting refs.
+        refs = (
             AssuranceRef("review_package", Pin.from_json(body["package_ref"])),
             AssuranceRef.from_json(body["subject"]["target"]),
-        ):
-            _permission(self.consumer.authority, identity, ref, now_ms)
+            *(entry.ref for entry in entries),
+        )
+        use = certify_point_use_locked(
+            orch.commit, mission_id=mission.id, purpose="DISCLOSE", consumer_kind=REVIEW_INTENT_CONSUMER,
+            consumer_id=intent.intent_id, claims=tuple(EvidenceClaim.exact(ref) for ref in refs),
+            subject=("task", task.id), record=record,
+        )
+        if not use.usable:
+            raise PointUseRefused(use)
