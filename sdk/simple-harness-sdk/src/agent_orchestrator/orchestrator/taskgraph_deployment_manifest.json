@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "b714c1c1367b197c31dfd27a04333dbab97716b0cefc6e47d02bd72441bde040",
+  "deployment_id": "67158d46104cf195a13f2bde36bc3d3df564029043043cd2eb103141442cd067",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -167,7 +167,7 @@
     "agent_orchestrator/observability/business_replay.py": "d28602035570c6ccc572e2063a6bebd8493a4ec9c39e8bef5bf776cbe1335ee1",
     "agent_orchestrator/observability/business_replay_inventory.json": "102bfb3f967b6bb1d36ca6b469b6cc03aac8ef04f836c9efcf1a44d4744090c0",
     "agent_orchestrator/observability/lineage.py": "58e99b7b72b2ec486a79a004d18c1a3b94ed954482cce08f4b39a427a4c09dfd",
-    "agent_orchestrator/observability/metrics.py": "f14af02fdef1fb14eadcdd4499e2c77d605a6d94bb7964d6181c2cea874fe064",
+    "agent_orchestrator/observability/metrics.py": "86e3330e80c31db046386b88d785deaa52915feb9c16716ec577a84a4d55370a",
     "agent_orchestrator/observability/secrets.py": "7f961fe7975af7274d04a404bdab40e89c2e3d934964f2e294da3b26dc398d4b",
     "agent_orchestrator/observability/taskgraph_replay.py": "519db236f3172042badd0d7a7caaa172aaddb77fe21e8f5338c9ea987dd20493",
     "agent_orchestrator/observability/trace.py": "14737204de2bbc372969dec9eeeaa2337fa590df4ad214a79560593e3b9576ad",

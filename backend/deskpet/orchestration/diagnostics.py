@@ -18,7 +18,7 @@ from typing import Any
 
 from agent_orchestrator.contracts.models import sha256_hex
 from agent_orchestrator.observability.business_replay import verify_mission
-from agent_orchestrator.observability.metrics import metrics
+from agent_orchestrator.observability.metrics import deployment_outcomes, metrics
 from agent_orchestrator.observability.secrets import redact_text
 from agent_orchestrator.observability.traces import attribution, failure_timeline
 
@@ -374,6 +374,9 @@ def build_diagnostics(
         "attribution": attribution_report,
         # 指标统计的唯一入口（HTN 补齐阶段 B）。编排只记 token，不记金额。
         "metrics": metrics(store, mission_id),
+        # 推后第 3 批 U05：全库的任务成功率与每成功任务成本——只有按结局的计数与 token 合计，
+        # 不含别的任务的编号或任何内容
+        "deployment_outcomes": deployment_outcomes(store),
         "verification": _verification(snapshot),
         "costs": {
             "usage": _pick(snapshot.get("budget_usage"), (
@@ -400,6 +403,7 @@ def build_diagnostics(
                     "artifact bytes and provider responses",
                     "unrelated Mission history",
                 ],
+                "aggregate_only": ["deployment_outcomes: counts by outcome and a token total, no Mission content"],
             },
         },
     }

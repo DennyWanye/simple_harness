@@ -80,6 +80,7 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
             "failure_timeline",
             "attribution",
             "metrics",
+            "deployment_outcomes",
             "verification",
             "costs",
             "input_references",
@@ -89,8 +90,12 @@ async def test_diagnostics_are_selected_only_redacted_read_only_and_stably_expor
         assert report["mission_id"] == selected["mission_id"]
         assert report["replay"]["version"] == "business-replay-v3"
         assert report["replay"]["tables"]["missions"]["rows"] == 1
-        assert report["metrics"]["version"] == "metrics-v1"
-        assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix"}
+        assert report["metrics"]["version"] == "metrics-v2"
+        assert report["metrics"].keys() >= {"health", "cost", "human", "verification", "role_mix",
+                                            "search", "knowledge", "outcome"}  # 推后第 3 批 U05
+        assert report["metrics"]["verification"].keys() >= {"false_positive_rate", "backlog"}
+        assert set(report["deployment_outcomes"]) == {"missions_ended", "completed", "failed", "cancelled",
+                                                      "success_rate", "tokens_of_ended", "cost_per_success"}
         assert set(report["metrics"]["cost"]) == {"tokens_by_role", "tokens_by_profile"}
         assert report["scope"]["selected_only"] is True
         assert foreign["mission_id"] not in rendered
