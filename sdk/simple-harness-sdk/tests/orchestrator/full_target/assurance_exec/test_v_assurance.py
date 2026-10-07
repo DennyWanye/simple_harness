@@ -556,12 +556,8 @@ def test_authority_and_expiry():
         is AnchorRejection.EXPIRED
     assert select([candidate(stale, temporal_use=TemporalUse.HISTORICAL_AS_OF)], {key_of(base): base},
                   purpose=WitnessPurpose.CONTEXT).admitted_ids() == {"obs-h"}
-    # MAINTAIN sampling has no continuous guarantee without a monitor interval.
-    sampled = observation("obs-s", key_of(base), True)
-    assert select([candidate(sampled, temporal_use=TemporalUse.CONTINUOUS)], {key_of(base): base},
-                  purpose=WitnessPurpose.MAINTAIN).reason_for("obs-s") is AnchorRejection.NO_CONTINUOUS_GUARANTEE
-    assert select([candidate(sampled, temporal_use=TemporalUse.CONTINUOUS, monitor_interval_ms=1000)],
-                  {key_of(base): base}, purpose=WitnessPurpose.MAINTAIN).admitted_ids() == {"obs-s"}
+    # MAINTAIN 没有持续监测：签发方一律挡住（A26，``test_point_use_certificates`` 的 MAINTAIN 用例），
+    # 选择器里那条到不了的分支已删（裁决 2026-10-07 建议 2）。
     # A non-USABLE certificate never binds, whatever the context.
     _refused(lambda: _bind(_certificate((7, 3, 1), decision="BLOCKED", truth="FALSE")), "CERTIFICATE_NOT_USABLE")
     _refused(lambda: _certificate((7, 3, 1), truth="UNKNOWN"), "CERTIFICATE_NOT_USABLE")

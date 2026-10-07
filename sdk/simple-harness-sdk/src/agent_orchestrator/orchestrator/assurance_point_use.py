@@ -37,6 +37,8 @@ from .assurance_validity import USE_CERTIFIED_KIND
 ACTION_CONSUMER = "ACTION"
 ATTEMPT_CONSUMER = "ATTEMPT"
 PLANNING_REQUEST_CONSUMER = "PLANNING_REQUEST"
+#: 执行者运行中一次 ``knowledge_read`` 工具调用（裁决 2026-10-07 第 5 件）
+TOOL_CALL_CONSUMER = "TOOL_CALL"
 READER_VERSION = "assurance-point-use-v1"
 #: §8.4：需要 MAINTAIN 而没有实际持续监测 / 锁 / fence。
 MAINTAIN_MONITOR_UNAVAILABLE = "MAINTAIN_MONITOR_UNAVAILABLE"
@@ -287,6 +289,40 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     return _Judged(None, refs, min(deadlines) if deadlines else None)
 
 
+def _judge_all(store: Any, mission_id: str, claims: Sequence[EvidenceClaim],
+               now_ms: int) -> tuple[list[str], list[AssuranceRef], list[int]]:
+    refusals: list[str] = []
+    refs: list[AssuranceRef] = []
+    deadlines: list[int] = []
+    summaries: list[Mapping[str, Any]] | None = None
+    for claim in claims:
+        if claim.kind == "knowledge":
+            judged = _judge_knowledge(store, mission_id, claim)
+        elif claim.kind == "summary":
+            if summaries is None:
+                from ..context.knowledge_tools import step_summaries
+
+                summaries = step_summaries(store, mission_id)
+            judged = _judge_summary(store, mission_id, claim, summaries)
+        else:
+            judged = _judge_step_ground(store, mission_id, claim.id, now_ms)
+        if judged.refusal is not None:
+            refusals.append(judged.refusal)
+            continue
+        refs.extend(judged.refs)
+        if judged.deadline is not None:
+            deadlines.append(judged.deadline)
+    return refusals, refs, deadlines
+
+
+def judge_claims(store: Any, mission_id: str, claims: Sequence[EvidenceClaim]) -> tuple[str, ...]:
+    """只做判定（与签发方同一套），不签证书。目前只给审阅员读黑板用：审阅员读算披露（DISCLOSE），
+    按第 2 批 A03 的定法再接签发方（裁决 2026-10-07 第 5 件第 5 点）。"""
+    with store.read_view():
+        refusals, _, _ = _judge_all(store, mission_id, _unique(tuple(claims)), integer(int(store.now * 1000)))
+    return tuple(dict.fromkeys(refusals))
+
+
 # ------------------------------------------------------------------ 签发
 def certify_point_use_locked(
     commit: Any,
@@ -330,27 +366,7 @@ def certify_point_use_locked(
         return _refused(use, error.code)
 
     # 1. 逐项用原有判定核此刻是否当前
-    refusals: list[str] = []
-    refs: list[AssuranceRef] = []
-    deadlines: list[int] = []
-    summaries: list[Mapping[str, Any]] | None = None
-    for claim in claims:
-        if claim.kind == "knowledge":
-            judged = _judge_knowledge(store, mission_id, claim)
-        elif claim.kind == "summary":
-            if summaries is None:
-                from ..context.knowledge_tools import step_summaries
-
-                summaries = step_summaries(store, mission_id)
-            judged = _judge_summary(store, mission_id, claim, summaries)
-        else:
-            judged = _judge_step_ground(store, mission_id, claim.id, now_ms)
-        if judged.refusal is not None:
-            refusals.append(judged.refusal)
-            continue
-        refs.extend(judged.refs)
-        if judged.deadline is not None:
-            deadlines.append(judged.deadline)
+    refusals, refs, deadlines = _judge_all(store, mission_id, claims, now_ms)
     if refusals:
         return _refused(use, *refusals)
 
@@ -443,12 +459,16 @@ def record_point_use_locked(store: Any, use: PointUse) -> None:
         "scope_id": certificate.scope_id,
         "evidence": [claim.to_json() for claim in use.claims],
     }
+    receipt_id = "assurance-use-certified:" + use.certificate_id
     with atomic(store):
         if not AssuranceStore(store).record_certificate(use.certificate_id, certificate):
-            raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", "assurance_use_certificates")
-        store.insert_receipt(commit_id="assurance-use-certified:" + use.certificate_id,
-                             kind=USE_CERTIFIED_KIND, subject_id=use.certificate_id, base_version=0,
-                             proposal_hash=fingerprint(receipt), receipt=receipt)
+            # 同一次使用重签出逐字节相同的证书（同一毫秒、同一读集）：已经记过，不再写
+            existing = store.get_receipt(receipt_id)
+            if existing is None or dict(existing) != receipt:
+                raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", "assurance_use_certificates")
+            return
+        store.insert_receipt(commit_id=receipt_id, kind=USE_CERTIFIED_KIND, subject_id=use.certificate_id,
+                             base_version=0, proposal_hash=fingerprint(receipt), receipt=receipt)
 
 
 def require_point_use_locked(commit: Any, **kwargs: Any) -> PointUse:
@@ -489,6 +509,21 @@ def planning_evidence_stale(commit: Any, mission_id: str, request_id: str) -> st
     return None if use.usable else "; ".join(use.refusals)
 
 
+def knowledge_handover(commit: Any, *, mission_id: str, consumer_id: str, task_id: str) -> Any:
+    """执行者运行中读一条已验证知识 / 核对过的摘要：交出正文前与装上下文同一道门——签 CONTEXT 证书
+    （消费方是这次工具调用），核时钟、授权、根实例并留证书（裁决 2026-10-07 第 5 件）。返回的函数
+    对一项证据声明给出拒绝原因（空 = 可以交出）。"""
+
+    def handover(claim: EvidenceClaim) -> tuple[str, ...]:
+        with commit.store.transaction():
+            use = certify_point_use_locked(
+                commit, mission_id=mission_id, purpose="CONTEXT", consumer_kind=TOOL_CALL_CONSUMER,
+                consumer_id=consumer_id, claims=(claim,), subject=("task", task_id))
+        return use.refusals
+
+    return handover
+
+
 def certify_recovery_locked(commit: Any, attempt: Any) -> PointUse:
     """重启后恢复一次在途尝试之前，按它开工时装进上下文的证据重签 RECOVERY（§12.2：冻结的请求
     不静默替换上下文）。开工时没用证据：没什么可核。"""
@@ -504,6 +539,7 @@ __all__ = (
     "ATTEMPT_CONSUMER",
     "MAINTAIN_MONITOR_UNAVAILABLE",
     "PLANNING_REQUEST_CONSUMER",
+    "TOOL_CALL_CONSUMER",
     "USE_CERTIFICATE_REQUIRED",
     "EvidenceClaim",
     "PointUse",
@@ -512,6 +548,8 @@ __all__ = (
     "certify_recovery_locked",
     "context_claims",
     "issued_claims",
+    "judge_claims",
+    "knowledge_handover",
     "planning_claims",
     "planning_evidence_stale",
     "record_point_use_locked",

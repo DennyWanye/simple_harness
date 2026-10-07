@@ -381,3 +381,113 @@ def test_an_attempt_cut_off_by_a_restart_resumes_only_on_current_evidence(tmp_pa
             assert len(siblings) == 2
 
     asyncio.run(case())
+
+
+# ---------------------------------------------- 运行中读知识（裁决 2026-10-07 第 5 件）
+def test_a_worker_reading_knowledge_mid_run_goes_through_the_same_issuer(tmp_path, monkeypatch):
+    """执行者运行中用 ``knowledge_read`` 读一条已验证知识，与装上下文同一道门：签 CONTEXT 证书
+    （消费方是这次工具调用）。证据此刻不当前、时钟不可信 → 不给正文，原因具名。"""
+    import agent_orchestrator.memory.knowledge_standing as standing
+    from agent_orchestrator.orchestrator.assurance_point_use import TOOL_CALL_CONSUMER, knowledge_handover
+    from test_repair_staleness import _find, _tool_results
+
+    state: dict[str, Any] = {"methods": []}
+    read: list[dict[str, Any]] = []
+    planner, worker, reviewer = scenario(state)
+
+    def reading_worker(request: Any) -> Any:
+        package = package_of(request)
+        if list(package.get("task_contract", {}).get("outputs") or []) != ["notes/b.md"]:
+            return worker(request)
+        results = _tool_results(request)
+        write = ("workspace_write_file", {"path": "notes/b.md", "content": "# 第二份\n\n- 接着第一份\n"})
+        if not results:
+            return ("knowledge_list", {})
+        if len(results) == 1:
+            verified = [item for item in _find(json.loads(results[0]), "items") or ()
+                        if item.get("layer") == "verified"]
+            state["cited"] = [item["ref"] for item in verified]
+            return ("knowledge_read", {"id": verified[0]["id"]}) if verified and not read else write
+        if len(results) == 2 and not read:
+            read.append(json.loads(results[1])["value"])
+            return write
+        return worker(request)
+
+    async def case():
+        provider = LayeredScriptedProvider(planner=planner, worker=reading_worker, reviewer=reviewer)
+        async with product_world(tmp_path / "root", provider, allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+            store = world.store
+            mission_id = await _run(world, "point-use-tool-read")
+            assert read and read[0]["content"], read
+            certificates = [row for row in _certificates(store, mission_id, "CONTEXT")
+                            if row["consumer_kind"] == TOOL_CALL_CONSUMER]
+            assert len(certificates) == 1
+            evidence = _receipt(store, certificates[0]["certificate_id"])["evidence"]
+            assert evidence == [{"kind": "knowledge", "id": read[0]["id"], "version": read[0]["version"]}]
+
+            # 任务完成后同一道门再读：当前 → 给正文并留证书；判定说过时 → 不给；时钟回拨 → 不给
+            current, _ = _knowledge(store, mission_id)
+            handover = knowledge_handover(world.loop.commit, mission_id=mission_id,
+                                          consumer_id="tool-call-under-test", task_id=current.source_task)
+            served = knowledge_tools.read_knowledge_tool(store, mission_id, "knowledge_read",
+                                                         {"id": current.id}, handover=handover)
+            assert served["content"] and len([row for row in _certificates(store, mission_id, "CONTEXT")
+                                              if row["consumer_id"] == "tool-call-under-test"]) == 1
+            def goes_stale_at_handover(claim: Any) -> Any:
+                # 目录照常列出；正文取出后、交出去之前，它所依据的验收不再撑着那一步
+                with monkeypatch.context() as patch:
+                    patch.setattr(standing, "acceptance_is_current", lambda *args: (False, "test_gone"))
+                    return handover(claim)
+
+            stale = knowledge_tools.read_knowledge_tool(store, mission_id, "knowledge_read",
+                                                        {"id": current.id}, handover=goes_stale_at_handover)
+            assert stale["content"] is None
+            assert stale["standing"] == f"knowledge:{current.id}@{current.version}:STALE:test_gone"
+            with store.transaction():
+                # 本机时钟回拨：高水位在"现在"之后，状态 ROLLBACK、代次加一
+                store.connection.execute(
+                    "UPDATE assurance_environment_state SET clock_state='ROLLBACK', "
+                    "clock_generation=clock_generation+1, wall_high_ms=MAX(wall_high_ms, ?), "
+                    "row_version=row_version+1 WHERE singleton=1", (int(store.now * 1000) + 10 ** 9,))
+            rolled = knowledge_tools.read_knowledge_tool(store, mission_id, "knowledge_read",
+                                                         {"id": current.id}, handover=handover)
+            assert rolled["content"] is None and rolled["standing"] == "TIME_DISCONTINUITY"
+
+    asyncio.run(case())
+
+
+# ------------------------------------- 签不出时开规划轮的三条路同样收（裁决 2026-10-07 建议 1）
+def test_a_planning_round_that_cannot_be_certified_waits_instead_of_stopping(tmp_path, monkeypatch):
+    """要交给规划器的证据此刻签不出 PLAN 证书（例如时钟回拨期间）：普通开轮、服务恢复、等待唤醒
+    三条路一样处理——这一轮不开、记进度、不算一轮故障；能签了照常开，任务完成。
+
+    剧本里返工那一轮由"服务恢复"开（修复请求）。连续拒绝次数超过一轮故障的上限，且把故障的最短
+    时长调成 0：若这条路按一轮故障处理，任务会被按名停掉。"""
+    import agent_orchestrator.orchestrator.assurance_point_use as point_use
+    from agent_orchestrator.orchestrator import failure_classes
+
+    monkeypatch.setattr(failure_classes, "ROUND_FAULT_MIN_SECONDS", 0.0)
+    original = point_use.certify_point_use_locked
+    refused = {"n": 0}
+
+    def certify(commit: Any, **kwargs: Any) -> Any:
+        if (kwargs["purpose"] == "PLAN" and kwargs.get("record", True) and kwargs["claims"]
+                and refused["n"] < failure_classes.NON_MODEL_FAILURE_CAP + 4):
+            refused["n"] += 1
+            use = point_use.PointUse("PLAN", kwargs["mission_id"], kwargs["consumer_kind"],
+                                     kwargs["consumer_id"], tuple(kwargs["claims"]))
+            return point_use._refused(use, "TIME_DISCONTINUITY")
+        return original(commit, **kwargs)
+
+    monkeypatch.setattr(point_use, "certify_point_use_locked", certify)
+    state: dict[str, Any] = {"methods": []}
+
+    async def case():
+        async with product_world(tmp_path / "root", _scenario_provider(state),
+                                 allowed_tools=DEFAULT_TOOLS + KNOWLEDGE_TOOLS) as world:
+            mission_id = await _run(world, "point-use-plan-waits")
+            assert refused["n"] == failure_classes.NON_MODEL_FAILURE_CAP + 4
+            faults = [event for event in world.store.iter_events(mission_id) if event.type == "MissionRoundFault"]
+            assert faults == [], [event.payload for event in faults]
+
+    asyncio.run(case())

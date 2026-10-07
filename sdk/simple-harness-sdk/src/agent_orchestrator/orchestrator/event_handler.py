@@ -541,6 +541,9 @@ class Orchestrator:
         self._deferred: dict[str, float] = {}  # task_id → first time it waited for a profile
         # review P0-1: a Planner whose pool is cooling down waits too: mission_id → (since, ordinal)
         self._deferred_planning: dict[str, tuple[float, int]] = DeferredPlanning()
+        #: 推后第 1 批 A26（裁决 2026-10-07 建议 1）：开规划轮时证据签不出 PLAN 证书、正在等下一轮
+        #: 重签的任务。这是合法等待，不判停滞；建出规划意图即清。
+        self._planning_evidence_waits: set[str] = set()
         #: P2.3f: when this process first saw a service turn blocked on an unknown
         #: Provider outcome, per ``intent_id:replays``.  In memory on purpose: the
         #: bound is a *wait*, and a restarted process starting the wait again costs at
@@ -837,8 +840,9 @@ class Orchestrator:
             self._assembled.gateway.on_executed = self._record_tool_call
             from ..context.knowledge_tools import read_knowledge_tool
 
-            self._assembled.gateway.knowledge_reader = lambda mission_id, tool, args: (
-                read_knowledge_tool(self.store, mission_id, tool, args)
+            self._assembled.gateway.knowledge_reader = lambda mission_id, tool, args, reader: (
+                read_knowledge_tool(self.store, mission_id, tool, args,
+                                    handover=self._knowledge_handover(mission_id, reader))
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
@@ -2717,7 +2721,8 @@ class Orchestrator:
             or self._requirements_unconfirmed(mission),
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
-            "planning_wait": self._has_pending_planning_waits(mission.id),
+            "planning_wait": self._has_pending_planning_waits(mission.id)
+            or mission.id in self._planning_evidence_waits,
             "taskgraph_sources": bool(
                 self._taskgraph_notifications is not None
                 and self._taskgraph_notifications.awaiting_sources(mission.id)
@@ -3185,6 +3190,13 @@ class Orchestrator:
             return False
         if self._requirements_unconfirmed(mission):
             return False
+        from .assurance_point_use import PointUseRefused
+        try:
+            return self._resume_planning_services_now(mission, questions)
+        except PointUseRefused as refused:
+            return self._planning_round_waits(mission.id, refused, path="service_resume")
+
+    def _resume_planning_services_now(self, mission: Mission, questions: Any) -> bool:
         with self.store.transaction():
             if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
                 return False
@@ -3497,6 +3509,8 @@ class Orchestrator:
         return progressed
 
     def _wake_planning_wait(self, listed: Mission) -> bool:
+        from .assurance_point_use import PointUseRefused
+
         progressed = False
         for _ in (0,):  # one Mission; ``continue`` below ends its share
             if self.store.count_events(listed.id, "PlanningWaitRegistered") == 0:
@@ -3610,6 +3624,10 @@ class Orchestrator:
             except RoutingUnavailable:
                 # Retain the WAIT; do not enqueue an unbound deferred planner that
                 # could bypass target revalidation on the next cycle.
+                continue
+            except PointUseRefused as refused:
+                # 同普通开轮：保留 WAIT，这一轮不开，不算故障（A26 裁决建议 1）
+                self._planning_round_waits(listed.id, refused, path="wait_wakeup")
                 continue
             except ContextRejected as error:
                 self._stop_planning_round(
@@ -4021,6 +4039,29 @@ class Orchestrator:
         Every path that opens a Planner round asks this one question (阶段 E)."""
         return self._planning_start_gate is not None and not self._planning_start_gate(mission)
 
+    def _knowledge_handover(self, mission_id: str, reader: Mapping[str, Any]) -> Any:
+        """``knowledge_read`` 交出正文前的那道门（裁决 2026-10-07 第 5 件）。执行者：与装上下文同一个
+        使用证书签发方，消费方是这次工具调用。审阅员读黑板算披露（DISCLOSE），按第 2 批 A03 定；
+        在那之前只过同一套判定、不签证书。"""
+        from .assurance_point_use import judge_claims, knowledge_handover
+
+        if reader.get("review_key") is not None:
+            return lambda claim: judge_claims(self.store, mission_id, (claim,))
+        attempt = self.store.get_attempt(str(reader["attempt_id"]))
+        if attempt is None or attempt.mission_id != mission_id:
+            return lambda claim: ("TOOL_CALL_ATTEMPT_UNKNOWN",)
+        return knowledge_handover(self.commit, mission_id=mission_id, consumer_id=str(reader["call_id"]),
+                                  task_id=attempt.task_id)
+
+    def _planning_round_waits(self, mission_id: str, refused: Any, *, path: str) -> bool:
+        """推后第 1 批 A26（裁决 2026-10-07 建议 1）：要当事实交给规划器的证据此刻签不出 PLAN 证书
+        （证据刚过时、时钟回拨、授权变了）。三条开轮的路——普通开轮、服务恢复、等待唤醒——都走这里：
+        这一轮不开（开轮事务已回滚），原因写进进度记录，不算一轮故障、不停任务；下一轮按当时的世界
+        重新组包再签。"""
+        self._planning_evidence_waits.add(mission_id)
+        self._note(f"mission {mission_id}: planning round waits at {path} ({'; '.join(refused.use.refusals)})")
+        return False
+
     async def _try_planner_intent(self, mission_id: str, *, ordinal: int) -> bool:
         """Create the Planner intent, or — review P0-1 — wait (bounded) while its pool is
         cooling down; a package that would carry a credential stops planning visibly."""
@@ -4034,10 +4075,7 @@ class Orchestrator:
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
         except PointUseRefused as refused:
-            # 推后第 1 批 A26：要给规划器的证据此刻签不出 PLAN 证书——这一轮不开（事务已回滚），
-            # 原因写进进度记录，下一轮按当时的世界重新组包再签。
-            self._note(f"mission {mission_id}: planning round waits ({'; '.join(refused.use.refusals)})")
-            return False
+            return self._planning_round_waits(mission_id, refused, path="ask")
         except UnsupportedPlanningPackage as error:
             # 2026-09-25: a Mission bound to a package this build no longer serves stops
             # here, by itself — it must not take the orchestrator loop (and every other
@@ -5004,6 +5042,7 @@ class Orchestrator:
                 self.commit, mission_id=mission_id, purpose="PLAN",
                 consumer_kind=PLANNING_REQUEST_CONSUMER, consumer_id=intent.intent_id,
                 claims=planning_claims(package.package), subject=("requirements", mission_id))
+        self._planning_evidence_waits.discard(mission_id)
         return intent
 
     # -------------------------------------------------------------- dispatch

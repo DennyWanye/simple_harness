@@ -39,6 +39,7 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
 from production_fixture import chain_planner, enabled_world  # noqa: E402
 
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # noqa: E402
+from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
@@ -195,7 +196,11 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "listed_once": listed_once, "listed_twice": listed_twice,
             "statuses_before": statuses_before, "statuses_after": statuses_after,
             "listing": read_knowledge_tool(store, mission_id, "knowledge_list", {}),
-            "reading": read_knowledge_tool(store, mission_id, "knowledge_read", {"id": knowledge_id}),
+            # 交出正文前过使用证书签发方那道门（推后第 1 批 A26，与执行者运行中读同一道门）
+            "reading": read_knowledge_tool(store, mission_id, "knowledge_read", {"id": knowledge_id},
+                                           handover=knowledge_handover(commit, mission_id=mission_id,
+                                                                       consumer_id="step04-read",
+                                                                       task_id=knowledge[0].source_task)),
             "foreign_read": _refusal(lambda: read_knowledge_tool(
                 store, "mission-foreign", "knowledge_read", {"id": knowledge_id})),
             "unknown_read": _refusal(lambda: read_knowledge_tool(
