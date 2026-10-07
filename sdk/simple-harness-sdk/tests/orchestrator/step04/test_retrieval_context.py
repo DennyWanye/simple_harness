@@ -20,6 +20,7 @@ from agent_orchestrator.context.context_builder import (
 )
 from agent_orchestrator.context.retrieval import (
     RETRIEVAL_VERSION,
+    GoalTree,
     KnowledgeContext,
     RetrievalResult,
     rank_knowledge,
@@ -98,6 +99,12 @@ def test_ranking_combines_relevance_trust_distance_recency_reuse_and_drops_dupli
         ),
         "m:task-4": _task("m:task-4", deps=("m:task-2",), goal="别的"),
     }
+    # 推后第 2 批 K06：结构从分层计划读——四步挂在根下，task-1 → task-3、task-2 → task-4 是数据边
+    tree = GoalTree.build(
+        roots=("m:root",), children={"m:root": tuple(tasks)},
+        task_of={"m:root": "m:root", **{name: name for name in tasks}},
+        precedence=(("m:task-1", "m:task-3"), ("m:task-2", "m:task-4")),
+    )
     records = [
         _record(
             "K-anc",
@@ -135,7 +142,7 @@ def test_ranking_combines_relevance_trust_distance_recency_reuse_and_drops_dupli
         _record("K-new", source="m:task-1", content="新结论", key="impl_a.trailing", created=4.0),
         _record("K-foreign", source="x:task-1", content="impl_a 对空输入抛错", mission="x"),
     ]
-    result = rank_knowledge(tasks["m:task-3"], records, tasks_by_id=tasks, limit=10)
+    result = rank_knowledge(tasks["m:task-3"], records, goal_tree=tree, limit=10)
     assert result.version == RETRIEVAL_VERSION and result.status == "ok"
     ids = [item.id for item in result.items]
     assert (
@@ -145,15 +152,15 @@ def test_ranking_combines_relevance_trust_distance_recency_reuse_and_drops_dupli
     assert result.superseded[0]["superseded_by"] == "K-new"
     assert (
         "K-far" in result.dropped["duplicate"] and "K-anc" in ids
-    )  # same key+stance: the ancestor wins
+    )  # same key+stance: the upstream one wins
     assert ids[0] == "K-anc"  # most relevant + ancestor
     parts = {item.id: item.parts for item in result.items}
-    assert parts["K-anc"]["proximity"] == 1.0 and parts["K-other"]["proximity"] < 1.0
+    assert parts["K-anc"]["proximity"] > parts["K-other"]["proximity"]  # 数据边上的上游更近
     assert parts["K-other"]["reuse"] == pytest.approx(2 / 3)
-    assert rank_knowledge(tasks["m:task-3"], records, tasks_by_id=tasks, limit=1).dropped[
+    assert rank_knowledge(tasks["m:task-3"], records, goal_tree=tree, limit=1).dropped[
         "over_limit"
     ]
-    assert rank_knowledge(tasks["m:task-3"], [], tasks_by_id=tasks).items == ()
+    assert rank_knowledge(tasks["m:task-3"], [], goal_tree=tree).items == ()
 
 
 # ------------------------------------------------------------------ D4-10'

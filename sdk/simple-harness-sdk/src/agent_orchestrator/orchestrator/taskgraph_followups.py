@@ -141,7 +141,7 @@ class TaskGraphEventConsumer:
             raise ValueError("event batch must be between 1 and 1024")
         store = self.notifications.store
         key = derive_id("taskgraph-exec-v2-event-cursor", self.consumer_id, mission_id)
-        with store.transaction() as db:
+        with store.transaction():
             from ..storage.taskgraph_store import NotBoundError, require_bound
             try:
                 require_bound(store, mission_id)
