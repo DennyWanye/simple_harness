@@ -481,8 +481,10 @@ class WorkspaceToolGateway:
         if set(self._domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tool names")
         self._domain_locks: dict[str, asyncio.Lock] = {}
+        # The fourth argument names the reader (attempt, this tool call, review key):
+        # content is handed over through the use-certificate issuer (A26).
         self.knowledge_reader: (
-            Callable[[str, str, Mapping[str, Any]], Mapping[str, Any]] | None
+            Callable[[str, str, Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]] | None
         ) = None
         self.calls: list[dict[str, Any]] = []
         self._read_only_existing_streak: dict[str, int] = {}
@@ -836,7 +838,9 @@ class WorkspaceToolGateway:
                     if refusal is not None:
                         raise WorkspaceError(refusal)
                 try:
-                    value = self.knowledge_reader(binding.mission_id, call.name, arguments)
+                    value = self.knowledge_reader(binding.mission_id, call.name, arguments, {
+                        "attempt_id": binding.attempt_id, "call_id": f"{run_id}:{call.call_id}",
+                        "review_key": binding.review_key})
                 except ValueError as error:
                     raise WorkspaceError(str(error)) from error
             elif call.name in ASSURANCE_EVIDENCE_TOOLS:

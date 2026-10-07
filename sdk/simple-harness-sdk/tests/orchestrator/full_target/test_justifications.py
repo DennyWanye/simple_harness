@@ -682,21 +682,6 @@ def test_k10_an_observation_made_after_as_of_is_not_an_anchor() -> None:
     assert selection.reason_for("obs-future") is AnchorRejection.AFTER_AS_OF
 
 
-def test_k10_a_continuous_premise_needs_a_declared_monitor_interval() -> None:
-    world = World({}, declared_only=frozenset({"stock"}))
-    unmonitored = candidate(world.keys["stock"], name="lock", temporal_use=TemporalUse.CONTINUOUS)
-    blocked = selector(world, purpose=WitnessPurpose.MAINTAIN).select([unmonitored])
-    assert blocked.reason_for("obs-lock") is AnchorRejection.NO_CONTINUOUS_GUARANTEE
-
-    monitored = candidate(
-        world.keys["stock"],
-        name="lock",
-        temporal_use=TemporalUse.CONTINUOUS,
-        monitor_interval_ms=250,
-    )
-    assert len(selector(world, purpose=WitnessPurpose.MAINTAIN).select([monitored]).anchors) == 1
-
-
 def test_k10_evidence_from_another_scope_is_not_selected() -> None:
     world = World({}, declared_only=frozenset({"stock"}))
     selection = selector(world).select(

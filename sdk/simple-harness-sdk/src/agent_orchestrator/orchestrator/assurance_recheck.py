@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from ..assurance.certificates import UseIdentity
+from ..assurance.certificates import POINT_PURPOSES_SQL, UseIdentity
 from ..assurance.codec import AssuranceError, decode, fingerprint, integer
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef, Pin
@@ -32,10 +32,12 @@ EVIDENCE_STALE = "EVIDENCE_STALE"
 
 
 def live_usable_certificates(connection: Any, mission_id: str, *, limit: int) -> list[Any]:
-    """每个消费方身份最新的一张证书，且是 USABLE 的（才有有效性可观察）。"""
+    """每个消费方身份最新的一张证书，且是 USABLE 的（才有有效性可观察）。时点用途的证书在签发事务里
+    就用掉了，之后是历史，不在此列（推后第 1 批 A26）。"""
     return connection.execute(
         "SELECT c.* FROM assurance_use_certificates c WHERE c.mission_id=? "
         "AND json_extract(c.certificate_json,'$.decision')='USABLE' "
+        f"AND c.purpose NOT IN ({POINT_PURPOSES_SQL}) "
         "AND NOT EXISTS(SELECT 1 FROM assurance_use_certificates newer "
         "WHERE newer.mission_id=c.mission_id AND newer.consumer_kind=c.consumer_kind "
         "AND newer.consumer_id=c.consumer_id AND newer.purpose=c.purpose "

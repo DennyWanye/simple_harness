@@ -53,7 +53,6 @@ from ..contracts.semantic_base import (
     identifier,
     index,
     optional_identifier,
-    optional_index,
     reject_executable,
     sequence_of,
 )
@@ -414,7 +413,6 @@ class AnchorRejection(StrEnum):
     COVERAGE_SCOPE_MISMATCH = "COVERAGE_SCOPE_MISMATCH"
     PREDICTED_NOT_OBSERVED = "PREDICTED_NOT_OBSERVED"
     SUPERSEDED_BY_RECEIPT = "SUPERSEDED_BY_RECEIPT"
-    NO_CONTINUOUS_GUARANTEE = "NO_CONTINUOUS_GUARANTEE"
     UNREGISTERED_PREDICATE = "UNREGISTERED_PREDICATE"
 
 
@@ -437,7 +435,6 @@ class AnchorCandidate:
     availability: Availability = Availability.READABLE
     validity: Validity = Validity.CURRENT
     temporal_use: TemporalUse = TemporalUse.CURRENT_AT_USE
-    monitor_interval_ms: int | None = None
     traceable: bool = True
     predicted: bool = False
     inapplicable: bool = False
@@ -462,11 +459,6 @@ class AnchorCandidate:
         object.__setattr__(self, "validity", enum_of(Validity, self.validity, "anchor.validity"))
         object.__setattr__(
             self, "temporal_use", enum_of(TemporalUse, self.temporal_use, "anchor.temporal_use")
-        )
-        object.__setattr__(
-            self,
-            "monitor_interval_ms",
-            optional_index(self.monitor_interval_ms, "anchor.monitor_interval_ms", minimum=1),
         )
         object.__setattr__(self, "traceable", flag(self.traceable, "anchor.traceable"))
         object.__setattr__(self, "predicted", flag(self.predicted, "anchor.predicted"))
@@ -670,12 +662,6 @@ class AnchorSelector:
                 historical = True
             else:
                 return AnchorRejection.EXPIRED, False
-        if (
-            candidate.temporal_use is TemporalUse.CONTINUOUS
-            and self._purpose is WitnessPurpose.MAINTAIN
-            and candidate.monitor_interval_ms is None
-        ):
-            return AnchorRejection.NO_CONTINUOUS_GUARANTEE, False
         if not observation.polarity:
             reason = self._negative_verdict(candidate, signature)
             if reason is not None:

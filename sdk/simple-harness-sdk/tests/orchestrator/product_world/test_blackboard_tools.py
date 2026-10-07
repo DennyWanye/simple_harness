@@ -170,7 +170,12 @@ def test_checked_summary_layer(tmp_path, monkeypatch, case):
             assert set(row) == {"layer", "id", "source_task", "summary", "summary_sha256", "result_ref",
                                 "artifacts", "checked_by"}
             assert row["summary"] == "写好了要求的文件" and row["artifacts"][0]["path"] == "notes/a.md"
-            read = knowledge_tools.read_knowledge_tool(world.store, mission_id, "knowledge_read", {"id": row["id"]})
+            from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover
+
+            read = knowledge_tools.read_knowledge_tool(
+                world.store, mission_id, "knowledge_read", {"id": row["id"]},
+                handover=knowledge_handover(world.loop.commit, mission_id=mission_id,
+                                            consumer_id="summary-read", task_id=row["source_task"]))
             assert read["content"] == row["summary"] and read["summary_sha256"] == row["summary_sha256"]
             assert pushed and pushed[-1] == [row]
 

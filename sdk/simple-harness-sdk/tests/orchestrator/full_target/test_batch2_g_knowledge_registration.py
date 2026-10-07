@@ -181,7 +181,12 @@ def test_review_confirmed_knowledge_carries_its_registrations_and_the_tools_show
             [entry] = [item for item in listing["items"] if item["layer"] == "verified"]
             assert entry["assurance_level"] == "ASSURANCE_1_1" and entry["permitted_uses"] is None
             assert entry["validity_interval"] == dict(record.validity_interval)
-            text = read_knowledge_tool(store, mission_id, "knowledge_read", {"id": record.id})
+            from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover
+
+            text = read_knowledge_tool(store, mission_id, "knowledge_read", {"id": record.id},
+                                       handover=knowledge_handover(world.loop.commit, mission_id=mission_id,
+                                                                   consumer_id="registration-read",
+                                                                   task_id=record.source_task))
             assert text["assurance_level"] == "ASSURANCE_1_1"
             assert text["validity_interval"] == dict(record.validity_interval)
 

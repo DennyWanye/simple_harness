@@ -33,6 +33,12 @@ from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider,
 from test_operation import PUBLISH, TARGET, _confirm_completion
 
 
+def _start_certificates(store: Any, mission_id: str, action_key: str) -> list[Any]:
+    return store.connection.execute(
+        "SELECT * FROM assurance_use_certificates WHERE mission_id=? AND purpose='START' "
+        "AND consumer_kind='ACTION' AND consumer_id=?", (mission_id, action_key)).fetchall()
+
+
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch):
     import agent_orchestrator.orchestrator.event_handler as event_handler
@@ -90,6 +96,8 @@ def test_handoff_refused_when_scope_epoch_moved(tmp_path):
             refusal = world.loop.actions.last_refusal.get(action["action_key"], "")
             assert refusal.startswith("validity_stale:scope_epoch:"), refusal
             assert int(after.get("handoffs") or 0) == 0 and not any(published.rglob("*.md"))
+            # 推后第 1 批 A26：交接前的核对就是签 START 证书；地基不当前就不签
+            assert _start_certificates(store, mission_id, action["action_key"]) == []
             # 地基一直不回来：这不是"等人审批"，任务不会永远挂着——停滞确认后如实交给规划器，
             # 规划器不改，就按"没有可派发的工作"停，报告里写着哪次交接为什么被拒。
             mission = await world.run_until_settled(mission_id, rounds=20, timeout=20)
@@ -153,5 +161,11 @@ def test_handoff_goes_through_once_the_witness_is_reissued(tmp_path):
             assert ("mission", 1, "USABLE") in {(w["scope_id"], w["scope_epoch"], w["decision"]) for w in witnesses()}
             assert int(store.get_action(action["action_key"]).get("handoffs") or 0) == 1
             assert len(list(published.rglob("*.md"))) == 1
+            # 推后第 1 批 A26：放行的那次交接带一张 START 证书，钉住这一步与它所依据的上游验收
+            [certificate] = _start_certificates(store, mission_id, action["action_key"])
+            body = json.loads(certificate["certificate_json"])
+            assert body["decision"] == "USABLE" and body["consumer_kind"] == "ACTION"
+            kinds = {json.loads(item["key"])["kind"] for item in body["read_set"] if item["channel"] == "OBJECT"}
+            assert {"task", "acceptance"} <= kinds, kinds
 
     asyncio.run(case())

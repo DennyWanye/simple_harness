@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
-"""第 2 批 K05：读取知识后再复核一次有效性（原计划 §11.3 两道：检索前过滤 + 读取后复核）。
+"""第 2 批 K05：读取知识后再过一道门（原计划 §11.3 两道：检索前过滤 + 读取后复核）。
 
-目录（``knowledge_list``）是检索前的过滤；``knowledge_read`` 把正文取出之后、交出去之前，用同一个
-判定（``knowledge_standing``，不写第二套）再判一次：
+目录（``knowledge_list``）是检索前的过滤；``knowledge_read`` 把正文取出之后、交出去之前过一道门
+（推后第 1 批 A26，裁决 2026-10-07 第 5 件）：产品里这道门是使用证书签发方（判定仍是同一个
+``knowledge_standing``，另核时钟、授权、根实例并留证书，见 ``product_world/test_point_use_certificates.py``）。
+这里只验工具这一侧的约定（库里没有保证通道，门用替身）：
 
-* 目录判它当前、复核判它不再当前 → 不返回正文，如实写明现状；
-* 编号是本任务的一条知识、只是已过时 → 同样如实说明，不当成"没有这条"；
-* 编号对不上 → 照旧拒绝。
+* 门说不能交 → 不返回正文，如实写明原因；每次读都过门，目录那次判定不替这一次作数；
+* 没有门 → 不交正文（不留一条绕过门的路）；
+* 编号是本任务的一条知识、只是已过时 → 如实说明，不当成"没有这条"；编号对不上 → 照旧拒绝。
 
-**改坏检验**：去掉交出去之前的那次复核 → 第一条变红（正文照样返回）。
+**改坏检验**：去掉交出去之前那道门 → 第一条变红（正文照样返回）。
 """
 from __future__ import annotations
 
@@ -50,26 +52,34 @@ def store(tmp_path: Path) -> Store:
     store.close()
 
 
-def test_knowledge_that_goes_stale_between_the_catalogue_and_the_handover_is_not_served(store, monkeypatch):
-    """目录那一次判它当前；正文取出后的复核判它不再当前 → 没有正文，只有现状。"""
-    calls = {"n": 0}
+def test_knowledge_the_gate_refuses_at_handover_is_not_served(store, monkeypatch):
+    """目录判它当前；交出去之前那道门说不能交 → 没有正文，只有原因。每次读都过一次门。"""
+    from agent_orchestrator.orchestrator.assurance_point_use import EvidenceClaim
 
-    def judged(store_, record, **kwargs):
-        calls["n"] += 1
-        # 第一次（编目录）当前；之后（交出去之前的复核）它所依赖的验收已经不算数了
-        return standing_module.CURRENT if calls["n"] == 1 else f"{standing_module.STALE}:acceptance_not_current"
-
-    monkeypatch.setattr(knowledge_tools, "knowledge_standing", judged)
+    monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
     listing = read_knowledge_tool(store, MISSION, "knowledge_list", {"limit": 5})
     assert [row["id"] for row in listing["items"] if row["layer"] == "verified"] == ["k1"]
 
-    calls["n"] = 0
-    reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"})
-    assert calls["n"] >= 2, "the handover must judge again, not reuse the catalogue's verdict"
+    asked: list[EvidenceClaim] = []
+
+    def gate(claim: EvidenceClaim) -> tuple[str, ...]:
+        asked.append(claim)
+        return ("knowledge:k1@1:STALE:acceptance_not_current",)
+
+    reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"}, handover=gate)
+    assert asked == [EvidenceClaim.knowledge("k1", 1)], "the handover must pass the gate, not reuse the catalogue"
     assert reply["content"] is None and reply["sha256"] is None
-    assert reply["standing"] == "STALE:acceptance_not_current"
+    assert reply["standing"] == "knowledge:k1@1:STALE:acceptance_not_current"
     assert reply["id"] == "k1" and reply["ref"] == "k1@1" and reply["layer"] == "verified"
     assert "不再当前" in reply["notice"] and "不能引用" in reply["notice"]
+    read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"}, handover=gate)
+    assert len(asked) == 2
+
+
+def test_content_is_not_handed_over_without_the_gate(store, monkeypatch):
+    monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
+    with pytest.raises(ValueError, match="hand-over gate"):
+        read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"})
 
 
 def test_a_stale_entry_of_this_mission_is_explained_not_denied(store):
@@ -85,8 +95,8 @@ def test_an_unknown_id_is_still_refused(store):
         read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "nobody"})
 
 
-def test_the_current_entry_is_served_whole_when_both_judgements_agree(store, monkeypatch):
+def test_the_current_entry_is_served_whole_when_the_gate_lets_it_through(store, monkeypatch):
     monkeypatch.setattr(knowledge_tools, "knowledge_standing", lambda *_a, **_k: standing_module.CURRENT)
-    reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"})
+    reply = read_knowledge_tool(store, MISSION, "knowledge_read", {"id": "k1"}, handover=lambda claim: ())
     assert reply["content"] == _record().content and "standing" not in reply
     assert reply["ref"] == "k1@1" and reply["layer"] == "verified"

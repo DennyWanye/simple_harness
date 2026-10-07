@@ -1730,6 +1730,7 @@ class CommitService(ProtectedTailCommitsMixin,
         runtime_profile_id: str = "default",
         routing: Mapping[str, Any] | None = None,
         critic_tail: Reservation | None = None,
+        context_evidence: Sequence[Any] = (),
     ) -> tuple[Attempt, DispatchIntent]:
         """Atomic Reserve + Attempt(PENDING) + dispatch intent (ORCH-BUILD §4.3 step 1).
 
@@ -1737,6 +1738,11 @@ class CommitService(ProtectedTailCommitsMixin,
         already has an open Attempt (one at a time per Task) or when the budget does not
         fit; the caller turns ``BudgetExhausted`` into a stop.  Every Attempt counts
         against ``max_attempts``.
+
+        ``context_evidence``: the knowledge and checked summaries frozen into this
+        Attempt's context.  A CONTEXT use certificate over them is issued in this same
+        transaction (推后第 1 批 A26); evidence that is no longer current refuses the
+        Attempt with the named reason, and the next round assembles a current context.
         """
 
         with self._store.transaction():
@@ -1809,6 +1815,13 @@ class CommitService(ProtectedTailCommitsMixin,
                     )
             ordinal = len(existing) + 1
             attempt_id = ids.attempt_id(task_id, ordinal)
+            from .assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
+            try:
+                require_point_use_locked(
+                    self, mission_id=task.mission_id, purpose="CONTEXT", consumer_kind=ATTEMPT_CONSUMER,
+                    consumer_id=attempt_id, claims=tuple(context_evidence), subject=("task", task_id))
+            except PointUseRefused as refused:
+                raise CommitRejected(f"CONTEXT_EVIDENCE_NOT_CURRENT: {'; '.join(refused.use.refusals)}") from refused
             from .completion_inputs import freeze_attempt_completion_inputs
             frozen_completion = freeze_attempt_completion_inputs(
                 self._store, self, task,
@@ -2232,12 +2245,15 @@ class CommitService(ProtectedTailCommitsMixin,
         )
         return True
 
-    def mark_attempt_lost(self, attempt_id: str, *, reason: str) -> Attempt:
+    def mark_attempt_lost(
+        self, attempt_id: str, *, reason: str, detail: Mapping[str, Any] | None = None
+    ) -> Attempt:
         with self._store.transaction():
             attempt = self._require_attempt(attempt_id)
             if attempt.status is AttemptStatus.LOST:
                 return attempt
-            updated = next_attempt(attempt, AttemptStatus.LOST, failure={"reason": reason})
+            updated = next_attempt(
+                attempt, AttemptStatus.LOST, failure={"reason": reason, **jsonable(dict(detail or {}))})
             self._store.update_attempt(updated, expected_version=attempt.version)
             self._release_attempt_charge(updated)
             # Loss is a control-plane observation, not proof that the SDK call
@@ -2248,7 +2264,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 key=attempt.id,
                 task_id=attempt.task_id,
                 attempt_id=attempt.id,
-                payload={"reason": reason},
+                payload={"reason": reason, **jsonable(dict(detail or {}))},
             )
             return updated
 

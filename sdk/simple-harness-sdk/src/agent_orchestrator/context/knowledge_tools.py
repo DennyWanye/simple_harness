@@ -16,13 +16,14 @@ or out of date is never served as if it were current.  The tool names, arguments
 and descriptions are unchanged (they are part of every pool's identity).
 
 读取后复核（第 2 批 K05，原计划 §11.3 的第二道）：目录是检索前的过滤；``knowledge_read`` 把一条
-已验证知识的正文取出之后、交给读者之前，用同一个判定（:func:`knowledge_standing`）再判一次。
-不再当前的不返回正文，如实写明它的现状（SUPERSEDED / STALE:<原因>）；只有编号对不上的才拒绝。
+已验证知识（与核对过的摘要）的正文取出之后、交给读者之前过一道门：执行者走使用证书签发方
+（推后第 1 批 A26，与装上下文同一道门；签发方里仍是同一个判定 :func:`knowledge_standing`）。
+过不了的不返回正文，如实写明原因；只有编号对不上的才拒绝。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from hashlib import sha256
 from typing import Any
 
@@ -189,9 +190,26 @@ def not_current_reply(record: Any, standing: str) -> dict[str, Any]:
     }
 
 
+def refused_handover_reply(row: Mapping[str, Any], refusals: tuple[str, ...]) -> dict[str, Any]:
+    """交出正文前这一道门没过（证据此刻不当前、时钟不可信、授权变了）：没有正文，只有原因。"""
+    standing = "; ".join(refusals)
+    if row["layer"] == VERIFIED_LAYER:
+        return not_current_reply(row["_record"], standing)
+    return {
+        **{key: value for key, value in _public(row).items() if key not in {"preview", "summary"}},
+        "standing": standing, "content": None, "sha256": None, "offset": 0, "next_offset": None,
+        "notice": (f"读取后复核：这条摘要此刻不能交出（{standing}），不返回正文。"
+                   "用 knowledge_list 重新取现行目录。"),
+    }
+
+
 def read_knowledge_tool(
-    store: Store, mission_id: str, tool: str, args: Mapping[str, Any],
+    store: Store, mission_id: str, tool: str, args: Mapping[str, Any], *,
+    handover: Callable[[Any], tuple[str, ...]] | None = None,
 ) -> dict[str, Any]:
+    """``handover``：交出已验证知识 / 核对过的摘要正文之前那一道门（推后第 1 批 A26，裁决 2026-10-07
+    第 5 件）——执行者走使用证书签发方（``assurance_point_use.knowledge_handover``）。没有这道门就不交
+    正文（目录、候选、原始引用不交事实，不过这道门）。"""
     gate = getattr(store, "_assurance_root_gate", None)
     if gate is not None:
         gate.require_execution()
@@ -242,11 +260,17 @@ def read_knowledge_tool(
     if offset > len(text):
         raise ValueError("offset is outside original knowledge")
     end = min(offset + 2048, len(text))
-    if row["layer"] == VERIFIED_LAYER:
-        # 读取后复核（K05）：正文已取出，交出去之前再判一次；目录那次判定不替这一次作数
-        standing = knowledge_standing(store, row["_record"])
-        if standing != CURRENT:
-            return not_current_reply(row["_record"], standing)
+    if row["layer"] in {VERIFIED_LAYER, SUMMARY_LAYER}:
+        # 读取后复核（K05）：正文已取出，交出去之前过一道门；目录那次判定不替这一次作数
+        from ..orchestrator.assurance_point_use import EvidenceClaim
+
+        if handover is None:
+            raise ValueError("knowledge content needs the hand-over gate")
+        claim = (EvidenceClaim.knowledge(row["id"], row["version"]) if row["layer"] == VERIFIED_LAYER
+                 else EvidenceClaim.summary(row["id"], row["summary_sha256"]))
+        refusals = tuple(handover(claim))
+        if refusals:
+            return refused_handover_reply(row, refusals)
     head = (
         {**knowledge_view(row["_record"], None), "layer": VERIFIED_LAYER, "ref": row["ref"],
          "basis": row["basis"]}
