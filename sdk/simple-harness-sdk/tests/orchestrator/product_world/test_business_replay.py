@@ -441,3 +441,28 @@ def test_a_root_review_cut_that_fails_halfway_leaves_no_unclaimed_package(tmp_pa
             assert verify_mission(world.store, mission_id)["status"] == CONSISTENT
 
     asyncio.run(case())
+
+
+def test_the_snapshot_event_count_agrees_with_walking_every_event_page(tmp_path):
+    """2026-10-07（Host 事件分页对不上数）：列事件不含存储层自己的 ``RowsWritten`` 记账，
+    快照里的 ``event_count`` 也必须同一口径——界面翻完所有页，条数就是详情里写的事件数。
+
+    **改坏检验**：计数仍把记账事件算进去 → 计数比翻页多约四分之一 → 变红。"""
+    from agent_orchestrator.storage.source_records import EVENT_TYPE
+
+    async def case():
+        async with product_world(tmp_path / "root", LayeredScriptedProvider()) as world:
+            mission_id = world.create({"goal": "写 notes.md", "idempotency_key": "count-pages",
+                                       "success_criteria": ["file:notes.md"]})["mission_id"]
+            await world.run_until_settled(mission_id, rounds=30)
+            assert world.store.count_events(mission_id, EVENT_TYPE) > 0  # 真有记账事件可漏
+            walked, after = 0, 0
+            while True:
+                page = world.control.events(mission_id, after_seq=after, limit=50)
+                walked += len(page["events"])
+                after = page["through_seq"]
+                if not page["has_more"]:
+                    break
+            assert world.control.snapshot(mission_id)["snapshot"]["event_count"] == walked
+
+    asyncio.run(case())

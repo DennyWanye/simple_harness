@@ -632,9 +632,14 @@ class Store:
         return [_event_from_row(row) for row in rows]
 
     def count_events(self, mission_id: str, event_type: str | None = None) -> int:
+        """Without ``event_type``: the same rows :meth:`list_events` lists — the storage
+        layer's own ``RowsWritten`` bookkeeping is left out, so a count and a full page
+        walk agree (2026-10-07, Host 事件分页对不上数)."""
         if event_type is None:
+            from .source_records import EVENT_TYPE
+
             row = self._connection.execute(
-                "SELECT COUNT(*) FROM events WHERE mission_id = ?", (mission_id,)
+                "SELECT COUNT(*) FROM events WHERE mission_id = ? AND type != ?", (mission_id, EVENT_TYPE)
             ).fetchone()
         else:
             row = self._connection.execute(
