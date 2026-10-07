@@ -238,7 +238,7 @@
    "when_unreadable": "没有声明的转换：artifacts/input_bindings.py:_check_schema 报 SCHEMA_MISMATCH（不推断兼容）；策略来源缺失或与首次读取不同：orchestrator/taskgraph_policy_sources.py:StoreTaskGraphPolicyAuthority.installed_policy 抛 SourceUnavailable('taskgraph_installed_policy_source_missing' / 'taskgraph_installed_policy_changed')",
    "tests": [
     "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_newer_schema_version_without_a_declaration_is_a_mismatch",
-    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_registered_compatibility_declaration_binds_and_records_the_converter",
+    "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_declaration_that_needs_a_converter_is_refused_by_name",
     "tests/orchestrator/full_target/test_input_manifest_resolution.py::test_a_declaration_in_the_other_direction_does_not_bind",
     "tests/orchestrator/product_world/test_sub_goal.py::test_goal_port_schema_mismatch_is_unbound"
    ],

@@ -74,7 +74,7 @@
 | 重复无进展的计数不因换名字而重置 | §9.1 表末行 | 做法不同 | 停滞问规划器的计数 `planning_repair_requests.py` `stall_asks_since_new_work` | 修做法机会按步骤算（用户 09-30 18:15 选 A，B-15） |
 | PlanRevisionProposal 字段（触发事实、读集、基础版本、采用/退出、修改、共享影响、要求覆盖、预算影响、在途处理、理由） | §9.2 | 部分 | `SDK/contracts/htn.py:2510` `PlanProposal`、`:2902` `ProposedPlanDelta`、`:2832` `ObligationCoverage` | 没有显式的"共享影响""预算影响"字段（B-8，裁决认定由系统计算） |
 | 影响分析：系统算影响范围，读依赖不完整就保守闭包 | §9.3 | 做法不同 | `SDK/planning/htn/repair_decision.py` `analyze_impact`；`SDK/graph/convergence.py` | 屏障加使用前重验，取代脏标记加局部重算（用户 09-30 拍板，B-14） |
-| 原子切换：先过整数闸门，再核语义读集；撤销被替代工作的派发代号；大图走持久 PREPARED + 激活屏障 | §9.4 | 部分 | `SDK/orchestrator/plan_commits.py:638,1174,1217`、`_revoke_running_work`；`SDK/orchestrator/_read_set.py:196-212` | 整数闸门删了（B-13）；读集缺预算授权修订、支持集合修订、manager epoch（B-12）；大图分阶段激活没做（C-3） |
+| 原子切换：先过整数闸门，再核语义读集；撤销被替代工作的派发代号；大图走持久 PREPARED + 激活屏障 | §9.4 | 部分 | `SDK/orchestrator/plan_commits.py:638,1174,1217`、`_revoke_running_work`；`SDK/orchestrator/_read_set.py:196-212` | 整数闸门删了（B-13）；读集缺预算授权修订、支持集合修订、manager epoch（B-12）；大图分阶段激活不做，改条文（C-3，B 级 #49） |
 | 新路线中，旧路线结果不明的外部操作先阻塞核对，不重新执行 | §9.5 | 部分 | 核对 `SDK/runtime/operation_reconciliation.py:160` | 台账自己承认崩溃切点 K10 绑的用例不涉及换做法（见第六节） |
 | Frontier 不只有 READY 叶子，还包括分解、取证、复审、比较、人工事项 | §10.1 | 做法不同 | `SDK/graph/eligibility.py:1612-1646`（规划/执行/准入三层）；分配器只排已准入的叶子（`allocator.py:392` `allocate_v2`） | 规划、取证都由主循环直接唤醒规划器，不和执行争名额（B-4、B-21） |
 | 搜索策略全集：greedy、best-first/beam、Best-of-N、模拟前瞻、失败剪枝 | §10.2 | 已删 | 全库没有 | B-4 |
@@ -257,7 +257,7 @@
 |---|---|---|---|
 | C-1 | §25.1 第 11 条：完整恢复协议八步（RECOVERY_LOCKED → 清单核对 → reducer 重建 → inbox/outbox → 未决核对 → fence 收敛 → 孤儿回收 → READY/DEGRADED_RECOVERY）。§16.4：恢复时先进入 SIDE_EFFECTS_DISABLED。§23 P7.1：`recovery_coordinator` | 只有启动恢复 `SDK/orchestrator/event_handler.py:2118` `recover()`，会按任务重新核对已交出的操作。全库没有恢复锁、降级恢复状态、`RecoveryObligation`、孤儿进程回收，git 历史里也从没出现过 | 用户 09-30 的原话（PLAN-STATUS:476）是"P7 迁移快照/归档/删除标记暂不做"，没提恢复协议。A 级 #4 删的是保证通道的离线备份受管恢复，不是这一套。10-02 评估第 44 项把它算进"09-30 暂缓"，是扩大解读 |
 | C-2 | §11.2：知识要有 `validity_interval`、`assurance_level`、`permitted_uses`。§25.1 第 5 条：证据四维（结论、有效性、保障范围、使用权） | `SDK/memory/verified_knowledge.py:31-53` 没有这三个字段 | F 阶段的裁决只说"适用条件"（claim_scope/assumptions）不加；一致性补改只说"多组依据"不做。这三个字段没有任何登记。台账 R29 写"已接入" |
-| C-3 | §9.4：大型图使用持久的 PREPARED 版本加激活屏障，最后用短事务切换 | `SDK/orchestrator/plan_commits.py:1174,1217`：PREPARED 和 ACTIVE 在同一个事务里，没有大图分阶段准备 | 没有偏差单 |
+| C-3 | §9.4：大型图使用持久的 PREPARED 版本加激活屏障，最后用短事务切换 | `SDK/orchestrator/plan_commits.py:1174,1217`：PREPARED 和 ACTIVE 在同一个事务里，没有大图分阶段准备 | 2026-10-07 改为 B 级 #49：保持单事务原子切换，计划条文已补注（`推后第3批-偏差裁决.md` 第 1 件） |
 | C-4 | §17.2：界面要显示证据版本、备选与采用路线、共享子目标 | 任务详情有预算去向（共用步骤在里面标"几个分支共用"）、还没细化的目标、不再算数的步骤；对话卡片显示要求版本。证据版本、备选路线、执行图上的共享子目标都没有 | 10-04 复核第 7 处点过名，建议"计划里补一句其余不做，或者补"。用户只定了加"不再算数"一行（A 级 #9），其余没有裁决、也没有归属 |
 | C-5 | §14.4：子进程身份、沙箱归属、回收材料持久化，不能凭旧 PID 终止陌生进程；跨机器 Executor 用受认证的 TaskPackage | `SDK/runtime/sandbox.py:326,393`：只在内存里记 `root_pid`，靠进程组 kill，重启后没有回收材料；没有跨机器 Executor | 一致性补改只把"三种系统隔离"定为只做 macOS，没有覆盖持久化回收和跨机器 |
 | C-6 | §17.2：前端用同一份公开 Schema 校验，坏消息标协议错 | 前端没有统一的 Schema 校验；只有 `FE/views/PlanChangePanel.tsx` 处理"已过期" | 台账 R58 写"已接入"，差距只写了"只有前端单元用例"，没登记缺统一校验 |

@@ -56,7 +56,6 @@ from ...contracts.htn import (
     OccurrenceSpec,
     OrderConstraint,
     PlanRevision,
-    PortCardinality,
     ProposedPlanDelta,
     ReadItem,
     ScopeEpochRead,
@@ -1567,7 +1566,7 @@ def unbound_required_ports(
         for port in binding.input_ports:
             if not port.required:
                 continue
-            if port.cardinality is PortCardinality.SET and port.ordering is None:
+            if not port.set_order_declared:
                 continue
             if (occurrence_id, port.port_key) not in bound:
                 out.append((occurrence_id, port.port_key))

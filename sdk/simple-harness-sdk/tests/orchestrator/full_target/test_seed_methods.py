@@ -578,7 +578,10 @@ def test_a_disjunctive_precondition_is_outside_the_fragment() -> None:
     del env
 
 
-def test_a_set_valued_port_is_outside_the_fragment() -> None:
+@pytest.mark.parametrize("cardinality", [True, "list", "map"])
+def test_a_set_valued_port_is_outside_the_fragment(cardinality: bool | str) -> None:
+    """SET, LIST and MAP are all multi-valued: none of them fits the fragment (T05)."""
+
     env = Env()
     env.register_predicate("frag.ready")
     env.register_type(
@@ -592,7 +595,7 @@ def test_a_set_valued_port_is_outside_the_fragment() -> None:
         parameters=(("subject", "string"),),
         inputs=(("many", "frag.many", False),),
         outputs=(("out", "frag.out"),),
-        set_port=True,
+        set_port=cardinality,
     )
     from agent_orchestrator.contracts.htn import OccurrenceSpec, ProposedPlanDelta, SemanticReadSet
     from agent_orchestrator.graph.task_network import TaskNetworkSnapshot

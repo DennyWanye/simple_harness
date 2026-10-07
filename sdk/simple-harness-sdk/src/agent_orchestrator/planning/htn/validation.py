@@ -332,7 +332,7 @@ def _check_ports(
 def _set_port_problem(binding: TaskSemanticBindingV1) -> DeltaProblem | None:
     for label, ports in (("input", binding.input_ports), ("output", binding.output_ports)):
         for port in ports:
-            if port.cardinality is PortCardinality.SET and port.ordering is None:
+            if not port.set_order_declared:
                 return DeltaProblem(
                     kind=DeltaProblemKind.PORT_UNBINDABLE,
                     detail=(
@@ -798,8 +798,8 @@ def unsupported_features(
             continue
         binding = network.binding_for_task(spec.task_id)
         for port in (*binding.input_ports, *binding.output_ports):
-            if port.cardinality is PortCardinality.SET:
-                note("set-valued-ports")
+            if port.cardinality is not PortCardinality.SINGLE:
+                note("set-valued-ports")  # SET, LIST and MAP are all multi-valued
         for value in binding.typed_parameters.values():
             if isinstance(value, (dict, list)):
                 note("structured-objects")
