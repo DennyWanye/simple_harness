@@ -293,12 +293,19 @@ def proposition_key(signature: PredicateSignature, arguments: Mapping[str, Any])
 
 def proposition_key_of(predicate_ref: Mapping[str, Any], arguments: Mapping[str, Any]) -> str:
     """The same identity from a predicate reference in JSON form — the one formula; the
-    observation store checks a stored question against its key with it."""
+    observation store checks a stored question against its key with it.
+
+    Assurance 1.1 §8.2: ``canonical({predicate, typed_args, …})`` with the whole SHA-256
+    (推后第 2 批 A16：不再截成 32 位).  Canonical JSON keeps ``1`` apart from ``true``
+    and a missing argument apart from ``null``."""
 
     digest = content_hash_of(
-        {"predicate": dict(predicate_ref), "arguments": {key: arguments[key] for key in sorted(arguments)}}
+        {
+            "predicate": dict(predicate_ref),
+            "typed_args": {key: arguments[key] for key in sorted(arguments)},
+        }
     )
-    return f"{predicate_ref['id']}@{predicate_ref['version']}#{digest[:32]}"
+    return f"{predicate_ref['id']}@{predicate_ref['version']}#{digest}"
 
 
 def closed_world_denial_admissible(

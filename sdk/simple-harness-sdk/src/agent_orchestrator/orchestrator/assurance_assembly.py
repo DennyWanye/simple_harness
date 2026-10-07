@@ -433,6 +433,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         require_creation_root=require_root,
         requirements=ports.requirements or mission_requirements(ports.principal),
         reconcile=lambda mission_id: activation_inventory(store, mission_id),
+        check_specs=local_checks,
     )
     tick = AssuranceTick(
         orchestrator,

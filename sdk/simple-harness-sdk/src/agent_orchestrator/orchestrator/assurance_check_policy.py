@@ -240,7 +240,7 @@ def approve_check_policy(
             if importer is None or importer.tenant_id != tenant_id:
                 raise AssuranceError("CHECKER_UNAVAILABLE")
             importer._require_deployment()
-            registry = importer._registry(mission_id)
+            registry = importer._read_registry(mission_id)
         deployed = {entry.binding.spec_ref for entry in registry.values()}
         for row in criteria:
             source = originals[row.criterion_id]
@@ -437,7 +437,7 @@ def _lossless_mapping(
             if importer is None:
                 raise AssuranceError("CHECKER_UNAVAILABLE")
             importer._require_deployment()
-            registry = importer._registry(mission_id)
+            registry = importer._read_registry(mission_id)
         group = []
         for name in required_ids:
             entry = registry.get(name)

@@ -1588,6 +1588,50 @@
     "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_settlement_wakes_an_import_waiting_on_budget_before_its_due_time"
    ],
    "note": "调用与预算结清不唤醒卡在预算上的审阅导入，只能等退避到点"
+  },
+  {
+   "id": "A16-01",
+   "source": "推后第 2 批车道 Q1（A16：命题键哈希不截断）",
+   "file": "src/agent_orchestrator/knowledge/predicates.py",
+   "original": "    return f\"{predicate_ref['id']}@{predicate_ref['version']}#{digest}\"",
+   "replacement": "    return f\"{predicate_ref['id']}@{predicate_ref['version']}#{digest[:32]}\"",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a16_proposition_key_keeps_the_full_hash_of_the_plan_fields"
+   ],
+   "note": "命题键的哈希又截成 32 位"
+  },
+  {
+   "id": "A12-01",
+   "source": "推后第 2 批车道 Q1（A12：引用种类唯一来源）",
+   "file": "src/agent_orchestrator/assurance/refs.py",
+   "original": "REF_KINDS = _schema_kinds()\n",
+   "replacement": "REF_KINDS = _schema_kinds() | {\"extra_kind\"}\n",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a12_ref_kinds_are_read_from_the_common_schema_not_copied"
+   ],
+   "note": "代码里的引用种类和公共 schema 分叉（多出一个种类）"
+  },
+  {
+   "id": "A14-01",
+   "source": "推后第 2 批车道 Q1（A14：检查规格建任务时写定）",
+   "file": "src/agent_orchestrator/orchestrator/assurance_factory.py",
+   "original": "        self.check_specs.register_specs_locked(mission.id)\n",
+   "replacement": "        pass\n",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a14_check_specs_are_written_at_creation_and_only_read_on_use"
+   ],
+   "note": "建任务时不写检查规格登记"
+  },
+  {
+   "id": "A23-01",
+   "source": "推后第 2 批车道 Q1（A23：删反向依赖索引）",
+   "file": "src/agent_orchestrator/storage/schema.py",
+   "original": "    Migration(47, \"orchestrator-drop-assurance-dependency-index\", DDL_V47),\n",
+   "replacement": "",
+   "tests": [
+    "tests/orchestrator/full_target/assurance_exec/test_defer2_q1_contracts.py::test_a14_check_specs_are_written_at_creation_and_only_read_on_use"
+   ],
+   "note": "不跑删表迁移：新库里还留着没人读的反向依赖索引"
   }
  ]
 }

@@ -1632,6 +1632,13 @@ CREATE TABLE sandbox_executions (
 CREATE INDEX sandbox_executions_open_idx ON sandbox_executions(finished_at, started_at);
 """
 
+# 推后第 2 批 A23（2026-10-07）：保证通道反向依赖索引只写不读。原计划 queries Q09 说它只是优化、
+# 缺了不能当空集；产品路径没有读方。按"同一件事只留一条路径"删表，证书正文的 read_set 是唯一来源。
+DDL_V47 = """
+DROP INDEX IF EXISTS assurance_dependency_reverse_idx;
+DROP TABLE IF EXISTS assurance_dependency_index;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1679,6 +1686,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(44, "orchestrator-manifest-binding-per-input-revision", DDL_V44),
     Migration(45, "orchestrator-knowledge-validity-uses-level", DDL_V45),
     Migration(46, "orchestrator-recovery-protocol-and-sandbox-identity", DDL_V46),
+    Migration(47, "orchestrator-drop-assurance-dependency-index", DDL_V47),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

@@ -475,56 +475,35 @@ class AssuranceLocalChecks:
                 registry[layer] = entry
         return registry
 
-    def _registry(self, mission_id: str) -> dict[str, RegisteredLayer]:
-        registry = {}
-        with atomic(self.commit.store):
-            reader = AssuranceReader(
-                self.commit.store, tenant_id=self.tenant_id, mission_id=mission_id
+    def register_specs_locked(self, mission_id: str) -> None:
+        """Write this Mission's CheckSpec registry once, as the fixed system owner.
+
+        Assurance 1.1 §3.1 (check_spec): "registry 安装时由固定系统 owner 写入".  Called
+        only by the Mission factory inside the creation UoW, right after the lane is
+        bound (推后第 2 批 A14).  Use sites only read (:meth:`_read_registry`); a Mission
+        without these rows has no checker, never a late registration.
+        """
+        if not self.commit.store.connection.in_transaction:
+            raise AssuranceError("FACTORY_TRANSACTION_REQUIRED")
+        for layer in (*LOCAL_LAYERS, *EXECUTOR_LAYERS):
+            definition = layer_spec(layer, self.checker_hash).to_json()
+            key = fingerprint({"mission_id": mission_id, "definition": definition})
+            event = self.commit._emit(
+                "AssuranceCheckSpecRegistered", mission_id, key=key, payload=definition
             )
-            reader._mission_locked(self.commit.store.connection)
-            for layer in (*LOCAL_LAYERS, *EXECUTOR_LAYERS):
-                definition = layer_spec(layer, self.checker_hash).to_json()
-                key = fingerprint({"mission_id": mission_id, "definition": definition})
-                receipt_id = "assurance-check-spec:" + key
-                old = self.commit.store.get_receipt(receipt_id)
-                if old is None:
-                    event = self.commit._emit(
-                        "AssuranceCheckSpecRegistered",
-                        mission_id,
-                        key=key,
-                        payload=definition,
-                    )
-                    ref = AssuranceRef("check_spec", Pin(event.id, 0, fingerprint(event.to_json())))
-                    self.commit.store.insert_receipt(
-                        commit_id=receipt_id,
-                        kind="AssuranceCheckSpecRegistered",
-                        subject_id=event.id,
-                        base_version=0,
-                        proposal_hash=fingerprint(definition),
-                        receipt={
-                            "mission_id": mission_id,
-                            "definition_hash": fingerprint(definition),
-                            "event_ref": ref.to_json(),
-                        },
-                    )
-                else:
-                    if old.get("mission_id") != mission_id or old.get(
-                        "definition_hash"
-                    ) != fingerprint(definition):
-                        raise AssuranceError("CHECKER_REGISTRY_IDENTITY")
-                    ref = AssuranceRef.from_json(old["event_ref"], kinds={"check_spec"})
-                entry = RegisteredLayer(
-                    layer,
-                    LocalLayerBinding(
-                        ref,
-                        definition["assertion_key"],
-                        self.checker_hash,
-                        definition["max_runtime_ms"],
-                    ),
-                )
-                entry.require_registered(reader)
-                registry[layer] = entry
-        return self._read_registry(mission_id)
+            ref = AssuranceRef("check_spec", Pin(event.id, 0, fingerprint(event.to_json())))
+            self.commit.store.insert_receipt(
+                commit_id="assurance-check-spec:" + key,
+                kind="AssuranceCheckSpecRegistered",
+                subject_id=event.id,
+                base_version=0,
+                proposal_hash=fingerprint(definition),
+                receipt={
+                    "mission_id": mission_id,
+                    "definition_hash": fingerprint(definition),
+                    "event_ref": ref.to_json(),
+                },
+            )
 
     def prepare(self, inputs: dict[str, Any], *, requirements_revision: int | None = None) -> LocalVerificationRecorder:
         """Receives actual VerifierRouter arguments, never a Host API document.
@@ -568,7 +547,7 @@ class AssuranceLocalChecks:
                 or envelope["attempt_id"] != inputs.get("attempt_id")
             ):
                 raise AssuranceError("CHECK_INPUT_MANIFEST_MISMATCH")
-            registry = self._registry(mission_id)
+            registry = self._read_registry(mission_id)
             manifest_hash = HtnStore(self.commit.store).insert_input_manifest(
                 mission_id,
                 inputs["task_id"],
