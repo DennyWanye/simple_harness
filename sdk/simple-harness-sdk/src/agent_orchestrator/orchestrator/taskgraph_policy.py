@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import Event
 from ..contracts.planning_decisions import PLANNING_DECISION_V1
 from ..contracts.state_machines import TERMINAL_MISSION
@@ -19,7 +16,12 @@ from ..graph.notification_contracts import _text
 from ..graph.revision_records import SourceRef
 from ..planning.htn.grounding import derive_id
 from ..storage.store import Store, StoreConflict, StoreError
-from ..storage.taskgraph_store import KERNEL_VERSION  # noqa: E402 - the one kernel identity
+from ..storage.taskgraph_store import (  # noqa: E402 - the one kernel identity and policy store
+    KERNEL_VERSION,
+    InstalledGraphPolicy,
+    PolicyBinding,
+    TaskGraphStore,
+)
 from .plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from .planning_protocol_binding import planning_protocol_for_mission
 
@@ -29,53 +31,12 @@ def enable_command_id(mission_id: str) -> str:
     return f"taskgraph-enable:{mission_id}:{KERNEL_VERSION}"
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InstalledGraphPolicy:
-    """A frozen canonical snapshot of installed versioned deployment policy."""
-    canonical_document: str
-
-    def __post_init__(self) -> None:
-        raw = json.loads(self.canonical_document)
-        if not isinstance(raw, dict) or canonical_json(raw) != self.canonical_document:
-            raise StoreError("TASKGRAPH_POLICY_NOT_CANONICAL")
-        if set(raw) != {"kernel_version", "graph_structure_budget",
-                        "candidate_policy_ref", "schema_policy_ref", "target_policy_ref", "deployment_policy_ref"}:
-            raise StoreError("TASKGRAPH_POLICY_FIELDS_INVALID")
-        if raw["kernel_version"] != KERNEL_VERSION:
-            raise StoreError("TASKGRAPH_POLICY_VERSION_UNSUPPORTED")
-        GraphStructureBudget.from_json(raw["graph_structure_budget"])
-        from ..graph.revision_records import SourceRef
-        for key, value in raw.items():
-            if key.endswith("_ref"):
-                SourceRef.from_json(value)
-
-    @property
-    def content_hash(self) -> str:
-        return hashlib.sha256(self.canonical_document.encode()).hexdigest()
-
-    def to_json(self) -> dict[str, Any]:
-        return dict(json.loads(self.canonical_document))
-
-
 def read_installed_graph_policy(store: Store, mission_id: str) -> InstalledGraphPolicy:
-    """Read a policy only with its original enabling command receipt."""
-    with store.read_view() as db:
-        row = db.execute("SELECT * FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
-        if row is None or row["kernel_version"] != KERNEL_VERSION:
-            raise StoreError("TASKGRAPH_POLICY_UNAVAILABLE")
-        policy = InstalledGraphPolicy(canonical_document=row["policy_json"])
-        receipt = store.get_receipt(row["enabling_command_id"])
-        if (policy.content_hash != row["policy_hash"] or receipt is None
-                or receipt.get("kind") != "TaskGraphContractEnabled"
-                or receipt.get("mission_id") != mission_id or receipt.get("kernel_version") != KERNEL_VERSION
-                or receipt.get("policy_hash") != policy.content_hash
-                or receipt.get("command_id") != row["enabling_command_id"]
-                or hashlib.sha256(canonical_json(dict(receipt)).encode()).hexdigest() != row["enabling_receipt_hash"]):
-            raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
-        acceptance = SourceRef.from_json(receipt.get("deployment_acceptance_ref"))
-        if acceptance.channel != "h1h_deployment_acceptance":
-            raise StoreError("TASKGRAPH_POLICY_DEPLOYMENT_RECEIPT_INVALID")
-        return policy
+    """The Mission's installed policy; the store read checks it against its enabling receipt."""
+    binding = TaskGraphStore(store).policy(mission_id)
+    if binding is None:
+        raise StoreError("TASKGRAPH_POLICY_UNAVAILABLE")
+    return binding.policy
 
 
 class TaskGraphPolicyAuthority(Protocol):
@@ -134,22 +95,20 @@ class TaskGraphPolicyService:
             if db.execute("SELECT 1 FROM plan_revisions WHERE mission_id=? LIMIT 1", (mission_id,)).fetchone():
                 raise StoreError("TASKGRAPH_MISSION_ALREADY_PLANNED")
             policy = self.authority.installed_policy(self.store, mission_id)
-            old = db.execute("SELECT policy_hash FROM taskgraph_policy_bindings WHERE mission_id=?",
-                             (mission_id,)).fetchone()
-            if old is not None:
-                raise StoreConflict("TASKGRAPH_POLICY_ALREADY_BOUND")
             receipt: dict[str, Any] = {"schema_version": 1, "kind": "TaskGraphContractEnabled",
                                       "command_id": command_id, "mission_id": mission_id,
                                       "intent_hash": intent_hash, "policy_hash": policy.content_hash,
                                       "deployment_acceptance_ref": deployment_acceptance.to_json(),
                                       "kernel_version": KERNEL_VERSION}
             receipt_hash = hashlib.sha256(canonical_json(receipt).encode()).hexdigest()
-            db.execute("INSERT INTO taskgraph_policy_bindings VALUES (?,?,?,?,?,?,?)",
-                       (mission_id, KERNEL_VERSION, policy.content_hash, policy.canonical_document,
-                        command_id, receipt_hash, self.store.now))
             self.store.insert_receipt(commit_id=command_id, kind="EnableTaskGraphContract",
                                       subject_id=mission_id, base_version=mission.version,
                                       proposal_hash=intent_hash, receipt=receipt)
+            # 策略行只经存储层写（原计划 §6.2/§6.3）：同任务已有不同的行是冲突，整个事务回滚
+            TaskGraphStore(self.store).insert_policy(PolicyBinding(mission_id=mission_id, policy=policy,
+                                              enabling_command_id=command_id,
+                                              enabling_receipt_hash=receipt_hash, receipt=receipt,
+                                              created_at=self.store.now), receipt)
             event_key = derive_id("tg-enable-event", command_id)
             # NEXT-TG-1.0 §6.4: enabling is a trusted deployment action taken on the
             # principal's behalf (after the principal's own planning grant), not a

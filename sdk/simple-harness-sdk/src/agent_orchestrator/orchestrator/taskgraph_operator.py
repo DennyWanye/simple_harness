@@ -12,7 +12,7 @@ from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, Follo
 from ..planning.htn.grounding import derive_id
 from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
-from .taskgraph_policy import KERNEL_VERSION, read_installed_graph_policy
+from ..storage.taskgraph_store import KERNEL_VERSION, TaskGraphStore
 
 
 class TaskGraphOperatorGuard:
@@ -32,10 +32,10 @@ class TaskGraphOperatorGuard:
                 or mission is None or mission.tenant_id != self.tenant_id):
             raise StoreError("TASKGRAPH_OPERATOR_NOT_AUTHORIZED")
         self.validate_read(caller, mission_id)
-        read_installed_graph_policy(store, mission_id)
-        row = store.connection.execute(
-            "SELECT enabling_command_id FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone()
-        receipt = None if row is None else store.get_receipt(row[0])
+        binding = TaskGraphStore(store).policy(mission_id)
+        if binding is None:
+            raise StoreError("TASKGRAPH_POLICY_UNAVAILABLE")
+        receipt = binding.receipt
         expected = sha256_hex({"kind": "EnableTaskGraphContract", "mission_id": mission_id,
                               "kernel_version": KERNEL_VERSION, "principal_id": caller.principal_id})
         if receipt is None or receipt.get("intent_hash") != expected:

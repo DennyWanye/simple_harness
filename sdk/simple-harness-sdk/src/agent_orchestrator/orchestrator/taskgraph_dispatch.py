@@ -104,11 +104,13 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> N
             raise StoreError("TASKGRAPH_FROZEN_ORIGIN_HASH_MISMATCH")
     except ContractError as error:
         raise StoreError("TASKGRAPH_FROZEN_ORIGIN_CORRUPT") from error
-    pin = store.connection.execute(
-        "SELECT task_id,binding_revision,binding_hash FROM taskgraph_member_pins "
-        "WHERE mission_id=? AND revision=? AND occurrence_id=?",
-        (intent.mission_id, origin.source_revision, origin.occurrence_id)).fetchone()
-    if pin is None or tuple(pin) != (attempt.task_id, origin.binding_revision, binding.content_hash()):
+    try:
+        pins = TaskGraphStore(store).list_member_pins(intent.mission_id, origin.source_revision)
+    except ContractError as error:
+        raise StoreError("TASKGRAPH_FROZEN_ORIGIN_PIN_MISMATCH") from error
+    pin = next((row for row in pins if row.occurrence_id == origin.occurrence_id), None)
+    if pin is None or (pin.task_id, pin.binding_revision, pin.binding_hash) != (
+            attempt.task_id, origin.binding_revision, binding.content_hash()):
         raise StoreError("TASKGRAPH_FROZEN_ORIGIN_PIN_MISMATCH")
     manifest = store.connection.execute("SELECT manifest_json FROM input_manifests WHERE manifest_hash=?",
                                         (row["manifest_hash"],)).fetchone()

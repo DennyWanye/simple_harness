@@ -331,14 +331,13 @@ class PlanCommitsMixin:
                 return replayed
             if precommit_guard is not None:
                 precommit_guard()
-            graph_binding = self._store.connection.execute(
-                "SELECT kernel_version FROM taskgraph_policy_bindings WHERE mission_id=?",
-                (command.mission_id,),
-            ).fetchone()
-            if graph_binding is None:
+            from ..storage.taskgraph_store import NotBoundError, require_bound
+            try:
+                require_bound(self._store, command.mission_id)
+            except NotBoundError:
                 # A hierarchical Mission is bound when it is created (2026-10-03); the
                 # one write path of plan_revisions never writes an unbound plan.
-                raise PlanCommitRejected("TASKGRAPH_NOT_BOUND", "this Mission has no TaskGraph binding")
+                raise PlanCommitRejected("TASKGRAPH_NOT_BOUND", "this Mission has no TaskGraph binding") from None
             from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
             if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant)
                     or taskgraph.store is not self._store
