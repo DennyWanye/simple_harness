@@ -185,16 +185,17 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
     # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
     "WORKER_HIERARCHICAL": (
-        "worker-hierarchical-v6",
-        "3c6693b7d996e4b991e321ab2005b226efcd14ce422b4412da996176f29aa7be",
+        "worker-hierarchical-v7",
+        "13d769418ad407bcd21c531d4f9e8b2aab40ba5e238a97eea2d6f3532064f37a",
     ),
 }
 
 #: P2.3d / defect D1: the same freeze for the versions a *domain module* registers.
 #: They are not module attributes, so they are looked up in ``TEMPLATE_VERSIONS``.
 FROZEN_REGISTERED_DIGESTS: dict[str, str] = {
-    "worker-appworld-hierarchical-v2": (
-        "730707bbf13aadd280480c7b6ea2dbbb31ea08fbd27757c82c095e8f36f3768c"
+    # 2026-10-07：基线随 10-03 升版（C3，提交 0f8d8d9f）重生成；v7 / v3 自发布起字节未变
+    "worker-appworld-hierarchical-v3": (
+        "db03975c5a59f832f7a8e1978a45231dd79594ef29513a8979cbf79c241cdb2e"
     ),
 }
 
@@ -254,8 +255,8 @@ def test_the_hierarchical_worker_versions_are_the_current_one_and_the_domain_one
     assert HIERARCHICAL_WORKER_VERSIONS == frozenset(
         {
             WORKER_HIERARCHICAL_VERSION,
-            "worker-appworld-hierarchical-v2",
-            "worker-drone-sim-hierarchical-v2",
+            "worker-appworld-hierarchical-v3",
+            "worker-drone-sim-hierarchical-v3",
         }
     )
     assert "worker-v3" not in HIERARCHICAL_WORKER_VERSIONS, (

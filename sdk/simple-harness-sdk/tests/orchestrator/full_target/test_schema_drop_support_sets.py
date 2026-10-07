@@ -86,7 +86,8 @@ def test_a_version_38_library_opens_and_keeps_its_duties(tmp_path, monkeypatch) 
     Store.open(path).close()
 
     _gone(path)
-    assert path.with_name("orchestrator.db.pre-schema-39.backup").is_file()
+    # 备份按"这次升到的最后一个迁移号"命名（D4-15），不写死号码
+    assert path.with_name(f"orchestrator.db.pre-schema-{schema.MIGRATIONS[-1].version}.backup").is_file()
     connection = sqlite3.connect(path)
     try:
         assert connection.execute(

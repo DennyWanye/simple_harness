@@ -26,6 +26,8 @@ def _planner(gate_open: bool, assembly_missing: bool = False):
         _dispatch_for=lambda mission_id: None,
         _try_planner_intent=lambda mission_id, ordinal: asyncio.sleep(0, calls.append("planner")),
     )
+    # 阶段 E 起，开工关口经同一个问句 _requirements_unconfirmed 读（真方法，绑到假编排器上）
+    fake._requirements_unconfirmed = lambda mission: Orchestrator._requirements_unconfirmed(fake, mission)
     return fake, calls
 
 
