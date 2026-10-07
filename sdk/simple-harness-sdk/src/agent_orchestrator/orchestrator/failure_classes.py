@@ -159,6 +159,17 @@ def review_exhausted_by_interruption(store: Any, review_key: str) -> bool:
 ROUND_CORRUPT = "CORRUPT"
 ROUND_RETRY = "RETRY"
 ROUND_FAULT_MIN_SECONDS = 120.0
+# 试用前第 5 步（2026-10-07）：重试不再每个主循环（约 65 毫秒）一次，按退避间隔：第一次故障后
+# 0.25 秒再试，每再错一次间隔翻倍，最长 10 秒。停的规矩不变（连续 NON_MODEL_FAILURE_CAP 轮
+# 且距第一次至少 ROUND_FAULT_MIN_SECONDS 秒）。
+ROUND_FAULT_BACKOFF_FIRST = 0.25
+ROUND_FAULT_BACKOFF_CAP = 10.0
+
+
+def round_fault_delay(count: int) -> float:
+    """第 ``count`` 次连续故障之后，同一任务同一处要等多少秒再试。"""
+
+    return min(ROUND_FAULT_BACKOFF_CAP, ROUND_FAULT_BACKOFF_FIRST * 2 ** max(0, count - 1))
 
 
 def classify_round_fault(error: BaseException) -> tuple[str, str | None]:

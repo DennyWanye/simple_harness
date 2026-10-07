@@ -200,6 +200,8 @@ def import_late_accounting(orch) -> bool:
     for row in rows:
         if orch.recovery_isolated(str(row[1])):
             continue  # 已隔离的任务：不往它的库里导入任何东西
+        if not orch._round_due(str(row[1]), "late_accounting"):
+            continue  # 上次在这里出错，退避间隔还没到
         # one hold is one Mission's: its fault is that Mission's round fault, never the loop's
         with orch._round_boundary(str(row[1]), "late_accounting"):
             progressed = _import_hold(orch, row[0]) or progressed

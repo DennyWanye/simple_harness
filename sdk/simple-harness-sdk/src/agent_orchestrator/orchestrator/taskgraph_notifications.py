@@ -237,7 +237,8 @@ class TaskGraphNotifications:
         from ..storage.taskgraph_store import TaskGraphStore
         consumed = 0
         for mission_id in TaskGraphStore(self.store).bound_mission_ids():
-            if mission_id in self.orchestrator._unrecovered or self.orchestrator.recovery_isolated(mission_id):
+            if mission_id in self.orchestrator._unrecovered or self.orchestrator.recovery_isolated(mission_id) \
+                    or not self.orchestrator._round_due(mission_id, "taskgraph_notifications"):
                 continue
             # 这个任务的这一份在"一个任务一轮"的边界里：下面只接得住来源读不了，别的错
             # （库读写故障等）由边界接住、按同一张表计数，不冲出主循环（阶段 C 第 0′ 条）

@@ -952,6 +952,14 @@ class Store:
         ).fetchone()
         return None if row is None else _stored_result(_loads(row[0]))
 
+    def has_unverified_results(self, mission_id: str) -> bool:
+        """这个任务有没有还在等审或正在审的结果（试用前第 5 步：积压只暂停它自己的规划轮）。"""
+
+        return self._connection.execute(
+            "SELECT 1 FROM results WHERE mission_id=? AND verification_state IN ('PENDING','RUNNING') LIMIT 1",
+            (mission_id,),
+        ).fetchone() is not None
+
     def list_results_by_verification(self, *states: str) -> list[StoredResult]:
         marks = ",".join("?" for _ in states)
         rows = self._connection.execute(

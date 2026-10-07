@@ -219,6 +219,8 @@ class AssuranceTick:
         # Ingest every consumer before expensive preparation. One budget-blocked
         # review cannot prevent later revocation from entering the durable inbox.
         for mission_id in missions:
+            if not self.orchestrator._round_due(mission_id, "assurance_ingest"):
+                continue
             # 一个任务的这一份在"一个任务一轮"的边界里（阶段 C 第 0′ 条）：通道不符、库读写
             # 故障都只是这个任务这一轮的故障，别的任务照常
             with self.orchestrator._round_boundary(mission_id, "assurance_ingest"):
@@ -242,6 +244,8 @@ class AssuranceTick:
                 ):
                     return progressed
                 claims = ()
+                if not self.orchestrator._round_due(mission_id, "assurance_claim"):
+                    continue
                 with self.orchestrator._round_boundary(mission_id, "assurance_claim"):
                     claims = self.work.claim_due(
                         mission_id,

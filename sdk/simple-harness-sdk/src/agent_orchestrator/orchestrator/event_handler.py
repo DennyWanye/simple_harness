@@ -620,7 +620,8 @@ class Orchestrator:
         # 审阅调用的等待（阶段 B 裁决第 6 类）：意图 → (等待的形态, 这一形态开始的库时钟)
         self._review_call_marks: dict[str, tuple[Any, float]] = {}
         # 一轮故障（阶段 B 裁决第 9 类）：(任务, 出事地点) → (连续次数, 第一次的库时钟)
-        self._round_faults: dict[tuple[str, str], tuple[int, float]] = {}
+        #: (任务, 位置) → (连续故障轮数, 第一次的时刻, 下次可以再试的时刻)
+        self._round_faults: dict[tuple[str, str], tuple[int, float, float]] = {}
         #: Missions whose restart recovery faulted: each round retries the recovery first,
         #: inside the boundary, and skips the rest of that Mission's round until it holds.
         self._unrecovered: set[str] = set()
@@ -2294,7 +2295,7 @@ class Orchestrator:
             "SELECT mission_id FROM missions WHERE status IN ('CANCELLED','FAILED')"
             " AND json_extract(json, '$.final_report.unresolved_actions') IS NOT NULL").fetchall()
         for (mission_id,) in rows:
-            if self.recovery_isolated(str(mission_id)):
+            if self.recovery_isolated(str(mission_id)) or not self._round_due(str(mission_id), "notice:settled-actions"):
                 continue
             # one Mission's fault is that Mission's; the scan goes on (阻断核验 2026-10-04)
             with self._round_boundary(str(mission_id), "notice:settled-actions"):
@@ -2688,10 +2689,11 @@ class Orchestrator:
         whether a named wait holds.
         """
 
-        if mission.id in self._unrecovered:
+        if mission.id in self._unrecovered or self._round_backing_off(mission.id):
             # Its recovery is still being retried and the rest of its round is skipped, so
             # it cannot dispatch: that is a wait with its own bound (the round-fault cap),
-            # never a stall to confirm, ask the Planner about, or stop on.
+            # never a stall to confirm, ask the Planner about, or stop on.  The same holds
+            # while a failed place waits out its retry interval (试用前第 5 步).
             return None
         new_mode = self._new_mode(mission)
         if new_mode is None:
@@ -3176,6 +3178,9 @@ class Orchestrator:
 
         if self._actions is not None and self._actions.inflight:
             return True  # D7-5': a hand-off this process is waiting on
+        if self._round_faults and any(self._round_backing_off(mission_id)
+                                      for mission_id in {key[0] for key in self._round_faults}):
+            return True  # 试用前第 5 步：出错的一处在等退避间隔，到点就重试，不是空闲
         if any(not task.done() for task in self._verifying.values()):
             return True
         self._prune_deferred()  # review P0-2: only live waits keep the loop alive
@@ -3200,8 +3205,6 @@ class Orchestrator:
         runtime_block = pending_block(self.store, mission.id)
         if runtime_block is not None and last_wake(self.store, mission.id, runtime_block) is None:
             return False
-        if self._decomposition_paused(mission):
-            return False  # 推后第 3 批 H12：积压消退或暂停到时限后再开
         questions = PlanningHumanStore(self.store)
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
@@ -3258,6 +3261,11 @@ class Orchestrator:
 
             pending = [e for e in events if e.type in service_types and needs_resume(e)]
             if not pending:
+                return False
+            # 推后第 3 批 H12：审阅积压时，自己有结果在排队等审的任务先不开新规划轮（积压消退或
+            # 暂停到时限后再开）。人刚答了问题的那一轮不等：人在等结果（试用前第 5 步）。
+            if self._decomposition_paused(mission) and not any(
+                    e.type == "PlanningHumanAnswered" for e in pending):
                 return False
             # 本任务有做法正在送审、结论还没入库：这时开一轮规划，规划器看到的只能是"审阅中"，
             # 采用不了、也没有别的可做（联测真机：它只好选等待，等待又被退回，白丢一轮）。等结论
@@ -3520,7 +3528,7 @@ class Orchestrator:
 
         progressed = False
         for listed in self._active_missions():
-            if listed.id in self._unrecovered:
+            if listed.id in self._unrecovered or not self._round_due(listed.id, "planning_wait"):
                 continue
             with self._round_boundary(listed.id, "planning_wait"):
                 progressed = self._wake_planning_wait(listed) or progressed
@@ -3680,6 +3688,8 @@ class Orchestrator:
             return False  # its restart recovery has not held yet; retried first next round
         if self.recovery_isolated(mission_id):
             return False  # 重启核对没通过、已隔离：本进程不替它做任何事（AER 恢复第 3、8 条）
+        if not self._round_due(mission_id, where):
+            return False  # 上次在这里出错，退避间隔还没到
         progressed = False
         with self._round_boundary(mission_id, where):
             progressed = bool(await step())
@@ -3706,6 +3716,23 @@ class Orchestrator:
         else:
             self._round_faults.pop((mission_id, where), None)
 
+    def _round_due(self, mission_id: str, where: str) -> bool:
+        """这一处上次出错后的退避间隔到了没有（没出过错就是到了）。扫描类调用方在进
+        ``_round_boundary`` 之前先问它，没到就跳过这个任务的这一份。"""
+
+        fault = self._round_faults.get((mission_id, where))
+        return fault is None or self.store.now >= fault[2]
+
+    def _round_backing_off(self, mission_id: str) -> bool:
+        """这个未结束的任务有一处出错后正在等退避间隔。已结束任务的收尾故障不算：
+        它没有可停的东西，不该让 ``run()`` 一直等它。"""
+
+        now = self.store.now
+        if not any(key[0] == mission_id and now < due for key, (_c, _f, due) in self._round_faults.items()):
+            return False
+        mission = self.store.get_mission(mission_id)
+        return mission is not None and mission.status not in TERMINAL_MISSION
+
     async def _settle_parked_faults(self) -> bool:
         progressed = False
         while self._parked_faults:
@@ -3716,13 +3743,14 @@ class Orchestrator:
     async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
         from .failure_classes import (
             NON_MODEL_FAILURE_CAP, ROUND_CORRUPT, ROUND_FAULT_MIN_SECONDS, classify_round_fault,
+            round_fault_delay,
         )
 
         kind, code = classify_round_fault(error)
         now = self.store.now
-        count, first = self._round_faults.get((mission_id, where), (0, now))
+        count, first, _due = self._round_faults.get((mission_id, where), (0, now, now))
         count += 1
-        self._round_faults[(mission_id, where)] = (count, first)
+        self._round_faults[(mission_id, where)] = (count, first, now + round_fault_delay(count))
         summary = f"{type(error).__name__}: {str(error)[:300]}"
         self._note(f"mission {mission_id}: round fault at {where} #{count} ({kind}) {summary}")
         logger.warning("orchestrator.round_fault mission=%s where=%s count=%s kind=%s error=%s",
@@ -3852,6 +3880,8 @@ class Orchestrator:
         # a dropped planning contract) is stopped by name, never left to make every
         # later step of the round refuse — ``_cycle`` skips a whole round on a refusal.
         for mission in self._active_missions():
+            if not self._round_due(mission.id, "contract_check"):
+                continue
             with self._round_boundary(mission.id, "contract_check"):
                 if self._refuse_unsupported_contract(mission):
                     progressed = True
@@ -9272,13 +9302,14 @@ class Orchestrator:
         return self._backlog.verifier_workers
 
     def _decomposition_paused(self, mission: Mission) -> bool:
-        """推后第 3 批 H12：审阅积压中，已有计划的任务先不开新规划轮（首次规划不受影响）。"""
+        """推后第 3 批 H12：审阅积压中，自己有结果在排队等审的任务先不开新规划轮。
+
+        只停排队的那几个任务（试用前第 5 步）：别的任务没有往积压里加东西，照常规划；首次
+        规划没有结果，也不受影响。人答完问题的那一轮由调用方放行。"""
 
         if not self._backlog.decomposition_paused:
             return False
-        from ..storage.htn_store import HtnStore
-
-        return HtnStore(self.store).active_plan_revision(mission.id) is not None
+        return self.store.has_unverified_results(mission.id)
 
     @property
     def pressure(self) -> BackpressureState:

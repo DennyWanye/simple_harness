@@ -154,32 +154,83 @@ def test_with_the_default_config_a_backlog_never_adds_verifiers_beyond_the_model
     assert all(c["verifier_ceiling"] == c["base_verifier_workers"] for c in changes), changes
 
 
-def test_while_paused_a_mission_with_a_plan_opens_no_new_planner_round(tmp_path: Path) -> None:
-    from production_fixture import enabled_world
-
-    from agent_orchestrator.orchestrator import planning_repair_requests as repair_requests
+def _paused(store: Any) -> Any:
     from agent_orchestrator.scheduling.backpressure import BacklogResponse
 
+    return BacklogResponse(base_verifier_workers=2, verifier_workers=4, verifier_ceiling=4,
+                           decomposition_paused=True, reason="raised", since=store.now)
+
+
+def _open(store: Any) -> Any:
+    from agent_orchestrator.scheduling.backpressure import BacklogResponse
+
+    return BacklogResponse(base_verifier_workers=2, verifier_workers=2, verifier_ceiling=4,
+                           decomposition_paused=False, reason="normal", since=None)
+
+
+def _ask_planner(loop: Any, mission: Any) -> None:
+    from agent_orchestrator.orchestrator import planning_repair_requests as repair_requests
+
+    new_mode = loop._new_mode(mission)
+    assert repair_requests.request_planner_for_stall(
+        new_mode, mission, plan_revision=int(new_mode.network(mission.id).plan_revision), detail={})
+
+
+def test_while_paused_a_mission_with_its_own_queued_review_opens_no_new_planner_round(tmp_path: Path) -> None:
+    """试用前第 5 步：只暂停自己有结果在排队等审的任务；人刚答了问题的那一轮照开。
+
+    **改坏检验**：放行条件去掉"人答了问题" → 第三段 ``answered`` 为假，变红。"""
+    from production_fixture import enabled_world
+
     async def case() -> dict[str, Any]:
-        async with enabled_world(tmp_path, key="r3-pause", hold_worker=True) as world:
-            await world.commit_seed()
+        async with enabled_world(tmp_path, key="r3-pause") as world:
+            never = asyncio.Event()
+
+            async def verify_later(result_id: str) -> bool:  # 审阅一直轮不到：结果留在队里
+                await never.wait()
+                return False
+
+            world.loop._verify = verify_later  # type: ignore[method-assign]
+            await world.until(lambda: world.store.has_unverified_results(world.mission.id), timeout=60)
             loop, store = world.loop, world.store
             mission = store.get_mission(world.mission.id)
-            new_mode = loop._new_mode(mission)
-            assert repair_requests.request_planner_for_stall(
-                new_mode, mission, plan_revision=int(new_mode.network(mission.id).plan_revision), detail={})
-            loop._backlog = BacklogResponse(base_verifier_workers=2, verifier_workers=4, verifier_ceiling=4,
-                                            decomposition_paused=True, reason="raised", since=store.now)
+            _ask_planner(loop, mission)
+            loop._backlog = _paused(store)
             held = loop._resume_planning_services(mission)
             in_flight_while_paused = loop._planner_intents_in_flight(mission.id)
             facts = loop._idle_facts(mission, read_plan=False)
-            loop._backlog = BacklogResponse(base_verifier_workers=2, verifier_workers=2, verifier_ceiling=4,
-                                            decomposition_paused=False, reason="normal", since=None)
-            resumed = loop._resume_planning_services(mission)
+            with store.transaction():  # 人答了一个问题（回答接口写的就是这条回执）
+                loop.commit._emit("PlanningHumanAnswered", mission.id, key=f"{mission.id}:answered-test",
+                                  payload={"decision_id": "decision-answered-test"})
+            answered = loop._resume_planning_services(mission)
             return {"held": held, "in_flight": in_flight_while_paused, "facts": facts,
-                    "resumed": resumed, "in_flight_after": loop._planner_intents_in_flight(mission.id)}
+                    "answered": answered, "in_flight_after": loop._planner_intents_in_flight(mission.id)}
 
     seen = asyncio.run(case())
     assert seen["held"] is False and seen["in_flight"] is False
     assert seen["facts"] is not None and seen["facts"][0].backlog_paused is True
-    assert seen["resumed"] is True and seen["in_flight_after"] is True
+    assert seen["answered"] is True and seen["in_flight_after"] is True
+
+
+def test_while_paused_a_mission_with_nothing_queued_still_plans(tmp_path: Path) -> None:
+    """试用前第 5 步：别的任务的积压不拖住没往队里加东西的任务。
+
+    **改坏检验**：``_decomposition_paused`` 只看全局开关 → ``resumed`` 为假，变红。"""
+    from production_fixture import enabled_world
+
+    async def case() -> dict[str, Any]:
+        async with enabled_world(tmp_path, key="r3-pause-other", hold_worker=True) as world:
+            await world.commit_seed()
+            loop, store = world.loop, world.store
+            mission = store.get_mission(world.mission.id)
+            assert not store.has_unverified_results(mission.id)
+            _ask_planner(loop, mission)
+            loop._backlog = _paused(store)
+            resumed = loop._resume_planning_services(mission)
+            facts = loop._idle_facts(mission, read_plan=False)
+            loop._backlog = _open(store)
+            return {"resumed": resumed, "in_flight": loop._planner_intents_in_flight(mission.id), "facts": facts}
+
+    seen = asyncio.run(case())
+    assert seen["resumed"] is True and seen["in_flight"] is True
+    assert seen["facts"] is None or seen["facts"][0].backlog_paused is False
