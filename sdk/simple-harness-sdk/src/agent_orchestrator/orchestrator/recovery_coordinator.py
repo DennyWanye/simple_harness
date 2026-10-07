@@ -268,9 +268,8 @@ class RecoveryCoordinator:
             unclassified = sorted(live - classified)
         except InventoryError as error:
             problems.append(f"replay_inventory: {error}")
-        bound = int(store.connection.execute(
-            "SELECT count(*) FROM taskgraph_policy_bindings b JOIN missions m ON m.mission_id=b.mission_id"
-            " WHERE m.status NOT IN ('COMPLETED','FAILED','CANCELLED')").fetchone()[0])
+        from ..storage.taskgraph_store import TaskGraphStore
+        bound = len(TaskGraphStore(store).bound_mission_ids(open_only=True))
         deployment: str | None = None
         if bound:
             # 有执行图任务要恢复：这份部署的源码字节必须与它的清单一致（与建任务时同一道核对）

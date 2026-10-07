@@ -141,9 +141,12 @@ class TaskGraphEventConsumer:
             raise ValueError("event batch must be between 1 and 1024")
         store = self.notifications.store
         key = derive_id("taskgraph-exec-v2-event-cursor", self.consumer_id, mission_id)
-        with store.transaction() as db:
-            if db.execute("SELECT 1 FROM taskgraph_policy_bindings WHERE mission_id=?", (mission_id,)).fetchone() is None:
-                raise StoreError("TASKGRAPH_POLICY_UNAVAILABLE")
+        with store.transaction():
+            from ..storage.taskgraph_store import NotBoundError, require_bound
+            try:
+                require_bound(store, mission_id)
+            except NotBoundError:
+                raise StoreError("TASKGRAPH_POLICY_UNAVAILABLE") from None
             try:
                 saved = store.get_scheduler_state(key)
             except (ValueError, TypeError) as error:

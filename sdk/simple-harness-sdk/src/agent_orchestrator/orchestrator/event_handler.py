@@ -39,6 +39,7 @@ from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 from .accounting_recovery import import_late_accounting
 
 if TYPE_CHECKING:
+    from ..graph.task_network import TaskNetworkSnapshot
     from ..runtime.provider_budget_guard import ProviderBudgetGuard
 
 from ..artifacts.bound_workspace import (
@@ -61,6 +62,7 @@ from ..context.context_builder import (
 )
 from ..context.knowledge_tools import MAX_PUSHED_SUMMARIES, step_summaries
 from ..context.retrieval import (
+    GoalTree,
     KnowledgeContext,
     RetrievalUnavailable,
     candidate_claims,
@@ -5658,12 +5660,13 @@ class Orchestrator:
         self,
         mission: Mission,
         task: Task,
-        tasks_by_id: Mapping[str, Task],
+        network: TaskNetworkSnapshot | None,
     ) -> KnowledgeContext:
         """§10 items 4/5/7 for one Task: ranked Verified Knowledge (read back in full),
         the disputed claims (marked), the candidate / rejected claims for the templates
         that may see them, and the checked step summaries.  Raises
-        ``RetrievalUnavailable`` instead of pretending the Mission has no knowledge."""
+        ``RetrievalUnavailable`` instead of pretending the Mission has no knowledge —
+        also when the active plan (whose goal tree orders the knowledge) is unreadable."""
 
         if not self._config.knowledge_sharing:
             return KnowledgeContext.unavailable("knowledge_sharing disabled", status="disabled")
@@ -5680,10 +5683,12 @@ class Orchestrator:
             disputes = disputed_claims(claims, mission_id=mission.id)
         except (StoreBusy, OSError, ValueError) as error:  # index unreadable / not ready
             raise RetrievalUnavailable(str(error)) from error
+        if network is None:
+            raise RetrievalUnavailable("the active plan is unreadable; knowledge cannot be ordered by its structure")
         ranked = rank_knowledge(
             task,
             records,
-            tasks_by_id=tasks_by_id,
+            goal_tree=GoalTree.from_network(network),
             limit=self._config.max_knowledge_items,
         )
         by_id = {record.id: record for record in records}
@@ -10461,7 +10466,6 @@ class Orchestrator:
                 )
         # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
         # so an ORDER-only predecessor contributes nothing.
-        all_tasks = {t.id: t for t in self.store.list_tasks(mission.id)}
         try:
             inputs = new_mode.attempt_inputs(mission.id, task.id)
             # P2.3o: a patch (or any DATA) binding names the port document; the
@@ -10488,8 +10492,14 @@ class Orchestrator:
         role = self._template(role_for_task(task), mission.id)  # D5-9: approach
         role = self._hierarchical_worker_template(role, mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
+        # 现行计划网络只读一次：检索按它的目标树排序（推后第 2 批 K06），父目标与直接上游也读它（K04）
+        network_error: Exception | None = None
         try:
-            knowledge = self._gather_knowledge(mission, task, all_tasks)
+            network = new_mode.network(mission.id)
+        except (GraphIntegrityError, ContractError, StoreError, LookupError) as error:
+            network, network_error = None, error
+        try:
+            knowledge = self._gather_knowledge(mission, task, network)
         except RetrievalUnavailable as error:
             # S4-07 / D4-11': never "no knowledge" — degrade explicitly or block visibly
             count = self.commit.record_retrieval_unavailable(
@@ -10573,7 +10583,8 @@ class Orchestrator:
         from .worker_context import upstream_steps
 
         try:
-            network = new_mode.network(mission.id)
+            if network is None:
+                raise network_error  # type: ignore[misc]
             step_parent = read_parent_goal(self.store, network, mission, task)
             upstream = upstream_steps(self.store, network, mission, task, inputs)
         except (GraphIntegrityError, ContractError, StoreError, LookupError) as error:

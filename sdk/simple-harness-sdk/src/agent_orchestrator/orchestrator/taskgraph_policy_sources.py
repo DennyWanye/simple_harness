@@ -17,7 +17,7 @@ from ..graph.revision_records import SourceRef
 from ..runtime.planning_operations import SourceUnavailable
 from ..storage.store import Store, StoreError
 from .taskgraph_execution_sources import _document
-from .taskgraph_policy import KERNEL_VERSION, InstalledGraphPolicy
+from ..storage.taskgraph_store import KERNEL_VERSION, InstalledGraphPolicy
 
 # This is the final deployed H1-H acceptance adapter, not a caller-supplied bool.
 # It must compare actual installed source/config bytes and original acceptance

@@ -5,8 +5,9 @@
 
 Retrieval is *not* vector similarity: a deterministic score combines semantic
 relevance (token overlap between the Task and the knowledge), the knowledge's
-trust level, its DAG distance to the Task, its age and its reuse value, then
-removes duplicates and superseded entries.  The permission pre-filter is the
+trust level, its graph distance to the Task and whether it comes from the Task's
+branch (both read from the hierarchical plan, :class:`GoalTree`), its age and its
+reuse value, then removes duplicates and superseded entries.  The permission pre-filter is the
 Mission boundary (S4-06): only this Mission's records are ever considered.  The
 weights below are this build's implementation convention (plan §6.1), versioned
 as ``RETRIEVAL_VERSION`` so every context package records which ranking it saw
@@ -19,16 +20,19 @@ records back from the store (回读原文) — never a paraphrase.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from ..contracts import Claim, ClaimStatus, Task
 from ..memory.verified_knowledge import KnowledgeRecord, knowledge_ref
 
-RETRIEVAL_VERSION = "retrieval-v3-evidence-relevance"
+RETRIEVAL_VERSION = "retrieval-v4-hierarchy-structure"
 WEIGHTS = {
-    "relevance": 3.0, "trust": 2.0, "proximity": 1.0, "recency": 0.5, "reuse": 0.5,
+    # 推后第 2 批 K06：09-10 §10.1 的"Task DAG 距离"(proximity) 与"分支相关性"(branch)
+    # 各占原 proximity 的一半，普通最高分仍是 7.0
+    "relevance": 3.0, "trust": 2.0, "proximity": 0.5, "branch": 0.5, "recency": 0.5, "reuse": 0.5,
     # An explicit reference outranks the maximum ordinary score (7.0).
     "exact_reference": 8.0,
 }
@@ -116,49 +120,117 @@ class RetrievalResult:
         return cls(RETRIEVAL_VERSION, status, (), (), {}, 0, reason=reason)
 
 
-def dag_proximity(task: Task, source_task: str, tasks_by_id: Mapping[str, Task]) -> float:
-    """1.0 for an ancestor (or the Task itself), 0.6 for a task under the same root,
-    0.3 otherwise (§10.1 "Task DAG 距离" / "分支相关性")."""
+@dataclass(frozen=True, slots=True)
+class GoalTree:
+    """The hierarchical plan's structure as retrieval reads it (推后第 2 批 K06).
 
-    if source_task == task.id:
-        return 1.0
-    ancestors = _ancestor_ids(task.id, tasks_by_id)
-    if source_task in ancestors:
-        return 1.0
-    if _roots(task.id, tasks_by_id) & _roots(source_task, tasks_by_id):
-        return 0.6
-    return 0.3
+    Nodes are plan *occurrences*.  Tree edges join a refined goal occurrence to the
+    occurrences its adopted method places under it; precedence edges are the plan's
+    data requirements and order constraints.  ``Task.dependency_ids`` is empty under a
+    hierarchical plan, so neither is read from it.  Only structure — never what a piece
+    of knowledge says."""
+
+    parent: Mapping[str, str | None]
+    task_of: Mapping[str, str]
+    neighbours: Mapping[str, frozenset[str]]
+
+    @classmethod
+    def build(cls, *, roots: Iterable[str], children: Mapping[str, Iterable[str]],
+              task_of: Mapping[str, str], precedence: Iterable[tuple[str, str]]) -> GoalTree:
+        parent: dict[str, str | None] = {}
+        links: dict[str, set[str]] = {}
+        pending = deque((str(root), None) for root in roots)
+        while pending:
+            node, above = pending.popleft()
+            if node in parent:
+                continue
+            parent[node] = above
+            links.setdefault(node, set())
+            if above is not None:
+                links[node].add(above)
+                links[above].add(node)
+            pending.extend((str(child), node) for child in children.get(node, ()))
+        for before, after in precedence:
+            before, after = str(before), str(after)
+            if before in parent and after in parent:
+                links[before].add(after)
+                links[after].add(before)
+        return cls(parent=parent, task_of={node: str(task_of[node]) for node in parent},
+                   neighbours={node: frozenset(near) for node, near in links.items()})
+
+    @classmethod
+    def from_network(cls, network: Any) -> GoalTree:
+        """The active plan's tree: each occurrence's adopted method places its children."""
+        children: dict[str, tuple[str, ...]] = {}
+        for spec in network.occurrences:
+            draft = network.adopted_instance_for(spec.occurrence_id)
+            if draft is not None:
+                children[str(spec.occurrence_id)] = tuple(
+                    str(child.occurrence_id) for child in draft.child_bindings)
+        precedence = [(str(item.producer_occurrence), str(item.consumer_occurrence))
+                      for item in network.data_requirements]
+        precedence += [(str(item.before), str(item.after)) for item in network.order_constraints]
+        return cls.build(roots=[str(root) for root in network.root_occurrence_ids], children=children,
+                         task_of={str(spec.occurrence_id): str(spec.task_id) for spec in network.occurrences},
+                         precedence=precedence)
+
+    def occurrences_of(self, task_id: str) -> tuple[str, ...]:
+        return tuple(sorted(node for node, task in self.task_of.items() if task == task_id))
+
+    def _path(self, node: str) -> list[str]:
+        path = [node]
+        while (above := self.parent[path[-1]]) is not None:
+            path.append(above)
+        return path[::-1]
+
+    def distance(self, task_id: str, source_task: str) -> int | None:
+        """Fewest edges between any occurrence of the two steps; ``None`` when unconnected
+        (e.g. the source step is no longer in the active plan)."""
+        targets = set(self.occurrences_of(source_task))
+        start = self.occurrences_of(task_id)
+        if not targets or not start:
+            return None
+        seen = set(start)
+        frontier = deque((node, 0) for node in start)
+        while frontier:
+            node, steps = frontier.popleft()
+            if node in targets:
+                return steps
+            for near in sorted(self.neighbours.get(node, ())):
+                if near not in seen:
+                    seen.add(near)
+                    frontier.append((near, steps + 1))
+        return None
+
+    def branch_share(self, task_id: str, source_task: str) -> float:
+        """How much of the step's root path the source shares: the depth of their lowest
+        common goal over the step's own depth (1.0 for the step itself or a root step)."""
+        best = 0.0
+        for mine in self.occurrences_of(task_id):
+            own = self._path(mine)
+            for theirs in self.occurrences_of(source_task):
+                common = 0
+                for left, right in zip(own, self._path(theirs)):
+                    if left != right:
+                        break
+                    common += 1
+                if common:
+                    best = max(best, 1.0 if len(own) == 1 else (common - 1) / (len(own) - 1))
+        return best
 
 
-def _ancestor_ids(task_id: str, tasks_by_id: Mapping[str, Task]) -> set[str]:
-    seen: set[str] = set()
-    stack = [task_id]
-    while stack:
-        current = stack.pop()
-        task = tasks_by_id.get(current)
-        if task is None:
-            continue
-        for dep in task.dependency_ids:
-            if dep not in seen:
-                seen.add(dep)
-                stack.append(dep)
-    return seen
-
-
-def _roots(task_id: str, tasks_by_id: Mapping[str, Task]) -> set[str]:
-    task = tasks_by_id.get(task_id)
-    if task is None:
-        return set()
-    if not task.dependency_ids:
-        return {task_id}
-    return {a for a in _ancestor_ids(task_id, tasks_by_id) if not tasks_by_id[a].dependency_ids}
+def structure_parts(task_id: str, source_task: str, tree: GoalTree) -> dict[str, float]:
+    """The two structural factors of one knowledge record for one step."""
+    steps = tree.distance(task_id, source_task)
+    return {"proximity": 0.0 if steps is None else 1.0 / (1 + steps),
+            "branch": tree.branch_share(task_id, source_task)}
 
 
 def rank_knowledge(
     task: Task,
     records: Sequence[KnowledgeRecord],
     *,
-    tasks_by_id: Mapping[str, Task],
+    goal_tree: GoalTree,
     limit: int = DEFAULT_LIMIT,
     query_text: str | None = None,
 ) -> RetrievalResult:
@@ -196,7 +268,7 @@ def rank_knowledge(
         parts = {
             "relevance": relevance(query, " ".join((record.content, record.key or ""))),
             "trust": TRUST.get(record.status, 0.0),
-            "proximity": dag_proximity(task, record.source_task, tasks_by_id),
+            **structure_parts(task.id, record.source_task, goal_tree),
             "recency": (record.created_at - oldest) / span if newest > oldest else 1.0,
             "reuse": min(len(record.used_by), 3) / 3.0,
         }
@@ -361,11 +433,12 @@ __all__ = (
     "RetrievalResult",
     "RetrievalUnavailable",
     "Scored",
+    "GoalTree",
     "candidate_claims",
-    "dag_proximity",
     "disputed_claims",
     "knowledge_view",
     "rank_knowledge",
     "relevance",
+    "structure_parts",
     "tokens",
 )

@@ -6,13 +6,16 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Mapping
 from contextlib import contextmanager
-from dataclasses import astuple
-from typing import Iterator, NoReturn
+from dataclasses import astuple, dataclass
+from typing import Any, Iterator, NoReturn
 
 from simple_harness.contracts import canonical_json
 
 from ..contracts.error_table import CodedFault, RoundFaultCode
+from ..contracts.htn import GraphStructureBudget
+from ..contracts.state_machines import TERMINAL_MISSION
 from ..contracts.models import ContractError
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
@@ -33,7 +36,7 @@ from ..graph.revision_records import (
     certificate_from_json,
 )
 from .htn_store import HtnStore
-from .store import Store, StoreError
+from .store import Store, StoreConflict, StoreError
 from .taskgraph_history_sources import validate_revision_sources
 
 #: The one kernel identity (a CHECK on ``taskgraph_policy_bindings`` pins it).  Since
@@ -66,6 +69,72 @@ def require_bound(store: Store, mission_id: str) -> None:
     if row[0] != KERNEL_VERSION:
         raise KernelUnsupportedError("TASKGRAPH_KERNEL_UNSUPPORTED")
 
+
+
+_POLICY_FIELDS = frozenset({"kernel_version", "graph_structure_budget", "candidate_policy_ref",
+                            "schema_policy_ref", "target_policy_ref", "deployment_policy_ref"})
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InstalledGraphPolicy:
+    """A frozen canonical snapshot of installed versioned deployment policy."""
+    canonical_document: str
+
+    def __post_init__(self) -> None:
+        raw = json.loads(self.canonical_document)
+        if not isinstance(raw, dict) or canonical_json(raw) != self.canonical_document:
+            raise StoreError("TASKGRAPH_POLICY_NOT_CANONICAL")
+        if set(raw) != _POLICY_FIELDS:
+            raise StoreError("TASKGRAPH_POLICY_FIELDS_INVALID")
+        if raw["kernel_version"] != KERNEL_VERSION:
+            raise StoreError("TASKGRAPH_POLICY_VERSION_UNSUPPORTED")
+        GraphStructureBudget.from_json(raw["graph_structure_budget"])
+        for key, value in raw.items():
+            if key.endswith("_ref"):
+                SourceRef.from_json(value)
+
+    @property
+    def content_hash(self) -> str:
+        return hashlib.sha256(self.canonical_document.encode()).hexdigest()
+
+    def to_json(self) -> dict[str, Any]:
+        return dict(json.loads(self.canonical_document))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PolicyBinding:
+    """One row of ``taskgraph_policy_bindings`` with the enabling receipt it rests on
+    (原计划 §6.3 ``policy() -> PolicyBinding``)."""
+    mission_id: str
+    policy: InstalledGraphPolicy
+    enabling_command_id: str
+    enabling_receipt_hash: str
+    receipt: Mapping[str, Any]
+    created_at: float
+    kernel_version: str = KERNEL_VERSION
+
+    def row(self) -> tuple[Any, ...]:
+        return (self.mission_id, self.kernel_version, self.policy.content_hash,
+                self.policy.canonical_document, self.enabling_command_id,
+                self.enabling_receipt_hash, self.created_at)
+
+
+def _receipt_hash(receipt: Mapping[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(dict(receipt)).encode()).hexdigest()
+
+
+def _check_binding_receipt(binding: PolicyBinding, receipt: Mapping[str, Any] | None) -> None:
+    """The one check that a policy row rests on its own enabling receipt."""
+    if (receipt is None or receipt.get("kind") != "TaskGraphContractEnabled"
+            or receipt.get("mission_id") != binding.mission_id
+            or receipt.get("kernel_version") != KERNEL_VERSION
+            or receipt.get("policy_hash") != binding.policy.content_hash
+            or receipt.get("command_id") != binding.enabling_command_id
+            or _receipt_hash(receipt) != binding.enabling_receipt_hash):
+        raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
+    acceptance = SourceRef.from_json(receipt.get("deployment_acceptance_ref"))
+    if acceptance.channel != "h1h_deployment_acceptance":
+        raise StoreError("TASKGRAPH_POLICY_DEPLOYMENT_RECEIPT_INVALID")
 
 
 class GraphIntegrityError(ContractError, CodedFault):
@@ -109,14 +178,101 @@ class TaskGraphStore:
             else:
                 owned_connection.execute(f"RELEASE {name}")
 
-    @staticmethod
-    def _pins(connection: sqlite3.Connection, mission: str, revision: int) -> RevisionPins:
-        members = tuple(MemberPin(**dict(row)) for row in connection.execute(
-            "SELECT mission_id,revision,occurrence_id,task_id,binding_revision,binding_hash "
-            "FROM taskgraph_member_pins WHERE mission_id=? AND revision=?", (mission, revision)))
-        methods = tuple(MethodPin(**dict(row)) for row in connection.execute(
-            "SELECT mission_id,revision,instance_id,goal_occurrence_id,adopted,draft_hash "
-            "FROM taskgraph_method_pins WHERE mission_id=? AND revision=?", (mission, revision)))
+    # ------------------------------------------------------------ 原计划 §6.3 读写接口
+    def policy(self, mission_id: str) -> PolicyBinding | None:
+        """The Mission's policy binding, checked against its enabling receipt; ``None`` when
+        the Mission has none (Missing).  A row that does not rest on its receipt is refused
+        by name — the one place this check is written."""
+        with self._store.read_view() as connection:
+            row = connection.execute(
+                "SELECT mission_id,kernel_version,policy_hash,policy_json,enabling_command_id,"
+                "enabling_receipt_hash,created_at FROM taskgraph_policy_bindings WHERE mission_id=?",
+                (mission_id,)).fetchone()
+            if row is None:
+                return None
+            if row["kernel_version"] != KERNEL_VERSION:
+                raise KernelUnsupportedError("TASKGRAPH_KERNEL_UNSUPPORTED")
+            policy = InstalledGraphPolicy(canonical_document=str(row["policy_json"]))
+            if policy.content_hash != row["policy_hash"]:
+                raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
+            receipt = self._store.get_receipt(row["enabling_command_id"])
+            binding = PolicyBinding(mission_id=mission_id, policy=policy,
+                                    enabling_command_id=str(row["enabling_command_id"]),
+                                    enabling_receipt_hash=str(row["enabling_receipt_hash"]),
+                                    receipt={} if receipt is None else dict(receipt),
+                                    created_at=float(row["created_at"]))
+            _check_binding_receipt(binding, receipt)
+            return binding
+
+    def insert_policy(self, binding: PolicyBinding, receipt: Mapping[str, Any]) -> PolicyBinding:
+        """Write the one policy row of a Mission inside the caller's transaction (the enabling
+        command's receipt is already written in it).  The same row again returns it; a
+        different row for the same Mission is a conflict, never a replacement (§6.3)."""
+        if not self._store.connection.in_transaction:
+            raise StoreError("TASKGRAPH_POLICY_TRANSACTION_REQUIRED")
+        if dict(receipt) != dict(binding.receipt) or binding.kernel_version != KERNEL_VERSION:
+            raise StoreError("TASKGRAPH_POLICY_RECEIPT_MISMATCH")
+        try:
+            _check_binding_receipt(binding, receipt)
+        except StoreError as error:
+            raise StoreError("TASKGRAPH_POLICY_RECEIPT_MISMATCH") from error
+        with self._store.transaction() as connection:
+            old = connection.execute(
+                "SELECT mission_id,kernel_version,policy_hash,policy_json,enabling_command_id,"
+                "enabling_receipt_hash,created_at FROM taskgraph_policy_bindings WHERE mission_id=?",
+                (binding.mission_id,)).fetchone()
+            if old is not None:
+                if tuple(old) != binding.row():
+                    raise StoreConflict("TASKGRAPH_POLICY_ALREADY_BOUND")
+            else:
+                connection.execute("INSERT INTO taskgraph_policy_bindings(mission_id,kernel_version,"
+                                   "policy_hash,policy_json,enabling_command_id,enabling_receipt_hash,"
+                                   "created_at) VALUES (?,?,?,?,?,?,?)", binding.row())
+            stored = self.policy(binding.mission_id)
+        if stored != binding:
+            raise StoreError("TASKGRAPH_POLICY_RECEIPT_CORRUPT")
+        return stored
+
+    def list_member_pins(self, mission_id: str, revision: int) -> tuple[MemberPin, ...]:
+        with self._store.read_view() as connection:
+            return tuple(MemberPin(**dict(row)) for row in connection.execute(
+                "SELECT mission_id,revision,occurrence_id,task_id,binding_revision,binding_hash "
+                "FROM taskgraph_member_pins WHERE mission_id=? AND revision=? ORDER BY occurrence_id",
+                (mission_id, revision)))
+
+    def list_method_pins(self, mission_id: str, revision: int) -> tuple[MethodPin, ...]:
+        with self._store.read_view() as connection:
+            return tuple(MethodPin(**dict(row)) for row in connection.execute(
+                "SELECT mission_id,revision,instance_id,goal_occurrence_id,adopted,draft_hash "
+                "FROM taskgraph_method_pins WHERE mission_id=? AND revision=? ORDER BY instance_id",
+                (mission_id, revision)))
+
+    def bound_mission_ids(self, *, open_only: bool = False) -> tuple[str, ...]:
+        """Every TaskGraph-bound Mission, by id; ``open_only`` leaves out ended Missions
+        (2026-10-07 推后第 2 批裁决第 4 件：通知轮询与重启核对的一处读法)."""
+        ended = tuple(sorted(str(status) for status in TERMINAL_MISSION))
+        with self._store.read_view() as connection:
+            if not open_only:
+                rows = connection.execute(
+                    "SELECT mission_id FROM taskgraph_policy_bindings ORDER BY mission_id").fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT b.mission_id FROM taskgraph_policy_bindings b JOIN missions m "
+                    "ON m.mission_id=b.mission_id WHERE m.status NOT IN (?,?,?) ORDER BY b.mission_id",
+                    ended).fetchall()
+            return tuple(str(row[0]) for row in rows)
+
+    def ever_member(self, mission_id: str, task_id: str) -> bool:
+        """Whether ``task_id`` was a pinned member in any revision of the Mission's graph
+        (终止门用；同一裁决)."""
+        with self._store.read_view() as connection:
+            return connection.execute(
+                "SELECT 1 FROM taskgraph_member_pins WHERE mission_id=? AND task_id=? LIMIT 1",
+                (mission_id, task_id)).fetchone() is not None
+
+    def _pins(self, connection: sqlite3.Connection, mission: str, revision: int) -> RevisionPins:
+        members = self.list_member_pins(mission, revision)
+        methods = self.list_method_pins(mission, revision)
         demands = tuple(DemandRef(**dict(row)) for row in connection.execute(
             "SELECT mission_id,revision,consumer_instance_id,slot_key,slot_occurrence_id,"
             "producer_occurrence_id,obligation_id,mode,requiredness,source_slot_hash "
@@ -124,22 +280,12 @@ class TaskGraphStore:
         return RevisionPins(member_pins=members, method_pins=methods, demand_refs=demands)
 
     def _verify_policy(self, connection: sqlite3.Connection, mission: str) -> None:
-        row = connection.execute("SELECT * FROM taskgraph_policy_bindings WHERE mission_id=?", (mission,)).fetchone()
-        if row is None or row["kernel_version"] != KERNEL_VERSION:
+        try:
+            binding = self.policy(mission)
+        except StoreError as error:
+            _fail(f"TaskGraph policy does not rest on its enabling receipt ({error})")
+        if binding is None:
             _fail("TaskGraph policy is not enabled")
-        raw = str(row["policy_json"])
-        if canonical_json(json.loads(raw)) != raw or hashlib.sha256(raw.encode()).hexdigest() != row["policy_hash"]:
-            _fail("TaskGraph policy bytes/hash mismatch")
-        receipt = self._store.get_receipt(row["enabling_command_id"])
-        if (receipt is None or receipt.get("mission_id") != mission
-                or receipt.get("command_id") != row["enabling_command_id"]
-                or receipt.get("policy_hash") != row["policy_hash"]
-                or receipt.get("kind") != "TaskGraphContractEnabled"
-                or hashlib.sha256(canonical_json(dict(receipt)).encode()).hexdigest() != row["enabling_receipt_hash"]):
-            _fail("TaskGraph enabling receipt does not match its immutable policy")
-        acceptance = SourceRef.from_json(receipt.get("deployment_acceptance_ref"))
-        if acceptance.channel != "h1h_deployment_acceptance":
-            _fail("TaskGraph enabling receipt lacks actual deployment acceptance identity")
 
     def _verify_certificate(self, connection: sqlite3.Connection, mission: str, command: str,
                             admission: str | None, certificate: RevisionCertificate,
@@ -393,4 +539,5 @@ class TaskGraphStore:
             return HistoricalRevision(record=record)
 
 
-__all__ = ["GraphIntegrityError", "KernelUnsupportedError", "NotBoundError", "TaskGraphStore", "require_bound"]
+__all__ = ["GraphIntegrityError", "InstalledGraphPolicy", "KernelUnsupportedError", "NotBoundError", "PolicyBinding",
+           "TaskGraphStore", "require_bound"]
