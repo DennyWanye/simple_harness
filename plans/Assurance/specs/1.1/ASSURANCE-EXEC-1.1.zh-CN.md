@@ -66,7 +66,7 @@ source-map 从附件 18 文件新 hash 初始化，旧 seed hash 移入历史，
 | execution_receipt | 原 events(event_id) 的 `AssuranceExecutionImported`，受信 execution importer 以 provider/call identity、实际结果/费用来源核对；review/read 不直接跨库做原子写 |
 | local_check_receipt | 原 events(event_id) 的 `AssuranceLocalCheckFinished`；§5 的同步 recorder 在实际本地 checker 执行之后导入真实结果，含源码/环境/目标和 assertion；不可从 API 提交 bool |
 | check_binding | assurance_check_bindings(check_binding_id)，正文 binding_json、binding_hash；revision=0；writer 只接上述两种真实检查来源 |
-| check_spec | 已注册 checker 的不可变 `AssuranceCheckSpecRegistered` 事件 body；id=event_id，revision=0。声明并非检查结果，registry 安装时由固定系统 owner 写入 |
+| check_spec | 已注册 checker 的不可变 `AssuranceCheckSpecRegistered` 事件 body；id=event_id，revision=0。声明并非检查结果，registry 安装时由固定系统 owner 写入。（2026-10-07 补注，推后第 2 批 A14：事件表要任务号，所以"安装"落在每个任务建保证通道的同一事务里，由系统写定三层登记；用到时只读，没登记即 `CHECKER_UNAVAILABLE`。落法说明，不另登偏离） |
 | check_policy | assurance_criterion_policies(policy_id)，批准映射 body+hash，revision=0；引用精确 requirements revision 与 scope |
 | disclosure_receipt | `AssuranceEvidenceDisclosed` 原事件；由实际 reviewer Provider 输入/消息 manifest importer 写入，必须证明已包含相应消息且先于结论输出 |
 | review_package | 原 review_packages(package_id) 的完整不可变ReviewPackage body；原六purpose builder产生，所属Mission/round/purpose精确匹配，revision=0不表示latest |
@@ -235,6 +235,8 @@ closeout只能INSERT NOT_READY/version1；重评转READY；最终事务重读当
 `CompleteRead`必须包含分页结束/SQL全结果、原schema/version、精确scope、count、canonical集合摘要、捕获的两级epoch；缺表/失败/没读完不能COMPLETE。完整空集count0且有epoch和摘要。
 
 命题键不拼接模糊文本：`canonical({predicate:{id,version,hash},typed_args,namespace,scope})`；args 类型检查后编码；不将 1/true、缺失/null 混同。read_set item的 `(channel,key)` 唯一；相同key即使同fingerprint重复也拒绝，避免各层对去重规则不同。
+
+（2026-10-07 补注，推后第 2 批裁决）命题键实现为 `{id}@{version}#sha256(canonical({predicate,typed_args}))`，哈希不截断。namespace 与 scope 不进命题键本身：任务号与作用域由观察行的 `mission_id`、`scope_id` 两列承担，并在 QUERY_SET 键里显式出现（下文）；观察的每次读取都按任务过滤。一个任务内只用一个作用域。若以后一个任务内出现多个作用域，须先把作用域并入键或按作用域分读，再开放。（独立裁决 2026-10-07，`plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第2批-Q1Q3Q4-偏差裁决.md` 第 1 件；B 级 #44）
 
 - OBJECT key=canonical `{kind,id,revision}`，fingerprint=原body hash。
 - QUERY_SET key=canonical `{reader_version,mission,scope,query_kind,proposition_keys,polarity:"BOTH"}`；值为完整候选ID/rev/hash及准入/撤回排序摘要。包括未被模型引用的新反证与不采用分支。

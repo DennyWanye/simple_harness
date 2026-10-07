@@ -9,3 +9,7 @@
 所有字段source映射为JSON pointer与展开子树hash，修改嵌套enum或字段必须重生成、独立审核；不能靠删除checker使其通过。
 
 Schema绝对ID统一使用`https://schemas.simpleharness.invalid/assurance/1.1/<file>`作为离线注册命名空间，不是需要联网访问的网站。消费者应预加载本包schema registry，禁止运行时从网络补未知引用。
+
+## blob-pin-v1
+
+（2026-10-07 补注）库表按 `sql/assurance_additive.sql` 存 `source_receipt_id`/`last_receipt_id`。`*_receipt_ref` 由读方按附录 C.3 形成。读方逐项核：回执存在、种类为 `commit_receipt`、对象、钉住号与哈希一致（SDK `storage/assurance_pins.py`）。（独立裁决 2026-10-07，`推后第2批-Q1Q3Q4-偏差裁决.md` 第 2 件；B 级 #45）

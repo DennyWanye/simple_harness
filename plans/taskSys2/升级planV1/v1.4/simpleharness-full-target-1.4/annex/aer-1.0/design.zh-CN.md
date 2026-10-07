@@ -292,7 +292,7 @@ CAS 中检查支持集合版本而不仅是逐条证据版本，避免另一个�
 
 | 对象 | 不可省略的数据 | 语义 |
 |---|---|---|
-| PropositionKey | 谓词版本、类型化参数、对象版本、Mission/scope、时间范围 | 判断的对象；不靠自然语言相似度认定相同命题 |
+| PropositionKey | 谓词版本、类型化参数、对象版本、Mission/scope（2026-10-07 补注：由观察行与 QUERY_SET 键承担，见 ASSURANCE-EXEC-1.1 §8.2 补注。）、时间范围 | 判断的对象；不靠自然语言相似度认定相同命题 |
 | ObservationRecord | 观察值/极性、来源/工具回执、observed_at、recorded_at、有效区间、环境/方法版本 | 某时、某范围的真实观察；非绝对真理 |
 | EvidenceRecord | 类型、准确目标/hash、执行与来源回执、来源群组、披露范围、可读取性 | 证据在哪里、怎样产生；hash 证明字节身份而非内容真实 |
 | JustificationSet | conclusion、polarity、全部必须 premise 引用、条件、推理/Review receipt、规则版本 | 一组共同充分支持；多组之间可择一 |
