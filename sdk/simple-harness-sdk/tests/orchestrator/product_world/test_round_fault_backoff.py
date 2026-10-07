@@ -49,3 +49,36 @@ def test_a_failing_place_is_retried_on_the_backoff_not_every_cycle(tmp_path):
             assert str(world.store.get_mission(a).status.value) not in {"FAILED", "CANCELLED", "COMPLETED"}
 
     asyncio.run(case())
+
+
+def test_a_fault_past_its_stop_condition_no_longer_holds_the_run():
+    """发版前评估 opt.172 建议 2：停不了的任务（比如还没开始）到了停止条件仍一直出错，
+    不再算"在等重试"，``run()`` 照常空闲返回。
+
+    **改坏检验**：去掉停止条件那一判断 → 第二个断言变红。"""
+    from types import SimpleNamespace
+
+    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+
+    now = 1000.0
+    fake = SimpleNamespace(store=SimpleNamespace(now=now, get_mission=lambda _id: SimpleNamespace(status="CREATED")))
+    fake._round_faults = {("m1", "decide"): (3, now - 10.0, now + 2.0)}
+    assert Orchestrator._round_backing_off(fake, "m1") is True
+    fake._round_faults = {("m1", "decide"): (7, now - 200.0, now + 10.0)}
+    assert Orchestrator._round_backing_off(fake, "m1") is False
+
+
+def test_a_wall_clock_rollback_does_not_stretch_the_wait():
+    """发版前评估 opt.172 建议 1：墙钟往回拨，到点时刻比现在晚出一个最长间隔以上 → 视为到点。
+
+    **改坏检验**：去掉回拨判断 → 第三个断言变红。"""
+    from types import SimpleNamespace
+
+    from agent_orchestrator.orchestrator.event_handler import Orchestrator
+
+    fake = SimpleNamespace(store=SimpleNamespace(now=1000.0))
+    fake._round_faults = {("m1", "decide"): (2, 999.0, 1000.5)}
+    assert Orchestrator._round_due(fake, "m1", "decide") is False
+    assert Orchestrator._round_due(fake, "m1", "other") is True
+    fake._round_faults = {("m1", "decide"): (2, 3999.0, 4000.5)}  # 墙钟回拨了约 3000 秒
+    assert Orchestrator._round_due(fake, "m1", "decide") is True

@@ -3720,15 +3720,23 @@ class Orchestrator:
         """这一处上次出错后的退避间隔到了没有（没出过错就是到了）。扫描类调用方在进
         ``_round_boundary`` 之前先问它，没到就跳过这个任务的这一份。"""
 
+        from .failure_classes import ROUND_FAULT_BACKOFF_CAP
+
         fault = self._round_faults.get((mission_id, where))
-        return fault is None or self.store.now >= fault[2]
+        # 墙钟往回拨时，到点时刻会比"现在"晚出一个最长间隔以上：视为已到点，不多等
+        return fault is None or self.store.now >= fault[2] or fault[2] - self.store.now > ROUND_FAULT_BACKOFF_CAP
 
     def _round_backing_off(self, mission_id: str) -> bool:
         """这个未结束的任务有一处出错后正在等退避间隔。已结束任务的收尾故障不算：
-        它没有可停的东西，不该让 ``run()`` 一直等它。"""
+        它没有可停的东西，不该让 ``run()`` 一直等它。已到停止条件（连续轮数与时长都够）
+        却停不了的（比如还没开始的任务）也不算：再等也只是重复，``run()`` 照常空闲返回。"""
+
+        from .failure_classes import NON_MODEL_FAILURE_CAP, ROUND_FAULT_MIN_SECONDS
 
         now = self.store.now
-        if not any(key[0] == mission_id and now < due for key, (_c, _f, due) in self._round_faults.items()):
+        if not any(key[0] == mission_id and now < due
+                   and not (count >= NON_MODEL_FAILURE_CAP and now - first >= ROUND_FAULT_MIN_SECONDS)
+                   for key, (count, first, due) in self._round_faults.items()):
             return False
         mission = self.store.get_mission(mission_id)
         return mission is not None and mission.status not in TERMINAL_MISSION
