@@ -9,12 +9,14 @@
 * 规划器的一步做法把用户那条要求挂到这一步自己的准则 ``c-notes-written`` 上，这一步的内容审阅因此
   按它的检查层（格式、规则、测试）必检（CHECKED）；
 * 外界只扣住"检查绑定写进库"这一个时机——等内容审阅回复的导入准备过一次以后再放行（检查导入方
-  照常写绑定事件）。
+  自己的写入口，屏障照常写资料变更事件）。
 
 期望：
 
 * 导入先记 ``CHECK_PENDING`` 等着，不导入、不复审；
-* 绑定事件把同一项导入工作唤醒（最后一次领取的触发事件就是它），按精确检查导入；
+* 检查绑定写入同一事务里屏障触发器写的资料变更事件（``source_table=assurance_check_bindings``）
+  把同一项导入工作唤醒（最后一次领取的触发事件就是它），按精确检查导入；不另有检查事件
+  （P1a 偏差裁决第 3 件）；
 * 内容审阅只调一次模型，任务完成、验收一次。
 """
 from __future__ import annotations
@@ -98,11 +100,12 @@ def test_a_late_check_wakes_the_waiting_review_without_a_second_model_call(tmp_p
             assert len(case.events("AcceptanceCommitted")) == 1
             assert state["prepared"][0] == "CHECK_PENDING", state["prepared"]
             rows = case.store.connection.execute(
-                "SELECT w.work_key, w.state, e.type FROM assurance_pending_work w JOIN events e "
+                "SELECT w.work_key, w.state, e.type, json_extract(e.payload_json,'$.source_table') "
+                "FROM assurance_pending_work w JOIN events e "
                 "ON e.event_id=w.trigger_event_id WHERE w.mission_id=? AND w.consumer='REVIEW' "
                 "AND w.work_key LIKE 'review-import:%'", (case.mission_id,)).fetchall()
             [row] = [tuple(row[1:]) for row in rows if content_review(case.store, row[0])]
-            # 同一项导入工作被检查绑定事件唤醒后做完（不是到点重看，也没有另起一项）
-            assert row == ("DONE", "AssuranceCheckBound")
+            # 同一项导入工作被检查绑定的屏障事件唤醒后做完（不是到点重看，也没有另起一项）
+            assert row == ("DONE", "AssuranceEvidenceChanged", "assurance_check_bindings")
 
     asyncio.run(run())

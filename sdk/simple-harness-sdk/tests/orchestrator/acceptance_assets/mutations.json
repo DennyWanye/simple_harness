@@ -1568,22 +1568,22 @@
   },
   {
    "id": "A25-02",
-   "source": "推后第 1 批车道 P1a（A25 第 2 行：检查结果晚到）",
+   "source": "推后第 1 批车道 P1a（A25 第 2 行：检查结果晚到；按偏差裁决第 3 件改为屏障事件唤醒）",
    "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
-   "original": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT}) | SETTLED_EVENTS",
-   "replacement": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT}) | SETTLED_EVENTS",
+   "original": "    \"WHERE w.mission_id=? AND w.consumer='REVIEW' AND w.state IN ('PENDING','RUNNING','WAITING') \"",
+   "replacement": "    \"WHERE w.mission_id=? AND w.consumer='REVIEW' AND w.state IN ('PENDING','RUNNING') \"",
    "tests": [
-    "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_check_wakes_only_the_unfinished_import_it_can_complete",
+    "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_check_binding_wakes_only_the_import_waiting_for_it_through_one_barrier_event",
     "tests/orchestrator/full_target/assurance_exec/test_review_waits_for_late_check.py::test_a_late_check_wakes_the_waiting_review_without_a_second_model_call"
    ],
-   "note": "检查绑定事件不唤醒在等它的审阅导入，只能等到点重看或别的事件"
+   "note": "导入前等检查以后，屏障事件的唤醒查询漏掉 WAITING 行：等检查的导入不被检查绑定叫醒，只能到点重看"
   },
   {
    "id": "A25-03",
    "source": "推后第 1 批车道 P1a（A25 第 3 行：业务或运行结清）",
    "file": "src/agent_orchestrator/orchestrator/assurance_review_consumer.py",
-   "original": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT}) | SETTLED_EVENTS",
-   "replacement": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT})",
+   "original": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT}) | SETTLED_EVENTS",
+   "replacement": "WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT})",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_review_wakeups.py::test_a_settlement_wakes_an_import_waiting_on_budget_before_its_due_time"
    ],

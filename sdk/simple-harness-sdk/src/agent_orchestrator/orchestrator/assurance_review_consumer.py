@@ -38,22 +38,20 @@ REVIEW_SOURCE_REPLACED = "REVIEW_SOURCE_REPLACED"
 REVIEW_PACKAGE_STALE = "REVIEW_PACKAGE_STALE"
 
 # 审阅这一侧登记的唤醒事件（事件消费表的类别登记，按类型列出，不按前缀猜；事件名不带来权限——
-# 唤醒以后准备照常重核来源、授权、纪元、钉住对象与预算）。三类都只唤醒还没做完的同一项导入工作
+# 唤醒以后准备照常重核来源、授权、纪元、钉住对象与预算）。两类都只唤醒还没做完的同一项导入工作
 # （工作键不变，目标升到这条事件），不另起一项、不重解已做完的导入（推后第 1 批 A25）。
-#: SOURCE_OR_AUTHORITY_CHANGED：资料换版 / 撤销。
+#: SOURCE_OR_AUTHORITY_CHANGED，也是 ACTUAL_CHECK_AVAILABLE 的实际信号：屏障触发器在资料换版 /
+#: 撤销、以及检查绑定写入（source_table=assurance_check_bindings）的同一事务里写它。等检查的导入
+#: 就靠它醒（P1a 偏差裁决第 3 件：不另登记检查事件，免得同一事实叫醒两次）。
 EVIDENCE_CHANGED_EVENT = "AssuranceEvidenceChanged"
-#: ACTUAL_CHECK_AVAILABLE：受信检查导入方把一次真实检查绑定到完成范围。
-CHECK_BOUND_EVENT = "AssuranceCheckBound"
 #: BUSINESS_OR_RUNTIME_SETTLED：调用与预算结清（与收尾消费者登记的同一组名字）；只唤醒卡在预算上的导入。
 SETTLED_EVENTS = frozenset({"IntentSettled", "BudgetReleased", "BudgetTailReleased"})
-WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT, CHECK_BOUND_EVENT}) | SETTLED_EVENTS
+WAKE_EVENTS = frozenset({EVIDENCE_CHANGED_EVENT}) | SETTLED_EVENTS
 
 _UNFINISHED_IMPORTS = (
-    "SELECT w.work_key,c.commit_id,c.receipt_json,b.subject_hash,b.binding_json "
-    "FROM assurance_pending_work w "
+    "SELECT w.work_key,c.commit_id,c.receipt_json FROM assurance_pending_work w "
     "JOIN assurance_review_invocations i ON i.mission_id=w.mission_id "
     "AND w.work_key='review-import:'||i.review_key||':'||i.ordinal "
-    "JOIN assurance_review_bindings b ON b.mission_id=i.mission_id AND b.review_key=i.review_key "
     "JOIN commit_receipts c ON c.subject_id=i.dispatch_intent_id "
     "AND c.kind IN ('AssuranceReviewClassified','AssuranceReviewFormatRejected') "
     "JOIN events e ON e.mission_id=i.mission_id AND e.type=c.kind AND json_extract(e.payload_json,'$.classification_receipt_ref.pin.id')=c.commit_id "
@@ -140,19 +138,6 @@ class AssuranceReviewConsumer:
             # Its first-start time/tries remain owned by WorkStore. Completed
             # historical imports are not reinterpreted when a source changes.
             extra, args = "", ()
-        elif event.type == CHECK_BOUND_EVENT:
-            # 检查晚到：只唤醒对象、完成范围都对得上、且检查要求里有这项检查的导入。
-            binding = self.store.connection.execute(
-                "SELECT binding_json FROM assurance_check_bindings WHERE mission_id=? AND check_binding_id=?",
-                (event.mission_id, AssuranceRef.from_json(
-                    event.payload.get("check_binding_ref"), kinds={"check_binding"}).pin.id),
-            ).fetchone()
-            if binding is None:
-                raise AssuranceError("REVIEW_WORK_SOURCE_MISSING", "check binding")
-            check = CheckBinding.from_json(decode(binding[0]))
-            extra = ("AND b.subject_hash=? "
-                     "AND json_extract(b.binding_json,'$.subject.completion_scope_ref.content_hash')=?")
-            args = (check.subject_hash, check.scope_hash)
         else:
             # 结清：只唤醒卡在预算上的导入；已被这条事件唤醒、正在准备的那一项也算（准备时重核身份）。
             extra = "AND (w.wait_reason='BUDGET_WAIT' OR w.trigger_event_id=?)"
@@ -162,11 +147,6 @@ class AssuranceReviewConsumer:
         ).fetchall()
         if len(rows) > 256 or len({row["work_key"] for row in rows}) != len(rows):
             raise AssuranceError("REVIEW_WAKEUP_INVENTORY_INCOMPLETE")
-        if event.type == CHECK_BOUND_EVENT:
-            rows = [row for row in rows if check.check_spec_ref in {
-                AssuranceRef.from_json(ref)
-                for policy in decode(row["binding_json"])["check_requirements"]
-                for group in policy["any_check_sets"] for ref in group}]
         return rows
 
     def classify(self, event: Event) -> tuple[WorkTarget, ...]:
