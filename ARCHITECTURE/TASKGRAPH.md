@@ -1,4 +1,4 @@
-最后更新：2026-10-07 CST（推后必补第 2 批，待发版 SDK `opt.170`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第2批-*.md`）。
+最后更新：2026-10-07 CST（推后必补第 2 批，已发版 SDK `opt.170`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第2批-*.md`）。
 - **策略行经存储层、知识按分层距离挑选**：见 `AGENT_ORCHESTRATION.md` 同日条目（T09、K06，B 级 #46）。
 
 最后更新：2026-10-06 CST（严格评估后补齐第 2～4 批，合并中，待发版 SDK `opt.166`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/``第2批-车道L-记录.md`、`第2批-车道J-记录.md`）。**八份对外合同进 SDK**（原计划附录 E）：`graph/schemas/*.schema.json` + `graph/view_contracts.py`，三种视图经严格编解码返回；收敛视图合同升 v2（加必填 `blocked_notifications`，界面 `PlanChangePanel.tsx` 在读它）。**改要求时允许改目标**：`{op: "goal", statement}` 作为一次要求修订；Host 入口尚未放行。**子目标跨版本沿用**：现状自下而上，自上而下未做（偏差单待用户定）。**死锁具名停止**：`scheduling/wait_for.py` + `MissionStopReason.DEADLOCK`（原计划 §10.5）。明细见 AGENT_ORCHESTRATION.md 同日条目。
