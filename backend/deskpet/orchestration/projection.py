@@ -470,13 +470,120 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
     }
 
 
+# ---------------------------------------------------------------------------
+# 对外公开合同的投影（推后第 2 批 U03；Assurance §13.1 L350/L354、F13；HTN §17.2 L856）
+#
+# 下面这些读动词的回复和错误回执，出门前按 SDK 随包发布的公开合同核一遍；核过的才出门，
+# 而且出门的是新拷贝，不是 SDK 交来的那个对象。不合合同 → ``ProtocolError``，``handlers``
+# 回具名协议错 ``protocol_error``，不带数据、不带原回执，原因只进 Host 日志。
+#
+# 核法按合同族各用 SDK 指定的那一条：
+# - Assurance：``agent_orchestrator.assurance.contracts`` 的 host-*-v1 Schema 与其核对器。
+# - 执行图：边界 codec（第 2 批 T06 定的"执行图合同在生产代码里只走 codec"；codec 与
+#   ``graph/schemas`` 里的 Schema 一致由 SDK 用例守住）。
+# 前端 ``tauri-app/src/ws/orchestrationContracts.ts`` 直接 import 同一批 Schema 文件，表与这里同名。
+# ---------------------------------------------------------------------------
+
+PROTOCOL_ERROR = "protocol_error"
+PROTOCOL_ERROR_TEXT = "收到的数据格式不对，没有显示，请稍后重新读取。"
+
+#: 动词 → Assurance 回复合同名（错误回执一律 host-error-v1）
+ASSURANCE_REPLIES = {
+    "mission_assurance_snapshot": "host-response-v1",
+    "mission_assurance_review": "host-review-response-v1",
+    "mission_assurance_use_check": "host-use-response-v1",
+}
+ASSURANCE_ERROR = "host-error-v1"
+#: 动词 → 执行图回复合同名（错误回执一律 taskgraph-error-v1）
+TASKGRAPH_REPLIES = {
+    "taskgraph.snapshot": "taskgraph-view-v1",
+    "taskgraph.why_not_ready": "taskgraph-explanation-v1",
+    "taskgraph.diff": "taskgraph-diff-v1",
+    "taskgraph.convergence": "taskgraph-convergence-view-v2",
+}
+TASKGRAPH_ERROR = "taskgraph-error-v1"
+CONTRACT_VERBS = frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES)
+#: 回执种类 → (回复里的字段名, 合同名)
+ERROR_WIRES = {"assurance": ("assurance_error", ASSURANCE_ERROR), "taskgraph": ("taskgraph_error", TASKGRAPH_ERROR)}
+
+
+class ProtocolError(Exception):
+    """SDK 交来的东西不合公开合同。``code`` 让 ``handlers`` 按具名错误回给界面。"""
+
+    code = PROTOCOL_ERROR
+
+    def __init__(self, verb: str, contract: str, reason: str) -> None:
+        super().__init__(PROTOCOL_ERROR_TEXT)
+        self.verb = verb
+        self.contract = contract
+        self.reason = reason
+
+
+def _taskgraph_codec(contract: str) -> Any:
+    from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1
+    from agent_orchestrator.graph.structural_diff import TaskGraphDiffV1
+    from agent_orchestrator.graph.view_contracts import (
+        TaskGraphConvergenceViewV2,
+        TaskGraphExplanationV1,
+        TaskGraphViewV1,
+    )
+
+    return {
+        "taskgraph-view-v1": TaskGraphViewV1,
+        "taskgraph-explanation-v1": TaskGraphExplanationV1,
+        "taskgraph-diff-v1": TaskGraphDiffV1,
+        "taskgraph-convergence-view-v2": TaskGraphConvergenceViewV2,
+        "taskgraph-error-v1": TaskGraphErrorV1,
+    }[contract]
+
+
+def _through_contract(verb: str, contract: str, body: Any) -> dict[str, Any]:
+    if contract.startswith("host-"):
+        from agent_orchestrator.assurance.contracts import ContractViolation, validate
+
+        try:
+            validate(contract, body)
+            # 合同已逐字段核过（additionalProperties: false），这里只断开与 SDK 对象的引用
+            return json.loads(json.dumps(body, ensure_ascii=False))
+        except (ContractViolation, TypeError, ValueError) as error:
+            raise ProtocolError(verb, contract, str(error)) from error
+    from agent_orchestrator.contracts.models import ContractError
+
+    try:
+        return _taskgraph_codec(contract).from_json(body).to_json()
+    except (ContractError, TypeError, ValueError, KeyError) as error:
+        raise ProtocolError(verb, contract, str(error)) from error
+
+
+def project_reply(verb: str, body: Any) -> dict[str, Any]:
+    """有公开合同的读动词：回复核过合同后出一份新拷贝；不合 → ``ProtocolError``。"""
+
+    contract = ASSURANCE_REPLIES.get(verb) or TASKGRAPH_REPLIES[verb]
+    return _through_contract(verb, contract, body)
+
+
+def project_error(verb: str, contract: str, wire: Any) -> dict[str, Any]:
+    """错误回执（``assurance_error`` 核 host-error-v1，``taskgraph_error`` 核 taskgraph-error-v1）。
+
+    不分动词：只要 Host 往外挂这两种回执，就先核合同。"""
+
+    return _through_contract(verb, contract, wire)
+
+
 __all__ = (
+    "CONTRACT_VERBS",
+    "ERROR_WIRES",
     "MISSION_FIELDS",
+    "PROTOCOL_ERROR",
+    "PROTOCOL_ERROR_TEXT",
+    "ProtocolError",
     "UI_STATES",
     "model_text",
     "project_approval",
     "project_detail",
     "project_event",
+    "project_error",
     "project_events",
+    "project_reply",
     "ui_state",
 )

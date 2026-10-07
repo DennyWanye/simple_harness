@@ -145,22 +145,32 @@ async def handle(
     action = _ACTIONS.get(msg_type)
     if action is None:
         return _error(msg_type, request_id, "invalid_request", f"unknown message {msg_type!r}")
+    from .projection import CONTRACT_VERBS, ERROR_WIRES, ProtocolError, project_error, project_reply
+
     try:
-        data = action(service, body)
-        if hasattr(data, "__await__"):
-            data = await data  # type: ignore[misc]
-        return _ok(msg_type, request_id, data)
+        try:
+            data = action(service, body)
+            if hasattr(data, "__await__"):
+                data = await data  # type: ignore[misc]
+            # 推后第 2 批 U03：有公开合同的读动词，回复只经投影出门（核合同 + 新拷贝）
+            if msg_type in CONTRACT_VERBS:
+                data = project_reply(msg_type, data)
+            return _ok(msg_type, request_id, data)
+        except Exception as error:
+            from .taskgraph import TaskGraphRequestError
+            from .assurance import AssuranceRequestError
+            if isinstance(error, (TaskGraphRequestError, AssuranceRequestError)):
+                # 错误回执同样经投影；不合合同就整条按协议错回，不挂原回执
+                key, contract = ERROR_WIRES["taskgraph" if isinstance(error, TaskGraphRequestError) else "assurance"]
+                wire = project_error(msg_type, contract, error.wire)
+                response = _error(msg_type, request_id, error.code, str(error))
+                response["payload"][key] = wire
+                return response
+            raise
     except Exception as error:  # the socket loop must never see an exception
-        from .taskgraph import TaskGraphRequestError
-        if isinstance(error, TaskGraphRequestError):
-            response = _error(msg_type, request_id, error.code, str(error))
-            response["payload"]["taskgraph_error"] = error.wire
-            return response
-        from .assurance import AssuranceRequestError
-        if isinstance(error, AssuranceRequestError):
-            response = _error(msg_type, request_id, error.code, str(error))
-            response["payload"]["assurance_error"] = error.wire
-            return response
+        if isinstance(error, ProtocolError):
+            # 原因只进 Host 日志，界面只拿到一句大白话
+            logger.warning("orchestration reply refused: %s violates %s: %s", error.verb, error.contract, error.reason)
         code = getattr(error, "code", None)
         if isinstance(code, str) and code:
             return _error(msg_type, request_id, code, str(error))
