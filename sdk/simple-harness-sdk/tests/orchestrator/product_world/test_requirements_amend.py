@@ -80,6 +80,7 @@ def test_amend_writes_everything_in_one_transaction(tmp_path):
             await until_first_plan(world, mission_id)
             before = written(world.store, mission_id)
             assert before["revisions"] == [1] and before["root_contract"] == 1
+            first = HtnStore(world.store).get_requirements_revision(mission_id, 1).to_json()
 
             stale = dict(latest_ref(world.store, mission_id), content_hash="0" * 64)
             with pytest.raises(FacadeError) as refused:
@@ -118,6 +119,8 @@ def test_amend_writes_everything_in_one_transaction(tmp_path):
                              "epoch": before["epoch"] + 1, "events": 1, "receipts": 1}
             latest = HtnStore(world.store).latest_requirements_revision(mission_id)
             assert latest.amendment_credential_ref == "amend-1"
+            # 保证 A03 后半（2026-10-07 V08 回挂）：用户确认的新版是新的一版加回执，第 1 版一个字节不动
+            assert HtnStore(world.store).get_requirements_revision(mission_id, 1).to_json() == first
             assert {str(c.criterion_id): int(c.revision) for c in latest.criteria} == {
                 "c-user-1": 2, "c-user-2": 1, "c-user-4": 1}
             assert receipt["changes"] == {"added": ["c-user-4"], "rewritten": ["c-user-1"], "removed": ["c-user-3"]}
@@ -1518,5 +1521,69 @@ def test_after_an_amendment_a_step_under_a_resolved_sub_goal_is_replaced_through
                        and "REPLACE_METHOD" in item for item in refused), refused
             assert state["tried"] and state["replaced"] and not state["unexpected"], state
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, refused[-4:])
+
+    asyncio.run(case())
+
+
+
+class _HeldContentReview(LayeredScriptedProvider):
+    """第一次内容审阅调用停在半路，直到测试放行（模拟一次很慢的审阅）。"""
+
+    def __init__(self, **roles: Any) -> None:
+        super().__init__(**roles)
+        self.review_entered = asyncio.Event()
+        self.review_go = asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        from agent_orchestrator.testing.fixtures import role_of
+        from agent_orchestrator.testing.scripted_replies import review_input
+
+        data = review_input(request) if role_of(request) != "worker" else None
+        if (data is not None and str((data.get("package") or {}).get("purpose")) == "TASK_CONTENT"
+                and not self.review_entered.is_set()):
+            self.review_entered.set()
+            await self.review_go.wait()
+        return await super().invoke(request, cancel=cancel)
+
+
+def test_a_review_frozen_on_the_first_version_keeps_its_record_and_cost_but_approves_nothing(tmp_path):
+    """保证 A11 后半（2026-10-07 V08 回挂；原以"产品上没有第 2 版要求"删）：一步的内容审阅按第 1 版
+    要求切包、调用还在路上时，用户改了要求。审阅回复晚到：原审阅照常入账、它的费用照常结清（不丢
+    已经花掉的钱）；但这份结果是按第 1 版判的，按"被取代"归档，不能拿来批准第 2 版下的任何验收。
+    任务按第 2 版完成。"""
+    seen: dict[str, Any] = {}
+
+    async def case():
+        provider = _HeldContentReview(planner=replanning_planner(seen))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写 a.md 和 b.md", "idempotency_key": "amend-late-review",
+                                       "success_criteria": ["file:a.md", "file:b.md"]})["mission_id"]
+            for _ in range(30):
+                await world.drain(timeout=5)
+                if provider.review_entered.is_set():
+                    break
+            assert provider.review_entered.is_set()
+            mark = max(e.seq for e in world.store.list_events(mission_id))
+            amend(world, mission_id, [{"op": "add", "statement": "file:extra.md"}])
+            provider.review_go.set()
+            mission = await world.run_until_settled(mission_id, rounds=40)
+            assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report)
+            events = [e for e in world.store.list_events(mission_id) if e.seq > mark]
+            # 晚到的第 1 版审阅：它的意图结清、费用入账、审阅记录照常导入
+            late = next(e.payload["intent_id"] for e in events
+                        if e.type == "IntentSettled" and ":assurance-content:" in e.payload["intent_id"])
+            subject = late.removeprefix("intent-critic-")
+            [settled] = [e.payload for e in events if e.type == "BudgetReleased" and e.payload["subject_id"] == subject]
+            assert settled["settled_tokens"] > 0
+            first_import = next(e.seq for e in events if e.type == "AssuranceReviewImported")
+            # 那份结果按"被取代"归档；任何验收都没用它
+            [superseded] = [e.payload for e in events if e.type == "ResultRejected"]
+            assert superseded["reason"] == "superseded"
+            assert superseded["detail"]["error"] == "completion_scope_stale"
+            accepted = [e.payload for e in world.store.list_events(mission_id) if e.type == "AcceptanceCommitted"]
+            assert superseded["detail"]["result_id"] not in json.dumps(accepted)
+            assert first_import < next(e.seq for e in events if e.type == "ResultRejected")
+            [judged] = [e.payload for e in world.store.list_events(mission_id) if e.type == "MissionSuccessJudged"]
+            assert [j["criterion"] for j in judged["judgments"]] == ["file:a.md", "file:b.md", "file:extra.md"]
 
     asyncio.run(case())

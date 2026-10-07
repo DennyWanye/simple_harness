@@ -9,8 +9,13 @@ A10 取证工具、A12 格式修复）跑迁到产品同形世界的接缝脚本
 分诊表的处置：A13 / A14 / A17（内容验收只是"准备好了"、数据可读顺序不放、根要求的效果目录）并入
 ``operation_completion/test_publish_variants.py`` 第一条；A16（效果待办时不空转）同上；A18（直接
 写终审绕过有效性闸）删：原用例要把产品的有效性服务关掉、替换准备函数才碰得到下游检查（裁决①
-不许）；A03 / A11 里"要求书第 2 版"的两半删：第 2 版在产品上没有写入方；A07 里"伪造的作者集合"
-那一半删：靠替换产品读函数造状态。
+不许）；A07 里"伪造的作者集合"那一半删：靠替换产品读函数造状态。
+
+A03 / A11 里"要求书第 2 版"的两半：原以"第 2 版在产品上没有写入方"删；用户改要求（HTN 补齐阶段 E）
+上线后已有第 2 版写入方，2026-10-07（V08）回挂到 ``product_world/test_requirements_amend.py``：
+A03 后半（真实用户确认新版 → 新一版加回执，旧版字节不动）→ ``test_amend_writes_everything_in_one_transaction``；
+A11 后半（审阅冻结在第 1 版、回复晚到 → 原审阅与费用照常入账，不能批准第 2 版）→
+``test_a_review_frozen_on_the_first_version_keeps_its_record_and_cost_but_approves_nothing``。
 """
 
 from __future__ import annotations

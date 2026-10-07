@@ -9,8 +9,14 @@ requirement approval, plan compiler, T0, or T3 writers.
 OCC-01/08/12 → 第一条（内容验收只是准备）；OCC-03 → 代表用例 3；OCC-04 → 改坏结果审阅绑定；
 OCC-06 → 两个发布各走各的证明链；OCC-09/11 → 效果验收写失败回滚、重启后只写一次；OCC-10 → 
 ``test_completion_plan_commit.py`` 的范围断言；OCC-02 运行时一侧 → ``test_completion_plan_commit.py``
-（没确认映射不开工）。OCC-05（要求修订使旧链过期）删：要求书第 2 版在产品上没有写入方；OCC-07
-（旧通道兼容）随旧通道删。
+（没确认映射不开工）。OCC-07（旧通道兼容）随旧通道删。
+
+OCC-05（要求修订使旧链过期）：原以"要求书第 2 版在产品上没有写入方"删；2026-10-07（V08）回挂到
+``product_world/test_requirements_amend.py``：发布后改要求 → 旧结论不顶新要求、发布事实与花费保留、
+不重发（``test_requirements_amended_after_the_publish_never_publish_again``）；改要求落在准备后 / 审阅后 /
+提交前三个时机各一条（``test_a_result_that_lands_while_requirements_are_unconfirmed_is_not_reviewed_under_the_old_ones``、
+``test_a_review_frozen_on_the_first_version_keeps_its_record_and_cost_but_approves_nothing``、
+``test_an_amendment_landing_between_the_verdict_and_its_commit_sets_the_result_aside``）。
 """
 
 from __future__ import annotations
