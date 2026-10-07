@@ -231,7 +231,7 @@ class Env:
         writes: Sequence[tuple[str, str]] = (),
         effect_identity: str | None = None,
         domain: str | None = None,
-        set_port: bool = False,
+        set_port: bool | str = False,
         level: int | None = None,
     ) -> TaskTypeSpec:
         parameter_schema = f"{identifier}.params"
@@ -258,7 +258,9 @@ class Env:
                     port_key=key,
                     schema_ref=ref(schema_id),
                     required=required,
-                    cardinality="set" if set_port else "single",
+                    cardinality=(
+                        "single" if not set_port else "set" if set_port is True else set_port
+                    ),
                 )
                 for key, schema_id, required in inputs
             ),

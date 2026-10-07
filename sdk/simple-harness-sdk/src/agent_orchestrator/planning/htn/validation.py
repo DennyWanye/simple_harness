@@ -798,8 +798,8 @@ def unsupported_features(
             continue
         binding = network.binding_for_task(spec.task_id)
         for port in (*binding.input_ports, *binding.output_ports):
-            if port.cardinality is PortCardinality.SET:
-                note("set-valued-ports")
+            if port.cardinality is not PortCardinality.SINGLE:
+                note("set-valued-ports")  # SET, LIST and MAP are all multi-valued
         for value in binding.typed_parameters.values():
             if isinstance(value, (dict, list)):
                 note("structured-objects")

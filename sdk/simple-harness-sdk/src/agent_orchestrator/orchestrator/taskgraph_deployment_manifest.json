@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "450bb2ec87a4db69dbe67911526cbd24a2178d4e8bb674844192029bc52d37a7",
+  "deployment_id": "0932482b45594d8bad98cc8e9b8e4884ec4317410c3b5dda26ea609c714b887c",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -343,7 +343,7 @@
     "agent_orchestrator/planning/htn/seed_methods/drone-sim-v1/schemas.json": "94ad3f1ac9b61379d74942bf01cc14bfcdcc59d57a766289b563321eca73409b",
     "agent_orchestrator/planning/htn/seed_methods/drone-sim-v1/task_types.json": "38b21fc54dd231922135e4789a0dbec3c33dc39160c9f2795cf3123babdfdcdf",
     "agent_orchestrator/planning/htn/seed_methods/loader.py": "d74dba27dda84596dea7a4e61ece97d48f1a3f783c73869d5dd77daaf7647e95",
-    "agent_orchestrator/planning/htn/validation.py": "cf34ba5d651673c5cc727043312fe125e6f9514cae7b27375f6042a2545a0137",
+    "agent_orchestrator/planning/htn/validation.py": "43e836c60ca8b1032ea4021c60632f1e601d9a1ee42edc5df9659f10857edb59",
     "agent_orchestrator/planning/htn/world.py": "03cdad3faede3732c3f81650f725972e87a977793754b6b6e6ccbd0fcee557ee",
     "agent_orchestrator/planning/plan_preview.py": "13eea92fe3a327af60a21c0b8e970ce2ebf57c14ba87bdc6f1a4f78ef38e735a",
     "agent_orchestrator/planning/unknown_fields.py": "026d7001b072e00a4c843845277d039804ffe7d3328180caf3c3fd2a131269a2",
