@@ -42,6 +42,7 @@ from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # no
 from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
+from agent_orchestrator.observability.lineage import lineage  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.verification.conflicts import mission_disputes  # noqa: E402
@@ -206,6 +207,7 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "unknown_read": _refusal(lambda: read_knowledge_tool(
                 store, mission_id, "knowledge_read", {"id": "observation:unknown"})),
             "packages": worker.packages,
+            "lineage": lineage(store, mission_id),
             **_stage_c_facts(store, mission_id, knowledge, results),
         }
     return facts
@@ -355,6 +357,23 @@ def test_contradicting_claims_are_disputed_and_never_enter_knowledge(world):
     assert set(disputes) == {first.id, affirms.id, affirms_again.id, against_knowledge.id, record.claim_id}
     assert disputes[record.claim_id]["in_knowledge"] is True
     assert not any(d["in_knowledge"] for key, d in disputes.items() if key != record.claim_id)
+
+
+def test_the_knowledge_records_who_modified_it(world):
+    """K07（推后第 3 批车道 R2，原计划 09-10 §11.2"由谁修改过"）：下游声明反驳已核实知识，知识上追加
+    恰好一项修改记录，指向那条声明、它的任务与尝试、提出者与时刻；血缘视图里也带着。
+
+    **改坏检验**：反驳写方不追加修改记录 → 本条失败。"""
+
+    against_knowledge = _continue_claims(world)[0]
+    (record,) = world["knowledge"]
+    (entry,) = record.modified_by
+    assert {key: value for key, value in entry.items() if key != "at"} == {
+        "change": "DISPUTED", "by": against_knowledge.id, "task_id": against_knowledge.source_task,
+        "attempt_id": against_knowledge.source_attempt, "proposed_by": against_knowledge.proposed_by}
+    assert entry["at"] >= record.created_at
+    (view,) = [item for item in world["lineage"]["knowledge"] if item["id"] == record.id]
+    assert view["modified_by"] == [dict(entry)]
 
 
 def test_a_model_cannot_supersede_verified_knowledge(world):

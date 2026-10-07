@@ -16,7 +16,7 @@ claim below VERIFIED never appears here — SUPPORTED is evidence, not knowledge
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ClaimStatus, ContractError
@@ -64,6 +64,11 @@ class KnowledgeRecord:
     validity_interval: Mapping[str, Any] | None = None
     permitted_uses: tuple[str, ...] | None = None
     assurance_level: str | None = None
+    #: 原计划 09-10 §11.2"由谁修改过"（推后第 3 批 K07）：入库后的每一次改动追加一项
+    #: ``{change, by, task_id, attempt_id, proposed_by, at}``，只经 :func:`modified` 写。``change`` 是
+    #: DISPUTED（别的声明反驳它）或 SUPERSEDED（新版本取代它）；``by`` 是那条声明 / 新知识的编号；
+    #: ``at`` 是库时钟（与 ``created_at`` 同一口径）。被谁用过另记在 ``used_by``，不算修改。
+    modified_by: tuple[Mapping[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         for name in (
@@ -97,6 +102,7 @@ class KnowledgeRecord:
         ):
             object.__setattr__(self, name, _texts(getattr(self, name), f"knowledge.{name}"))
         object.__setattr__(self, "support", _support(self.support))
+        object.__setattr__(self, "modified_by", _modifications(self.modified_by))
         object.__setattr__(self, "validity_interval", _validity_interval(self.validity_interval))
         if self.permitted_uses is not None:
             object.__setattr__(
@@ -109,7 +115,7 @@ class KnowledgeRecord:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
         for name, value in list(data.items()):
             if isinstance(value, tuple):
-                data[name] = list(value)
+                data[name] = [dict(item) if isinstance(item, Mapping) else item for item in value]
             elif isinstance(value, Mapping):
                 data[name] = dict(value)
         return data
@@ -148,6 +154,37 @@ def _support(value: object) -> dict[str, Any]:
                              "content_hash": str(row["content_hash"])} for row in rows),
                            key=lambda row: row["id"])
     return out
+
+
+MODIFICATIONS = ("DISPUTED", "SUPERSEDED")
+_MODIFICATION_KEYS = ("at", "attempt_id", "by", "change", "proposed_by", "task_id")
+
+
+def _modifications(value: object) -> tuple[dict[str, Any], ...]:
+    """``KnowledgeRecord.modified_by``: entries of exactly the six keys (K07)."""
+    if not isinstance(value, (list, tuple)):
+        raise ContractError("knowledge.modified_by must be a list")
+    out = []
+    for row in value:
+        if not isinstance(row, Mapping) or tuple(sorted(row)) != _MODIFICATION_KEYS:
+            raise ContractError(f"knowledge.modified_by entries must carry exactly {list(_MODIFICATION_KEYS)}")
+        if row["change"] not in MODIFICATIONS:
+            raise ContractError(f"knowledge.modified_by.change must be one of {list(MODIFICATIONS)}")
+        if type(row["at"]) not in (int, float):
+            raise ContractError("knowledge.modified_by.at must be a number")
+        entry = {name: _text(row[name], f"knowledge.modified_by.{name}", limit=512)
+                 for name in ("by", "task_id", "attempt_id", "proposed_by")}
+        out.append({**entry, "change": row["change"], "at": row["at"]})
+    return tuple(out)
+
+
+def modified(record: KnowledgeRecord, *, change: str, by: str, task_id: str, attempt_id: str,
+             proposed_by: str, at: float) -> KnowledgeRecord:
+    """The one way a knowledge record notes who changed it (§11.2, K07): the caller writes the
+    returned record in the same write as the change itself."""
+    entry = {"change": change, "by": by, "task_id": task_id, "attempt_id": attempt_id,
+             "proposed_by": proposed_by, "at": at}
+    return replace(record, modified_by=(*record.modified_by, entry))
 
 
 _VALIDITY_KEYS = ("mission_epoch", "valid_from_ms", "valid_until_ms")
@@ -259,4 +296,5 @@ class KnowledgeIndex:
         return problems
 
 
-__all__ = ("KNOWLEDGE_STATES", "KnowledgeIndex", "KnowledgeRecord", "knowledge_ref", "parse_knowledge_ref")
+__all__ = ("KNOWLEDGE_STATES", "MODIFICATIONS", "KnowledgeIndex", "KnowledgeRecord", "knowledge_ref", "modified",
+           "parse_knowledge_ref")
