@@ -642,7 +642,8 @@ def test_invalidation_racing_cache(tmp_path):
 # --------------------------------------------------------------------------- V13
 def test_root_quarantine_and_current_read_authority():
     """根闸门接缝（产品同形）：根状态文件丢失时主循环不派发；冷启动只开管理面、没有当前读权限时拒绝一切
-    读取；闸门层契约下本租户读得到，别的租户 / 权限过期按名拒绝。离线备份与受管恢复已删（A″）。"""
+    读取；原生根上产物读取走使用证书签发方（推后第 2 批 A03）：本人读得到并留 DISCLOSE 证书，别的租户 /
+    别的主体 / 权限过期按名拒绝、不留证书。离线备份与受管恢复已删（A″）。"""
     seam = SDK_ROOT / "scripts/assurance_seams/root-gate-seam.py"
     completed = subprocess.run([sys.executable, str(seam)], capture_output=True, text=True, timeout=600,
                                cwd=str(SDK_ROOT))
@@ -653,7 +654,7 @@ def test_root_quarantine_and_current_read_authority():
     assert set(report["results"]) == {
         "missing_root_state_refuses_the_main_loop_before_any_model_call",
         "quarantine_without_current_authority_refuses_every_read",
-        "native_root_read_checks_tenant_and_expiry",
+        "native_root_read_checks_tenant_principal_and_expiry",
     } and all(report["results"].values())
 
 

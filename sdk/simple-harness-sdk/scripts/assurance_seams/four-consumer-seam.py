@@ -8,7 +8,8 @@
 报告里的事实：
 * 安装：四个消费者都在，新库启动对账为空，第二次安装按名拒绝；
 * 建任务：任务在保证通道上，四个游标都停在"保证档案已激活"那条事件上，原始要求由登录用户确认；
-* 当前读权限：同一主体同一用途得到同一份权限，别的用途不同，别的主体 / 租户 / 不认识的用途被拒；
+* 当前读权限：同一主体同一用途得到同一份权限，别的用途不同，别的主体 / 不认识的用途被拒；签发方对
+  外来调用者（原生下载）核主体与租户，别的租户 / 主体被拒；都只读；
 * 跑完：方法计划审查（在任何完成范围之前）有正式记录、绑定里没有范围；收尾从"差根结论"一路走到
   定稿；完成通知只发一次；任务完成以后空转一轮不自己触发；
 * 到期：授权时长过了以后，有效性消费者观察到证书到期；
@@ -88,20 +89,41 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
             "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (mission_id,))}
         assert set(cursors) == CONSUMERS and set(cursors.values()) == {activation.seq}, cursors
 
-        # 当前读权限：部署装上的那一份（门面的实际调用者），只读，什么都不写。
-        read = installed.authority.read
+        # 当前读权限：部署装上的那一份（消费者与使用证书签发方共用），只读，什么都不写。推后第 2 批 A03
+        # 删了门面专用的 ``authority.read``：主体由可信装配交进来的使用身份核；"别的租户"由签发方核
+        # 外来调用者（原生下载就这样调），只核不落库。
+        from agent_orchestrator.assurance.certificates import UseIdentity
+        from agent_orchestrator.orchestrator.assurance_point_use import (
+            NATIVE_READ_CONSUMER, EvidenceClaim, certify_point_use_locked)
+
+        authority = installed.authority
         principal = world.deployment.principal
+        root_id = world.loop._assurance_root_gate.require_execution().root_incarnation_id
         ref = AssuranceRef("requirements", Pin(str(requirements.revision_id), 1, requirements.content_hash()))
+
+        def read(principal_id: str, purpose: str) -> Any:
+            return authority(UseIdentity(mission_id, NATIVE_READ_CONSUMER, "seam", mission_id, principal_id,
+                                         purpose, root_id), ref)
+
+        def certify(caller: tuple[str, str]) -> Any:
+            with store.read_view():
+                return certify_point_use_locked(
+                    world.loop.commit, mission_id=mission_id, purpose="DISCLOSE", consumer_kind=NATIVE_READ_CONSUMER,
+                    consumer_id="seam", claims=(EvidenceClaim.exact(ref),), subject=("requirements", mission_id),
+                    record=False, caller=caller)
+
         before = store.connection.total_changes
-        permission = read(principal, TENANT, mission_id, ref, "DISCLOSE")
-        same = read(principal, TENANT, mission_id, ref, "DISCLOSE")
-        other = read(principal, TENANT, mission_id, ref, "CONTEXT")
+        permission = read(principal.principal_id, "DISCLOSE")
+        same = read(principal.principal_id, "DISCLOSE")
+        other = read(principal.principal_id, "CONTEXT")
         assert same.access == permission.access and same.policy == permission.policy
         assert other.access != permission.access and other.policy != permission.policy
         assert permission.not_after_ms - int(store.now * 1000) <= TTL_SECONDS * 1000
-        refused(lambda: read(Principal("someone-else"), TENANT, mission_id, ref, "DISCLOSE"), {"ROOT_READ_NOT_AUTHORIZED"})
-        refused(lambda: read(principal, "other-tenant", mission_id, ref, "DISCLOSE"), {"ROOT_READ_NOT_AUTHORIZED"})
-        refused(lambda: read(principal, TENANT, mission_id, ref, "BOGUS"), {"CURRENT_READ_AUTHORITY_REQUIRED"})
+        refused(lambda: read("someone-else", "DISCLOSE"), {"CURRENT_READ_AUTHORITY_REQUIRED"})
+        refused(lambda: read(principal.principal_id, "BOGUS"), {"CURRENT_READ_AUTHORITY_REQUIRED"})
+        assert certify((principal.principal_id, TENANT)).usable
+        assert certify((principal.principal_id, "other-tenant")).refusals == ("ROOT_READ_NOT_AUTHORIZED",)
+        assert certify(("someone-else", TENANT)).refusals == ("ROOT_READ_NOT_AUTHORIZED",)
         assert store.connection.total_changes == before
 
         mission = await world.run_until_settled(mission_id, timeout=60)

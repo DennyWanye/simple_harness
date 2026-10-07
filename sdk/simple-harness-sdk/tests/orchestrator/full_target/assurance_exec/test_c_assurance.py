@@ -91,7 +91,10 @@ def test_acceptance_atomic_faults(tmp_path, fault):
                         len(case.events("AcceptanceCommitted")))
 
             if fault == "certificate":
+                # 只断验收那一张（ACCEPT）许可证的写入：推后第 2 批 A03 起，审阅请求发出前先写 DISCLOSE
+                # 时点证书；不限用途的话，故障落在披露上、到不了验收这一笔（披露写失败按一轮故障原地重试）
                 connection.execute("CREATE TRIGGER cut_c01 BEFORE INSERT ON assurance_use_certificates "
+                                   "WHEN NEW.purpose='ACCEPT' "
                                    "BEGIN SELECT RAISE(ABORT,'disk write failed'); END;")
                 expected = sqlite3.IntegrityError
             elif fault == "event":
