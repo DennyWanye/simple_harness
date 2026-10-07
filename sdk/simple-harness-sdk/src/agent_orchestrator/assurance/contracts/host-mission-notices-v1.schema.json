@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.simpleharness.invalid/host/host-mission-notices-v1.schema.json",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "notice_id",
+      "mission_id",
+      "state_version",
+      "notified_at",
+      "acked_at",
+      "status",
+      "status_zh",
+      "goal",
+      "stop_reason",
+      "unresolved_actions"
+    ],
+    "properties": {
+      "notice_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "mission_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "state_version": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "notified_at": {
+        "type": "number",
+        "minimum": 0
+      },
+      "acked_at": {
+        "type": "null"
+      },
+      "status": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "status_zh": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "goal": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 200
+      },
+      "stop_reason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "minLength": 0
+      },
+      "unresolved_actions": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "action_settled": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation",
+          "target",
+          "applied"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string",
+            "minLength": 0
+          },
+          "target": {
+            "type": "string",
+            "minLength": 0
+          },
+          "applied": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

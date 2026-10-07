@@ -10,6 +10,7 @@ import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import { asList as list, asRecord as record, asText as text, newRequestKey } from "../stores/missionsStore";
 import { MissionsChannelContext } from "./chatMission";
+import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
 
 type Settled = { operation: string; target: string; applied: boolean };
 type Notice = {
@@ -71,6 +72,9 @@ export function ChatMissionNotices(): React.JSX.Element | null {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
+  /** 最近一次通知列表读到坏消息（推后第 3 批 U09）：卡片保留上次的，下面显示这句话；好列表到了清掉。 */
+  const [listError, setListError] = useState("");
+  const shown = useRef(false);
   const listRequest = useRef<string | null>(null);
   const acks = useRef(new Map<string, string>());
 
@@ -94,7 +98,11 @@ export function ChatMissionNotices(): React.JSX.Element | null {
       if (type === "mission_notices_response" && payload.request_id === listRequest.current) {
         listRequest.current = null;
         if (payload.ok === true) {
+          shown.current = true;
           setNotices(list(payload.data).map(asNotice).filter((item): item is Notice => item !== null));
+          setListError("");
+        } else if (payload.error_code === PROTOCOL_ERROR) {
+          setListError(text(payload.error) + (shown.current ? STALE_NOTE : ""));
         }
         return;
       }
@@ -135,7 +143,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
     }
   };
 
-  if (!notices.length && !error) return null;
+  if (!notices.length && !error && !listError) return null;
   return (
     <div aria-label="后台任务通知" style={{ display: "grid", gap: tokens.space.xs, margin: `${tokens.space.xs}px 0` }}>
       {notices.slice(-SHOWN).map((notice) => (
@@ -166,6 +174,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
             onClick={() => acknowledge(ALL)}>全部已收到</button>
         </div>
       ) : null}
+      {listError ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{listError}</div> : null}
       {error ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div> : null}
     </div>
   );

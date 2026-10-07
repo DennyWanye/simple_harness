@@ -97,7 +97,7 @@ describe("U02 编排回复按公开 Schema 核", () => {
   });
 
   it("leaves messages without a public contract alone", () => {
-    const other = { type: "mission_events_response", payload: { request_id: "r1", ok: true, data: { anything: 1 } } };
+    const other = { type: "mission_artifact_read_response", payload: { request_id: "r1", ok: true, data: { anything: 1 } } };
     expect(guardIncoming(other)).toBe(other);
     const operate = { type: "taskgraph.abandon_convergence_response", payload: { request_id: "r1", ok: true, data: { done: 1 } } };
     expect(guardIncoming(operate)).toBe(operate);
@@ -122,7 +122,20 @@ const DETAIL = {
   event_count: 5, through_seq: 9, recovery_isolated: null,
 };
 
-describe("U09 执行图主画面、回合详情、任务列表、任务详情也按公开 Schema 核", () => {
+const EVENTS = { mission_id: "m1", has_more: false, through_seq: 9, events: [{ seq: 9, type: "HumanCommentAdded",
+  created_at: 1791365208.4, task_id: null, attempt_id: null, actor_type: "human", summary: "看一下" }] };
+const APPROVAL = { request_id: "ap-1", kind: "action", mission_id: "m1", task_id: "t1", state: "PENDING", level: "L2",
+  required_count: 1, grant_count: 0, expires_at: 1791369999, topic: null, options: [],
+  summary: { connector: "file_publish", operation: "publish", target: "README.md", params: { artifact_path: "README.md" },
+    reason: "发布", reason_source: "system" },
+  created_at: 1791365208.4,
+  action: { connector: "file_publish", operation: "publish", target: "README.md", params: { artifact_path: "README.md" },
+    params_hash: HASH, state: "PROPOSED", reason: { text: "发布", source: "model" } },
+  comments: [] };
+const NOTICE = { notice_id: "ev-1", mission_id: "m1", state_version: 7, notified_at: 1791365208.4, acked_at: null,
+  status: "COMPLETED", status_zh: "已完成", goal: "写一份 NOTES.md", stop_reason: null, unresolved_actions: 0 };
+
+describe("U09 执行图主画面、回合详情、任务列表、任务详情、事件、待批准列表、通知也按公开 Schema 核", () => {
   const examples = graphExamples as Record<string, Record<string, unknown>>;
   const view = examples["taskgraph-execution-view-v1"];
   const detail = examples["taskgraph-execution-detail-v1"];
@@ -137,6 +150,12 @@ describe("U09 执行图主画面、回合详情、任务列表、任务详情也
     expect(contractViolation("taskgraph-execution-detail-v1", detail)).toBeNull();
     expect(contractViolation("host-mission-list-v1", { missions: [ROW] })).toBeNull();
     expect(contractViolation("host-mission-detail-v1", DETAIL)).toBeNull();
+    for (const name of ["host-mission-events-v1", "host-mission-approval-list-v1", "host-mission-notices-v1"] as const) {
+      expect(CONTRACT_SCHEMAS[name].$id).toMatch(new RegExp("host/" + name + "\\.schema\\.json$"));
+    }
+    expect(contractViolation("host-mission-events-v1", EVENTS)).toBeNull();
+    expect(contractViolation("host-mission-approval-list-v1", { approvals: [APPROVAL] })).toBeNull();
+    expect(contractViolation("host-mission-notices-v1", [NOTICE])).toBeNull();
   });
 
   it.each([
@@ -149,6 +168,13 @@ describe("U09 执行图主画面、回合详情、任务列表、任务详情也
     ["mission_list", { missions: [ROW] }, { missions: [{ ...ROW, ui_state: "done" }] }],
     ["mission_get", DETAIL, { ...DETAIL, tasks: [{ ...DETAIL.tasks[0], goal: "写 NOTES.md" }] }],
     ["mission_get", DETAIL, { ...DETAIL, internal_paths: ["/tmp/x"] }],
+    // 裁决后续做（推后第 3 批偏差裁决第 5 件）：另三个读动词
+    ["mission_events", EVENTS, { ...EVENTS, events: [{ ...EVENTS.events[0], payload: { text: "原始正文" } }] }],
+    ["mission_events", EVENTS, { ...EVENTS, has_more: "no" }],
+    ["mission_approval_list", { approvals: [APPROVAL] }, { approvals: [{ ...APPROVAL, binding: { path: "/x" } }] }],
+    ["mission_approval_list", { approvals: [APPROVAL] }, { approvals: [{ ...APPROVAL, summary: "发布" }] }],
+    ["mission_notices", [NOTICE], [{ ...NOTICE, acked_at: 1791365300 }]],
+    ["mission_notices", [NOTICE], { notices: [NOTICE] }],
   ])("%s：合格放行（同一个对象），漂移改成协议错", (verb, good, drifted) => {
     const ok = reply(verb, { ok: true, data: good });
     expect(guardIncoming(ok)).toBe(ok);

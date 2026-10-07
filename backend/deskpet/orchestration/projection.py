@@ -483,9 +483,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
 #   ``graph/schemas`` 里的 Schema 一致由 SDK 用例守住）。
 # 前端 ``tauri-app/src/ws/orchestrationContracts.ts`` 直接 import 同一批 Schema 文件，表与这里同名。
 #
-# 推后第 3 批 U09（HTN §17.2）补上界面画得最多的四个读动词：执行图主画面与回合详情（执行图合同族，
-# 走 codec），任务列表与任务详情（Host 任务投影，合同 ``host-mission-*-v1`` 放在 SDK 的 Host DTO 合同处，
-# 走同一个 ``host-`` 核对器）。
+# 推后第 3 批 U09（HTN §17.2）补上界面会画的七个读动词：执行图主画面与回合详情（执行图合同族，
+# 走 codec），任务列表、任务详情、事件、待批准列表、任务结束通知（Host 投影，合同 ``host-mission-*-v1``
+# 放在 SDK 的 Host DTO 合同处，走同一个 ``host-`` 核对器）。
 # ---------------------------------------------------------------------------
 
 PROTOCOL_ERROR = "protocol_error"
@@ -512,6 +512,10 @@ TASKGRAPH_ERROR = "taskgraph-error-v1"
 MISSION_REPLIES = {
     "mission_list": "host-mission-list-v1",
     "mission_get": "host-mission-detail-v1",
+    # 推后第 3 批偏差裁决第 5 件：另三个界面会画的读回复
+    "mission_events": "host-mission-events-v1",
+    "mission_approval_list": "host-mission-approval-list-v1",
+    "mission_notices": "host-mission-notices-v1",
 }
 CONTRACT_VERBS = frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES) | frozenset(MISSION_REPLIES)
 #: 回执种类 → (回复里的字段名, 合同名)

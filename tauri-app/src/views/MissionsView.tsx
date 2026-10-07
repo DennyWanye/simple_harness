@@ -676,8 +676,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       if (payload.ok === false && (tracked === undefined || tracked === selectedRef.current)) {
         const code = text(payload.error_code);
         const message = ERROR_TEXT[code] ?? (text(payload.error) || code || "请求失败");
-        // 推后第 3 批 U09：详情读到坏消息时保留上次详情，并标明下面是旧的
-        const stale = code === PROTOCOL_ERROR && type === "mission_get_response" && state.detail !== null;
+        // 推后第 3 批 U09：详情、事件读到坏消息时保留上次的内容，并标明下面是旧的
+        const stale = code === PROTOCOL_ERROR && ((type === "mission_get_response" && state.detail !== null)
+          || (type === "mission_events_response" && (state.events[tracked ?? ""]?.length ?? 0) > 0));
         state.setError(stale ? message + STALE_NOTE : message);
       }
 

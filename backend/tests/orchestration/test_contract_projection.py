@@ -10,9 +10,10 @@ HTN §17.2（L856）"后端输出权威投影；前端用同一公开 Schema 验
 回 ``protocol_error`` 一句大白话，不带数据、不带原回执。合格回复照常出门。
 最后一条核"Host 用的包内 Schema 与仓库 SDK 源码（前端 import 的那一份）字节相同"。
 
-推后第 3 批 U09 加四个动词：执行图主画面（``taskgraph.execution_snapshot``）、回合详情
-（``taskgraph.execution_detail``）、任务列表（``mission_list``）、任务详情（``mission_get``）。
-另有一条产品同形：脚本化任务整圈跑完，四个动词经 ``handle`` 读出的真实数据全部合合同。
+推后第 3 批 U09 加七个动词：执行图主画面（``taskgraph.execution_snapshot``）、回合详情
+（``taskgraph.execution_detail``）、任务列表（``mission_list``）、任务详情（``mission_get``）、事件
+（``mission_events``）、待批准列表（``mission_approval_list``）、任务结束通知（``mission_notices``）。
+另有一条产品同形：脚本化任务整圈跑完，七个动词经 ``handle`` 读出的真实数据全部合合同。
 """
 
 from __future__ import annotations
@@ -112,6 +113,15 @@ class _Service:
         return self._control.assurance_snapshot({})["missions"]  # handlers 外面再包一层 {"missions": …}
 
     def mission_detail(self, mission_id: str) -> Any:
+        return self._control.assurance_snapshot({})
+
+    def events(self, mission_id: str, **_: Any) -> Any:
+        return self._control.assurance_snapshot({})
+
+    def approvals(self, mission_id: Any = None) -> Any:
+        return self._control.assurance_snapshot({})["approvals"]  # handlers 外面再包一层 {"approvals": …}
+
+    def pending_notices(self, body: Any = None) -> Any:
         return self._control.assurance_snapshot({})
 
 
@@ -220,6 +230,9 @@ def test_host_package_schemas_are_the_repo_files_the_frontend_imports() -> None:
         "graph/schemas/taskgraph-execution-detail-v1.schema.json",
         "assurance/contracts/host-mission-list-v1.schema.json",
         "assurance/contracts/host-mission-detail-v1.schema.json",
+        "assurance/contracts/host-mission-events-v1.schema.json",
+        "assurance/contracts/host-mission-approval-list-v1.schema.json",
+        "assurance/contracts/host-mission-notices-v1.schema.json",
     ]
     for name in names:
         assert (package / name).read_bytes() == (REPO_SDK / name).read_bytes(), name
@@ -279,8 +292,35 @@ def _detail(**extra: Any) -> dict[str, Any]:
     return detail
 
 
+_EVENTS = {"mission_id": "m1", "has_more": False, "through_seq": 9,
+           "events": [{"seq": 9, "type": "HumanCommentAdded", "created_at": 1791365208.4, "task_id": None,
+                       "attempt_id": None, "actor_type": "human", "summary": "看一下"}]}
+_APPROVAL = {"request_id": "ap-1", "kind": "action", "mission_id": "m1", "task_id": "t1", "state": "PENDING",
+             "level": "L2", "required_count": 1, "grant_count": 0, "expires_at": 1791369999.0, "topic": None,
+             "options": [], "summary": {"connector": "file_publish", "operation": "publish", "target": "README.md",
+                                        "params": {"artifact_path": "README.md"}, "reason": "发布",
+                                        "reason_source": "system"},
+             "created_at": 1791365208.4,
+             "action": {"connector": "file_publish", "operation": "publish", "target": "README.md",
+                        "params": {"artifact_path": "README.md"}, "params_hash": HASH, "state": "PROPOSED",
+                        "reason": {"text": "发布", "source": "model"}},
+             "comments": []}
+_NOTICE = {"notice_id": "ev-1", "mission_id": "m1", "state_version": 7, "notified_at": 1791365208.4,
+           "acked_at": None, "status": "COMPLETED", "status_zh": "已完成", "goal": "写一份 NOTES.md",
+           "stop_reason": None, "unresolved_actions": 0}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("verb,request_body,good,drifted", [
+    # 裁决后续做（推后第 3 批偏差裁决第 5 件）：另三个读动词
+    ("mission_events", {"mission_id": "m1"}, _EVENTS,
+     [{**_EVENTS, "events": [{**_EVENTS["events"][0], "payload": {"text": "原始正文"}}]},   # 原始正文不出门
+      {**_EVENTS, "has_more": "no"}]),
+    ("mission_approval_list", {}, {"approvals": [_APPROVAL]},
+     [{"approvals": [{**_APPROVAL, "binding": {"secret_path": "/x"}}]},
+      {"approvals": [{**_APPROVAL, "summary": "发布"}]}]),                                  # 模型的话没标来源
+    ("mission_notices", {}, [_NOTICE],
+     [[{**_NOTICE, "acked_at": 1791365300.0}], [{**_NOTICE, "unresolved_actions": "0"}], {"notices": [_NOTICE]}]),
     ("taskgraph.execution_snapshot", {"mission_id": "m1"}, _execution_page(),
      [_execution_page(execution_nodes=[{**_ATTEMPT, "debug_row": 1}]),        # 节点多字段
       _execution_page(execution_nodes=[{**_ATTEMPT, "kind": "magic"}]),       # 节点种类外
@@ -298,7 +338,7 @@ def _detail(**extra: Any) -> dict[str, Any]:
       _detail(event_count=None),
       _detail(internal_paths=["/tmp/x"])]),
 ])
-async def test_the_four_u09_verbs_go_out_only_inside_their_public_contract(verb, request_body, good, drifted) -> None:
+async def test_the_u09_verbs_go_out_only_inside_their_public_contract(verb, request_body, good, drifted) -> None:
     ok = await handle(_Service(good), verb, {"request_id": "u1", **request_body})
     assert ok["payload"]["ok"] is True, ok["payload"]
     assert ok["payload"]["data"] == good and ok["payload"]["data"] is not good
@@ -323,6 +363,8 @@ async def test_real_replies_of_a_finished_mission_fit_the_public_contracts(orche
         mission_id = service.create_mission(notes_mission())["mission_id"]
         await run_until_settled(service, mission_id)
         reads = [("mission_list", {}), ("mission_get", {"mission_id": mission_id}),
+                 ("mission_events", {"mission_id": mission_id, "limit": 200}),
+                 ("mission_approval_list", {}), ("mission_notices", {}),
                  ("taskgraph.execution_snapshot", {"mission_id": mission_id})]
         replies = {verb: (await handle(service, verb, body))["payload"] for verb, body in reads}
         for verb, payload in replies.items():

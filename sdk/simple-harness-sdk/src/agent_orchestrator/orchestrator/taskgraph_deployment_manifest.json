@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "15b0234f0cda008362a78a6ce9cc69113df81b5190e5ad3f37f8d3da08ac48ae",
+  "deployment_id": "44f2b9b662adfe5516bbedaa7fc580ecedc1fda5cd9f1643ea04704efbdf1405",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -32,11 +32,14 @@
     "agent_orchestrator/assurance/checks.py": "c3f4e191f8e27263d21271700c910fc68fd3b48c27278a20eedc24a0a1433949",
     "agent_orchestrator/assurance/clock.py": "545882fdb2a081e45f5a10d2625aadf577d72a2aabd8fd62289f50beaedf78ee",
     "agent_orchestrator/assurance/codec.py": "47ed18e20dfbdc11709c047244dcdd4b1fe745e7acc045ba73684b52b8a5fac1",
-    "agent_orchestrator/assurance/contracts/__init__.py": "e6fd06d1d4a7dcfc6b4f6d315f299a27c7ea125dadadcdb9da4b5f162ed99d15",
+    "agent_orchestrator/assurance/contracts/__init__.py": "6366695b8ffb23fee8d898e95593f6269ac98e875782aa01ec232c6a2bc210e6",
     "agent_orchestrator/assurance/contracts/common.schema.json": "aef103042c68c8cde4c499240c62a0c0694290ac8dad5dff1b055c7d0e64399b",
     "agent_orchestrator/assurance/contracts/host-error-v1.schema.json": "d1e9bd13f93f4f90f9922aafcd6bd37a5a40a20d6fe7ca2e0fd887d80e3e12c0",
+    "agent_orchestrator/assurance/contracts/host-mission-approval-list-v1.schema.json": "082f9a8b0c509665de285d26c664d2526d45033e7110458c78d887267bc79c8a",
     "agent_orchestrator/assurance/contracts/host-mission-detail-v1.schema.json": "308277b8ffe0372d6b65eca23b76c58034a71cf680e8c41e1e0c0256453b4205",
+    "agent_orchestrator/assurance/contracts/host-mission-events-v1.schema.json": "b8b1a1ae2cfde72e3df6ad4780dbf020937ed2830247e15434880c5a4881d80a",
     "agent_orchestrator/assurance/contracts/host-mission-list-v1.schema.json": "c9cc0b587d7e831af19db10ad8d1df1a477900b0242269541dbb1296a0157f7d",
+    "agent_orchestrator/assurance/contracts/host-mission-notices-v1.schema.json": "9eb8dfc53d114d11730d6c54179588eadf01ff130b01b4d2dc67f634ee45f7a6",
     "agent_orchestrator/assurance/contracts/host-response-v1.schema.json": "63d3e8b725c9953bca911ae6ab96901b845fec522edcd233518946553af1174f",
     "agent_orchestrator/assurance/contracts/host-review-request-v1.schema.json": "faa54259970abbaa12e78ea7faafb325d7fc18b93bad947e053bf015c131cd22",
     "agent_orchestrator/assurance/contracts/host-review-response-v1.schema.json": "ef03102521bd6f6d817eef7ff70fef068babb4c3e17b56f8e0949e4f5088fe01",

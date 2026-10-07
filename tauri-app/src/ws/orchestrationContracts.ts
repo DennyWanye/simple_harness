@@ -10,8 +10,8 @@
  * - `ControlChannel` 收到消息先过 `guardIncoming` 再分发：不合合同的回复换成协议错
  *   （`ok:false`、`error_code:"protocol_error"`、一句大白话），数据不往下传，界面保留上次画面。
  * - 只核形状（秩序），不判断内容对错。
- * - 推后第 3 批 U09 加四个动词：执行图主画面与回合详情（`graph/schemas/` 两份）、任务列表与任务详情
- *   （`assurance/contracts/` 里 Host DTO 合同处的 `host-mission-*-v1` 两份）。
+ * - 推后第 3 批 U09 加七个动词：执行图主画面与回合详情（`graph/schemas/` 两份）、任务列表、任务详情、
+ *   事件、待批准列表、任务结束通知（`assurance/contracts/` 里 Host DTO 合同处的 `host-mission-*-v1` 五份）。
  */
 import common from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/common.schema.json";
 import hostResponse from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-response-v1.schema.json";
@@ -27,6 +27,9 @@ import executionView from "../../../sdk/simple-harness-sdk/src/agent_orchestrato
 import executionDetail from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas/taskgraph-execution-detail-v1.schema.json";
 import missionList from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-list-v1.schema.json";
 import missionDetail from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-detail-v1.schema.json";
+import missionEvents from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-events-v1.schema.json";
+import missionApprovals from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-approval-list-v1.schema.json";
+import missionNotices from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-notices-v1.schema.json";
 
 type Schema = { [key: string]: unknown };
 
@@ -50,6 +53,9 @@ export const CONTRACT_SCHEMAS = {
   "taskgraph-execution-detail-v1": executionDetail as Schema,
   "host-mission-list-v1": missionList as Schema,
   "host-mission-detail-v1": missionDetail as Schema,
+  "host-mission-events-v1": missionEvents as Schema,
+  "host-mission-approval-list-v1": missionApprovals as Schema,
+  "host-mission-notices-v1": missionNotices as Schema,
 } as const;
 export type ContractName = keyof typeof CONTRACT_SCHEMAS;
 
@@ -58,6 +64,7 @@ const DOCUMENTS: Record<string, Schema> = {
   "common.schema.json": common as Schema,
   "taskgraph-view-v1.schema.json": graphView as Schema,
   "taskgraph-execution-view-v1.schema.json": executionView as Schema,
+  "host-mission-detail-v1.schema.json": missionDetail as Schema,
 };
 
 /** 动词 → 回复合同（与 Host projection.ASSURANCE_REPLIES / TASKGRAPH_REPLIES / MISSION_REPLIES 同表）。 */
@@ -73,6 +80,9 @@ const REPLIES: Record<string, ContractName> = {
   "taskgraph.execution_detail": "taskgraph-execution-detail-v1",
   mission_list: "host-mission-list-v1",
   mission_get: "host-mission-detail-v1",
+  mission_events: "host-mission-events-v1",
+  mission_approval_list: "host-mission-approval-list-v1",
+  mission_notices: "host-mission-notices-v1",
 };
 
 export const supportedKeywords: ReadonlySet<string> = new Set([
