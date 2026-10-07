@@ -1081,7 +1081,8 @@ export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlC
         这台机器上所有后台任务每个月合计可用的 token 上限（单个任务默认上限 2000 万、每一步 300 万不变）。
         任务的用量算在它建立的那个月；每月 1 日自动换成新的一个月，额度重新是满的。
         本月用完后新任务会在第一轮规划时停下、本月建立的任务也会停下；
-        在 config.toml 的 [orchestration] 里调大 global_monthly_max_tokens 并重启，重启后立即生效（在跑的任务也按新上限）。
+        在 config.toml 的 [orchestration] 里改 global_monthly_max_tokens 并重启，调大调小都在重启后立即生效（在跑的任务也按新上限）；
+        调小到低于某个月的已用量时，那个月建立、还在跑的任务（包括上个月建立的）会按“全局预算用完”停下。
       </p>
       <div role="status" data-testid="global-budget-status" style={{ ...statusStyle, color: data ? dark.text : dark.textMuted }}>
         {data === null ? (error ?? "读取中…")
