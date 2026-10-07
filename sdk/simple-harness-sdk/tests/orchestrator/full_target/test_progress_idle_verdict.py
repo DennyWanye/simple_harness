@@ -73,6 +73,8 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         _operation_dead_end=lambda mission: dead_end,
         _has_pending_assurance_work=lambda mission_id: False,
         _has_pending_planning_waits=lambda mission_id: False,
+        # 推后第 1 批 A26：签不出 PLAN 证书而不开轮的任务算合法等待（假编排器要带这张表）
+        _planning_evidence_waits={},
         _taskgraph_notifications=None,
         _note=notes.append,
         _unrecovered=set(),  # 阶段 B：恢复失败的任务这一轮不判空闲（假编排器要带这张表）
