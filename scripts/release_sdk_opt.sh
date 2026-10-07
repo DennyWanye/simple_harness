@@ -79,6 +79,7 @@ uv run --frozen python -m pytest -q -p no:cacheprovider tests/sdk_adapters/test_
   tests/orchestration/test_recovery_degraded_host.py tests/orchestration/test_recovery_isolated_host.py \
   tests/orchestration/test_global_budget_setting.py tests/orchestration/test_chat_mission_amend.py \
   tests/orchestration/test_assurance_quarantine.py \
+  tests/orchestration/test_contract_projection.py tests/orchestration/test_projection.py \
   tests/orchestration/test_diagnostics_contract.py tests/orchestration/test_mission_diagnostics.py 2>&1 | tail -1
 
 cd "$REPO"
