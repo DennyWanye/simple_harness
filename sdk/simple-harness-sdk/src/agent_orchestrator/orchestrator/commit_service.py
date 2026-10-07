@@ -233,6 +233,7 @@ class MissionSpec:
 class Reservation:
     tokens: int
     tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
+    search_calls: int = 0  # 推后第 3 批 H08：这次尝试预留的检索次数
 
 
 def mission_account(mission_id: str) -> str:
@@ -1854,6 +1855,7 @@ class CommitService(ProtectedTailCommitsMixin,
                 tokens=reservation.tokens,
                 counts_attempt=True,
                 tool_calls=reservation.tool_calls,
+                search_calls=reservation.search_calls,
             )
             attempt = Attempt(
                 id=attempt_id,

@@ -68,7 +68,7 @@ CLOSED_FIELDS = {
 OPEN_BUDGET = frozenset({"max_tokens", "max_attempts"})
 LIST_FIELDS = ("success_criteria", "stop_conditions", "untrusted_sources")
 CLOSED_BUDGET = frozenset(
-    {"max_runtime_seconds", "max_concurrency", "max_tool_calls"}
+    {"max_runtime_seconds", "max_concurrency", "max_tool_calls", "max_agents", "max_search_calls"}
 )
 MAX_EVENT_PAGE = 200
 MAX_ARTIFACT_BYTES = 256 * 1024

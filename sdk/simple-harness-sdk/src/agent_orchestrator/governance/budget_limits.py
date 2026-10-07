@@ -21,6 +21,8 @@ def inherit_limits(budget: Budget, parent: Budget) -> Budget:
         "max_concurrency",
         "max_runtime_seconds",
         "max_tool_calls",  # step 6 (D6-8): every dimension the parent bounds is inherited
+        "max_agents",  # 推后第 3 批 H08
+        "max_search_calls",
     ):
         if getattr(budget, name) is None and getattr(parent, name) is not None:
             changes[name] = getattr(parent, name)

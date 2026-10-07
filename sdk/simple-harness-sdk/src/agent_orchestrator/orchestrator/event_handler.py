@@ -848,6 +848,7 @@ class Orchestrator:
                                     handover=self._knowledge_handover(mission_id, reader))
             )
             self._assembled.gateway.executed_counter = self.store.count_tool_calls
+            self._assembled.gateway.search_counter = self.store.count_search_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
             self._bind_startup_tools()
             try:
@@ -5623,6 +5624,8 @@ class Orchestrator:
                 tuple(config.get("allowed_tools", WORKER_TOOLS)),
                 tuple(str(p) for p in config.get("untrusted_sources", ())),
                 max_tool_calls=None if cap is None else int(cap),
+                max_search_calls=(None if config.get("max_search_calls") is None
+                                  else int(config["max_search_calls"])),
                 mission_id=attempt.mission_id,
                 protected=self._read_only_inputs(str(config["attempt_id"])),
                 protected_prefixes=tuple(config.get("source_roots", ())),
@@ -9248,6 +9251,28 @@ class Orchestrator:
                 spent_room = left if spent_room is None else min(spent_room, left)
         return reservable, spent_room
 
+    def _search_call_room(self, mission: Mission, task: Task) -> int | None:
+        """推后第 3 批 H08：Task → Mission → Global 链上检索次数还能预留多少（不小于 0）；
+        链上都不限时为 None（不预留、网关不拦）。"""
+
+        room: int | None = None
+        with self.store.transaction():
+            accounts = [task_account(task.id), mission_account(mission.id)]
+            try:
+                parent = self.commit.ledger.account(mission_account(mission.id)).parent_id
+            except BudgetError:
+                parent = None
+            if parent is not None:
+                accounts.append(parent)
+            for account_id in accounts:
+                try:
+                    left = self.commit.ledger.account(account_id).remaining_search_calls()
+                except BudgetError:
+                    continue
+                if left is not None:
+                    room = max(0, left) if room is None else max(0, min(room, left))
+        return room
+
     def _tool_calls_limited(self, mission: Mission, task: Task) -> bool:
         """Whether any account on the Task's chain caps tool calls (only then is a
         reservation meaningful; an unlimited dimension is never reserved)."""
@@ -10733,6 +10758,8 @@ class Orchestrator:
                     self._note(f"task {task.id}: tool calls all reserved in flight; waiting")
                     return False
                 tool_cap = min(tool_cap, reservable)
+        # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
+        search_cap = self._search_call_room(mission, task)
         config = AgentConfig(
             name=f"{role.name}-{placeholder.ordinal}",
             instructions=role.instructions,
@@ -10801,6 +10828,7 @@ class Orchestrator:
                 reservation=replace(
                     self._reservation(tokens),
                     tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
+                    search_calls=search_cap or 0,
                 ),
                 runtime_profile_id=decision.profile_id,
                 routing=decision.to_json(),
@@ -10811,6 +10839,7 @@ class Orchestrator:
                     "allowed_tools": list(allowed),
                     **self._service_config(decision),
                     "max_tool_calls": tool_cap,
+                    **({} if search_cap is None else {"max_search_calls": search_cap}),
                     "context_version": package.context_version,
                     "prompt_version": role.prompt_version,
                     "policy_version_id": self.policy_version_of(mission.id),

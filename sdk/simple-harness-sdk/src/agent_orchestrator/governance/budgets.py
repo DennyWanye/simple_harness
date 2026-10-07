@@ -75,6 +75,20 @@ class AccountSnapshot:
     reserved_tool_calls: int = 0
     settled_tool_calls: int = 0
     reserved_attempts: int = 0
+    # 推后第 3 批 H08：真起过的执行者会话数（只增不退）与检索类工具的预留 / 结清
+    agents_started: int = 0
+    reserved_search_calls: int = 0
+    settled_search_calls: int = 0
+
+    def remaining_agents(self) -> int | None:
+        if self.limits.max_agents is None:
+            return None
+        return self.limits.max_agents - self.agents_started
+
+    def remaining_search_calls(self) -> int | None:
+        if self.limits.max_search_calls is None:
+            return None
+        return self.limits.max_search_calls - self.reserved_search_calls - self.settled_search_calls
 
     def remaining_tool_calls(self) -> int | None:
         if self.limits.max_tool_calls is None:
@@ -104,6 +118,11 @@ class AccountSnapshot:
             "reserved_tool_calls": self.reserved_tool_calls,
             "settled_tool_calls": self.settled_tool_calls,
             "remaining_tool_calls": self.remaining_tool_calls(),
+            "agents_started": self.agents_started,
+            "remaining_agents": self.remaining_agents(),
+            "reserved_search_calls": self.reserved_search_calls,
+            "settled_search_calls": self.settled_search_calls,
+            "remaining_search_calls": self.remaining_search_calls(),
             "remaining_tokens": self.remaining_tokens(),
             "remaining_attempts": self.remaining_attempts(),
             "version": self.version,
@@ -173,6 +192,9 @@ class BudgetLedger:
             settled_tool_calls=int(row["settled_tool_calls"] or 0),
             # Pre-system-tail libraries cannot contain reserved attempt pools.
             reserved_attempts=int(row["reserved_attempts"]) if "reserved_attempts" in row.keys() else 0,
+            agents_started=int(row["agents_started"]),
+            reserved_search_calls=int(row["reserved_search_calls"]),
+            settled_search_calls=int(row["settled_search_calls"]),
         )
 
     def _chain(self, account_id: str) -> list[AccountSnapshot]:
@@ -204,8 +226,12 @@ class BudgetLedger:
         counts_attempt: bool,
         tool_calls: int = 0,
         mission_id: str | None = None,
+        search_calls: int = 0,
     ) -> str:
-        """Reserve ``tokens`` (/ ``tool_calls``) on ``account_id`` and every ancestor.
+        """Reserve ``tokens`` (/ ``tool_calls`` / ``search_calls``) on ``account_id`` and every ancestor.
+
+        ``counts_attempt`` marks an executor Attempt: it also starts one executor session,
+        checked against ``max_agents`` and never given back (推后第 3 批 H08).
 
         Idempotent per ``subject_id``: a second call returns the existing reservation.
         Fails closed on the first dimension that does not fit (§18.3: 避免并发 Agent 同时超支).
@@ -230,12 +256,23 @@ class BudgetLedger:
                 raise BudgetExhausted(
                     snapshot.account_id, "tool_calls", tool_calls, remaining_calls
                 )
+            if counts_attempt:
+                remaining_agents = snapshot.remaining_agents()
+                if remaining_agents is not None and remaining_agents < 1:
+                    raise BudgetExhausted(snapshot.account_id, "agents", 1, remaining_agents)
+            remaining_search = snapshot.remaining_search_calls()
+            if remaining_search is not None and search_calls > remaining_search:
+                raise BudgetExhausted(
+                    snapshot.account_id, "search_calls", search_calls, remaining_search
+                )
         for snapshot in chain:
             self._apply(
                 snapshot.account_id,
                 reserved_tokens=tokens,
                 reserved_tool_calls=tool_calls,
                 attempts_created=1 if counts_attempt else 0,
+                agents_started=1 if counts_attempt else 0,
+                reserved_search_calls=search_calls,
             )
         reservation_id = f"reservation-{subject_id}"
         if (
@@ -247,8 +284,8 @@ class BudgetLedger:
             )
         self._store.connection.execute(
             "INSERT INTO budget_reservations(reservation_id,account_id,mission_id,subject_id,state,"
-            "reserved_tokens,reserved_tool_calls,created_at,updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
+            "reserved_tokens,reserved_tool_calls,reserved_search_calls,created_at,updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 reservation_id,
                 account_id,
@@ -257,6 +294,7 @@ class BudgetLedger:
                 "RESERVED",
                 tokens,
                 tool_calls,
+                search_calls,
                 self._store.now,
                 self._store.now,
             ),
@@ -389,6 +427,7 @@ class BudgetLedger:
             # ORCH §12.2: an UNKNOWN charge keeps the reservation occupied until reconciled.
             raise BudgetError(f"{subject_id} has an unknown provider charge; reservation held")
         tokens = self.usage_for(subject_id)
+        searches = self._store.count_search_calls(subject_id)  # H08: the tool-call table's fact
         for snapshot in self._chain(reservation["account_id"]):
             self._apply(
                 snapshot.account_id,
@@ -396,11 +435,13 @@ class BudgetLedger:
                 reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
                 settled_tokens=tokens,
                 settled_tool_calls=int(tool_calls),
+                reserved_search_calls=-int(reservation.get("reserved_search_calls") or 0),
+                settled_search_calls=searches,
             )
         self._store.connection.execute(
             "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
-            " settled_tool_calls = ?, updated_at = ? WHERE subject_id = ?",
-            (tokens, int(tool_calls), self._store.now, subject_id),
+            " settled_tool_calls = ?, settled_search_calls = ?, updated_at = ? WHERE subject_id = ?",
+            (tokens, int(tool_calls), searches, self._store.now, subject_id),
         )
         settled = self.reservation(subject_id)
         assert settled is not None
@@ -422,6 +463,7 @@ class BudgetLedger:
             return reservation
         known_tokens = self.known_usage_for(subject_id)
         tokens = max(int(reservation["reserved_tokens"]), int(known_tokens))
+        searches = self._store.count_search_calls(subject_id)  # H08: executed calls are known facts
         for snapshot in self._chain(reservation["account_id"]):
             self._apply(
                 snapshot.account_id,
@@ -429,11 +471,13 @@ class BudgetLedger:
                 reserved_tool_calls=-int(reservation.get("reserved_tool_calls") or 0),
                 settled_tokens=tokens,
                 settled_tool_calls=0,
+                reserved_search_calls=-int(reservation.get("reserved_search_calls") or 0),
+                settled_search_calls=searches,
             )
         self._store.connection.execute(
             "UPDATE budget_reservations SET state = 'SETTLED', settled_tokens = ?,"
-            " settled_tool_calls = 0, updated_at = ? WHERE subject_id = ?",
-            (tokens, self._store.now, subject_id),
+            " settled_tool_calls = 0, settled_search_calls = ?, updated_at = ? WHERE subject_id = ?",
+            (tokens, searches, self._store.now, subject_id),
         )
         settled = self.reservation(subject_id)
         assert settled is not None

@@ -21,6 +21,7 @@ import asyncio
 import posixpath
 import re
 from .domain_tools import DomainTool
+from ..contracts.models import SEARCH_TOOL_NAMES
 
 from bisect import bisect_right
 from collections.abc import Callable, Mapping
@@ -314,6 +315,8 @@ class WorkspaceBinding:
     allowed_tools: tuple[str, ...]
     untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes marked as data
     max_tool_calls: int | None = None  # step 6 (D6-7 ⑤ / D6-8): the reserved tool-call cap
+    # 推后第 3 批 H08：这次尝试预留的检索次数（``SEARCH_TOOL_NAMES``）；None = 不限
+    max_search_calls: int | None = None
     protected: tuple[str, ...] = ()  # step 6 (D6-6): read-only upstream inputs of this Attempt
     denied_prefixes: tuple[str, ...] = ()  # step 6 (D6-7): the deployment's denied paths
     protected_prefixes: tuple[str, ...] = ()  # Source directories: readable, never writable.
@@ -495,6 +498,7 @@ class WorkspaceToolGateway:
         # per-Attempt cap is checked against that durable count (it survives a restart)
         self.on_executed: Callable[[str, Mapping[str, Any]], None] | None = None
         self.executed_counter: Callable[[str], int] | None = None
+        self.search_counter: Callable[[str], int] | None = None  # H08: durable executed search calls
         self.execution_refusal: Callable[[str], str | None] | None = None
         self.executed_lookup: Callable[[str], Mapping[str, Any] | None] | None = None
         self.before_execute: Callable[[WorkspaceBinding], None] | None = None
@@ -777,6 +781,27 @@ class WorkspaceToolGateway:
                     else f"this Attempt may execute at most {binding.max_tool_calls} tool calls"
                 ),
             )
+        # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
+        if call.name in SEARCH_TOOL_NAMES and binding.max_search_calls is not None:
+            searched = (
+                self.search_counter(binding.attempt_id)
+                if self.search_counter is not None and binding.view == "work"
+                else sum(1 for item in self.calls if item.get("run_id") == run_id
+                         and item.get("tool") in SEARCH_TOOL_NAMES
+                         and str(item.get("outcome", "")).startswith("succeeded"))
+            )
+            if searched >= binding.max_search_calls:
+                return self._reject(
+                    call,
+                    record,
+                    code="search_budget_exhausted",
+                    outcome="rate_limited",
+                    stage="rate",
+                    message=(
+                        f"本次尝试的检索次数已用完（最多 {binding.max_search_calls} 次）："
+                        "检索类工具不再可用，其余工具照常；请用已有信息继续。"
+                    ),
+                )
         # Re-read the original Attempt control and temporary graph fence immediately
         # before physical work. It never changes an already handed-off effect.
         if self.before_execute is not None:

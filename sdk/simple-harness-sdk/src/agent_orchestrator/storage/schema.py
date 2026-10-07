@@ -1639,6 +1639,16 @@ DROP INDEX IF EXISTS assurance_dependency_reverse_idx;
 DROP TABLE IF EXISTS assurance_dependency_index;
 """
 
+# 推后第 3 批 H08（2026-10-07，原文 §5 ``max_agents``、§18.1）：预算补"执行者数""搜索次数"两维。
+# 执行者数只增不退（真起过的执行者会话）；搜索次数照工具次数的办法预留与结清。
+DDL_V48 = """
+ALTER TABLE budget_accounts ADD COLUMN agents_started INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budget_accounts ADD COLUMN reserved_search_calls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budget_accounts ADD COLUMN settled_search_calls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budget_reservations ADD COLUMN reserved_search_calls INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE budget_reservations ADD COLUMN settled_search_calls INTEGER;
+"""
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "orchestrator-step02", DDL_V1),
     Migration(2, "orchestrator-step04", DDL_V2),
@@ -1687,6 +1697,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(45, "orchestrator-knowledge-validity-uses-level", DDL_V45),
     Migration(46, "orchestrator-recovery-protocol-and-sandbox-identity", DDL_V46),
     Migration(47, "orchestrator-drop-assurance-dependency-index", DDL_V47),
+    Migration(48, "orchestrator-budget-agents-and-search-calls", DDL_V48),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 SCHEMA_NAME = MIGRATIONS[-1].name

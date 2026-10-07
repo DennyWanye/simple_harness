@@ -1257,6 +1257,19 @@ class Store:
             ("call_key", "subject_id", "mission_id", "tool", "outcome"), row, strict=True
         ))
 
+    def count_search_calls(self, subject_id: str) -> int:
+        """推后第 3 批 H08：这个主体真执行过的检索类工具调用数（``SEARCH_TOOL_NAMES``）。"""
+
+        from ..contracts.models import SEARCH_TOOL_NAMES
+
+        names = sorted(SEARCH_TOOL_NAMES)
+        row = self._connection.execute(
+            "SELECT COUNT(*) FROM tool_calls WHERE subject_id = ? AND outcome = 'succeeded'"
+            f" AND tool IN ({','.join('?' for _ in names)})",
+            (subject_id, *names),
+        ).fetchone()
+        return int(row[0])
+
     def count_tool_calls(self, subject_id: str, *, outcome: str = "succeeded") -> int:
         row = self._connection.execute(
             "SELECT COUNT(*) FROM tool_calls WHERE subject_id = ? AND outcome = ?",
