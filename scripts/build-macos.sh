@@ -48,11 +48,12 @@ for _ in $(seq 1 90); do
   kill -0 "$BACKEND_PID" 2>/dev/null || break
   sleep 2
 done
+# "启动完成"不够：编排服务、成长功能等子系统失败只记一条 error、后台照样起来（2026-10-08 实测
+# 漏过）。在停后台之前看，关后台时 MCP 收尾的报错栈不算。
+if grep -qE "orchestration service failed to start|growth_authority_cutover_failed|Traceback" "$SMOKE/backend.out"; then ok=0; fi
 kill -TERM "$BACKEND_PID" 2>/dev/null || true
 for _ in $(seq 1 15); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
 kill -KILL "$BACKEND_PID" 2>/dev/null || true
-# "启动完成"不够：编排服务等子系统失败只记一条 error、后台照样起来（2026-10-08 实测漏过）
-if grep -qE "orchestration service failed to start|Traceback" "$SMOKE/backend.out"; then ok=0; fi
 if [ "$ok" != 1 ]; then
   cp "$SMOKE/backend.out" "$REPO/backend/build/smoke-macos.out"
   rm -rf "$SMOKE"

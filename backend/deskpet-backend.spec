@@ -320,6 +320,25 @@ def _collect_startup_resources(repository):
 # (source, dest-inside-bundle) tuples. Use collect_data_files() for
 # installed packages; hardcode relative paths for our own repo files.
 datas: list[tuple[str, str]] = []
+# 执行图部署验收（Host 启动时 InstalledHtnWiringAcceptance 按 SDK 部署清单逐字节核对 714 个
+# 源文件）：清单里登记的每个文件都原样带进包里，只作数据、不额外导入（如 simple_harness/testing，
+# 上面按生产模块过滤没收进来）。缺一个，编排服务整个不开（2026-10-08 macOS 正式包实测）。
+def _taskgraph_manifest_sources():
+    import json as _json
+    import agent_orchestrator.orchestrator as _orchestrator
+
+    _site = Path(_orchestrator.__file__).resolve().parents[2]
+    _manifest = _json.loads((Path(_orchestrator.__file__).parent / "taskgraph_deployment_manifest.json").read_text(encoding="utf-8"))
+    _entries = []
+    for _name in sorted(_manifest["source_files"]):
+        _source = _site / _name
+        if not _source.is_file():
+            raise RuntimeError(f"installed SDK lacks a deployment-manifest source: {_name}")
+        _entries.append((str(_source), str(Path(_name).parent)))
+    return _entries
+
+
+datas += _taskgraph_manifest_sources()
 datas.append((str(_host_identity_path), "."))
 datas += _collect_startup_resources(_repo_root)
 datas += copy_metadata("simple-harness-sdk")

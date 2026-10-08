@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
@@ -276,6 +277,16 @@ def authority_accepts_handler(
     durable identity itself.
     """
 
+    if getattr(sys, "frozen", False):
+        # 冻结包（PyInstaller）里没有仓库目录，处理器也多半只有字节码：按定义它的模块名对上
+        # 清单里登记的 ``backend/<模块路径>.py``。字节身份由构建清单本身保证，这里只做准入
+        # （2026-10-08 macOS 正式包：否则核心处理器全落空，成长功能切换失败）。
+        module = inspect.getmodule(handler)
+        name = str(getattr(module, "__name__", "") or "")
+        if not name:
+            return False
+        stem = "backend/" + name.replace(".", "/")
+        return bool({stem + ".py", stem + "/__init__.py"} & {path for path, _digest in authority.build.artifacts})
     try:
         source = Path(str(inspect.getsourcefile(handler) or "")).resolve(strict=True)
     except (OSError, TypeError, ValueError):

@@ -333,3 +333,22 @@ def test_known_name_with_unhashed_callable_is_not_blessed() -> None:
     assert spec.stable_handler_id == ""
     assert spec.execution_build_identity is None
     assert spec.effect_class is EffectClass.UNKNOWN
+
+
+def test_a_frozen_backend_admits_core_handlers_by_their_registered_module(monkeypatch):
+    """2026-10-08 macOS 正式包：冻结包里没有仓库目录和源文件，按源文件路径比对会让核心处理器
+    全部落空（成长功能切换报 handler set mismatch）。冻结时按定义处理器的模块名对上清单登记的
+    ``backend/<模块>.py``；不在清单里的模块照样拒绝。
+
+    **改坏检验**：去掉冻结分支 → 第一条断言红。"""
+    import sys as _sys
+
+    from deskpet.tools.build_identity import authority_accepts_handler, core_authority_for_tool
+    from deskpet.tools.os_tools.process_tools import process_list
+
+    authority = core_authority_for_tool("process_list")
+    assert authority is not None
+    monkeypatch.setattr(_sys, "frozen", True, raising=False)
+    monkeypatch.setattr("inspect.getsourcefile", lambda _obj: None)  # 冻结包里拿不到源文件
+    assert authority_accepts_handler(authority, process_list)
+    assert not authority_accepts_handler(authority, json.dumps)
