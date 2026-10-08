@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import io
 import inspect
 import json
@@ -49,6 +50,15 @@ from .store import (
     CapabilityStoreConflict,
     CapabilityVersionRecord,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityRehydrateFailure:
+    """An installed pack that could not be rebuilt at startup and was skipped."""
+
+    record: Any
+    code: str
+    message: str
 
 
 class CapabilityManagerError(RuntimeError):
@@ -411,6 +421,9 @@ def _intent_id(operation_id: str) -> str:
 
 class CapabilityPackManager:
     """Run the fixed package lifecycle with durable phase intents."""
+
+    #: installed packs skipped at the last rehydrate, by name (shown as unavailable)
+    rehydrate_failures: tuple[CapabilityRehydrateFailure, ...] = ()
 
     def __init__(
         self,
@@ -2944,57 +2957,79 @@ class CapabilityPackManager:
     async def rehydrate_active_bindings(
         self,
     ) -> tuple[CapabilityPublication, ...]:
-        """Rebuild the process-local registry from durable active bindings."""
+        """Rebuild the process-local registry from durable active bindings.
+
+        One installed pack that cannot be rebuilt (its directory is gone, its files or
+        tool fingerprints no longer match) is skipped and kept in ``rehydrate_failures``
+        by name; the other packs and the rest of the app still start (试用前 2026-10-08
+        用户定：跳过坏包、在技能中心标"不可用"). The skipped pack is never published,
+        so nothing of it can run."""
 
         await self.initialize()
         publications: list[CapabilityPublication] = []
+        failures: list[CapabilityRehydrateFailure] = []
         async with self.publish_lock:
             for record in await self.store.list_active_versions():
-                operation_id = hashlib.sha256(
-                    (
-                        "capability-rehydrate|"
-                        f"{record.descriptor.capability_id}|"
-                        f"{record.descriptor.version}|"
-                        f"{record.descriptor.manifest_hash}"
-                    ).encode("utf-8")
-                ).hexdigest()
-                prepare_rehydrate = getattr(
-                    self.publisher,
-                    "prepare_installed_for_rehydrate",
-                    None,
-                )
-                if callable(prepare_rehydrate):
-                    candidate, legacy_schema = await prepare_rehydrate(
-                        record,
-                        operation_id=operation_id,
+                try:
+                    publication = await self._rehydrate_one(record)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - one pack's fault is that pack's
+                    code = str(getattr(error, "code", "") or type(error).__name__)
+                    failures.append(CapabilityRehydrateFailure(record=record, code=code, message=str(error)[:300]))
+                    logging.getLogger(__name__).error(
+                        "capability_rehydrate_skipped pack=%s version=%s code=%s error=%s",
+                        record.descriptor.capability_id, record.descriptor.version, code, str(error)[:300],
                     )
-                    if legacy_schema is not None:
-                        await self.store.migrate_version_tool_fingerprint_schema(
-                            pack_id=record.descriptor.capability_id,
-                            version=record.descriptor.version,
-                            manifest_hash=record.descriptor.manifest_hash,
-                            expected_fingerprints=(
-                                record.expected_tool_fingerprints
-                            ),
-                            replacement_fingerprints=(
-                                candidate.tool_spec_fingerprints
-                            ),
-                        )
-                else:
-                    candidate = await self.publisher.prepare_installed(
-                        record,
-                        operation_id=operation_id,
-                    )
-                publications.append(
-                    await self.publisher.publish(
-                        candidate,
-                        operation_id=operation_id,
-                    )
-                )
+                    continue
+                publications.append(publication)
+        self.rehydrate_failures = tuple(failures)
         return tuple(publications)
+
+    async def _rehydrate_one(self, record: Any) -> CapabilityPublication:
+        operation_id = hashlib.sha256(
+            (
+                "capability-rehydrate|"
+                f"{record.descriptor.capability_id}|"
+                f"{record.descriptor.version}|"
+                f"{record.descriptor.manifest_hash}"
+            ).encode("utf-8")
+        ).hexdigest()
+        prepare_rehydrate = getattr(
+            self.publisher,
+            "prepare_installed_for_rehydrate",
+            None,
+        )
+        if callable(prepare_rehydrate):
+            candidate, legacy_schema = await prepare_rehydrate(
+                record,
+                operation_id=operation_id,
+            )
+            if legacy_schema is not None:
+                await self.store.migrate_version_tool_fingerprint_schema(
+                    pack_id=record.descriptor.capability_id,
+                    version=record.descriptor.version,
+                    manifest_hash=record.descriptor.manifest_hash,
+                    expected_fingerprints=(
+                        record.expected_tool_fingerprints
+                    ),
+                    replacement_fingerprints=(
+                        candidate.tool_spec_fingerprints
+                    ),
+                )
+        else:
+            candidate = await self.publisher.prepare_installed(
+                record,
+                operation_id=operation_id,
+            )
+        return await self.publisher.publish(
+            candidate,
+            operation_id=operation_id,
+        )
 
 
 __all__ = [
+    "CapabilityRehydrateFailure",
     "CapabilityCandidate",
     "CapabilityEnvironmentPreparer",
     "CapabilityInstallResult",

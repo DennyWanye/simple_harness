@@ -2764,22 +2764,35 @@ class CapabilityPlatform:
                         "first_party_source_invalid",
                         f"{manifest.id} must declare source.type=builtin",
                     )
-                installed.append(
-                    await self.manager.install(
-                        PackSourceRequest(
-                            source_type="builtin",
-                            uri=str(pack_root),
-                            revision=manifest.source.revision,
-                        ),
-                        scope="builtin",
-                        scope_key="builtin",
-                        idempotency_key=(
-                            "first-party:"
-                            f"{manifest.id}:{manifest.version}:{manifest.manifest_hash}"
-                        ),
-                        expected_pack_id=manifest.id,
+                try:
+                    installed.append(
+                        await self.manager.install(
+                            PackSourceRequest(
+                                source_type="builtin",
+                                uri=str(pack_root),
+                                revision=manifest.source.revision,
+                            ),
+                            scope="builtin",
+                            scope_key="builtin",
+                            idempotency_key=(
+                                "first-party:"
+                                f"{manifest.id}:{manifest.version}:{manifest.manifest_hash}"
+                            ),
+                            expected_pack_id=manifest.id,
+                        )
                     )
-                )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - one pack's fault is that pack's
+                    # 试用前 2026-10-08：已装副本坏了（目录被挪走/删掉）的自带包按名跳过，
+                    # 不拖垮整个平台；它在恢复那一步已记进 ``rehydrate_failures``、技能中心标"不可用"。
+                    logging.getLogger(__name__).error(
+                        "first_party_pack_install_skipped pack=%s code=%s error=%s",
+                        manifest.id,
+                        getattr(exc, "code", type(exc).__name__),
+                        str(exc)[:300],
+                    )
+                    continue
             result = CapabilityPlatformInitialization(
                 recovered_operations=tuple(recovered),
                 rehydrated_publications=tuple(rehydrated),

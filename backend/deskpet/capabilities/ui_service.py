@@ -75,6 +75,14 @@ def _binding_from_projection(
         return None
 
 
+def _unavailable_after_rehydrate(failure: Any) -> dict[str, Any]:
+    return {
+        "health": "unavailable",
+        "health_summary": f"启动时没能载入，已跳过（{failure.code}）。安装目录可能被移动或删除，请重新安装。",
+        "available_actions": [],
+    }
+
+
 class CapabilityCenterService:
     """Read-model and exact task owner for the Capability Center."""
 
@@ -151,6 +159,29 @@ class CapabilityCenterService:
             ):
                 continue
             item["manifest"] = project_pack_manifest(manifest)
+        # 启动时没能恢复、已跳过的已装包（试用前 2026-10-08）：标"不可用"并写明原因；
+        # 当前快照里没有它的，照样列出来。
+        failed = {
+            failure.record.descriptor.capability_id: failure
+            for failure in getattr(self.manager, "rehydrate_failures", ())
+        }
+        for item in projected:
+            failure = failed.pop(str(item.get("capability_id")), None)
+            if failure is not None:
+                item.update(_unavailable_after_rehydrate(failure))
+        for failure in failed.values():
+            descriptor = failure.record.descriptor
+            projected.append({
+                "capability_id": descriptor.capability_id,
+                "name": descriptor.display_name,
+                "description": descriptor.description,
+                "categories": ["pack"],
+                "version": descriptor.version,
+                "source": {"type": "local", "label": str(failure.record.install_path)[-120:]},
+                "scope": "user",
+                "installed": True,
+                **_unavailable_after_rehydrate(failure),
+            })
         return projected
 
     async def _rollback_target(

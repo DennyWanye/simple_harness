@@ -332,11 +332,50 @@ async def test_platform_rejects_unknown_fingerprint_drift_on_rehydrate(
         register_control_surface=False,
         command_finder=lambda _name: None,
     )
-    with pytest.raises(CapabilityManagerError) as raised:
-        await restarted.initialize()
+    # 试用前 2026-10-08 用户定：坏的已装包按名跳过、不发布，其余照常启动（原来整个平台失败）。
+    await restarted.initialize()
+    [failure] = restarted.manager.rehydrate_failures
+    assert failure.code == "installed_tool_fingerprint_mismatch"
+    assert failure.record.descriptor.capability_id == record.descriptor.capability_id
+    assert not {spec.name for spec in restarted.registry.catalog_snapshot().specs} & {
+        "godot__detect", "godot__project_check"}
+    await restarted.shutdown()
 
-    assert raised.value.code == "installed_tool_fingerprint_mismatch"
-    assert await restarted.shutdown() == ()
+
+@pytest.mark.asyncio
+async def test_a_pack_whose_install_directory_is_gone_is_skipped_and_listed_unavailable(
+    tmp_path: Path,
+) -> None:
+    """试用前第 4 步发现：已装包的目录被挪走/删掉，整个后台起不来。现在跳过它、其余照常，
+    技能中心把它列成"不可用"并写明原因。
+
+    **改坏检验**：恢复循环不接单个包的异常 → ``initialize`` 抛 ``FileNotFoundError``，变红。"""
+    from deskpet.capabilities.ui_service import CapabilityCenterService
+
+    platform, store, _registry = await _platform(tmp_path, pack_root=GODOT_PACK)
+    await platform.initialize()
+    record = (await store.list_active_versions())[0]
+    await platform.shutdown()
+    shutil.rmtree(record.install_path)
+
+    restarted = CapabilityPlatform(
+        registry=ToolRegistry(),
+        store=store,
+        user_data_root=platform.manager.layout.root.parent,
+        environment=TEST_ENVIRONMENT,
+        first_party_pack_roots=(),
+        register_control_surface=False,
+        command_finder=lambda _name: None,
+    )
+    await restarted.initialize()
+    [failure] = restarted.manager.rehydrate_failures
+    assert failure.record.descriptor.capability_id == record.descriptor.capability_id
+    service = CapabilityCenterService(store=store, manager=restarted.manager, hub=restarted.hub)
+    listed = {item["capability_id"]: item for item in await service.list_capabilities()}
+    shown = listed[record.descriptor.capability_id]
+    assert shown["health"] == "unavailable" and "已跳过" in shown["health_summary"]
+    assert shown["available_actions"] == []
+    await restarted.shutdown()
 
 
 @pytest.mark.asyncio
@@ -377,10 +416,10 @@ async def test_healthcheck_crash_is_isolated_and_never_published(
         tmp_path, pack_root=pack, runtime=runtime
     )
 
-    with pytest.raises(CapabilityManagerError) as raised:
-        await platform.initialize()
+    # 试用前 2026-10-08 用户定：坏包按名跳过、不发布，平台其余照常启动（原来整个平台失败）。
+    initialized = await platform.initialize()
 
-    assert raised.value.code == "capability_healthcheck_failed"
+    assert initialized.first_party_installs == ()
     assert registry.catalog_snapshot().specs == ()
     # The failed one-shot worker lease is already settled; shutdown has no
     # broad process-name cleanup to perform.
