@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "../../backend/dist/deskpet-backend": "backend"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}
