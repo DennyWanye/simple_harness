@@ -1798,11 +1798,14 @@ async def _complete_growth_authority_cutover() -> None:
                     "reminder_registry_reconciler_unavailable"
                 )
             reconciler()
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "growth_authority_cutover_failed",
             phase=router.current.phase.value,
             operation_id=cutover_plan.cutover_operation_id,
+            # 日志脱敏会去掉异常栈；留下类型与简短原因，否则装机版无从诊断（2026-10-08）
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
         )
         # Growth remains visibly paused/retired; ordinary conversation stays
         # available and must not resurrect a legacy writer.

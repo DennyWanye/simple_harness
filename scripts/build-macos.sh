@@ -44,13 +44,15 @@ DESKPET_USER_DATA_DIR="$SMOKE/userdata" DESKPET_USER_LOG_DIR="$SMOKE/logs" DESKP
 BACKEND_PID=$!
 ok=0
 for _ in $(seq 1 90); do
-  if grep -q "startup complete" "$SMOKE/backend.out" 2>/dev/null; then ok=1; break; fi
+  if grep -q "startup complete" "$SMOKE/backend.out" 2>/dev/null; then ok=1; sleep 5; break; fi
   kill -0 "$BACKEND_PID" 2>/dev/null || break
   sleep 2
 done
 kill -TERM "$BACKEND_PID" 2>/dev/null || true
 for _ in $(seq 1 15); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
 kill -KILL "$BACKEND_PID" 2>/dev/null || true
+# "启动完成"不够：编排服务等子系统失败只记一条 error、后台照样起来（2026-10-08 实测漏过）
+if grep -qE "orchestration service failed to start|Traceback" "$SMOKE/backend.out"; then ok=0; fi
 if [ "$ok" != 1 ]; then
   cp "$SMOKE/backend.out" "$REPO/backend/build/smoke-macos.out"
   rm -rf "$SMOKE"
@@ -60,5 +62,17 @@ rm -rf "$SMOKE"
 
 echo "== 4/4 打 .app 与 .dmg"
 cd "$REPO/tauri-app"
-npx tauri build --bundles app,dmg --config src-tauri/tauri.macos-release.conf.json </dev/null
-ls -la "$REPO/tauri-app/src-tauri/target/release/bundle/dmg/"
+npx tauri build --bundles app --config src-tauri/tauri.macos-release.conf.json </dev/null
+# .dmg 用系统 hdiutil 直接做：Tauri 的 bundle_dmg.sh 要驱动 Finder 摆图标，无人值守时常失败。
+BUNDLE=$REPO/tauri-app/src-tauri/target/release/bundle
+APP=$BUNDLE/macos/SimpleHarness.app
+VERSION=$(python3 -c "import json;print(json.load(open('$REPO/tauri-app/src-tauri/tauri.conf.json'))['version'])")
+DMG=$BUNDLE/dmg/SimpleHarness_${VERSION}_aarch64.dmg
+STAGE=$(mktemp -d)
+cp -cR "$APP" "$STAGE/"            # APFS 克隆，不占空间
+ln -s /Applications "$STAGE/Applications"
+mkdir -p "$BUNDLE/dmg"
+rm -f "$DMG"
+hdiutil create -volname "SimpleHarness" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
+ls -la "$DMG"

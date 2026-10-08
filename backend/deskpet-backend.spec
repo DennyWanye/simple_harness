@@ -470,6 +470,12 @@ a = Analysis(
         # Path(__file__).read_bytes(); these are not lifespan registration data.
         "deskpet.capabilities.platform": "pyz+py",
         "deskpet.mcp.manager": "pyz+py",
+        # 编排 SDK 启动时按源码字节核对网络编码器与部署清单（network_codec 读
+        # agent_orchestrator/contracts/htn.py 等）；冻结包里只有字节码会报
+        # "registered codec source is unreadable"，编排服务整个起不来（2026-10-08
+        # macOS 正式包实测）。两个 SDK 包都保留与 wheel 逐字节相同的源码。
+        "agent_orchestrator": "pyz+py",
+        "simple_harness": "pyz+py",
     },
 )
 
