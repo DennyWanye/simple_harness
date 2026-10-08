@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from .contracts import CapabilityBinding, CapabilityScope
@@ -81,6 +82,17 @@ def _unavailable_after_rehydrate(failure: Any) -> dict[str, Any]:
         "health_summary": f"启动时没能载入，已跳过（{failure.code}）。安装目录可能被移动或删除，请重新安装。",
         "available_actions": [],
     }
+
+
+def _rehydrate_failure_resolved(failure: Any, item: Mapping[str, Any]) -> bool:
+    """跳过记录还算不算数（不看健康状态：纯说明类包被跳过时健康状态照样是 healthy）。
+
+    现在绑定的已是另一个版本，或当初是"目录不见"而目录已经回来（重装同一版本），算已恢复；
+    别的原因（文件或工具指纹对不上）一直标到下次启动重新核对，宁可多标不可少标。"""
+
+    if str(item.get("version")) != str(failure.record.descriptor.version):
+        return True
+    return failure.code == "FileNotFoundError" and Path(failure.record.install_path).is_dir()
 
 
 class CapabilityCenterService:
@@ -167,7 +179,7 @@ class CapabilityCenterService:
         }
         for item in projected:
             failure = failed.pop(str(item.get("capability_id")), None)
-            if failure is not None and item.get("health") != "healthy":  # 已重装好的不再标
+            if failure is not None and not _rehydrate_failure_resolved(failure, item):
                 item.update(_unavailable_after_rehydrate(failure))
         for failure in failed.values():
             descriptor = failure.record.descriptor

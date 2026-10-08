@@ -541,3 +541,42 @@ async def test_configured_pack_is_discoverable_before_integrity_checked_install(
     assert not descriptor.executable
     assert "godot-catalog" in descriptor.version.aliases
     await platform.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_instruction_pack_is_listed_unavailable_until_its_directory_is_back(
+    tmp_path: Path,
+) -> None:
+    """核验阻断项（2026-10-08）：纯说明类技能包被跳过时健康状态照样是 healthy，不能拿健康状态判断
+    "已恢复"；它照样要标"不可用"。目录回来（同一版本重装）后不再标。
+
+    **改坏检验**：恢复判断改回看 ``health != "healthy"`` → 第一段断言红。"""
+    from deskpet.capabilities.ui_service import CapabilityCenterService
+
+    pack_root = REPOSITORY_ROOT / "capability-packs" / "skill-web-read"
+    platform, store, _registry = await _platform(tmp_path, pack_root=pack_root)
+    await platform.initialize()
+    record = (await store.list_active_versions())[0]
+    await platform.shutdown()
+    moved = record.install_path.with_name(record.install_path.name + ".moved")
+    record.install_path.rename(moved)
+
+    restarted = CapabilityPlatform(
+        registry=ToolRegistry(),
+        store=store,
+        user_data_root=platform.manager.layout.root.parent,
+        environment=TEST_ENVIRONMENT,
+        first_party_pack_roots=(),
+        register_control_surface=False,
+        command_finder=lambda _name: None,
+    )
+    await restarted.initialize()
+    assert [f.record.descriptor.capability_id for f in restarted.manager.rehydrate_failures] == ["skill-web-read"]
+    service = CapabilityCenterService(store=store, manager=restarted.manager, hub=restarted.hub)
+    shown = {item["capability_id"]: item for item in await service.list_capabilities()}["skill-web-read"]
+    assert shown["health"] == "unavailable" and "已跳过" in shown["health_summary"]
+
+    moved.rename(record.install_path)  # 目录回来了
+    shown = {item["capability_id"]: item for item in await service.list_capabilities()}["skill-web-read"]
+    assert shown["health"] != "unavailable"
+    await restarted.shutdown()
