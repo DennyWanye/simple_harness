@@ -15,6 +15,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -497,6 +498,42 @@ def set_process_tool_service(service: ProcessToolService) -> ProcessToolService:
     return previous
 
 
+# 进程列表交给模型前把命令行里的密钥藏起来（试用前 2026-10-08 用户定）：别的程序常把密钥写在
+# 参数里（``--api-key=…``、``--token …``、``API_KEY=…``、``sk-…``）。只改给模型看的这一份，
+# 停进程用的身份比对仍用原始命令行（``_capture_identity``）。
+_SECRET_NAME = re.compile(
+    r"(?i)(?:api[-_]?key|apikey|access[-_]?key|secret|token|passw(?:or)?d|passwd|pwd|auth|credential|cookie|private[-_]?key)"
+)
+_SECRET_VALUE = re.compile(
+    r"\b(?:sk-ant-[A-Za-z0-9_-]{20,}|(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}"
+    r"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
+    r"|\bBearer\s+[-._~+/A-Za-z0-9=]{12,}",
+)
+_HIDDEN = "[REDACTED]"
+
+
+def _redacted_argv(argv: list[str] | tuple[str, ...]) -> list[str]:
+    out: list[str] = []
+    hide_next = False
+    for raw in argv:
+        arg = str(raw)
+        if hide_next and not arg.startswith("-"):
+            out.append(_HIDDEN)
+            hide_next = False
+            continue
+        hide_next = False
+        name, sep, _value = arg.partition("=")
+        if sep and _SECRET_NAME.search(name):
+            out.append(f"{name}={_HIDDEN}")
+            continue
+        if arg.startswith("-") and _SECRET_NAME.search(arg):
+            out.append(arg)
+            hide_next = True  # ``--token abc``：值在下一个参数
+            continue
+        out.append(_SECRET_VALUE.sub(_HIDDEN, arg))
+    return out
+
+
 async def process_list(
     args: dict[str, Any],
     task_id: str = "",
@@ -515,11 +552,12 @@ async def process_list(
     ):
         try:
             info = process.info
+            command_line = _redacted_argv(info.get("cmdline") or [])
             searchable = " ".join(
                 [
                     str(info.get("name") or ""),
                     str(info.get("exe") or ""),
-                    " ".join(info.get("cmdline") or []),
+                    " ".join(command_line),
                 ]
             ).casefold()
             if query and query not in searchable:
@@ -529,7 +567,7 @@ async def process_list(
                     "pid": info["pid"],
                     "name": info.get("name"),
                     "executable": info.get("exe"),
-                    "command_line": info.get("cmdline") or [],
+                    "command_line": command_line,
                     "creation_time": info.get("create_time"),
                 }
             )
