@@ -101,3 +101,21 @@ def test_durable_run_start_probe_reads_only_sdk_execution_database(
 
     assert durable_sdk_run_start_exists(paths.execution_database, "sdk-waiting")
     assert not durable_sdk_run_start_exists(paths.execution_database, "legacy-only")
+
+
+def test_a_frozen_executable_skips_only_the_build_host_origin_check(tmp_path: Path, monkeypatch) -> None:
+    """2026-10-08 macOS 冻结包冒烟启动：PyInstaller 带进来的 direct_url.json 指向打包机路径，
+    冻结包里必然对不上。冻结时只跳过"安装来源"这一项；版本与 wheel 字节照样核对。
+
+    **改坏检验**：去掉 ``sys.frozen`` 分支 → 第二段红（报 installed origin mismatch）。"""
+    import sys
+
+    moved = tmp_path / WHEEL.name
+    moved.write_bytes(WHEEL.read_bytes())
+    identity = SdkCandidateIdentity(SDK_VERSION, WHEEL_SHA256, moved)
+    with pytest.raises(RuntimeError, match="origin mismatch"):
+        verify_sdk_candidate(identity)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    assert verify_sdk_candidate(identity) == identity
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        verify_sdk_candidate(SdkCandidateIdentity(SDK_VERSION, "0" * 64, moved))

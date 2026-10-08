@@ -31,6 +31,7 @@ def _make_fake_install(tmp_path) -> tuple[Path, Path]:
 
 def _activate_frozen(monkeypatch, exe: Path) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")  # 便携布局只属于 Windows 安装包
     monkeypatch.setattr(sys, "executable", str(exe))
     # Strip env overrides so only the install-dir layout matters.
     monkeypatch.delenv("DESKPET_USER_DATA_DIR", raising=False)

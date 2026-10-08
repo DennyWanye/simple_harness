@@ -96,6 +96,12 @@ def _portable_userdata_dir() -> Path | None:
     if _PORTABLE_CACHE is not _UNSET:
         return _PORTABLE_CACHE if isinstance(_PORTABLE_CACHE, Path) else None
 
+    if sys.platform == "darwin":
+        # macOS .app（2026-10-08 试用安装包）：后台在 Contents/Resources/backend，"安装目录旁的
+        # userdata" 会落进程序包里——更新即丢、只读位置写不进。便携布局只属于 Windows 安装包；
+        # Mac 上用户数据由外壳经 DESKPET_USER_DATA_DIR 指定，模型/缓存走系统目录。
+        _PORTABLE_CACHE = None
+        return None
     base = _install_dir()
     if base is None:
         _PORTABLE_CACHE = None

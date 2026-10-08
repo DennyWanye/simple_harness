@@ -33,8 +33,9 @@ OUT=$REPO/backend/dist/deskpet-backend
 [ -x "$OUT/deskpet-backend" ] || { echo "没有产出 $OUT/deskpet-backend"; exit 1; }
 
 echo "== 3/4 冻结包核对与冒烟启动"
-"$PY" "$REPO/scripts/assert_playwright_packaging.py" "$OUT" --json >/dev/null
-SMOKE=$(mktemp -d)
+"$PY" "$REPO/scripts/assert_playwright_packaging.py" "$OUT" --json \
+  --tauri-config "$REPO/tauri-app/src-tauri/tauri.macos-release.conf.json" >/dev/null
+SMOKE=$(cd "$(mktemp -d)" && pwd -P)  # /var 是软链接，状态库拒绝含软链接的路径
 PORT=${DESKPET_SMOKE_PORT:-18765}
 lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null && { echo "冒烟端口 $PORT 被占用"; exit 1; }
 DESKPET_USER_DATA_DIR="$SMOKE/userdata" DESKPET_USER_LOG_DIR="$SMOKE/logs" DESKPET_USER_LOG="$SMOKE/logs/backend.log" \

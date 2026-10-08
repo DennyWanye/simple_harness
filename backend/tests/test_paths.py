@@ -200,6 +200,7 @@ def _freeze_backend_install(monkeypatch, install_root: Path) -> None:
     backend_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
     monkeypatch.setattr(paths.sys, "executable", str(backend_dir / "x.exe"))
+    monkeypatch.setattr(paths.sys, "platform", "win32")  # 便携布局只属于 Windows 安装包
 
 
 def test_portable_resolves_install_userdata_only(clean_env, tmp_path, monkeypatch):
@@ -330,3 +331,23 @@ def test_user_data_dir_memoized_until_reset(clean_env, monkeypatch, tmp_path):
     c = paths.user_data_dir()
     assert c == tmp_path / "ud2"          # reset 后重算
     assert calls["n"] == 2
+
+
+def test_macos_app_never_writes_portable_userdata_into_the_bundle(clean_env, tmp_path, monkeypatch):
+    """2026-10-08 macOS 试用安装包：后台在 .app/Contents/Resources/backend；便携 userdata 会落进
+    程序包（更新即丢、只读位置写不进）。Mac 上不用便携模式，也不在程序包里建目录。
+
+    **改坏检验**：去掉 darwin 分支 → 程序包里出现 userdata，变红。"""
+    paths.reset_path_cache()
+    try:
+        resources = tmp_path / "SimpleHarness.app" / "Contents" / "Resources"
+        backend_dir = resources / "backend"
+        backend_dir.mkdir(parents=True)
+        monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(paths.sys, "executable", str(backend_dir / "deskpet-backend"))
+        monkeypatch.setattr(paths.sys, "platform", "darwin")
+        assert paths._portable_userdata_dir() is None
+        assert not (resources / "userdata").exists()
+        assert "SimpleHarness.app" not in str(paths.user_models_dir())
+    finally:
+        paths.reset_path_cache()

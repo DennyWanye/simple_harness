@@ -52,6 +52,12 @@ def verify_sdk_candidate(identity: SdkCandidateIdentity) -> SdkCandidateIdentity
     distribution = metadata.distribution("simple-harness-sdk")
     if distribution.version != identity.version:
         raise RuntimeError("SDK candidate installed version mismatch")
+    # Same rule as ``sdk_candidate.verify_*``: a frozen executable has already
+    # proven the bundled wheel bytes above; the build host's direct_url.json that
+    # PyInstaller may copy is meaningless under ``sys._MEIPASS`` (2026-10-08，
+    # macOS 冻结包冒烟启动在这里失败).
+    if getattr(sys, "frozen", False):
+        return identity
     direct_url_raw = distribution.read_text("direct_url.json")
     if direct_url_raw is None:
         raise RuntimeError("SDK candidate installed origin is unavailable")
