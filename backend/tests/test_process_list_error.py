@@ -72,16 +72,54 @@ if __name__ == "__main__":
 
 
 def test_process_list_hides_secrets_in_command_lines():
-    """试用前 2026-10-08：命令行里的密钥不交给模型（``--k=v``、``--token v``、``KEY=v``、长得像密钥的串）。
+    """试用前 2026-10-08：命令行里的密钥不交给模型；普通参数不误伤；隐藏两次结果不变。
 
-    **改坏检验**：``process_list`` 直接返回原始 ``cmdline`` → 第二条用例红。"""
+    **改坏检验**：``process_list`` 直接返回原始 ``cmdline`` → 下一条用例红；名字按子串匹配 →
+    这条第二段（``--max-tokens`` 等）红。"""
     from deskpet.tools.os_tools.process_tools import _redacted_argv
 
     argv = ["python", "serve.py", "--api-key=abc123", "--token", "t0ps3cret", "DEEPSEEKER_APIKEY=xyz",
-            "--password", "p@ss", "--model", "flash", "sk-" + "a" * 24, "Bearer " + "b" * 20, "--verbose"]
+            "--password", "p@ss", "--model", "flash", "sk-" + "a" * 24, "Bearer " + "b" * 20, "--verbose",
+            "--key", "k1", "FOO_KEY=k2", "Authorization: token tk", "https://user:pw@example.com/x",
+            "curl --token inner -H 'X-Api-Key: hv'"]
     assert _redacted_argv(argv) == [
         "python", "serve.py", "--api-key=[REDACTED]", "--token", "[REDACTED]", "DEEPSEEKER_APIKEY=[REDACTED]",
-        "--password", "[REDACTED]", "--model", "flash", "[REDACTED]", "[REDACTED]", "--verbose"]
+        "--password", "[REDACTED]", "--model", "flash", "[REDACTED]", "Bearer [REDACTED]", "--verbose",
+        "--key", "[REDACTED]", "FOO_KEY=[REDACTED]", "Authorization: token [REDACTED]",
+        "https://user:[REDACTED]@example.com/x", "curl --token [REDACTED] -H 'X-Api-Key: [REDACTED]'"]
+    assert _redacted_argv(_redacted_argv(argv)) == _redacted_argv(argv)
+    plain = ["llm", "--max-tokens", "4096", "--tokenizer", "/m/tok", "--author", "bob", "--monkey", "x"]
+    assert _redacted_argv(plain) == plain
+
+
+@pytest.mark.asyncio
+async def test_a_process_listed_with_hidden_secrets_can_still_be_stopped():
+    """核验阻断项（2026-10-08）：模型停外部进程只能交回列表给它的那份命令行（已隐藏密钥），
+    身份比对两边按同一规则隐藏后再比，照样停得掉；进程号与启动时间仍要对上。
+
+    **改坏检验**：``_matches_identity`` 只比原始命令行 → 停进程报身份不符，变红。"""
+    import subprocess
+    import sys
+
+    from deskpet.tools.os_tools.process_tools import process_stop
+
+    marker = "proc-redact-stop-check"
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", marker, "--api-key=abc123"])
+    try:
+        await asyncio.sleep(0.3)
+        listed = json.loads(await process_list({"query": marker}))
+        [row] = [p for p in listed["processes"] if p["pid"] == child.pid]
+        assert "--api-key=[REDACTED]" in row["command_line"] and "abc123" not in json.dumps(row)
+        wrong_time = json.loads(await process_stop({"pid": row["pid"], "creation_time": row["creation_time"] + 5,
+                                                    "command_line": row["command_line"]}))
+        assert wrong_time.get("ok") is False and child.poll() is None, wrong_time  # 启动时间不对：不停
+        stopped = json.loads(await process_stop({"pid": row["pid"], "creation_time": row["creation_time"],
+                                                 "command_line": row["command_line"]}))
+        assert stopped.get("ok") is True and child.pid in stopped["cleanup"]["stopped_pids"], stopped
+        assert child.wait(timeout=10) is not None
+    finally:
+        if child.poll() is None:
+            child.kill()
 
 
 @pytest.mark.asyncio

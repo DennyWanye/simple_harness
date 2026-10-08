@@ -167,7 +167,7 @@ class CapabilityCenterService:
         }
         for item in projected:
             failure = failed.pop(str(item.get("capability_id")), None)
-            if failure is not None:
+            if failure is not None and item.get("health") != "healthy":  # 已重装好的不再标
                 item.update(_unavailable_after_rehydrate(failure))
         for failure in failed.values():
             descriptor = failure.record.descriptor

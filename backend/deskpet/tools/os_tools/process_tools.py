@@ -100,7 +100,11 @@ def _matches_identity(process: psutil.Process, expected: ProcessIdentity) -> boo
     try:
         return (
             abs(float(process.create_time()) - expected.creation_time) <= 0.01
-            and tuple(process.cmdline()) == expected.command_line
+            and (
+                tuple(process.cmdline()) == expected.command_line
+                # 模型交回的是进程列表给它的、密钥已隐藏的那份（同一规则，结果确定）
+                or _redacted_argv(process.cmdline()) == _redacted_argv(expected.command_line)
+            )
         )
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return False
@@ -499,17 +503,40 @@ def set_process_tool_service(service: ProcessToolService) -> ProcessToolService:
 
 
 # 进程列表交给模型前把命令行里的密钥藏起来（试用前 2026-10-08 用户定）：别的程序常把密钥写在
-# 参数里（``--api-key=…``、``--token …``、``API_KEY=…``、``sk-…``）。只改给模型看的这一份，
-# 停进程用的身份比对仍用原始命令行（``_capture_identity``）。
-_SECRET_NAME = re.compile(
-    r"(?i)(?:api[-_]?key|apikey|access[-_]?key|secret|token|passw(?:or)?d|passwd|pwd|auth|credential|cookie|private[-_]?key)"
+# 参数里（``--api-key=…``、``--token …``、``API_KEY=…``、``sk-…``、``https://u:p@…``、
+# ``bash -c "… --token …"``）。停外部进程时模型交回的是这份隐藏后的命令行，所以身份比对两边都按
+# 同一规则隐藏后再比（``_matches_identity``）；进程号与启动时间照比，身份不会认错。
+_SECRET_WORDS = (
+    "key|apikey|token|secret|password|passwd|pwd|passphrase|credential|credentials|cookie"
+    "|auth|authorization|bearer"
 )
+# 名字按 - _ . 分段，整段是密钥词（``--max-tokens``、``--tokenizer``、``--author`` 不算）
+_SECRET_NAME = re.compile(rf"(?i)(?:^|[-_.])(?:{_SECRET_WORDS})(?:$|[-_.])")
 _SECRET_VALUE = re.compile(
-    r"\b(?:sk-ant-[A-Za-z0-9_-]{20,}|(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}"
+    r"\b(?:sk-ant-[A-Za-z0-9_-]{20,}|(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}"
     r"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-    r"|\bBearer\s+[-._~+/A-Za-z0-9=]{12,}",
+)
+# 一个参数里夹着的写法：``--token v`` / ``--token=v`` / ``API_KEY=v`` / ``X-Api-Key: v`` /
+# ``Authorization: token v`` / ``Bearer v`` / ``scheme://user:pass@host``
+_INLINE = (
+    re.compile(rf"(?i)(--?[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*[ =]+)"
+               r"(?!\[REDACTED\])([^\s\"']+)"),
+    re.compile(rf"(?i)(\b[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*?(?:^|[-_.]|\b)(?:{_SECRET_WORDS})(?:[-_.][A-Za-z0-9]+)*\s*[:=]\s*"
+               r"(?:(?:bearer|token|basic)\s+)?+)(?!\[REDACTED\])([^\s\"']+)"),  # ?+：方案词不回吐成值
+    re.compile(r"(?i)(\bbearer\s+)(?!\[REDACTED\])([^\s\"']+)"),
+    re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]+:)(?!\[REDACTED\])([^\s/@]+)(?=@)"),
 )
 _HIDDEN = "[REDACTED]"
+
+
+def _redact_inline(text: str) -> str:
+    for pattern in _INLINE:
+        text = pattern.sub(lambda match: match.group(1) + _HIDDEN, text)
+    return _SECRET_VALUE.sub(_HIDDEN, text)
+
+
+def _secret_name(name: str) -> bool:
+    return bool(_SECRET_NAME.search(name.lstrip("-")))
 
 
 def _redacted_argv(argv: list[str] | tuple[str, ...]) -> list[str]:
@@ -523,14 +550,14 @@ def _redacted_argv(argv: list[str] | tuple[str, ...]) -> list[str]:
             continue
         hide_next = False
         name, sep, _value = arg.partition("=")
-        if sep and _SECRET_NAME.search(name):
+        if sep and " " not in name and _secret_name(name):
             out.append(f"{name}={_HIDDEN}")
             continue
-        if arg.startswith("-") and _SECRET_NAME.search(arg):
+        if arg.startswith("-") and " " not in arg and _secret_name(arg):
             out.append(arg)
             hide_next = True  # ``--token abc``：值在下一个参数
             continue
-        out.append(_SECRET_VALUE.sub(_HIDDEN, arg))
+        out.append(_redact_inline(arg))
     return out
 
 
