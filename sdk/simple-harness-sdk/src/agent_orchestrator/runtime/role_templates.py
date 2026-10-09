@@ -110,7 +110,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v29"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v30"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -357,7 +357,10 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "arguments（对象：参数名或输入端口名 → 值表达式；值表达式只有五种："
         "{\"op\":\"parameter\",\"name\":目标参数名}、{\"op\":\"output\",\"step\":上游 local_id,\"port\":上游输出端口名}"
         "（每次新尝试都用上游当前算数的那一版验收产出）、"
-        "{\"op\":\"constant\",\"value\":…}、{\"op\":\"object\",\"fields\":{…}}、{\"op\":\"array\",\"items\":[…]}）、"
+        "{\"op\":\"constant\",\"value\":…}、{\"op\":\"object\",\"fields\":{…}}、{\"op\":\"array\",\"items\":[…]}）；"
+        "operators 里 cardinality 为 set 的输入端口（如接着交付步骤的 delivery）可以接多个上游：值写 "
+        "{\"op\":\"array\",\"items\":[多个 {\"op\":\"output\",…}]}，数组里的先后就是这些上游产出铺进这一步工作区的先后，"
+        "互不依赖的上游可以同时做再在这一步汇合；cardinality 为 single 的端口只接一个）、"
         "required_capabilities（照抄该类型的；子目标步骤写 []）、obligation_relation（写 refines_parent）。"
         "子目标步骤的 arguments 按 subgoal_types 里该类型的 parameters 写，"
         "用 {\"op\":\"constant\",\"value\":\"…\"} 写清这个子目标自己要达成什么；\n"

@@ -237,6 +237,9 @@ def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuatio
     fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
                            carried_inputs=lambda mission_id, task_id: hd.carried_inputs(
         store, mission_id, task_id), semantics=lambda: hd.HtnStore(store))
+    # 2026-10-09 第 4 条：同一路径多版本由 _one_version 定（这里每个路径只有一版）
+    fake._one_version = lambda mission_id, path, versions: hd.HierarchicalDispatch._one_version(
+        fake, mission_id, path, versions)
     port = [UpstreamInput("t-tests", "README.md", "3" * 64, "a-readme")]
     got = hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, port)
     assert [(item.task_id, item.path) for item in got] == [

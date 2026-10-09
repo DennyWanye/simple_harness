@@ -386,8 +386,9 @@ def test_naming_a_step_that_reads_upstream_requires_naming_the_upstream_too(tmp_
             assert str(mission.status.value) == "COMPLETED", (mission.status, mission.final_report, state,
                                                               [item[:600] for item in refused[-2:]])
             assert state["partial"] and state["full"]
-            # 退回原因写明：被共用的那一步的输入端口有了两个来源（它原来的上游 + 右边自己的"写"）
-            assert any("single_port_overbound" in item and "delivery" in item for item in refused), [
+            # 退回原因写明：右边自己的"写"和被共用的左边那一步都写 out.md、彼此没有先后（2026-10-09 第 4 条
+            # 起接着交付的输入端口能接多个来源，"端口有两个来源"不再是拒绝原因；拒绝本身不变）
+            assert any("resource_conflict" in item and "out.md" in item for item in refused), [
                 item[:600] for item in refused]
             network = world.loop._dispatch_for(mission_id).network(mission_id)
             kinds = [str(network.binding_for_occurrence(item.occurrence_id).goal_signature.signature_id)

@@ -2987,15 +2987,9 @@ class ProposedPlanDelta:
                     raise ContractError(
                         f"delta.data_requirements refers to unknown occurrence {endpoint!r}"
                     )
-        ports = [
-            (requirement.consumer_occurrence, requirement.input_port)
-            for requirement in self.data_requirements
-        ]
-        if len(set(ports)) != len(ports):
-            raise ContractError(
-                "a single-valued input port accepts one binding; "
-                "delta.data_requirements binds one twice (TG decision 3)"
-            )
+        # 2026-10-09 四项修复第 4 条：一个输入端口接几条由它的基数定（集合端口接多条），这里不看
+        # 基数，所以不再在合同层拒"一口两条"；``validate_execution_projection`` 按基数报
+        # SINGLE_PORT_OVERBOUND，规划器收到的是能改正的问题。
         object.__setattr__(
             self,
             "compiled_from_proposal_id",

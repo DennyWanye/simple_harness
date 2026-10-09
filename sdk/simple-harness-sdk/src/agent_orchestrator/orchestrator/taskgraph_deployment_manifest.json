@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-09T13:44:30+00:00",
-    "gate_sha256": "75b3b85c95c193a78c5f984bc58a380663054400631b9188d052d913122cd3dd",
-    "gate_status": "PASS",
-    "source_files_sha256": "fcd1622c5b520ef15551c5756fe5b7690b0c47ba5a0b85783d0b861f8539b1b1"
-  },
-  "deployment_id": "970ffa5dbde39cad4bf446f9566fdfe6c0357ca5d75790360c8b6939f5a0331e",
+  "acceptance_evidence": null,
+  "deployment_id": "9ac03368bc158476c4dc7cd8ad94476f6b7670a640e39142db249615c42d40b6",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -82,7 +77,7 @@
     "agent_orchestrator/contracts/__init__.py": "5345c68d365488c86c425bc0e47e4ee6e5efc4c67a5d109ae15b24e58ea48490",
     "agent_orchestrator/contracts/error_table.py": "bed26c5f49f2eb98a2333fb9c238cf69595a1dc882aaa583a2914d972e00ea4b",
     "agent_orchestrator/contracts/evidence_state.py": "c8e77432dddcbaa8dda7b6b05b0e30944d597ea18125ac01df03c71598cb4f59",
-    "agent_orchestrator/contracts/htn.py": "852e24f46de8d823b5b359978b22bb150c80e2b865947c7cfbd4ec8b8b599eb1",
+    "agent_orchestrator/contracts/htn.py": "95b806a3fd833b60db2f072eeb533e28f78b1eabfb6202afde95c35449798779",
     "agent_orchestrator/contracts/ids.py": "5b048365c5cd02a64e41776e09880585757183d174ee81a2ff29ed556064b358",
     "agent_orchestrator/contracts/models.py": "38db26e66cf90ffb58563de716296f91dbfc20778472ca7a7b73740092f239c1",
     "agent_orchestrator/contracts/obligations.py": "de05d1f793fca5ecdf15d4104e6559baecb330c54c4ab4ce26371e28de100171",
@@ -138,7 +133,7 @@
     "agent_orchestrator/graph/network_codec_manifest_v2.json": "eb22b3c37cb426fbf36dbc5b2ee258cca8d2073693006a94f3c15d1542e170b6",
     "agent_orchestrator/graph/network_codec_manifest_v3.json": "0efadf4853d0470dc017c19245eaae4014be1ea92089a58924f91463372c5c2b",
     "agent_orchestrator/graph/network_codec_manifest_v4.json": "1a4696a71daa2962af3948bd61397606e98027ae0e294110f20714bea87e75e7",
-    "agent_orchestrator/graph/network_codec_manifest_v5.json": "c7a1086639785c6642549325bc3734c415f9303d979f4db54433ce3402a6fc57",
+    "agent_orchestrator/graph/network_codec_manifest_v5.json": "869d77f8962f7925bc5d25c0769aafd42d2314baa0315d3254c3e4d6f8afe22c",
     "agent_orchestrator/graph/notification_contracts.py": "34788a13467b9bc4b814affad9ca46e598ab48cb4a02fdc447ba2851009674bd",
     "agent_orchestrator/graph/planning_scope.py": "0d81a21f87385425e9d0acb4556606c1184ec702db1ff7d96332ea5ce5020161",
     "agent_orchestrator/graph/projection_validation.py": "1826447c7937df5c965f0ca3842099af024855038e6966c1b00e54e24d2c8dca",
@@ -224,7 +219,7 @@
     "agent_orchestrator/orchestrator/composition_review.py": "f9d06172af99df717475fba57dc4c096088e2a9bb75eca6c34dfb9ac6c82daad",
     "agent_orchestrator/orchestrator/event_handler.py": "e43cef2c55e30bf1992db385b9ec188e76c181150f949f81ebc7ba5b438b8b85",
     "agent_orchestrator/orchestrator/failure_classes.py": "9ed86a468b2d46885dbeb6f1d689da04ded4dc7e8bb89a8ac3116b0b8745cbd2",
-    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "da6d7d96c0dbe654b0852922a20a61ed70621bef793513f4c9a74f02031d2d0b",
+    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "17dcd65bb21882b8fa0d62632978a1b8250cb88fa76797c1dfef7fb4d5b8705e",
     "agent_orchestrator/orchestrator/human_commits.py": "8098653638a0bd14cd2c4e88f204bcc6f60f820077d79206e2f26877fde318cb",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "58fb601ef3db7bab6c8fec15eb58109313b8a86a089aae909dd1f867d80e6828",
     "agent_orchestrator/orchestrator/method_library.py": "659de6e1109435b9ef5cbc32920b1ef51238713d32c6186434219b77405ae94d",
@@ -389,7 +384,7 @@
     "agent_orchestrator/runtime/output_blocks.py": "43b2f1cb7c10556ecc42c531ce7651d053b71d5937294921d64a8c90b8038fc8",
     "agent_orchestrator/runtime/planning_operations.py": "aa68f8c22e768ed967a67997a70a49026234c3c4228872be964afcb0e29febe1",
     "agent_orchestrator/runtime/provider_budget_guard.py": "3e92e386f99895abfafa00058ddc3f4ab9dd77198e626c11dfd01b671c198229",
-    "agent_orchestrator/runtime/role_templates.py": "e314643b7e60536b8a94869a51f99834c0a1be98da5e46031008c167f9a6844f",
+    "agent_orchestrator/runtime/role_templates.py": "0ca0b6da54ff1ecf42fbb2fe9637ddf11d7e61a9b2cb060690cae187b606a18d",
     "agent_orchestrator/runtime/sandbox.py": "b64160f775556c8507068634e3133db8c5d8210127216abf89b9dcbbacea11e8",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",
@@ -442,7 +437,7 @@
     "agent_orchestrator/testing/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/testing/code_domain_world.py": "94776f463f80bbc54429ec38d58e7689acb76de063babf8f6083c61a0148640d",
     "agent_orchestrator/testing/fixtures.py": "fa2d23090afa432819347f1693ddb6bf169791a3e6071893d2d1ec325ec746e0",
-    "agent_orchestrator/testing/product_world.py": "43f60a9fc04ab76b5233acdf6d84243763a218c0d6a6713d7b4706e0c2b8f394",
+    "agent_orchestrator/testing/product_world.py": "b88524d3fba521fe65bd35cac67a9d555e96cc453136c7ab29262c7122faf376",
     "agent_orchestrator/testing/schema_oracle.py": "4acb455cfc035a3232e95607cd66bf3bf69ed5d4822f433b0187bfd8da5e3dfd",
     "agent_orchestrator/testing/scripted_replies.py": "685038bd40798f807bcf638e238b5af12cc8940cd18857140ba849fd14e53746",
     "agent_orchestrator/testing/word_counter.py": "4986f2ae94961e3f2da47cf1cdccffe92e42e6bdcc8bebe09aaab063b2afe929",
@@ -723,7 +718,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

@@ -1688,6 +1688,52 @@
     "tests/orchestrator/full_target/taskgraph_exec/test_execution_view.py::test_execution_reads_never_hand_out_a_view_outside_the_public_contract"
    ],
    "note": "执行过程两种视图的 codec 放过合同外的字段：Schema 拒、codec 收；SDK 把多出字段的视图交给 Host"
+  },
+  {
+   "id": "MU-01",
+   "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
+   "file": "src/agent_orchestrator/testing/product_world.py",
+   "original": "            input_ports = (PortSpec(\"delivery\", outputs, cardinality=PortCardinality.SET,\n                                    ordering=PortOrdering.EXPLICIT),)",
+   "replacement": "            input_ports = (PortSpec(\"delivery\", outputs),)",
+   "tests": [
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_continue_delivery_port_is_a_set_in_the_methods_order",
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order"
+   ],
+   "note": "接着交付的输入端口改回单值：两个上游无法在一步汇合"
+  },
+  {
+   "id": "MU-02",
+   "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "        for candidate in versions.values():\n            others = [item for item in versions.values() if item is not candidate]",
+   "replacement": "        for candidate in versions.values():\n            others = []",
+   "tests": [
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_one_version_takes_only_a_proven_relay_and_refuses_the_rest"
+   ],
+   "note": "同一路径几个版本\"先到先占\"，不再要求接力证明"
+  },
+  {
+   "id": "MU-03",
+   "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "                orders.append(ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later]))))",
+   "replacement": "                orders.append(ExplicitPortOrder(port.port_key, tuple(sorted(dict.fromkeys([*ids, *later])))))",
+   "tests": [
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order",
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_explicit_order_follows_the_array_not_the_slot_names"
+   ],
+   "note": "端口先后不按做法数组、按编号排序：两条顺序用例至少一条变红"
+  },
+  {
+   "id": "MU-05",
+   "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
+   "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+   "original": "        return carried(right, left, left_file) or carried(left, right, right_file)",
+   "replacement": "        return False",
+   "tests": [
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relay_then_merge_takes_the_relayed_version_and_is_no_conflict"
+   ],
+   "note": "接力证明永远不成立：接着改的上游与原上游被当成写入冲突，汇合步开不了工"
   }
  ]
 }

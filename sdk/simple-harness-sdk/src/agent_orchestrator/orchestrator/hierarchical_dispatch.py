@@ -90,6 +90,9 @@ from ..contracts.htn import (
     TaskRef,
     TaskSemanticBindingV1,
     condition_digest,
+    ORDERED_CARDINALITIES,
+    OutputValue,
+    PortOrdering,
 )
 from ..contracts.obligations import ObligationAccountView
 from ..contracts.resolution import (
@@ -1107,10 +1110,12 @@ class HierarchicalDispatch:
                 if witnesses is None
                 else witnesses
             ),
-            policy=self.resolution_policy_for(mission_id, now_ms=now_ms),
+            policy=self.resolution_policy_for(mission_id, now_ms=now_ms,
+                                              consumer=spec.occurrence_id, network=network),
         )
 
-    def resolution_policy_for(self, mission_id: str, *, now_ms: int | None = None) -> Any:
+    def resolution_policy_for(self, mission_id: str, *, now_ms: int | None = None,
+                              consumer: Any = None, network: Any = None) -> Any:
         """This deployment's resolution policy with the Mission's live epochs in it.
 
         I19 is a *comparison*, and the policy this class is constructed with does not
@@ -1126,11 +1131,64 @@ class HierarchicalDispatch:
         from dataclasses import replace as _replace
 
         policy = self.resolution_policy
+        explicit = tuple(policy.explicit_orders)
+        if consumer is not None:
+            # 2026-10-09 第 4 条：这一步集合端口上各上游的先后，就是规划器在做法里数组写的先后
+            explicit = (*explicit, *self._explicit_port_orders(mission_id, consumer, network))
         return _replace(
             policy,
+            explicit_orders=explicit,
             scope_epochs=self.scope_epochs(mission_id),
             now_ms=int(self.store.now * 1000) if now_ms is None else int(now_ms),
         )
+
+    def _explicit_port_orders(self, mission_id: str, consumer: Any, network: Any = None) -> tuple[Any, ...]:
+        """The declared order of each EXPLICIT set input port of ``consumer``: the order the
+        adopted method lists the upstream outputs in that port's argument array (TaskGraph §5.5
+        "按显式 order 列表").  Read from the plan, decided by nobody here."""
+        from ..artifacts.input_bindings import ExplicitPortOrder
+        from ..planning.htn.compiler import _derive_requirement_id
+        from ..planning.htn.registry import iter_values
+
+        network = self.network(mission_id) if network is None else network
+        binding = network.binding_for_occurrence(consumer)
+        ports = [port for port in binding.input_ports
+                 if port.cardinality in ORDERED_CARDINALITIES and port.ordering is PortOrdering.EXPLICIT]
+        if not ports:
+            return ()
+        semantics = self.semantics()
+        for instance in network.method_instances:
+            if not network.is_adopted(instance.instance_id):
+                continue
+            mine = next((child for child in instance.child_bindings if child.occurrence_id == consumer), None)
+            if mine is None:
+                continue
+            entry = semantics.get_method(str(instance.method_ref.method_id), int(instance.method_ref.version))
+            contract = getattr(entry, "contract", entry)
+            step = next((item for item in contract.steps if item.local_id == mine.slot_key), None)
+            if step is None:
+                continue
+            slot_to_occurrence = {child.slot_key: child.occurrence_id for child in instance.child_bindings}
+            live = {item.requirement_id for item in network.data_requirements}
+            orders = []
+            for port in ports:
+                argument = step.arguments.get(port.port_key)
+                ids: list[str] = []
+                for node in (iter_values(argument) if argument is not None else ()):
+                    if (isinstance(node, OutputValue) and node.step != step.local_id
+                            and node.step in slot_to_occurrence):
+                        derived = _derive_requirement_id(
+                            slot_to_occurrence[node.step], node.port, consumer, port.port_key)
+                        if derived in live:  # an edge a repair replaced is no longer named
+                            ids.append(derived)
+                # 规划器后来用修复操作改接/加接的边不在做法正文里：排在做法列出的之后，按网络
+                # 里的（固定）顺序；这是写明的约定，不是替规划器挑谁先谁后。
+                later = [item.requirement_id for item in network.data_requirements
+                         if item.consumer_occurrence == consumer and item.input_port == port.port_key
+                         and item.requirement_id not in ids]
+                orders.append(ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later]))))
+            return tuple(orders)
+        return ()
 
     #: The purpose a witness must carry to license *binding an accepted output* as an
     #: input.  ``START`` because that is what the use is: starting this consumer's
@@ -3622,6 +3680,8 @@ class HierarchicalDispatch:
             # "not resolved yet", which is the DATA gate's business (WAITING_DATA) and
             # not a materialisation failure — so nothing is placed and nothing raises.
             return []
+        # 几个上游的端口文件撞在同一路径：write_conflicts 已把它当写入冲突交规划器（修复触发在派发
+        # 之前），走到这里的清单没有冲突；这里不再查第二遍（2026-10-09 第 4 条改坏检验证明那道查是多余的）。
         rules = self.target_rules_for(task_id)
         return manifest_upstream_inputs(result.manifest, rules, network=network)
 
@@ -3652,6 +3712,20 @@ class HierarchicalDispatch:
                 if artifact is None or artifact.path.startswith(("actions/", ".")):
                     continue
                 holders.setdefault(artifact.path, []).append((task_id, artifact))
+        # 2026-10-09 四项修复第 4 条：一步可以接多个上游。两个有先后的上游交付同一路径的不同
+        # 内容，只在它们共同喂同一个下游时才成问题；那时只有一种情况系统可以自己定——后一步的
+        # 冻结清单证明它收到过前一步那份（接力，交的是接着改的那一版），且两份不是都作为端口
+        # 文件接进同一个下游。其余一律是写入冲突，交规划器（不许"有先后就取后者"，TaskGraph §2
+        # 第 5 条：先后关系不传文件、不授权覆盖）。
+        consumers_of: dict[Any, set[Any]] = {}
+        port_bound: dict[Any, set[tuple[Any, str]]] = {}
+        for item in network.data_requirements:
+            consumers_of.setdefault(item.producer_occurrence, set()).add(item.consumer_occurrence)
+            port_bound.setdefault(item.consumer_occurrence, set()).add((item.producer_occurrence, item.output_port))
+        port_of: dict[str, tuple[Any, str]] = {}
+        if any(len(bound) > 1 for bound in port_bound.values()):
+            for output in self.accepted_outputs(mission_id, network).outputs:
+                port_of[str(output.artifact_id)] = (output.producer_occurrence, output.output_port)
         ordered = None
         found: list[dict[str, Any]] = []
         for path in sorted(holders):
@@ -3664,10 +3738,44 @@ class HierarchicalDispatch:
                         continue
                     ordered = ordered or ordering_of(network)
                     if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
-                        continue
+                        shared = ({c for a in occurrences[left] for c in consumers_of.get(a, ())}
+                                  & {c for b in occurrences[right] for c in consumers_of.get(b, ())})
+                        if not shared:
+                            continue
+                        both_ports = any(port_of.get(str(left_file.id)) in port_bound.get(c, set())
+                                         and port_of.get(str(right_file.id)) in port_bound.get(c, set())
+                                         for c in shared)
+                        if not both_ports and self._relay_proven(mission_id, left, left_file, right, right_file):
+                            continue
                     found.append({"path": path, "steps": [left, right],
                                   "artifacts": [left_file.id, right_file.id]})
         return found
+
+    def _relay_proven(self, mission_id: str, left: str, left_file: Any, right: str, right_file: Any) -> bool:
+        """One step's frozen inputs held the other's version of this file (same path and hash):
+        what it delivered is the next version of that file, not a rival one."""
+
+        def carried(later: str, earlier: str, file: Any) -> bool:
+            return any(item.task_id == earlier and item.path == file.path and item.content_hash == file.content_hash
+                       for item in self.carried_inputs(mission_id, later))
+
+        return carried(right, left, left_file) or carried(left, right, right_file)
+
+    def _one_version(self, mission_id: str, path: str, versions: Mapping[str, UpstreamInput]) -> UpstreamInput:
+        """Of several versions of one path reaching a step, the one its upstreams prove is the
+        latest (its producer carried every other version); otherwise a write conflict."""
+
+        if len(versions) == 1:
+            return next(iter(versions.values()))
+        for candidate in versions.values():
+            others = [item for item in versions.values() if item is not candidate]
+            carried = list(self.carried_inputs(mission_id, candidate.task_id))
+            if all(any(c.task_id == other.task_id and c.path == other.path and c.content_hash == other.content_hash
+                       for c in carried) for other in others):
+                return candidate
+        items = sorted(versions.values(), key=lambda item: (item.task_id, item.content_hash))
+        raise WriteConflictPending([{"path": path, "steps": [item.task_id for item in items],
+                                     "artifacts": [item.artifact_id for item in items]}])
 
     def overlay_attempt_inputs(
         self, mission_id: str, inputs: Sequence[UpstreamInput]
@@ -3724,24 +3832,30 @@ class HierarchicalDispatch:
         # 2026-10-09 库存题：起始型上游同样如此——一步写出 parser/ledger/report/cli 四个模块、
         # 全部通过核验，端口只认领 cli.py，下一步只拿到 cli.py。数据边接上的写入型上游，交付的
         # 都是它通过核验的全部文件（操作申请单除外）；只读步骤不改文件，不在此列。
-        own: list[UpstreamInput] = []
+        # 2026-10-09 第 4 条：几个上游交到同一路径时不"先到先占"：同一哈希就是同一份；不同哈希
+        # 只认接力（某一份的产出者收到过其余几份），否则是写入冲突（上面 write_conflicts 已拦，
+        # 这里再守一道）。
+        own_versions: dict[str, dict[str, UpstreamInput]] = {}
         for task_id in dict.fromkeys(item.task_id for item in inputs):
             if task_id in read_only:
                 continue
             for artifact in artifacts[task_id]:
                 if artifact.path in occupied or artifact.path.startswith("actions/"):
                     continue
-                occupied.add(artifact.path)
-                own.append(UpstreamInput(task_id, artifact.path, artifact.content_hash, artifact.id))
+                own_versions.setdefault(artifact.path, {}).setdefault(
+                    artifact.content_hash, UpstreamInput(task_id, artifact.path, artifact.content_hash, artifact.id))
+        own = [self._one_version(mission_id, path, versions) for path, versions in own_versions.items()]
+        occupied.update(own_versions)
         overlaid = sorted([*overlaid, *own], key=lambda entry: entry.path)
-        carried: dict[str, UpstreamInput] = {}
+        carried_versions: dict[str, dict[str, UpstreamInput]] = {}
         for task_id in dict.fromkeys(item.task_id for item in inputs):
             for item in self.carried_inputs(mission_id, task_id):
-                if item.path not in occupied and item.path not in carried:
-                    carried[item.path] = item
-        if not carried:
+                if item.path not in occupied:
+                    carried_versions.setdefault(item.path, {}).setdefault(item.content_hash, item)
+        if not carried_versions:
             return overlaid
-        return sorted([*overlaid, *carried.values()], key=lambda entry: entry.path)
+        carried = [self._one_version(mission_id, path, versions) for path, versions in carried_versions.items()]
+        return sorted([*overlaid, *carried], key=lambda entry: entry.path)
 
     def carried_inputs(self, mission_id: str, producer_task_id: str) -> list[UpstreamInput]:
         return carried_inputs(self.store, mission_id, producer_task_id)

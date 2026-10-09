@@ -11,7 +11,9 @@ from typing import Any
 
 
 def planning_world(loop: Any, mission: Any) -> Any:
-    from agent_orchestrator.contracts.htn import GoalSignature, PortSpec, SideEffectKind, TaskForm
+    from agent_orchestrator.contracts.htn import (
+        GoalSignature, PortCardinality, PortOrdering, PortSpec, SideEffectKind, TaskForm,
+    )
     from agent_orchestrator.contracts.semantic_base import VersionedRef, content_hash_of
     from agent_orchestrator.planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
     from agent_orchestrator.planning.htn.world import build_planning_world, capability_records
@@ -34,7 +36,7 @@ def planning_world(loop: Any, mission: Any) -> Any:
     signature = GoalSignature("desktop.user-goal", 1, params, outputs, "The user's goal; the root binding carries the user's own words and requirements.", ())
     preparation = GoalSignature("desktop.prepare-delivery", 1, params, outputs, "One step of the user's goal; the plan's links say which requirements it answers for.", ())
     continuation = GoalSignature("desktop.continue-delivery", 1, params, outputs,
-        "One step of the user's goal that continues from an accepted upstream delivery; the plan's links say which requirements it answers for.", ())
+        "One step of the user's goal that continues from one or more accepted upstream deliveries (its delivery input port takes several, laid into the workspace in the order the plan lists them); the plan's links say which requirements it answers for.", ())
     ports = (PortSpec("delivery", outputs),)
     # 内容步骤不再有申请单端口：申请单由系统按已批准效果生成（2026-09-29）。
     preparation_ports = ports
@@ -64,7 +66,10 @@ def planning_world(loop: Any, mission: Any) -> Any:
         input_ports = ()
         if name == "desktop.continue-delivery":
             goal_signature = continuation
-            input_ports = (PortSpec("delivery", outputs),)
+            # 2026-10-09 四项修复第 4 条：输入端口接多个上游（集合、按做法里数组的先后），并行分支
+            # 才能在一步汇合；此前单值端口让一步只能接一个上游，规划器只能排成一条链。
+            input_ports = (PortSpec("delivery", outputs, cardinality=PortCardinality.SET,
+                                    ordering=PortOrdering.EXPLICIT),)
         declared_ports = preparation_ports if form is TaskForm.PRIMITIVE else ports
         body = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
                 "ports": [p.to_json() for p in declared_ports]}

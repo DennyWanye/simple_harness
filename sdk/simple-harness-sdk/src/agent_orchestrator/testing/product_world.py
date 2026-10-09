@@ -34,7 +34,7 @@ TENANT = "tenant-product-world"
 def user_goal_world(loop: Any, mission: Any) -> Any:
     """A planning world shaped like the product's: a root goal, two levels of sub-goals and a
     workspace step (plus a continuation step that consumes an upstream delivery)."""
-    from ..contracts.htn import GoalSignature, PortSpec, SideEffectKind, TaskForm
+    from ..contracts.htn import GoalSignature, PortCardinality, PortOrdering, PortSpec, SideEffectKind, TaskForm
     from ..contracts.semantic_base import VersionedRef, content_hash_of
     from ..planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
     from ..planning.htn.world import build_planning_world, capability_records
@@ -55,7 +55,7 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     signature = GoalSignature("user-goal", 1, params, outputs, "The user's goal; the root binding carries the user's own words and requirements.", ())
     step = GoalSignature("prepare-delivery", 1, params, outputs, "One step of the user's goal; the plan's links say which requirements it answers for.", ())
     continuation = GoalSignature("continue-delivery", 1, params, outputs,
-                                 "One step of the user's goal that continues from an accepted upstream delivery; the plan's links say which requirements it answers for.", ())
+                                 "One step of the user's goal that continues from one or more accepted upstream deliveries (its delivery input port takes several, laid into the workspace in the order the plan lists them); the plan's links say which requirements it answers for.", ())
     ports = (PortSpec("delivery", outputs),)
     levels = {"user-goal": 0, "sub-goal-1": 1, "sub-goal-2": 2}
     for name, form in (("user-goal", TaskForm.COMPOUND), ("sub-goal-1", TaskForm.COMPOUND),
@@ -70,7 +70,9 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
         input_ports: tuple[Any, ...] = ()
         if name == "continue-delivery":
             goal_signature = continuation
-            input_ports = (PortSpec("delivery", outputs),)
+            # 2026-10-09 第 4 条：与产品同形——输入端口接多个上游，集合、按做法里数组的先后
+            input_ports = (PortSpec("delivery", outputs, cardinality=PortCardinality.SET,
+                                    ordering=PortOrdering.EXPLICIT),)
         body: dict[str, Any] = {"name": name, "form": str(form), "signature": goal_signature.to_json(),
                                 "ports": [p.to_json() for p in ports]}
         if input_ports:

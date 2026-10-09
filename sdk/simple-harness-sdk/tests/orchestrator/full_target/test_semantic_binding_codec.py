@@ -413,7 +413,9 @@ def test_a_delta_refuses_an_edge_to_an_occurrence_it_never_names() -> None:
         )
 
 
-def test_a_single_valued_input_port_takes_one_binding() -> None:
+def test_the_delta_contract_does_not_judge_port_cardinality() -> None:
+    """2026-10-09 四项修复第 4 条：一个输入端口能接几条由它的基数定（集合端口接多条），合同层不看
+    基数，所以不再在这里拒"一口两条"；``validate_execution_projection`` 按基数报 SINGLE_PORT_OVERBOUND。"""
     delta = proposed_delta()
     doubled = delta.data_requirements + (
         DataRequirement(
@@ -427,8 +429,7 @@ def test_a_single_valued_input_port_takes_one_binding() -> None:
             freshness_policy_ref="freshness-default",
         ),
     )
-    with pytest.raises(ContractError, match="binds one twice"):
-        ProposedPlanDelta(
+    accepted = ProposedPlanDelta(
             delta_id="delta-3",
             mission_id="mission-1",  # type: ignore[arg-type]
             base_plan_revision=PlanRevision(2),
@@ -436,6 +437,7 @@ def test_a_single_valued_input_port_takes_one_binding() -> None:
             occurrences=delta.occurrences,
             data_requirements=doubled,
         )
+    assert len(accepted.data_requirements) == len(doubled)
 
 
 # --------------------------------------------------------------------------------------
