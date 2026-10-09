@@ -79,6 +79,10 @@ class ReviewScript(LayeredScriptedProvider):
                 return ""
             if verdict == "PROSE":
                 return "我看过了，这份内容可以。"
+            if verdict == "LOOP":
+                # 审阅员只查不答，直到撞上这一回合的模型调用上限（react_max_turns_exceeded）：
+                # 它自己的事，不是被打断（库存题第一局最终审阅的真实失败方式）
+                return ("knowledge_list", {})
             return review_reply(data, verdict=verdict, grade=GRADES[verdict],
                                 reason=f"脚本化审阅：{verdict}。")
 

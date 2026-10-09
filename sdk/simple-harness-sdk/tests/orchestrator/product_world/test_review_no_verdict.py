@@ -84,6 +84,40 @@ def test_final_review_without_usable_reply_asks_person(tmp_path):
     asyncio.run(case())
 
 
+def test_final_review_whose_second_call_failed_by_its_own_doing_asks_person(tmp_path, monkeypatch):
+    """2026-10-09 库存题第一局的死路：最终审阅两次都撞上调用上限（不是被打断），此前只写"用完"回执、
+    没有正式记录，交给规划器而规划器没有"重开终审"的决定，任务判失败。现在与格式坏两次同一个出口。
+
+    **Mutation**: 消费者把非被打断的第 2 次回合失败送回"格式修复/用完" → 没有裁决题 → 红。"""
+    from agent_orchestrator.orchestrator import assurance_review_runtime
+
+    monkeypatch.setattr(assurance_review_runtime, "REVIEW_MODEL_CALLS", 3)  # 3 次就撞上限，测试快
+
+    async def case():
+        calls: dict[str, int] = {}
+        # 审阅员只查不答，撞上调用上限（react_max_turns_exceeded）：它自己的事，不是被打断
+        provider = LayeredScriptedProvider(
+            reviewer=_unusable("MISSION_FINAL", lambda data: ("knowledge_list", {}), calls))
+        async with product_world(tmp_path / "root", provider) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "final-call-failed"})["mission_id"]
+            mission = await world.run_until_settled(mission_id, rounds=8)
+            assert mission.status.value == "ACTIVE", mission.stop_reason
+            assert calls["MISSION_FINAL"] == 6  # 两次审阅调用、每次 3 次模型调用；没有第三次审阅调用
+            [row] = _questions(world, mission_id, "adjudicate-root:")
+            assert row["state"] == "PENDING"
+            record = HtnStore(world.store).get_review_record(row["request"]["repair_context"]["record_id"]).record
+            assert record.verdict.value == "INCONCLUSIVE"
+            assert all(item.limitations[0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED"
+                       for item in record.criteria)
+            assert not [e for e in world.store.list_events(mission_id) if e.type == "AssuranceReviewFormatExhausted"]
+            _answer(world, mission, row, "pass")
+            mission = await world.run_until_settled(mission_id, rounds=8)
+            assert mission.status.value == "COMPLETED"
+
+    asyncio.run(case())
+
+
 def _extra_field(data: Any) -> str:
     body = json.loads(review_reply(data))
     body["confidence"] = "high"  # a field with a value the reply shape does not have

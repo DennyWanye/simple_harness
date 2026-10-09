@@ -281,7 +281,10 @@ class VerifierRouter:
                                     critic.to_json(),
                                 )
                     except ContractError as error:
-                        result = LayerResult(layer, ERROR, f"critic verdict unusable: {error}", {})
+                        # 带码的错误（审阅调用被打断）把码放进明细：下游按码判，不读这句话
+                        code = getattr(error, "code", None)
+                        result = LayerResult(layer, ERROR, f"critic verdict unusable: {error}",
+                                             {"code": code} if isinstance(code, str) and code else {})
             elif layer == "code_test" and not self._local_code_execution:
                 # host support 0.9.8: a Task from before the switch still asks for the layer;
                 # it cannot run here, which is an ERROR — never a PASS or NOT_REQUIRED

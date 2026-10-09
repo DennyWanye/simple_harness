@@ -70,11 +70,15 @@ class ImportedReview:
     binding: AssuranceReviewBinding
     classification: ResolvedRef
     turn: ResolvedRef
-    provider_manifest: ResolvedRef
+    #: None for the "no reply" shape: the second call's turn failed through the reviewer's own
+    #: doing (2026-10-09 四项修复第 1 条); nothing was exposed to a reply that never came.
+    provider_manifest: ResolvedRef | None
     disclosures: tuple[DisclosureBatch, ...]
     disclosure_metadata: tuple[ResolvedRef, ...]
     catalogue: tuple[CatalogueEntry, ...]
     exposed: frozenset[str]
+    #: The frozen review package text when it cannot be read from a provider manifest.
+    package_json: str | None = None
 
 
 PRE_SCOPE_ID = "mission"
@@ -198,8 +202,15 @@ def read_imported_review_locked(
     unusable = (meta["kind"] == "AssuranceReviewFormatRejected"
                 and source.get("classification") == "FORMAT_INVALID"
                 and isinstance(source.get("error_code"), str) and value["ordinal"] == 2)
+    # 2026-10-09 四项修复第 1 条：第 2 次调用的回合失败、又不是被打断（调用上限、工具用错、
+    # 输出上限用完……审阅员自己的事）——同样导入为"没有可采用的回复"的正式记录，交人裁决。
+    # 被打断的第 2 次（有被打断回执）不在此列：仍是"被打断用完"，终审重切、步骤重做。
+    failed_second = (meta["kind"] == "AssuranceReviewClassified"
+                     and source.get("classification") == "TURN_FAILED"
+                     and isinstance(source.get("error_code"), str) and value["ordinal"] == 2
+                     and reader.store.get_receipt("assurance-review-interrupted:" + str(intent_id)) is None)
     if (
-        not (readable or unusable)
+        not (readable or unusable or failed_second)
         or meta["subject_id"] != intent_id
         or meta["base_version"] != 0
         or meta["proposal_hash"] != fingerprint(source)
@@ -215,13 +226,13 @@ def read_imported_review_locked(
     intent = reader.store.get_intent(intent_id)
     if (
         payload.get("intent_id") != intent_id
-        or payload.get("state") != "COMMITTED"
+        or payload.get("state") != ("FAILED" if failed_second else "COMMITTED")
         or payload.get("review_key") != bound["review_key"]
         or payload.get("invocation_ordinal") != value["ordinal"]
         or payload.get("turn_id") != intent.expected_turn_id
         or payload.get("agent_id") != intent.agent_id
         or payload.get("raw_output_hash") != source.get("raw_output_hash")
-        or payload.get("exposure_error") is not None
+        or payload.get("exposure_error") != ("REVIEW_TURN_NOT_COMMITTED" if failed_second else None)
     ):
         raise AssuranceError("REVIEW_TURN_SOURCE_MISMATCH")
     # A classification cannot transform an untrusted source row into a runtime
@@ -249,6 +260,22 @@ def read_imported_review_locked(
         raise AssuranceError("REVIEW_TURN_SOURCE_MISMATCH")
     if intent.agent_id in bound["producer_agent_ids"]:
         raise AssuranceError("REVIEW_INDEPENDENCE_REQUIRED")
+    catalogue = {
+        item["label"]: CatalogueEntry(item["label"], AssuranceRef.from_json(item["ref"]))
+        for item in bound["evidence_catalogue"]
+    }
+    if failed_second:
+        if payload.get("provider_manifest_ref") is not None:
+            raise AssuranceError("REVIEW_TURN_SOURCE_MISMATCH")
+        # 没有回复就没有曝光链；审查包从冻结的包记录读（不是从提供方清单里的消息）
+        package = reader.read_exact_metadata(
+            AssuranceRef("review_package", Pin.from_json(bound["package_ref"]))
+        )
+        return ImportedReview(
+            invocation, binding, classified, turn, None, (), (),
+            tuple(catalogue[k] for k in sorted(catalogue)), frozenset(),
+            canonical(decode(package.body_json, limit=MAX_RECORD_BYTES)),
+        )
     manifest = reader.read_exact_metadata(
         AssuranceRef.from_json(payload.get("provider_manifest_ref"), kinds={"input_manifest"})
     )
@@ -262,10 +289,6 @@ def read_imported_review_locked(
         turn_receipt_ref=turn.ref,
         provider_input_hash=provider["provider_input_hash"],
     )
-    catalogue = {
-        item["label"]: CatalogueEntry(item["label"], AssuranceRef.from_json(item["ref"]))
-        for item in bound["evidence_catalogue"]
-    }
     disclosure_metadata = []
     selected = []
     for batch in batches:
@@ -342,7 +365,8 @@ def _interpret(
     decoded but cannot be imported as given (a repairable interpretation error)."""
     bound = imported.binding.to_json()
     source = decode(imported.classification.body_json)
-    if source.get("classification") == "FORMAT_INVALID":
+    if source.get("classification") in {"FORMAT_INVALID", "TURN_FAILED"}:
+        # 不合法 JSON，或这一轮根本没交出回复（2026-10-09）：都是"没有可采用的回复"
         code = str(source["error_code"])
         return _interpret_reply(imported, _no_usable_reply(bound, code), checks, code)
     try:
@@ -502,7 +526,8 @@ def _interpret_reply(
         "exposed_evidence_refs": [
             item.to_json() for item in imported.catalogue if item.label in imported.exposed
         ],
-        "provider_manifest_ref": imported.provider_manifest.ref.to_json(),
+        "provider_manifest_ref": (None if imported.provider_manifest is None
+                                  else imported.provider_manifest.ref.to_json()),
         "disclosure_refs": [batch.delivery_receipt_ref.to_json() for batch in imported.disclosures],
         **({} if no_usable_reply is None
            else {"interpretation": NO_USABLE_REPLY, "error_code": no_usable_reply}),
@@ -527,6 +552,10 @@ def raw_package(imported: ImportedReview) -> str:
     # checked by the original invocation writer. No latest reconstruction.
     from ..assurance.review_input import read_initial_materials
 
+    if imported.provider_manifest is None:
+        if imported.package_json is None:
+            raise AssuranceError("REVIEW_PACKAGE_SOURCE_UNAVAILABLE")
+        return imported.package_json
     provider = decode(imported.provider_manifest.body_json, limit=MAX_RECORD_BYTES)
     matches = []
     for row in provider["messages"]:
@@ -787,7 +816,6 @@ def prepare_official_review(
         refs = {
             classification_ref,
             imported.turn.ref,
-            imported.provider_manifest.ref,
             _raw_ref(imported),
             AssuranceRef("review_package", Pin.from_json(body["package_ref"])),
             AssuranceRef("requirements", Pin.from_json(body["requirements_ref"])),
@@ -797,6 +825,8 @@ def prepare_official_review(
         }
         if scope is not None:
             refs.add(AssuranceRef("completion_scope", Pin.from_json(scope)))
+        if imported.provider_manifest is not None:
+            refs.add(imported.provider_manifest.ref)
         refs.update(item.ref for item in imported.catalogue)
         refs.update(item.ref for item in imported.disclosure_metadata)
         # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。

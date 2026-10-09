@@ -36,12 +36,20 @@ from .assurance_review_policies import register_review_policies
 # tool calls) before concluding, and the old cap of 8 ended every such turn with
 # react_max_tool_calls_exceeded → TURN_FAILED.
 from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
+from .failure_classes import INTERRUPTED_REVIEW, REVIEW_INTERRUPTED_CODE
 from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
 
 #: 2026-10-09 库存题：最终审阅员每轮查 2 次左右，10 次模型调用先用完（只查了 20 次，工具上限 32），
 #: 循环被截断、没有任何提示，两次都没给结论，任务判失败。模型调用上限放在工具上限之上：先到的总是
 #: 带"只剩 N 次"提示和"马上作答"拒绝话的工具上限；多出的两次留给被拒的那一轮和作答的那一轮。
 REVIEW_MODEL_CALLS = MAX_EVIDENCE_TOOL_CALLS + 2
+
+
+class ReviewCallInterrupted(ContractError):
+    """审阅调用被打断（没回来，或两次都被打断而用完）：不是审阅员的结论，也不是它的错。
+    审阅层按出错收口，带结构化码；步骤按"被打断"原地重做、不扣次数。"""
+
+    code = REVIEW_INTERRUPTED_CODE
 #: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
 REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
 #: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
@@ -488,7 +496,7 @@ class AssuranceReviewRuntime:
                     # SUBMITTED and its held reservation remain collectable. A
                     # timeout does not create a format-repair ordinal.
                     await orch._cancel_turn(intent)
-                    raise ContractError("Assurance review awaits original-call reconciliation")
+                    raise ReviewCallInterrupted(INTERRUPTED_REVIEW)
                 if orch._critic_subject_stopped(intent):
                     await orch._collect_after_stop(intent)
                     raise ContractError("Assurance review subject stopped")
@@ -528,10 +536,11 @@ class AssuranceReviewRuntime:
             "SELECT json_extract(receipt_json,'$.classification') FROM commit_receipts "
             "WHERE kind='AssuranceReviewClassified' AND json_extract(receipt_json,'$.review_key')=? "
             "AND json_extract(receipt_json,'$.classification')<>'READY_FOR_CURRENT_REVIEW' "
-            # A first turn that failed to commit is retried once (TURN_RETRY); only a
-            # failed second turn is final — it ends as AssuranceReviewFormatExhausted.
-            "AND NOT (json_extract(receipt_json,'$.classification')='TURN_FAILED' "
-            "AND json_extract(receipt_json,'$.invocation_ordinal')=1) LIMIT 1",
+            # TURN_FAILED is never final by itself (2026-10-09 四项修复第 1 条): the first is
+            # retried once (TURN_RETRY); a second that was interrupted ends as
+            # AssuranceReviewFormatExhausted (below); any other second one is imported as
+            # the official "no usable reply" record and goes to the person.
+            "AND json_extract(receipt_json,'$.classification')<>'TURN_FAILED' LIMIT 1",
             (review_key,),
         ).fetchone()
         if failed is not None:
@@ -549,6 +558,10 @@ class AssuranceReviewRuntime:
                 raise ContractError(
                     "这次审阅作废：审阅进行期间，任务的资料换了版本或被撤销，审阅员看的不是现行资料"
                     "（这一步是拿旧版资料做的）")
+            if row[0] == "AssuranceReviewFormatExhausted":
+                # 只有两次调用都被打断才会写这条回执：不是审阅员的错，步骤按被打断重做
+                raise ReviewCallInterrupted(
+                    "Assurance review stopped: both review calls were interrupted (" + row[0] + ")")
             raise ContractError("Assurance review stopped: " + row[0])
         row = self.store.connection.execute(
             "SELECT wait_reason FROM assurance_pending_work WHERE consumer='REVIEW' "

@@ -76,22 +76,67 @@ def test_failed_first_turn_is_retried_once_and_imported(tmp_path):
     asyncio.run(run())
 
 
-def test_failed_second_turn_is_exhausted_without_a_third_call(tmp_path):
+def test_two_interrupted_calls_exhaust_the_review_and_the_step_is_redone_without_charge(tmp_path):
+    """两次调用都是空回复（服务端没给内容：按被打断/服务出错，不是审阅员的错）→ 这个审阅"被打断
+    用完"→ 这一步按被打断由系统原地重做、不扣次数、不问规划器；新尝试有新的审阅（第 3 次调用）。
+    2026-10-09 四项修复第 1 条之前，这里按"模型做错"交规划器、扣次数（合规评估偏离第 7 条）。
+
+    **Mutation**: judge "interrupted" by the summary text again, or drop ``ReviewCallInterrupted``
+    on the exhausted receipt → the planner is asked and the attempt is charged → red."""
     provider = ReviewScript(verdicts={"TASK_CONTENT": ["EMPTY", "EMPTY", "ACCEPT"]})
 
     async def run() -> None:
         async with reviewed_mission(tmp_path, provider) as case:
-            await case.run_until(provider.repair_asked.is_set)
-            assert provider.review_calls["TASK_CONTENT"] == 2  # 第三条脚本回复只有第三次调用才会用到
-            rows = _content_invocations(case)
-            assert [(r["ordinal"], r["reason"]) for r in rows] == [(1, "INITIAL"), (2, "TURN_RETRY")]
+            mission = await case.settle()
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
+            assert provider.review_calls["TASK_CONTENT"] == 3
+            rows = _content_invocations(case)  # 两个尝试各一个审阅：第一个用了 2 次，第二个 1 次
+            assert sorted((r["ordinal"], r["reason"]) for r in rows) == [(1, "INITIAL"), (1, "INITIAL"), (2, "TURN_RETRY")]
             [exhausted] = case.store.connection.execute(
                 "SELECT receipt_json FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchall()
             assert json.loads(exhausted[0])["reason"] == "REVIEW_TURN_RETRY_EXHAUSTED"
-            assert not case.events("AcceptanceCommitted")
-            # 这一步按验证失败交给规划器（事实如实），不再有第三次审阅调用。
-            [entry] = provider.repair_packages[0]["repair_requests"]
-            assert entry["request"]["context"]["event_type"] == "VerificationFailed"
+            assert not provider.repair_packages  # 没有交给规划器
+            released = [e.payload for e in case.events("AttemptChargeReleased")]
+            assert [item["failure_class"] for item in released] == ["INTERRUPTED"]
+            assert len(case.events("AcceptanceCommitted")) == 1
+
+    asyncio.run(run())
+
+
+def test_a_second_call_failed_by_the_reviewers_own_doing_goes_to_the_person(tmp_path, monkeypatch):
+    """2026-10-09 库存题第一局：最终审阅两次都撞上调用上限（审阅员自己的事，不是被打断），只写了
+    "用完"回执、没有正式记录，终审走进死路，四步全过的任务判失败。现在第 2 次回合失败（非被打断）
+    导入为"没有可采用的回复"的正式记录（判不下来），与格式坏了两次同一个出口：交人裁决。
+
+    **Mutation**: route a non-interrupted failed second call back to ``_prepare_format_repair`` →
+    no official record, no review approval → red."""
+    from agent_orchestrator.orchestrator import assurance_review_runtime
+
+    monkeypatch.setattr(assurance_review_runtime, "REVIEW_MODEL_CALLS", 3)  # 3 次就撞上限，测试快
+    provider = ReviewScript(verdicts={"TASK_CONTENT": ["LOOP"] * 6})
+
+    async def run() -> None:
+        async with reviewed_mission(tmp_path, provider) as case:
+            await case.run_until(lambda: any(a.get("kind") == "review" for a in case.pending_approvals()))
+            assert provider.review_calls["TASK_CONTENT"] == 6  # 两次审阅调用，每次 3 次模型调用；没有第三次
+            rows = _content_invocations(case)
+            assert [(r["ordinal"], r["reason"]) for r in rows] == [(1, "INITIAL"), (2, "TURN_RETRY")]
+            failed = [c for c in _content_classes(case) if c["classification"] == "TURN_FAILED"]
+            assert [c["invocation_ordinal"] for c in failed] == [1, 2]
+            assert case.store.connection.execute(
+                "SELECT count(*) FROM commit_receipts WHERE kind='AssuranceReviewFormatExhausted'").fetchone()[0] == 0
+            assert not provider.repair_packages  # 没有交给规划器
+            records = [json.loads(row[0]) for row in case.store.connection.execute(
+                "SELECT record_json FROM review_records WHERE official=1").fetchall()]
+            [record] = [r for r in records if r.get("purpose") == "TASK_CONTENT"]  # 另一份是做法审阅
+            assert record["verdict"] == "INCONCLUSIVE"
+            assert all(item["limitations"][0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED"
+                       for item in record["criteria"])
+            [approval] = [a for a in case.pending_approvals() if a.get("kind") == "review"]
+            case.world.control.decide(approval["request_id"], "review_pass")
+            mission = await case.settle()
+            assert str(mission.status.value) == "COMPLETED", mission.final_report
+            assert len(case.events("AcceptanceCommitted")) == 1
 
     asyncio.run(run())
 

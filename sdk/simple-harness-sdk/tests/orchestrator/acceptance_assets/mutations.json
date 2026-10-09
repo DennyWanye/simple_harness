@@ -1137,8 +1137,8 @@
    "id": "AS-M02",
    "source": "Assurance 原计划 M02 fake_official（2026-10-06 第 4 批车道 M 登记）",
    "file": "src/agent_orchestrator/orchestrator/assurance_review_import.py",
-   "original": "        or payload.get(\"exposure_error\") is not None\n    ):\n        raise AssuranceError(\"REVIEW_TURN_SOURCE_MISMATCH\")",
-   "replacement": "        or payload.get(\"exposure_error\") is not None\n    ):\n        pass",
+   "original": "        or payload.get(\"exposure_error\") != (\"REVIEW_TURN_NOT_COMMITTED\" if failed_second else None)\n    ):\n        raise AssuranceError(\"REVIEW_TURN_SOURCE_MISMATCH\")",
+   "replacement": "        or payload.get(\"exposure_error\") != (\"REVIEW_TURN_NOT_COMMITTED\" if failed_second else None)\n    ):\n        pass",
    "tests": [
     "tests/orchestrator/full_target/assurance_exec/test_batch4_mutation_bindings.py::test_m02_a_review_turn_from_another_session_than_dispatched_is_not_official"
    ],

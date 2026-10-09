@@ -20,6 +20,9 @@ NON_MODEL = frozenset({FORMAT, INFRA, INTERRUPTED})
 NON_MODEL_FAILURE_CAP = 6
 
 INTERRUPTED_REVIEW = "Assurance review awaits original-call reconciliation"
+#: 审阅调用被打断（没回来、或两次都被打断用完）时审阅层出错项带的结构化码；判"被打断"只看它，
+#: 不读摘要文字（2026-10-09 四项修复第 1 条，合规评估偏离第 7 条）。
+REVIEW_INTERRUPTED_CODE = "REVIEW_INTERRUPTED"
 #: 一次审阅调用过了期限还没回来，按"被打断"收口（阶段 B 裁决第 6 类）。
 REVIEW_CALL_ABANDONED = "REVIEW_CALL_ABANDONED"
 
@@ -74,7 +77,9 @@ def interrupted_review(failures: Any) -> bool:
     items = tuple(failures or ())
     return bool(items) and all(
         isinstance(item, Mapping) and item.get("layer") == "critic_review"
-        and item.get("status") == "ERROR" and INTERRUPTED_REVIEW in str(item.get("summary", ""))
+        and item.get("status") == "ERROR"
+        and isinstance(item.get("detail"), Mapping)
+        and item["detail"].get("code") == REVIEW_INTERRUPTED_CODE
         for item in items)
 
 

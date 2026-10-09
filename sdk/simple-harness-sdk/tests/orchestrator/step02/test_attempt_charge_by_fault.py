@@ -69,8 +69,12 @@ def test_the_table_says_whose_fault_each_real_failure_is():
     assert classify_failure({"reason": "executor_stalled", "stalled_seconds": 600}) == INTERRUPTED
     assert classify_failure({"reason": "provider_outcome_unknown"}) == INTERRUPTED
     assert classify_failure({"reason": "runtime_unavailable"}) == INFRA
+    # 2026-10-09：被打断按审阅层出错项的结构化码判，不再读摘要文字
     interrupted = {"layer": "critic_review", "status": "ERROR",
-                   "summary": "critic verdict unusable: " + INTERRUPTED_REVIEW}
+                   "summary": "critic verdict unusable: " + INTERRUPTED_REVIEW,
+                   "detail": {"code": "REVIEW_INTERRUPTED"}}
+    assert classify_failure({"reason": "verification_failed", "failures": [
+        {**interrupted, "detail": {}}]}) == MODEL  # 只有文字、没有码：不算被打断
     assert classify_failure({"reason": "verification_failed", "failures": [interrupted]}) == INTERRUPTED
     assert classify_failure({"reason": "verification_failed", "failures": [
         interrupted, {"layer": "code_test", "status": "FAIL", "summary": "1 failed"}]}) == MODEL

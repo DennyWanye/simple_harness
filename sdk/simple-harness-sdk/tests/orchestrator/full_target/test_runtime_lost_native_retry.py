@@ -104,7 +104,7 @@ def test_an_interrupted_review_redoes_the_step_but_a_real_rejection_does_not():
     package["repair_requests"][0]["request"] = {
         "trigger_source": "VERIFIER_ACCEPTANCE_REJECT",
         "context": {"event_type": "VerificationFailed", "detail": {"failures": [
-            {"layer": "critic_review", "status": "ERROR",
+            {"layer": "critic_review", "status": "ERROR", "detail": {"code": "REVIEW_INTERRUPTED"},
              "summary": "critic verdict unusable: Assurance review awaits original-call reconciliation"}]}},
         "trigger_refs": ["task-742189979604bf7b96ea9335250e4a2c:attempt-1", "task-742189979604bf7b96ea9335250e4a2c"],
     }

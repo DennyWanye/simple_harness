@@ -220,13 +220,23 @@ class AssuranceReviewConsumer:
             ref = AssuranceRef.from_json(event.payload["classification_receipt_ref"])
             unusable_second = (event.type == "AssuranceReviewFormatRejected"
                                and event.payload.get("invocation_ordinal") == 2)
+            # 2026-10-09 四项修复第 1 条：第 2 次调用的回合失败、且不是被打断（没有被打断回执）
+            # —— 审阅员自己的事（调用上限、工具用错、输出上限用完），同样导入为"没有可采用的
+            # 回复"的正式记录，交人裁决；此前它只写"用完"回执，终审因此走进死路（规划器没有
+            # "重开终审"的决定可用）。被打断的第 2 次仍是"被打断用完"（终审重切、步骤重做）。
+            failed_second = (event.payload.get("classification") == "TURN_FAILED"
+                             and event.payload.get("invocation_ordinal") == 2
+                             and self.store.get_receipt(
+                                 "assurance-review-interrupted:" + str(event.payload.get("intent_id"))) is None)
             if (event.type == "AssuranceReviewFormatRejected"
-                    or event.payload.get("classification") == "TURN_FAILED") and not unusable_second:
-                # First unusable reply: asked again in a fresh session.  A call that never
-                # came back (TURN_FAILED) stays an infrastructure matter on both calls.
+                    or event.payload.get("classification") == "TURN_FAILED") \
+                    and not unusable_second and not failed_second:
+                # First unusable reply or failed call: asked again in a fresh session.  A second
+                # call that was interrupted stays an infrastructure matter (exhausted below).
                 return self._prepare_format_repair(reader, ref)
-            # The second call's reply still cannot be decoded: imported below as "no usable
-            # reply" — an INCONCLUSIVE record, the same exit as "cannot tell" (阶段 C 第 3 条).
+            # The second call's reply still cannot be decoded, or the second call failed by the
+            # reviewer's own doing: imported below as "no usable reply" — an INCONCLUSIVE record,
+            # the same exit as "cannot tell" (阶段 C 第 3 条).
             imported = read_imported_review_locked(self.commit, reader, ref)
             body = imported.binding.to_json()
             existing = HtnStore(self.store).official_review_record(body["package_ref"]["id"])
@@ -630,16 +640,19 @@ class AssuranceReviewConsumer:
             return PreparedAssuranceWork(repair)
 
         def exhausted() -> AssuranceRef:
+            # 只剩一种到这里的情形：第 2 次调用被打断（有被打断回执）。格式错的第 2 次与审阅员
+            # 自己造成的第 2 次回合失败都已导入为正式记录（2026-10-09）。
             self.commit._assurance_root_gate.require_execution()
             if reader.read_exact_metadata(ref) != metadata:
                 raise AssuranceError("RECHECK_REQUIRED")
+            if (source.get("classification") != "TURN_FAILED" or self.store.get_receipt(
+                    "assurance-review-interrupted:" + str(source.get("intent_id"))) is None):
+                raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
             body = {
                 "mission_id": reader.mission_id,
                 "review_key": value["review_key"],
                 "classification_ref": ref.to_json(),
-                "reason": ("REVIEW_FORMAT_REPAIR_EXHAUSTED"
-                           if source.get("classification") == "FORMAT_INVALID"
-                           else "REVIEW_TURN_RETRY_EXHAUSTED"),
+                "reason": "REVIEW_TURN_RETRY_EXHAUSTED",
             }
             receipt_id = "assurance-review-format-exhausted:" + binding.to_json()["review_key"]
             old = self.store.get_receipt(receipt_id)

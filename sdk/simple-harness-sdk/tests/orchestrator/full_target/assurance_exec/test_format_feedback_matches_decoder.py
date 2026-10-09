@@ -71,9 +71,9 @@ def test_a_stop_after_an_unreadable_final_review_says_so():
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
     content = {"review_key": "assurance-content:x", "reason": "R"}
-    final = {"review_key": "assurance-mission-final:k", "reason": "REVIEW_FORMAT_REPAIR_EXHAUSTED"}
+    final = {"review_key": "assurance-mission-final:k", "reason": "REVIEW_TURN_RETRY_EXHAUSTED"}
     assert Orchestrator._reviews_without_verdict_detail(_orch([content, final]), "m1") == {
-        "final_review": {"reason": "REVIEW_FORMAT_REPAIR_EXHAUSTED",
+        "final_review": {"reason": "REVIEW_TURN_RETRY_EXHAUSTED",
                          "review_key": "assurance-mission-final:k", "interrupted": False}}
     assert Orchestrator._reviews_without_verdict_detail(_orch([content]), "m1") == {}
 

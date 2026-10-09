@@ -58,7 +58,7 @@ def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict
 # 2026-09-28 用户决定：不是模型自己做错的失败（格式没写对、服务出错、执行或审阅被打断）
 # 由系统原样重做该步，不交给规划器，也不扣任务次数（failure_classes）。同一步合计的上限
 # 在创建尝试时把关（NonModelFailuresExhausted），服务一直坏着不会无限重做。
-from .failure_classes import INTERRUPTED_REVIEW, NON_MODEL
+from .failure_classes import NON_MODEL, interrupted_review
 
 
 def _lost_execution(request: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
@@ -76,10 +76,7 @@ def _interrupted_review(request: Mapping[str, Any], context: Mapping[str, Any]) 
     if (request.get("trigger_source") != "VERIFIER_ACCEPTANCE_REJECT"
             or context.get("event_type") != "VerificationFailed"):
         return False
-    failures = (context.get("detail") or {}).get("failures") or ()
-    return bool(failures) and all(
-        f.get("layer") == "critic_review" and f.get("status") == "ERROR"
-        and INTERRUPTED_REVIEW in str(f.get("summary", "")) for f in failures)
+    return interrupted_review((context.get("detail") or {}).get("failures") or ())
 
 
 def _not_models_fault(request: Mapping[str, Any], context: Mapping[str, Any]) -> bool:
