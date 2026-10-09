@@ -1779,6 +1779,18 @@
     "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting"
    ],
    "note": "等着的作业唤醒间隔不翻倍"
+  },
+  {
+   "id": "CV-04",
+   "source": "2026-10-10 docopt 局（独立核验 M1）：拦截集合不看预留是否已按上限结清",
+   "file": "src/agent_orchestrator/runtime/taskgraph_local_work.py",
+   "original": "                       or (row[\"state\"] == \"UNKNOWN\" and row[\"subject_id\"] not in settled)))",
+   "replacement": "                       or row[\"state\"] == \"UNKNOWN\"))",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_local_work_blocking.py::test_an_unknown_charge_blocks_until_its_reservation_is_counted_at_the_upper_bound",
+    "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound"
+   ],
+   "note": "未知名额不管账关没关都拦：收敛作业永远等"
   }
  ]
 }

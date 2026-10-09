@@ -116,7 +116,8 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
             # **Mutation**: ``has_unknown_usage`` → ``physical = False`` in ``_read`` → red.
             from agent_orchestrator.orchestrator.taskgraph_runtime_imports import TaskGraphRuntimeImports
             facts = TaskGraphRuntimeImports(world.loop).read_subject(store.get_intent_for_subject(first.id))
-            assert facts.physical_settled is True and facts.accounting_complete is False, (
+            # "broken"（连接中断）那一例 SDK 的回合记录停在 running：回合没结束，物理上就还不算安静
+            assert facts.physical_settled is (fault != "broken") and facts.accounting_complete is False, (
                 [(e.get("phase"), [(i["state"]) for i in e.get("provider_invocations", [])], [(f["state"]) for f in e.get("effects", [])])
                  for e in facts.document["executors"]], [(g["state"]) for g in facts.document["provider_grants"]])
             assert world.loop.commit.ledger.usage_flags(mission_id) == {

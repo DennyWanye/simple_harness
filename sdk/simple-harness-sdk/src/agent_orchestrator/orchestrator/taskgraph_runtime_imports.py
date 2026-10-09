@@ -135,6 +135,8 @@ class TaskGraphRuntimeImports:
                 raise SourceUnavailable("taskgraph_runtime_turn_input_changed")
             entry.update(materialization="TURN_PRESENT", turn_id=turn.turn_id,
                          turn_hash=sha256_hex(_document(turn)), phase=str(turn.phase))
+            if str(turn.phase) in {"queued", "running", "result_pending"}:
+                physical = False  # the turn itself has not ended
             bound = executor.agent_id == expected_agent and executor.expected_turn_id == expected_turn
             if not bound:
                 # A crash may occur after SDK submit and before saving its receipt.

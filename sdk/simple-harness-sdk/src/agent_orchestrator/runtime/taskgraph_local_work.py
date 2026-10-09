@@ -61,10 +61,15 @@ class LocalWorkFacts:
                        if row["subject_id"] in subjects and row["state"] not in {"SETTLED", "FAILED"})
         blocked.update(row["subject_id"] for row in body["reservations"]
                        if row["subject_id"] in subjects and row["state"] != "SETTLED")
+        # 2026-10-10（docopt 局）：一笔"用量未知"的名额或用量事实，在它的预留已经按上限结清
+        # （账已关）之后不再拦截——否则收敛作业永远等一笔永远不会来的对账。仍占着的名额
+        # （RESERVED / HANDED_OFF）与预留未结清的未知用量照旧拦截。
+        settled = {row["subject_id"] for row in body["reservations"] if row["state"] == "SETTLED"}
         blocked.update(row["subject_id"] for row in body["provider_grants"]
-                       if row["subject_id"] in subjects and row["state"] in {"RESERVED", "HANDED_OFF", "UNKNOWN"})
+                       if row["subject_id"] in subjects and (row["state"] in {"RESERVED", "HANDED_OFF"}
+                       or (row["state"] == "UNKNOWN" and row["subject_id"] not in settled)))
         blocked.update(row["subject_id"] for row in body["usage"]
-                       if row["subject_id"] in subjects and row["unknown"])
+                       if row["subject_id"] in subjects and row["unknown"] and row["subject_id"] not in settled)
         blocked.update(row["subject_id"] for row in body["tool_calls"]
                        if row["subject_id"] in subjects and row["outcome"] not in {"succeeded", "failed", "rejected"})
         return frozenset(blocked)

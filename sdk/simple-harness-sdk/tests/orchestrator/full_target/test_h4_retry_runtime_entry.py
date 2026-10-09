@@ -136,9 +136,13 @@ def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_th
             assert loop.commit.ledger.reservation(first.id)["state"] == "RESERVED"
             assert str(loop.store.get_mission(mission.id).status.value) == "ACTIVE"
             assert not accounting._settle_expired_ended_holds(loop)  # 三个整轮还没过：不动
+            from agent_orchestrator.runtime.taskgraph_local_work import read_local_work
+            assert first.id in read_local_work(loop.store, mission.id).blocking_subjects(frozenset({task_id}))
             monkeypatch.setattr(accounting, "ENDED_MISSION_RECHECK_SECONDS", 0.0)
             assert accounting._settle_expired_ended_holds(loop)
             assert loop.commit.ledger.reservation(first.id)["state"] == "SETTLED"
+            # 账关了，这次尝试不再拦住执行图收敛（docopt 局卡住的正是这一点）
+            assert first.id not in read_local_work(loop.store, mission.id).blocking_subjects(frozenset({task_id}))
             counted = [e.payload for e in events(loop, mission.id, "ReservationCountedAtUpperBound")]
             assert [(c["subject_id"], c["reason"]) for c in counted] == [(first.id, "attempt_ended_usage_unknown")]
             assert loop.commit.ledger.reservation(second.id)["state"] != "SETTLED"  # 在跑的那次不碰

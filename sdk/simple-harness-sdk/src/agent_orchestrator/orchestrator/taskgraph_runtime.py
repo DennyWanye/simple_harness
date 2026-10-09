@@ -211,10 +211,13 @@ class TaskGraphRuntimeCommands:
             if (current is None or current.creation_key != intent.creation_key
                     or current.expected_turn_id != intent.expected_turn_id):
                 raise StoreConflict("TASKGRAPH_CANCEL_SERVICE_CHANGED")
-            if self._observe._physical_settled(current):
+            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+            facts = TaskGraphRuntimeImports(self.orchestrator).read_subject(current)
+            if facts.physical_settled and facts.accounting_complete:
                 # Original provider facts, complete effects and imported usage
-                # have now been checked. Never release an UNKNOWN hold on intent
-                # status alone and never substitute zero usage for a missing Turn.
+                # have now been checked (2026-10-10: 物理安静与账完整分开后，两个都要满足才结清；
+                # 只看安静会在账不完整时抛 BudgetError 回滚、把投递耗成 BLOCKED). Never release an
+                # UNKNOWN hold on intent status alone and never substitute zero usage for a missing Turn.
                 self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)
 
     async def reconcile_operation(self, job: ConvergenceJob, action: ConvergenceAction, *, command_key: str) -> None:

@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "1af1cd7f615d462afb66e4f1300e5f3f83c41be52ab66011ee0a01897f8a098b",
+  "deployment_id": "5afcf8098fb20257c18a179ec3faa0bdb46e376204eb108e17921d2f804c29e8",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -294,8 +294,8 @@
     "agent_orchestrator/orchestrator/taskgraph_resume.py": "8861738211f2e8f6ec38be212074118a5dd68b8610942499a8d17f83a51f00e8",
     "agent_orchestrator/orchestrator/taskgraph_review.py": "8d8fb1199addf3d5f01f23fb667ae177aa8e60c2aa6895e84def670c1aabd19f",
     "agent_orchestrator/orchestrator/taskgraph_review_evidence.py": "78f14e90e7401bb45ab5735554d9b7e3961c723b1d4f2d6a9dbe47b7c2dc0174",
-    "agent_orchestrator/orchestrator/taskgraph_runtime.py": "8a4710e796108a3b3357d4cb1a296976e22f2200ec8f62d53ba17c42c5281665",
-    "agent_orchestrator/orchestrator/taskgraph_runtime_imports.py": "e654548c1fae2b3ae61980593f6a5399a6eb697a1d8d0d9c50c12800e71c2cc4",
+    "agent_orchestrator/orchestrator/taskgraph_runtime.py": "257836e8ccf882ef0ee3309c001e545614477c90d8681df64bcf10e478841bd4",
+    "agent_orchestrator/orchestrator/taskgraph_runtime_imports.py": "d561681bb29ee81281bc69e63eac94673772d1371564615c36514fc57983d9f5",
     "agent_orchestrator/orchestrator/taskgraph_runtime_observation.py": "38ada21d31b56a400bbe6fee6dbe29f545258041524b802e5f8464596f7fcdf1",
     "agent_orchestrator/orchestrator/taskgraph_settlement.py": "2b0005302ccf6f2d0d577d9d313e31edd4a05eca0264957702b84542448e3f65",
     "agent_orchestrator/orchestrator/taskgraph_sharing_inputs.py": "c60419162cc4a4c871d944dd1c203e73d506651d4e70b5b47524395eac2ba904",
@@ -386,7 +386,7 @@
     "agent_orchestrator/runtime/provider_budget_guard.py": "3e92e386f99895abfafa00058ddc3f4ab9dd77198e626c11dfd01b671c198229",
     "agent_orchestrator/runtime/role_templates.py": "54171d9c4f1da66b9150502c0c9e86f232224d078b315674ab60831dc9e37738",
     "agent_orchestrator/runtime/sandbox.py": "b64160f775556c8507068634e3133db8c5d8210127216abf89b9dcbbacea11e8",
-    "agent_orchestrator/runtime/taskgraph_local_work.py": "7633316454532fba9aa50890b3c92513c70e67dd18737e2bd0784739310dd623",
+    "agent_orchestrator/runtime/taskgraph_local_work.py": "126675f02089083b86e01cffd3c7a3e484c6a30fafd3986f5fda1d35feae3b67",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "26cafeaaad2c2684bc9058c730616ea962ef6056f5038ad60e0b1c3f0d581219",
     "agent_orchestrator/runtime/tool_gateway.py": "1131a92e4ad6f6a2710f39b195f2979478073348fb2956c0dfd39e7e39ad4ccd",
     "agent_orchestrator/scheduling/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
