@@ -157,8 +157,7 @@ class TaskGraphRuntimeImports:
                 else:
                     actual, settled = self._unguarded_usage(bridge, originals, turn)
                 facts.extend(actual)
-                complete = complete and settled
-                physical = physical and settled
+                complete = complete and settled  # 账是否说得清；执行是否还在跑看下面的调用状态
             provider_facts = []
             for original in originals:
                 effective = runtime.uow.read_effective_provider_invocation(original.invocation_id)
@@ -167,6 +166,8 @@ class TaskGraphRuntimeImports:
                 provider_facts.append({"invocation_id": original.invocation_id,
                     "original_hash": sha256_hex(_document(original)),
                     "effective_hash": sha256_hex(_document(effective)), "state": str(effective.state)})
+                if original.handoff_attempt and str(effective.state) not in {"succeeded", "failed", "unknown"}:
+                    physical = False  # handed off and still on the wire; a never-handed-off claim runs nothing
             effect_facts = []
             for effect in effects:
                 if (effect.run_id.value != agent.run_id or effect.request_hash != effect_request_hash(
@@ -181,7 +182,15 @@ class TaskGraphRuntimeImports:
             raise SourceUnavailable("taskgraph_runtime_grant_outside_executor_history")
         if len({fact.usage_ref for fact in facts}) != len(facts):
             raise SourceUnavailable("taskgraph_runtime_invocation_reused")
+        # 2026-10-10（docopt 局）：用量未知是记账的事——按上限计、以后导入——不是执行还在跑。
+        # 只有仍占着的调用名额（RESERVED / HANDED_OFF）和没结束的回合才算"物理上没安静"；
+        # 把一笔服务出错留下的未知用量也算作没安静，会让执行图的收敛作业每 5 秒空转、永远等
+        # （那局等了两个多小时）。用户硬规则：可以多算不可以少算，但不冻结。
         if self.orchestrator.commit.ledger.has_unknown_usage(intent.subject_id):
+            complete = False
+        if store.connection.execute(
+                "SELECT 1 FROM provider_token_grants WHERE subject_id=? AND state IN ('RESERVED','HANDED_OFF') LIMIT 1",
+                (intent.subject_id,)).fetchone() is not None:
             physical = False
         imports = []
         for fact in facts:
@@ -190,14 +199,14 @@ class TaskGraphRuntimeImports:
                 "FROM imported_usage WHERE usage_ref=?", (fact.usage_ref,),
             ).fetchone()
             if imported is None:
-                physical = False
+                complete = False  # 还没导入：账不完整，不是执行没安静
             elif tuple(imported) != (intent.subject_id, intent.mission_id, fact.input_tokens,
                                      fact.output_tokens, int(fact.unknown)):
                 # A still-unknown old import awaits the real accounting importer;
                 # differing final amounts or identities are corruption.
                 if (imported[0] != intent.subject_id or imported[1] != intent.mission_id or not imported[4]):
                     raise SourceUnavailable("taskgraph_runtime_imported_usage_mismatch")
-                physical = False
+                complete = False
             imports.append({"usage_ref": fact.usage_ref, "actual": _document(fact),
                             "imported": None if imported is None else list(imported)})
         return RuntimeSubjectFacts({"intent_id": intent.intent_id, "subject_id": intent.subject_id,

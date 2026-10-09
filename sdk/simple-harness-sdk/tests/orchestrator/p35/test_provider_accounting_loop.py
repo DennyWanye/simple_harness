@@ -111,6 +111,14 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
             assert all(calls[row["invocation_id"]][1] == row["handoff_ordinal"] == 1 for row in unknown), calls
             # 账上：这次尝试的用量是"未知"，不是 0；整局用量不算"全部已知"
             assert world.loop.commit.ledger.has_unknown_usage(first.id)
+            # 2026-10-10（docopt 局）：未知用量是记账的事，不是执行还在跑——调用已在线路上结束，
+            # 执行图收敛看"物理上安静"时不把它算作没安静（否则收敛作业永远等）；记账完整性照实为假。
+            # **Mutation**: ``has_unknown_usage`` → ``physical = False`` in ``_read`` → red.
+            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import TaskGraphRuntimeImports
+            facts = TaskGraphRuntimeImports(world.loop).read_subject(store.get_intent_for_subject(first.id))
+            assert facts.physical_settled is True and facts.accounting_complete is False, (
+                [(e.get("phase"), [(i["state"]) for i in e.get("provider_invocations", [])], [(f["state"]) for f in e.get("effects", [])])
+                 for e in facts.document["executors"]], [(g["state"]) for g in facts.document["provider_grants"]])
             assert world.loop.commit.ledger.usage_flags(mission_id) == {
                 "usage_fully_known": False, "budget_conserved": True}
             # 收尾按上限计入：计的是整笔预留（不小于这几次调用的上限之和），一次

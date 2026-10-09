@@ -1746,6 +1746,39 @@
     "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay"
    ],
    "note": "端口规则不扣除端口产出者收到过的旧版：最常见的单链接力被判成写入冲突"
+  },
+  {
+   "id": "CV-01",
+   "source": "2026-10-10 docopt 局：收敛作业因一笔未知用量永远等",
+   "file": "src/agent_orchestrator/orchestrator/taskgraph_runtime_imports.py",
+   "original": "        if self.orchestrator.commit.ledger.has_unknown_usage(intent.subject_id):\n            complete = False\n",
+   "replacement": "        if self.orchestrator.commit.ledger.has_unknown_usage(intent.subject_id):\n            physical = False\n",
+   "tests": [
+    "tests/orchestrator/p35/test_provider_accounting_loop.py::test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout"
+   ],
+   "note": "未知用量又被当成\"执行没安静\"：收敛作业永远等"
+  },
+  {
+   "id": "CV-02",
+   "source": "2026-10-10 docopt 局：已结束尝试的未知用量永远结不了",
+   "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
+   "original": "        \" WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED') AND i.kind='attempt'\"",
+   "replacement": "        \" WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED') AND i.kind='never'\"",
+   "tests": [
+    "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound"
+   ],
+   "note": "只对已结束任务按上限结清，在跑任务里已结束尝试的预留永远留着"
+  },
+  {
+   "id": "CV-03",
+   "source": "2026-10-10 docopt 局：收敛作业 5 秒一次空转两小时",
+   "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
+   "original": "        return min(self.interval_ms * 2 ** max(0, int(ordinal) - 1), max(self.interval_ms, self.MAX_INTERVAL_MS))",
+   "replacement": "        return self.interval_ms",
+   "tests": [
+    "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting"
+   ],
+   "note": "等着的作业唤醒间隔不翻倍"
   }
  ]
 }

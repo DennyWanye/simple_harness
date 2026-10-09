@@ -217,7 +217,8 @@ def import_late_accounting(orch) -> bool:
 
 
 def _settle_expired_ended_holds(orch) -> bool:
-    """A hold left by a Mission that ended long ago is counted at its upper bound.
+    """A hold left by a Mission — or, since 2026-10-10, by an *Attempt* — that ended long ago is
+    counted at its upper bound.
 
     2026-10-03 (阶段 B 裁决第 8 类): after the Mission ended its holds are re-checked on
     every full pass; a late usage record settles them as it is.  Once three full passes
@@ -225,28 +226,43 @@ def _settle_expired_ended_holds(orch) -> bool:
     and the known facts — overcount, never undercount, never freeze (users, 2026-09-24 /
     09-26) — and the event names why.  Time passing is not a store write, so this runs on
     every full pass even when the quiet-generation check skipped the scan above.
+
+    2026-10-10（docopt 局）：一个还在跑的任务里，某次尝试的回合早已结束（意图 SETTLED/FAILED），
+    但它有一笔用量未知（服务出错、调用没回执），这笔预留同样永远不会有真实用量来结清；它卡住的
+    不只是账，还有执行图收敛（上游要取消/换做法时等它安静）。同一条规则：三个整轮之后按上限计，
+    事件写明原因是"尝试已结束、用量未知"。仍在跑的尝试（意图 SUBMITTED）不碰；用量都知道、只是
+    还没导入的留给导入路径。
     """
     from .assurance_consumers import UPPER_BOUND_EVENT
-
     store = orch.store
     ended = sorted(str(status) for status in TERMINAL_MISSION)
+    cutoff = store.now - ENDED_MISSION_RECHECK_SECONDS * 3
+    marks = ",".join("?" * len(ended))
     rows = store.connection.execute(
-        "SELECT i.subject_id, i.mission_id FROM dispatch_intents i"
+        "SELECT i.subject_id, i.mission_id, 'mission_ended_usage_unknown' AS reason FROM dispatch_intents i"
         " JOIN budget_reservations r ON r.subject_id=i.subject_id"
         " JOIN missions m ON m.mission_id=i.mission_id"
         " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED')"
-        f" AND m.status IN ({','.join('?' * len(ended))}) AND m.updated_at <= ?",
-        (*ended, store.now - ENDED_MISSION_RECHECK_SECONDS * 3),
+        f" AND m.status IN ({marks}) AND m.updated_at <= ?"
+        " UNION ALL"
+        " SELECT i.subject_id, i.mission_id, 'attempt_ended_usage_unknown' AS reason FROM dispatch_intents i"
+        " JOIN budget_reservations r ON r.subject_id=i.subject_id"
+        " JOIN missions m ON m.mission_id=i.mission_id"
+        " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED') AND i.kind='attempt'"
+        f" AND m.status NOT IN ({marks}) AND i.updated_at <= ?",
+        (*ended, cutoff, *ended, cutoff),
     ).fetchall()
     progressed = False
-    for subject_id, mission_id in rows:
+    for subject_id, mission_id, reason in rows:
         with store.transaction():
             reservation = orch.commit.ledger.reservation(subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 continue
+            if reason == "attempt_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(subject_id):
+                continue
             settled = orch.commit.ledger.settle_at_upper_bound(subject_id=subject_id)
             orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key="upper-bound:" + subject_id, payload={
-                "subject_id": subject_id, "reason": "mission_ended_usage_unknown",
+                "subject_id": subject_id, "reason": reason,
                 "counted_tokens": settled["settled_tokens"]})
         progressed = True
     return progressed

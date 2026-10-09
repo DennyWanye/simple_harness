@@ -112,6 +112,36 @@ def test_a_failed_attempt_with_an_unknown_charge_can_still_be_retried(tmp_path):
                         if e.payload.get("decision_type") == "REPAIR"]
             assert repair["status"] == "COMMITTED"
             assert second.retry_of == first.id
+            # 这里的"未知"来自一次还挂在线路上的调用（HANDED_OFF）：执行图收敛仍把它算作没安静
+            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import TaskGraphRuntimeImports
+            facts = TaskGraphRuntimeImports(loop).read_subject(loop.store.get_intent_for_subject(first.id))
+            assert facts.physical_settled is False and facts.accounting_complete is False
+
+    asyncio.run(case())
+
+
+def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound(tmp_path, monkeypatch):
+    """2026-10-10（docopt 局）：任务还在跑，第一次尝试早已结束、用量未知，预留永远结不了：
+    三个整轮之后按上限计（与"任务结束后"同一条规则），事件原因写"尝试已结束、用量未知"；
+    还在跑的第二次尝试不碰。
+
+    **Mutation**: drop the ``attempt_ended_usage_unknown`` half of the query → red."""
+    from agent_orchestrator.orchestrator import accounting_recovery as accounting
+
+    async def case():
+        async with _timed_out_and_retried(tmp_path, "h4-ended-attempt-cap") as (seed, task_id):
+            loop, mission = seed.loop, seed.mission
+            first, second = loop.store.list_attempts(task_id)[:2]
+            assert loop.commit.ledger.has_unknown_usage(first.id)
+            assert loop.commit.ledger.reservation(first.id)["state"] == "RESERVED"
+            assert str(loop.store.get_mission(mission.id).status.value) == "ACTIVE"
+            assert not accounting._settle_expired_ended_holds(loop)  # 三个整轮还没过：不动
+            monkeypatch.setattr(accounting, "ENDED_MISSION_RECHECK_SECONDS", 0.0)
+            assert accounting._settle_expired_ended_holds(loop)
+            assert loop.commit.ledger.reservation(first.id)["state"] == "SETTLED"
+            counted = [e.payload for e in events(loop, mission.id, "ReservationCountedAtUpperBound")]
+            assert [(c["subject_id"], c["reason"]) for c in counted] == [(first.id, "attempt_ended_usage_unknown")]
+            assert loop.commit.ledger.reservation(second.id)["state"] != "SETTLED"  # 在跑的那次不碰
 
     asyncio.run(case())
 

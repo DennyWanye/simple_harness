@@ -14,10 +14,18 @@ from ..storage.taskgraph_followups import TaskGraphFollowupStore
 
 
 class TaskGraphConvergenceWakeups:
+    #: 2026-10-10：一个等着的作业每次被唤醒都要完整重读它的全部执行事实；连续等着时间隔翻倍
+    #: （5 s、10 s、20 s … 到 60 s 封顶）。docopt 局里一个作业两小时被唤醒一千多次、占了主循环
+    #: 七成 CPU。作业一旦推进（状态/版本变），下面 ``schedule`` 对它的记录随作业重新开始。
+    MAX_INTERVAL_MS = 60_000
+
     def __init__(self, notifications: TaskGraphFollowupStore, *, interval_ms: int = 5_000) -> None:
         self.notifications = notifications
         self.store = notifications.store
         self.interval_ms = _integer(interval_ms, "interval_ms", minimum=1_000)
+
+    def _interval_ms(self, ordinal: int) -> int:
+        return min(self.interval_ms * 2 ** max(0, int(ordinal) - 1), max(self.interval_ms, self.MAX_INTERVAL_MS))
 
     def schedule(self, mission_id: str, *, now_ms: int, limit: int = 16) -> int:
         """Commit source event, notification and next due time in one transaction.
@@ -69,7 +77,7 @@ class TaskGraphConvergenceWakeups:
                     cause_ref=FollowupCauseRef(kind="event", id=event.id, revision=event.seq,
                                               content_hash=sha256_hex(event.to_json()))), now_ms=now_ms)
                 self.store.put_scheduler_state(key, {"mission_id": mission_id, "job_id": job["job_id"],
-                    "ordinal": ordinal, "next_due_ms": _integer(now_ms + self.interval_ms, "next_due_ms")})
+                    "ordinal": ordinal, "next_due_ms": _integer(now_ms + self._interval_ms(ordinal), "next_due_ms")})
                 scheduled += 1
                 if scheduled == limit:
                     break
