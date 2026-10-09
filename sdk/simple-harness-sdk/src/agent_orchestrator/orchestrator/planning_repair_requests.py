@@ -562,13 +562,19 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     produced = False
     active_tasks = {str(spec.task_id) for spec in dispatch.network(mission.id).occurrences}
     seen = {e.payload.get("source_key") for e in store.iter_events(mission.id) if e.type == REQUESTED}
-    from .failure_classes import classify_failure
+    from .failure_classes import classify_failure, output_exhausted, output_exhausted_fact
 
     def failure_class(attempt_id: str | None) -> dict[str, str]:
         # 2026-09-28：请求里带上"谁的错"，非模型原因由系统原地重做（planning_selection）。
         attempt = store.get_attempt(attempt_id) if attempt_id else None
-        return {} if attempt is None or not attempt.failure else {
-            "failure_class": classify_failure(attempt.failure)}
+        if attempt is None or not attempt.failure:
+            return {}
+        out = {"failure_class": classify_failure(attempt.failure)}
+        error = attempt.failure.get("error")
+        if attempt.failure.get("reason") == "turn_failed" and output_exhausted(error):
+            # 2026-10-09：输出上限用完的事实如实给规划器，重做还是拆小由它判断
+            out["failure_fact"] = output_exhausted_fact(error)
+        return out
     sources = STEP_FAILURE_SOURCES
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)

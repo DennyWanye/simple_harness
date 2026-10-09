@@ -169,3 +169,30 @@ def test_a_step_stops_after_six_failures_that_were_not_the_models_fault(tmp_path
     [failed] = [event.payload for event in events if event.type == "TaskFailed"]
     assert "non_model_failures_exhausted" in str(failed)
     assert provider.asked.count("planner") == 2  # 重做全由系统批准，没有问规划器
+
+
+def test_output_exhausted_is_the_models_unfinished_turn_not_a_service_error():
+    """2026-10-09 编程测评：一轮输出 32768 个 token 全是思考、没有正文（finish_reason=length），
+    错误带 tool_parse 标记，被归成"服务出错"原样重做三次、不问规划器。输出上限用完是模型这一轮
+    没完成：按模型做错计次；真正的服务出错（非 length）不变。
+
+    **Mutation**: drop the ``output_exhausted`` check in ``classify_failure`` → red."""
+    from agent_orchestrator.orchestrator.failure_classes import output_exhausted, output_exhausted_fact
+
+    exhausted = {"reason": "turn_failed", "error_kind": "other", "error": {
+        "error_code": "provider_empty_response", "source_kind": "tool_parse",
+        "detail": {"finish_reason": "length",
+                   "usage": {"output_tokens": 32768, "reasoning_tokens": 32768, "input_tokens": 14853}}}}
+    assert classify_failure(exhausted) == MODEL
+    # 工具调用参数被截断：同样是 length
+    assert classify_failure({"reason": "turn_failed", "error": {
+        "error_code": "provider_protocol_error", "source_kind": "tool_parse",
+        "detail": {"finish_reason": "length", "parse_stage": "tool_parse"}}}) == MODEL
+    # 没写满、只是空回复或解析不了：仍是服务出错
+    assert classify_failure({"reason": "turn_failed", "error": {
+        "error_code": "provider_empty_response", "source_kind": "tool_parse",
+        "detail": {"finish_reason": "stop"}}}) == INFRA
+    assert not output_exhausted({"error_code": "provider_empty_response"})
+    assert output_exhausted_fact(exhausted["error"]) == (
+        "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。")
+    assert "已达上限" in output_exhausted_fact({"detail": {"finish_reason": "length"}})

@@ -42,6 +42,32 @@ _INTERRUPTED_REASONS = frozenset({
 })
 
 
+def output_exhausted(error: Mapping[str, Any] | None) -> bool:
+    """这一轮模型调用因输出上限停止（协议字段 ``finish_reason == "length"``），没有最终结果。
+
+    2026-10-09 编程测评：执行者一轮输出 32768 个 token 全是思考、没有正文，错误带着 ``tool_parse``
+    标记，被归成"服务出错"原样重做三次、不问规划器。这不是服务坏了，是模型这一轮没完成——按
+    模型做错计次，事实如实交给下一轮与规划器。只看结构化字段，不读文字；工具调用参数被截断
+    （``provider_protocol_error`` + ``length``）同样算。
+    """
+    if not isinstance(error, Mapping):
+        return False
+    detail = error.get("detail")
+    return isinstance(detail, Mapping) and detail.get("finish_reason") == "length"
+
+
+def output_exhausted_fact(error: Mapping[str, Any] | None) -> str:
+    """交给模型的一句事实：这一轮因输出上限停止、思考用了多少。不替它判断该怎么办。"""
+    detail = error.get("detail") if isinstance(error, Mapping) else None
+    usage = detail.get("usage") if isinstance(detail, Mapping) else None
+    usage = usage if isinstance(usage, Mapping) else {}
+    total = usage.get("output_tokens")
+    reasoning = usage.get("reasoning_tokens")
+    amount = f"{total} 个 token" if isinstance(total, int) else "已达上限"
+    thinking = f"，其中思考 {reasoning} 个" if isinstance(reasoning, int) else ""
+    return f"上一轮有一次模型调用因输出上限（{amount}{thinking}）停止，没有给出最终结果。"
+
+
 def interrupted_review(failures: Any) -> bool:
     """Every failure is a content review whose call was interrupted (not a verdict)."""
 
@@ -70,6 +96,8 @@ def classify_failure(failure: Mapping[str, Any] | None) -> str:
             return MODEL
         if error.get("error_code") in _INTERRUPTED_TURN_CODES:
             return INTERRUPTED
+        if output_exhausted(error):
+            return MODEL  # 输出上限用完是模型这一轮没完成，不是服务出错（2026-10-09）
         if failure.get("error_kind") in _INFRA_TURN_KINDS or error.get("source_kind") == "tool_parse":
             return INFRA
         return MODEL
@@ -116,7 +144,7 @@ def review_turn_interrupted(error: Mapping[str, Any] | None) -> bool:
     if not isinstance(error, Mapping):
         return False
     code = str(error.get("error_code", ""))
-    if code in _MODEL_TURN_CODES:
+    if code in _MODEL_TURN_CODES or output_exhausted(error):
         return False
     return (code in _INTERRUPTED_TURN_CODES or code.startswith("provider_")
             or error.get("source_kind") == "tool_parse")

@@ -6368,6 +6368,8 @@ class Orchestrator:
         format_retry = (
             reason == "proposal_unreadable"
             and "planning_decision_attempt_ordinal" in intent.config
+            # 输出上限用完不是格式写错：不占同一请求的格式重问名额，下一问是新一轮（2026-10-09）
+            and detail.get("output_exhausted") is not True
             and self._planning_format_retry_remaining(intent=intent, mission=mission) > 0
         )
         await self._planner_round_on_committed_plan(
@@ -6606,6 +6608,13 @@ class Orchestrator:
         """
 
         if result.state is not AgentTurnState.COMMITTED:
+            from .failure_classes import output_exhausted
+
+            if output_exhausted(result.error):
+                # 2026-10-09：思考写满输出、没有正文，不是服务出错，是模型这一轮没完成——按一条
+                # 空回复评估（读不懂、扣答错次数、事实进下一问的 previous_feedback），不走服务故障宽限。
+                await self._collect_plan_decision(intent, result, mission, "", new_mode)
+                return
             self._settle_intent(intent, "FAILED")
             self._settle_service_if_known(intent.subject_id, mission.id)
             error = PlannerTurnFailed(f"planner turn failed: {dict(result.error or {})}")
@@ -6673,7 +6682,16 @@ class Orchestrator:
             read_running_work,
         )
         from ..storage.planning_decision_store import PlanningDecisionStore
+        from .failure_classes import output_exhausted, output_exhausted_fact
 
+        # 规划器这一轮因输出上限停止（没有正文）：评估的是一条空回复，事实替代"没找到决定块"
+        # （系统自己发起的原样重做没有模型回合，result 为 None）
+        exhausted_fact = (
+            output_exhausted_fact(result.error)
+            if result is not None and result.state is not AgentTurnState.COMMITTED
+            and output_exhausted(result.error)
+            else None
+        )
         del result
 
         reject_planning = self._planning_rejected
@@ -6869,6 +6887,8 @@ class Orchestrator:
             )
         except PlanningDecisionCodecError as error:
             retry_remaining = self._planning_format_retry_remaining(intent=intent, mission=mission)
+            error_text = exhausted_fact or error.detail or str(error)
+            exhausted = {"output_exhausted": True} if exhausted_fact else {}
             record_decision(
                 request_id=request_id,
                 attempt_ordinal=attempt_ordinal,
@@ -6877,12 +6897,13 @@ class Orchestrator:
                 decision_id=decision_id,
                 status=PlanningDecisionStatus.UNREADABLE,
                 rejection_codes=(str(error.code),),
-                detail={"error": error.detail or str(error)},
+                detail={"error": error_text, **exhausted},
             )
             evaluated(
                 PlanningDecisionStatus.UNREADABLE,
                 rejection_codes=[str(error.code)],
-                detail=error.detail or str(error),
+                detail=error_text,
+                **exhausted,
             )
             self._settle_intent(intent, "FAILED")
             self._settle_service_if_known(intent.subject_id, mission.id)
@@ -6890,8 +6911,9 @@ class Orchestrator:
                 intent,
                 reason="proposal_unreadable",
                 detail={
-                    "error": error.detail or str(error),
+                    "error": error_text,
                     "format_retry_remaining": retry_remaining,
+                    **exhausted,
                 },
             )
             return
@@ -11418,6 +11440,8 @@ __all__ = ("FAULT_POINTS", "InjectedCrash", "Orchestrator")
 def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
+    from .failure_classes import output_exhausted, output_exhausted_fact
+
     """What the repair Attempt is told about the failures before it.
 
     2026-09-26 真机文档任务: a provider turn failure in between hid the earlier
@@ -11446,6 +11470,9 @@ def retry_feedback(
                 if isinstance(item, Mapping):
                     feedback.append(f"{item.get('layer')}: {item.get('summary')}")
                     verifier_feedback.append(dict(item))
+        elif reason == "turn_failed" and output_exhausted(failure.get("error")):
+            # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
+            feedback.append(output_exhausted_fact(failure.get("error")))
         else:
             feedback.append(f"{reason}: {failure.get('error', '')}")
     return feedback, verifier_feedback

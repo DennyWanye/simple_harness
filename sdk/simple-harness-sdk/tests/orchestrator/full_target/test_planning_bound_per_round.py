@@ -178,3 +178,19 @@ def test_an_unknown_blocker_code_is_other_with_the_model_words_kept() -> None:
         BlockedItemV1.from_json({"code": 7})
     with pytest.raises(ContractError):
         BlockedItemV1.from_json({"code": "OTHER"})  # OTHER 本身仍须说明
+
+
+_EXHAUSTED = ("PlanningRejected", {"reason": "proposal_unreadable", "detail": {
+    "error": "上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。",
+    "output_exhausted": True, "format_retry_remaining": 1}})
+
+
+def test_a_planner_turn_that_spent_its_output_on_thinking_counts_and_gets_no_format_retry() -> None:
+    """2026-10-09：规划器思考写满输出、没有正文，不是服务出错——算答错一次（不进服务故障宽限），
+    也不占同一请求的格式重问名额：下一问是新一轮，包里带着这句事实。
+
+    **Mutation**: drop ``output_exhausted`` from the ``format_retry`` condition → red."""
+    assert _count(_EXHAUSTED, _EXHAUSTED) == 2
+    assert _forgiven(_EXHAUSTED) is False
+    assert _reject(_EXHAUSTED[1]["detail"], prior=[], format_retry_left=1) == [("reopen", "planning_ladder")]
+    assert _reject(_EXHAUSTED[1]["detail"], prior=[], ladder_spent=True) == [("stop", "planning_attempts_exhausted")]

@@ -32,3 +32,18 @@ def test_verifier_details_still_travel_and_no_previous_means_no_feedback():
     feedback, verifier = retry_feedback(attempts, attempts[2])
     assert feedback[-1] == "rule_check: s" and len(verifier) == 1 and len(feedback) == 3
     assert retry_feedback(attempts, None) == ([], [])
+
+
+def test_an_output_exhausted_turn_is_told_as_one_fact_not_a_raw_dict():
+    """2026-10-09：重做那一轮原来收到一段原始字典；现在收到一句事实，怎么办由模型判断。
+
+    **Mutation**: drop the ``output_exhausted`` branch in ``retry_feedback`` → red."""
+    exhausted = {"reason": "turn_failed", "error": {
+        "error_code": "provider_empty_response", "source_kind": "tool_parse",
+        "detail": {"finish_reason": "length", "usage": {"output_tokens": 32768, "reasoning_tokens": 32768}}}}
+    attempts = [_attempt(1, exhausted)]
+    feedback, verifier = retry_feedback(attempts, attempts[0])
+    assert feedback == ["上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。"]
+    assert verifier == []
+    # 别的回合失败照旧
+    assert retry_feedback([_attempt(1, TURN)], _attempt(1, TURN))[0][0].startswith("turn_failed: ")

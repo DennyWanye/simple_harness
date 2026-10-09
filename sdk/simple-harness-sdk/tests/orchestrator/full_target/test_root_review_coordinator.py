@@ -529,3 +529,16 @@ def test_only_an_interrupted_turn_code_counts_as_interrupted() -> None:
     assert not review_turn_interrupted({"error_code": "react_max_turns_exceeded"})
     assert not review_turn_interrupted({"error_code": "invalid_tool_arguments"})
     assert not review_turn_interrupted(None)
+
+
+def test_a_reviewer_that_spent_its_output_on_thinking_was_not_interrupted() -> None:
+    """2026-10-09：审阅员一轮输出写满（finish_reason=length）不是被打断，是它这一轮没完成；
+    第 2 次仍如此就走"判不下来 → 人审"，不重切新包。
+
+    **Mutation**: drop ``output_exhausted`` from ``review_turn_interrupted`` → red."""
+    from agent_orchestrator.orchestrator.failure_classes import review_turn_interrupted
+
+    assert not review_turn_interrupted({"error_code": "provider_empty_response", "source_kind": "tool_parse",
+                                        "detail": {"finish_reason": "length"}})
+    assert review_turn_interrupted({"error_code": "provider_empty_response", "source_kind": "tool_parse",
+                                    "detail": {"finish_reason": "stop"}})
