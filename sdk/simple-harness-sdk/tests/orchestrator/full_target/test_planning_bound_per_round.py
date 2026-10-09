@@ -147,8 +147,11 @@ def test_no_reply_on_the_format_retry_asks_again_instead_of_ending_the_round() -
 
     no_reply = {"error": "planner turn failed: {}", "turn_failed": True}
     assert _reject(no_reply, prior=[]) == [("reopen", "planning_ladder")]
-    # 同一请求的格式重试还有余量：下一问就是这个请求的格式重试
-    assert _reject(no_reply, prior=[], format_retry_left=1) == [("reopen", "planning_format_retry")]
+    # 没拿到回复不占同一请求的格式重问名额（2026-10-09 第 2 条）：下一问是新一轮
+    assert _reject(no_reply, prior=[], format_retry_left=1) == [("reopen", "planning_ladder")]
+    # 真正读不懂的第一次回答才用这个请求的格式重问
+    assert _reject({"error": "bad block", "rejection_codes": ["MALFORMED_DECISION"], "request_attempt_ordinal": 0},
+                   prior=[], format_retry_left=1) == [("reopen", "planning_format_retry")]
     assert _reject({"error": "bad block"}, prior=[]) == [("reopen", "planning_ladder")]
     # 分层任务首次规划也走同一个入口
     assert _reject({"error": "bad block"}, prior=[], status=MissionStatus.PLANNING) == [
@@ -194,3 +197,21 @@ def test_a_planner_turn_that_spent_its_output_on_thinking_counts_and_gets_no_for
     assert _forgiven(_EXHAUSTED) is False
     assert _reject(_EXHAUSTED[1]["detail"], prior=[], format_retry_left=1) == [("reopen", "planning_ladder")]
     assert _reject(_EXHAUSTED[1]["detail"], prior=[], ladder_spent=True) == [("stop", "planning_attempts_exhausted")]
+
+
+def _unreadable(code: str, attempt: int, **extra: object) -> tuple[str, dict]:
+    return ("PlanningRejected", {"reason": "proposal_unreadable", "detail": {
+        "error": "x", "rejection_codes": [code], "request_attempt_ordinal": attempt, **extra}})
+
+
+def test_the_first_unreadable_answer_of_a_request_is_a_free_reask_the_second_counts() -> None:
+    """2026-10-09 四项修复第 2 条（用户推翻 10-01 第 8 项"格式重试计入其中"）：同一请求第一次读不懂
+    带着错误重问一次不算答错；重问仍读不懂才算；内容被拒每次都算；输出上限用完不是格式错，照算。
+
+    **Mutation**: drop the ``_free_reask`` skip in ``_planning_attempts`` → red."""
+    assert _count(_unreadable("MALFORMED_DECISION", 0)) == 0
+    assert _count(_unreadable("MALFORMED_DECISION", 0), _unreadable("MALFORMED_DECISION", 1)) == 1
+    assert _count(_unreadable("DECISION_BLOCK_MISSING", 0), _WRONG) == 1
+    assert _count(_unreadable("PARAMETER_INVALID", 0)) == 1  # 内容不成立：不是免扣的码
+    assert _count(_unreadable("DECISION_BLOCK_MISSING", 0, output_exhausted=True)) == 1
+    assert _count(("PlanningRejected", {"reason": "proposal_unreadable", "detail": {"error": "x"}})) == 1  # 没带码：照算

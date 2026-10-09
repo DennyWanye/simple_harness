@@ -166,3 +166,18 @@ def test_read_api_fail_refuses_an_unregistered_code():
     with pytest.raises(TaskGraphReadError) as caught:
         _fail("NOT_FOUND", "Mission was not found")
     assert caught.value.code == "NOT_FOUND" and caught.value.error.retry_kind == "NONE"
+
+
+def test_only_the_codecs_unreadable_codes_allow_one_free_same_request_reask():
+    """2026-10-09 四项修复第 2 条：解码器读不懂回复的 7 个码标 free_reask，同一请求重问一次不算答错；
+    准入/提交被拒的码都不标。
+
+    **Mutation**: clear ``free_reask`` on any of the seven, or set it on a content code → red."""
+    from agent_orchestrator.contracts.error_table import refusal_free_reask
+
+    free = {code for code, entry in PLANNING_ERRORS.items() if entry.free_reask}
+    assert free == {P.DECISION_BLOCK_MISSING, P.MULTIPLE_DECISIONS, P.MIXED_PROTOCOL_BLOCKS,
+                    P.MALFORMED_DECISION, P.UNKNOWN_FIELD, P.MODEL_SET_SYSTEM_FIELD, P.DECISION_TYPE_UNKNOWN}
+    assert refusal_free_reask(["MALFORMED_DECISION"]) and refusal_free_reask([P.DECISION_BLOCK_MISSING])
+    assert not refusal_free_reask([]) and not refusal_free_reask(["PARAMETER_INVALID"])
+    assert not refusal_free_reask(["MALFORMED_DECISION", "COVERAGE_GAP"]) and not refusal_free_reask(["NOPE"])

@@ -76,7 +76,10 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             opener = current
             prior = opener.config["planning_package"]["previous_feedback"]
             assert prior is not None and prior["status"] == "REJECTED"
+            charged_before = loop._planning_attempts(mission.id)
             await loop._collect_plan_decision(opener, None, mission, "bad JSON", dispatch)
+            # 2026-10-09 第 2 条：同一请求第一次读不懂，重问一次不算答错
+            assert loop._planning_attempts(mission.id) == charged_before
             store = PlanningDecisionStore(loop.store)
             binding = store.get_planning_request(opener.intent_id)
             assert binding is not None and binding.intent_id != opener.intent_id
@@ -89,6 +92,7 @@ def test_later_request_retries_its_own_frozen_package_once(tmp_path: Path, ordin
             assert loop._planning_format_retry_remaining(intent=retry, mission=mission) == 0
             await loop._collect_plan_decision(retry, None, mission, "bad again", dispatch)
             assert store.get_planning_decision_by_attempt(opener.intent_id, 1)["status"] == "UNREADABLE"
+            assert loop._planning_attempts(mission.id) == charged_before + 1  # 重问仍读不懂才算一次
             # 2026-09-30：同一请求的格式重试只有一次（上面），用完后规划总次数还有剩就开一个
             # **新请求**（新的冻结包、自己的一次格式重试），任务不因两次格式错失败。
             # 片 A（2026-10-01）：新请求取下一个空闲序号（``_next_planning_ordinal``）。本测试

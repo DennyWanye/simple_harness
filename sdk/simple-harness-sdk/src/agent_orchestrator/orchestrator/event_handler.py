@@ -452,8 +452,22 @@ def _refusal_codes(event: Any) -> list[str]:
     problems = detail.get("problems") if isinstance(detail, Mapping) else None
     preview = detail.get("preview") if isinstance(detail, Mapping) else None
     mapped = preview.get("mapped_problems") if isinstance(preview, Mapping) else None
+    codes = detail.get("rejection_codes") if isinstance(detail, Mapping) else None
     return [*(str(item.get("code")) for item in problems or () if isinstance(item, Mapping)),
-            *(str(item) for item in mapped or ())]
+            *(str(item) for item in mapped or ()),
+            *(str(item) for item in (codes if isinstance(codes, (list, tuple)) else ()))]
+
+
+def _free_reask(event: Any) -> bool:
+    """这条拒绝是同一请求的第一次回答读不懂（错误码表 free_reask 列），重问一次不算答错
+    （2026-10-09 四项修复第 2 条）。重问仍读不懂（本请求第 2 次回答）照常算；输出上限用完
+    不是格式错，照常算。"""
+    from ..contracts.error_table import refusal_free_reask
+
+    detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
+    if not isinstance(detail, Mapping) or detail.get("output_exhausted") is True:
+        return False
+    return detail.get("request_attempt_ordinal") == 0 and refusal_free_reask(_refusal_codes(event))
 
 
 def _stale_commit_problems(reason: object) -> dict[str, Any]:
@@ -6291,7 +6305,9 @@ class Orchestrator:
         * **服务故障宽限**（``PLANNER_TURN_FAILURE_GRACE``）：没拿到回复的回合（服务端报错、
           超时、被重启打断）不算答错，宽限内原样再问；超出即按"运行环境不可用"停。
         * **答错次数**（``max_planning_attempts``）：自上一次提交成功起，被拒的回答——读不懂、
-          不被准入、提交被拒——累计到上限即停。同一请求的格式重试计入其中，不另开阶梯。
+          不被准入、提交被拒——累计到上限即停。2026-10-09（用户推翻 10-01 第 8 项那一句）：同一
+          请求第一次读不懂时带着错误重问一次**不算答错**（错误码表 ``free_reask`` 列），重问仍
+          读不懂才算；没拿到回复的回合不占这一次重问名额。
 
         已有计划的任务：被拒的这一问如果没有什么还欠着（没有待处理的修复请求、没有等重试
         决定的步骤、没有还没做法的目标），任务带着现有计划继续，不为它判失败。
@@ -6368,8 +6384,10 @@ class Orchestrator:
         format_retry = (
             reason == "proposal_unreadable"
             and "planning_decision_attempt_ordinal" in intent.config
-            # 输出上限用完不是格式写错：不占同一请求的格式重问名额，下一问是新一轮（2026-10-09）
+            # 输出上限用完不是格式写错、没拿到回复也不是：都不占同一请求的格式重问名额，
+            # 下一问是新一轮（2026-10-09）
             and detail.get("output_exhausted") is not True
+            and not no_reply
             and self._planning_format_retry_remaining(intent=intent, mission=mission) > 0
         )
         await self._planner_round_on_committed_plan(
@@ -6534,6 +6552,8 @@ class Orchestrator:
                     continue
                 if not refusal_charges_planner(_refusal_codes(event)):
                     continue  # 请求过期：规划器作答期间世界变了，不算它答错（错误码表那一列）
+                if _free_reask(event):
+                    continue  # 同一请求第一次读不懂：免扣重问一次（错误码表 free_reask 列）
                 count += 1
             elif event.type == "PlanningDecisionEvaluated" and event.payload.get("status") == "COMMITTED":
                 count = 0
@@ -6913,6 +6933,9 @@ class Orchestrator:
                 detail={
                     "error": error_text,
                     "format_retry_remaining": retry_remaining,
+                    # 答错计数要知道是哪个码、本请求第几次回答（第 2 条：第一次读不懂免扣）
+                    "rejection_codes": [str(error.code)],
+                    "request_attempt_ordinal": int(attempt_ordinal),
                     **exhausted,
                 },
             )

@@ -3,8 +3,10 @@
 
 此前被拒之后"还能不能再问"分六条阶梯各自计数（格式重试、回合重试、格式阶梯、规划阶梯、
 修复阶梯、已有计划不判失败），外加"合成成功多给一次"。现在：自上一次提交成功起，被拒的
-回答——读不懂、不被准入、提交被拒，不分种类——累计到 ``max_planning_attempts``（默认 3）
-即停；同一请求的格式重试计入其中。被接受的服务类决定（提做法、问用户）不是答错。
+回答——读不懂、不被准入、提交被拒——累计到 ``max_planning_attempts``（默认 3）即停。
+2026-10-09（四项修复第 2 条，用户推翻本项"同一请求的格式重试计入其中"一句，按原计划 §39 两个
+余量分开）：同一请求第一次读不懂时带着错误重问一次不算答错，重问仍读不懂才算。被接受的服务类
+决定（提做法、问用户）不是答错。
 
 HTN 补齐阶段 A′：跑在产品同形世界（:mod:`_assured_loop`），只有模型回复是脚本。
 """
@@ -42,20 +44,23 @@ def test_the_default_is_three_wrong_answers() -> None:
     assert OrchestratorConfig.__dataclass_fields__["max_planning_attempts"].default == 3
 
 
-def test_three_refused_answers_of_any_kind_end_the_first_plan(tmp_path):
+def test_three_refused_answers_end_the_first_plan_but_the_first_unreadable_reask_is_free(tmp_path):
+    """**Mutation**: drop the ``_free_reask`` skip in ``_planning_attempts`` → the Mission fails after
+    three planner calls and the fourth script step is never used → red."""
     async def case():
         scripted = provider(planner=[
-            "this is not a decision",                 # unreadable
-            "still not a decision",                   # the same request's format retry
-            adopt_unknown,                            # readable, refers to nothing it was shown
+            "this is not a decision",                 # unreadable: the same request is re-asked for free
+            "still not a decision",                   # the re-ask is still unreadable: wrong 1
+            adopt_unknown,                            # readable, refers to nothing it was shown: wrong 2
+            adopt_unknown,                            # wrong 3 → stop
             adopt_unknown,                            # must never be asked for
         ])
         async with assured_loop(tmp_path, scripted) as world:
             assert await run_until(world, lambda w: _status(w) is MissionStatus.FAILED)
-            assert scripted.by_role == {"planner": 3}
+            assert scripted.by_role == {"planner": 4}
             rejected = events_of(world, "PlanningRejected")
             assert [event.payload["reason"] for event in rejected] == [
-                "proposal_unreadable", "proposal_unreadable", "proposal_not_grounded"]
+                "proposal_unreadable", "proposal_unreadable", "proposal_not_grounded", "proposal_not_grounded"]
             [failed] = events_of(world, "MissionFailed")
             assert failed.payload["stop_reason"] == "planning_failed"
             assert failed.payload["reason"] == "proposal_not_grounded"

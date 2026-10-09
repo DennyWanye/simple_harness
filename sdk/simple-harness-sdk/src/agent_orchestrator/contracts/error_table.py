@@ -162,10 +162,16 @@ class ErrorEntry:
     #: 规划器答的是一份在它作答期间变了的世界（纪元动了、计划换了版本），重问即可，
     #: 上限由任务总额度兜着（阶段 D 裁决 1.9）。
     charges_planner: bool = True
+    #: 同一请求可免扣重问一次的码（2026-10-09 四项修复第 2 条，LLM-native HTN 第 2 版 §39 把
+    #: "同一请求格式重问余量"与"规划轮次余量"分开）：解码器读不懂回复（没有决定块、不是
+    #: 合法 JSON、多写/少写字段……）时带着错误重问同一个冻结请求一次，不算答错；重问仍读不懂
+    #: 才算。准入与提交被拒（内容不成立）每次都算，不在此列。
+    free_reask: bool = False
 
 
-def _e(category: ErrorCategory) -> ErrorEntry:
-    return ErrorEntry(category, charges_planner=category is not ErrorCategory.REQUEST_STALE)
+def _e(category: ErrorCategory, *, free_reask: bool = False) -> ErrorEntry:
+    return ErrorEntry(category, charges_planner=category is not ErrorCategory.REQUEST_STALE,
+                      free_reask=free_reask)
 
 
 def refusal_charges_planner(codes: object) -> bool:
@@ -183,16 +189,25 @@ def refusal_charges_planner(codes: object) -> bool:
     return False
 
 
+def refusal_free_reask(codes: object) -> bool:
+    """这次拒绝是否属于"同一请求可免扣重问一次"：码非空、全部登记、全部标了 free_reask。"""
+
+    names = [str(code) for code in codes or ()] if isinstance(codes, (list, tuple, set, frozenset)) else []
+    if not names:
+        return False
+    return all(name in P.__members__ and _PLANNING[P(name)].free_reask for name in names)
+
+
 C = ErrorCategory
 _PLANNING: dict[P, ErrorEntry] = {
-    # 身份/协议
-    P.DECISION_BLOCK_MISSING: _e(C.IDENTITY_PROTOCOL),
-    P.MULTIPLE_DECISIONS: _e(C.IDENTITY_PROTOCOL),
-    P.MIXED_PROTOCOL_BLOCKS: _e(C.IDENTITY_PROTOCOL),
-    P.MALFORMED_DECISION: _e(C.IDENTITY_PROTOCOL),
-    P.UNKNOWN_FIELD: _e(C.IDENTITY_PROTOCOL),
-    P.MODEL_SET_SYSTEM_FIELD: _e(C.IDENTITY_PROTOCOL),
-    P.DECISION_TYPE_UNKNOWN: _e(C.IDENTITY_PROTOCOL),
+    # 身份/协议（前 7 个是解码器读不懂回复时抛的码：同一请求免扣重问一次）
+    P.DECISION_BLOCK_MISSING: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.MULTIPLE_DECISIONS: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.MIXED_PROTOCOL_BLOCKS: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.MALFORMED_DECISION: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.UNKNOWN_FIELD: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.MODEL_SET_SYSTEM_FIELD: _e(C.IDENTITY_PROTOCOL, free_reask=True),
+    P.DECISION_TYPE_UNKNOWN: _e(C.IDENTITY_PROTOCOL, free_reask=True),
     P.DECISION_NOT_ENABLED_IN_PHASE: _e(C.IDENTITY_PROTOCOL),
     P.SUBJECT_NOT_IN_REQUEST: _e(C.IDENTITY_PROTOCOL),
     P.REF_OUTSIDE_CONTEXT: _e(C.IDENTITY_PROTOCOL),
@@ -392,4 +407,6 @@ __all__ = (
     "classify",
     "handoff_refusal_transient",
     "ordered",
+    "refusal_charges_planner",
+    "refusal_free_reask",
 )
