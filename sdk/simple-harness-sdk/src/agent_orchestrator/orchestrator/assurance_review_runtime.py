@@ -38,7 +38,10 @@ from .assurance_review_policies import register_review_policies
 from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
 from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
 
-REVIEW_MODEL_CALLS = 10
+#: 2026-10-09 库存题：最终审阅员每轮查 2 次左右，10 次模型调用先用完（只查了 20 次，工具上限 32），
+#: 循环被截断、没有任何提示，两次都没给结论，任务判失败。模型调用上限放在工具上限之上：先到的总是
+#: 带"只剩 N 次"提示和"马上作答"拒绝话的工具上限；多出的两次留给被拒的那一轮和作答的那一轮。
+REVIEW_MODEL_CALLS = MAX_EVIDENCE_TOOL_CALLS + 2
 #: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
 REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
 #: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给

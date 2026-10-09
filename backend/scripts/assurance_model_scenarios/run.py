@@ -409,7 +409,10 @@ async def run_trial(name: str, trial: int, attempt: int, run_dir: Path) -> dict[
                 if approval.get("state") != "PENDING" or approval["request_id"] in {a["request_id"] for a in record["approvals"]}:
                     continue
                 kind = approval.get("kind")
-                decision = "approve"
+                # 审阅员判不下来升级给人的结果审阅（kind=review）只收 review_pass/review_fail；
+                # 2026-10-09 NL2Repo retrying 局按普通审批答，被拒、脚本中断。驱动脚本代人判"通过"，
+                # 记进 approvals（kind=review 即代答），最终质量看系统外判定。
+                decision = "review_pass" if kind == "review" else "approve"
                 await control.call("mission_approval_decide", {"approval_id": approval["request_id"], "decision": decision,
                                                                "reason": "", "note": "验收驱动脚本批准", "ruling": "", "basis": ""})
                 record["approvals"].append({"request_id": approval["request_id"], "kind": kind, "decision": decision,

@@ -28,6 +28,10 @@ def test_turn_tool_cap_matches_gateway_cap_and_covers_the_observed_reviewer():
     assert REVIEW_TOOL_CALLS >= 3 + 6 + 4 + 5
     # observed: three tool rounds, then one answering call
     assert REVIEW_MODEL_CALLS >= 4 + 1
+    # 2026-10-09 库存题：10 次模型调用先于工具上限用完（查了 20 次），循环截断、没给结论。
+    # 每个没作答的轮次至少用一次工具，所以模型调用上限 ≥ 工具上限 + 被拒一轮 + 作答一轮时，
+    # 先到的总是带提示的工具上限。
+    assert REVIEW_MODEL_CALLS >= MAX_EVIDENCE_TOOL_CALLS + 2
 
 
 def test_near_the_cap_every_evidence_result_says_to_conclude():
