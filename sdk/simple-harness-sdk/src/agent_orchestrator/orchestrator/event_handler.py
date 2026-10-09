@@ -6706,10 +6706,12 @@ class Orchestrator:
 
         # 规划器这一轮因输出上限停止（没有正文）：评估的是一条空回复，事实替代"没找到决定块"
         # （系统自己发起的原样重做没有模型回合，result 为 None）
+        # 只读回合结果上真有的两个字段：没有 ``state``/``error`` 的结果（没有模型回合的替身）不是写满
+        turn_error = getattr(result, "error", None)
         exhausted_fact = (
-            output_exhausted_fact(result.error)
-            if result is not None and result.state is not AgentTurnState.COMMITTED
-            and output_exhausted(result.error)
+            output_exhausted_fact(turn_error)
+            if getattr(result, "state", None) is not None
+            and result.state is not AgentTurnState.COMMITTED and output_exhausted(turn_error)
             else None
         )
         del result
