@@ -45,9 +45,35 @@ def test_an_unlinked_leaf_keeps_every_criterion():
 
 
 def test_the_scoped_goal_names_the_share_first():
-    text = scoped_goal("整个任务", ("c-user-1", "file:01-画像.md"), ["写出画像"])
+    text = scoped_goal("整个任务", ("c-user-1", "file:01-画像.md"), ["写出画像"],
+                       others=("02-路线.md", "01-画像.md"))
     assert text.startswith("本步骤只负责：01-画像.md")
-    assert "写出画像" in text and "不要创建或改写" in text and text.endswith("整个任务")
+    assert "写出画像" in text and text.endswith("整个任务")
+    # 只点名其他步骤认领的文件；本步骤自己的文件不在禁止名单里
+    assert "其他步骤负责这些文件，本步骤不要创建或改写它们：02-路线.md。" in text
+    assert "由本步骤自己写" in text
+
+
+def test_the_scoped_goal_forbids_nothing_nobody_claimed():
+    """2026-10-09 库存题：四个模块没被任何步骤列成文件检查，旧套话一刀切"其他文件不要创建"，
+    执行者只写了 __main__.py。没有别的步骤认领文件时，不出现禁止句。"""
+
+    text = scoped_goal("整个任务", ("file:inventory/__main__.py",), ["分成四个模块"])
+    assert "不要创建" not in text and "由本步骤自己写" in text
+
+
+def test_the_other_steps_files_come_from_their_criteria():
+    from agent_orchestrator.orchestrator.occurrence_tasks import _files_of
+
+    def item(ref, statement, checks=()):
+        return SimpleNamespace(criterion_id=ref, statement=statement,
+                               required_evidence_policy=SimpleNamespace(required_check_ids=checks))
+
+    requirements = SimpleNamespace(criteria=(
+        item("c-1", "file:inventory/__main__.py"), item("c-2", "file:README.md"),
+        item("c-3", "附测试", ("pytest:tests", "file:tests/test_cli.py"))))
+    assert _files_of(requirements, {"c-2", "c-3"}) == ("README.md", "tests/test_cli.py")
+    assert _files_of(None, {"c-2"}) == ()
 
 
 def test_owned_criteria_pairs_links_with_the_bound_occurrences():
@@ -86,3 +112,35 @@ def test_an_unlinked_leaf_does_not_take_a_file_another_step_was_given():
     # 被认领的普通内容要求照旧兜底：只排除写文件要求
     text_only = SimpleNamespace(criteria=(item("c-user-1", "先调研"), item("c-user-2", "说明结论")))
     assert occurrence_criteria(leaf, text_only, claimed={"c-user-2"}) == ("c-user-1", "c-user-2")
+
+
+def test_a_linked_leaf_goal_names_only_the_files_other_steps_own():
+    """The Task row's goal lists the other steps' file criteria and not its own.
+
+    **Mutation**: drop ``others=`` at the ``scoped_goal`` call in ``occurrence_task`` → red."""
+    import dataclasses
+
+    from test_read_only_leaf_policy import DEPLOYED
+
+    from agent_orchestrator.contracts import Budget, Mission
+    from agent_orchestrator.contracts.htn import ObligationId, OccurrenceId, OccurrenceSpec, TaskForm, TaskRef
+    from agent_orchestrator.contracts.models import MissionStatus
+    from agent_orchestrator.orchestrator.occurrence_tasks import occurrence_task
+
+    def item(ref, statement):
+        return SimpleNamespace(criterion_id=ref, statement=statement,
+                               required_evidence_policy=SimpleNamespace(required_check_ids=()))
+
+    requirements = SimpleNamespace(criteria=(
+        item("c-1", "file:inventory/__main__.py"), item("c-2", "file:README.md"), item("c-3", "写测试")))
+    mission = Mission(id="m", tenant_id="t", goal="写 inventory 包", success_criteria=("c",), status=MissionStatus.PLANNING,
+                      allowed_tools=(), budget=Budget(max_tokens=1000), idempotency_key="k", version=1,
+                      stop_conditions=(), risk_level="sandbox", created_at=0.0)
+    binding = dataclasses.replace(_leaf(("c-1", "c-2", "c-3")), requirement_refs=("c-1", "c-2", "c-3"))
+    spec = OccurrenceSpec(occurrence_id=OccurrenceId("occ-impl"), task_id=TaskRef("task-impl"),
+                          obligation_id=ObligationId("obl"), form=TaskForm.PRIMITIVE)
+    goal = occurrence_task(mission, spec, binding, plan_revision=1, budget=Budget(max_tokens=100), ordinal=1,
+                           deployed=DEPLOYED, requirements=requirements, owned=(("c-1", "写主入口"),),
+                           claimed={"c-1", "c-2", "c-3"}).task.goal
+    assert goal.startswith("本步骤只负责：inventory/__main__.py")
+    assert "本步骤不要创建或改写它们：README.md。" in goal and "由本步骤自己写" in goal

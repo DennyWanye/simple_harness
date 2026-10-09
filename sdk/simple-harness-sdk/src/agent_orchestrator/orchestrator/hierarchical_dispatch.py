@@ -3721,11 +3721,12 @@ class HierarchicalDispatch:
         occupied = {item.path for item in overlaid}
         # 2026-09-29 真机第十一局：接力型上游一步写出三个文件、全部通过核验，端口只选了
         # README.md，上面只补原工作区文件和测试文件，wordfreq.py 被丢掉，下一步找不到模块。
-        # 接力型上游交付的是它通过核验的全部文件（操作申请单除外）。
+        # 2026-10-09 库存题：起始型上游同样如此——一步写出 parser/ledger/report/cli 四个模块、
+        # 全部通过核验，端口只认领 cli.py，下一步只拿到 cli.py。数据边接上的写入型上游，交付的
+        # 都是它通过核验的全部文件（操作申请单除外）；只读步骤不改文件，不在此列。
         own: list[UpstreamInput] = []
         for task_id in dict.fromkeys(item.task_id for item in inputs):
-            if task_id in read_only or not _is_continuation(
-                    self.semantics().task_semantics_of(mission_id, task_id)):
+            if task_id in read_only:
                 continue
             for artifact in artifacts[task_id]:
                 if artifact.path in occupied or artifact.path.startswith("actions/"):

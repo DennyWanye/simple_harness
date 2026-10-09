@@ -541,7 +541,8 @@ def occurrence_task(
     goal = binding.goal_signature.statement or f"satisfy {binding.goal_signature.signature_id}"
     if owned_refs and primitive:
         # "整个任务"一句取用户原话（阶段 C3：桌面类型的说明是固定句，原话只在任务上）
-        goal = scoped_goal(mission.goal, criteria, [text for ref, text in owned if ref in owned_refs])
+        goal = scoped_goal(mission.goal, criteria, [text for ref, text in owned if ref in owned_refs],
+                           others=_files_of(requirements, set(claimed) - set(owned_refs)))
     policy = occurrence_policy(
         criteria, deployed, declared_policy,
         read_only=read_only_leaf(binding) and not criterion_linked,
@@ -596,15 +597,39 @@ def occurrence_task(
     )
 
 
-def scoped_goal(goal: str, criteria: Sequence[str], requirements: Sequence[str]) -> str:
-    """The goal a leaf with owned criteria is dispatched with: its share first."""
+def scoped_goal(goal: str, criteria: Sequence[str], requirements: Sequence[str],
+                others: Sequence[str] = ()) -> str:
+    """The goal a leaf with owned criteria is dispatched with: its share first.
+
+    2026-10-09（库存题开发环境重跑）：原来一刀切写"整个任务的其他文件由其他步骤负责，不要创建"。
+    四个模块没被任何步骤列成文件检查，执行者就只写了 __main__.py。现在只陈述事实：其他步骤
+    认领了哪些文件（``others``），这些不要写；完成本步骤要求所需的其他文件，本步骤自己写。
+    """
 
     files = [c[5:] for c in criteria if c.startswith("file:") and c[5:]]
     lines = ["本步骤只负责：" + ("、".join(files) if files else "下列要求")]
     lines += ["- " + text for text in dict.fromkeys(t.strip() for t in requirements) if text]
-    lines.append("整个任务的其他文件由计划中的其他步骤负责，本步骤不要创建或改写它们。")
+    taken = [path for path in dict.fromkeys(others) if path and path not in files]
+    if taken:
+        lines.append("计划里其他步骤负责这些文件，本步骤不要创建或改写它们：" + "、".join(taken) + "。")
+    lines.append("完成本步骤要求所需的其他文件，由本步骤自己写。")
     lines.append("整个任务（供理解上下文）：" + goal)
     return "\n".join(lines)
+
+
+def _files_of(requirements: RequirementsRevision | None, refs: Collection[str]) -> tuple[str, ...]:
+    """The ``file:`` paths the given criteria require, in the requirements' order."""
+
+    if requirements is None:
+        return ()
+    paths: list[str] = []
+    for item in requirements.criteria:
+        if item.criterion_id not in refs:
+            continue
+        for check in (item.statement, *item.required_evidence_policy.required_check_ids):
+            if check.startswith("file:") and check[5:] and check[5:] not in paths:
+                paths.append(check[5:])
+    return tuple(paths)
 
 
 def _priority(spec: OccurrenceSpec) -> float:

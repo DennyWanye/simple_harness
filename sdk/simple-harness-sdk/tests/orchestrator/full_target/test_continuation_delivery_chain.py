@@ -220,7 +220,9 @@ def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuatio
     """2026-09-29 真机第十一局：写文件那一步一次写出 README.md / test_wordfreq.py /
     wordfreq.py 并全部通过核验，端口只选了 README.md；交接时只补"原工作区文件和测试
     文件"，wordfreq.py 被丢掉，下一步跑 pytest 找不到模块，整局失败。接力型上游通过
-    核验的全部文件都要交给下一步；非接力型上游仍只给端口文件（ORDER/DATA 规则不变）。
+    核验的全部文件都要交给下一步。2026-10-09 库存题：起始型上游（没有输入端口）一步写出
+    四个模块、端口只认领 cli.py，下一步只拿到 cli.py——数据边接上的写入型上游一律交出它
+    通过核验的全部文件；只读上游与只有先后（ORDER）的上游仍不交（规则不变）。
 
     **Mutation**: drop the own-accepted-files pass in ``overlay_attempt_inputs`` → red."""
     store = _Store()
@@ -240,8 +242,37 @@ def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuatio
     assert [(item.task_id, item.path) for item in got] == [
         ("t-tests", "README.md"), ("t-module", "slugify.py"),
         ("t-tests", "test_slugify.py"), ("t-tests", "wordfreq.py")]
-    # 非接力型上游（没有输入端口）：只有端口文件与测试文件，新写的其他文件不交接
+    # 起始型上游（没有输入端口）：通过核验的全部文件同样交接（2026-10-09）
     store.artifacts["a-extra"] = _artifact("t-module", "notes.md", "6" * 64, "a-extra")
     store.tasks["t-module"].accepted_artifacts = ("a-module", "a-extra")
+    only = [UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
+    assert [item.path for item in hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, only)] == [
+        "notes.md", "slugify.py"]
+
+
+def test_a_read_only_producer_still_hands_on_only_its_port_file(monkeypatch):
+    """2026-10-09：写入型上游一律交出全部通过核验的文件；只读上游（如核对、报告）不改文件，
+    它新写的非测试文件仍不交接。
+
+    **Mutation**: drop the ``task_id in read_only`` skip in ``overlay_attempt_inputs`` → red."""
+    from agent_orchestrator.contracts.htn import SideEffectKind
+
+    class _Htn:
+        def __init__(self, store):
+            pass
+
+        def task_semantics_of(self, mission_id, task_id):
+            return SimpleNamespace(input_ports=(), output_ports=(_port("delivery"),),
+                                   side_effect_kind=SideEffectKind.EXTERNAL_READ,
+                                   capability_requirements=(), resource_writes=())
+
+    monkeypatch.setattr(hd, "HtnStore", _Htn)
+    store = _Store()
+    store.get_mission = lambda mission_id: SimpleNamespace(final_report={})
+    store.artifacts["a-extra"] = _artifact("t-module", "notes.md", "6" * 64, "a-extra")
+    store.tasks["t-module"].accepted_artifacts = ("a-module", "a-extra")
+    fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
+                           carried_inputs=lambda mission_id, task_id: [],
+                           semantics=lambda: hd.HtnStore(store))
     only = [UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
     assert [item.path for item in hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, only)] == ["slugify.py"]
