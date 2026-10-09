@@ -250,13 +250,17 @@ def is_hierarchical(mission: Mission) -> bool:
 
 
 class WriteConflictPending(ContractError):
-    """A step's inputs come from unordered producers that wrote one file differently; it
-    waits for the Planner's answer to the write-conflict repair request (阶段 D)."""
+    """A step would start from a file the plan lets several versions of reach it — unordered
+    producers wrote it differently, or ordered/relayed versions arrive with no proof of which is
+    the latest, or two port documents land on one path; it waits for the Planner's answer to the
+    write-conflict repair request (阶段 D；2026-10-09 第 4 条)."""
 
     def __init__(self, conflicts: Sequence[Mapping[str, Any]]) -> None:
         self.conflicts = tuple(dict(item) for item in conflicts)
         super().__init__("WRITE_CONFLICT: " + "; ".join(
-            f"{item['path']} written by {item['steps'][0]} and {item['steps'][1]}" for item in self.conflicts))
+            f"{item['path']} written by {' and '.join(str(step) for step in item['steps'])}"
+            + (f" (both reach {item['consumer']})" if item.get("consumer") else "")
+            for item in self.conflicts))
 
 
 class PlanIntegrityError(GraphIntegrityError):
@@ -3680,22 +3684,44 @@ class HierarchicalDispatch:
             # "not resolved yet", which is the DATA gate's business (WAITING_DATA) and
             # not a materialisation failure — so nothing is placed and nothing raises.
             return []
-        # 几个上游的端口文件撞在同一路径：write_conflicts 已把它当写入冲突交规划器（修复触发在派发
-        # 之前），走到这里的清单没有冲突；这里不再查第二遍（2026-10-09 第 4 条改坏检验证明那道查是多余的）。
         rules = self.target_rules_for(task_id)
+        # 2026-10-09 第 4 条：两份内容不同的端口文件落在同一个位置，是计划里的写入冲突（规划器点名了
+        # 两份、没说用哪份），不是产物库坏了——交写入冲突修复请求，不以"产物冲突"停掉任务。别的
+        # 物化问题照旧由 manifest_upstream_inputs 报。
+        from ..artifacts.input_bindings import ResolutionProblemKind, materialise_plan
+        plan = materialise_plan(result.manifest, rules)
+        clashes = []
+        by_artifact = {binding.artifact_id: binding for binding in result.manifest.bindings}
+        for problem in plan.problems:
+            if problem.kind is not ResolutionProblemKind.TARGET_PATH_CONFLICT:
+                continue
+            artifacts = [self.store.get_artifact(artifact_id) for artifact_id in problem.candidates]
+            paths = sorted({artifact.path for artifact in artifacts if artifact is not None})
+            clashes.append({"path": paths[0] if paths else "", "artifacts": list(problem.candidates),
+                            "steps": [str(by_artifact[artifact_id].producer_task_ref) for artifact_id in problem.candidates
+                                      if artifact_id in by_artifact],
+                            "consumer": task_id})
+        if clashes:
+            raise WriteConflictPending(clashes)
         return manifest_upstream_inputs(result.manifest, rules, network=network)
 
     def write_conflicts(self, mission_id: str, *, touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
-        """Steps with no order between them whose accepted outputs land on one file (阶段 D).
+        """Files the plan lets two versions of reach one place with nothing saying which (阶段 D；
+        2026-10-09 四项修复第 4 条扩成两条规则).
 
-        Two steps the plan lets run at the same time each delivered a file at the same
-        path, with different content: which one a later step should start from is not
-        something the plan says, and picking one ("first come") would be the Harness
-        deciding it.  Each such pair is reported once — path, the two steps, the two
-        outputs — for the Planner to settle.  A relay (one step delivers the next version
-        of an upstream file) is ordered by its data edge and is not a conflict; identical
-        content is not one either.  ``touching`` keeps only the conflicts one of those producer
-        tasks is a party to.
+        Rule one: two steps with no order between them each delivered a different content at one
+        path.  Which one a later step starts from is not something the plan says, and picking one
+        ("first come") would be the Harness deciding it.  Reported as ``{path, steps, artifacts}``.
+
+        Rule two: several versions of one path reach one consumer (its upstreams' delivered files
+        and what they carried from theirs), and the frozen manifests prove no relay that makes one
+        of them the latest; or two of its *port* files land on one path.  Reported with the
+        ``consumer`` task — ordering the producers does not help there, so the Planner must know
+        which step takes both.  The same reading dispatch uses (:meth:`overlay_attempt_inputs`), so
+        the repair request and the refusal to start never disagree.  A relay (one step delivers the
+        next version of a file it demonstrably received) is not a conflict; identical content is
+        not one either.  ``touching`` keeps only the conflicts one of those producer tasks is a party
+        to (rule one) or feeds (rule two).
         """
         from ..graph.projection_validation import ordering_of
 
@@ -3712,20 +3738,6 @@ class HierarchicalDispatch:
                 if artifact is None or artifact.path.startswith(("actions/", ".")):
                     continue
                 holders.setdefault(artifact.path, []).append((task_id, artifact))
-        # 2026-10-09 四项修复第 4 条：一步可以接多个上游。两个有先后的上游交付同一路径的不同
-        # 内容，只在它们共同喂同一个下游时才成问题；那时只有一种情况系统可以自己定——后一步的
-        # 冻结清单证明它收到过前一步那份（接力，交的是接着改的那一版），且两份不是都作为端口
-        # 文件接进同一个下游。其余一律是写入冲突，交规划器（不许"有先后就取后者"，TaskGraph §2
-        # 第 5 条：先后关系不传文件、不授权覆盖）。
-        consumers_of: dict[Any, set[Any]] = {}
-        port_bound: dict[Any, set[tuple[Any, str]]] = {}
-        for item in network.data_requirements:
-            consumers_of.setdefault(item.producer_occurrence, set()).add(item.consumer_occurrence)
-            port_bound.setdefault(item.consumer_occurrence, set()).add((item.producer_occurrence, item.output_port))
-        port_of: dict[str, tuple[Any, str]] = {}
-        if any(len(bound) > 1 for bound in port_bound.values()):
-            for output in self.accepted_outputs(mission_id, network).outputs:
-                port_of[str(output.artifact_id)] = (output.producer_occurrence, output.output_port)
         ordered = None
         found: list[dict[str, Any]] = []
         for path in sorted(holders):
@@ -3738,32 +3750,37 @@ class HierarchicalDispatch:
                         continue
                     ordered = ordered or ordering_of(network)
                     if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
-                        shared = ({c for a in occurrences[left] for c in consumers_of.get(a, ())}
-                                  & {c for b in occurrences[right] for c in consumers_of.get(b, ())})
-                        if not shared:
-                            continue
-                        both_ports = any(port_of.get(str(left_file.id)) in port_bound.get(c, set())
-                                         and port_of.get(str(right_file.id)) in port_bound.get(c, set())
-                                         for c in shared)
-                        if not both_ports and self._relay_proven(mission_id, left, left_file, right, right_file):
-                            continue
+                        continue
                     found.append({"path": path, "steps": [left, right],
                                   "artifacts": [left_file.id, right_file.id]})
+        consumers = dict.fromkeys(str(network.occurrence(item.consumer_occurrence).task_id)
+                                  for item in network.data_requirements)
+        def note(conflicts: Sequence[Mapping[str, Any]]) -> None:
+            for item in conflicts:
+                if not any(f["path"] == item["path"] and set(f["artifacts"]) == set(item["artifacts"]) for f in found):
+                    found.append(dict(item))
+
+        for consumer in consumers:
+            try:
+                inputs = self.attempt_inputs(mission_id, consumer)
+            except WriteConflictPending as error:  # two port documents at one place
+                if touching is None or any(set(item["steps"]) & set(touching) for item in error.conflicts):
+                    note(error.conflicts)
+                continue
+            if not inputs:
+                continue
+            if touching is not None and not {item.task_id for item in inputs} & set(touching):
+                continue
+            versions, ports = self._delivery_versions(mission_id, inputs)
+            try:
+                self._choose_versions(mission_id, versions, ports, consumer=consumer)
+            except WriteConflictPending as error:
+                note(error.conflicts)
         return found
-
-    def _relay_proven(self, mission_id: str, left: str, left_file: Any, right: str, right_file: Any) -> bool:
-        """One step's frozen inputs held the other's version of this file (same path and hash):
-        what it delivered is the next version of that file, not a rival one."""
-
-        def carried(later: str, earlier: str, file: Any) -> bool:
-            return any(item.task_id == earlier and item.path == file.path and item.content_hash == file.content_hash
-                       for item in self.carried_inputs(mission_id, later))
-
-        return carried(right, left, left_file) or carried(left, right, right_file)
 
     def _one_version(self, mission_id: str, path: str, versions: Mapping[str, UpstreamInput]) -> UpstreamInput:
         """Of several versions of one path reaching a step, the one its upstreams prove is the
-        latest (its producer carried every other version); otherwise a write conflict."""
+        latest (its producer's frozen inputs held every other version); otherwise a write conflict."""
 
         if len(versions) == 1:
             return next(iter(versions.values()))
@@ -3777,6 +3794,93 @@ class HierarchicalDispatch:
         raise WriteConflictPending([{"path": path, "steps": [item.task_id for item in items],
                                      "artifacts": [item.artifact_id for item in items]}])
 
+    def _delivery_versions(
+        self, mission_id: str, inputs: Sequence[UpstreamInput]
+    ) -> tuple[dict[str, dict[str, UpstreamInput]], dict[str, list[UpstreamInput]]]:
+        """Every version of every path that reaches a step through its DATA-bound producers.
+
+        Sources, each by its real producer, artifact id and hash: the port documents themselves;
+        each writing producer's accepted files (2026-09-29 第十一局 / 2026-10-09 库存题：数据边接上
+        的写入型上游交出它通过核验的全部文件，操作申请单除外); a read-only producer's accepted
+        copies of original-workspace files only (it changes nothing, and its new ``tests/`` stay off
+        the consumer's baseline — P2.3u); and what a continuation producer carried from its own
+        upstreams (NEXT-TG-1.0 2A.1d).  Nothing is chosen here: ``versions[path]`` keeps one entry
+        per distinct hash, ``ports[path]`` the port documents at that path.
+        """
+        from .occurrence_tasks import read_only_leaf
+
+        mission = self.store.get_mission(mission_id)
+        if mission is None:
+            raise ContractError("input overlay Mission is unavailable")
+        seed = set((mission.final_report or {}).get("workspace_seed", {}))
+        versions: dict[str, dict[str, UpstreamInput]] = {}
+        ports: dict[str, list[UpstreamInput]] = {}
+
+        def add(item: UpstreamInput) -> None:
+            versions.setdefault(item.path, {}).setdefault(item.content_hash, item)
+
+        for item in inputs:
+            ports.setdefault(item.path, []).append(item)
+            add(item)
+        for task_id in dict.fromkeys(item.task_id for item in inputs):
+            producer = self.store.get_task(task_id)
+            if producer is None or producer.mission_id != mission_id:
+                raise ContractError("input overlay producer is outside the Mission")
+            semantic = self.semantics().task_semantics_of(mission_id, task_id)
+            read_only = semantic is not None and read_only_leaf(semantic)
+            for artifact_id in producer.accepted_artifacts:
+                artifact = self.store.get_artifact(artifact_id)
+                if (artifact is None or artifact.mission_id != mission_id
+                        or artifact.task_id != producer.id):
+                    raise ContractError("input overlay artifact ownership is unavailable or differs")
+                if artifact.path.startswith("actions/"):
+                    continue  # an operation candidate is not part of the delivered work
+                if read_only and artifact.path not in seed:
+                    continue
+                add(UpstreamInput(task_id, artifact.path, artifact.content_hash, artifact.id))
+            for item in self.carried_inputs(mission_id, task_id):
+                add(item)
+        return versions, ports
+
+    def _choose_versions(
+        self,
+        mission_id: str,
+        versions: Mapping[str, Mapping[str, UpstreamInput]],
+        ports: Mapping[str, Sequence[UpstreamInput]],
+        *,
+        consumer: str | None = None,
+    ) -> list[UpstreamInput]:
+        """One version per path, or the write conflicts that stop this step from starting.
+
+        A path the plan binds as a port document is that document: two port documents at one
+        path, or any other source delivering a different content there, is a conflict (the plan
+        named one file and the workspace would hold another).  Elsewhere the only version the
+        system may pick is the one proven to be the next version of all the others
+        (:meth:`_one_version`); no "first come", no "later in the order wins" (TaskGraph §2 第 5 条).
+        """
+        chosen: list[UpstreamInput] = []
+        clashes: list[dict[str, Any]] = []
+        for path in sorted(versions):
+            candidates = versions[path]
+            at_port = list(ports.get(path, ()))
+            if at_port:
+                if len({item.content_hash for item in at_port}) > 1 or len(candidates) > 1:
+                    items = sorted(candidates.values(), key=lambda item: (item.task_id, item.content_hash))
+                    clashes.append({"path": path, "steps": [item.task_id for item in items],
+                                    "artifacts": [item.artifact_id for item in items]})
+                    continue
+                chosen.append(at_port[0])
+                continue
+            try:
+                chosen.append(self._one_version(mission_id, path, candidates))
+            except WriteConflictPending as error:
+                clashes.extend(dict(item) for item in error.conflicts)
+        if clashes:
+            if consumer is not None:
+                clashes = [{**item, "consumer": consumer} for item in clashes]
+            raise WriteConflictPending(clashes)
+        return sorted(chosen, key=lambda entry: entry.path)
+
     def overlay_attempt_inputs(
         self, mission_id: str, inputs: Sequence[UpstreamInput]
     ) -> list[UpstreamInput]:
@@ -3785,77 +3889,18 @@ class HierarchicalDispatch:
         Dispatch and its writer-transaction check share this projection.  The
         Attempt freezes the resulting exact artifact identities and hashes.
 
-        阶段 D：这一步的某个上游与另一个没有先后的步骤把同一个文件写成了两样，该从哪一份开工
-        计划没有说，不在这里"先到先占"——拒绝（``WriteConflictPending``），这一步等规划器处理
-        写入冲突修复请求。
+        阶段 D / 2026-10-09 第 4 条：这一步会收到的每个路径的每个版本先全部收齐
+        （:meth:`_delivery_versions`），再按同一条规则选（:meth:`_choose_versions`）：端口文件
+        就是计划点名的那份，别处只取冻结清单能证明的接力版本；证明不了、或端口文件撞上，
+        拒绝（``WriteConflictPending``），这一步等规划器处理写入冲突修复请求。没有先后的两步
+        把同一文件写成两样同样拦住（:meth:`write_conflicts` 规则一）。
         """
-        clashes = self.write_conflicts(mission_id, touching=tuple(dict.fromkeys(item.task_id for item in inputs)))
+        producers = tuple(dict.fromkeys(item.task_id for item in inputs))
+        clashes = self.write_conflicts(mission_id, touching=producers)
         if clashes:
             raise WriteConflictPending(clashes)
-        from ..artifacts.bound_workspace import overlay_bound_producer_files
-        from .occurrence_tasks import read_only_leaf
-
-        mission = self.store.get_mission(mission_id)
-        if mission is None:
-            raise ContractError("input overlay Mission is unavailable")
-        artifacts: dict[str, list[Any]] = {}
-        read_only: set[str] = set()
-        for task_id in dict.fromkeys(item.task_id for item in inputs):
-            producer = self.store.get_task(task_id)
-            if producer is None or producer.mission_id != mission_id:
-                raise ContractError("input overlay producer is outside the Mission")
-            artifacts[task_id] = []
-            for artifact_id in producer.accepted_artifacts:
-                artifact = self.store.get_artifact(artifact_id)
-                if (artifact is None or artifact.mission_id != mission_id
-                        or artifact.task_id != producer.id):
-                    raise ContractError("input overlay artifact ownership is unavailable or differs")
-                artifacts[task_id].append(artifact)
-            semantic = self.semantics().task_semantics_of(mission_id, task_id)
-            if semantic is not None and read_only_leaf(semantic):
-                read_only.add(task_id)
-        overlaid = overlay_bound_producer_files(
-            inputs,
-            seed_paths=set((mission.final_report or {}).get("workspace_seed", {})),
-            artifacts_by_producer=artifacts,
-            read_only_producers=read_only,
-        )
-        # NEXT-TG-1.0 2A.1d: a continuation producer (every input port is also one of
-        # its output ports, e.g. desktop.continue-delivery) delivers the next version
-        # of what it received.  Its delivery therefore carries the inputs its accepted
-        # Attempt was frozen with — which already carry theirs, so the chain is
-        # complete — each by its real producer, artifact id and hash.  The nearest
-        # version of a path wins; ORDER-only predecessors still contribute nothing.
-        occupied = {item.path for item in overlaid}
-        # 2026-09-29 真机第十一局：接力型上游一步写出三个文件、全部通过核验，端口只选了
-        # README.md，上面只补原工作区文件和测试文件，wordfreq.py 被丢掉，下一步找不到模块。
-        # 2026-10-09 库存题：起始型上游同样如此——一步写出 parser/ledger/report/cli 四个模块、
-        # 全部通过核验，端口只认领 cli.py，下一步只拿到 cli.py。数据边接上的写入型上游，交付的
-        # 都是它通过核验的全部文件（操作申请单除外）；只读步骤不改文件，不在此列。
-        # 2026-10-09 第 4 条：几个上游交到同一路径时不"先到先占"：同一哈希就是同一份；不同哈希
-        # 只认接力（某一份的产出者收到过其余几份），否则是写入冲突（上面 write_conflicts 已拦，
-        # 这里再守一道）。
-        own_versions: dict[str, dict[str, UpstreamInput]] = {}
-        for task_id in dict.fromkeys(item.task_id for item in inputs):
-            if task_id in read_only:
-                continue
-            for artifact in artifacts[task_id]:
-                if artifact.path in occupied or artifact.path.startswith("actions/"):
-                    continue
-                own_versions.setdefault(artifact.path, {}).setdefault(
-                    artifact.content_hash, UpstreamInput(task_id, artifact.path, artifact.content_hash, artifact.id))
-        own = [self._one_version(mission_id, path, versions) for path, versions in own_versions.items()]
-        occupied.update(own_versions)
-        overlaid = sorted([*overlaid, *own], key=lambda entry: entry.path)
-        carried_versions: dict[str, dict[str, UpstreamInput]] = {}
-        for task_id in dict.fromkeys(item.task_id for item in inputs):
-            for item in self.carried_inputs(mission_id, task_id):
-                if item.path not in occupied:
-                    carried_versions.setdefault(item.path, {}).setdefault(item.content_hash, item)
-        if not carried_versions:
-            return overlaid
-        carried = [self._one_version(mission_id, path, versions) for path, versions in carried_versions.items()]
-        return sorted([*overlaid, *carried], key=lambda entry: entry.path)
+        versions, ports = self._delivery_versions(mission_id, inputs)
+        return self._choose_versions(mission_id, versions, ports)
 
     def carried_inputs(self, mission_id: str, producer_task_id: str) -> list[UpstreamInput]:
         return carried_inputs(self.store, mission_id, producer_task_id)

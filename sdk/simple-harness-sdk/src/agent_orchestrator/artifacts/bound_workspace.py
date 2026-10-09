@@ -18,10 +18,6 @@ seed + the diff document and runs against the red baseline.
 
 This module does three pure things and writes nothing:
 
-* :func:`overlay_bound_producer_files` — for each bound producer, add the accepted
-  artifacts that overlay the consumer's seed.  The port document stays; REPORT.md
-  and other non-seed files stay off the baseline (they are the producer's own
-  outputs, not product code).
 * :func:`bound_artifacts_named_in_envelope` — an envelope path that names a bound
   input is a recorded workspace file for ``rule_check``, even when the collector
   dropped it as "already accepted" (P2.3m).
@@ -61,51 +57,6 @@ def decode_unified_diff_text(data: bytes, *, path: str) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise UnifiedDiffApplyError(path, "not_utf8") from error
-
-
-def _is_test_artifact(path: str) -> bool:
-    """P2.3t: new test files are not on the consumer seed (they are the write)."""
-
-    return path.startswith("tests/") or path.startswith("test_")
-
-
-def overlay_bound_producer_files(
-    inputs: Sequence[UpstreamInput],
-    *,
-    seed_paths: Collection[str],
-    artifacts_by_producer: Mapping[str, Sequence[Artifact]],
-    read_only_producers: Collection[str] = (),
-) -> list[UpstreamInput]:
-    """The manifest entries plus each bound producer's accepted seed-path files.
-
-    Producers the manifest did not name contribute nothing — that is the
-    ORDER-only case §24.1 decision 4 already holds.  A path already in the
-    manifest is left as the port document; a later producer does not override it.
-    P2.3u P2-1: new ``tests/`` files from a read-only producer stay off the
-    consumer baseline (only a write-step tests port should pre-lay tests).
-    """
-
-    occupied = {item.path: item for item in inputs}
-    extra: dict[str, UpstreamInput] = {}
-    seed = set(seed_paths)
-    read_only = set(read_only_producers)
-    for item in inputs:
-        for artifact in artifacts_by_producer.get(item.task_id, ()):
-            if artifact.path in occupied or artifact.path in extra:
-                continue
-            if artifact.path not in seed:
-                if not _is_test_artifact(artifact.path):
-                    continue
-                if item.task_id in read_only:
-                    continue
-            extra[artifact.path] = UpstreamInput(
-                item.task_id,
-                artifact.path,
-                artifact.content_hash,
-                artifact.id,
-            )
-    combined = [*inputs, *extra.values()]
-    return sorted(combined, key=lambda entry: entry.path)
 
 
 def bound_artifacts_named_in_envelope(
@@ -266,6 +217,5 @@ __all__ = (
     "bound_artifacts_named_in_envelope",
     "decode_unified_diff_text",
     "files_patched_by_unified_diff",
-    "overlay_bound_producer_files",
     "patched_content_hash",
 )

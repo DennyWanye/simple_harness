@@ -554,6 +554,7 @@ def task_type_row(spec: Any, schemas: Any) -> dict[str, Any]:
                                  else spec.parameter_schema_ref.to_json()),
         "parameters": [field.to_json() for field in getattr(schema, "fields", ())],
         "input_ports": [port.port_key for port in spec.input_ports],
+        "input_port_cardinality": {port.port_key: str(port.cardinality.value) for port in spec.input_ports},
         "output_ports": [port.port_key for port in spec.output_ports],
     }
 

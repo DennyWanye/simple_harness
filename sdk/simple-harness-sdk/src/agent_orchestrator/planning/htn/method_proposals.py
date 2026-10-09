@@ -203,6 +203,9 @@ class OperatorOffer:
     unavailable_capabilities: tuple[str, ...] = ()
     coverage_criteria: tuple[str, ...] = ()
     side_effect_kind: str = ""
+    #: 2026-10-09 第 4 条：每个输入端口接几条（single / set / list / map）——规划器据此知道哪个端口
+    #: 可以在数组里放多个上游产出。是类型目录里的事实，不是模板文字。
+    input_port_cardinality: Mapping[str, str] = field(default_factory=dict)
     domain: str | None = None
 
     @property
@@ -219,6 +222,7 @@ class OperatorOffer:
             "form": self.form,
             "statement": self.statement,
             "input_ports": list(self.input_ports),
+            "input_port_cardinality": dict(self.input_port_cardinality),
             "output_ports": list(self.output_ports),
             "required_capabilities": list(self.required_capabilities),
             "unavailable_capabilities": list(self.unavailable_capabilities),
@@ -417,6 +421,7 @@ def _offers(
                 form=str(spec.form),
                 statement=spec.goal_signature.statement,
                 input_ports=tuple(port.port_key for port in spec.input_ports),
+                input_port_cardinality={port.port_key: str(port.cardinality.value) for port in spec.input_ports},
                 output_ports=tuple(port.port_key for port in spec.output_ports),
                 required_capabilities=tuple(spec.required_capabilities),
                 unavailable_capabilities=capabilities.missing_from(

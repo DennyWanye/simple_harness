@@ -237,9 +237,11 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         " CARRIED_REVIEW_PENDING，重审没过的是 CARRIED_RESULT_REJECTED。"
         "被改要求的目标的 criterion_evidence 已是新版：请让新版每一条要求都落到步骤上（通常是为根目标提一个新做法，"
         "审阅通过后用 REPLACE_METHOD 换上去），删掉的要求不用再覆盖。改要求之前问用户的问题已作废，需要的话重新问。"
-        "trigger_source 为 WRITE_CONFLICT 的请求说的是：两个没有先后的步骤各自通过验收的产出落在同一个文件上、"
-        "内容不同（context.path 是文件，context.steps 是这两步，context.artifacts 是两份产出）。"
-        "接在它们后面的步骤不会开工，系统不替你挑用哪一份：给两步加先后、重做其中一步、换做法，还是问用户，由你判断。"
+        "trigger_source 为 WRITE_CONFLICT 的请求说的是：同一个文件有几份内容不同的版本、计划没说用哪份"
+        "（context.path 是文件，context.steps 是写出它们的步骤，context.artifacts 是这几份产出）。没有 context.consumer 时，"
+        "是两个没有先后的步骤各自写了它；有 context.consumer 时，是这几份（有先后、或经上游转交）同时到达 consumer 这一步，"
+        "而冻结清单证明不了哪一份是接着改的最新版，或两份都是接进这一步的端口文件——这种情况给两步加先后没有用。"
+        "接在后面的步骤不会开工，系统不替你挑用哪一份：改接法、让一步接着另一步改、重做其中一步、换做法，还是问用户，由你判断。"
         "unknown_coverage 或 unresolved_operations 没解决时不能声称修复完成。\n"
         "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。\n"
         "  - abandoned_plan_changes：用户亲手放弃过的改计划（卡在半路、用户点了「放弃这次改计划」，旧计划已恢复）："
@@ -358,9 +360,9 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "{\"op\":\"parameter\",\"name\":目标参数名}、{\"op\":\"output\",\"step\":上游 local_id,\"port\":上游输出端口名}"
         "（每次新尝试都用上游当前算数的那一版验收产出）、"
         "{\"op\":\"constant\",\"value\":…}、{\"op\":\"object\",\"fields\":{…}}、{\"op\":\"array\",\"items\":[…]}）；"
-        "operators 里 cardinality 为 set 的输入端口（如接着交付步骤的 delivery）可以接多个上游：值写 "
+        "operators 与类型行的 input_port_cardinality 标为 set 或 list 的输入端口可以接多个上游：值写 "
         "{\"op\":\"array\",\"items\":[多个 {\"op\":\"output\",…}]}，数组里的先后就是这些上游产出铺进这一步工作区的先后，"
-        "互不依赖的上游可以同时做再在这一步汇合；cardinality 为 single 的端口只接一个）、"
+        "互不依赖的上游可以同时做再在这一步汇合；标为 single 的端口只接一个）、"
         "required_capabilities（照抄该类型的；子目标步骤写 []）、obligation_relation（写 refines_parent）。"
         "子目标步骤的 arguments 按 subgoal_types 里该类型的 parameters 写，"
         "用 {\"op\":\"constant\",\"value\":\"…\"} 写清这个子目标自己要达成什么；\n"
@@ -495,7 +497,7 @@ register_template(PLANNER_HIERARCHICAL)
 #: ``candidate`` — claims not verified yet, leads and not facts.  Version 16 (夜间 N6):
 #: a method proposal context may carry ``criterion_share_unreadable`` — the requirements
 #: handed to an intermediate goal could not be read (before, that read as "none").
-PLANNING_DECISION_PACKAGE_VERSION = 16
+PLANNING_DECISION_PACKAGE_VERSION = 17
 
 #: The prompt written against that package.  One package, one prompt.
 PLANNING_DECISION_PROMPT_VERSION = PLANNER_HIERARCHICAL_VERSION

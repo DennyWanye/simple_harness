@@ -745,12 +745,11 @@ def _compile_data(
             )
         )
     # No duplicate-port check here on purpose.  Within one method a consumer's input
-    # port *is* the argument name, so a dict cannot hold two of them, and the two
-    # cases that really can overbind a port are each owned by a layer that can see
-    # them: ``ProposedPlanDelta`` refuses two requirements into one port inside a
-    # delta, and ``validate_execution_projection`` reports SINGLE_PORT_OVERBOUND when
-    # a second delta binds a port an earlier one already filled.  A third copy here
-    # would only be dead code that reads like a guarantee.
+    # port *is* the argument name, so a dict cannot hold two of them; how many links
+    # one port takes is its declared cardinality (a set port takes several — 2026-10-09
+    # 第 4 条), and the one layer that sees the cardinality is
+    # ``validate_execution_projection``, which reports SINGLE_PORT_OVERBOUND.  A copy
+    # here would only be dead code that reads like a guarantee.
     return tuple(out)
 
 

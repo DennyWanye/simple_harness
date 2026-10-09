@@ -1074,8 +1074,9 @@ def test_commit_readiness_accepts_the_increment_with_its_openings() -> None:
 # ============================================================== port overbinding
 
 
-def test_the_contract_refuses_two_bindings_into_one_input_port() -> None:
-    """TG decision 3, inside one delta: a single-valued port takes one binding."""
+def test_the_contract_does_not_judge_port_cardinality() -> None:
+    """2026-10-09 四项修复第 4 条：一个输入端口能接几条由它的基数定（集合端口接多条），合同层不看
+    基数，不再拒"一口两条"；单值端口两条绑定由投影按基数报 SINGLE_PORT_OVERBOUND（下一条用例）。"""
 
     env, binding, _, bundle = outer_only()
     existing = bundle.delta.data_requirements[0]
@@ -1084,13 +1085,13 @@ def test_the_contract_refuses_two_bindings_into_one_input_port() -> None:
         requirement_id="data-twin",
         producer_occurrence=str(binding.task_id),
     )
-    with pytest.raises(ContractError, match="single-valued input port"):
-        replace(bundle.delta, data_requirements=(existing, twin))
+    doubled = replace(bundle.delta, data_requirements=(existing, twin))
+    assert len(doubled.data_requirements) == 2
     del env
 
 
 def test_a_second_delta_binding_a_filled_port_is_reported_by_the_projection() -> None:
-    """The cross-delta case the contract cannot see, and the layer that can."""
+    """Two bindings into one single-valued port: the projection reports it (the contract does not judge)."""
 
     env, binding, _, bundle = outer_only()
     existing = bundle.delta.data_requirements[0]

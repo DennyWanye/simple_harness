@@ -216,6 +216,13 @@ def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live()
     assert refusal(fake, "task-x:attempt-9") == "attempt_unavailable"
 
 
+
+def _bind_version_rules(fake) -> None:
+    """2026-10-09 第 4 条：铺工作区的三步（收齐版本、选版本、接力判断）是调度类的方法，替身借用。"""
+    from functools import partial
+    for name in ("_one_version", "_delivery_versions", "_choose_versions"):
+        setattr(fake, name, partial(getattr(hd.HierarchicalDispatch, name), fake))
+
 def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuation):
     """2026-09-29 真机第十一局：写文件那一步一次写出 README.md / test_wordfreq.py /
     wordfreq.py 并全部通过核验，端口只选了 README.md；交接时只补"原工作区文件和测试
@@ -237,9 +244,7 @@ def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuatio
     fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
                            carried_inputs=lambda mission_id, task_id: hd.carried_inputs(
         store, mission_id, task_id), semantics=lambda: hd.HtnStore(store))
-    # 2026-10-09 第 4 条：同一路径多版本由 _one_version 定（这里每个路径只有一版）
-    fake._one_version = lambda mission_id, path, versions: hd.HierarchicalDispatch._one_version(
-        fake, mission_id, path, versions)
+    _bind_version_rules(fake)
     port = [UpstreamInput("t-tests", "README.md", "3" * 64, "a-readme")]
     got = hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, port)
     assert [(item.task_id, item.path) for item in got] == [
@@ -277,5 +282,6 @@ def test_a_read_only_producer_still_hands_on_only_its_port_file(monkeypatch):
     fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
                            carried_inputs=lambda mission_id, task_id: [],
                            semantics=lambda: hd.HtnStore(store))
+    _bind_version_rules(fake)
     only = [UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
     assert [item.path for item in hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, only)] == ["slugify.py"]

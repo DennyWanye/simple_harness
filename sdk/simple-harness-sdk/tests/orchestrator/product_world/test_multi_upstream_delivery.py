@@ -105,10 +105,14 @@ class _Provider(LayeredScriptedProvider):
             if not extra_file or not outputs or outputs[0] not in (A, B):
                 return reply
             written = sum(1 for message in request.messages if "tool" in str(message.role).lower())
+            if extra_file in outputs and outputs[0] != B:
+                return reply  # 这一步声明的产出就是它，不再多写
             if written == len(outputs):  # 声明的文件写完了，再写一份同名、内容不同的
                 return ("workspace_write_file", {"path": extra_file, "content": f"# 由写 {outputs[0]} 的那一步写的\n"})
             if written > len(outputs) and isinstance(reply, str):
                 body = json.loads(reply[len("<result_envelope>"):-len("</result_envelope>")])
+                if extra_file in body["artifacts"]:
+                    return reply
                 body["artifacts"].append(extra_file)
                 body["evidence"].append(extra_file)
                 body["claims"].append({"content": f"{extra_file} 已写出", "confidence": 0.8, "evidence": [extra_file]})
@@ -224,6 +228,36 @@ def test_two_port_files_at_one_path_are_a_write_conflict_not_an_artifact_stop(tm
     assert mission.status.value != "COMPLETED", mission.status
     assert mission.stop_reason != "ARTIFACT_CONFLICT", (mission.stop_reason, mission.final_report)
     assert [item["path"] for item in facts["clashes"]] == [A], facts["clashes"]
+    assert facts["merge_attempts"] == 0
+    assert any(e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
+               for e in facts["events"]), sorted({e.type for e in facts["events"]})
+
+
+def test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version(tmp_path):
+    """核验员 10-09 复现：a 写 a.md + tests/test_shared.py；b 接着 a 改写 tests/test_shared.py；c 接 a、b。
+    原先原工作区文件与 tests/ 先按路径铺底、先到先占，c 拿到 a 的旧版。现在每个路径的版本先收齐再选：
+    b 的冻结清单证明它收到过 a 那版（接力），c 拿到 b 改后的那份。
+
+    **Mutation**: ``_one_version`` 的 ``others`` 置空（先到先占）→ red."""
+    facts = _run(tmp_path, _Provider(extra_file="tests/test_shared.py", relay=True))
+    mission = facts["mission"]
+    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
+    shared = [item for item in facts["overlaid"] if item.path == "tests/test_shared.py"]
+    b_task = next(item.task_id for item in facts["inputs"] if item.path == B)
+    assert [item.task_id for item in shared] == [b_task]
+
+
+def test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planner(tmp_path):
+    """a 的端口文件是 a.md；b 接着 a、把 a.md 改了但 b 的端口文件是 b.md；c 接 a、b：计划点名 c 用 a 的
+    a.md，工作区却会有 b 的新版——端口文件与别的来源内容不同，不替规划器选，交写入冲突。
+
+    **Mutation**: ``_choose_versions`` 端口文件只比端口之间、不比别的来源 → red."""
+    facts = _run(tmp_path, _Provider(extra_file=A, relay=True), rounds=30)
+    mission = facts["mission"]
+    assert mission.status.value != "COMPLETED", mission.status
+    assert mission.stop_reason != "ARTIFACT_CONFLICT", mission.stop_reason
+    assert [item["path"] for item in facts["clashes"]] == [A], facts["clashes"]
+    assert facts["clashes"][0].get("consumer") == facts["merge"]
     assert facts["merge_attempts"] == 0
     assert any(e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
                for e in facts["events"]), sorted({e.type for e in facts["events"]})

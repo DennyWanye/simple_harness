@@ -1708,7 +1708,8 @@
    "original": "        for candidate in versions.values():\n            others = [item for item in versions.values() if item is not candidate]",
    "replacement": "        for candidate in versions.values():\n            others = []",
    "tests": [
-    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_one_version_takes_only_a_proven_relay_and_refuses_the_rest"
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_one_version_takes_only_a_proven_relay_and_refuses_the_rest",
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version"
    ],
    "note": "同一路径几个版本\"先到先占\"，不再要求接力证明"
   },
@@ -1728,12 +1729,12 @@
    "id": "MU-05",
    "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
    "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-   "original": "        return carried(right, left, left_file) or carried(left, right, right_file)",
-   "replacement": "        return False",
+   "original": "                if len({item.content_hash for item in at_port}) > 1 or len(candidates) > 1:",
+   "replacement": "                if len({item.content_hash for item in at_port}) > 1:",
    "tests": [
-    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relay_then_merge_takes_the_relayed_version_and_is_no_conflict"
+    "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planner"
    ],
-   "note": "接力证明永远不成立：接着改的上游与原上游被当成写入冲突，汇合步开不了工"
+   "note": "端口文件只和别的端口文件比、不和别的来源比：接力者改写了上游端口文件，系统静默用了计划点名的旧版"
   }
  ]
 }

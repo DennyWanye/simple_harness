@@ -36,7 +36,6 @@ from pathlib import Path
 
 from agent_orchestrator.artifacts.bound_workspace import (
     bound_artifacts_named_in_envelope,
-    overlay_bound_producer_files,
 )
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.models import Artifact
@@ -103,58 +102,6 @@ def test_c3_r0_failed_rule_check_because_window_py_was_not_a_recorded_workspace_
 # ======================================================================================
 # 2. Overlay: a patch binding also places the producer's accepted seed files
 # ======================================================================================
-
-
-def test_overlay_adds_the_producer_seed_file_next_to_the_patch_document() -> None:
-    """The manifest places ``patch.diff``.  The producer also accepted the patched
-    ``stats/window.py``.  The consumer workspace has to start from that file."""
-
-    patch_task = "task-patch"
-    inputs = [
-        UpstreamInput(patch_task, PATCH_DIFF, "d" * 64, "artifact-diff"),
-    ]
-    window = _artifact(patch_task, WINDOW, PATCHED_WINDOW.encode("utf-8"), artifact_id="artifact-w")
-    report = _artifact(patch_task, REPORT, b"# patch\n", artifact_id="artifact-r")
-    overlay = overlay_bound_producer_files(
-        inputs,
-        seed_paths=set(SEED),
-        artifacts_by_producer={patch_task: [window, report]},
-    )
-    assert [item.path for item in overlay] == [PATCH_DIFF, WINDOW]
-    added = next(item for item in overlay if item.path == WINDOW)
-    assert added.artifact_id == "artifact-w"
-    assert added.content_hash == PATCHED_HASH
-    assert added.task_id == patch_task
-
-
-def test_overlay_does_not_sweep_an_order_only_predecessor() -> None:
-    """§24.1 decision 4: no DATA binding, no files.  Overlay must not invent a
-    producer that the manifest did not name."""
-
-    overlay = overlay_bound_producer_files(
-        [],
-        seed_paths=set(SEED),
-        artifacts_by_producer={
-            "task-facts": [
-                _artifact("task-facts", WINDOW, b"x", artifact_id="artifact-facts-w"),
-            ]
-        },
-    )
-    assert overlay == []
-
-
-def test_inspect_and_summarize_optional_patch_bindings_get_the_same_overlay() -> None:
-    """P2.3k's inspect/summarize@2 optional ``patch`` port is the same DATA edge."""
-
-    patch_task = "task-apply"
-    inputs = [UpstreamInput(patch_task, "out/patch.json", "a" * 64, "artifact-port")]
-    window = _artifact(patch_task, WINDOW, PATCHED_WINDOW.encode("utf-8"), artifact_id="artifact-w")
-    overlay = overlay_bound_producer_files(
-        inputs,
-        seed_paths={WINDOW, "kv.py"},
-        artifacts_by_producer={patch_task: [window]},
-    )
-    assert {item.path for item in overlay} == {"out/patch.json", WINDOW}
 
 
 # ======================================================================================

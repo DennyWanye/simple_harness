@@ -225,8 +225,9 @@ def precondition_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: se
 
 
 def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
-    """阶段 D：两个没有先后的步骤，通过验收的产出落在同一个文件上、内容不同 → 一条写入冲突修复请求
-    （路径、两步、两份产出）。同一对产出只记一次；怎么办（加先后、重做其中一步、换做法）由规划器定。"""
+    """阶段 D：同一个文件有几份内容不同的版本、计划没说用哪份 → 一条写入冲突修复请求（路径、写出它们的
+    步骤、几份产出；2026-10-09 第 4 条起还可能带 consumer：这几份同时到达的那一步）。同一组产出只记一次；
+    怎么办（改接法、加先后、重做其中一步、换做法）由规划器定。"""
     produced = False
     for clash in dispatch.write_conflicts(mission.id):
         source_key = "write-conflict:" + content_hash_of({"mission": mission.id, **clash})
