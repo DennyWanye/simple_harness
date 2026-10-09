@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "5bf375f4ddffc95a8d1d0672306b63145b1ddfa91953b0b8afd619f1ef75015b",
+  "deployment_id": "99fabf859e6746d0a14a520c548faf26b09b816398c2476e6501b345a8c5f49f",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -219,7 +219,7 @@
     "agent_orchestrator/orchestrator/composition_review.py": "f9d06172af99df717475fba57dc4c096088e2a9bb75eca6c34dfb9ac6c82daad",
     "agent_orchestrator/orchestrator/event_handler.py": "e43cef2c55e30bf1992db385b9ec188e76c181150f949f81ebc7ba5b438b8b85",
     "agent_orchestrator/orchestrator/failure_classes.py": "9ed86a468b2d46885dbeb6f1d689da04ded4dc7e8bb89a8ac3116b0b8745cbd2",
-    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "5ed8aa69e0845cbac4c5858b281c696b3f301a118060d2078d00d3f462af8dc0",
+    "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "387ceb44ec939f1f2b17bc4cf047b453c4d4d9d47b24099eeb91f2a8272a828f",
     "agent_orchestrator/orchestrator/human_commits.py": "8098653638a0bd14cd2c4e88f204bcc6f60f820077d79206e2f26877fde318cb",
     "agent_orchestrator/orchestrator/leaf_acceptance.py": "58fb601ef3db7bab6c8fec15eb58109313b8a86a089aae909dd1f867d80e6828",
     "agent_orchestrator/orchestrator/method_library.py": "659de6e1109435b9ef5cbc32920b1ef51238713d32c6186434219b77405ae94d",

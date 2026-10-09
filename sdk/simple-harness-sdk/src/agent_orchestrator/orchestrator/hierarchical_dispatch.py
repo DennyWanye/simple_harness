@@ -57,7 +57,7 @@ from ..artifacts.input_bindings import (
     ResolutionResult,
     TargetRules,
 )
-from ..artifacts.versioning import UpstreamInput, manifest_upstream_inputs, resolve_input_manifest
+from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs, resolve_input_manifest
 from ..contracts import (
     TERMINAL_MISSION,
     ContractError,
@@ -3753,23 +3753,26 @@ class HierarchicalDispatch:
                         continue
                     found.append({"path": path, "steps": [left, right],
                                   "artifacts": [left_file.id, right_file.id]})
-        consumers = dict.fromkeys(str(network.occurrence(item.consumer_occurrence).task_id)
-                                  for item in network.data_requirements)
+        consumers: dict[str, set[str]] = {}
+        for item in network.data_requirements:
+            consumers.setdefault(str(network.occurrence(item.consumer_occurrence).task_id), set()).add(
+                str(network.occurrence(item.producer_occurrence).task_id))
         def note(conflicts: Sequence[Mapping[str, Any]]) -> None:
             for item in conflicts:
                 if not any(f["path"] == item["path"] and set(f["artifacts"]) == set(item["artifacts"]) for f in found):
                     found.append(dict(item))
 
-        for consumer in consumers:
+        for consumer, producers in consumers.items():
+            if touching is not None and not producers & set(touching):
+                continue  # 只读这些上游喂的下游，不解析别的
             try:
                 inputs = self.attempt_inputs(mission_id, consumer)
             except WriteConflictPending as error:  # two port documents at one place
-                if touching is None or any(set(item["steps"]) & set(touching) for item in error.conflicts):
-                    note(error.conflicts)
+                note(error.conflicts)
                 continue
+            except ArtifactConflict:
+                continue  # 那一步自己的别的物化问题，由它自己的派发报，不在这里替它停
             if not inputs:
-                continue
-            if touching is not None and not {item.task_id for item in inputs} & set(touching):
                 continue
             versions, ports = self._delivery_versions(mission_id, inputs)
             try:
@@ -3864,8 +3867,14 @@ class HierarchicalDispatch:
             candidates = versions[path]
             at_port = list(ports.get(path, ()))
             if at_port:
-                if len({item.content_hash for item in at_port}) > 1 or len(candidates) > 1:
-                    items = sorted(candidates.values(), key=lambda item: (item.task_id, item.content_hash))
+                # 端口文件的产出者收到过的旧版本（它接着改的那份，经转交又到了这里）不是另一份
+                port = at_port[0]
+                carried = list(self.carried_inputs(mission_id, port.task_id))
+                rivals = [item for item in candidates.values() if item.content_hash != port.content_hash
+                          and not any(c.task_id == item.task_id and c.path == item.path
+                                      and c.content_hash == item.content_hash for c in carried)]
+                if len({item.content_hash for item in at_port}) > 1 or rivals:
+                    items = sorted([port, *rivals], key=lambda item: (item.task_id, item.content_hash))
                     clashes.append({"path": path, "steps": [item.task_id for item in items],
                                     "artifacts": [item.artifact_id for item in items]})
                     continue

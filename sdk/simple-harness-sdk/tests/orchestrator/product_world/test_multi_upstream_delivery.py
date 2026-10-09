@@ -133,11 +133,11 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
             mission = await world.run_until_settled(created["mission_id"], rounds=rounds)
             dispatch = world.loop._dispatch_for(mission.id)
             network = dispatch.network(mission.id)
-            by_kind: dict[str, str] = {}
-            for spec in network.occurrences:
-                kind = str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
-                by_kind.setdefault(kind, str(spec.task_id))
-            merge = by_kind["continue-delivery"]
+            # 汇合步 c：接着交付类型里唯一不再喂别的步骤的那一个（接力时 b 也是接着交付类型）
+            producers = {str(network.occurrence(item.producer_occurrence).task_id) for item in network.data_requirements}
+            [merge] = [str(spec.task_id) for spec in network.occurrences
+                       if str(network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id)
+                       == "continue-delivery" and str(spec.task_id) not in producers]
             facts: dict[str, Any] = {"mission": mission, "merge": merge, "inputs": [], "overlaid": [],
                                      "port_order": [], "events": list(world.store.list_events(mission.id)),
                                      "merge_attempts": len(dispatch.store.list_attempts(merge)),
@@ -261,6 +261,22 @@ def test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planne
     assert facts["merge_attempts"] == 0
     assert any(e.type == "PlanningRepairRequested" and "write_conflict" in json.dumps(e.payload)
                for e in facts["events"]), sorted({e.type for e in facts["events"]})
+
+
+def test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay(tmp_path):
+    """核验员 10-09 复核发现的回归：a→b→c 单链，b 接着 a 改写了端口文件 a.md，c 只接 b。b 转交来的 a 旧版
+    是 b 收到过、接着改的那份，不是"另一份"——不是冲突，c 拿 b 的新版。
+
+    **Mutation**: ``_choose_versions`` 端口规则不扣除端口产出者收到过的旧版 → red."""
+    # same_port：b 也承接 a.md 这条要求，所以 b 的端口文件就是它改写的 a.md（内容与 a 的不同）
+    facts = _run(tmp_path, _Provider(same_port=True, relay=True, order=("b",)))
+    mission = facts["mission"]
+    assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
+    assert facts["clashes"] == []
+    [b_task] = {item.task_id for item in facts["inputs"]}  # c 只有 b 一个上游
+    assert [item.path for item in facts["inputs"]] == [A]
+    assert [item.task_id for item in facts["overlaid"] if item.path == A] == [b_task]
+    assert sorted(item.path for item in facts["overlaid"]) == [A, B]
 
 
 def _versions(*items: tuple[str, str]) -> dict[str, UpstreamInput]:
