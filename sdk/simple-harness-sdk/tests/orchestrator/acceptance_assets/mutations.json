@@ -1892,6 +1892,17 @@
         "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_the_model_itself_failed_is_not_called_a_server_error"
       ],
       "note": "所有回合失败都说成服务侧错误"
+    },
+    {
+      "id": "SM-10",
+      "source": "2026-10-10 parse 局：长思考流按原始字节累计到 16 MiB 被拒",
+      "file": "src/simple_harness/providers/chat_stream.py",
+      "original": "                data, self._data, self._pending = \"\\n\".join(self._data), [], 0",
+      "replacement": "                data, self._data = \"\\n\".join(self._data), []",
+      "tests": [
+        "tests/providers/test_chat_stream_long_reasoning.py::test_a_long_thinking_stream_is_bounded_by_what_is_kept_not_by_transport_bytes"
+      ],
+      "note": "又按传输字节累计，长思考流再次被拒"
     }
   ]
 }

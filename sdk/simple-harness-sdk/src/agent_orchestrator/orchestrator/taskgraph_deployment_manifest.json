@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-10T09:03:02+00:00",
-    "gate_sha256": "7af5fd72dd4a53188c54bdafd1e02413d4c07612a853590257e302bd1c8b5065",
-    "gate_status": "PASS",
-    "source_files_sha256": "c0c91acc8ac57468eeadd2515359a83a427edc726c756ee60e0eb16e5f4454ba"
-  },
-  "deployment_id": "349240f5054770391f575b995de2e0d863e21b1fbe650dd05e1ea00989eaf846",
+  "acceptance_evidence": null,
+  "deployment_id": "b87f6548a58e63f3aa973c94d2f9a1ae0206d7e8203c7830beb367713aa0218b",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -520,7 +515,7 @@
     "simple_harness/agents/context/protocol_groups.py": "43402a2c377eb5d512a66f782dbc54d1d22279568ff81f0e34cc3232005082a7",
     "simple_harness/agents/context/tokenizer.py": "e0905b99e2e4f67a84e2493f2ee3c0d6a8a0912caca522515e50b566647065c0",
     "simple_harness/agents/contracts.py": "2951cfb797f6b63b6757adbec162db6a565f41d54eb35dae8a1707b9735df2a0",
-    "simple_harness/agents/execution.py": "7eadc431daa4a53fd8fa3ffc2e6f9c00c893aca2bd4e4d7c53f1ef1ac890bd93",
+    "simple_harness/agents/execution.py": "9dbb7bed79b68f3e4ea9520d47996860db0490eb33b25716dc17d2af6028814e",
     "simple_harness/agents/memory/__init__.py": "13a52571a7dcbd5cea18f4bfdb83340885669c570833984368d3d7dfed7e5602",
     "simple_harness/agents/memory/embedding.py": "7a79ffb3b2f995fd272ea1366ec642ec7233c657f8aa1fc472238d13b8542c63",
     "simple_harness/agents/ports.py": "de78213efc3d70dee4e171a714ee66791a07a6c4b3daa2d9fd5402d9cf7a384a",
@@ -613,10 +608,10 @@
     "simple_harness/observability/snapshot.py": "42704dbe376efa38361819261b48cf13c76a36deb363cdf8b03393397bb2e3d6",
     "simple_harness/providers/__init__.py": "90b900c019284bbbb4329652d6500e14b31196b8a5b8841276f9c087f859aec1",
     "simple_harness/providers/base.py": "84b0c59b35b2e69b17d435fca50effb0e4ba55c3336db862d21e8136fd1f92b0",
-    "simple_harness/providers/chat_stream.py": "a0161c9506920cb8c4b95e1747aa1df0402f341b2d5c41ddc9127a487bd96585",
+    "simple_harness/providers/chat_stream.py": "ff36a00b41b5c5d21685e99d0879123c4031ee869c630df180c32250028d52b9",
     "simple_harness/providers/deepseek_strict.py": "6a2167191b29977ecd716fc175963baafa4108d2c985535d7fa30f5a3d63f880",
     "simple_harness/providers/errors.py": "61b884503ece67051f4102dfdba049374f47ba7c5abceec58a14f85a699f768e",
-    "simple_harness/providers/openai_compatible.py": "04103b08e2cee09c4cc4ab48a748f93fec2cc63b137702e651f3e78288717e89",
+    "simple_harness/providers/openai_compatible.py": "ca0a6f76be72ecaf33b7e8c69a026f3bf72b414d5ebc87918b2c261439a233ae",
     "simple_harness/providers/reconciliation.py": "9323ac917ff626161a28ad9daad77ad3f23cce204e9608b6f4bf5ddaf63987e0",
     "simple_harness/providers/redaction.py": "c33298f1f1288c6454c19ccaaf80a735a2a1b19e48b3df5016cea183e1180206",
     "simple_harness/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -723,7 +718,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

@@ -592,6 +592,9 @@ class AgentExecutionDriver:
                             else "tool_parse"
                         ),
                         "error_type": type(error).__name__,
+                        # 2026-10-10 parse 局：三次"回复无法解析"只留了错误码，没人知道为什么。
+                        # 错误自带的说明（不含回复内容）记进去，给模型和审计看。
+                        "message": str(error)[:500],
                     }
                     if code == "provider_admission_denied":
                         error_payload["retryable"] = False

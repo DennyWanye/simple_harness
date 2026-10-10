@@ -9,6 +9,20 @@ from typing import Any
 
 from .errors import ProviderProtocolError
 
+#: Memory bound on what one response may make this process hold: the data lines of one
+#: event while it is being assembled, and the text kept from the whole stream (content,
+#: reasoning, tool arguments).  Transport bytes that are not retained are not counted:
+#: 2026-10-10 parse 局，思考每个 token 一个 SSE 事件、每个约 230 字节，原来按原始字节累计到
+#: 16 MiB 就拒绝，约 3.5 万个思考 token 的调用一律在 4 分钟左右"回复无法解析"，而留在内存里的
+#: 文字只有几百 KB。上限不变，改成只数留下来的。
+RETAINED_LIMIT = 16 * 1024 * 1024
+
+
+def _reject(reason: str) -> ProviderProtocolError:
+    """Name the rule the stream broke (no response content), so the record says why."""
+
+    return ProviderProtocolError(public_message=f"invalid chat stream: {reason}")
+
 
 def _billed(usage: Any) -> bool:
     """A usage object that states a charge: any positive token count."""
@@ -54,34 +68,41 @@ class ChatStream:
         self.finish: str | None = None
         self.done = False
         self._data: list[str] = []
-        self._size = 0
+        self._pending = 0  # bytes buffered for the event being assembled
+        self._retained = 0  # bytes of text kept from the whole stream
 
     def line(self, line: str) -> None:
-        # Bound even ignored fields/keepalives, without retaining their content.
-        self._size += len(line.encode("utf-8"))
-        if self._size > 16 * 1024 * 1024:
-            raise ProviderProtocolError()
         if not line:
             if self._data:
-                data, self._data = "\n".join(self._data), []
+                data, self._data, self._pending = "\n".join(self._data), [], 0
                 self._event(data)
         elif line.startswith("data:"):
+            self._pending += len(line.encode("utf-8"))
+            if self._pending > RETAINED_LIMIT:
+                raise _reject("one event larger than the memory bound")
             self._data.append(line[5:].removeprefix(" "))
+
+    def _keep(self, text: str) -> None:
+        self._retained += len(text.encode("utf-8"))
+        if self._retained > RETAINED_LIMIT:
+            raise _reject("retained text larger than the memory bound")
 
     def _event(self, data: str) -> None:
         if self.done:
-            raise ProviderProtocolError()
+            raise _reject("event after [DONE]")
         if data == "[DONE]":
             if self.finish is None:
-                raise ProviderProtocolError()
+                raise _reject("[DONE] without a finish_reason")
             self.done = True
             return
         try:
             value = json.loads(data)
         except (ValueError, UnicodeError):
-            raise ProviderProtocolError() from None
-        if not isinstance(value, dict) or "error" in value:
-            raise ProviderProtocolError()
+            raise _reject("event is not JSON") from None
+        if not isinstance(value, dict):
+            raise _reject("event is not an object")
+        if "error" in value:
+            raise _reject("event carries an error object")
         if _placeholder(value):
             # Some compatible relays open the stream with an empty delta under a
             # provisional id and repeat a 0/0/0 usage on every delta.  Such a chunk
@@ -93,7 +114,7 @@ class ChatStream:
                 if not isinstance(part, str) or (
                     name in self.identity and self.identity[name] != part
                 ):
-                    raise ProviderProtocolError()
+                    raise _reject(f"{name} changed or is not a string")
                 self.identity[name] = part
         usage = value.get("usage")
         if usage is not None and not _billed(usage):
@@ -101,11 +122,11 @@ class ChatStream:
         if usage is not None:
             if self.usage is not None and self.usage != usage:
                 self.usage = None  # contradictory billing must remain unknown
-                raise ProviderProtocolError()
+                raise _reject("contradictory usage statements")
             self.usage = usage
         choices = value.get("choices")
         if not isinstance(choices, list) or len(choices) > 1:
-            raise ProviderProtocolError()
+            raise _reject("choices is not a list of at most one")
         if not choices:  # OpenAI's trailing usage-only chunk
             return
         choice = choices[0]
@@ -114,25 +135,27 @@ class ChatStream:
             or type(choice.get("index")) is not int
             or choice["index"] != 0
         ):
-            raise ProviderProtocolError()
+            raise _reject("choice is not index 0")
         delta = choice.get("delta")
         if not isinstance(delta, dict) or delta.get("role") not in (None, "assistant"):
-            raise ProviderProtocolError()
+            raise _reject("delta is not an assistant delta")
         content, calls = delta.get("content"), delta.get("tool_calls")
         reasoning = delta.get("reasoning_content")
         if self.finish is not None and (content or calls or reasoning):
-            raise ProviderProtocolError()
+            raise _reject("content after finish_reason")
         if reasoning is not None:
             if not isinstance(reasoning, str):
-                raise ProviderProtocolError()
+                raise _reject("reasoning_content is not a string")
+            self._keep(reasoning)
             self.reasoning.append(reasoning)
         if content is not None:
             if not isinstance(content, str):
-                raise ProviderProtocolError()
+                raise _reject("content is not a string")
+            self._keep(content)
             self.content.append(content)
         if calls is not None:
             if not isinstance(calls, list):
-                raise ProviderProtocolError()
+                raise _reject("tool_calls is not a list")
             for call in calls:
                 self._tool(call)
         finish = choice.get("finish_reason")
@@ -142,36 +165,41 @@ class ChatStream:
             finish = None
         if finish is not None:
             if not isinstance(finish, str) or not finish or self.finish is not None:
-                raise ProviderProtocolError()
+                raise _reject("finish_reason repeated or not a string")
             self.finish = finish
 
     def _tool(self, delta: Any) -> None:
         if not isinstance(delta, dict):
-            raise ProviderProtocolError()
+            raise _reject("tool call delta is not an object")
         index = delta.get("index")
         if type(index) is not int or not 0 <= index < 128:
-            raise ProviderProtocolError()
+            raise _reject("tool call index missing or out of range")
         call = self.tools.setdefault(index, {"function": {"name": "", "arguments": ""}})
         for name in ("id", "type"):
             value = delta.get(name)
             if value is not None:
                 if not isinstance(value, str) or (name in call and call[name] != value):
-                    raise ProviderProtocolError()
+                    raise _reject(f"tool call {name} changed or is not a string")
                 call[name] = value
         function = delta.get("function")
         if function is not None:
             if not isinstance(function, dict):
-                raise ProviderProtocolError()
+                raise _reject("tool call function is not an object")
             for name in ("name", "arguments"):
                 value = function.get(name)
                 if value is not None:
                     if not isinstance(value, str):
-                        raise ProviderProtocolError()
+                        raise _reject(f"tool call function {name} is not a string")
+                    self._keep(value)
                     call["function"][name] += value
 
     def payload(self) -> dict[str, Any]:
-        if not self.done or self._data or set(self.tools) != set(range(len(self.tools))):
-            raise ProviderProtocolError()
+        if not self.done:
+            raise _reject("stream ended without [DONE]")
+        if self._data:
+            raise _reject("stream ended inside an event")
+        if set(self.tools) != set(range(len(self.tools))):
+            raise _reject("tool call indexes are not contiguous")
         return {
             **self.identity,
             "usage": self.usage,
