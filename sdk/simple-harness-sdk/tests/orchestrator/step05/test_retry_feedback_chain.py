@@ -65,6 +65,8 @@ def test_a_turn_that_used_all_its_model_calls_is_told_as_that_fact():
                           "error": {"error_code": "react_max_turns_exceeded", "source_kind": "termination"}})
     feedback, _ = retry_feedback([capped], capped)
     assert feedback == ["上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。这一轮从头做。"]
+    tools = _attempt(1, {"reason": "turn_failed", "error": {"error_code": "react_max_tool_calls_exceeded"}})
+    assert retry_feedback([tools], tools)[0] == ["上一次尝试达到单轮工具调用次数上限被终止，没有交出结果。这一轮从头做。"]
 
 
 def test_a_turn_past_its_time_limit_is_told_as_that_fact():

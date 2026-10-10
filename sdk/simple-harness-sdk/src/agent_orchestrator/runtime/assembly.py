@@ -95,7 +95,9 @@ class OrchestratorConfig:
     #: 调用处被终止、每次从头重来各花 120～185 万 token；达到上限的事实同时交给执行者下一轮与规划器
     #: （拆不拆步由规划器判断）。
     max_model_calls_per_turn: int = 64
-    max_tool_calls_per_turn: int = 48
+    #: 独立核验 opt.182 M1：工具上限原来 48 = 24 次调用 × 2；调用放到 64 后按同一比例放到 128，
+    #: 否则工具上限先到（实测每次调用带 0.9～1.6 个工具），改了等于没改。
+    max_tool_calls_per_turn: int = 128
     knowledge_sharing: bool = True  # step 4 (D4-19): the layer's kill switch
     on_retrieval_failure: str = "block"  # step 4 (D4-11'): block | degrade
     max_retrieval_failures: int = 3

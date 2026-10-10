@@ -11,6 +11,8 @@ def test_the_two_executor_caps_are_told_to_the_planner_as_facts():
         "failure_class": "MODEL",
         "failure_fact": "上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。",
     }
+    tools = {"reason": "turn_failed", "error": {"error_code": "react_max_tool_calls_exceeded", "source_kind": "termination"}}
+    assert attempt_failure_facts(tools)["failure_fact"] == "上一次尝试达到单轮工具调用次数上限被终止，没有交出结果。"
     exhausted = {"reason": "turn_failed", "error": {
         "error_code": "provider_empty_response", "source_kind": "tool_parse",
         "detail": {"finish_reason": "length", "usage": {"output_tokens": 32768, "reasoning_tokens": 32768}}}}

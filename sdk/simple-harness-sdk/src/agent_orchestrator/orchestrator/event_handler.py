@@ -11505,7 +11505,7 @@ def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
     from .failure_classes import (
-        INFRA, classify_failure, max_turns_exceeded, max_turns_fact, output_exhausted, output_exhausted_fact,
+        INFRA, classify_failure, output_exhausted, output_exhausted_fact, turn_cap_exceeded, turn_cap_fact,
     )
 
     """What the repair Attempt is told about the failures before it.
@@ -11539,9 +11539,9 @@ def retry_feedback(
         elif reason == "turn_failed" and _turn_error_code(failure) == "react_wall_clock_exceeded":
             # 2026-10-10 parse 重跑：单轮时限到了被终止，原来写成"模型调用失败"——不是事实
             feedback.append("上一次尝试超过了单轮时限，被系统终止；这一轮从头做。")
-        elif reason == "turn_failed" and max_turns_exceeded(failure.get("error")):
+        elif reason == "turn_failed" and turn_cap_exceeded(failure.get("error")):
             # 2026-10-10 parse 重跑：做满 24 次调用被终止，原来写"模型调用失败"——只写事实
-            feedback.append(max_turns_fact(failure.get("error")) + "这一轮从头做。")
+            feedback.append(turn_cap_fact(failure.get("error")) + "这一轮从头做。")
         elif reason == "turn_failed" and output_exhausted(failure.get("error")):
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))

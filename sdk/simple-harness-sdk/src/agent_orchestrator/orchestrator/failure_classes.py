@@ -71,14 +71,21 @@ def output_exhausted_fact(error: Mapping[str, Any] | None) -> str:
     return f"上一轮有一次模型调用因输出上限（{amount}{thinking}）停止，没有给出最终结果。"
 
 
-def max_turns_exceeded(error: Mapping[str, Any] | None) -> bool:
-    """这一轮因达到单轮模型调用次数上限被终止（协议错误码 ``react_max_turns_exceeded``）。"""
-    return isinstance(error, Mapping) and error.get("error_code") == "react_max_turns_exceeded"
+_TURN_CAP_FACTS = {
+    "react_max_turns_exceeded": "上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。",
+    # 独立核验 opt.182 S1：工具次数做满（网关拒绝后仍继续调）同样是事实
+    "react_max_tool_calls_exceeded": "上一次尝试达到单轮工具调用次数上限被终止，没有交出结果。",
+}
 
 
-def max_turns_fact(error: Mapping[str, Any] | None) -> str:
-    """交给模型/规划器的一句事实：这一轮做满了单轮调用次数上限，没有交出结果。不替它们判断。"""
-    return "上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。"
+def turn_cap_exceeded(error: Mapping[str, Any] | None) -> bool:
+    """这一轮因做满单轮上限（模型调用次数或工具调用次数）被终止。"""
+    return isinstance(error, Mapping) and error.get("error_code") in _TURN_CAP_FACTS
+
+
+def turn_cap_fact(error: Mapping[str, Any] | None) -> str:
+    """交给模型/规划器的一句事实：做满了哪条单轮上限，没有交出结果。不替它们判断。"""
+    return _TURN_CAP_FACTS[error["error_code"]]
 
 
 def interrupted_review(failures: Any) -> bool:

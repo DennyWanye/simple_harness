@@ -467,7 +467,7 @@ def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
     the plain fact — output ceiling (2026-10-09) or per-turn model-call cap (2026-10-10).
     Whether to redo or split the step is the planner's judgment."""
     from .failure_classes import (
-        classify_failure, max_turns_exceeded, max_turns_fact, output_exhausted, output_exhausted_fact,
+        classify_failure, output_exhausted, output_exhausted_fact, turn_cap_exceeded, turn_cap_fact,
     )
 
     if not failure:
@@ -476,8 +476,8 @@ def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
     error = failure.get("error")
     if failure.get("reason") == "turn_failed" and output_exhausted(error):
         out["failure_fact"] = output_exhausted_fact(error)
-    elif failure.get("reason") == "turn_failed" and max_turns_exceeded(error):
-        out["failure_fact"] = max_turns_fact(error)
+    elif failure.get("reason") == "turn_failed" and turn_cap_exceeded(error):
+        out["failure_fact"] = turn_cap_fact(error)
     return out
 
 
