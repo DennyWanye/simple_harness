@@ -362,7 +362,7 @@ async def run_trial(name: str, trial: int, attempt: int, run_dir: Path) -> dict[
     backend.prepare()
     record: dict[str, Any] = {"scenario": name, "title": spec["title"], "trial": trial, "attempt": attempt,
                               "limits": dict(LIMITS), "started_at": time.time(),
-                              "events_seen": [], "approvals": [], "triggers": [], "notes": []}
+                              "events_seen": [], "approvals": [], "questions": [], "triggers": [], "notes": []}
     control = Control()
     backend.start()
     try:
@@ -423,6 +423,22 @@ async def run_trial(name: str, trial: int, attempt: int, run_dir: Path) -> dict[
                                                                "reason": "", "note": note, "ruling": "", "basis": ""})
                 record["approvals"].append({"request_id": approval["request_id"], "kind": kind, "decision": decision,
                                             "at": time.time() - started})
+            # 2026-10-10：规划器向人提问时（10-09 parse 局：连续写满 + 无进展上限后请人决定），无人值守的
+            # 验收脚本代答"按你的判断继续"并记进 record；真人使用时由人回答，这里不替系统做任何判断。
+            for question in detail.get("planning_questions") or ():
+                if question.get("state") != "PENDING" or question.get("decision_id") in {q["decision_id"] for q in record["questions"]}:
+                    continue
+                answer = "按你的判断继续：你自己决定做法，不用再问我。"
+                try:
+                    await control.call("mission_planning_answer", {
+                        "decision_id": question["decision_id"], "answer": answer,
+                        "expected_version": int(question.get("version") or 0),
+                        "nonce": f"{key}:answer:{question['decision_id']}"})
+                    outcome = "answered"
+                except Exception as error:  # noqa: BLE001 - 记下来，不中断这一局
+                    outcome = f"answer_failed: {type(error).__name__}: {error}"
+                record["questions"].append({"decision_id": question["decision_id"], "question": question.get("question"),
+                                            "answer": answer, "outcome": outcome, "at": time.time() - started})
             if status in {"COMPLETED", "FAILED", "CANCELLED"}:
                 break
         record["final_status"] = status
