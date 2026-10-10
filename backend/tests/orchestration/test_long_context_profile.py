@@ -1,7 +1,7 @@
 """LC1: actual Host create/read/restart of the context capacity, no paid provider calls.
 
 2026-09-30 用户决定：旧式执行池（``default`` / ``deepseek-context-*``）已删除，上下文容量
-只在原生池（``deepseek-native-256k-v1`` / ``deepseek-native-512k-v1``）上选择。原来
+只在原生池（``deepseek-native-256k-v1`` / ``-512k-v1`` / ``-600k-v1``，2026-10-10 起默认 600k）上选择。原来
 依赖旧式池的"旧空白请求升级""旧协议在长上下文池上跑完全部角色"两条用例随旧池一并删除。
 计数器是受信任测试组合里的 ``FixtureWordCounter``，不需要本机的 DeepSeek 分词器。
 """
