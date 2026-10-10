@@ -65,25 +65,25 @@ def test_a_new_mission_takes_the_thinking_pool_only_when_the_setting_asks_and_th
         service._context_profiles = lambda: [{"profile_id": pid} for pid in available]  # type: ignore[attr-defined]
         return OrchestrationService._context_default(service)  # type: ignore[arg-type]
 
-    both = {native_profile_id(524_288), native_profile_id(524_288, thinking=True)}
-    assert default_for("disabled", both) == native_profile_id(524_288)
-    assert default_for("enabled", both) == native_profile_id(524_288, thinking=True)
+    both = {native_profile_id(614_400), native_profile_id(614_400, thinking=True)}  # 2026-10-10 默认 600K
+    assert default_for("disabled", both) == native_profile_id(614_400)
+    assert default_for("enabled", both) == native_profile_id(614_400, thinking=True)
     # No thinking pool assembled (not DeepSeek, no certified counter): the plain pool.
-    assert default_for("enabled", {native_profile_id(524_288)}) == native_profile_id(524_288)
+    assert default_for("enabled", {native_profile_id(614_400)}) == native_profile_id(614_400)
 
 
 def test_new_missions_default_to_the_512k_window_and_256k_is_the_option() -> None:
     """用户 2026-10-04：新任务默认 512K，配置写 262144 才用 256K（已有任务沿用冻结的执行池）。
-    2026-10-10 用户改为默认 800K；512K、256K 要在配置里写明。
+    2026-10-10 用户改为默认 600K（线路实测安全线）；512K、256K 要在配置里写明。
 
     **改坏检验**（H-09）：配置解析的默认改回 256K → 变红。"""
     from deskpet.orchestration.settings import load_settings
 
-    assert load_settings({}).context_input_tokens == 819_200
+    assert load_settings({}).context_input_tokens == 614_400
     assert load_settings({"context_input_tokens": 262_144}).context_input_tokens == 262_144
     assert load_settings({"context_input_tokens": 524_288}).context_input_tokens == 524_288
-    assert load_settings({"context_input_tokens": 400_000}).context_input_tokens == 819_200
-    assert load_settings({"context_input_tokens": 1_000}).context_input_tokens == 524_288
+    assert load_settings({"context_input_tokens": 400_000}).context_input_tokens == 614_400
+    assert load_settings({"context_input_tokens": 1_000}).context_input_tokens == 614_400
 
 
 def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_client() -> None:

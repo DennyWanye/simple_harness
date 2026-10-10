@@ -46,10 +46,10 @@ NATIVE_PROFILE_PREFIX = "deepseek-native-"
 #: token 正常结束，线路允许。执行层"写满翻倍重试到顶"的路径因此能翻到 131,072。
 NATIVE_OUTPUT_TOKENS = 131_072
 #: The context sizes this deployment offers, smallest first (the first is the catalogue owner).
-#: 2026-10-10 用户决定加 800K 档并做默认。线路实测：60 万 token 输入答对；64 万～91 万 token 输入都被
-#: 接受但模型看不到末尾（四次都答同一个错数，直连上游也一样）。800K 扣掉 131,072 输出预留后输入约
-#: 68.8 万，超出实测安全线——这是用户知情后的选择；换线路后再核。
-CONTEXT_INPUT_LIMITS = (262_144, 524_288, 819_200)
+#: 2026-10-10 用户决定加 600K 档并做默认。线路实测：60 万 token 输入答对；64 万～91 万 token 输入都被
+#: 接受但模型看不到末尾（四次都答同一个错数，直连上游也一样，且不报错）。原生面每次请求只扣当次的
+#: 输出起步值，所以这一档单次输入最多约 60 万，正好贴着实测安全线；换线路后再探再调。
+CONTEXT_INPUT_LIMITS = (262_144, 524_288, 614_400)
 
 
 def native_profile_id(tokens: int, *, thinking: bool = False) -> str:

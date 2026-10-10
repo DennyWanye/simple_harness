@@ -62,16 +62,16 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         status = service.status()
         assert status["state"] == "available", status["reason"]
         native = status["native_plane"]
-        assert native["available"] is True and {p["profile_id"] for p in native["profiles"]} == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        assert native["available"] is True and {p["profile_id"] for p in native["profiles"]} == {"deepseek-native-256k-v1", "deepseek-native-512k-v1", "deepseek-native-600k-v1"}
         assert all(p["count_mode"] == "EXACT" for p in native["profiles"])
         # 2026-09-25 条目 6：每个池带后台循环健康行（建好即为 5 个循环，全部 0 次失败）
         assert all({row["loop"] for row in p["background"]} == {"index", "draining", "recall", "tool_probe", "reap"} for p in native["profiles"])
         assert all(row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"])
         # 2026-10-04 用户定（H-9 bbce635bd）：默认窗口 512K，256K 可选
-        assert status["default_context_profile_id"] == "deepseek-native-512k-v1"
+        assert status["default_context_profile_id"] == "deepseek-native-600k-v1"  # 2026-10-10 默认 600K
         rows = {p["profile_id"]: p for p in status["context_profiles"]}
         # 2026-09-30 用户决定：旧式执行池已删除，只列原生池；指名非原生池新建任务被拒。
-        assert set(rows) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        assert set(rows) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1", "deepseek-native-600k-v1"}
         assert all("native_plane" not in p for p in status["context_profiles"])
         assert "context_unavailable_reason" not in status
         from deskpet.orchestration.service import OrchestrationRequestError
@@ -85,12 +85,12 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(orches
         assert pool.runtime.arp.profile.body["owner_mode"] == "MISSION" and pool.runtime.arp.profile.revision == 2
         assert pool.runtime.arp.ports.mission_sources is service._native.mission_sources
         assert all(p["owner_mode"] == "MISSION" for p in native["profiles"])
-        assert set(service._runtime_options["profiles"]) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        assert set(service._runtime_options["profiles"]) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1", "deepseek-native-600k-v1"}
         # Each pool has its own Assurance acceptance reader, bound to that pool's own Skill
         # lifecycle and to the orchestrator store (review finding: a shared reader answered
         # for the last pool built).
         readers = service._native.acceptances
-        assert set(readers) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1"}
+        assert set(readers) == {"deepseek-native-256k-v1", "deepseek-native-512k-v1", "deepseek-native-600k-v1"}
         for profile_id, reader in readers.items():
             assert reader.store is service._orchestrator.store
             assert reader.dispatches.__self__ is service._orchestrator.assembled.pool(profile_id).runtime.arp.lifecycle
@@ -210,7 +210,7 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         await service._host_duties()  # binds the strict TaskGraph the granted request waits for
         await asyncio.wait_for(loop.run(max_cycles=40), timeout=240)
         assert loop.store.get_mission(mission_id).status.value == "PLANNING"
-        pool = loop.assembled.pool("deepseek-native-512k-v1")  # 默认窗口建的任务在 512K 池（H-9）
+        pool = loop.assembled.pool("deepseek-native-600k-v1")  # 默认窗口建的任务在 600K 池（H-9；2026-10-10）
         connection = pool.runtime.uow.database.connection
         sessions = connection.execute("SELECT agent_id, state FROM arp_agent_sessions").fetchall()
         assert len(sessions) == 1 and sessions[0][1] == "ACTIVE"

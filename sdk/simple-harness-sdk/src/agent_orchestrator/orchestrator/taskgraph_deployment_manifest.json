@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "9b6ebe42895399b671a63ae1f16bf30a93b431bc1e2c70eac7b27c9851b6494e",
+  "deployment_id": "c0671de49fedbc82ab191cc419e045cd4872b2667a1e15d2533f862306726efe",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -94,7 +94,7 @@
     "agent_orchestrator/deployment/__init__.py": "65b22949daeaf41aee6b7c663e5b1138f48257c1d14cb25266cacb91d7dfb430",
     "agent_orchestrator/deployment/assembly.py": "4ffd304dd513fbbe957d9525e16bda2d4a8a781ecbb6543db84d33009c865f74",
     "agent_orchestrator/deployment/duties.py": "112f821a0f6224043a968ed4b61c7a3f78f6103a8e3e2c582806631541087b5c",
-    "agent_orchestrator/deployment/native_pools.py": "21332e3495da81192aa100efbc6d196e73908176c8ac200d9bfdd5d893e25286",
+    "agent_orchestrator/deployment/native_pools.py": "396730d0bc3884adc3b8c4c4a385a9b8fc8aa3c0f44a4a57e5fee0b8b5817eaa",
     "agent_orchestrator/deployment/root.py": "46d4480271209ab6250d99b6e9f96b88f65081f280df40231746cbdcfa530847",
     "agent_orchestrator/domains/__init__.py": "8fc9e932a491ce64f5e687a047a71b0e191c49b9e89a45a1011dd7771ea4b711",
     "agent_orchestrator/domains/drone_sim.py": "b839fa119423095981a0aabd13b3d3aec55b2774acaaaa31b23ffa21d76fbef3",
