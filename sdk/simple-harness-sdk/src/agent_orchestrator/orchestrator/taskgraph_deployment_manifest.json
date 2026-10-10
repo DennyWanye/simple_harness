@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "b87f6548a58e63f3aa973c94d2f9a1ae0206d7e8203c7830beb367713aa0218b",
+  "deployment_id": "ac8da504c4ff0cb9b4a407e4a146cf62da8f59f6eb35f401586048b90966c736",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -608,10 +608,10 @@
     "simple_harness/observability/snapshot.py": "42704dbe376efa38361819261b48cf13c76a36deb363cdf8b03393397bb2e3d6",
     "simple_harness/providers/__init__.py": "90b900c019284bbbb4329652d6500e14b31196b8a5b8841276f9c087f859aec1",
     "simple_harness/providers/base.py": "84b0c59b35b2e69b17d435fca50effb0e4ba55c3336db862d21e8136fd1f92b0",
-    "simple_harness/providers/chat_stream.py": "ff36a00b41b5c5d21685e99d0879123c4031ee869c630df180c32250028d52b9",
+    "simple_harness/providers/chat_stream.py": "ca5843574b4b0d35c8fc27ec78c237d6009d69bbe2aeb18762583772ecb4e8aa",
     "simple_harness/providers/deepseek_strict.py": "6a2167191b29977ecd716fc175963baafa4108d2c985535d7fa30f5a3d63f880",
     "simple_harness/providers/errors.py": "61b884503ece67051f4102dfdba049374f47ba7c5abceec58a14f85a699f768e",
-    "simple_harness/providers/openai_compatible.py": "ca0a6f76be72ecaf33b7e8c69a026f3bf72b414d5ebc87918b2c261439a233ae",
+    "simple_harness/providers/openai_compatible.py": "5969d17a0fdb34491c0c798c921034fddf15ef2c4245a2de8caf254f49309383",
     "simple_harness/providers/reconciliation.py": "9323ac917ff626161a28ad9daad77ad3f23cce204e9608b6f4bf5ddaf63987e0",
     "simple_harness/providers/redaction.py": "c33298f1f1288c6454c19ccaaf80a735a2a1b19e48b3df5016cea183e1180206",
     "simple_harness/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

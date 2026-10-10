@@ -134,7 +134,7 @@ class _ProtocolErrorWithUsage(ProviderProtocolError):
         cause: ProviderProtocolError,
         finish_reason: str | None,
     ) -> None:
-        super().__init__(private_cause=cause)
+        super().__init__(public_message=str(cause), private_cause=cause)
         self.detail: dict[str, JsonValue] = {
             "usage": {
                 "input_tokens": usage.input_tokens,

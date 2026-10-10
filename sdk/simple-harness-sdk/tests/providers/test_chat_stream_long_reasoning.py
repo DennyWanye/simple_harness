@@ -67,6 +67,30 @@ def test_one_oversized_event_is_refused_before_it_is_parsed() -> None:
     assert "one event larger than the memory bound" in str(refused.value)
 
 
+def test_tool_call_ids_count_toward_the_memory_bound() -> None:
+    """独立核验 opt.180 M1：128 个调用各带 1 MiB 的 id 原来一个字节都不计。"""
+    stream = ChatStream()
+    with pytest.raises(ProviderProtocolError) as refused:
+        for index in range(128):
+            stream.line(_chunk({"tool_calls": [{"index": index, "id": "i" * (1024 * 1024), "type": "function",
+                                                "function": {"name": "f", "arguments": ""}}]}))
+            stream.line("")
+    assert "retained text larger than the memory bound" in str(refused.value)
+    assert index < 20, index  # 16 MiB of ids: refused well before all 128
+
+
+def test_empty_pieces_leave_nothing_behind() -> None:
+    """独立核验 opt.180 M2：每个片段一个列表槽位是上限看不见的内存；现在用缓冲区，空片段不占。"""
+    stream = ChatStream()
+    for _ in range(50_000):
+        stream.line(_chunk({"reasoning_content": ""})); stream.line("")
+    assert stream.reasoning.tell() == 0 and stream.content.tell() == 0
+    stream.line(_chunk({"content": "ok"}, finish="stop")); stream.line("")
+    stream.line("data: [DONE]"); stream.line("")
+    message = stream.payload()["choices"][0]["message"]
+    assert message["content"] == "ok" and "reasoning_content" not in message
+
+
 def test_every_refusal_names_the_rule_it_applies() -> None:
     cases = {
         "data: [DONE]": "[DONE] without a finish_reason",

@@ -1903,6 +1903,17 @@
         "tests/providers/test_chat_stream_long_reasoning.py::test_a_long_thinking_stream_is_bounded_by_what_is_kept_not_by_transport_bytes"
       ],
       "note": "又按传输字节累计，长思考流再次被拒"
+    },
+    {
+      "id": "SM-11",
+      "source": "2026-10-10 独立核验 opt.180 M1：工具调用 id 不计入内存上限",
+      "file": "src/simple_harness/providers/chat_stream.py",
+      "original": "                if name not in call:\n                    self._keep(value)  # 独立核验 opt.180 M1: ids are kept text too",
+      "replacement": "                if name not in call:\n                    pass",
+      "tests": [
+        "tests/providers/test_chat_stream_long_reasoning.py::test_tool_call_ids_count_toward_the_memory_bound"
+      ],
+      "note": "id 又不计数"
     }
   ]
 }

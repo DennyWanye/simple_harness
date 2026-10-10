@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from typing import Any
 
@@ -60,8 +61,10 @@ class ChatStream:
     """
 
     def __init__(self) -> None:
-        self.content: list[str] = []
-        self.reasoning: list[str] = []
+        # Buffers, not per-piece lists: a relay sends one token per event, and a list slot
+        # per piece is memory the bound would not see (独立核验 opt.180 M2).
+        self.content = io.StringIO()
+        self.reasoning = io.StringIO()
         self.tools: dict[int, dict[str, Any]] = {}
         self.identity: dict[str, str] = {}
         self.usage: Any = None
@@ -147,12 +150,12 @@ class ChatStream:
             if not isinstance(reasoning, str):
                 raise _reject("reasoning_content is not a string")
             self._keep(reasoning)
-            self.reasoning.append(reasoning)
+            self.reasoning.write(reasoning)
         if content is not None:
             if not isinstance(content, str):
                 raise _reject("content is not a string")
             self._keep(content)
-            self.content.append(content)
+            self.content.write(content)
         if calls is not None:
             if not isinstance(calls, list):
                 raise _reject("tool_calls is not a list")
@@ -180,6 +183,8 @@ class ChatStream:
             if value is not None:
                 if not isinstance(value, str) or (name in call and call[name] != value):
                     raise _reject(f"tool call {name} changed or is not a string")
+                if name not in call:
+                    self._keep(value)  # 独立核验 opt.180 M1: ids are kept text too
                 call[name] = value
         function = delta.get("function")
         if function is not None:
@@ -208,9 +213,9 @@ class ChatStream:
                     "finish_reason": self.finish,
                     "message": {
                         "role": "assistant",
-                        "content": "".join(self.content),
+                        "content": self.content.getvalue(),
                         "tool_calls": [self.tools[i] for i in sorted(self.tools)],
-                        **({"reasoning_content": "".join(self.reasoning)} if self.reasoning else {}),
+                        **({"reasoning_content": self.reasoning.getvalue()} if self.reasoning.tell() else {}),
                     },
                 }
             ],
