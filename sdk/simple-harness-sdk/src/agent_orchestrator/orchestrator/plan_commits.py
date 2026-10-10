@@ -1409,23 +1409,40 @@ class PlanCommitsMixin:
             if spec.form is TaskForm.COMPOUND
             and network.adopted_instance_for(spec.occurrence_id) is None
         )
-        available = None if pool is None else max(0, pool - committed)
-        share = share_tokens(available, funded_now, reserved)
-        if share is not None and funded_now and share < MIN_TOKEN_SHARE:
-            raise PlanCommitRejected(
-                "BUDGET_INSUFFICIENT",
-                f"the Mission's task pool has {available} tokens left and this revision needs "
-                f"to fund {funded_now} new primitive occurrence(s) while holding a share for "
-                f"{reserved} unrefined compound(s); a plan whose work cannot pay for anything "
-                "is refused, not opened with an account nobody can draw on (§21.5)",
-            )
-        # 2026-09-25 user decision: a deployment that names a fixed per-leaf allowance
-        # gives every new leaf that allowance instead of the even share.  The even share
-        # stays the upper bound, so a pool that cannot pay the fixed amount for every
-        # leaf still splits what it has and the conservation equation below holds.
+        from .commit_service import mission_account
+
         cap = getattr(self, "_task_max_tokens", None)
-        if cap is not None and funded_now:
-            share = cap if share is None else min(share, cap)
+        if cap is None:
+            available = None if pool is None else max(0, pool - committed)
+            share = share_tokens(available, funded_now, reserved)
+            if share is not None and funded_now and share < MIN_TOKEN_SHARE:
+                raise PlanCommitRejected(
+                    "BUDGET_INSUFFICIENT",
+                    f"the Mission's task pool has {available} tokens left and this revision needs "
+                    f"to fund {funded_now} new primitive occurrence(s) while holding a share for "
+                    f"{reserved} unrefined compound(s); a plan whose work cannot pay for anything "
+                    "is refused, not opened with an account nobody can draw on (§21.5)",
+                )
+        else:
+            # 2026-10-11 user decision A（parse 重跑）：固定单步额度，不再平分。原来（2026-09-25）
+            # 取"固定额度"与"池子平分份额"中较小的，多步任务里每步实际只有 500 万，用户定的
+            # 1000 万不生效。现在每个新叶子都拿固定额度（不超过任务总额）；任务总额由账户链在
+            # 每次预留时挡住（``reserve`` 走到父账户），所以"还剩多少"按任务账户的实际占用算
+            # （已结清 + 预留中），不按每行的上限相加。
+            snapshot = self._ledger.account(mission_account(command.mission_id))
+            available = (
+                None if pool is None
+                else max(0, pool - snapshot.reserved_tokens - snapshot.settled_tokens)
+            )
+            if available is not None and funded_now and available < MIN_TOKEN_SHARE:
+                raise PlanCommitRejected(
+                    "BUDGET_INSUFFICIENT",
+                    f"the Mission's task pool has {available} tokens left (after what its "
+                    f"accounts hold or have spent) and this revision needs to fund {funded_now} "
+                    "new primitive occurrence(s); a plan whose work cannot pay for anything is "
+                    "refused, not opened with an account nobody can draw on (§21.5)",
+                )
+            share = cap if pool is None else min(cap, pool)
         built: list[OccurrenceTask] = []
         ordinal = len(stored)
         # P2.3k verification P1-2: the occurrences a root criterion is linked to keep
@@ -1473,6 +1490,8 @@ class PlanCommitsMixin:
             reused=tuple(reused),
             pool_tokens=pool,
             share_tokens=share,
+            fixed_allowance=cap,
+            available_tokens=available,
             committed_tokens=committed,
             funded_now=funded_now,
             reserved_subtrees=reserved,

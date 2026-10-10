@@ -134,6 +134,11 @@ class Materialisation:
     reused: tuple[str, ...] = ()
     pool_tokens: int | None = None
     share_tokens: int | None = None
+    #: 2026-10-11 user decision A: a fixed per-leaf allowance replaces the even share.
+    #: With it, the pool is conserved at reservation time by the account chain, so the
+    #: equation below checks each leaf's ceiling against the pool instead of their sum.
+    fixed_allowance: int | None = None
+    available_tokens: int | None = None
     #: What the Mission's Task rows already hold, *before* this round — read from the
     #: store, not from this network, because an occurrence retired by an earlier
     #: revision still owns the tokens its account was opened with.
@@ -194,8 +199,16 @@ class Materialisation:
             # closes: ``held_by_reused`` + ``held_elsewhere`` == ``committed_tokens``.
             "held_elsewhere": int(self.committed_tokens)
             - sum(int(value) for value in self.existing.values()),
+            "mode": "fixed_allowance" if self.fixed_allowance is not None else "even_share",
+            "fixed_allowance": self.fixed_allowance,
+            "available_tokens": self.available_tokens,
             "holds": (
-                self.pool_tokens is None or self.committed_tokens + granted <= self.pool_tokens
+                self.pool_tokens is None
+                or (
+                    all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)
+                    if self.fixed_allowance is not None
+                    else self.committed_tokens + granted <= self.pool_tokens
+                )
             ),
         }
 

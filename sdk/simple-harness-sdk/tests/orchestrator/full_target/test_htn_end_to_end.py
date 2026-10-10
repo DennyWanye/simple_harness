@@ -1208,7 +1208,8 @@ def _sub_goal_planner(request: Any) -> Any:
                     {"method_proposal": {"method": method, "rationale": goal}}, goal)
 
 
-@pytest.mark.parametrize("allowance", [None, 400_000, 1_500_000], ids=["even", "fixed", "fixed-too-big"])
+# 固定额度要装得下首审尾款（opt.178 起 393,216 = 256K 输入 + 131,072 输出）加一次执行的预留
+@pytest.mark.parametrize("allowance", [None, 800_000, 3_000_000], ids=["even", "fixed", "fixed-too-big"])
 def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None) -> None:
     """Review F7: §21.5's second half — round two is funded out of what round one *left*.
 
@@ -1216,8 +1217,10 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     round two (the sub-goal refined into two steps by the Planner, through its own review)
     is funded from that held share, and the two rounds together never grant more than the
     pool.  ``held_by_reused`` + ``held_elsewhere`` account for every committed token (F15).
-    A fixed per-leaf allowance (2026-09-25) replaces the even share; one the pool cannot pay
-    falls back to what is left — conservation outranks the fixed amount.
+    A fixed per-leaf allowance (2026-09-25) replaces the even share.  2026-10-11 user decision
+    A: the fixed amount is no longer cut down to the even share — every leaf gets it (at most
+    the pool), the pool itself is conserved by the account chain at reservation time, and the
+    equation checks each leaf's ceiling against the pool instead of their sum.
 
     **Mutation**: ``committed = 0`` (the equation stated over this network alone) overdraws
     round two by half a pool.
@@ -1253,19 +1256,25 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     assert second["funded_now"] == 2 and second["reserved_subtrees"] == 0
     assert second["holds"] is True
     granted = sum(int(task.budget.max_tokens or 0) for task in rows)
-    assert granted <= pool
-    assert sum(item["granted_tokens"] for item in equations) <= pool
+    if allowance is None:
+        assert first["mode"] == second["mode"] == "even_share"
+        assert granted <= pool
+        assert sum(item["granted_tokens"] for item in equations) <= pool
+    else:
+        # 2026-10-11 A：每个叶子都拿固定额度（不超过池子），各叶子上限之和可以超过池子
+        assert first["mode"] == second["mode"] == "fixed_allowance"
+        leaves = [int(task.budget.max_tokens or 0) for task in rows if task.budget.max_tokens]
+        assert leaves and all(cap == min(allowance, pool) for cap in leaves), leaves
+        assert second["available_tokens"] is not None and second["available_tokens"] <= pool
     assert first["granted_tokens"] + 2 * (pool // 2) > pool, "re-spending the pool each round would overdraw"
     reused = sum(int(value) for value in second["held_by_reused"].values())
     assert reused + second["held_elsewhere"] == second["committed_tokens"]
     if allowance is None:
         assert first["share_tokens"] == pool // 2
         assert second["share_tokens"] < first["share_tokens"]
-    elif allowance * 2 <= pool // 2:
-        assert first["share_tokens"] == allowance and second["share_tokens"] == allowance
     else:
-        assert first["share_tokens"] == pool // 2, "a fixed amount the pool cannot pay falls back"
-        assert second["share_tokens"] == (pool - first["granted_tokens"]) // 2
+        # 2026-10-11 A：固定额度不再被份额削减；超过池子的只削到池子
+        assert first["share_tokens"] == second["share_tokens"] == min(allowance, pool)
 
 
 def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, monkeypatch) -> None:

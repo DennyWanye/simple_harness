@@ -287,8 +287,9 @@ class _UnknownChargeReviewer:
     （第 2 批车道 S 起：用量说不清本身不再让格式修复等结清——那会成环永远卡住；
     这里的"卡在预算上"改由预算真的不够造出。）"""
 
-    #: 装得下第一次内容审阅的预留（约 29.5 万）加上其余几次小额度，装不下第二次
-    TIGHT_BUDGET = {"max_tokens": 400_000, "max_attempts": 12}
+    #: 装得下第一次内容审阅的预留（opt.178 起 393,216 = 256K 输入 + 131,072 输出）加上其余几次
+    #: 小额度，装不下第二次。（原 400,000 对应旧尾款 294,912；opt.178 后这条用例一直红，10-11 改）
+    TIGHT_BUDGET = {"max_tokens": 500_000, "max_attempts": 12}
 
     def __init__(self) -> None:
         from agent_orchestrator.testing.scripted_replies import (
@@ -337,6 +338,9 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
     path = "sources/spec.md"
     state: dict = {"armed": None, "fired": None, "ticks": 0, "settled": [], "kinds": set()}
     settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
+    # 2026-10-11：账户链上没有活着的预留时，等不到的额度不再等（这一步按额度用完结束）。本用例
+    # 考的是"卡在预算上的审阅不挡后续事件入箱"，与为什么还可能等到无关——这里让它仍可能等到。
+    monkeypatch.setattr(AssuranceTick, "_budget_can_still_change", lambda self, account_id: True, raising=False)
 
     def snapshot(store, mission_id):
         cursors = {row[0]: row[1] for row in store.connection.execute(

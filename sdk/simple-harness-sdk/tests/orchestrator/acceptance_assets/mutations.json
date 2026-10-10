@@ -1947,6 +1947,28 @@
         "tests/orchestrator/step05/test_repair_request_failure_facts.py::test_the_two_executor_caps_are_told_to_the_planner_as_facts"
       ],
       "note": "规划器只看到错误码"
+    },
+    {
+      "id": "SM-15",
+      "source": "2026-10-11 用户决定 A：固定单步额度不再平分",
+      "file": "src/agent_orchestrator/orchestrator/occurrence_tasks.py",
+      "original": "                    all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)\n                    if self.fixed_allowance is not None\n                    else self.committed_tokens + granted <= self.pool_tokens",
+      "replacement": "                    self.committed_tokens + granted <= self.pool_tokens",
+      "tests": [
+        "tests/orchestrator/full_target/test_fixed_leaf_allowance.py::test_fixed_allowance_leaves_may_sum_past_the_pool_but_none_exceeds_it"
+      ],
+      "note": "固定额度下又把各行上限相加"
+    },
+    {
+      "id": "SM-16",
+      "source": "2026-10-11 parse 重跑：等不到的额度永远等",
+      "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
+      "original": "                if isinstance(error, BudgetExhausted) and not self._budget_can_still_change(error.account_id):",
+      "replacement": "                if False:",
+      "tests": [
+        "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_a_budget_wait_nothing_can_change_ends_the_step_then_waits_as_before"
+      ],
+      "note": "审阅等额度永远等"
     }
   ]
 }
