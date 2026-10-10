@@ -115,6 +115,7 @@ class AssuranceTick:
         self.expiry = AssuranceExpiry(self.store)
         self.owner = text(orchestrator._owner)
         self._after_mission = ""
+        self._release_after: set[str] = set()  # Missions a budget stop closed in this tick
 
     def _missions(self) -> tuple[str, ...]:
         # Include terminal Missions: expiry, late accounting and NOTIFY survive
@@ -309,33 +310,71 @@ class AssuranceTick:
                         # data does not read back, must not starve the other consumers
                         # or prevent later revocation ingestion.
                         self._settle_failure(claim, error)
+        while self._release_after:
+            await self.orchestrator._release_mission(self._release_after.pop())
         return progressed
 
-    def _budget_can_still_change(self, account_id: str) -> bool:
-        """Whether waiting can help: some reservation on the account chain belongs to a
-        subject that is still running (its charge may settle below what it holds)."""
+    def _budget_can_still_change(self, account_id: str, mission_id: str) -> bool:
+        """Whether waiting can help: a reservation that could still give tokens back to the
+        account that refused — on that account itself (a step account) or anywhere under
+        the Mission (its total or the global quota) — belongs to a subject still running."""
         from ..contracts.state_machines import TERMINAL_ATTEMPT
 
-        ledger = self.orchestrator.commit.ledger
-        try:
-            chain = [snapshot.account_id for snapshot in ledger._chain(account_id)]
-        except BudgetError:
-            return True  # an unreadable account is not evidence that nothing can change
-        marks = ",".join("?" for _ in chain)
-        rows = self.store.connection.execute(
-            f"SELECT subject_id FROM budget_reservations WHERE state='RESERVED' AND account_id IN ({marks})",
-            tuple(chain),
-        ).fetchall()
+        if account_id.startswith("budget:task-"):
+            rows = self.store.connection.execute(
+                "SELECT subject_id FROM budget_reservations WHERE state='RESERVED' AND account_id=?",
+                (account_id,),
+            ).fetchall()
+        else:
+            rows = self.store.connection.execute(
+                "SELECT subject_id FROM budget_reservations WHERE state='RESERVED' AND mission_id=?",
+                (mission_id,),
+            ).fetchall()
         for (subject_id,) in rows:
             intent = self.store.get_intent_for_subject(subject_id)
-            if intent is not None and intent.state in {"AGENT_CREATED", "SUBMITTED"}:
+            if intent is not None and str(intent.state) not in {"SETTLED", "FAILED", "CANCELLED"}:
                 return True
             attempt = self.store.get_attempt(subject_id)
             if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
                 return True
         return False
 
-    def _review_owner_task(self, claim: WorkClaim) -> str | None:
+    def _end_on_exhausted_budget(self, claim: WorkClaim, error: BudgetExhausted) -> None:
+        """End what the refusing account funds, the same way an executor refused at
+        admission ends: a step account ends that step; the Mission total or the global
+        quota ends the Mission.  A step that cannot be stopped where it stands (a BLOCKED
+        compound or root that owns a method/final review, an already accepted one) ends
+        the Mission too — the review it needs can never be paid (独立核验 opt.183 M1)."""
+        from ..contracts.state_machines import TERMINAL_TASK, MissionStopReason
+        from .commit_service import CommitRejected
+
+        detail = {
+            "source_kind": "assurance_review",
+            "retryable": False,
+            "account": error.account_id,
+            "dimension": error.dimension,
+            "requested": error.requested,
+            "remaining": error.remaining,
+        }
+        task_id = self._review_owner_task(claim) if error.account_id.startswith("budget:task-") else None
+        task = self.store.get_task(task_id) if task_id is not None else None
+        try:
+            if task is not None and task.status not in TERMINAL_TASK:
+                self.orchestrator._commit_stop_task(
+                    task_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+            else:
+                self.orchestrator._commit_fail_mission(
+                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+        except CommitRejected:
+            # the step cannot be stopped where it stands: the Mission ends instead
+            try:
+                self.orchestrator._commit_fail_mission(
+                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)
+            except CommitRejected:
+                return
+        self._release_after.add(claim.mission_id)
+
+    def _review_owner_task(self, claim: WorkClaim) -> str | None:  # noqa: D401
         """The step a review-import work item belongs to (None for other consumers)."""
         if claim.consumer != "REVIEW" or not claim.work_key.startswith("review-import:"):
             return None
@@ -344,25 +383,6 @@ class AssuranceTick:
             "SELECT owner_task_id FROM assurance_review_bindings WHERE review_key=?", (review_key,)
         ).fetchone()
         return None if row is None else str(row[0])
-
-    def _stop_task_budget_exhausted(self, task_id: str, error: BudgetExhausted) -> None:
-        from ..contracts.state_machines import TERMINAL_TASK, MissionStopReason
-
-        task = self.store.get_task(task_id)
-        if task is None or task.status in TERMINAL_TASK:
-            return
-        self.orchestrator._commit_stop_task(
-            task_id,
-            stop_reason=MissionStopReason.BUDGET_EXHAUSTED,
-            detail={
-                "source_kind": "assurance_review",
-                "retryable": False,
-                "account": error.account_id,
-                "dimension": error.dimension,
-                "requested": error.requested,
-                "remaining": error.remaining,
-            },
-        )
 
     def _settle_failure(self, claim: WorkClaim, error: BaseException) -> None:
         """一项工作准备失败后怎么放回去（第 2 批 A05，原计划 §9 第 5 步）。
@@ -380,10 +400,9 @@ class AssuranceTick:
                 # 半小时——账户上没有任何还活着的预留，额度不会变，等是等不到的。等待只在
                 # "有在跑的东西可能把额度还回来"时才有意义；否则这一步按额度用完结束，
                 # 与执行者在准入处被拒的处理相同。
-                if isinstance(error, BudgetExhausted) and not self._budget_can_still_change(error.account_id):
-                    task_id = self._review_owner_task(claim)
-                    if task_id is not None:
-                        self._stop_task_budget_exhausted(task_id, error)
+                if (isinstance(error, BudgetExhausted)
+                        and not self._budget_can_still_change(error.account_id, claim.mission_id)):
+                    self._end_on_exhausted_budget(claim, error)
                 self.work.wait(
                     claim,
                     now_ms=now_ms,

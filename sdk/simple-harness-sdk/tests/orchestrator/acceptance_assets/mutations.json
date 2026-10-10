@@ -1963,12 +1963,23 @@
       "id": "SM-16",
       "source": "2026-10-11 parse 重跑：等不到的额度永远等",
       "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
-      "original": "                if isinstance(error, BudgetExhausted) and not self._budget_can_still_change(error.account_id):",
+      "original": "                if (isinstance(error, BudgetExhausted)\n                        and not self._budget_can_still_change(error.account_id, claim.mission_id)):",
       "replacement": "                if False:",
       "tests": [
         "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_a_budget_wait_nothing_can_change_ends_the_step_then_waits_as_before"
       ],
       "note": "审阅等额度永远等"
+    },
+    {
+      "id": "SM-17",
+      "source": "2026-10-11 独立核验 opt.183 M1：做法审阅/终审的归属任务停不了，仍永远等",
+      "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
+      "original": "        except CommitRejected:\n            # the step cannot be stopped where it stands: the Mission ends instead\n            try:\n                self.orchestrator._commit_fail_mission(\n                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)\n            except CommitRejected:\n                return",
+      "replacement": "        except CommitRejected:\n            return",
+      "tests": [
+        "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_the_refusing_account_decides_what_ends"
+      ],
+      "note": "停不了的步骤不再让任务结束"
     }
   ]
 }

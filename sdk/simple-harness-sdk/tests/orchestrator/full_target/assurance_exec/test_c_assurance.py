@@ -340,7 +340,7 @@ def test_a_budget_blocked_review_does_not_hold_back_later_events(tmp_path, monke
     settle, tick = AssuranceTick._settle_failure, AssuranceTick.tick
     # 2026-10-11：账户链上没有活着的预留时，等不到的额度不再等（这一步按额度用完结束）。本用例
     # 考的是"卡在预算上的审阅不挡后续事件入箱"，与为什么还可能等到无关——这里让它仍可能等到。
-    monkeypatch.setattr(AssuranceTick, "_budget_can_still_change", lambda self, account_id: True, raising=False)
+    monkeypatch.setattr(AssuranceTick, "_budget_can_still_change", lambda self, account_id, mission_id: True, raising=False)
 
     def snapshot(store, mission_id):
         cursors = {row[0]: row[1] for row in store.connection.execute(
