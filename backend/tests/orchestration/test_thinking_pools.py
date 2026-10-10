@@ -74,12 +74,15 @@ def test_a_new_mission_takes_the_thinking_pool_only_when_the_setting_asks_and_th
 
 def test_new_missions_default_to_the_512k_window_and_256k_is_the_option() -> None:
     """用户 2026-10-04：新任务默认 512K，配置写 262144 才用 256K（已有任务沿用冻结的执行池）。
+    2026-10-10 用户改为默认 800K；512K、256K 要在配置里写明。
 
     **改坏检验**（H-09）：配置解析的默认改回 256K → 变红。"""
     from deskpet.orchestration.settings import load_settings
 
-    assert load_settings({}).context_input_tokens == 524_288
+    assert load_settings({}).context_input_tokens == 819_200
     assert load_settings({"context_input_tokens": 262_144}).context_input_tokens == 262_144
+    assert load_settings({"context_input_tokens": 524_288}).context_input_tokens == 524_288
+    assert load_settings({"context_input_tokens": 400_000}).context_input_tokens == 819_200
     assert load_settings({"context_input_tokens": 1_000}).context_input_tokens == 524_288
 
 

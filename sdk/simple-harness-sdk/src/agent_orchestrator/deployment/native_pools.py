@@ -41,9 +41,15 @@ from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 logger = logging.getLogger(__name__)
 
 NATIVE_PROFILE_PREFIX = "deepseek-native-"
-NATIVE_OUTPUT_TOKENS = 32_768
+#: 2026-10-10 用户决定：单次输出上限 32,768 → 131,072。原来的 32,768 是 9 月底接 DeepSeek 时按当时公开值
+#: 取的；10-09 两局里执行者 9 次把 32,768 全部用来思考、一字正文没写。流式探测一次完整输出 103,000 个
+#: token 正常结束，线路允许。执行层"写满翻倍重试到顶"的路径因此能翻到 131,072。
+NATIVE_OUTPUT_TOKENS = 131_072
 #: The context sizes this deployment offers, smallest first (the first is the catalogue owner).
-CONTEXT_INPUT_LIMITS = (262_144, 524_288)
+#: 2026-10-10 用户决定加 800K 档并做默认。线路实测：60 万 token 输入答对；64 万～91 万 token 输入都被
+#: 接受但模型看不到末尾（四次都答同一个错数，直连上游也一样）。800K 扣掉 131,072 输出预留后输入约
+#: 68.8 万，超出实测安全线——这是用户知情后的选择；换线路后再核。
+CONTEXT_INPUT_LIMITS = (262_144, 524_288, 819_200)
 
 
 def native_profile_id(tokens: int, *, thinking: bool = False) -> str:
@@ -91,7 +97,7 @@ def _scaled_policy(policy_id: str, *, tokens: int, output_tokens: int, embedding
     policy["max_context_tokens"] = tokens
     policy["output_reserve_tokens"] = output_tokens
     policy["embedding_required_for_activation"] = embedding
-    if tokens < 524_288:
+    if tokens != 524_288:  # the policy file is written for 512K; other sizes scale its soft caps
         scale = tokens / 524_288
         for name in ("recent_min_tokens", "recall_max_tokens", "fixed_soft_max_tokens"):
             policy[name] = max(4096, int(policy[name] * scale))
@@ -347,7 +353,7 @@ def pool_options(
     def register(identifier: str, tokens: int, pool_counter: Any, base: Any, *, kind: str,
                  default_output: int = 8192) -> None:
         wanted = ContextPolicy(
-            max_input_tokens=tokens, output_reserve=32768,
+            max_input_tokens=tokens, output_reserve=NATIVE_OUTPUT_TOKENS,
             max_tool_result_tokens=16384, render_slack_tokens=0,
         )
         policy = resolve_profile_context_policy(
@@ -359,7 +365,7 @@ def pool_options(
         options["profiles"][identifier] = RuntimeProfile(
             identifier, calibrated(base, pool_counter), config.model,
             provider_kind=kind, context_policy=policy, tokenizer=pool_counter,
-            default_max_output_tokens=default_output, max_output_tokens_ceiling=32768,
+            default_max_output_tokens=default_output, max_output_tokens_ceiling=NATIVE_OUTPUT_TOKENS,
             native_plane=native.assembly(identifier, tokens=tokens, counter=pool_counter),
         )
 

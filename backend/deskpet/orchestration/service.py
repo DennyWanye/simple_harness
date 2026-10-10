@@ -40,7 +40,7 @@ from .projection import (
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from .storage_usage import StorageUsage
-from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS
+from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS, NATIVE_OUTPUT_TOKENS
 from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
 
 from .runtime_profile import (
@@ -348,7 +348,9 @@ class OrchestrationService:
         if self._snapshot is not None:  # a real model: the bounds the SDK real runs use
             # Reasoning tokens share the output limit. 8K truncated a real
             # operation verdict before its closing envelope reached the Host.
-            knobs = {"default_max_output_tokens": 16384, "max_output_tokens_ceiling": 32768}
+            # 2026-10-10 用户决定：封顶 32768 → 131072（线路实测一次输出 103,000 正常结束；10-09 两局
+            # 执行者 9 次把 32768 全部用来思考）。起步值不动，写满才翻倍。
+            knobs = {"default_max_output_tokens": 16384, "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS}
         self._config = OrchestratorConfig(
             evidence_root=self.root,
             model=self._snapshot.requested_model if self._snapshot is not None else "agent-model",
@@ -979,7 +981,7 @@ class OrchestrationService:
                     "profile_id": identifier,
                     "max_input_tokens": profiles[identifier].context_policy.input_budget(),
                     "default_max_output_tokens": 8192,
-                    "max_output_tokens_ceiling": 32768,
+                    "max_output_tokens_ceiling": NATIVE_OUTPUT_TOKENS,
                     # A bounded multi-turn allowance, not a charge for unused capacity.
                     "mission_max_tokens": self.settings.default_mission_max_tokens,
                 })

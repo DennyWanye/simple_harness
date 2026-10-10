@@ -60,9 +60,10 @@ class OrchestrationSettings:
     # 当月下一个新任务建立时当月总账的上限随之改。任务预算超过它的新任务按 SDK 现有拒绝路径如实报
     # （invalid_request）。默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 300 万不变（2026-09-26）。
     global_monthly_max_tokens: int = 2_000_000_000
-    # New Missions' context window: 512K by default, 256K on request (user 2026-10-04);
-    # an existing Mission keeps the pool it was frozen on.
-    context_input_tokens: int = 524_288
+    # New Missions' context window: 800K by default (user 2026-10-10; the line reads ~600K token
+    # inputs completely, larger ones were accepted but not read to the end), 512K or 256K on
+    # request; an existing Mission keeps the pool it was frozen on.
+    context_input_tokens: int = 819_200
     # P3.2 (plan D9 / P32-14): the one directory the user authorised for published files.
     # Empty means no directory is authorised, and then nothing can be published at all —
     # the connector is not even enabled, so a Mission may not carry a publish criterion.
@@ -135,8 +136,8 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         enabled=enabled if isinstance(enabled, bool) else True,
         max_concurrency=_bounded_int(raw.get("max_concurrency"), 2, 1, 4),
         max_concurrent_model_calls=_bounded_int(raw.get("max_concurrent_model_calls"), 2, 1, 4),
-        context_input_tokens=(262_144 if type(raw.get("context_input_tokens")) is int
-                              and raw["context_input_tokens"] == 262_144 else 524_288),
+        context_input_tokens=(raw["context_input_tokens"] if type(raw.get("context_input_tokens")) is int
+                              and raw["context_input_tokens"] in (262_144, 524_288) else 819_200),
         # a path only; whether it exists and can carry a hard link is decided at start-up,
         # and a directory that cannot is never authorised (P3.2 review round 2 P2-5)
         publish_dir=str(publish_dir).strip() if isinstance(publish_dir, str) else "",

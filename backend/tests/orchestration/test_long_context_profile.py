@@ -46,8 +46,9 @@ async def test_default_and_selected_capacity_persist_and_retry_across_default_ch
     try:
         assert first.status()["available"], first.status()["reason"]
         profiles = first.status()["context_profiles"]
-        assert [p["profile_id"] for p in profiles] == ["deepseek-native-256k-v1", "deepseek-native-512k-v1"]
-        assert [p["max_input_tokens"] for p in profiles] == [262144, 524288]
+        assert [p["profile_id"] for p in profiles] == ["deepseek-native-256k-v1", "deepseek-native-512k-v1",
+                                                        "deepseek-native-800k-v1"]  # 2026-10-10 加 800K 档
+        assert [p["max_input_tokens"] for p in profiles] == [262144, 524288, 819200]
         a = first.create_mission(request("long-default"))
         # 用户 2026-10-04：默认 512K，256K 可选
         b = first.create_mission(
