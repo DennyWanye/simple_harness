@@ -82,8 +82,10 @@ def test_tool_call_ids_count_toward_the_memory_bound() -> None:
 def test_empty_pieces_leave_nothing_behind() -> None:
     """独立核验 opt.180 M2：每个片段一个列表槽位是上限看不见的内存；现在用缓冲区，空片段不占。"""
     stream = ChatStream()
+    billed = json.loads(_chunk({"reasoning_content": ""})[6:]); billed["usage"] = USAGE  # 核验 S5：带计费才不算占位块
     for _ in range(50_000):
-        stream.line(_chunk({"reasoning_content": ""})); stream.line("")
+        stream.line("data: " + json.dumps(billed)); stream.line("")
+    assert stream.usage == USAGE  # the pieces were really processed, not skipped as placeholders
     assert stream.reasoning.tell() == 0 and stream.content.tell() == 0
     stream.line(_chunk({"content": "ok"}, finish="stop")); stream.line("")
     stream.line("data: [DONE]"); stream.line("")
