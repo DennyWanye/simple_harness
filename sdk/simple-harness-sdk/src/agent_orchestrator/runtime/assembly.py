@@ -72,6 +72,10 @@ class OrchestratorConfig:
     lease_seconds: float = 60.0
     sdk_lease_ttl_seconds: float | None = None  # D3-10': SDK Run lease; default lease_seconds / 2
     stall_seconds: float = 180.0
+    #: 2026-10-10：一次已交出、仍在线路上的模型调用不算"没进展"（输出上限放到 131,072 后一次思考可达
+    #: 5 分钟；parse 重跑里一次 3.6 分钟的调用在 180 秒被当成卡死杀掉）。这是它单独的上限：超过它仍在
+    #: 线路上，才按卡死处理；线路本身的读超时另有保护。
+    provider_call_seconds: float = 900.0
     test_timeout_seconds: float = 120.0
     default_max_output_tokens: int = 4096
     max_output_tokens_ceiling: int = 8192  # SDK empty-response escalation cap (F-BA-1)
@@ -211,6 +215,7 @@ class OrchestratorConfig:
             "lease_seconds": self.lease_seconds,
             "sdk_lease_ttl_seconds": self.sdk_lease_ttl_seconds,
             "stall_seconds": self.stall_seconds,
+            "provider_call_seconds": self.provider_call_seconds,
             "test_timeout_seconds": self.test_timeout_seconds,
             "reserves": {
                 "planner_tokens": self.planner_reserve_tokens,

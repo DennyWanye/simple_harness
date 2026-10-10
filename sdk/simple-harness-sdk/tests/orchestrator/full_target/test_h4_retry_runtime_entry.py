@@ -67,9 +67,13 @@ async def _timed_out_and_retried(tmp_path: Any, key: str) -> AsyncIterator[tuple
     a repair request opens, the system's own RETRY_SAME_METHOD is committed and the next
     Attempt is created under it (its executor's call held again)."""
 
-    async with committed(tmp_path, key=key, stall_seconds=0.5) as seed:
+    # 2026-10-10：被扣住的那次调用在线路上，也要超过它自己的上限才算卡死——这里一并设 0.5 秒
+    async with committed(tmp_path, key=key, stall_seconds=0.5, provider_call_seconds=0.5) as seed:
         task_id = _leaf(seed.loop, seed.mission)
-        await run_until(seed.product, lambda: len(seed.loop.store.list_attempts(task_id)) >= 2, timeout=30)
+        try:
+            await run_until(seed.product, lambda: len(seed.loop.store.list_attempts(task_id)) >= 2, timeout=30)
+        except TimeoutError:
+            raise AssertionError("the held call was never timed out and retried") from None
         yield seed, task_id
 
 
@@ -412,5 +416,34 @@ def test_a_step_that_reports_blocked_goes_back_to_the_planner(tmp_path):
             assert summary in json.dumps(request, ensure_ascii=False)
             assert not collect_triggers(loop, loop.store.get_mission(mission.id)), \
                 "the same report opens one request only"
+
+    asyncio.run(case())
+
+
+def test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound(tmp_path):
+    """2026-10-10（parse 重跑）：执行者一次 3.6 分钟的模型调用在 180 秒被当成"没进展"杀掉，
+    再重试一遍。输出上限放到 131,072 后一次思考可以很长：调用已交出、还没结清，就不算卡死；
+    只有超过调用自己的上限（provider_call_seconds）仍挂在线路上，才回到原来的卡死处理。"""
+
+    async def case():
+        from dataclasses import replace
+        # stall 0.5 秒，但调用上限保持默认（900 秒）：被扣住的调用一直在线路上，不超时
+        async with committed(tmp_path, key="h4-call-on-the-wire", stall_seconds=0.5) as seed:
+            loop, mission = seed.loop, seed.mission
+            task_id = _leaf(loop, mission)
+            with pytest.raises(TimeoutError):
+                await run_until(seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=3)
+            [only] = loop.store.list_attempts(task_id)
+            assert str(only.status) in {"RUNNING", "AttemptStatus.RUNNING"}, only.status
+            assert not events(loop, mission.id, "AttemptTimedOut")
+            # 同一次调用超过它自己的上限还没回来：按卡死处理，超时并重试
+            loop._config = replace(loop._config, provider_call_seconds=0.5)
+            try:
+                await run_until(seed.product, lambda: len(loop.store.list_attempts(task_id)) >= 2, timeout=30)
+            except TimeoutError:
+                raise AssertionError("a call past its own bound was never treated as a stall") from None
+            first = loop.store.list_attempts(task_id)[0]
+            assert str(first.status) in {"TIMED_OUT", "AttemptStatus.TIMED_OUT"}, first.status
+            assert events(loop, mission.id, "AttemptTimedOut")
 
     asyncio.run(case())

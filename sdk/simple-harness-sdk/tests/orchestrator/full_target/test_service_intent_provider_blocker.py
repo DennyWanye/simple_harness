@@ -120,12 +120,17 @@ def test_a_planner_round_on_an_unknown_outcome_ends_after_the_bound_and_the_next
     assert "PlanRevisionCommitted" in outcome["types"] and "MissionFailed" not in outcome["types"]
 
 
-def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_path) -> None:
+def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_path, monkeypatch) -> None:
     """``max_planning_attempts=1``: no next rung, so the Mission ends — named, decided.
+    2026-10-10 起结果不明的一轮和回合失败一样进宽限、不占答错次数；这条用例把宽限设 0 保留
+    "没有下一级"的局面（宽限内不计次见下一条用例）。
 
     P2.3l: ``planning_failed`` would be a lie (the Planner was never heard);
     ``runtime_unavailable`` is the stop for a model service that did not answer.  The
     call is asked exactly once; the books keep it as unknown, its reservation held."""
+
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+    monkeypatch.setattr(event_handler, "PLANNER_TURN_FAILURE_GRACE", 0)
 
     async def case() -> dict[str, Any]:
         provider = FaultyProvider({"planner": [transport_loss]})
@@ -158,6 +163,26 @@ def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(tmp_p
     assert outcome["known"] == 0 and outcome["unknown"] is True
     [held] = outcome["ledger"]["held_reservations"]
     assert held["subject_id"].endswith(":planner:1") and int(held["reserved_tokens"]) > 0
+
+
+def test_an_unknown_outcome_within_the_grace_does_not_count_as_a_wrong_answer(tmp_path) -> None:
+    """2026-10-10（第三轮复查）：规划器自己的调用结果不明不是它答错（用户 09-28：服务出错不计
+    次数）；与回合失败同一道宽限。``max_planning_attempts=1`` 时宽限内的不明一轮不占那唯一一次，
+    下一轮照常开、任务完成。
+
+    **Mutation**: ``provider_outcome_unknown`` not treated as unanswered in ``_planning_attempts`` → red."""
+    async def case() -> dict[str, Any]:
+        provider = FaultyProvider({"planner": [http_loss(418)]})
+        async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}) as world:
+            mission_id = create(world, "p23f-planner-unknown-forgiven")
+            assert await settle(world, mission_id, seconds=20)
+            return {"status": status(world, mission_id), "types": [item.type for item in events(world, mission_id)],
+                    "rejected": [dict(item.payload) for item in events(world, mission_id, "PlanningRejected")],
+                    "attempts": world.loop._planning_attempts(mission_id)}
+    outcome = asyncio.run(case())
+    assert outcome["status"] == "COMPLETED", outcome["types"][-15:]
+    assert [r["reason"] for r in outcome["rejected"]] == ["provider_outcome_unknown"]
+    assert outcome["attempts"] == 0
 
 
 # ======================================================================================

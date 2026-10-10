@@ -130,7 +130,8 @@ def test_a_second_call_failed_by_the_reviewers_own_doing_goes_to_the_person(tmp_
                 "SELECT record_json FROM review_records WHERE official=1").fetchall()]
             [record] = [r for r in records if r.get("purpose") == "TASK_CONTENT"]  # 另一份是做法审阅
             assert record["verdict"] == "INCONCLUSIVE"
-            assert all(item["limitations"][0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED"
+            # 2026-10-10：标记带上第二次调用的缘由（第一次为什么没用上），人裁决时看得懂两次各自的原因
+            assert all(item["limitations"][0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
                        for item in record["criteria"])
             [approval] = [a for a in case.pending_approvals() if a.get("kind") == "review"]
             case.world.control.decide(approval["request_id"], "review_pass")

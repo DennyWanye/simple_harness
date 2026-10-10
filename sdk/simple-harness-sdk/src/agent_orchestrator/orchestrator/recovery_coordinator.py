@@ -36,7 +36,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 
 from ..storage.recovery_store import RecoveryStore
 from ..storage.store import InjectedCrash, StoreBusy
@@ -421,14 +420,7 @@ class RecoveryCoordinator:
         orch = self._orch
         woken: list[str] = []
         for key, pool in orch.assembled.pools.items():  # D6-5': each pool recovers only its own library
-            try:
-                await pool.bridge.recover()
-            except ProviderAdmissionDenied as error:
-                if error.detail.get("reason_code") != "bound_overrun":
-                    raise
-                # SDK/guard have committed the actual overrun. Import its original
-                # cost before leaving recovery; new admission remains fail-closed.
-                orch._note(f"recovered actual provider overrun: {error}")
+            await pool.bridge.recover()
             woken.append(key)
         import_late_accounting(orch)
         return {"pools_woken": woken}

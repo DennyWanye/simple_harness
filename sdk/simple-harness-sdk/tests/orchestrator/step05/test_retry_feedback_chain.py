@@ -15,7 +15,7 @@ def _attempt(n, failure, status="RETRY_WAIT"):
 def test_a_turn_failure_does_not_hide_the_earlier_content_rejection():
     attempts = [_attempt(1, REJECTED), _attempt(2, TURN)]
     feedback, verifier = retry_feedback(attempts, attempts[1])
-    assert len(feedback) == 2 and feedback[0].startswith("turn_failed")
+    assert len(feedback) == 2 and feedback[0].startswith("上一轮有一次模型调用没有拿到回复")  # 2026-10-10 只写事实
     assert "pytest" in feedback[1] and verifier == []
 
 
@@ -34,6 +34,26 @@ def test_verifier_details_still_travel_and_no_previous_means_no_feedback():
     assert retry_feedback(attempts, None) == ([], [])
 
 
+def test_a_provider_failure_turn_is_told_as_one_fact_not_a_raw_dict():
+    """2026-10-10（第三轮复查）：5xx 之后给下一轮的反馈原来是一段原始字典。只写一句事实。
+
+    **Mutation**: drop the plain ``turn_failed`` branch in ``retry_feedback`` → red."""
+    failed = _attempt(1, {"reason": "turn_failed", "error_kind": "provider_unavailable",
+                          "error": {"error_code": "provider_server_error", "source_kind": "tool_parse"}})
+    feedback, _ = retry_feedback([failed], failed)
+    assert feedback == ["上一轮有一次模型调用没有拿到回复（服务侧错误，代码 provider_server_error）；这一轮从头做。"]
+    assert "{" not in feedback[0]
+
+
+def test_a_stalled_attempt_is_told_as_one_fact_not_a_raw_dict():
+    """2026-10-10（parse/docopt 重跑）：被当成卡死终止的尝试，下一轮收到的是 ``executor_stalled: ``。
+
+    **Mutation**: drop the ``executor_stalled`` branch in ``retry_feedback`` → red."""
+    stalled = _attempt(1, {"reason": "executor_stalled", "stalled_seconds": 180.899, "progress_marker": 13})
+    feedback, _ = retry_feedback([stalled], stalled)
+    assert feedback == ["上一次尝试 181 秒没有进展，被系统终止；这一轮从头做。"]
+
+
 def test_an_output_exhausted_turn_is_told_as_one_fact_not_a_raw_dict():
     """2026-10-09：重做那一轮原来收到一段原始字典；现在收到一句事实，怎么办由模型判断。
 
@@ -46,4 +66,4 @@ def test_an_output_exhausted_turn_is_told_as_one_fact_not_a_raw_dict():
     assert feedback == ["上一轮有一次模型调用因输出上限（32768 个 token，其中思考 32768 个）停止，没有给出最终结果。"]
     assert verifier == []
     # 别的回合失败照旧
-    assert retry_feedback([_attempt(1, TURN)], _attempt(1, TURN))[0][0].startswith("turn_failed: ")
+    assert retry_feedback([_attempt(1, TURN)], _attempt(1, TURN))[0][0].startswith("上一轮有一次模型调用没有拿到回复")

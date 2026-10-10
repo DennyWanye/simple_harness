@@ -616,15 +616,10 @@ class ProviderBudgetGuard:
                     }
                     if any(row[key] != value for key, value in expected.items()):
                         raise _deny("released provider grant identity or allowance changed")
-                if self.store.connection.execute(
-                    "SELECT 1 FROM provider_token_grants"
-                    " WHERE mission_id=? AND state='OVERRUN' LIMIT 1",
-                    (intent.mission_id,),
-                ).fetchone():
-                    raise _deny(
-                        "observed provider usage exceeded its bound protocol",
-                        reason_code="bound_overrun",
-                    )
+                # 2026-10-10（parse 重跑）：一次调用报回的输出比请求的上限多 2 个 token（32,770 对
+                # 32,768，线路的计数口径），以前这里从此拒绝该 Mission 的每一次调用，任务整个停掉。
+                # 记账硬规则（2026-09-24）：可以多算、不可以少算、不冻结——超出的那次照实记成
+                # OVERRUN（实际数照记、照结账），后面的调用照常准入；不再有"Mission 准入停止"。
                 # A physical slot is held by every grant still in flight; a grant whose
                 # call terminated on the wire with unresolved usage keeps only its
                 # allowance (see WIRE_TERMINAL_TABLE).
@@ -781,15 +776,12 @@ class ProviderBudgetGuard:
 
     def observe(self, ticket, *, record) -> None:
         with self.store.transaction():
-            overrun = self._observe_in_transaction(ticket, record=record)
-        if overrun:
-            raise _deny(
-                "actual provider usage exceeded the admitted bound; Mission admission stopped",
-                reason_code="bound_overrun",
-            )
+            self._observe_in_transaction(ticket, record=record)
 
     def _observe_in_transaction(self, ticket, *, record) -> bool:
-        """Record actual usage; the caller raises only after its transaction commits."""
+        """Record actual usage.  Returns whether it exceeded the admitted bound: the grant
+        row then says OVERRUN with the actual numbers (a recorded fact, charged as it is);
+        nothing is refused because of it (2026-10-10, count rule: never freeze)."""
         row = self._row(ticket)
         if row is None or row["state"] in {"SETTLED", "OVERRUN"}:
             return False
@@ -873,7 +865,6 @@ class ProviderBudgetGuard:
     def recover(self, uow, *, missions: frozenset[str] | None = None) -> None:
         """``missions`` narrows this pass to those Missions' grants; None is every grant."""
         # Read and fence in Orch -> SDK order; no remote reconciliation under this lock.
-        overrun = False
         with self.store.transaction():
             rows = self.store.connection.execute(
                 "SELECT * FROM provider_token_grants"
@@ -927,17 +918,14 @@ class ProviderBudgetGuard:
                                 "succeeded",
                                 "failed",
                             }:
-                                overrun = (
-                                    self._observe_in_transaction(ticket, record=record)
-                                    or overrun
-                                )
+                                self._observe_in_transaction(ticket, record=record)
                             current = self._row(ticket)
                             if current is not None and current["state"] in HELD:
                                 self._update(ticket, "RELEASED")
                             continue
                         raise _deny("recovery SDK/intent/grant identities differ")
                 if record is not None and str(record.state) in {"succeeded", "failed"}:
-                    overrun = self._observe_in_transaction(ticket, record=record) or overrun
+                    self._observe_in_transaction(ticket, record=record)
                 elif record is not None and record.handoff_attempt >= row["handoff_ordinal"]:
                     resolution = uow.read_reconciliation_resolution(
                         kind="provider",
@@ -987,12 +975,6 @@ class ProviderBudgetGuard:
                         or sdk_lease.expires_at <= self._clock()
                     ):
                         self._update(ticket, "RELEASED")
-
-        if overrun:
-            raise _deny(
-                "actual provider usage exceeded the admitted bound; Mission admission stopped",
-                reason_code="bound_overrun",
-            )
 
 
 __all__ = (

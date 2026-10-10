@@ -298,6 +298,7 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "lease_seconds",
             "sdk_lease_ttl_seconds",
             "stall_seconds",
+            "provider_call_seconds",  # 2026-10-10: decides when an in-flight call counts as a stall
             "test_timeout_seconds",
             "default_max_output_tokens",
             "max_output_tokens_ceiling",

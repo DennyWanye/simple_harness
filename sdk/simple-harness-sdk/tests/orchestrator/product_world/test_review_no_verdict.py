@@ -108,7 +108,8 @@ def test_final_review_whose_second_call_failed_by_its_own_doing_asks_person(tmp_
             assert row["state"] == "PENDING"
             record = HtnStore(world.store).get_review_record(row["request"]["repair_context"]["record_id"]).record
             assert record.verdict.value == "INCONCLUSIVE"
-            assert all(item.limitations[0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED"
+            # 2026-10-10：标记带上第二次调用的缘由（第一次为什么没用上），人裁决时看得懂两次各自的原因
+            assert all(item.limitations[0] == "REVIEW_NO_USABLE_REPLY:REVIEW_TURN_NOT_COMMITTED;FIRST_CALL=TURN_RETRY"
                        for item in record.criteria)
             assert not [e for e in world.store.list_events(mission_id) if e.type == "AssuranceReviewFormatExhausted"]
             _answer(world, mission, row, "pass")

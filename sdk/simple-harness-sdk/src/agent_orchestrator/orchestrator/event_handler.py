@@ -876,15 +876,7 @@ class Orchestrator:
             self._assembled.gateway.search_counter = self.store.count_search_calls
             self._assembled.gateway.execution_refusal = self._tool_execution_refusal
             self._bind_startup_tools()
-            try:
-                await self._assembled.__aenter__()
-            except ProviderAdmissionDenied as error:
-                if error.detail.get("reason_code") == "bound_overrun":
-                    # A receipt may appear during startup reconciliation, after the
-                    # first scan. Pay its original actual cost even when SDK startup
-                    # has failed; do not pretend that failed runtime has started.
-                    import_late_accounting(self)
-                raise
+            await self._assembled.__aenter__()
             # execution copies a crash left behind are removed
             workspaces = self._assembled.workspaces
             self.cleanup_workspaces()  # P3.2 D4: finished Missions past their retention
@@ -5942,6 +5934,26 @@ class Orchestrator:
         )
         self._note(f"attempt {attempt.id}: late result recorded as history")
 
+    def _provider_call_in_flight(self, intent: DispatchIntent, now: float) -> bool:
+        """A model call handed off and not yet settled, younger than ``provider_call_seconds``.
+
+        2026-10-10（parse 重跑）：执行者一次 3.6 分钟的调用在 180 秒被当成"没进展"杀掉。模型还在
+        答就不是卡死；这里只看执行库里的事实（已交出、未结清、多久了），不看任何内容。超过这条
+        调用自己的上限仍在线路上，才回到原来的卡死处理。"""
+        if not intent.agent_id:
+            return False
+        runtime = self.bridge_for(intent).runtime
+        agent = runtime.uow.read_agent_binding(intent.agent_id)
+        if agent is None:
+            return False
+        from simple_harness import RunId
+        for invocation in runtime.uow.list_provider_invocations(RunId(agent.run_id)):
+            handed_off = getattr(invocation, "handed_off_at", None)
+            if (str(invocation.state) == "handed_off" and handed_off is not None
+                    and now - float(handed_off) < self._config.provider_call_seconds):
+                return True
+        return False
+
     async def _observe_liveness(self, intent: DispatchIntent) -> bool:
         assert intent.agent_id and intent.expected_turn_id
         liveness: Liveness = await self.bridge_for(intent).liveness(
@@ -5995,8 +6007,10 @@ class Orchestrator:
             except CommitRejected:
                 return False  # another live owner; not ours yet (review P1-2)
             running = liveness.state == str(AgentTurnState.RUNNING)
-            if running and not liveness.blocked and attempt.progress_at is not None:
-                # D3-4': only a *running* turn is timed; queued / semaphore-waiting ones are not
+            if (running and not liveness.blocked and attempt.progress_at is not None
+                    and not self._provider_call_in_flight(intent, now)):
+                # D3-4': only a *running* turn is timed; queued / semaphore-waiting ones are not;
+                # 2026-10-10: nor one whose model call is still on the wire within its own bound
                 stalled_for = now - attempt.progress_at
                 if stalled_for > self._config.stall_seconds:
                     # D6': alive, no blocker, no provider progress within stall_seconds.
@@ -6547,7 +6561,11 @@ class Orchestrator:
                 # 2026-09-28 真机：12 轮规划里 5 轮是模型服务端报错与重启打断，规划器根本
                 # 没被听到却照样扣次数，任务因此失败。没有回复的回合不算"答错"，但设宽限，
                 # 服务一直坏着时超出部分照样计数，不会无限重试。
-                if _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:
+                # 2026-10-10（第三轮复查）：规划器自己的调用结果不明（交出后线路断了）同样不是它答错，
+                # 与回合失败走同一道宽限（用户 09-28：服务出错不计次数）；连续不明另有上限
+                # （MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS），不会无限重试。
+                unanswered = _turn_failed(event) or event.payload.get("reason") == "provider_outcome_unknown"
+                if unanswered and forgiven < PLANNER_TURN_FAILURE_GRACE:
                     forgiven += 1
                     continue
                 if not refusal_charges_planner(_refusal_codes(event)):
@@ -11498,6 +11516,16 @@ def retry_feedback(
         elif reason == "turn_failed" and output_exhausted(failure.get("error")):
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))
+        elif reason == "turn_failed":
+            # 2026-10-10（第三轮复查）：服务侧出错的那一轮同样只写一句事实，不拼原始字典
+            error = failure.get("error") if isinstance(failure.get("error"), Mapping) else {}
+            code = error.get("error_code") or failure.get("error_kind") or "unknown"
+            feedback.append(f"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。")
+        elif reason == "executor_stalled":
+            # 2026-10-10（parse/docopt 重跑）：被当成卡死终止的那一轮，原来给下一轮的是 "executor_stalled: "
+            stalled = failure.get("stalled_seconds")
+            how_long = f"{float(stalled):.0f} 秒" if isinstance(stalled, (int, float)) else "太久"
+            feedback.append(f"上一次尝试 {how_long}没有进展，被系统终止；这一轮从头做。")
         else:
             feedback.append(f"{reason}: {failure.get('error', '')}")
     return feedback, verifier_feedback

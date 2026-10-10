@@ -155,7 +155,7 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
 
 
 class Overrun(Scripted):
-    """执行者的第一次调用报回的用量超出了准入时算的上限（输出 9000 > 输出上限 8192）。"""
+    """执行者的每一次调用报回的用量都超出准入时算的上限（输出 9000 > 输出上限 8192）。"""
 
     async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
         response = await super().invoke(request, cancel=cancel)
@@ -174,28 +174,58 @@ class ZeroUsage(Scripted):
         return response
 
 
-#: 第二种情形的额度：建尝试要先留 9000（尝试预留）+ 294912（首审尾款 = 256k 池的输入上限 + 输出上限），
-#: 规划三次各结 150；剩下约 3700，盖得住第一次调用（8622 在 9000 的预留里），盖不住第二次要追加的
-#: 约 8200（第一次零用量、按上限 8622 算进已花）。
-TIGHT = {"budget": {"max_tokens": 308_000, "max_attempts": 12}}
+#: 第二种情形的额度：建尝试要先留 9000（尝试预留）+ 393216（首审尾款 = 256k 池的输入上限 262144 +
+#: 输出上限 131072，opt.178 起），规划三次各结 150；剩下约 3700，盖得住第一次调用（8622 在 9000 的
+#: 预留里），盖不住第二次要追加的约 8200（第一次零用量、按上限 8622 算进已花）。
+TIGHT = {"budget": {"max_tokens": 406_304, "max_attempts": 12}}
 
 
-@pytest.mark.parametrize("refusal", ["overrun", "budget"])
-def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_path, refusal):
-    """准入拒绝不是"被打断"：这一步停下、任务按原因结束，不原地打转。
-
-    * ``overrun``：实际用量先记上账（OVERRUN，实际数照记），再拒绝这一任务之后的所有调用；
-    * ``budget``：零用量的那次按上限算进已花，下一次"输入估算 + 输出上限"盖不住，在交出之前就拒绝，
-      提供方没被调用，这次调用没有授权行。"""
+def test_a_call_whose_usage_exceeds_its_admitted_bound_is_recorded_and_the_step_goes_on(tmp_path):
+    """2026-10-10（parse 重跑）：一次调用报回的输出比请求的上限多 2 个 token（线路的计数口径），
+    以前这个 Mission 从此一次调用也不准入，任务失败。记账硬规则（2026-09-24）：可以多算、不可以
+    少算、不冻结——超出的那次照实记成 OVERRUN（实际数照记、照实结账），后面的调用照常准入，任务做完。"""
 
     async def case():
-        provider = Overrun() if refusal == "overrun" else ZeroUsage()
+        provider = Overrun()
         root = tmp_path / "root"
-        config = dict(QUICK, attempt_reserve_tokens=9_000) if refusal == "budget" else dict(QUICK)
+        async with product_world(root, provider, **QUICK) as world:
+            mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
+                                       "idempotency_key": "overrun-goes-on"})["mission_id"]
+            store = world.store
+
+            async def drive():
+                while status(store, mission_id) not in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    await world.drain(timeout=10)
+            await asyncio.wait_for(drive(), 60)
+            assert status(store, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
+            assert not events(store, mission_id, "TaskFailed")
+            worker_calls = provider.asked.count("worker")
+            assert worker_calls >= 2, "超出之后的调用照常交出去"
+            [attempt] = [a for a in attempts(store, mission_id).values()
+                         if any(g["state"] == "OVERRUN" for g in grants(store, a.id))]
+            rows = grants(store, attempt.id)
+            assert len(rows) == worker_calls and all(g["state"] == "OVERRUN" for g in rows)
+            for granted in rows:  # 每一次都照实记：实际数、超出了上限
+                assert (granted["actual_tokens"], granted["actual_output_tokens"]) == (9100, 9000)
+                assert granted["actual_output_tokens"] > granted["output_ceiling"]
+            assert world.loop.commit.ledger.reservation(attempt.id)["settled_tokens"] == 9100 * worker_calls
+
+    asyncio.run(case())
+
+
+def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_path):
+    """准入拒绝不是"被打断"：这一步停下、任务按原因结束，不原地打转。
+
+    零用量的那次按上限算进已花，下一次"输入估算 + 输出上限"盖不住，在交出之前就拒绝，
+    提供方没被调用，这次调用没有授权行。"""
+
+    async def case():
+        provider = ZeroUsage()
+        root = tmp_path / "root"
+        config = dict(QUICK, attempt_reserve_tokens=9_000)
         async with product_world(root, provider, **config) as world:
             mission_id = world.create({"goal": "写一份 NOTES.md", "success_criteria": ["file:NOTES.md"],
-                                       "idempotency_key": "refused-" + refusal,
-                                       **(TIGHT if refusal == "budget" else {})})["mission_id"]
+                                       "idempotency_key": "refused-budget", **TIGHT})["mission_id"]
             store = world.store
 
             async def drive():
@@ -209,24 +239,15 @@ def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_pat
             assert provider.asked.count("worker") == 1  # 拒绝之后再没有调用交出去
             calls = physical_calls(root)
             [granted] = grants(store, attempt.id)
-            if refusal == "overrun":
-                assert failed["stop_reason"] == "runtime_unavailable"
-                assert admission["reason_code"] == "bound_overrun"
-                # 实际用量先落账：超出的那次照实记，尝试按实际结账
-                assert granted["state"] == "OVERRUN"
-                assert (granted["actual_tokens"], granted["actual_output_tokens"]) == (9100, 9000)
-                assert granted["actual_tokens"] > granted["total_upper"]
-                assert world.loop.commit.ledger.reservation(attempt.id)["settled_tokens"] == 9100
-            else:
-                assert failed["stop_reason"] == "budget_exhausted"
-                assert admission["reason_code"] == "budget_exhausted" and admission["dimension"] == "tokens"
-                # 被拒的那次：没交出去（交出次数 0），也没有授权行；挡住它的是按上限算的零用量那次
-                refused = [state for invocation, state in calls.items() if invocation != granted["invocation_id"]
-                           and state[1] == 0]
-                assert refused, calls
-                assert granted["state"] == "UNKNOWN" and granted["actual_tokens"] is None
-                assert admission["request_tokens"] + granted["total_upper"] > 9_000
-                assert admission["requested"] > admission["remaining"]
+            assert failed["stop_reason"] == "budget_exhausted"
+            assert admission["reason_code"] == "budget_exhausted" and admission["dimension"] == "tokens"
+            # 被拒的那次：没交出去（交出次数 0），也没有授权行；挡住它的是按上限算的零用量那次
+            refused = [state for invocation, state in calls.items() if invocation != granted["invocation_id"]
+                       and state[1] == 0]
+            assert refused, calls
+            assert granted["state"] == "UNKNOWN" and granted["actual_tokens"] is None
+            assert admission["request_tokens"] + granted["total_upper"] > 9_000
+            assert admission["requested"] > admission["remaining"]
 
     asyncio.run(case())
 

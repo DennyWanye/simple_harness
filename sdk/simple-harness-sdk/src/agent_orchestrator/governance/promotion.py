@@ -65,6 +65,7 @@ NON_PROMOTABLE = frozenset(
         "max_running_attempts",
         "lease_seconds",
         "stall_seconds",
+        "provider_call_seconds",  # 2026-10-10: the in-flight model-call bound, same family as stall
         "test_timeout_seconds",
         "turn_deadline_seconds",
         "verification_policy",

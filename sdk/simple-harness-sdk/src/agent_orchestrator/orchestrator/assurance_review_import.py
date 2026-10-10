@@ -340,11 +340,13 @@ REPAIRABLE_INTERPRETATION_ERRORS = frozenset(
 NO_USABLE_REPLY = "NO_USABLE_REPLY"
 
 
-def _no_usable_reply(bound: Mapping[str, Any], code: str) -> ReviewReply:
+def _no_usable_reply(bound: Mapping[str, Any], code: str, *, second_call_reason: str | None = None) -> ReviewReply:
     """What the record says when the reviewer's last reply could not be used: nothing was
     judged.  Every criterion is UNKNOWN with the reason named; the overall word is
-    INCONCLUSIVE — the same exit as a reviewer that says it cannot tell (a person rules)."""
-    marker = "REVIEW_NO_USABLE_REPLY:" + code
+    INCONCLUSIVE — the same exit as a reviewer that says it cannot tell (a person rules).
+    2026-10-10（第三轮复查）：请人裁决时要看得懂两次各自为什么——标记里带上第二次调用的缘由
+    （第一次为什么没用上）和第二次自己的错误码。"""
+    marker = "REVIEW_NO_USABLE_REPLY:" + code + (f";FIRST_CALL={second_call_reason}" if second_call_reason else "")
     return ReviewReply(
         "INCONCLUSIVE",
         tuple(Assessment(row["criterion_id"], Grade.UNKNOWN, (), marker, (marker,))
@@ -365,17 +367,18 @@ def _interpret(
     decoded but cannot be imported as given (a repairable interpretation error)."""
     bound = imported.binding.to_json()
     source = decode(imported.classification.body_json)
+    why_second = str(decode(imported.invocation.body_json).get("reason") or "") or None
     if source.get("classification") in {"FORMAT_INVALID", "TURN_FAILED"}:
         # 不合法 JSON，或这一轮根本没交出回复（2026-10-09）：都是"没有可采用的回复"
         code = str(source["error_code"])
-        return _interpret_reply(imported, _no_usable_reply(bound, code), checks, code)
+        return _interpret_reply(imported, _no_usable_reply(bound, code, second_call_reason=why_second), checks, code)
     try:
         return _interpret_reply(imported, decode_review_reply(raw), checks, None)
     except AssuranceError as error:
         if (error.code not in REPAIRABLE_INTERPRETATION_ERRORS
                 or imported.invocation.to_json()["ordinal"] != 2):
             raise
-        return _interpret_reply(imported, _no_usable_reply(bound, error.code), checks, error.code)
+        return _interpret_reply(imported, _no_usable_reply(bound, error.code, second_call_reason=why_second), checks, error.code)
 
 
 def _interpret_reply(
