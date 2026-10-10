@@ -61,7 +61,7 @@ class OrchestrationSettings:
     # 任务的全部用量按任务建立月份计，月初自然是新的空账。当月用完后新任务第一轮规划就以
     # budget_exhausted（scope=global）停下，当月建立、在跑的任务同样停下；调大这个数并重启，
     # 当月下一个新任务建立时当月总账的上限随之改。任务预算超过它的新任务按 SDK 现有拒绝路径如实报
-    # （invalid_request）。默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 300 万不变（2026-09-26）。
+    # （invalid_request）。默认 20 亿 = 100 个默认上限（2000 万）的任务；单步 1000 万（2026-10-10 用户定，原 300 万）。
     global_monthly_max_tokens: int = 2_000_000_000
     # New Missions' context window: 600K by default (user 2026-10-10; the line reads ~600K token
     # inputs completely, larger ones were accepted but not read to the end), 512K or 256K on
