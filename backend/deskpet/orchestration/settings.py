@@ -50,7 +50,10 @@ class OrchestrationSettings:
     # a 1M leaf: one Assurance review costs 130k–270k tokens (every evidence read re-sends
     # the whole context, counted at full price) plus a 295k review reserve.
     default_mission_max_tokens: int = 20_000_000
-    task_max_tokens: int = 3_000_000
+    # 2026-10-10 user decision: 10M per leaf.  parse (NL2Repo) used 3M over four attempts of one
+    # step once thinking calls of 30k–96k tokens became possible (opt.178/180); the allowance
+    # bounds spending, it is not the expected spend.  The Mission total stays 20M.
+    task_max_tokens: int = 10_000_000
     default_mission_max_attempts: int = 12
     # 第 2 批 H11（原计划 §18.2 Global Budget、§28 "多 Mission 配额"，2026-10-06）+ 车道 P（同日晚
     # 用户定）：这台机器上所有任务每个自然月合计的 token 上限（月配额）。SDK 每月一个全局总账

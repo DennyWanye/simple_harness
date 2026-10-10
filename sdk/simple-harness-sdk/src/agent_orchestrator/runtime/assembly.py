@@ -86,7 +86,11 @@ class OrchestratorConfig:
     # P3.2 (plan D4): how long a finished Mission's workspace directories are kept before
     # cleanup removes them (the registry rows and the content-addressed bytes stay)
     workspace_retention_seconds: float = 7 * 24 * 3600.0
-    turn_deadline_seconds: float = 900.0
+    #: 2026-10-10 用户决定（parse 重跑）：单轮时限 900→3600 秒。输出上限放到 131,072 后一次思考
+    #: 调用实测 5～9 分钟；一轮里连续三次这样的调用就超过 15 分钟，两次尝试各做 15 分钟被终止。
+    #: 一轮要装得下已经批准的输出上限：每次调用自己的上限是 ``provider_call_seconds``（900 秒），
+    #: 一轮放几次。时限是秩序，不是对模型思考长短的判断。
+    turn_deadline_seconds: float = 3600.0
     max_model_calls_per_turn: int = 24
     max_tool_calls_per_turn: int = 48
     knowledge_sharing: bool = True  # step 4 (D4-19): the layer's kill switch

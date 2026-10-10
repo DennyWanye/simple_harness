@@ -113,8 +113,8 @@ async def test_each_leaf_gets_the_fixed_three_million_allowance(orchestration_ro
 
     service = await _service(orchestration_root, principal)
     try:
-        assert service._config.task_max_tokens == 3_000_000
-        assert service._orchestrator.commit._task_max_tokens == 3_000_000
+        assert service._config.task_max_tokens == 10_000_000  # 2026-10-10 用户定：单步 300 万→1000 万
+        assert service._orchestrator.commit._task_max_tokens == 10_000_000
         assert service.status()["mission_budget_defaults"]["max_tokens"] == 20_000_000
     finally:
         await service.close()

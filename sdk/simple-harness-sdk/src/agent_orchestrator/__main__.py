@@ -121,7 +121,7 @@ REAL_KNOBS: dict[str, Any] = {  # flash spends its output cap on reasoning (step
     "planner_reserve_tokens": 30_000,
     "lease_seconds": 120.0,
     "stall_seconds": 300.0,
-    "turn_deadline_seconds": 900.0,
+    "turn_deadline_seconds": 3600.0,  # 2026-10-10：与 OrchestratorConfig 默认一致
 }
 
 

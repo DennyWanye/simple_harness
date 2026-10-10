@@ -1914,6 +1914,17 @@
         "tests/providers/test_chat_stream_long_reasoning.py::test_tool_call_ids_count_toward_the_memory_bound"
       ],
       "note": "id 又不计数"
+    },
+    {
+      "id": "SM-12",
+      "source": "2026-10-10 parse 重跑：单轮时限到被终止的反馈不是事实",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "        elif reason == \"turn_failed\" and _turn_error_code(failure) == \"react_wall_clock_exceeded\":",
+      "replacement": "        elif reason == \"turn_failed\" and _turn_error_code(failure) == \"never\":",
+      "tests": [
+        "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_past_its_time_limit_is_told_as_that_fact"
+      ],
+      "note": "时限分支失效，退回'模型调用失败'"
     }
   ]
 }

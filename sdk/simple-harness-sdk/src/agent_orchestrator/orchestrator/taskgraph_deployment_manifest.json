@@ -1,15 +1,10 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-10T10:33:16+00:00",
-    "gate_sha256": "000a6b6e32ce9871efb258776bc8e3482dbc32764fd443dae775daa618e59c0f",
-    "gate_status": "PASS",
-    "source_files_sha256": "448060cb559b714647eaa1dd406a46adebd1e1cb09d120eb65ecc09f9f37615d"
-  },
-  "deployment_id": "f3c136a22d0b2a377f8e099391b82cb703d6ea0b2b9a78c12007b239ca4eb017",
+  "acceptance_evidence": null,
+  "deployment_id": "16475570040644de9bc575330218160de6e290680a0c6f0316a5d3ba3e76878d",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
-    "agent_orchestrator/__main__.py": "e66d97f3c3d4b7a15d37de1a9ce8738729a6efbb57c9c13f6d9c2745f87697b9",
+    "agent_orchestrator/__main__.py": "5f68652c0fe9361e52ad2ae486d5e6f49032d9bc604ac5f21f0c18d5b58f5ffb",
     "agent_orchestrator/api/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/api/approvals.py": "456359314d2ac0d2dd07000708cd2271d8b6f547346ac2c383f3ec1a19319798",
     "agent_orchestrator/api/assurance.py": "3e6ce3e706afd52de1f6f954da1ac412da933aedac65783454afe56a6ca8035d",
@@ -222,7 +217,7 @@
     "agent_orchestrator/orchestrator/completion_status.py": "a53098a52d74d2cd8a357acf478b2214fc0d46943ef02446233ec8ced9c89a75",
     "agent_orchestrator/orchestrator/completion_support.py": "f4c185adf17ab09056ca277297a781e53a63f453b99f3294a2e0ee60c6b60600",
     "agent_orchestrator/orchestrator/composition_review.py": "f9d06172af99df717475fba57dc4c096088e2a9bb75eca6c34dfb9ac6c82daad",
-    "agent_orchestrator/orchestrator/event_handler.py": "afe68b195602deaa7cae7101209ffec6f9c633fde0f625cdd2df3cfa0d15992b",
+    "agent_orchestrator/orchestrator/event_handler.py": "12beb4959b8e52e275814e05a8d17ad6d2a6580e630df48f0aa31451657416a6",
     "agent_orchestrator/orchestrator/failure_classes.py": "9ed86a468b2d46885dbeb6f1d689da04ded4dc7e8bb89a8ac3116b0b8745cbd2",
     "agent_orchestrator/orchestrator/hierarchical_dispatch.py": "387ceb44ec939f1f2b17bc4cf047b453c4d4d9d47b24099eeb91f2a8272a828f",
     "agent_orchestrator/orchestrator/human_commits.py": "8098653638a0bd14cd2c4e88f204bcc6f60f820077d79206e2f26877fde318cb",
@@ -366,7 +361,7 @@
     "agent_orchestrator/runtime/actions.py": "0bec685231e86881a756ded72e59c8fce6c3a8177b4325525df0320dc8a09da3",
     "agent_orchestrator/runtime/agent_worker.py": "3f07f0883dc59566bcf2f3c5cd7975cc20e861fe3fae7afcb03a43e3c6534edb",
     "agent_orchestrator/runtime/appworld_templates.py": "b7356272e2677aa806adac12134b4e1237905492ec6b3fc2cb155e9b7e3f7d47",
-    "agent_orchestrator/runtime/assembly.py": "dabba64fb5f56c048b7e6229f14ba30157b9d84417c8fb7e9b46b57d8ffc1eb2",
+    "agent_orchestrator/runtime/assembly.py": "4776904f77af7d016d45ee989f215744f03833a7f7f8e339d8b42e147dac3a29",
     "agent_orchestrator/runtime/assurance_turn_sources.py": "5500b5d69b35e3107c1efa903dffd8fa23515a05ef788c691c58692d36d7bfea",
     "agent_orchestrator/runtime/connectors.py": "5c695ba3df23316d0a9d913480b1db42be136766a6c8868ce1927902f29ad8dd",
     "agent_orchestrator/runtime/connectors_publish.py": "5c305b99a41ab9856e1ef82356d18390f17ca54fcceaeb6be56b2df6f3478a2d",
@@ -723,7 +718,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

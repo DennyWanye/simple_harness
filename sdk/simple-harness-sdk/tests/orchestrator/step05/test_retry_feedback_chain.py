@@ -57,6 +57,16 @@ def test_a_turn_the_model_itself_failed_is_not_called_a_server_error():
     assert "服务侧" not in feedback[0]
 
 
+def test_a_turn_past_its_time_limit_is_told_as_that_fact():
+    """2026-10-10 parse 重跑：单轮时限到了被终止，下一轮收到的是"模型调用失败（代码 react_wall_clock_exceeded）"。
+
+    **Mutation**: drop the wall-clock branch → red."""
+    timed = _attempt(1, {"reason": "turn_failed", "error_kind": "other",
+                         "error": {"error_code": "react_wall_clock_exceeded", "source_kind": "termination"}})
+    feedback, _ = retry_feedback([timed], timed)
+    assert feedback == ["上一次尝试超过了单轮时限，被系统终止；这一轮从头做。"]
+
+
 def test_a_stalled_attempt_is_told_as_one_fact_not_a_raw_dict():
     """2026-10-10（parse/docopt 重跑）：被当成卡死终止的尝试，下一轮收到的是 ``executor_stalled: ``。
 

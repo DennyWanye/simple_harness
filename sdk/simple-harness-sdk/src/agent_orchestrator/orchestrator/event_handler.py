@@ -11496,6 +11496,11 @@ def sha256_hex_text(content: str | bytes) -> str:
 __all__ = ("FAULT_POINTS", "InjectedCrash", "Orchestrator")
 
 
+def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
+    error = failure.get("error")
+    return error.get("error_code") if isinstance(error, Mapping) else None
+
+
 def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
@@ -11529,6 +11534,9 @@ def retry_feedback(
                 if isinstance(item, Mapping):
                     feedback.append(f"{item.get('layer')}: {item.get('summary')}")
                     verifier_feedback.append(dict(item))
+        elif reason == "turn_failed" and _turn_error_code(failure) == "react_wall_clock_exceeded":
+            # 2026-10-10 parse 重跑：单轮时限到了被终止，原来写成"模型调用失败"——不是事实
+            feedback.append("上一次尝试超过了单轮时限，被系统终止；这一轮从头做。")
         elif reason == "turn_failed" and output_exhausted(failure.get("error")):
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))
