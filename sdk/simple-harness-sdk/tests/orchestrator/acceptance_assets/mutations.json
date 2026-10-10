@@ -1830,8 +1830,8 @@
       "id": "SM-04",
       "source": "2026-10-10 parse 重跑：线路上的长调用在 180 秒被当成卡死",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "                    and not self._provider_call_in_flight(intent, now)):",
-      "replacement": "                    and True):",
+      "original": "            if running and not liveness.blocked and attempt.progress_at is not None and not in_flight:",
+      "replacement": "            if running and not liveness.blocked and attempt.progress_at is not None:",
       "tests": [
         "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound"
       ],
@@ -1870,6 +1870,28 @@
         "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_stalled_attempt_is_told_as_one_fact_not_a_raw_dict"
       ],
       "note": "反馈退回原始字符串"
+    },
+    {
+      "id": "SM-08",
+      "source": "2026-10-10 独立核验 M1：长调用回来那一刻被杀",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "                if last_settled is not None:\n                    since = max(since, last_settled)",
+      "replacement": "                if last_settled is not None:\n                    since = since",
+      "tests": [
+        "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_a_long_call_that_comes_back_is_not_a_stall_the_moment_it_settles"
+      ],
+      "note": "卡死计时不从结清时刻起算"
+    },
+    {
+      "id": "SM-09",
+      "source": "2026-10-10 独立核验 M2：模型自己的回合失败被说成服务侧错误",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "            if classify_failure(failure) == INFRA:\n                feedback.append(f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\")",
+      "replacement": "            if True:\n                feedback.append(f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\")",
+      "tests": [
+        "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_the_model_itself_failed_is_not_called_a_server_error"
+      ],
+      "note": "所有回合失败都说成服务侧错误"
     }
   ]
 }

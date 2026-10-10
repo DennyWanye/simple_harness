@@ -420,6 +420,34 @@ def test_a_step_that_reports_blocked_goes_back_to_the_planner(tmp_path):
     asyncio.run(case())
 
 
+def test_a_long_call_that_comes_back_is_not_a_stall_the_moment_it_settles(tmp_path):
+    """独立核验 M1（2026-10-10）：进展标记只在预留下一次调用时才动；一次超过 stall_seconds 的调用
+    回来后，到下一次预留之前，尝试仍按旧标记算"没进展"，回来那一刻就被杀——钱照付、结果照丢。
+    卡死计时从"进展时刻"和"最近一次调用结清时刻"中较晚的一个算起。"""
+
+    async def case():
+        async with committed(tmp_path, key="h4-long-call-comes-back", stall_seconds=0.5) as seed:
+            loop, mission = seed.loop, seed.mission
+            task_id = _leaf(loop, mission)
+            with pytest.raises(TimeoutError):  # 调用在线路上 2 秒（> 0.5 秒），期间不被杀
+                await run_until(seed.product, lambda: False, timeout=2)
+            assert not events(loop, mission.id, "AttemptTimedOut")
+            resume(seed.product)  # 放行：调用结清，这一轮照常提交
+
+            def done() -> bool:
+                [first, *_] = loop.store.list_attempts(task_id)
+                return str(first.status).split(".")[-1] not in {"PENDING", "CLAIMED", "RUNNING"}
+            try:
+                await run_until(seed.product, done, timeout=30)
+            except TimeoutError:
+                raise AssertionError("the released call never ended its attempt") from None
+            first = loop.store.list_attempts(task_id)[0]
+            assert not events(loop, mission.id, "AttemptTimedOut"), first.status
+            assert str(first.status).split(".")[-1] != "TIMED_OUT", first.status
+
+    asyncio.run(case())
+
+
 def test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound(tmp_path):
     """2026-10-10（parse 重跑）：执行者一次 3.6 分钟的模型调用在 180 秒被当成"没进展"杀掉，
     再重试一遍。输出上限放到 131,072 后一次思考可以很长：调用已交出、还没结清，就不算卡死；

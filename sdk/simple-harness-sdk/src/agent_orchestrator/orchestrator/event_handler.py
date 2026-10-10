@@ -5934,25 +5934,32 @@ class Orchestrator:
         )
         self._note(f"attempt {attempt.id}: late result recorded as history")
 
-    def _provider_call_in_flight(self, intent: DispatchIntent, now: float) -> bool:
-        """A model call handed off and not yet settled, younger than ``provider_call_seconds``.
+    def _provider_call_facts(self, intent: DispatchIntent, now: float) -> tuple[bool, float | None]:
+        """Two facts from the execution library about this executor's model calls: whether one
+        is handed off and not yet settled, younger than ``provider_call_seconds``; and when the
+        latest one settled (None when none has).
 
         2026-10-10（parse 重跑）：执行者一次 3.6 分钟的调用在 180 秒被当成"没进展"杀掉。模型还在
-        答就不是卡死；这里只看执行库里的事实（已交出、未结清、多久了），不看任何内容。超过这条
-        调用自己的上限仍在线路上，才回到原来的卡死处理。"""
+        答就不是卡死；这里只看执行库里的事实（已交出、未结清、多久了；最近一次何时结清），不看
+        任何内容。超过这条调用自己的上限仍在线路上，才回到原来的卡死处理。"""
         if not intent.agent_id:
-            return False
+            return False, None
         runtime = self.bridge_for(intent).runtime
         agent = runtime.uow.read_agent_binding(intent.agent_id)
         if agent is None:
-            return False
+            return False, None
         from simple_harness import RunId
+        in_flight = False
+        last_settled: float | None = None
         for invocation in runtime.uow.list_provider_invocations(RunId(agent.run_id)):
             handed_off = getattr(invocation, "handed_off_at", None)
+            settled = getattr(invocation, "settled_at", None)
             if (str(invocation.state) == "handed_off" and handed_off is not None
                     and now - float(handed_off) < self._config.provider_call_seconds):
-                return True
-        return False
+                in_flight = True
+            if settled is not None and (last_settled is None or float(settled) > last_settled):
+                last_settled = float(settled)
+        return in_flight, last_settled
 
     async def _observe_liveness(self, intent: DispatchIntent) -> bool:
         assert intent.agent_id and intent.expected_turn_id
@@ -6007,11 +6014,20 @@ class Orchestrator:
             except CommitRejected:
                 return False  # another live owner; not ours yet (review P1-2)
             running = liveness.state == str(AgentTurnState.RUNNING)
-            if (running and not liveness.blocked and attempt.progress_at is not None
-                    and not self._provider_call_in_flight(intent, now)):
+            in_flight, last_settled = (
+                self._provider_call_facts(intent, now)
+                if running and not liveness.blocked and attempt.progress_at is not None
+                else (False, None)
+            )
+            if running and not liveness.blocked and attempt.progress_at is not None and not in_flight:
                 # D3-4': only a *running* turn is timed; queued / semaphore-waiting ones are not;
-                # 2026-10-10: nor one whose model call is still on the wire within its own bound
-                stalled_for = now - attempt.progress_at
+                # 2026-10-10: nor one whose model call is still on the wire within its own bound.
+                # The progress mark moves only when the next call is reserved, so a long call
+                # that has just come back counts from the moment it settled (独立核验 M1).
+                since = attempt.progress_at
+                if last_settled is not None:
+                    since = max(since, last_settled)
+                stalled_for = now - since
                 if stalled_for > self._config.stall_seconds:
                     # D6': alive, no blocker, no provider progress within stall_seconds.
                     self._import_usage(intent)
@@ -11483,7 +11499,7 @@ __all__ = ("FAULT_POINTS", "InjectedCrash", "Orchestrator")
 def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
-    from .failure_classes import output_exhausted, output_exhausted_fact
+    from .failure_classes import INFRA, classify_failure, output_exhausted, output_exhausted_fact
 
     """What the repair Attempt is told about the failures before it.
 
@@ -11517,10 +11533,17 @@ def retry_feedback(
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))
         elif reason == "turn_failed":
-            # 2026-10-10（第三轮复查）：服务侧出错的那一轮同样只写一句事实，不拼原始字典
+            # 2026-10-10（第三轮复查）：服务侧出错的那一轮同样只写一句事实，不拼原始字典。
+            # 只有归类为服务侧（INFRA）的才说"服务侧错误"；模型自己这一轮的失败（回合上限、
+            # 工具参数错…）写错误码和错误自带的说明，不替它定性（独立核验 M2）。
             error = failure.get("error") if isinstance(failure.get("error"), Mapping) else {}
             code = error.get("error_code") or failure.get("error_kind") or "unknown"
-            feedback.append(f"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。")
+            if classify_failure(failure) == INFRA:
+                feedback.append(f"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。")
+            else:
+                said = error.get("message")
+                said = f"：{said}" if isinstance(said, str) and said.strip() else ""
+                feedback.append(f"上一轮有一次模型调用失败（代码 {code}{said}）；这一轮从头做。")
         elif reason == "executor_stalled":
             # 2026-10-10（parse/docopt 重跑）：被当成卡死终止的那一轮，原来给下一轮的是 "executor_stalled: "
             stalled = failure.get("stalled_seconds")

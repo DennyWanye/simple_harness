@@ -5,7 +5,8 @@ from types import SimpleNamespace
 from agent_orchestrator.orchestrator.event_handler import retry_feedback
 
 REJECTED = {"reason": "result_evidence_kind_not_allowed", "error": "evidence of kind 'pytest' is not allowed"}
-TURN = {"reason": "turn_failed", "error": {"error_code": "provider_protocol_error"}}
+# 产品里协议错误的 error_kind 由 classify_turn_error 定为 provider_error（服务侧），夹具照产品写
+TURN = {"reason": "turn_failed", "error_kind": "provider_error", "error": {"error_code": "provider_protocol_error"}}
 
 
 def _attempt(n, failure, status="RETRY_WAIT"):
@@ -43,6 +44,17 @@ def test_a_provider_failure_turn_is_told_as_one_fact_not_a_raw_dict():
     feedback, _ = retry_feedback([failed], failed)
     assert feedback == ["上一轮有一次模型调用没有拿到回复（服务侧错误，代码 provider_server_error）；这一轮从头做。"]
     assert "{" not in feedback[0]
+
+
+def test_a_turn_the_model_itself_failed_is_not_called_a_server_error():
+    """独立核验 M2（2026-10-10）：用完回合上限是模型自己的事，不能说成"服务侧错误"。
+
+    **Mutation**: call every ``turn_failed`` a server error → red."""
+    failed = _attempt(1, {"reason": "turn_failed", "error_kind": "react",
+                          "error": {"error_code": "react_max_turns_exceeded", "message": "12 turns used"}})
+    feedback, _ = retry_feedback([failed], failed)
+    assert feedback == ["上一轮有一次模型调用失败（代码 react_max_turns_exceeded：12 turns used）；这一轮从头做。"]
+    assert "服务侧" not in feedback[0]
 
 
 def test_a_stalled_attempt_is_told_as_one_fact_not_a_raw_dict():
