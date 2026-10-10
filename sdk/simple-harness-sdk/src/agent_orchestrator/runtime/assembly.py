@@ -91,7 +91,10 @@ class OrchestratorConfig:
     #: 一轮要装得下已经批准的输出上限：每次调用自己的上限是 ``provider_call_seconds``（900 秒），
     #: 一轮放几次。时限是秩序，不是对模型思考长短的判断。
     turn_deadline_seconds: float = 3600.0
-    max_model_calls_per_turn: int = 24
+    #: 2026-10-10 用户决定（parse 重跑）：单轮模型调用次数 24→64。parse 第 1 步三次尝试都在第 24 次
+    #: 调用处被终止、每次从头重来各花 120～185 万 token；达到上限的事实同时交给执行者下一轮与规划器
+    #: （拆不拆步由规划器判断）。
+    max_model_calls_per_turn: int = 64
     max_tool_calls_per_turn: int = 48
     knowledge_sharing: bool = True  # step 4 (D4-19): the layer's kill switch
     on_retrieval_failure: str = "block"  # step 4 (D4-11'): block | degrade

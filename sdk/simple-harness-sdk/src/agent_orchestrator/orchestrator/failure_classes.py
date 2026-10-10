@@ -71,6 +71,16 @@ def output_exhausted_fact(error: Mapping[str, Any] | None) -> str:
     return f"上一轮有一次模型调用因输出上限（{amount}{thinking}）停止，没有给出最终结果。"
 
 
+def max_turns_exceeded(error: Mapping[str, Any] | None) -> bool:
+    """这一轮因达到单轮模型调用次数上限被终止（协议错误码 ``react_max_turns_exceeded``）。"""
+    return isinstance(error, Mapping) and error.get("error_code") == "react_max_turns_exceeded"
+
+
+def max_turns_fact(error: Mapping[str, Any] | None) -> str:
+    """交给模型/规划器的一句事实：这一轮做满了单轮调用次数上限，没有交出结果。不替它们判断。"""
+    return "上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。"
+
+
 def interrupted_review(failures: Any) -> bool:
     """Every failure is a content review whose call was interrupted (not a verdict)."""
 

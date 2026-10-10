@@ -6,6 +6,8 @@ snapshot as the request; the original PlanningDecision pipeline chooses and comm
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from dataclasses import asdict
 from typing import Any
 
@@ -459,6 +461,26 @@ def _is_step_failure(event: Any) -> bool:
             or event.payload.get("outcome") in {"blocked", "failure", "no_progress"})
 
 
+def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
+    """What a repair request says about a failed attempt: whose fault (2026-09-28, non-model
+    causes are redone in place by the system) and, for the two caps the executor can run into,
+    the plain fact — output ceiling (2026-10-09) or per-turn model-call cap (2026-10-10).
+    Whether to redo or split the step is the planner's judgment."""
+    from .failure_classes import (
+        classify_failure, max_turns_exceeded, max_turns_fact, output_exhausted, output_exhausted_fact,
+    )
+
+    if not failure:
+        return {}
+    out = {"failure_class": classify_failure(failure)}
+    error = failure.get("error")
+    if failure.get("reason") == "turn_failed" and output_exhausted(error):
+        out["failure_fact"] = output_exhausted_fact(error)
+    elif failure.get("reason") == "turn_failed" and max_turns_exceeded(error):
+        out["failure_fact"] = max_turns_fact(error)
+    return out
+
+
 def step_failure_facts(events: Any, event: Any) -> dict[str, Any]:
     """这一步到这次为止失败了几次、连续几次是同一个失败、失败指纹（片 0 第 2 步，2026-10-01）。
 
@@ -563,19 +585,9 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     produced = False
     active_tasks = {str(spec.task_id) for spec in dispatch.network(mission.id).occurrences}
     seen = {e.payload.get("source_key") for e in store.iter_events(mission.id) if e.type == REQUESTED}
-    from .failure_classes import classify_failure, output_exhausted, output_exhausted_fact
-
     def failure_class(attempt_id: str | None) -> dict[str, str]:
-        # 2026-09-28：请求里带上"谁的错"，非模型原因由系统原地重做（planning_selection）。
         attempt = store.get_attempt(attempt_id) if attempt_id else None
-        if attempt is None or not attempt.failure:
-            return {}
-        out = {"failure_class": classify_failure(attempt.failure)}
-        error = attempt.failure.get("error")
-        if attempt.failure.get("reason") == "turn_failed" and output_exhausted(error):
-            # 2026-10-09：输出上限用完的事实如实给规划器，重做还是拆小由它判断
-            out["failure_fact"] = output_exhausted_fact(error)
-        return out
+        return attempt_failure_facts(attempt.failure if attempt is not None else None)
     sources = STEP_FAILURE_SOURCES
     produced |= settle_addressed_requests(handler, dispatch, mission)
     produced |= source_change_triggers(handler, dispatch, mission, seen=seen, active_tasks=active_tasks)

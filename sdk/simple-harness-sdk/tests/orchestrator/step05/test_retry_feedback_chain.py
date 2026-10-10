@@ -51,10 +51,20 @@ def test_a_turn_the_model_itself_failed_is_not_called_a_server_error():
 
     **Mutation**: call every ``turn_failed`` a server error → red."""
     failed = _attempt(1, {"reason": "turn_failed", "error_kind": "react",
-                          "error": {"error_code": "react_max_turns_exceeded", "message": "12 turns used"}})
+                          "error": {"error_code": "invalid_tool_arguments", "message": "arguments are not JSON"}})
     feedback, _ = retry_feedback([failed], failed)
-    assert feedback == ["上一轮有一次模型调用失败（代码 react_max_turns_exceeded：12 turns used）；这一轮从头做。"]
+    assert feedback == ["上一轮有一次模型调用失败（代码 invalid_tool_arguments：arguments are not JSON）；这一轮从头做。"]
     assert "服务侧" not in feedback[0]
+
+
+def test_a_turn_that_used_all_its_model_calls_is_told_as_that_fact():
+    """2026-10-10 parse 重跑：做满 24 次调用被终止，下一轮收到的是"模型调用失败（代码 react_max_turns_exceeded）"。
+
+    **Mutation**: drop the max-turns branch → red."""
+    capped = _attempt(1, {"reason": "turn_failed", "error_kind": "other",
+                          "error": {"error_code": "react_max_turns_exceeded", "source_kind": "termination"}})
+    feedback, _ = retry_feedback([capped], capped)
+    assert feedback == ["上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。这一轮从头做。"]
 
 
 def test_a_turn_past_its_time_limit_is_told_as_that_fact():

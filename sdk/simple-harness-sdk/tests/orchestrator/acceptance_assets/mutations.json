@@ -1925,6 +1925,28 @@
         "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_past_its_time_limit_is_told_as_that_fact"
       ],
       "note": "时限分支失效，退回'模型调用失败'"
+    },
+    {
+      "id": "SM-13",
+      "source": "2026-10-10 parse 重跑：做满单轮调用次数被终止的反馈不是事实",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "        elif reason == \"turn_failed\" and max_turns_exceeded(failure.get(\"error\")):",
+      "replacement": "        elif reason == \"turn_failed\" and False:",
+      "tests": [
+        "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_that_used_all_its_model_calls_is_told_as_that_fact"
+      ],
+      "note": "调用次数上限分支失效"
+    },
+    {
+      "id": "SM-14",
+      "source": "2026-10-10 parse 重跑：做满单轮调用次数的事实没给规划器",
+      "file": "src/agent_orchestrator/orchestrator/planning_repair_requests.py",
+      "original": "    elif failure.get(\"reason\") == \"turn_failed\" and max_turns_exceeded(error):\n        out[\"failure_fact\"] = max_turns_fact(error)",
+      "replacement": "    elif False:\n        out[\"failure_fact\"] = max_turns_fact(error)",
+      "tests": [
+        "tests/orchestrator/step05/test_repair_request_failure_facts.py::test_the_two_executor_caps_are_told_to_the_planner_as_facts"
+      ],
+      "note": "规划器只看到错误码"
     }
   ]
 }
