@@ -226,6 +226,14 @@ def precondition_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: se
     return produced
 
 
+#: 2026-10-11 第三批：规划器处理写入冲突时要知道系统交文件的规则——只写事实，不改模板与工具说明。
+WRITE_CONFLICT_DELIVERY_RULE = (
+    "数据边接上的写入型上游交出它那次验收通过的全部文件（操作申请单除外）；只读型上游只交原工作区"
+    "文件的副本；接续上游另交它自己冻结清单里收到的文件。几份不同内容落到同一路径时，系统只认"
+    "冻结清单能证明的接力版本，证明不了就报本条冲突，由规划器决定哪一步接哪份。"
+)
+
+
 def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> bool:
     """阶段 D：同一个文件有几份内容不同的版本、计划没说用哪份 → 一条写入冲突修复请求（路径、写出它们的
     步骤、几份产出；2026-10-09 第 4 条起还可能带 consumer：这几份同时到达的那一步）。同一组产出只记一次；
@@ -237,7 +245,7 @@ def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> b
             continue
         produced |= record_request(dispatch, mission.id, event_type="WriteConflict",
                                    trigger_refs=tuple(clash["steps"]), source_key=source_key,
-                                   detail={"reason": "write_conflict", **clash})
+                                   detail={"reason": "write_conflict", **clash, "delivery_rule": WRITE_CONFLICT_DELIVERY_RULE})
     return produced
 
 

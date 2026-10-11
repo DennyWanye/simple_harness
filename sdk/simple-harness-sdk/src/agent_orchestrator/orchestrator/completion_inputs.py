@@ -251,9 +251,12 @@ def _verify_frozen_document(store: Store, frozen: FrozenCompletionInputs) -> Non
         or document.get("pending") != []
         or not isinstance(document.get("consumer_task_ref"), str)
         or not isinstance(document.get("bindings"), list)
+        or not isinstance(document.get("deliveries"), list)
     ):
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "stored input manifest is not frozen")
-    payload = {"consumer_task_ref": document["consumer_task_ref"], "bindings": document["bindings"]}
+    # 2026-10-11 第三批：清单哈希覆盖端口绑定与交付绑定两部分（与 ``InputManifest._hash_payload`` 同形）
+    payload = {"consumer_task_ref": document["consumer_task_ref"], "bindings": document["bindings"],
+               "deliveries": document["deliveries"]}
     if sha256_hex(payload) != frozen.embedded_manifest_hash:
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "stored embedded manifest hash differs")
 

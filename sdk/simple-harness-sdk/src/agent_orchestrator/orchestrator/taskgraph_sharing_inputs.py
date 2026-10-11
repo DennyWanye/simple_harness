@@ -59,8 +59,13 @@ def read_shared_inputs(reader: Any, local: Any, entry: SharedGoalEntry,
             return None  # exact inputs exist but no longer have current use permission
         # Witness renewal changes permission evidence, not the frozen input's
         # source/Acceptance/schema/version identity. Keep the other fields exact.
-        rows = [{key: value for key, value in item.to_json().items()
-                 if key != "witness_id"} for item in manifest.bindings]
+        # 2026-10-11 第三批：交付绑定也在摘要里——端口相同、交付文件不同的两次尝试不是同一份输入。
+        rows = {
+            "bindings": [{key: value for key, value in item.to_json().items()
+                          if key != "witness_id"} for item in manifest.bindings],
+            "deliveries": [{key: value for key, value in item.to_json().items()
+                            if key != "witness_id"} for item in manifest.deliveries],
+        }
         digests.add(sha256_hex(rows))
         origins.append((identity, sha256_hex(manifest.to_json())))
     if len(digests) != 1:

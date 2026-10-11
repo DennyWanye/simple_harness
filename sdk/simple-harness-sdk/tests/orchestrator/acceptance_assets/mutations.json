@@ -1703,12 +1703,12 @@
     },
     {
       "id": "MU-02",
-      "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-      "original": "        for candidate in versions.values():\n            others = [item for item in versions.values() if item is not candidate]",
-      "replacement": "        for candidate in versions.values():\n            others = []",
+      "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）；2026-10-11 第三批改锚到交付解析",
+      "file": "src/agent_orchestrator/artifacts/input_bindings.py",
+      "original": "                others = [item.version_key for item in versions.values() if item is not candidate]",
+      "replacement": "                others = []",
       "tests": [
-        "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_one_version_takes_only_a_proven_relay_and_refuses_the_rest",
+        "tests/orchestrator/full_target/test_delivery_bindings.py::test_a_relay_takes_the_proven_next_version_and_an_unproven_pair_is_a_conflict",
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version"
       ],
       "note": "同一路径几个版本\"先到先占\"，不再要求接力证明"
@@ -1727,10 +1727,10 @@
     },
     {
       "id": "MU-05",
-      "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-      "original": "                if len({item.content_hash for item in at_port}) > 1 or rivals:",
-      "replacement": "                if len({item.content_hash for item in at_port}) > 1:",
+      "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）；2026-10-11 第三批改锚到交付解析",
+      "file": "src/agent_orchestrator/artifacts/input_bindings.py",
+      "original": "            if rivals:\n                problems.append(",
+      "replacement": "            if False and rivals:\n                problems.append(",
       "tests": [
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planner"
       ],
@@ -1738,10 +1738,10 @@
     },
     {
       "id": "MU-06",
-      "source": "2026-10-09 第 4 条独立核验复核（单链接力回归）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-      "original": "                rivals = [item for item in candidates.values() if item.content_hash != port.content_hash\n                          and not any(c.task_id == item.task_id and c.path == item.path\n                                      and c.content_hash == item.content_hash for c in carried)]",
-      "replacement": "                rivals = [item for item in candidates.values() if item.content_hash != port.content_hash]",
+      "source": "2026-10-09 第 4 条独立核验复核（单链接力回归）；2026-10-11 第三批改锚到交付解析",
+      "file": "src/agent_orchestrator/artifacts/input_bindings.py",
+      "original": "            rivals = [item for item in versions.values()\n                      if item.content_hash != port_hash and item.version_key not in known]",
+      "replacement": "            rivals = [item for item in versions.values()\n                      if item.content_hash != port_hash]",
       "tests": [
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay"
       ],
@@ -2057,6 +2057,50 @@
         "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_the_backoff_restarts_once_the_job_moved"
       ],
       "note": "重数后的唤醒被幂等去重吞掉"
+    },
+    {
+      "id": "SM-25",
+      "source": "2026-10-11 第三批：交付文件见证不可用时不交且点名",
+      "file": "src/agent_orchestrator/artifacts/input_bindings.py",
+      "original": "            if problem is not None:\n                kind, detail = problem\n                problems.append(",
+      "replacement": "            if problem is not None:\n                kind, detail = problem\n                continue\n                problems.append(",
+      "tests": [
+        "tests/orchestrator/full_target/test_delivery_bindings.py::test_a_delivered_file_without_a_usable_licence_is_refused_by_name_not_dropped"
+      ],
+      "note": "见证不可用的交付文件被悄悄丢掉"
+    },
+    {
+      "id": "SM-26",
+      "source": "2026-10-11 第三批：接续上游只从它自己的冻结清单接力",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "original": "            if not _is_continuation(semantic):\n                continue\n            for item in frozen:",
+      "replacement": "            if True:\n                continue\n            for item in frozen:",
+      "tests": [
+        "tests/orchestrator/full_target/test_continuation_delivery_chain.py::test_delivery_sources_hand_on_every_accepted_file_and_what_a_continuation_received"
+      ],
+      "note": "接续上游收到的文件不再交给下一步"
+    },
+    {
+      "id": "SM-27",
+      "source": "2026-10-11 第三批：冻结输入旧版具名退役",
+      "file": "src/agent_orchestrator/orchestrator/taskgraph_dispatch.py",
+      "original": "    if type(version) is not int or version != FROZEN_INPUT_VERSION:",
+      "replacement": "    if type(version) is not int or version not in (2, FROZEN_INPUT_VERSION):",
+      "tests": [
+        "tests/orchestrator/full_target/test_delivery_bindings.py::test_a_retired_frozen_input_version_is_refused_by_name"
+      ],
+      "note": "第 2 版意图照收"
+    },
+    {
+      "id": "SM-28",
+      "source": "2026-10-11 第三批：交接核对交付见证",
+      "file": "src/agent_orchestrator/artifacts/taskgraph_inputs.py",
+      "original": "        if verdict is not None and verdict[1] is not None:\n            raise ContractError(\"TASKGRAPH_FROZEN_DELIVERY_WITNESS_NOT_CURRENT\")",
+      "replacement": "        if False:\n            raise ContractError(\"TASKGRAPH_FROZEN_DELIVERY_WITNESS_NOT_CURRENT\")",
+      "tests": [
+        "tests/orchestrator/full_target/test_delivery_bindings.py::test_handover_rechecks_every_delivery_licence_and_sharing_tells_different_deliveries_apart"
+      ],
+      "note": "交接不核交付见证"
     }
   ]
 }

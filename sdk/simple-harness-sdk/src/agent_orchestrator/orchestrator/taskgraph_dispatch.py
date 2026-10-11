@@ -29,7 +29,12 @@ from ..storage.htn_store import HtnStore
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
 from ..storage.taskgraph_store import TaskGraphStore, require_bound
-from .hierarchical_dispatch import HierarchicalDispatch, NetworkView, carried_inputs
+from .hierarchical_dispatch import HierarchicalDispatch, NetworkView
+
+#: 2026-10-11 第三批：冻结输入第 3 版——清单本身列出全部交付（端口绑定 + 交付绑定），意图的
+#: ``inputs`` 必须与清单物化结果完全相等。第 1、2 版（清单只有端口、多交文件另存）已退役：开发期
+#: 不兼容旧数据，遇到即以具名码拒绝，不冒充"损坏"。
+FROZEN_INPUT_VERSION = 3
 
 
 def _mission_judge_tasks(store: Store, intent: DispatchIntent, view_id: str) -> set[str]:
@@ -124,62 +129,48 @@ def require_taskgraph_attempt_handoff(store: Store, intent: DispatchIntent) -> N
         if str(frozen.consumer_task_ref) != attempt.task_id:
             raise StoreError("TASKGRAPH_FROZEN_INPUT_CONSUMER_MISMATCH")
         _intent_inputs(intent, frozen, source_revision=row["source_revision"],
-                       manifest_hash=row["manifest_hash"],
-                       carried=lambda producer: carried_inputs(store, intent.mission_id, producer))
+                       manifest_hash=row["manifest_hash"])
     except (ContractError, ArtifactConflict) as error:
         raise StoreError("TASKGRAPH_FROZEN_INPUT_CORRUPT") from error
 
 
+def _frozen_binding(intent: DispatchIntent) -> Mapping[str, Any]:
+    """The intent's frozen-input binding, current version only (第三批：旧版具名拒绝)."""
+    frozen = intent.config.get("taskgraph_inputs")
+    if not isinstance(frozen, Mapping):
+        raise StoreError("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
+    version = frozen.get("version")
+    if type(version) is not int or version != FROZEN_INPUT_VERSION:
+        raise StoreError("TASKGRAPH_FROZEN_INPUT_VERSION_RETIRED")
+    return frozen
+
+
 def _intent_inputs(intent: DispatchIntent, manifest: InputManifest, *,
                    source_revision: int, manifest_hash: str,
-                   network: TaskNetworkSnapshot | None = None,
-                   carried: Callable[[str], Sequence[UpstreamInput]] | None = None) -> tuple[UpstreamInput, ...]:
-    frozen = intent.config.get("taskgraph_inputs")
-    version = frozen.get("version") if isinstance(frozen, Mapping) else None
-    keys = {"version", "source_revision", "manifest_hash", "target_rules"}
-    if version == 2:
-        keys.add("data_inputs")
-    if (not isinstance(frozen, Mapping) or set(frozen) != keys
-            or type(version) is not int or version not in (1, 2)
+                   network: TaskNetworkSnapshot | None = None) -> tuple[UpstreamInput, ...]:
+    """The intent's ``inputs`` must equal the frozen manifest's materialisation exactly.
+
+    2026-10-11 第三批：the manifest lists every delivered file (port and delivery
+    bindings, each with its acceptance and licence), so there is nothing beside it to
+    reconcile — no closure, no "re-verified by the producer's latest result".
+    """
+    frozen = _frozen_binding(intent)
+    if (set(frozen) != {"version", "source_revision", "manifest_hash", "target_rules"}
             or type(frozen["source_revision"]) is not int or frozen["source_revision"] != source_revision
             or frozen["manifest_hash"] != manifest_hash):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
     rules = decode_target_rules(frozen["target_rules"])
-    data_inputs = tuple(manifest_upstream_inputs(manifest, rules, network=network))
-    if version == 2:
-        raw = frozen["data_inputs"]
-        if not isinstance(raw, (list, tuple)):
-            raise StoreError("TASKGRAPH_FROZEN_DATA_INPUTS_INVALID")
-        materialized = tuple(UpstreamInput.from_json(item) for item in raw)
-        from collections import Counter
-        base = Counter(canonical_json(item.to_json()) for item in data_inputs)
-        actual = Counter(canonical_json(item.to_json()) for item in materialized)
-        direct = {x.task_id for x in data_inputs}
-        # NEXT-TG-1.0 2A.1d: besides the direct producers' own files, an entry may be
-        # one a direct continuation producer was itself frozen with (re-verified by
-        # ``carried_inputs``: accepted by its real producer, same path and hash).
-        closure: set[str] = set()
-        if carried is not None:
-            for producer in direct:
-                closure.update(canonical_json(item.to_json()) for item in carried(producer))
-        if not base <= actual or any(item.task_id not in direct
-                                     and canonical_json(item.to_json()) not in closure
-                                     for item in materialized):
-            raise StoreError("TASKGRAPH_FROZEN_DATA_PRODUCER_MISMATCH")
-        data_inputs = materialized
-    expected = tuple(data_inputs)
+    expected = tuple(manifest_upstream_inputs(manifest, rules, network=network))
     if canonical_json(intent.config.get("inputs")) != canonical_json([item.to_json() for item in expected]):
         raise StoreError("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
     message = intent.config.get("message")
     if not isinstance(message, Mapping) or sha256_hex(message) != intent.input_hash:
         raise StoreError("TASKGRAPH_DISPATCH_MESSAGE_HASH_MISMATCH")
-    return tuple(expected)
+    return expected
 
 
 def _require_materialization_receipt(store: Store, intent: DispatchIntent) -> None:
-    frozen = intent.config.get("taskgraph_inputs")
-    if not isinstance(frozen, Mapping) or frozen.get("version") != 2:
-        return  # v1 had only the immutable DATA manifest, without workspace overlays.
+    frozen = _frozen_binding(intent)
     command_id = "taskgraph-materialization:" + intent.subject_id
     receipt = store.get_receipt(command_id)
     row = store.connection.execute(
@@ -198,12 +189,10 @@ class PreparedTaskGraphAttempt:
     admission: EligiblePrimitiveTask
     manifest: InputManifest
     target_rules_json: str
-    data_inputs_json: str
 
     def intent_binding(self) -> dict[str, Any]:
-        return {"version": 2, "source_revision": int(self.admission.plan_revision),
+        return {"version": FROZEN_INPUT_VERSION, "source_revision": int(self.admission.plan_revision),
                 "manifest_hash": sha256_hex(self.manifest.to_json()),
-                "data_inputs": json.loads(self.data_inputs_json),
                 "target_rules": json.loads(self.target_rules_json)}
 
 
@@ -302,9 +291,8 @@ class TaskGraphDispatchBinding:
         rules = self.dispatch_for(task.mission_id).target_rules_for(task.id)
         if not isinstance(rules, TargetRules):
             raise StoreError("TARGET_RULES_UNAVAILABLE")
-        data_inputs = self.dispatch_for(task.mission_id).overlay_attempt_inputs(task.mission_id,
-            manifest_upstream_inputs(manifest, rules, network=view.network))
-        expected = tuple(data_inputs)
+        # 第三批：清单（端口绑定 + 交付绑定）的物化结果就是这次尝试的全部输入，没有第二套叠加
+        expected = tuple(manifest_upstream_inputs(manifest, rules, network=view.network))
         if canonical_json([dict(item) for item in inputs]) != canonical_json([item.to_json() for item in expected]):
             raise StoreConflict("TASKGRAPH_DISPATCH_INPUT_SET_MISMATCH")
         message = intent_config.get("message")
@@ -320,8 +308,7 @@ class TaskGraphDispatchBinding:
         # are rechecked by the original installed execution adapter, never plan grant.
         self.recheck_execution(self.store, view, admission, manifest, intent_config, inputs, input_hash)
         prepared = PreparedTaskGraphAttempt(admission=admission, manifest=manifest,
-                                            target_rules_json=canonical_json(encode_target_rules(rules)),
-                                            data_inputs_json=canonical_json([item.to_json() for item in data_inputs]))
+                                            target_rules_json=canonical_json(encode_target_rules(rules)))
         supplied = intent_config.get("taskgraph_inputs")
         if supplied is not None and canonical_json(supplied) != canonical_json(prepared.intent_binding()):
             raise StoreConflict("TASKGRAPH_DISPATCH_INPUT_IDENTITY_MISMATCH")
@@ -342,8 +329,7 @@ class TaskGraphDispatchBinding:
             _require_materialization_receipt(self.store, intent)
             upstream = _intent_inputs(intent, manifest,
                                       source_revision=frozen.binding.source_revision,
-                                      manifest_hash=frozen.binding.manifest_hash, network=network,
-                                      carried=lambda producer: carried_inputs(self.store, mission_id, producer))
+                                      manifest_hash=frozen.binding.manifest_hash, network=network)
             return TaskGraphAttemptContext(inputs=frozen, history=history, manifest=manifest,
                                            network=network, upstream=upstream)
 
@@ -372,7 +358,7 @@ class TaskGraphDispatchBinding:
                      "dispatch_generation": bound.dispatch_generation,
                      "manifest_hash": bound.manifest_hash, "origin_hash": bound.origin_hash},
             idempotency_key=identity, created_at=self.store.now))
-        receipt = {"version": 2, "kind": "TaskGraphAttemptMaterialized", "attempt_id": attempt.id,
+        receipt = {"version": FROZEN_INPUT_VERSION, "kind": "TaskGraphAttemptMaterialized", "attempt_id": attempt.id,
                    "mission_id": attempt.mission_id, "intent_id": intent.intent_id,
                    "input_hash": intent.input_hash, "binding": prepared.intent_binding(),
                    "inputs": [dict(item) for item in intent.config["inputs"]]}

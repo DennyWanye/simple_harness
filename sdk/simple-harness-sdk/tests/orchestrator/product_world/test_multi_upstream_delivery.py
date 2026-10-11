@@ -160,11 +160,17 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
                     "results": [item["task_id"] for item in report.get("accepted_results", [])],
                 }
                 inputs = dispatch.attempt_inputs(mission.id, merge)
-                facts["inputs"] = inputs
-                facts["overlaid"] = dispatch.overlay_attempt_inputs(mission.id, inputs)
                 spec = next(item for item in network.occurrences if str(item.task_id) == merge)
                 manifest = dispatch.input_result(mission.id, network, spec).manifest
-                by_path = {item.task_id: item.path for item in inputs}
+                # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入，没有第二套叠加
+                port_paths = {str(item.producer_task_ref): item.source_identity.path for item in manifest.bindings}
+                facts["inputs"] = [item for item in inputs if item.path in port_paths.values()
+                                   and item.acceptance_id in {b.acceptance_id for b in manifest.bindings}
+                                   and item.carried_from is None]
+                facts["overlaid"] = inputs
+                facts["deliveries"] = [(str(d.producer_task_ref), d.path, d.witness_id, d.carried_from)
+                                       for d in manifest.deliveries]
+                by_path = port_paths
                 facts["port_order"] = [by_path[str(item.producer_task_ref)]
                                        for item in sorted(manifest.bindings, key=lambda item: item.port_ordinal)]
             return facts
@@ -209,7 +215,7 @@ def test_two_upstreams_writing_one_path_differently_is_a_write_conflict_for_the_
     """a、b 都写了 shared.md、内容不同，c 要同时接两份：不"先到先占"、不"取后者"，c 不开工，
     写入冲突作为修复请求交规划器。
 
-    **Mutation**: ``_one_version`` returning the first version → red."""
+    **Mutation**: ``resolve_deliveries`` 先到先占（MU-02）→ red."""
     facts = _run(tmp_path, _Provider(extra_file="shared.md"), rounds=30)
     assert facts["mission"].status.value != "COMPLETED", (facts["mission"].status, facts["mission"].stop_reason)
     assert [item["path"] for item in facts["clashes"]] == ["shared.md"], facts["clashes"]
@@ -234,6 +240,9 @@ def test_a_relay_then_merge_takes_the_relayed_version_and_is_no_conflict(tmp_pat
     b_task = next(item.task_id for item in facts["inputs"] if item.path == B)
     assert shared[0].task_id == b_task  # 接力：取 b 改后的版本
     assert sorted(item.path for item in facts["overlaid"]) == [A, B, "shared.md"]
+    # 2026-10-11 第三批：交付绑定在冻结清单里，带真实产出者那次验收的见证
+    assert [(step, path, bool(witness)) for step, path, witness, _ in facts["deliveries"]] == [(b_task, "shared.md", True)]
+    assert all(item.acceptance_id and item.witness_id for item in facts["overlaid"])
 
 
 def test_two_port_files_at_one_path_are_a_write_conflict_not_an_artifact_stop(tmp_path):
@@ -258,7 +267,7 @@ def test_a_relayed_tests_file_reaches_the_merge_step_in_its_newest_version(tmp_p
     原先原工作区文件与 tests/ 先按路径铺底、先到先占，c 拿到 a 的旧版。现在每个路径的版本先收齐再选：
     b 的冻结清单证明它收到过 a 那版（接力），c 拿到 b 改后的那份。
 
-    **Mutation**: ``_one_version`` 的 ``others`` 置空（先到先占）→ red."""
+    **Mutation**: ``resolve_deliveries`` 的 ``others`` 置空（先到先占，MU-02）→ red."""
     facts = _run(tmp_path, _Provider(extra_file="tests/test_shared.py", relay=True))
     mission = facts["mission"]
     assert mission.status.value == "COMPLETED", (mission.status, mission.stop_reason, facts["clashes"])
@@ -271,7 +280,7 @@ def test_a_relayer_rewriting_the_upstream_port_file_is_a_conflict_for_the_planne
     """a 的端口文件是 a.md；b 接着 a、把 a.md 改了但 b 的端口文件是 b.md；c 接 a、b：计划点名 c 用 a 的
     a.md，工作区却会有 b 的新版——端口文件与别的来源内容不同，不替规划器选，交写入冲突。
 
-    **Mutation**: ``_choose_versions`` 端口文件只比端口之间、不比别的来源 → red."""
+    **Mutation**: ``resolve_deliveries`` 端口文件只比端口之间、不比别的来源（MU-05）→ red."""
     facts = _run(tmp_path, _Provider(extra_file=A, relay=True), rounds=30)
     mission = facts["mission"]
     assert mission.status.value != "COMPLETED", mission.status
@@ -287,7 +296,7 @@ def test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay(tmp_path)
     """核验员 10-09 复核发现的回归：a→b→c 单链，b 接着 a 改写了端口文件 a.md，c 只接 b。b 转交来的 a 旧版
     是 b 收到过、接着改的那份，不是"另一份"——不是冲突，c 拿 b 的新版。
 
-    **Mutation**: ``_choose_versions`` 端口规则不扣除端口产出者收到过的旧版 → red."""
+    **Mutation**: ``resolve_deliveries`` 端口规则不扣除端口产出者收到过的旧版（MU-06）→ red."""
     # same_port：b 也承接 a.md 这条要求，所以 b 的端口文件就是它改写的 a.md（内容与 a 的不同）
     facts = _run(tmp_path, _Provider(same_port=True, relay=True, order=("b",)))
     mission = facts["mission"]
@@ -297,29 +306,6 @@ def test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay(tmp_path)
     assert [item.path for item in facts["inputs"]] == [A]
     assert [item.task_id for item in facts["overlaid"] if item.path == A] == [b_task]
     assert sorted(item.path for item in facts["overlaid"]) == [A, B]
-
-
-def _versions(*items: tuple[str, str]) -> dict[str, UpstreamInput]:
-    return {digest: UpstreamInput(task, "shared.md", digest, f"art-{task}") for task, digest in items}
-
-
-def test_one_version_takes_only_a_proven_relay_and_refuses_the_rest():
-    """同一路径几个版本：只有产出者收到过其余全部版本的那份（接力）可取；否则写入冲突。
-
-    **Mutation**: ``_one_version`` returning ``next(iter(versions.values()))`` → red."""
-    carried = {"t-b": [UpstreamInput("t-a", "shared.md", "1" * 64, "art-t-a")]}
-    fake = SimpleNamespace(carried_inputs=lambda mission_id, task_id: carried.get(task_id, []))
-    one = hd.HierarchicalDispatch._one_version
-    chosen = one(fake, "m", "shared.md", _versions(("t-a", "1" * 64), ("t-b", "2" * 64)))
-    assert chosen.task_id == "t-b"  # b 收到过 a 的那份：b 交的是接着改的版本
-    with pytest.raises(hd.WriteConflictPending) as caught:
-        one(fake, "m", "shared.md", _versions(("t-a", "1" * 64), ("t-c", "3" * 64)))  # c 没收到过 a 的
-    assert "shared.md" in str(caught.value)
-    # 三个版本、b 只收到过 a 的：仍不能定
-    with pytest.raises(hd.WriteConflictPending):
-        one(fake, "m", "shared.md", _versions(("t-a", "1" * 64), ("t-b", "2" * 64), ("t-c", "3" * 64)))
-    single = _versions(("t-a", "1" * 64))
-    assert one(fake, "m", "shared.md", single) is next(iter(single.values()))
 
 
 def test_the_continue_delivery_port_is_a_set_in_the_methods_order(tmp_path):

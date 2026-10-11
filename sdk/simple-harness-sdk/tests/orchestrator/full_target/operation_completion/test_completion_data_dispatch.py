@@ -123,17 +123,19 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
             artifact = loop.store.get_artifact(bound.artifact_id)
 
             rules = dispatch.target_rules or TargetRules(namespace=f"workspace:{consumer_task}")
+            # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入；上游验收通过的
+            # 其余文件是交付绑定，带这个下游对上游那次验收的见证
             upstream = manifest_upstream_inputs(resolved.manifest, rules, network=network)
-            assert len(upstream) == 1
-            assert upstream[0].artifact_id == artifact.id
-            assert upstream[0].content_hash == artifact.content_hash
-
-            upstream = dispatch.overlay_attempt_inputs(mission.id, upstream)
+            port = next(item for item in upstream if item.artifact_id == artifact.id)
+            assert port.content_hash == artifact.content_hash and port.acceptance_id == bound.acceptance_id
             assert len(upstream) == (1 if overlay == "none" else 2)
+            assert len(resolved.manifest.deliveries) == (0 if overlay == "none" else 1)
             if overlay != "none":
                 overlaid = next(item for item in upstream if item.path == EXTRA[overlay])
                 # the accepted upstream file, not a seed copy
                 assert overlaid.artifact_id in producer.accepted_artifacts
+                assert overlaid.acceptance_id == bound.acceptance_id and overlaid.witness_id
+            upstream = [port, *(item for item in upstream if item is not port)]
 
             # A caller cannot use the reviewed artifact at a mount the adopted
             # DATA manifest did not select: the TaskGraph dispatch binding refuses the input
@@ -153,9 +155,11 @@ def test_oc2_data_dispatch_freezes_nonempty_accepted_input_and_never_uses_order_
 
                 with monkeypatch.context() as patch:
                     patch.setattr(loop.store, "get_artifact", wrong_owner)
-                    with pytest.raises(Exception, match="artifact ownership"):
-                        dispatch.overlay_attempt_inputs(mission.id, upstream)
-                    with pytest.raises(Exception, match="artifact ownership"):
+                    # 来源读不到（产物归属变了）：解析点名报"来源不可用"，派发不冻结、不新建尝试
+                    refused = dispatch.resolved_inputs(mission.id, network, consumer_occurrence)
+                    assert [str(p.kind) for p in refused.problems] == ["delivery_source_unavailable"]
+                    assert overlay_id in refused.problems[0].detail
+                    with pytest.raises(Exception, match="TASKGRAPH_INPUT_NOT_FROZEN"):
                         _forged_attempt(loop, consumer_task, [item.to_json() for item in upstream])
                 assert loop.store.list_attempts(consumer_task) == []
 

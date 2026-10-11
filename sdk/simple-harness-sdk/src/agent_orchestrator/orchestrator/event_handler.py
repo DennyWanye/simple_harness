@@ -5491,7 +5491,8 @@ class Orchestrator:
 
             context = taskgraph_context
             artifacts = {}
-            for entry in context.manifest.bindings:
+            # 第三批：交付绑定与端口绑定一样物化（同一份清单、同一道身份复核）
+            for entry in (*context.manifest.bindings, *context.manifest.deliveries):
                 artifact = self.store.get_artifact(entry.artifact_id)
                 if artifact is None:
                     raise ArtifactConflict(
@@ -10728,14 +10729,8 @@ class Orchestrator:
         # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
         # so an ORDER-only predecessor contributes nothing.
         try:
+            # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入，没有第二套叠加。
             inputs = new_mode.attempt_inputs(mission.id, task.id)
-            # P2.3o: a patch (or any DATA) binding names the port document; the
-            # files the producer changed overlay the consumer seed so verify /
-            # inspect / summarize start from the accepted workspace, not the
-            # unpatched snapshot.  ORDER-only predecessors still contribute
-            # nothing — overlay only reads producers the manifest already named.
-            if inputs:
-                inputs = new_mode.overlay_attempt_inputs(mission.id, inputs)
         except WriteConflictPending as error:
             # 阶段 D：上游两步把同一个文件写成了两样；这一步不开工，等规划器处理写入冲突修复请求
             self._note(f"task {task.id} not dispatched: {error}")

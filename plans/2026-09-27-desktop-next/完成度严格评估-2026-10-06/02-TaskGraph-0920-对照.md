@@ -51,7 +51,7 @@
 | 15. I02 每任务一个 ACTIVE 修订、历史不可改 | §2 | 按计划在用 | `SDK/storage/htn_schema.py:127-128`（唯一索引）；九表不可改删触发器（`taskgraph_schema.DDL`） | 无 |
 | 16. I03 每个目标最多一个采用方法 | §2 | 按计划在用 | `taskgraph_one_adopted_per_goal_idx`（DDL） | 无 |
 | 17. I04 方法内必需槽都满足；compound 不建 Worker 尝试 | §2 | 按计划在用 | `SDK/graph/eligibility.py`（改坏 M12）；`SDK/orchestrator/hierarchical_dispatch.py` 复合阶段 | 无 |
-| 18. I05 ORDER 不传文件，DATA 只绑声明端口 | §2 | 做法不同 | `SDK/orchestrator/hierarchical_dispatch.py:3671-4015`（`_is_continuation`：接续步骤顺带交出它收到的文件）；改坏 M04 | B1 |
+| 18. I05 ORDER 不传文件，DATA 只绑声明端口 | §2 | 条文已改（2026-10-11 第三批） | `SDK/orchestrator/hierarchical_dispatch.py`（`delivery_sources`）、`SDK/artifacts/input_bindings.py`（`resolve_deliveries`）：数据边上游交出验收的全部文件，每份进冻结清单并带见证；改坏 MU-02/05/06、SM-25～28 | B1（已按 I05 新条文登记） |
 | 19. I06 发给 Worker 的输入全部冻结，恢复不取最新 | §2 | 按计划在用 | `SDK/storage/taskgraph_attempt_inputs.py:109-256`；`SDK/orchestrator/taskgraph_dispatch.py:77-131` | 库层守卫被迁移 30 放宽一处（见 C5） |
 | 20. I07 身份完整匹配，不凭文本/前缀授权 | §2 | 按计划在用 | `SDK/orchestrator/taskgraph_dispatch.py:77-131`；`SDK/graph/taskgraph_sharing.py:52-219` | 无 |
 | 21. I08 历史完成不回退，当前有效性另算 | §2 | 按计划在用 | `SDK/orchestrator/carried_review.py:54`（改要求后旧验收不算数但不回退）；`acceptance_id_for(任务, 结果, 要求版本)` | 无 |
@@ -289,7 +289,7 @@
 
 | 编号 | 计划原文 | 现状（代码） | 裁决出处 | 用户原话依据 |
 |---|---|---|---|---|
-| B1 | I05"ORDER 不传播文件/授权" | 接续步骤顺带交出收到的文件：`SDK/orchestrator/hierarchical_dispatch.py:3671-4015` | 补全方案第 2 版第七节第 1 条 | 无 |
+| B1 | I05"ORDER 不传播文件/授权" | 2026-10-11 第三批：I05 条文改为"数据边上游交出验收的全部文件、每份进冻结清单并带见证"；实现 `SDK/artifacts/input_bindings.py`（`resolve_deliveries`）、`SDK/orchestrator/hierarchical_dispatch.py`（`delivery_sources`） | 编程测评-第三批-接力文件见证-方案-2026-10-11.md | 无 |
 | B2 | §6.5"新 Mission 在第一次 TaskGraph 提交前启用"（由明确命令） | 建任务同事务绑定：`SDK/deployment/assembly.py:118-127` | 第七节第 2 条；HTN 计划表一 16 | 有（转述：HTN 计划第二节"都是用户逐项定过"；记忆"09-27 所有功能默认开启"） |
 | B3 | §3.1/§3.3 三种读上下文与四个装配函数 | 类方法与 `PlanMutationSources`，无联合返回类型（第 32、44、60～64 条） | 第七节第 3 条 | 无 |
 | B4 | 附录C §3.1-5"升级不能覆盖旧清单" | v5 清单原地重写多次：`SDK/graph/network_codec.py:141` | 第七节第 4 条 | 命中 A#17 |

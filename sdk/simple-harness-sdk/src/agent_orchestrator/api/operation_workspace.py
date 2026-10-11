@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..runtime.action_schema import is_operation_candidate_path
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..observability.secrets import find_secrets
@@ -57,7 +58,7 @@ def operation_workspace(loop: Any, mission: Any, *, principal: Any) -> dict[str,
         for ref in acceptance.artifact_refs:
             artifact = store.get_artifact(ref.id)
             if (artifact is None or artifact.mission_id != mission.id
-                    or not artifact.path.startswith("actions/") or not artifact.path.endswith(".json")
+                    or not is_operation_candidate_path(artifact.path) or not artifact.path.endswith(".json")
                     or artifact.verification_status != "VERIFIED" or artifact.size_bytes > 262144
                     or artifact.content_hash != ref.content_hash):
                 continue

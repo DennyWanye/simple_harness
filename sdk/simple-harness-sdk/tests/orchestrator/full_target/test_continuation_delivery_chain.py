@@ -5,8 +5,10 @@
    ``desktop.continue-delivery``) delivers the next version of what it received,
    but only its own file reached the next step: in "slugify.py → test_slugify.py →
    NOTES.md" the third step had the tests but not the module, pytest failed on the
-   import, the Mission failed.  Its delivery now carries the inputs its accepted
-   Attempt was frozen with (real producer, artifact id, hash), nearest version wins.
+   import, the Mission failed.  Its delivery now carries what its accepted Attempt was
+   frozen with — read from that acceptance's own frozen manifest (2026-10-11 第三批:
+   ``delivery_sources``), never from its latest result — and every delivered file
+   carries the consumer's licence over the real producer's acceptance.
 2. A hierarchical primitive with the operation candidate port was never given the
    candidate contract (its Task declares no file outputs), so it invented a format
    outside ``actions/`` and the operation workspace found no candidate.
@@ -20,9 +22,7 @@ import pytest
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.semantic_base import VersionedRef
 from agent_orchestrator.orchestrator import hierarchical_dispatch as hd
-from agent_orchestrator.orchestrator.taskgraph_dispatch import _intent_inputs
 from agent_orchestrator.runtime.action_schema import OPERATION_CANDIDATE_FILE, OPERATION_CANDIDATE_PORT
-from agent_orchestrator.storage.store import StoreError
 
 SCHEMA = VersionedRef("desktop.workspace-outputs", 1, "a" * 64)
 M = "mission-chain"
@@ -34,98 +34,6 @@ def _port(key):
 
 def _artifact(task, path, digest, artifact_id):
     return SimpleNamespace(id=artifact_id, mission_id=M, task_id=task, path=path, content_hash=digest)
-
-
-class _Store:
-    """Only the reads ``carried_inputs`` makes, over three accepted steps."""
-
-    def __init__(self, *, tampered=False):
-        self.artifacts = {
-            "a-module": _artifact("t-module", "slugify.py", "1" * 64, "a-module"),
-            "a-tests": _artifact("t-tests", "test_slugify.py", "2" * 64, "a-tests"),
-        }
-        self.tasks = {
-            "t-module": SimpleNamespace(id="t-module", mission_id=M, accepted_result_id="r-module",
-                                        accepted_artifacts=("a-module",)),
-            "t-tests": SimpleNamespace(id="t-tests", mission_id=M, accepted_result_id="r-tests",
-                                       accepted_artifacts=("a-tests",)),
-        }
-        module_input = UpstreamInput("t-module", "slugify.py", ("9" if tampered else "1") * 64, "a-module")
-        self.results = {"r-tests": SimpleNamespace(envelope=SimpleNamespace(attempt_id="t-tests:attempt-1"))}
-        self.intents = {"t-tests:attempt-1": SimpleNamespace(config={"inputs": [module_input.to_json()]})}
-
-    def get_task(self, task_id):
-        return self.tasks.get(task_id)
-
-    def get_result(self, result_id):
-        return self.results.get(result_id)
-
-    def get_intent_for_subject(self, subject):
-        return self.intents.get(subject)
-
-    def get_artifact(self, artifact_id):
-        return self.artifacts.get(artifact_id)
-
-
-@pytest.fixture
-def continuation(monkeypatch):
-    kinds = {"t-tests": (_port("delivery"),), "t-module": ()}
-
-    class _Htn:
-        def __init__(self, store):
-            pass
-
-        def task_semantics_of(self, mission_id, task_id):
-            inputs = kinds.get(task_id)
-            if inputs is None:
-                return None
-            return SimpleNamespace(input_ports=inputs, output_ports=(_port("delivery"),),
-                                   side_effect_kind=None)
-
-    monkeypatch.setattr(hd, "HtnStore", _Htn)
-
-
-def test_a_continuation_producer_carries_what_it_received(continuation):
-    """**Mutation**: return ``overlaid`` without the carried entries → red."""
-    store = _Store()
-    assert hd.carried_inputs(store, M, "t-tests") == [
-        UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
-    # a preparation producer (no input ports) carries nothing
-    assert hd.carried_inputs(store, M, "t-module") == []
-
-
-def test_a_tampered_or_unaccepted_carried_entry_is_not_carried(continuation):
-    assert hd.carried_inputs(_Store(tampered=True), M, "t-tests") == []
-    store = _Store()
-    store.tasks["t-module"].accepted_artifacts = ()
-    assert hd.carried_inputs(store, M, "t-tests") == []
-
-
-def _intent(inputs, data_inputs):
-    frozen = {"version": 2, "source_revision": 1, "manifest_hash": "m" * 64,
-              "target_rules": None, "data_inputs": [item.to_json() for item in data_inputs]}
-    message = {"text": "x"}
-    from agent_orchestrator.contracts.models import sha256_hex
-    return SimpleNamespace(config={"taskgraph_inputs": frozen, "inputs": [i.to_json() for i in inputs],
-                                   "message": message}, input_hash=sha256_hex(message))
-
-
-def test_the_frozen_check_accepts_the_carried_closure_and_nothing_else(monkeypatch):
-    """**Mutation**: drop the ``closure`` allowance → the first assertion goes red."""
-    from agent_orchestrator.orchestrator import taskgraph_dispatch as td
-
-    direct = UpstreamInput("t-tests", "test_slugify.py", "2" * 64, "a-tests")
-    carried = UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")
-    monkeypatch.setattr(td, "decode_target_rules", lambda raw: None)
-    monkeypatch.setattr(td, "manifest_upstream_inputs", lambda manifest, rules, network=None: [direct])
-    both = [carried, direct]
-    got = _intent_inputs(_intent(both, both), None, source_revision=1, manifest_hash="m" * 64,
-                         carried=lambda producer: [carried] if producer == "t-tests" else [])
-    assert list(got) == both
-    stranger = UpstreamInput("t-other", "evil.py", "3" * 64, "a-other")
-    with pytest.raises(StoreError, match="PRODUCER_MISMATCH"):
-        _intent_inputs(_intent([stranger, direct], [stranger, direct]), None, source_revision=1,
-                       manifest_hash="m" * 64, carried=lambda producer: [carried])
 
 
 def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch):
@@ -216,72 +124,121 @@ def test_the_mission_judge_view_keeps_tool_authority_while_its_mission_is_live()
     assert refusal(fake, "task-x:attempt-9") == "attempt_unavailable"
 
 
+# ---------------------------------------------------------------- delivery_sources (第三批)
 
-def _bind_version_rules(fake) -> None:
-    """2026-10-09 第 4 条：铺工作区的三步（收齐版本、选版本、接力判断）是调度类的方法，替身借用。"""
-    from functools import partial
-    for name in ("_one_version", "_delivery_versions", "_choose_versions"):
-        setattr(fake, name, partial(getattr(hd.HierarchicalDispatch, name), fake))
 
-def test_a_continuation_producer_hands_on_every_file_it_had_accepted(continuation):
-    """2026-09-29 真机第十一局：写文件那一步一次写出 README.md / test_wordfreq.py /
-    wordfreq.py 并全部通过核验，端口只选了 README.md；交接时只补"原工作区文件和测试
-    文件"，wordfreq.py 被丢掉，下一步跑 pytest 找不到模块，整局失败。接力型上游通过
-    核验的全部文件都要交给下一步。2026-10-09 库存题：起始型上游（没有输入端口）一步写出
-    四个模块、端口只认领 cli.py，下一步只拿到 cli.py——数据边接上的写入型上游一律交出它
-    通过核验的全部文件；只读上游与只有先后（ORDER）的上游仍不交（规则不变）。
+def _acceptance(task, acceptance_id, refs, manifest_hash="m" * 64):
+    return SimpleNamespace(acceptance_id=acceptance_id, mission_id=M, task_id=task, input_manifest_hash=manifest_hash,
+                           artifact_refs=tuple(SimpleNamespace(id=i, content_hash=h) for i, h in refs),
+                           validity="CURRENT")
 
-    **Mutation**: drop the own-accepted-files pass in ``overlay_attempt_inputs`` → red."""
-    store = _Store()
-    store.artifacts.update({
+
+def _sources_world(monkeypatch, *, read_only_module=False):
+    """三步：t-module 起始写 slugify.py + notes.md；t-tests 接着交付（收到 slugify.py）写 test_slugify.py、
+    README.md、wordfreq.py 与一份操作申请单；下游 t-notes 接 t-tests 的端口文件 README.md。"""
+    from agent_orchestrator.contracts.htn import SideEffectKind
+    from agent_orchestrator.artifacts.input_bindings import DeliveryBinding, InputManifest
+    from agent_orchestrator.contracts.htn import TaskRef
+
+    artifacts = {
+        "a-module": _artifact("t-module", "slugify.py", "1" * 64, "a-module"),
+        "a-notes": _artifact("t-module", "notes.md", "6" * 64, "a-notes"),
+        "a-tests": _artifact("t-tests", "test_slugify.py", "2" * 64, "a-tests"),
         "a-readme": _artifact("t-tests", "README.md", "3" * 64, "a-readme"),
         "a-mod2": _artifact("t-tests", "wordfreq.py", "4" * 64, "a-mod2"),
         "a-act": _artifact("t-tests", "actions/action_candidate.json", "5" * 64, "a-act"),
-    })
-    store.tasks["t-tests"].accepted_artifacts = ("a-tests", "a-readme", "a-mod2", "a-act")
-    store.get_mission = lambda mission_id: SimpleNamespace(final_report={})
-    # 阶段 D（10-03）起开工前先查写入冲突；这里两个上游有先后、没有冲突
-    fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
-                           carried_inputs=lambda mission_id, task_id: hd.carried_inputs(
-        store, mission_id, task_id), semantics=lambda: hd.HtnStore(store))
-    _bind_version_rules(fake)
-    port = [UpstreamInput("t-tests", "README.md", "3" * 64, "a-readme")]
-    got = hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, port)
-    assert [(item.task_id, item.path) for item in got] == [
-        ("t-tests", "README.md"), ("t-module", "slugify.py"),
-        ("t-tests", "test_slugify.py"), ("t-tests", "wordfreq.py")]
-    # 起始型上游（没有输入端口）：通过核验的全部文件同样交接（2026-10-09）
-    store.artifacts["a-extra"] = _artifact("t-module", "notes.md", "6" * 64, "a-extra")
-    store.tasks["t-module"].accepted_artifacts = ("a-module", "a-extra")
-    only = [UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
-    assert [item.path for item in hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, only)] == [
-        "notes.md", "slugify.py"]
-
-
-def test_a_read_only_producer_still_hands_on_only_its_port_file(monkeypatch):
-    """2026-10-09：写入型上游一律交出全部通过核验的文件；只读上游（如核对、报告）不改文件，
-    它新写的非测试文件仍不交接。
-
-    **Mutation**: drop the ``task_id in read_only`` skip in ``overlay_attempt_inputs`` → red."""
-    from agent_orchestrator.contracts.htn import SideEffectKind
+        "a-hidden": _artifact("t-tests", ".cache/x", "7" * 64, "a-hidden"),
+    }
+    acceptances = {
+        "acc-module": _acceptance("t-module", "acc-module", [("a-module", "1" * 64), ("a-notes", "6" * 64)], "e" * 64),
+        "acc-tests": _acceptance("t-tests", "acc-tests", [("a-tests", "2" * 64), ("a-readme", "3" * 64),
+                                                           ("a-mod2", "4" * 64), ("a-act", "5" * 64),
+                                                           ("a-hidden", "7" * 64)], "f" * 64),
+    }
+    # t-tests 的冻结清单：端口文件 slugify.py（来自 acc-module），无交付；t-module 的清单为空
+    from test_delivery_bindings import _port as _bound_port
+    tests_manifest = InputManifest(consumer_task_ref=TaskRef("t-tests"), bindings=(
+        _bound_port("t-module", "acc-module", "a-module", "slugify.py", "1" * 64, consumer=TaskRef("t-tests")),))
+    manifests = {"f" * 64: tests_manifest.to_json(),
+                 "e" * 64: InputManifest(consumer_task_ref=TaskRef("t-module")).to_json()}
+    kinds = {"t-tests": (_port("delivery"),), "t-module": ()}
 
     class _Htn:
         def __init__(self, store):
             pass
 
         def task_semantics_of(self, mission_id, task_id):
-            return SimpleNamespace(input_ports=(), output_ports=(_port("delivery"),),
-                                   side_effect_kind=SideEffectKind.EXTERNAL_READ,
+            inputs = kinds.get(task_id)
+            if inputs is None:
+                return None
+            return SimpleNamespace(input_ports=inputs, output_ports=(_port("delivery"),),
+                                   side_effect_kind=(SideEffectKind.EXTERNAL_READ
+                                                     if read_only_module and task_id == "t-module" else None),
                                    capability_requirements=(), resource_writes=())
 
+        def get_acceptance(self, acceptance_id):
+            return acceptances[acceptance_id]
+
+        def get_input_manifest(self, digest):
+            return manifests[digest]
+
     monkeypatch.setattr(hd, "HtnStore", _Htn)
-    store = _Store()
-    store.get_mission = lambda mission_id: SimpleNamespace(final_report={})
-    store.artifacts["a-extra"] = _artifact("t-module", "notes.md", "6" * 64, "a-extra")
-    store.tasks["t-module"].accepted_artifacts = ("a-module", "a-extra")
-    fake = SimpleNamespace(store=store, write_conflicts=lambda mission_id, touching=None: [],
-                           carried_inputs=lambda mission_id, task_id: [],
-                           semantics=lambda: hd.HtnStore(store))
-    _bind_version_rules(fake)
-    only = [UpstreamInput("t-module", "slugify.py", "1" * 64, "a-module")]
-    assert [item.path for item in hd.HierarchicalDispatch.overlay_attempt_inputs(fake, M, only)] == ["slugify.py"]
+    store = SimpleNamespace(get_artifact=artifacts.get,
+                            get_mission=lambda mission_id: SimpleNamespace(final_report={"workspace_seed": {"slugify.py": "x"}}))
+    fake = SimpleNamespace(store=store, semantics=lambda: hd.HtnStore(store),
+                           target_rules_for=lambda task_id: hd.TargetRules(namespace=f"workspace:{task_id}"))
+    return fake, artifacts, tests_manifest
+
+
+def test_delivery_sources_hand_on_every_accepted_file_and_what_a_continuation_received(monkeypatch):
+    """2026-09-29 第十一局 / 2026-10-09 库存题 / 2026-10-11 第三批：写入型上游交出它那次验收通过的全部
+    文件（操作申请单、点开头文件除外）；接续上游另交它自己冻结清单里收到的文件（真实产出者、接力来源
+    标明）；``received`` 记下每个验收冻结过的版本集合，供版本证明。
+
+    **Mutation**: ``delivery_sources`` 不读接续上游的冻结清单（去掉 carried 段）→ red."""
+    from agent_orchestrator.artifacts.input_bindings import InputManifest
+    from agent_orchestrator.contracts.htn import TaskRef
+    from test_delivery_bindings import _port as _bound_port
+
+    fake, artifacts, _ = _sources_world(monkeypatch)
+    consumer = InputManifest(consumer_task_ref=TaskRef("t-notes"), bindings=(
+        _bound_port("t-tests", "acc-tests", "a-readme", "README.md", "3" * 64, consumer=TaskRef("t-notes")),))
+    sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
+    assert sources.unavailable == ()
+    assert sorted((str(f.producer_task_ref), f.path, f.acceptance_id, str(f.carried_from) if f.carried_from else None)
+                  for f in sources.files) == [
+        ("t-module", "slugify.py", "acc-module", "t-tests"),
+        ("t-tests", "README.md", "acc-tests", None),
+        ("t-tests", "test_slugify.py", "acc-tests", None),
+        ("t-tests", "wordfreq.py", "acc-tests", None)]
+    assert sources.received == {"acc-tests": frozenset({("t-module", "slugify.py", "1" * 64)}),
+                                "acc-module": frozenset()}
+
+
+def test_a_read_only_producer_hands_on_only_its_copies_of_original_workspace_files(monkeypatch):
+    """只读上游（核对、报告类）不改文件：它新写的非原工作区文件不交接；原工作区文件的副本照交。
+
+    **Mutation**: 去掉 ``read_only and artifact.path not in seed`` 的跳过 → red."""
+    from agent_orchestrator.artifacts.input_bindings import InputManifest
+    from agent_orchestrator.contracts.htn import TaskRef
+    from test_delivery_bindings import _port as _bound_port
+
+    fake, _, _ = _sources_world(monkeypatch, read_only_module=True)
+    consumer = InputManifest(consumer_task_ref=TaskRef("t-next"), bindings=(
+        _bound_port("t-module", "acc-module", "a-module", "slugify.py", "1" * 64, consumer=TaskRef("t-next")),))
+    sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
+    assert [f.path for f in sources.files] == ["slugify.py"]  # notes.md 不在原工作区，不交
+
+
+def test_an_unreadable_source_is_named_not_skipped(monkeypatch):
+    """验收指向的产物没了或哈希变了：点名报不可用，不悄悄少交。"""
+    from agent_orchestrator.artifacts.input_bindings import InputManifest
+    from agent_orchestrator.contracts.htn import TaskRef
+    from test_delivery_bindings import _port as _bound_port
+
+    fake, artifacts, _ = _sources_world(monkeypatch)
+    del artifacts["a-mod2"]
+    consumer = InputManifest(consumer_task_ref=TaskRef("t-notes"), bindings=(
+        _bound_port("t-tests", "acc-tests", "a-readme", "README.md", "3" * 64, consumer=TaskRef("t-notes")),))
+    sources = hd.HierarchicalDispatch.delivery_sources(fake, M, consumer)
+    assert [(acceptance, "a-mod2" in detail) for acceptance, detail in sources.unavailable] == [("acc-tests", True)]

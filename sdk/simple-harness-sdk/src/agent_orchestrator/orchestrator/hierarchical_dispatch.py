@@ -44,20 +44,26 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
 
 from ..artifacts.input_bindings import (
     AcceptedOutput,
     AcceptedOutputsIndex,
+    DeliveredFile,
+    DeliverySources,
     InputManifest,
     ManifestNotFrozen,
     ResolutionPolicy,
+    ResolutionProblemKind,
     ResolutionResult,
     TargetRules,
+    resolve_deliveries,
 )
+from ..artifacts.taskgraph_inputs import decode_frozen_manifest
 from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs, resolve_input_manifest
+from ..runtime.action_schema import is_operation_candidate_path
 from ..contracts import (
     TERMINAL_MISSION,
     ContractError,
@@ -1098,24 +1104,37 @@ class HierarchicalDispatch:
         # UNBOUND_REQUIRED_PORT, instead of becoming an empty success below.
         if not requirements and not any(port.required for port in binding.input_ports):
             return None
-        return resolve_input_manifest(
+        # P2.3c part 2b: the witnesses this lane needs are keyed by **acceptance
+        # id** and issued to *this* consumer (I19), which is a different question
+        # from ``witnesses()``'s "which condition was this witness taken for".
+        # Passing the precondition map here meant no key ever matched and every
+        # DATA consumer refused with ``WITNESS_MISSING`` whatever the deployment
+        # had recorded.
+        licences = (
+            self.input_witnesses(mission_id, str(spec.task_id))
+            if witnesses is None
+            else witnesses
+        )
+        policy = self.resolution_policy_for(mission_id, now_ms=now_ms,
+                                            consumer=spec.occurrence_id, network=network)
+        result = resolve_input_manifest(
             binding,
             network,
             accepted if accepted is not None else self.accepted_outputs(mission_id, network),
             consumer_occurrence=spec.occurrence_id,
-            # P2.3c part 2b: the witnesses this lane needs are keyed by **acceptance
-            # id** and issued to *this* consumer (I19), which is a different question
-            # from ``witnesses()``'s "which condition was this witness taken for".
-            # Passing the precondition map here meant no key ever matched and every
-            # DATA consumer refused with ``WITNESS_MISSING`` whatever the deployment
-            # had recorded.
-            witnesses=(
-                self.input_witnesses(mission_id, str(spec.task_id))
-                if witnesses is None
-                else witnesses
-            ),
-            policy=self.resolution_policy_for(mission_id, now_ms=now_ms,
-                                              consumer=spec.occurrence_id, network=network),
+            witnesses=licences,
+            policy=policy,
+        )
+        if result.problems or result.manifest is None or not result.manifest.is_frozen:
+            return result
+        # 2026-10-11 第三批：端口解析完、冻结了，再把这些上游交出的其余文件（交付绑定）按同一份
+        # 规则算进清单——每份都带真实产出者那次验收的见证；版本证明不了的报冲突，不替规划器选。
+        return resolve_deliveries(
+            result.manifest,
+            self.delivery_sources(mission_id, result.manifest),
+            target_rules=self.target_rules_for(str(spec.task_id)),
+            witnesses=licences,
+            policy=policy,
         )
 
     def resolution_policy_for(self, mission_id: str, *, now_ms: int | None = None,
@@ -1257,6 +1276,7 @@ class HierarchicalDispatch:
         # 片 B：接在中间目标端口上的步骤，见证发给它实际读到的那份验收（收尾步骤的）。
         delivered = self.goal_port_outputs(mission_id, network, recorded,
                                            complete=self._complete_goals(mission_id, network))
+        covered: set[tuple[str, str]] = set()
         for output in (*recorded, *delivered):
             consumers = {
                 str(network.binding_for_occurrence(item.consumer_occurrence).task_id)
@@ -1264,42 +1284,81 @@ class HierarchicalDispatch:
                 if item.producer_occurrence == output.producer_occurrence
                 and item.output_port == output.output_port
             }
+            # 2026-10-11 第三批：接力文件的真实产出者那次验收也要给这个下游一份见证——与清单构造
+            # 同一处枚举（``delivery_sources`` 读的就是这些验收），一个验收一份，不按文件数发。
+            sources = [(str(output.acceptance_id), int(output.support_revision)),
+                       *self._carried_acceptances(mission_id, str(output.acceptance_id))]
             for consumer in sorted(consumers):
-                acceptance = semantics.get_acceptance(str(output.acceptance_id))
-                usable = acceptance.validity is Validity.CURRENT
-                witness = ValidityWitness(
-                    witness_id="wit-in-"
-                    + content_hash_of({"c": consumer, "a": str(output.acceptance_id), "e": epoch})[
-                        :28
-                    ],
-                    consumer_ref=_typed(TypedRefKind.TASK, consumer),
-                    purpose=self.INPUT_WITNESS_PURPOSE,
-                    truth=TruthValue.TRUE if usable else TruthValue.FALSE,
-                    freshness=Validity.CURRENT if usable else acceptance.validity,
-                    availability=Availability.READABLE,
-                    # ``BLOCKED``, not ``UNAVAILABLE``: the acceptance was read and found
-                    # revoked or superseded, which is a different fact from "the
-                    # library could not be read".
-                    decision=WitnessDecision.USABLE if usable else WitnessDecision.BLOCKED,
-                    scope_id=scope_id,
-                    scope_epoch=epoch,
-                    support_revision=int(output.support_revision),
-                    as_of_ms=int(now_ms),
-                    support_refs=(_typed(TypedRefKind.ACCEPTANCE, str(output.acceptance_id)),),
-                )
-                subject = acceptance_subject(str(output.acceptance_id))
-                stored = self._record_witness(mission_id, witness, subject=subject)
-                if stored is None:
-                    # Since migration 18 the subject is part of the key, so this is no
-                    # longer the DATA lane colliding with the precondition lane: it is
-                    # this consumer already holding a *different* verdict about this
-                    # very acceptance at this very reading of the world.  Skipping is
-                    # the honest answer — the consumer then reports WAITING_DATA,
-                    # which is true — and the anomaly is written down.
-                    self._witness_key_taken(mission_id, witness, subject=subject)
-                    continue
-                issued.append(stored)
+                for acceptance_id, support_revision in sources:
+                    if (consumer, acceptance_id) in covered:
+                        continue
+                    covered.add((consumer, acceptance_id))
+                    stored = self._issue_acceptance_witness(
+                        mission_id, consumer, acceptance_id, support_revision,
+                        epoch=epoch, scope_id=scope_id, now_ms=now_ms)
+                    if stored is not None:
+                        issued.append(stored)
         return tuple(issued)
+
+    def _issue_acceptance_witness(
+        self, mission_id: str, consumer: str, acceptance_id: str, support_revision: int, *,
+        epoch: int, scope_id: str, now_ms: int,
+    ) -> ValidityWitness | None:
+        """One START licence for ``consumer`` over ``acceptance_id``, read now (I19)."""
+
+        acceptance = self.semantics().get_acceptance(acceptance_id)
+        usable = acceptance.validity is Validity.CURRENT
+        witness = ValidityWitness(
+            witness_id="wit-in-"
+            + content_hash_of({"c": consumer, "a": acceptance_id, "e": epoch})[:28],
+            consumer_ref=_typed(TypedRefKind.TASK, consumer),
+            purpose=self.INPUT_WITNESS_PURPOSE,
+            truth=TruthValue.TRUE if usable else TruthValue.FALSE,
+            freshness=Validity.CURRENT if usable else acceptance.validity,
+            availability=Availability.READABLE,
+            # ``BLOCKED``, not ``UNAVAILABLE``: the acceptance was read and found
+            # revoked or superseded, which is a different fact from "the
+            # library could not be read".
+            decision=WitnessDecision.USABLE if usable else WitnessDecision.BLOCKED,
+            scope_id=scope_id,
+            scope_epoch=epoch,
+            support_revision=int(support_revision),
+            as_of_ms=int(now_ms),
+            support_refs=(_typed(TypedRefKind.ACCEPTANCE, acceptance_id),),
+        )
+        subject = acceptance_subject(acceptance_id)
+        stored = self._record_witness(mission_id, witness, subject=subject)
+        if stored is None:
+            # Since migration 18 the subject is part of the key, so this is no
+            # longer the DATA lane colliding with the precondition lane: it is
+            # this consumer already holding a *different* verdict about this
+            # very acceptance at this very reading of the world.  Skipping is
+            # the honest answer — the consumer then reports WAITING_DATA,
+            # which is true — and the anomaly is written down.
+            self._witness_key_taken(mission_id, witness, subject=subject)
+            return None
+        return stored
+
+    def _carried_acceptances(self, mission_id: str, acceptance_id: str) -> list[tuple[str, int]]:
+        """The acceptances a continuation producer's accepted Attempt was frozen with
+        (acceptance id, support revision) — the real producers of what it hands on."""
+
+        semantics = self.semantics()
+        try:
+            acceptance = semantics.get_acceptance(acceptance_id)
+        except StoreError:
+            return []
+        if acceptance.mission_id != mission_id or not _is_continuation(
+                semantics.task_semantics_of(mission_id, str(acceptance.task_id))):
+            return []
+        try:
+            frozen = decode_frozen_manifest(semantics.get_input_manifest(acceptance.input_manifest_hash))
+        except (StoreError, ContractError):
+            return []  # the resolution names this source as unavailable; nothing to license
+        found: dict[str, int] = {}
+        for item in (*frozen.bindings, *frozen.deliveries):
+            found.setdefault(item.acceptance_id, int(item.support_revision))
+        return sorted(found.items())
 
     def _record_witness(
         self, mission_id: str, witness: ValidityWitness, *, subject: str
@@ -3669,7 +3728,10 @@ class HierarchicalDispatch:
         Only the resolved :class:`InputManifest` — §24.1 decision 4's "no longer
         collect every ancestor's files".  An ORDER-only predecessor contributes
         nothing however many artifacts it accepted, which is the property T015 /
-        T066 exist to hold.
+        T066 exist to hold.  2026-10-11 第三批: the manifest carries the delivery
+        bindings too, so this is a straight materialisation of it; a version conflict
+        the resolution reported is handed to the write-conflict repair request rather
+        than stopping the task as an artifact conflict (2026-10-09 第 4 条).
         """
 
         network = self.network(mission_id)
@@ -3677,33 +3739,33 @@ class HierarchicalDispatch:
         if spec is None:
             raise missing_bindings(mission_id, [task_id])
         result = self.input_result(mission_id, network, spec)
-        if result is None or result.manifest is None:
+        if result is None:
             return []
-        if not result.manifest.is_frozen:
+        clashes = []
+        for problem in result.problems:
+            if problem.kind not in (ResolutionProblemKind.TARGET_PATH_CONFLICT,
+                                    ResolutionProblemKind.DELIVERY_VERSION_CONFLICT):
+                continue
+            artifacts = [self.store.get_artifact(artifact_id) for artifact_id in problem.candidates]
+            paths = sorted({artifact.path for artifact in artifacts if artifact is not None})
+            steps = list(problem.producers) or [
+                artifact.task_id for artifact in artifacts if artifact is not None]
+            clashes.append({"path": paths[0] if paths else "", "artifacts": list(problem.candidates),
+                            "steps": list(dict.fromkeys(steps)), "consumer": task_id})
+        if clashes:
+            raise WriteConflictPending(clashes)
+        if result.manifest is None or not result.manifest.is_frozen:
             # A producer that has not finished leaves a *symbolic* binding.  That is
             # "not resolved yet", which is the DATA gate's business (WAITING_DATA) and
             # not a materialisation failure — so nothing is placed and nothing raises.
             return []
-        rules = self.target_rules_for(task_id)
-        # 2026-10-09 第 4 条：两份内容不同的端口文件落在同一个位置，是计划里的写入冲突（规划器点名了
-        # 两份、没说用哪份），不是产物库坏了——交写入冲突修复请求，不以"产物冲突"停掉任务。别的
-        # 物化问题照旧由 manifest_upstream_inputs 报。
-        from ..artifacts.input_bindings import ResolutionProblemKind, materialise_plan
-        plan = materialise_plan(result.manifest, rules)
-        clashes = []
-        by_artifact = {binding.artifact_id: binding for binding in result.manifest.bindings}
-        for problem in plan.problems:
-            if problem.kind is not ResolutionProblemKind.TARGET_PATH_CONFLICT:
-                continue
-            artifacts = [self.store.get_artifact(artifact_id) for artifact_id in problem.candidates]
-            paths = sorted({artifact.path for artifact in artifacts if artifact is not None})
-            clashes.append({"path": paths[0] if paths else "", "artifacts": list(problem.candidates),
-                            "steps": [str(by_artifact[artifact_id].producer_task_ref) for artifact_id in problem.candidates
-                                      if artifact_id in by_artifact],
-                            "consumer": task_id})
+        # 阶段 D（10-03）：开工前先查这一步直接上游牵涉的写入冲突（规则一：没有先后的两步把同一文件写成
+        # 两样）。独立核验 opt.185 M1：这道检查原先在被删的叠加函数里，不能随它一起没了。
+        producers = tuple(dict.fromkeys(str(item.producer_task_ref) for item in result.manifest.bindings))
+        clashes = self.producer_write_conflicts(mission_id, network, touching=producers)
         if clashes:
             raise WriteConflictPending(clashes)
-        return manifest_upstream_inputs(result.manifest, rules, network=network)
+        return manifest_upstream_inputs(result.manifest, self.target_rules_for(task_id), network=network)
 
     def write_conflicts(self, mission_id: str, *, touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
         """Files the plan lets two versions of reach one place with nothing saying which (阶段 D；
@@ -3712,47 +3774,19 @@ class HierarchicalDispatch:
         Rule one: two steps with no order between them each delivered a different content at one
         path.  Which one a later step starts from is not something the plan says, and picking one
         ("first come") would be the Harness deciding it.  Reported as ``{path, steps, artifacts}``.
+        The files are the ones each step's *acceptance* covers (2026-10-11 第三批: the same set the
+        manifest delivers), read off the acceptances that feed a DATA edge.
 
-        Rule two: several versions of one path reach one consumer (its upstreams' delivered files
-        and what they carried from theirs), and the frozen manifests prove no relay that makes one
-        of them the latest; or two of its *port* files land on one path.  Reported with the
-        ``consumer`` task — ordering the producers does not help there, so the Planner must know
-        which step takes both.  The same reading dispatch uses (:meth:`overlay_attempt_inputs`), so
-        the repair request and the refusal to start never disagree.  A relay (one step delivers the
-        next version of a file it demonstrably received) is not a conflict; identical content is
-        not one either.  ``touching`` keeps only the conflicts one of those producer tasks is a party
-        to (rule one) or feeds (rule two).
+        Rule two: several versions of one path reach one consumer and the frozen manifests prove
+        no relay that makes one of them the latest; or two of its *port* files land on one path.
+        That is the delivery resolution's own refusal (:func:`resolve_deliveries`), read back from
+        :meth:`attempt_inputs` so the repair request and the refusal to start never disagree.  A
+        relay (one step delivers the next version of a file it demonstrably received) is not a
+        conflict; identical content is not one either.  ``touching`` keeps only the conflicts one
+        of those producer tasks is a party to (rule one) or feeds (rule two).
         """
-        from ..graph.projection_validation import ordering_of
-
         network = self.network(mission_id)
-        occurrences: dict[str, list[Any]] = {}
-        for spec in network.occurrences:
-            if spec.form is TaskForm.PRIMITIVE:
-                occurrences.setdefault(str(spec.task_id), []).append(spec.occurrence_id)
-        holders: dict[str, list[tuple[str, Any]]] = {}
-        for task_id in sorted(occurrences):
-            producer = self.store.get_task(task_id)
-            for artifact_id in (() if producer is None else producer.accepted_artifacts):
-                artifact = self.store.get_artifact(artifact_id)
-                if artifact is None or artifact.path.startswith(("actions/", ".")):
-                    continue
-                holders.setdefault(artifact.path, []).append((task_id, artifact))
-        ordered = None
-        found: list[dict[str, Any]] = []
-        for path in sorted(holders):
-            entries = holders[path]
-            for seat, (left, left_file) in enumerate(entries):
-                for right, right_file in entries[seat + 1:]:
-                    if left == right or left_file.content_hash == right_file.content_hash:
-                        continue
-                    if touching is not None and not {left, right} & set(touching):
-                        continue
-                    ordered = ordered or ordering_of(network)
-                    if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
-                        continue
-                    found.append({"path": path, "steps": [left, right],
-                                  "artifacts": [left_file.id, right_file.id]})
+        found = self.producer_write_conflicts(mission_id, network, touching=touching)
         consumers: dict[str, set[str]] = {}
         for item in network.data_requirements:
             consumers.setdefault(str(network.occurrence(item.consumer_occurrence).task_id), set()).add(
@@ -3772,153 +3806,150 @@ class HierarchicalDispatch:
                 # 没做完的（含停下的）照旧报：那是规划器与事后取证都要看的事实。
                 continue
             try:
-                inputs = self.attempt_inputs(mission_id, consumer)
-            except WriteConflictPending as error:  # two port documents at one place
-                note(error.conflicts)
-                continue
-            except ArtifactConflict:
-                continue  # 那一步自己的别的物化问题，由它自己的派发报，不在这里替它停
-            if not inputs:
-                continue
-            versions, ports = self._delivery_versions(mission_id, inputs)
-            try:
-                self._choose_versions(mission_id, versions, ports, consumer=consumer)
+                self.attempt_inputs(mission_id, consumer)
             except WriteConflictPending as error:
                 note(error.conflicts)
+            except ArtifactConflict:
+                continue  # 那一步自己的别的物化问题，由它自己的派发报，不在这里替它停
         return found
 
-    def _one_version(self, mission_id: str, path: str, versions: Mapping[str, UpstreamInput]) -> UpstreamInput:
-        """Of several versions of one path reaching a step, the one its upstreams prove is the
-        latest (its producer's frozen inputs held every other version); otherwise a write conflict."""
+    def producer_write_conflicts(self, mission_id: str, network: TaskNetworkSnapshot, *,
+                                 touching: Sequence[str] | None = None) -> list[dict[str, Any]]:
+        """Rule one of :meth:`write_conflicts`, on its own so dispatch can ask it before a step
+        starts without re-entering the per-consumer resolution (rule two)."""
+        from ..graph.projection_validation import ordering_of
 
-        if len(versions) == 1:
-            return next(iter(versions.values()))
-        for candidate in versions.values():
-            others = [item for item in versions.values() if item is not candidate]
-            carried = list(self.carried_inputs(mission_id, candidate.task_id))
-            if all(any(c.task_id == other.task_id and c.path == other.path and c.content_hash == other.content_hash
-                       for c in carried) for other in others):
-                return candidate
-        items = sorted(versions.values(), key=lambda item: (item.task_id, item.content_hash))
-        raise WriteConflictPending([{"path": path, "steps": [item.task_id for item in items],
-                                     "artifacts": [item.artifact_id for item in items]}])
+        semantics = self.semantics()
+        occurrences: dict[str, list[Any]] = {}
+        for spec in network.occurrences:
+            if spec.form is TaskForm.PRIMITIVE:
+                occurrences.setdefault(str(spec.task_id), []).append(spec.occurrence_id)
+        producers_by_acceptance: dict[str, str] = {}
+        for row in semantics.list_acceptance_outputs(mission_id):
+            producers_by_acceptance.setdefault(str(row["acceptance_id"]), str(row["producer_task_ref"]))
+        holders: dict[str, list[tuple[str, Any]]] = {}
+        for acceptance_id, task_id in sorted(producers_by_acceptance.items()):
+            if task_id not in occurrences:
+                continue
+            for ref in semantics.get_acceptance(acceptance_id).artifact_refs:
+                artifact = self.store.get_artifact(ref.id)
+                if (artifact is None or artifact.content_hash != ref.content_hash
+                        or is_operation_candidate_path(artifact.path) or artifact.path.startswith(".")):
+                    continue
+                holders.setdefault(artifact.path, []).append((task_id, artifact))
+        ordered = None
+        found: list[dict[str, Any]] = []
+        for path in sorted(holders):
+            entries = holders[path]
+            for seat, (left, left_file) in enumerate(entries):
+                for right, right_file in entries[seat + 1:]:
+                    if left == right or left_file.content_hash == right_file.content_hash:
+                        continue
+                    if touching is not None and not {left, right} & set(touching):
+                        continue
+                    ordered = ordered or ordering_of(network)
+                    if any(ordered(a, b) for a in occurrences[left] for b in occurrences[right]):
+                        continue
+                    found.append({"path": path, "steps": [left, right],
+                                  "artifacts": [left_file.id, right_file.id]})
+        return found
 
-    def _delivery_versions(
-        self, mission_id: str, inputs: Sequence[UpstreamInput]
-    ) -> tuple[dict[str, dict[str, UpstreamInput]], dict[str, list[UpstreamInput]]]:
-        """Every version of every path that reaches a step through its DATA-bound producers.
+    def delivery_sources(self, mission_id: str, manifest: InputManifest) -> DeliverySources:
+        """What the DATA-bound producers of ``manifest``'s consumer hand on, read once.
 
-        Sources, each by its real producer, artifact id and hash: the port documents themselves;
-        each writing producer's accepted files (2026-09-29 第十一局 / 2026-10-09 库存题：数据边接上
-        的写入型上游交出它通过核验的全部文件，操作申请单除外); a read-only producer's accepted
-        copies of original-workspace files only (it changes nothing, and its new ``tests/`` stay off
-        the consumer's baseline — P2.3u); and what a continuation producer carried from its own
-        upstreams (NEXT-TG-1.0 2A.1d).  Nothing is chosen here: ``versions[path]`` keeps one entry
-        per distinct hash, ``ports[path]`` the port documents at that path.
+        The one place the delivery rule is spelled out (2026-10-11 第三批):
+
+        * a writing producer hands on every file its *acceptance* covers
+          (``Acceptance.artifact_refs`` — the per-acceptance set, not the task-level
+          one, so a re-acceptance changes it in step with the licence);
+        * a read-only producer hands on only its copies of original-workspace files
+          (it changes nothing; its new ``tests/`` stay off the consumer's baseline);
+        * operation candidates and dot-files are not part of the delivered work
+          (the same two exclusions :meth:`write_conflicts` applies);
+        * a continuation producer (every input port also an output port) also hands
+          on what it received — read from its own frozen manifest, one level, since
+          that manifest already holds what *it* was handed;
+        * ``received`` maps each acceptance to the exact ``(producer, path, hash)`` set
+          its Attempt was frozen with — the only proof of a relay the resolution accepts.
+
+        A source that cannot be read is named in ``unavailable`` rather than skipped.
         """
         from .occurrence_tasks import read_only_leaf
 
         mission = self.store.get_mission(mission_id)
         if mission is None:
-            raise ContractError("input overlay Mission is unavailable")
+            raise ContractError("delivery sources: the Mission is unavailable")
         seed = set((mission.final_report or {}).get("workspace_seed", {}))
-        versions: dict[str, dict[str, UpstreamInput]] = {}
-        ports: dict[str, list[UpstreamInput]] = {}
+        semantics = self.semantics()
+        files: list[DeliveredFile] = []
+        received: dict[str, frozenset[tuple[str, str, str]]] = {}
+        unavailable: list[tuple[str, str]] = []
+        direct: dict[str, tuple[str, int]] = {}
+        for binding in manifest.bindings:
+            direct.setdefault(binding.acceptance_id, (str(binding.producer_task_ref), int(binding.support_revision)))
 
-        def add(item: UpstreamInput) -> None:
-            versions.setdefault(item.path, {}).setdefault(item.content_hash, item)
+        def frozen_inputs_of(acceptance: Any) -> tuple[DeliveredFile, ...] | None:
+            """The files the producer's accepted Attempt started from, as its manifest froze them."""
+            try:
+                frozen = decode_frozen_manifest(semantics.get_input_manifest(acceptance.input_manifest_hash))
+            except (StoreError, ContractError) as error:
+                unavailable.append((str(acceptance.acceptance_id), f"frozen inputs unreadable: {error}"))
+                return None
+            rules = self.target_rules_for(str(acceptance.task_id))
+            entries: list[DeliveredFile] = []
+            for port in frozen.bindings:
+                path = rules.target_for(port).path
+                if is_operation_candidate_path(path):
+                    continue
+                entries.append(DeliveredFile(port.producer_task_ref, port.acceptance_id,
+                                             int(port.support_revision), port.artifact_id, path, port.content_hash))
+            for item in frozen.deliveries:
+                entries.append(DeliveredFile(item.producer_task_ref, item.acceptance_id, int(item.support_revision),
+                                             item.artifact_id, item.path, item.content_hash))
+            return tuple(entries)
 
-        for item in inputs:
-            ports.setdefault(item.path, []).append(item)
-            add(item)
-        for task_id in dict.fromkeys(item.task_id for item in inputs):
-            producer = self.store.get_task(task_id)
-            if producer is None or producer.mission_id != mission_id:
-                raise ContractError("input overlay producer is outside the Mission")
-            semantic = self.semantics().task_semantics_of(mission_id, task_id)
+        for acceptance_id, (producer, support) in sorted(direct.items()):
+            try:
+                acceptance = semantics.get_acceptance(acceptance_id)
+            except StoreError as error:
+                unavailable.append((acceptance_id, str(error)))
+                continue
+            if acceptance.mission_id != mission_id or str(acceptance.task_id) != producer:
+                unavailable.append((acceptance_id, "the acceptance belongs to another Mission or task"))
+                continue
+            semantic = semantics.task_semantics_of(mission_id, producer)
             read_only = semantic is not None and read_only_leaf(semantic)
-            for artifact_id in producer.accepted_artifacts:
-                artifact = self.store.get_artifact(artifact_id)
-                if (artifact is None or artifact.mission_id != mission_id
-                        or artifact.task_id != producer.id):
-                    raise ContractError("input overlay artifact ownership is unavailable or differs")
-                if artifact.path.startswith("actions/"):
-                    continue  # an operation candidate is not part of the delivered work
+            for ref in acceptance.artifact_refs:
+                artifact = self.store.get_artifact(ref.id)
+                if (artifact is None or artifact.mission_id != mission_id or artifact.task_id != producer
+                        or artifact.content_hash != ref.content_hash):
+                    unavailable.append((acceptance_id, f"accepted artifact {ref.id} is missing or changed"))
+                    continue
+                if is_operation_candidate_path(artifact.path) or artifact.path.startswith("."):
+                    continue
                 if read_only and artifact.path not in seed:
                     continue
-                add(UpstreamInput(task_id, artifact.path, artifact.content_hash, artifact.id))
-            for item in self.carried_inputs(mission_id, task_id):
-                add(item)
-        return versions, ports
-
-    def _choose_versions(
-        self,
-        mission_id: str,
-        versions: Mapping[str, Mapping[str, UpstreamInput]],
-        ports: Mapping[str, Sequence[UpstreamInput]],
-        *,
-        consumer: str | None = None,
-    ) -> list[UpstreamInput]:
-        """One version per path, or the write conflicts that stop this step from starting.
-
-        A path the plan binds as a port document is that document: two port documents at one
-        path, or any other source delivering a different content there, is a conflict (the plan
-        named one file and the workspace would hold another).  Elsewhere the only version the
-        system may pick is the one proven to be the next version of all the others
-        (:meth:`_one_version`); no "first come", no "later in the order wins" (TaskGraph §2 第 5 条).
-        """
-        chosen: list[UpstreamInput] = []
-        clashes: list[dict[str, Any]] = []
-        for path in sorted(versions):
-            candidates = versions[path]
-            at_port = list(ports.get(path, ()))
-            if at_port:
-                # 端口文件的产出者收到过的旧版本（它接着改的那份，经转交又到了这里）不是另一份
-                port = at_port[0]
-                carried = list(self.carried_inputs(mission_id, port.task_id))
-                rivals = [item for item in candidates.values() if item.content_hash != port.content_hash
-                          and not any(c.task_id == item.task_id and c.path == item.path
-                                      and c.content_hash == item.content_hash for c in carried)]
-                if len({item.content_hash for item in at_port}) > 1 or rivals:
-                    items = sorted([port, *rivals], key=lambda item: (item.task_id, item.content_hash))
-                    clashes.append({"path": path, "steps": [item.task_id for item in items],
-                                    "artifacts": [item.artifact_id for item in items]})
-                    continue
-                chosen.append(at_port[0])
+                files.append(DeliveredFile(TaskRef(producer), acceptance_id, support,
+                                           artifact.id, artifact.path, artifact.content_hash))
+            frozen = frozen_inputs_of(acceptance)
+            if frozen is None:
                 continue
-            try:
-                chosen.append(self._one_version(mission_id, path, candidates))
-            except WriteConflictPending as error:
-                clashes.extend(dict(item) for item in error.conflicts)
-        if clashes:
-            if consumer is not None:
-                clashes = [{**item, "consumer": consumer} for item in clashes]
-            raise WriteConflictPending(clashes)
-        return sorted(chosen, key=lambda entry: entry.path)
-
-    def overlay_attempt_inputs(
-        self, mission_id: str, inputs: Sequence[UpstreamInput]
-    ) -> list[UpstreamInput]:
-        """Project accepted workspace files from DATA-bound producers only.
-
-        Dispatch and its writer-transaction check share this projection.  The
-        Attempt freezes the resulting exact artifact identities and hashes.
-
-        阶段 D / 2026-10-09 第 4 条：这一步会收到的每个路径的每个版本先全部收齐
-        （:meth:`_delivery_versions`），再按同一条规则选（:meth:`_choose_versions`）：端口文件
-        就是计划点名的那份，别处只取冻结清单能证明的接力版本；证明不了、或端口文件撞上，
-        拒绝（``WriteConflictPending``），这一步等规划器处理写入冲突修复请求。没有先后的两步
-        把同一文件写成两样同样拦住（:meth:`write_conflicts` 规则一）。
-        """
-        producers = tuple(dict.fromkeys(item.task_id for item in inputs))
-        clashes = self.write_conflicts(mission_id, touching=producers)
-        if clashes:
-            raise WriteConflictPending(clashes)
-        versions, ports = self._delivery_versions(mission_id, inputs)
-        return self._choose_versions(mission_id, versions, ports)
-
-    def carried_inputs(self, mission_id: str, producer_task_id: str) -> list[UpstreamInput]:
-        return carried_inputs(self.store, mission_id, producer_task_id)
+            received[acceptance_id] = frozenset(item.version_key for item in frozen)
+            if not _is_continuation(semantic):
+                continue
+            for item in frozen:
+                files.append(replace(item, carried_from=TaskRef(producer)))
+                if item.acceptance_id in received:
+                    continue
+                try:
+                    origin = semantics.get_acceptance(item.acceptance_id)
+                except StoreError as error:
+                    unavailable.append((item.acceptance_id, str(error)))
+                    continue
+                inner = frozen_inputs_of(origin)
+                if inner is not None:
+                    received[item.acceptance_id] = frozenset(entry.version_key for entry in inner)
+        return DeliverySources(files=tuple(files), received=received, unavailable=tuple(unavailable))
 
     # ------------------------------------------------------------------------ plumbing
     def require_planning_world(self) -> PlanningWorld:
@@ -4222,38 +4253,3 @@ def _is_continuation(semantic: Any) -> bool:
         return False
     outputs = {(port.port_key, port.schema_ref) for port in semantic.output_ports}
     return all((port.port_key, port.schema_ref) in outputs for port in semantic.input_ports)
-
-
-def carried_inputs(store: Any, mission_id: str, producer_task_id: str) -> list[UpstreamInput]:
-    """What a continuation producer's accepted Attempt received, re-verified.
-
-    Empty for any producer that is not a continuation, or has no accepted
-    result.  Every entry must still name an artifact of this Mission that its
-    own producer accepted, with the same path and content hash; anything else
-    (a candidate's selection material, a later-rejected file) is not carried.
-    """
-    if not _is_continuation(HtnStore(store).task_semantics_of(mission_id, producer_task_id)):
-        return []
-    producer = store.get_task(producer_task_id)
-    if producer is None or producer.mission_id != mission_id or not producer.accepted_result_id:
-        return []
-    result = store.get_result(producer.accepted_result_id)
-    if result is None:
-        return []
-    intent = store.get_intent_for_subject(result.envelope.attempt_id)
-    if intent is None:
-        return []
-    received: list[UpstreamInput] = []
-    for raw in intent.config.get("inputs", []) or []:
-        item = UpstreamInput.from_json(raw)
-        if item.path.startswith("actions/"):
-            continue  # an operation candidate is not part of the delivered work
-        owner = store.get_task(item.task_id)
-        artifact = store.get_artifact(item.artifact_id)
-        if (owner is None or owner.mission_id != mission_id or artifact is None
-                or item.artifact_id not in owner.accepted_artifacts
-                or artifact.mission_id != mission_id or artifact.task_id != item.task_id
-                or artifact.path != item.path or artifact.content_hash != item.content_hash):
-            continue
-        received.append(item)
-    return received

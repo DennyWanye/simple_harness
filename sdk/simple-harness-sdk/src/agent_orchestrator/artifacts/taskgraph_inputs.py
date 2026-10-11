@@ -11,8 +11,9 @@ from ..contracts.htn import BoundInput, OccurrenceId, TaskRef
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import VersionedRef
 from .input_bindings import (
-    AcceptedOutputsIndex, DisclosureState, InputManifest, ResolutionPolicy,
+    AcceptedOutputsIndex, DeliveryBinding, DisclosureState, InputManifest, ResolutionPolicy,
     ResolvedInputBinding, ResourceIdentity, TargetRules, _check_schema, _check_witness,
+    witness_verdict,
 )
 from ..contracts.evidence_state import ValidityWitness, WitnessPurpose
 from ..graph.task_network import TaskNetworkSnapshot
@@ -57,6 +58,19 @@ def require_current_manifest_use(manifest: InputManifest, network: TaskNetworkSn
         _, witness_problem = _check_witness(requirement, candidate, manifest.consumer_task_ref, witnesses, policy)
         if witness_problem is not None:
             raise ContractError("TASKGRAPH_FROZEN_INPUT_WITNESS_NOT_CURRENT")
+    # 2026-10-11 第三批：交付绑定同样要有当前的许可——对真实产出者那次验收的见证，同一纪元、同一
+    # 支持版本、USABLE。文件内容本身已冻结（路径与哈希在物化时复核），这里只核"现在还能用"。
+    for delivery in manifest.deliveries:
+        verdict = witness_verdict(
+            witnesses.get(delivery.acceptance_id),
+            acceptance_id=delivery.acceptance_id,
+            artifact_id=delivery.artifact_id,
+            support_revision=delivery.support_revision,
+            consumer_task_ref=manifest.consumer_task_ref,
+            policy=policy,
+        )
+        if verdict is not None and verdict[1] is not None:
+            raise ContractError("TASKGRAPH_FROZEN_DELIVERY_WITNESS_NOT_CURRENT")
 
 
 def _plain(value: Any) -> Any:
@@ -95,10 +109,26 @@ def decode_frozen_manifest(value: Mapping[str, Any]) -> InputManifest:
     try:
         raw = _plain(value)
         if (not isinstance(raw, dict)
-                or set(raw) != {"consumer_task_ref", "bindings", "pending", "manifest_hash"}
-                or raw["pending"] != [] or not isinstance(raw["bindings"], list)):
+                or set(raw) != {"consumer_task_ref", "bindings", "deliveries", "pending", "manifest_hash"}
+                or raw["pending"] != [] or not isinstance(raw["bindings"], list)
+                or not isinstance(raw["deliveries"], list)):
             raise ContractError("TASKGRAPH_INPUT_NOT_FROZEN")
         consumer = TaskRef(_text(raw["consumer_task_ref"]))
+        deliveries = []
+        for item in raw["deliveries"]:
+            one_delivery = DeliveryBinding(
+                binding_id=_text(item["binding_id"]),
+                producer_task_ref=TaskRef(_text(item["producer_task_ref"])),
+                acceptance_id=_text(item["acceptance_id"]),
+                support_revision=_index(item["support_revision"]),
+                artifact_id=_text(item["artifact_id"]), path=_text(item["path"]),
+                content_hash=_text(item["content_hash"]),
+                witness_id=None if item["witness_id"] is None else _text(item["witness_id"]),
+                carried_from=None if item["carried_from"] is None else TaskRef(_text(item["carried_from"])),
+            )
+            if canonical_json(one_delivery.to_json()) != canonical_json(item):
+                raise ContractError("TASKGRAPH_INPUT_DELIVERY_NOT_CANONICAL")
+            deliveries.append(one_delivery)
         bindings = []
         for item in raw["bindings"]:
             bound = BoundInput.from_json(item["bound_input"])
@@ -124,7 +154,8 @@ def decode_frozen_manifest(value: Mapping[str, Any]) -> InputManifest:
             if canonical_json(one.to_json()) != canonical_json(item):
                 raise ContractError("TASKGRAPH_INPUT_BINDING_NOT_CANONICAL")
             bindings.append(one)
-        manifest = InputManifest(consumer_task_ref=consumer, bindings=tuple(bindings))
+        manifest = InputManifest(consumer_task_ref=consumer, bindings=tuple(bindings),
+                                 deliveries=tuple(deliveries))
         if canonical_json(manifest.to_json()) != canonical_json(raw):
             raise ContractError("TASKGRAPH_INPUT_MANIFEST_NOT_CANONICAL")
         return manifest

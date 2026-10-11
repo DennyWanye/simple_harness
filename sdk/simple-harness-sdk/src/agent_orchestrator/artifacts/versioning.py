@@ -48,10 +48,21 @@ class ArtifactConflict(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class UpstreamInput:
+    """One file an Attempt starts from, as frozen in its dispatch intent (第 3 版).
+
+    2026-10-11 第三批: besides the four identity fields, every entry names the
+    acceptance it was delivered under, the consumer's licence over that acceptance
+    and, for a relayed file, the continuation producer that handed it on — so the
+    frozen record is the whole proof and not a path list somebody has to trust.
+    """
+
     task_id: str
     path: str
     content_hash: str
     artifact_id: str
+    acceptance_id: str = ""
+    witness_id: str | None = None
+    carried_from: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -59,15 +70,24 @@ class UpstreamInput:
             "path": self.path,
             "content_hash": self.content_hash,
             "artifact_id": self.artifact_id,
+            "acceptance_id": self.acceptance_id,
+            "witness_id": self.witness_id,
+            "carried_from": self.carried_from,
         }
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> UpstreamInput:
+        if set(value) != {"task_id", "path", "content_hash", "artifact_id", "acceptance_id",
+                          "witness_id", "carried_from"}:
+            raise ContractError("TASKGRAPH_FROZEN_INPUT_VERSION_RETIRED")
         return cls(
             str(value["task_id"]),
             str(value["path"]),
             str(value["content_hash"]),
             str(value["artifact_id"]),
+            str(value["acceptance_id"]),
+            None if value["witness_id"] is None else str(value["witness_id"]),
+            None if value["carried_from"] is None else str(value["carried_from"]),
         )
 
 
@@ -228,22 +248,31 @@ def manifest_upstream_inputs(
     if plan.problems:
         raise _refuse(plan.problems)
     bindings_by_id = {binding.binding_id: binding for binding in manifest.bindings}
+    deliveries_by_id = {item.binding_id: item for item in manifest.deliveries}
     inputs: list[UpstreamInput] = []
     for entry in plan.entries:
-        producer = next(
-            (str(bindings_by_id[item].producer_task_ref) for item in entry.binding_ids
-             if item in bindings_by_id and entry.artifact_ids
-             and bindings_by_id[item].artifact_id == entry.artifact_ids[0]),
-            "",
+        artifact_id = entry.artifact_ids[0] if entry.artifact_ids else ""
+        port = next(
+            (bindings_by_id[item] for item in entry.binding_ids
+             if item in bindings_by_id and bindings_by_id[item].artifact_id == artifact_id),
+            None,
         )
-        inputs.append(
-            UpstreamInput(
-                producer,
-                entry.target.path,
-                entry.content_hash,
-                entry.artifact_ids[0] if entry.artifact_ids else "",
-            )
+        if port is not None:
+            inputs.append(UpstreamInput(str(port.producer_task_ref), entry.target.path,
+                                        entry.content_hash, artifact_id,
+                                        port.acceptance_id, port.witness_id, None))
+            continue
+        delivery = next(
+            (deliveries_by_id[item] for item in entry.binding_ids
+             if item in deliveries_by_id and deliveries_by_id[item].artifact_id == artifact_id),
+            None,
         )
+        if delivery is None:  # a plan entry always comes from one of the two binding kinds
+            raise ArtifactConflict(f"manifest entry {entry.target.path!r} names no binding")
+        inputs.append(UpstreamInput(str(delivery.producer_task_ref), entry.target.path,
+                                    entry.content_hash, artifact_id, delivery.acceptance_id,
+                                    delivery.witness_id,
+                                    None if delivery.carried_from is None else str(delivery.carried_from)))
     return sorted(inputs, key=lambda item: item.path)
 
 

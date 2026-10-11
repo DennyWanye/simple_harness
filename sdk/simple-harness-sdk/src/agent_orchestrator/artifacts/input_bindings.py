@@ -101,6 +101,11 @@ class ResolutionProblemKind(StrEnum):
     MAP_KEY_MISSING = "map_key_missing"
     MAP_KEY_DUPLICATE = "map_key_duplicate"
     MAP_KEY_MISPLACED = "map_key_misplaced"
+    # 2026-10-11 第三批：数据边交出的非端口文件（交付绑定）也要见证与版本证明
+    DELIVERY_WITNESS_MISSING = "delivery_witness_missing"
+    DELIVERY_WITNESS_NOT_USABLE = "delivery_witness_not_usable"
+    DELIVERY_SOURCE_UNAVAILABLE = "delivery_source_unavailable"
+    DELIVERY_VERSION_CONFLICT = "delivery_version_conflict"
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,12 +125,16 @@ class ResolutionProblem:
     requirement_ids: tuple[str, ...] = ()
     candidates: tuple[str, ...] = ()
     input_ports: tuple[str, ...] = ()
+    #: the producer tasks of ``candidates``, in the same order (delivery conflicts name
+    #: the steps so the write-conflict repair request can say who wrote what)
+    producers: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.input_ports and self.input_port is not None:
             object.__setattr__(self, "input_ports", (self.input_port,))
         else:
             object.__setattr__(self, "input_ports", tuple(self.input_ports))
+        object.__setattr__(self, "producers", tuple(self.producers))
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -133,6 +142,7 @@ class ResolutionProblem:
             "detail": self.detail,
             "input_port": self.input_port,
             "input_ports": list(self.input_ports),
+            "producers": list(self.producers),
             "requirement_ids": list(self.requirement_ids),
             "candidates": list(self.candidates),
         }
@@ -461,18 +471,69 @@ class SymbolicBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryBinding:
+    """One non-port file a DATA-bound producer hands on, frozen to one exact identity
+    (2026-10-11 第三批：冻结清单里的接力文件).
+
+    A port binding says "the plan named this document"; a delivery binding says "the
+    producer's *acceptance* covered this file too, and the consumer may read it under
+    the same licence".  ``acceptance_id`` is the real producer's acceptance — for a
+    relayed file that is the acceptance of the step that wrote it, and
+    ``carried_from`` names the continuation producer whose own frozen manifest
+    proved the relay.  ``witness_id`` is the consumer's START licence over that
+    acceptance, exactly as on a port binding.  ``path`` is the place in the
+    consumer's namespace (the producer's own path; deliveries are not re-rooted).
+    """
+
+    binding_id: str
+    producer_task_ref: TaskRef
+    acceptance_id: str
+    support_revision: int
+    artifact_id: str
+    path: str
+    content_hash: str
+    witness_id: str | None = None
+    carried_from: TaskRef | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "binding_id": self.binding_id,
+            "producer_task_ref": str(self.producer_task_ref),
+            "acceptance_id": self.acceptance_id,
+            "support_revision": self.support_revision,
+            "artifact_id": self.artifact_id,
+            "path": self.path,
+            "content_hash": self.content_hash,
+            "witness_id": self.witness_id,
+            "carried_from": None if self.carried_from is None else str(self.carried_from),
+        }
+
+
+def delivery_binding_id(consumer: str, artifact_id: str, acceptance_id: str) -> str:
+    """Keyed by consumer + artifact + acceptance: one file reaching one consumer through
+    two relay paths is one binding, not two."""
+
+    return "delivery-" + sha256_hex(
+        {"consumer_task_ref": consumer, "artifact_id": artifact_id, "acceptance_id": acceptance_id}
+    )[:16]
+
+
+@dataclass(frozen=True, slots=True)
 class InputManifest:
     """The immutable inputs of one dispatch.
 
     Bindings are stored in canonical order — by input port, then by the port's
     declared ordinal — so the hash depends on what was resolved and on the
     *declared* set-port order, never on the order the requirements happened to
-    arrive in.
+    arrive in.  ``deliveries`` are the non-port files the same producers hand on,
+    one chosen version per path (2026-10-11 第三批); they are part of the hash, so
+    "what this Attempt was built on" is the whole manifest and nothing outside it.
     """
 
     consumer_task_ref: TaskRef
     bindings: tuple[ResolvedInputBinding, ...] = ()
     pending: tuple[SymbolicBinding, ...] = ()
+    deliveries: tuple[DeliveryBinding, ...] = ()
 
     def __post_init__(self) -> None:
         ordered = tuple(
@@ -489,6 +550,14 @@ class InputManifest:
             "pending",
             tuple(sorted(self.pending, key=lambda item: (item.input_port, item.requirement_id))),
         )
+        delivered = tuple(sorted(self.deliveries, key=lambda item: (item.path, item.binding_id)))
+        if any(not isinstance(item, DeliveryBinding) for item in delivered):
+            raise ContractError("manifest.deliveries must be DeliveryBinding records")
+        if len({item.binding_id for item in delivered}) != len(delivered):
+            raise ContractError("manifest must not repeat a delivery binding_id")
+        if len({item.path for item in delivered}) != len(delivered):
+            raise ContractError("manifest must hold one delivered version per path")
+        object.__setattr__(self, "deliveries", delivered)
 
     @property
     def is_frozen(self) -> bool:
@@ -520,6 +589,7 @@ class InputManifest:
         return {
             "consumer_task_ref": str(self.consumer_task_ref),
             "bindings": [item.to_json() for item in self.bindings],
+            "deliveries": [item.to_json() for item in self.deliveries],
         }
 
     def manifest_hash(self) -> str:
@@ -534,6 +604,7 @@ class InputManifest:
         return {
             "consumer_task_ref": str(self.consumer_task_ref),
             "bindings": [item.to_json() for item in self.bindings],
+            "deliveries": [item.to_json() for item in self.deliveries],
             "pending": [item.to_json() for item in self.pending],
             "manifest_hash": self.manifest_hash() if self.is_frozen else None,
         }
@@ -718,16 +789,48 @@ def _check_witness(
             candidates=(candidate.artifact_id,),
         )
 
-    witness = witnesses.get(candidate.acceptance_id)
+    verdict = witness_verdict(
+        witnesses.get(candidate.acceptance_id),
+        acceptance_id=candidate.acceptance_id,
+        artifact_id=candidate.artifact_id,
+        support_revision=candidate.support_revision,
+        consumer_task_ref=consumer_task_ref,
+        policy=policy,
+    )
+    if verdict is None:
+        return None, None
+    witness_id, problem = verdict
+    if problem is not None:
+        return refuse(*problem)
+    return witness_id, None
+
+
+def witness_verdict(
+    witness: ValidityWitness | None,
+    *,
+    acceptance_id: str,
+    artifact_id: str,
+    support_revision: int,
+    consumer_task_ref: TaskRef,
+    policy: ResolutionPolicy,
+) -> tuple[str | None, tuple[ResolutionProblemKind, str] | None] | None:
+    """The one reading of "does this witness license this consumer over this acceptance".
+
+    Port bindings and delivery bindings (2026-10-11 第三批) ask the same question and
+    must get the same answer, so the five checks live here once.  ``None`` means the
+    policy asks for no witness at all; otherwise ``(witness_id, None)`` licenses and
+    ``(None, (kind, detail))`` refuses.
+    """
+
     if witness is None:
         if not policy.require_witness:
-            return None, None
-        return refuse(
+            return None
+        return None, (
             ResolutionProblemKind.WITNESS_MISSING,
-            f"no validity witness covers acceptance {candidate.acceptance_id}",
+            f"no validity witness covers acceptance {acceptance_id}",
         )
     if witness.purpose not in policy.witness_purposes:
-        return refuse(
+        return None, (
             ResolutionProblemKind.WITNESS_PURPOSE_MISMATCH,
             (
                 f"witness {witness.witness_id} was issued for {witness.purpose!s}; binding an "
@@ -737,7 +840,7 @@ def _check_witness(
     if witness.consumer_ref.kind is not TypedRefKind.TASK or witness.consumer_ref.id != str(
         consumer_task_ref
     ):
-        return refuse(
+        return None, (
             ResolutionProblemKind.WITNESS_CONSUMER_MISMATCH,
             (
                 f"witness {witness.witness_id} was issued to "
@@ -745,23 +848,23 @@ def _check_witness(
                 f"not to task {str(consumer_task_ref)!r}"
             ),
         )
-    if witness.support_revision != candidate.support_revision:
-        return refuse(
+    if witness.support_revision != support_revision:
+        return None, (
             ResolutionProblemKind.WITNESS_SUPPORT_MISMATCH,
             (
                 f"witness {witness.witness_id} was taken over support revision "
-                f"{witness.support_revision} but {candidate.artifact_id} carries "
-                f"{candidate.support_revision}"
+                f"{witness.support_revision} but {artifact_id} carries "
+                f"{support_revision}"
             ),
         )
     if witness.decision is not WitnessDecision.USABLE:
-        return refuse(
+        return None, (
             ResolutionProblemKind.WITNESS_NOT_USABLE,
             f"witness {witness.witness_id} decided {witness.decision!s}",
         )
     if witness.scope_id not in policy.scope_epochs:
         if not policy.allow_unknown_scope:
-            return refuse(
+            return None, (
                 ResolutionProblemKind.WITNESS_EPOCH_UNKNOWN,
                 (
                     f"the current epoch of scope {witness.scope_id!r} is unknown, so witness "
@@ -773,7 +876,7 @@ def _check_witness(
     else:
         current_epoch = policy.scope_epochs[witness.scope_id]
     if not witness.is_fresh_for(now_ms=policy.now_ms, current_scope_epoch=current_epoch):
-        return refuse(
+        return None, (
             ResolutionProblemKind.WITNESS_NOT_USABLE,
             (
                 f"witness {witness.witness_id} is stale: it was taken at scope epoch "
@@ -1174,6 +1277,236 @@ def resolve_declared_inputs(
 
 
 # --------------------------------------------------------------------------------------
+# resolve_deliveries (2026-10-11 第三批：冻结清单里的接力文件)
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveredFile:
+    """One file a DATA-bound producer's acceptance covers, as the dispatch read it.
+
+    ``carried_from`` is set when the file reached the consumer through a continuation
+    producer's own frozen manifest (one level: that manifest already holds what *it*
+    received); ``producer_task_ref`` / ``acceptance_id`` are always the real writer's.
+    """
+
+    producer_task_ref: TaskRef
+    acceptance_id: str
+    support_revision: int
+    artifact_id: str
+    path: str
+    content_hash: str
+    carried_from: TaskRef | None = None
+
+    @property
+    def version_key(self) -> tuple[str, str, str]:
+        return (str(self.producer_task_ref), self.path, self.content_hash)
+
+
+@dataclass(frozen=True, slots=True)
+class DeliverySources:
+    """Everything the delivery resolution reads, gathered by the dispatch in one pass.
+
+    ``files`` are the candidates (direct and carried); ``received`` maps an acceptance
+    id to the ``(producer task, path, hash)`` set that acceptance's Attempt was frozen
+    with — the only proof the system accepts that one version is the next of another
+    (TaskGraph §2 第 5 条: no "first come", no "later in the order wins").
+    ``unavailable`` names acceptances whose files could not be read, so the refusal
+    says which source and why instead of delivering less in silence.
+    """
+
+    files: tuple[DeliveredFile, ...] = ()
+    received: Mapping[str, frozenset[tuple[str, str, str]]] = field(default_factory=dict)
+    unavailable: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "files", tuple(self.files))
+        object.__setattr__(
+            self, "received", {key: frozenset(value) for key, value in dict(self.received).items()}
+        )
+        object.__setattr__(self, "unavailable", tuple(self.unavailable))
+
+
+def resolve_deliveries(
+    manifest: InputManifest,
+    sources: DeliverySources,
+    *,
+    target_rules: TargetRules,
+    witnesses: Mapping[str, ValidityWitness],
+    policy: ResolutionPolicy,
+) -> ResolutionResult:
+    """Add the delivery bindings to a frozen port manifest, or say why not.
+
+    This is the *only* algorithm that decides which non-port files a consumer starts
+    from and which version of each: dispatch, the handover re-check, recovery, sharing
+    and the write-conflict scan all read the manifest this produces.
+
+    Rules, all order and none judgment:
+
+    * a path the plan binds as a port document is that document; another content at
+      the same place is a version conflict unless the port producer's acceptance was
+      frozen with it (it received that version and changed it on purpose);
+    * elsewhere, of several contents at one path only the one whose producer's
+      acceptance was frozen with every other is taken; otherwise a conflict;
+    * every delivered file carries the consumer's licence over the real producer's
+      acceptance — the same five checks a port binding passes; a file whose licence
+      is missing or not usable is refused by name, not dropped.
+
+    Identical content at one path is one file, however many producers agree on it.
+    """
+
+    if not manifest.is_frozen:
+        raise ManifestNotFrozen("deliveries are resolved onto a frozen port manifest")
+    consumer = str(manifest.consumer_task_ref)
+    problems: list[ResolutionProblem] = []
+    for acceptance_id, detail in sources.unavailable:
+        problems.append(
+            ResolutionProblem(
+                kind=ResolutionProblemKind.DELIVERY_SOURCE_UNAVAILABLE,
+                detail=f"the files accepted under {acceptance_id} cannot be read: {detail}",
+            )
+        )
+    port_plan = materialise_plan(
+        InputManifest(consumer_task_ref=manifest.consumer_task_ref, bindings=manifest.bindings),
+        target_rules,
+    )
+    if port_plan.problems:
+        return ResolutionResult(manifest=None, problems=tuple(sorted(
+            (*problems, *port_plan.problems), key=lambda item: (str(item.kind), item.detail))))
+    bindings_by_id = {binding.binding_id: binding for binding in manifest.bindings}
+    ports: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {}
+    for entry in port_plan.entries:
+        members = [bindings_by_id[item] for item in entry.binding_ids if item in bindings_by_id]
+        ports[entry.target.path] = (
+            entry.content_hash,
+            tuple(sorted({binding.acceptance_id for binding in members})),
+            tuple(sorted({binding.artifact_id for binding in members})),
+        )
+
+    def received_by(acceptance_ids: Sequence[str]) -> frozenset[tuple[str, str, str]]:
+        found: set[tuple[str, str, str]] = set()
+        for acceptance_id in acceptance_ids:
+            found |= sources.received.get(acceptance_id, frozenset())
+        return frozenset(found)
+
+    # direct files before carried ones, then by producer and artifact: the first file
+    # of a content is the one recorded, so the result never depends on read order
+    ordered = sorted(
+        sources.files,
+        key=lambda item: (item.carried_from is not None, str(item.producer_task_ref),
+                          item.artifact_id, item.acceptance_id),
+    )
+    by_path: dict[str, dict[str, DeliveredFile]] = {}
+    for item in ordered:
+        by_path.setdefault(item.path, {}).setdefault(item.content_hash, item)
+
+    deliveries: list[DeliveryBinding] = []
+    for path in sorted(by_path):
+        versions = by_path[path]
+        port = ports.get(path)
+        if port is not None:
+            port_hash, port_acceptances, port_artifacts = port
+            known = received_by(port_acceptances)
+            rivals = [item for item in versions.values()
+                      if item.content_hash != port_hash and item.version_key not in known]
+            if rivals:
+                problems.append(
+                    ResolutionProblem(
+                        kind=ResolutionProblemKind.DELIVERY_VERSION_CONFLICT,
+                        detail=(
+                            f"the plan binds {path!r} as a port document and "
+                            f"{len(rivals)} other content(s) reach the same place; nothing "
+                            "proves which version this step takes"
+                        ),
+                        candidates=(*port_artifacts, *(item.artifact_id for item in rivals)),
+                        producers=(*(str(bindings_by_id[b].producer_task_ref)
+                                     for b in sorted(bindings_by_id)
+                                     if bindings_by_id[b].artifact_id in port_artifacts),
+                                   *(str(item.producer_task_ref) for item in rivals)),
+                    )
+                )
+            continue  # the port document is the file at this place
+        chosen: DeliveredFile | None
+        if len(versions) == 1:
+            chosen = next(iter(versions.values()))
+        else:
+            chosen = None
+            for candidate in versions.values():
+                others = [item.version_key for item in versions.values() if item is not candidate]
+                if all(key in sources.received.get(candidate.acceptance_id, frozenset())
+                       for key in others):
+                    chosen = candidate
+                    break
+            if chosen is None:
+                items = list(versions.values())
+                problems.append(
+                    ResolutionProblem(
+                        kind=ResolutionProblemKind.DELIVERY_VERSION_CONFLICT,
+                        detail=(
+                            f"{len(items)} different contents of {path!r} reach this step and no "
+                            "producer's frozen inputs prove one is the next version of the others"
+                        ),
+                        candidates=tuple(item.artifact_id for item in items),
+                        producers=tuple(str(item.producer_task_ref) for item in items),
+                    )
+                )
+                continue
+        verdict = witness_verdict(
+            witnesses.get(chosen.acceptance_id),
+            acceptance_id=chosen.acceptance_id,
+            artifact_id=chosen.artifact_id,
+            support_revision=chosen.support_revision,
+            consumer_task_ref=manifest.consumer_task_ref,
+            policy=policy,
+        )
+        witness_id: str | None = None
+        if verdict is not None:
+            witness_id, problem = verdict
+            if problem is not None:
+                kind, detail = problem
+                problems.append(
+                    ResolutionProblem(
+                        kind=(ResolutionProblemKind.DELIVERY_WITNESS_MISSING
+                              if kind is ResolutionProblemKind.WITNESS_MISSING
+                              else ResolutionProblemKind.DELIVERY_WITNESS_NOT_USABLE),
+                        detail=(
+                            f"delivered file {path!r} (artifact {chosen.artifact_id}, accepted "
+                            f"under {chosen.acceptance_id} of {chosen.producer_task_ref!s}"
+                            + (f", relayed by {chosen.carried_from!s}" if chosen.carried_from else "")
+                            + f"): {detail}"
+                        ),
+                        candidates=(chosen.artifact_id,),
+                        producers=(str(chosen.producer_task_ref),),
+                    )
+                )
+                continue
+        deliveries.append(
+            DeliveryBinding(
+                binding_id=delivery_binding_id(consumer, chosen.artifact_id, chosen.acceptance_id),
+                producer_task_ref=chosen.producer_task_ref,
+                acceptance_id=chosen.acceptance_id,
+                support_revision=int(chosen.support_revision),
+                artifact_id=chosen.artifact_id,
+                path=chosen.path,
+                content_hash=chosen.content_hash,
+                witness_id=witness_id,
+                carried_from=chosen.carried_from,
+            )
+        )
+    ordered_problems = tuple(sorted(problems, key=lambda item: (str(item.kind), item.detail)))
+    if ordered_problems:
+        return ResolutionResult(manifest=None, problems=ordered_problems)
+    return ResolutionResult(
+        manifest=InputManifest(
+            consumer_task_ref=manifest.consumer_task_ref,
+            bindings=manifest.bindings,
+            pending=manifest.pending,
+            deliveries=tuple(deliveries),
+        )
+    )
+
+
+# --------------------------------------------------------------------------------------
 # materialise_plan
 # --------------------------------------------------------------------------------------
 
@@ -1265,7 +1598,10 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
             "a materialisation plan needs every input resolved to an exact identity"
         )
     problems: list[ResolutionProblem] = []
-    grouped: dict[tuple[str, str], list[tuple[ResourceIdentity, ResolvedInputBinding]]] = {}
+    # (target, content_hash, artifact_id, binding_id, input_port, requirement_id, producer);
+    # a delivery binding (2026-10-11 第三批) has no port and no requirement.
+    Member = tuple[ResourceIdentity, str, str, str, str | None, str | None, str]
+    grouped: dict[tuple[str, str], list[Member]] = {}
     for binding in manifest.bindings:
         target = target_rules.target_for(binding)
         if target.is_escaping:
@@ -1283,12 +1619,32 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
             )
             continue
         key = target.collation_key(case_insensitive=target_rules.case_insensitive)
-        grouped.setdefault(key, []).append((target, binding))
+        grouped.setdefault(key, []).append((target, binding.content_hash, binding.artifact_id,
+                                            binding.binding_id, binding.input_port, binding.requirement_id,
+                                            str(binding.producer_task_ref)))
+    for delivery in manifest.deliveries:
+        target = ResourceIdentity(namespace=target_rules.namespace, path=delivery.path)
+        if target.is_escaping:
+            problems.append(
+                ResolutionProblem(
+                    kind=ResolutionProblemKind.TARGET_PATH_INVALID,
+                    detail=(
+                        f"delivery {delivery.binding_id} would be placed at {target.path!r}, "
+                        "which leaves the consumer namespace"
+                    ),
+                    candidates=(delivery.artifact_id,),
+                    producers=(str(delivery.producer_task_ref),),
+                )
+            )
+            continue
+        key = target.collation_key(case_insensitive=target_rules.case_insensitive)
+        grouped.setdefault(key, []).append((target, delivery.content_hash, delivery.artifact_id,
+                                            delivery.binding_id, None, None, str(delivery.producer_task_ref)))
 
     entries: list[MaterialisationEntry] = []
     for key in sorted(grouped):
         members = grouped[key]
-        hashes = {binding.content_hash for _target, binding in members}
+        hashes = {member[1] for member in members}
         if len(hashes) > 1:
             problems.append(
                 ResolutionProblem(
@@ -1298,11 +1654,10 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
                         f"{target_rules.namespace!r}; choose, convert or synthesise one new "
                         "artifact and verify it again"
                     ),
-                    input_ports=tuple(sorted({binding.input_port for _target, binding in members})),
-                    requirement_ids=tuple(
-                        sorted({binding.requirement_id for _target, binding in members})
-                    ),
-                    candidates=tuple(sorted({binding.artifact_id for _t, binding in members})),
+                    input_ports=tuple(sorted({m[4] for m in members if m[4] is not None})),
+                    requirement_ids=tuple(sorted({m[5] for m in members if m[5] is not None})),
+                    candidates=tuple(m[2] for m in sorted(members, key=lambda m: m[2])),
+                    producers=tuple(m[6] for m in sorted(members, key=lambda m: m[2])),
                 )
             )
             continue
@@ -1317,10 +1672,10 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
         entries.append(
             MaterialisationEntry(
                 target=target,
-                content_hash=members[0][1].content_hash,
-                artifact_ids=tuple(sorted({binding.artifact_id for _t, binding in members})),
-                binding_ids=tuple(sorted(binding.binding_id for _t, binding in members)),
-                input_ports=tuple(sorted({binding.input_port for _t, binding in members})),
+                content_hash=members[0][1],
+                artifact_ids=tuple(sorted({m[2] for m in members})),
+                binding_ids=tuple(sorted(m[3] for m in members)),
+                input_ports=tuple(sorted({m[4] for m in members if m[4] is not None})),
             )
         )
     return MaterialisationPlan(
@@ -1438,6 +1793,22 @@ _REMEDIES: Mapping[ResolutionProblemKind, str] = {
     ResolutionProblemKind.MAP_KEY_MISPLACED: (
         "Remove the key, or declare the consumer port as a map."
     ),
+    ResolutionProblemKind.DELIVERY_WITNESS_MISSING: (
+        "wait for the next reading: the consumer's START witness over the real producer's "
+        "acceptance is issued when the acceptance is read; a file is never delivered unlicensed"
+    ),
+    ResolutionProblemKind.DELIVERY_WITNESS_NOT_USABLE: (
+        "the licence over that acceptance is blocked or stale (revoked acceptance, moved scope "
+        "epoch); the producer's acceptance must be current again or the plan must stop reading it"
+    ),
+    ResolutionProblemKind.DELIVERY_SOURCE_UNAVAILABLE: (
+        "the acceptance, its artifacts or its frozen inputs cannot be read as recorded; this is "
+        "a library fault to repair, not a reason to deliver less"
+    ),
+    ResolutionProblemKind.DELIVERY_VERSION_CONFLICT: (
+        "the Planner must say which step takes which version (reorder, re-wire the edge, or "
+        "redo one producer); the system does not pick by recency or by order"
+    ),
 }
 
 _SUMMARIES: Mapping[ResolutionProblemKind, str] = {
@@ -1478,6 +1849,10 @@ _SUMMARIES: Mapping[ResolutionProblemKind, str] = {
     ResolutionProblemKind.MAP_KEY_MISSING: "an input of a map port declares no key",
     ResolutionProblemKind.MAP_KEY_DUPLICATE: "two inputs of a map port share one key",
     ResolutionProblemKind.MAP_KEY_MISPLACED: "a key is declared for a port that is not a map",
+    ResolutionProblemKind.DELIVERY_WITNESS_MISSING: "a delivered file has no licence yet",
+    ResolutionProblemKind.DELIVERY_WITNESS_NOT_USABLE: "a delivered file's licence is not usable",
+    ResolutionProblemKind.DELIVERY_SOURCE_UNAVAILABLE: "a producer's accepted files cannot be read",
+    ResolutionProblemKind.DELIVERY_VERSION_CONFLICT: "several versions of one delivered path, none proven latest",
 }
 
 
@@ -1501,6 +1876,12 @@ def explain(problems: Sequence[ResolutionProblem]) -> tuple[Explanation, ...]:
 __all__ = (
     "AcceptedOutput",
     "AcceptedOutputsIndex",
+    "DeliveredFile",
+    "DeliveryBinding",
+    "DeliverySources",
+    "delivery_binding_id",
+    "resolve_deliveries",
+    "witness_verdict",
     "DisclosureState",
     "Explanation",
     "ExplicitPortOrder",

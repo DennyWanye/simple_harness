@@ -199,13 +199,11 @@ def seed_verified_result(
     dispatch.issue_input_witnesses(mission_id, network, now_ms=now_ms)
     spec = next(item for item in network.occurrences if str(item.task_id) == task_id)
     manifest = dispatch.resolved_inputs(mission_id, network, spec).manifest
+    # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入
     upstream = (
         ()
         if manifest is None or not manifest.is_frozen
-        else dispatch.overlay_attempt_inputs(
-            mission_id,
-            manifest_upstream_inputs(manifest, dispatch.target_rules_for(task_id), network=network),
-        )
+        else manifest_upstream_inputs(manifest, dispatch.target_rules_for(task_id), network=network)
     )
     attempt, intent = service.create_attempt(
         task_id,

@@ -30,7 +30,17 @@ ACTION_CANDIDATE_CONTEXT_VERSION = "action-candidate-context-v2"
 #: reads candidates.  Without it the Worker was never told the candidate shape and
 #: invented one outside ``actions/`` (NEXT-TG-1.0 2A upstream run, 2026-09-27).
 OPERATION_CANDIDATE_PORT = "action_candidate"
-OPERATION_CANDIDATE_FILE = f"actions/{OPERATION_CANDIDATE_PORT}.json"
+OPERATION_CANDIDATE_DIR = "actions/"
+OPERATION_CANDIDATE_FILE = f"{OPERATION_CANDIDATE_DIR}{OPERATION_CANDIDATE_PORT}.json"
+
+
+def is_operation_candidate_path(path: str) -> bool:
+    """Whether a workspace path is an operation candidate (the ``actions/<name>.json``
+    contract of plan D7-2).  Artifacts carry no type of their own beyond ``file``, so the
+    declared place *is* the contract; every reader asks here rather than spelling the
+    prefix itself (2026-10-11 第三批)."""
+
+    return path.startswith(OPERATION_CANDIDATE_DIR)
 
 
 _USER_REQUIREMENT_ID = re.compile(r"c-user-[1-9][0-9]*")
@@ -217,7 +227,8 @@ def with_candidate_targets(listed: Sequence[Any], workspace: Any) -> list[Any]:
 
 
 __all__ = (
-    "ACTION_CANDIDATE_CONTEXT_VERSION", "OPERATION_CANDIDATE_FILE", "OPERATION_CANDIDATE_PORT",
+    "ACTION_CANDIDATE_CONTEXT_VERSION", "OPERATION_CANDIDATE_DIR", "OPERATION_CANDIDATE_FILE",
+    "OPERATION_CANDIDATE_PORT", "is_operation_candidate_path",
     "declared_action_outputs",
     "worker_action_contract",
 )

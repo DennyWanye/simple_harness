@@ -18,6 +18,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+from ..runtime.action_schema import is_operation_candidate_path
 from ..contracts.htn import TaskForm
 from ..contracts.models import ContractError
 from ..contracts.operation_intents import (
@@ -151,7 +152,7 @@ def _sources(store: Any, htn: HtnStore, mission_id: str, leaves: list[Any],
         result = store.get_result(task.accepted_result_id)
         for artifact_id in () if result is None else result.artifacts:
             artifact = store.get_artifact(artifact_id)
-            if (artifact is None or artifact.path.startswith("actions/")
+            if (artifact is None or is_operation_candidate_path(artifact.path)
                     or artifact.verification_status != "VERIFIED"):
                 continue
             acceptance = current.get((artifact.id, artifact.content_hash))
