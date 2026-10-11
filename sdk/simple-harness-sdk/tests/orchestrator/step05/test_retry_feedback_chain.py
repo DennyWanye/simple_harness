@@ -53,7 +53,7 @@ def test_a_turn_the_model_itself_failed_is_not_called_a_server_error():
     failed = _attempt(1, {"reason": "turn_failed", "error_kind": "react",
                           "error": {"error_code": "invalid_tool_arguments", "message": "arguments are not JSON"}})
     feedback, _ = retry_feedback([failed], failed)
-    assert feedback == ["上一轮有一次模型调用失败（代码 invalid_tool_arguments：arguments are not JSON）；这一轮从头做。"]
+    assert feedback == ["上一轮因一次模型调用出错而失败（代码 invalid_tool_arguments：arguments are not JSON）；这一轮从头做。"]
     assert "服务侧" not in feedback[0]
 
 

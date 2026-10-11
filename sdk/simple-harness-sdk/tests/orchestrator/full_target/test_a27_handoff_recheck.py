@@ -165,10 +165,11 @@ def test_a_transport_cut_after_handoff_is_recorded_as_unconfirmed(tmp_path) -> N
     现行按阶段 B 裁决第 6 类走原门（偏差单见车道记录）。"""
 
     async def case() -> dict[str, Any]:
-        provider = FaultyProvider({"planner": [transport_loss]})
+        # 2026-10-10 决定：没被听到的回合共用 6 次宽限、第 7 次才计次 → 7 次掉线用掉 1 格梯子
+        provider = FaultyProvider({"planner": [transport_loss] * 7})
         async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 1}) as world:
             mission_id = create(world, "a27-transport-cut")
-            assert await settle(world, mission_id, seconds=10)
+            assert await settle(world, mission_id, seconds=30)
             final = world.store.get_mission(mission_id)
             return {"status": status(world, mission_id), "stop_reason": final.stop_reason,
                     "report": dict(final.final_report or {})}
@@ -179,7 +180,7 @@ def test_a_transport_cut_after_handoff_is_recorded_as_unconfirmed(tmp_path) -> N
     assert detail["reason"] == "provider_outcome_unknown"
     assert detail["handoff_check"]["verdict"] == "unresolved"
     assert detail["handoff_check"]["http_status"] is None
-    assert detail["resend"]["ground"] == "outcome_unconfirmed" and detail["resend"]["replaces_ordinal"] == 1
+    assert detail["resend"]["ground"] == "outcome_unconfirmed" and detail["resend"]["replaces_ordinal"] == 7
 
 
 # ======================================================================================

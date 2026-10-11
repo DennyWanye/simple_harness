@@ -151,7 +151,9 @@
         "attempts",
         "reserved_tokens",
         "settled_tokens",
-        "ledger_version"
+        "ledger_version",
+        "overrun_calls",
+        "overrun_tokens"
       ],
       "properties": {
         "attempts": {
@@ -176,6 +178,22 @@
           "maximum": 9007199254740991
         },
         "ledger_version": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "overrun_calls": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "overrun_tokens": {
           "type": [
             "integer",
             "null"

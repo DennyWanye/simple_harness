@@ -314,13 +314,20 @@ class AssuranceTick:
             await self.orchestrator._release_mission(self._release_after.pop())
         return progressed
 
+    def _account_scope(self, account_id: str) -> str | None:
+        """The account's recorded scope (``task`` / ``mission`` / ``global``) — read from the
+        accounts table, not guessed from the id's spelling (V40, 核验 opt.183 建议 S8)."""
+        row = self.store.connection.execute(
+            "SELECT scope FROM budget_accounts WHERE account_id=?", (account_id,)).fetchone()
+        return None if row is None else str(row[0])
+
     def _budget_can_still_change(self, account_id: str, mission_id: str) -> bool:
         """Whether waiting can help: a reservation that could still give tokens back to the
         account that refused — on that account itself (a step account) or anywhere under
         the Mission (its total or the global quota) — belongs to a subject still running."""
         from ..contracts.state_machines import TERMINAL_ATTEMPT
 
-        if account_id.startswith("budget:task-"):
+        if self._account_scope(account_id) == "task":
             rows = self.store.connection.execute(
                 "SELECT subject_id FROM budget_reservations WHERE state='RESERVED' AND account_id=?",
                 (account_id,),
@@ -356,7 +363,7 @@ class AssuranceTick:
             "requested": error.requested,
             "remaining": error.remaining,
         }
-        task_id = self._review_owner_task(claim) if error.account_id.startswith("budget:task-") else None
+        task_id = self._review_owner_task(claim) if self._account_scope(error.account_id) == "task" else None
         task = self.store.get_task(task_id) if task_id is not None else None
         try:
             if task is not None and task.status not in TERMINAL_TASK:

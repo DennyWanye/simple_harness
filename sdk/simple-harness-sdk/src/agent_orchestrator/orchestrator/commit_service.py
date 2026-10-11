@@ -29,6 +29,7 @@ from simple_harness.agents import AgentTurnState
 
 from ..artifacts.store import ArtifactStore
 from ..artifacts.versioning import next_versions
+from .occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -273,7 +274,7 @@ class CommitService(ProtectedTailCommitsMixin,
         store: Store,
         *,
         global_budget: Budget | None = None,
-        task_max_tokens: int | None = None,
+        task_max_tokens: int = DEFAULT_TASK_MAX_TOKENS,
         deployed_layers: frozenset[str] = STEP2_IMPLEMENTED_LAYERS,
         artifact_store: ArtifactStore | None = None,
         mission_profile_validator: Callable[[str, Mapping[str, Any]], None] | None = None,
@@ -300,10 +301,11 @@ class CommitService(ProtectedTailCommitsMixin,
         self._ledger = BudgetLedger(store)
         self._global_budget = global_budget  # D6-1: None = no deployment-wide cap
         self._follow_global_quota_on_start()
-        if task_max_tokens is not None and int(task_max_tokens) < 1:
+        if int(task_max_tokens) < 1:
             raise ValueError("task_max_tokens must be a positive token count")
-        # fixed per-leaf allowance (None = even share of the pool); see plan_commits
-        self._task_max_tokens = None if task_max_tokens is None else int(task_max_tokens)
+        # fixed per-leaf allowance (V42: the even share is gone; the default is the product's
+        # own 10,000,000, see plan_commits)
+        self._task_max_tokens = int(task_max_tokens)
         # host support 0.9.8: the verification layers this deployment runs — without local
         # code execution ``code_test`` is not among them; the Graph Manager checks, the
         # system default policies and the conflict path all follow it
@@ -3299,7 +3301,8 @@ class CommitService(ProtectedTailCommitsMixin,
                 "knowledge": [
                     k.id for k in self._store.list_knowledge(mission_id, status="VERIFIED")
                 ],
-                "lineage": lineage(self._store, mission_id),  # D4-14 / 30-27
+                "lineage": lineage(self._store, mission_id,  # D4-14 / 30-27
+                                   terminal_task_id=None if finalizer is None else finalizer.id),
             }
             judged = self._emit(
                 "MissionSuccessJudged",

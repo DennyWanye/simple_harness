@@ -86,7 +86,8 @@ def _unreadable(request: Any) -> str:
 PATHS = {
     "planning_failed": ("FAILED", "planning_failed", False, {}, _unreadable, {"max_planning_attempts": 1}, {}),
     "budget_exhausted": ("FAILED", "budget_exhausted", False, {}, None, {}, {"max_tokens": 30_000}),
-    "runtime_unavailable": ("FAILED", "runtime_unavailable", True, {"planner": [transport_loss]}, None,
+    # 2026-10-10 决定：没被听到的回合共用 6 次宽限，第 7 次才计次 → 7 次掉线用掉 1 格梯子
+    "runtime_unavailable": ("FAILED", "runtime_unavailable", True, {"planner": [transport_loss] * 7}, None,
                             {"max_planning_attempts": 1}, {}),
 }
 

@@ -17,13 +17,18 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-from ..graph.terminal import terminal_task
 
 if TYPE_CHECKING:
     from ..storage.store import Store
 
 
-def lineage(store: Store, mission_id: str) -> dict[str, Any]:
+def lineage(store: Store, mission_id: str, *, terminal_task_id: str | None) -> dict[str, Any]:
+    """The knowledge path behind a Mission's accepted results.
+
+    ``terminal_task_id`` is the completion report's finalizer step (V36: one reading of
+    "the terminal step" — the report's — never a second one derived here), or None when
+    the adopted method names no finalizer.
+    """
     tasks = store.list_tasks(mission_id)
     if not tasks:
         return {
@@ -34,7 +39,7 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
             "agents": [],
             "edges": [],
         }
-    terminal = terminal_task(tasks)
+    terminal = next((task for task in tasks if task.id == terminal_task_id), None)
     knowledge_seen: dict[str, dict[str, Any]] = {}
     attempts: dict[str, dict[str, Any]] = {}
     task_ids: list[str] = []
@@ -77,7 +82,7 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
     # 2026-10-11 偏离 5：血缘从全部验收结果展开，不只从"最后一个叶"（分层计划里那是任取的一步）
     from ..graph.terminal import accepted_tasks
 
-    for accepted in accepted_tasks(tasks) or ([terminal] if terminal.accepted_result_id else []):
+    for accepted in accepted_tasks(tasks):
         if accepted.accepted_result_id and accepted.accepted_result_id not in queue:
             queue.append(accepted.accepted_result_id)
     expanded: set[str] = set()
@@ -102,8 +107,8 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
             add_record(used)
     agents = sorted({a["agent_id"] for a in attempts.values() if a["agent_id"]})
     return {
-        "terminal_task_id": terminal.id,
-        "terminal_result_id": terminal.accepted_result_id,
+        "terminal_task_id": None if terminal is None else terminal.id,
+        "terminal_result_id": None if terminal is None else terminal.accepted_result_id,
         "knowledge": list(knowledge_seen.values()),
         "tasks": task_ids,
         "attempts": list(attempts.values()),

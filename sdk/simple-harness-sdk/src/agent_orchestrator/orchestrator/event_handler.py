@@ -445,6 +445,13 @@ def _turn_failed(event: Any) -> bool:
     return isinstance(detail, Mapping) and detail.get("turn_failed") is True
 
 
+def _planning_turn_unanswered(event: Any) -> bool:
+    """The Planner was not heard this round: the turn failed, or its outcome is unknown
+    (handed off, line dropped).  Both share one grace (``PLANNER_TURN_FAILURE_GRACE``);
+    V30: ``_planning_attempts`` and ``_planner_turn_failure_forgiven`` read this one predicate."""
+    return _turn_failed(event) or event.payload.get("reason") == "provider_outcome_unknown"
+
+
 def _refusal_codes(event: Any) -> list[str]:
     """The problem codes a ``PlanningRejected`` event names."""
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
@@ -853,8 +860,9 @@ class Orchestrator:
             for key, admission in local_admissions.items():
                 admission.recover(self._assembled.pool(key).runtime.uow)
             # SDK startup itself reconciles grants. Consume already durable late
-            # receipts before it can raise on an actual overrun; no runtime is started
-            # by this accounting-only pass. Tool counts also come from durable rows.
+            # receipts first so an actual overrun is recorded with its real numbers
+            # (OVERRUN is a recorded fact, never raised); no runtime is started by this
+            # accounting-only pass. Tool counts also come from durable rows.
             self._commit.tool_calls_for = self._executed_tool_calls
             import_late_accounting(self)
             # Reconcile orphan execution identities before any runtime can resume tools.
@@ -5951,10 +5959,9 @@ class Orchestrator:
         from simple_harness import RunId
         in_flight = False
         last_settled: float | None = None
-        for invocation in runtime.uow.list_provider_invocations(RunId(agent.run_id)):
-            handed_off = getattr(invocation, "handed_off_at", None)
-            settled = getattr(invocation, "settled_at", None)
-            if (str(invocation.state) == "handed_off" and handed_off is not None
+        # V32（核验 opt.179 建议）：只读这三列，不把整行记录反序列化
+        for state, handed_off, settled in runtime.uow.list_provider_invocation_liveness(RunId(agent.run_id)):
+            if (state == "handed_off" and handed_off is not None
                     and now - float(handed_off) < self._config.provider_call_seconds):
                 in_flight = True
             if settled is not None and (last_settled is None or float(settled) > last_settled):
@@ -6580,8 +6587,7 @@ class Orchestrator:
                 # 2026-10-10（第三轮复查）：规划器自己的调用结果不明（交出后线路断了）同样不是它答错，
                 # 与回合失败走同一道宽限（用户 09-28：服务出错不计次数）；连续不明另有上限
                 # （MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS），不会无限重试。
-                unanswered = _turn_failed(event) or event.payload.get("reason") == "provider_outcome_unknown"
-                if unanswered and forgiven < PLANNER_TURN_FAILURE_GRACE:
+                if _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:
                     forgiven += 1
                     continue
                 if not refusal_charges_planner(_refusal_codes(event)):
@@ -6601,7 +6607,8 @@ class Orchestrator:
         latest_forgiven = False
         for event in self.store.list_events(mission_id):
             if event.type == "PlanningRejected":
-                latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE
+                # V30（核验 opt.179 建议）：与 ``_planning_attempts`` 同一口径——结果不明也是"没被听到"
+                latest_forgiven = _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE
                 forgiven += 1 if latest_forgiven else 0
             elif event.type == "PlanningDecisionEvaluated" and event.payload.get("status") == "COMMITTED":
                 forgiven = 0
@@ -9581,8 +9588,8 @@ class Orchestrator:
         # 2026-10-11（第三轮复查附带发现 3）：parse 局里规划器刚换了接替步、那一步还没派发，这里就问它
         # "这一版计划不改就停？"——它在一步正要开工时被问是否结束，最后去问人。有步骤已放行、还没开工
         # 时不是问的时候：等那一步开了工（或被挡住）再说。只看事实：READY 的步骤。
-        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):
-            return False
+        if any(task.status is TaskStatus.READY and not task.paused for task in self.store.list_tasks(mission.id)):
+            return False  # V38：暂停的步骤不会开工，不算"正要开工"
         try:
             network = new_mode.network(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:
@@ -11561,7 +11568,7 @@ def retry_feedback(
             else:
                 said = error.get("message")
                 said = f"：{said}" if isinstance(said, str) and said.strip() else ""
-                feedback.append(f"上一轮有一次模型调用失败（代码 {code}{said}）；这一轮从头做。")
+                feedback.append(f"上一轮因一次模型调用出错而失败（代码 {code}{said}）；这一轮从头做。")
         elif reason == "executor_stalled":
             # 2026-10-10（parse/docopt 重跑）：被当成卡死终止的那一轮，原来给下一轮的是 "executor_stalled: "
             stalled = failure.get("stalled_seconds")

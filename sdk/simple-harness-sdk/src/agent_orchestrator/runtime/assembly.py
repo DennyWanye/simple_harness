@@ -31,6 +31,7 @@ from simple_harness.execution.provider_admission import ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 
 from ..artifacts.workspace import WorkspaceManager
+from ..orchestrator.occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from ..contracts import Budget
 from ..governance.policies import DeploymentPolicy
 from ..orchestrator.root_review import DEFAULT_MAX_CUTS_PER_REVISION
@@ -114,10 +115,9 @@ class OrchestratorConfig:
     aging_window_seconds: float = 300.0
     # step 6 (D6-1 / D6-8)
     global_budget: Budget | None = None  # §18.2 Global Budget above every Mission; None = uncapped
-    # 2026-09-25 user decision: a materialised leaf gets this fixed token allowance instead
-    # of an even share of the Mission pool (None = the even share, every earlier config
-    # unchanged).  Still bounded by what the pool has left, so conservation holds.
-    task_max_tokens: int | None = field(default=None, kw_only=True)
+    # 2026-09-25 user decision: a materialised leaf gets this fixed token allowance; V42
+    # (2026-10-11) deleted the even share, so the default is the product's own number.
+    task_max_tokens: int = field(default=DEFAULT_TASK_MAX_TOKENS, kw_only=True)
     # step 6 (D6-2 / D6-3): the §18.5 caps and the gate they drive
     max_running_attempts: int | None = (
         None  # deployment-wide open Attempts; None = max_concurrency × 4
@@ -233,7 +233,7 @@ class OrchestratorConfig:
             },
             "aging_window_seconds": self.aging_window_seconds,
             "global_budget": None if self.global_budget is None else self.global_budget.to_json(),
-            **({} if self.task_max_tokens is None else {"task_max_tokens": self.task_max_tokens}),
+            "task_max_tokens": self.task_max_tokens,
             "deployment_policy": self.deployment_policy.to_json(),
             "backpressure": {
                 **self.backpressure_limits().to_json(),

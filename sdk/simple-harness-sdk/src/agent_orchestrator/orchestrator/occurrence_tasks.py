@@ -41,9 +41,10 @@ refuses a child whose limits do not fit its parent, so the share has to be compu
 rather than guessed: what is left of the Mission's task pool (its budget minus the
 system reserve, minus what the existing rows already hold) is divided over the
 occurrences this round funds *plus one share held back for every compound nobody has
-refined yet*, and every other dimension the Mission bounds is inherited.  See
-:func:`share_tokens` for why the divisor counts the unrefined compounds, and
-:meth:`Materialisation.conservation` for the equation the suite checks each round.
+refined yet*, and every other dimension the Mission bounds is inherited.  V42
+(2026-10-11): every leaf gets the fixed allowance ``DEFAULT_TASK_MAX_TOKENS`` (or the
+deployment's own), the even share is gone; see :meth:`Materialisation.conservation`
+for the equation the suite checks each round.
 """
 
 from __future__ import annotations
@@ -86,6 +87,8 @@ MATERIALISER = "occurrence-tasks-v1"
 #: primitive this much is a refusal (``BUDGET_INSUFFICIENT``), never a row rounded
 #: down to an account nobody can draw on.
 MIN_TOKEN_SHARE = 1
+#: V42：每个叶子的固定额度；与产品设置里的默认值同一个数（Host ``task_max_tokens``）。
+DEFAULT_TASK_MAX_TOKENS = 10_000_000
 
 #: What a compound's account is opened with.  A compound is refined and never
 #: dispatched, so "may spend nothing" is the true statement about it rather than a
@@ -133,10 +136,10 @@ class Materialisation:
     tasks: tuple[OccurrenceTask, ...] = ()
     reused: tuple[str, ...] = ()
     pool_tokens: int | None = None
-    share_tokens: int | None = None
-    #: 2026-10-11 user decision A: a fixed per-leaf allowance replaces the even share.
-    #: With it, the pool is conserved at reservation time by the account chain, so the
+    #: 2026-10-11 user decision A: every new leaf gets this fixed allowance (at most the
+    #: pool); the pool is conserved at reservation time by the account chain, so the
     #: equation below checks each leaf's ceiling against the pool instead of their sum.
+    #: V42: the even share is gone — there is one way to fund a leaf.
     fixed_allowance: int | None = None
     available_tokens: int | None = None
     #: What the Mission's Task rows already hold, *before* this round — read from the
@@ -160,13 +163,14 @@ class Materialisation:
     def conservation(self) -> dict[str, Any]:
         """§21.5 budget conservation, as the equation and not as a claim.
 
-        The equation is the legacy one, applied to the occurrence rows instead of to
-        a Planner's DAG (``graph/task_graph.py``: *sum of task max_tokens plus the
-        system reserve never exceeds the Mission*)::
+        Under the fixed per-leaf allowance (2026-10-11 决定 A; V42 deleted the even share)
+        the equation is::
 
-            committed_before + granted_now <= pool
+            every leaf's ceiling <= pool
 
-        where ``pool`` is the Mission's ceiling minus the system reserve.  Writing it
+        where ``pool`` is the Mission's ceiling minus the system reserve; the pool itself
+        is conserved by the account chain at reservation time, so leaf ceilings may sum
+        past it.  Writing it
         against what the *store* already holds rather than against this network is
         the load-bearing part: a plan grows by refining compounds, so round two's
         occurrences are funded out of what round one left, and an equation stated
@@ -182,7 +186,6 @@ class Materialisation:
             "pool_tokens": self.pool_tokens,
             "committed_tokens": self.committed_tokens,
             "granted_tokens": granted,
-            "share_tokens": self.share_tokens,
             "funded_now": self.funded_now,
             "reserved_subtrees": self.reserved_subtrees,
             "materialised": len(self.tasks),
@@ -199,16 +202,11 @@ class Materialisation:
             # closes: ``held_by_reused`` + ``held_elsewhere`` == ``committed_tokens``.
             "held_elsewhere": int(self.committed_tokens)
             - sum(int(value) for value in self.existing.values()),
-            "mode": "fixed_allowance" if self.fixed_allowance is not None else "even_share",
             "fixed_allowance": self.fixed_allowance,
             "available_tokens": self.available_tokens,
             "holds": (
                 self.pool_tokens is None
-                or (
-                    all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)
-                    if self.fixed_allowance is not None
-                    else self.committed_tokens + granted <= self.pool_tokens
-                )
+                or all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)
             ),
         }
 
@@ -228,39 +226,6 @@ def task_pool_tokens(mission: Mission) -> int | None:
     if ceiling is None:
         return None
     return int(ceiling)
-
-
-def share_tokens(available: int | None, funded_now: int, reserved_subtrees: int = 0) -> int | None:
-    """One new primitive occurrence's share of what the pool still has.
-
-    Two things make this different from "pool divided by the primitives of this
-    network", which is the obvious rule and the wrong one:
-
-    * **The divisor counts the compounds nobody has refined yet.**  A plan grows by
-      refining a compound into children, and those children have to be payable when
-      they arrive.  If every token were handed to the primitives of revision one,
-      revision two's children would be funded out of nothing and the refinement would
-      be refused for lack of budget — the plan would be shaped by the order the
-      Planner happened to expand it in.  So each unrefined compound reserves one
-      share for the subtree it still owes.
-    * **The dividend is what is *left*.**  ``available`` is the pool minus what the
-      Mission's existing rows already hold, so the equation in
-      :meth:`Materialisation.conservation` stays true across revisions instead of
-      being re-satisfied from scratch each time.
-
-    Floor division and not "distribute the remainder": the remainder stays on the
-    Mission account, where a Task that needs more than its share can still draw it
-    through the normal reserve path (``BudgetLedger.reserve`` charges the whole
-    chain).  Handing the remainder to whichever occurrence happens to sort first
-    would make the plan's budget depend on occurrence ids.
-    """
-
-    if available is None:
-        return None
-    slots = max(0, funded_now) + max(0, reserved_subtrees)
-    if slots <= 0:
-        return max(0, available)
-    return max(0, available) // slots
 
 
 def occurrence_criteria(
@@ -674,6 +639,5 @@ __all__ = (
     "read_only_existing_paths",
     "read_only_leaf",
     "read_only_rewrites",
-    "share_tokens",
     "task_pool_tokens",
 )

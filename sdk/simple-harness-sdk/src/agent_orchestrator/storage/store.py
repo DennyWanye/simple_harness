@@ -1819,7 +1819,19 @@ class Store:
             "FROM budget_accounts WHERE mission_id = ? AND scope = 'mission'",
             (mission_id,),
         ).fetchone()
-        return None if row is None else dict(row)
+        if row is None:
+            return None
+        usage = dict(row)
+        # V34（核验 opt.179 建议）：超出准入上限的调用照记不拦（可多算不可少算）；把它们的数目与
+        # 多出的 token 一起交给任务详情与审计视图，只显示、不拦。
+        overrun = self.connection.execute(
+            "SELECT COUNT(*), COALESCE(SUM(MAX(actual_tokens - total_upper, 0)), 0) "
+            "FROM provider_token_grants WHERE mission_id = ? AND state = 'OVERRUN'",
+            (mission_id,),
+        ).fetchone() if self.has_table("provider_token_grants") else (0, 0)
+        usage["overrun_calls"] = int(overrun[0])
+        usage["overrun_tokens"] = int(overrun[1])
+        return usage
 
 def _event_from_row(row: sqlite3.Row) -> Event:
     return Event(

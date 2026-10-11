@@ -174,8 +174,9 @@ def import_late_accounting(orch) -> bool:
     live = None if full else _live_missions(store)
     if full:
         orch._late_accounting_ended_at = now
-    # Guard recovery reads effective receipts. An actual overrun is committed
-    # before it raises; its real usage must still be imported. Other failures stay fail-closed and are checked per subject below.
+    # Guard recovery reads effective receipts. An actual overrun is recorded with its real
+    # numbers (OVERRUN is a fact, never raised; 2026-10-10 第一批); its usage must still be
+    # imported. Other failures stay fail-closed and are checked per subject below.
     for pool in orch.assembled.pools.values():
         guard = pool.bridge.runtime.ports.provider_admission
         if guard is not None:

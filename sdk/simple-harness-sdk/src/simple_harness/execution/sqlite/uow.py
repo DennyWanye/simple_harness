@@ -7632,6 +7632,28 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ).fetchall()
         return tuple(_provider_invocation_record(row) for row in rows)
 
+    def list_provider_invocation_liveness(
+        self, run_id: RunId
+    ) -> tuple[tuple[str, float | None, float | None], ...]:
+        """``(state, handed_off_at, settled_at)`` of every provider invocation of one Run.
+
+        The orchestration layer's stall question ("is a call still on the wire; when did the
+        last one settle") needs these three columns only; decoding whole records for it
+        (V32, 2026-10-11) was measurable work on every liveness tick.
+        """
+
+        rows = self.database.connection.execute(
+            "SELECT state, handed_off_at, settled_at FROM provider_invocations WHERE run_id = ?"
+            " ORDER BY claimed_at, invocation_id",
+            (run_id.value,),
+        ).fetchall()
+        return tuple(
+            (str(row["state"]),
+             None if row["handed_off_at"] is None else float(row["handed_off_at"]),
+             None if row["settled_at"] is None else float(row["settled_at"]))
+            for row in rows
+        )
+
     def _provider_budget(self, connection: sqlite3.Connection, run_id: RunId) -> BudgetSnapshot:
         committed = 0
         reserved = 0

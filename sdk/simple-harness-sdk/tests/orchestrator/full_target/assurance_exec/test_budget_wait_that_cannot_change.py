@@ -47,6 +47,10 @@ def _store_with_reservations(rows, *, live_intents=(), live_attempts=()):
     connection = sqlite3.connect(":memory:")
     connection.execute("CREATE TABLE budget_reservations(subject_id TEXT, account_id TEXT, state TEXT, mission_id TEXT)")
     connection.executemany("INSERT INTO budget_reservations VALUES (?,?,?,'m-1')", rows)
+    # V40：账户范围读账户表，不按名字猜
+    connection.execute("CREATE TABLE budget_accounts(account_id TEXT, scope TEXT)")
+    connection.executemany("INSERT INTO budget_accounts VALUES (?,?)", [
+        ("budget:task-1", "task"), ("budget:task-2", "task"), ("budget:mission-m-1", "mission")])
     return SimpleNamespace(
         connection=connection,
         get_intent_for_subject=lambda s: SimpleNamespace(state="SUBMITTED") if s in live_intents else None,
@@ -55,7 +59,9 @@ def _store_with_reservations(rows, *, live_intents=(), live_attempts=()):
 
 
 def _real_tick(store) -> SimpleNamespace:
-    return SimpleNamespace(store=store)
+    tick = SimpleNamespace(store=store)
+    tick._account_scope = lambda account_id: AssuranceTick._account_scope(tick, account_id)
+    return tick
 
 
 def test_budget_can_change_only_while_a_live_subject_holds_a_reservation():
@@ -95,7 +101,8 @@ def test_the_refusing_account_decides_what_ends(monkeypatch):
             _commit_fail_mission=lambda mid, *, stop_reason, detail: calls.append(("fail", mid, detail["account"])),
         )
         store = SimpleNamespace(get_task=lambda tid: SimpleNamespace(status=task_status) if tid == "task-1" else None)
-        return SimpleNamespace(store=store, orchestrator=orch, _review_owner_task=lambda claim: "task-1", _release_after=set())
+        return SimpleNamespace(store=store, orchestrator=orch, _review_owner_task=lambda claim: "task-1", _release_after=set(),
+                               _account_scope=lambda account_id: "task" if account_id.startswith("budget:task-") else "mission")
 
     claim = _claim()
     t = tick("VERIFYING"); AssuranceTick._end_on_exhausted_budget(t, claim, BudgetExhausted("budget:task-1", "tokens", 1, 0))

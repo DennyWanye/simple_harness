@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """2026-09-25 user decision: a deployment can give every leaf a fixed token allowance.
 
-The setting reaches the commit service through the Orchestrator config and is part
-of the config record only when set, so every earlier configuration keeps its record.
+The setting reaches the commit service through the Orchestrator config and is always
+part of the config record (V42: the even share is gone, the default is the product's).
 """
 
 from __future__ import annotations
@@ -14,8 +14,11 @@ from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 
 
-def test_the_fixed_allowance_is_recorded_only_when_set(tmp_path) -> None:
-    assert "task_max_tokens" not in OrchestratorConfig(evidence_root=tmp_path).to_json()
+def test_the_fixed_allowance_is_always_recorded(tmp_path) -> None:
+    """V42（2026-10-11）：平分路径已删，没有"未设置"一说——默认就是产品的固定额度，照样进记录。"""
+    from agent_orchestrator.orchestrator.occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
+
+    assert OrchestratorConfig(evidence_root=tmp_path).to_json()["task_max_tokens"] == DEFAULT_TASK_MAX_TOKENS == 10_000_000
     config = OrchestratorConfig(evidence_root=tmp_path, task_max_tokens=1_000_000)
     assert config.to_json()["task_max_tokens"] == 1_000_000
 

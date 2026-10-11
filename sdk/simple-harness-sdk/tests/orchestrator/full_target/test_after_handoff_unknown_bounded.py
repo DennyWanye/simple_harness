@@ -80,15 +80,20 @@ def _quick(monkeypatch):
 
 
 def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_path) -> None:
-    """Three planner rounds in a row end on an unknown outcome (three different kinds of
-    after-handoff failure).  ``max_planning_attempts=3``: the Mission is FAILED /
-    ``runtime_unavailable`` with ``MissionFailed``, no fourth round is opened, nothing is
-    left in flight, and every lost call is on the books — never in PLANNING with
+    """Planner rounds end on an unknown outcome round after round (three different kinds of
+    after-handoff failure, then plain transport losses).  2026-10-10 决定：没被听到的回合不算
+    答错，但共用一道宽限（``PLANNER_TURN_FAILURE_GRACE`` = 6 次）；宽限用完后照样计次。
+    ``max_planning_attempts=3``: 6 + 3 = 9 unknown rounds spend the ladder, the Mission is
+    FAILED / ``runtime_unavailable`` with ``MissionFailed``, no tenth round is opened, nothing
+    is left in flight, and every lost call is on the books — never in PLANNING with
     ``stop_reason=null``.  N11: the diagnostics unwrap a wrapper to the transport class and
     HTTP status, and never carry the reply text."""
 
     async def case() -> dict[str, Any]:
-        provider = FaultyProvider({"planner": [unclassified, http_loss(418), _wrapped(503), transport_loss]})
+        from agent_orchestrator.orchestrator.event_handler import PLANNER_TURN_FAILURE_GRACE
+
+        assert PLANNER_TURN_FAILURE_GRACE == 6
+        provider = FaultyProvider({"planner": [unclassified, http_loss(418), _wrapped(503), *([transport_loss] * 6)]})
         async with product_world(tmp_path / "root", provider, **{**CONFIG, "max_planning_attempts": 3}) as world:
             mission_id = create(world, "p23p-ladder-stop")
             assert await settle(world, mission_id, seconds=15)
@@ -112,10 +117,10 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
     assert outcome["stop_reason"] == "runtime_unavailable", outcome["report"]
     assert outcome["report"]["planning_failure"]["reason"] == "provider_outcome_unknown"
     assert "MissionFailed" in outcome["types"]
-    assert outcome["rejected"] == ["provider_outcome_unknown"] * 3
-    assert outcome["planner_calls"] == 3 and outcome["rounds"] == ["1", "2", "3"], outcome["rounds"]
+    assert outcome["rejected"] == ["provider_outcome_unknown"] * 9
+    assert outcome["planner_calls"] == 9 and outcome["rounds"] == [str(n) for n in range(1, 10)], outcome["rounds"]
     assert outcome["open"] == []
-    assert len(outcome["ledger"]["held_reservations"]) == 3
+    assert len(outcome["ledger"]["held_reservations"]) == 9
     # the runtime_unavailable report: usage is not fully known, the budget is conserved
     assert outcome["report"]["usage_fully_known"] is False and outcome["report"]["budget_conserved"] is True
 
@@ -128,8 +133,9 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
         dumped = str(usage)
         assert "scripted transport loss" not in dumped and "scripted unclassified" not in dumped
         assert "Authorization" not in dumped and "api_key" not in dumped
-    assert seen == [("UnknownAfterHandoff", None, None), ("ProviderTransportError", 418, None),
-                    ("ProviderTransportError", 503, "_ProviderAdapterError")], seen
+    assert seen[:3] == [("UnknownAfterHandoff", None, None), ("ProviderTransportError", 418, None),
+                        ("ProviderTransportError", 503, "_ProviderAdapterError")], seen
+    assert len(seen) == 9 and all(item[0] == "ProviderTransportError" for item in seen[3:]), seen
 
 
 def test_a_worker_step_whose_calls_keep_ending_unknown_stops_as_runtime_unavailable(tmp_path) -> None:

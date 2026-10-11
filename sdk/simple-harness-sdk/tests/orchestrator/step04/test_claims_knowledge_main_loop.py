@@ -207,7 +207,7 @@ async def _run(tmp_path: Path) -> dict[str, Any]:
             "unknown_read": _refusal(lambda: read_knowledge_tool(
                 store, mission_id, "knowledge_read", {"id": "observation:unknown"})),
             "packages": worker.packages,
-            "lineage": lineage(store, mission_id),
+            "lineage": lineage(store, mission_id, terminal_task_id=(mission.final_report or {}).get("terminal_task_id")),
             **_stage_c_facts(store, mission_id, knowledge, results),
         }
     return facts

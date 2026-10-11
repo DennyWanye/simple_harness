@@ -138,7 +138,6 @@ from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
     CONTEXT_PLAN_REVISION,
     MATERIALISER,
     Materialisation,
-    share_tokens,
     task_pool_tokens,
 )
 from agent_orchestrator.orchestrator.plan_commits import (  # noqa: E402
@@ -229,14 +228,6 @@ def _accepted_output(network: Any, producer: OccurrenceId, task_id: str, *, port
 def test_a_fixed_allowance_must_be_positive(tmp_path) -> None:
     with pytest.raises(ValueError):
         CommitService(Store.open(Path(tmp_path) / "zero.db"), task_max_tokens=0)
-
-
-def test_the_share_divisor_counts_the_compounds_nobody_refined_yet() -> None:
-    """A later refinement has to be payable, so an open compound reserves a share."""
-
-    assert share_tokens(100, funded_now=2, reserved_subtrees=0) == 50
-    assert share_tokens(100, funded_now=1, reserved_subtrees=1) == 50
-    assert share_tokens(None, 3, 1) is None
 
 
 def test_a_mission_with_no_token_ceiling_conserves_vacuously() -> None:
@@ -446,15 +437,18 @@ def test_the_decide_step_allocates_only_through_the_admission_entry() -> None:
     assert "plan = allocate(" not in source
 
 
-def test_mutant_an_equation_over_one_network_would_respend_the_pool_each_revision() -> None:
-    """``committed_before`` is what makes the equation survive a second revision."""
+def test_the_equation_checks_each_leaf_against_the_pool() -> None:
+    """V42（2026-10-11）：平分路径删了，守恒式只有一种——每个叶子的上限不超过池子；池子本身由账户链
+    在预留时守住，``committed_before`` 不再进这条式子。"""
 
-    naive = Materialisation(pool_tokens=100, committed_tokens=0)
-    assert naive.conservation()["holds"] is True
-    honest = Materialisation(pool_tokens=100, committed_tokens=100)
-    assert honest.conservation()["holds"] is True
-    overdrawn = dataclasses.replace(honest, committed_tokens=101)
-    assert overdrawn.conservation()["holds"] is False
+    from types import SimpleNamespace
+
+    def leaves(*caps: int):
+        return tuple(SimpleNamespace(task=SimpleNamespace(budget=SimpleNamespace(max_tokens=cap))) for cap in caps)
+
+    assert Materialisation(pool_tokens=100, committed_tokens=0, tasks=leaves(100, 100)).conservation()["holds"] is True
+    assert Materialisation(pool_tokens=100, committed_tokens=100, tasks=leaves(100)).conservation()["holds"] is True
+    assert Materialisation(pool_tokens=100, tasks=leaves(101)).conservation()["holds"] is False
 
 
 def test_mutant_completing_on_the_settled_flag_would_declare_the_mission_done() -> None:
@@ -788,14 +782,6 @@ def test_the_decide_loop_issues_the_start_licence_before_it_reads_readiness() ->
 # ======================================================================================
 
 
-def test_a_pool_too_small_for_the_new_primitives_shares_nothing() -> None:
-    """§2's refusal (``BUDGET_INSUFFICIENT``) starts here: a share below ``MIN_TOKEN_SHARE``
-    is a refusal, never a row rounded down to an account nobody can draw on."""
-
-    assert share_tokens(1, funded_now=2, reserved_subtrees=0) < occurrence_tasks.MIN_TOKEN_SHARE
-    assert share_tokens(2, funded_now=2, reserved_subtrees=0) == occurrence_tasks.MIN_TOKEN_SHARE
-
-
 def test_mutant_spelling_the_account_prefix_by_hand_finds_no_parent(tmp_path) -> None:
     """The half-finished part-2 code spelled ``task:``/``mission:`` by hand; ``open_account``
     could only report "unknown budget account".  The names come from one place."""
@@ -1042,12 +1028,13 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             pool = task_pool_tokens(mission)
             assert pool == int(mission.budget.max_tokens)
             assert equation["holds"] is True
-            assert equation["committed_tokens"] + equation["granted_tokens"] <= equation["pool_tokens"] == pool
+            # V42（2026-10-11）：平分路径删了——每个叶子拿固定额度（不超过池子），各叶子之和可以超过池子，
+            # 池子由账户链在预留时守住
+            assert equation["pool_tokens"] == pool and equation["committed_tokens"] == 0
             assert rows[str(root.task_id)].budget.max_tokens == COMPOUND_TOKENS
             shares = [rows[str(spec.task_id)].budget.max_tokens for spec in (write, follow)]
-            assert shares == [pool // 2, pool // 2]
-            assert sum(int(task.budget.max_tokens or 0) for task in rows.values()) <= pool
-            assert sum(pool // 2 for _ in rows) > pool, "a compound given a primitive's share would overdraw"
+            assert shares == [min(equation["fixed_allowance"], pool)] * 2
+            assert all(cap <= pool for cap in shares)
 
             # §3 activation, recorded on the commit event
             [revision_event] = _events(world, PLAN_REVISION_COMMITTED)
@@ -1209,7 +1196,7 @@ def _sub_goal_planner(request: Any) -> Any:
 
 
 # 固定额度要装得下首审尾款（opt.178 起 393,216 = 256K 输入 + 131,072 输出）加一次执行的预留
-@pytest.mark.parametrize("allowance", [None, 800_000, 3_000_000], ids=["even", "fixed", "fixed-too-big"])
+@pytest.mark.parametrize("allowance", [800_000, 3_000_000], ids=["fixed", "fixed-too-big"])
 def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None) -> None:
     """Review F7: §21.5's second half — round two is funded out of what round one *left*.
 
@@ -1229,7 +1216,7 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
     provider = LayeredScriptedProvider(planner=_sub_goal_planner)
-    config = {} if allowance is None else {"task_max_tokens": allowance}
+    config = {"task_max_tokens": allowance}  # V42：平分路径已删，只有固定额度
     # 一次执行的预留按请求大小算（约 30 万），每一步的份额要付得起它
     budget = 2_000_000
 
@@ -1256,25 +1243,15 @@ def test_two_refinement_rounds_conserve_the_pool(tmp_path, allowance: int | None
     assert second["funded_now"] == 2 and second["reserved_subtrees"] == 0
     assert second["holds"] is True
     granted = sum(int(task.budget.max_tokens or 0) for task in rows)
-    if allowance is None:
-        assert first["mode"] == second["mode"] == "even_share"
-        assert granted <= pool
-        assert sum(item["granted_tokens"] for item in equations) <= pool
-    else:
-        # 2026-10-11 A：每个叶子都拿固定额度（不超过池子），各叶子上限之和可以超过池子
-        assert first["mode"] == second["mode"] == "fixed_allowance"
-        leaves = [int(task.budget.max_tokens or 0) for task in rows if task.budget.max_tokens]
-        assert leaves and all(cap == min(allowance, pool) for cap in leaves), leaves
-        assert second["available_tokens"] is not None and second["available_tokens"] <= pool
+    # 2026-10-11 A：每个叶子都拿固定额度（不超过池子），各叶子上限之和可以超过池子
+    assert first["fixed_allowance"] == second["fixed_allowance"] == allowance
+    leaves = [int(task.budget.max_tokens or 0) for task in rows if task.budget.max_tokens]
+    assert leaves and all(cap == min(allowance, pool) for cap in leaves), leaves
+    assert second["available_tokens"] is not None and second["available_tokens"] <= pool
     assert first["granted_tokens"] + 2 * (pool // 2) > pool, "re-spending the pool each round would overdraw"
     reused = sum(int(value) for value in second["held_by_reused"].values())
     assert reused + second["held_elsewhere"] == second["committed_tokens"]
-    if allowance is None:
-        assert first["share_tokens"] == pool // 2
-        assert second["share_tokens"] < first["share_tokens"]
-    else:
-        # 2026-10-11 A：固定额度不再被份额削减；超过池子的只削到池子
-        assert first["share_tokens"] == second["share_tokens"] == min(allowance, pool)
+    assert granted == sum(leaves)  # V42：没有"份额"一说，叶子拿到的就是固定额度
 
 
 def test_the_root_and_the_judgment_gates_on_the_product_deployment(tmp_path, monkeypatch) -> None:

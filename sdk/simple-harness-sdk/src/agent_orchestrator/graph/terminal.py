@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""The Mission judgment target: the last leaf, in topological order, of the Tasks that
-were not cancelled (all Tasks when every one was cancelled)."""
+"""The completion report's terminal step (the adopted method's finalizer) and the accepted
+tasks in topological order.  V36 (2026-10-11): the old "last leaf in topological order"
+reading is gone — the report and the lineage share the finalizer."""
 
 from __future__ import annotations
 
@@ -14,9 +15,10 @@ from ..contracts import Task, TaskStatus
 
 def finalizer_task_id(network: Any, semantics: Any, mission_id: str) -> str | None:
     """The step the root's adopted method names as its finalizer (``composition.finalizer_step``),
-    as a task id — ``derive_id("task", instance, slot)`` is how grounding names every slot's task.
+    as a task id.  Read off the adopted instance's child bindings (slot → occurrence → task):
+    a shared slot is bound to an occurrence another instance opened, whose task id is not
+    the one ``derive_id`` would spell for this instance (V35, 核验 opt.184 建议 S1).
     None when the method names no finalizer.  (2026-10-11 偏离 5：完成报告不再任取一步。)"""
-    from ..planning.htn.grounding import derive_id
 
     for root in network.root_occurrence_ids:
         draft = network.adopted_instance_for(root)
@@ -24,8 +26,12 @@ def finalizer_task_id(network: Any, semantics: Any, mission_id: str) -> str | No
             continue
         stored = semantics.get_method(draft.method_ref.method_id, int(draft.method_ref.version))
         step = stored.contract.composition.finalizer_step
-        if step:
-            return str(derive_id("task", str(draft.instance_id), str(step)))
+        if not step:
+            continue
+        child = next((item for item in network.adopted_children(root) if str(item.slot_key) == str(step)), None)
+        if child is None:
+            return None
+        return str(network.occurrence(child.occurrence_id).task_id)
     return None
 
 
@@ -38,14 +44,4 @@ def accepted_tasks(tasks: Sequence[Task]) -> list[Task]:
     return [task for task in ordered if task.accepted_result_id]
 
 
-def terminal_task(tasks: Sequence[Task]) -> Task:
-    live = [task for task in tasks if task.status is not TaskStatus.CANCELLED] or list(tasks)
-    from ..artifacts.versioning import topological  # review P2-10: order by edges, not ordinal
-
-    ordered = topological(live, {task.id: task for task in live})
-    depended = {dep for task in ordered for dep in task.dependency_ids}
-    leaves = [task for task in ordered if task.id not in depended]
-    return leaves[-1] if leaves else ordered[-1]
-
-
-__all__ = ("accepted_tasks", "finalizer_task_id", "terminal_task")
+__all__ = ("accepted_tasks", "finalizer_task_id")

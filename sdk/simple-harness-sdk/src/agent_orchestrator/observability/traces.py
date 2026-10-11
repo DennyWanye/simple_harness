@@ -222,7 +222,8 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
 
     # -- the knowledge path
     knowledge = (
-        lineage(store, mission_id)
+        lineage(store, mission_id,
+                terminal_task_id=(mission.final_report or {}).get("terminal_task_id"))
         if success
         else {"knowledge": [], "attempts": [], "edges": []}
     )

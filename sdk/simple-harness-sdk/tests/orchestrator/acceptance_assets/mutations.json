@@ -1796,8 +1796,8 @@
       "id": "SM-01",
       "source": "2026-10-10 第三轮复查：规划器自己的调用结果未知不计次",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "                unanswered = _turn_failed(event) or event.payload.get(\"reason\") == \"provider_outcome_unknown\"",
-      "replacement": "                unanswered = _turn_failed(event)",
+      "original": "                if _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:",
+      "replacement": "                if _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:",
       "tests": [
         "tests/orchestrator/full_target/test_service_intent_provider_blocker.py::test_an_unknown_outcome_within_the_grace_does_not_count_as_a_wrong_answer"
       ],
@@ -1952,8 +1952,8 @@
       "id": "SM-15",
       "source": "2026-10-11 用户决定 A：固定单步额度不再平分",
       "file": "src/agent_orchestrator/orchestrator/occurrence_tasks.py",
-      "original": "                    all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)\n                    if self.fixed_allowance is not None\n                    else self.committed_tokens + granted <= self.pool_tokens",
-      "replacement": "                    self.committed_tokens + granted <= self.pool_tokens",
+      "original": "                or all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)",
+      "replacement": "                or self.committed_tokens + granted <= self.pool_tokens",
       "tests": [
         "tests/orchestrator/full_target/test_fixed_leaf_allowance.py::test_fixed_allowance_leaves_may_sum_past_the_pool_but_none_exceeds_it"
       ],
@@ -2018,7 +2018,7 @@
       "id": "SM-21",
       "source": "2026-10-11 第二批：停止条件在步骤待开工时就问规划器（第三轮复查发现 3）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):\n            return False\n        try:\n            network = new_mode.network(mission.id)",
+      "original": "        if any(task.status is TaskStatus.READY and not task.paused for task in self.store.list_tasks(mission.id)):\n            return False  # V38：暂停的步骤不会开工，不算\"正要开工\"\n        try:\n            network = new_mode.network(mission.id)",
       "replacement": "        try:\n            network = new_mode.network(mission.id)",
       "tests": [
         "tests/orchestrator/test_batch2_h_stop_conditions.py::test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start"
@@ -2101,6 +2101,61 @@
         "tests/orchestrator/full_target/test_delivery_bindings.py::test_handover_rechecks_every_delivery_licence_and_sharing_tells_different_deliveries_apart"
       ],
       "note": "交接不核交付见证"
+    },
+    {
+      "id": "SM-29",
+      "source": "2026-10-11 V30 宽限口径一致",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "                latest_forgiven = _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE",
+      "replacement": "                latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE",
+      "tests": [
+        "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v30_both_grace_counters_treat_an_unknown_outcome_as_unanswered"
+      ],
+      "note": "两处宽限又不一致"
+    },
+    {
+      "id": "SM-30",
+      "source": "2026-10-11 V34 超额记录可见",
+      "file": "src/agent_orchestrator/storage/store.py",
+      "original": "        usage[\"overrun_calls\"] = int(overrun[0])\n        usage[\"overrun_tokens\"] = int(overrun[1])",
+      "replacement": "        usage[\"overrun_calls\"] = 0\n        usage[\"overrun_tokens\"] = 0",
+      "tests": [
+        "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v34_the_usage_ledger_reports_overrun_calls_and_tokens"
+      ],
+      "note": "超额永远显示 0"
+    },
+    {
+      "id": "SM-31",
+      "source": "2026-10-11 V35 收尾步骤按槽位取",
+      "file": "src/agent_orchestrator/graph/terminal.py",
+      "original": "        return str(network.occurrence(child.occurrence_id).task_id)",
+      "replacement": "        from ..planning.htn.grounding import derive_id\n        return str(derive_id(\"task\", str(draft.instance_id), str(step)))",
+      "tests": [
+        "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v35_the_finalizer_is_read_off_the_adopted_children_not_respelled"
+      ],
+      "note": "共享槽位时收尾步骤号重新推导、找不到"
+    },
+    {
+      "id": "SM-32",
+      "source": "2026-10-11 V38 暂停步骤不算正要开工",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "        if any(task.status is TaskStatus.READY and not task.paused for task in self.store.list_tasks(mission.id)):",
+      "replacement": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):",
+      "tests": [
+        "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v38_a_paused_ready_step_does_not_postpone_the_stop_condition_question"
+      ],
+      "note": "暂停的步骤永远挡住停止条件"
+    },
+    {
+      "id": "SM-33",
+      "source": "2026-10-11 V40 账户范围读表",
+      "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
+      "original": "        if self._account_scope(account_id) == \"task\":\n            rows = self.store.connection.execute(",
+      "replacement": "        if account_id.startswith(\"budget:task-\"):\n            rows = self.store.connection.execute(",
+      "tests": [
+        "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v40_the_account_scope_is_read_from_the_accounts_table_not_the_id_prefix"
+      ],
+      "note": "按名字前缀猜账户范围"
     }
   ]
 }
