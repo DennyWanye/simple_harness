@@ -1087,7 +1087,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
               </div>
               <div style={muted}>
-                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"}
+                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"}{Number(record(detail.usage).overrun_calls) > 0 ? ` · 超出上限的调用 ${text(record(detail.usage).overrun_calls)} 次（超出总上限 ${text(record(detail.usage).overrun_tokens) || "0"}，已照实入账）` : ""}
               </div>
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}

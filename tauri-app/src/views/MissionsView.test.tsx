@@ -480,6 +480,7 @@ describe("MissionsView（HA-10）", () => {
   it.each([
     [{ settled_tokens: 86732, reserved_tokens: 0 }, /Token 已结算 86732 · 当前预留 0/],
     [{ settled_tokens: null, reserved_tokens: null }, /Token 已结算 未知 · 当前预留 未知/],
+    [{ settled_tokens: 10, reserved_tokens: 0, overrun_calls: 2, overrun_tokens: 4321 }, /超出上限的调用 2 次（超出总上限 4321，已照实入账）/],
   ])("显示账本当前用量，未知不冒充零 %j", (usage, expected) => {
     openMission({
       ...DETAIL,

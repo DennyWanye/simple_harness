@@ -97,6 +97,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
       <p>证据链缺口 {asList(attribution.breaks).length} 项。重建一致不代表任务交付成功。</p>
       <p>记录用量：{asText(total.tokens) || "未知"} tokens</p>
       <p>预留：{usage.reserved_tokens == null ? "未知" : asText(usage.reserved_tokens)} tokens · 未知用量记录（已入账）：{unknownRows == null ? "未知" : unknownRows} · 账本核对：{cost.reconciled === true ? "一致" : "未对齐或不可用"}</p>
+      <p>超出上限的调用：{usage.overrun_calls == null ? "未知" : asText(usage.overrun_calls)} 次 · 超出总上限 {usage.overrun_tokens == null ? "未知" : asText(usage.overrun_tokens)} tokens（只算超出总上限的部分，照实入账，不拦）</p>
       <p>待结算用量：{ledger.unsettled_usage_tokens == null ? "未知" : asText(ledger.unsettled_usage_tokens)} tokens。{incomplete ? "记录不完整，以上已记录用量不能作为最终总消耗。" : "仅表示当前账本记录，不是供应商独立账单。"}</p>
       <p>未知记录数只统计已入账数据，不包含尚未入账的在途调用。</p>
       <h4>尝试与贡献</h4>

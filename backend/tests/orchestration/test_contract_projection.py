@@ -286,7 +286,8 @@ def _detail(**extra: Any) -> dict[str, Any]:
         "planning_authorization_requests": [], "operation_workspace": None, "budget_by_duty": [],
         "unrefined_goals": [], "steps_no_longer_counting": [], "waiting_on": [], "blocked": [], "disputes": [],
         "mission_policy": {"version_id": "policy-1", "source": "active"},
-        "usage": {"attempts": 0, "reserved_tokens": 0, "settled_tokens": 0, "ledger_version": 1},
+        "usage": {"attempts": 0, "reserved_tokens": 0, "settled_tokens": 0, "ledger_version": 1,
+                  "overrun_calls": 0, "overrun_tokens": 0},
         "event_count": 5, "through_seq": 9, "recovery_isolated": None}
     detail.update(extra)
     return detail

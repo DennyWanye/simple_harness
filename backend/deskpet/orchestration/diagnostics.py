@@ -380,7 +380,8 @@ def build_diagnostics(
         "verification": _verification(snapshot),
         "costs": {
             "usage": _pick(snapshot.get("budget_usage"), (
-                "reserved_tokens", "settled_tokens", "attempts_created", "version")),
+                "reserved_tokens", "settled_tokens", "attempts_created", "version",
+                "overrun_calls", "overrun_tokens")),
             "attribution": attribution_report.get("cost"),
             # 预算花在哪件事上（义务账，阶段 D/E；一致性补改 H-6）：只给编号、层级与数字，
             # 不带"这件事是什么"的原文——那是任务目标的话

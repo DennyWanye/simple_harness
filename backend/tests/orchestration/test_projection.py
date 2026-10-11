@@ -73,11 +73,13 @@ async def test_detail_is_whitelisted_and_marks_model_text(orchestration_root, pr
 def test_budget_projection_keeps_actual_held_reservation_even_after_terminal(status):
     view = {"snapshot": {
         "mission": {"status": status},
-        "budget_usage": {"reserved_tokens": 700, "settled_tokens": 123, "version": 8},
+        "budget_usage": {"reserved_tokens": 700, "settled_tokens": 123, "version": 8,
+                         "overrun_calls": 2, "overrun_tokens": 4_321},
     }}
     usage = project_detail(view)["usage"]
     assert usage["reserved_tokens"] == 700  # UNKNOWN can outlive a cancelled Mission
     assert usage["settled_tokens"] == 123
+    assert usage["overrun_calls"] == 2 and usage["overrun_tokens"] == 4_321  # V34：超额只显示不拦
     assert "amount_micros" not in usage
 
 

@@ -463,6 +463,9 @@ def project_detail(view: Mapping[str, Any], *, blocked: Sequence[Mapping[str, An
             "reserved_tokens": ledger.get("reserved_tokens"),
             "settled_tokens": ledger.get("settled_tokens"),
             "ledger_version": ledger.get("version"),
+            # V34（SDK opt.186）：超出准入上限的调用——只显示、不拦（可多算不可少算）
+            "overrun_calls": ledger.get("overrun_calls"),
+            "overrun_tokens": ledger.get("overrun_tokens"),
         },
         "event_count": snapshot.get("event_count"),
         "through_seq": view.get("through_seq"),
