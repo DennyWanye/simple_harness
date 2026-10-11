@@ -1980,6 +1980,72 @@
         "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_the_refusing_account_decides_what_ends"
       ],
       "note": "停不了的步骤不再让任务结束"
+    },
+    {
+      "id": "SM-18",
+      "source": "2026-10-11 第二批：知识列表翻页被拒不说要带什么（挑战第 8 条）",
+      "file": "src/agent_orchestrator/context/knowledge_tools.py",
+      "original": "            if \"expected_sha256\" not in args:\n                raise ValueError(\n                    \"knowledge_list paging needs expected_sha256: pass the sha256 the first page \"\n                    \"returned together with offset (expected_sha256=\" + digest + \")\"\n                )",
+      "replacement": "            if False:\n                pass",
+      "tests": [
+        "tests/orchestrator/step04/test_knowledge_paging_message.py::test_a_page_request_without_the_digest_is_told_what_to_send"
+      ],
+      "note": "被拒信息又只说目录变了"
+    },
+    {
+      "id": "SM-19",
+      "source": "2026-10-11 第二批：唤醒退避在作业推进后不重数（opt.177 建议 d）",
+      "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
+      "original": "                    if _integer(saved[\"job_version\"], \"job_version\", minimum=0) == int(job[\"row_version\"]):\n                        ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1",
+      "replacement": "                    ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1",
+      "tests": [
+        "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_the_backoff_restarts_once_the_job_moved"
+      ],
+      "note": "作业推进了退避照样翻倍"
+    },
+    {
+      "id": "SM-20",
+      "source": "2026-10-11 第二批：写入冲突扫描每轮解析已做完的下游（opt.176 建议 1）",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "original": "            consumer_task = self.store.get_task(consumer)\n            if consumer_task is not None and consumer_task.status is TaskStatus.COMPLETED:",
+      "replacement": "            consumer_task = self.store.get_task(consumer)\n            if False:",
+      "tests": [
+        "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order"
+      ],
+      "note": "做完的下游又被逐个解析"
+    },
+    {
+      "id": "SM-21",
+      "source": "2026-10-11 第二批：停止条件在步骤待开工时就问规划器（第三轮复查发现 3）",
+      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "original": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):\n            return False\n        try:\n            network = new_mode.network(mission.id)",
+      "replacement": "        try:\n            network = new_mode.network(mission.id)",
+      "tests": [
+        "tests/orchestrator/test_batch2_h_stop_conditions.py::test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start"
+      ],
+      "note": "有 READY 步骤照问"
+    },
+    {
+      "id": "SM-22",
+      "source": "2026-10-11 第二批：完成报告任取一步（偏离 5）",
+      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "original": "            artifact_ids: list[str] = []\n            for task in accepted:\n                artifact_ids.extend(a for a in task.accepted_artifacts if a not in artifact_ids)",
+      "replacement": "            artifact_ids: list[str] = []\n            for task in accepted[-1:]:\n                artifact_ids.extend(a for a in task.accepted_artifacts if a not in artifact_ids)",
+      "tests": [
+        "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order"
+      ],
+      "note": "产物又只有一步的"
+    },
+    {
+      "id": "SM-23",
+      "source": "2026-10-11 第二批：取消服务意图后结清条件（opt.177 建议 S6）",
+      "file": "src/agent_orchestrator/orchestrator/taskgraph_runtime.py",
+      "original": "        if facts.physical_settled and facts.accounting_complete:\n            self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)\n            return True\n        return False",
+      "replacement": "        if facts.physical_settled:\n            self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)\n            return True\n        return False",
+      "tests": [
+        "tests/orchestrator/full_target/taskgraph_exec/test_cancel_service_settle_decision.py::test_only_quiet_and_complete_settles_the_service_subject"
+      ],
+      "note": "账不完整也结清"
     }
   ]
 }

@@ -222,6 +222,39 @@ def test_a_reached_condition_asks_the_planner_once_and_stops_only_when_the_plan_
         seen["asked"][0].payload["request_id"])
 
 
+def test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-10-11（第三轮复查附带发现 3）：parse 局里规划器刚换了接替步、那一步还没派发，就被问
+    "这一版计划不改就停？"。有 READY 的步骤时不问。
+
+    **Mutation**: drop the READY gate → red."""
+    reached = [{"condition": "no_new_knowledge", "rounds_without_new_knowledge": 5, "limit": 5}]
+    monkeypatch.setattr(sc, "reached_stop_conditions", lambda *a, **k: list(reached))
+    from agent_orchestrator.contracts import TaskStatus
+
+    async def case() -> dict[str, Any]:
+        async with enabled_world(tmp_path, key="b2h-stop-ready", hold_worker=True) as world:
+            await world.commit_seed()
+            loop, store, mission_id = world.loop, world.store, world.mission.id
+            new_mode = loop._new_mode(store.get_mission(mission_id))
+            tasks = store.list_tasks(mission_id)
+            [leaf] = [t for t in tasks if t.status in {TaskStatus.READY, TaskStatus.ACTIVE}]
+            # the leaf is admitted but not started: READY (the loop may already have dispatched it;
+            # put the row back to READY directly — the gate reads the status, not the history)
+            import dataclasses
+            if leaf.status is not TaskStatus.READY:
+                with store.transaction():
+                    store.update_task(dataclasses.replace(leaf, status=TaskStatus.READY), expected_version=leaf.version)
+            asked_ready = await loop._stop_conditions_reached(store.get_mission(mission_id), new_mode)
+            requests = [e for e in store.iter_events(mission_id) if e.type == REQUESTED
+                        and str(e.payload["source_key"]).startswith(sc.STOP_PREFIX)]
+            return {"asked_ready": asked_ready, "requests": requests}
+
+    seen = asyncio.run(case())
+    assert seen["asked_ready"] is False and seen["requests"] == []
+
+
 def test_nothing_reached_means_nothing_asked_and_nothing_stopped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sc, "reached_stop_conditions", lambda *a, **k: [])
 

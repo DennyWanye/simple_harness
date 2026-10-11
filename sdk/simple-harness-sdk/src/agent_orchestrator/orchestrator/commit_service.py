@@ -72,7 +72,6 @@ from ..memory.knowledge_standing import knowledge_standing
 from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord, modified, parse_knowledge_ref
 from ..observability.lineage import lineage
 from ..governance.budget_limits import inherit_limits
-from ..graph.terminal import terminal_task
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..scheduling.backpressure import (
     BACKLOG_KEY,
@@ -3273,12 +3272,25 @@ class CommitService(ProtectedTailCommitsMixin,
             if [item.get("criterion") for item in judgments] != criteria:
                 raise CommitRejected("judgments must cover the Mission's current requirements in order")
             met = all(bool(item.get("met")) for item in judgments)
-            terminal = terminal_task(tasks)
+            # 2026-10-11 偏离 5（TaskGraph §8.4）：分层计划里步骤之间没有依赖边，"最后一个叶"退化成任取
+            # 一步，报告的结果、产物只有那一步的。现在：产物是全部验收步骤的（按网络顺序），"终结步"
+            # 是做法声明的收尾步骤（没有就不指定），每一步各自的结果列在 accepted_results。
+            from ..graph.terminal import accepted_tasks, finalizer_task_id
+            from ..storage.htn_store import HtnStore
+
+            accepted = accepted_tasks(tasks)
+            finalizer_id = finalizer_task_id(network, HtnStore(self._store), mission_id)
+            finalizer = next((task for task in accepted if task.id == finalizer_id), None)
+            artifact_ids: list[str] = []
+            for task in accepted:
+                artifact_ids.extend(a for a in task.accepted_artifacts if a not in artifact_ids)
             report = {
                 **dict(mission.final_report or {}),
-                "accepted_result_id": terminal.accepted_result_id,
-                "accepted_artifacts": list(terminal.accepted_artifacts),
-                "terminal_task_id": terminal.id,
+                "accepted_result_id": None if finalizer is None else finalizer.accepted_result_id,
+                "accepted_artifacts": artifact_ids,
+                "terminal_task_id": None if finalizer is None else finalizer.id,
+                "accepted_results": [{"task_id": task.id, "result_id": task.accepted_result_id,
+                                      "artifacts": list(task.accepted_artifacts)} for task in accepted],
                 "summary": summary,
                 "attempts": sum(task.attempt_count for task in tasks),
                 "tasks": self._task_reports(mission_id),

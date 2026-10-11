@@ -56,12 +56,15 @@ class TaskGraphConvergenceWakeups:
                 saved = self.store.get_scheduler_state(key)
                 ordinal = 1
                 if saved is not None:
-                    if (set(saved) != {"mission_id", "job_id", "ordinal", "next_due_ms"}
+                    if (set(saved) != {"mission_id", "job_id", "ordinal", "next_due_ms", "job_version"}
                             or saved["mission_id"] != mission_id or saved["job_id"] != job["job_id"]):
                         raise StoreError("TASKGRAPH_CONVERGENCE_WAKE_CORRUPT")
-                    ordinal = _integer(saved["ordinal"], "ordinal", minimum=1) + 1
                     if now_ms < _integer(saved["next_due_ms"], "next_due_ms"):
                         continue
+                    # 2026-10-11（opt.177 核验建议 d）：作业推进过（行版本变了）就从头数——退避是对"一直
+                    # 等着"的，不是对作业本身的；没推进才继续翻倍。
+                    if _integer(saved["job_version"], "job_version", minimum=0) == int(job["row_version"]):
+                        ordinal = _integer(saved["ordinal"], "ordinal", minimum=1) + 1
                 identity = derive_id("tg-convergence-wake-event", key, str(ordinal))
                 event = self.store.append_event(Event(
                     id=identity, type="TaskGraphConvergenceWakeRequested", trace_id=identity,
@@ -77,7 +80,8 @@ class TaskGraphConvergenceWakeups:
                     cause_ref=FollowupCauseRef(kind="event", id=event.id, revision=event.seq,
                                               content_hash=sha256_hex(event.to_json()))), now_ms=now_ms)
                 self.store.put_scheduler_state(key, {"mission_id": mission_id, "job_id": job["job_id"],
-                    "ordinal": ordinal, "next_due_ms": _integer(now_ms + self._interval_ms(ordinal), "next_due_ms")})
+                    "ordinal": ordinal, "job_version": int(job["row_version"]),
+                    "next_due_ms": _integer(now_ms + self._interval_ms(ordinal), "next_due_ms")})
                 scheduled += 1
                 if scheduled == limit:
                     break

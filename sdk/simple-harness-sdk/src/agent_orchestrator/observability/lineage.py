@@ -74,8 +74,12 @@ def lineage(store: Store, mission_id: str) -> dict[str, Any]:
             if old is not None:
                 add_record(old, via={"knowledge": record.id, "supersedes": old.id})
 
-    if terminal.accepted_result_id:
-        queue.append(terminal.accepted_result_id)
+    # 2026-10-11 偏离 5：血缘从全部验收结果展开，不只从"最后一个叶"（分层计划里那是任取的一步）
+    from ..graph.terminal import accepted_tasks
+
+    for accepted in accepted_tasks(tasks) or ([terminal] if terminal.accepted_result_id else []):
+        if accepted.accepted_result_id and accepted.accepted_result_id not in queue:
+            queue.append(accepted.accepted_result_id)
     expanded: set[str] = set()
     while queue:
         result_id = queue.popleft()

@@ -143,6 +143,22 @@ def _run(tmp_path, provider: _Provider, *, rounds: int = 60) -> dict[str, Any]:
                                      "merge_attempts": len(dispatch.store.list_attempts(merge)),
                                      "clashes": dispatch.write_conflicts(mission.id)}
             if mission.status.value == "COMPLETED":
+                # 2026-10-11 第二批：做完的下游不再被写入冲突扫描逐个解析（opt.176 核验建议 1）
+                resolved: list[str] = []
+                original = dispatch.attempt_inputs
+                dispatch.attempt_inputs = lambda mid, consumer, *a, **k: (resolved.append(consumer), original(mid, consumer, *a, **k))[1]
+                try:
+                    dispatch.write_conflicts(mission.id)
+                finally:
+                    dispatch.attempt_inputs = original
+                facts["resolved_after_done"] = resolved
+                # 2026-10-11 偏离 5：完成报告是全部验收步骤的，终结步是做法声明的收尾步骤
+                report = world.store.get_mission(mission.id).final_report or {}
+                facts["report"] = {
+                    "paths": sorted(world.store.get_artifact(a).path for a in report.get("accepted_artifacts", [])),
+                    "terminal": report.get("terminal_task_id"),
+                    "results": [item["task_id"] for item in report.get("accepted_results", [])],
+                }
                 inputs = dispatch.attempt_inputs(mission.id, merge)
                 facts["inputs"] = inputs
                 facts["overlaid"] = dispatch.overlay_attempt_inputs(mission.id, inputs)
@@ -174,6 +190,10 @@ def test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order(t
     seen = json.dumps(merge_packages[0], ensure_ascii=False)
     assert A in seen and B in seen
     assert facts["port_order"] == [A, B]  # 端口顺序 = 做法数组顺序
+    assert facts["resolved_after_done"] == []  # 三步都做完了：写入冲突扫描不再解析任何下游
+    assert facts["report"]["paths"] == sorted([A, B, C])  # 报告的产物是三步的，不是任取一步的
+    assert facts["report"]["terminal"] == facts["merge"]  # 做法把 c 声明为收尾步骤
+    assert len(facts["report"]["results"]) == 3 and facts["merge"] in facts["report"]["results"]
 
 
 def test_the_explicit_order_follows_the_array_not_the_slot_names(tmp_path):

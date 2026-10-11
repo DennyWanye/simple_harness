@@ -211,14 +211,21 @@ class TaskGraphRuntimeCommands:
             if (current is None or current.creation_key != intent.creation_key
                     or current.expected_turn_id != intent.expected_turn_id):
                 raise StoreConflict("TASKGRAPH_CANCEL_SERVICE_CHANGED")
-            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-            facts = TaskGraphRuntimeImports(self.orchestrator).read_subject(current)
-            if facts.physical_settled and facts.accounting_complete:
-                # Original provider facts, complete effects and imported usage
-                # have now been checked (2026-10-10: 物理安静与账完整分开后，两个都要满足才结清；
-                # 只看安静会在账不完整时抛 BudgetError 回滚、把投递耗成 BLOCKED). Never release an
-                # UNKNOWN hold on intent status alone and never substitute zero usage for a missing Turn.
-                self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)
+            self._settle_service_subject_if_quiet_and_complete(current)
+
+    def _settle_service_subject_if_quiet_and_complete(self, current: Any) -> bool:
+        """After the cancel receipts are recorded: the subject's reservation is settled only when
+        the execution library is physically quiet *and* its accounting is complete (2026-10-10:
+        the two were split; quiet with an unknown charge used to raise BudgetError, roll back and
+        wear the delivery down to BLOCKED).  An unknown charge on a wire that already ended keeps
+        its reservation (counted at its bound later) and raises nothing (opt.177 核验建议 S6)."""
+        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
+
+        facts = TaskGraphRuntimeImports(self.orchestrator).read_subject(current)
+        if facts.physical_settled and facts.accounting_complete:
+            self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)
+            return True
+        return False
 
     async def reconcile_operation(self, job: ConvergenceJob, action: ConvergenceAction, *, command_key: str) -> None:
         if self.store.connection.in_transaction or action.kind is not ConvergenceActionKind.RECONCILE_OPERATION:

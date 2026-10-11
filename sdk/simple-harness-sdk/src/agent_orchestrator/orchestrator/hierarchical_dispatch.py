@@ -3765,6 +3765,12 @@ class HierarchicalDispatch:
         for consumer, producers in consumers.items():
             if touching is not None and not producers & set(touching):
                 continue  # 只读这些上游喂的下游，不解析别的
+            consumer_task = self.store.get_task(consumer)
+            if consumer_task is not None and consumer_task.status is TaskStatus.COMPLETED:
+                # 2026-10-11（opt.176 核验建议 1）：做完的下游拿到的输入早已冻结在它的清单里，再解析
+                # 一遍只是开销（每轮修复触发都对全部下游完整解析，步骤多时核心用例集从 601 秒涨到 670 秒）。
+                # 没做完的（含停下的）照旧报：那是规划器与事后取证都要看的事实。
+                continue
             try:
                 inputs = self.attempt_inputs(mission_id, consumer)
             except WriteConflictPending as error:  # two port documents at one place

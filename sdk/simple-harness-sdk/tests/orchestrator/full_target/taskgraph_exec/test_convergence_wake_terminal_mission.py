@@ -166,6 +166,32 @@ def test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting(tmp_path):
     asyncio.run(case())
 
 
+def test_the_backoff_restarts_once_the_job_moved(tmp_path):
+    """2026-10-11（opt.177 核验建议 d）：退避是对"一直等着"的；作业推进过（行版本变了）就从头数。
+
+    **Mutation**: ignore ``job_version`` when counting the ordinal → red."""
+    async def case() -> None:
+        async with waiting_convergence(tmp_path, key="wake-restart") as waiting:
+            store, mission_id = waiting.world.store, waiting.mission_id
+            wakeups = TaskGraphConvergenceWakeups(TaskGraphFollowupStore(store), interval_ms=5_000)
+            t0 = int(store.now * 1000) + 10 * MINUTE_MS
+            assert wakeups.schedule(mission_id, now_ms=t0) == 1
+            _ack_all(store, mission_id)
+            assert wakeups.schedule(mission_id, now_ms=t0 + 5_000) == 1   # ordinal 2: next in 10 s
+            _ack_all(store, mission_id)
+            from agent_orchestrator.testing.fixtures import lift_immutable_guards
+            lift_immutable_guards(store.connection, "taskgraph_convergence_jobs")
+            with store.transaction():  # the job moved (its row version changed)
+                store.connection.execute(
+                    "UPDATE taskgraph_convergence_jobs SET row_version=row_version+1 WHERE mission_id=?", (mission_id,))
+            assert wakeups.schedule(mission_id, now_ms=t0 + 15_000) == 1  # due; counted as ordinal 1 again
+            _ack_all(store, mission_id)
+            assert wakeups.schedule(mission_id, now_ms=t0 + 15_000 + 4_000) == 0
+            assert wakeups.schedule(mission_id, now_ms=t0 + 15_000 + 5_000) == 1  # 5 s, not 20 s
+
+    asyncio.run(case())
+
+
 def test_a_waiting_job_of_a_cancelled_mission_is_not_woken_and_keeps_its_fence(tmp_path):
     async def case() -> None:
         async with waiting_convergence(tmp_path, key="wake-terminal") as waiting:

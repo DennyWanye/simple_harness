@@ -223,7 +223,17 @@ def read_knowledge_tool(
             raise ValueError("limit must be between 1 and 5")
         digest = _digest("\n".join(row["_stamp"] for row in rows))
         if offset and args.get("expected_sha256") != digest:
-            raise ValueError("knowledge catalog changed; restart pagination")
+            # 2026-10-09 架构挑战第 8 条：审阅员连翻 4 次被拒、撞上调用上限，因为被拒信息没说要带什么。
+            # 只改返回内容，不改工具说明（工具说明进执行池准入身份）。
+            if "expected_sha256" not in args:
+                raise ValueError(
+                    "knowledge_list paging needs expected_sha256: pass the sha256 the first page "
+                    "returned together with offset (expected_sha256=" + digest + ")"
+                )
+            raise ValueError(
+                "knowledge catalog changed since that sha256; restart pagination from offset 0 "
+                "(current sha256=" + digest + ")"
+            )
         page = rows[offset : offset + limit]
         return {
             "items": [_public(row) for row in page],

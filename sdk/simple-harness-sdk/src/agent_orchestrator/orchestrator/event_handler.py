@@ -109,7 +109,6 @@ from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
 from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE, knowledge_standing
 from ..memory.verified_knowledge import KnowledgeIndex
-from ..graph.terminal import terminal_task
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
 from ..runtime.agent_worker import AgentBridge, Liveness, user_message_json
 from ..runtime.assembly import (
@@ -9578,6 +9577,11 @@ class Orchestrator:
             hashes=stop_rules.result_hashes(self.store, mission.id, events=events))
         if not reached:
             return False
+        # 2026-10-11（第三轮复查附带发现 3）：parse 局里规划器刚换了接替步、那一步还没派发，这里就问它
+        # "这一版计划不改就停？"——它在一步正要开工时被问是否结束，最后去问人。有步骤已放行、还没开工
+        # 时不是问的时候：等那一步开了工（或被挡住）再说。只看事实：READY 的步骤。
+        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):
+            return False
         try:
             network = new_mode.network(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:
@@ -11234,9 +11238,15 @@ class Orchestrator:
             attempt_id="",
             detail={"artifacts": sorted(a.id for a in artifacts), "seed": sorted(seed)},
         )
-        terminal = terminal_task(list(tasks))
-        stored = self.store.get_result(terminal.accepted_result_id or "")
-        summary = "" if stored is None else stored.envelope.summary
+        # 2026-10-11 偏离 5：判定看的是全部验收步骤各自的总结，不是任取一步的
+        from ..graph.terminal import accepted_tasks
+
+        summaries = []
+        for accepted in accepted_tasks(list(tasks)):
+            stored = self.store.get_result(accepted.accepted_result_id or "")
+            if stored is not None and stored.envelope.summary:
+                summaries.append(stored.envelope.summary)
+        summary = "\n".join(summaries)
         test_runs: dict[str, dict[str, Any]] = {}
         for criterion in current_statements(self.store, mission):
             if not criterion.startswith("pytest:"):
