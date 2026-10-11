@@ -67,7 +67,7 @@ I01 单一逻辑 Commit；模型、UI、图算法不直接写业务表。
 I02 每 Mission 仅一个 ACTIVE PlanRevision，历史 revision 内容不可重写。  
 I03 每 adopted goal occurrence 最多一个 adopted MethodInstance；候选方法不是必须完成的工作。  
 I04 一个方法内所有 required/当前 conditional slot 均需满足；compound 不创建 Worker Attempt。  
-I05 ORDER 不传播文件/授权；DATA 只绑定声明端口。  
+I05 ORDER 不传播文件/授权；DATA 端口绑定声明的文件；接上数据边的写入型上游交出它那次验收的全部文件（操作申请单除外），只读型上游只交原工作区文件的副本，接续上游另交它自己冻结清单里收到的文件；每一份交付都带它真实产出者那次验收的见证，见证不可用的文件不交且点名拒绝（2026-10-11 第三批改）。  
 I06 发布到 Worker 的 InputManifest 全部冻结；恢复不取 latest。  
 I07 Task/Method/Operator/Schema/输入身份都必须完整匹配，不凭文本或 ID 前缀授权。  
 I08 历史完成不回退；当前 Acceptance 有效性另算。  
@@ -417,7 +417,7 @@ H1不改变wire：REFINE、REPAIR/REPLACE_METHOD经原Decoder→PreAdmission→A
 6. 原DispatchIntent写入，连同`taskgraph_attempt_inputs`一起提交。来源admission_check必须与所属revision_record指向同一实际APPLIED的plan check。仅显式CAPTURED_BASELINE允许两者均为NULL，由实际baseline授权回执解释，不能给历史补造PASS；**本次执行检查和原plan检查是两种事实**。
 7. 事务外由原AgentBridge按creation_key/input_id交接；失败释放物理调度占用按原规则，不能无证释放逻辑费用。
 
-只给本地目录赋值不等于物化完成：CAS逐文件hash核对、只读取manifest列出路径、按TargetRules拒绝跨目录/大小写冲突/符号链接逃逸，继承原工作区安全逻辑。
+只给本地目录赋值不等于物化完成：CAS逐文件hash核对、只读取manifest列出路径（manifest 列出全部交付：端口绑定 + 交付绑定，清单之外没有交付，2026-10-11 第三批改）、按TargetRules拒绝跨目录/大小写冲突/符号链接逃逸，继承原工作区安全逻辑。
 
 ### 8.2 恢复
 
