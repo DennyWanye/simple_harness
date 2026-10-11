@@ -2046,6 +2046,17 @@
         "tests/orchestrator/full_target/taskgraph_exec/test_cancel_service_settle_decision.py::test_only_quiet_and_complete_settles_the_service_subject"
       ],
       "note": "账不完整也结清"
+    },
+    {
+      "id": "SM-24",
+      "source": "2026-10-11 独立核验 opt.184 M1：序号重数后唤醒编号撞旧事件被吞",
+      "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
+      "original": "                identity = derive_id(\"tg-convergence-wake-event\", key, str(int(job[\"row_version\"])), str(ordinal))",
+      "replacement": "                identity = derive_id(\"tg-convergence-wake-event\", key, str(ordinal))",
+      "tests": [
+        "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_the_backoff_restarts_once_the_job_moved"
+      ],
+      "note": "重数后的唤醒被幂等去重吞掉"
     }
   ]
 }

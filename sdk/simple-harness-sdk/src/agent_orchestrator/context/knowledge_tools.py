@@ -266,7 +266,12 @@ def read_knowledge_tool(
     text = row["_text"]
     digest = _digest(text)
     if offset and args.get("expected_sha256") != digest:
-        raise ValueError("knowledge changed; restart reading")
+        # 核验 opt.184 建议：续读被拒同样说清要带什么
+        if "expected_sha256" not in args:
+            raise ValueError("knowledge_read paging needs expected_sha256: pass the sha256 the first "
+                             "read returned together with offset (expected_sha256=" + digest + ")")
+        raise ValueError("knowledge changed since that sha256; restart reading from offset 0 "
+                         "(current sha256=" + digest + ")")
     if offset > len(text):
         raise ValueError("offset is outside original knowledge")
     end = min(offset + 2048, len(text))

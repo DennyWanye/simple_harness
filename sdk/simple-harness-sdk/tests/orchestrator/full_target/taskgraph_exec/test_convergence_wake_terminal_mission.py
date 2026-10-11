@@ -184,10 +184,15 @@ def test_the_backoff_restarts_once_the_job_moved(tmp_path):
             with store.transaction():  # the job moved (its row version changed)
                 store.connection.execute(
                     "UPDATE taskgraph_convergence_jobs SET row_version=row_version+1 WHERE mission_id=?", (mission_id,))
+            wakes_before, followups_before = _wakes(store, mission_id), _open_followups(store, mission_id)
             assert wakeups.schedule(mission_id, now_ms=t0 + 15_000) == 1  # due; counted as ordinal 1 again
+            # 独立核验 opt.184 M1：重数后的唤醒真的写出来了（事件与跟进都多一条），不是撞旧编号被吞
+            assert _wakes(store, mission_id) == wakes_before + 1
+            assert _open_followups(store, mission_id) == followups_before + 1
             _ack_all(store, mission_id)
             assert wakeups.schedule(mission_id, now_ms=t0 + 15_000 + 4_000) == 0
             assert wakeups.schedule(mission_id, now_ms=t0 + 15_000 + 5_000) == 1  # 5 s, not 20 s
+            assert _wakes(store, mission_id) == wakes_before + 2
 
     asyncio.run(case())
 

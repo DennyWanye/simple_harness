@@ -65,7 +65,9 @@ class TaskGraphConvergenceWakeups:
                     # 等着"的，不是对作业本身的；没推进才继续翻倍。
                     if _integer(saved["job_version"], "job_version", minimum=0) == int(job["row_version"]):
                         ordinal = _integer(saved["ordinal"], "ordinal", minimum=1) + 1
-                identity = derive_id("tg-convergence-wake-event", key, str(ordinal))
+                # 独立核验 opt.184 M1：序号重数后编号不能撞上旧事件（撞上就按幂等键原样返回、什么都
+                # 没写，唤醒被悄悄吞掉）——编号带上作业的行版本
+                identity = derive_id("tg-convergence-wake-event", key, str(int(job["row_version"])), str(ordinal))
                 event = self.store.append_event(Event(
                     id=identity, type="TaskGraphConvergenceWakeRequested", trace_id=identity,
                     mission_id=mission_id, task_id=None, attempt_id=None,

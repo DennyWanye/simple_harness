@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "bfe245584823a3dce73016f2a3ee2e6b33a8adc745e79d4eb084b4ad2e2790f6",
+  "deployment_id": "d575c0446560c821c12e3cf629352d6076af37c97bb39ffcc50057150e9fb576",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -72,7 +72,7 @@
     "agent_orchestrator/assurance/schemas/use-certificate-v2.schema.json": "b4a5e7d7738c5ccbceacd94310a1b37216a404a3b7359d01edbcaf6c5620cce7",
     "agent_orchestrator/context/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/context/context_builder.py": "c81fb1d86d57e6d3fc8ddf6fb57655cdd416a131dbadc4318a83f047aaab22f5",
-    "agent_orchestrator/context/knowledge_tools.py": "98eb8f5c105b6038f7616cc0e129fbf027a4a449d7dec0a4c15e9e97b4d2bb27",
+    "agent_orchestrator/context/knowledge_tools.py": "fb7f339efd3379f7e099274a59968362aaa9f3faac9677d45524f33110957d17",
     "agent_orchestrator/context/retrieval.py": "e08cf0eb0d91cf4c5fb4d005e25d7d98a4c3b9d75ae9e1176d3af3aafb72d285",
     "agent_orchestrator/contracts/__init__.py": "5345c68d365488c86c425bc0e47e4ee6e5efc4c67a5d109ae15b24e58ea48490",
     "agent_orchestrator/contracts/error_table.py": "bed26c5f49f2eb98a2333fb9c238cf69595a1dc882aaa583a2914d972e00ea4b",
@@ -301,7 +301,7 @@
     "agent_orchestrator/orchestrator/taskgraph_sharing_inputs.py": "c60419162cc4a4c871d944dd1c203e73d506651d4e70b5b47524395eac2ba904",
     "agent_orchestrator/orchestrator/taskgraph_sources.py": "2ff98c5e6f443c6caba1b26f1f145f60a93b9b68f1ce034f99d671d36d970e1e",
     "agent_orchestrator/orchestrator/taskgraph_terminal.py": "4a20f710633c5a654ffece2e541fd8fbafac6333ed1c6fa959e18e9cb266f5b6",
-    "agent_orchestrator/orchestrator/taskgraph_wakeups.py": "97360d9fd221818e76fa5fe3f1242a132b6ad6b11840250470628894a48c7dbf",
+    "agent_orchestrator/orchestrator/taskgraph_wakeups.py": "859d7df7db318322bec15487de3cf9c7add0d6eb3acb4f0557ba2e305302e222",
     "agent_orchestrator/orchestrator/worker_context.py": "9674e0d0d8e6bff26f6f103cd825c398abfef0d4ea5901e2950047bdb88bc217",
     "agent_orchestrator/planning/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/planning/decision_adapter.py": "f2da07aaf25a4a2e1ab0fb712898d3507d82059127aacbdb2919228807752299",
