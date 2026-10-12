@@ -18,8 +18,11 @@ import json
 
 import main as main_module
 import pytest
+from host import llm_calls, llm_providers
+from host.llm_providers import LLM_RUNTIME_PATH
+from host.state import host_state
 from httpx import ASGITransport, AsyncClient
-from main import LLM_RUNTIME_PATH, app
+from main import app
 
 
 @pytest.fixture(autouse=True)
@@ -30,13 +33,13 @@ def _snapshot_runtime_config(tmp_path, monkeypatch):
     tests assert persist_key semantics against an empty runtime store.
     """
     isolated = tmp_path / "llm_runtime.json"
-    monkeypatch.setattr(main_module, "LLM_RUNTIME_PATH", isolated)
+    monkeypatch.setattr(llm_providers, "LLM_RUNTIME_PATH", isolated)
     monkeypatch.setitem(globals(), "LLM_RUNTIME_PATH", isolated)
-    saved_llm = main_module.local_llm
+    saved_llm = host_state.local_llm
     try:
         yield
     finally:
-        main_module.local_llm = saved_llm
+        host_state.local_llm = saved_llm
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +75,7 @@ async def test_t3_1_persist_key_false_applies_key_live():
         )
     assert resp.status_code == 200
     # The in-memory provider must carry the relay key (live, usable).
-    assert getattr(main_module.local_llm, "api_key", None) == _RELAY_KEY
+    assert getattr(host_state.local_llm, "api_key", None) == _RELAY_KEY
 
 
 @pytest.mark.asyncio
@@ -166,7 +169,7 @@ async def test_auxiliary_llm_callable_follows_live_provider_swap():
             return {"content": self.name}
 
     current = {"provider": Provider("boot-placeholder")}
-    call = main_module._make_live_str_llm_call(
+    call = llm_calls._make_live_str_llm_call(
         lambda: current["provider"],
         purpose="classifier",
     )

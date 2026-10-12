@@ -98,8 +98,6 @@ def main() -> int:
         if overlap and not inside:
             raise SystemExit(f"范围切开了第 {start}-{st.end_lineno} 行的语句")
         if inside:
-            if isinstance(st, (ast.Import, ast.ImportFrom)):
-                raise SystemExit(f"范围里有导入语句（第 {st.lineno} 行），请把范围调到导入之后")
             moved.append(st)
     if not moved:
         raise SystemExit("范围里没有完整的顶层语句")
@@ -168,12 +166,10 @@ def main() -> int:
             merged.append([s, e])
     body_text = "\n\n".join("".join(lines[s - 1:e]).rstrip("\n") + "\n" for s, e in merged)
 
-    exported = sorted({nm for st in moved for nm in bound_names(st)})
-    rest_loads = set()
-    for st in rest:
-        for x in ast.walk(st):
-            if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load):
-                rest_loads.add(x.id)
+    moved_imports = [st for st in moved if isinstance(st, (ast.Import, ast.ImportFrom))]
+    exported = sorted({nm for st in moved if not isinstance(st, (ast.Import, ast.ImportFrom))
+                       for nm in bound_names(st)})
+    rest_loads = global_refs(ast.Module(body=rest, type_ignores=[]))
     test_refs = tests_referencing(src_path, exported)
     still_used = [n for n in exported if n in rest_loads or n in test_refs]
     if test_refs - rest_loads:
@@ -184,11 +180,27 @@ def main() -> int:
     doc = a.doc or f"从 {src_path.name} 搬出的代码。"
     dst_text = f'"""{doc}"""\n\nfrom __future__ import annotations\n\n' + "\n".join(imp_lines) + "\n\n\n" + body_text
     import_stmt = ""
+    # 搬走的导入语句：其余代码还在用的名字，在插入点保留一份
+    keep_imports = []
+    for st in moved_imports:
+        names_here = [al for al in st.names if (al.asname or al.name).split(".")[0] in rest_loads]
+        if not names_here:
+            continue
+        if isinstance(st, ast.Import):
+            keep_imports.append("import " + ", ".join(
+                al.name + (f" as {al.asname}" if al.asname else "") for al in names_here))
+        else:
+            mod = "." * st.level + (st.module or "")
+            keep_imports.append(f"from {mod} import " + ", ".join(
+                al.name + (f" as {al.asname}" if al.asname else "") for al in names_here))
     if still_used:
         # isort: split 让导入排序不把这条并进上方导入块，导入期副作用的先后保持原样
         import_stmt = ("# isort: split\n" + f"from {module} import (\n"
                        + "".join(f"    {n},\n" for n in still_used) + ")\n# isort: split\n")
 
+    if keep_imports:
+        import_stmt = ("# isort: split\n" + "\n".join(keep_imports) + "\n" + import_stmt) if import_stmt \
+            else ("# isort: split\n" + "\n".join(keep_imports) + "\n# isort: split\n")
     out: list[str] = []
     first = spans[0][0]
     drop = {i for s, e in merged for i in range(s, e + 1)}
@@ -216,6 +228,27 @@ def main() -> int:
     dst_path.write_text(dst_text, encoding="utf-8")
     src_path.write_text(remove_import_names(new_src, set(removable)), encoding="utf-8")
     return 0
+
+
+def global_refs(module: ast.Module) -> set[str]:
+    """模块里"按全局变量"引用的名字：模块级读取，加上函数里 symtable 判为全局的读取。
+    函数局部变量同名者不算（2026-10-13 教训：try 块里的临时变量 cfg 被误当成要导出的名字）。"""
+    import symtable
+
+    code = ast.unparse(module)
+    out: set[str] = set()
+
+    def walk(t: symtable.SymbolTable) -> None:
+        for sym in t.get_symbols():
+            if not sym.is_referenced():
+                continue
+            if t.get_type() == "module" or sym.is_global():
+                out.add(sym.get_name())
+        for c in t.get_children():
+            walk(c)
+
+    walk(symtable.symtable(code, "<rest>", "exec"))
+    return out
 
 
 def tests_referencing(src_path: Path, names: list[str]) -> set[str]:

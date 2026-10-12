@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import main as main_module
 import pytest
+from host.llm_providers import LLM_RUNTIME_PATH
+from host.runtime import SHARED_SECRET
 from httpx import ASGITransport, AsyncClient
-from main import LLM_RUNTIME_PATH, SHARED_SECRET, app
+from main import app
 
 
 # Autouse: snapshot llm_runtime.json before each test, restore after.

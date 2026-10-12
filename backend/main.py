@@ -30,7 +30,6 @@ import weakref
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 from deskpet.companion.control_credentials import (
     WindowControlBootstrap,
@@ -98,121 +97,46 @@ from host.runtime import (
 # isort: split
 
 
-async def _restart_orchestration() -> None:
-    """Stop and start the orchestration service with the current config (Settings changes)."""
-    from deskpet.orchestration.wiring import activate_orchestration, deactivate_orchestration
-    from paths import user_data_dir as _orchestration_user_data_dir
+# isort: split
+from host.settings_persistence import (
+    _persist_supervisor_enabled,
+    _restart_orchestration,
+)
 
-    await deactivate_orchestration(service_context)
-    await activate_orchestration(
-        service_context,
-        config_path=_CONFIG_PATH,
-        user_data=_orchestration_user_data_dir(),
-        broadcast_targets=lambda: list(_control_connections.values()),
-        record_startup_error=startup_errors.record,
-    )
+# isort: split
 
 
-def _persist_supervisor_enabled(enabled: bool) -> bool:
-    """Persist the runtime supervisor toggle into config.toml."""
-    try:
-        import tomlkit
-
-        path = _CONFIG_PATH
-        try:
-            text = path.read_text(encoding="utf-8") if path.exists() else ""
-            doc = tomlkit.parse(text) if text.strip() else tomlkit.document()
-        except Exception:
-            doc = tomlkit.document()
-        sup = doc.get("supervisor")
-        if not hasattr(sup, "__setitem__"):
-            sup = tomlkit.table()
-            doc["supervisor"] = sup
-        sup["enabled"] = bool(enabled)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-        try:
-            config.raw.setdefault("supervisor", {})["enabled"] = bool(enabled)
-        except Exception:
-            pass
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("supervisor_toggle_persist_failed enabled=%s err=%s", enabled, exc)
-        return False
-
-
-# --- Register providers ---
+# isort: split
 from agent.providers.simple_llm import SimpleLLMAgent
 from agent.providers.tool_using import ToolUsingAgent
-from billing.ledger import BillingLedger
-from config import resolve_cloud_api_key as _resolve_cloud_api_key  # P2-1-S3
-from deskpet.sdk_adapters.sdk_candidate import (
-    SDK_VERSION,
-    build_runtime_identity,
-)
+from config import resolve_cloud_api_key as _resolve_cloud_api_key
+from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, build_runtime_identity
 from deskpet.tools import ppt_tools
-from deskpet.tools.ppt_outline_store import (
-    expire_dangling_proposed,
-    list_history,
-    mark_status,
-    save_outline,
+from deskpet.tools.ppt_outline_store import expire_dangling_proposed, list_history
+from deskpet.tools.public_projection import project_public_tool_calls, project_public_tool_result
+from llm.provider_registry import (
+    LLMProviderRegistry,
+    ProviderMutationConflict,
+    _migrate_legacy_provider_config,
 )
-from deskpet.tools.ppt_tools import _ppt_pro_cfg
-from deskpet.tools.public_projection import (
-    project_public_tool_arguments,
-    project_public_tool_calls,
-    project_public_tool_result,
-)
-from memory.sensitive_filter import RedactingMemoryStore
-from observability.vram import classify_tier
 from providers.openai_compatible import OpenAICompatibleProvider
-from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
-from tools.clipboard import read_clipboard_tool
-from tools.get_time import get_time_tool
+from router.hybrid_router import RoutingStrategy
 from tools.registry import ToolRegistry
 
-# P4-S20-LLM-Unified: runtime overrides — settings panel 里改的会写到这个文件，
-# 启动时读它覆盖 config.toml [llm] 段（只 base_url / model / temperature；
-# api_key 走 keychain 不进文件）。允许用户改完不动 config.toml 也保留。
-LLM_RUNTIME_PATH = _paths.user_data_dir() / "llm_runtime.json"
+# isort: split
+from host.llm_providers import (
+    _chat_turn_timeout_s,
+    _context_os_e2e_boot_hooks,
+    _e2e_provider_base,
+    _load_llm_runtime_overrides,
+    _sanitize_cot_dsml,
+    _save_llm_runtime_overrides,
+    billing_ledger,
+    cloud_llm,
+    llm,
+)
 
-
-def _load_llm_runtime_overrides() -> dict:
-    """Read llm_runtime.json — empty/missing/invalid → {}."""
-    if not LLM_RUNTIME_PATH.exists():
-        return {}
-    try:
-        import json as _json
-
-        return _json.loads(LLM_RUNTIME_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_runtime_overrides_load_failed: %s", exc)
-        return {}
-
-
-def _save_llm_runtime_overrides(data: dict) -> None:
-    """Write llm_runtime.json — best-effort, never raise."""
-    import json as _json
-
-    try:
-        LLM_RUNTIME_PATH.parent.mkdir(parents=True, exist_ok=True)
-        LLM_RUNTIME_PATH.write_text(
-            _json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        logger.info("llm_runtime_overrides_saved path=%s", LLM_RUNTIME_PATH)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_runtime_overrides_save_failed: %s", exc)
-
-
-# Agent 有效执行预算（默认 15 分钟，可在设置里调整）。等待用户确认、选择目录
-# 或完成外部操作时由 durable Run 预算暂停，不再按整轮墙钟时间误取消。
-def _chat_turn_timeout_s() -> float:
-    try:
-        m = float(_load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15))
-    except Exception:  # noqa: BLE001
-        m = 15.0
-    return max(60.0, min(3600.0, m * 60.0))
+# isort: split
 
 
 # P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at
@@ -220,722 +144,43 @@ def _chat_turn_timeout_s() -> float:
 # instead of auto-swapping to a different model with a different
 # voice mid-turn.
 
-# Apply runtime overrides BEFORE creating local_llm so the very first
-# request after a restart uses the user's saved config.
-_llm_overrides = _load_llm_runtime_overrides()
-if _llm_overrides:
-    if "base_url" in _llm_overrides:
-        config.llm.local.base_url = _llm_overrides["base_url"]
-    if "model" in _llm_overrides:
-        config.llm.local.model = _llm_overrides["model"]
-        # P-B 修复(同步 raw): 覆盖只写 dataclass,但有代码读 config.raw["llm"]["model"]
-        # (压缩窗口 :1384 / stub :4268 / breakdown 探针 :2944)会拿到旧种子 gemma → 这里
-        # 同步原始 dict,使所有 in-process raw 读取也读到有效模型。配合下方 effective_llm_model
-        # 访问器(WI-3)双保险。见 plans/2026-06-16-effective-llm-model-resolution。
-        try:
-            config.raw.setdefault("llm", {})["model"] = _llm_overrides["model"]
-        except Exception:  # noqa: BLE001
-            pass
-    if "base_url" in _llm_overrides:
-        # base_url 也同步 raw(让 breakdown 探针的 base_url 预览也对;真出站本就用 dataclass)
-        try:
-            config.raw.setdefault("llm", {})["base_url"] = _llm_overrides["base_url"]
-        except Exception:  # noqa: BLE001
-            pass
-    if "temperature" in _llm_overrides:
-        config.llm.local.temperature = float(_llm_overrides["temperature"])
-    if "api_key" in _llm_overrides and _llm_overrides["api_key"]:
-        # plaintext stored in runtime json — usable but not recommended;
-        # the proper place is OS keychain via SettingsPanel.
-        config.llm.local.api_key = _llm_overrides["api_key"]
-    logger.info(
-        "llm_runtime_overrides_applied base_url=%s model=%s",
-        config.llm.local.base_url,
-        config.llm.local.model,
-    )
-
-
-# P4-S20-LLM-Unified: 统一 LLM endpoint。api_key 解析三档优先级：
-#   1. 配置值如果以 "$" 开头 → 视作环境变量名，从 env 读 (e.g. "$OPENAI_API_KEY")
-#   2. config.llm.local.api_key 是 "ollama" / "from-keychain" / 空 → 尝试从
-#      keychain 通过 DESKPET_CLOUD_API_KEY env 读（向后兼容 P2-1-S3 的 Tauri
-#      keychain 注入路径）；拿不到就用配置原值
-#   3. 其它情况（用户写了真 key 在 config）→ 直接用配置值
-def _resolve_llm_api_key(configured: str) -> str:
-    if configured.startswith("$"):
-        env_name = configured[1:]
-        val = os.environ.get(env_name, "")
-        if val:
-            logger.info("llm_api_key_from_env env=%s", env_name)
-            return val
-        logger.warning(
-            "llm_api_key_env_not_set env=%s — falling back to placeholder",
-            env_name,
-        )
-        return configured  # placeholder; provider call will 401 if used
-    # 占位符触发 keychain 读取
-    placeholders = {"ollama", "from-keychain", "from-env", "", "your-key-here"}
-    if configured in placeholders:
-        keychain_key = _resolve_cloud_api_key()
-        if keychain_key:
-            logger.info(
-                "llm_api_key_from_keychain",
-                key_fp=hashlib.sha256(keychain_key.encode("utf-8")).hexdigest()[:8],
-            )
-            return keychain_key
-        # 占位符 + 没 env → 保持占位符（Ollama 会接受任何值；云端会 401）
-    return configured
-
-
-_resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
-from deskpet.context_os_e2e_hooks import ContextOSE2EHooks as _ContextOSE2EHooks
-
-_context_os_e2e_boot_hooks = _ContextOSE2EHooks.from_env()
-_e2e_provider_base = (
-    _context_os_e2e_boot_hooks.provider_url
-    if _context_os_e2e_boot_hooks is not None and _context_os_e2e_boot_hooks.provider_url
-    else ""
-)
-
-# 2026-05-17 deepseek-inline-cot-dsml-sanitize Strangler-Fig flag (default
-# on). Read once; passed to every OpenAICompatibleProvider so setting
-# [llm] sanitize_inline_cot_dsml = false instantly restores legacy raw
-# passthrough after a restart (demo rollback).
-_sanitize_cot_dsml = bool((config.raw.get("llm") or {}).get("sanitize_inline_cot_dsml", True))
-logger.info("sanitize_inline_cot_dsml_flag", enabled=_sanitize_cot_dsml)
-
-host_state.local_llm = OpenAICompatibleProvider(
-    base_url=_e2e_provider_base or config.llm.local.base_url,
-    api_key="ctx-e2e-local-key" if _e2e_provider_base else _resolved_api_key,
-    model="ctx-primary" if _e2e_provider_base else config.llm.local.model,
-    temperature=config.llm.local.temperature,
-    sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-)
 
 # P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at user
 # request — they don't want auto-swap to gemma4:e4b mid-turn because
 # the model-style mismatch produces ugly mixed responses. Errors from
 # the configured LLM endpoint now surface directly to the user.
 
-# Keep cloud_llm symbol around for legacy code paths but it's None now —
-# config.llm.cloud is no longer set under the unified [llm] schema.
-cloud_llm = None
-host_state.current_cloud_api_key = (
-    _resolved_api_key if "localhost" not in config.llm.local.base_url else None
-)
-if config.llm.cloud is not None:
-    # 兼容旧 [llm.cloud] schema — 新部署不会走这里。
-    _cloud_key = _resolve_cloud_api_key()
-    if _cloud_key:
-        host_state.current_cloud_api_key = _cloud_key
-        cloud_llm = OpenAICompatibleProvider(
-            base_url=config.llm.cloud.base_url,
-            api_key=_cloud_key,
-            model=config.llm.cloud.model,
-            temperature=config.llm.cloud.temperature,
-            sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-        )
 
-# P2-1-S8: BillingLedger — SQLite ledger of every chat_stream call + its
-# cost in CNY. Its .create_hook() becomes the BudgetHook HybridRouter gates
-# cloud calls through. Local calls bypass the hook entirely (they're free).
-billing_ledger = BillingLedger(
-    db_path=config.billing.db_path,
-    pricing=config.billing.pricing,
-    unknown_model_price_cny_per_m_tokens=config.billing.unknown_model_price_cny_per_m_tokens,
-    daily_budget_cny=config.billing.daily_budget_cny,
-    tz=ZoneInfo(config.billing.tz),
-)
-service_context.register("billing_ledger", billing_ledger)
-
-# P5-S2 multi-provider-management Phase 2: LLMProviderRegistry
-# 单一 source of truth for [[llm.providers]] 列表。Phase 0/1 已实现底层,
-# 这里在启动时执行 legacy migration + 构造 registry,放到 service_context
-# 供 ws handler (`settings_providers_*`) 读写。
-from llm.provider_registry import (
-    LLMProviderRegistry,
-    ProviderMutationConflict,
-    _migrate_legacy_provider_config,
+# isort: split
+from host.tools_bootstrap import (
+    _automode_path,
+    _get_receipt_store,
+    deskpet_tool_registry_v2,
+    memory_store,
+    permission_gate_v2,
+    plugin_manager,
+    skill_registry_client,
+    tool_registry,
 )
 
-# Provider authority is created only after state.db migrations complete in
-# lifespan. Importing main must never make a pre-migration registry usable.
-service_context.register("provider_registry", None)
-service_context.register("provider_routing_readiness", None)
+# isort: split
 
-llm = HybridRouter(
-    local=host_state.local_llm,
-    cloud=cloud_llm,
-    strategy=RoutingStrategy(config.llm.strategy),
-    # P2-1-S8: BillingLedger's hook debits cloud spend and denies cloud
-    # calls once daily_budget_cny is exhausted. Local calls bypass the
-    # hook entirely (free). See spec §1.1 / §2.4.
-    budget_hook=billing_ledger.create_hook(),
-)
-service_context.register("llm_engine", llm)
-
-# P4-S17: SessionDB is the single conversation source of truth.
-# The P4 wire-in below wraps it in RedactingMemoryStore, then agent_engine
-# is constructed with that final memory_store.
-memory_store = None
-
-# V5 §2.3: agent_engine 与 llm_engine 分层。
-# 组装栈:ToolUsingAgent(S3) 包装 SimpleLLMAgent(S2 + S0), memory 在内层。
-# 工具调用的结果是 inline 注入 user-facing stream,不走 memory 持久化。
-tool_registry = ToolRegistry()
-tool_registry.register(get_time_tool)
-tool_registry.register(read_clipboard_tool)
-service_context.register("tool_router", tool_registry)
-
-# P4-S20: v2 deskpet.tools.registry singleton — full schema-aware
-# registry used by the new tool_use agent loop. Hosts the 7 OS tools
-# (read/write/edit/list/shell/web/desktop_create_file) plus the
-# auto-discovered file/web/memory tools from earlier slices.
-# PermissionGate is wired with the control-WS responder so user
-# popups appear before any sensitive op runs.
-_tool_capability_scope_store = None
-_tool_capability_resolver = None
-_automode_path = _Path(_paths.user_data_dir()) / "permissions_auto_mode.json"
-try:
-    from deskpet.permissions.gate import (
-        PermissionGate as _PermissionGate,
-    )
-    from deskpet.permissions.gate import (
-        PermissionGateConfig as _PermissionGateConfig,
-    )
-    from deskpet.tools import registry as deskpet_tool_registry_v2
-    from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
-
-    _register_os_tools_v2(deskpet_tool_registry_v2)
-    # General-agent tools (glob, grep, web_search) registered now;
-    # todo_write + agent need closures over runtime objects (SessionDB,
-    # LLM shim) and are wired later, after those are constructed.
-    from deskpet.tools.code_tools import register_code_tools as _register_code_tools
-
-    _register_code_tools(deskpet_tool_registry_v2)
-    _shell_deny = list(
-        getattr(getattr(config, "permissions", None), "deny", {}).get("shell_patterns", [])
-        or [
-            "rm -rf /",
-            "format c:",
-            "del /f /s /q c:",
-        ]
-    )
-    permission_gate_v2 = _PermissionGate(
-        config=_PermissionGateConfig(
-            timeout_s=60.0,
-            shell_deny_patterns=_shell_deny,
-        )
-    )
-    deskpet_tool_registry_v2.set_permission_gate(permission_gate_v2)
-    # WI-T3.1 last-mile wiring: provider 模式注入 ToolsConfig 到 registry。
-    # 2026-05-23 测试阶段决策：config.toml 默认全 ON（不走灰度），
-    # 用户/管理员可在 config.toml 改 flag 个别关闭。
-    deskpet_tool_registry_v2.set_tools_config_provider(lambda: getattr(config, "tools", None))
-    from deskpet.tools.capabilities import (
-        ToolCapabilityBridgeService as _ToolCapabilityBridgeService,
-    )
-    from deskpet.tools.capabilities import (
-        ToolCapabilityResolver as _ToolCapabilityResolver,
-    )
-    from deskpet.tools.capabilities import (
-        ToolCapabilityScopeStore as _ToolCapabilityScopeStore,
-    )
-
-    _tool_capability_scope_store = _ToolCapabilityScopeStore()
-    _tool_capability_resolver = _ToolCapabilityResolver(deskpet_tool_registry_v2)
-    deskpet_tool_registry_v2.set_capability_scope_store(_tool_capability_scope_store)
-    deskpet_tool_registry_v2.set_context_os_enabled_provider(
-        lambda: bool(getattr(getattr(config, "features", None), "context_os_v1", False))
-    )
-    # Test-only Context OS E2E seam. ``from_env`` returns None unless dev
-    # mode is explicit and the configured control/data planes are loopback.
-    _context_os_e2e_hooks = _context_os_e2e_boot_hooks
-    deskpet_tool_registry_v2.set_context_os_e2e_hooks(_context_os_e2e_hooks)
-    if bool(getattr(getattr(config, "features", None), "context_os_v1", False)):
-        from deskpet.tools.tool_search import register_capability_bridge_tools
-
-        register_capability_bridge_tools(
-            deskpet_tool_registry_v2,
-            _ToolCapabilityBridgeService(deskpet_tool_registry_v2, _tool_capability_scope_store),
-        )
-
-    # WI-T1.5 last-mile: 解析 default_artifact_dir 空字符串 → 默认
-    # <user_data>/artifacts/。这样 config.toml 用户留空也能拿到合理默认；
-    # 显式填路径则按用户配置走（office_paths.artifact_default_path 直接读）。
-    if hasattr(config, "tools") and config.tools.last_mile.default_artifact_dir == "":
-        from pathlib import Path as _PathLM
-
-        config.tools.last_mile.default_artifact_dir = str(
-            _PathLM(_paths.user_data_dir()) / "artifacts"
-        )
-        logger.info(
-            "last_mile.default_artifact_dir resolved to %s",
-            config.tools.last_mile.default_artifact_dir,
-        )
-    # WI-T2.2 P0 修：按 cfg.tools.verifier.emit_receipts 构造 ReceiptStore
-    # 并通过 provider 注入。flag OFF 时 box[0]=None 永不产 receipt（BC）；
-    # flag ON 时每次 execute_tool 都 emit + 写盘。
-    # 注：用 list[Any] 容器避免 nonlocal (此处在 module 顶层 try-block)。
-    _receipt_store_box: list[Any] = [None]
-
-    def _get_receipt_store() -> Any:
-        cfg = getattr(config, "tools", None)
-        emit = bool(getattr(getattr(cfg, "verifier", None), "emit_receipts", False))
-        if not emit:
-            return None
-        if _receipt_store_box[0] is None:
-            try:
-                from pathlib import Path as _PathRS
-
-                from deskpet.tools.receipt_store import ReceiptStore
-
-                # WI-T2.2 v3 P0 修：取消 min(retention, 7) 截断（last-mile
-                # round2 P0-2）。原代码把用户配的 30 天硬压成 7 天，回放窗口
-                # 残缺。按 ToolsLastMileConfig.artifact_dir_retention_days
-                # 默认 30 + 用户 cfg 真值。
-                retention = int(
-                    getattr(
-                        getattr(cfg, "last_mile", None),
-                        "artifact_dir_retention_days",
-                        30,
-                    )
-                )
-                _receipt_store_box[0] = ReceiptStore(
-                    _PathRS(_paths.user_data_dir()),
-                    retention_days=retention,
-                )
-                # 启动期自清理 (PRD D5)
-                deleted = _receipt_store_box[0].cleanup_expired()
-                if deleted > 0:
-                    logger.info("receipt_store: cleaned %d expired files", deleted)
-            except Exception as _rs_exc:  # noqa: BLE001
-                logger.warning("ReceiptStore init failed: %s", _rs_exc)
-                return None
-        return _receipt_store_box[0]
-
-    deskpet_tool_registry_v2.set_receipt_store_provider(_get_receipt_store)
-    # The legacy JSON is consumed exactly once into the execution SQLite
-    # during lifespan startup.  It is never rebound as a live authority.
-    _automode_path = _Path(_paths.user_data_dir()) / "permissions_auto_mode.json"
-    # Module-level globals (service_context has a pre-declared key list
-    # we don't want to extend just for this).
-    # Accessed by the chat handler when it instantiates AgentLoop.
-
-    # P4-S20 Stage C — marketplace installer + registry client.
-    from deskpet.skills.marketplace import (
-        RegistryClient as _RegistryClient,
-    )
-    from deskpet.skills.marketplace import (
-        SafetyError as _MarketplaceSafetyError,
-    )
-    from deskpet.skills.marketplace import (
-        SkillInstaller as _SkillInstaller,
-    )
-
-    _user_skills_dir = _paths.user_data_dir() / "skills"
-    _staging_dir = _paths.user_data_dir() / "_skill_staging"
-    _user_skills_dir.mkdir(parents=True, exist_ok=True)
-    _staging_dir.mkdir(parents=True, exist_ok=True)
-    _registry_url = (
-        getattr(getattr(config, "marketplace", None), "registry_url", None)
-        or "https://raw.githubusercontent.com/DennyWanye/deskpet/master/docs/skills-registry.json"
-    )
-    skill_registry_client = _RegistryClient(
-        url=_registry_url,
-        cache_ttl_s=3600.0,
-    )
-    skill_installer = _SkillInstaller(
-        skills_dir=_user_skills_dir,
-        staging_dir=_staging_dir,
-        known_tools=set(deskpet_tool_registry_v2.list_tools()),
-    )
-    # P4-S20 Stage D — plugin system.
-    from deskpet.plugins import PluginManager as _PluginManager
-
-    _plugins_dir = _paths.user_data_dir() / "plugins"
-    _plugins_dir.mkdir(parents=True, exist_ok=True)
-    _enabled_plugins = list(getattr(getattr(config, "plugins", None), "enabled", []) or [])
-    plugin_manager = _PluginManager(
-        plugins_dir=_plugins_dir,
-        enabled=_enabled_plugins or None,  # None → default-enable all
-    )
-    plugin_manager.discover()
-    logger.info(
-        "p4_s20_plugins_discovered",
-        plugins_dir=str(_plugins_dir),
-        plugins=[p["name"] for p in plugin_manager.list_plugins()],
-    )
-    # WI-TG-2: register the gate as a read-only service so the p4_ipc
-    # `permissions_pending_list` handler can surface in-flight requests to
-    # the ApprovalCenterPanel. Read-only — the panel never mutates the gate.
-    try:
-        service_context.register("permission_gate", permission_gate_v2)
-    except Exception as _pg_reg_exc:  # noqa: BLE001 — non-fatal
-        logger.warning("permission_gate_register_failed", error=str(_pg_reg_exc))
-
-    logger.info(
-        "p4_s20_tool_registry_v2_ready",
-        os_tools=len(deskpet_tool_registry_v2.list_tools(source="builtin")),
-    )
-except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
-    logger.warning("p4_s20_v2_init_failed", error=str(_v2_exc))
-    deskpet_tool_registry_v2 = None
-    permission_gate_v2 = None
-    skill_registry_client = None
-    skill_installer = None
-    plugin_manager = None
-
-service_context.register("tool_capability_scope_store", _tool_capability_scope_store)
-service_context.register("tool_capability_resolver", _tool_capability_resolver)
-
-# S8 (R9): log the current hardware tier once so the dispatch decision is
-# visible in the startup banner. The tier itself doesn't force provider
-# swaps yet — that's Phase 2 work when we ship multiple LLM/TTS binaries.
-_tier = classify_tier()
-logger.info(
-    "hardware_tier",
-    tier=_tier.tier,
-    recommended_llm=_tier.llm_model,
-    recommended_tts=_tier.tts_model,
-    recommended_asr=_tier.asr_model,
+# isort: split
+from host.voice_bootstrap import (
+    _voice_runtime,
 )
 
-from deskpet.voice_runtime import configure_legacy_voice_runtime
+# isort: split
 
-_voice_runtime = configure_legacy_voice_runtime(
-    config=config,
-    service_context=service_context,
-    permission_gate=globals().get("permission_gate_v2"),
-    logger=logger,
+
+# isort: split
+from host.llm_calls import (
+    _make_session_aware_llm_call,
+    _make_str_llm_call,
+    _refresh_research_live_llm,
 )
 
-
-# 记忆系统升级 WI-M1.2/M1.7: facts 抽取 / reflection 需要一个
-# (prompt:str)->str 的 LLMCall —— summarizer.make_llm_call 走的是
-# messages->dict 形状，不匹配。这里把 provider 适配成纯字符串形状。
-def _make_str_llm_call(
-    provider,
-    *,
-    max_tokens: int = 512,
-    response_format=None,
-    purpose: str = "auxiliary_unknown",
-):
-    """Adapt an OpenAICompatibleProvider into a ``(prompt: str) -> str``
-    async callable. provider=None → return None so callers can skip
-    (用户未配置 / 离线时 facts/reflection 静默跳过，不报错)。
-
-    response_format（M-3，plans/2026-06-24-...）：可选 json_schema structured-output
-    透传给 chat_with_tools。留 None = 旧行为（不传，字节级 BC）；非 None 时供七步流水线
-    intent/contradiction 合并预分析绑定 schema（中转站 thinking-model 仍可能 400，调用方各自 safe-fail）。
-    """
-    if provider is None:
-        return None
-
-    async def _call(prompt: str) -> str:
-        from agent.context_messages import provider_purpose_scope
-
-        # WI-4-C（2026-06-25 真测）：relay 对 `stream:True + json_schema strict` 偶发慢(9-20s,
-        # 偶尔超 analysis_timeout_s) 或上游瞬时错返空 body → 预分析被 safe-fail 误降级。直连实测
-        # **非流式裸补全（无 strict schema）稳定 5-6s**（launcher 已 NO_PROXY）。故带 schema（=七步
-        # 预分析专用路径）时**非流式裸补全优先**（模型仍按提示出 JSON，调用方 _extract_json 3 级容错
-        # +控制字符净化接住），空/异常才回退流式+schema；relay 整体坏窗两条都空时由上层 safe-fail 兜。
-        _msgs = [{"role": "user", "content": prompt}]
-        if response_format is not None:
-            try:
-                # 非流式**保留 strict schema**：probe 实测 deepseek 非流式+schema 4-6s 稳，
-                # 且 schema 的 enum 约束保证 problem_type 分类准（丢 schema 会让 deepseek 把
-                # 清晰 debug 误判 chitchat → 变相重现 BUG-B，真测 2026-06-25 实证）。
-                with provider_purpose_scope(purpose):
-                    result = await provider._legacy_chat_with_tools_nonstream(
-                        messages=_msgs,
-                        max_tokens=max_tokens,
-                        temperature=0.2,
-                        response_format=response_format,
-                    )
-                content = (result or {}).get("content") or ""
-                if content.strip():
-                    return content
-            except Exception:  # noqa: BLE001 — 非流式失败回退流式
-                pass
-            with provider_purpose_scope(purpose):
-                result = await provider.chat_with_tools(
-                    messages=_msgs,
-                    max_tokens=max_tokens,
-                    temperature=0.2,
-                    response_format=response_format,
-                )
-            return (result or {}).get("content") or ""
-        # 无 schema（facts/reflection 等）：保持流式，字节级 BC。
-        with provider_purpose_scope(purpose):
-            result = await provider.chat_with_tools(
-                messages=_msgs,
-                max_tokens=max_tokens,
-                temperature=0.2,
-            )
-        return (result or {}).get("content") or ""
-
-    return _call
-
-
-def _make_live_str_llm_call(
-    provider_resolver,
-    *,
-    max_tokens: int = 512,
-    response_format=None,
-    purpose: str = "auxiliary_unknown",
-):
-    """Build an auxiliary LLM callable that follows provider hot-swaps.
-
-    Relay login updates the module-level ``local_llm`` after boot. Long-lived
-    services such as FactExtractor and IntentTriage must therefore resolve the
-    provider for every invocation instead of retaining the placeholder provider
-    captured during composition.
-    """
-
-    async def _call(prompt: str) -> str:
-        provider = provider_resolver()
-        delegate = _make_str_llm_call(
-            provider,
-            max_tokens=max_tokens,
-            response_format=response_format,
-            purpose=purpose,
-        )
-        if delegate is None:
-            raise RuntimeError("live LLM provider is unavailable")
-        return await delegate(prompt)
-
-    return _call
-
-
-def _make_session_aware_llm_call(
-    *,
-    max_tokens: int = 512,
-    response_format=None,
-):
-    """Create the explicit auxiliary protocol without capturing a provider."""
-
-    from deskpet.execution.provider_workloads import SessionAwareLLMCall
-
-    return SessionAwareLLMCall(
-        lambda: service_context.get("provider_workload_router"),
-        max_tokens=max_tokens,
-        response_format=response_format,
-    )
-
-
-def _make_research_llm_call_v2(provider):
-    """Adapt the active provider to the usage-bearing v5 research contract."""
-    if provider is None:
-        return None
-
-    async def _call(
-        prompt: str,
-        *,
-        max_output_tokens: int,
-        stable_call_id: str,
-        response_format=None,
-    ):
-        if not stable_call_id:
-            raise ValueError("stable_call_id is required")
-        from agent.context_messages import provider_purpose_scope
-        from deskpet.tools.research_tools import _research_llm_result_from_provider_response
-
-        with provider_purpose_scope("research"):
-            result = await provider.chat_with_tools_at_most_once(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[],
-                max_tokens=max_output_tokens,
-                response_format=response_format,
-            )
-        return _research_llm_result_from_provider_response(
-            result,
-            fallback_model=str(getattr(provider, "model", "") or "unknown"),
-        )
-
-    return _call
-
-
-def _resolve_ephemeral_provider(base_provider, model_name: str):
-    """Clone ``base_provider`` with its model overridden to ``model_name``.
-
-    接 ``[tools.verifier].ephemeral_subagent_model``（D6 第 3 次失败救援模型）。
-    中转站按 model id 路由，故只换 model、复用 base_provider 的
-    base_url/api_key/temperature/sanitize（与 ``effective_llm_model``
-    同思路：配置里写啥模型就出站啥模型，不做隐式改写）。
-
-    回退 ``base_provider``（即旧行为 = 复用主 LLM）的情形：
-      * ``base_provider is None`` —— 调用方整体跳过 ephemeral；
-      * ``model_name`` 空 / 仅空白 —— 缺省，回退主 LLM（保持 BC）；
-      * ``model_name == base_provider.model`` —— 已是目标模型，免重复构造；
-      * 克隆失败（任意异常）—— 兜底回退主 LLM，绝不让 verify-gate 接电崩。
-    """
-    if base_provider is None:
-        return None
-    # Context OS E2E uses a strict loopback provider catalog. Auxiliary
-    # classifiers/verifiers must stay on ctx-primary; cloning an arbitrary
-    # configured model here would bypass the hermetic provider-chain override.
-    if _e2e_provider_base:
-        return base_provider
-    name = (model_name or "").strip()
-    if not name:
-        return base_provider
-    try:
-        if getattr(base_provider, "model", None) == name:
-            return base_provider
-        return OpenAICompatibleProvider(
-            base_url=base_provider.base_url,
-            api_key=base_provider.api_key,
-            model=name,
-            temperature=getattr(base_provider, "temperature", 0.2),
-            sanitize_inline_cot_dsml=getattr(
-                base_provider, "sanitize_inline_cot_dsml", _sanitize_cot_dsml
-            ),
-        )
-    except Exception as exc:  # noqa: BLE001 — 克隆失败兜底回退主 LLM（保 BC）
-        logger.warning(
-            "ephemeral provider clone failed (model=%s): %s — falling back to base LLM",
-            name,
-            exc,
-        )
-        return base_provider
-
-
-# 把运行中的 local_llm(relay base_url + keychain key) 注入 deep-research，
-# 让 deepresearch 的 plan/synthesize/reflection 走和聊天 agent 同一个 live
-# relay（修旧 _resolve_default_llm_call 读 providers[0] 丢 key 的隐患）。
-try:
-    from deskpet.tools import research_tools as _research_tools
-
-    _research_tools.set_live_llm_call(
-        _make_str_llm_call(host_state.local_llm, max_tokens=4096, purpose="research")
-    )
-    _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(host_state.local_llm))
-
-    # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
-    # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
-    # 同 base_url + keychain key,只换 model。[research].reranker_model 可覆盖。
-    # 仅在云端/relay base_url 下注入: 本地 ollama(localhost) 通常没有 gpt-4.1-mini,
-    # 会每次研究都失败白调,故 localhost 端点不注入(research 自动跳过精排)。
-    try:
-        _r_base = str(config.llm.local.base_url or "")
-        if _r_base and not _research_tools._is_loopback_url(_r_base):
-            _rerank_model = str(
-                (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
-            )
-            _rerank_provider = OpenAICompatibleProvider(
-                base_url=_r_base,
-                api_key=_resolved_api_key,
-                model=_rerank_model,
-            )
-            _research_tools.set_rerank_llm_call(
-                _make_str_llm_call(_rerank_provider, max_tokens=2048, purpose="research")
-            )
-    except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 跳过精排
-        logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
-except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重建
-    logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
-
-
-# ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
-# 任务计划确认统一由 Harness durable admission decision 处理。
-def _resolve_primary_registry_provider():
-    """Return the highest-priority enabled provider from the registry.
-
-    2026-08-09：原 `_resolve_relay_registry_provider` 只认写死的 relay-cloud
-    条目。relay 托管登录移除后，provider 一律由用户手动配置（baseUrl +
-    apiKey），"当前该用哪个"就等于 registry 链的头部——与主聊天链路
-    (`get_chain()`) 同一口径，避免图片/研究链路各自为政选出不同的 provider。
-    """
-    try:
-        _reg = service_context.get("provider_registry")
-        if _reg is None:
-            return None
-        try:
-            _chain = _reg.get_chain()
-        except Exception:  # NoProviderConfiguredError 等 —— 没配就是没配
-            return None
-        if not _chain:
-            return None
-        _primary_id = str(_chain[0].get("id") or "")
-        _entry = _reg.get_entry(_primary_id) if _primary_id else None
-        if _entry is None:
-            return None
-        _api_key = _reg.resolve_api_key(_entry.id)
-        if not _api_key:
-            return None
-        return OpenAICompatibleProvider(
-            base_url=_entry.base_url,
-            api_key=_api_key,
-            model=_entry.model,
-            temperature=getattr(_entry, "temperature", 0.7),
-            sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-        )
-    except Exception as _exc:  # noqa: BLE001
-        logger.debug("primary_provider_resolve_skipped", error=str(_exc))
-    return None
-
-
-def _refresh_image_endpoint_resolver() -> None:
-    """Keep image/PPT generation aligned with the active relay provider."""
-    try:
-        from deskpet.tools import image_tools as _image_tools
-
-        def _resolver() -> tuple[str | None, str | None] | None:
-            _provider = _resolve_primary_registry_provider()
-            if _provider is None:
-                return None
-            return (
-                str(getattr(_provider, "base_url", "") or ""),
-                str(getattr(_provider, "api_key", "") or ""),
-            )
-
-        _image_tools.set_endpoint_resolver(_resolver)
-        logger.info("image_endpoint_resolver_wired")
-    except Exception as _exc:  # noqa: BLE001
-        logger.debug("image_endpoint_resolver_wiring_skipped", error=str(_exc))
-
-
-def _refresh_research_live_llm(provider=None) -> None:
-    """Keep deep-research/PPT background LLM aligned with chat routing."""
-    try:
-        from deskpet.tools import research_tools as _research_tools
-
-        _provider = provider or _resolve_primary_registry_provider() or host_state.local_llm
-        _research_tools.set_live_llm_call(
-            _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
-        )
-        _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(_provider))
-
-        try:
-            _r_base = str(getattr(_provider, "base_url", "") or "")
-            if _r_base and not _research_tools._is_loopback_url(_r_base):
-                _rerank_model = str(
-                    (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
-                )
-                _rerank_provider = OpenAICompatibleProvider(
-                    base_url=_r_base,
-                    api_key=getattr(_provider, "api_key", ""),
-                    model=_rerank_model,
-                    sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-                )
-                _research_tools.set_rerank_llm_call(
-                    _make_str_llm_call(_rerank_provider, max_tokens=2048, purpose="research")
-                )
-        except Exception as _exc2:  # noqa: BLE001
-            logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
-
-        logger.info(
-            "research_live_llm_refreshed base_url=%s model=%s",
-            getattr(_provider, "base_url", ""),
-            getattr(_provider, "model", ""),
-        )
-    except Exception as _exc:  # noqa: BLE001
-        logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
-
-
-_refresh_image_endpoint_resolver()
-_refresh_research_live_llm()
+# isort: split
 
 
 # ─── WI-4.3 技能自创闭环 hook（方案 B 抽 helper）─────────────────────
@@ -5828,15 +5073,14 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Shared-Secret"],
 )
 
-# Track control channel connections for lip-sync forwarding
-_control_connections: dict[str, WebSocket] = {}
-# One independently cancellable Inspector query per connection/kind/root.
-_harness_inspector_tasks: dict[tuple[int, str, str], asyncio.Task] = {}
-# Transport websocket sid -> effective chat sid shown by that peer.
-_chat_peer_groups: dict[str, str] = {
-    "default": "default",
-    "message-panel-main": "default",
-}
+# isort: split
+from host.connections import (
+    _chat_peer_groups,
+    _control_connections,
+    _harness_inspector_tasks,
+)
+
+# isort: split
 
 
 def _cancel_harness_inspector_tasks(

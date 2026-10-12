@@ -40,7 +40,7 @@ def _base_provider(model: str = "gpt-5.5") -> OpenAICompatibleProvider:
 
 def test_resolve_overrides_model_reusing_connection():
     """配了不同模型 → 克隆出该模型的 provider，复用 base 的连接参数."""
-    from main import _resolve_ephemeral_provider
+    from host.llm_calls import _resolve_ephemeral_provider
 
     base = _base_provider("gpt-5.5")
     out = _resolve_ephemeral_provider(base, "sonnet")
@@ -54,7 +54,7 @@ def test_resolve_overrides_model_reusing_connection():
 
 def test_resolve_empty_model_falls_back_to_base():
     """缺省（空串）→ 回退主 LLM（保持旧行为 = BC）."""
-    from main import _resolve_ephemeral_provider
+    from host.llm_calls import _resolve_ephemeral_provider
 
     base = _base_provider("gpt-5.5")
     assert _resolve_ephemeral_provider(base, "") is base
@@ -63,7 +63,7 @@ def test_resolve_empty_model_falls_back_to_base():
 
 def test_resolve_same_model_returns_base():
     """配的模型 == 主 LLM 模型 → 免重复构造，直接返回 base."""
-    from main import _resolve_ephemeral_provider
+    from host.llm_calls import _resolve_ephemeral_provider
 
     base = _base_provider("haiku")
     assert _resolve_ephemeral_provider(base, "haiku") is base
@@ -71,23 +71,23 @@ def test_resolve_same_model_returns_base():
 
 def test_resolve_e2e_provider_keeps_strict_primary(monkeypatch):
     """The loopback E2E catalog is authoritative for every auxiliary call."""
-    import main
+    from host import llm_calls
 
     base = _base_provider("ctx-primary")
-    monkeypatch.setattr(main, "_e2e_provider_base", "http://127.0.0.1:18992/v1")
-    assert main._resolve_ephemeral_provider(base, "deepseek-v4-pro") is base
+    monkeypatch.setattr(llm_calls, "_e2e_provider_base", "http://127.0.0.1:18992/v1")
+    assert llm_calls._resolve_ephemeral_provider(base, "deepseek-v4-pro") is base
 
 
 def test_resolve_none_base_returns_none():
     """base=None（用户离线/未配 LLM）→ None，调用方整体跳过 ephemeral."""
-    from main import _resolve_ephemeral_provider
+    from host.llm_calls import _resolve_ephemeral_provider
 
     assert _resolve_ephemeral_provider(None, "sonnet") is None
 
 
 def test_resolve_clone_failure_falls_back_to_base():
     """克隆抛异常 → 兜底回退 base（绝不让 verify-gate 接电崩）."""
-    from main import _resolve_ephemeral_provider
+    from host.llm_calls import _resolve_ephemeral_provider
 
     broken = MagicMock(name="broken_provider")
     broken.model = "gpt-5.5"

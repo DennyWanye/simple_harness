@@ -115,7 +115,7 @@ def ast_metrics() -> dict:
         "funcs_over_300_backend": [], "funcs_over_300_sdk": [], "funcs_over_150": 0,
         "inner_imports": 0, "except_broad": 0, "except_broad_silent": 0,
         "backend_imports_sdk_internal": 0, "backend_sdk_module_paths": set(), "print_calls": 0, "sys_path_hacks": 0,
-        "global_stmts": 0, "codename_comment_lines": 0, "legacy_files": 0, "py_lines": 0,
+        "global_stmts": 0, "codename_comment_lines": 0, "legacy_lines": 0, "py_lines": 0,
     }
     for tree_name, tree in PY_TREES.items():
         for path in py_files(tree):
@@ -123,8 +123,7 @@ def ast_metrics() -> dict:
             src = path.read_text(encoding="utf-8", errors="replace")
             lines = src.count("\n") + 1
             m["py_lines"] += lines
-            if re.search(r"legacy|deprecated", src, re.I):
-                m["legacy_files"] += 1
+            m["legacy_lines"] += len(re.findall(r"^.*(?:legacy|deprecated).*$", src, re.I | re.M))
             for line in src.splitlines():
                 s = line.strip()
                 if s.startswith("#") and CODENAME.search(s):
@@ -191,8 +190,7 @@ def ast_metrics() -> dict:
             m["files_2000_3000"].append(f"{r}:{lines}")
         ts_any += len(re.findall(r":\s*any\b|\bas any\b|<any>", src))
         ts_inline += src.count("style={{")
-        if re.search(r"legacy|deprecated", src, re.I):
-            m["legacy_files"] += 1
+        m["legacy_lines"] += len(re.findall(r"^.*(?:legacy|deprecated).*$", src, re.I | re.M))
         for line in src.splitlines():
             s = line.strip()
             if s.startswith("//") and CODENAME.search(s):

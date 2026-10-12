@@ -265,7 +265,6 @@
  "sys_path_hacks": 26,
  "global_stmts": 81,
  "codename_comment_lines": 424,
- "legacy_files": 338,
  "py_lines": 652286,
  "main_py_lines": 17311,
  "ts_explicit_any": 62,
@@ -474,6 +473,13 @@
    "from": 3677,
    "to": 3766,
    "reason": "2026-10-12 阶段 1：格式化把长语句拆行后行尾的 type: ignore 离开报错行而失效；getattr 常量换属性访问后，原先被掩盖的 object 类型漏洞暴露。运行时不变，阶段 5、6 清理类型时处理"
+  },
+  {
+   "key": "legacy_lines",
+   "from": null,
+   "to": 2130,
+   "reason": "2026-10-13 旧版字样改按行计（原按文件计，拆文件会虚增）；基线按主分支提交 d1654f4b3 计算"
   }
- ]
+ ],
+ "legacy_lines": 2130
 }
