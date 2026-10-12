@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
 from pathlib import Path
+from typing import Mapping
 
 from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, RetryPolicy, WorkflowState
 from ...definition import (
@@ -31,11 +31,12 @@ from ..deep_research_v4_nodes import (
     plan_handler,
     post_cite_route,
     post_direct_route,
-    rerank_handler,
     research_continue_handler,
+    rerank_handler,
     synth_handler,
 )
 from ..v3.deep_research import initial_state as v3_initial_state
+
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v4"
@@ -55,9 +56,7 @@ _PUBLIC_NODE_HANDLERS = {
 }
 _JOIN_NODE_IDS = tuple(f"{stage}_join" for stage in BRANCH_STAGES)
 _PUBLIC_WRITERS = frozenset((*_PUBLIC_NODE_HANDLERS, *_JOIN_NODE_IDS))
-_BRANCH_NODE_IDS = tuple(
-    f"{stage}_{branch_id}" for stage in BRANCH_STAGES for branch_id in BRANCH_IDS
-)
+_BRANCH_NODE_IDS = tuple(f"{stage}_{branch_id}" for stage in BRANCH_STAGES for branch_id in BRANCH_IDS)
 _RETRY = RetryPolicy(
     max_attempts=2,
     initial_delay_seconds=0.1,
@@ -67,9 +66,7 @@ _RETRY = RetryPolicy(
 
 
 def _nodes() -> tuple[NodeDefinition, ...]:
-    result = [
-        NodeDefinition(node_id, handler) for node_id, handler in _PUBLIC_NODE_HANDLERS.items()
-    ]
+    result = [NodeDefinition(node_id, handler) for node_id, handler in _PUBLIC_NODE_HANDLERS.items()]
     result.append(NodeDefinition("research", research_continue_handler))
     for stage in BRANCH_STAGES:
         result.extend(
@@ -117,9 +114,7 @@ def _edges() -> tuple[Edge, ...]:
 def _channels() -> dict[str, ChannelSpec]:
     channels = {
         "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, _PUBLIC_WRITERS),
-        "branch_events": ChannelSpec(
-            JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset(_BRANCH_NODE_IDS)
-        ),
+        "branch_events": ChannelSpec(JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset(_BRANCH_NODE_IDS)),
         "blob_refs": ChannelSpec(
             JsonType.ARRAY,
             ReducerKind.STABLE_LIST,
@@ -202,10 +197,6 @@ def initial_state(
 
 
 __all__ = [
-    "DEEP_RESEARCH_V4",
-    "DEEP_RESEARCH_V4_DEFINITION",
-    "STATE_SCHEMA_VERSION",
-    "WORKFLOW_NAME",
-    "WORKFLOW_VERSION",
-    "initial_state",
+    "DEEP_RESEARCH_V4", "DEEP_RESEARCH_V4_DEFINITION", "STATE_SCHEMA_VERSION",
+    "WORKFLOW_NAME", "WORKFLOW_VERSION", "initial_state",
 ]

@@ -70,19 +70,28 @@ def test_delegate_handlers_call_the_host_delegation_service():
     assert calls == [("agent", {"description": "d", "prompt": "p"}, context)]
 
 
+def _c(text: str) -> str:
+    """去掉全部空白：格式化会拆行、改缩进（2026-10-12 代码质量整治阶段 1）。"""
+    return "".join(text.split())
+
+
 def test_restart_recovery_and_projection_keep_delegated_children_out_of_the_chat():
-    source = inspect.getsource(main._build_product_sdk_runtime_stack)
-    factory = source.split("def ports_factory(database, uow):", 1)[1]
+    source = _c(inspect.getsource(main._build_product_sdk_runtime_stack))
+    factory = source.split(_c("def ports_factory(database, uow):"), 1)[1]
     # 子运行跳过界面投递路由（也就不进根映射、不挂恢复监视器），交给委派服务重新接管。
-    guard = factory.index("if is_delegated_child_start(start):")
-    assert guard < factory.index("elif not _restore_sdk_delivery_route(record, start, session_db):")
-    assert "delegation_service.adopt_recovered(child_run_id, parent_run_id)" in factory
-    assert "delegation_service.start_recovery()" in factory
-    assert "on_parent_woken=lambda run_id: _ensure_sdk_recovery_watcher(run_id)" in source
-    assert "*waiting_runs_blocked_on_delegation(uow, exclude={" in factory
-    assert 'delegation_uow["uow"] = uow' in factory
+    guard = factory.index(_c("if is_delegated_child_start(start):"))
+    assert guard < factory.index(
+        _c("elif not _restore_sdk_delivery_route(record, start, session_db):")
+    )
+    assert _c("delegation_service.adopt_recovered(child_run_id, parent_run_id)") in factory
+    assert _c("delegation_service.start_recovery()") in factory
+    assert _c("on_parent_woken=lambda run_id: _ensure_sdk_recovery_watcher(run_id)") in source
+    assert _c("*waiting_runs_blocked_on_delegation(uow, exclude={") in factory
+    assert _c('delegation_uow["uow"] = uow') in factory
     # 工具对账：执行中不明的委派调用由委派服务按"父运行 + 调用 ID"推出子运行来判定。
     assert (
-        "ProductReconciliationAdapter(\n        repository, observer=_delegation_observer\n    )"
+        _c(
+            "ProductReconciliationAdapter(\n        repository, observer=_delegation_observer\n    )"
+        )
         in source
     )

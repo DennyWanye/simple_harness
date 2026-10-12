@@ -278,7 +278,9 @@ def test_the_root_trigger_reads_the_composition_verdict_rather_than_asserting_it
     # 去掉全部空白再比：格式化可能把一次调用拆成多行（2026-10-12 代码质量整治阶段 1）。
     compact = "".join(source.split())
     # 2026-09-30 审阅升级：读记录的结论，或人对判不下来的记录的裁决——仍不是触发器自己断言。
-    assert "composition_obligation_passed=accepted_or_adjudicated(self.store,inputs.record)" in compact
+    assert (
+        "composition_obligation_passed=accepted_or_adjudicated(self.store,inputs.record)" in compact
+    )
     assert "composition_obligation_passed=True" not in compact
 
 

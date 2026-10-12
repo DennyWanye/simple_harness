@@ -21,7 +21,8 @@ describe("voice availability", () => {
   it("guards the phone-style call control behind product availability", () => {
     const source = readFileSync(resolve("src", "views", "ChatView.tsx"), "utf8");
     expect(source.match(/data-testid="realtime-call-button"/g)).toHaveLength(1);
-    expect(source).toContain("VOICE_INPUT_ENABLED && <button");
+    // Prettier 会给多行 JSX 加括号、换行（2026-10-12 代码质量整治阶段 1），只认"按钮受开关控制"
+    expect(source).toMatch(/VOICE_INPUT_ENABLED\s*&&\s*\(?\s*<button/);
     expect(source).not.toContain("chat-mic-disabled");
     expect(source).not.toContain("开始说话");
   });

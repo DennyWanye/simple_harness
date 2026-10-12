@@ -45,6 +45,8 @@ RESOURCE_ROOTS = ("sdk/simple-harness-sdk/src/", "backend/deskpet/", "backend/ag
 # 发版流程会重写的文件，不算禁区（但不许手改）
 RELEASE_OWNED = {
     "sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/taskgraph_deployment_manifest.json",
+    # 由 scripts/generate_execution_build_manifest.py 生成，测试强制与工具源码一致
+    "backend/deskpet/tools/execution_build_manifest.json",
 }
 FORBIDDEN_PY = re.compile(
     r"(^|/)(schema|migrator|migration|[a-z_]*_migration|schema_migrations)\.py$|(^|/)migrations/")
@@ -58,6 +60,9 @@ CODEC_PINNED = {
         "simple_harness/contracts/errors.py", "simple_harness/contracts/json.py",
         # 测试按字节冻结（tests/agents/test_api_mode_fence.py）
         "simple_harness/runtime/start_snapshot.py", "simple_harness/runtime/drivers/start_mode.py")
+} | {
+    # 工作流定义用节点函数源码文本计算身份（与 ruff.toml 的排除清单一致）
+    "backend/deskpet/workflows/definitions/" + p for p in ("v1/deep_research.py", "v2/deep_research.py", "v3/deep_research.py", "v4/deep_research.py", "v5/deep_research.py", "v6/deep_research.py", "v7/deep_research.py", "v1/ppt_pro.py", "code_nodes.py", "deep_research_v2_nodes.py", "deep_research_v3_nodes.py", "deep_research_v4_nodes.py", "deep_research_v5_nodes.py", "deep_research_v6_production_nodes.py", "deep_research_v6_terminal_nodes.py", "personal_workflow.py")
 }
 STRICT = re.compile(r"^[A-Za-z0-9_.:/\-\[\]{}<>=+*#@$%^&|~!?]{2,}$")
 

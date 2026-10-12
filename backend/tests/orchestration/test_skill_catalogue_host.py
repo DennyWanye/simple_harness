@@ -160,8 +160,9 @@ def test_only_the_listed_skill_verbs_are_open_on_the_control_channel():
         ) :
     ]
     head = branch[: branch.index("):")]
+    # 去掉空白再比：格式化会把元组拆成一行一个（2026-10-12 代码质量整治阶段 1）
     assert (
-        '"agent_skill_request", "agent_skill_evaluation_mission", "agent_skill_evaluation_dispatch"'
-        in head
+        '"agent_skill_request","agent_skill_evaluation_mission","agent_skill_evaluation_dispatch"'
+        in "".join(head.split())
     )
     assert "agent_runtime_request" not in head and "agent_session" not in head

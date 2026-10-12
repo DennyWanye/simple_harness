@@ -8,21 +8,22 @@ from __future__ import annotations
 import copy
 import json
 import re
-from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 from ....tools import ppt_outline_store, ppt_tools
+from ...control import workflow_interrupt
 from ...contracts import (
     ChannelSpec,
     JsonType,
     JsonValue,
     ReducerKind,
+    RetryPolicy,
     StatePatch,
     WorkflowContext,
     WorkflowState,
     validate_json_value,
 )
-from ...control import workflow_interrupt
 from ...definition import (
     END_NODE,
     CompiledWorkflow,
@@ -35,13 +36,16 @@ from ...definition import (
 from .. import ppt_pro_nodes as nodes
 from . import deep_research as research_graph
 
+
 WORKFLOW_NAME = "ppt_pro"
 WORKFLOW_VERSION = "v1"
 STATE_SCHEMA_VERSION = 1
 MAX_OUTLINE_REVISIONS = 2
 MAX_VISUAL_REVISIONS = 2
 MAX_FULL_PAGE_PROVIDER_ATTEMPTS = 3
-MAX_IMAGE_ITERATIONS = 20 * (MAX_FULL_PAGE_PROVIDER_ATTEMPTS + MAX_VISUAL_REVISIONS + 1)
+MAX_IMAGE_ITERATIONS = 20 * (
+    MAX_FULL_PAGE_PROVIDER_ATTEMPTS + MAX_VISUAL_REVISIONS + 1
+)
 RESEARCH_CORE_NAMESPACE = "ppt_pro/research_core"
 
 
@@ -254,14 +258,15 @@ def _global_validation_tail_start(segment: str) -> int | None:
 
     for scope_match in _GLOBAL_DECK_ELEMENT_SCOPE_RE.finditer(segment):
         if _GLOBAL_EDITABILITY_ACTION_RE.search(
-            segment[scope_match.start() : scope_match.end() + 96]
+            segment[scope_match.start():scope_match.end() + 96]
         ):
             return scope_match.start()
 
     boundaries = list(_CLAUSE_BOUNDARY_RE.finditer(segment))
     for boundary_index, boundary in enumerate(boundaries):
-        if boundary.group() in {":", "："} and _CONTENT_LABEL_BEFORE_COLON_RE.search(
-            segment[: boundary.start()]
+        if (
+            boundary.group() in {":", "："}
+            and _CONTENT_LABEL_BEFORE_COLON_RE.search(segment[:boundary.start()])
         ):
             continue
         clause_end = (
@@ -269,11 +274,15 @@ def _global_validation_tail_start(segment: str) -> int | None:
             if boundary_index + 1 < len(boundaries)
             else len(segment)
         )
-        clause = segment[boundary.end() : clause_end]
+        clause = segment[boundary.end():clause_end]
         clause_has_scope = _GLOBAL_PAGE_SCOPE_RE.search(clause) is not None
         clause_has_action = _GLOBAL_VALIDATION_ACTION_RE.search(clause) is not None
-        clause_has_global_elements = _GLOBAL_DECK_ELEMENT_SCOPE_RE.search(clause) is not None
-        clause_has_editability = _GLOBAL_EDITABILITY_ACTION_RE.search(clause) is not None
+        clause_has_global_elements = (
+            _GLOBAL_DECK_ELEMENT_SCOPE_RE.search(clause) is not None
+        )
+        clause_has_editability = (
+            _GLOBAL_EDITABILITY_ACTION_RE.search(clause) is not None
+        )
         if clause_has_global_elements and clause_has_editability:
             return boundary.start()
         if clause_has_scope and clause_has_action:
@@ -285,9 +294,13 @@ def _global_validation_tail_start(segment: str) -> int | None:
                 if boundary_index + 2 < len(boundaries)
                 else len(segment)
             )
-            next_clause = segment[next_boundary.end() : next_clause_end]
-            if (clause_has_scope and _GLOBAL_VALIDATION_ACTION_RE.search(next_clause)) or (
-                clause_has_action and _GLOBAL_PAGE_SCOPE_RE.search(next_clause)
+            next_clause = segment[next_boundary.end():next_clause_end]
+            if (
+                clause_has_scope
+                and _GLOBAL_VALIDATION_ACTION_RE.search(next_clause)
+            ) or (
+                clause_has_action
+                and _GLOBAL_PAGE_SCOPE_RE.search(next_clause)
             ):
                 return boundary.start()
     return None
@@ -303,7 +316,7 @@ def _requirement_clauses(segment: str) -> list[str]:
         clause = raw_clause
         copy_marker = _PRESERVED_COPY_MARKER_RE.search(clause)
         if copy_marker is not None:
-            prefix = clause[: copy_marker.start()]
+            prefix = clause[:copy_marker.start()]
             if prefix.strip():
                 result.append(prefix)
             copy_mode = True
@@ -362,10 +375,10 @@ def _without_copy_quotes(topic: str) -> str:
     pieces: list[str] = []
     cursor = 0
     for match in _QUOTED_TEXT_RE.finditer(topic):
-        prefix = topic[max(0, match.start() - 96) : match.start()]
+        prefix = topic[max(0, match.start() - 96):match.start()]
         if _QUOTED_REQUIREMENT_CONTEXT_RE.search(prefix) is not None:
             continue
-        pieces.append(topic[cursor : match.start()])
+        pieces.append(topic[cursor:match.start()])
         pieces.append(" ")
         cursor = match.end()
     pieces.append(topic[cursor:])
@@ -386,7 +399,9 @@ def _requirement_from_object(object_text: str) -> str:
         r"(?<![a-z0-9_])pie(?:\s+|-)+chart(?![a-z0-9_])", normalized
     ):
         return "chart:pie"
-    if "图表" in normalized or re.search(r"(?<![a-z0-9_])chart(?![a-z0-9_])", normalized):
+    if "图表" in normalized or re.search(
+        r"(?<![a-z0-9_])chart(?![a-z0-9_])", normalized
+    ):
         return "chart"
     return "table"
 
@@ -399,7 +414,9 @@ def _remove_requirement(merged: list[str], requirement: str) -> None:
 
 
 def _add_requirement(merged: list[str], requirement: str) -> None:
-    if requirement == "chart" and any(existing.startswith("chart:") for existing in merged):
+    if requirement == "chart" and any(
+        existing.startswith("chart:") for existing in merged
+    ):
         return
     if requirement.startswith("chart:") and "chart" in merged:
         merged.remove("chart")
@@ -411,7 +428,7 @@ def _explicit_image_mode_is_false(topic: str) -> bool:
     instruction_source = _without_copy_quotes(topic)
     for instruction in _requirement_clauses(instruction_source):
         for match in _EXPLICIT_IMAGE_MODE_FALSE_RE.finditer(instruction):
-            prefix = instruction[max(0, match.start() - 80) : match.start()]
+            prefix = instruction[max(0, match.start() - 80):match.start()]
             match_text = match.group(0).lstrip().casefold()
             if match_text.startswith("without") and re.search(
                 r"(?<![a-z0-9_])"
@@ -423,12 +440,15 @@ def _explicit_image_mode_is_false(topic: str) -> bool:
                 flags=re.IGNORECASE,
             ):
                 continue
-            if match_text.startswith("without") and re.search(
-                r"^\s*(?:is|are|was|were)?\s*"
-                r"(?:not\s+(?:acceptable|allowed|permitted)|"
-                r"unacceptable|forbidden)",
-                instruction[match.end() : match.end() + 64],
-                flags=re.IGNORECASE,
+            if (
+                match_text.startswith("without")
+                and re.search(
+                    r"^\s*(?:is|are|was|were)?\s*"
+                    r"(?:not\s+(?:acceptable|allowed|permitted)|"
+                    r"unacceptable|forbidden)",
+                    instruction[match.end():match.end() + 64],
+                    flags=re.IGNORECASE,
+                )
             ):
                 continue
             if not _NEGATED_SETTING_PREFIX_RE.search(prefix):
@@ -451,8 +471,10 @@ def _slide_requirements_from_topic(topic: str) -> dict[str, list[str]]:
     requirements: dict[str, list[str]] = {}
     for index, match in enumerate(matches):
         page = str(int(match.group("zh_page") or match.group("en_page")))
-        segment_end = matches[index + 1].start() if index + 1 < len(matches) else len(topic)
-        segment = topic[match.end() : segment_end]
+        segment_end = (
+            matches[index + 1].start() if index + 1 < len(matches) else len(topic)
+        )
+        segment = topic[match.end():segment_end]
         global_tail_start = _global_validation_tail_start(segment)
         if global_tail_start is not None:
             segment = segment[:global_tail_start]
@@ -463,13 +485,19 @@ def _slide_requirements_from_topic(topic: str) -> dict[str, list[str]]:
             or _EXPLICIT_OBJECT_PREDICATE_RE.search(clause) is not None
             for clause in base_clauses
         )
-        if _is_pure_non_rasterization_clause(segment) and not has_explicit_object_creation:
+        if (
+            _is_pure_non_rasterization_clause(segment)
+            and not has_explicit_object_creation
+        ):
             if not merged:
                 requirements.pop(page, None)
             continue
         for base_clause in base_clauses:
             for clause in _OBJECT_ACTION_BOUNDARY_RE.split(base_clause):
-                if _is_pure_non_rasterization_clause(clause) or _is_editability_only_clause(clause):
+                if (
+                    _is_pure_non_rasterization_clause(clause)
+                    or _is_editability_only_clause(clause)
+                ):
                     continue
                 negated_matches = [
                     *_NEGATED_OBJECT_RE.finditer(clause),
@@ -499,11 +527,18 @@ def _slide_requirements_from_topic(topic: str) -> dict[str, list[str]]:
                         )
                         cursor = additional.end()
                 positive_text = clause
-                negated_spans = [(match.start(), match.end()) for match in negated_matches] + [
+                negated_spans = [
+                    (match.start(), match.end()) for match in negated_matches
+                ] + [
                     (start, end) for start, end, _object in additionally_negated
                 ]
-                for start, end in sorted(negated_spans, key=lambda item: item[0], reverse=True):
-                    positive_text = positive_text[:start] + positive_text[end:]
+                for start, end in sorted(
+                    negated_spans, key=lambda item: item[0], reverse=True
+                ):
+                    positive_text = (
+                        positive_text[:start]
+                        + positive_text[end:]
+                    )
                 positive_text = positive_text.casefold()
                 required: list[str] = []
                 if "表格" in positive_text or re.search(
@@ -525,10 +560,14 @@ def _slide_requirements_from_topic(topic: str) -> dict[str, list[str]]:
                     positive_text,
                 ):
                     required.append("chart:pie")
-                has_specific_chart = any(item.startswith("chart:") for item in required)
+                has_specific_chart = any(
+                    item.startswith("chart:") for item in required
+                )
                 if not has_specific_chart and (
                     "图表" in positive_text
-                    or re.search(r"(?<![a-z0-9_])chart(?![a-z0-9_])", positive_text)
+                    or re.search(
+                        r"(?<![a-z0-9_])chart(?![a-z0-9_])", positive_text
+                    )
                 ):
                     required.append("chart")
                 for item in required:
@@ -536,7 +575,6 @@ def _slide_requirements_from_topic(topic: str) -> dict[str, list[str]]:
         if not merged:
             requirements.pop(page, None)
     return requirements
-
 
 _RESEARCH_NODES = (
     "research_plan",
@@ -664,7 +702,9 @@ async def normalize_handler(state: WorkflowState, context: WorkflowContext) -> S
         "image_mode": bool(effective.get("image_mode", True)),
         # Missing means a legacy v1 checkpoint created before full-page mode.
         "full_page_images": (
-            False if editable_required else bool(effective.get("full_page_images", False))
+            False
+            if editable_required
+            else bool(effective.get("full_page_images", False))
         ),
         "editable_required": editable_required,
         "slide_requirements": slide_requirements,
@@ -850,7 +890,9 @@ async def outline_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     return await _draft_outline(state, context)
 
 
-async def outline_ready_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def outline_ready_handler(
+    state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     notifier = context.ports.get("notifier")
     if callable(notifier):
         effective = _effective(state)
@@ -910,9 +952,7 @@ async def wait_outline_decision_handler(
             effective["outline_slides"] = slides
             effective["outline_hash"] = nodes.content_hash(slides)
             decision["action"] = "accept"
-    ppt_outline_store.project_workflow_decision(
-        str(effective["outline_id"]), str(decision["action"])
-    )
+    ppt_outline_store.project_workflow_decision(str(effective["outline_id"]), str(decision["action"]))
     updates: dict[str, JsonValue] = {
         "outline_decision": copy.deepcopy(decision),
         "outline_slides": copy.deepcopy(effective["outline_slides"]),
@@ -921,8 +961,11 @@ async def wait_outline_decision_handler(
     }
     if decision["action"] == "cancel":
         updates.update({"terminal_status": "cancelled", "terminal_error": None})
-    elif decision["action"] == "modify" and _counter(state, "outline_revisions") >= _budget(
-        state, "outline_revisions", MAX_OUTLINE_REVISIONS
+    elif (
+        decision["action"] == "modify"
+        and _counter(state, "outline_revisions") >= _budget(
+            state, "outline_revisions", MAX_OUTLINE_REVISIONS
+        )
     ):
         updates.update(
             {
@@ -1020,7 +1063,8 @@ async def prepare_slides_handler(state: WorkflowState, context: WorkflowContext)
         records = nodes.stable_slide_records(
             parsed,
             full_page_images=(
-                bool(effective["image_mode"]) and bool(effective.get("full_page_images", False))
+                bool(effective["image_mode"])
+                and bool(effective.get("full_page_images", False))
             ),
         )
     except ppt_tools.FullPageLayoutError as exc:
@@ -1077,7 +1121,9 @@ async def prepare_slides_handler(state: WorkflowState, context: WorkflowContext)
         records, image_mode=bool(effective["image_mode"]), reachable=reachable
     )
     fallback_reason = (
-        "provider_unavailable" if bool(effective["image_mode"]) and not reachable else None
+        "provider_unavailable"
+        if bool(effective["image_mode"]) and not reachable
+        else None
     )
     return StatePatch(
         {
@@ -1126,7 +1172,8 @@ async def _image_map_once(state: WorkflowState, context: WorkflowContext) -> Sta
             retry_image["provider_attempts"] = provider_attempts
             updated["image"] = retry_image
             records = [
-                updated if item["slide_id"] == updated["slide_id"] else item for item in records
+                updated if item["slide_id"] == updated["slide_id"] else item
+                for item in records
             ]
             if provider_attempts < MAX_FULL_PAGE_PROVIDER_ATTEMPTS:
                 retry_image["status"] = "pending"
@@ -1164,7 +1211,9 @@ async def _image_map_once(state: WorkflowState, context: WorkflowContext) -> Sta
         fallback_reason: str | None = "provider_unavailable"
     else:
         render_mode = str(effective.get("render_mode") or "template")
-        fallback_reason = str(effective.get("image_fallback_reason") or "") or None
+        fallback_reason = (
+            str(effective.get("image_fallback_reason") or "") or None
+        )
     return StatePatch(
         {
             "values": _merged_values(
@@ -1191,11 +1240,7 @@ async def image_map_route(state: WorkflowState, context: WorkflowContext) -> str
     del context
     if _effective(state).get("terminal_status") == "error":
         return "terminal"
-    return (
-        "pending"
-        if nodes.next_pending_slide(_effective(state).get("slide_records", []))
-        else "done"
-    )
+    return "pending" if nodes.next_pending_slide(_effective(state).get("slide_records", [])) else "done"
 
 
 async def render_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -1240,16 +1285,24 @@ async def preview_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     previous_hashes = {
         int(item["page"]): str(item["sha256"])
         for item in effective.get("preview_refs", [])
-        if isinstance(item, Mapping) and isinstance(item.get("page"), int) and item.get("sha256")
+        if isinstance(item, Mapping)
+        and isinstance(item.get("page"), int)
+        and item.get("sha256")
     }
     current_hashes = {
         int(item["page"]): str(item["sha256"])
         for item in previews
-        if isinstance(item, Mapping) and isinstance(item.get("page"), int) and item.get("sha256")
+        if isinstance(item, Mapping)
+        and isinstance(item.get("page"), int)
+        and item.get("sha256")
     }
     raw_revision_pages = effective.get("visual_revision_pages", [])
     revision_pages = sorted(
-        {int(page) for page in raw_revision_pages if isinstance(page, int) and int(page) > 0}
+        {
+            int(page)
+            for page in raw_revision_pages
+            if isinstance(page, int) and int(page) > 0
+        }
     )
     no_effect_pages = [
         page
@@ -1261,7 +1314,10 @@ async def preview_handler(state: WorkflowState, context: WorkflowContext) -> Sta
     revision_no_effect = bool(
         int(effective.get("render_revision") or 0) > 0
         and previous_hashes
-        and (no_effect_pages or (not revision_pages and current_hashes == previous_hashes))
+        and (
+            no_effect_pages
+            or (not revision_pages and current_hashes == previous_hashes)
+        )
     )
     return StatePatch(
         {
@@ -1281,7 +1337,9 @@ async def preview_handler(state: WorkflowState, context: WorkflowContext) -> Sta
 async def visual_evaluate_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     effective = _effective(state)
     if bool(effective.get("visual_revision_no_effect", False)):
-        no_effect_pages = list(effective.get("visual_revision_no_effect_pages", []))
+        no_effect_pages = list(
+            effective.get("visual_revision_no_effect_pages", [])
+        )
         review = {
             "issues": [],
             "reviews": [],
@@ -1320,7 +1378,9 @@ async def visual_evaluate_handler(state: WorkflowState, context: WorkflowContext
     )
     updates: dict[str, JsonValue] = {"visual_review": review}
     issues = review.get("issues", []) if isinstance(review, Mapping) else []
-    hard_failures = review.get("hard_failures", []) if isinstance(review, Mapping) else []
+    hard_failures = (
+        review.get("hard_failures", []) if isinstance(review, Mapping) else []
+    )
     if hard_failures:
         codes = [
             str(item.get("code") or "ppt_quality_gate_failed")
@@ -1331,7 +1391,8 @@ async def visual_evaluate_handler(state: WorkflowState, context: WorkflowContext
             {
                 "terminal_status": "error",
                 "terminal_error": (
-                    "PPT quality gate could not verify every page: " + ", ".join(codes)
+                    "PPT quality gate could not verify every page: "
+                    + ", ".join(codes)
                 ),
             }
         )
@@ -1352,7 +1413,9 @@ async def visual_route(state: WorkflowState, context: WorkflowContext) -> str:
     effective = _effective(state)
     review = effective.get("visual_review", {})
     issues = review.get("issues", []) if isinstance(review, Mapping) else []
-    hard_failures = review.get("hard_failures", []) if isinstance(review, Mapping) else []
+    hard_failures = (
+        review.get("hard_failures", []) if isinstance(review, Mapping) else []
+    )
     if hard_failures:
         return "terminal"
     if issues and _counter(state, "visual_revisions") < _budget(
@@ -1440,7 +1503,8 @@ async def publish_handler(state: WorkflowState, context: WorkflowContext) -> Sta
                     {
                         "terminal_status": "error",
                         "terminal_error": (
-                            "PPT delivery quality revalidation failed: " + ", ".join(codes)
+                            "PPT delivery quality revalidation failed: "
+                            + ", ".join(codes)
                         ),
                         "delivery_quality_gate": quality,
                     },
@@ -1532,11 +1596,7 @@ async def terminal_handler(state: WorkflowState, context: WorkflowContext) -> St
             ]
         )
     else:
-        text = (
-            "PPT 任务已取消。"
-            if status == "cancelled"
-            else f"PPT 生成失败：{error or 'unknown error'}"
-        )
+        text = "PPT 任务已取消。" if status == "cancelled" else f"PPT 生成失败：{error or 'unknown error'}"
         intents.append(
             {
                 "intent_id": f"{run_id}:final",
@@ -1649,8 +1709,7 @@ PPT_PRO_V1_DEFINITION = WorkflowDefinition(
             "prepare_slides", prepare_slides_route, {"images": "image_map", "terminal": "terminal"}
         ),
         ConditionalEdge(
-            "image_map",
-            image_map_route,
+            "image_map", image_map_route,
             {"pending": "image_map", "done": "render", "terminal": "terminal"},
         ),
         ConditionalEdge("render", render_route, {"preview": "preview", "terminal": "terminal"}),
@@ -1715,7 +1774,9 @@ def initial_state(
     max_visual_revisions: int = MAX_VISUAL_REVISIONS,
 ) -> WorkflowState:
     effective_editable_required = (
-        not full_page_images if editable_required is None else bool(editable_required)
+        not full_page_images
+        if editable_required is None
+        else bool(editable_required)
     )
     frozen_requirements = (
         {
@@ -1725,8 +1786,12 @@ def initial_state(
         if slide_requirements is not None
         else _slide_requirements_from_topic(topic)
     )
-    effective_image_mode = False if _explicit_image_mode_is_false(topic) else image_mode
-    effective_full_page_images = False if effective_editable_required else full_page_images
+    effective_image_mode = (
+        False if _explicit_image_mode_is_false(topic) else image_mode
+    )
+    effective_full_page_images = (
+        False if effective_editable_required else full_page_images
+    )
     return {
         "schema_version": STATE_SCHEMA_VERSION,
         "workflow_name": WORKFLOW_NAME,

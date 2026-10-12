@@ -2,32 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
+from typing import Mapping
 
 from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, RetryPolicy, WorkflowState
-from ...definition import (
-    END_NODE,
-    Edge,
-    NodeDefinition,
-    NodeDispatch,
-    WorkflowDefinition,
-    compile_workflow,
-)
+from ...definition import END_NODE, Edge, NodeDefinition, NodeDispatch, WorkflowDefinition, compile_workflow
 from ..deep_research_v3_contracts import BRANCH_IDS, BRANCH_STAGES
 from ..deep_research_v3_nodes import (
+    cite_handler, finalize_handler, gap_handler, make_branch_handler, make_join_handler,
+    normalize_handler, persist_handler, plan_handler, rerank_handler, synth_handler,
     PUBLIC_STAGE_IDS,
-    cite_handler,
-    finalize_handler,
-    gap_handler,
-    make_branch_handler,
-    make_join_handler,
-    normalize_handler,
-    persist_handler,
-    plan_handler,
-    rerank_handler,
-    synth_handler,
 )
+
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v3"
@@ -45,9 +31,7 @@ _PUBLIC_NODE_HANDLERS = {
 }
 _JOIN_NODE_IDS = tuple(f"{stage}_join" for stage in BRANCH_STAGES)
 _PUBLIC_WRITERS = frozenset((*_PUBLIC_NODE_HANDLERS, *_JOIN_NODE_IDS))
-_BRANCH_NODE_IDS = tuple(
-    f"{stage}_{branch_id}" for stage in BRANCH_STAGES for branch_id in BRANCH_IDS
-)
+_BRANCH_NODE_IDS = tuple(f"{stage}_{branch_id}" for stage in BRANCH_STAGES for branch_id in BRANCH_IDS)
 _RETRY = RetryPolicy(
     max_attempts=2,
     initial_delay_seconds=0.1,
@@ -57,16 +41,12 @@ _RETRY = RetryPolicy(
 
 
 def _nodes() -> tuple[NodeDefinition, ...]:
-    result = [
-        NodeDefinition(node_id, handler) for node_id, handler in _PUBLIC_NODE_HANDLERS.items()
-    ]
+    result = [NodeDefinition(node_id, handler) for node_id, handler in _PUBLIC_NODE_HANDLERS.items()]
     for stage in BRANCH_STAGES:
         result.extend(
             NodeDefinition(
-                f"{stage}_{branch_id}",
-                make_branch_handler(stage, branch_id),
-                retry_policy=_RETRY,
-                dispatch=NodeDispatch.PARALLEL,
+                f"{stage}_{branch_id}", make_branch_handler(stage, branch_id),
+                retry_policy=_RETRY, dispatch=NodeDispatch.PARALLEL,
             )
             for branch_id in BRANCH_IDS
         )
@@ -84,12 +64,8 @@ def _edges() -> tuple[Edge, ...]:
         previous = f"{stage}_join"
     result.extend(
         (
-            Edge(previous, "gap"),
-            Edge("gap", "rerank"),
-            Edge("rerank", "synth"),
-            Edge("synth", "cite"),
-            Edge("cite", "persist"),
-            Edge("persist", "finalize"),
+            Edge(previous, "gap"), Edge("gap", "rerank"), Edge("rerank", "synth"),
+            Edge("synth", "cite"), Edge("cite", "persist"), Edge("persist", "finalize"),
             Edge("finalize", END_NODE),
         )
     )
@@ -99,19 +75,15 @@ def _edges() -> tuple[Edge, ...]:
 def _channels() -> dict[str, ChannelSpec]:
     channels = {
         "values": ChannelSpec(JsonType.OBJECT, ReducerKind.SINGLE_WRITER, _PUBLIC_WRITERS),
-        "branch_events": ChannelSpec(
-            JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset(_BRANCH_NODE_IDS)
-        ),
+        "branch_events": ChannelSpec(JsonType.ARRAY, ReducerKind.STABLE_LIST, frozenset(_BRANCH_NODE_IDS)),
         "blob_refs": ChannelSpec(
-            JsonType.ARRAY,
-            ReducerKind.STABLE_LIST,
+            JsonType.ARRAY, ReducerKind.STABLE_LIST,
             frozenset({"gap", *(f"fetch_{branch_id}" for branch_id in BRANCH_IDS)}),
         ),
     }
     for stage in BRANCH_STAGES:
         channels[f"branch_{stage}"] = ChannelSpec(
-            JsonType.OBJECT,
-            ReducerKind.DICT_DISJOINT,
+            JsonType.OBJECT, ReducerKind.DICT_DISJOINT,
             frozenset(f"{stage}_{branch_id}" for branch_id in BRANCH_IDS),
         )
     return channels
@@ -127,12 +99,7 @@ DEEP_RESEARCH_V3_DEFINITION = WorkflowDefinition(
     edges=_edges(),
     recursion_limit=128,
     max_supersteps=64,
-    prompt_manifest={
-        "research_core": "v3",
-        "branch_slots": list(BRANCH_IDS),
-        "branch_stages": list(BRANCH_STAGES),
-        "public_stages": list(PUBLIC_STAGE_IDS),
-    },
+    prompt_manifest={"research_core": "v3", "branch_slots": list(BRANCH_IDS), "branch_stages": list(BRANCH_STAGES), "public_stages": list(PUBLIC_STAGE_IDS)},
     policy_manifest={
         "implementation": "deep-research-graph-v3.0.0",
         "fanout_strategy": "fixed-six-slot-five-phase",
@@ -165,8 +132,7 @@ def initial_state(
         "active_step_id": None,
         "status": "pending",
         "values": {
-            "topic": topic,
-            "mode": mode,
+            "topic": topic, "mode": mode,
             "research_config": dict(research_config or {}),
             "blob_root": str(blob_root) if blob_root is not None else "",
         },
@@ -182,11 +148,4 @@ def initial_state(
     return state  # type: ignore[return-value]
 
 
-__all__ = [
-    "DEEP_RESEARCH_V3",
-    "DEEP_RESEARCH_V3_DEFINITION",
-    "STATE_SCHEMA_VERSION",
-    "WORKFLOW_NAME",
-    "WORKFLOW_VERSION",
-    "initial_state",
-]
+__all__ = ["DEEP_RESEARCH_V3", "DEEP_RESEARCH_V3_DEFINITION", "STATE_SCHEMA_VERSION", "WORKFLOW_NAME", "WORKFLOW_VERSION", "initial_state"]

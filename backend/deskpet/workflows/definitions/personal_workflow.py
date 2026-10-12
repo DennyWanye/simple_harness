@@ -5,10 +5,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from deskpet.companion.personal_workflow import (
     PersonalWorkflowV1,
@@ -86,7 +85,9 @@ def _digest(value: object, name: str) -> str:
 
 
 def _closed_mapping(value: object, name: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
+    if not isinstance(value, Mapping) or any(
+        not isinstance(key, str) for key in value
+    ):
         raise PersonalWorkflowSelectionError(f"{name}_invalid")
     try:
         cloned = json.loads(_canonical_json(dict(value)))
@@ -132,12 +133,17 @@ class PersonalWorkflowSelectionV1:
             "query_hash",
         ):
             object.__setattr__(self, name, _digest(getattr(self, name), name))
-        if isinstance(self.binding_generation, bool) or self.binding_generation < 1:
+        if (
+            isinstance(self.binding_generation, bool)
+            or self.binding_generation < 1
+        ):
             raise PersonalWorkflowSelectionError("binding_generation_invalid")
         graph = _closed_mapping(self.graph, "graph")
         topology = _closed_mapping(self.effect_topology, "effect_topology")
         bindings = _closed_mapping(self.tool_bindings, "tool_bindings")
-        entries = tuple(_closed_mapping(item, "lease_entry") for item in self.lease_entries)
+        entries = tuple(
+            _closed_mapping(item, "lease_entry") for item in self.lease_entries
+        )
         if not entries:
             raise PersonalWorkflowSelectionError("lease_entries_required")
         object.__setattr__(self, "graph", graph)
@@ -155,12 +161,16 @@ class PersonalWorkflowSelectionV1:
         if self.selection_id != expected_id:
             raise PersonalWorkflowSelectionError("personal_selection_id_mismatch")
         if self.selection_fingerprint != _hash(self._fingerprint_payload()):
-            raise PersonalWorkflowSelectionError("personal_selection_fingerprint_mismatch")
+            raise PersonalWorkflowSelectionError(
+                "personal_selection_fingerprint_mismatch"
+            )
 
     def _tool_binding(self, name: str) -> Mapping[str, Any]:
         value = self.tool_bindings.get(name)
         if not isinstance(value, Mapping):
-            raise PersonalWorkflowSelectionError("personal_tool_binding_missing")
+            raise PersonalWorkflowSelectionError(
+                "personal_tool_binding_missing"
+            )
         return value
 
     def _identity_payload(self) -> dict[str, object]:
@@ -184,7 +194,8 @@ class PersonalWorkflowSelectionV1:
             "lease_entries": [dict(item) for item in self.lease_entries],
             "effect_topology": dict(self.effect_topology),
             "tool_bindings": {
-                name: dict(value) for name, value in sorted(self.tool_bindings.items())
+                name: dict(value)
+                for name, value in sorted(self.tool_bindings.items())
             },
         }
 
@@ -209,15 +220,20 @@ class PersonalWorkflowSelectionV1:
             "graph_hash": self.graph_hash,
             "query_hash": self.query_hash,
             "run_catalog_content_stamp": self.run_catalog_content_stamp,
-            "lease_entries": [copy.deepcopy(dict(item)) for item in self.lease_entries],
+            "lease_entries": [
+                copy.deepcopy(dict(item)) for item in self.lease_entries
+            ],
             "effect_topology": copy.deepcopy(dict(self.effect_topology)),
             "tool_bindings": {
-                name: copy.deepcopy(dict(value)) for name, value in self.tool_bindings.items()
+                name: copy.deepcopy(dict(value))
+                for name, value in self.tool_bindings.items()
             },
         }
 
     @classmethod
-    def from_authoritative_mapping(cls, value: Mapping[str, Any]) -> PersonalWorkflowSelectionV1:
+    def from_authoritative_mapping(
+        cls, value: Mapping[str, Any]
+    ) -> "PersonalWorkflowSelectionV1":
         required = {
             "schema_version",
             "selection_id",
@@ -236,7 +252,9 @@ class PersonalWorkflowSelectionV1:
             "tool_bindings",
         }
         if set(value) != required or value.get("schema_version") != 1:
-            raise PersonalWorkflowSelectionError("personal_selection_schema_invalid")
+            raise PersonalWorkflowSelectionError(
+                "personal_selection_schema_invalid"
+            )
         lease_entries = value["lease_entries"]
         if not isinstance(lease_entries, Sequence) or isinstance(
             lease_entries, (str, bytes, bytearray)
@@ -274,7 +292,7 @@ class PersonalWorkflowSelectionV1:
         lease_entries: Sequence[Mapping[str, Any]],
         effect_topology: Mapping[str, Any],
         tool_bindings: Mapping[str, Mapping[str, Any]],
-    ) -> PersonalWorkflowSelectionV1:
+    ) -> "PersonalWorkflowSelectionV1":
         parsed = parse_personal_workflow_v1(
             graph,
             tool_resolver=lambda name: tool_bindings[name],
@@ -297,7 +315,10 @@ class PersonalWorkflowSelectionV1:
             "run_catalog_content_stamp": run_catalog_content_stamp,
             "lease_entries": [dict(item) for item in lease_entries],
             "effect_topology": dict(effect_topology),
-            "tool_bindings": {name: dict(value) for name, value in sorted(tool_bindings.items())},
+            "tool_bindings": {
+                name: dict(value)
+                for name, value in sorted(tool_bindings.items())
+            },
         }
         return cls(
             selection_id=selection_id,
@@ -336,7 +357,9 @@ def selection_from_capability_snapshot(
     return PersonalWorkflowSelectionV1.from_authoritative_mapping(raw)
 
 
-async def _execute_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
+async def _execute_handler(
+    state: WorkflowState, context: WorkflowContext
+) -> StatePatch:
     runtime = context.ports.get("personal_workflow_runtime")
     execute = getattr(runtime, "execute", None)
     if not callable(execute):
@@ -386,7 +409,9 @@ PERSONAL_WORKFLOW_V1_DEFINITION = WorkflowDefinition(
     },
 )
 
-PERSONAL_WORKFLOW_V1: CompiledWorkflow = compile_workflow(PERSONAL_WORKFLOW_V1_DEFINITION)
+PERSONAL_WORKFLOW_V1: CompiledWorkflow = compile_workflow(
+    PERSONAL_WORKFLOW_V1_DEFINITION
+)
 
 
 def initial_state(
@@ -398,7 +423,9 @@ def initial_state(
     session_id: str = "",
     **_ignored: object,
 ) -> WorkflowState:
-    selection = PersonalWorkflowSelectionV1.from_authoritative_mapping(personal_workflow_selection)
+    selection = PersonalWorkflowSelectionV1.from_authoritative_mapping(
+        personal_workflow_selection
+    )
     return {
         "schema_version": STATE_SCHEMA_VERSION,
         "workflow_name": WORKFLOW_NAME,

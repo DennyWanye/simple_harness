@@ -322,18 +322,26 @@ async def test_sdk_07_required_authorities_are_constructor_bound_and_fail_closed
         await bindings["task_execution_authority"].issue_envelope(object())
 
 
-def test_desktop_composition_shares_physical_capability_scope_store() -> None:
-    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+def _c(text: str) -> str:
+    """去掉全部空白：格式化会拆行、改缩进（2026-10-12 代码质量整治阶段 1）。"""
+    return "".join(text.split())
 
-    assert 'capability_scope_store = service_context.get("tool_capability_scope_store")' in source
-    assert "scope_store=capability_scope_store" in source
+
+def test_desktop_composition_shares_physical_capability_scope_store() -> None:
+    source = _c((PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8"))
+
+    assert (
+        _c('capability_scope_store = service_context.get("tool_capability_scope_store")') in source
+    )
+    assert _c("scope_store=capability_scope_store") in source
     assert source.index(
-        'capability_scope_store = service_context.get("tool_capability_scope_store")'
-    ) < source.index("scope_store=capability_scope_store")
-    assert 'frozen_catalog["policy_fingerprint"] = (' in source
-    assert "visibility_registry=live_tool_registry" in source
-    assert "reason=global_visibility_not_ready" in source
-    assert "deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint" in source
+        _c('capability_scope_store = service_context.get("tool_capability_scope_store")')
+    ) < source.index(_c("scope_store=capability_scope_store"))
+    # 格式化去掉了赋值右边多余的括号，只认赋值本身
+    assert _c('frozen_catalog["policy_fingerprint"] =') in source
+    assert _c("visibility_registry=live_tool_registry") in source
+    assert _c("reason=global_visibility_not_ready") in source
+    assert _c("deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint") in source
 
 
 @pytest.mark.asyncio

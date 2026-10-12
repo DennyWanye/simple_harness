@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
 from pathlib import Path
+from typing import Mapping
 
 from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, WorkflowState
-from ...definition import (
-    END_NODE,
-    ConditionalEdge,
-    Edge,
-    NodeDefinition,
-    WorkflowDefinition,
-    compile_workflow,
-)
-from ..deep_research_v5_contracts import ResearchEvidenceSnapshot
-from ..deep_research_v5_evidence import POLICY_HASH as EVIDENCE_ADMISSION_POLICY_HASH
+from ...definition import END_NODE, ConditionalEdge, Edge, NodeDefinition, WorkflowDefinition, compile_workflow
 from ..deep_research_v5_nodes import (
     direct_handler,
     expand_handler,
@@ -43,7 +34,10 @@ from ..deep_research_v5_nodes import (
     search_handler,
     synth_handler,
 )
+from ..deep_research_v5_contracts import ResearchEvidenceSnapshot
+from ..deep_research_v5_evidence import POLICY_HASH as EVIDENCE_ADMISSION_POLICY_HASH
 from ..deep_research_v5_report import REPORT_QUALITY_RUBRIC_V1_HASH
+
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v5"
@@ -51,36 +45,12 @@ STATE_SCHEMA_VERSION = 5
 CONTRACT_SCHEMA_VERSION = 1
 
 NODE_IDS = (
-    "normalize",
-    "model",
-    "plan",
-    "expand",
-    "search",
-    "direct",
-    "fetch",
-    "score",
-    "gap_evaluate",
-    "gap_work",
-    "gap_join",
-    "rerank",
-    "synth",
-    "quality_audit",
-    "repair_work",
-    "repair_join",
-    "persist",
-    "finalize",
-    "insufficient_finalize",
+    "normalize", "model", "plan", "expand", "search", "direct", "fetch", "score",
+    "gap_evaluate", "gap_work", "gap_join", "rerank", "synth", "quality_audit",
+    "repair_work", "repair_join", "persist", "finalize", "insufficient_finalize",
 )
 PUBLIC_STAGE_IDS = (
-    "normalize",
-    "plan",
-    "research",
-    "gap",
-    "rerank",
-    "synth",
-    "quality",
-    "persist",
-    "finalize",
+    "normalize", "plan", "research", "gap", "rerank", "synth", "quality", "persist", "finalize",
 )
 
 
@@ -318,10 +288,14 @@ def initial_state(
     if snapshot is not None:
         values = state["values"]
         assert isinstance(values, dict)
-        values["dimension_coverages"] = [item.to_json() for item in snapshot.dimension_coverages]
+        values["dimension_coverages"] = [
+            item.to_json() for item in snapshot.dimension_coverages
+        ]
         values["passage_blob_refs"] = list(snapshot.passage_blob_refs)
         values["source_families"] = [item.to_json() for item in snapshot.source_families]
-        values["executed_source_family_ids"] = [item.family_id for item in snapshot.source_families]
+        values["executed_source_family_ids"] = [
+            item.family_id for item in snapshot.source_families
+        ]
         values["executed_query_fingerprints"] = list(snapshot.query_fingerprints)
         values["budget_summary"] = copy.deepcopy(snapshot.budget_summary)
     return state

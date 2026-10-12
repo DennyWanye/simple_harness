@@ -11,10 +11,8 @@ import copy
 import hashlib
 import inspect
 import json
-from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Mapping, Sequence
 
-from ..adapters.deep_research_v6_semantic_runtime import INFERENCE_POLICY
 from ..contracts import (
     JsonValue,
     NodeExecutionIdentity,
@@ -24,6 +22,7 @@ from ..contracts import (
     canonical_json,
 )
 from ..store import RegisteredBlobStore
+from ..adapters.deep_research_v6_semantic_runtime import INFERENCE_POLICY
 from .deep_research_v6_assessment import (
     assess_requirements,
     decode_assessment_inputs,
@@ -44,9 +43,9 @@ from .deep_research_v6_contracts import (
 )
 from .deep_research_v6_control import poll_v6_control, settle_v6_control
 from .deep_research_v6_evidence import (
-    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     EvidenceFactBatchV1,
+    GENESIS_EVIDENCE_HEAD,
     RegisteredInferenceV1,
 )
 from .deep_research_v6_evidence_contracts import (
@@ -57,19 +56,13 @@ from .deep_research_v6_evidence_contracts import (
 )
 from .deep_research_v6_terminal_nodes import CLAIM_POLICY_V1, QUALITY_POLICY_V1
 
+
 ADMISSION_POLICY_V1: dict[str, JsonValue] = {
     "schema_version": 1,
     "policy_id": "deep-research-v6-admission-v1",
     "validation_order": [
-        "shape",
-        "identity",
-        "spec_target",
-        "body_span",
-        "source_policy",
-        "type_semantics",
-        "unit_time_definition",
-        "duplicate",
-        "conflict",
+        "shape", "identity", "spec_target", "body_span", "source_policy",
+        "type_semantics", "unit_time_definition", "duplicate", "conflict",
     ],
 }
 INFERENCE_POLICY_V1 = INFERENCE_POLICY
@@ -80,27 +73,13 @@ ASSESSMENT_POLICY_V1: dict[str, JsonValue] = {
 }
 
 _UPSTREAM_KEYS = (
-    "fetched_page_refs",
-    "page_result_refs",
-    "compiler_candidates",
-    "candidate_slot_results",
-    "fact_batch_refs",
-    "inference_slot_results",
-    "admitted_fact_refs",
-    "registered_inference_refs",
+    "fetched_page_refs", "page_result_refs", "compiler_candidates",
+    "candidate_slot_results", "fact_batch_refs", "inference_slot_results",
+    "admitted_fact_refs", "registered_inference_refs",
 )
 _POLICY_KEYS = {
-    "compiler",
-    "route",
-    "extraction",
-    "llm_extract",
-    "llm_repair",
-    "llm_inference",
-    "admission",
-    "inference",
-    "assessment",
-    "claim",
-    "quality",
+    "compiler", "route", "extraction", "llm_extract", "llm_repair",
+    "llm_inference", "admission", "inference", "assessment", "claim", "quality",
 }
 
 _CANDIDATE_KINDS = {
@@ -137,7 +116,9 @@ def validate_candidate_admission(
     # identity
     raw = candidate.to_json()
     declared_id = str(raw.pop("candidate_id"))
-    expected_id = "ecd_" + hashlib.sha256(canonical_json(raw).encode("utf-8")).hexdigest()[:24]
+    expected_id = "ecd_" + hashlib.sha256(
+        canonical_json(raw).encode("utf-8")
+    ).hexdigest()[:24]
     if (
         declared_id != expected_id
         or candidate.work_group_id != work_group_id
@@ -190,14 +171,12 @@ def validate_candidate_admission(
             axes = requirement["axes"]
             member_ids = list(payload["axis_member_ids"])
             allowed_by_axis = [
-                {str(member["member_id"]) for member in axis["members"]} for axis in axes
+                {str(member["member_id"]) for member in axis["members"]}
+                for axis in axes
             ]
             if (
                 len(member_ids) != len(allowed_by_axis)
-                or any(
-                    member_id not in allowed_by_axis[index]
-                    for index, member_id in enumerate(member_ids)
-                )
+                or any(member_id not in allowed_by_axis[index] for index, member_id in enumerate(member_ids))
                 or payload["cell_id"] != derive_matrix_cell_id(candidate.requirement_id, member_ids)
             ):
                 return "payload_semantics_invalid"
@@ -209,8 +188,7 @@ def validate_candidate_admission(
             if (
                 field_key not in fields
                 or len(unique_values) != len(schema["unique_key"])
-                or payload["item_id"]
-                != derive_collection_item_id(candidate.requirement_id, unique_values)
+                or payload["item_id"] != derive_collection_item_id(candidate.requirement_id, unique_values)
             ):
                 return "payload_semantics_invalid"
         elif candidate.candidate_kind == "claim_fact":
@@ -225,25 +203,18 @@ def validate_candidate_admission(
         schema = requirement["value_schema"]
         if payload["canonical_unit"] != schema["canonical_unit"]["unit_id"]:
             return "unit_mismatch"
-        if (
-            payload["time_scope"] != requirement["time_scope"]
-            or payload["scope"] != requirement["scope"]
-        ):
+        if payload["time_scope"] != requirement["time_scope"] or payload["scope"] != requirement["scope"]:
             return "time_scope_mismatch"
         if payload["definition"] != schema["definition"]:
             return "definition_mismatch"
     elif candidate.candidate_kind == "matrix_cell":
-        if (
-            payload["time_scope"] != requirement["time_scope"]
-            or payload["scope"] != requirement["scope"]
-        ):
+        if payload["time_scope"] != requirement["time_scope"] or payload["scope"] != requirement["scope"]:
             return "time_scope_mismatch"
         if not isinstance(payload["definition"], str) or not payload["definition"].strip():
             return "definition_mismatch"
     elif candidate.candidate_kind == "collection_field":
         field = next(
-            item
-            for item in requirement["item_schema"]["fields"]
+            item for item in requirement["item_schema"]["fields"]
             if item["field_key"] == payload["field_key"]
         )
         expected_unit = None if field["unit"] is None else field["unit"]["unit_id"]
@@ -252,10 +223,7 @@ def validate_candidate_admission(
         if payload["as_of"] != requirement["selection"]["as_of"]:
             return "time_scope_mismatch"
     else:
-        if (
-            payload["time_scope"] != requirement["time_scope"]
-            or payload["scope"] != requirement["scope"]
-        ):
+        if payload["time_scope"] != requirement["time_scope"] or payload["scope"] != requirement["scope"]:
             return "time_scope_mismatch"
         if not isinstance(payload["definition"], str) or not payload["definition"].strip():
             return "definition_mismatch"
@@ -299,7 +267,9 @@ async def _put_json(
     *,
     media_type: str,
 ) -> str:
-    ref = await blobs.put(canonical_json(value).encode("utf-8"), identity, media_type=media_type)
+    ref = await blobs.put(
+        canonical_json(value).encode("utf-8"), identity, media_type=media_type
+    )
     return format_blob_ref(ref.sha256)
 
 
@@ -329,7 +299,9 @@ def _walk_registered_refs(value: object) -> set[str]:
                 refs.add(item)
             elif key.endswith("_refs") and isinstance(item, list):
                 refs.update(
-                    str(ref) for ref in item if isinstance(ref, str) and ref.startswith("sha256:")
+                    str(ref)
+                    for ref in item
+                    if isinstance(ref, str) and ref.startswith("sha256:")
                 )
             else:
                 refs.update(_walk_registered_refs(item))
@@ -384,11 +356,7 @@ def _state_refs(state: WorkflowState) -> set[str]:
     if not isinstance(raw, list):
         raise ValueError("blob_refs must be an array")
     for item in raw:
-        digest = (
-            str(item.get("sha256") or item.get("id") or "")
-            if isinstance(item, Mapping)
-            else str(item)
-        )
+        digest = str(item.get("sha256") or item.get("id") or "") if isinstance(item, Mapping) else str(item)
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("blob_refs contains an invalid digest")
         result.add(format_blob_ref(digest))
@@ -416,7 +384,9 @@ async def _call(method: object, **kwargs: object) -> object:
     return await result if inspect.isawaitable(result) else result
 
 
-async def _load_spec(values: Mapping[str, JsonValue], blobs: RegisteredBlobStore) -> ResearchSpecV1:
+async def _load_spec(
+    values: Mapping[str, JsonValue], blobs: RegisteredBlobStore
+) -> ResearchSpecV1:
     raw = await _read_json(blobs, _required_text(values.get("spec_ref"), "spec_ref"))
     spec = ResearchSpecV1.from_json(raw)
     if spec.spec_hash != values.get("spec_hash"):
@@ -554,9 +524,7 @@ async def plan_route_handler(state: WorkflowState, context: WorkflowContext) -> 
     blobs, identity = _runtime(state, context)
     spec = await _load_spec(values, blobs)
     retrieval = context.ports.get("retrieval")
-    raw = await _call(
-        getattr(retrieval, "plan_route", None), spec=spec.to_json(), identity=identity
-    )
+    raw = await _call(getattr(retrieval, "plan_route", None), spec=spec.to_json(), identity=identity)
     keys = {"route_policy_ref", "route_policy_hash", "route_decision_ref", "route_id", "blob_refs"}
     if not isinstance(raw, Mapping) or set(raw) != keys:
         raise ValueError("retrieval plan_route response keys differ")
@@ -578,15 +546,13 @@ async def plan_route_handler(state: WorkflowState, context: WorkflowContext) -> 
     port_refs = _wire_refs_from_items(raw["blob_refs"], "plan_route.blob_refs")
     if not {policy_ref, decision_ref}.issubset(port_refs):
         raise ValueError("plan_route blob closure omits route policy/decision")
-    values.update(
-        {
-            "route_policy_ref": policy_ref,
-            "route_policy_hash": policy_hash,
-            "route_decision_ref": decision_ref,
-            "route_id": decision_value["route_id"],
-            "stage": "route_planned",
-        }
-    )
+    values.update({
+        "route_policy_ref": policy_ref,
+        "route_policy_hash": policy_hash,
+        "route_decision_ref": decision_ref,
+        "route_id": decision_value["route_id"],
+        "stage": "route_planned",
+    })
     _merge_policy_refs(values, {"route": policy_ref})
     closure = _state_refs(state) | port_refs
     return StatePatch({"values": values, "blob_refs": _blob_items(sorted(closure))})
@@ -611,9 +577,7 @@ async def load_pages_handler(state: WorkflowState, context: WorkflowContext) -> 
         retrieval = context.ports.get("retrieval")
         raw = await _call(
             getattr(retrieval, "load_pages", None),
-            spec=spec.to_json(),
-            identity=identity,
-            route_decision=decision.to_json(),
+            spec=spec.to_json(), identity=identity, route_decision=decision.to_json(),
         )
     if not isinstance(raw, Mapping) or set(raw) != {"page_result_refs", "blob_refs"}:
         raise ValueError("retrieval load_pages response keys differ")
@@ -628,9 +592,7 @@ async def load_pages_handler(state: WorkflowState, context: WorkflowContext) -> 
     if not set(page_refs).issubset(port_refs):
         raise ValueError("load_pages blob closure omits page results")
     values.update({"page_result_refs": copy.deepcopy(page_refs), "stage": "pages_loaded"})
-    return StatePatch(
-        {"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | port_refs))}
-    )
+    return StatePatch({"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | port_refs))})
 
 
 async def extract_candidate_bundles_handler(
@@ -698,22 +660,12 @@ async def extract_candidate_bundles_handler(
         raise ValueError("candidate blob closure omits slot refs")
     policies = raw["policy_refs"]
     if not isinstance(policies, Mapping) or set(policies) != {
-        "extraction",
-        "llm_extract",
-        "llm_repair",
-        "llm_inference",
+        "extraction", "llm_extract", "llm_repair", "llm_inference"
     }:
         raise ValueError("semantic candidate policy refs differ")
     _merge_policy_refs(values, policies)
     values.update({"candidate_slot_results": normalized, "stage": "candidates_extracted"})
-    return StatePatch(
-        {
-            "values": values,
-            "blob_refs": _blob_items(
-                sorted(_state_refs(state) | port_refs | {str(ref) for ref in policies.values()})
-            ),
-        }
-    )
+    return StatePatch({"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | port_refs | {str(ref) for ref in policies.values()}))})
 
 
 def _page_identity(page: Mapping[str, Any]) -> tuple[str, str, str, str]:
@@ -722,21 +674,13 @@ def _page_identity(page: Mapping[str, Any]) -> tuple[str, str, str, str]:
     body_ref = _required_text(source.get("body_ref") or page.get("body_ref"), "page.body_ref")
     page_id = _required_text(source.get("page_id") or page.get("page_id"), "page.page_id")
     family = str(source.get("authority_id") or page.get("source_family_id") or page_id)
-    tier = str(
-        page.get("source_tier") or ("first_party" if source.get("authority_id") else "general")
-    )
+    tier = str(page.get("source_tier") or ("first_party" if source.get("authority_id") else "general"))
     return body_ref, page_id, family, tier
 
 
 def _fact_from_candidate(
-    candidate: Any,
-    *,
-    run_id: str,
-    spec_hash: str,
-    page_id: str,
-    source_family_id: str,
-    source_tier: str,
-    admission_policy_hash: str,
+    candidate: Any, *, run_id: str, spec_hash: str, page_id: str,
+    source_family_id: str, source_tier: str, admission_policy_hash: str,
     status: str = "admitted",
 ) -> AdmittedResearchFactV1:
     payload = copy.deepcopy(candidate.payload)
@@ -763,33 +707,16 @@ def _fact_from_candidate(
         "end": candidate.span_end_byte,
         "excerpt_hash": candidate.excerpt_hash,
     }
-    span_id = (
-        "span_" + hashlib.sha256(canonical_json(span_payload).encode("utf-8")).hexdigest()[:24]
-    )
-    binding_id = (
-        "binding_"
-        + hashlib.sha256(
-            canonical_json({"candidate_id": candidate.candidate_id, "span_id": span_id}).encode(
-                "utf-8"
-            )
-        ).hexdigest()[:24]
-    )
+    span_id = "span_" + hashlib.sha256(canonical_json(span_payload).encode("utf-8")).hexdigest()[:24]
+    binding_id = "binding_" + hashlib.sha256(
+        canonical_json({"candidate_id": candidate.candidate_id, "span_id": span_id}).encode("utf-8")
+    ).hexdigest()[:24]
     return AdmittedResearchFactV1.create(
-        run_id=run_id,
-        spec_hash=spec_hash,
-        requirement_id=candidate.requirement_id,
-        target_kind=kind,
-        item_or_cell_id=item_or_cell_id,
-        field_or_facet_key=field,
-        candidate_id=candidate.candidate_id,
-        page_id=page_id,
-        span_id=span_id,
-        binding_id=binding_id,
-        source_family_id=source_family_id,
-        source_tier=source_tier,
-        admission_policy_hash=admission_policy_hash,
-        status=status,
-        semantic_payload=payload,
+        run_id=run_id, spec_hash=spec_hash, requirement_id=candidate.requirement_id,
+        target_kind=kind, item_or_cell_id=item_or_cell_id, field_or_facet_key=field,
+        candidate_id=candidate.candidate_id, page_id=page_id, span_id=span_id,
+        binding_id=binding_id, source_family_id=source_family_id, source_tier=source_tier,
+        admission_policy_hash=admission_policy_hash, status=status, semantic_payload=payload,
     )
 
 
@@ -809,17 +736,15 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
     conflicts: list[str] = []
     provenance: set[str] = set(str(ref) for ref in values.get("page_result_refs", []))
     seen: dict[tuple[str, object, object], tuple[str, str]] = {}
-    ordered_candidates: list[tuple[str, int, int, str, Any, tuple[str, str, str, bytes]]] = []
+    ordered_candidates: list[
+        tuple[str, int, int, str, Any, tuple[str, str, str, bytes]]
+    ] = []
     for slot in slots:
         if not isinstance(slot, Mapping):
             raise ValueError("candidate slot must be an object")
         producer_ref = str(slot["producer_outcome_ref"])
         producer = CandidateProducerOutcomeV1.from_json(await _read_json(blobs, producer_ref))
-        if (
-            producer.logical_page_id != slot["logical_page_id"]
-            or producer.work_group_id != slot["work_group_id"]
-            or producer.bundle_ref != slot["bundle_ref"]
-        ):
+        if producer.logical_page_id != slot["logical_page_id"] or producer.work_group_id != slot["work_group_id"] or producer.bundle_ref != slot["bundle_ref"]:
             raise ValueError("candidate producer differs from state slot")
         provenance.update(producer.dependency_refs)
         provenance.add(producer_ref)
@@ -831,33 +756,21 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
         body_ref, page_id, family, tier = _page_identity(page)
         body = await blobs.get(parse_blob_ref(body_ref))
         bundle = EvidenceCandidateBundleV1.from_json(bundle_raw, body_bytes=body)
-        if (
-            bundle.run_id != identity.run_id
-            or bundle.spec_hash != spec.spec_hash
-            or bundle.bundle_id == ""
-        ):
+        if bundle.run_id != identity.run_id or bundle.spec_hash != spec.spec_hash or bundle.bundle_id == "":
             raise ValueError("candidate bundle identity differs")
         provenance.update({producer.bundle_ref, page_result_ref, body_ref})
         for candidate in bundle.candidates:
-            ordered_candidates.append(
-                (
-                    bundle.work_group_id,
-                    bundle.page_plan_ordinal,
-                    candidate.candidate_ordinal,
-                    candidate.candidate_id,
-                    candidate,
-                    (page_id, family, tier, body),
-                )
-            )
+            ordered_candidates.append((
+                bundle.work_group_id, bundle.page_plan_ordinal,
+                candidate.candidate_ordinal, candidate.candidate_id, candidate,
+                (page_id, family, tier, body),
+            ))
     ordered_candidates.sort(key=lambda item: item[:4])
-    requirements = {str(item["requirement_id"]): item for item in spec.requirements}
+    requirements = {
+        str(item["requirement_id"]): item for item in spec.requirements
+    }
     admission_hash = parse_blob_ref(str(policy_refs["admission"]))
-    for group_id, page_ordinal, _, candidate_id, candidate, (
-        page_id,
-        family,
-        tier,
-        body,
-    ) in ordered_candidates:
+    for group_id, page_ordinal, _, candidate_id, candidate, (page_id, family, tier, body) in ordered_candidates:
         requirement = requirements.get(candidate.requirement_id)
         failure = validate_candidate_admission(
             candidate,
@@ -873,12 +786,8 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
             rejected.append(candidate_id)
             continue
         fact = _fact_from_candidate(
-            candidate,
-            run_id=identity.run_id,
-            spec_hash=spec.spec_hash,
-            page_id=page_id,
-            source_family_id=family,
-            source_tier=tier,
+            candidate, run_id=identity.run_id, spec_hash=spec.spec_hash,
+            page_id=page_id, source_family_id=family, source_tier=tier,
             admission_policy_hash=admission_hash,
         )
         target = (fact.requirement_id, fact.item_or_cell_id, fact.field_or_facet_key)
@@ -903,28 +812,16 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
             continue
         if duplicate_or_conflict == "conflicting_candidate":
             fact = _fact_from_candidate(
-                candidate,
-                run_id=identity.run_id,
-                spec_hash=spec.spec_hash,
-                page_id=page_id,
-                source_family_id=family,
-                source_tier=tier,
-                admission_policy_hash=admission_hash,
-                status="conflicted",
+                candidate, run_id=identity.run_id, spec_hash=spec.spec_hash,
+                page_id=page_id, source_family_id=family, source_tier=tier,
+                admission_policy_hash=admission_hash, status="conflicted",
             )
-            conflict_id = (
-                "conflict_"
-                + hashlib.sha256(
-                    canonical_json(
-                        {"target": list(target), "facts": sorted([prior[0], fact.fact_id])}
-                    ).encode("utf-8")
-                ).hexdigest()[:24]
-            )
+            conflict_id = "conflict_" + hashlib.sha256(
+                canonical_json({"target": list(target), "facts": sorted([prior[0], fact.fact_id])}).encode("utf-8")
+            ).hexdigest()[:24]
             conflicts.append(conflict_id)
         fact_ref = await _put_json(
-            blobs,
-            identity,
-            fact.to_json(),
+            blobs, identity, fact.to_json(),
             media_type="application/vnd.deskpet.admitted-research-fact.v1+json",
         )
         admitted_refs.append(fact_ref)
@@ -934,8 +831,13 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
     if not isinstance(previous_refs, list):
         raise ValueError("fact_batch_refs must be an array")
     head = str(values.get("evidence_head_hash", GENESIS_EVIDENCE_HEAD))
-    candidate_roots = {str(slot["producer_outcome_ref"]) for slot in slots} | {
-        str(slot["bundle_ref"]) for slot in slots if slot["bundle_ref"] is not None
+    candidate_roots = {
+        str(slot["producer_outcome_ref"])
+        for slot in slots
+    } | {
+        str(slot["bundle_ref"])
+        for slot in slots
+        if slot["bundle_ref"] is not None
     }
     provenance = await _exact_provenance_closure(
         blobs,
@@ -947,34 +849,20 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
         policy_refs=policy_refs,
     )
     batch = EvidenceFactBatchV1.create(
-        batch_kind="facts",
-        run_id=identity.run_id,
-        spec_hash=spec.spec_hash,
-        previous_head_hash=head,
-        ordinal=len(previous_refs),
+        batch_kind="facts", run_id=identity.run_id, spec_hash=spec.spec_hash,
+        previous_head_hash=head, ordinal=len(previous_refs),
         page_result_refs=tuple(str(ref) for ref in values.get("page_result_refs", [])),
-        candidate_slot_results=slots,
-        inference_slot_results=(),
-        admitted_fact_refs=admitted_refs,
-        registered_inference_refs=(),
-        rejected_candidate_ids=rejected,
-        conflict_ids=conflicts,
-        provenance_refs=provenance,
-        policy_refs=dict(policy_refs),
+        candidate_slot_results=slots, inference_slot_results=(),
+        admitted_fact_refs=admitted_refs, registered_inference_refs=(),
+        rejected_candidate_ids=rejected, conflict_ids=conflicts,
+        provenance_refs=provenance, policy_refs=dict(policy_refs),
     )
-    batch_ref = await _put_json(
-        blobs,
-        identity,
-        batch.to_json(),
-        media_type="application/vnd.deskpet.evidence-fact-batch.v1+json",
-    )
-    values.update(
-        {
-            "fact_batch_refs": [*previous_refs, batch_ref],
-            "evidence_head_hash": batch.head_hash,
-            "stage": "facts_admitted",
-        }
-    )
+    batch_ref = await _put_json(blobs, identity, batch.to_json(), media_type="application/vnd.deskpet.evidence-fact-batch.v1+json")
+    values.update({
+        "fact_batch_refs": [*previous_refs, batch_ref],
+        "evidence_head_hash": batch.head_hash,
+        "stage": "facts_admitted",
+    })
     # Candidate extraction observed at the committed load_pages frontier.  The
     # input here contains its typed partial result, so admission can now settle
     # the command against the exact page/candidate evidence frontier.
@@ -986,16 +874,16 @@ async def admit_facts_handler(state: WorkflowState, context: WorkflowContext) ->
             result={
                 "route": "evidence_frontier",
                 "evidence_head_hash": batch.head_hash,
-                "page_result_refs": [str(ref) for ref in values.get("page_result_refs", [])],
+                "page_result_refs": [
+                    str(ref) for ref in values.get("page_result_refs", [])
+                ],
             },
         )
     closure = _state_refs(state) | provenance | {batch_ref, *admitted_refs}
     return StatePatch({"values": values, "blob_refs": _blob_items(sorted(closure))})
 
 
-async def _ordered_fact_refs(
-    values: Mapping[str, JsonValue], blobs: RegisteredBlobStore
-) -> tuple[list[str], list[str]]:
+async def _ordered_fact_refs(values: Mapping[str, JsonValue], blobs: RegisteredBlobStore) -> tuple[list[str], list[str]]:
     raw_refs = values.get("fact_batch_refs")
     if not isinstance(raw_refs, list) or any(not isinstance(ref, str) for ref in raw_refs):
         raise ValueError("fact_batch_refs must be an ordered ref array")
@@ -1014,9 +902,7 @@ async def _ordered_fact_refs(
     return facts, inferences
 
 
-async def synthesize_inferences_handler(
-    state: WorkflowState, context: WorkflowContext
-) -> StatePatch:
+async def synthesize_inferences_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
     values = _values(state)
     blobs, identity = _runtime(state, context)
     spec = await _load_spec(values, blobs)
@@ -1025,11 +911,9 @@ async def synthesize_inferences_handler(
     semantic = context.ports.get("semantic")
     raw = await _call(
         getattr(semantic, "synthesize_inference_slots", None),
-        spec=spec.to_json(),
-        route_decision=decision.to_json(),
+        spec=spec.to_json(), route_decision=decision.to_json(),
         evidence_head_hash=_required_text(values.get("evidence_head_hash"), "evidence_head_hash"),
-        admitted_fact_refs=facts,
-        identity=identity,
+        admitted_fact_refs=facts, identity=identity,
     )
     if not isinstance(raw, Mapping) or set(raw) != {"inference_slots", "policy_refs", "blob_refs"}:
         raise ValueError("semantic inference response keys differ")
@@ -1047,9 +931,7 @@ async def synthesize_inferences_handler(
         normalized.append({key: copy.deepcopy(item[key]) for key in keys})
     port_refs = _wire_refs_from_items(raw["blob_refs"], "inference.blob_refs")
     direct = {str(item["effect_outcome_ref"]) for item in normalized} | {
-        str(item["proposal_bundle_ref"])
-        for item in normalized
-        if item["proposal_bundle_ref"] is not None
+        str(item["proposal_bundle_ref"]) for item in normalized if item["proposal_bundle_ref"] is not None
     }
     if not direct.issubset(port_refs):
         raise ValueError("inference blob closure omits slot refs")
@@ -1058,14 +940,7 @@ async def synthesize_inferences_handler(
         raise ValueError("semantic inference policy refs differ")
     _merge_policy_refs(values, policies)
     values.update({"inference_slot_results": normalized, "stage": "inferences_synthesized"})
-    return StatePatch(
-        {
-            "values": values,
-            "blob_refs": _blob_items(
-                sorted(_state_refs(state) | port_refs | {str(ref) for ref in policies.values()})
-            ),
-        }
-    )
+    return StatePatch({"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | port_refs | {str(ref) for ref in policies.values()}))})
 
 
 async def register_inferences_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -1077,7 +952,8 @@ async def register_inferences_handler(state: WorkflowState, context: WorkflowCon
     if prior_inferences:
         raise ValueError("inference frontier may be appended only once")
     facts = {
-        ref: AdmittedResearchFactV1.from_json(await _read_json(blobs, ref)) for ref in fact_refs
+        ref: AdmittedResearchFactV1.from_json(await _read_json(blobs, ref))
+        for ref in fact_refs
     }
     slots = values.get("inference_slot_results")
     if not isinstance(slots, list):
@@ -1098,12 +974,7 @@ async def register_inferences_handler(state: WorkflowState, context: WorkflowCon
         if bundle_ref is None:
             continue
         bundle = InferenceProposalBundleV1.from_json(await _read_json(blobs, str(bundle_ref)))
-        if (
-            bundle.run_id != identity.run_id
-            or bundle.spec_hash != spec.spec_hash
-            or bundle.input_evidence_head_hash != values["evidence_head_hash"]
-            or bundle.work_group_id != slot["work_group_id"]
-        ):
+        if bundle.run_id != identity.run_id or bundle.spec_hash != spec.spec_hash or bundle.input_evidence_head_hash != values["evidence_head_hash"] or bundle.work_group_id != slot["work_group_id"]:
             raise ValueError("inference proposal bundle identity differs")
         provenance.add(str(bundle_ref))
         for proposal in bundle.proposals:
@@ -1112,82 +983,50 @@ async def register_inferences_handler(state: WorkflowState, context: WorkflowCon
             reasons: list[str] = []
             if len(resolved) != len(proposed):
                 reasons.append("inference_premise_missing")
-            if proposal.requirement_id not in groups.get(bundle.work_group_id, set()) or any(
-                facts[ref].requirement_id != proposal.requirement_id for ref in resolved
-            ):
+            if proposal.requirement_id not in groups.get(bundle.work_group_id, set()) or any(facts[ref].requirement_id != proposal.requirement_id for ref in resolved):
                 reasons.append("inference_premise_requirement_mismatch")
             status = "rejected" if reasons else "registered"
             bindings = tuple(sorted({facts[ref].binding_id for ref in resolved}))
             inference = RegisteredInferenceV1.create(
-                run_id=identity.run_id,
-                spec_hash=spec.spec_hash,
+                run_id=identity.run_id, spec_hash=spec.spec_hash,
                 requirement_id=proposal.requirement_id,
                 item_or_cell_id=proposal.item_or_cell_id,
-                inference_kind=proposal.inference_kind,
-                facet_ids=proposal.facet_ids,
+                inference_kind=proposal.inference_kind, facet_ids=proposal.facet_ids,
                 normalized_proposition=proposal.normalized_proposition,
-                proposed_premise_fact_refs=proposed,
-                premise_fact_refs=resolved,
-                premise_binding_ids=bindings,
-                model_id=proposal.model_id,
+                proposed_premise_fact_refs=proposed, premise_fact_refs=resolved,
+                premise_binding_ids=bindings, model_id=proposal.model_id,
                 model_policy_ref=proposal.model_policy_ref,
                 inference_policy_hash=parse_blob_ref(str(policy_refs["inference"])),
-                status=status,
-                reason_codes=reasons,
+                status=status, reason_codes=reasons,
             )
-            inference_ref = await _put_json(
-                blobs,
-                identity,
-                inference.to_json(),
-                media_type="application/vnd.deskpet.registered-inference.v1+json",
-            )
+            inference_ref = await _put_json(blobs, identity, inference.to_json(), media_type="application/vnd.deskpet.registered-inference.v1+json")
             registered_refs.append(inference_ref)
             provenance.add(inference_ref)
             provenance.update(resolved)
     prior_batches = values["fact_batch_refs"]
-    inference_roots = (
-        {str(slot["effect_outcome_ref"]) for slot in slots}
-        | {
-            str(slot["proposal_bundle_ref"])
-            for slot in slots
-            if slot["proposal_bundle_ref"] is not None
-        }
-        | set(registered_refs)
-    )
+    inference_roots = {
+        str(slot["effect_outcome_ref"])
+        for slot in slots
+    } | {
+        str(slot["proposal_bundle_ref"])
+        for slot in slots
+        if slot["proposal_bundle_ref"] is not None
+    } | set(registered_refs)
     provenance = await _exact_provenance_closure(
         blobs,
         roots=inference_roots,
         policy_refs=policy_refs,
     )
     batch = EvidenceFactBatchV1.create(
-        batch_kind="inferences",
-        run_id=identity.run_id,
-        spec_hash=spec.spec_hash,
-        previous_head_hash=str(values["evidence_head_hash"]),
-        ordinal=len(prior_batches),
-        page_result_refs=(),
-        candidate_slot_results=(),
-        inference_slot_results=slots,
-        admitted_fact_refs=(),
-        registered_inference_refs=registered_refs,
-        rejected_candidate_ids=(),
-        conflict_ids=(),
-        provenance_refs=provenance,
+        batch_kind="inferences", run_id=identity.run_id, spec_hash=spec.spec_hash,
+        previous_head_hash=str(values["evidence_head_hash"]), ordinal=len(prior_batches),
+        page_result_refs=(), candidate_slot_results=(), inference_slot_results=slots,
+        admitted_fact_refs=(), registered_inference_refs=registered_refs,
+        rejected_candidate_ids=(), conflict_ids=(), provenance_refs=provenance,
         policy_refs=dict(policy_refs),
     )
-    batch_ref = await _put_json(
-        blobs,
-        identity,
-        batch.to_json(),
-        media_type="application/vnd.deskpet.evidence-fact-batch.v1+json",
-    )
-    values.update(
-        {
-            "fact_batch_refs": [*prior_batches, batch_ref],
-            "evidence_head_hash": batch.head_hash,
-            "stage": "inferences_registered",
-        }
-    )
+    batch_ref = await _put_json(blobs, identity, batch.to_json(), media_type="application/vnd.deskpet.evidence-fact-batch.v1+json")
+    values.update({"fact_batch_refs": [*prior_batches, batch_ref], "evidence_head_hash": batch.head_hash, "stage": "inferences_registered"})
     command = await poll_v6_control(context, run_id=identity.run_id, observe=True)
     if command is not None and command.action in {"generate_now", "cancel_settle"}:
         await settle_v6_control(
@@ -1199,14 +1038,7 @@ async def register_inferences_handler(state: WorkflowState, context: WorkflowCon
                 "inference_slot_count": len(slots),
             },
         )
-    return StatePatch(
-        {
-            "values": values,
-            "blob_refs": _blob_items(
-                sorted(_state_refs(state) | provenance | {batch_ref, *registered_refs})
-            ),
-        }
-    )
+    return StatePatch({"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | provenance | {batch_ref, *registered_refs}))})
 
 
 async def assess_answer_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:
@@ -1224,44 +1056,25 @@ async def assess_answer_handler(state: WorkflowState, context: WorkflowContext) 
     if not isinstance(policy_refs, Mapping) or set(policy_refs) != _POLICY_KEYS:
         raise ValueError("assessment requires the frozen policy set")
     assessment = assess_requirements(
-        spec=spec,
-        evidence_head_hash=str(values["evidence_head_hash"]),
-        facts=facts,
-        inferences=inferences,
-        ordered_fact_refs=fact_refs,
+        spec=spec, evidence_head_hash=str(values["evidence_head_hash"]),
+        facts=facts, inferences=inferences, ordered_fact_refs=fact_refs,
         ordered_inference_refs=inference_refs,
         policy_hash=parse_blob_ref(str(policy_refs["assessment"])),
     )
-    assessment_ref = await _put_json(
-        blobs,
-        identity,
-        assessment.to_json(),
-        media_type="application/vnd.deskpet.answer-assessment.v1+json",
-    )
-    values.update(
-        {
-            "assessment_ref": assessment_ref,
-            "assessment_hash": assessment.assessment_hash,
-            "assessment_input_hash": assessment.assessment_input_hash,
-            "stage": "answer_assessed",
-        }
-    )
-    return StatePatch(
-        {"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | {assessment_ref}))}
-    )
+    assessment_ref = await _put_json(blobs, identity, assessment.to_json(), media_type="application/vnd.deskpet.answer-assessment.v1+json")
+    values.update({
+        "assessment_ref": assessment_ref,
+        "assessment_hash": assessment.assessment_hash,
+        "assessment_input_hash": assessment.assessment_input_hash,
+        "stage": "answer_assessed",
+    })
+    return StatePatch({"values": values, "blob_refs": _blob_items(sorted(_state_refs(state) | {assessment_ref}))})
 
 
 __all__ = [
-    "ADMISSION_POLICY_V1",
-    "ASSESSMENT_POLICY_V1",
-    "INFERENCE_POLICY_V1",
-    "admit_facts_handler",
-    "assess_answer_handler",
-    "compile_spec_handler",
-    "extract_candidate_bundles_handler",
-    "load_pages_handler",
-    "plan_route_handler",
-    "register_inferences_handler",
-    "synthesize_inferences_handler",
+    "ADMISSION_POLICY_V1", "ASSESSMENT_POLICY_V1", "INFERENCE_POLICY_V1",
+    "admit_facts_handler", "assess_answer_handler", "compile_spec_handler",
+    "extract_candidate_bundles_handler", "load_pages_handler", "plan_route_handler",
+    "register_inferences_handler", "synthesize_inferences_handler",
     "validate_candidate_admission",
 ]

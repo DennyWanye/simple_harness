@@ -12,9 +12,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable, Mapping, Sequence
 
 import aiosqlite
 
@@ -38,17 +37,18 @@ from .deep_research_v6_contracts import ResearchSpecV1, format_blob_ref, parse_b
 from .deep_research_v6_control import consume_v6_control
 from .deep_research_v6_delivery import TerminalDeliveryManifestV1, build_intent_specs
 from .deep_research_v6_evidence import (
-    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     AnswerAssessmentV1,
     EvidenceFactBatchV1,
+    GENESIS_EVIDENCE_HEAD,
     RegisteredInferenceV1,
     derive_assessment_input_hash,
 )
 from .deep_research_v6_evidence_contracts import V6FetchedPageRefPayloadV1
+from .deep_research_v6_retrieval_contracts import PageExtractionResultV1
 from .deep_research_v6_integrity import ClaimBatchV1, ClaimRecordV1, QualityAuditV1
 from .deep_research_v6_report import CitationView, TypedReportResult, render_typed_report
-from .deep_research_v6_retrieval_contracts import PageExtractionResultV1
+
 
 CLAIM_POLICY_V1: dict[str, JsonValue] = {
     "schema_version": 1,
@@ -62,51 +62,19 @@ QUALITY_POLICY_V1: dict[str, JsonValue] = {
 }
 
 _POLICY_KEYS = {
-    "compiler",
-    "route",
-    "extraction",
-    "llm_extract",
-    "llm_repair",
-    "llm_inference",
-    "admission",
-    "inference",
-    "assessment",
-    "claim",
-    "quality",
+    "compiler", "route", "extraction", "llm_extract", "llm_repair",
+    "llm_inference", "admission", "inference", "assessment", "claim", "quality",
 }
 _RENDER_KEYS = {
-    "schema_version",
-    "bundle_id",
-    "run_id",
-    "spec_hash",
-    "evidence_head_hash",
-    "assessment_ref",
-    "assessment_hash",
-    "ordered_fact_refs",
-    "ordered_inference_refs",
-    "answer_status",
-    "final_assistant_ref",
-    "report_ref",
-    "claims",
+    "schema_version", "bundle_id", "run_id", "spec_hash", "evidence_head_hash",
+    "assessment_ref", "assessment_hash", "ordered_fact_refs", "ordered_inference_refs",
+    "answer_status", "final_assistant_ref", "report_ref", "claims",
 }
 _SNAPSHOT_KEYS = {
-    "schema_version",
-    "snapshot_id",
-    "snapshot_hash",
-    "run_id",
-    "workflow_name",
-    "workflow_version",
-    "spec_ref",
-    "spec_hash",
-    "fact_batch_refs",
-    "evidence_head_hash",
-    "assessment_ref",
-    "assessment_hash",
-    "assessment_input_hash",
-    "claim_batch_ref",
-    "provenance_refs",
-    "policy_refs",
-    "closure_refs",
+    "schema_version", "snapshot_id", "snapshot_hash", "run_id", "workflow_name",
+    "workflow_version", "spec_ref", "spec_hash", "fact_batch_refs", "evidence_head_hash",
+    "assessment_ref", "assessment_hash", "assessment_input_hash", "claim_batch_ref",
+    "provenance_refs", "policy_refs", "closure_refs",
 }
 _HEX = frozenset("0123456789abcdef")
 
@@ -138,8 +106,7 @@ def _values(state: WorkflowState) -> dict[str, JsonValue]:
 
 
 def _runtime(
-    state: WorkflowState,
-    context: WorkflowContext,
+    state: WorkflowState, context: WorkflowContext,
 ) -> tuple[RegisteredBlobStore, NodeExecutionIdentity]:
     blobs = context.ports.get("blob")
     identity = context.identity
@@ -155,9 +122,8 @@ def _runtime(
 async def _assert_owner(blobs: RegisteredBlobStore, digest: str, run_id: str) -> None:
     db = await aiosqlite.connect(blobs.database)
     try:
-        row = await (
-            await db.execute(
-                """SELECT 1 FROM workflow_blob_refs r WHERE r.sha256=? AND (
+        row = await (await db.execute(
+            """SELECT 1 FROM workflow_blob_refs r WHERE r.sha256=? AND (
               (r.owner_kind='run_staging' AND r.owner_id=?) OR
               (r.owner_kind='pending_task' AND r.owner_id LIKE ?) OR
               (r.owner_kind='checkpoint' AND EXISTS(
@@ -166,9 +132,8 @@ async def _assert_owner(blobs: RegisteredBlobStore, digest: str, run_id: str) ->
               (r.owner_kind='effect' AND EXISTS(
                 SELECT 1 FROM workflow_effects e
                 WHERE e.effect_id=r.owner_id AND e.run_id=?))) LIMIT 1""",
-                (digest, run_id, f"{run_id}:%", run_id, run_id),
-            )
-        ).fetchone()
+            (digest, run_id, f"{run_id}:%", run_id, run_id),
+        )).fetchone()
     finally:
         await db.close()
     if row is None:
@@ -176,9 +141,7 @@ async def _assert_owner(blobs: RegisteredBlobStore, digest: str, run_id: str) ->
 
 
 async def _read_bytes(
-    blobs: RegisteredBlobStore,
-    identity: NodeExecutionIdentity,
-    wire_ref: str,
+    blobs: RegisteredBlobStore, identity: NodeExecutionIdentity, wire_ref: str,
 ) -> bytes:
     digest = parse_blob_ref(wire_ref)
     await _assert_owner(blobs, digest, identity.run_id)
@@ -189,9 +152,7 @@ async def _read_bytes(
 
 
 async def _read_json(
-    blobs: RegisteredBlobStore,
-    identity: NodeExecutionIdentity,
-    wire_ref: str,
+    blobs: RegisteredBlobStore, identity: NodeExecutionIdentity, wire_ref: str,
 ) -> dict[str, Any]:
     data = await _read_bytes(blobs, identity, wire_ref)
     try:
@@ -211,21 +172,15 @@ async def _put_json(
     media_type: str,
 ) -> str:
     validate_json_value(dict(value))
-    ref = await blobs.put(
-        canonical_json(dict(value)).encode("utf-8"), identity, media_type=media_type
-    )
+    ref = await blobs.put(canonical_json(dict(value)).encode("utf-8"), identity, media_type=media_type)
     return format_blob_ref(ref.sha256)
 
 
 async def _put_text(
-    blobs: RegisteredBlobStore,
-    identity: NodeExecutionIdentity,
-    value: str,
+    blobs: RegisteredBlobStore, identity: NodeExecutionIdentity, value: str,
 ) -> str:
     value = _text(value, "rendered text")
-    ref = await blobs.put(
-        value.encode("utf-8"), identity, media_type="text/markdown; charset=utf-8"
-    )
+    ref = await blobs.put(value.encode("utf-8"), identity, media_type="text/markdown; charset=utf-8")
     return format_blob_ref(ref.sha256)
 
 
@@ -235,18 +190,15 @@ def _state_refs(state: WorkflowState) -> set[str]:
         raise ValueError("blob_refs must be an array")
     refs: set[str] = set()
     for item in raw:
-        digest = (
-            str(item.get("sha256") or item.get("id") or "")
-            if isinstance(item, Mapping)
-            else str(item)
-        )
+        digest = str(item.get("sha256") or item.get("id") or "") if isinstance(item, Mapping) else str(item)
         refs.add(format_blob_ref(_digest(digest, "blob_refs digest")))
     return refs
 
 
 def _blob_items(refs: Iterable[str]) -> list[dict[str, JsonValue]]:
     return [
-        {"id": digest, "sha256": digest} for digest in sorted({parse_blob_ref(ref) for ref in refs})
+        {"id": digest, "sha256": digest}
+        for digest in sorted({parse_blob_ref(ref) for ref in refs})
     ]
 
 
@@ -344,15 +296,11 @@ async def _load_terminal_inputs(
         if inference.inference_policy_hash != parse_blob_ref(policy_refs["inference"]):
             raise ValueError("registered inference policy hash differs from registered policy ref")
         if inference.model_policy_ref not in {
-            policy_refs["llm_inference"],
-            policy_refs["llm_repair"],
+            policy_refs["llm_inference"], policy_refs["llm_repair"],
         }:
             raise ValueError("registered inference model profile is absent from policy closure")
     facts, inferences = decode_assessment_inputs(
-        fact_refs,
-        inference_refs,
-        spec,
-        registered_objects=registered,
+        fact_refs, inference_refs, spec, registered_objects=registered,
     )
     assessment_ref = _wire_ref(values.get("assessment_ref"), "assessment_ref")
     assessment = AnswerAssessmentV1.from_json(await _read_json(blobs, identity, assessment_ref))
@@ -385,16 +333,8 @@ async def _load_terminal_inputs(
     if recomputed.to_json() != assessment.to_json():
         raise ValueError("persisted assessment differs from deterministic recomputation")
     return _TerminalInputs(
-        spec,
-        assessment,
-        tuple(batches),
-        batch_refs,
-        tuple(fact_refs),
-        tuple(inference_refs),
-        facts,
-        inferences,
-        registered,
-        policy_refs,
+        spec, assessment, tuple(batches), batch_refs, tuple(fact_refs), tuple(inference_refs),
+        facts, inferences, registered, policy_refs,
     )
 
 
@@ -445,7 +385,9 @@ def _zh_exact_scope_label(value: object) -> str:
     if isinstance(value, Mapping):
         jurisdiction = value.get("jurisdiction")
         geography_ids = value.get("geography_ids")
-        if jurisdiction == "CN" or (isinstance(geography_ids, list) and "CN" in geography_ids):
+        if jurisdiction == "CN" or (
+            isinstance(geography_ids, list) and "CN" in geography_ids
+        ):
             return "全国"
     if isinstance(value, str) and value in {"China", "CN", "national"}:
         return "全国"
@@ -500,28 +442,20 @@ def derive_registered_claims(inputs: _TerminalInputs) -> tuple[ClaimRecordV1, ..
             and fact.target_kind == "claim_fact"
             and fact.semantic_payload.get("claim_kind") == "policy_fact"
         )
-        records.append(
-            ClaimRecordV1.create(
-                requirement_id=fact.requirement_id,
-                item_or_cell_id=item_id,
-                claim_kind="fact",
-                normalized_proposition=_fact_proposition(fact),
-                binding_ids=(fact.binding_id,),
-                inference_ref=None,
-                support_status="supported"
-                if supported
-                else ("conflicted" if fact.status == "conflicted" else "unsupported"),
-                visibility="user" if supported and not support_only else "audit",
-            )
-        )
+        records.append(ClaimRecordV1.create(
+            requirement_id=fact.requirement_id,
+            item_or_cell_id=item_id,
+            claim_kind="fact",
+            normalized_proposition=_fact_proposition(fact),
+            binding_ids=(fact.binding_id,),
+            inference_ref=None,
+            support_status="supported" if supported else ("conflicted" if fact.status == "conflicted" else "unsupported"),
+            visibility="user" if supported and not support_only else "audit",
+        ))
     inference_kind = {
-        "impact": "inference",
-        "comparison": "inference",
-        "preference": "preference",
-        "conclusion": "inference",
-        "limitation": "limitation",
-        "counterevidence": "counterevidence",
-        "uncertainty": "uncertainty",
+        "impact": "inference", "comparison": "inference", "preference": "preference",
+        "conclusion": "inference", "limitation": "limitation",
+        "counterevidence": "counterevidence", "uncertainty": "uncertainty",
     }
     for ref in inputs.inference_refs:
         inference = RegisteredInferenceV1.from_json(inputs.registered[ref])
@@ -533,18 +467,16 @@ def derive_registered_claims(inputs: _TerminalInputs) -> tuple[ClaimRecordV1, ..
             and result["support_status"] == "supported"
             and set(inference.premise_binding_ids).issubset(set(result["binding_ids"]))
         )
-        records.append(
-            ClaimRecordV1.create(
-                requirement_id=inference.requirement_id,
-                item_or_cell_id=inference.item_or_cell_id,
-                claim_kind=inference_kind[inference.inference_kind],
-                normalized_proposition=inference.normalized_proposition,
-                binding_ids=inference.premise_binding_ids,
-                inference_ref=ref,
-                support_status="supported" if supported else "unsupported",
-                visibility="user" if supported else "audit",
-            )
-        )
+        records.append(ClaimRecordV1.create(
+            requirement_id=inference.requirement_id,
+            item_or_cell_id=inference.item_or_cell_id,
+            claim_kind=inference_kind[inference.inference_kind],
+            normalized_proposition=inference.normalized_proposition,
+            binding_ids=inference.premise_binding_ids,
+            inference_ref=ref,
+            support_status="supported" if supported else "unsupported",
+            visibility="user" if supported else "audit",
+        ))
     return tuple(sorted(records, key=lambda item: item.claim_id))
 
 
@@ -554,7 +486,8 @@ def _renderer_facts(inputs: _TerminalInputs) -> tuple[GenericAdmittedFactV1, ...
     # uncertainty surface and must not treat support-only facts as claims.
     projected = [] if inputs.spec.intent_type == "open_research" else list(inputs.facts)
     requirement_kinds = {
-        str(item["requirement_id"]): str(item["kind"]) for item in inputs.spec.requirements
+        str(item["requirement_id"]): str(item["kind"])
+        for item in inputs.spec.requirements
     }
     for item in inputs.inferences:
         # Collection ranking has a single fact/binding owner.  A preference
@@ -562,16 +495,14 @@ def _renderer_facts(inputs: _TerminalInputs) -> tuple[GenericAdmittedFactV1, ...
         # field and therefore must not enter rank_collection_item_ids().
         if requirement_kinds[item.requirement_id] == "collection":
             continue
-        projected.append(
-            GenericAdmittedFactV1.create(
-                requirement_id=item.requirement_id,
-                item_or_cell_id=item.item_or_cell_id,
-                binding_ids=item.premise_binding_ids,
-                claim_kind=item.assessment_claim_kind,
-                facet_ids=item.facet_ids,
-                inference_ref=item.inference_ref,
-            )
-        )
+        projected.append(GenericAdmittedFactV1.create(
+            requirement_id=item.requirement_id,
+            item_or_cell_id=item.item_or_cell_id,
+            binding_ids=item.premise_binding_ids,
+            claim_kind=item.assessment_claim_kind,
+            facet_ids=item.facet_ids,
+            inference_ref=item.inference_ref,
+        ))
     return tuple(projected)
 
 
@@ -581,19 +512,17 @@ def _render_exact(
     citations: Mapping[str, CitationView],
 ) -> TypedReportResult:
     requirement_order = {
-        str(item["requirement_id"]): int(item["ordinal"]) for item in inputs.spec.requirements
+        str(item["requirement_id"]): int(item["ordinal"])
+        for item in inputs.spec.requirements
     }
     visible = tuple(
-        claim
-        for claim in claims
+        claim for claim in claims
         if claim.visibility == "user" and claim.support_status == "supported"
     )
-    display_claims = tuple(
-        sorted(
-            visible,
-            key=lambda claim: (requirement_order[claim.requirement_id], claim.claim_id),
-        )
-    )
+    display_claims = tuple(sorted(
+        visible,
+        key=lambda claim: (requirement_order[claim.requirement_id], claim.claim_id),
+    ))
     status = {
         "completed_candidate": "completed",
         "partial_candidate": "partial",
@@ -601,14 +530,8 @@ def _render_exact(
         "needs_evidence": "insufficient_evidence",
     }[inputs.assessment.status]
     if status == "insufficient_evidence":
-        summary = (
-            "没有足够的已准入证据来形成可靠答案。"
-            if inputs.spec.answer_locale.startswith("zh")
-            else "There is not enough admitted evidence to provide a reliable answer."
-        )
-        return TypedReportResult(
-            status, summary, None, (), inputs.assessment.missing_requirement_ids
-        )
+        summary = "没有足够的已准入证据来形成可靠答案。" if inputs.spec.answer_locale.startswith("zh") else "There is not enough admitted evidence to provide a reliable answer."
+        return TypedReportResult(status, summary, None, (), inputs.assessment.missing_requirement_ids)
     lines = []
     localize_exact = inputs.spec.answer_locale.startswith("zh")
     for claim in display_claims:
@@ -622,16 +545,24 @@ def _render_exact(
         if fact is not None:
             payload = fact.semantic_payload
             time_scope = payload.get("time_scope")
-            time_label = time_scope.get("label") if isinstance(time_scope, Mapping) else time_scope
+            time_label = (
+                time_scope.get("label")
+                if isinstance(time_scope, Mapping)
+                else time_scope
+            )
             qualifiers = (
                 f" [unit={payload.get('canonical_unit')}; "
                 f"time={time_label}; scope={canonical_json(payload.get('scope'))}; "
                 f"definition={payload.get('definition')}]"
             )
         citation = citations.get(claim.claim_id)
-        suffix = f" ([{citation.title}]({citation.url}))" if citation is not None else ""
+        suffix = (
+            f" ([{citation.title}]({citation.url}))" if citation is not None else ""
+        )
         localized = (
-            _zh_exact_fact_proposition(fact) if localize_exact and fact is not None else None
+            _zh_exact_fact_proposition(fact)
+            if localize_exact and fact is not None
+            else None
         )
         if localized is not None:
             lines.append(f"- {localized}{suffix}")
@@ -640,13 +571,7 @@ def _render_exact(
     heading = "结论" if localize_exact else "Answer"
     report_heading = "调研报告" if localize_exact else "Research report"
     final = f"## {heading}\n\n" + "\n".join(lines)
-    return TypedReportResult(
-        status,
-        final,
-        f"# {report_heading}\n\n{final}",
-        visible,
-        inputs.assessment.missing_requirement_ids,
-    )
+    return TypedReportResult(status, final, f"# {report_heading}\n\n{final}", visible, inputs.assessment.missing_requirement_ids)
 
 
 def _render(
@@ -717,10 +642,7 @@ async def _citation_views(
 
 
 def _render_base(
-    *,
-    inputs: _TerminalInputs,
-    final_ref: str,
-    report_ref: str | None,
+    *, inputs: _TerminalInputs, final_ref: str, report_ref: str | None,
     result: TypedReportResult,
 ) -> dict[str, JsonValue]:
     return {
@@ -771,17 +693,14 @@ async def render_claims_handler(state: WorkflowState, context: WorkflowContext) 
     final_ref = await _put_text(blobs, identity, result.final_assistant)
     report_ref = (
         await _put_text(blobs, identity, result.report_markdown)
-        if result.report_markdown is not None
-        else None
+        if result.report_markdown is not None else None
     )
     base = _render_base(inputs=inputs, final_ref=final_ref, report_ref=report_ref, result=result)
     base["assessment_ref"] = _wire_ref(values.get("assessment_ref"), "assessment_ref")
     bundle = {**base, "bundle_id": "rcl_" + sha256_json(base)[:24]}
     _render_bundle(bundle)
     bundle_ref = await _put_json(
-        blobs,
-        identity,
-        bundle,
+        blobs, identity, bundle,
         media_type="application/vnd.deskpet.deepresearch-v6-rendered-claims+json",
     )
     values["render_bundle_ref"] = bundle_ref
@@ -798,10 +717,7 @@ def _policy_hash(value: Mapping[str, JsonValue]) -> str:
 
 
 def _generic_integrity(
-    *,
-    run_id: str,
-    inputs: _TerminalInputs,
-    render: Mapping[str, JsonValue],
+    *, run_id: str, inputs: _TerminalInputs, render: Mapping[str, JsonValue],
 ) -> tuple[ClaimBatchV1, QualityAuditV1]:
     claims = derive_registered_claims(inputs)
     rerendered = _render(inputs, claims)
@@ -848,9 +764,7 @@ def _generic_integrity(
 
 
 async def _assert_policy_objects(
-    inputs: _TerminalInputs,
-    blobs: RegisteredBlobStore,
-    identity: NodeExecutionIdentity,
+    inputs: _TerminalInputs, blobs: RegisteredBlobStore, identity: NodeExecutionIdentity,
 ) -> None:
     claim = await _read_json(blobs, identity, inputs.policy_refs["claim"])
     quality = await _read_json(blobs, identity, inputs.policy_refs["quality"])
@@ -868,30 +782,26 @@ async def integrity_handler(state: WorkflowState, context: WorkflowContext) -> S
     final_bytes = await _read_bytes(blobs, identity, str(render["final_assistant_ref"]))
     report_bytes = (
         await _read_bytes(blobs, identity, str(render["report_ref"]))
-        if render["report_ref"] is not None
-        else None
+        if render["report_ref"] is not None else None
     )
     claims = derive_registered_claims(inputs)
     citations = await _citation_views(inputs, claims, blobs, identity)
     result = _render(inputs, claims, citations)
     if final_bytes != result.final_assistant.encode("utf-8") or (
-        report_bytes
-        != (result.report_markdown.encode("utf-8") if result.report_markdown is not None else None)
+        report_bytes != (result.report_markdown.encode("utf-8") if result.report_markdown is not None else None)
     ):
         raise ValueError("rendered content bytes differ from deterministic replay")
-    claim_batch, audit = _generic_integrity(run_id=identity.run_id, inputs=inputs, render=render)
+    claim_batch, audit = _generic_integrity(
+        run_id=identity.run_id, inputs=inputs, render=render
+    )
     claim_ref = await _put_json(
-        blobs,
-        identity,
-        claim_batch.to_json(),
+        blobs, identity, claim_batch.to_json(),
         media_type="application/vnd.deskpet.claim-batch.v1+json",
     )
     if claim_ref != audit.claim_batch_ref:
         raise ValueError("quality audit claim ref does not address persisted claim batch")
     audit_ref = await _put_json(
-        blobs,
-        identity,
-        audit.to_json(),
+        blobs, identity, audit.to_json(),
         media_type="application/vnd.deskpet.quality-audit.v1+json",
     )
     values["claim_batch_ref"] = claim_ref
@@ -910,9 +820,7 @@ def _walk_wire_refs(value: object) -> set[str]:
             if key.endswith("_ref") and isinstance(item, str) and item.startswith("sha256:"):
                 refs.add(item)
             elif key.endswith("_refs") and isinstance(item, list):
-                refs.update(
-                    str(ref) for ref in item if isinstance(ref, str) and ref.startswith("sha256:")
-                )
+                refs.update(str(ref) for ref in item if isinstance(ref, str) and ref.startswith("sha256:"))
             else:
                 refs.update(_walk_wire_refs(item))
     elif isinstance(value, list):
@@ -922,10 +830,7 @@ def _walk_wire_refs(value: object) -> set[str]:
 
 
 async def _expand_provenance(
-    *,
-    inputs: _TerminalInputs,
-    blobs: RegisteredBlobStore,
-    identity: NodeExecutionIdentity,
+    *, inputs: _TerminalInputs, blobs: RegisteredBlobStore, identity: NodeExecutionIdentity,
 ) -> tuple[str, ...]:
     policy_values = set(inputs.policy_refs.values())
     roots: set[str] = set()
@@ -966,33 +871,22 @@ async def _expand_provenance(
             pending.append(child)
     if seen != declared:
         raise ValueError(
-            f"batch provenance is not the exact transitive closure: missing={sorted(seen - declared)}, extra={sorted(declared - seen)}"
+            f"batch provenance is not the exact transitive closure: missing={sorted(seen-declared)}, extra={sorted(declared-seen)}"
         )
     return tuple(sorted(seen))
 
 
 def build_continuation_snapshot(
-    *,
-    run_id: str,
-    spec_ref: str,
-    assessment_ref: str,
-    inputs: _TerminalInputs,
-    claim_batch_ref: str,
-    provenance_refs: Sequence[str],
+    *, run_id: str, spec_ref: str, assessment_ref: str, inputs: _TerminalInputs,
+    claim_batch_ref: str, provenance_refs: Sequence[str],
 ) -> dict[str, JsonValue]:
     policy_refs: dict[str, JsonValue] = {
         key: inputs.policy_refs[key] for key in sorted(_POLICY_KEYS)
     }
-    closure_refs = sorted(
-        {
-            spec_ref,
-            *inputs.batch_refs,
-            assessment_ref,
-            claim_batch_ref,
-            *provenance_refs,
-            *[str(ref) for ref in policy_refs.values()],
-        }
-    )
+    closure_refs = sorted({
+        spec_ref, *inputs.batch_refs, assessment_ref, claim_batch_ref,
+        *provenance_refs, *[str(ref) for ref in policy_refs.values()],
+    })
     base: dict[str, JsonValue] = {
         "schema_version": 1,
         "run_id": run_id,
@@ -1031,10 +925,7 @@ async def persist_manifest_handler(state: WorkflowState, context: WorkflowContex
     expected_claim, expected_quality = _generic_integrity(
         run_id=identity.run_id, inputs=inputs, render=render
     )
-    if (
-        claim.to_json() != expected_claim.to_json()
-        or quality.to_json() != expected_quality.to_json()
-    ):
+    if claim.to_json() != expected_claim.to_json() or quality.to_json() != expected_quality.to_json():
         raise ValueError("persisted integrity objects differ from deterministic terminal replay")
     if (
         claim.status != "valid"
@@ -1056,9 +947,7 @@ async def persist_manifest_handler(state: WorkflowState, context: WorkflowContex
         provenance_refs=provenance,
     )
     snapshot_ref = await _put_json(
-        blobs,
-        identity,
-        snapshot,
+        blobs, identity, snapshot,
         media_type="application/vnd.deskpet.research-continuation-snapshot.v1+json",
     )
     answer_status = str(render["answer_status"])
@@ -1101,9 +990,7 @@ async def persist_manifest_handler(state: WorkflowState, context: WorkflowContex
         engine_terminal={"status": "completed", "error_code": None, "recovery_action": None},
     )
     manifest_ref = await _put_json(
-        blobs,
-        identity,
-        manifest.to_json(),
+        blobs, identity, manifest.to_json(),
         media_type="application/vnd.deskpet.terminal-delivery-manifest.v1+json",
     )
     if manifest_ref != manifest.manifest_ref:
@@ -1120,12 +1007,7 @@ async def persist_manifest_handler(state: WorkflowState, context: WorkflowContex
     )
     values["stage"] = "terminal_persisted"
     closure = _state_refs(state) | {
-        snapshot_ref,
-        manifest_ref,
-        render_ref,
-        claim_ref,
-        quality_ref,
-        final_ref,
+        snapshot_ref, manifest_ref, render_ref, claim_ref, quality_ref, final_ref,
         *snapshot["closure_refs"],
     }
     if report_ref is not None:
