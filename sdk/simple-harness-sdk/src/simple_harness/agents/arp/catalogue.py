@@ -20,8 +20,9 @@ comes from the authenticated dispatcher or from the runtime itself.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 from . import store
 from .codec import check

@@ -20,9 +20,6 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
 ) -> None:
     from dataclasses import replace
 
-    from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext
-
     from deskpet.sdk_adapters.context_authority import canonical_sha256
     from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
     from deskpet.sdk_adapters.tools import (
@@ -32,6 +29,8 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
     from deskpet.tools.capabilities import canonical_hash
     from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext
 
     runtime_context = SimpleNamespace(
         session_id="session-stable",
@@ -573,14 +572,6 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     import importlib
     import inspect
 
-    from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import (
-        CancellationToken,
-        ToolCall,
-        ToolContext,
-        ToolOutcome,
-    )
-
     from deskpet.sdk_adapters.tools import build_product_tool_registry
     from deskpet.tool_catalog import (
         build_explicit_product_tool_catalog,
@@ -588,6 +579,13 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     )
     from deskpet.tools.capabilities import ToolExecutionContext
     from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     # The two environment migrations must be observed by the real handlers,
     # not merely by the argument adapter.
@@ -770,6 +768,9 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
 def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> None:
     import asyncio
 
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
     from simple_harness import CallId, RequestId, RunId, thaw_json
     from simple_harness.tools import (
         CancellationToken,
@@ -777,10 +778,6 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
         ToolContext,
         ToolOutcome,
     )
-
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import build_explicit_product_tool_catalog
-    from deskpet.tools.context_page_in_tools import ContextPageInStore
 
     calls: list[tuple[dict, object, str]] = []
 
@@ -839,6 +836,12 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
 
 @pytest.mark.asyncio
 async def test_sdk_todo_write_runs_sync_bridge_off_event_loop() -> None:
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import (
+        ToolCatalogDependencies,
+        build_explicit_product_tool_catalog,
+    )
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
     from simple_harness import CallId, RequestId, RunId, thaw_json
     from simple_harness.tools import (
         CancellationToken,
@@ -846,13 +849,6 @@ async def test_sdk_todo_write_runs_sync_bridge_off_event_loop() -> None:
         ToolContext,
         ToolOutcome,
     )
-
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import (
-        ToolCatalogDependencies,
-        build_explicit_product_tool_catalog,
-    )
-    from deskpet.tools.context_page_in_tools import ContextPageInStore
 
     writes: list[tuple[str, list[dict[str, str]]]] = []
 
@@ -905,14 +901,6 @@ async def test_sdk_todo_write_runs_sync_bridge_off_event_loop() -> None:
 def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> None:
     import asyncio
 
-    from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import (
-        CancellationToken,
-        ToolCall,
-        ToolContext,
-        ToolOutcome,
-    )
-
     from deskpet.sdk_adapters.tools import (
         HOST_COMPOSED_TOOL_NAMES,
         PROJECTLESS_SAFE_TOOL_NAMES,
@@ -920,6 +908,13 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     )
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
     from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     source = tmp_path / "source.txt"
     source.write_text("real-sync-handler", encoding="utf-8")
@@ -1021,6 +1016,10 @@ def test_required_provider_failure_occurs_before_catalog_publish() -> None:
 def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -> None:
     import asyncio
 
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from deskpet.tools.project_group_send import configure_project_group_transport
     from simple_harness import CallId, RequestId, RunId
     from simple_harness.tools import (
         CancellationToken,
@@ -1028,11 +1027,6 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
         ToolContext,
         ToolOutcome,
     )
-
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import build_explicit_product_tool_catalog
-    from deskpet.tools.context_page_in_tools import ContextPageInStore
-    from deskpet.tools.project_group_send import configure_project_group_transport
 
     class Transport:
         def __init__(self) -> None:
@@ -1107,6 +1101,9 @@ def test_sdk_tool_context_without_authoritative_workspace_fails_closed(
 ) -> None:
     import asyncio
 
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
     from simple_harness import CallId, RequestId, RunId
     from simple_harness.tools import (
         CancellationToken,
@@ -1114,10 +1111,6 @@ def test_sdk_tool_context_without_authoritative_workspace_fails_closed(
         ToolContext,
         ToolOutcome,
     )
-
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import build_explicit_product_tool_catalog
-    from deskpet.tools.context_page_in_tools import ContextPageInStore
 
     profile = tmp_path / "profile"
     monkeypatch.delenv("DESKPET_WORKSPACE_DIR", raising=False)

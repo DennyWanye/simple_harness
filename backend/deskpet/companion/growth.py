@@ -12,11 +12,12 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .contracts import CandidateMode, GrowthEvent, JsonValue, OwnerRef
 
@@ -130,7 +131,7 @@ class GrowthEvidenceV1:
         occurred_at: datetime,
         intent: str | None = None,
         capability_id: str | None = None,
-    ) -> "GrowthEvidenceV1":
+    ) -> GrowthEvidenceV1:
         payload = dict(event.payload)
         facts = payload.get("facts")
         fact_map = facts if isinstance(facts, Mapping) else payload
@@ -543,7 +544,7 @@ class StructuredGrowthProposalV1:
         }
 
     @classmethod
-    def from_mapping(cls, raw: Mapping[str, object]) -> "StructuredGrowthProposalV1":
+    def from_mapping(cls, raw: Mapping[str, object]) -> StructuredGrowthProposalV1:
         required = {
             "schema_id",
             "decision",
@@ -641,7 +642,7 @@ class StructuredGrowthProposalV1:
         evidence_event_ids: Sequence[str],
         evidence_set_hash: str,
         reason: str,
-    ) -> "StructuredGrowthProposalV1":
+    ) -> StructuredGrowthProposalV1:
         return cls(
             decision=GrowthProposalDecision.ABSTAIN,
             evidence_event_ids=tuple(evidence_event_ids),

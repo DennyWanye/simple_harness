@@ -22,8 +22,12 @@ import sqlite3
 from typing import Any
 
 import pytest
-
-from agent_orchestrator.assurance.checks import CheckResult, CriterionPolicy, Grade, evaluate_check_gate
+from agent_orchestrator.assurance.checks import (
+    CheckResult,
+    CriterionPolicy,
+    Grade,
+    evaluate_check_gate,
+)
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.evidence import (
     CatalogueEntry,

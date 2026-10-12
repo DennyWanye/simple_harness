@@ -21,15 +21,16 @@ REFUSE→PASS (consistent with companion-context-isolation §D2:
 from __future__ import annotations
 
 import base64
-from contextvars import ContextVar
 import json
 import logging
 import os
 import ssl
 import sys
 import time
+from collections.abc import Callable
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 

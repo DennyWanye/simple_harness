@@ -21,10 +21,9 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from test_convergence_wake_terminal_mission import waiting_convergence  # noqa: E402
-
 from agent_orchestrator.orchestrator import taskgraph_notifications  # noqa: E402
 from agent_orchestrator.planning.htn.grounding import derive_id  # noqa: E402
+from test_convergence_wake_terminal_mission import waiting_convergence  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

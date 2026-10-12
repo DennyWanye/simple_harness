@@ -29,7 +29,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.execution.semantic_closure import dirty_state, pending_receipts_tx
 from deskpet.sdk_adapters.task_scope_mutation import (
     ClosureRejected,

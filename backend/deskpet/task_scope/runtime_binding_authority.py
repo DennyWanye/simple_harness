@@ -11,14 +11,14 @@ generation.  Both paths terminate in the same append-only binding store.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
-import hashlib
 import time
 import uuid
+from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
 

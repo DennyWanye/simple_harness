@@ -99,6 +99,6 @@ class ChatChunk(BaseModel):
     delta_content: str = ""
     delta_tool_calls: list[ToolCall] = Field(default_factory=list)
     is_final: bool = False
-    usage: Optional[ChatUsage] = None
+    usage: ChatUsage | None = None
     stop_reason: str = ""
     model: str = ""

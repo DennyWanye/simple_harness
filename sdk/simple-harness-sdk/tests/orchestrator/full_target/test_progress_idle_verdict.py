@@ -13,7 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.orchestrator.progress import IdleFacts, Route, idle_verdict
 

@@ -140,7 +140,11 @@ def test_the_systems_own_retry_is_recorded_as_such_and_not_as_a_planner_choice(t
     import agent_orchestrator.orchestrator.event_handler as event_handler
     from agent_orchestrator.orchestrator.planning_selection import SYSTEM_RETRY_ORIGIN
     from agent_orchestrator.testing.product_world import product_world
-    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, broken_result, worker_reply
+    from agent_orchestrator.testing.scripted_replies import (
+        LayeredScriptedProvider,
+        broken_result,
+        worker_reply,
+    )
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
     assert SYSTEM_RETRY_ORIGIN == "system_infrastructure_retry"

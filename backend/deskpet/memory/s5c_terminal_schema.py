@@ -12,7 +12,8 @@ from simple_harness.contracts import canonical_json
 
 from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.s5c_timer_schema import (
-    initialize_s5c_timer_state_db, validate_s5c_timer_state_db,
+    initialize_s5c_timer_state_db,
+    validate_s5c_timer_state_db,
 )
 
 TERMINAL_MIGRATION = "s5c/044_prospective_terminals_v52.sql"

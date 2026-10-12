@@ -69,7 +69,7 @@ class BudgetAllocator:
         self.budget_ratio = budget_ratio
         self.min_memory_tokens = min_memory_tokens
 
-    def budget_tokens(self, *, override_ratio: Optional[float] = None) -> int:
+    def budget_tokens(self, *, override_ratio: float | None = None) -> int:
         ratio = override_ratio if override_ratio is not None else self.budget_ratio
         return max(0, int(self.context_window * ratio))
 
@@ -77,7 +77,7 @@ class BudgetAllocator:
         self,
         slices: list[Slice],
         *,
-        override_ratio: Optional[float] = None,
+        override_ratio: float | None = None,
     ) -> BudgetResult:
         budget = self.budget_tokens(override_ratio=override_ratio)
         total = sum(max(0, s.tokens) for s in slices)

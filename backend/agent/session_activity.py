@@ -64,7 +64,7 @@ class CompactEvent:
     ts: float = 0.0
     name: str = ""
     args_hash: str = ""
-    ok: Optional[bool] = None
+    ok: bool | None = None
     snippet: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -137,10 +137,10 @@ class SessionActivityStore:
         sid: str,
         *,
         event_type: str,
-        ts: Optional[float] = None,
+        ts: float | None = None,
         name: str = "",
         args: Any = None,
-        ok: Optional[bool] = None,
+        ok: bool | None = None,
         snippet: str = "",
         iteration: int = 0,
         max_iterations: int = 0,
@@ -246,7 +246,7 @@ class SessionActivityStore:
             if sa is not None:
                 sa.auto_resume_attempts = 0
 
-    async def get(self, sid: str) -> Optional[SessionActivity]:
+    async def get(self, sid: str) -> SessionActivity | None:
         async with self._lock:
             return self._states.get(sid)
 
@@ -261,7 +261,7 @@ class SessionActivityStore:
 
 # Module-level singleton — most callers go through service_context, but
 # importing this directly is fine for unit tests.
-_default_store: Optional[SessionActivityStore] = None
+_default_store: SessionActivityStore | None = None
 
 
 def default_store() -> SessionActivityStore:

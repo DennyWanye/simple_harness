@@ -8,13 +8,13 @@ from __future__ import annotations
 import copy
 import json
 import math
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Awaitable, Callable, Mapping, Protocol, TypeAlias, TypedDict
+from typing import Protocol, TypeAlias, TypedDict
 
 from .errors import InvalidStatePatch, WorkflowDefinitionError
-
 
 JsonPrimitive: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
@@ -212,7 +212,7 @@ class NodeExecutionIdentity:
         node_id: str,
         execution_info: object,
         state: Mapping[str, object] | None = None,
-    ) -> "NodeExecutionIdentity":
+    ) -> NodeExecutionIdentity:
         state = state or {}
         thread_id = getattr(execution_info, "thread_id", None) or state.get("thread_id")
         run_id = getattr(execution_info, "run_id", None) or state.get("run_id")
@@ -311,7 +311,7 @@ class WorkflowContext:
             raise KeyError(f"Unknown workflow port: {name}")
         return self.ports[name]
 
-    def for_node(self, identity: NodeExecutionIdentity) -> "WorkflowContext":
+    def for_node(self, identity: NodeExecutionIdentity) -> WorkflowContext:
         return replace(self, identity=identity, _writer_node_id=identity.node_id)
 
 

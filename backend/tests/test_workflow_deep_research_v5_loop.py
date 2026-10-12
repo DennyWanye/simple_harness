@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Mapping
 
 import pytest
-
 from deskpet.workflows.contracts import (
     NodeExecutionIdentity,
     WorkflowContext,
@@ -38,14 +37,13 @@ from deskpet.workflows.definitions.v5 import (
 from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
 from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeWorkflowExecutable
 
-
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_graph_loop.json"
 
 
 class VirtualClock:
     def __init__(self, active: float = 0.0) -> None:
         self.active = active
-        self.wall = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 7, 16, 8, 0, tzinfo=UTC)
 
     def active_seconds(
         self, *, operation_id: str, accumulated_active_seconds: float

@@ -1,8 +1,7 @@
 """2026-09-25 UI 全量点击：自动模式下 Host 代签"授权本轮规划"，并如实记成自动。"""
 import pytest
-
-from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 
 class _Control:

@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 import pytest
-
 from simple_harness.contracts import JsonValue, RunId, freeze_json
 from simple_harness.execution.delivery import (
     DeliveryDispatcher,

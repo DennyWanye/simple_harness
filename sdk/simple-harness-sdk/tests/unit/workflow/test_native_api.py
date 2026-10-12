@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from dataclasses import fields
 
 import pytest
-
 from simple_harness.workflow.native import (
     NativeCheckpointStore,
     NativeCommitResult,

@@ -10,17 +10,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from simple_harness import (
-    ROOT_PROFILE_KEY,
-    DriverResult,
-    RuntimePorts,
-    RuntimeProfile,
-    SqliteContextPort,
-    build_runtime,
-)
-from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-from simple_harness.execution.uow import RunState
-
 from context import ServiceContext
 from deskpet.capabilities.store import CapabilitySkillInstallVerificationAttempt
 from deskpet.sdk_adapters.composition import (
@@ -38,6 +27,16 @@ from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_whe
 from deskpet.sdk_adapters.skill_install_verification import (
     skill_install_verification_authority_hash,
 )
+from simple_harness import (
+    ROOT_PROFILE_KEY,
+    DriverResult,
+    RuntimePorts,
+    RuntimeProfile,
+    SqliteContextPort,
+    build_runtime,
+)
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.execution.uow import RunState
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()
@@ -878,6 +877,11 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     import json as _json
     from types import SimpleNamespace
 
+    import main
+    from deskpet.sdk_adapters.context_authority import (
+        ContextRouteLedgerStore,
+        ProductRunContextAuthority,
+    )
     from simple_harness.contracts import RunId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.execution.context_authority import (
@@ -886,12 +890,6 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     )
     from simple_harness.providers import ProviderToolSpec
     from simple_harness.runtime.context import ContextSnapshot
-
-    import main
-    from deskpet.sdk_adapters.context_authority import (
-        ContextRouteLedgerStore,
-        ProductRunContextAuthority,
-    )
     from tests.sdk_adapters import s5b_closure_harness as ch
 
     # 上一 Run：脏 + 模型不收口 → pending receipt，终态照常。

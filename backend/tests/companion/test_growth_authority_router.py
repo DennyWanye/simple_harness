@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
 from deskpet.companion.authority import (
     GrowthAuthorityGenerationMismatch,
     GrowthAuthorityPhase,

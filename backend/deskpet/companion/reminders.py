@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Awaitable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .clock import ClockPort, SystemClock
 from .contracts import LeaseClaim, OwnerRef
 from .store import canonical_hash, canonical_json
-
 
 _MAX_TEXT_LENGTH = 2000
 _RESULT_PREFIX = "json:"
@@ -99,7 +99,7 @@ class ReminderStorePort(Protocol):
 class ReminderServicePort(Protocol):
     def create(
         self,
-        authority: "ReminderRunAuthority",
+        authority: ReminderRunAuthority,
         *,
         effect_id: str,
         args: Mapping[str, Any],
@@ -107,14 +107,14 @@ class ReminderServicePort(Protocol):
 
     def list(
         self,
-        authority: "ReminderRunAuthority",
+        authority: ReminderRunAuthority,
         *,
         args: Mapping[str, Any],
     ) -> Mapping[str, Any]: ...
 
     def cancel(
         self,
-        authority: "ReminderRunAuthority",
+        authority: ReminderRunAuthority,
         *,
         effect_id: str,
         args: Mapping[str, Any],

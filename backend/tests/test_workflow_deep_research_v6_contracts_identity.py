@@ -5,14 +5,13 @@ import json
 from pathlib import Path
 
 from deskpet.workflows.adapters.research_runtime import (
-    DurableResearchCallEffectAdapter,
     V6_RESEARCH_RESPONSE_FORMATS,
+    DurableResearchCallEffectAdapter,
     build_v6_research_llm_profiles,
     research_response_format_hash,
 )
 from deskpet.workflows.definitions.v6 import DEEP_RESEARCH_V6
 from deskpet.workflows.runner import manifest_hash
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v6_release_identity.json"
 V5_FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_identity.json"

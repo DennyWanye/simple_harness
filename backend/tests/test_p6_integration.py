@@ -28,7 +28,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import (
     AgentLoop,
     ErrorEvent,
@@ -37,7 +36,6 @@ from agent.agent_loop import (
 from agent.context_manager import ContextConfig, ContextManager
 from agent.termination import GateConfig, TerminationGate, TerminationReason
 from llm.types import ChatResponse, ChatUsage, ToolCall
-
 
 # ─────────────────────────── stubs ───────────────────────────
 #

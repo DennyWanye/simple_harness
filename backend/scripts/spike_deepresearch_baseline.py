@@ -12,6 +12,7 @@
 运行：DESKPET_CLOUD_API_KEY 须在环境（Tauri 注入口径），cwd=backend。
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -24,9 +25,9 @@ if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
 from config import load_config, resolve_cloud_api_key  # type: ignore
-from providers.openai_compatible import OpenAICompatibleProvider  # type: ignore
 from deskpet.tools import research_tools as rt  # type: ignore
-from deskpet.tools.research_tools import deepresearch, _DEPTH_PRESETS  # type: ignore
+from deskpet.tools.research_tools import _DEPTH_PRESETS, deepresearch  # type: ignore
+from providers.openai_compatible import OpenAICompatibleProvider  # type: ignore
 
 OUT_DIR = os.path.join(_BACKEND, "..", "plans", "deepresearch-upgrade")
 

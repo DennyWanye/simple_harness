@@ -36,10 +36,6 @@ import json
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId
-from simple_harness.execution.context_authority import TaskScopeRoute
-from simple_harness.tools import ToolOutcome
-
 from deskpet.sdk_adapters import tools as product_tools
 from deskpet.sdk_adapters.read_gate import (
     READ_OUTSIDE_REASON,
@@ -56,7 +52,9 @@ from deskpet.tools.code_tools._search_scope import (
 )
 from deskpet.tools.code_tools.glob_tool import glob_tool
 from deskpet.tools.code_tools.grep_tool import grep_tool
-
+from simple_harness import CallId
+from simple_harness.execution.context_authority import TaskScopeRoute
+from simple_harness.tools import ToolOutcome
 from tests.sdk_adapters.test_read_tool_call_gate_f_z1 import (
     REQUEST,
     RUN,

@@ -16,12 +16,11 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from simple_harness.contracts import RunId
-from simple_harness.execution.context_authority import ContextRouteReceipt
-
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.sdk_adapters.context_route import ROUTES, ContextRouteToolService
+from simple_harness.contracts import RunId
+from simple_harness.execution.context_authority import ContextRouteReceipt
 
 RUN = "run-route-1"
 
@@ -415,13 +414,12 @@ async def test_scope_disclosure_reader_missing_rejects(state_db, operation):
 
 
 def test_context_route_policy_is_context_control() -> None:
+    from deskpet.sdk_adapters.tool_authority import (
+        SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
+    )
     from simple_harness.tools.runtime_catalog import (
         ToolEffectClass,
         ToolRouteRequirement,
-    )
-
-    from deskpet.sdk_adapters.tool_authority import (
-        SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
     )
 
     effect, route, scope = SDK_TOOL_EXECUTION_POLICY_OVERRIDES["context_route"]

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import dataclasses
 
-from test_scoped_acceptance_rules import EPOCH, NOW_MS, _scoped_subject, witness
-
 from agent_orchestrator.contracts.resolution import ReviewPurpose
 from agent_orchestrator.verification.acceptance_rules import AcceptReason, CompoundFacts
 from agent_orchestrator.verification.scoped_composition import acceptable_scoped_composition
+from test_scoped_acceptance_rules import EPOCH, NOW_MS, _scoped_subject, witness
 
 
 def _composition_subject(*, legal: bool = True, passed: bool = True):

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     DimensionCoverage,
     ResearchBrief,
@@ -15,7 +14,6 @@ from deskpet.workflows.definitions.deep_research_v5_delivery import (
     build_extractively_grounded_draft,
     evaluate_structured_report,
 )
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_report_golden.json"
 

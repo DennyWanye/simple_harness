@@ -17,11 +17,10 @@ import threading
 
 from arp_fixture import build
 from provider_fixture import ScriptedProvider
-from test_arp_index_recall import FILLERS, SMALL, _latest_manifest, _recall_of, _seed, _turn
-
 from simple_harness.agents.arp import store
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.memory.embedding import HashEmbedder
+from test_arp_index_recall import FILLERS, SMALL, _latest_manifest, _recall_of, _seed, _turn
 
 
 class HeavyEmbedder(HashEmbedder):

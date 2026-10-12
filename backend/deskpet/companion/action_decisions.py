@@ -47,7 +47,7 @@ class TrustedCompanionControlIdentity:
     @classmethod
     def from_frozen(
         cls, identity: FrozenOwnerIdentity
-    ) -> "TrustedCompanionControlIdentity":
+    ) -> TrustedCompanionControlIdentity:
         return cls(
             owner=identity.owner,
             owner_key=identity.owner_key,

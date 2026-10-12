@@ -21,9 +21,10 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping
 from functools import lru_cache
 from importlib import resources
-from typing import Any, Mapping
+from typing import Any
 
 from . import purge_rules, retrieval_status
 from .errors import ArpError

@@ -6,15 +6,15 @@ import asyncio
 import inspect
 import logging
 import os
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
-from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from .clock import ClockPort, SystemClock
 from .contracts import LeaseClaim, OwnerRef
 from .identity_gate import CompanionIdentityNotReady, IdentityReadyGate
-
 
 logger = logging.getLogger(__name__)
 

@@ -15,12 +15,11 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-import pytest
 
+import pytest
 from agent.context_manager import ContextConfig, ContextManager
 from agent.token_budget import BudgetCheck, check_budget
 from agent.tool_result_truncator import get_global_ref_store
-
 
 # ─────────────────────────── helpers / fakes ───────────────────────────
 

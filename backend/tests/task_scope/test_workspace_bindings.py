@@ -8,20 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from simple_harness import (
-    CallId,
-    ContextRouteReceipt,
-    EffectId,
-    RunBindingModeSnapshotRequest,
-    RunId,
-    TaskExecutionEnvelope,
-    TaskScopeRoute,
-    WorkspaceBindingAuthorizationChannel,
-    WorkspaceBindingAuthorizationDecision,
-    WorkspaceBindingMode,
-    WorkspaceBindingProposal,
-)
-
 from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 from deskpet.memory.schema import (
     InitializeError,
@@ -35,6 +21,19 @@ from deskpet.task_scope.workspace_bindings import (
     WorkspaceBindingAuthorityStore,
     WorkspaceBindingError,
     canonical_workspace_root,
+)
+from simple_harness import (
+    CallId,
+    ContextRouteReceipt,
+    EffectId,
+    RunBindingModeSnapshotRequest,
+    RunId,
+    TaskExecutionEnvelope,
+    TaskScopeRoute,
+    WorkspaceBindingAuthorizationChannel,
+    WorkspaceBindingAuthorizationDecision,
+    WorkspaceBindingMode,
+    WorkspaceBindingProposal,
 )
 
 

@@ -4,12 +4,10 @@
 """TDD T0 — office_paths.py path authorization (防手滑层)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-import os
-
 import pytest
-
 from deskpet.tools import office_paths as op
 
 

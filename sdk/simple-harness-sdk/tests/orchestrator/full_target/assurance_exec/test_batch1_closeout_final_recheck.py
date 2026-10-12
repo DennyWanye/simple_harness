@@ -15,7 +15,6 @@ import re
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.certificates import POINT_PURPOSES_SQL
 from agent_orchestrator.assurance.codec import AssuranceError, decode
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer

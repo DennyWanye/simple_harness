@@ -7,14 +7,14 @@ import inspect
 import json
 import math
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Protocol, Sequence
+from typing import Any, Protocol
 
 import aiosqlite
 
 from .contracts import TERMINAL_RUN_STATUSES
-
 
 DELIVERY_STAGE = "delivered_terminal_events"
 TOMBSTONE_STAGE = "evaluation_tombstones"
@@ -112,7 +112,7 @@ class RetentionPolicy:
         terminal_days: float,
         evaluation_tombstone_days: float,
         orphan_grace_hours: float,
-    ) -> "RetentionPolicy":
+    ) -> RetentionPolicy:
         return cls(
             terminal_seconds=terminal_days * 24 * 60 * 60,
             evaluation_tombstone_seconds=evaluation_tombstone_days * 24 * 60 * 60,

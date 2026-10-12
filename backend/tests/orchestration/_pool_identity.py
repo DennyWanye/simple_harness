@@ -112,9 +112,8 @@ def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> d
 
     from types import SimpleNamespace
 
-    from agent_orchestrator.runtime.assembly import OrchestratorConfig
-
     import deskpet.orchestration.runtime_profile as rp
+    from agent_orchestrator.runtime.assembly import OrchestratorConfig
     from deskpet.orchestration.native_plane import build_native_pools
 
     class Provider:

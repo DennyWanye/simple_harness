@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 from __future__ import annotations
+
 import copy
 from dataclasses import dataclass
 from types import MappingProxyType

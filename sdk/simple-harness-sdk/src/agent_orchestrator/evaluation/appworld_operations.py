@@ -21,7 +21,14 @@ from pathlib import Path
 from typing import Any
 
 from simple_harness.contracts import canonical_json
-from ..runtime.connectors import ConnectorRejected, ConnectorTransportError, OperationSpec, Receipt, params_hash
+
+from ..runtime.connectors import (
+    ConnectorRejected,
+    ConnectorTransportError,
+    OperationSpec,
+    Receipt,
+    params_hash,
+)
 from .appworld import AppWorldEpisode
 
 

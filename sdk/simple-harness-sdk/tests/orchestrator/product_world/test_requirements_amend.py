@@ -7,7 +7,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.obligation_store import ObligationStore
@@ -90,8 +89,8 @@ def test_amend_writes_everything_in_one_transaction(tmp_path):
                 amend(world, mission_id, [{"op": "remove", "criterion_id": "c-user-9"}])
             assert refused.value.code == "AMEND_UNKNOWN_CRITERION"
             # 写到一半出错：事件写入失败 → 前面写的全部回滚
-            import agent_orchestrator.orchestrator.requirements_amendment as amendment
             import agent_orchestrator.orchestrator.hierarchical_dispatch as hierarchical
+            import agent_orchestrator.orchestrator.requirements_amendment as amendment
 
             real = hierarchical.append_hierarchical_event
 
@@ -1192,7 +1191,11 @@ def test_apply_changes_refuses_with_a_typed_code_not_by_slicing_text():
     from pathlib import Path
 
     import agent_orchestrator.orchestrator.requirements_amendment as amendment
-    from agent_orchestrator.deployment.root import AmendmentRefused, apply_changes, build_requirements
+    from agent_orchestrator.deployment.root import (
+        AmendmentRefused,
+        apply_changes,
+        build_requirements,
+    )
 
     previous = build_requirements("m-1", 1, (("c-user-1", 1, "file:a.md"),), "local-user")
     with pytest.raises(AmendmentRefused) as refused:

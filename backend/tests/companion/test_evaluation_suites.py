@@ -8,7 +8,6 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
-
 from deskpet.companion.evaluation_suites import (
     PackagedEvaluationSuiteError,
     PackagedEvaluationSuiteLoader,

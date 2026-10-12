@@ -24,19 +24,17 @@ import os
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import ppt_tools as ppt
 from deskpet.tools.ppt_tools import (
-    SlideOutline,
-    parse_outline,
-    render_markdown_fallback,
-    ppt_create,
-    get_theme,
+    _HAS_PPTX,
     VALID_LAYOUTS,
     VALID_THEMES,
-    _HAS_PPTX,
+    SlideOutline,
+    get_theme,
+    parse_outline,
+    ppt_create,
+    render_markdown_fallback,
 )
-
 
 # ----------------------------------------------------------------------
 # parse_outline / SlideOutline

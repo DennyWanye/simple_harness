@@ -7,9 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from h1i_seed import committed, root_task
-
 from agent_orchestrator.contracts import TaskStatus
+from h1i_seed import committed, root_task
 
 
 def test_planner_task_state_projection_holds_one_write_snapshot(

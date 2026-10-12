@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from deskpet.tools.public_projection import (
     project_public_tool_arguments,
     project_public_tool_calls,

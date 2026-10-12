@@ -7,7 +7,6 @@ Reserve/Settle on the account chain; usage facts imported at most once; tokens o
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import Budget, Event, Mission, MissionStatus
 from agent_orchestrator.governance.budgets import BudgetExhausted, BudgetLedger, UsageFact
 from agent_orchestrator.storage.store import InjectedCrash, Store, StoreConflict

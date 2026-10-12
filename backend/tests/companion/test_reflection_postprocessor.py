@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
 from deskpet.companion.contracts import OwnerRef
 from deskpet.companion.growth import (
     CandidateBindingFenceV1,
@@ -18,7 +17,6 @@ from deskpet.companion.reflection_postprocessor import (
     ReflectionResultPostprocessor,
 )
 from deskpet.companion.run_adapter import BackgroundRunCanonicalResultV1
-
 
 OWNER = OwnerRef("profile-a", 3)
 OWNER_KEY = "companion:profile-a:3"

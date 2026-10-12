@@ -9,8 +9,8 @@ layer remains a historical verdict; acceptance needs independent current proof.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from typing import Callable, Any
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from simple_harness.agents import AgentConfig, AgentLimits
 
@@ -19,15 +19,6 @@ from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
 from ..assurance.reviews import REVIEW_CODEC_VERSION
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ContractError
-from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
-from ..storage.assurance_reads import AssuranceReader
-from ..storage.htn_store import HtnStore
-from ..verification.critics import CriticVerdict
-from .assurance_content_review import ensure_task_content_review
-from .assurance_review_collect import collect_assurance_review
-from .assurance_review_consumer import AssuranceReviewConsumer
-from .assurance_review_import import carried_review_alive, read_official_review_binding_locked
-from .assurance_review_policies import register_review_policies
 
 # One review turn: the initial request plus a bounded number of tool rounds.
 # The per-call cap on the gateway binding is MAX_EVIDENCE_TOOL_CALLS; the turn's
@@ -35,9 +26,17 @@ from .assurance_review_policies import register_review_policies
 # listed the catalogue and read the candidate plus five evidence items (3+2+5 = 10
 # tool calls) before concluding, and the old cap of 8 ended every such turn with
 # react_max_tool_calls_exceeded → TURN_FAILED.
-from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
-from .failure_classes import INTERRUPTED_REVIEW, REVIEW_INTERRUPTED_CODE
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_ANSWER_MARGIN
+from ..storage.assurance_reads import AssuranceReader
+from ..storage.htn_store import HtnStore
+from ..verification.critics import CriticVerdict
 from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
+from .assurance_content_review import ensure_task_content_review
+from .assurance_review_collect import collect_assurance_review
+from .assurance_review_consumer import AssuranceReviewConsumer
+from .assurance_review_import import carried_review_alive, read_official_review_binding_locked
+from .assurance_review_policies import register_review_policies
+from .failure_classes import INTERRUPTED_REVIEW, REVIEW_INTERRUPTED_CODE
 
 #: 2026-10-09 库存题：最终审阅员每轮查 2 次左右，10 次模型调用先用完（只查了 20 次，工具上限 32），
 #: 循环被截断、没有任何提示，两次都没给结论，任务判失败。模型调用上限放在工具上限之上：先到的总是

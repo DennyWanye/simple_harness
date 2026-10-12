@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.skill_install_ui import (
     ProjectSkillInstallUIAdapter,
     ProjectSkillInstallUIError,

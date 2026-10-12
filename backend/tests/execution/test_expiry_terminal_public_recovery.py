@@ -11,7 +11,6 @@
 import sqlite3
 
 import pytest
-
 from simple_harness.execution.audit import RunAuditUnavailable
 
 
@@ -20,6 +19,7 @@ from simple_harness.execution.audit import RunAuditUnavailable
 async def test_observer_never_repairs_other_public_failures(tmp_path, monkeypatch, failure):
     """Dispatch guard negative; does not assert SDK source-level corruption proof."""
     from types import SimpleNamespace
+
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
     state = tmp_path/'host.db'
     with sqlite3.connect(state) as db:

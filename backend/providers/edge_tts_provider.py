@@ -12,8 +12,8 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import edge_tts
 import structlog
@@ -164,5 +164,5 @@ class EdgeTTSProvider:
                     pass
             try:
                 await asyncio.wait_for(proc.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("ffmpeg_wait_timeout", pid=proc.pid)

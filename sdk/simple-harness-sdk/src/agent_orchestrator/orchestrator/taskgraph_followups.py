@@ -10,10 +10,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from ..contracts.models import Event
-
 from ..graph.notification_contracts import FollowupKind, FollowupV1
 from ..storage.store import StoreConflict, StoreError
-from ..storage.taskgraph_followups import BlockedFollowup, DurableFollowupReceipt, TaskGraphFollowupStore
+from ..storage.taskgraph_followups import (
+    BlockedFollowup,
+    DurableFollowupReceipt,
+    TaskGraphFollowupStore,
+)
 
 FollowupHandler = Callable[[FollowupV1, str], Awaitable[DurableFollowupReceipt]]
 
@@ -126,7 +129,7 @@ class TaskGraphEventConsumer:
     """
 
     def __init__(self, notifications: TaskGraphFollowupStore, *, consumer_id: str,
-                 projector: Callable[["Event"], tuple[FollowupV1, ...]]) -> None:
+                 projector: Callable[[Event], tuple[FollowupV1, ...]]) -> None:
         from ..graph.notification_contracts import _text
         _text(consumer_id, "consumer_id")
         self.notifications = notifications

@@ -11,7 +11,6 @@ from deskpet.session.project_binding import (
     SessionCreationService,
 )
 
-
 PROJECT_SESSION_COMMANDS = frozenset({
     "project_preview_register", "project_register", "session_create",
     "project_catalog_page", "project_sessions_page", "project_inspect",

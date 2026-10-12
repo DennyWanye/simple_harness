@@ -14,10 +14,10 @@ here is model-provided; the Host's bootstrap supplies all three.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Mapping
-from typing import Any, Callable
+from typing import Any
 
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.meter import NO_PRIOR, PriorBasis

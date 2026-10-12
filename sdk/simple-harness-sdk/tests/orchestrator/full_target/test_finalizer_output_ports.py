@@ -35,8 +35,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, run_until
-
 from agent_orchestrator.contracts.htn import OccurrenceId
 from agent_orchestrator.orchestrator.accepted_outputs import (
     coverage_in_revision,
@@ -47,7 +45,12 @@ from agent_orchestrator.orchestrator.accepted_outputs import (
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world, user_goal_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, planner_reply
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+)
+from h1i_seed import CONFIG, run_until
 
 
 @pytest.fixture(autouse=True)

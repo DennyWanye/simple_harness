@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+
 def test_tool_component_has_no_domain_regex_surface_mutation() -> None:
     source = (
         Path(__file__).parents[1]

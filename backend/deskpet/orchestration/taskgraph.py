@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-
 from collections.abc import Mapping
 from typing import Any
 
@@ -49,11 +48,11 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
     service._require()._mission(mission_id)
     try:
         from agent_orchestrator.api.taskgraph import TaskGraphReadError
+        from agent_orchestrator.contracts.models import ContractError
         from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1
         from agent_orchestrator.runtime.planning_operations import SourceUnavailable
-        from agent_orchestrator.storage.taskgraph_store import GraphIntegrityError
-        from agent_orchestrator.contracts.models import ContractError
         from agent_orchestrator.storage.store import StoreError
+        from agent_orchestrator.storage.taskgraph_store import GraphIntegrityError
     except ImportError as error:
         raise OrchestrationRequestError("taskgraph_unavailable", "当前 SDK 尚未安装执行图读取接口") from error
     try:

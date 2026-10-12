@@ -20,9 +20,6 @@ import logging
 from typing import Any
 
 import pytest
-from simple_harness import CallId, RequestId, RunId, thaw_json
-from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
-
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.tool_authority import (
     SDK_DIRECT_TOOL_KERNEL,
@@ -43,6 +40,8 @@ from deskpet.tools.tool_search import (
     _SCHEMA,
     register_capability_bridge_tools,
 )
+from simple_harness import CallId, RequestId, RunId, thaw_json
+from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 
 RUN_ID = "product-sdk-ui-b"
 WORKSPACE_ROOT = "/tmp/ui-b/documents/SimpleHarnessProjects/Session-b493255c"
@@ -712,9 +711,8 @@ def test_every_manifest_required_argument_is_enforced_by_the_host_wrapper() -> N
     """
 
     from deskpet.sdk_adapters.tools import ProductToolRegistration, _sdk_tool
-    from simple_harness.tools.schema import SchemaDefinitionError
-
     from deskpet.tool_catalog.manifest import load_tool_manifest
+    from simple_harness.tools.schema import SchemaDefinitionError
 
     checked = 0
     for tool in load_tool_manifest().tools:

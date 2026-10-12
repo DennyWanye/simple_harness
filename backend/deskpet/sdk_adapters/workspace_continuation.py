@@ -5,9 +5,11 @@ caller must append a new binding using the current AUTO/MANUAL authority.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
+
 from simple_harness import CanonicalWorkspaceRoot
+
 from deskpet.memory.human_memory_service import OpenTaskScopeRequest
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 

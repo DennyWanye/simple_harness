@@ -7,7 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from deskpet.code_mode import CodeModeManager
 from deskpet.code_mode.state import _code_session_id
 

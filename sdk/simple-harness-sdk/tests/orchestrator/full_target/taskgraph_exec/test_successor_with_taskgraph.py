@@ -25,10 +25,9 @@ for _extra in (_TESTS / "orchestrator" / "full_target", _TESTS / "orchestrator" 
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
-
 from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 
 def _marks(world):  # type: ignore[no-untyped-def]

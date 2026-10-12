@@ -33,15 +33,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from h1i_seed import root_task, run_until  # noqa: E402
-from root_review_world import CRITERIA, GOAL, FinalReviewProvider  # noqa: E402
-
 from agent_orchestrator.orchestrator.leaf_acceptance import (  # noqa: E402
     LEAF_LOCAL_CRITERION,
     LayerOutcome,
     criteria_for,
 )
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
+from h1i_seed import root_task, run_until  # noqa: E402
+from root_review_world import CRITERIA, GOAL, FinalReviewProvider  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

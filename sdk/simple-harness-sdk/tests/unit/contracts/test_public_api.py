@@ -6,11 +6,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from packaging.version import Version
-
 import simple_harness
 import simple_harness.contracts as contracts
 import simple_harness.runtime as runtime
+from packaging.version import Version
 from simple_harness.testing import arm64_candidate
 
 # 冻结快照按发布版本（去掉 .devN 与 +opt.N 本地段）记录；开发构建每次升 opt 号不需要重冻，

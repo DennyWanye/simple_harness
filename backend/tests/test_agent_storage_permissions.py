@@ -1,9 +1,8 @@
 import os
-from pathlib import Path
 import stat
+from pathlib import Path
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.memory.storage import StateStorageUnsafe
 

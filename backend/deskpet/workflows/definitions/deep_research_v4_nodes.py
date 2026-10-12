@@ -7,14 +7,16 @@ import copy
 import json
 import re
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import date, datetime, timezone
-from typing import Any, Mapping, Sequence
+from datetime import UTC, date, datetime, timezone
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState
+from . import deep_research_v3_nodes as v3
 from .deep_research_v3_contracts import (
     BRANCH_IDS,
     BranchBudgetState,
@@ -23,8 +25,12 @@ from .deep_research_v3_contracts import (
     canonical_url,
     no_op_patch,
 )
-from . import deep_research_v3_nodes as v3
-from .deep_research_v4_contracts import IntentProfile, SourceSeed, TechnologyFinding, TechnologyTopic
+from .deep_research_v4_contracts import (
+    IntentProfile,
+    SourceSeed,
+    TechnologyFinding,
+    TechnologyTopic,
+)
 from .deep_research_v4_intelligence import (
     build_ranked_findings,
     canonical_host,
@@ -37,7 +43,6 @@ from .deep_research_v4_intelligence import (
 )
 from .deep_research_v4_report import render_technology_report
 from .research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
-
 
 PUBLIC_STAGE_IDS = v3.PUBLIC_STAGE_IDS
 _FAILURE_METRIC_KEYS = (
@@ -86,7 +91,7 @@ def _as_of_date(state: WorkflowState, context: WorkflowContext) -> date:
     elif callable(getattr(clock, "now", None)):
         candidate = clock.now()  # type: ignore[union-attr]
     if isinstance(candidate, datetime):
-        return candidate.astimezone(timezone.utc).date() if candidate.tzinfo else candidate.date()
+        return candidate.astimezone(UTC).date() if candidate.tzinfo else candidate.date()
     if isinstance(candidate, date):
         return candidate
     if isinstance(candidate, str):
@@ -94,7 +99,7 @@ def _as_of_date(state: WorkflowState, context: WorkflowContext) -> date:
             return date.fromisoformat(candidate[:10])
         except ValueError:
             pass
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _config(values: Mapping[str, Any]) -> dict[str, Any]:
@@ -463,7 +468,7 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
                     errors.append(_event(branch_id, "direct", "deadline_exhausted"))
                     break
                 outcome = await asyncio.wait_for(port.direct(query, seed.direct_source), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 errors.append(_event(branch_id, "direct", "timeout"))
                 continue
             except Exception:
@@ -577,7 +582,7 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
                     port.search(query, max_results=min(5, budget.url_remaining)),
                     timeout=timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 outcome = []
                 errors.append(_event(branch_id, "search", "timeout"))
             except Exception:
@@ -1459,7 +1464,7 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     try:
         as_of = date.fromisoformat(profile.as_of_date)
     except ValueError:
-        as_of = datetime.now(timezone.utc).date()
+        as_of = datetime.now(UTC).date()
     ranked_evidence = [
         dict(item) for item in values.get("ranked_evidence", []) if isinstance(item, Mapping)
     ]

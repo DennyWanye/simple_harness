@@ -23,11 +23,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import tomli
-import pytest
-
 import config as cfg
-
+import pytest
+import tomli
 
 # A bundle default carrying NEW factory flags the existing user never had.
 BUNDLE_TOML = """\

@@ -10,10 +10,10 @@ used as protocol detection signals.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal, Mapping
-
+from typing import Literal
 
 ReasoningBehavior = Literal["toggleable", "always_on", "unsupported", "unknown"]
 ReasoningRequestStyle = Literal["thinking_object", "effort_only", "none"]

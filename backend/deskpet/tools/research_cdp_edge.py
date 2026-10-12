@@ -29,11 +29,11 @@ log = structlog.get_logger(__name__)
 _UNSET = object()
 _EDGE_EXE_CACHE: object = _UNSET
 
-_proc: Optional[subprocess.Popen[bytes]] = None
+_proc: subprocess.Popen[bytes] | None = None
 _ws: Any = None
-_recv_task: Optional[asyncio.Task[None]] = None
-_port: Optional[int] = None
-_user_data_dir: Optional[str] = None
+_recv_task: asyncio.Task[None] | None = None
+_port: int | None = None
+_user_data_dir: str | None = None
 
 _next_msg_id = 0
 _pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
@@ -43,7 +43,7 @@ _send_lock = asyncio.Lock()
 _render_semaphore = asyncio.Semaphore(2)
 
 
-def _find_edge_executable() -> Optional[str]:
+def _find_edge_executable() -> str | None:
     """按平台查找 Edge 可执行文件。"""
     system = platform.system()
     if system == "Windows":
@@ -63,7 +63,7 @@ def _find_edge_executable() -> Optional[str]:
     return shutil.which("microsoft-edge") or shutil.which("msedge")
 
 
-def _edge_executable() -> Optional[str]:
+def _edge_executable() -> str | None:
     global _EDGE_EXE_CACHE
     if _EDGE_EXE_CACHE is _UNSET:
         _EDGE_EXE_CACHE = _find_edge_executable()
@@ -158,9 +158,9 @@ async def _recv_loop() -> None:
 
 async def _cdp_call(
     method: str,
-    params: Optional[dict[str, Any]] = None,
+    params: dict[str, Any] | None = None,
     *,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
     """发送一条 CDP 命令并等待响应。"""
@@ -280,7 +280,7 @@ async def _eval(
     # 经典 CDP 坑: Page.navigate 后页面正在导航,旧执行上下文被销毁、新上下文还没建好,
     # 此刻发的 Runtime.evaluate 收不到响应。用【短超时 + 重试】化解: 一次没响应就快速
     # 重发(等上下文就绪),而不是死等 5s 然后整个 render 失败(quotes/js 稳定 5.8s 超时即此)。
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for _ in range(5):
         if time.perf_counter() >= deadline:
             break
@@ -300,7 +300,7 @@ async def _eval(
     return None
 
 
-async def _render_once(url: str, timeout: float) -> Optional[str]:
+async def _render_once(url: str, timeout: float) -> str | None:
     await _ensure_browser(timeout)
     deadline = time.perf_counter() + timeout
     target_id = ""
@@ -350,7 +350,7 @@ async def _render_once(url: str, timeout: float) -> Optional[str]:
         await asyncio.sleep(min(2.5, _remaining(deadline)))
 
         # 文本长度稳定后再取 DOM，降低抓到半成品页面的概率。
-        last_len: Optional[int] = None
+        last_len: int | None = None
         stable_hits = 0
         for _ in range(8):
             if time.perf_counter() >= deadline:
@@ -388,7 +388,7 @@ async def _render_once(url: str, timeout: float) -> Optional[str]:
                 pass
 
 
-async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> Optional[str]:
+async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> str | None:
     """用常驻无头 Edge 经 CDP 渲染 url，返回渲染后的 outerHTML。
 
     best-effort：Edge 找不到、启动失败、CDP 失败、超时或任何异常都返回 ``None``，

@@ -10,20 +10,23 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+from deskpet.memory.human_memory_service import SearchTaskScopesRequest
+from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.sdk_adapters import tools as host_tools
+from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore, canonical_sha256
+from deskpet.sdk_adapters.context_route import (
+    CONTEXT_ROUTE_SCHEMA,
+    ContextRouteToolService,
+    local_owner_auth,
+)
+from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
+from deskpet.task_scope.disclosure import render_scope_disclosure
+from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from simple_harness import CallId, RequestId, RunId, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import CancelToken, ProviderRequest, ProviderToolSpec, Secret
 from simple_harness.tools.schema import validate_arguments, validate_tool_schema
-
-from deskpet.memory.human_memory_service import SearchTaskScopesRequest
-from deskpet.memory.schema import initialize_human_memory_program_state_db
-from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
-from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore, canonical_sha256
-from deskpet.sdk_adapters.context_route import CONTEXT_ROUTE_SCHEMA, ContextRouteToolService, local_owner_auth
-from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
-from deskpet.sdk_adapters import tools as host_tools
-from deskpet.task_scope.disclosure import render_scope_disclosure
-from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from tests.execution.test_completed_scope_workspace_continuation import archive, archive_facts
 
 

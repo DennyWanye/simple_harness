@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from agent_orchestrator.artifacts.workspace import WorkspaceError, WorkspaceManager
 from agent_orchestrator.runtime.output_blocks import BlockError, extract_block, outside_text
 from agent_orchestrator.runtime.tool_gateway import (

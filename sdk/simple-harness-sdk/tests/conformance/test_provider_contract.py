@@ -8,7 +8,6 @@ from dataclasses import FrozenInstanceError
 
 import httpx
 import pytest
-
 from simple_harness.contracts.identity import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import (

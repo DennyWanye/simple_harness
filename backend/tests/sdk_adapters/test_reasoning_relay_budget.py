@@ -26,7 +26,6 @@ carry 去猜, 于是第 16 次调用被终局拦下, 而分页/裁史(F-E2/F-E3)
 from __future__ import annotations
 
 import pytest
-
 from deskpet.sdk_adapters.context_partitions import NON_CJK_CHARS_PER_TOKEN
 from deskpet.sdk_adapters.wire_input_budget import (
     ObservedInputCarryLedger,
@@ -433,11 +432,10 @@ async def test_the_relay_that_leaves_the_host_is_the_one_that_was_measured(
     import json as _json
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window(tmp_path, monkeypatch)
     sent: list[dict] = []
@@ -498,11 +496,10 @@ async def test_the_gate_now_trims_the_relay_instead_of_killing_the_turn(
     import json as _json
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window(tmp_path, monkeypatch)
     sent: list[dict] = []
@@ -561,11 +558,10 @@ async def test_a_pre_loop_relay_never_reaches_the_relay_endpoint(
     import json as _json
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window(tmp_path, monkeypatch)
     sent: list[dict] = []
@@ -616,7 +612,6 @@ def test_the_thinking_control_is_off_by_default(tmp_path, monkeypatch) -> None:
     """没配就什么都不写 —— 型号用它自己的默认, 行为与事件 Y 之前相同。"""
 
     import httpx
-
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from llm.model_info import resolve_reasoning_mode
 
@@ -638,7 +633,6 @@ def test_model_overrides_can_pin_the_thinking_control(tmp_path, monkeypatch) -> 
     ``thinking={"type":"disabled"}``(真机探针实测该端点支持, 见备忘录 §1)。"""
 
     import httpx
-
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from llm.model_info import resolve_reasoning_mode
 
@@ -659,7 +653,6 @@ def test_the_session_model_params_always_beat_the_file(tmp_path, monkeypatch) ->
     """用户在「模型与参数」面板选的东西永远赢 override。"""
 
     import httpx
-
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window(tmp_path, monkeypatch, extra='reasoning_mode = "fast"\n')
@@ -718,12 +711,11 @@ async def test_an_uncounted_relay_still_falls_back_to_the_whole_output(
     """
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_OUTPUT_FALLBACK
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
-    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_OUTPUT_FALLBACK
 
     _pin_window(tmp_path, monkeypatch)
     run = f"{RUN}uncounted"
@@ -806,12 +798,11 @@ async def test_a_thinking_disabled_run_never_carries_its_own_echoed_output(
     import json as _json
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_NO_REASONING
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
-    from deskpet.sdk_adapters.wire_input_budget import CARRY_BASIS_NO_REASONING
 
     _pin_window(tmp_path, monkeypatch, extra='reasoning_mode = "fast"\n')
     sent: list[dict] = []

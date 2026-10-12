@@ -23,13 +23,12 @@ from pathlib import Path
 
 import httpx
 import pytest
+from deskpet.memory.human_memory_service import CreateTaskScopeRequest
+from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from simple_harness.contracts import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetSnapshot
 from simple_harness.providers import ProviderResponse, ProviderToolCall
-
-from deskpet.memory.human_memory_service import CreateTaskScopeRequest
-from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from tests.sdk_adapters.test_s5a_milestone_route_loop import (  # noqa: F401
     RUN,
     _bind_scope_root,
@@ -354,12 +353,11 @@ async def test_real_provider_continue_active_follows_durable_cursor(
 
     # Durable active cursor: a prior committed resume decision (Host artifact
     # from an earlier run; the model under test only handles the continue).
-    from simple_harness.execution.context_authority import ContextRouteReceipt
-    from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
-
     from deskpet.task_scope.workspace_bindings import (
         WorkspaceBindingAuthorityStore,
     )
+    from simple_harness.execution.context_authority import ContextRouteReceipt
+    from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
     head = await WorkspaceBindingAuthorityStore(
         milestone.db_path

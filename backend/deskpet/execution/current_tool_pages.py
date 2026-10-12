@@ -8,11 +8,16 @@ from types import MappingProxyType
 import aiosqlite
 
 from deskpet.execution.primary_context_pages import (
-    EXCERPT_BYTES, LEGACY_PAGE_BYTES, PAGE_BYTES, PrimaryContextPageUnavailable, _excerpt, _sha,
+    EXCERPT_BYTES,
+    LEGACY_PAGE_BYTES,
+    PAGE_BYTES,
+    PrimaryContextPageUnavailable,
+    _excerpt,
+    _sha,
 )
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
+from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 
 PREFIX = "primary-effect-page:v1:"
 MARKER = "primary_settled_effect_v1"
@@ -224,7 +229,9 @@ def read_effect_facts(uow, run_id, effect_id):
     from simple_harness import EffectId, RunId, thaw_json
     from simple_harness.execution.audit import audit_hash, audit_reference
     from simple_harness.execution.provider_invocations import (
-        provider_response_from_json, provider_request_from_json, provider_request_fingerprint,
+        provider_request_fingerprint,
+        provider_request_from_json,
+        provider_response_from_json,
     )
     effect = uow.read_effect(EffectId(effect_id))
     _require(effect is not None and effect.run_id.value == run_id, "effect_missing")
@@ -932,7 +939,9 @@ def control_result_allowance(metadata, *, provider_turn_ordinal=0):
     """
     from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
     from deskpet.sdk_adapters.context_partitions import (
-        calibration_for_model, effective_input_budget, window_tokens_for,
+        calibration_for_model,
+        effective_input_budget,
+        window_tokens_for,
     )
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
@@ -953,7 +962,9 @@ def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
     """
     from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
     from deskpet.sdk_adapters.context_partitions import (
-        calibration_for_model, effective_input_budget, window_tokens_for,
+        calibration_for_model,
+        effective_input_budget,
+        window_tokens_for,
     )
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
@@ -1048,6 +1059,7 @@ class CurrentToolProjector:
                        pageable, over_bound, allowance, force_all=False,
                        control_over_bound=False, control_allowance=0):
         from simple_harness.contracts.messages import Message
+
         from deskpet.sdk_adapters.composition import project_primary_transcript
         from deskpet.sdk_adapters.context_partitions import text_tokens
 

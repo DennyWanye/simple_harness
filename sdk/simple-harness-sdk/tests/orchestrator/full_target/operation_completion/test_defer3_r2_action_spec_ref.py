@@ -19,10 +19,9 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.assurance.codec import fingerprint
-from agent_orchestrator.storage.assurance_reads import AssuranceReader
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
+from agent_orchestrator.storage.assurance_reads import AssuranceReader
 from agent_orchestrator.testing.product_world import TENANT
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 

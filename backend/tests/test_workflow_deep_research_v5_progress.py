@@ -7,20 +7,19 @@ import random
 from dataclasses import replace
 
 import pytest
-
 from deskpet.workflows.contracts import NodeExecutionIdentity, WorkflowContext
 from deskpet.workflows.definitions.deep_research_v5_nodes import normalize_handler
 from deskpet.workflows.definitions.deep_research_v5_progress import (
     build_v5_stage_projection,
 )
+from deskpet.workflows.definitions.v5 import DEEP_RESEARCH_V5, deep_research_initial_state
+from deskpet.workflows.native import _uses_deep_research_stage_contract
 from deskpet.workflows.progress import (
     _V5_PROJECTION_KEYS,
     ProgressPayloadError,
     WorkflowProgressReporter,
     validated_v2_stage_text,
 )
-from deskpet.workflows.definitions.v5 import DEEP_RESEARCH_V5, deep_research_initial_state
-from deskpet.workflows.native import _uses_deep_research_stage_contract
 
 
 def _coverage(

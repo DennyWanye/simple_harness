@@ -14,7 +14,6 @@ import asyncio
 import sqlite3
 
 import pytest
-
 from agent_orchestrator.orchestrator.failure_classes import round_fault_delay
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider

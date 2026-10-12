@@ -16,7 +16,6 @@ from agent_orchestrator.api.facade import MissionControlV1
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.root_gate import STATE_FILE
 from agent_orchestrator.testing.product_world import TENANT
-
 from product_assembly import unstarted
 
 

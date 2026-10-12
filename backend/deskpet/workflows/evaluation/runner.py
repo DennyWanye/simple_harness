@@ -6,8 +6,9 @@ import hashlib
 import inspect
 import json
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from .adapters import adapt_exception, adapt_legacy_result
 from .models import (
@@ -36,7 +37,7 @@ Evaluator = Callable[[EvaluationExample, Any], Any | Awaitable[Any]]
 
 
 def _stable_id(kind: str, experiment_id: str, example_id: str) -> str:
-    payload = f"{kind}\0{experiment_id}\0{example_id}".encode("utf-8")
+    payload = f"{kind}\0{experiment_id}\0{example_id}".encode()
     return hashlib.sha256(payload).hexdigest()[:32]
 
 

@@ -6,7 +6,7 @@ a tool terminal receipt, and does not by itself make a group indexable.
 from __future__ import annotations
 
 from simple_harness import EffectId, RunId
-from simple_harness.contracts import thaw_json, canonical_json
+from simple_harness.contracts import canonical_json, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.audit import audit_hash, audit_reference
 from simple_harness.execution.provider_invocations import provider_response_from_json

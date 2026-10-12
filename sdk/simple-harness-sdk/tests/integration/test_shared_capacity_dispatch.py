@@ -4,7 +4,6 @@ import asyncio
 import os
 
 import pytest
-
 from simple_harness.contracts import RunId
 from simple_harness.execution.deployment_capacity import CapacityProvider, DeploymentCapacity
 from simple_harness.execution.provider_invocations import ProviderInvocationState

@@ -11,7 +11,6 @@ lazy module exports.
 
 from importlib import import_module
 
-
 _EXPORT_MODULE = {
     "BrokeredCommandBoundary": "effect_plan",
     "BrokeredEffectPlanRecord": "effect_plan",

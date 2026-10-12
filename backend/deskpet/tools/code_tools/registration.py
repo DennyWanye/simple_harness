@@ -24,13 +24,13 @@ from __future__ import annotations
 from typing import Any
 
 from ..context_adapter import bind_context_handler
+from .fetch_tool_result_tool import (
+    FETCH_TOOL_RESULT_SCHEMA,
+    fetch_tool_result_handler,
+)
 from .glob_tool import glob_tool
 from .grep_tool import grep_tool
 from .web_search_tool import web_search
-from .fetch_tool_result_tool import (
-    fetch_tool_result_handler,
-    FETCH_TOOL_RESULT_SCHEMA,
-)
 
 
 def _schema(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:

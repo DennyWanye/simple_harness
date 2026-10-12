@@ -9,13 +9,15 @@ import os
 import shutil
 import time
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Protocol
 
 from deskpet.product_state.authorization_saga import (
     AuthorizationSagaRepository,
     AuthorizationSagaState,
+    auto_skill_approval_receipt,
 )
 from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
 from deskpet.sdk_adapters.tool_authority import (
@@ -42,18 +44,6 @@ from .store import (
     CapabilityStore,
     CapabilityStoreConflict,
 )
-from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
-from deskpet.product_state.authorization_saga import (
-    AuthorizationSagaRepository,
-    AuthorizationSagaState,
-    auto_skill_approval_receipt,
-)
-from deskpet.sdk_adapters.tool_authority import (
-    SkillInstallPreflightReady,
-    SkillInstallPreflightRejected,
-)
-from deskpet.tools.capabilities import ToolExecutionContext
-
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +92,7 @@ class GlobalSkillInstallAuthority:
     @classmethod
     def from_identity_seed(
         cls, *, principal_id: str, identity_namespace_hash: str
-    ) -> "GlobalSkillInstallAuthority":
+    ) -> GlobalSkillInstallAuthority:
         return cls(
             principal_id=str(principal_id).strip(),
             global_owner_key=canonical_global_owner_key(identity_namespace_hash),

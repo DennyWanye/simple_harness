@@ -24,7 +24,6 @@ import types
 import numpy as np
 import pytest
 
-
 # Stub `faster_whisper` before importing the provider — the CUDA package
 # isn't present in the test env.
 if "faster_whisper" not in sys.modules:
@@ -41,7 +40,6 @@ if "faster_whisper" not in sys.modules:
     sys.modules["faster_whisper"] = _stub
 
 from providers.faster_whisper_asr import FasterWhisperASR  # noqa: E402
-
 
 # --- fake WhisperModel ---------------------------------------------------
 

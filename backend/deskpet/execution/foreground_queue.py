@@ -23,10 +23,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiosqlite
-from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
-from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
@@ -437,7 +436,10 @@ class ForegroundQueueStore:
                     raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                 input_use = None
                 if input_declaration is not None:
-                    from deskpet.memory.current_input_source import build_input_use, validate_input_use
+                    from deskpet.memory.current_input_source import (
+                        build_input_use,
+                        validate_input_use,
+                    )
                     from deskpet.memory.writer_fence import require_authenticated_host_snapshot
                     require_authenticated_host_snapshot(input_auth)
                     current = await current_record_tx(db, subject)

@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 import deskpet.orchestration.wiring as wiring
+import pytest
 from deskpet.orchestration.provider import NO_MODEL
 from deskpet.orchestration.wiring import activate_orchestration, deactivate_orchestration
 

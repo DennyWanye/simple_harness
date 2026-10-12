@@ -36,17 +36,15 @@ from contextlib import asynccontextmanager
 from typing import Any, NamedTuple
 
 import pytest
-from h1i_seed import CONFIG
-
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.contracts.htn import ObligationId
 from agent_orchestrator.orchestrator import planning_repair_requests as requests
 from agent_orchestrator.orchestrator.hierarchical_dispatch import MISSION_STALLED
+from agent_orchestrator.orchestrator.root_review import ROOT_REVIEW_CUT_BUDGET_SPENT
 from agent_orchestrator.planning.htn.repair_adapter import RepairEventAdapter
 from agent_orchestrator.planning.htn.repair_decision import RepairTriggerSource
 from agent_orchestrator.runtime.role_templates import PLANNER_HIERARCHICAL
 from agent_orchestrator.storage.obligation_store import ObligationStore
-from agent_orchestrator.orchestrator.root_review import ROOT_REVIEW_CUT_BUDGET_SPENT
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
 from agent_orchestrator.testing.scripted_replies import (
@@ -56,6 +54,7 @@ from agent_orchestrator.testing.scripted_replies import (
     review_input,
     review_reply,
 )
+from h1i_seed import CONFIG
 
 
 @pytest.fixture(autouse=True)

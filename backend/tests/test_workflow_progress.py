@@ -4,7 +4,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.contracts import (
     NodeExecutionIdentity,
@@ -16,11 +15,6 @@ from deskpet.workflows.definitions.research_core import (
     ResearchLLMPort,
     ResearchSearchPort,
 )
-from deskpet.workflows.progress import (
-    PUBLIC_WORKFLOW_STAGES,
-    WorkflowProgressReporter,
-    validated_v2_stage_text,
-)
 from deskpet.workflows.definitions.v1 import (
     CODE_COMPLEX_V1_DEFINITION,
     DEEP_RESEARCH_V1,
@@ -30,10 +24,14 @@ from deskpet.workflows.definitions.v1 import (
     deep_research_initial_state,
 )
 from deskpet.workflows.outbox import WorkflowOutbox
+from deskpet.workflows.progress import (
+    PUBLIC_WORKFLOW_STAGES,
+    WorkflowProgressReporter,
+    validated_v2_stage_text,
+)
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
-
 
 EXPECTED_STAGES = {
     "deep_research": {

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.agent.assembler.bundle import ContextFragment
-from deskpet.execution.harness_public_read_service import _public_content
-from deskpet.execution.harness_public_read_service import _public_views
+from deskpet.execution.harness_public_read_service import _public_content, _public_views
 from deskpet.execution.run_read_model import (
     PublicFactEnvelope,
     ReadCutV1,

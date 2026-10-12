@@ -4,17 +4,14 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
 import httpx
 import structlog
-from deskpet.execution.dispatch import current_dispatch_handoff
-from deskpet.provider_extra_headers import extra_headers_for
-from providers.dispatch_transport import DispatchAwareAsyncTransport
-
 from agent.context_messages import (
     current_provider_attempt_options,
     split_wire_messages,
@@ -25,9 +22,13 @@ from agent.context_report import (
     mark_current_attempt_sent,
     mark_current_attempt_transport_retry,
 )
+from deskpet.execution.dispatch import current_dispatch_handoff
+from deskpet.provider_extra_headers import extra_headers_for
 from llm.errors import LLMProviderError
 from llm.relay_errors import classify_relay_error
+
 from providers._response_sanitizer import sanitize_response
+from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 logger = structlog.get_logger()
 

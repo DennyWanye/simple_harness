@@ -40,7 +40,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.resolution import DeliveryStage
@@ -550,7 +549,6 @@ def test_a_tampered_outcome_binding_is_never_accepted(tmp_path, field):
     不重发，任务不完成。"""
 
     from publish_world import ReviewHeld
-
     from simple_harness.contracts import canonical_json
 
     faults = Faults()

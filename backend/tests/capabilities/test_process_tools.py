@@ -7,7 +7,6 @@ from pathlib import Path
 
 import psutil
 import pytest
-
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools.process_tools import (
     ManagedProcessLease,

@@ -5,7 +5,6 @@ import sqlite3
 from dataclasses import replace
 
 import pytest
-
 from deskpet.companion.build_admission import (
     CandidateDraftReceiptExpectationV1,
     CandidateDraftReceiptV1,
@@ -37,7 +36,6 @@ from deskpet.workflows.store.schema import (
     WORKFLOW_SCHEMA_VERSION,
     initialize_workflow_db,
 )
-
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64

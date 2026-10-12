@@ -11,8 +11,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_receipt_args_strip_injected_keys(caplog, monkeypatch):
-    from deskpet.tools.registry import ToolRegistry
     import deskpet.tools.receipt_store as receipt_store
+    from deskpet.tools.registry import ToolRegistry
 
     seen: dict[str, object] = {}
 
@@ -80,8 +80,8 @@ async def test_receipt_args_strip_injected_keys(caplog, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_receipt_marks_handler_domain_error_as_failed(monkeypatch):
-    from deskpet.tools.registry import ToolRegistry
     import deskpet.tools.receipt_store as receipt_store
+    from deskpet.tools.registry import ToolRegistry
 
     captured: dict[str, object] = {}
 

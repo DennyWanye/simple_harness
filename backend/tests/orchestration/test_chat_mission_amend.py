@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.chat_tool import (
     MISSION_AMEND_SCHEMA,
     MissionStartRefused,

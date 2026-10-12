@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-
 from ..contracts import ContractError
 from ..contracts.operation_intents import SubmitOperationIntentV2
 from ..contracts.resolution import ReviewVerdict
@@ -212,7 +211,6 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
 def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
     """Queue one review or consume a durable verdict, without re-sending an action."""
     from ..storage.operation_completion_store import OperationCompletionStore
-    from .review_adjudication import accepted_or_adjudicated, adjudication_of
     from .operation_outcomes import (
         _effect_owner,
         accept_operation_outcome,
@@ -220,6 +218,7 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
         persist_operation_outcome_review,
         prepare_operation_outcome_review,
     )
+    from .review_adjudication import accepted_or_adjudicated, adjudication_of
 
     store = orchestrator.store
     rows = OperationIntentStore(store).for_mission(mission_id)

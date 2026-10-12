@@ -9,6 +9,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     ActorContext,
     ContractValidationError,
     LiveCursor,
@@ -20,7 +21,6 @@ from deskpet.execution.contracts import (
     RunRecord,
     RunRef,
     RunStatus,
-    TERMINAL_RUN_STATUSES,
     TerminalConflict,
 )
 from deskpet.execution.uow_ports import DriverRuntimeUnitOfWork

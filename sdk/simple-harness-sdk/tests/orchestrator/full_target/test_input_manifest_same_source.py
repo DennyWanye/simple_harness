@@ -37,13 +37,15 @@ _TASKGRAPH = Path(__file__).resolve().parent / "taskgraph_exec"
 if str(_TASKGRAPH) not in sys.path:
     sys.path.insert(0, str(_TASKGRAPH))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
-
-from agent_orchestrator.artifacts.input_bindings import InputManifest, ResolutionProblemKind  # noqa: E402
+from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
+    InputManifest,
+    ResolutionProblemKind,
+)
 from agent_orchestrator.graph import eligibility  # noqa: E402
 from agent_orchestrator.graph.eligibility import NotEligible  # noqa: E402
 from agent_orchestrator.orchestrator import hierarchical_dispatch, taskgraph_dispatch  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch  # noqa: E402
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

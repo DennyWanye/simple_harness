@@ -9,7 +9,6 @@ import json
 from copy import deepcopy
 
 import pytest
-
 from agent_orchestrator.evaluation.context_challenge import (
     ANSWER_SCHEMA_VERSION,
     build_context_challenge,

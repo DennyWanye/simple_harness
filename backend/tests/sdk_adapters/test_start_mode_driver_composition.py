@@ -1,18 +1,20 @@
 """Exercise the real Host factory and its exact Host-control delegate."""
 import pytest
-
+from deskpet.sdk_adapters.skill_install_verification import (
+    SKILL_INSTALL_VERIFICATION_PURPOSE,
+    ProductRootDriverRouter,
+    SkillInstallVerificationAttemptResolver,
+    skill_install_verification_authority_hash,
+)
 from simple_harness import HostControlAuthorityV1
 from simple_harness.execution.uow import RunState
 from simple_harness.runtime import StartModeDriverRouter
-
-from deskpet.sdk_adapters.skill_install_verification import (
-    ProductRootDriverRouter, SkillInstallVerificationAttemptResolver,
-    SKILL_INSTALL_VERIFICATION_PURPOSE, skill_install_verification_authority_hash,
-)
 from tests.sdk_adapters.test_skill_install_verification_router import (
-    _attempt, _Driver, _Store, _invocation,
+    _attempt,
+    _Driver,
+    _invocation,
+    _Store,
 )
-
 
 # 2026-09-30 删除 test_real_main_factory_selects_sdk_react_and_original_control_delegate：
 # 它借 tests.test_provider_runtime_refresh.test_human_epoch_composition_registers_three_authorities
@@ -41,10 +43,17 @@ async def test_sdk_selector_keeps_host_verification_checks_and_never_falls_back(
 
 
 def test_harness_lock_and_manifest_match_current_candidate():
-    import json, tomllib, hashlib
+    import hashlib
+    import json
+    import tomllib
+
     from deskpet.sdk_adapters.sdk_candidate import (
-        sdk_wheel_path, SDK_VERSION, SDK_WHEEL_SHA256,
-        SDK_CANDIDATE_MANIFEST_FILENAME, SDK_CANDIDATE_MANIFEST_SHA256, SDK_SOURCE_COMMIT,
+        SDK_CANDIDATE_MANIFEST_FILENAME,
+        SDK_CANDIDATE_MANIFEST_SHA256,
+        SDK_SOURCE_COMMIT,
+        SDK_VERSION,
+        SDK_WHEEL_SHA256,
+        sdk_wheel_path,
     )
     wheel = sdk_wheel_path()
     lock = tomllib.loads((wheel.parent.parent / "uv.lock").read_text())

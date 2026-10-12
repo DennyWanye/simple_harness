@@ -9,9 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from ..contracts.operation_completion import CompletionPinV1
-from ..contracts.operation_payloads import ConditionalWriteKind, ConnectorOperationProfileV1, OperationParametersV1, ReconciliationPolicy
+from ..contracts.operation_payloads import (
+    ConditionalWriteKind,
+    ConnectorOperationProfileV1,
+    OperationParametersV1,
+    ReconciliationPolicy,
+)
 from ..contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef, content_hash_of
-from ..orchestrator.operation_materialization_inputs import DeploymentOperationPolicyInputs, OperationMaterializationInputError
+from ..orchestrator.operation_materialization_inputs import (
+    DeploymentOperationPolicyInputs,
+    OperationMaterializationInputError,
+)
 from ..runtime.connectors import Receipt
 from ..runtime.operation_outcomes import ObservedOperationMilestone, OutcomeReceiptError
 from ..runtime.operation_payloads import ConnectorProfileRegistration

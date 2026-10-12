@@ -5,7 +5,6 @@ import json
 
 import httpx
 import pytest
-
 from simple_harness.contracts import Message, RequestId
 from simple_harness.providers import (
     CancelToken,

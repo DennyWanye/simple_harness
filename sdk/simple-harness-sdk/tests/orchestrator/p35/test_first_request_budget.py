@@ -3,7 +3,6 @@
 """Decisive oracle for FIRST Critic input/output capacity."""
 
 import pytest
-
 from agent_orchestrator.runtime.first_request_budget import (
     INPUT_CAP_PROTOCOL,
     FirstRequestBudget,

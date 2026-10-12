@@ -5,7 +5,6 @@ ReadError）→ agent turn 立即崩。chat_with_fallback_stream 加重试：流
 from __future__ import annotations
 
 import pytest
-
 from agent.tool_use_shim import OpenAICompatibleAgentLLM
 
 

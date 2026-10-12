@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_official_exact_fact
 from deskpet.workflows.definitions.deep_research_v6_contracts import (
     ResearchSpecV1,
@@ -11,7 +10,6 @@ from deskpet.workflows.definitions.deep_research_v6_contracts import (
     derive_spec_hash,
     validate_continuation_spec_hash,
 )
-
 
 QUESTION = "深入调研：2024年中国总人口和出生人口分别是多少？优先国家统计局。"
 

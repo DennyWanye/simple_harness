@@ -3,8 +3,13 @@
 """决定性实测：CDP 在 pet 主窗手动触发 update_cloud_config IPC，
 测 Rust IPC 通道是否工作(区分 IPC坏 vs login事件没触发apply)。
 无害：用已知 chinzy base_url + 不传 key(保留当前)。"""
-import asyncio, json, sys, urllib.request
+import asyncio
+import json
+import sys
+import urllib.request
+
 import websockets
+
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 _mid=[0]

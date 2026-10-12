@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import pytest
 import hashlib
 import json
 
+import pytest
 from deskpet.capabilities.contracts import (
-    CapabilityVersionDescriptor, canonical_json, fingerprint_json,
+    CapabilityVersionDescriptor,
+    canonical_json,
+    fingerprint_json,
 )
 from deskpet.capabilities.store import (
     CapabilitySkillInstallIntent,

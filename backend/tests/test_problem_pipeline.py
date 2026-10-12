@@ -16,9 +16,12 @@ import asyncio
 from unittest.mock import AsyncMock
 
 from deskpet.agent.intent_triage import (
-    Contradiction, ContradictionMap, IntentCard, IntentTriage,
+    Contradiction,
+    ContradictionMap,
+    IntentCard,
+    IntentTriage,
 )
-from deskpet.agent.problem_pipeline import ProblemHandlingPipeline, PreLoopResult
+from deskpet.agent.problem_pipeline import PreLoopResult, ProblemHandlingPipeline
 
 
 def _make_triage_returning(card: IntentCard) -> IntentTriage:

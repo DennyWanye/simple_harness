@@ -14,12 +14,15 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.planning_answers import answer_planning_question
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, review_input, review_reply
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    review_input,
+    review_reply,
+)
 
 
 @pytest.fixture(autouse=True)

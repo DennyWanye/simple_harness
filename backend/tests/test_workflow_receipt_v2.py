@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from deskpet.tools.receipt import ToolReceipt, hmac_sign, hmac_verify, make_receipt
 from deskpet.tools.receipt_store import (
@@ -10,8 +10,7 @@ from deskpet.tools.receipt_store import (
     emit_delivered_receipt,
 )
 
-
-NOW = datetime(2026, 7, 10, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 10, tzinfo=UTC)
 KEY = b"r" * 32
 
 

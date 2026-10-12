@@ -17,7 +17,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.testing.fixtures import package_of
@@ -29,7 +28,6 @@ from agent_orchestrator.testing.scripted_replies import (
     planner_reply,
     worker_reply,
 )
-
 from test_operation import PUBLISH, TARGET, _confirm_completion, _pending_cards, _until_card
 
 TERMINAL = {"COMPLETED", "FAILED", "CANCELLED"}

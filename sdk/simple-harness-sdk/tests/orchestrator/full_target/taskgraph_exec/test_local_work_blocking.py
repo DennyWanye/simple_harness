@@ -4,9 +4,8 @@
 
 from __future__ import annotations
 
-from simple_harness.contracts import canonical_json
-
 from agent_orchestrator.runtime.taskgraph_local_work import LocalWorkFacts
+from simple_harness.contracts import canonical_json
 
 SUBJECT = "task-1:attempt-1"
 

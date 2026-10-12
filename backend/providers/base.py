@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 from __future__ import annotations
-from typing import AsyncIterator, Protocol, runtime_checkable
+
+from collections.abc import AsyncIterator
+from typing import Protocol, runtime_checkable
+
 
 @runtime_checkable
 class LLMProvider(Protocol):

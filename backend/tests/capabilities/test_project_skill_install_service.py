@@ -4,19 +4,19 @@ import io
 import json
 import zipfile
 from pathlib import Path
-import pytest
 
+import pytest
 from deskpet.capabilities.contracts import canonical_global_owner_key, fingerprint_json
+from deskpet.capabilities.package_limits import (
+    CapabilityPackageLimitsV1,
+    ValidatedCapabilityPackageRefV1,
+)
 from deskpet.capabilities.skill_install import (
     AuthorizedSkillInstallReceipt,
     GlobalSkillInstallAuthority,
     ProjectSkillInstallError,
     ProjectSkillInstallService,
     SkillInstallProjectAuthority,
-)
-from deskpet.capabilities.package_limits import (
-    CapabilityPackageLimitsV1,
-    ValidatedCapabilityPackageRefV1,
 )
 from deskpet.capabilities.skill_source import (
     CanonicalSkillBatch,

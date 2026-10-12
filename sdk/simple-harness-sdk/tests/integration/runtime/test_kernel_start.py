@@ -8,7 +8,6 @@ import hashlib
 import time
 
 import pytest
-
 from simple_harness import (
     AdmissionVerdict,
     AgentIdentity,

@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent.agent_loop import AgentLoop
 from deskpet.agent.compression_model_resolver import (
     CompressionModelCandidate,

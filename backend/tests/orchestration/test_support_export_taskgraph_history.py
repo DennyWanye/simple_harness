@@ -11,10 +11,15 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.handlers import handle
 
-from ._layered_lane import LayeredScriptedProvider, layered_service, notes_mission, quick_runtime, run_until_settled
+from ._layered_lane import (
+    LayeredScriptedProvider,
+    layered_service,
+    notes_mission,
+    quick_runtime,
+    run_until_settled,
+)
 
 
 @pytest.mark.asyncio

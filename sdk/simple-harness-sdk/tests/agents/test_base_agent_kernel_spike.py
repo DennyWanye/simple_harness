@@ -18,7 +18,6 @@ import asyncio
 
 from kernel_fixture import create_agent, submit
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.agents.runtime import assemble_runtime
 from simple_harness.contracts import RunId

@@ -17,9 +17,6 @@ import dataclasses
 from typing import Any
 
 import pytest
-from h1i_seed import events as _events
-from h1i_seed import plan_reply, refuse_tampered_first, reviewed
-
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.governance.planning_authorization import (
     PlanningLanePolicy,
@@ -32,6 +29,8 @@ from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from h1i_seed import events as _events
+from h1i_seed import plan_reply, refuse_tampered_first, reviewed
 
 
 def _caller(binding: dict[str, Any]) -> PlanPrincipal:

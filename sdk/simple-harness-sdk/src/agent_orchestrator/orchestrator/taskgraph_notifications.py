@@ -6,13 +6,16 @@ from collections.abc import Callable
 from typing import Any
 
 from ..contracts.htn import OccurrenceId
-from ..contracts.models import Event, sha256_hex
+from ..contracts.models import ContractError, Event, sha256_hex
 from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1
 from ..planning.htn.grounding import derive_id
-from ..storage.store import StoreError
-from ..contracts.models import ContractError
 from ..runtime.planning_operations import SourceUnavailable
-from ..storage.taskgraph_followups import DurableFollowupReceipt, ReceiptKind, TaskGraphFollowupStore
+from ..storage.store import StoreError
+from ..storage.taskgraph_followups import (
+    DurableFollowupReceipt,
+    ReceiptKind,
+    TaskGraphFollowupStore,
+)
 from ..storage.taskgraph_store import TaskGraphStore
 from .taskgraph_convergence import TaskGraphConvergence
 from .taskgraph_followups import TaskGraphEventConsumer, TaskGraphFollowupPump

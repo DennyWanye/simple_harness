@@ -27,8 +27,9 @@ Spec: openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/spec.md
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Literal, Optional
 
 from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
 
@@ -109,10 +110,10 @@ class Slice:
     tool_schemas: list[dict[str, Any]] = field(default_factory=list)
     tokens: int = 0
     priority: int = 50
-    bucket: Optional[str] = None
+    bucket: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
-    fragments: list["ContextFragment"] = field(default_factory=list)
-    tool_exposure_intent: Optional[ToolExposureIntent] = None
+    fragments: list[ContextFragment] = field(default_factory=list)
+    tool_exposure_intent: ToolExposureIntent | None = None
 
 
 @dataclass(frozen=True)
@@ -131,9 +132,9 @@ class ContextFragment:
     trim_policy: Literal["never", "truncate", "drop", "summarize", "page_in"]
     protected: bool = False
     reason: str = ""
-    cache_scope: Optional[str] = None
-    causal_group_id: Optional[str] = None
-    anchor_after: Optional[str] = None
+    cache_scope: str | None = None
+    causal_group_id: str | None = None
+    anchor_after: str | None = None
     meta: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -177,8 +178,8 @@ class PageInRef:
 class PreparedContext:
     messages: list[dict[str, Any]]
     tool_set: Any = None
-    stable_prefix_boundary: Optional[int] = None
-    stable_prefix_fingerprint: Optional[str] = None
+    stable_prefix_boundary: int | None = None
+    stable_prefix_fingerprint: str | None = None
     assembly_decisions: list[ContextDecision] = field(default_factory=list)
     active_snapshot_handle: Any = None
     coverage_report: Any = None
@@ -249,9 +250,9 @@ class AssemblyPolicy:
     tools: list[str] = field(default_factory=lambda: ["*"])
     # Context OS ON-only policy.  ``tools`` remains the exact legacy truth for
     # the global rollback path and must never be reconstructed from this field.
-    tool_exposure: Optional[ToolExposurePolicy] = None
+    tool_exposure: ToolExposurePolicy | None = None
     memory: MemoryPolicy = field(default_factory=MemoryPolicy)
-    budget_ratio: Optional[float] = None
+    budget_ratio: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -291,8 +292,8 @@ class AssemblyDecisions:
     # ``session_id`` lets the panel filter by session if needed.
     # Both default None so the existing IPC contract stays backward
     # compatible — frontend treats missing fields as "?"/"-".
-    timestamp: Optional[float] = None
-    session_id: Optional[str] = None
+    timestamp: float | None = None
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for IPC/log — dataclasses aren't JSON-native.
@@ -369,15 +370,15 @@ class ContextBundle:
     history: list[dict[str, Any]] = field(default_factory=list)
     late_system_nudge: str = ""
     fragments: list[ContextFragment] = field(default_factory=list)
-    tool_exposure_intent: Optional[ToolExposureIntent] = None
+    tool_exposure_intent: ToolExposureIntent | None = None
 
     def build_messages(
         self,
         base_system: str = "",
         *,
-        history: Optional[list[dict[str, Any]]] = None,
-        late_system_nudge: Optional[str] = None,
-        user_message: Optional[str] = None,
+        history: list[dict[str, Any]] | None = None,
+        late_system_nudge: str | None = None,
+        user_message: str | None = None,
     ) -> list[dict[str, Any]]:
         """Construct an OpenAI-format messages list.
 
@@ -425,9 +426,9 @@ class ContextBundle:
         self,
         base_system: str = "",
         *,
-        history: Optional[list[dict[str, Any]]] = None,
-        late_system_nudge: Optional[str] = None,
-        user_message: Optional[str] = None,
+        history: list[dict[str, Any]] | None = None,
+        late_system_nudge: str | None = None,
+        user_message: str | None = None,
         tool_set: Any = None,
         attachment_refs: tuple[AttachmentRef, ...] = (),
         attachment_tokens: int = 0,
@@ -460,7 +461,7 @@ class ContextBundle:
         )
 
 
-def legacy_slice_to_fragment(slice_: Slice) -> Optional[ContextFragment]:
+def legacy_slice_to_fragment(slice_: Slice) -> ContextFragment | None:
     """Map one legacy textual Slice to one fragment without double injection."""
     if slice_.fragments:
         if slice_.text_content:

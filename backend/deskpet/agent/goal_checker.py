@@ -24,7 +24,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from deskpet.execution.provider_workloads import (
     ProviderWorkloadContext,
     derive_workload_context,

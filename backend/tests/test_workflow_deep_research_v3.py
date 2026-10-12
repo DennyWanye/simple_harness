@@ -6,8 +6,14 @@ import json
 import time
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext
+from deskpet.workflows.definitions.deep_research_v3_contracts import AtomicClaim
+from deskpet.workflows.definitions.deep_research_v3_nodes import (
+    _meaningful_structured_claims,
+    branch_handler,
+    rerank_handler,
+    synth_handler,
+)
 from deskpet.workflows.definitions.research_core import (
     FetchPort,
     ResearchLLMPort,
@@ -19,13 +25,6 @@ from deskpet.workflows.definitions.v3.deep_research import (
     DEEP_RESEARCH_V3,
     DEEP_RESEARCH_V3_DEFINITION,
     initial_state,
-)
-from deskpet.workflows.definitions.deep_research_v3_contracts import AtomicClaim
-from deskpet.workflows.definitions.deep_research_v3_nodes import (
-    _meaningful_structured_claims,
-    branch_handler,
-    rerank_handler,
-    synth_handler,
 )
 from deskpet.workflows.native import NativeExecutionPolicy
 from deskpet.workflows.runner import WorkflowRegistry

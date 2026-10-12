@@ -21,7 +21,8 @@ chat() contract:
 from __future__ import annotations
 
 import abc
-from typing import Any, AsyncIterator, Optional, Union
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
 
 from llm.types import ChatChunk, ChatResponse
 
@@ -39,12 +40,12 @@ class BaseLLMAdapter(abc.ABC):
     async def chat(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
         stream: bool = False,
         **kwargs: Any,
-    ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+    ) -> ChatResponse | AsyncIterator[ChatChunk]:
         """Run one chat completion.
 
         Raises:

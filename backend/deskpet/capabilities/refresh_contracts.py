@@ -6,9 +6,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from .contracts import CatalogStamp, JsonValue, canonical_json, fingerprint_json
 
@@ -180,7 +181,7 @@ class CapabilityOperationReceipt:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "CapabilityOperationReceipt":
+    def from_dict(cls, value: Mapping[str, Any]) -> CapabilityOperationReceipt:
         return cls(
             operation_id=str(value["operation_id"]),
             root_run_id=str(value["root_run_id"]),
@@ -224,7 +225,7 @@ class CapabilityRefreshIntent:
     exposure_intent_ref: str
     status: RefreshStatus = "pending"
     commit_hash: str | None = None
-    commit: "CapabilityRefreshCommit | None" = None
+    commit: CapabilityRefreshCommit | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -376,7 +377,7 @@ class CapabilityRefreshCommit:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "CapabilityRefreshCommit":
+    def from_dict(cls, value: Mapping[str, Any]) -> CapabilityRefreshCommit:
         return cls(
             intent_id=str(value["intent_id"]),
             root_run_id=str(value["root_run_id"]),

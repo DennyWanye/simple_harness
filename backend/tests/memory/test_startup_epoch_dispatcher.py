@@ -5,7 +5,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     HUMAN_MEMORY_TARGET_SCHEMA_VERSION,

@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import sqlite3
 
-from test_base_agent_schema_v10 import build_legacy_library
-
 import simple_harness as h
 from simple_harness.execution.sqlite import Database, schema
 from simple_harness.execution.sqlite.short_context_migration import _validate
+from test_base_agent_schema_v10 import build_legacy_library
 
 
 def _descriptor_rows(path):

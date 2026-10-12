@@ -4,13 +4,12 @@ import re
 import zipfile
 
 import pytest
-from PIL import Image
-from pptx import Presentation
-from pptx.util import Inches, Pt
-
 from deskpet.tools import ppt_tools
 from deskpet.workflows.definitions import ppt_pro_nodes
 from deskpet.workflows.definitions.v1 import ppt_pro_initial_state
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches, Pt
 
 
 def test_new_ppt_run_defaults_to_editable_native_objects() -> None:

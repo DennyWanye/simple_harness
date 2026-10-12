@@ -17,9 +17,6 @@ schema 里已有的形状**（类型 / 枚举 / 最小值 / 数组元素必填�
 from __future__ import annotations
 
 import pytest
-from simple_harness import CallId, RequestId, RunId
-from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
-
 from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
 from deskpet.sdk_adapters.tools import (
     MISSING_ARGUMENT_ERROR_CODE,
@@ -28,6 +25,8 @@ from deskpet.sdk_adapters.tools import (
     _expected_arguments_hint,
     _sdk_tool,
 )
+from simple_harness import CallId, RequestId, RunId
+from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 
 RUN = RunId("product-sdk-b-shape")
 

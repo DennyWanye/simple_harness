@@ -51,6 +51,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from agent_orchestrator.orchestrator.failure_classes import INTERRUPTED, classify_failure
+from agent_orchestrator.testing.fixtures import role_of
+from agent_orchestrator.testing.scripted_replies import review_input
 from provider_world import (
     QUICK,
     HeldStep,
@@ -64,10 +67,6 @@ from provider_world import (
     settle,
     wire_terminal,
 )
-
-from agent_orchestrator.orchestrator.failure_classes import INTERRUPTED, classify_failure
-from agent_orchestrator.testing.fixtures import role_of
-from agent_orchestrator.testing.scripted_replies import review_input
 
 
 @pytest.fixture(autouse=True)

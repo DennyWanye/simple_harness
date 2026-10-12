@@ -1,9 +1,9 @@
 import httpx
 import pytest
+from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from simple_harness import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import CancelToken, ProviderRequest, ProviderRequestRejectedError
-from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from tests.sdk_adapters.test_product_host_ports import Registry
 
 

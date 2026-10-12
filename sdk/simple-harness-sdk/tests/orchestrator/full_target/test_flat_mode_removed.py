@@ -26,13 +26,12 @@ import dataclasses
 import json
 
 import pytest
-from h1i_seed import run_until
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts import ContractError, MissionStatus
 from agent_orchestrator.orchestrator.commit_service import CommitRejected, MissionSpec
 from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from h1i_seed import run_until
 
 
 def _spec(key: str, **extra) -> MissionSpec:

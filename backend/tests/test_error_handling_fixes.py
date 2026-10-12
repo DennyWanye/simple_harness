@@ -1,10 +1,11 @@
 # Test error handling fixes for stuck status bug
-import pytest
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-from deskpet.agent.run_presenter import _present_final, _present_error
-from agent.agent_loop import FinalEvent, ErrorEvent
+
+import pytest
+from agent.agent_loop import ErrorEvent, FinalEvent
+from deskpet.agent.run_presenter import _present_error, _present_final
 
 
 @pytest.mark.asyncio

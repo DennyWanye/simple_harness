@@ -19,12 +19,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from deskpet.tools.registry import (
-    ToolRegistry,
     _WRITE_PERMISSION_CATEGORIES,
+    ToolRegistry,
 )
-
 
 # ---------------------------------------------------------------------
 # helpers

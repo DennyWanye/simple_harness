@@ -19,15 +19,17 @@ open group 的组成（同一份证据）：20 条 assistant 工具调用回声 
 （注入一条确定性收尾指令、只保留本轮受保护部分与用户消息，请求装得下）。
 """
 import pytest
+from deskpet.sdk_adapters.context_partitions import (
+    ContextBudgetExceeded,
+    effective_input_budget,
+)
 from simple_harness import CallId
 from simple_harness.contracts.messages import Message, MessageRole
-
-from deskpet.sdk_adapters.context_partitions import (
-    ContextBudgetExceeded, effective_input_budget,
-)
-
 from tests.execution.test_control_result_bound import (  # noqa: F401
-    CURRENT_TEXT, FLASH_RATIO, WINDOW, flash_calibration,
+    CURRENT_TEXT,
+    FLASH_RATIO,
+    WINDOW,
+    flash_calibration,
 )
 
 # 证据里的组成（字节数取每类总量 / 条数）。
@@ -107,7 +109,8 @@ def test_incident_z_still_fails_closed_without_the_wrap_up(incident):
 
 def test_wrap_up_makes_the_incident_turn_fit(incident):
     from deskpet.sdk_adapters.context_authority import (
-        CONTEXT_BUDGET_WRAP_UP_ID, context_budget_wrap_up_message,
+        CONTEXT_BUDGET_WRAP_UP_ID,
+        context_budget_wrap_up_message,
     )
 
     messages, effective = incident
@@ -132,11 +135,10 @@ def test_wrap_up_makes_the_incident_turn_fit(incident):
 
 
 def test_wrap_up_message_is_deterministic_and_part_of_the_request(incident):
+    from deskpet.sdk_adapters.context_authority import context_budget_wrap_up_message
     from simple_harness import RequestId
     from simple_harness.execution.provider_invocations import provider_request_fingerprint
     from simple_harness.providers import ProviderRequest
-
-    from deskpet.sdk_adapters.context_authority import context_budget_wrap_up_message
 
     first, second = context_budget_wrap_up_message(), context_budget_wrap_up_message()
     assert first.content == second.content
@@ -198,7 +200,8 @@ def test_threshold_is_one_react_step_and_fires_on_every_turn_that_needs_it():
     """
 
     from deskpet.sdk_adapters.context_authority import (
-        CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS, ProductRunContextAuthority,
+        CONTEXT_BUDGET_WRAP_UP_HEADROOM_TOKENS,
+        ProductRunContextAuthority,
     )
 
     # 证据：open_group 20574 token / 45 条 ≈ 457，一个 react 步（回声 + 它的结果）
@@ -306,7 +309,8 @@ def test_event_ag_still_wraps_up_after_an_earlier_advisory(ag_incident):
     """
 
     from deskpet.sdk_adapters.context_authority import (
-        ProductRunContextAuthority, context_budget_wrap_up_message,
+        ProductRunContextAuthority,
+        context_budget_wrap_up_message,
     )
 
     messages, effective = ag_incident

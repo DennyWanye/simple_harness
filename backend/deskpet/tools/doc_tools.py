@@ -41,9 +41,9 @@ try:
     import docx
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.shared import Pt, Inches, RGBColor
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Inches, Pt, RGBColor
 
     _HAS_DOCX = True
 except Exception:  # noqa: BLE001
@@ -58,7 +58,7 @@ _ALIGN = {
 }
 
 
-def _coerce(obj: Any) -> Optional[Any]:
+def _coerce(obj: Any) -> Any | None:
     """Accept a Python object or a JSON string of one."""
     if isinstance(obj, str):
         try:
@@ -71,7 +71,7 @@ def _coerce(obj: Any) -> Optional[Any]:
 # ---------------------------------------------------------------------------
 # Rich-formatting helpers (font color, mixed runs, lists, images, page #)
 # ---------------------------------------------------------------------------
-def _rgb(c: Any) -> Optional["RGBColor"]:
+def _rgb(c: Any) -> RGBColor | None:
     """'#1F4E78' / '1F4E78' → RGBColor; bad input → None."""
     if not c:
         return None
@@ -309,7 +309,7 @@ def _add_element(document, el: dict[str, Any]) -> None:
             para.alignment = getattr(WD_ALIGN_PARAGRAPH, align)
 
 
-def doc_create(spec: Any, *, output_path: Optional[str] = None) -> dict[str, Any]:
+def doc_create(spec: Any, *, output_path: str | None = None) -> dict[str, Any]:
     """Create a new .docx from ``spec`` = {title?, elements: [...]}.
 
     Element types: heading{text,level,color}, paragraph{text|runs,bold,

@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import replace
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     ActorContext,
     AdmissionBoundary,
     AdmissionPhase,
@@ -27,27 +28,31 @@ from deskpet.execution.contracts import (
     RunRecord,
     RunRef,
     RunStatus,
-    TERMINAL_RUN_STATUSES,
     TerminalConflict,
     VersionConflict,
     fingerprint_json,
     root_idempotency_key,
-    DecisionSignal as DurableDecisionSignal,
     thaw_json,
 )
-from deskpet.execution.uow_ports import KernelUnitOfWork
-from deskpet.execution.run_block_signals import (
-    RootBlockReasonV1,
-    RunBlockReporter,
-    block_signal_for_terminal,
+from deskpet.execution.contracts import (
+    DecisionSignal as DurableDecisionSignal,
 )
 from deskpet.execution.fences import (
     RunExecutionFencePort,
     UnboundRunExecutionFence,
     release_run_execution_fence,
 )
-from deskpet.permissions.admission import AdmissionAuthorizer
-from deskpet.permissions.admission import resolve_admission_task_grant, task_grant_receipt_payload
+from deskpet.execution.run_block_signals import (
+    RootBlockReasonV1,
+    RunBlockReporter,
+    block_signal_for_terminal,
+)
+from deskpet.execution.uow_ports import KernelUnitOfWork
+from deskpet.permissions.admission import (
+    AdmissionAuthorizer,
+    resolve_admission_task_grant,
+    task_grant_receipt_payload,
+)
 
 from .admission_launch import (
     AdmissionLauncher,
@@ -55,9 +60,9 @@ from .admission_launch import (
     build_admission_start,
     build_driver_start,
 )
-from .context import HostContextFactory, authorize_live
-from .child_signal_runtime import ChildSignalRuntime
 from .child_runs import ChildRunCoordinator
+from .child_signal_runtime import ChildSignalRuntime
+from .context import HostContextFactory, authorize_live
 from .contracts import (
     CancelReceipt,
     HostContext,
@@ -69,17 +74,19 @@ from .contracts import (
     TerminalDeliveryContributor,
     TerminalProjection,
 )
-from .live_index import BoundedLiveIndex, LiveStreamOverflow
 from .kernel_terminal import KernelTerminalLifecycle
+from .live_index import BoundedLiveIndex, LiveStreamOverflow
 from .ports import (
     DecisionSignal as DriverDecisionSignal,
+)
+from .ports import (
     DriverRecoveryDeferred,
     DriverSignal,
     DriverStart,
     DriverTerminalCandidate,
 )
-from .router import RegisteredRouter
 from .profiles import ProfileRegistry
+from .router import RegisteredRouter
 from .runtime import DriverRuntime
 from .start_snapshot import (
     activate_after_start_commit,

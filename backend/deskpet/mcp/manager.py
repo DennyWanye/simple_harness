@@ -41,9 +41,10 @@ import json
 import os
 import shutil
 import uuid
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Optional
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 import structlog
@@ -228,14 +229,14 @@ class _ServerRuntime:
     def __init__(self, name: str, config: dict[str, Any]) -> None:
         self.name: str = name
         self.config: dict[str, Any] = config
-        self.session: Optional[Any] = None  # ClientSession when live
+        self.session: Any | None = None  # ClientSession when live
         self.state: ServerState = "pending"
         # Tool names registered into ToolRegistry for this server, so
         # we can drop them cleanly on disconnect.
         self.tool_names: list[str] = []
-        self.reconnect_task: Optional[asyncio.Task[None]] = None
-        self.exit_stack: Optional[AsyncExitStack] = None
-        self.execution_build_material: Optional[_McpExecutionBuildMaterial] = None
+        self.reconnect_task: asyncio.Task[None] | None = None
+        self.exit_stack: AsyncExitStack | None = None
+        self.execution_build_material: _McpExecutionBuildMaterial | None = None
         self.incarnation: str = ""
 
 
@@ -281,7 +282,7 @@ class MCPManager:
         self._servers: dict[str, _ServerRuntime] = {}
         self._lock = asyncio.Lock()
         self._stopped = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ------------------------------------------------------------------
     # Public lifecycle
@@ -653,7 +654,7 @@ class MCPManager:
                     runtime.exit_stack.aclose(),
                     timeout=_SESSION_CLOSE_TIMEOUT_S,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "mcp_session_close_timeout",
                     server=runtime.name,
@@ -1087,7 +1088,7 @@ def _tool_to_schema(qualified: str, tool: Any) -> dict[str, Any]:
 
 
 def _make_tool_handler(
-    manager: "MCPManager",
+    manager: MCPManager,
     server_name: str,
     tool: Any,
     *,
@@ -1116,7 +1117,7 @@ def _make_tool_handler(
 
 
 def _make_check_fn(
-    manager: "MCPManager", server_name: str
+    manager: MCPManager, server_name: str
 ) -> Callable[[], bool]:
     """Gate: tool only usable while session is running (§spec
     Requirement "Tool Gating by MCP Connection State")."""
@@ -1135,7 +1136,7 @@ def _make_check_fn(
 def _register_mcp_tool(
     *,
     registry: Any,
-    manager: "MCPManager",
+    manager: MCPManager,
     runtime: _ServerRuntime,
     tool: Any,
     qualified: str,

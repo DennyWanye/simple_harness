@@ -11,7 +11,6 @@ what the ledger itself still counts.
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.htn import (
     BudgetInheritance,
     GoalSignature,

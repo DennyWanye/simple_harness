@@ -13,14 +13,14 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
+from .deep_research_v3_quality import evaluate_support
 from .deep_research_v5_contracts import (
     DimensionAnalysis,
     DimensionCoverage,
     JsonValue,
     ResearchBrief,
 )
-from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
-from .deep_research_v3_quality import evaluate_support
 from .deep_research_v5_report import (
     REPORT_QUALITY_RUBRIC_V1_HASH,
     ReportClaim,

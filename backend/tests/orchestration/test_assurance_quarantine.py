@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings

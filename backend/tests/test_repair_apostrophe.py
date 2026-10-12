@@ -15,7 +15,6 @@ import re
 
 import pytest
 
-
 _INVALID_ESC = re.compile(r'\\([^"\\/bfnrtu])')
 
 

@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.assurance.checks import CriterionPolicy
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.orchestrator.assurance_check_policy import lossless_scope_mapping

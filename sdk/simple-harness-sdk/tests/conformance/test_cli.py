@@ -11,14 +11,13 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from test_suite_runner import GOOD_VALUES
-
 from simple_harness.testing.cli import (
     load_host_factory,
     parse_host_factory,
     run_conformance_cli,
     validate_suites,
 )
+from test_suite_runner import GOOD_VALUES
 
 ARTIFACT_SHA = "b" * 64
 

@@ -23,11 +23,9 @@ The orchestrator closes the supervisor → main-agent loop:
 from __future__ import annotations
 
 import pytest
-
 from agent.auto_resume import AutoResumeOrchestrator, AutoResumeResult
 from agent.session_activity import SessionActivityStore
 from agent.supervisor import SupervisorAction
-
 
 # ─────────────── helpers ───────────────
 

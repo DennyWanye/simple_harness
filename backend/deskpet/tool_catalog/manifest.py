@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import copy
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
-import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from simple_harness import freeze_json, thaw_json
-
 
 MANIFEST_SHA256 = "57900a1d4d7b24091b6e04cac4cd3b441e3ea15385134f262b10ed368ba4d02b"
 _ROOT = Path(__file__).resolve().parent

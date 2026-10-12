@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-
 import simple_harness
 from simple_harness.contracts import fingerprint_json
 from simple_harness.runtime import (

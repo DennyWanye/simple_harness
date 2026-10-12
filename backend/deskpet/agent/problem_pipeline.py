@@ -24,8 +24,11 @@ from typing import Optional
 import structlog
 
 from deskpet.agent.intent_triage import (
-    ContradictionMap, IntentCard, IntentTriage,
-    contradiction_to_system_message, intent_to_system_message,
+    ContradictionMap,
+    IntentCard,
+    IntentTriage,
+    contradiction_to_system_message,
+    intent_to_system_message,
 )
 
 logger = structlog.get_logger(__name__)
@@ -36,8 +39,8 @@ class PreLoopResult:
     """PRE-LOOP 产出。main.py 据此注入 system 消息 + 发事件 + 决定是否短路/澄清。"""
     short_circuit: bool = False           # 闲聊短路：整条流水线跳过，裸 ReAct
     needs_clarification: bool = False     # 歧义高：暂停问澄清（走独立 chat_v2_final 澄清出口）
-    intent: Optional[IntentCard] = None
-    contradiction: Optional[ContradictionMap] = None
+    intent: IntentCard | None = None
+    contradiction: ContradictionMap | None = None
     system_injections: list[str] = field(default_factory=list)  # 注入 _msgs 的 system 文本（按序）
     events: list[dict] = field(default_factory=list)            # 要发的 WS 事件（type+payload）
 
@@ -47,7 +50,7 @@ class ProblemHandlingPipeline:
         self,
         *,
         enabled: bool = False,
-        intent_triage: Optional[IntentTriage] = None,
+        intent_triage: IntentTriage | None = None,
         observability_events: bool = False,
     ) -> None:
         self.enabled = enabled
@@ -58,7 +61,7 @@ class ProblemHandlingPipeline:
         self,
         user_message: str,
         *,
-        prior_task_type: Optional[str] = None,
+        prior_task_type: str | None = None,
         workload_context: Any | None = None,
     ) -> PreLoopResult:
         """PRE-LOOP 编排（决策4：Step1+3 一次调用）：analyze → (短路/澄清出口) → 读 contradiction 段。

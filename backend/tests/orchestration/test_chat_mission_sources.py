@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.orchestration.chat_tool import (
     MissionStartRefused,
     mission_list,

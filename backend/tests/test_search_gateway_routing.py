@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import httpx
 import pytest
-
 from config import SearchGatewayConfig
 from deskpet.retrieval.cache import AsyncTTLCache
 from deskpet.retrieval.contracts import PublicErrorCode, SearchRequest

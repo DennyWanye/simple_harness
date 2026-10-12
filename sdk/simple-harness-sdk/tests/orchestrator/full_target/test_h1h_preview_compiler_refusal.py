@@ -22,9 +22,6 @@ from typing import Any
 
 import pytest
 import test_projection_integrity as projection
-from h1i_seed import plan_reply, reviewed
-from test_h1h_preview_purity import _PreviewInputsCaptured
-
 from agent_orchestrator.contracts.htn import OrderConstraint, PortCardinality, PortSpec, TaskForm
 from agent_orchestrator.contracts.models import sha256_hex
 from agent_orchestrator.planning.plan_preview import (
@@ -32,6 +29,8 @@ from agent_orchestrator.planning.plan_preview import (
     PreviewUnavailable,
     _source_snapshot_payload,
 )
+from h1i_seed import plan_reply, reviewed
+from test_h1h_preview_purity import _PreviewInputsCaptured
 
 
 def _with_network(inputs: PreviewInputs, network: Any) -> PreviewInputs:
@@ -178,10 +177,9 @@ def test_p04_real_projection_bound_refusal_keeps_planning_bound_code(tmp_path: P
 def test_real_collector_persists_the_compiler_bound_code(
     tmp_path: Path, unknown_code: bool
 ) -> None:
-    from test_h1h_preview_purity import _tree_hash
-
     from agent_orchestrator.storage.htn_store import HtnStore
     from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+    from test_h1h_preview_purity import _tree_hash
 
     async def run() -> None:
         async with reviewed(tmp_path, key="preview-bound-collector") as ((loop, mission, _world, _root, dispatch, _product), opener, provider):
@@ -260,12 +258,11 @@ def test_real_collector_persists_the_compiler_bound_code(
     ),
 )
 def test_plan_admission_keeps_exact_typed_preview_code(code: str) -> None:
-    from test_planning_decision_admission import _context, _valid_envelope
-
     from agent_orchestrator.planning.decision_admission import (
         PlanShapeView,
         admit_planning_decision,
     )
+    from test_planning_decision_admission import _context, _valid_envelope
 
     feedback = admit_planning_decision(
         _valid_envelope("refine"),

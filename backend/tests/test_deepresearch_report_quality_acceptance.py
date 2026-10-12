@@ -7,7 +7,6 @@ import pytest
 
 from scripts.acceptance.deepresearch_report_quality import evaluate_report, main
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 

@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 from kernel_fixture import Catalog, NoopPort, create_agent
 from provider_fixture import MODEL, ScriptedProvider
-
 from simple_harness import (
     AgentIdentity,
     AllowAllAdmission,

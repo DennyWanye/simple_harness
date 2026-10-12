@@ -5,46 +5,59 @@ import sqlite3
 from dataclasses import replace
 from importlib import metadata
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 from types import SimpleNamespace
+from urllib.parse import unquote, urlparse
 
 import pytest
+from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_runtime import (
+    BoundProviderAuthority,
+    ForegroundRuntimeExecutionAuthority,
+    FrozenProviderAuthority,
+    SqliteSdkTerminalObserver,
+)
+from deskpet.execution.foreground_runtime_ports import ProductForegroundToolPort
+from deskpet.execution.primary_context import PrimaryForegroundContextPort
+from deskpet.execution.primary_context_pages import HISTORY_PREFIX, HISTORY_SUFFIX
+from deskpet.execution.primary_dependencies import current_disclosure
+from deskpet.execution.primary_history import PrimaryHistoryStore
 from simple_harness import RuntimePorts, RuntimeProfile, SqliteContextPort
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 from simple_harness.execution.context_authority import DurableToolCatalogResolver
 from simple_harness.execution.delivery import DeliveryDispatcher
 from simple_harness.execution.dispatch import ProviderBinding, ProviderInvocationCoordinator
-from simple_harness.providers import ProviderResponse, ProviderTarget, ProviderToolSpec, ProviderUsage
+from simple_harness.providers import (
+    ProviderResponse,
+    ProviderTarget,
+    ProviderToolSpec,
+    ProviderUsage,
+)
 from simple_harness.providers.base import ProviderContinuationCapability, ProviderContinuationMode
 from simple_harness.runtime import EffectBatchExecutor
 from simple_harness.runtime.drivers import ReActDriver
-from simple_harness.tools import EffectExecutor, FunctionTool, ToolRegistry, ToolSpec, ToolResult
+from simple_harness.tools import EffectExecutor, FunctionTool, ToolRegistry, ToolResult, ToolSpec
 from simple_harness.tools.authorization import AuthorizationDecision, AuthorizationResult
-from deskpet.execution.foreground_queue import ForegroundQueueStore
-from deskpet.execution.foreground_runtime import (
-    BoundProviderAuthority, ForegroundRuntimeExecutionAuthority, FrozenProviderAuthority, SqliteSdkTerminalObserver,
-)
-from deskpet.execution.foreground_runtime_ports import ProductForegroundToolPort
-from deskpet.execution.primary_context import PrimaryForegroundContextPort
-from deskpet.execution.primary_context_pages import HISTORY_PREFIX, HISTORY_SUFFIX
-from deskpet.execution.primary_history import PrimaryHistoryStore
-from deskpet.execution.primary_dependencies import current_disclosure
+
 
 def history_disclosure():
     return current_disclosure(run_id="history-read-request", subject=local_owner_auth().subject, request_id="history-read-request")
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.composition import ProductSdkRuntimeStack, SdkRuntimeBuildInputs
-from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore, ProductRuntimeDecisionSink, ProductRunContextAuthority
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore,
+    ProductRunContextAuthority,
+    ProductRuntimeDecisionSink,
+)
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
 from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity
 from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
-from deskpet.task_scope.protocol import canonical_hash
 from deskpet.sdk_adapters.tools import ProductToolInventoryEntry
+from deskpet.task_scope.protocol import canonical_hash
 
 
 class Provider:
@@ -115,7 +128,10 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     specs = [dict(name=name, description=name, input_schema={"type": "object", "properties": {}})
              for name in ("tool_search", "tool_describe", "tool_activate")]
     if dynamic:
-        from deskpet.sdk_adapters.context_route import CONTEXT_ROUTE_SCHEMA, TASK_SCOPE_SEARCH_SCHEMA
+        from deskpet.sdk_adapters.context_route import (
+            CONTEXT_ROUTE_SCHEMA,
+            TASK_SCOPE_SEARCH_SCHEMA,
+        )
         from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
         from tests.sdk_adapters.s5b_effect_gate_harness import WRITE_FILE_SCHEMA
         specs.extend(dict(name=name, description=name, input_schema=schema) for name, schema in (
@@ -159,7 +175,10 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     # F06: same reconciliation wiring as production (main.py) — the SDK startup /
     # runtime.reconcile() step hands UNKNOWN provider invocations to the coordinator's
     # reconcile_incomplete with the retry-once policy.
-    from deskpet.sdk_adapters.reconciliation import ProductProviderRetryOnceReconciliation, ProductRuntimeReconciliation
+    from deskpet.sdk_adapters.reconciliation import (
+        ProductProviderRetryOnceReconciliation,
+        ProductRuntimeReconciliation,
+    )
     if provider_reconciliation is None:
         provider_reconciliation = ProductProviderRetryOnceReconciliation()
     built_ports = {}
@@ -193,12 +212,15 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                             context_provider=None if memory is None else ProductConversationContextProvider(sources),
                             context_staging=None if memory is None else ContextStagingRepository(database))
         if dynamic:
-            from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority, BindingRootResolver
-            from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
-            from deskpet.task_scope.store import CanonicalTaskScopeStore
-            from deskpet.sdk_adapters.effect_gate import EffectGate
-            from deskpet.sdk_adapters.tools import ProductEffectExecutor
             from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+            from deskpet.sdk_adapters.effect_gate import EffectGate
+            from deskpet.sdk_adapters.task_execution import (
+                BindingRootResolver,
+                ProductTaskExecutionAuthority,
+            )
+            from deskpet.sdk_adapters.tools import ProductEffectExecutor
+            from deskpet.task_scope.store import CanonicalTaskScopeStore
+            from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
             bindings = WorkspaceBindingAuthorityStore(state_path)
             gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
                               authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
@@ -806,11 +828,11 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
 
 
 def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, scope_reader=None, page_in_store=None, context_route_ledger_factory=None):
-    from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
-    from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
+    from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
     from deskpet.sdk_adapters.tool_authority import SdkRuntimeCapabilityBridgeAdapter
+    from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
     from deskpet.tools.os_tools.write_file import write_file
     ledger = (ContextRouteLedgerStore(state_path) if context_route_ledger_factory is None
@@ -860,9 +882,9 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
 @pytest.mark.asyncio
 @pytest.mark.parametrize("supersede", [False, True])
 async def test_primary_none_routes_to_exact_task_and_writes_real_file(tmp_path, supersede):
+    from deskpet.memory.human_memory_service import CreateTaskScopeRequest
     from simple_harness import CallId
     from simple_harness.providers import ProviderToolCall
-    from deskpet.memory.human_memory_service import CreateTaskScopeRequest
     from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
     state = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)

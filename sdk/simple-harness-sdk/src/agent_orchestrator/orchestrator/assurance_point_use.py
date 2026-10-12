@@ -28,7 +28,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..assurance.certificates import POINT_PURPOSES, UseCertificate, UseIdentity, check_certificate_binding
+from ..assurance.certificates import (
+    POINT_PURPOSES,
+    UseCertificate,
+    UseIdentity,
+    check_certificate_binding,
+)
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef, Pin

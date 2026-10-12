@@ -6,7 +6,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     ContractValidationError,
     ResearchBrief,
@@ -22,7 +21,6 @@ from deskpet.workflows.definitions.deep_research_v5_policy import (
     profile_definition,
     validate_modeling_output,
 )
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_brief_profiles.json"
 AS_OF = date(2026, 7, 16)

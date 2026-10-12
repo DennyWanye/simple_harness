@@ -9,8 +9,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from h1i_seed import committed, events
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.planning.htn.repair_adapter import RepairEventAdapter
 from agent_orchestrator.planning.htn.repair_decision import (
@@ -21,6 +19,7 @@ from agent_orchestrator.planning.htn.repair_decision import (
     RepairDecisionStatus,
     RepairTriggerSource,
 )
+from h1i_seed import committed, events
 
 
 def test_worker_event_enters_auditable_retry_path() -> None:

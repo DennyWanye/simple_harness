@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-
 from config import SearchGatewayConfig
 from deskpet.retrieval.contracts import (
     FetchRequest,
@@ -22,8 +21,8 @@ from deskpet.retrieval.contracts import (
 from deskpet.retrieval.fetch_extract import FetchExtractService
 from deskpet.retrieval.playwright_renderer import (
     FetchRenderBudget,
-    PlaywrightRenderError,
     PlaywrightRendererPool,
+    PlaywrightRenderError,
 )
 from deskpet.retrieval.search_gateway import SearchGateway
 from deskpet.workflows.contracts import WorkflowContext
@@ -254,7 +253,6 @@ async def test_real_browser_crash_restarts_once_and_preserves_cleanup(
     fixture_server: str, task0_browser_root: Path
 ) -> None:
     import psutil
-
     from deskpet.playwright_bundle import get_platform_contract
 
     contract = get_platform_contract()
@@ -360,6 +358,7 @@ async def test_idle_shutdown_reaps_browser_and_driver_children(
 ])
 def test_process_snapshot_tracks_native_driver_and_owns_only_browser_ancestor(monkeypatch, driver_script):
     from types import SimpleNamespace
+
     import psutil
 
     executable = Path("/owned/chrome-headless-shell")

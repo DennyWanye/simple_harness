@@ -18,7 +18,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.memory.verified_knowledge import KnowledgeRecord, modified
 from agent_orchestrator.observability.lineage import _view

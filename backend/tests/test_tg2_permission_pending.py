@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from deskpet.permissions.gate import PermissionGate, PermissionGateConfig
 from deskpet.types.skill_platform import PermissionResponse
 

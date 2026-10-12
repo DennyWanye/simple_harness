@@ -10,7 +10,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from tests.execution.test_current_tool_pages import (
     test_actual_current_effect_page_and_physical_guard as run_pages,
 )

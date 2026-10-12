@@ -3,10 +3,11 @@ import asyncio
 import sqlite3
 
 import pytest
-
 from deskpet.memory.s5c_schema import initialize_s5c_state_db, validate_s5c_state_db
 from deskpet.memory.s5c_timer_schema import (
-    TIMER_TABLE, initialize_s5c_timer_state_db, validate_s5c_timer_state_db,
+    TIMER_TABLE,
+    initialize_s5c_timer_state_db,
+    validate_s5c_timer_state_db,
 )
 from deskpet.memory.schema import HumanMemoryProgramEpochError
 

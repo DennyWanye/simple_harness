@@ -26,15 +26,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.codec import decode
 from agent_orchestrator.contracts.resolution import ReviewPurpose
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
 from agent_orchestrator.orchestrator.assurance_final_writer import recorded_judgment
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
-from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
 from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
 from agent_orchestrator.storage.operation_intent_store import OperationIntentStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
@@ -89,7 +88,9 @@ def test_a_root_short_only_of_an_unknown_effect_is_blocked_unknown_not_scope_unm
     内容没好、效果还在等申请单 / 审阅的，照旧是 ``ROOT_SCOPE_UNMET``。
 
     **改坏检验**：``unmet_only_by_unknown_effects`` 恒 False（所有未满足的根都落 ROOT_SCOPE_UNMET）→ 变红。"""
-    from agent_orchestrator.orchestrator.assurance_consumers import unmet_only_by_unknown_effects as only_unknown
+    from agent_orchestrator.orchestrator.assurance_consumers import (
+        unmet_only_by_unknown_effects as only_unknown,
+    )
 
     ready = SimpleNamespace(content_ready=True, effects_ready=False, complete=False)
     assert only_unknown(ready, {"publish-weekly": "RECONCILIATION_REQUIRED"})

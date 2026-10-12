@@ -6,9 +6,18 @@ import re
 from collections.abc import Mapping
 
 import aiosqlite
-from simple_harness import (DisclosureContext, DeliveryRecipient, IntendedAudience,
-    DisclosurePurpose, DisclosureSource, DisclosureTrust, DisclosureGeneration, DisclosureReasonCode)
+from simple_harness import (
+    DeliveryRecipient,
+    DisclosureContext,
+    DisclosureGeneration,
+    DisclosurePurpose,
+    DisclosureReasonCode,
+    DisclosureSource,
+    DisclosureTrust,
+    IntendedAudience,
+)
 from simple_harness.providers import ProviderRequestRejectedError
+
 from deskpet.task_scope.protocol import canonical_json, digest, identifier
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
@@ -211,10 +220,11 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         recall.extend(scope_proof["recall"])
         short.extend(scope_proof.get("short_horizon", ()))
         drafts.extend(scope_proof.get("procedure_drafts", ()))
+    import uuid
+
+    from simple_harness import thaw_json
     from simple_harness.execution.context_authority import ContextRouteReceipt
     from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
-    from simple_harness import thaw_json
-    import uuid
     for raw, origin, ordinal in decisions:
         if origin == "context_tool":
             continue
@@ -327,9 +337,13 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             # claimed error code as a successful content read. (F07: the model
             # passing a typed recall item id as reference_id must not make the
             # whole Run unverifiable.)
+            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX
+            from deskpet.execution.current_tool_pages import admitted_current_page
+            from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
             from deskpet.execution.primary_context_pages import (
-                PREFIX as HISTORY_PAGE_PREFIX, PrimaryContextPageUnavailable, admitted_page)
-            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX, admitted_current_page
+                PrimaryContextPageUnavailable,
+                admitted_page,
+            )
             arguments = thaw_json(fact.arguments)
             reference = arguments.get("reference_id") if isinstance(arguments, Mapping) else None
             # Only the primary page handler publishes a stable rejection code;
@@ -375,7 +389,10 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         # 这条重放校验分支不会再有对应的工具调用记录。
         if row["tool_name"] == "context_page_in":
             if value.get("kind") == "primary_current_tool_page_v1":
-                from deskpet.execution.current_tool_pages import LEGACY_PAGE_SIZE, admitted_current_page
+                from deskpet.execution.current_tool_pages import (
+                    LEGACY_PAGE_SIZE,
+                    admitted_current_page,
+                )
                 expected = await admitted_current_page(db=db, stack=stack, run=run,
                     sdk_run_id=sdk_run_id, page_effect=fact, arguments=thaw_json(fact.arguments))
                 if value != expected:

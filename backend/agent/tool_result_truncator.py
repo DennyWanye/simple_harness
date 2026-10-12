@@ -81,10 +81,10 @@ DEFAULT_MAX_ENTRIES = 256
 # resolve refs without plumbing the store through tool dispatch. The
 # store is keyed by random ref_id so cross-session collision is
 # astronomically unlikely; LRU eviction (256 entries) bounds memory.
-_GLOBAL_REF_STORE: "ToolResultRefStore" | None = None
+_GLOBAL_REF_STORE: ToolResultRefStore | None = None
 
 
-def get_global_ref_store() -> "ToolResultRefStore":
+def get_global_ref_store() -> ToolResultRefStore:
     """Lazy-init and return the module singleton."""
     global _GLOBAL_REF_STORE
     if _GLOBAL_REF_STORE is None:
@@ -92,7 +92,7 @@ def get_global_ref_store() -> "ToolResultRefStore":
     return _GLOBAL_REF_STORE
 
 
-def _spill_dir() -> Optional[Path]:
+def _spill_dir() -> Path | None:
     """落盘目录 <user_data>/cache/tool_refs/。paths 不可用(独立脚本) → None。
 
     pytest 进程内默认禁用(防全套测试把假数据写进真实用户 cache 目录);
@@ -157,7 +157,7 @@ class ToolResultRefStore:
             else _env_int("DESKPET_TOOL_REF_SPILL_MAX_FILES", _SPILL_MAX_FILES)
         )
         # OrderedDict gives us O(1) move-to-end (LRU update) + popitem(last=False).
-        self._store: "OrderedDict[str, str]" = OrderedDict()
+        self._store: OrderedDict[str, str] = OrderedDict()
 
     def put(self, content: str) -> str:
         """Store the full body, return a fresh ref_id. Evicts oldest if full."""
@@ -177,9 +177,9 @@ class ToolResultRefStore:
         self,
         ref_id: str,
         *,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-    ) -> Optional[str]:
+        start: int | None = None,
+        end: int | None = None,
+    ) -> str | None:
         """Retrieve full body (or a slice). Returns None if ref_id unknown.
 
         ``start``/``end`` follow Python slice semantics; out-of-bound
@@ -226,7 +226,7 @@ class ToolResultRefStore:
             logger.debug("tool_ref spill write failed: %s", exc)
 
     @staticmethod
-    def _spill_read(ref: str) -> Optional[str]:
+    def _spill_read(ref: str) -> str | None:
         try:
             d = _spill_dir()
             if d is None:
@@ -252,7 +252,7 @@ def maybe_truncate_tool_result(
     threshold: int = DEFAULT_THRESHOLD,
     head_chars: int = DEFAULT_HEAD,
     tail_chars: int = DEFAULT_TAIL,
-) -> Tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Truncate ``content`` if it exceeds ``threshold``.
 
     Returns ``(message_content, ref_id_or_None)``. The returned

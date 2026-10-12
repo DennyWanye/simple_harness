@@ -8,7 +8,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.sqlite import Database, ExecutionStorageError
 
 

@@ -22,15 +22,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, EffectId, RequestId, RunId
-from simple_harness.tools import ToolContext
-from simple_harness.tools.contracts import CancellationToken
-
 from deskpet.sdk_adapters import task_scope_mutation as tsm
 from deskpet.sdk_adapters.task_scope_mutation import (
     ClosureRejected,
     TaskScopeUpdateService,
 )
+from simple_harness import CallId, EffectId, RequestId, RunId
+from simple_harness.tools import ToolContext
+from simple_harness.tools.contracts import CancellationToken
 from tests.sdk_adapters import s5b_closure_harness as ch
 
 # T17 的 18 KiB 逐字目标（A6-5 唯一杠杆：> README 16384 且 > STATUS 12288，< value 上限 32768）。

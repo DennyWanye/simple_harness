@@ -8,9 +8,9 @@ import inspect
 import json
 import time
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ class CheckpointTuple:
 
 class BaseCheckpointSaver:
     @classmethod
-    def __class_getitem__(cls, _item: object) -> type["BaseCheckpointSaver"]:
+    def __class_getitem__(cls, _item: object) -> type[BaseCheckpointSaver]:
         return cls
 
     def __init__(self, *_args: object, **_kwargs: object) -> None:
@@ -88,16 +88,15 @@ def empty_legacy_checkpoint() -> dict[str, Any]:
     return {
         "v": 1,
         "id": uuid.uuid4().hex,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {},
         "channel_versions": {},
         "versions_seen": {},
         "updated_channels": None,
     }
 
-from ..errors import AsyncOnlyWorkflowError, UnsupportedDeltaChannelError
 from ..contracts import JsonValue, canonical_json, validate_json_value
-from ..errors import WorkflowContractError
+from ..errors import AsyncOnlyWorkflowError, UnsupportedDeltaChannelError, WorkflowContractError
 from .run_store import RunFence, StaleRunFence
 from .schema import initialize_workflow_db
 
@@ -486,7 +485,7 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
             for channel in changed:
                 versions[channel] = self.get_next_version(versions.get(channel), None)
             checkpoint["id"] = child_checkpoint_id
-            checkpoint["ts"] = datetime.now(timezone.utc).isoformat()
+            checkpoint["ts"] = datetime.now(UTC).isoformat()
             checkpoint["channel_values"] = channel_values
             checkpoint["channel_versions"] = versions
             checkpoint["pending_sends"] = []

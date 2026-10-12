@@ -4,15 +4,14 @@ import hashlib
 
 import aiosqlite
 import pytest
-
-from deskpet.workflows.store import schema as workflow_schema
 from deskpet.workflows.store import (
+    WORKFLOW_SCHEMA_VERSION,
     BlobStore,
     StaleRunFence,
-    WORKFLOW_SCHEMA_VERSION,
     WorkflowRunStore,
     initialize_workflow_db,
 )
+from deskpet.workflows.store import schema as workflow_schema
 
 
 @pytest.mark.asyncio

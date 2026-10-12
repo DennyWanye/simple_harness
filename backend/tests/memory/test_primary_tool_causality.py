@@ -1,18 +1,21 @@
 """Actual Host/SDK tool runs; no fabricated terminal/effect/Provider receipts."""
-from dataclasses import replace
 import json
 import sqlite3
+from dataclasses import replace
 
 import pytest
-from simple_harness import CallId, EffectId
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.primary_message_v2 import effectless_denial, item_ordinals, representable
-from deskpet.memory.primary_tool_causality import read_tool_causal_sources, PrimaryToolCausalityUnavailable
+from deskpet.memory.primary_tool_causality import (
+    PrimaryToolCausalityUnavailable,
+    read_tool_causal_sources,
+)
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.composition import project_primary_transcript
 from deskpet.sdk_adapters.context_route import local_owner_auth
+from simple_harness import CallId, EffectId
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_foreground_runtime import Provider, build
 
 

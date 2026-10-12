@@ -30,7 +30,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.htn import (
     ChildBinding,
     ContractRevision,

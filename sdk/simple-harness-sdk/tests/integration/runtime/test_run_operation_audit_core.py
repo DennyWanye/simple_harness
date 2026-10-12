@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-
 from simple_harness import CallId, ExecutionSessionId, Message, MessageRole, RequestId, RunId
 from simple_harness.providers import ProviderResponse, ProviderToolCall
 from simple_harness.runtime import RunStart

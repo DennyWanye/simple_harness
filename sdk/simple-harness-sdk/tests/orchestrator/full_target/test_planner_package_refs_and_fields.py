@@ -39,7 +39,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
-    exposed_enablement,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -56,6 +55,7 @@ from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
     PlanningRefKind,
     PlanningRefV1,
     PlanningRetryBudgetView,
+    exposed_enablement,
 )
 from agent_orchestrator.contracts.semantic_base import content_hash_of  # noqa: E402
 from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402

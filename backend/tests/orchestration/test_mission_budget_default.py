@@ -13,13 +13,12 @@ filled before the facade, so the persisted receipt (spec hash) includes them.
 from __future__ import annotations
 
 import pytest
-
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
     OrchestrationSettings,
 )
-from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 from ._support import notes_provider, notes_request
 

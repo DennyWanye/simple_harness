@@ -4,14 +4,12 @@
 """TDD T1 — excel_tools.py (excel_create)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-import os
-
 import pytest
-
-from deskpet.tools import office_paths as op
 from deskpet.tools import excel_tools as xl
+from deskpet.tools import office_paths as op
 
 pytestmark = pytest.mark.skipif(not xl._HAS_OPENPYXL, reason="openpyxl not installed")
 

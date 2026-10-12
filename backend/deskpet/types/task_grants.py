@@ -16,9 +16,10 @@ import math
 import os
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 from urllib.parse import urlsplit
 
 ResourceKind = Literal[
@@ -161,11 +162,11 @@ class ResourceSelector:
     @classmethod
     def filesystem(
         cls, root: str | Path, *access: str
-    ) -> "ResourceSelector":
+    ) -> ResourceSelector:
         return cls("filesystem", canonical_filesystem_path(root), tuple(access))
 
     @classmethod
-    def network(cls, origin: str, *access: str) -> "ResourceSelector":
+    def network(cls, origin: str, *access: str) -> ResourceSelector:
         return cls("network_origin", canonical_network_origin(origin), tuple(access))
 
     @property
@@ -180,7 +181,7 @@ class ResourceSelector:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "ResourceSelector":
+    def from_dict(cls, value: object) -> ResourceSelector:
         if not isinstance(value, dict) or set(value) != {
             "kind",
             "canonical_value",
@@ -286,7 +287,7 @@ class TaskGrant:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> "TaskGrant":
+    def from_dict(cls, value: object) -> TaskGrant:
         required = {
             "task_grant_id",
             "root_run_id",
@@ -373,7 +374,7 @@ class TaskGrant:
         effect_kinds: Sequence[str] = (),
         policy_generation: int | None = None,
         expires_at: float | None = None,
-    ) -> "TaskGrant":
+    ) -> TaskGrant:
         selectors = {
             (item.kind, item.canonical_value, item.access): item
             for item in (*self.resource_selectors, *resources)

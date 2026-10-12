@@ -1,18 +1,17 @@
 """Signed control + public Host store contracts. No SDK/Provider/model invocation."""
-from dataclasses import replace
 import json
 import sqlite3
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-
 from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueStore
 from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
-from deskpet.memory.trusted_disclosure import resolve_current_disclosure, TrustedDisclosureError
+from deskpet.memory.trusted_disclosure import TrustedDisclosureError, resolve_current_disclosure
 from deskpet.task_scope.protocol import canonical_hash
 from tests.companion.test_window_control_credentials import _ingress
 from tests.memory.test_primary_control_binding import _bind

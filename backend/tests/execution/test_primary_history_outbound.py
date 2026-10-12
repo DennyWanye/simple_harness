@@ -1,17 +1,17 @@
 """Real SQLite/Harness ledger at the production preflight/transport boundary."""
 import asyncio
 import sqlite3
+
 import aiosqlite
 import httpx
 import pytest
-
+from deskpet.execution.primary_dependencies import check_runtime_dependencies
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
-from deskpet.execution.primary_dependencies import check_runtime_dependencies
-from tests.sdk_adapters.test_product_host_ports import Registry
 from tests.execution.test_primary_foreground_runtime import build
+from tests.sdk_adapters.test_product_host_ports import Registry
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ from tests.execution.test_primary_foreground_runtime import build
 @pytest.mark.parametrize("mode", ["missing_proof", "wrong_hash", "sent_unknown"])
 async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(tmp_path, mode):
     late_deny = mode != "sent_unknown"
-    from simple_harness import RunId, RequestId
+    from simple_harness import RequestId, RunId
     from simple_harness.execution.provider_invocations import provider_invocation_id
     state = tmp_path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
@@ -38,6 +38,7 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
     runtime, stack, queue = await build(tmp_path, state, provider)
     if mode in {"missing_proof", "wrong_hash"}:
         from dataclasses import replace
+
         from simple_harness import thaw_json
         original_prepare = runtime._context.prepare
         async def prepare(**kwargs):

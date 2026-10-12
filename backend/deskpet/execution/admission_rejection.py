@@ -1,7 +1,7 @@
 """Verified Host-only terminal disposition of an unclaimed stale-policy turn."""
 import json
 
-from deskpet.memory.trusted_disclosure import bound_record_tx, binding_token, current_record_tx
+from deskpet.memory.trusted_disclosure import binding_token, bound_record_tx, current_record_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest
 

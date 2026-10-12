@@ -7,8 +7,9 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, is_dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from deskpet.capabilities.contracts import OwnerScopeKey
 from deskpet.security.redaction import TraceRedactor

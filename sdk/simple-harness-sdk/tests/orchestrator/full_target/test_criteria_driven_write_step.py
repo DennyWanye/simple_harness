@@ -32,10 +32,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_inspect_leaf_patch_input import _c1_method  # noqa: E402
-
 from agent_orchestrator.planning.htn.seed_methods.loader import seed_content_hash  # noqa: E402
 from agent_orchestrator.planning.htn.world import build_planning_world  # noqa: E402
+from test_inspect_leaf_patch_input import _c1_method  # noqa: E402
 
 TESTS_PATH = "tests/test_concurrent_contract.py"
 

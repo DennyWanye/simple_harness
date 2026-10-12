@@ -20,9 +20,6 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from simple_harness.contracts import RunId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-
 from deskpet.memory.human_memory_service import (
     CreateTaskScopeRequest,
     HumanMemoryHostService,
@@ -31,9 +28,10 @@ from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.sdk_adapters.context_route import ContextRouteToolService
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+from simple_harness.contracts import RunId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
 from tests.sdk_adapters.test_s5a_milestone_route_loop import (
     AUTH,
-    harness_scope_disclosure,
     HarnessCheckpoint,
     HarnessContext,
     RouteExposure,
@@ -43,6 +41,7 @@ from tests.sdk_adapters.test_s5a_milestone_route_loop import (
     _bind_scope_root,
     _loop,
     _tool_call,
+    harness_scope_disclosure,
 )
 
 
@@ -71,11 +70,6 @@ class MatrixEnv:
         provider: ScriptedProvider | None = None,
         loop_factory=None,
     ):
-        from simple_harness.execution.fences import RunFenceLease
-        from simple_harness.execution.uow import ExecutionLease
-        from simple_harness.runtime.drivers.react_loop import ReActRunInput
-        from simple_harness.runtime.kernel import RuntimeServices
-
         from deskpet.sdk_adapters.context_authority import (
             ProductRunContextAuthority,
             ProductRuntimeDecisionSink,
@@ -83,6 +77,10 @@ class MatrixEnv:
         from deskpet.sdk_adapters.task_execution import (
             ProductTaskExecutionAuthority,
         )
+        from simple_harness.execution.fences import RunFenceLease
+        from simple_harness.execution.uow import ExecutionLease
+        from simple_harness.runtime.drivers.react_loop import ReActRunInput
+        from simple_harness.runtime.kernel import RuntimeServices
 
         run = RunId(run_id)
         context = context or HarnessContext(first_message)

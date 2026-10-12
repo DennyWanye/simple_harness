@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from .contracts import RetrievalCandidate
 from .query_terms import extract_query_terms, normalize_query_text
 
@@ -85,7 +87,7 @@ def rank_candidates(
         freshness = 0.0
         if item.published_at:
             try:
-                age = max(0, (datetime.now(timezone.utc) - datetime.fromisoformat(item.published_at.replace("Z", "+00:00"))).days)
+                age = max(0, (datetime.now(UTC) - datetime.fromisoformat(item.published_at.replace("Z", "+00:00"))).days)
                 freshness = 1.0 / (1.0 + age / 30.0)
             except ValueError: pass
         host = normalized_host(item.canonical_url)

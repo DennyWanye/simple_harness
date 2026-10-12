@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from .contracts import JsonValue, OwnerRef
 from .growth import StructuredGrowthProposalV1
@@ -117,7 +118,7 @@ class TrustedRootBuildRequestV1:
         user_message_hash: str,
         requested_entry_kinds: tuple[RequestedEntryKind | str, ...],
         explicit_capability_request: bool,
-    ) -> "TrustedRootBuildRequestV1":
+    ) -> TrustedRootBuildRequestV1:
         return cls(
             owner=owner,
             owner_key=owner_key,
@@ -344,7 +345,7 @@ class GrowthCandidateBuildPermitV1:
         source_fence_hash: str,
         target_fence_hash: str,
         lease_epoch: int,
-    ) -> "GrowthCandidateBuildPermitV1":
+    ) -> GrowthCandidateBuildPermitV1:
         permit_id = "permit:" + _hash(
             {
                 "build_id": build_id,
@@ -438,7 +439,7 @@ class CandidateDraftReceiptV1:
     @classmethod
     def from_authoritative_row(
         cls, row: Mapping[str, object]
-    ) -> "CandidateDraftReceiptV1":
+    ) -> CandidateDraftReceiptV1:
         fields = (
             "receipt_id",
             "builder_launch_id",
@@ -478,7 +479,7 @@ class CandidateDraftReceiptV1:
         archive_hash: str,
         file_set_hash: str,
         effect_topology_hash: str,
-    ) -> "CandidateDraftReceiptV1":
+    ) -> CandidateDraftReceiptV1:
         receipt_id = "candidate-draft:" + _hash(
             {
                 "builder_launch_id": builder_launch_id,

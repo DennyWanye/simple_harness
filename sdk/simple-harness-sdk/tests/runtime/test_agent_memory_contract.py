@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from simple_harness import (
     AgentIdentity,
     CommittedTurn,

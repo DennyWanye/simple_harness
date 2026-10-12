@@ -62,8 +62,12 @@ from ..artifacts.input_bindings import (
     resolve_deliveries,
 )
 from ..artifacts.taskgraph_inputs import decode_frozen_manifest
-from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs, resolve_input_manifest
-from ..runtime.action_schema import is_operation_candidate_path
+from ..artifacts.versioning import (
+    ArtifactConflict,
+    UpstreamInput,
+    manifest_upstream_inputs,
+    resolve_input_manifest,
+)
 from ..contracts import (
     TERMINAL_MISSION,
     ContractError,
@@ -81,12 +85,15 @@ from ..contracts.evidence_state import (
     WitnessPurpose,
 )
 from ..contracts.htn import (
+    ORDERED_CARDINALITIES,
     MissionRef,
     ObligationId,
     OccurrenceId,
     OccurrenceSpec,
+    OutputValue,
     PlanRevision,
     PortCardinality,
+    PortOrdering,
     ReadItem,
     ReadItemKind,
     RunningWorkPolicy,
@@ -96,9 +103,6 @@ from ..contracts.htn import (
     TaskRef,
     TaskSemanticBindingV1,
     condition_digest,
-    ORDERED_CARDINALITIES,
-    OutputValue,
-    PortOrdering,
 )
 from ..contracts.obligations import ObligationAccountView
 from ..contracts.resolution import (
@@ -142,6 +146,7 @@ from ..planning.htn.grounding import (
     SharedGoalEntry,
     SharingSignature,
 )
+from ..runtime.action_schema import is_operation_candidate_path
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError
@@ -2360,11 +2365,11 @@ class HierarchicalDispatch:
         assert inputs.record is not None
         manifest_hash = input_manifest_hash or inputs.package.binding.input_manifest_hash
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
-        from .review_adjudication import accepted_or_adjudicated
         # Assurance §7.2（2026-10-06 车道 O）：根结论复述的是根的内容投影——根终审判的那一份；
         # 效果判据由各自的结果审阅判、收尾核对收敛，不写进根结论。
         from ..contracts.models import ContractError
         from .completion_status import read_occurrence_completion
+        from .review_adjudication import accepted_or_adjudicated
         from .scoped_composition_review import root_content_projection
 
         try:
@@ -3099,7 +3104,6 @@ class HierarchicalDispatch:
         against an ambient or stale mission identity.
         """
         from ..planning.htn.repair_adapter import RepairEventAdapter
-
         from .repair_impact import read_repair_impact_indexes
         del all_items
         with self.store.read_view():

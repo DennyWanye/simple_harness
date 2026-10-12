@@ -5,8 +5,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from deskpet.orchestration.storage_usage import CACHE_TTL_MS, FORCED_REFRESH_MIN_MS, StorageUsage, measure
+from deskpet.orchestration.storage_usage import (
+    CACHE_TTL_MS,
+    FORCED_REFRESH_MIN_MS,
+    StorageUsage,
+    measure,
+)
 
 
 def _fill(root):

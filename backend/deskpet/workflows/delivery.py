@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 
 class DeliveryDisposition(str, Enum):
@@ -44,7 +45,7 @@ class DeliveryAttemptResultV1:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "DeliveryAttemptResultV1":
+    def from_json(cls, value: Mapping[str, Any]) -> DeliveryAttemptResultV1:
         if set(value) != {
             "schema_version",
             "disposition",
@@ -69,15 +70,15 @@ class DeliveryAttemptResultV1:
         reason_code: str = "projection_persisted",
         *,
         artifact_projection: Mapping[str, Any] | None = None,
-    ) -> "DeliveryAttemptResultV1":
+    ) -> DeliveryAttemptResultV1:
         return cls(DeliveryDisposition.DELIVERED, reason_code, artifact_projection)
 
     @classmethod
-    def discarded_fenced(cls, reason_code: str) -> "DeliveryAttemptResultV1":
+    def discarded_fenced(cls, reason_code: str) -> DeliveryAttemptResultV1:
         return cls(DeliveryDisposition.DISCARDED_FENCED, reason_code)
 
     @classmethod
-    def retryable_failure(cls, reason_code: str) -> "DeliveryAttemptResultV1":
+    def retryable_failure(cls, reason_code: str) -> DeliveryAttemptResultV1:
         return cls(DeliveryDisposition.RETRYABLE_FAILURE, reason_code)
 
 

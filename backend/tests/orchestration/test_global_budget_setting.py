@@ -19,11 +19,10 @@
 from __future__ import annotations
 
 import pytest
+from agent_orchestrator.orchestrator.commit_service import global_account_id, mission_account
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings, load_settings
-
-from agent_orchestrator.orchestrator.commit_service import global_account_id, mission_account
 
 from ._support import notes_provider, notes_request
 

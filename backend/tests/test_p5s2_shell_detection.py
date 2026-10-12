@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     os.name != "nt",
     reason="Shell tier detection is Windows-specific; unix uses /bin/sh",

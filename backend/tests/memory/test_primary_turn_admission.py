@@ -2,7 +2,6 @@ import json
 import sqlite3
 
 import pytest
-
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.human_memory_service import (
     FOREGROUND_TURN_TEXT_MAX_BYTES,

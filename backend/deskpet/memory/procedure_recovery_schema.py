@@ -8,8 +8,12 @@ import time
 from pathlib import Path
 
 import aiosqlite
+
 from deskpet.memory import migrator, schema, schema_chain
-from deskpet.memory.procedure_schema import initialize_procedure_state_db, validate_procedure_state_db
+from deskpet.memory.procedure_schema import (
+    initialize_procedure_state_db,
+    validate_procedure_state_db,
+)
 
 MIGRATION = "procedure/046_procedure_attempts_v54.sql"
 SCHEMA_VERSION = 54

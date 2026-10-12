@@ -8,8 +8,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from test_planning_decision_admission import _context, _valid_envelope
-
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.htn import ReadItem, ReadItemKind
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
@@ -27,6 +25,7 @@ from agent_orchestrator.planning.plan_preview import (
     PreviewUnavailable,
     preview_candidate,
 )
+from test_planning_decision_admission import _context, _valid_envelope
 
 
 def _adapter_context() -> AdapterContext:

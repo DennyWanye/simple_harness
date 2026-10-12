@@ -3,13 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from structlog.testing import capture_logs
-
 from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.store import WorkflowRunStore
 from deskpet.workflows.trace import TraceStore
 from deskpet.workflows.trace.observer import WorkflowExecutionObserver
 from observability.metrics_sink import MetricsSink
+from structlog.testing import capture_logs
 
 
 class _Store:

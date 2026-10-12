@@ -18,15 +18,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, events, run_until
-from test_resolution_commits import (
-    HASH_A,
-    requirements,
-    review_binding,
-    review_package,
-    review_record,
-)
-
 from agent_orchestrator.api.planning_answers import answer_planning_question
 from agent_orchestrator.contracts.resolution import (
     CheckExecution,
@@ -45,6 +36,14 @@ from agent_orchestrator.testing.scripted_replies import (
     planner_reply,
     review_input,
     review_reply,
+)
+from h1i_seed import CONFIG, events, run_until
+from test_resolution_commits import (
+    HASH_A,
+    requirements,
+    review_binding,
+    review_package,
+    review_record,
 )
 
 

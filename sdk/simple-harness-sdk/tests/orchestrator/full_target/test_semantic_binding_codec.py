@@ -13,23 +13,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from full_target_world import (
-    FIXTURE_ROOT,
-    HASH_A,
-    HASH_B,
-    UPSTREAM_ROOT,
-    World,
-    goal_signature,
-    load_plan_fixtures,
-    method_contract,
-    sha256_of,
-    source_manifest,
-    task_binding,
-    tref,
-    upstream_plan_pack_available,
-    vref,
-)
-
 from agent_orchestrator.contracts.evidence_state import (
     PreconditionPhase,
     PreconditionWitnessRecord,
@@ -101,6 +84,22 @@ from agent_orchestrator.contracts.semantic_base import (
     Provenance,
     TypedRefKind,
     VersionedRef,
+)
+from full_target_world import (
+    FIXTURE_ROOT,
+    HASH_A,
+    HASH_B,
+    UPSTREAM_ROOT,
+    World,
+    goal_signature,
+    load_plan_fixtures,
+    method_contract,
+    sha256_of,
+    source_manifest,
+    task_binding,
+    tref,
+    upstream_plan_pack_available,
+    vref,
 )
 
 

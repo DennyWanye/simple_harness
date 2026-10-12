@@ -2,16 +2,18 @@
 import asyncio
 
 import pytest
-
 from simple_harness import RunId
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.runtime import ReActDriver, StartModeDriverRouter
 
+from .test_kernel_start import Driver, host_control_request
+from .test_kernel_start import runtime as control_runtime
 from .test_react_sqlite_runtime import (
-    AuthorizationScenario, PhysicalToolCounter, authorization_runtime,
+    AuthorizationScenario,
+    PhysicalToolCounter,
+    authorization_runtime,
 )
 from .test_run_operation_audit_core import Calls, start
-from .test_kernel_start import Driver, host_control_request, runtime as control_runtime
 
 
 class OpaqueRouter:

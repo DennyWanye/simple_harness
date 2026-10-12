@@ -3,15 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from deskpet.workflows.definitions.deep_research_v5_evidence import POLICY_HASH
+from deskpet.workflows.definitions.deep_research_v5_report import REPORT_QUALITY_RUBRIC_V1_HASH
 from deskpet.workflows.definitions.v1 import DEEP_RESEARCH_V1
 from deskpet.workflows.definitions.v2 import DEEP_RESEARCH_V2
 from deskpet.workflows.definitions.v3 import DEEP_RESEARCH_V3
 from deskpet.workflows.definitions.v4 import DEEP_RESEARCH_V4
 from deskpet.workflows.definitions.v5 import DEEP_RESEARCH_V5, deep_research_initial_state
-from deskpet.workflows.definitions.deep_research_v5_evidence import POLICY_HASH
-from deskpet.workflows.definitions.deep_research_v5_report import REPORT_QUALITY_RUBRIC_V1_HASH
 from deskpet.workflows.definitions.v5.deep_research import NODE_IDS, PUBLIC_STAGE_IDS
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_identity.json"
 

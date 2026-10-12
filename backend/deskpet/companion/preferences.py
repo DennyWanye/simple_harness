@@ -15,10 +15,12 @@ import hashlib
 import inspect
 import json
 import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Any
+
 from deskpet.execution.provider_workloads import (
     ProviderWorkloadContext,
     derive_workload_context,
@@ -96,7 +98,7 @@ class PreferencePolicy:
         return canonical_hash(self.to_dict())
 
     @classmethod
-    def from_growth_config(cls, config: Any) -> "PreferencePolicy":
+    def from_growth_config(cls, config: Any) -> PreferencePolicy:
         """Build policy only from the checked typed Companion config."""
 
         return cls(
@@ -257,7 +259,7 @@ class PreferenceTurnDecision:
     @classmethod
     def from_mapping(
         cls, payload: Mapping[str, Any]
-    ) -> "PreferenceTurnDecision":
+    ) -> PreferenceTurnDecision:
         if payload.get("schema_version") != 1:
             raise ValueError("preference_turn_payload_invalid")
         return cls(
@@ -309,7 +311,7 @@ class ModelPreferenceTurnInterpreter:
     def assessment_payload(
         *,
         user_text: str,
-        current_preferences: Sequence["ResolvedPreference"],
+        current_preferences: Sequence[ResolvedPreference],
     ) -> dict[str, JsonValue]:
         return {
             "schema_version": 1,
@@ -325,7 +327,7 @@ class ModelPreferenceTurnInterpreter:
         self,
         *,
         user_text: str,
-        current_preferences: Sequence["ResolvedPreference"],
+        current_preferences: Sequence[ResolvedPreference],
         workload_context: ProviderWorkloadContext | None = None,
     ) -> PreferenceTurnDecision:
         assessment = self.assessment_payload(

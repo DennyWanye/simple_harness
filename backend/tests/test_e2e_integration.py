@@ -23,16 +23,14 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
 from main import (
+    SHARED_SECRET,
     _control_connections,
     _voice_transports,
     app,
     service_context,
-    SHARED_SECRET,
 )
-
+from starlette.websockets import WebSocketDisconnect
 
 # ---------------------------------------------------------------------
 # Fakes — keep tests hermetic, no Ollama / Whisper / edge-tts required.

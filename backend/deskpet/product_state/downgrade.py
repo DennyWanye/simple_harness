@@ -10,9 +10,10 @@ import sqlite3
 import stat
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, Protocol
+from typing import Literal, Protocol
 
 from .backup import ProductStateBackupError, restore_migration_backup_offline
 from .database import ProductStateDatabase

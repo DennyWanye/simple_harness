@@ -13,7 +13,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.sdk_adapters.delegation import (
     DELEGATED_CHILD_RUN_KIND,
     MAX_CHILDREN_PER_PARENT,

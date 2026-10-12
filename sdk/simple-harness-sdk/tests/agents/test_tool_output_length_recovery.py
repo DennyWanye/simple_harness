@@ -10,7 +10,6 @@ from contextlib import nullcontext
 
 import httpx
 import pytest
-
 from simple_harness.agents import (
     AgentConfig,
     AgentLimits,

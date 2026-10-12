@@ -1,22 +1,24 @@
 """Actual Host/SDK scope producer and closure adapter; no model/native calls."""
 import asyncio
-from dataclasses import replace
 import json
 import sqlite3
+from dataclasses import replace
 from types import SimpleNamespace
 
 import httpx
 import pytest
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderUsage
-
-from deskpet.execution.closure_request_guard import ClosureRequestAuthority, ClosurePhysicalRequestGuard
+from deskpet.execution.closure_request_guard import (
+    ClosurePhysicalRequestGuard,
+    ClosureRequestAuthority,
+)
 from deskpet.execution.semantic_closure import ClosureFallback
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.post_turn_invoker import ForegroundLeaseFence, RunBoundInvoker
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
-from tests.execution.test_primary_create_new_runtime import fixture, CreateProvider
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderUsage
+from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
 from tests.sdk_adapters.test_product_host_ports import Registry
 

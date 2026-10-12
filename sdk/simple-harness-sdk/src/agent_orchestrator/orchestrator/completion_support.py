@@ -13,10 +13,10 @@ from ..contracts.htn import TaskForm
 from ..contracts.resolution import ReviewPurpose, ReviewVerdict
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
 from ..storage.htn_store import HtnStore
-from .review_adjudication import accepted_or_adjudicated
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreError
 from .completion_status import _official_accept_review, read_occurrence_completion
+from .review_adjudication import accepted_or_adjudicated
 
 
 @dataclass(frozen=True, slots=True)

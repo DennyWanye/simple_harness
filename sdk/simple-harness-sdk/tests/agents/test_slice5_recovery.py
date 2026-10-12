@@ -9,13 +9,12 @@ from __future__ import annotations
 import asyncio
 
 from provider_fixture import MODEL, ScriptedProvider
-from tool_fixture import ECHO_SCHEMA
-
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState, build_agent_runtime
 from simple_harness.agents.execution import AgentExecutionDriver
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.execution.uow import ContinuationState, RunState
 from simple_harness.runtime.termination import TerminationLimits
+from tool_fixture import ECHO_SCHEMA
 
 TOOL = ("echo", {})
 

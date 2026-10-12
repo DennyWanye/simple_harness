@@ -16,12 +16,11 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.graph.projection_validation import GraphIntegrityError
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
-from agent_orchestrator.orchestrator.assurance_tick import AssuranceTick, MISSION_DATA_ERRORS
+from agent_orchestrator.orchestrator.assurance_tick import MISSION_DATA_ERRORS, AssuranceTick
 from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.storage.store import StoreError
 

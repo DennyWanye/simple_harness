@@ -12,7 +12,6 @@ from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
-
 from simple_harness.contracts import (
     CallId,
     EffectId,

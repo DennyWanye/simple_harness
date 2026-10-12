@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import platform
 import json
+import platform
 import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.schema import initialize_state_db
 from deskpet.session.project_binding import ProjectBindingService, SessionCreationService
 

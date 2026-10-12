@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..contracts.models import Event, Task, sha256_hex
 from ..contracts.htn import TaskSemanticBindingV1
+from ..contracts.models import Event, Task, sha256_hex
 from ..graph.eligibility import OccurrenceOutcome
 from ..planning.htn.grounding import derive_id
 from ..runtime.planning_operations import SourceUnavailable

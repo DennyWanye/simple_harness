@@ -41,16 +41,16 @@ from typing import Any, Optional
 
 import structlog
 
+from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.bundle import (
+    TASK_TYPES,
     AssemblyDecisions,
     AssemblyPolicy,
     ComponentTrace,
     ContextBundle,
     Slice,
-    TASK_TYPES,
     legacy_slice_to_fragment,
 )
-from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.classifier import ClassifierResult, TaskClassifier
 from deskpet.agent.assembler.components.base import ComponentContext
 from deskpet.agent.assembler.registry import ComponentRegistry
@@ -87,10 +87,10 @@ class ContextAssembler:
         component_registry: ComponentRegistry,
         policies: dict[str, AssemblyPolicy],
         classifier: TaskClassifier,
-        budget_allocator: Optional[BudgetAllocator] = None,
+        budget_allocator: BudgetAllocator | None = None,
         enabled: bool = True,
         component_timeout_ms: float = 1500.0,
-        default_config: Optional[dict[str, Any]] = None,
+        default_config: dict[str, Any] | None = None,
     ) -> None:
         self._registry = component_registry
         self._policies = policies
@@ -135,16 +135,16 @@ class ContextAssembler:
         self,
         user_message: str,
         *,
-        history: Optional[list[dict[str, Any]]] = None,
+        history: list[dict[str, Any]] | None = None,
         memory_manager: Any = None,
         tool_registry: Any = None,
         skill_registry: Any = None,
         mcp_manager: Any = None,
-        config: Optional[dict[str, Any]] = None,
-        session_id: Optional[str] = None,
-        current_message_id: Optional[int] = None,
-        task_type_override: Optional[str] = None,
-        memory_policy_override: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        current_message_id: int | None = None,
+        task_type_override: str | None = None,
+        memory_policy_override: dict[str, Any] | None = None,
     ) -> ContextBundle:
         """Produce a ContextBundle. MUST NOT raise."""
         start = time.monotonic()
@@ -311,8 +311,8 @@ class ContextAssembler:
         self,
         bundle: ContextBundle,
         *,
-        used_tools: Optional[list[str]] = None,
-        final_response: Optional[str] = None,
+        used_tools: list[str] | None = None,
+        final_response: str | None = None,
     ) -> None:
         """Record post-turn outcome for future adaptive learning (task 12.12).
 

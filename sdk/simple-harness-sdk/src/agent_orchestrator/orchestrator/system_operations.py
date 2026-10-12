@@ -18,7 +18,6 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from ..runtime.action_schema import is_operation_candidate_path
 from ..contracts.htn import TaskForm
 from ..contracts.models import ContractError
 from ..contracts.operation_intents import (
@@ -30,6 +29,7 @@ from ..contracts.operation_intents import (
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.permissions import Principal
 from ..planning.htn.grounding import derive_id
+from ..runtime.action_schema import is_operation_candidate_path
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore

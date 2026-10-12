@@ -9,8 +9,11 @@ import time
 from dataclasses import replace
 
 import pytest
-
-from deskpet.execution.foreground_queue import ControlKind, ForegroundQueueError, ForegroundQueueStore
+from deskpet.execution.foreground_queue import (
+    ControlKind,
+    ForegroundQueueError,
+    ForegroundQueueStore,
+)
 from tests.execution import test_primary_decisions as decisions
 from tests.execution.test_primary_foreground_runtime import assert_exact_sdk_terminal_identity
 

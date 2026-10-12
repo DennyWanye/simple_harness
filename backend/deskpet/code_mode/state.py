@@ -40,8 +40,8 @@ class CodeModeState:
     """One row of the per-session enable map."""
 
     enabled: bool = False
-    project_root: Optional[Path] = None
-    code_session_id: Optional[str] = None
+    project_root: Path | None = None
+    code_session_id: str | None = None
     # Optional human-readable name shown in UI; defaults to dir name.
     project_name: str = ""
 
@@ -163,15 +163,15 @@ class CodeModeManager:
             s = self._states.get(base_session_id)
             return bool(s and s.enabled)
 
-    def get(self, base_session_id: str) -> Optional[CodeModeState]:
+    def get(self, base_session_id: str) -> CodeModeState | None:
         with self._lock:
             return self._states.get(base_session_id)
 
-    def project_root(self, base_session_id: str) -> Optional[Path]:
+    def project_root(self, base_session_id: str) -> Path | None:
         s = self.get(base_session_id)
         return s.project_root if s else None
 
-    def code_session_id(self, base_session_id: str) -> Optional[str]:
+    def code_session_id(self, base_session_id: str) -> str | None:
         s = self.get(base_session_id)
         return s.code_session_id if s else None
 

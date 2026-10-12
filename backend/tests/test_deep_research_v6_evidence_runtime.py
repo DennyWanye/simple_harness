@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.retrieval.contracts import (
     EvidenceDocument,
     FetchRequest,
@@ -37,7 +36,6 @@ from deskpet.workflows.definitions.deep_research_v6_contracts import (
 from deskpet.workflows.store import RegisteredBlobStore
 from deskpet.workflows.trace import SpanContext, TraceStore, use_span
 from deskpet.workflows.trace.models import SpanKind, SpanStatus
-
 
 QUESTION = (
     "What were China's total population and number of births in 2024? "

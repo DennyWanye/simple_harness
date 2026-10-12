@@ -17,13 +17,11 @@ import time
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.artifact import (
     ToolArtifact,
     extract_artifacts_from_result,
     sha256_file_async,
 )
-
 
 # ─── T2-1 ~ T2-4 dataclass 基础 ─────────────────────────────
 

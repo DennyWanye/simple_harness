@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent
 from agent.trace import IterationTracer
 from llm.types import ChatResponse, ToolCall

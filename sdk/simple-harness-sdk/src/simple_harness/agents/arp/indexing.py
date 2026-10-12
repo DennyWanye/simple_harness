@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from simple_harness.execution.base_agent import AgentJournalRecord
 from simple_harness.execution.sqlite.base_agent import history

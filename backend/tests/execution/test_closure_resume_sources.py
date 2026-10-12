@@ -4,12 +4,11 @@ import json
 import sqlite3
 
 import pytest
+from deskpet.memory.human_memory_service import QueueTurnRequest
 from simple_harness import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-
-from deskpet.memory.human_memory_service import QueueTurnRequest
-from tests.execution.test_closure_request_guard import world, attempt_rows
+from tests.execution.test_closure_request_guard import attempt_rows, world
 
 RESUME = "Next: inspect the actual written file."
 
@@ -86,9 +85,9 @@ async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeyp
                     # Freeze the actual field immediately after its SDK mutation,
                     # before the same Run consumes a later scope route. That
                     # future route must not rewrite this producer's input proof.
+                    from deskpet.memory.trusted_disclosure import resolve_current_disclosure
                     from deskpet.task_scope.disclosure import render_scope_disclosure
                     from deskpet.task_scope.search import TaskScopeSearchStore
-                    from deskpet.memory.trusted_disclosure import resolve_current_disclosure
                     current = await w.queue.current_snapshot(w.runtime.subject)
                     scope_id = w.provider.route_result["context_route_receipt"]["task_scope_id"]
                     opened = await TaskScopeSearchStore(w.state).open_exact(subject=w.runtime.subject,

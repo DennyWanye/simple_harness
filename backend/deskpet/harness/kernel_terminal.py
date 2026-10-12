@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     LiveCursor,
     OutcomeStatus,
     PersistenceLevel,
@@ -19,7 +20,6 @@ from deskpet.execution.contracts import (
     RunNotFound,
     RunRecord,
     RunStatus,
-    TERMINAL_RUN_STATUSES,
     TerminalConflict,
     VersionConflict,
     stable_event_id,

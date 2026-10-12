@@ -43,8 +43,8 @@ the next iteration.
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Tuple
-
+from collections.abc import Awaitable, Callable
+from typing import Any, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def select_compactable_range(
     messages: list[dict[str, Any]],
     *,
     keep_recent: int = DEFAULT_KEEP_RECENT,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Return (start, end) — exclusive — of the contiguous middle range.
 
     The slice ``messages[start:end]`` is what we'll summarize. Anything
@@ -110,7 +110,7 @@ def select_compactable_range(
 
 def inject_summary(
     messages: list[dict[str, Any]],
-    compact_range: Tuple[int, int],
+    compact_range: tuple[int, int],
     summary_text: str,
 ) -> list[dict[str, Any]]:
     """Return a NEW list with messages[start:end] replaced by a single

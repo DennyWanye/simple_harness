@@ -436,7 +436,7 @@ def policy_snapshot(
     # Never serialize a callback's repr (object addresses are unstable and bound
     # objects can carry credentials). Availability still changes admission.
     if "appworld_execute" in fields:
-        configuration["appworld_execute"] = getattr(config, "appworld_execute") is not None
+        configuration["appworld_execute"] = config.appworld_execute is not None
     if getattr(config, "domain_tools", None):
         configuration["domain_tools"] = {
             name: {"schema": tool.schema, "read_only": tool.read_only}

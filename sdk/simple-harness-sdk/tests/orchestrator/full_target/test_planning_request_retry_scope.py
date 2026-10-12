@@ -11,9 +11,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, committed, events, root_task, run_until, seeded
-from h1i_seed import planner as seed_planner
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.orchestrator.planning_retry import pending_retry_permit
@@ -25,6 +22,8 @@ from agent_orchestrator.testing.scripted_replies import (
     review_input,
     review_reply,
 )
+from h1i_seed import CONFIG, committed, events, root_task, run_until, seeded
+from h1i_seed import planner as seed_planner
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid"
 

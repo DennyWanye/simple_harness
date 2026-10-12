@@ -4,9 +4,12 @@ import dataclasses
 import json
 
 import pytest
-
 from deskpet.retrieval.contracts import (
-    AttemptStatus, ProviderAttempt, RetrievalCandidate, SearchRequest, SearchResponse,
+    AttemptStatus,
+    ProviderAttempt,
+    RetrievalCandidate,
+    SearchRequest,
+    SearchResponse,
 )
 
 

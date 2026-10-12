@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.companion.authority import (
     GrowthAuthorityPhase,
     GrowthAuthorityRouter,
@@ -11,9 +10,9 @@ from deskpet.companion.authority import (
     GrowthWritesPaused,
 )
 from deskpet.companion.cutover import (
-    CompanionGrowthAuthorityAdapter,
     DEFAULT_POST_MARKER_STEPS,
     DEFAULT_PRE_MARKER_STEPS,
+    CompanionGrowthAuthorityAdapter,
     GrowthAuthorityCutoverCoordinator,
     GrowthCutoverPlan,
     GrowthCutoverPlanConflict,

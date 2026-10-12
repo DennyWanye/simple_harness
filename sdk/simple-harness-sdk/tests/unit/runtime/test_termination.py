@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.execution.budget import BudgetPolicy, BudgetSnapshot
 from simple_harness.runtime import build_react_driver
 from simple_harness.runtime.termination import (

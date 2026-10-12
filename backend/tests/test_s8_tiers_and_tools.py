@@ -7,10 +7,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from observability.vram import classify_tier
 from tools.clipboard import ReadClipboardTool
-
 
 # --- classify_tier ---
 

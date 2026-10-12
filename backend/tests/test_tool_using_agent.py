@@ -4,10 +4,9 @@
 """Tests for ToolUsingAgent — text-protocol tool routing layer."""
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
-
 from agent.providers.base import AgentProvider
 from agent.providers.tool_using import ToolUsingAgent
 from tools.base import ToolSpec

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     ContractValidationError,
     DimensionCoverage,
@@ -35,14 +34,13 @@ from deskpet.workflows.definitions.deep_research_v5_loop_policy import (
     settle_target_reached,
 )
 
-
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_loop_policy.json"
 
 
 class VirtualClock:
     def __init__(self) -> None:
         self.monotonic = 100.0
-        self.wall = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+        self.wall = datetime(2026, 7, 16, 8, 0, tzinfo=UTC)
 
     @property
     def wall_iso(self) -> str:

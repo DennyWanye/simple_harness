@@ -122,7 +122,7 @@ class ExecutionProjection:
             self.edges.append(edge)
 
     # ------------------------------------------------------------------ build
-    def build(self) -> "ExecutionProjection":
+    def build(self) -> ExecutionProjection:
         self._load_intents()
         self._plan_revisions()
         self._attempts()

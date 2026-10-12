@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+
 def _stub_handler(slice_name: str):
     """Return a handler closure that reports the owning slice."""
 

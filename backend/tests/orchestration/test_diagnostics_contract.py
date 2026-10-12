@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 import pytest
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._layered_lane import (

@@ -8,11 +8,10 @@ P0-2: VerifyGate matching 必须按 tool_hint 严格匹配，不放任一 ok rec
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import pytest
-
 from deskpet.agent.verify_gate import (
     Claim,
     ClaimPattern,
@@ -20,7 +19,6 @@ from deskpet.agent.verify_gate import (
     VerifyGate,
 )
 from deskpet.tools.receipt import make_receipt
-
 
 # ─── P0-1 registry → ReceiptStore 接电验证 ──────────────────
 
@@ -121,8 +119,8 @@ def test_p0_2_matching_tool_name_passes():
     """ledger 有 ppt_create ok=True → 匹配通过。"""
     r = make_receipt(
         tool_name="ppt_create", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     gate = _gate_with_pattern(["ppt_create"])
@@ -135,8 +133,8 @@ def test_p0_2_mismatched_tool_name_blocks():
     ppt_create → 必拒（修前会放行）。"""
     r = make_receipt(
         tool_name="excel_create", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     gate = _gate_with_pattern(["ppt_create"])  # claim 只接受 ppt
@@ -150,8 +148,8 @@ def test_p0_2_failed_receipt_does_not_satisfy():
     """ok=False receipt 不算匹配（工具调过但失败）。"""
     r = make_receipt(
         tool_name="ppt_create", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=False,
     )
     gate = _gate_with_pattern(["ppt_create"])
@@ -163,8 +161,8 @@ def test_p0_2_multi_tool_hint_any_match_passes():
     """pattern.tool_hint = [ppt_create, excel_create] → ledger 任一即匹配。"""
     r = make_receipt(
         tool_name="excel_create", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     gate = _gate_with_pattern(["ppt_create", "excel_create"])
@@ -176,8 +174,8 @@ def test_p0_2_empty_tool_hint_uses_file_tool_whitelist():
     """tool_hint=[] 的通用 pattern → ledger 有任一 file-gen 工具放行（保守扩展）。"""
     r = make_receipt(
         tool_name="ppt_create", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     gate = _gate_with_pattern([])  # 无 hint
@@ -189,8 +187,8 @@ def test_p0_2_empty_hint_random_tool_blocks():
     """tool_hint=[] + ledger 仅有 non-file 工具 (如 get_time) → 拒。"""
     r = make_receipt(
         tool_name="get_time", args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     gate = _gate_with_pattern([])  # 无 hint

@@ -11,9 +11,11 @@ Pass criteria:
 - NO permission_request event seen during the run
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import sys
+
 import websockets
 
 
@@ -53,7 +55,7 @@ async def smoke(secret: str) -> int:
                 if t == "chat_v2_error":
                     print(f"<- chat_v2_error {msg['payload']}")
                     break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("<- timeout")
     print()
     print(f"saw_permission_popup={saw_permission_popup}")

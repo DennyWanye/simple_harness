@@ -7,9 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from deskpet.tools import office_paths as op
 from deskpet.tools import ocr_tools as ocr
+from deskpet.tools import office_paths as op
 
 
 @pytest.fixture(autouse=True)

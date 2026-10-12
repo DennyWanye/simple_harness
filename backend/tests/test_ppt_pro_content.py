@@ -8,7 +8,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import SlideOutline
 

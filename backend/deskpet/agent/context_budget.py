@@ -4,11 +4,17 @@
 """Whole-request budget accounting for Context OS V1."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from deskpet.agent.tokens import count_messages_tokens, count_text_tokens
-from deskpet.tools.capabilities import PreparedToolPayload, PreparedToolSet, canonical_hash, canonical_json
+from deskpet.tools.capabilities import (
+    PreparedToolPayload,
+    PreparedToolSet,
+    canonical_hash,
+    canonical_json,
+)
 
 
 @dataclass(frozen=True)

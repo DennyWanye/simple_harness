@@ -86,7 +86,7 @@ _PENDING_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 class _LaneConnection:
     """Connection façade that routes explicit commit/rollback through the lane."""
 
-    def __init__(self, lane: "ExecutionWriteLane", db: aiosqlite.Connection) -> None:
+    def __init__(self, lane: ExecutionWriteLane, db: aiosqlite.Connection) -> None:
         self._lane = lane
         self._db = db
 

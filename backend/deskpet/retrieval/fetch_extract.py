@@ -8,7 +8,7 @@ import re
 import time
 import urllib.robotparser
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -18,7 +18,6 @@ from .content_quality import looks_like_app_shell, quality_flags
 from .contracts import EvidenceDocument, FetchRequest
 from .ranking import canonicalize_url, stable_candidate_id
 from .transports import ScraplingTransport
-
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TEXT_CONTENT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
@@ -115,13 +114,14 @@ class FetchExtractService:
         self._closed = False
 
     @classmethod
-    def from_config(cls, config) -> "FetchExtractService":
+    def from_config(cls, config) -> FetchExtractService:
         web = ((getattr(config, "raw", {}) or {}).get("tools") or {}).get("web") or {}
         research = (getattr(config, "raw", {}) or {}).get("research") or {}
         sg = config.search_gateway
         playwright_renderer = None
         if bool(getattr(sg, "playwright_renderer_enabled", True)):
             from deskpet.playwright_bundle import resolve_browser_bundle
+
             from .playwright_renderer import PlaywrightRendererPool
 
             playwright_renderer = PlaywrightRendererPool(
@@ -388,7 +388,7 @@ class FetchExtractService:
 
         text = text[: max(1, request.max_chars)]
         canonical = canonicalize_url(str(raw.get("url_final") or url))
-        fetched_at = datetime.now(timezone.utc).isoformat()
+        fetched_at = datetime.now(UTC).isoformat()
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         flags = list(quality_flags(text=text, html=html, content_type=content_type))
         async with self._content_lock:

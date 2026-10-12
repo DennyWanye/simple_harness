@@ -14,15 +14,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import structlog
 
 from .contracts import JsonValue
 from .effects import PreparedToolCall
-
 
 logger = structlog.get_logger(__name__)
 
@@ -158,7 +158,7 @@ class TaskOutputContractV1:
         *,
         output_refs: Sequence[object],
         scratch_refs: Sequence[object] = (),
-    ) -> "TaskOutputContractV1":
+    ) -> TaskOutputContractV1:
         workspace = Path(workspace_root).expanduser().resolve(strict=False)
         if not workspace.is_dir():
             raise ValueError("task output contract workspace must be an existing directory")
@@ -186,7 +186,7 @@ class TaskOutputContractV1:
         return contract
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "TaskOutputContractV1":
+    def from_dict(cls, value: Mapping[str, object]) -> TaskOutputContractV1:
         if value.get("schema_version") != 1:
             raise ValueError("unsupported task output contract schema version")
         contract = cls(

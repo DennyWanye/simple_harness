@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import office_paths as op
 from deskpet.tools import pdf_tools as pdf
 

@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.os_tools._scope_paths import normalize_model_path
 from deskpet.tools.os_tools.edit_file import edit_file
 from deskpet.tools.os_tools.list_directory import list_directory

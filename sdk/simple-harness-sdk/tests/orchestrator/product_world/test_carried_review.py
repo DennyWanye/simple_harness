@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
@@ -158,8 +157,12 @@ def test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner(tmp
             assert not [e for e in events if e.type == "CarriedResultAccepted"]
             # 被换掉的那一步已不在现行计划里：它的结果读起来是"范围过期"（归档），不是完整性错误
             # （阻断核验 B4：否则这种结果排队等验证时会把主循环冲垮）
-            from agent_orchestrator.orchestrator.completion_inputs import load_completion_result_inputs
-            from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
+            from agent_orchestrator.orchestrator.completion_inputs import (
+                load_completion_result_inputs,
+            )
+            from agent_orchestrator.orchestrator.operation_completion import (
+                OperationCompletionError,
+            )
 
             with pytest.raises(OperationCompletionError) as stale:
                 load_completion_result_inputs(world.store, world.store.get_result(result_id))

@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from config import load_config
 from deskpet.agent.assembler.components.base import ComponentContext
 from deskpet.agent.assembler.components.skill import SkillComponent
@@ -22,7 +21,6 @@ from deskpet.agent.assembler.policy import AssemblyPolicy
 from deskpet.agent.context_compressor import _partition
 from deskpet.skills.loader import SkillLoader, SkillMeta
 from deskpet.skills.skill_matcher import SkillMatcher
-
 
 _PPT_BODY = "生成 PPT 的注意事项：先列大纲再渲染，避免长标题竖排。"
 

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from .contracts import RunRequest
 from .profiles import ProfileRegistry, ProfileSpec
@@ -67,7 +68,7 @@ class RegisteredRouter:
             names = ",".join(sorted(missing))
             raise RouteUnavailable(f"route profile {profile.profile_key} is unavailable: {names}")
         digest = hashlib.sha256(
-            f"{request.request_id}\0{request.turn_id}\0{profile.profile_key}".encode("utf-8")
+            f"{request.request_id}\0{request.turn_id}\0{profile.profile_key}".encode()
         ).hexdigest()
         return RouteDecision(
             decision_key=f"route:{digest}",

@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 import yaml
 
+from deskpet.capabilities.contracts import fingerprint_json
 from deskpet.capabilities.manifest import (
     PackEnvironment,
     PackManifestError,
     load_and_validate_pack,
 )
-from deskpet.capabilities.contracts import fingerprint_json
 
 
 def _split_frontmatter(raw: bytes, *, path: Path) -> tuple[Mapping[str, Any], str]:
@@ -100,7 +101,7 @@ class PreparedSkillInvocationScopeV1:
     @classmethod
     def from_dict(
         cls, value: Mapping[str, Any]
-    ) -> "PreparedSkillInvocationScopeV1":
+    ) -> PreparedSkillInvocationScopeV1:
         """Restore one exact slash-selected scope without a fresh lookup."""
 
         if not isinstance(value, Mapping):

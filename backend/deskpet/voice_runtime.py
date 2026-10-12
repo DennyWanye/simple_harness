@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 VOICE_DISABLED_CODE = "voice_temporarily_disabled"
 VOICE_DISABLED_MESSAGE = "语音功能暂时关闭，后续将接入 Realtime。"
 

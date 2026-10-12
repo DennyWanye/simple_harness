@@ -11,7 +11,6 @@ import zipfile
 from typing import Any
 
 from arp_fixture import trusted_caller
-
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ScriptRun, ScriptRunReceipt

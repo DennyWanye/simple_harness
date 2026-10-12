@@ -39,8 +39,6 @@ from contextlib import ExitStack
 from types import SimpleNamespace
 
 import pytest
-from p33_world import opened, request
-
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
@@ -48,6 +46,7 @@ from agent_orchestrator.observability.business_replay import verify_library, ver
 from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.store import Store
+from p33_world import opened, request
 
 PATH = "sources/report.md"
 TEXT = "来源原文：我们不建议删除前提。\n"

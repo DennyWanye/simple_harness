@@ -44,7 +44,6 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import structlog
-
 from agent.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
@@ -52,8 +51,8 @@ from agent.context_messages import (
     context_attempt_scope,
     tag_message,
 )
-from deskpet.execution.provider_workloads import ProviderWorkloadContext
-from deskpet.execution.provider_workloads import invoke_explicit
+
+from deskpet.execution.provider_workloads import ProviderWorkloadContext, invoke_explicit
 
 logger = structlog.get_logger(__name__)
 
@@ -76,7 +75,7 @@ class CompressionResult:
     reduction_ratio: float = 0.0
     summary_preview: str = ""
     latency_ms: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
     # Count of middle messages rolled into the summary (for telemetry UI).
     messages_summarized: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
@@ -144,7 +143,7 @@ class ContextCompressor:
         last_n: int = 6,
         model: str = "claude-haiku-4-5",
         summary_max_tokens: int = 768,   # 512→768: 结构化摘要稍长,保任务连续性(优化 #2)
-        effective_pct: "float | None" = None,
+        effective_pct: float | None = None,
         microcompact_keep_tools: int = 3,
         microcompact_size_aware: bool = False,
         microcompact_keep_bytes: int = 24_000,
@@ -221,8 +220,8 @@ class ContextCompressor:
         *,
         context_window: int,
         threshold_percent: float,
-        effective_pct: "float | None",
-    ) -> "ContextCompressor":
+        effective_pct: float | None,
+    ) -> ContextCompressor:
         """Return an isolated view for one Run's frozen model limits.
 
         The summary client is safe to share, but window limits are not: two
@@ -342,8 +341,8 @@ class ContextCompressor:
         self,
         messages: list[dict[str, Any]],
         *,
-        goal_text: "str | None" = None,
-        pending_tasks: "list[str] | None" = None,
+        goal_text: str | None = None,
+        pending_tasks: list[str] | None = None,
         resolved_provider: Any = None,
         resolved_model: str | None = None,
         compaction_cycle_id: str | None = None,
@@ -999,7 +998,7 @@ def _looks_reflective(text: str) -> bool:
 
 def _extract_prior_summary(
     msgs: list[dict[str, Any]],
-) -> "tuple[Optional[str], list[dict[str, Any]]]":
+) -> tuple[str | None, list[dict[str, Any]]]:
     """WI-3 锚定增量：从待摘中段抽出上一次的 [压缩摘要],防止套娃 drift。
 
     扫 ``msgs`` 里动态 system 摘要（并兼容旧 assistant 摘要）且 content 以
@@ -1010,7 +1009,7 @@ def _extract_prior_summary(
 
     无历史摘要 → 返回 ``(None, list(msgs))``。
     """
-    prior: Optional[str] = None
+    prior: str | None = None
     kept: list[dict[str, Any]] = []
     for m in msgs:
         content = m.get("content")
@@ -1036,8 +1035,8 @@ def _microcompact_tool_results(
     messages: list[dict[str, Any]],
     keep_recent_tools: int,
     *,
-    keep_bytes: "int | None" = None,
-) -> "tuple[list[dict[str, Any]], int]":
+    keep_bytes: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     """WI-2 microcompact：把陈旧 tool_result 正文换占位串(不调模型、不动语义)。
 
     保护**最近 keep_recent_tools 个** role=="tool" 消息的 content 原文;更早的
@@ -1100,8 +1099,8 @@ def _approx_tokens(text: str) -> int:
 
 
 def _build_goal_anchor(
-    goal_text: "str | None",
-    pending_tasks: "list[str] | None",
+    goal_text: str | None,
+    pending_tasks: list[str] | None,
     *,
     metadata_enabled: bool = False,
     anchor_after: str | None = None,

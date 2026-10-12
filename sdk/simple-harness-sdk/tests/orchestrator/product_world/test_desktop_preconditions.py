@@ -18,7 +18,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.evidence_state import EvidenceEntry, TruthValue
 from agent_orchestrator.knowledge.predicates import proposition_key
 from agent_orchestrator.planning.htn.observers import ObservationOutcome, denial, observed

@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent, ToolBatchEvent
 from llm.types import ChatResponse, ToolCall
 from providers.openai_compatible import OpenAICompatibleProvider

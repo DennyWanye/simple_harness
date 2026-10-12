@@ -17,9 +17,13 @@ async def test_sdk_execution():
     print("=" * 60)
 
     # Import after path setup
-    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-    from deskpet.agent.run_presenter import build_product_run_presenter, CanonicalRunEventPresentationAdapter, PresentationState
+    from deskpet.agent.run_presenter import (
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+        build_product_run_presenter,
+    )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
     print("\n1. Creating mock context and components...")
 

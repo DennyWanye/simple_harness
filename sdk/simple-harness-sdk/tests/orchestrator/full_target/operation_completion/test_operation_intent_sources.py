@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.operation_intents import (
     OperationIntentSourceKind,
@@ -96,14 +95,13 @@ def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path,
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from publish_world import TARGET, publishing
-
     from agent_orchestrator.contracts.semantic_base import content_hash_of
     from agent_orchestrator.orchestrator.operation_intent_sources import (
         OperationIntentSourceError,
         prepare_operation_intent_sources,
     )
     from agent_orchestrator.storage.htn_store import HtnStore
+    from publish_world import TARGET, publishing
 
     async def run() -> None:
         async with publishing(tmp_path) as case:

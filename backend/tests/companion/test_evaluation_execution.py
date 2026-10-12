@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from deskpet.capabilities.process_job import ManagedProcessStartReceipt
 from deskpet.companion.authority import RevocationBarrier
 from deskpet.companion.contracts import (

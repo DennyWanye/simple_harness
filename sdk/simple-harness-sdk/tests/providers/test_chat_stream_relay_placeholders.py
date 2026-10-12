@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from simple_harness.providers.chat_stream import ChatStream
 from simple_harness.providers.errors import ProviderProtocolError
 

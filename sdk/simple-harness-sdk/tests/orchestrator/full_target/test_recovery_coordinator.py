@@ -21,7 +21,6 @@ import asyncio
 import sqlite3
 
 import pytest
-
 from agent_orchestrator.observability.business_replay import check_inventory
 from agent_orchestrator.orchestrator.recovery_coordinator import RECOVERY_STEPS, RecoveryState
 from agent_orchestrator.storage import schema
@@ -407,11 +406,10 @@ def test_an_isolated_missions_question_and_approvals_are_refused_and_taken_again
     import json
     from pathlib import Path
 
-    from h1i_seed import CONFIG, CRITERIA, GOAL, run_until
-
     from agent_orchestrator.api.facade import FacadeError
     from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
     from agent_orchestrator.testing.fixtures import package_of
+    from h1i_seed import CONFIG, CRITERIA, GOAL, run_until
 
     fixture = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "request-human.json"
 

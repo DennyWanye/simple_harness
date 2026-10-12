@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 from agent_orchestrator.storage.store import CodedStoreConflict, StoreConflict
-
 from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.orchestration.taskgraph import operate_taskgraph
 

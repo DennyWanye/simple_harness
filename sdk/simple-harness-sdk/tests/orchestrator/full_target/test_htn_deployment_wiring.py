@@ -97,10 +97,9 @@ def _open_product_mission(tmp_path, *, key: str, criteria: tuple[str, ...] = ("f
 
     import asyncio
 
-    from h1i_seed import CONFIG, GOAL, Seed, root_task
-
     from agent_orchestrator.testing.product_world import product_world
     from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+    from h1i_seed import CONFIG, GOAL, Seed, root_task
 
     loop = asyncio.new_event_loop()
     opened = product_world(Path(tmp_path) / "root", LayeredScriptedProvider(), auto=False, **{**CONFIG, **world})
@@ -452,18 +451,6 @@ def test_an_observer_that_is_down_writes_nothing(product_mission, worktree) -> N
 # *can* be grounded.
 
 
-from htn_world import (  # noqa: E402
-    Env,
-    atom,
-    ground_draft,
-    method,
-    out,
-    param,
-    root_network,
-    step,
-    task_binding,
-)
-
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     ReusePolicy,
     SideEffectKind,
@@ -478,6 +465,17 @@ from agent_orchestrator.planning.htn.observers import denial, observed  # noqa: 
 from agent_orchestrator.planning.htn.refinement import (  # noqa: E402
     evidence_requests,
     unknown_predicates,
+)
+from htn_world import (  # noqa: E402
+    Env,
+    atom,
+    ground_draft,
+    method,
+    out,
+    param,
+    root_network,
+    step,
+    task_binding,
 )
 
 PRIMARY = "demo.primary-ready"

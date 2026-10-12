@@ -71,10 +71,6 @@ _TASKGRAPH = Path(__file__).resolve().parent / "taskgraph_exec"
 if str(_TASKGRAPH) not in sys.path:
     sys.path.insert(0, str(_TASKGRAPH))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
-
-from h1i_seed import run_until  # noqa: E402
-
 from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
     AcceptedOutput,
     DisclosureState,
@@ -166,6 +162,8 @@ from agent_orchestrator.planning.htn.planner_package import (  # noqa: E402
 from agent_orchestrator.storage import acceptance_receipt_schema, schema  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.store import Store  # noqa: E402
+from h1i_seed import run_until  # noqa: E402
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 HEX_A = "a" * 64
 #: Pure-function cases quote a Mission and a root by literal ids; nothing is stored.
@@ -325,7 +323,7 @@ class _Pinned:
         def connection(self) -> Any:
             return self
 
-        def execute(self, query: str, params: tuple[str, ...]) -> "_Pinned._Store._Result":
+        def execute(self, query: str, params: tuple[str, ...]) -> _Pinned._Store._Result:
             del query, params
             if self._package_version is None:
                 return self._Result(None)
@@ -661,7 +659,9 @@ def _register(registry: PredicateRegistry, predicate_id: str):
     return signature
 
 
-from agent_orchestrator.knowledge.predicates import proposition_key as _proposition_key  # noqa: E402
+from agent_orchestrator.knowledge.predicates import (
+    proposition_key as _proposition_key,  # noqa: E402
+)
 from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
@@ -1071,7 +1071,10 @@ def test_the_first_plan_revision_on_the_product_deployment(tmp_path) -> None:
             held_back = [e for e in recorded if e.payload["reason"] == str(waiting.reason)]
             assert held_back and held_back[0].payload["detail_codes"]
             # M16: one occurrence withheld for two different reasons leaves two records
-            from agent_orchestrator.orchestrator.hierarchical_dispatch import DispatchAdmissions, DispatchRefusal
+            from agent_orchestrator.orchestrator.hierarchical_dispatch import (
+                DispatchAdmissions,
+                DispatchRefusal,
+            )
 
             for reason in (ReadinessReason.WAITING_DATA, ReadinessReason.STALE_BINDING):
                 dispatch.record_withheld(mission_id, DispatchAdmissions(plan_revision=1, refusals=(

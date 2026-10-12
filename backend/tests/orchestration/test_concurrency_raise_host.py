@@ -12,7 +12,6 @@ the earlier form.  Here a library freezes a request under one slot and restarts 
 from __future__ import annotations
 
 import pytest
-
 from deskpet.orchestration.service import OrchestrationSettings
 
 from ._support import notes_request

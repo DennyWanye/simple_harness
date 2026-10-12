@@ -26,7 +26,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import AttemptStatus, MissionStatus, MissionStopReason, TaskStatus
 from agent_orchestrator.orchestrator.commit_service import OPEN_ATTEMPT_STATES
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of, role_of

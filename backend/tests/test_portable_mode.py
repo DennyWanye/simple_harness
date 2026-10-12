@@ -14,9 +14,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 import paths
+import pytest
 
 
 def _make_fake_install(tmp_path) -> tuple[Path, Path]:

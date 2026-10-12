@@ -9,9 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from h1i_seed import run_until
-from product_assembly import unstarted
-
 from agent_orchestrator.artifacts.workspace import WorkspaceCleanupIncomplete, WorkspaceManager
 from agent_orchestrator.governance.budgets import BudgetLedger
 from agent_orchestrator.orchestrator import event_handler
@@ -19,6 +16,8 @@ from agent_orchestrator.runtime.assembly import AssembledOrchestratorRuntime
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from h1i_seed import run_until
+from product_assembly import unstarted
 from simple_harness.agents.runtime import AgentRuntime
 
 

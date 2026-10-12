@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import semantic_base
 from agent_orchestrator.contracts.htn import parse_condition
 from agent_orchestrator.contracts.models import ContractError

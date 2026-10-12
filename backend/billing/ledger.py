@@ -13,13 +13,12 @@ DailyBudgetHook contract: see docs/superpowers/specs/2026-04-15-p2-1-finale-desi
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import aiosqlite
 import structlog
-
 from router.types import BudgetContext, BudgetDecision, BudgetHook
 
 logger = structlog.get_logger()
@@ -106,7 +105,7 @@ class BillingLedger:
         cost = self._cost_cny(provider, model, total)
         # ts_utc keeps the canonical UTC wall clock for auditing; ts_date is
         # the *local* day key used by the daily rollover (see _DEFAULT_TZ).
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         today_local = datetime.now(self._tz).date().isoformat()
         async with self._lock:
             async with aiosqlite.connect(self._db_path) as db:

@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.semantic_base import TypedRef
 from ..contracts.htn import TaskSemanticBindingV1
 from ..contracts.models import sha256_hex
-from ..graph.network_codec import NetworkDocumentV1, encode
+from ..contracts.semantic_base import TypedRef
 from ..graph.convergence import compute_convergence_impact
+from ..graph.network_codec import NetworkDocumentV1, encode
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store, StoreError
 from .taskgraph_bindings import current_bindings as read_current_bindings

@@ -7,7 +7,6 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_DIR.parent
 FORBIDDEN_IMPORT_ROOTS = frozenset({"langgraph", "langchain", "langchain_core"})

@@ -22,10 +22,13 @@ _FULL_TARGET = Path(__file__).resolve().parents[1]
 if str(_FULL_TARGET) not in sys.path:
     sys.path.insert(0, str(_FULL_TARGET))
 
-from h1i_seed import CONFIG, CRITERIA, GOAL, root_task  # noqa: E402
-
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi, PlanningGrantReceipt  # noqa: E402
-from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance  # noqa: E402
+from agent_orchestrator.api.planning_authorization import (  # noqa: E402
+    PlanningAuthorizationApi,
+    PlanningGrantReceipt,
+)
+from agent_orchestrator.orchestrator.taskgraph_deployment import (
+    InstalledHtnWiringAcceptance,  # noqa: E402
+)
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore  # noqa: E402
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
@@ -37,6 +40,7 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     planner_reply,
     worker_reply,
 )
+from h1i_seed import CONFIG, CRITERIA, GOAL, root_task  # noqa: E402
 
 #: 种子任务的产出文件（``h1i_seed`` 的要求：``file:NOTES.md``）。
 OUTPUT = "NOTES.md"

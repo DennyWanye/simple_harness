@@ -2,6 +2,7 @@
 import hashlib
 import shutil
 import sqlite3
+
 import pytest
 from deskpet.memory import migrator, schema
 

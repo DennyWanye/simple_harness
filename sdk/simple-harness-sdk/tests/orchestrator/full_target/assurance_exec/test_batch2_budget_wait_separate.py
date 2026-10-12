@@ -13,7 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.governance.budgets import BudgetError

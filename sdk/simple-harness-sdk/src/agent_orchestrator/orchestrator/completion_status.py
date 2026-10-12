@@ -30,7 +30,6 @@ from ..storage.store import Store, StoreConflict, StoreError
 from .operation_completion import OperationCompletionReader
 from .review_adjudication import accepted_or_adjudicated
 
-
 #: 效果"不在途"的两种状态（Assurance §7.2，2026-10-06 车道 O）：已验收，或结果不明等人 / 对账。
 #: 根终审只在根范围每项必需效果都不在途时开门；收尾把"只差结果不明的效果"记 BLOCKED_UNKNOWN。
 #: 其余状态（等申请单 / 审阅 / 批准 / 执行 / 结果审阅、被拒、没生效）都是在途或归系统操作那条线处理。

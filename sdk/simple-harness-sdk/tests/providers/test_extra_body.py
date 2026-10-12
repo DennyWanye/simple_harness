@@ -9,7 +9,6 @@ import asyncio
 
 import httpx
 import pytest
-
 from simple_harness.contracts import Message, MessageRole, RequestId
 from simple_harness.providers import OpenAICompatibleProvider, ProviderRequest, Secret
 from simple_harness.providers.openai_compatible import openai_chat_request_payload

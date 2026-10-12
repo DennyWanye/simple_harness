@@ -4,13 +4,14 @@ import inspect
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows import WorkflowContext
 from deskpet.workflows.contracts import NodeExecutionIdentity, canonical_json
+from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 from deskpet.workflows.definitions.deep_research_v6_contracts import (
     ResearchSpecV1,
     build_route_decision_from_spec,
 )
+from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import EvidenceCandidateV1
 from deskpet.workflows.definitions.deep_research_v6_production_nodes import (
     ADMISSION_POLICY_V1,
     ASSESSMENT_POLICY_V1,
@@ -25,8 +26,6 @@ from deskpet.workflows.definitions.deep_research_v6_production_nodes import (
     synthesize_inferences_handler,
     validate_candidate_admission,
 )
-from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
-from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import EvidenceCandidateV1
 from deskpet.workflows.definitions.v6.deep_research import (
     DEEP_RESEARCH_V6_DEFINITION,
     NODE_IDS,
@@ -190,7 +189,7 @@ def test_admission_validator_preserves_frozen_first_failure_order() -> None:
     import copy
     import hashlib
 
-    body = "2024年末全国人口140828万人。".encode("utf-8")
+    body = "2024年末全国人口140828万人。".encode()
     spec = compile_research_spec(
         "What was China's year-end total population in 2024?"
     )

@@ -226,7 +226,7 @@ class CandidateCompositionFactsV1:
         reservation_version: int | None = None,
         reflection_job_id: str | None = None,
         attempt_generation: int = 1,
-    ) -> "CandidateCompositionFactsV1":
+    ) -> CandidateCompositionFactsV1:
         values = {
             "build_id": build_id,
             "build_state": build_state,

@@ -6,7 +6,6 @@ from dataclasses import replace
 
 import httpx
 import pytest
-
 from config import SearchGatewayConfig
 from deskpet.retrieval.contracts import RetrievalCandidate, SearchRequest
 from deskpet.retrieval.search_gateway import SearchGateway

@@ -12,7 +12,6 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceNotifyConsumer
 from agent_orchestrator.orchestrator.assurance_final_writer import (
     NOTIFICATION_EVENT,

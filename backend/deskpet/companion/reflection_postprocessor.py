@@ -98,7 +98,7 @@ class HostNeutralSemanticGrowthResultV1:
     def from_mapping(
         cls,
         raw: Mapping[str, object],
-    ) -> "HostNeutralSemanticGrowthResultV1":
+    ) -> HostNeutralSemanticGrowthResultV1:
         required = {
             "decision",
             "target_kind",

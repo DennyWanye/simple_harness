@@ -11,8 +11,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
-from agent_orchestrator.assurance.codec import MAX_BYTES, MAX_RECORD_BYTES, AssuranceError, canonical
+from agent_orchestrator.assurance.codec import (
+    MAX_BYTES,
+    MAX_RECORD_BYTES,
+    AssuranceError,
+    canonical,
+)
 from agent_orchestrator.orchestrator.assurance_review_import import raw_package
 
 

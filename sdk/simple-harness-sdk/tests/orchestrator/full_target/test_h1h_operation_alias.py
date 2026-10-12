@@ -35,9 +35,6 @@ for _directory in (_SDK_TESTS / "full_target", _SDK_TESTS / "step07"):
     if str(_directory) not in sys.path:
         sys.path.insert(0, str(_directory))
 
-from helpers_step07 import ENABLED, candidate, ledger_world  # noqa: E402
-from test_htn_store import HASH_B, envelope  # noqa: E402
-
 from agent_orchestrator.orchestrator.action_commits import (  # noqa: E402
     ActionCommitError,
 )
@@ -49,6 +46,8 @@ from agent_orchestrator.storage.planning_admission_store import (  # noqa: E402
     PlanningAdmissionStore,
 )
 from agent_orchestrator.storage.store import StoreConflict  # noqa: E402
+from helpers_step07 import ENABLED, candidate, ledger_world  # noqa: E402
+from test_htn_store import HASH_B, envelope  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -24,9 +24,10 @@ import shutil
 import signal
 import subprocess
 import sys
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from deskpet.companion.authority import (

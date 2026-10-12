@@ -26,12 +26,12 @@ import json
 import os
 import threading
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 import structlog
-
 from paths import user_models_dir
 
 logger = structlog.get_logger(__name__)
@@ -44,7 +44,7 @@ DEFAULT_CDN_BASE = (
 
 #: (子目录, 就绪哨兵文件)。哨兵存在即视为就绪；None 表示"目录非空即就绪"。
 #: 子目录名与 `paths.resolve_model_dir` 期望的一致。
-_MODELS: tuple[tuple[str, Optional[str]], ...] = (
+_MODELS: tuple[tuple[str, str | None], ...] = (
     # 2026-09-01: WeMM-Embedding-2B replaces BGE-M3 as the vector model.
     # NOTE(release): upload the WeMM snapshot to the COS model bucket before
     # shipping — the provisioner can only download what the bucket holds.
@@ -67,12 +67,12 @@ class ProvisionStatus:
     """供前端渲染的快照。state 机：idle→checking→downloading→ready/error。"""
 
     state: str = "idle"
-    current: Optional[str] = None  # 正在下载的模型子目录名
+    current: str | None = None  # 正在下载的模型子目录名
     index: int = 0                 # 1-based：当前是第几个
     total: int = 0                 # 本次需下载的模型总数
     downloaded_bytes: int = 0      # 当前模型已下载（按磁盘实时大小估）
     total_bytes: int = 0           # 当前模型总字节（来自 manifest，0=未知）
-    error: Optional[str] = None
+    error: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -106,9 +106,9 @@ class ModelProvisioner:
 
     def __init__(
         self,
-        models_dir: Optional[Path] = None,
-        cdn_base: Optional[str] = None,
-        fetch_url: Optional[FetchUrl] = None,
+        models_dir: Path | None = None,
+        cdn_base: str | None = None,
+        fetch_url: FetchUrl | None = None,
     ) -> None:
         # models_dir=None → 运行时解析（尊重 env override）。测试可注入临时目录。
         self._models_dir_override = Path(models_dir) if models_dir else None
@@ -132,7 +132,7 @@ class ModelProvisioner:
     def _target(self, subdir: str) -> Path:
         return self._models_dir() / subdir
 
-    def _is_ready(self, subdir: str, sentinel: Optional[str]) -> bool:
+    def _is_ready(self, subdir: str, sentinel: str | None) -> bool:
         d = self._target(subdir)
         if not d.is_dir():
             return False
@@ -143,7 +143,7 @@ class ModelProvisioner:
         except OSError:
             return False
 
-    def missing(self) -> list[tuple[str, Optional[str]]]:
+    def missing(self) -> list[tuple[str, str | None]]:
         return [m for m in _MODELS if not self._is_ready(m[0], m[1])]
 
     # ---- 状态 ----------------------------------------------------------

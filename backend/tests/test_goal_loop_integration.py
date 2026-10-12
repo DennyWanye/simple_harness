@@ -13,11 +13,9 @@ import inspect
 from typing import Any, Optional
 
 import pytest
-
 from agent.agent_loop import AgentLoop, FinalEvent
 from deskpet.agent.goal_store import SessionGoalStore
 from llm.types import ChatResponse, ChatUsage
-
 
 # ───────────────────── fake LLM / tools (copied from existing loop tests) ─
 
@@ -29,8 +27,8 @@ class FakeLLMRegistry:
     async def chat_with_fallback(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         self.calls.append({"messages": messages, "tools": tools, "model": model})
@@ -40,7 +38,7 @@ class FakeLLMRegistry:
 
 
 class FakeToolRegistry:
-    def schemas(self, enabled_toolsets: Optional[list[str]] = None) -> list[dict[str, Any]]:
+    def schemas(self, enabled_toolsets: list[str] | None = None) -> list[dict[str, Any]]:
         return []
 
     def dispatch(self, name: str, args: dict[str, Any], task_id: str) -> Any:

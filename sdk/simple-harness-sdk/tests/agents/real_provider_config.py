@@ -64,7 +64,6 @@ def resolve_real_provider() -> RealProviderConfig | None:
 
 def build_real_provider(config: RealProviderConfig, *, timeout: float = 180.0):  # type: ignore[no-untyped-def]
     import httpx
-
     from simple_harness.providers import OpenAICompatibleProvider, Secret
 
     # The DeepSeek relay currently terminates TLS 1.2 reliably but intermittently

@@ -19,7 +19,6 @@ from .store.checkpointer import (
 )
 from .store.run_store import ForkPreparationError, WorkflowRunStore
 
-
 _RUN_NAMESPACE = uuid.UUID("43e3158d-908d-49f6-881d-f830c72fba40")
 _TRACE_NAMESPACE = uuid.UUID("c927ec1a-b5fa-4a73-b0b2-90d57d8f23c8")
 _CHECKPOINT_NAMESPACE = uuid.UUID("a949969a-f687-4b92-9a92-8f1ed0cb1323")
@@ -207,7 +206,7 @@ class WorkflowReplay:
                     "source workflow run version changed",
                     details={"current_version": int(source["run_version"])},
                 )
-            require = getattr(self.registry, "require")
+            require = self.registry.require
             try:
                 registration = require(
                     str(source["workflow_name"]),
@@ -413,8 +412,8 @@ class WorkflowReplay:
             "thread_id": str(source["thread_id"]),
             "run_id": str(source["run_id"]),
         }
-        manifest = getattr(registration, "manifest")
-        if int(getattr(manifest, "state_schema_version")) != expected["schema_version"]:
+        manifest = registration.manifest
+        if int(manifest.state_schema_version) != expected["schema_version"]:
             raise WorkflowReplayError(
                 "fork_state_schema_mismatch", "source state schema does not match the workflow manifest"
             )

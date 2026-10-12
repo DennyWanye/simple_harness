@@ -70,7 +70,6 @@ from ..context.retrieval import (
     knowledge_view,
     rank_knowledge,
 )
-from ..contracts.error_table import refusal_charges_planner
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -89,7 +88,12 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
-from ..contracts.error_table import CodedFault, RoundFaultCode, SharingRefused
+from ..contracts.error_table import (
+    CodedFault,
+    RoundFaultCode,
+    SharingRefused,
+    refusal_charges_planner,
+)
 from ..contracts.models import jsonable, sha256_hex
 from ..contracts.planning_decisions import (
     PlanningRefKind,
@@ -98,17 +102,19 @@ from ..contracts.planning_decisions import (
     UnsupportedPlanningPackage,
 )
 from ..contracts.resolution import DeliveryStage
-from ..planning.decision_feedback import refusal_text
 from ..contracts.semantic_base import content_hash_of
 from ..contracts.state_machines import IllegalTransition
+from ..deployment.root import current_criteria, current_statements
 from ..governance.budgets import BudgetError, BudgetExhausted
 from ..governance.permissions import Principal
 from ..governance.policies import action_decision, deployed_layers, effective_tools
 from ..governance.promotion import diff_params, interpreter_versions, resolve_params
 from ..graph.eligibility import EligiblePrimitiveTask
 from ..graph.projection_validation import GraphIntegrityError
-from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE, knowledge_standing
+from ..memory.knowledge_standing import STALE as KNOWLEDGE_STALE
+from ..memory.knowledge_standing import knowledge_standing
 from ..memory.verified_knowledge import KnowledgeIndex
+from ..planning.decision_feedback import refusal_text
 from ..runtime.actions import ActionExecutor, publication_overlaps_storage
 from ..runtime.agent_worker import AgentBridge, Liveness, user_message_json
 from ..runtime.assembly import (
@@ -158,7 +164,12 @@ from ..scheduling.allocator import (
     OPEN_ATTEMPT_STATES,
     allocate_v2,
 )
-from ..scheduling.backpressure import BacklogResponse, BackpressureState, Observation, backlog_response
+from ..scheduling.backpressure import (
+    BacklogResponse,
+    BackpressureState,
+    Observation,
+    backlog_response,
+)
 from ..storage.store import (
     DispatchIntent,
     InjectedCrash,
@@ -186,17 +197,16 @@ from .action_commits import (
     judgment_key,
     parse_action_criterion,
 )
+from .carried_review import CARRIED_RESULT_REJECTED, carried_reviews
 from .commit_service import (
     CommitRejected,
     CommitService,
     MissionSpec,
     Reservation,
-    mission_account,
     is_global_account,
+    mission_account,
     task_account,
 )
-from ..deployment.root import current_criteria, current_statements
-from .carried_review import CARRIED_RESULT_REJECTED, carried_reviews
 from .hierarchical_dispatch import (
     MISSION_STALLED,
     HierarchicalDispatch,
@@ -701,8 +711,8 @@ class Orchestrator:
                 deployed_layers=self._deployed,
                 mission_profile_validator=self._validate_mission_profile,
             )
-            from ..assurance.root_gate import AssuranceRootGate
             from ..assurance.codec import AssuranceError
+            from ..assurance.root_gate import AssuranceRootGate
 
             # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
             if self._executor is not None:
@@ -1767,8 +1777,8 @@ class Orchestrator:
                 if intent.mission_id == mission_id:
                     self._settle_intent(intent, "FAILED")
             return
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
         from ..runtime.planning_operations import SourceUnavailable
+        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
         reader = TaskGraphRuntimeImports(self)
         for intent in self.store.list_intents(
                 "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"):
@@ -3214,7 +3224,7 @@ class Orchestrator:
     def _resume_planning_services(self, mission: Mission) -> bool:
         """Consume service receipts and reserve the next Planner atomically."""
         from ..storage.planning_human_store import PlanningHumanStore
-        from .planning_runtime_block import pending_block, last_wake
+        from .planning_runtime_block import last_wake, pending_block
         runtime_block = pending_block(self.store, mission.id)
         if runtime_block is not None and last_wake(self.store, mission.id, runtime_block) is None:
             return False
@@ -3763,7 +3773,10 @@ class Orchestrator:
 
     async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
         from .failure_classes import (
-            NON_MODEL_FAILURE_CAP, ROUND_CORRUPT, ROUND_FAULT_MIN_SECONDS, classify_round_fault,
+            NON_MODEL_FAILURE_CAP,
+            ROUND_CORRUPT,
+            ROUND_FAULT_MIN_SECONDS,
+            classify_round_fault,
             round_fault_delay,
         )
 
@@ -4617,15 +4630,14 @@ class Orchestrator:
             PlanningRefV1,
         )
         from ..governance.planning_authorization import (
-            planning_policy_for_mission,
-            StorePlanningAuthorityReader,
-            build_planning_authorization,
-        )
-        from ..governance.planning_authorization import (
             SourceUnavailable as AuthoritySourceUnavailable,
         )
+        from ..governance.planning_authorization import (
+            StorePlanningAuthorityReader,
+            build_planning_authorization,
+            planning_policy_for_mission,
+        )
         from ..orchestrator.plan_commits import PlanPrincipal
-        from .assurance_point_use import planning_evidence_stale
         from ..planning.decision_admission import (
             AdmissionContext,
             AuthorizationView,
@@ -4648,6 +4660,7 @@ class Orchestrator:
         )
         from ..storage.planning_admission_store import PlanningAdmissionStore
         from ..storage.planning_decision_store import PlanningDecisionStore
+        from .assurance_point_use import planning_evidence_stale
         from .planning_protocol_binding import current_planning_protocol
 
         body = intent.config.get("planning_package")
@@ -4767,7 +4780,7 @@ class Orchestrator:
                     f"an unavailable parameter schema {contract.parameter_schema_ref!s}"
                 )
             required_parameters = tuple(
-                sorted(str(getattr(field, "name")) for field in getattr(schema, "fields", ()))
+                sorted(str(field.name) for field in getattr(schema, "fields", ()))
             )
             predicates = tuple(
                 sorted(
@@ -4869,8 +4882,8 @@ class Orchestrator:
         prompt = self._hierarchical_planner_template(mission.id)
         from .planning_evidence import evidence_authority
         evidence_observers, evidence_authorized = evidence_authority(world, authority)
-        from ..storage.obligation_store import ObligationStore
         from ..contracts.htn import ObligationId
+        from ..storage.obligation_store import ObligationStore
         duties = ObligationStore(self.store)
         open_duties = {str(duty.obligation_id) for duty in duties.list_obligations(mission.id)
             if (account := duties.account(mission.id, ObligationId(str(duty.obligation_id)))).has_admitted_demand
@@ -5150,8 +5163,8 @@ class Orchestrator:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""
 
         self._require_assurance_execution_root()
-        from .assurance_review_transport import require_review_handoff
         from ..assurance.codec import AssuranceError
+        from .assurance_review_transport import require_review_handoff
 
         try:
             require_review_handoff(self.commit, intent)
@@ -5893,8 +5906,8 @@ class Orchestrator:
                     return True
             return False
         if result is None:
-            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
             from ..runtime.planning_operations import SourceUnavailable
+            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
             try:
                 source = TaskGraphRuntimeImports(self).read_subject(intent)
                 self.commit.import_usage(intent.subject_id, intent.mission_id, source.usage)
@@ -7151,6 +7164,11 @@ class Orchestrator:
         if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
             and decision.decision_type in {PlanningDecisionType.REQUEST_HUMAN, PlanningDecisionType.PROPOSE_METHOD,
                                            PlanningDecisionType.READ_METHOD_LIBRARY}):
+            from ..contracts.planning_decisions import (
+                ProposeMethodDecision,
+                ReadMethodLibraryDecision,
+                RequestHumanDecision,
+            )
             from .planning_method_proposal import (
                 decode_proposal,
                 persist_method,
@@ -7158,8 +7176,6 @@ class Orchestrator:
                 proposal_origin,
                 read_library,
             )
-            from ..contracts.planning_decisions import ReadMethodLibraryDecision
-            from ..contracts.planning_decisions import RequestHumanDecision, ProposeMethodDecision
             prepared_method = None
             try:
                 with self.store.transaction():
@@ -7264,8 +7280,8 @@ class Orchestrator:
             return
         if (isinstance(pre_admitted, PreAdmittedPlanningDecision)
             and decision.decision_type is PlanningDecisionType.REQUEST_EVIDENCE):
-            from .planning_evidence import prepare_questions, observe_questions, persist_questions
             from ..contracts.planning_decisions import RequestEvidenceDecision
+            from .planning_evidence import observe_questions, persist_questions, prepare_questions
             assert isinstance(decision.payload, RequestEvidenceDecision)
             try:
                 world = new_mode.require_planning_world()
@@ -7401,7 +7417,7 @@ class Orchestrator:
             if not isinstance(proposal, PlanProposal):
                 raise ContractError("SOURCE_UNAVAILABLE: preview adapter returned no proposal")
             retiring_instance_ids = tuple(
-                str(getattr(operation, "method_instance_id"))
+                str(operation.method_instance_id)
                 for operation in proposal.operations
                 if getattr(operation, "method_instance_id", None) is not None
             )
@@ -7423,9 +7439,9 @@ class Orchestrator:
                     raise ContractError(f"SOURCE_UNAVAILABLE: {error}") from error
                 world = new_mode.require_planning_world()
                 network = new_mode.network(mission.id)
+                from ..contracts.htn import GraphStructureBudget
                 from ..storage.taskgraph_store import require_bound
                 from .taskgraph_policy import read_installed_graph_policy
-                from ..contracts.htn import GraphStructureBudget
                 require_bound(self.store, mission.id)
                 preview_budget = GraphStructureBudget.from_json(
                     read_installed_graph_policy(self.store, mission.id).to_json()["graph_structure_budget"])
@@ -7435,8 +7451,12 @@ class Orchestrator:
                     principal_id=context.authorization.planning_snapshot.planner_principal_id,
                     scope_id="mission")
                 taskgraph_sources = new_mode._taskgraph_preview.capture(request_id, decision_id, source_principal)
+                from ..contracts.htn import (
+                    CancelBranchOperation,
+                    ProposeSuccessorOperation,
+                    RebindInputOperation,
+                )
                 from .repair_impact import read_repair_impact_indexes
-                from ..contracts.htn import CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation
                 graph_mutation = any(isinstance(op, (CancelBranchOperation, ProposeSuccessorOperation, RebindInputOperation))
                                      for op in proposal.operations)
                 frozen_inputs = PreviewInputs(
@@ -7666,8 +7686,8 @@ class Orchestrator:
             solver_snapshot = None
             solver_result = None
             if self._config.planning_backend is not None:
-                from .planning_backend_runtime import solve_decision
                 from ..planning.htn.backend_port import BackendStatus
+                from .planning_backend_runtime import solve_decision
                 solver_lane = new_mode.solver_preview_lane(mission.id, outcome.proposal,
                     preview=preview_candidate, admission=planning_commit_admission,
                     principal=principal, command_id=(f"plan:{intent.intent_id}"
@@ -9655,8 +9675,10 @@ class Orchestrator:
         if not tasks or mission.status is not MissionStatus.ACTIVE:
             return False
         from .operation_runtime import (
-            advance_operation_outcomes, dispatch_materialized_operations,
-            ensure_assured_proposal_reviews, recover_materializations,
+            advance_operation_outcomes,
+            dispatch_materialized_operations,
+            ensure_assured_proposal_reviews,
+            recover_materializations,
         )
 
         if ensure_assured_proposal_reviews(self, mission.id):
@@ -10949,8 +10971,8 @@ class Orchestrator:
                     },
                 }
             )
-        from .scoped_content_review import task_content_prompt_scope
         from ..context.context_builder import _seal
+        from .scoped_content_review import task_content_prompt_scope
         content_scope = task_content_prompt_scope(self.store, mission.id, task.id)
         # The Task contract is a durable document-assessment identity. Keep it
         # byte-equivalent to the committed Task; the separate content scope
@@ -11517,7 +11539,12 @@ def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
     from .failure_classes import (
-        INFRA, classify_failure, output_exhausted, output_exhausted_fact, turn_cap_exceeded, turn_cap_fact,
+        INFRA,
+        classify_failure,
+        output_exhausted,
+        output_exhausted_fact,
+        turn_cap_exceeded,
+        turn_cap_fact,
     )
 
     """What the repair Attempt is told about the failures before it.

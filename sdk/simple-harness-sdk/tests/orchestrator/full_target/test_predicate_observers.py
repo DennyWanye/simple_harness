@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.evidence_state import QueryCompleteness
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.semantic_base import Provenance, TypedRefKind

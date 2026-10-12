@@ -35,17 +35,6 @@ _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
 
-from htn_world import (  # noqa: E402
-    Env,
-    load_proposal,
-    method,
-    param,
-    ref,
-    seed_env,
-    step,
-    task_binding,
-)
-
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     MethodRegistryStatus,
     RegistryAuthor,
@@ -60,6 +49,7 @@ from agent_orchestrator.planning.htn.applicability import (  # noqa: E402
 )
 from agent_orchestrator.planning.htn.method_proposals import (  # noqa: E402
     PROPOSAL_AUTHOR,
+    SYSTEM_BOUND_FIELDS,  # noqa: E402
     TERMINAL_STATUSES,
     ApplicabilityNote,
     MethodProposalContext,
@@ -74,7 +64,16 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     MethodProposal,
     RejectionCode,
 )
-from agent_orchestrator.planning.htn.method_proposals import SYSTEM_BOUND_FIELDS  # noqa: E402
+from htn_world import (  # noqa: E402
+    Env,
+    load_proposal,
+    method,
+    param,
+    ref,
+    seed_env,
+    step,
+    task_binding,
+)
 
 MISSION = "mission-1"
 

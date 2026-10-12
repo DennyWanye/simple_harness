@@ -8,7 +8,6 @@ import hashlib
 from dataclasses import FrozenInstanceError
 
 import pytest
-
 from simple_harness.contracts import CallId, EffectId, RequestId, RunId
 from simple_harness.tools import (
     CancellationToken,

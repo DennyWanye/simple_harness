@@ -8,10 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
-
 
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 

@@ -9,10 +9,9 @@ Draft written before the implementation (plan 2026-09-11 H2/H3).
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.api.policies import PolicyApi
-from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
 

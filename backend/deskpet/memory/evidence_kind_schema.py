@@ -30,9 +30,11 @@ import time
 from pathlib import Path
 
 import aiosqlite
+
 from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.context_use_recollect_schema import (
-    initialize_context_use_recollect_state_db, validate_context_use_recollect_state_db,
+    initialize_context_use_recollect_state_db,
+    validate_context_use_recollect_state_db,
 )
 
 MIGRATION = "primary/049_evidence_kind_recollection_v57.sql"

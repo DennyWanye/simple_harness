@@ -23,8 +23,8 @@ import asyncio
 import hashlib
 import json
 import logging
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any, Literal, Optional
 
@@ -122,13 +122,13 @@ class ToolArtifact:
     字段顺序必须稳定（用于字节级 golden file 对账，TG-12 T12-1）。
     """
     kind: Kind
-    path: Optional[str] = None
-    url: Optional[str] = None
-    mime: Optional[str] = None
+    path: str | None = None
+    url: str | None = None
+    mime: str | None = None
     title: str = ""
-    preview: Optional[str] = None
-    size_bytes: Optional[int] = None
-    sha256: Optional[str] = None
+    preview: str | None = None
+    size_bytes: int | None = None
+    sha256: str | None = None
     created_at: str = ""
     actions: list[ArtifactAction] = field(default_factory=list)
 
@@ -152,7 +152,7 @@ class ToolArtifact:
                 self.title = "untitled"
         # 默认 created_at = now（UTC, ISO-8601 with Z）
         if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).strftime(
+            self.created_at = datetime.now(UTC).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
         # 默认 mime（仅 file）
@@ -195,7 +195,7 @@ def _sha256_file_sync(path: Path) -> str:
 async def sha256_file_async(
     path: Path,
     timeout_s: float = SHA256_DEFAULT_TIMEOUT_S,
-) -> Optional[str]:
+) -> str | None:
     """异步算 sha256，大文件走线程池避免阻塞主循环（PRD D5）。
 
     Returns:
@@ -220,7 +220,7 @@ async def sha256_file_async(
 
     try:
         return await asyncio.wait_for(fut, timeout=timeout_s)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "sha256_file_async timed out after %.2fs: %s (size=%d)",
             timeout_s, path, size,

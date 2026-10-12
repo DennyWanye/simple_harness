@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 import aiosqlite
 

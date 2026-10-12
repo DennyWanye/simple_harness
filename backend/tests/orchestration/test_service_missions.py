@@ -10,13 +10,12 @@ Draft written before the implementation (plan 2026-09-11 H2); the service is dri
 from __future__ import annotations
 
 import pytest
-
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
     OrchestrationSettings,
 )
-from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 from ._support import mission_count as _mission_count
 from ._support import notes_provider, notes_request

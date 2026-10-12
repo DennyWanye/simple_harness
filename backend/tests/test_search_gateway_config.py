@@ -4,8 +4,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
-from config import ConfigError, load_config, _reset_load_config_cache
+from config import ConfigError, _reset_load_config_cache, load_config
 
 
 @pytest.fixture(autouse=True)

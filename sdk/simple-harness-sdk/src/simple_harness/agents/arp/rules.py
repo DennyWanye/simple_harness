@@ -19,9 +19,9 @@ import re
 import sqlite3
 import struct
 import unicodedata
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Iterable, Iterator, Mapping, Sequence
 
 from .errors import ArpError
 from .strict import digest, nonnegative_int

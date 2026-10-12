@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_orchestrator.contracts.planning_decisions import (
     AlternativeSummaryV1,
     AssumptionV1,

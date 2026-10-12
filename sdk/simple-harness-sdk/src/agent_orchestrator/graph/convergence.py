@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import asdict, dataclass
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
@@ -149,7 +149,7 @@ def compute_convergence_impact(
     )
 
 
-def compute_plan_effects(before: NetworkDocumentV1, candidate: NetworkDocumentV1) -> "PlanEffectSet":
+def compute_plan_effects(before: NetworkDocumentV1, candidate: NetworkDocumentV1) -> PlanEffectSet:
     """Conservatively revalidate retained work separately from revocation targets.
 
     A downstream consumer may keep valid frozen inputs; needing a new validity

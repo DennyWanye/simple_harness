@@ -218,7 +218,7 @@ _MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 _ROTATE_KEEP_LINES = 2000
 
 
-def sanitize_detail(detail: Optional[dict[str, Any]]) -> dict[str, Any]:
+def sanitize_detail(detail: dict[str, Any] | None) -> dict[str, Any]:
     """Return a privacy-safe copy of ``detail``.
 
     Rules (in order):
@@ -271,9 +271,9 @@ class MetricsSink:
     def record(
         self,
         event: str,
-        detail: Optional[dict[str, Any]] = None,
+        detail: dict[str, Any] | None = None,
         *,
-        now: Optional[float] = None,
+        now: float | None = None,
     ) -> bool:
         """Append one event. Returns True if written, False if dropped.
 
@@ -367,7 +367,7 @@ class MetricsSink:
 # Process-wide default sink — resolved lazily so import is side-effect free
 # ---------------------------------------------------------------------
 
-_default_sink: Optional[MetricsSink] = None
+_default_sink: MetricsSink | None = None
 
 
 def get_default_sink() -> MetricsSink:
@@ -390,6 +390,6 @@ def get_default_sink() -> MetricsSink:
     return _default_sink
 
 
-def record(event: str, detail: Optional[dict[str, Any]] = None) -> bool:
+def record(event: str, detail: dict[str, Any] | None = None) -> bool:
     """Module-level convenience: record onto the default sink."""
     return get_default_sink().record(event, detail)

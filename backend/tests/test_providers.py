@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 import pytest
-
-from providers.faster_whisper_asr import FasterWhisperASR
 from providers.base import ASRProvider
+from providers.faster_whisper_asr import FasterWhisperASR
 
 
 def test_faster_whisper_implements_protocol():
@@ -12,8 +11,8 @@ def test_faster_whisper_implements_protocol():
     assert isinstance(asr, ASRProvider)
 
 
-from providers.edge_tts_provider import EdgeTTSProvider
 from providers.base import TTSProvider
+from providers.edge_tts_provider import EdgeTTSProvider
 
 
 def test_edge_tts_implements_protocol():
@@ -21,8 +20,8 @@ def test_edge_tts_implements_protocol():
     assert isinstance(tts, TTSProvider)
 
 
-from providers.silero_vad import SileroVAD
 from providers.base import VADProvider
+from providers.silero_vad import SileroVAD
 
 
 def test_silero_vad_implements_protocol():

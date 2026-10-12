@@ -33,8 +33,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
+
 import httpx
-from typing import Any, AsyncIterator, Optional, Union
+from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 from llm.base import BaseLLMAdapter
 from llm.errors import (
@@ -45,8 +49,6 @@ from llm.errors import (
 )
 from llm.keys import get_api_key, mask_key
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
-from deskpet.execution.dispatch import current_dispatch_handoff
-from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 logger = logging.getLogger("deskpet.llm.gemini")
 
@@ -60,8 +62,8 @@ class GeminiAdapter(BaseLLMAdapter):
     def __init__(
         self,
         *,
-        api_key: Optional[str] = None,
-        default_model: Optional[str] = None,
+        api_key: str | None = None,
+        default_model: str | None = None,
         timeout: float = 60.0,
     ) -> None:
         self.default_model = default_model or self.default_model
@@ -159,7 +161,7 @@ class GeminiAdapter(BaseLLMAdapter):
     @staticmethod
     def _split_system(
         messages: list[dict[str, Any]],
-    ) -> tuple[Optional[str], list[dict[str, Any]]]:
+    ) -> tuple[str | None, list[dict[str, Any]]]:
         system_parts: list[str] = []
         chat: list[dict[str, Any]] = []
         for msg in messages:
@@ -237,7 +239,7 @@ class GeminiAdapter(BaseLLMAdapter):
         return contents
 
     @staticmethod
-    def _convert_tools(tools: Optional[list[dict[str, Any]]]) -> Optional[list[Any]]:
+    def _convert_tools(tools: list[dict[str, Any]] | None) -> list[Any] | None:
         """OpenAI tools list → [Tool(function_declarations=[...])]."""
         if not tools:
             return None
@@ -293,12 +295,12 @@ class GeminiAdapter(BaseLLMAdapter):
     async def chat(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
         stream: bool = False,
         **kwargs: Any,
-    ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+    ) -> ChatResponse | AsyncIterator[ChatChunk]:
         client = self._get_client()
         use_model = model or self.default_model
         system_instruction, chat_messages = self._split_system(messages)

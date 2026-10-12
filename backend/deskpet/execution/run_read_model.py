@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
-
+from typing import Any
 
 JsonObject = Mapping[str, Any]
 CONTEXT_VISIBILITY_EXCLUDE = "exclude"

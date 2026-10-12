@@ -7,7 +7,6 @@ from typing import Any
 
 from .agent_reach_port import agent_reach_port
 
-
 _DOCTOR_SCHEMA: dict[str, Any] = {
     "name": "agent_reach_doctor",
     "description": (

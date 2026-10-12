@@ -10,7 +10,7 @@ partial frontier is committed.
 from __future__ import annotations
 
 import inspect
-from typing import Mapping
+from collections.abc import Mapping
 
 from ..contracts import JsonValue, WorkflowContext
 from .deep_research_v5_contracts import ResearchControlCommand

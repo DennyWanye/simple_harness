@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 from future_consumer_fixture import FutureConsumerFixture, RichProductContextProvider
-
 from simple_harness import (
     CommandOutputState,
     CommandState,

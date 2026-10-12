@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from deskpet.retrieval.contracts import PublicErrorCode, SearchBudget, SearchRequest
-from deskpet.retrieval.providers.base import ProviderFailure
-from deskpet.retrieval.providers.duckduckgo import DuckDuckGoProvider
 from deskpet.retrieval.providers.baidu import BaiduProvider
+from deskpet.retrieval.providers.base import ProviderFailure
 from deskpet.retrieval.providers.bing_cdp import BingCDPProvider
+from deskpet.retrieval.providers.duckduckgo import DuckDuckGoProvider
 from deskpet.retrieval.providers.google_cdp import GoogleCDPProvider
 from deskpet.retrieval.providers.searxng import SearXNGProvider
 

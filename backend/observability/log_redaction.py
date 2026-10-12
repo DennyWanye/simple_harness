@@ -8,7 +8,6 @@ from typing import Any
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
 
-
 _TRACE_REDACTOR = TraceRedactor()
 
 

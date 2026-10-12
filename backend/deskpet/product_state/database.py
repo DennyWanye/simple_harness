@@ -13,9 +13,15 @@ from deskpet.execution.contracts import root_idempotency_key
 
 from .backup import create_verified_backup, create_verified_migration_backup
 from .schema import (
-    CAPABILITY_SCHEMA_SQL, SCHEMA_V1_PARTS, SCHEMA_V2_PARTS, SCHEMA_V3_PARTS,
-    SCHEMA_V4_PARTS, SCHEMA_VERSION, VERIFICATION_V3_COLUMNS_SQL,
-    VERIFICATION_V3_SCHEMA_SQL, VERIFICATION_V4_QUARANTINE_SQL,
+    CAPABILITY_SCHEMA_SQL,
+    SCHEMA_V1_PARTS,
+    SCHEMA_V2_PARTS,
+    SCHEMA_V3_PARTS,
+    SCHEMA_V4_PARTS,
+    SCHEMA_VERSION,
+    VERIFICATION_V3_COLUMNS_SQL,
+    VERIFICATION_V3_SCHEMA_SQL,
+    VERIFICATION_V4_QUARANTINE_SQL,
     VERIFICATION_V4_SCHEMA_SQL,
 )
 from .schema_integrity import expected_semantic_fingerprint, run_check_probes, semantic_fingerprint

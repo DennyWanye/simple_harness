@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
-from pathlib import Path
+import shutil
 import socket
 import subprocess
-import json
-import shutil
 import time
 import uuid
+from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LAUNCHER = REPO_ROOT / "scripts" / "e2e" / "launch_companion_growth.ps1"

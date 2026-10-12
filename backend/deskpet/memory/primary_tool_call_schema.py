@@ -16,9 +16,11 @@ import time
 from pathlib import Path
 
 import aiosqlite
+
 from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.procedure_recovery_schema import (
-    initialize_procedure_recovery_state_db, validate_procedure_recovery_state_db,
+    initialize_procedure_recovery_state_db,
+    validate_procedure_recovery_state_db,
 )
 
 MIGRATION = "primary/047_primary_assistant_tool_calls_v55.sql"

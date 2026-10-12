@@ -15,7 +15,6 @@ Validates:
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.workflow.contracts import (
     StatePatch,
     WorkflowContext,

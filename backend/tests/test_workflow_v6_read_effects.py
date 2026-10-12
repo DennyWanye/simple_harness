@@ -3,30 +3,20 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import aiosqlite
 import pytest
-
-from deskpet.workflows.contracts import NodeExecutionIdentity
-from deskpet.workflows.contracts import canonical_json
+from deskpet.workflows.adapters.deep_research_v6_evidence_runtime import (
+    DeepResearchV6EvidenceRuntime,
+)
 from deskpet.workflows.adapters.deep_research_v6_retrieval_runtime import (
     DurableV6DeadlinePort,
     DurableV6PageReadEffectAdapter,
     v6_read_logical_effect_id,
 )
 from deskpet.workflows.adapters.research_runtime import BoundResearchEffectContext
-from deskpet.workflows.effects import (
-    BudgetReservationExceeded,
-    EffectExecutionContext,
-    EffectJournal,
-    EffectStateConflict,
-    StagingPreconditionFailed,
-)
-from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
-from deskpet.workflows.adapters.deep_research_v6_evidence_runtime import (
-    DeepResearchV6EvidenceRuntime,
-)
+from deskpet.workflows.contracts import NodeExecutionIdentity, canonical_json
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_official_exact_fact
 from deskpet.workflows.definitions.deep_research_v6_retrieval_contracts import (
     OfficialSearchResultV1,
@@ -35,6 +25,14 @@ from deskpet.workflows.definitions.deep_research_v6_retrieval_contracts import (
     SearchCandidateV1,
     SourceLocatorV1,
 )
+from deskpet.workflows.effects import (
+    BudgetReservationExceeded,
+    EffectExecutionContext,
+    EffectJournal,
+    EffectStateConflict,
+    StagingPreconditionFailed,
+)
+from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
 
 
 def _contract_search_result() -> OfficialSearchResultV1:
@@ -148,10 +146,10 @@ async def test_v6_search_commit_rejects_candidate_locator_authority_tampering(tm
             deadline=root, identity=identity, transport=transport,
         )
 from tests.test_deep_research_v6_evidence_runtime import (
-    FakeFetchService,
-    FakeGateway,
     NO_SEED_SOURCE_RESOLVER,
     QUESTION,
+    FakeFetchService,
+    FakeGateway,
     _candidate,
     _document,
 )
@@ -464,7 +462,7 @@ async def test_v6_automatic_deadline_wall_anchors_survive_retry_resume_and_resta
     tmp_path,
 ):
     _, _, identity, deadlines, reads = await _runtime(tmp_path)
-    now = [datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc)]
+    now = [datetime(2026, 7, 18, 12, 0, tzinfo=UTC)]
     monotonic = [1_000_000_000]
     deadlines.wall_clock = lambda: now[0]
     deadlines.monotonic_ns = lambda: monotonic[0]

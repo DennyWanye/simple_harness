@@ -21,10 +21,9 @@ tool_calls 的机制在真实 continuation 上必然失效——第二轮请求�
 from __future__ import annotations
 
 import pytest
+from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
 from simple_harness.contracts import CallId
 from simple_harness.contracts.messages import Message, MessageRole
-
-from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
 
 
 def _wire_messages(messages):

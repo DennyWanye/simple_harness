@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _MIN_SUBAGENTS = 2
 _MAX_SUBAGENTS = 8
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]

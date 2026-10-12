@@ -8,11 +8,10 @@ import asyncio
 import time
 
 import pytest
-
 from agent.session_activity import (
+    _RECENT_EVENTS_CAP,
     SessionActivityStore,
     args_hash,
-    _RECENT_EVENTS_CAP,
 )
 
 

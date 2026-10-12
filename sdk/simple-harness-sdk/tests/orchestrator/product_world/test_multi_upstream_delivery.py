@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.htn import PortCardinality, PortOrdering
 from agent_orchestrator.orchestrator import hierarchical_dispatch as hd

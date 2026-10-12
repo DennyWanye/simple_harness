@@ -10,10 +10,12 @@
 5. Confirm file flips to {"enabled": false}
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import os
 import sys
+
 import websockets
 
 
@@ -39,7 +41,7 @@ async def smoke(secret: str) -> int:
                 print(f"<- ack enabled={msg['payload']['enabled']}")
                 break
         if not os.path.exists(persist_path):
-            print(f"FAIL: file not written")
+            print("FAIL: file not written")
             return 1
         with open(persist_path) as f:
             data = json.load(f)

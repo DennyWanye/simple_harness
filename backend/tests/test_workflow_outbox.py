@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.service import WorkflowService

@@ -8,6 +8,7 @@ Pre-fix (max_tokens=2048): LLM cuts off mid-string → JSON parse fail.
 Post-fix (max_tokens=8192): LLM has headroom to finish 5-6KB output.
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import os

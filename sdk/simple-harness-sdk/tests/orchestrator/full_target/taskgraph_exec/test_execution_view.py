@@ -13,10 +13,9 @@ import asyncio
 import json
 
 import pytest
-
-from production_fixture import OUTPUT, enabled_world, scripted_worker
 from agent_orchestrator.api.taskgraph import TaskGraphReadError
 from agent_orchestrator.orchestrator.taskgraph_execution_view import EDGE_KINDS, NODE_KINDS
+from production_fixture import OUTPUT, enabled_world, scripted_worker
 
 SECRET = "sk-" + "a" * 30
 def _worker():  # type: ignore[no-untyped-def]

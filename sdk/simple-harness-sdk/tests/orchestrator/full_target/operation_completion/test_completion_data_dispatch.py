@@ -22,15 +22,6 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import (  # noqa: E402
-    CHAIN_CRITERIA,
-    chain_planner,
-    enabled_world,
-    product_loop,
-    result_envelope,
-    scripted_worker,
-)
-
 from agent_orchestrator.artifacts.input_bindings import TargetRules  # noqa: E402
 from agent_orchestrator.artifacts.versioning import manifest_upstream_inputs  # noqa: E402
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
@@ -39,6 +30,14 @@ from agent_orchestrator.contracts.state_machines import TaskStatus  # noqa: E402
 from agent_orchestrator.orchestrator.commit_service import Reservation  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of  # noqa: E402
+from production_fixture import (  # noqa: E402
+    CHAIN_CRITERIA,
+    chain_planner,
+    enabled_world,
+    product_loop,
+    result_envelope,
+    scripted_worker,
+)
 
 #: The extra workspace file the upstream Worker writes and delivers, per overlay case.  The
 #: upstream step writes (it is not read-only), so a new ``tests/`` file of it is laid on the

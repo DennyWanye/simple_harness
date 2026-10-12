@@ -8,6 +8,7 @@ Handlers are explicitly registered in live, durable, and domain groups so a
 later Driver can reuse the same mapping without growing another switch.
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import re
@@ -15,14 +16,32 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
+
 import structlog
-from agent.agent_loop import AgentEvent, AssistantDeltaEvent, AssistantMessageEvent, AsyncHandoffEvent, ContextCompactedEvent, ErrorEvent, FinalEvent, PipelineEvent, ProviderChainFallbackEvent, ToolCallEvent, ToolResultEvent
+from agent.agent_loop import (
+    AgentEvent,
+    AssistantDeltaEvent,
+    AssistantMessageEvent,
+    AsyncHandoffEvent,
+    ContextCompactedEvent,
+    ErrorEvent,
+    FinalEvent,
+    PipelineEvent,
+    ProviderChainFallbackEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
 from agent.auto_resume import is_auto_resume_trigger
-from deskpet.execution.contracts import OutcomeStatus, RunEvent, thaw_json
+from llm.types import ToolCall
+
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.turn_preparer import ProductDomainCommand
-from deskpet.tools.public_projection import project_public_tool_arguments, project_public_tool_result
-from llm.types import ToolCall
+from deskpet.execution.contracts import OutcomeStatus, RunEvent, thaw_json
+from deskpet.tools.public_projection import (
+    project_public_tool_arguments,
+    project_public_tool_result,
+)
+
 logger = structlog.get_logger(__name__)
 HandlerDomain = Literal['live', 'durable', 'domain']
 Handler = Callable[[AgentEvent, 'RunPresentationContext', 'PresentationState'], Awaitable[None]]

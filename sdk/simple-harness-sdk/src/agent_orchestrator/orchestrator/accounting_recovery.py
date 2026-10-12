@@ -17,8 +17,8 @@ from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 from simple_harness.execution.uow import UnitOfWorkConflict
 
 from ..contracts.models import jsonable, sha256_hex
-from ..governance.budgets import BudgetError, UsageFact
 from ..contracts.state_machines import TERMINAL_MISSION
+from ..governance.budgets import BudgetError, UsageFact
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.provider_budget_guard import ProviderBudgetGuard
 

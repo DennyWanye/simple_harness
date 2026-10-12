@@ -11,9 +11,11 @@
 Run AFTER deskpet has restarted (so backend re-loaded code_sessions).
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import sys
+
 import websockets
 
 

@@ -28,7 +28,6 @@ from unittest.mock import patch
 
 import pytest
 from _review_world import ReviewScript, reviewed_mission
-
 from agent_orchestrator.assurance.certificates import UseCertificate
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.evidence import ReadItem

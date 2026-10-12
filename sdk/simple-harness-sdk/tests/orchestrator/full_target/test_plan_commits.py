@@ -36,23 +36,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from simple_harness.contracts import canonical_json
 
 _HTN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"
 if str(_HTN_FIXTURES) not in sys.path:
     sys.path.insert(0, str(_HTN_FIXTURES))
-
-from h1i_seed import (  # noqa: E402
-    committed,
-    committing_round,
-    plan_reply,
-    refuse_tampered_first,
-    reviewed,
-    root_duty,
-    root_task,
-)
-from htn_world import Env, method, out, param, root_network, step, task_binding  # noqa: E402
 
 from agent_orchestrator.contracts import ContractError  # noqa: E402
 from agent_orchestrator.contracts.evidence_state import ObservationRecord  # noqa: E402
@@ -80,7 +68,11 @@ from agent_orchestrator.contracts.resolution import (  # noqa: E402
     RequirementClass,
     RequirementsRevision,
 )
-from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of  # noqa: E402
+from agent_orchestrator.contracts.semantic_base import (  # noqa: E402
+    TypedRef,
+    TypedRefKind,
+    content_hash_of,
+)
 from agent_orchestrator.graph.task_network import TaskNetworkSnapshot  # noqa: E402
 from agent_orchestrator.orchestrator._read_set import (  # noqa: E402
     ReadSetChannelUnknown,
@@ -116,6 +108,16 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     review_input,
     review_reply,
 )
+from h1i_seed import (  # noqa: E402
+    committed,
+    committing_round,
+    plan_reply,
+    refuse_tampered_first,
+    reviewed,
+    root_duty,
+    root_task,
+)
+from htn_world import Env, method, out, param, root_network, step, task_binding  # noqa: E402
 
 HEX_OTHER = "f" * 64
 

@@ -19,8 +19,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from test_htn_store import envelope
-
 from agent_orchestrator.runtime.planning_operations import (
     OperationEffect,
     SourceUnavailable,
@@ -30,9 +28,10 @@ from agent_orchestrator.runtime.planning_operations import (
 )
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from test_htn_store import envelope
 
 #: The planning principal the operation rows name (as the plan-commit principal did).
 PRINCIPAL = SimpleNamespace(principal_id="manager-1", scope_id="mission")

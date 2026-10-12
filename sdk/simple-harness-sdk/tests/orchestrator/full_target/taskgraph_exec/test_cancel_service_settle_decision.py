@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.orchestrator import taskgraph_runtime
 from agent_orchestrator.orchestrator.taskgraph_runtime import TaskGraphRuntimeCommands
 

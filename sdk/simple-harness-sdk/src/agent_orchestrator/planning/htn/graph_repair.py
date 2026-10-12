@@ -8,13 +8,25 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from ...contracts.htn import (
-    ContractRevision, DispatchGeneration, InputBindingRevision, OccurrenceId, PlanRevision,
-    ProposedPlanDelta, ReadItem, ReadItemKind, RebindInputOperation,
-    SemanticReadSet, TaskBindingRewrite, TaskRef,
+    ContractRevision,
+    DispatchGeneration,
+    InputBindingRevision,
+    OccurrenceId,
+    PlanRevision,
+    ProposedPlanDelta,
+    ReadItem,
+    ReadItemKind,
+    RebindInputOperation,
+    SemanticReadSet,
+    TaskBindingRewrite,
+    TaskRef,
 )
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import content_hash_of
-from ...graph.projection_validation import validate_execution_projection, validate_refinement_acyclic
+from ...graph.projection_validation import (
+    validate_execution_projection,
+    validate_refinement_acyclic,
+)
 from ...graph.task_network import TaskNetworkSnapshot
 from .compiler import BudgetRequirement, RefinementCompilation
 
@@ -292,7 +304,13 @@ def replace_membership(
 
 def compile_successor(inputs: PreviewInputs, operation: Any) -> RefinementCompilation:
     """A fresh Task replaces one owned leaf while retaining its original duty."""
-    from ...contracts.htn import MethodOccurrenceBinding, OccurrenceSpec, ReusePolicy, TaskForm, TaskSemanticBindingV1
+    from ...contracts.htn import (
+        MethodOccurrenceBinding,
+        OccurrenceSpec,
+        ReusePolicy,
+        TaskForm,
+        TaskSemanticBindingV1,
+    )
     from .grounding import ParameterBindingsError
 
     current = inputs.network

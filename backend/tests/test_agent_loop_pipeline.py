@@ -15,7 +15,6 @@ import json
 from typing import Any, Optional
 
 import pytest
-
 from agent.agent_loop import AgentLoop, FinalEvent, PipelineEvent, ToolBatchEvent
 from agent.termination import GateConfig, TerminationGate
 from deskpet.agent.evidence_gate import EvidenceGate
@@ -49,7 +48,7 @@ class FakeLLM:
 
 
 class FakeTools:
-    def __init__(self, results: Optional[dict] = None) -> None:
+    def __init__(self, results: dict | None = None) -> None:
         self._results = results or {}
         self.calls: list[dict] = []
 

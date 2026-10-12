@@ -11,7 +11,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import (
     _HAS_PPTX,
@@ -308,9 +307,9 @@ def test_template_apply_shrink_and_change_page():
 
 def test_template_scale_shape_runs_floor():
     """_scale_shape_runs 有 9pt 下限,无显式字号的 run 不动。"""
+    from deskpet.tools.ppt_tools import _scale_shape_runs
     from pptx import Presentation
     from pptx.util import Inches, Pt
-    from deskpet.tools.ppt_tools import _scale_shape_runs
 
     prs = Presentation()
     s = prs.slides.add_slide(prs.slide_layouts[6])

@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.workflows import WorkflowContext
 from deskpet.workflows.contracts import NodeExecutionIdentity, canonical_json
 from deskpet.workflows.definitions.deep_research_v6_assessment import (
@@ -18,9 +17,9 @@ from deskpet.workflows.definitions.deep_research_v6_delivery import (
     project_v6_terminal_commit,
 )
 from deskpet.workflows.definitions.deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
 )
 from deskpet.workflows.definitions.deep_research_v6_terminal_nodes import (
     CLAIM_POLICY_V1,

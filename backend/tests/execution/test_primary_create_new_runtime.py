@@ -5,15 +5,15 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from deskpet.capabilities.store import CapabilityStore, initialize_capability_database
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.task_scope.runtime_binding_authority import WorkspaceBindingRuntimeAuthority
+from simple_harness import CallId
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_foreground_runtime import Provider, build
 
 
@@ -138,11 +138,12 @@ async def test_active_primary_create_new_auto_real_binding_effect_terminal(tmp_p
 @pytest.mark.asyncio
 async def test_create_new_manual_returns_real_durable_proposal_challenge(tmp_path):
     from types import SimpleNamespace
-    from simple_harness import RunId
-    from deskpet.sdk_adapters.context_route import ContextRouteToolService
-    from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
-    from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+
     from deskpet.memory.human_memory_service import DecideManualBindingRequest
+    from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+    from deskpet.sdk_adapters.context_route import ContextRouteToolService
+    from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+    from simple_harness import RunId
     state, factory, _, configured, authority = await fixture(tmp_path, "manual")
     # Manual binding itself does not require a running SDK Run. Use its real
     # Host service/authority/proposal/challenge/decision path; no UI claim.
@@ -306,6 +307,7 @@ async def test_create_new_cannot_borrow_reclaimed_generation(tmp_path, monkeypat
 @pytest.mark.asyncio
 async def test_completed_invocation_cannot_fall_back_to_bootstrap(tmp_path, monkeypatch):
     import contextvars
+
     from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
     state, _, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "gone-origin", "Create a project"))

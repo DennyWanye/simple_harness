@@ -12,8 +12,6 @@ import json
 import pytest
 from kernel_fixture import create_agent, submit
 from provider_fixture import MODEL, ScriptedProvider
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from simple_harness.agents import (
     AgentConfig,
     AgentLimits,
@@ -41,6 +39,7 @@ from simple_harness.tools.authorization import (
     AuthorizationRequest,
     AuthorizationResult,
 )
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 TOOL = ("echo", {})
 

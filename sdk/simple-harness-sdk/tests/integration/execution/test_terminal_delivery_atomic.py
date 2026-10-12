@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from simple_harness import AgentIdentity, CommittedTurn, MemoryScopeRef
 from simple_harness.contracts import RunId
 from simple_harness.execution.delivery import DeliverySpec, DeliveryState

@@ -21,7 +21,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.provider import ProviderSnapshot, build_provider, requested_model
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 

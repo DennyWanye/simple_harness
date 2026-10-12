@@ -47,13 +47,6 @@ class _Inventory:
 
 def test_project_effect_list_frozen_and_route_required() -> None:
     """design-freeze §1：清单内每个工具 policy=(project_effect, required, required)，读取类不变。"""
-    from simple_harness import RunId
-    from simple_harness.tools.runtime_catalog import (
-        ToolEffectClass,
-        ToolRouteRequirement,
-        ToolTaskScopeRequirement,
-    )
-
     from deskpet.permissions.effect_policy import IrreversibleEffectPolicy
     from deskpet.sdk_adapters.context_authority import canonical_sha256
     from deskpet.sdk_adapters.tool_authority import (
@@ -63,6 +56,12 @@ def test_project_effect_list_frozen_and_route_required() -> None:
     )
     from deskpet.tool_catalog.manifest import load_tool_manifest
     from deskpet.tools.build_identity import EffectClass
+    from simple_harness import RunId
+    from simple_harness.tools.runtime_catalog import (
+        ToolEffectClass,
+        ToolRouteRequirement,
+        ToolTaskScopeRequirement,
+    )
 
     assert tuple(PROJECT_EFFECT_TOOL_NAMES) == PROJECT_EFFECT_FROZEN_LIST
     for name in PROJECT_EFFECT_FROZEN_LIST:
@@ -150,7 +149,6 @@ async def test_write_file_envelope_reverified_then_executed_and_host_file_event(
     （下方 strict xfail）在同一基座上补齐。
     """
     from simple_harness.tools.runtime_catalog import ToolEffectClass
-
     from tests.sdk_adapters import s5b_effect_gate_harness as h
 
     env = await h.build_env(tmp_path)
@@ -740,8 +738,6 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
     """
     import hashlib
 
-    from simple_harness.contracts.messages import Message, MessageRole
-
     from deskpet.execution.semantic_closure import dirty_state
     from deskpet.sdk_adapters.task_scope_mutation import derive_plan_id
     from deskpet.sdk_adapters.tool_authority import (
@@ -753,6 +749,7 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
         PROJECTLESS_SAFE_TOOL_NAMES,
     )
     from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from simple_harness.contracts.messages import Message, MessageRole
     from tests.sdk_adapters import s5b_effect_gate_harness as h
 
     # 注册面：direct kernel、projectless safe、覆盖表 (non_project_effect, required, required)。
@@ -876,14 +873,13 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     timeout/拒绝 → pending 且 Host 终态照常提交。
     """
 
-    from simple_harness.providers.errors import ProviderTimeoutError
-
     from deskpet.execution.semantic_closure import (
         closure_plan_id,
         closure_request_hash,
         dirty_state,
     )
     from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from simple_harness.providers.errors import ProviderTimeoutError
     from tests.sdk_adapters import s5b_closure_harness as ch
 
     # ① 漏调用 → 兜底一次 mutate（Provider 计数 1），receipt 与 apply 同事务，终态放行。

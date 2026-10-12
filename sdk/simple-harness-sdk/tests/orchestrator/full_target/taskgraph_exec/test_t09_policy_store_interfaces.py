@@ -10,11 +10,10 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-
-from production_fixture import enabled_world
 from agent_orchestrator.orchestrator.taskgraph_policy import enable_command_id
 from agent_orchestrator.storage.store import StoreConflict, StoreError
 from agent_orchestrator.storage.taskgraph_store import PolicyBinding, TaskGraphStore
+from production_fixture import enabled_world
 
 _SRC = Path(__file__).resolve().parents[4] / "src" / "agent_orchestrator"
 

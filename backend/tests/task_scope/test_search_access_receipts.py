@@ -5,7 +5,6 @@ import json
 import sqlite3
 
 import pytest
-
 from deskpet.memory.human_memory_service import OpenTaskScopeRequest, SearchTaskScopesRequest
 from deskpet.task_scope.protocol import TaskScopeProtocolError
 from deskpet.task_scope.search import TaskScopeSearchError, TaskScopeSearchStore

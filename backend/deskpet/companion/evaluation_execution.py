@@ -14,8 +14,9 @@ before a process adapter is called.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Mapping, Protocol
+from typing import Any, Literal, Protocol
 
 from deskpet.capabilities.process_job import (
     ManagedProcessStartPort,
@@ -129,7 +130,7 @@ class EvaluationExecutionFenceV1:
     @classmethod
     def from_mapping(
         cls, row: Mapping[str, Any]
-    ) -> "EvaluationExecutionFenceV1":
+    ) -> EvaluationExecutionFenceV1:
         try:
             return cls(
                 evaluation_id=str(row["evaluation_id"]),
@@ -204,7 +205,7 @@ class EvaluationCaseCompletionV1:
     @classmethod
     def from_mapping(
         cls, row: Mapping[str, Any]
-    ) -> "EvaluationCaseCompletionV1":
+    ) -> EvaluationCaseCompletionV1:
         if row.get("status") != "completed":
             raise EvaluationExecutionError(
                 "evaluation_completion_not_successful"

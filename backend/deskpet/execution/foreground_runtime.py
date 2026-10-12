@@ -114,6 +114,7 @@ class FrozenContextAuthority:
             object.__setattr__(self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure)))
         if self.visibility_dependencies is not None:
             from simple_harness import freeze_json
+
             from deskpet.execution.primary_dependencies import parse_dependencies
             object.__setattr__(self, "visibility_dependencies", freeze_json(parse_dependencies(self.visibility_dependencies)))
 

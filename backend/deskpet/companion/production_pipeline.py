@@ -10,9 +10,10 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Any
 
 from deskpet.capabilities.contracts import OwnerScopeKey
 from deskpet.harness.contracts import HostExtensionRefV1, PreparedRunContextV1

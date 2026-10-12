@@ -4,15 +4,13 @@
 """Tests for S6 security primitives: sensitive-info redaction + tool confirmation."""
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
-
 from agent.providers.tool_using import ToolUsingAgent
 from memory.sensitive_filter import RedactingMemoryStore, redact
 from tools.base import ToolSpec
 from tools.registry import ToolRegistry
-
 
 # --- redact() ---
 

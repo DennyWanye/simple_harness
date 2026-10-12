@@ -12,12 +12,13 @@ import json
 import logging
 import os
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from llm.types import ChatResponse
+
 from deskpet.execution.dispatch import dispatch_with_run_fence
 from deskpet.execution.provider_invocations import coordinate_provider_call
 from deskpet.tools.capabilities import (
@@ -33,13 +34,13 @@ from ..contracts import (
     validate_json_value,
 )
 from ..definitions.code_nodes import (
+    _DISCOVERY_ONLY_TOOL_NAMES,
+    _MAX_CONSECUTIVE_DISCOVERY_SEARCHES,
+    _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES,
     FORBIDDEN_DURABLE_TOOLS,
     CapabilitySnapshotV1,
     WorkflowSessionRefV1,
     _consecutive_discovery_searches,
-    _DISCOVERY_ONLY_TOOL_NAMES,
-    _MAX_CONSECUTIVE_DISCOVERY_SEARCHES,
-    _REPEATABLE_DISCOVERY_SEARCH_TOOL_NAMES,
 )
 from ..effects import (
     EffectAction,
@@ -50,13 +51,13 @@ from ..effects import (
     PreparedToolCall,
     ToolOutcomeState,
 )
+from ..output_contract import TaskOutputContractV1
 from ..proposal_state import (
     ProposalErrorV1,
     ProposalOutcomeV1,
     ProposalStateV1,
     derive_stable_call_id,
 )
-from ..output_contract import TaskOutputContractV1
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +235,7 @@ def capability_snapshot(
                 effect_policy=_policy_payload(getattr(spec, "effect_policy", None)),
                 lifecycle_hash=_lifecycle_hash(spec),
                 outcome_parser_hash=(
-                    str(getattr(spec, "outcome_parser_hash"))
+                    str(spec.outcome_parser_hash)
                     if getattr(spec, "outcome_parser_hash", None)
                     else None
                 ),

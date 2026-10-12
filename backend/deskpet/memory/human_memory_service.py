@@ -1881,6 +1881,7 @@ class HumanMemoryHostService:
                 (self._auth.subject,),
             ).fetchall()
         import aiosqlite
+
         from deskpet.execution.admission_rejection import read_admission_rejection_tx
         rejections = {}
         async with aiosqlite.connect(self._db_path) as db:

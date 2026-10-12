@@ -20,9 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from llm.resolution import SessionProviderUnavailable, resolve_session_provider_chain
-
 
 # ────────────────────── stubs ──────────────────────
 

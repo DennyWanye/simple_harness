@@ -8,9 +8,7 @@ import base64
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
-
 
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 

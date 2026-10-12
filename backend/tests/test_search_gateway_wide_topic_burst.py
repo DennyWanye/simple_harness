@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import httpx
 import pytest
-
 from config import SearchGatewayConfig
 from deskpet.retrieval.contracts import (
     PublicErrorCode,
@@ -40,7 +39,7 @@ class _BurstProvider:
             if self.behavior == "blocked":
                 raise ProviderFailure(PublicErrorCode.BLOCKED, 403)
             if self.behavior == "timeout":
-                raise asyncio.TimeoutError
+                raise TimeoutError
             if request.query.endswith("-00"):
                 return [
                     RetrievalCandidate(

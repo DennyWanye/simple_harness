@@ -1,11 +1,10 @@
 """Real command admission before a Run exists, not a synthetic Run ledger."""
 
 import pytest
-from test_command_ingress import _start
-
 from simple_harness import CommandErrorCode
 from simple_harness.execution.command_ingress import CommandIngress
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from test_command_ingress import _start
 
 
 def test_pre_run_retry_reject_is_fully_paged_after_reopen(tmp_path):
@@ -46,9 +45,8 @@ def test_pre_run_retry_reject_is_fully_paged_after_reopen(tmp_path):
 
 
 def test_cancel_before_create_records_all_cancelled_commands(tmp_path):
-    from test_command_ingress import _continuation
-
     from simple_harness import CancelCommandIntent, RunId
+    from test_command_ingress import _continuation
 
     with Database.open(tmp_path / "cancel.db") as database:
         ingress, reader = CommandIngress(database), SqliteExecutionUnitOfWork(database)
@@ -121,10 +119,9 @@ def test_command_event_failure_rolls_back_original_claim(tmp_path):
 
 
 def test_command_pages_exhaust_more_than_256_and_reject_cross_domain(tmp_path):
-    from test_command_ingress import _continuation
-
     from simple_harness import RunId
     from simple_harness.execution.audit import RunAuditUnavailable
+    from test_command_ingress import _continuation
 
     with Database.open(tmp_path / "many.db") as database:
         ingress, reader = CommandIngress(database), SqliteExecutionUnitOfWork(database)

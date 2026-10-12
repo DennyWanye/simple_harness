@@ -20,8 +20,8 @@ from deskpet.execution.contracts import (
     canonical_json,
     delegate_idempotency_key,
     fingerprint_json,
+    thaw_json,
 )
-from deskpet.execution.contracts import thaw_json
 from deskpet.execution.uow_ports import ChildRunUnitOfWork
 from deskpet.harness.contracts import PreparedRunContextV1
 from deskpet.harness.ports import DriverEvent, JoinPolicy

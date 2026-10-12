@@ -4,7 +4,6 @@ import copy
 import hashlib
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import (
     EvidenceRepairRequestV1,
     ResearchLLMEffectOutcomeV1,

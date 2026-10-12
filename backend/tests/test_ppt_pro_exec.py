@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import SlideOutline
 

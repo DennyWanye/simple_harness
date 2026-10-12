@@ -15,7 +15,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
 from deskpet.agent.verify_gate import (
     Claim,
     ClaimPattern,
@@ -28,8 +27,9 @@ from deskpet.agent.verify_gate import (
 
 def test_agent_loop_signature_accepts_verify_gate():
     """新增参数不破坏现有 callers (BC)。"""
-    from agent.agent_loop import AgentLoop
     import inspect
+
+    from agent.agent_loop import AgentLoop
 
     sig = inspect.signature(AgentLoop.__init__)
     params = sig.parameters
@@ -98,6 +98,7 @@ def test_d8_rebound_format_includes_required_fields():
     Classification + Next。"""
     # 此测试验文档：AgentLoop 内的 rebound 字符串模板必含关键 token
     import inspect
+
     from agent import agent_loop
     src = inspect.getsource(agent_loop)
     # 关键字段
@@ -110,9 +111,10 @@ def test_d8_rebound_format_includes_required_fields():
 def test_receipt_store_load_session_provides_ledger():
     """AgentLoop 通过 self.receipt_store.load_session(sid) 拿 ledger。
     确保 ReceiptStore.load_session 返 list[ToolReceipt] 接口稳定。"""
-    from deskpet.tools.receipt_store import ReceiptStore
     import tempfile
     from pathlib import Path
+
+    from deskpet.tools.receipt_store import ReceiptStore
 
     with tempfile.TemporaryDirectory() as td:
         store = ReceiptStore(Path(td), key=b"\x42" * 32)

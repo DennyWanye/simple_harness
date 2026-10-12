@@ -6,7 +6,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.platform import CapabilityPlatform
 from deskpet.capabilities.run_catalog import (

@@ -10,8 +10,6 @@ import json
 
 import pytest
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState, build_agent_runtime
 from simple_harness.agents.context import (
     ContextPolicy,
@@ -25,6 +23,7 @@ from simple_harness.contracts import MessageRole, RunId, thaw_json
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.execution.uow import RunState
 from simple_harness.runtime.termination import TerminationLimits
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 TOOL = ("echo", {})
 tiktoken = pytest.importorskip("tiktoken")

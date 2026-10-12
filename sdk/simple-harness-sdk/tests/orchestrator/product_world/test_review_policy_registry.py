@@ -15,7 +15,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError, decode
 from agent_orchestrator.assurance.refs import Pin
 from agent_orchestrator.orchestrator import assurance_review_policies as policies

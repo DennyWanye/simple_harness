@@ -27,13 +27,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, RequestId, RunId
-from simple_harness.execution.context_authority import (
-    ContextRouteReceipt,
-    TaskScopeRoute,
-)
-from simple_harness.tools import CancellationToken, ToolContext, ToolOutcome
-
 from deskpet.memory.human_memory_service import (
     CreateTaskScopeRequest,
     HumanMemoryHostService,
@@ -64,7 +57,12 @@ from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.types.task_work_context import PrimaryRunWorkContext, TaskWorkContext
-
+from simple_harness import CallId, RequestId, RunId
+from simple_harness.execution.context_authority import (
+    ContextRouteReceipt,
+    TaskScopeRoute,
+)
+from simple_harness.tools import CancellationToken, ToolContext, ToolOutcome
 from tests.sdk_adapters.s5b_effect_gate_harness import AUTH, bind_scope_root
 
 RUN = RunId("product-sdk-f-z1")

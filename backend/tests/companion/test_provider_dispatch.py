@@ -9,23 +9,6 @@ from typing import Any
 import aiosqlite
 import httpx
 import pytest
-
-from deskpet.execution.dispatch import (
-    DispatchStartedAck,
-    DispatchStartUnknown,
-)
-from deskpet.execution.provider_invocations import (
-    ProviderDispatchNotSentError,
-    ProviderDispatchUnknownError,
-    ProviderInvocationCoordinator,
-    build_provider_input_projection,
-    coordinate_provider_call,
-    coordinate_provider_stream,
-)
-from deskpet.execution.provider_fault_script import (
-    ProviderFaultInjectedError,
-    ProviderFaultScriptV1,
-)
 from deskpet.execution.contracts import (
     AttemptRecord,
     PersistenceLevel,
@@ -39,6 +22,22 @@ from deskpet.execution.contracts import (
     TaskGoalRecord,
     fingerprint_json,
     root_idempotency_key,
+)
+from deskpet.execution.dispatch import (
+    DispatchStartedAck,
+    DispatchStartUnknown,
+)
+from deskpet.execution.provider_fault_script import (
+    ProviderFaultInjectedError,
+    ProviderFaultScriptV1,
+)
+from deskpet.execution.provider_invocations import (
+    ProviderDispatchNotSentError,
+    ProviderDispatchUnknownError,
+    ProviderInvocationCoordinator,
+    build_provider_input_projection,
+    coordinate_provider_call,
+    coordinate_provider_stream,
 )
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
 from providers.dispatch_transport import DispatchAwareAsyncTransport
@@ -417,13 +416,13 @@ class _SseTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.count += 1
         body = (
-            'data: {"id":"chat-1","model":"model-1","choices":[{"delta":'
-            '{"content":"hello"},"finish_reason":null}]}\n\n'
-            'data: {"id":"chat-1","model":"model-1","choices":[{"delta":{},'
-            '"finish_reason":"stop"}],"usage":{"prompt_tokens":1,'
-            '"completion_tokens":1}}\n\n'
-            "data: [DONE]\n\n"
-        ).encode()
+            b'data: {"id":"chat-1","model":"model-1","choices":[{"delta":'
+            b'{"content":"hello"},"finish_reason":null}]}\n\n'
+            b'data: {"id":"chat-1","model":"model-1","choices":[{"delta":{},'
+            b'"finish_reason":"stop"}],"usage":{"prompt_tokens":1,'
+            b'"completion_tokens":1}}\n\n'
+            b"data: [DONE]\n\n"
+        )
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},

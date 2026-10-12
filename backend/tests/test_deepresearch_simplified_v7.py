@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from config import WorkflowsConfig, resolve_deep_research_workflow_version
 from deskpet.tools import research_tools as legacy
 from deskpet.workflows.contracts import WorkflowContext

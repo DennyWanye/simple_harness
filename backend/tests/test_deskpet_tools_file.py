@@ -20,9 +20,8 @@ import json
 from pathlib import Path
 
 import pytest
-
-from deskpet.tools.registry import registry
 from deskpet.tools import file_tools
+from deskpet.tools.registry import registry
 
 
 @pytest.fixture

@@ -13,9 +13,8 @@ Strategy: local_first
 """
 from __future__ import annotations
 
-import pytest
 import httpx
-
+import pytest
 from agent.context_messages import provider_purpose_scope
 from agent.context_report import ContextAttemptStore, set_context_attempt_store
 from providers.base import LLMProvider

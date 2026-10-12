@@ -12,7 +12,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import Budget
 from agent_orchestrator.contracts.models import SEARCH_TOOL_NAMES
 from agent_orchestrator.governance.budget_limits import inherit_limits

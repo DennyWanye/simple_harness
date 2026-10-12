@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.permissions import protected_paths as pp
 
 

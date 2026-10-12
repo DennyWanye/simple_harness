@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-
 from deskpet.companion.activation_guard import (
     ActivationGuardMonitor,
     GuardBindingSnapshotV1,

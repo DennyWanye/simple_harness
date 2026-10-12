@@ -25,7 +25,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Tuple
 
-
 # Error-code constants — callers (tests, /health consumers) depend on
 # these being stable strings. Don't rename without bumping the API.
 CUDA_UNAVAILABLE = "CUDA_UNAVAILABLE"
@@ -41,7 +40,7 @@ class StartupError:
     raw: str            # repr(exc) — for log correlation, not UI
 
 
-def _classify(exc: BaseException) -> Tuple[str, str]:
+def _classify(exc: BaseException) -> tuple[str, str]:
     """Map an exception from `engine.load()` to (error_code, user_message).
 
     Rules (checked in order — most specific first):

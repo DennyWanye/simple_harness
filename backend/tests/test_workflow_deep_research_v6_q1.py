@@ -11,7 +11,6 @@ from __future__ import annotations
 import inspect
 
 import pytest
-
 from deskpet.workflows.definitions import deep_research_v6_nodes as legacy_q1
 from deskpet.workflows.definitions.v6.deep_research import NODE_IDS, initial_state
 

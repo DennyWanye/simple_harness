@@ -11,15 +11,22 @@ import uuid
 
 import aiosqlite
 from simple_harness import (
-    DeliveryRecipient, IntendedAudience, DisclosurePurpose, DisclosureContext,
-    DisclosureSource, DisclosureTrust, DisclosureGeneration, DisclosureReasonCode,
-)
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier, digest
-from deskpet.memory.writer_fence import (
-    human_memory_connection, assert_human_memory_ingress_open_tx,
-    require_authenticated_host_snapshot,
+    DeliveryRecipient,
+    DisclosureContext,
+    DisclosureGeneration,
+    DisclosurePurpose,
+    DisclosureReasonCode,
+    DisclosureSource,
+    DisclosureTrust,
+    IntendedAudience,
 )
 
+from deskpet.memory.writer_fence import (
+    assert_human_memory_ingress_open_tx,
+    human_memory_connection,
+    require_authenticated_host_snapshot,
+)
+from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest, identifier
 
 POLICY = {
     "policy_id": "host-local-disclosure/v1",

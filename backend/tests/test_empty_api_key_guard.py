@@ -18,11 +18,9 @@ import logging
 import textwrap
 
 import pytest
-
 from llm.errors import LLMProviderError
 from llm.provider_registry import EmptyApiKeyError, LLMProviderRegistry
 from providers.openai_compatible import OpenAICompatibleProvider
-
 
 # ───────── 生产聊天 provider：providers.openai_compatible ─────────
 

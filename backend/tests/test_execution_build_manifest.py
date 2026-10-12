@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.build_identity import (
     EffectClass,
     IdempotencyClass,
@@ -18,7 +17,6 @@ from deskpet.tools.build_identity import (
     validate_core_registry_handler_set,
 )
 from deskpet.tools.registry import ToolSpec, tool_spec_fingerprint
-
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / "backend" / "deskpet" / "tools"
@@ -146,6 +144,8 @@ def test_runtime_bound_general_tools_keep_checked_metadata() -> None:
     from deskpet.tools.code_tools import register_code_tools
     from deskpet.tools.code_tools.clarify_tool import (
         _SCHEMA as clarification_schema,
+    )
+    from deskpet.tools.code_tools.clarify_tool import (
         durable_clarification_boundary_only,
     )
     from deskpet.tools.code_tools.spawn_subagents_tool import (

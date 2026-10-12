@@ -8,13 +8,14 @@ Platform receipt.  CapabilityStore remains the only active-binding authority.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Protocol
+from typing import Any, Literal, Protocol
 
 from .authority import RevocationBarrier
 from .contracts import (
-    CapabilityMutationReceipt,
     CandidateMode,
+    CapabilityMutationReceipt,
     MutationAction,
     MutationRequest,
     OwnerRef,

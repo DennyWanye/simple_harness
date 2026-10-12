@@ -23,7 +23,6 @@ import time
 import tracemalloc
 
 import pytest
-
 from observability.memory_probe import (
     DEFAULT_CENSUS,
     DEFAULT_EVERY,

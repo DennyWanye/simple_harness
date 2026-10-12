@@ -10,13 +10,11 @@ import asyncio
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
-from simple_harness.agents.arp.strict import digest
-from simple_harness.agents.arp.strict import plain
+from simple_harness.agents.arp.strict import digest, plain
 from simple_harness.agents.arp.tools import READ_TOOL_NAME, SEARCH_TOOL_NAME
 from simple_harness.agents.memory.embedding import HashEmbedder
 from simple_harness.contracts import CallId, RequestId, RunId

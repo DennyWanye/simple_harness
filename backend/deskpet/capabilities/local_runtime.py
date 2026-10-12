@@ -18,9 +18,10 @@ import os
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 import psutil
 
@@ -92,7 +93,7 @@ class ProcessCleanupReport:
     released_private_memory_bytes: int
 
     @classmethod
-    def empty(cls, lease_id: str) -> "ProcessCleanupReport":
+    def empty(cls, lease_id: str) -> ProcessCleanupReport:
         return cls(lease_id, (), (), (), 0)
 
 
@@ -570,7 +571,7 @@ class LocalToolRuntime:
                 await asyncio.wait_for(
                     stop.wait(), timeout=self.monitor_interval_seconds
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     async def _cleanup_lease(

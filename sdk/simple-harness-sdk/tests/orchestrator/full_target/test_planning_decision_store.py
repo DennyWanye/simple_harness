@@ -27,7 +27,6 @@ import sqlite3
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (

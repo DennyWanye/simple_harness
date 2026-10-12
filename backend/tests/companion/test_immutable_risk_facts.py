@@ -5,7 +5,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from deskpet.companion.build_admission import CandidateDraftReceiptV1
 from deskpet.companion.candidate_builder import (
     CandidateFileInputV1,

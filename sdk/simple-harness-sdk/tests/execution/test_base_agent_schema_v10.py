@@ -8,7 +8,6 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-
 from simple_harness.execution.sqlite import Database, schema
 from simple_harness.execution.sqlite.audit_schema import AUDIT_SCHEMA_VERSION, CHECKSUM
 from simple_harness.execution.sqlite.audit_schema import DDL as AUDIT_DDL

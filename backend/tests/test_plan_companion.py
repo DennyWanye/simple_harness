@@ -18,9 +18,11 @@ import json
 from unittest.mock import AsyncMock
 
 from agent.plan import (
-    PLAN_SCHEMA, Plan, PlanStep, maybe_extract_general_plan,
+    PLAN_SCHEMA,
+    Plan,
+    PlanStep,
+    maybe_extract_general_plan,
 )
-
 
 _LONG_MSG = "我的登录功能一直报错，帮我系统排查一下到底哪里出了问题" * 2
 

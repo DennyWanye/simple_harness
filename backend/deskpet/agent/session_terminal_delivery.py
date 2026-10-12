@@ -6,9 +6,9 @@ import asyncio
 import base64
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 from weakref import WeakValueDictionary
 
 from deskpet.execution.contracts import (
@@ -21,7 +21,6 @@ from deskpet.execution.contracts import (
 )
 from deskpet.execution.uow_ports import ProductProjectionUnitOfWork
 from deskpet.harness.projector import DeliveryDiscarded
-
 
 _WINDOWS_PATH = re.compile(r"(?i)\b[a-z]:\\[^\s\"']+")
 _TOKEN = re.compile(r"(?i)\b(?:tsk|key|sk)_[a-z0-9_-]+\b")
@@ -57,7 +56,7 @@ class SessionTerminalDeliveryTargetV1:
         return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
     @classmethod
-    def parse(cls, target_id: str) -> "SessionTerminalDeliveryTargetV1":
+    def parse(cls, target_id: str) -> SessionTerminalDeliveryTargetV1:
         text = str(target_id or "").strip()
         if not text:
             raise ValueError("session terminal target is empty")

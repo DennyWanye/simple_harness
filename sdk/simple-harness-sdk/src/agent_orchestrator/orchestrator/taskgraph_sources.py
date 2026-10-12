@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..contracts.models import sha256_hex
+from ..contracts.semantic_base import TypedRef, TypedRefKind
 from ..governance.permissions import Principal
 from ..graph.execution_contracts import CompleteRead, GraphReadToken
 from ..graph.network_codec import NetworkDocumentV1, decode, encode
 from ..graph.revision_pins import RevisionPins, build_revision_pins
-from ..contracts.semantic_base import TypedRef, TypedRefKind
-from ..contracts.models import sha256_hex
-from ..storage.htn_store import HtnStore
 from ..graph.revision_records import RevisionRecord
 from ..graph.task_network import TaskNetworkSnapshot
 from ..runtime.planning_operations import SourceUnavailable
+from ..storage.htn_store import HtnStore
 from ..storage.store import Store, StoreError
 from ..storage.taskgraph_store import InstalledGraphPolicy, PolicyBinding, TaskGraphStore
 from .taskgraph_epochs import current_scope_epochs

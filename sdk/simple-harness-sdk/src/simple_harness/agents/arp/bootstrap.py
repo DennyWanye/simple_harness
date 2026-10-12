@@ -15,8 +15,8 @@ moves only when something actually changed.
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Mapping, Sequence
 
 from simple_harness.tools import ToolSpec
 

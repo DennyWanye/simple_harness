@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-
 WorkspaceSource = Literal["existing", "user_path", "task_default", "none"]
 ProjectionState = Literal["open", "background", "closed"]
 UserContinuationState = Literal["pending", "bound", "failed"]
@@ -126,7 +125,7 @@ class ConversationBoundary:
     continuation_message_refs: tuple[str, ...] = ()
     version: int = 1
 
-    def append(self, message_ref: str, *, expected_version: int) -> "ConversationBoundary":
+    def append(self, message_ref: str, *, expected_version: int) -> ConversationBoundary:
         if expected_version != self.version:
             raise ValueError("conversation boundary version changed")
         if not message_ref:

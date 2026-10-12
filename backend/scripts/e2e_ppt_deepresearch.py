@@ -33,9 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from deskpet.tools.research_tools import deepresearch
 from deskpet.tools.ppt_tools import ppt_create
-
+from deskpet.tools.research_tools import deepresearch
 
 # --------------------------- fake plumbing ----------------------------
 

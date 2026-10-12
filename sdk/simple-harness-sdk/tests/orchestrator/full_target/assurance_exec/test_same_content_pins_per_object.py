@@ -12,7 +12,6 @@ live pins may share one blob.  One object still has at most one live pin.
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError, fingerprint
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
 from agent_orchestrator.storage import schema

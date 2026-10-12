@@ -21,7 +21,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.checks import (
     REVIEW_REPLY_SCHEMA_VERSION,
     CriterionPolicy,

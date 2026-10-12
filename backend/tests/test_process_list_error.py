@@ -3,7 +3,6 @@ import asyncio
 import json
 
 import pytest
-
 from deskpet.tools.os_tools.process_tools import process_list
 
 

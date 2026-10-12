@@ -37,14 +37,13 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from h1i_seed import CONFIG, run_until  # noqa: E402
-
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     LayeredScriptedProvider,
     broken_result,
     worker_reply,
 )
+from h1i_seed import CONFIG, run_until  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

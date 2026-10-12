@@ -3,11 +3,10 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.companion.personal_workflow import (
     PersonalWorkflowError,
-    plan_personal_workflow_tool_node,
     parse_personal_workflow_v1,
+    plan_personal_workflow_tool_node,
 )
 
 

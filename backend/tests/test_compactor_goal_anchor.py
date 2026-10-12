@@ -53,13 +53,11 @@ from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent.history_compactor import (
     DEFAULT_CHAR_THRESHOLD,
     DEFAULT_MESSAGE_THRESHOLD,
     compact_messages,
 )
-
 
 # ─────────────────────── helpers ───────────────────────
 
@@ -314,8 +312,8 @@ class _RecordingLLM:
     async def chat_with_fallback(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        model: Optional[str] = None,
+        tools: list[dict] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ):
         self.all_messages.append(list(messages))
@@ -339,7 +337,7 @@ class _NullToolRegistry:
 async def test_agent_loop_injects_anchor_at_anchor_every_iteration():
     """At iteration==_GOAL_ANCHOR_EVERY, a [目标锚定] system message must be
     injected into working_messages when goal is active."""
-    from agent.agent_loop import AgentLoop, _GOAL_ANCHOR_EVERY
+    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
     from deskpet.agent.goal_store import SessionGoalStore
 
     store = SessionGoalStore()
@@ -400,7 +398,7 @@ async def test_agent_loop_injects_anchor_at_anchor_every_iteration():
 @pytest.mark.asyncio
 async def test_agent_loop_no_anchor_when_no_goal():
     """BC: session_goal_store=None or no active goal → no [目标锚定] injected."""
-    from agent.agent_loop import AgentLoop, _GOAL_ANCHOR_EVERY
+    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
 
     n = _GOAL_ANCHOR_EVERY
     responses = []
@@ -438,7 +436,7 @@ async def test_agent_loop_no_anchor_when_no_goal():
 async def test_agent_loop_anchor_deduped_same_iteration():
     """Anchor message should appear at most once per qualifying iteration —
     the _last_anchor_iter guard prevents double-injection."""
-    from agent.agent_loop import AgentLoop, _GOAL_ANCHOR_EVERY
+    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
     from deskpet.agent.goal_store import SessionGoalStore
 
     store = SessionGoalStore()

@@ -8,7 +8,6 @@ Spec "Param→request mapping is total".
 from __future__ import annotations
 
 import pytest
-
 from llm.code_params import code_params_to_request as m
 
 

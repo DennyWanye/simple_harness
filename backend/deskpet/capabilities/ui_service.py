@@ -43,7 +43,7 @@ class CapabilityCenterError(RuntimeError):
 
 def _operation_id(idempotency_key: str) -> str:
     return hashlib.sha256(
-        f"capability:{idempotency_key}".encode("utf-8")
+        f"capability:{idempotency_key}".encode()
     ).hexdigest()
 
 

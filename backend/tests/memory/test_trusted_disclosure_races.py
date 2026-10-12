@@ -6,14 +6,13 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from deskpet.execution.primary_dependencies import check_runtime_dependencies
 from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from tests.companion.test_window_control_credentials import _ingress
-from tests.memory.test_primary_control_binding import _bind
-from tests.memory.test_trusted_disclosure import env, command, ok, selection, enqueue
 from tests.execution.test_primary_foreground_runtime import Provider, build
+from tests.memory.test_primary_control_binding import _bind
+from tests.memory.test_trusted_disclosure import command, enqueue, env, ok, selection
 from tests.sdk_adapters.test_product_host_ports import Registry
 
 
@@ -129,9 +128,12 @@ async def test_configuration_commit_during_checker_blocks_physical_send(env, cha
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fault", ["before_commit", "after_commit"])
 async def test_rejection_commit_fault_and_replay(env, fault):
-    from deskpet.execution.admission_rejection import reject_stale_candidate, read_admission_rejection_tx
-    from deskpet.execution.foreground_queue import ForegroundQueueStore
     import aiosqlite
+    from deskpet.execution.admission_rejection import (
+        read_admission_rejection_tx,
+        reject_stale_candidate,
+    )
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
     ok(await enqueue(env))
     queue = ForegroundQueueStore(env.path)
     candidate = await queue.read_next_preparation_candidate(env.auth.subject)

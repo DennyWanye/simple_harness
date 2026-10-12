@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from context import _VALID_SERVICES, ServiceContext
 
 _NEW_SLOTS = (

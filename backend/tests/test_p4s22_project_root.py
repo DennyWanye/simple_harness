@@ -8,10 +8,8 @@ import os
 from pathlib import Path
 
 import pytest
-
 from deskpet.code_mode import resolve_project_root, sanitize_project_name
 from deskpet.code_mode.project_root import assert_within_project_root
-
 
 # ---------------------------------------------------------------------------
 # sanitize_project_name

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from deskpet.tools.ppt_tools import ppt_create
 
-
 OUTLINE = [
     {"layout": "title", "title": "Demo Deck", "subtitle": "WI-T1.6"},
     {"layout": "bullet", "title": "Section 1", "bullets": ["alpha", "beta", "gamma"]},

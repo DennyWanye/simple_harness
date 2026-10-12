@@ -11,17 +11,30 @@ import json
 
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import AcceptingAssurance, ScriptedRunner, admit_skill, import_skill, md_bundle, native_bundle, receipt, trial_command
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.context.skill_blocks import replay_skill_blocks, skill_message
 from simple_harness.agents.arp.pins import Pin
-from simple_harness.agents.arp.skill_tools import SKILL_DISCOVER_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, SKILL_LOAD_TOOL_NAME, TOOL_DISCOVER_TOOL_NAME
+from simple_harness.agents.arp.skill_tools import (
+    SKILL_DISCOVER_TOOL_NAME,
+    SKILL_EXECUTE_TOOL_NAME,
+    SKILL_LOAD_TOOL_NAME,
+    TOOL_DISCOVER_TOOL_NAME,
+)
 from simple_harness.agents.arp.strict import digest, plain
 from simple_harness.contracts import CallId, RequestId, RunId
 from simple_harness.tools import CancellationToken, ToolContext
+from skill_fixture import (
+    AcceptingAssurance,
+    ScriptedRunner,
+    admit_skill,
+    import_skill,
+    md_bundle,
+    native_bundle,
+    receipt,
+    trial_command,
+)
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 SCRIPT = b"import json,sys\nprint(json.dumps({'ok': True}))\n"

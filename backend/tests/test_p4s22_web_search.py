@@ -6,7 +6,6 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from deskpet.retrieval.contracts import RetrievalCandidate, SearchResponse
 from deskpet.tools.code_tools.web_search_tool import web_search
 

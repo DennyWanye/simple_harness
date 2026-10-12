@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from deskpet.capabilities.contracts import CapabilityScope, CapabilityVersionDescriptor
 from deskpet.capabilities.store import (
     CapabilityStore,

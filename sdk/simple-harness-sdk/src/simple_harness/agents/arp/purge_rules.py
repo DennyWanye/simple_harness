@@ -9,8 +9,8 @@ one action it names under the session FileGuard and records a real receipt.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import PurePosixPath
-from typing import Mapping
 
 from .errors import ArpError
 

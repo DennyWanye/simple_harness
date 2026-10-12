@@ -18,7 +18,6 @@ from importlib import resources
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError, decode, fingerprint
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceCloseoutConsumer
 from agent_orchestrator.orchestrator.assurance_final_writer import closeout_document

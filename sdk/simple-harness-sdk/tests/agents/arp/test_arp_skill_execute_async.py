@@ -15,10 +15,9 @@ import threading
 
 from arp_fixture import build
 from provider_fixture import ScriptedProvider
+from simple_harness.agents.arp.strict import plain
 from skill_fixture import AcceptingAssurance, admit_skill, import_skill, receipt
 from test_arp_skill_use import SKILL_EXECUTE_TOOL_NAME, _agent, _context, _script_bundle, _tools
-
-from simple_harness.agents.arp.strict import plain
 
 
 class AsyncRunner:

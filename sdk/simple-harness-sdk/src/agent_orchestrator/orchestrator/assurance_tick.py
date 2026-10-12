@@ -31,7 +31,6 @@ from ..storage.assurance_work import (
 from ..storage.store import StoreConflict, StoreError
 from .assurance_clock import observe_assurance_clock
 
-
 #: 一项工作在读**它自己任务**的数据时可能抛出的错误：计划读不回来、执行图文档按现在的编解码
 #: 清单读不了（开发期不兼容旧数据）、库里这一行坏了。这是这个任务自己的事，这一项按持久
 #: 重试上限再看，绝不冲出轮询把别的任务一起带垮（片 D 真机，2026-10-02：冲出去之后主循环

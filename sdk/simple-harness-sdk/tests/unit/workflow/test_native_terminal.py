@@ -6,7 +6,6 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
-
 from simple_harness.contracts import canonical_json
 from simple_harness.workflow.errors import InvalidStatePatch
 from simple_harness.workflow.native import NativeWorkflowExecutable

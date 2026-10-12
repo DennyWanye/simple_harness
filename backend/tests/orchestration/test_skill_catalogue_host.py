@@ -18,9 +18,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id
+from deskpet.orchestration.handlers import handle
 
 from .test_native_plane_host import _service
 

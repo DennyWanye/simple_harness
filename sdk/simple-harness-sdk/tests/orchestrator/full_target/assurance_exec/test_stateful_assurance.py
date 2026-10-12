@@ -27,7 +27,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
-
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore  # noqa: E402
 
 VERDICTS = ("ACCEPT", "INCONCLUSIVE", "EMPTY")

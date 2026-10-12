@@ -16,8 +16,8 @@ Two concerns live here:
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import structlog
 from prometheus_client import (

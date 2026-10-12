@@ -6,7 +6,6 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from deskpet.companion import (
     CandidateAttempt,
     CandidateMode,

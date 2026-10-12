@@ -11,8 +11,6 @@ no store, no epoch barrier, no dirty queue (those are P3.5 / P3.6).
 from __future__ import annotations
 
 import pytest
-from full_target_world import HASH_A, World, tref
-
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     ObservationRecord,
@@ -53,6 +51,7 @@ from agent_orchestrator.knowledge.justifications import (
     parse_polarity,
 )
 from agent_orchestrator.knowledge.predicates import WorldAssumption
+from full_target_world import HASH_A, World, tref
 
 SCOPE = "mission-1"
 AS_OF = 1_000

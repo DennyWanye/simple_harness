@@ -6,9 +6,10 @@ import hashlib
 import json
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import aiosqlite
 
@@ -924,7 +925,7 @@ class WorkflowRunStore:
 
         now = self._clock()
         stable_key = event_key or uuid.uuid4().hex
-        event_id = hashlib.sha256(f"{fence.run_id}|{stable_key}".encode("utf-8")).hexdigest()
+        event_id = hashlib.sha256(f"{fence.run_id}|{stable_key}".encode()).hexdigest()
         db = await self._connect()
         try:
             await db.execute("BEGIN IMMEDIATE")

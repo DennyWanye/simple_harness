@@ -5,13 +5,12 @@ import json
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.adapters.research_runtime import (
+    V6_RESEARCH_RESPONSE_FORMATS,
     BoundResearchEffectContext,
     DurableResearchCallEffectAdapter,
     DurableV6ResearchLLMStagePort,
     ResearchEffectAdapterError,
-    V6_RESEARCH_RESPONSE_FORMATS,
     build_v6_research_llm_profiles,
     research_response_format_hash,
 )
@@ -23,7 +22,6 @@ from deskpet.workflows.definitions.research_core import (
 )
 from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
 from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
-
 
 EXTRACT_RESPONSE_FORMAT = {
     "type": "json_schema",

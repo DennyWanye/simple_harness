@@ -8,7 +8,6 @@ import time
 
 from deskpet.tools import research_scoring as rs
 
-
 # --- domain extraction (multi-part TLDs) ---
 
 def test_get_domain_multipart_cn():

@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus
 from agent_orchestrator.contracts.planning_decisions import PlanningRequestBinding

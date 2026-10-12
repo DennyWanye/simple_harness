@@ -27,7 +27,6 @@ import re
 from pathlib import Path
 from typing import Optional
 
-
 # spec 原文文案（test 对此精确断言，勿改）。
 _VIOLATION_MSG = (
     "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
@@ -85,9 +84,9 @@ def _is_within(child: Path, root: Path) -> bool:
 def write_scope_check(
     path: str,
     *,
-    scope_root: Optional[Path | str],
+    scope_root: Path | str | None,
     op: str = "write",
-) -> Optional[str]:
+) -> str | None:
     """校验单个写盘目标 ``path`` 是否在 ``scope_root`` 内。
 
     Returns
@@ -180,8 +179,8 @@ def _extract_paths_from_command(command: str) -> list[str]:
 def shell_write_scope_check(
     command: str,
     *,
-    scope_root: Optional[Path | str],
-) -> Optional[str]:
+    scope_root: Path | str | None,
+) -> str | None:
     """对 run_shell 命令做 write-scope 校验。
 
     只检查命令里**写盘类**操作的目标路径；任何一个越界 → 拒绝整条命令。

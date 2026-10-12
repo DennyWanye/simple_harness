@@ -10,11 +10,13 @@ import hashlib
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 from deskpet.tools.registry import tool_spec_fingerprint
 
+from .catalog_gate import CapabilityCatalogGate, CatalogGateKey
 from .contracts import (
     SCOPE_PRECEDENCE,
     CapabilityBinding,
@@ -32,9 +34,7 @@ from .contracts import (
     RevisionedCatalogEntries,
     fingerprint_json,
 )
-from .catalog_gate import CapabilityCatalogGate, CatalogGateKey
 from .store import CapabilityStore
-
 
 logger = logging.getLogger(__name__)
 

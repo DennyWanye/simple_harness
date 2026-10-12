@@ -8,9 +8,9 @@ from typing import Protocol
 
 from ..graph.notification_contracts import _text
 from ..planning.htn.grounding import derive_id
+from ..runtime.taskgraph_local_work import read_local_work
 from ..storage.store import CodedStoreConflict, Store, StoreError
 from ..storage.taskgraph_convergence import ConvergenceJob, TaskGraphConvergenceStore
-from ..runtime.taskgraph_local_work import read_local_work
 
 
 class ConvergenceActionKind(StrEnum):

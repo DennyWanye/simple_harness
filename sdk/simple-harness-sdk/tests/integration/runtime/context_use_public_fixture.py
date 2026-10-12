@@ -12,9 +12,8 @@ import json
 import time
 from typing import Any
 
-import simple_harness_memory as memory
-
 import simple_harness as harness
+import simple_harness_memory as memory
 
 
 def _sha(value: str) -> str:

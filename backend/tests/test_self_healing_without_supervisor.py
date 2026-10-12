@@ -13,7 +13,11 @@ import ast
 import asyncio
 from pathlib import Path
 
-from agent.auto_resume import AutoResumeOrchestrator, DeterministicResumePolicy, is_auto_resume_trigger
+from agent.auto_resume import (
+    AutoResumeOrchestrator,
+    DeterministicResumePolicy,
+    is_auto_resume_trigger,
+)
 from agent.session_activity import SessionActivityStore
 
 MAIN = Path(__file__).parents[1] / "main.py"

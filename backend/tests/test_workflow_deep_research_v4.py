@@ -9,8 +9,14 @@ from dataclasses import replace
 from datetime import date
 
 import pytest
-
 from deskpet.workflows.contracts import StatePatch, WorkflowContext
+from deskpet.workflows.definitions.deep_research_v3_nodes import (
+    normalize_handler as v3_normalize_handler,
+)
+from deskpet.workflows.definitions.deep_research_v3_nodes import (
+    plan_handler as v3_plan_handler,
+)
+from deskpet.workflows.definitions.deep_research_v4_contracts import TechnologyFinding
 from deskpet.workflows.definitions.deep_research_v4_nodes import (
     _fallback_localized_change,
     _github_release_document,
@@ -23,16 +29,11 @@ from deskpet.workflows.definitions.deep_research_v4_nodes import (
     insufficient_evidence_finalize,
     no_results_finalize,
     normalize_handler,
-    plan_handler,
     persist_handler,
+    plan_handler,
     post_cite_route,
     post_direct_route,
     rerank_handler,
-)
-from deskpet.workflows.definitions.deep_research_v4_contracts import TechnologyFinding
-from deskpet.workflows.definitions.deep_research_v3_nodes import (
-    normalize_handler as v3_normalize_handler,
-    plan_handler as v3_plan_handler,
 )
 from deskpet.workflows.definitions.research_core import (
     DirectOutcome,
@@ -43,6 +44,8 @@ from deskpet.workflows.definitions.research_core import (
 )
 from deskpet.workflows.definitions.v3.deep_research import (
     DEEP_RESEARCH_V3_DEFINITION,
+)
+from deskpet.workflows.definitions.v3.deep_research import (
     initial_state as v3_initial_state,
 )
 from deskpet.workflows.definitions.v4.deep_research import (
@@ -51,7 +54,6 @@ from deskpet.workflows.definitions.v4.deep_research import (
     initial_state,
 )
 from deskpet.workflows.native import NativeExecutionPolicy
-
 
 ORIGINAL_TOPIC = "可以帮我调研一下，现在 AI 相关的最新最有价值的技术相关的信息吗？"
 

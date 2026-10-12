@@ -7,24 +7,34 @@ import hashlib
 from dataclasses import replace
 
 import pytest
-
 from simple_harness import MandatoryContextActionRequired, MandatoryContextRejectionV1
-from simple_harness.contracts import CallId, RequestId, RunId, thaw_json, canonical_json
+from simple_harness.contracts import CallId, RequestId, RunId, canonical_json, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.execution.context_authority import ContextRouteReceipt, RunContextSnapshot
-from simple_harness.execution.provider_invocations import provider_request_fingerprint
-from simple_harness.execution.dispatch import ProviderInvocationCoordinator
 from simple_harness.execution.budget import FrozenPriceEstimator
+from simple_harness.execution.context_authority import ContextRouteReceipt, RunContextSnapshot
+from simple_harness.execution.dispatch import ProviderInvocationCoordinator
+from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-from simple_harness.providers import CancelToken, ProviderRequest, ProviderResponse, ProviderToolCall, ProviderToolSpec, ProviderUsage
+from simple_harness.providers import (
+    CancelToken,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderToolCall,
+    ProviderToolSpec,
+    ProviderUsage,
+)
 from simple_harness.runtime import EffectBatchExecutor, RuntimeServices, SqliteContextPort
-from simple_harness.runtime.drivers.react_loop import ReActLoop, ReActRunInput, AgentLoopCollaborator
+from simple_harness.runtime.drivers.react_loop import (
+    AgentLoopCollaborator,
+    ReActLoop,
+    ReActRunInput,
+)
 from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 from simple_harness.runtime.termination import TerminationLimits, TerminationState
-from simple_harness.tools import EffectExecutor, FunctionTool, ToolRegistry, ToolSpec, ToolResult
-
-from .test_react_sqlite_runtime import Provider, OpaqueResolver, Authorization, Reconciliation, Noop
+from simple_harness.tools import EffectExecutor, FunctionTool, ToolRegistry, ToolResult, ToolSpec
 from simple_harness.tools.authorization import AuthorizationReceipt
+
+from .test_react_sqlite_runtime import Authorization, Noop, OpaqueResolver, Provider, Reconciliation
 
 
 class PowerLoss(BaseException):

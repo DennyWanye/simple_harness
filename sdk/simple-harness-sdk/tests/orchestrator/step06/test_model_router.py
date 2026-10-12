@@ -12,7 +12,6 @@ another pool."""
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import Attempt, AttemptStatus, Budget
 from agent_orchestrator.runtime.model_router import (
     ModelRouter,

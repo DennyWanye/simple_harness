@@ -3,14 +3,13 @@
 import sqlite3
 
 import pytest
-from test_audit_schema import digest, old_empty_v7
-
 from simple_harness.execution.sqlite import SCHEMA_VERSION, Database
 from simple_harness.execution.sqlite.audit_schema import (
     V1_CHECKSUM,
     V1_DDL,
     AuditSchemaIncompatible,
 )
+from test_audit_schema import digest, old_empty_v7
 
 
 def legacy_v1(path):

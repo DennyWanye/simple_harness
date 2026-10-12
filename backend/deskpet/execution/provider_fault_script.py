@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Mapping
 
 from deskpet.execution.provider_workloads import ProviderWorkloadContext
-
 
 FAULT_SCRIPT_ENV = "DESKPET_PROVIDER_FAULT_SCRIPT"
 _MAX_SCRIPT_BYTES = 64 * 1024

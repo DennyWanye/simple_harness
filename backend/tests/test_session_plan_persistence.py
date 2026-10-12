@@ -20,7 +20,6 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_contracts import sha256_json
 from deskpet.workflows.definitions.deep_research_v6_integrity import (
     ClaimBatchV1,
@@ -14,7 +13,6 @@ from deskpet.workflows.definitions.deep_research_v6_integrity import (
     derive_fact_batch_head,
     validate_q1_exact_scalar_integrity,
 )
-
 
 RUN_ID = "run-q1-integrity"
 SPEC_HASH = "a" * 64

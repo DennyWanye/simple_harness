@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.companion.contracts import OwnerRef
 from deskpet.companion.identity_gate import FrozenOwnerIdentity, IdentityReadyGate
 from deskpet.companion.runtime import (

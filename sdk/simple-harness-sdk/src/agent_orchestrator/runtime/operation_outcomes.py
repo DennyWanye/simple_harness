@@ -100,7 +100,7 @@ class FilePublishReceiptAdapterV1:
                 or payload.get("idempotency_key") != action.get("idempotency_key")
             ):
                 raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff event")
-            ids.append(str(getattr(event, "id")))
+            ids.append(str(event.id))
             ordinal = payload.get("handoff")
             if type(ordinal) is not int:
                 raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff ordinal")
@@ -154,8 +154,9 @@ def resolve_receipt_adapter(
     A model/API caller cannot name an import, supply a receipt parser, or promote
     arbitrary shell output to an external-effect fact.
     """
-    from .operation_payloads import require_connector_profile
     from typing import cast
+
+    from .operation_payloads import require_connector_profile
     if profiles is not None:
         require_connector_profile(profiles, connector_id=profile.connector_id,
             operation_name=profile.operation_name, expected_hash=profile.content_hash())

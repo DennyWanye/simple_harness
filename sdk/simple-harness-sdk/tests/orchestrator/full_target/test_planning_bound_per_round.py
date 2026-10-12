@@ -12,7 +12,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import UncertaintySeverity, enum_of
 from agent_orchestrator.orchestrator.event_handler import (

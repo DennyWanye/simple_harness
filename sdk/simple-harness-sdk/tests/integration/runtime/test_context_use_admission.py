@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import simple_harness as h
 
 from .test_context_use_public_memory import UnusedAuthorization, UnusedTools, digest

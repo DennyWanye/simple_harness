@@ -6,7 +6,6 @@ from __future__ import annotations
 import inspect
 
 import pytest
-
 from simple_harness.testing import arm64_candidate
 from simple_harness.testing.arm64_candidate import (
     Arm64CandidateGateError,

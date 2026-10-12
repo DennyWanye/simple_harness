@@ -7,7 +7,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.sqlite import (
     SCHEMA_VERSION,
     Database,

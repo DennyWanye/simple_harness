@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 from ..contracts.models import sha256_hex
 from ..storage.store import Store

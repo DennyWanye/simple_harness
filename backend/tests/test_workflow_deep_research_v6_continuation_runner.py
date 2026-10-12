@@ -5,7 +5,6 @@ import json
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_evidence import EvidenceFactBatchV1
 from deskpet.workflows.definitions.v6.deep_research import (
     decode_continuation_snapshot,
@@ -14,6 +13,7 @@ from deskpet.workflows.definitions.v6.deep_research import (
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store.research_repository import ResearchWorkflowRepository
+
 from tests.test_deep_research_v6_production_runner import TOPICS, _runtime
 
 

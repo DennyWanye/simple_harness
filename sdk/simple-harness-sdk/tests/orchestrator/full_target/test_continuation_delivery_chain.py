@@ -18,11 +18,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.semantic_base import VersionedRef
 from agent_orchestrator.orchestrator import hierarchical_dispatch as hd
-from agent_orchestrator.runtime.action_schema import OPERATION_CANDIDATE_FILE, OPERATION_CANDIDATE_PORT
+from agent_orchestrator.runtime.action_schema import (
+    OPERATION_CANDIDATE_FILE,
+    OPERATION_CANDIDATE_PORT,
+)
 
 SCHEMA = VersionedRef("desktop.workspace-outputs", 1, "a" * 64)
 M = "mission-chain"
@@ -38,8 +40,8 @@ def _artifact(task, path, digest, artifact_id):
 
 def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch):
     """**Mutation**: return ``task.outputs`` unchanged → red."""
-    from agent_orchestrator.orchestrator import event_handler as eh
     import agent_orchestrator.storage.htn_store as htn
+    from agent_orchestrator.orchestrator import event_handler as eh
 
     ports = {"with": (_port("delivery"), _port(OPERATION_CANDIDATE_PORT)), "without": (_port("delivery"),)}
 
@@ -72,8 +74,8 @@ def test_the_published_artifact_is_verified_against_the_accepted_inputs(monkeypa
     发布的产物必须是冻结已验收输入里的同一产物（id 与哈希一致），并把核对结果交给审阅员。
 
     **Mutation**: return a fact without checking membership → the stranger case goes red."""
-    from agent_orchestrator.orchestrator import operation_proposal_review as review
     import agent_orchestrator.storage.htn_store as htn
+    from agent_orchestrator.orchestrator import operation_proposal_review as review
 
     accepted = SimpleNamespace(id="artifact-notes", content_hash="5" * 64)
 
@@ -136,9 +138,8 @@ def _acceptance(task, acceptance_id, refs, manifest_hash="m" * 64):
 def _sources_world(monkeypatch, *, read_only_module=False):
     """三步：t-module 起始写 slugify.py + notes.md；t-tests 接着交付（收到 slugify.py）写 test_slugify.py、
     README.md、wordfreq.py 与一份操作申请单；下游 t-notes 接 t-tests 的端口文件 README.md。"""
-    from agent_orchestrator.contracts.htn import SideEffectKind
     from agent_orchestrator.artifacts.input_bindings import DeliveryBinding, InputManifest
-    from agent_orchestrator.contracts.htn import TaskRef
+    from agent_orchestrator.contracts.htn import SideEffectKind, TaskRef
 
     artifacts = {
         "a-module": _artifact("t-module", "slugify.py", "1" * 64, "a-module"),

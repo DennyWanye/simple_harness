@@ -6,16 +6,16 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from collections.abc import Callable
-from typing import Any, Iterator, NoReturn
+from typing import Any, NoReturn
 
 from simple_harness.contracts import canonical_json
 
-from ..contracts.error_table import CodedFault, RoundFaultCode
-from ..contracts.models import Attempt, ContractError
-from ..contracts.htn import TaskSemanticBindingV1
 from ..artifacts.taskgraph_inputs import decode_frozen_manifest
+from ..contracts.error_table import CodedFault, RoundFaultCode
+from ..contracts.htn import TaskSemanticBindingV1
+from ..contracts.models import Attempt, ContractError
 from ..graph.attempt_inputs import AttemptInputBinding, FrozenAttemptInputs
 from ..graph.revision_records import HistoricalRevision
 from .store import Store

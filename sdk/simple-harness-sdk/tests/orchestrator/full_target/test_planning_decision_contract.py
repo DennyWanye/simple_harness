@@ -18,7 +18,6 @@ import hashlib
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     ENABLED_DECISIONS,

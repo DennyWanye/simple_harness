@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 from urllib.parse import quote_plus
+
 import httpx
-from .base import ProviderFailure, candidates_from_rows
+
 from ..contracts import PublicErrorCode, SearchBudget, SearchRequest
+from .base import ProviderFailure, candidates_from_rows
+
 
 class GoogleCDPProvider:
     name = "google-cdp"

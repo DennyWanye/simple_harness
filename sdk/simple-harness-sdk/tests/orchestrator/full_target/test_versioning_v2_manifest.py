@@ -30,7 +30,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.artifacts import versioning
 from agent_orchestrator.artifacts.input_bindings import (
     AcceptedOutput,

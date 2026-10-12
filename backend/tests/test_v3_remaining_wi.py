@@ -17,7 +17,6 @@ from typing import Any
 
 import pytest
 
-
 # ─── WI-T2.5: frontend CI workflow 存在 ─────────────────────────
 
 
@@ -144,7 +143,7 @@ def test_t4_2_two_plugins_same_name_no_conflict():
 
 def test_t5_1_cache_returns_same_instance_on_unchanged_mtime(tmp_path):
     """同 path + 同 mtime → 返同一个 AppConfig 实例（cache 命中）."""
-    from config import load_config, _reset_load_config_cache
+    from config import _reset_load_config_cache, load_config
 
     _reset_load_config_cache()
     cfg_file = tmp_path / "test.toml"
@@ -159,7 +158,7 @@ def test_t5_1_cache_returns_same_instance_on_unchanged_mtime(tmp_path):
 
 def test_t5_1_cache_invalidated_on_mtime_change(tmp_path, monkeypatch):
     """改 toml 后 mtime 变 → cache 失效，重新读."""
-    from config import load_config, _reset_load_config_cache
+    from config import _reset_load_config_cache, load_config
 
     monkeypatch.delenv("DESKPET_BACKEND_PORT", raising=False)
     _reset_load_config_cache()
@@ -183,7 +182,7 @@ def test_t5_1_cache_invalidated_on_mtime_change(tmp_path, monkeypatch):
 
 def test_t5_1_cache_invalidated_on_path_change(tmp_path, monkeypatch):
     """不同 path → cache 不命中，分别读."""
-    from config import load_config, _reset_load_config_cache
+    from config import _reset_load_config_cache, load_config
 
     monkeypatch.delenv("DESKPET_BACKEND_PORT", raising=False)
     _reset_load_config_cache()
@@ -201,7 +200,7 @@ def test_t5_1_cache_invalidated_on_path_change(tmp_path, monkeypatch):
 
 def test_t5_1_missing_file_not_cached(tmp_path):
     """文件不存在时不缓存（每次返新的默认 AppConfig）."""
-    from config import load_config, _reset_load_config_cache
+    from config import _reset_load_config_cache, load_config
 
     _reset_load_config_cache()
     nonexistent = tmp_path / "ghost.toml"

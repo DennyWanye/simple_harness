@@ -16,7 +16,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 # 7 categories from spec permission-gate §"Permission categories table".
 PermissionCategory = Literal[
     "read_file",

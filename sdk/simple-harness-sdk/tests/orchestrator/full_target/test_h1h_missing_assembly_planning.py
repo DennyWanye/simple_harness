@@ -13,12 +13,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from h1i_seed import run_until
-from product_assembly import unstarted
-
 from agent_orchestrator.contracts import ContractError, MissionStatus
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from h1i_seed import run_until
+from product_assembly import unstarted
 
 OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
 

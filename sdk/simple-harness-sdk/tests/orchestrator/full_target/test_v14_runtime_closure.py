@@ -18,15 +18,6 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from h1i_seed import seeded  # noqa: E402
-from production_fixture import (  # noqa: E402
-    CHAIN_CRITERIA,
-    chain_planner,
-    enabled_world,
-    result_envelope,
-    scripted_worker,
-)
-
 from agent_orchestrator.api.facade import FacadeError  # noqa: E402
 from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus  # noqa: E402
@@ -35,6 +26,14 @@ from agent_orchestrator.storage.planning_decision_store import PlanningDecisionS
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import decision  # noqa: E402
+from h1i_seed import seeded  # noqa: E402
+from production_fixture import (  # noqa: E402
+    CHAIN_CRITERIA,
+    chain_planner,
+    enabled_world,
+    result_envelope,
+    scripted_worker,
+)
 
 
 def _events(loop, mission_id: str, event_type: str) -> list:

@@ -9,14 +9,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ..contracts.error_table import SharingRefusalCode, SharingRefused
 from ..contracts.evidence_state import EvidenceSnapshot, ValidityWitness
 from ..contracts.htn import MethodContract, OccurrenceId, ReleaseCondition
-from ..contracts.error_table import SharingRefusalCode, SharingRefused
 from ..contracts.models import ContractError
 from ..knowledge.predicates import PredicateRegistry, PredicateSignature
 from ..planning.htn.applicability import authorization_gate, evaluate_condition
-from ..planning.htn.grounding import SharedGoalEntry, data_flows
 from ..planning.htn.compiler import DEFAULT_ASSURANCE_POLICY, DEFAULT_FRESHNESS_POLICY
+from ..planning.htn.grounding import SharedGoalEntry, data_flows
 from .convergence import compute_convergence_impact
 from .eligibility import OccurrenceOutcome, _witness_verdict, order_released, start_preconditions
 from .network_codec import NetworkDocumentV1, decode

@@ -15,7 +15,7 @@ import uuid
 
 def new_task_id() -> str:
     """Return a fresh task id string."""
-    now = _dt.datetime.now(_dt.timezone.utc)
+    now = _dt.datetime.now(_dt.UTC)
     stamp = now.strftime("%y%m%d%H%M%S")
     short = uuid.uuid4().hex[:8]
     return f"task_{stamp}_{short}"

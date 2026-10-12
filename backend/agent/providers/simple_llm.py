@@ -12,7 +12,7 @@
 """
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from memory.base import MemoryStore
 from providers.base import LLMProvider

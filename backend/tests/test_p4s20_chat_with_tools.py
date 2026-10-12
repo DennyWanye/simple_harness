@@ -8,13 +8,12 @@ import json
 
 import httpx
 import pytest
-
-from providers.openai_compatible import OpenAICompatibleProvider
 from agent.tool_use_shim import (
     OpenAICompatibleAgentLLM,
     OpenAICompatibleAgentLLMChain,
 )
 from llm.errors import LLMAuthError
+from providers.openai_compatible import OpenAICompatibleProvider
 
 
 def _mock_handler(captured: list, response_body: dict):

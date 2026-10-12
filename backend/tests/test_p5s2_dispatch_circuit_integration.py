@@ -14,10 +14,8 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent.circuit_breaker import ToolCircuitBreaker
 from deskpet.tools.registry import ToolRegistry
-
 
 # ─────────────── helpers ───────────────
 

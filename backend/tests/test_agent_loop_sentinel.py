@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import AgentLoop, FinalEvent, ToolBatchEvent
 from llm.types import ChatResponse, ChatUsage, ToolCall
 

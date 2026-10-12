@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from importlib import import_module
 
-
 _CONTRACTS = frozenset(
     {
         "ChannelSpec", "EffectKind", "EffectPolicy", "JsonType", "JsonValue",

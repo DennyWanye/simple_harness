@@ -16,11 +16,12 @@ import inspect
 import json
 
 import pytest
-
 from deskpet.sdk_adapters.tools import ProductToolsAdapter
 from deskpet.tools.tool_search import (
     _ACTIVATE_SCHEMA,
     _DESCRIBE_SCHEMA,
+)
+from deskpet.tools.tool_search import (
     _SCHEMA as _SEARCH_SCHEMA,
 )
 

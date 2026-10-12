@@ -15,7 +15,6 @@ import sqlite3
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.creation import MARKER_FILE

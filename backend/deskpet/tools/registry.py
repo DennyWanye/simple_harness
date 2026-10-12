@@ -50,19 +50,21 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Optional
 
-from .capabilities import (
-    ToolCapabilityScopeStore,
-    ToolEligibilityContext,
-    ToolExecutionContext,
-    ToolPolicySnapshot,
-    current_tool_execution_context,
-    reset_tool_execution_context,
-    set_tool_execution_context,
+from deskpet.execution.contracts import OutcomeStatus, fingerprint_json, thaw_json
+from deskpet.execution.dispatch import (
+    FunctionPreparedToolDispatch,
+    PreparedToolDispatch,
+    PreparedToolDispatchIdentity,
 )
+from deskpet.types.task_grants import ResourceSelector
+from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
+
 from .build_identity import (
     EffectClass,
     ExecutionBuildIdentity,
@@ -74,17 +76,17 @@ from .build_identity import (
     core_authority_for_tool,
     validate_core_registry_handler_set,
 )
-
-from .error_classifier import classify as _classify_retriable
-from .context_adapter import reject_reserved_model_fields
-from deskpet.execution.contracts import OutcomeStatus, fingerprint_json, thaw_json
-from deskpet.execution.dispatch import (
-    FunctionPreparedToolDispatch,
-    PreparedToolDispatch,
-    PreparedToolDispatchIdentity,
+from .capabilities import (
+    ToolCapabilityScopeStore,
+    ToolEligibilityContext,
+    ToolExecutionContext,
+    ToolPolicySnapshot,
+    current_tool_execution_context,
+    reset_tool_execution_context,
+    set_tool_execution_context,
 )
-from deskpet.types.task_grants import ResourceSelector
-from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
+from .context_adapter import reject_reserved_model_fields
+from .error_classifier import classify as _classify_retriable
 
 logger = logging.getLogger(__name__)
 
@@ -770,13 +772,13 @@ class ToolSpec:
     handler: ToolHandler
     # WI-2 add-only path: trusted host context is a separate argument.  The
     # legacy handler remains required until the WI-12 atomic cut-over.
-    context_handler: Optional[ContextToolHandler] = None
-    check_fn: Optional[CheckFn] = None
+    context_handler: ContextToolHandler | None = None
+    check_fn: CheckFn | None = None
     requires_env: list[str] = field(default_factory=list)
     permission_category: str = "read_file"
     source: str = "builtin"
     dangerous: bool = False
-    resource_scope_resolver: Optional[ResourceScopeResolver] = None
+    resource_scope_resolver: ResourceScopeResolver | None = None
     resource_scope_resolver_id: str = ""
     resource_scope_resolver_version: str = ""
     # P5-S1: per-tool hard timeout in seconds. ``execute_tool`` enforces
@@ -804,7 +806,7 @@ class ToolSpec:
     # runtime precondition holds (e.g. goal_task_* tools stay hidden until the
     # user runs /goal). Only gates *schema* exposure — ``execute_tool`` still
     # dispatches if the LLM somehow calls a hidden tool (handler guards apply).
-    visible_when: Optional[VisibilityFn] = None
+    visible_when: VisibilityFn | None = None
     visibility_scope: str = "global"
     fixture_epoch: int = 0
     fixture_spec_hash: str = ""
@@ -819,7 +821,7 @@ class ToolSpec:
     effect_class: EffectClass = EffectClass.UNKNOWN
     idempotency: IdempotencyClass = IdempotencyClass.UNKNOWN
     target_normalizer_version: str = "none"
-    execution_build_identity: Optional[ExecutionBuildIdentity] = None
+    execution_build_identity: ExecutionBuildIdentity | None = None
     dispatch_adapter_id: str = "builtin.function"
     dispatch_adapter_version: str = "v1"
     dispatch_adapter_fingerprint: str = ""
@@ -830,7 +832,7 @@ class ToolSpec:
     schema_hash: str = ""
     permission_policy_version: str = "v1"
     effect_policy: Any = None
-    outcome_parser: Optional[OutcomeParser] = None
+    outcome_parser: OutcomeParser | None = None
     outcome_parser_id: str = ""
     outcome_parser_version: str = ""
     outcome_parser_hash: str = ""
@@ -839,12 +841,12 @@ class ToolSpec:
     # authorized like normal tools, then converted to a durable child command;
     # their fail-closed handler is never executed.
     dispatch_kind: str = "handler"
-    prepare: Optional[PrepareFn] = None
-    stage: Optional[LifecycleFn] = None
-    validate: Optional[LifecycleFn] = None
-    commit: Optional[LifecycleFn] = None
-    rollback: Optional[LifecycleFn] = None
-    reconcile: Optional[LifecycleFn] = None
+    prepare: PrepareFn | None = None
+    stage: LifecycleFn | None = None
+    validate: LifecycleFn | None = None
+    commit: LifecycleFn | None = None
+    rollback: LifecycleFn | None = None
+    reconcile: LifecycleFn | None = None
     # Inspector V3 presentation metadata.  Empty allowlists are deliberately
     # default-deny; legacy tools remain executable but expose no raw details.
     activity_kind: str = "mutate"
@@ -859,7 +861,7 @@ class ToolSpec:
         """True iff every ``requires_env`` var is present AND non-empty."""
         return all(os.environ.get(e) for e in self.requires_env)
 
-    def is_visible(self, context: Optional[ToolEligibilityContext] = None) -> bool:
+    def is_visible(self, context: ToolEligibilityContext | None = None) -> bool:
         """True iff this tool should appear in the LLM schema list this turn.
 
         ``visible_when is None`` → always visible (legacy default). A predicate
@@ -1064,13 +1066,11 @@ class ToolRegistry:
         # The durable GrowthAuthorityRouter owns when this value advances.
         # Registry only provides the atomic, manifest-checked projection.
         self._authority_phase = "legacy"
-        self._capability_scope_store: Optional[ToolCapabilityScopeStore] = None
-        self._dynamic_capability_admission_provider: Optional[
-            Callable[[str, ToolExecutionContext, ToolSpec], bool]
-        ] = None
+        self._capability_scope_store: ToolCapabilityScopeStore | None = None
+        self._dynamic_capability_admission_provider: Callable[[str, ToolExecutionContext, ToolSpec], bool] | None = None
         self._context_os_enabled_provider: Callable[[], bool] = lambda: False
-        self._context_os_e2e_hooks: Optional[Any] = None
-        self._mcp_catalog_stale_callback: Optional[Callable[[str], None]] = None
+        self._context_os_e2e_hooks: Any | None = None
+        self._mcp_catalog_stale_callback: Callable[[str], None] | None = None
         # P4-S20: optional permission gate. When set, ``execute_tool``
         # awaits ``gate.check(...)`` before running the handler. Tests
         # and legacy ``dispatch()`` paths leave it unset (no gating).
@@ -1091,11 +1091,11 @@ class ToolRegistry:
         # WI-T1.1 (last-mile): optional ToolsConfig provider for D1 信封包装。
         # 默认 None → execute_tool 不加 artifacts 键（BC + 字节级一致硬保证）。
         # 启动期 main.py 调 set_tools_config_provider(lambda: cfg.tools)。
-        self._tools_config_provider: Optional[Callable[[], Any]] = None
+        self._tools_config_provider: Callable[[], Any] | None = None
         # WI-T2.2 (last-mile P0 修): optional ReceiptStore provider 真正插电。
         # 默认 None → 不产 receipt（BC）；main.py 启动时按 cfg.verifier.emit_receipts
         # 决定是否构造 ReceiptStore 并注入。
-        self._receipt_store_provider: Optional[Callable[[], Any]] = None
+        self._receipt_store_provider: Callable[[], Any] | None = None
         # WI-T2.3 session iteration 计数 (per session_id) — receipt.iteration 字段
         self._session_iteration: dict[str, int] = {}
         # WI-CC-2 (plan mode 物理只读): per-session 规划期只读开关。
@@ -1142,30 +1142,30 @@ class ToolRegistry:
         self._tools_config_provider = provider
 
     def set_capability_scope_store(
-        self, store: Optional[ToolCapabilityScopeStore]
+        self, store: ToolCapabilityScopeStore | None
     ) -> None:
         self._capability_scope_store = store
 
     def set_dynamic_capability_admission_provider(
         self,
-        provider: Optional[Callable[[str, ToolExecutionContext, ToolSpec], bool]],
+        provider: Callable[[str, ToolExecutionContext, ToolSpec], bool] | None,
     ) -> None:
         """Wire the Run-local authority for post-start capability activation."""
 
         self._dynamic_capability_admission_provider = provider
 
     @property
-    def capability_scope_store(self) -> Optional[ToolCapabilityScopeStore]:
+    def capability_scope_store(self) -> ToolCapabilityScopeStore | None:
         return self._capability_scope_store
 
     def set_context_os_enabled_provider(self, provider: Callable[[], bool]) -> None:
         self._context_os_enabled_provider = provider
 
-    def set_context_os_e2e_hooks(self, hooks: Optional[Any]) -> None:
+    def set_context_os_e2e_hooks(self, hooks: Any | None) -> None:
         self._context_os_e2e_hooks = hooks
 
     def set_mcp_catalog_stale_callback(
-        self, callback: Optional[Callable[[str], None]]
+        self, callback: Callable[[str], None] | None
     ) -> None:
         self._mcp_catalog_stale_callback = callback
 
@@ -1193,7 +1193,7 @@ class ToolRegistry:
                     logger.warning("mcp_catalog_stale_callback_failed", exc_info=True)
 
     @property
-    def context_os_e2e_hooks(self) -> Optional[Any]:
+    def context_os_e2e_hooks(self) -> Any | None:
         return self._context_os_e2e_hooks
 
     def read_policy_snapshot(self, *, strict: bool) -> ToolPolicySnapshot:
@@ -1271,19 +1271,19 @@ class ToolRegistry:
         schema: dict[str, Any],
         handler: ToolHandler,
         *,
-        context_handler: Optional[ContextToolHandler] = None,
-        check_fn: Optional[CheckFn] = None,
-        requires_env: Optional[list[str]] = None,
+        context_handler: ContextToolHandler | None = None,
+        check_fn: CheckFn | None = None,
+        requires_env: list[str] | None = None,
         permission_category: str = "read_file",
         source: str = "builtin",
         dangerous: bool = False,
-        resource_scope_resolver: Optional[ResourceScopeResolver] = None,
+        resource_scope_resolver: ResourceScopeResolver | None = None,
         resource_scope_resolver_id: str = "",
         resource_scope_resolver_version: str = "",
         timeout_seconds: float = 60.0,
         replace_allowed: bool = False,
         concurrency_safe: bool = True,
-        visible_when: Optional[VisibilityFn] = None,
+        visible_when: VisibilityFn | None = None,
         visibility_scope: str = "global",
         fixture_epoch: int = 0,
         fixture_spec_hash: str = "",
@@ -1292,22 +1292,22 @@ class ToolRegistry:
         spec_version: str = "v1",
         permission_policy_version: str = "v1",
         effect_policy: Any = None,
-        outcome_parser: Optional[OutcomeParser] = None,
-        outcome_parser_id: Optional[str] = None,
+        outcome_parser: OutcomeParser | None = None,
+        outcome_parser_id: str | None = None,
         outcome_parser_version: str = _OUTCOME_PARSER_VERSION,
-        outcome_parser_hash: Optional[str] = None,
-        completion_semantics: Optional[str] = None,
+        outcome_parser_hash: str | None = None,
+        completion_semantics: str | None = None,
         dispatch_kind: str = "handler",
-        prepare: Optional[PrepareFn] = None,
-        stage: Optional[LifecycleFn] = None,
-        validate: Optional[LifecycleFn] = None,
-        commit: Optional[LifecycleFn] = None,
-        rollback: Optional[LifecycleFn] = None,
-        reconcile: Optional[LifecycleFn] = None,
+        prepare: PrepareFn | None = None,
+        stage: LifecycleFn | None = None,
+        validate: LifecycleFn | None = None,
+        commit: LifecycleFn | None = None,
+        rollback: LifecycleFn | None = None,
+        reconcile: LifecycleFn | None = None,
         runtime_provenance_ref: str = "",
         stable_handler_id: str = "",
-        effect_metadata: Optional[ToolEffectMetadata] = None,
-        execution_build_identity: Optional[ExecutionBuildIdentity] = None,
+        effect_metadata: ToolEffectMetadata | None = None,
+        execution_build_identity: ExecutionBuildIdentity | None = None,
         dispatch_adapter_id: str = "builtin.function",
         dispatch_adapter_version: str = "v1",
         dispatch_adapter_fingerprint: str = "",
@@ -2133,8 +2133,8 @@ class ToolRegistry:
         *,
         context: ToolEligibilityContext,
         policy_snapshot: ToolPolicySnapshot,
-        catalog: Optional[ToolCatalogSnapshot] = None,
-        enabled_toolsets: Optional[Sequence[str]] = None,
+        catalog: ToolCatalogSnapshot | None = None,
+        enabled_toolsets: Sequence[str] | None = None,
     ) -> tuple[ToolSpec, ...]:
         """Single host/session eligibility owner for the Context OS path."""
         snapshot = catalog or self.catalog_snapshot()
@@ -2248,7 +2248,7 @@ class ToolRegistry:
                 raise RuntimeError("tool_catalog_stale")
 
     def schemas(
-        self, enabled_toolsets: Optional[list[str]] = None
+        self, enabled_toolsets: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Return OpenAI-format schema list.
 
@@ -2268,7 +2268,7 @@ class ToolRegistry:
           5. ★v3 WI-T5.1：``cfg.tools.dangerous_tools_allowlist`` —
              非空时过 dangerous=True 工具白名单。
         """
-        allowed: Optional[set[str]] = (
+        allowed: set[str] | None = (
             set(enabled_toolsets) if enabled_toolsets is not None else None
         )
 
@@ -2399,8 +2399,8 @@ class ToolRegistry:
     # ------------------------------------------------------------------
     def to_openai_schema(
         self,
-        names: Optional[list[str]] = None,
-        filter_categories: Optional[list[str]] = None,
+        names: list[str] | None = None,
+        filter_categories: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """OpenAI function-calling schema list.
 
@@ -2426,8 +2426,8 @@ class ToolRegistry:
 
     def to_anthropic_schema(
         self,
-        names: Optional[list[str]] = None,
-        filter_categories: Optional[list[str]] = None,
+        names: list[str] | None = None,
+        filter_categories: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Anthropic Messages API tool schema list.
 
@@ -2464,7 +2464,7 @@ class ToolRegistry:
         session_id: str,
         task_id: str = "",
         *,
-        execution_context: Optional[ToolExecutionContext] = None,
+        execution_context: ToolExecutionContext | None = None,
     ) -> dict[str, Any]:
         """Permission-gated async tool execution.
 
@@ -2485,7 +2485,7 @@ class ToolRegistry:
             return {"ok": False, "result": None, "error": f"unknown tool: {name}"}
 
         context_os_on = bool(self._context_os_enabled_provider())
-        active_policy: Optional[ToolPolicySnapshot] = None
+        active_policy: ToolPolicySnapshot | None = None
         if context_os_on:
             if execution_context is None or execution_context.origin != "agent":
                 return {
@@ -2667,8 +2667,9 @@ class ToolRegistry:
         # WI-T2.3 v3 P0 修：dispatch 真实开始时间。原 emit_receipt 处用了两次
         # datetime.now() → duration_ms 永远 ~0μs（last-mile round2 P0-3）。
         # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
-        from datetime import datetime as _dt, timezone as _tz
-        _started_at = _dt.now(_tz.utc)
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
+        _started_at = _dt.now(UTC)
         try:
             import asyncio as _asyncio
             import inspect as _inspect
@@ -2713,7 +2714,7 @@ class ToolRegistry:
 
             try:
                 result = await _asyncio.wait_for(_run_handler(), timeout=timeout_s)
-            except _asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "execute_tool %r timed out after %.1fs", name, timeout_s
                 )
@@ -2800,7 +2801,7 @@ class ToolRegistry:
                         receipt_args = {
                             str(k): str(v) for k, v in receipt_args.items()
                         }
-                    _artifact_shas: Optional[list[str]] = None
+                    _artifact_shas: list[str] | None = None
                     _env_arts = envelope.get("artifacts")
                     if not (isinstance(_env_arts, list) and _env_arts) and envelope_ok:
                         from deskpet.tools.artifact import extract_artifacts_from_result
@@ -2842,7 +2843,7 @@ class ToolRegistry:
                         tool_name=name,
                         args=receipt_args,
                         started_at=_started_at,
-                        ended_at=_dt.now(_tz.utc),
+                        ended_at=_dt.now(UTC),
                         ok=envelope_ok,
                         session_id=session_id,
                         iteration=iteration,
@@ -2870,7 +2871,7 @@ class ToolRegistry:
         session_id: str,
         task_id: str = "",
         *,
-        execution_context: Optional[ToolExecutionContext] = None,
+        execution_context: ToolExecutionContext | None = None,
     ) -> NormalizedToolOutcome:
         """Run the permission-aware path and normalize its durable outcome.
 
@@ -3458,6 +3459,7 @@ class ToolRegistry:
             if store is None:
                 return
             from datetime import datetime, timezone
+
             from deskpet.tools.receipt_store import emit_receipt
 
             accepted = status is OutcomeStatus.ACCEPTED
@@ -3468,7 +3470,7 @@ class ToolRegistry:
                     for k, v in prepared.arguments_json().items()
                     if not str(k).startswith("_")
                 },
-                started_at=started_at, ended_at=datetime.now(timezone.utc),
+                started_at=started_at, ended_at=datetime.now(UTC),
                 ok=status is OutcomeStatus.SUCCEEDED, session_id=session_id,
                 artifact_shas=refs or None, phase="accepted" if accepted else "executed",
                 outcome="pending" if accepted else "success" if status is OutcomeStatus.SUCCEEDED else "failed",
@@ -3520,7 +3522,7 @@ class ToolRegistry:
         from datetime import datetime, timezone
         await self._record_prepared_receipt(
             spec, prepared, outcome, effect_id=effect_id, session_id=session_id,
-            started_at=datetime.now(timezone.utc), execution_context=context,
+            started_at=datetime.now(UTC), execution_context=context,
         )
         return "complete", outcome
 
@@ -3790,7 +3792,7 @@ class ToolRegistry:
         try:
             from datetime import datetime, timezone
 
-            started_at = datetime.now(timezone.utc)
+            started_at = datetime.now(UTC)
 
             async def invoke() -> Any:
                 handler = spec.context_handler or spec.handler
@@ -3831,7 +3833,7 @@ class ToolRegistry:
                     return await asyncio.wait_for(
                         asyncio.shield(future), timeout=spec.timeout_seconds
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     self._late_prepared_calls[effect_id] = (
                         future,
                         spec,
@@ -3854,7 +3856,7 @@ class ToolRegistry:
                     effect_type=current_effect_type,
                     outcome_state=outcome.state.value,
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             late_pending = effect_id in self._late_prepared_calls
             if late_pending:
                 self._prepared_execution_metadata[effect_id] = {"late_pending": True}
@@ -3895,7 +3897,7 @@ class ToolRegistry:
             self._prepared_execution_outcomes[effect_id] = outcome
         return outcome
 
-    def tool_inventory(self, names: Optional[Sequence[str]] = None) -> list[Any]:
+    def tool_inventory(self, names: Sequence[str] | None = None) -> list[Any]:
         """Return one versioned workflow inventory row per selected ToolSpec."""
 
         from deskpet.workflows.contracts import ToolAccess, ToolInventoryEntry
@@ -3992,7 +3994,7 @@ class ToolRegistry:
         safe_batch = [item for item in indexed if self.is_concurrency_safe(item[1])]
         unsafe_batch = [item for item in indexed if not self.is_concurrency_safe(item[1])]
 
-        out: list[Optional[dict[str, Any]]] = [None] * len(calls)
+        out: list[dict[str, Any] | None] = [None] * len(calls)
 
         if safe_batch:
             safe_results = await asyncio.gather(*(
@@ -4015,7 +4017,7 @@ class ToolRegistry:
         to.
         """
         # Cooldown remaining (best-effort; breaker may not expose it).
-        cooldown_left: Optional[float] = None
+        cooldown_left: float | None = None
         if hasattr(self._breaker, "cooldown_remaining"):
             try:
                 cooldown_left = await self._breaker.cooldown_remaining(  # type: ignore[union-attr]
@@ -4059,7 +4061,7 @@ class ToolRegistry:
     # ------------------------------------------------------------------
     # Introspection helpers (tests + tool_search)
     # ------------------------------------------------------------------
-    def list_tools(self, source: Optional[str] = None) -> list[str]:
+    def list_tools(self, source: str | None = None) -> list[str]:
         """All registered tool names (env-hidden tools INCLUDED).
 
         Distinct from ``schemas()`` which filters — this is the raw
@@ -4074,7 +4076,7 @@ class ToolRegistry:
                 n for n, s in self._tools.items() if s.source == source
             )
 
-    def get(self, name: str) -> Optional[ToolSpec]:
+    def get(self, name: str) -> ToolSpec | None:
         """Return the full spec for one tool, or None if absent.
 
         ``tool_search`` uses this to grab ``description`` for matching
@@ -4156,11 +4158,11 @@ class _LegacyProductToolRegistry(ToolRegistry):
         self._ensure_product_catalog()
         return super().tool_inventory(*args, **kwargs)
 
-    def list_tools(self, source: Optional[str] = None) -> list[str]:
+    def list_tools(self, source: str | None = None) -> list[str]:
         self._ensure_product_catalog()
         return super().list_tools(source)
 
-    def get(self, name: str) -> Optional[ToolSpec]:
+    def get(self, name: str) -> ToolSpec | None:
         self._ensure_product_catalog()
         return super().get(name)
 

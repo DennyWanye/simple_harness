@@ -6,9 +6,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal, Mapping
+from typing import Literal
 
 from deskpet.types.task_grants import (
     DerivedAuthorizationGrant,
@@ -99,7 +100,7 @@ class AuthorizationPolicyState:
         now: float,
         provenance: AuthorizationPolicyProvenance = "user_explicit",
         user_set_receipt_ref: str | None = None,
-    ) -> "AuthorizationPolicyState":
+    ) -> AuthorizationPolicyState:
         """Return the CAS successor.
 
         Every explicit user transition advances the generation.  Factory and

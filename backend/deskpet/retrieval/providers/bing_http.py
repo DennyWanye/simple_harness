@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import httpx
-from .base import ProviderFailure, candidates_from_rows, raise_for_search_status
+
 from ..contracts import PublicErrorCode, SearchBudget, SearchRequest
+from .base import ProviderFailure, candidates_from_rows, raise_for_search_status
+
 
 class BingHTTPProvider:
     name = "bing"

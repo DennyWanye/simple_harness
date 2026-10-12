@@ -17,7 +17,6 @@ import sqlite3
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool
 from agent_orchestrator.context.retrieval import knowledge_view
 from agent_orchestrator.contracts import ContractError

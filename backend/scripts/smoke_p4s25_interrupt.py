@@ -9,9 +9,11 @@ Pass criteria:
   arrives quickly with cancelled state)
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import sys
+
 import websockets
 
 
@@ -55,7 +57,7 @@ async def smoke(secret: str) -> int:
                     print(f"<- chat_v2_error reason={msg['payload'].get('reason')}")
                 if saw_interrupted:
                     break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
     print(f"\nResult: saw_interrupted={saw_interrupted} saw_final={saw_final}")

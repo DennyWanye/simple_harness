@@ -57,11 +57,11 @@ class GateVerdict:
     alternative: str = ""
 
     @classmethod
-    def passed(cls) -> "GateVerdict":
+    def passed(cls) -> GateVerdict:
         return cls(verdict=Verdict.PASS)
 
     @classmethod
-    def refuse(cls, reason: str, alternative: str) -> "GateVerdict":
+    def refuse(cls, reason: str, alternative: str) -> GateVerdict:
         return cls(verdict=Verdict.REFUSE, reason=reason, alternative=alternative)
 
     def render_text(self) -> str:
@@ -230,7 +230,7 @@ def _has_tool_for(cap: _Capability, available_tools: set[str]) -> bool:
     return False
 
 
-def _rule_match(text: str, available_tools: set[str]) -> Optional[_Capability]:
+def _rule_match(text: str, available_tools: set[str]) -> _Capability | None:
     """规则层：返回命中的"无对应工具"capability，或 None。"""
     if not text:
         return None
@@ -267,7 +267,7 @@ async def _llm_fallback(
     text: str,
     llm_registry: Any,
     timeout_s: float = 2.0,
-) -> Optional[Verdict]:
+) -> Verdict | None:
     """歧义请求走一次 haiku-class 兜底。失败/超时 → None（默认放行）。"""
     if llm_registry is None:
         return None
@@ -288,7 +288,7 @@ async def _llm_fallback(
                 ),
                 timeout=timeout_s,
             )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("capability_gate.llm_timeout", timeout_s=timeout_s)
         return None
     except Exception as exc:  # noqa: BLE001 — 兜底永远不阻断主流程

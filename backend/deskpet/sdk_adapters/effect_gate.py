@@ -75,15 +75,12 @@ effect root from its exact verified route/binding envelope, only during dispatch
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from contextvars import ContextVar
-from dataclasses import replace
-from deskpet.types.task_work_context import PrimaryRunWorkContext
-
-
 import inspect
 import time
 from collections.abc import Callable, Mapping
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import replace
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -95,6 +92,7 @@ from simple_harness.tools.runtime_catalog import ToolEffectClass
 from deskpet.execution.evidence_ingress import ObjectiveEventSpec
 from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeNotFound, _uuid
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
+from deskpet.types.task_work_context import PrimaryRunWorkContext
 
 _primary_effect_root = ContextVar("primary_effect_root", default=None)
 

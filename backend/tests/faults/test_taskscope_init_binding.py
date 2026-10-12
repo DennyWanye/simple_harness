@@ -21,7 +21,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.execution import RunState
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
@@ -38,6 +37,7 @@ from deskpet.task_scope.store import (
     TaskScopeNotFound,
 )
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+
 from tests.execution import test_foreground_queue as fq
 from tests.faults._runner_contract import LANE_SEAMS, emit, new_root_run_id, state_hash
 from tests.sdk_adapters import s5b_effect_gate_harness as h
@@ -466,10 +466,10 @@ async def _run_fault_root_authority_ambiguous(tmp_path: Path, run_id: str) -> tu
 async def _run_fault_catalog_policy_unavailable(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
     """hidden 工具（deferred，未 activate）的 execution_policy → RuntimeToolCatalogError
     ``catalog_execution_policy_unavailable`` 进 Run 故障备忘（首码优先，重复读取稳定）；durable FAILED 携带稳定码。"""
+    from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
     from simple_harness import RunId
     from simple_harness.tools import RuntimeToolCatalogError
 
-    from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
     from tests.sdk_adapters import test_tool_authority as ta
 
     sdk_run_id = h.RUN.value
@@ -496,6 +496,7 @@ async def _frozen_root_split(tmp_path: Path, run_id: str) -> tuple[str, str, dic
     稳定拒绝 ``workspace_binding_receipt_superseded``，对同 route receipt sticky（换冻结根也不解封），
     rejection memo 首写胜出恰一行；两根零写入、canary 不变；revision 1 exact receipt 仍精确可解析；重放 hash 不变。"""
     from deskpet.sdk_adapters.effect_gate import EFFECT_GATE_STICKY_REASON
+
     from tests.sdk_adapters.test_effect_gate import _code, _context, _routed_write
 
     env, scope, root, envelope = await _routed_write(tmp_path / "gate")
@@ -535,8 +536,6 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
     2026-09-07 用户产品决定：权限只有手动/自动两种，默认自动；自动模式下不弹任何授权提示，
     所有工具效果默认允许（含原先只能确认的类别；实现见 tool_authority 自动模式二次规划
     ``explicit_only=False``）。原“auto + DESTRUCTIVE → REQUIRE_USER”的口径由该决定替代。"""
-    from simple_harness.tools import AuthorizationDecision
-
     from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
     from deskpet.product_state.database import ProductStateDatabase
     from deskpet.product_state.task_grants import DurableTaskGrantAuthority
@@ -545,6 +544,8 @@ async def _auto_destructive(tmp_path: Path, run_id: str) -> tuple[str, str, dict
         SdkRunToolAuthorityRegistry,
         confirm_only_tool_names,
     )
+    from simple_harness.tools import AuthorizationDecision
+
     from tests.sdk_adapters import test_tool_authority as ta
 
     inventory = (

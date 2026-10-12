@@ -4,7 +4,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import AgentLoop, FinalEvent, ToolBatchEvent
 from llm.types import ChatResponse, ToolCall
 

@@ -28,6 +28,12 @@ for _path in (_HERE, _HERE / "taskgraph_exec"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
+    REQUESTED,
+    collect_triggers,
+    pending_requests,
+)
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
 from production_fixture import (  # noqa: E402
     OUTPUT,
     enabled_world,
@@ -35,13 +41,6 @@ from production_fixture import (  # noqa: E402
     result_envelope,
     scripted_worker,
 )
-
-from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
-    REQUESTED,
-    collect_triggers,
-    pending_requests,
-)
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider  # noqa: E402
 
 OPEN = ("PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED")
 

@@ -13,7 +13,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.sdk_adapters.causal_groups import (
     plan_recent_causal_groups,
 )

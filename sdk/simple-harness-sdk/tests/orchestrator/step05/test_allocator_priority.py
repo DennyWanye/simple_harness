@@ -9,7 +9,6 @@ promoted after a whole aging window (S5-09)."""
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import (
     Attempt,
     AttemptStatus,

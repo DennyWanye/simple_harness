@@ -18,7 +18,14 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import CallId, FrozenJsonValue, JsonValue
-from simple_harness.tools import FunctionTool, ToolContext, ToolHandler, ToolOutcome, ToolResult, ToolSpec
+from simple_harness.tools import (
+    FunctionTool,
+    ToolContext,
+    ToolHandler,
+    ToolOutcome,
+    ToolResult,
+    ToolSpec,
+)
 
 from . import store
 from .errors import ArpError

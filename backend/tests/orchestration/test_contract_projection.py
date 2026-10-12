@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from deskpet.orchestration.handlers import handle
 
 HASH = "a" * 64
@@ -355,7 +354,13 @@ async def test_real_replies_of_a_finished_mission_fit_the_public_contracts(orche
     读出的真实数据全部合合同（合同不是照着假数据写的）。"""
     import asyncio
 
-    from ._layered_lane import LayeredScriptedProvider, layered_service, notes_mission, quick_runtime, run_until_settled
+    from ._layered_lane import (
+        LayeredScriptedProvider,
+        layered_service,
+        notes_mission,
+        quick_runtime,
+        run_until_settled,
+    )
 
     quick_runtime(monkeypatch)
     service = layered_service(orchestration_root, principal, LayeredScriptedProvider())

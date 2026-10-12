@@ -8,7 +8,7 @@
 """
 from __future__ import annotations
 
-from config import load_config, MemoryV2Config, MemoryV2FactsConfig
+from config import MemoryV2Config, MemoryV2FactsConfig, load_config
 
 
 def _write(tmp_path, body: str):

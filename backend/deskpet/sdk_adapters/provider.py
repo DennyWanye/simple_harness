@@ -13,8 +13,8 @@ import re
 import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import httpx

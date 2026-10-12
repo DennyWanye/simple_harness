@@ -12,12 +12,12 @@ import asyncio
 import json
 import random
 import time
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import pytest
 import pytest_asyncio
-
 from deskpet.agent.assembler import (
     AssemblyPolicy,
     BudgetAllocator,
@@ -38,6 +38,8 @@ from deskpet.agent.assembler import (
 )
 from deskpet.agent.assembler.bundle import TASK_TYPES
 from deskpet.agent.assembler.classifier import _rule_classify
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -623,7 +625,7 @@ async def test_time_component_uses_injected_clock():
         def now(self):
             from datetime import datetime, timezone
 
-            return datetime(2025, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+            return datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC)
 
     t = TimeComponent(clock=FixedClock())
     ctx = ComponentContext(
@@ -873,10 +875,10 @@ async def test_assemble_merges_default_config_when_caller_omits_skills(tmp_path:
     应把 default_config 的 skills 段兜底合并进去 → SkillComponent 拿得到
     auto_disclosure（而非降级 desc-only）。用一个捕获 ctx.config 的探针组件验证。"""
     from deskpet.agent.assembler.assembler import ContextAssembler
-    from deskpet.agent.assembler.registry import ComponentRegistry
     from deskpet.agent.assembler.bundle import Slice
     from deskpet.agent.assembler.classifier import TaskClassifier
     from deskpet.agent.assembler.policy import AssemblyPolicy
+    from deskpet.agent.assembler.registry import ComponentRegistry
 
     seen = {}
 
@@ -908,10 +910,10 @@ async def test_assemble_deep_merges_partial_skills_keeps_default_auto_disclosure
     """第10处加固：caller 传**部分** skills 二级 dict(如只含 codify)时,default 的
     skills.auto_disclosure 不被整段抹掉(一层深合并)。"""
     from deskpet.agent.assembler.assembler import ContextAssembler
-    from deskpet.agent.assembler.registry import ComponentRegistry
     from deskpet.agent.assembler.bundle import Slice
     from deskpet.agent.assembler.classifier import TaskClassifier
     from deskpet.agent.assembler.policy import AssemblyPolicy
+    from deskpet.agent.assembler.registry import ComponentRegistry
 
     seen: dict = {}
 

@@ -6,7 +6,6 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from deskpet.companion import (
     CandidateAttempt,
     CandidateMode,
@@ -25,12 +24,7 @@ from deskpet.companion import (
     MutationRequest,
     OwnerRef,
 )
-from deskpet.companion.store import (
-    SAFE_STATIC_RUNNER_POLICY_HASH,
-    CompanionStore,
-    canonical_hash,
-    canonical_json,
-)
+from deskpet.companion.activation import ActivationDecisionCoordinator
 from deskpet.companion.evaluation import (
     EvaluationAuthorizationCommandV1,
     EvaluationAuthorizationService,
@@ -38,7 +32,6 @@ from deskpet.companion.evaluation import (
     EvaluationIdentityV1,
     EvaluationPermitIssuer,
 )
-from deskpet.companion.activation import ActivationDecisionCoordinator
 from deskpet.companion.evaluation_execution import (
     EvaluationCaseCompletionV1,
     EvaluationCaseStartAckV1,
@@ -50,11 +43,17 @@ from deskpet.companion.growth import (
     evidence_set_hash,
 )
 from deskpet.companion.risk import (
-    CapabilityRiskPolicy,
     CandidateRiskInputV1,
+    CapabilityRiskPolicy,
     EffectFactV1,
     EffectTopologyDiffV1,
     StaticRiskPreflight,
+)
+from deskpet.companion.store import (
+    SAFE_STATIC_RUNNER_POLICY_HASH,
+    CompanionStore,
+    canonical_hash,
+    canonical_json,
 )
 
 

@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Self, cast
 
+from simple_harness.agents.background_health import BackgroundHealth, BackgroundHealthBook
 from simple_harness.contracts import (
     ExecutionSessionId,
     JsonValue,
@@ -26,7 +27,6 @@ from simple_harness.contracts import (
     canonical_json,
     thaw_json,
 )
-from simple_harness.agents.background_health import BackgroundHealth, BackgroundHealthBook
 from simple_harness.execution.base_agent import BASE_AGENT_API_MODE, AgentBindingRecord
 from simple_harness.execution.budget import FrozenPriceEstimator
 from simple_harness.execution.delivery import DeliveryDispatcher

@@ -29,7 +29,7 @@ from typing import Any, Optional
 async def prepare_chat_messages_for_chain(
     messages: list[dict[str, Any]],
     *,
-    provider_chain: Optional[list[Any]],
+    provider_chain: list[Any] | None,
     ctx_mgr: Any,
     fallback_summarizer: Any = None,
     context_os_v1: bool = False,

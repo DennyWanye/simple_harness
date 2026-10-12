@@ -10,7 +10,12 @@ from ..contracts.models import sha256_hex
 from ..graph.eligibility import OccurrenceOutcome
 from ..graph.settlement import SettledTerminalOccurrence
 from ..graph.task_network import TaskNetworkSnapshot
-from ..runtime.planning_operations import OperationEffect, SourceUnavailable, StoreOperationReader, build_operation_snapshot
+from ..runtime.planning_operations import (
+    OperationEffect,
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..runtime.taskgraph_local_work import read_local_work
 from ..runtime.taskgraph_operation_sources import read_operation_producers
 from ..storage.taskgraph_store import TaskGraphStore

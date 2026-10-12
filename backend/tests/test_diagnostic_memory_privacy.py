@@ -1,7 +1,6 @@
 import logging
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from observability.metrics_sink import MetricsSink
 

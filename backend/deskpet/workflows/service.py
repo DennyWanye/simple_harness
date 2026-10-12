@@ -12,7 +12,7 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,8 @@ from deskpet.execution.contracts import (
     WorkflowRunSeed,
     WorkflowSessionRef,
     fingerprint_json,
+)
+from deskpet.execution.contracts import (
     stable_event_id as stable_execution_event_id,
 )
 from deskpet.execution.ports import ExecutionUnitOfWork
@@ -45,32 +47,31 @@ from .contracts import (
     canonical_json,
     validate_json_value,
 )
+from .definitions.deep_research_v5_contracts import (
+    ResearchControlCommand,
+    ResearchEvidenceSnapshot,
+)
+from .delivery import DeliveryDisposition, normalize_v6_delivery_result
 from .evaluation.models import (
     EvaluationOutcome,
     HumanEvaluationRecord,
     PairwiseEvaluationRecord,
 )
 from .evaluation.store import EvaluationStore
-from .delivery import DeliveryDisposition, normalize_v6_delivery_result
+from .execution_ports import WorkflowExecutionPorts
 from .human import HumanDecision, HumanDecisionStore
 from .outbox import MAX_PAGE_SIZE, WorkflowOutbox, hydrate_event
 from .runner import WorkflowRunner, manifest_hash
-from .execution_ports import WorkflowExecutionPorts
 from .runtime_adapters import (
     RuntimeIdentity,
     WorkflowRuntimeAdapterRegistry,
 )
-from .store.run_store import WorkflowRunStore
-from .store.execution_uow import SqliteExecutionUnitOfWork
 from .store.checkpointer import NativeCheckpointStore
+from .store.execution_uow import SqliteExecutionUnitOfWork
 from .store.research_repository import ResearchRepositoryError, ResearchWorkflowRepository
+from .store.run_store import WorkflowRunStore
 from .terminal_projection import VersionedActionMatrix, WorkflowActionContext
-from .definitions.deep_research_v5_contracts import (
-    ResearchControlCommand,
-    ResearchEvidenceSnapshot,
-)
 from .trace.store import TraceStore
-
 
 START_SNAPSHOT_KEY = "_workflow_start"
 _UUID_V4_RE = re.compile(
@@ -152,7 +153,7 @@ class DurableResearchControlPort:
     @staticmethod
     def _timestamp(value: object, *, fallback: float) -> str:
         seconds = float(value) if isinstance(value, (int, float)) else fallback
-        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
 
     async def poll(
         self,
@@ -186,7 +187,7 @@ class DurableResearchControlPort:
             if isinstance(cancel_marker, Mapping)
             else str(row["idempotency_key"])
         )
-        now = datetime.now(tz=timezone.utc).timestamp()
+        now = datetime.now(tz=UTC).timestamp()
         observed_checkpoint = (
             str(row.get("head_checkpoint_id") or checkpoint_id or "") or None
             if status in {"observed", "settled", "consumed"}
@@ -517,7 +518,7 @@ class WorkflowService:
                 terminal_at = row.get("ended_at") or row.get("updated_at")
                 if isinstance(terminal_at, (int, float)) and (
                     float(terminal_at) + 30.0 * 24.0 * 60.0 * 60.0 > datetime.now(
-                        tz=timezone.utc
+                        tz=UTC
                     ).timestamp()
                 ):
                     if await self.persist_v6_continuation_snapshot(str(row["run_id"])):
@@ -753,8 +754,8 @@ class WorkflowService:
             identity=identity,
             workflow_version=version,
             manifest_hash=manifest_hash(manifest),
-            implementation_hash=str(getattr(manifest, "implementation_bundle_hash")),
-            state_schema_version=int(getattr(manifest, "state_schema_version")),
+            implementation_hash=str(manifest.implementation_bundle_hash),
+            state_schema_version=int(manifest.state_schema_version),
             capability_snapshot=persisted_snapshot,
             capability_hash=fingerprint_json(persisted_snapshot),
             start_payload=args,

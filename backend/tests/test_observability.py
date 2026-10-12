@@ -8,10 +8,8 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
-
 from observability.metrics import stage_timer
 from observability.vram import detect_vram_gb, recommend_asr_device
-
 
 # --- stage_timer ---
 

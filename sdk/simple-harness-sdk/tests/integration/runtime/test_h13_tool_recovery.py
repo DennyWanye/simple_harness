@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.contracts import CallId, EffectId, RunId
 from simple_harness.execution.effects import effect_request_hash
 from simple_harness.execution.recovery import (

@@ -9,15 +9,13 @@ import json
 from typing import Any
 
 import pytest
-
+from agent.nudge_queue import Hint, NudgeQueue
 from agent.supervisor import (
-    SupervisorAgent,
     SupervisorAction,
+    SupervisorAgent,
     _parse_action,
     _strip_json_fences,
 )
-from agent.nudge_queue import NudgeQueue, Hint
-
 
 # ───────── parser tests ────────────────────────────────────────────
 

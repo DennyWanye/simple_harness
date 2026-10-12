@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 
 from provider_fixture import MODEL, ScriptedProvider
-
 from simple_harness import Message, MessageRole
 from simple_harness.agents import AgentConfig, AgentTurnState, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization

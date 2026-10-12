@@ -39,7 +39,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-
 # Threshold defaults — same as Claude's own internal heuristic:
 #   WARN at 80% so user/UI can react ahead of failure
 #   BLOCK at 95% to leave room for the assistant's response itself

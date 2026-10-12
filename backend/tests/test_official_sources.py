@@ -4,7 +4,6 @@ import copy
 import json
 
 import pytest
-
 from deskpet.retrieval.official_sources import (
     DEFAULT_OFFICIAL_SOURCE_REGISTRY,
     OfficialSourceEntryV1,

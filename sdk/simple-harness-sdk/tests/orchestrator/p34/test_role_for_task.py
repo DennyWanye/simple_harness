@@ -6,7 +6,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.runtime.role_templates import ROLES, role_for_task
 
 

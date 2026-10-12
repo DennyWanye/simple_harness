@@ -171,7 +171,7 @@ async def main():
             print(f"\n[PASS] ✓ SendInput 真改变了 WebView2 状态 (activeElement={after['activeTag']})")
             return 0
         else:
-            print(f"\n[INCONCLUSIVE] 点击后状态变化不明显，需截图人工确认")
+            print("\n[INCONCLUSIVE] 点击后状态变化不明显，需截图人工确认")
             return 2
 
 

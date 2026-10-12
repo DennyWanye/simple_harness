@@ -21,10 +21,13 @@ from __future__ import annotations
 
 import json
 import logging
-import httpx
-from typing import Any, AsyncIterator, Optional, Union
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
 
+import httpx
 from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_transport import DispatchAwareAsyncTransport
+
 from llm.base import BaseLLMAdapter
 from llm.errors import (
     LLMAuthError,
@@ -35,7 +38,6 @@ from llm.errors import (
 from llm.keys import get_api_key, mask_key
 from llm.relay_errors import classify_relay_error
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
-from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 logger = logging.getLogger("deskpet.llm.openai")
 
@@ -51,10 +53,10 @@ class OpenAIAdapter(BaseLLMAdapter):
     def __init__(
         self,
         *,
-        api_key: Optional[str] = None,
-        default_model: Optional[str] = None,
+        api_key: str | None = None,
+        default_model: str | None = None,
         timeout: float = 60.0,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         is_relay: bool = False,
     ) -> None:
         self.default_model = default_model or self.default_model
@@ -190,7 +192,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         return LLMProviderError(str(exc), provider=provider, status_code=status)
 
     @staticmethod
-    def _map_stop_reason(openai_finish: Optional[str]) -> str:
+    def _map_stop_reason(openai_finish: str | None) -> str:
         return {
             "stop": "end_turn",
             "tool_calls": "tool_use",
@@ -249,12 +251,12 @@ class OpenAIAdapter(BaseLLMAdapter):
     async def chat(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
         stream: bool = False,
         **kwargs: Any,
-    ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+    ) -> ChatResponse | AsyncIterator[ChatChunk]:
         self._ensure_api_key_usable()
         client = self._get_client()
         use_model = model or self.default_model

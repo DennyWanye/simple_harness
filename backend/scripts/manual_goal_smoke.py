@@ -26,7 +26,7 @@ async def main():
     # 1. 真构造 SessionGoalStore
     from deskpet.agent.goal_store import SessionGoalStore
     store = SessionGoalStore()
-    print(f"\n[1] SessionGoalStore() OK")
+    print("\n[1] SessionGoalStore() OK")
 
     # 2. 调真 dispatch_slash_command('/goal write a haiku')
     from deskpet.commands import dispatch_slash_command
@@ -45,7 +45,7 @@ async def main():
     goal = store.get("sid-test")
     assert goal is not None
     assert goal.text == "write a haiku about cats"
-    print(f"    [OK] store.get('sid-test') 真返 SessionGoal 实例")
+    print("    [OK] store.get('sid-test') 真返 SessionGoal 实例")
 
     # 4. /goal clear
     print("\n[3] dispatch_slash_command('goal', 'clear', 'sid-test')")
@@ -55,7 +55,7 @@ async def main():
     assert res2["type"] == "goal_cleared"
     assert res2["ok"] is True
     assert store.get("sid-test") is None
-    print(f"    [OK] /goal clear 真清除")
+    print("    [OK] /goal clear 真清除")
 
     # 5. GoalChecker 真调用 — mock LLM
     from deskpet.agent.goal_checker import GoalChecker
@@ -66,11 +66,11 @@ async def main():
         "write a haiku",
         [{"role": "assistant", "content": "let me think"}],
     )
-    print(f"\n[4] GoalChecker.check (mock LLM 返 done=false)")
+    print("\n[4] GoalChecker.check (mock LLM 返 done=false)")
     print(f"    done: {done}, hint: {hint!r}")
     assert done is False
     assert "haiku" in hint
-    print(f"    [OK] GoalChecker 真接电 + JSON parse 正确")
+    print("    [OK] GoalChecker 真接电 + JSON parse 正确")
 
     # 6. metrics.jsonl 应不变（GoalChecker 单独调用不直接 emit；agent_loop 接电才 emit）
     from paths import user_data_dir
@@ -84,7 +84,7 @@ async def main():
     from observability.metrics_sink import record
     ok = record("goal_checker_invoked", {"ok": True, "count": 1})
     assert ok, "record() should return True"
-    print(f"    [6] record('goal_checker_invoked', ...) 返 True")
+    print("    [6] record('goal_checker_invoked', ...) 返 True")
 
     if metrics_path.exists():
         after_lines = metrics_path.read_text(encoding="utf-8").splitlines()

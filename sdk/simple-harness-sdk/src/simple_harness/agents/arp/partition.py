@@ -19,10 +19,11 @@ import os
 import sqlite3
 import struct
 import time
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any
 
 from .errors import ArpError
 from .migration import apply_ddl, partition_ddl

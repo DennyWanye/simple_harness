@@ -13,11 +13,12 @@ import hashlib
 import inspect
 import json
 import sys
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 
 class ManifestValidationError(ValueError):
@@ -76,7 +77,7 @@ class ToolEffectMetadata:
             raise ManifestValidationError("target_normalizer_version is required")
 
     @classmethod
-    def unknown(cls) -> "ToolEffectMetadata":
+    def unknown(cls) -> ToolEffectMetadata:
         return cls(EffectClass.UNKNOWN, IdempotencyClass.UNKNOWN, "none")
 
     def fingerprint_payload(self) -> dict[str, str]:

@@ -4,7 +4,6 @@ import json
 from dataclasses import FrozenInstanceError
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.sdk_adapters.context_authority import (
     DefaultDenySnapshotRedactor,

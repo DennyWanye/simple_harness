@@ -7,7 +7,6 @@ import dataclasses as dc
 import time
 
 import pytest
-
 import simple_harness as h
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 from simple_harness.execution.dispatch import (

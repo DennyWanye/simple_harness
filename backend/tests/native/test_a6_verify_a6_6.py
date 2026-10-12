@@ -88,7 +88,7 @@ def _relation(
 
 
 def _hm_db(tmp_path: Path, relations, *, with_relation_revision=True,
-           heads=None, revisions=None) -> "a6.RoDb":
+           heads=None, revisions=None) -> a6.RoDb:
     path = tmp_path / "human_memory_v7.db"
     conn = sqlite3.connect(path)
     conn.execute(
@@ -123,7 +123,7 @@ def _hm_db(tmp_path: Path, relations, *, with_relation_revision=True,
     return a6.RoDb(str(path), "human_memory_v7.db")
 
 
-def _run(tmp_path: Path, relations, **kwargs) -> "a6.Item":
+def _run(tmp_path: Path, relations, **kwargs) -> a6.Item:
     db = _hm_db(tmp_path, relations, **kwargs)
     try:
         return a6.item_a6_6(SimpleNamespace(hm=db))

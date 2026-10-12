@@ -18,7 +18,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.assurance.certificates import POINT_PURPOSES
 from agent_orchestrator.assurance.codec import decode
 from agent_orchestrator.assurance.expiry import AssuranceExpiry
@@ -29,8 +28,8 @@ from agent_orchestrator.orchestrator.assurance_point_use import (
     PLANNING_REQUEST_CONSUMER,
     EvidenceClaim,
     certify_point_use_locked,
-    planning_evidence_stale,
     planning_claims,
+    planning_evidence_stale,
 )
 from agent_orchestrator.orchestrator.assurance_recheck import live_usable_certificates
 from agent_orchestrator.testing.fixtures import package_of
@@ -388,7 +387,10 @@ def test_a_worker_reading_knowledge_mid_run_goes_through_the_same_issuer(tmp_pat
     """执行者运行中用 ``knowledge_read`` 读一条已验证知识，与装上下文同一道门：签 CONTEXT 证书
     （消费方是这次工具调用）。证据此刻不当前、时钟不可信 → 不给正文，原因具名。"""
     import agent_orchestrator.memory.knowledge_standing as standing
-    from agent_orchestrator.orchestrator.assurance_point_use import TOOL_CALL_CONSUMER, knowledge_handover
+    from agent_orchestrator.orchestrator.assurance_point_use import (
+        TOOL_CALL_CONSUMER,
+        knowledge_handover,
+    )
     from test_repair_staleness import _find, _tool_results
 
     state: dict[str, Any] = {"methods": []}

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from llm.errors import LLMAuthError
 from llm.openai_adapter import OpenAIAdapter
 from llm.relay_errors import (

@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import inspect
 import json
-from typing import Any, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from deskpet.agent.context_segment_store import (
     ContextSegmentStore,
@@ -20,7 +21,6 @@ from deskpet.tools.public_projection import (
     project_public_tool_arguments,
     project_public_tool_result,
 )
-
 
 SESSION_HISTORY_PAGE_IN_SCHEMA: dict[str, Any] = {
     "name": "session_history_page_in",

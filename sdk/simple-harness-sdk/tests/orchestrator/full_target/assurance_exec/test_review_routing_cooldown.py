@@ -19,7 +19,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
-
 from simple_harness.providers.errors import ProviderServerError  # noqa: E402
 
 

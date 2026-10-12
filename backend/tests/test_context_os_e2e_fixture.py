@@ -5,8 +5,8 @@ import os
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -386,8 +386,8 @@ def test_evidence_join_accepts_powershell_utf16_logs(tmp_path):
 def test_e2e01_raw_marker_oracle_requires_exact_value():
     sys.path.insert(0, str(SCRIPTS))
     from context_os_evidence import (
-        EvidenceOracleError,
         RAW_MARKER_ORACLE,
+        EvidenceOracleError,
         validate_e2e01_raw_value,
     )
 
@@ -401,8 +401,8 @@ def test_e2e01_raw_marker_oracle_requires_exact_value():
 def test_e2e11_off_golden_is_explicit_and_compared_without_on_derivation():
     sys.path.insert(0, str(SCRIPTS))
     from context_os_evidence import (
-        EvidenceOracleError,
         OFF_TASK_TYPES,
+        EvidenceOracleError,
         load_off_golden,
         validate_e2e11_off_observation,
     )

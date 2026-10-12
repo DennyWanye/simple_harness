@@ -5,7 +5,6 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,

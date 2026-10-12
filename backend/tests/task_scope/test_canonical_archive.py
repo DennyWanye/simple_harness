@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     TerminalWatermarkPending,

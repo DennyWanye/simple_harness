@@ -29,7 +29,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 from deskpet.agent.task_graph import TaskGraphStore
 
@@ -164,7 +165,7 @@ def _err(message: str) -> str:
 # main-agent (global) factory to fill the two required args of
 # ``TaskGraphStore.create`` that the ``(args, corr_id)`` handler signature
 # cannot otherwise supply.
-GoalContextResolver = Callable[[], Optional[tuple[str, str]]]
+GoalContextResolver = Callable[[], tuple[str, str] | None]
 
 
 def _node_to_dict(n: Any) -> dict[str, Any]:
@@ -320,7 +321,7 @@ def build_global_goal_task_tools(
     friendly "set a goal first" error instead of touching the store.
     """
 
-    def _resolve() -> Optional[tuple[str, str]]:
+    def _resolve() -> tuple[str, str] | None:
         try:
             return goal_resolver()
         except Exception as exc:  # noqa: BLE001 — never break dispatch

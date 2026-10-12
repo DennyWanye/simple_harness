@@ -12,6 +12,7 @@ from pathlib import Path
 
 import aiosqlite
 
+
 @dataclass
 class _RequestFenceScope:
     fence: object

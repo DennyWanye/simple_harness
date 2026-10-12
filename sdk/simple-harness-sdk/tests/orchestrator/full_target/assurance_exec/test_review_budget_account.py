@@ -12,8 +12,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
-from agent_orchestrator.contracts.resolution import ReviewAccount, ReviewPurpose, account_for_purpose
+from agent_orchestrator.contracts.resolution import (
+    ReviewAccount,
+    ReviewPurpose,
+    account_for_purpose,
+)
 from agent_orchestrator.orchestrator.assurance_review_transport import review_budget_subject
 
 MISSION, TASK = "mission-1", "task-goal"

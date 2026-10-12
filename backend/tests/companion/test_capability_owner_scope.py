@@ -4,7 +4,6 @@ import hashlib
 
 import aiosqlite
 import pytest
-
 from deskpet.capabilities.contracts import (
     EMPTY_OWNER_BINDING_SET_STAMP,
     LEGACY_LOCAL_OWNER_KEY,

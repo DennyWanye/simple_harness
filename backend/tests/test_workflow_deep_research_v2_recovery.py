@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext
-from deskpet.workflows.definitions.research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
+from deskpet.workflows.definitions.research_core import (
+    FetchPort,
+    ResearchLLMPort,
+    ResearchSearchPort,
+)
 from deskpet.workflows.definitions.v2.deep_research import DEEP_RESEARCH_V2, initial_state
 from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeExecutionPolicy
 

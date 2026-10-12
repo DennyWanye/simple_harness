@@ -2,7 +2,6 @@ import asyncio
 import json
 
 import pytest
-
 from deskpet.tools.code_tools.clarify_tool import (
     build_ask_clarification_tool,
     build_clarification_ask,

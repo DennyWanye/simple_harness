@@ -8,12 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
-
 from ..contracts.state_machines import TERMINAL_ATTEMPT
-from ..runtime.planning_operations import OperationEffect, SourceUnavailable, StoreOperationReader, build_operation_snapshot
+from ..runtime.planning_operations import (
+    OperationEffect,
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..runtime.taskgraph_local_work import read_local_work
-from ..storage.htn_store import HtnStore
 from ..runtime.taskgraph_operation_sources import read_operation_producers
+from ..storage.htn_store import HtnStore
 from ..storage.store import Store
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
 from ..storage.taskgraph_convergence import ConvergenceJob

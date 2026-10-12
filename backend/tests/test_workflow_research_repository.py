@@ -6,7 +6,6 @@ import json
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.store.research_repository import (
     ResearchRepositoryError,
     ResearchWorkflowRepository,

@@ -7,7 +7,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.package_limits import (
     CapabilityPackageLimitsV1,
     CapabilityPackageValidationError,

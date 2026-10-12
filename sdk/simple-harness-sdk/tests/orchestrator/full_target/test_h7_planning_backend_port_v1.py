@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import pytest
 from dataclasses import replace
 from types import SimpleNamespace
 
+import pytest
 from agent_orchestrator.contracts.htn import SemanticReadSet
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.planning.htn.backend_port import (

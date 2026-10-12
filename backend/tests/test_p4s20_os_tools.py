@@ -20,7 +20,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools import (
     desktop_create_file,

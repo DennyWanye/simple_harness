@@ -105,13 +105,13 @@ class PluginManager:
         self,
         *,
         plugins_dir: Path,
-        enabled: Optional[list[str]] = None,
+        enabled: list[str] | None = None,
     ) -> None:
         self.plugins_dir = Path(plugins_dir)
         # ``enabled=None`` → all discovered plugins enabled by default.
         # ``enabled=[]`` → none enabled (explicit opt-in mode).
         # ``enabled=["a","b"]`` → only those by name.
-        self._enabled: Optional[set[str]] = (
+        self._enabled: set[str] | None = (
             None if enabled is None else set(enabled)
         )
         self._plugins: dict[str, PluginManifest] = {}

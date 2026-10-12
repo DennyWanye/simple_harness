@@ -1,15 +1,16 @@
 """A real unscoped page-in result cannot escape the current-run source guard."""
 import asyncio
 import sqlite3
+
 import pytest
-from simple_harness import CallId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.tools.context_page_in_tools import ContextPageInStore
+from simple_harness import CallId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_create_new_runtime import fixture
-from tests.execution.test_primary_foreground_runtime import build, Provider
+from tests.execution.test_primary_foreground_runtime import Provider, build
 from tests.execution.test_scope_disclosure_runtime import install_guard
 
 

@@ -18,11 +18,10 @@ import asyncio
 import json
 
 import pytest
-from helpers_step07 import candidate, ledger_world, run_until
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts import AttemptStatus, MissionStatus, TaskStatus
 from agent_orchestrator.testing.scripted_replies import worker_reply
+from helpers_step07 import candidate, ledger_world, run_until
 
 NOTE = "先读 docs/SPEC.md"
 

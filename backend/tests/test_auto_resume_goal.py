@@ -13,11 +13,9 @@ supervisor hint — byte-identical to pre-WI-1.5 behavior.
 from __future__ import annotations
 
 import pytest
-
 from agent.auto_resume import AutoResumeOrchestrator, AutoResumeResult
 from agent.session_activity import SessionActivityStore
 from agent.supervisor import SupervisorAction
-
 
 # ─────────────── helpers (reused from test_p5s2_auto_resume patterns) ─────────
 

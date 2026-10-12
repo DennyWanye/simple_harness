@@ -2,7 +2,6 @@
 
 import httpx
 import pytest
-
 from simple_harness.providers import OpenAICompatibleProvider, Secret
 
 

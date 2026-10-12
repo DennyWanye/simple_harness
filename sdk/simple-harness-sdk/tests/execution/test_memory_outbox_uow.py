@@ -7,7 +7,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 from simple_harness import AgentIdentity, CommittedTurn, MemoryScopeRef, RunId
 from simple_harness.execution.memory_outbox import CommittedTurnSpec
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork

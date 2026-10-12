@@ -10,7 +10,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.observability import business_replay
 from agent_orchestrator.observability.business_replay import (
     CONSISTENT,

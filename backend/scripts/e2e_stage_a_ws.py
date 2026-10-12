@@ -80,7 +80,7 @@ async def main() -> int:
             while True:
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=timeout_s)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     _print("timeout waiting for next frame")
                     return
                 msg = json.loads(raw)
@@ -133,7 +133,7 @@ async def main() -> int:
 
         try:
             await asyncio.wait_for(consume(), timeout=timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _print("FAIL: overall timeout")
             return 1
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 
 @dataclass(slots=True)
@@ -22,7 +22,7 @@ class ProviderSlotLease:
         self._released = True
         self._slot.release()
 
-    async def __aenter__(self) -> "ProviderSlotLease":
+    async def __aenter__(self) -> ProviderSlotLease:
         return self
 
     async def __aexit__(self, *_exc_info) -> None:
@@ -90,7 +90,7 @@ class ProviderLimiter:
 
         try:
             await asyncio.wait_for(asyncio.shield(waiter), timeout=wait_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await abandon()
             return None
         except asyncio.CancelledError:

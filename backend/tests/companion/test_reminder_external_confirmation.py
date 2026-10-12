@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.companion.contracts import LeaseClaim, OwnerRef
 from deskpet.companion.run_adapter import BackgroundRunAdapter
 from deskpet.companion.runtime import (
@@ -13,12 +12,12 @@ from deskpet.companion.runtime import (
     CompanionRuntime,
     CompanionRuntimePolicy,
 )
-from deskpet.companion.store import CompanionStore
 from deskpet.companion.schema import (
     COMPANION_SCHEMA_VERSION,
     MIGRATION_RESOURCES,
     configure_connection,
 )
+from deskpet.companion.store import CompanionStore
 from deskpet.execution.contracts import (
     ActorContext,
     DecisionOpen,
@@ -40,7 +39,6 @@ from deskpet.permissions.task_grants import (
     TaskGrant,
 )
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
-
 
 ARGS_HASH = "a" * 64
 CAPABILITY_HASH = "c" * 64

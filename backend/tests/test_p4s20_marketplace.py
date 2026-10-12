@@ -10,7 +10,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from deskpet.skills.marketplace.installer import (
     BatchStageResult,
     SkillInstaller,
@@ -22,7 +21,6 @@ from deskpet.skills.marketplace.safety import (
     SafetyError,
     validate_manifest,
 )
-
 
 # ---------------------------------------------------------------------
 # Registry client

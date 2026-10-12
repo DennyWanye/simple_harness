@@ -49,8 +49,8 @@ try:  # openpyxl is a hard dep for this skill, but degrade gracefully.
     from openpyxl import Workbook
     from openpyxl.cell.cell import Cell
     from openpyxl.chart import BarChart, LineChart, PieChart, Reference
-    from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, CellIsRule
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
     _HAS_OPENPYXL = True
@@ -69,7 +69,7 @@ _HEADER_FILL = "FF1F4E78"
 _HEADER_FONT = "FFFFFFFF"
 
 
-def _coerce_spec(spec: Any) -> Optional[dict[str, Any]]:
+def _coerce_spec(spec: Any) -> dict[str, Any] | None:
     """Accept a dict or a JSON string; return a dict or None."""
     if isinstance(spec, dict):
         return spec
@@ -164,7 +164,7 @@ def _add_chart(ws, chart_spec: dict[str, Any]) -> None:
     ws.add_chart(chart, anchor)
 
 
-def _hex_argb(c: Any) -> Optional[str]:
+def _hex_argb(c: Any) -> str | None:
     """'#1F4E78' / '1F4E78' / 'FF1F4E78' → 8-hex ARGB; bad input → None."""
     if not c:
         return None
@@ -194,7 +194,7 @@ def _iter_cells(ws, rng: str):
                 yield cell
 
 
-def _thin_border() -> "Border":
+def _thin_border() -> Border:
     side = Side(style="thin", color="FFBFBFBF")
     return Border(left=side, right=side, top=side, bottom=side)
 
@@ -367,7 +367,7 @@ def _build_sheet(wb, sheet_spec: dict[str, Any], first: bool) -> None:
 def excel_create(
     spec: Any,
     *,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ) -> dict[str, Any]:
     """Render ``spec`` into a ``.xlsx``. See module docstring for shape.
 

@@ -16,7 +16,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from simple_harness.agents.arp import codec
 from simple_harness.agents.arp.errors import ArpError, is_known
 from simple_harness.agents.arp.strict import canonical

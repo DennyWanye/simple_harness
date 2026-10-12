@@ -9,8 +9,8 @@ import hashlib
 import inspect
 import json
 import logging
-from typing import Any, Mapping
-
+from collections.abc import Mapping
+from typing import Any
 
 logger = logging.getLogger("deskpet.agent.loop")
 
@@ -237,12 +237,12 @@ def remount_skills(
                 and hasattr(loader, "resolve_instruction")
             ):
                 frozen = loader.resolve_instruction(loader.resolve_selection(name))
-                body = str(getattr(frozen, "instruction"))
+                body = str(frozen.instruction)
             elif hasattr(loader, "read_body"):
                 body = loader.read_body(name)
             else:
                 raise KeyError(name)
-        except (KeyError, OSError, IOError):
+        except (KeyError, OSError):
             logger.debug(
                 "skill_remount.skip_unreadable sid=%s name=%s",
                 session_id,

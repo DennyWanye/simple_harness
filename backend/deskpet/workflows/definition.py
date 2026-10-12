@@ -11,11 +11,11 @@ import hashlib
 import inspect
 import logging
 import textwrap
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import AsyncIterator, Mapping, Sequence
 
 from .contracts import (
     ChannelSpec,
@@ -35,6 +35,7 @@ from .contracts import (
     canonical_json,
     validate_json_value,
 )
+from .control import WorkflowSuspended
 from .errors import (
     InvalidStatePatch,
     StateMergeConflict,
@@ -42,8 +43,6 @@ from .errors import (
     WorkflowErrorCode,
     WorkflowNodeError,
 )
-from .control import WorkflowSuspended
-
 
 logger = logging.getLogger(__name__)
 
@@ -922,7 +921,7 @@ class CompiledWorkflow:
                 node_id=edge.source,
             ) from None
 
-    def bind(self, *, checkpointer: object | None = None) -> "WorkflowExecutable":
+    def bind(self, *, checkpointer: object | None = None) -> WorkflowExecutable:
         if checkpointer is None:
             from .native import InMemoryNativeCheckpointStore
 
@@ -983,7 +982,7 @@ class WorkflowExecutable:
         checkpoint_ns: str = "",
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> object:
-        method = getattr(self.__graph, "ainvoke")
+        method = self.__graph.ainvoke
         if self._is_native:
             try:
                 return await method(
@@ -1018,7 +1017,7 @@ class WorkflowExecutable:
         checkpoint_ns: str = "",
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> AsyncIterator[object]:
-        method = getattr(self.__graph, "astream")
+        method = self.__graph.astream
         if self._is_native:
             async for item in method(
                 state,
@@ -1061,7 +1060,7 @@ class WorkflowExecutable:
                 "empty_resume", "A workflow resume requires at least one interrupt response"
             )
         if self._is_native:
-            method = getattr(self.__graph, "resume")
+            method = self.__graph.resume
             try:
                 return await method(
                     response_payload,
@@ -1073,7 +1072,7 @@ class WorkflowExecutable:
                 )
             except WorkflowSuspended as exc:
                 return {"interrupt": exc.interrupt.to_dict()}
-        method = getattr(self.__graph, "ainvoke")
+        method = self.__graph.ainvoke
         return await method(
             response_payload,
             config=self._config(

@@ -17,8 +17,9 @@ import json
 import re
 import time
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
 
 
 def canonical_json(value: Any) -> str:
@@ -60,7 +61,7 @@ class ToolPolicySnapshot:
     fingerprint: str = ""
 
     @classmethod
-    def from_config(cls, config: Any) -> "ToolPolicySnapshot":
+    def from_config(cls, config: Any) -> ToolPolicySnapshot:
         disabled = frozenset(getattr(config, "disabled_toolsets", ()) or ())
         schema_only = frozenset(
             getattr(config, "disabled_toolsets_schema_only", ()) or ()
@@ -198,8 +199,8 @@ class ResolvedToolDraft:
         self,
         *,
         required_conditional_names: tuple[str, ...] = (),
-        scope_id: Optional[str] = None,
-    ) -> "PreparedToolSet":
+        scope_id: str | None = None,
+    ) -> PreparedToolSet:
         required = set(required_conditional_names)
         known = {cap.ref.name for cap in self.conditional_direct}
         unknown = required - known
@@ -248,7 +249,7 @@ class PreparedToolSet:
     def create(
         cls,
         *,
-        scope_id: Optional[str],
+        scope_id: str | None,
         revision: int,
         registry_revision: int,
         direct: Iterable[PreparedToolCapability],
@@ -261,7 +262,7 @@ class PreparedToolSet:
         effect_policy_version: str = "",
         effect_policy_hash: str = "",
         effect_classifications: Iterable[ToolEffectClassification] = (),
-    ) -> "PreparedToolSet":
+    ) -> PreparedToolSet:
         direct_tuple = _dedupe_capabilities(tuple(direct))
         activated_tuple = _dedupe_capabilities(tuple(activated))
         schemas = [cap.schema_copy() for cap in (*direct_tuple, *activated_tuple)]
@@ -324,13 +325,13 @@ class PreparedToolSet:
     def has_direct(self, name: str) -> bool:
         return any(cap.ref.name == name for cap in (*self.direct, *self.activated))
 
-    def capability(self, name: str) -> Optional[PreparedToolCapability]:
+    def capability(self, name: str) -> PreparedToolCapability | None:
         return next(
             (cap for cap in (*self.direct, *self.activated) if cap.ref.name == name),
             None,
         )
 
-    def activate(self, capability: PreparedToolCapability) -> "PreparedToolSet":
+    def activate(self, capability: PreparedToolCapability) -> PreparedToolSet:
         if capability.ref.name in self.denied_names:
             raise ValueError("cannot activate denied capability")
         if self.effect_policy_hash and not any(
@@ -368,7 +369,7 @@ class PreparedToolSet:
         effect_policy_version: str,
         effect_policy_hash: str,
         effect_classifications: Iterable[ToolEffectClassification],
-    ) -> "PreparedToolSet":
+    ) -> PreparedToolSet:
         """Return the policy-filtered immutable set.
 
         The policy may remove tools (reflection/evaluation) but cannot add a
@@ -426,13 +427,13 @@ class ToolExecutionContext:
     session_id: str
     request_id: str
     origin: str = "agent"
-    policy_snapshot: Optional[ToolPolicySnapshot] = None
+    policy_snapshot: ToolPolicySnapshot | None = None
     root_run_id: str = ""
-    parent_run_id: Optional[str] = None
+    parent_run_id: str | None = None
     turn_id: str = ""
     venue: str = "text"
-    workspace: Optional[str] = None
-    write_scope_root: Optional[str] = None
+    workspace: str | None = None
+    write_scope_root: str | None = None
     project_id: str = ""
     project_revision: int = 0
     project_identity: str = ""
@@ -460,12 +461,12 @@ class ToolActivationProposal:
     nonce: str
 
 
-_CURRENT_EXECUTION_CONTEXT: contextvars.ContextVar[Optional[ToolExecutionContext]] = (
+_CURRENT_EXECUTION_CONTEXT: contextvars.ContextVar[ToolExecutionContext | None] = (
     contextvars.ContextVar("deskpet_tool_execution_context", default=None)
 )
 
 
-def current_tool_execution_context() -> Optional[ToolExecutionContext]:
+def current_tool_execution_context() -> ToolExecutionContext | None:
     return _CURRENT_EXECUTION_CONTEXT.get()
 
 
@@ -546,7 +547,7 @@ class ToolCapabilityScopeStore:
 
     def get(
         self, scope_id: str, *, session_id: str, request_id: str
-    ) -> Optional[ToolCapabilityScopeRecord]:
+    ) -> ToolCapabilityScopeRecord | None:
         self._purge_expired()
         record = self._records.get(scope_id)
         if record is None:
@@ -557,7 +558,7 @@ class ToolCapabilityScopeStore:
 
     def pin(
         self, scope_id: str, *, session_id: str, request_id: str
-    ) -> Optional[ToolCapabilityScopeRecord]:
+    ) -> ToolCapabilityScopeRecord | None:
         """Keep a valid scope alive while one authorized effect is in flight."""
         self._purge_expired()
         record = self._records.get(scope_id)
@@ -889,7 +890,7 @@ class ToolCapabilityResolver:
                 remote_aliases.setdefault(remote_name, []).append(spec.name)
         bridge_names = {"tool_search", "tool_describe", "tool_activate"}
 
-        def canonical_tool_name(requested_name: str) -> Optional[str]:
+        def canonical_tool_name(requested_name: str) -> str | None:
             """Resolve exact remote MCP names only when the alias is unique.
 
             MCP tools are registered under a server-qualified canonical name,

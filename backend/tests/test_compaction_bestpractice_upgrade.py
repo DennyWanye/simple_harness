@@ -7,14 +7,13 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.agent.context_compressor import (
+    _SUMMARY_MARKER,
     ContextCompressor,
     _extract_prior_summary,
-    _microcompact_tool_results,
     _format_summary,
     _looks_reflective,
-    _SUMMARY_MARKER,
+    _microcompact_tool_results,
 )
 
 
@@ -622,7 +621,7 @@ class TestWI2MicrocompactEdgeGaps:
     @pytest.mark.asyncio
     async def test_microcompact_only_keep0_no_orphan_after_sanitize(self):
         """microcompact-only 早退(keep_tools=0 全清) → _sanitize 不产孤儿(壳+配对仍齐)。"""
-        from deskpet.agent.context_compressor import _sanitize_tool_pairs, _partition
+        from deskpet.agent.context_compressor import _partition, _sanitize_tool_pairs
 
         msgs = [{"role": "system", "content": "s"}]
         for i in range(5):
@@ -1022,8 +1021,8 @@ class TestWI1B2CtxObservability:
     @pytest.mark.asyncio
     async def test_observability_off_no_extra_event(self, monkeypatch):
         """flag OFF (默认): 压缩命中也不 yield ContextCompactedEvent、不调 metrics。"""
-        from agent.agent_loop import AgentLoop
         import observability.metrics_sink as _ms
+        from agent.agent_loop import AgentLoop
 
         recorded: list[tuple] = []
         monkeypatch.setattr(
@@ -1058,8 +1057,8 @@ class TestWI1B2CtxObservability:
     async def test_observability_on_emits_event(self, monkeypatch):
         """flag ON: 压缩命中 yield ContextCompactedEvent(字段=reduction/in/out) +
         record 一条 context_compacted metrics(ratio/model/count)。"""
-        from agent.agent_loop import AgentLoop, ContextCompactedEvent
         import observability.metrics_sink as _ms
+        from agent.agent_loop import AgentLoop, ContextCompactedEvent
 
         recorded: list[tuple] = []
         monkeypatch.setattr(

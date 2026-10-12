@@ -4,10 +4,10 @@
 """Budget-aware, gap-free Session history planner for Context OS."""
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
-from deskpet.agent.tokens import count_messages_tokens
 from deskpet.agent.context_segment_store import (
     CausalMessageGroup,
     ContextSegment,
@@ -17,6 +17,7 @@ from deskpet.agent.context_segment_store import (
     group_causal_messages,
     recover_broken_causal_messages,
 )
+from deskpet.agent.tokens import count_messages_tokens
 
 
 @dataclass(frozen=True, slots=True)

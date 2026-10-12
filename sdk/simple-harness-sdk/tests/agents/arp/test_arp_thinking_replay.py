@@ -17,9 +17,15 @@ import sqlite3
 from dataclasses import replace
 
 import pytest
-from arp_fixture import ExactWordTokenizer, MODEL, RecordingAuthorization, activation_receipt, standalone_profile, trusted_caller
+from arp_fixture import (
+    MODEL,
+    ExactWordTokenizer,
+    RecordingAuthorization,
+    activation_receipt,
+    standalone_profile,
+    trusted_caller,
+)
 from provider_fixture import ScriptedProvider
-
 from simple_harness import Message, MessageRole
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
@@ -31,7 +37,10 @@ from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.wire import restore_reasoning, restore_wire_messages
 from simple_harness.contracts import CallId, RequestId, thaw_json
-from simple_harness.execution.provider_invocations import provider_response_from_json, provider_response_json
+from simple_harness.execution.provider_invocations import (
+    provider_response_from_json,
+    provider_response_json,
+)
 from simple_harness.providers import ProviderResponse
 from simple_harness.providers.base import (
     PROVIDER_REASONING_KEY,

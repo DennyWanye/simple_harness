@@ -28,17 +28,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
 
-from htn_world import (  # noqa: E402
-    Env,
-    atom,
-    load_proposal,
-    method,
-    param,
-    ref,
-    seed_env,
-    step,
-)
-
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     MethodRegistryStatus,
     RegistryAuthor,
@@ -52,6 +41,16 @@ from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     RejectionCode,
     StepOutcome,
     method_is_recursive,
+)
+from htn_world import (  # noqa: E402
+    Env,
+    atom,
+    load_proposal,
+    method,
+    param,
+    ref,
+    seed_env,
+    step,
 )
 
 

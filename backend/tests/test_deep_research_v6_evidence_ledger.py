@@ -3,11 +3,10 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AnswerAssessmentV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
 )
 
 

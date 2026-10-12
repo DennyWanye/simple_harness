@@ -11,7 +11,6 @@ dependency-free home.
 
 from __future__ import annotations
 
-
 _SCHEMA = {
     "name": "agent",
     "description": (

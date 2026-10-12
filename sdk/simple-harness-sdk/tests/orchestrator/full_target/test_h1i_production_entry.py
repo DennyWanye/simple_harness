@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
@@ -40,11 +39,10 @@ _FULL_TARGET = Path(__file__).resolve().parent
 if str(_FULL_TARGET) not in sys.path:
     sys.path.insert(0, str(_FULL_TARGET))
 
-from h1i_seed import CONFIG, CRITERIA, GOAL, plan_reply, seeded  # noqa: E402
-
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
+from h1i_seed import CONFIG, CRITERIA, GOAL, plan_reply, seeded  # noqa: E402
 
 
 def test_the_package_states_its_version_as_the_integer_the_binding_stores() -> None:

@@ -3,12 +3,11 @@
 import asyncio
 
 import pytest
-from test_memory_outbox_recovery import IdempotentMemory, InjectedCrash
-from test_memory_outbox_uow import _setup, _spec, _terminal
-
 from simple_harness import CommittedTurnStatus, RunId
 from simple_harness.execution.memory_outbox import MemoryDispatcher, MemoryOutboxRepository
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from test_memory_outbox_recovery import IdempotentMemory, InjectedCrash
+from test_memory_outbox_uow import _setup, _spec, _terminal
 
 
 def test_real_terminal_memory_call_ack_crash_reopen_cleanup_keeps_attempts(tmp_path):
@@ -162,6 +161,7 @@ def test_lost_whole_memory_handoff_is_a_gap_even_without_settlement(tmp_path):
 @pytest.mark.parametrize("boundary", ["begin", "settle"])
 def test_foreign_real_payload_receipt_cannot_replace_actual_claim(tmp_path, boundary):
     from dataclasses import replace
+
     from simple_harness.execution.uow import UnitOfWorkConflict
 
     database, uow, lease, fence = _setup(tmp_path / "foreign.db")

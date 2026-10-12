@@ -23,13 +23,11 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import ComponentContext
 from deskpet.agent.assembler.components.skill import SkillComponent
 from deskpet.skills.loader import SkillLoader, SkillMeta
 from deskpet.skills.skill_matcher import SkillMatcher
-
 
 # ---------------------------------------------------------------------------
 # Helpers

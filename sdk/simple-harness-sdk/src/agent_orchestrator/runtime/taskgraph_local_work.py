@@ -14,7 +14,7 @@ from typing import Any
 from simple_harness.contracts import canonical_json
 
 from ..contracts.models import sha256_hex
-from ..contracts.state_machines import AttemptStatus, TERMINAL_ATTEMPT
+from ..contracts.state_machines import TERMINAL_ATTEMPT, AttemptStatus
 from ..storage.store import Store
 from .planning_operations import SourceUnavailable
 

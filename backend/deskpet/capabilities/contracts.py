@@ -17,10 +17,11 @@ import json
 import math
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Sequence, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 JsonPrimitive: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
@@ -431,7 +432,7 @@ class CapabilityScope:
         project_revision: int | None = None,
         project_identity: str | None = None,
         user_key: str = "default",
-    ) -> "CapabilityScope":
+    ) -> CapabilityScope:
         identity_values = (project_id, project_revision, project_identity)
         if any(value is not None for value in identity_values) and not all(
             value is not None for value in identity_values
@@ -1105,7 +1106,7 @@ class CapabilitySearchReceipt:
         query: str,
         hits: Sequence[CapabilitySearchHit],
         created_at: float,
-    ) -> "CapabilitySearchReceipt":
+    ) -> CapabilitySearchReceipt:
         normalized_query = unicodedata.normalize("NFKC", query).strip().casefold()
         query_hash = fingerprint_json({"query": normalized_query})
         receipt_id = fingerprint_json(

@@ -7,16 +7,24 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.evidence_state import ValidityWitness, WitnessPurpose
 from ..contracts.htn import BoundInput, OccurrenceId, TaskRef
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import VersionedRef
+from ..graph.task_network import TaskNetworkSnapshot
 from .input_bindings import (
-    AcceptedOutputsIndex, DeliveryBinding, DisclosureState, InputManifest, ResolutionPolicy,
-    ResolvedInputBinding, ResourceIdentity, TargetRules, _check_schema, _check_witness,
+    AcceptedOutputsIndex,
+    DeliveryBinding,
+    DisclosureState,
+    InputManifest,
+    ResolutionPolicy,
+    ResolvedInputBinding,
+    ResourceIdentity,
+    TargetRules,
+    _check_schema,
+    _check_witness,
     witness_verdict,
 )
-from ..contracts.evidence_state import ValidityWitness, WitnessPurpose
-from ..graph.task_network import TaskNetworkSnapshot
 
 
 def require_current_manifest_use(manifest: InputManifest, network: TaskNetworkSnapshot, *,

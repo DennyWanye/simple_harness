@@ -14,7 +14,6 @@ from .errors import WorkflowContractError
 from .outbox import MAX_PAGE_SIZE, OutboxError
 from .service import WorkflowService, WorkflowServiceError, _plain
 
-
 logger = logging.getLogger(__name__)
 
 

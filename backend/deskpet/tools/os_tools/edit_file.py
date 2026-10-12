@@ -19,7 +19,6 @@ from typing import Any
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
 
-
 _EXAMPLES = [
     {"path": "main.py", "old_string": "old text", "new_string": "new text"},
     {

@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from ..workflows.effects import NormalizedToolOutcome
 from .brokered_planner import BrokeredEffectPlanner
@@ -78,7 +79,7 @@ class BrokeredPlanEnvelope:
         }
 
     @classmethod
-    def from_durable_value(cls, value: Any) -> "BrokeredPlanEnvelope | None":
+    def from_durable_value(cls, value: Any) -> BrokeredPlanEnvelope | None:
         if not isinstance(value, Mapping) or set(value) != {"__deskpet_deferred__"}:
             return None
         payload = value["__deskpet_deferred__"]

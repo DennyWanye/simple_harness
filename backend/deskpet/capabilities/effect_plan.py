@@ -9,9 +9,10 @@ import copy
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from .input_views import InputBindingSnapshot
 
@@ -43,7 +44,7 @@ class EffectPlan:
     @classmethod
     def parse(
         cls, value: Any, *, max_actions: int = 256
-    ) -> "EffectPlan":
+    ) -> EffectPlan:
         if not isinstance(value, Mapping):
             raise EffectPlanValidationError("effect_plan must be an object")
         if set(value) != {"actions"}:
@@ -216,7 +217,7 @@ class BrokeredEffectPlanRecord:
     @classmethod
     def from_mapping(
         cls, value: Mapping[str, Any]
-    ) -> "BrokeredEffectPlanRecord":
+    ) -> BrokeredEffectPlanRecord:
         expected = {
             "plan_ref",
             "root_run_id",
@@ -382,7 +383,7 @@ class BrokeredCommandBoundary:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "BrokeredCommandBoundary":
+    def from_mapping(cls, value: Mapping[str, Any]) -> BrokeredCommandBoundary:
         expected = {
             "parent_index",
             "parent_prepared_call_ref",

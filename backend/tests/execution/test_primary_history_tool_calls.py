@@ -11,22 +11,30 @@ import sqlite3
 
 import aiosqlite
 import pytest
-from simple_harness import CallId
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-
 from deskpet.execution.primary_context_pages import (
-    ARGUMENTS_SUMMARY_BYTES, HISTORY_PREFIX, HISTORY_SUFFIX, _source_group, project_history_group,
+    ARGUMENTS_SUMMARY_BYTES,
+    HISTORY_PREFIX,
+    HISTORY_SUFFIX,
+    _source_group,
+    project_history_group,
 )
 from deskpet.execution.primary_history import PrimaryHistoryStore
 from deskpet.execution.primary_tool_calls import (
-    GROUP_KEY, KIND, consistent_with_transcript, read_assistant_tool_calls_tx, record_id, side_record_body,
+    GROUP_KEY,
+    KIND,
+    consistent_with_transcript,
+    read_assistant_tool_calls_tx,
+    record_id,
+    side_record_body,
 )
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.primary_tool_call_schema import initialize_primary_tool_call_state_db
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
+from simple_harness import CallId
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_foreground_runtime import Provider, build, history_disclosure
 
 FIRST_ARGS = {"query": "read_file open file text contents 中文 边界"}

@@ -22,7 +22,6 @@ import sqlite3
 
 import httpx
 import pytest
-
 from agent_orchestrator.testing.fixtures import package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import (

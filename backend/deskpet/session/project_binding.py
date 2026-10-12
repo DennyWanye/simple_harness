@@ -14,18 +14,18 @@ import hashlib
 import json
 import os
 import platform
+import re
 import sqlite3
 import subprocess
 import time
 import uuid
-import re
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Mapping, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import aiosqlite
-
 
 CATALOG_SCHEMA_VERSION = 1
 DEFAULT_PAGE_SIZE = 50

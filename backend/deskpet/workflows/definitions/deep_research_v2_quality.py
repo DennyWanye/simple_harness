@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
-from typing import Callable, Iterable, Literal, Mapping
-
+from typing import Literal
 
 _CITATION = re.compile(r"\[(\d+)\]")
 _SENTENCE = re.compile(r"(?<=[。！？.!?])\s*")

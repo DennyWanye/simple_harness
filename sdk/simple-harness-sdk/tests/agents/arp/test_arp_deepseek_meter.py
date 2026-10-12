@@ -9,10 +9,20 @@ import os
 from pathlib import Path
 
 import pytest
-
-from agent_orchestrator.runtime.deepseek_meter import COUNTER_ID, CertifiedDeepSeekCounter, certification_ref, deepseek_meter_binding
+from agent_orchestrator.runtime.deepseek_meter import (
+    COUNTER_ID,
+    CertifiedDeepSeekCounter,
+    certification_ref,
+    deepseek_meter_binding,
+)
 from simple_harness.agents.arp.errors import ArpError
-from simple_harness.agents.arp.meter import NO_PRIOR, MeterBinding, NativeMeterAdapter, PriorBasis, model_limits
+from simple_harness.agents.arp.meter import (
+    NO_PRIOR,
+    MeterBinding,
+    NativeMeterAdapter,
+    PriorBasis,
+    model_limits,
+)
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.rules import Budget
 from simple_harness.contracts import Message, MessageRole, RequestId

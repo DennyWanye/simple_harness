@@ -11,15 +11,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from provider_fixture import ScriptedProvider, message_texts
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from agent_orchestrator.runtime.deepseek_tokens import DeepSeekV41TokenEstimator
+from provider_fixture import ScriptedProvider, message_texts
 from simple_harness.agents import AgentConfig, AgentTurnState, build_agent_runtime
 from simple_harness.agents.context import ContextPolicy
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.contracts import MessageRole
 from simple_harness.runtime.termination import TerminationLimits
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 MODEL = "deepseek-flash"
 INSTRUCTIONS = "你是LC6助手。必须保留本指令和本轮用户输入。"

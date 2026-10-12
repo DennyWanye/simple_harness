@@ -9,7 +9,6 @@ import asyncio
 
 import pytest
 from provider_fixture import MODEL, ScriptedProvider
-
 from simple_harness.agents import AgentConfig, AgentNotFound, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 

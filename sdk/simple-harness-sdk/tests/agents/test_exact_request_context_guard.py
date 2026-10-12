@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.port import ContextRequiredContentTooLarge, RequestGuard
 from simple_harness.contracts import Message, MessageRole, RequestId

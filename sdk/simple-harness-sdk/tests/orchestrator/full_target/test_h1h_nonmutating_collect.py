@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from h1i_seed import committed, events, root_task, seeded
-from test_h1i_production_entry import _open_planner_round
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.planning_decisions import (
     PlanningDecisionEnvelopeV1,
@@ -19,6 +16,8 @@ from agent_orchestrator.contracts.planning_decisions import (
 from agent_orchestrator.planning.decision_codec import serialize_planning_decision
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from h1i_seed import committed, events, root_task, seeded
+from test_h1i_production_entry import _open_planner_round
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "planning_decision_v1" / "valid"
 _events = events

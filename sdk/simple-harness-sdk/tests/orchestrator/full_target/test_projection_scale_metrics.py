@@ -15,11 +15,10 @@ import time
 import tracemalloc
 from pathlib import Path
 
-from test_projection_integrity import binding, instance, occurrence, order, snapshot
-
 from agent_orchestrator.contracts.htn import MethodInstanceId, TaskForm
 from agent_orchestrator.graph.projection_validation import validate_execution_projection
 from agent_orchestrator.graph.task_network import DEFAULT_PROJECTION_BUDGET
+from test_projection_integrity import binding, instance, occurrence, order, snapshot
 
 COMPOUNDS, LEAVES = 100, 18  # 2 + 2×100 + 100×18 = 2002 个节点，默认上限 2048
 

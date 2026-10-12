@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import json
 
-import pytest
-from httpx import AsyncClient, ASGITransport
-
 import main as main_module
-from main import app, LLM_RUNTIME_PATH
+import pytest
+from httpx import ASGITransport, AsyncClient
+from main import LLM_RUNTIME_PATH, app
 
 
 @pytest.fixture(autouse=True)

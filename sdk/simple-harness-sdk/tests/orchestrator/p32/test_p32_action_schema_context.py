@@ -10,7 +10,6 @@ Deterministic local checks only; none of these cases executes a publish connecto
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import Artifact
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.orchestrator.action_commits import (

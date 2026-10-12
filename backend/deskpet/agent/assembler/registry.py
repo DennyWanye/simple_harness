@@ -37,7 +37,7 @@ class ComponentRegistry:
         slices = await registry.fanout(ctx)
     """
 
-    def __init__(self, components: Optional[list[Component]] = None) -> None:
+    def __init__(self, components: list[Component] | None = None) -> None:
         self._components: dict[str, Component] = {}
         if components:
             for c in components:
@@ -50,7 +50,7 @@ class ComponentRegistry:
             raise ValueError("Component must have a non-empty .name")
         self._components[name] = component
 
-    def get(self, name: str) -> Optional[Component]:
+    def get(self, name: str) -> Component | None:
         return self._components.get(name)
 
     def names(self) -> list[str]:
@@ -60,7 +60,7 @@ class ComponentRegistry:
         self,
         ctx: ComponentContext,
         *,
-        timeout_ms: Optional[float] = None,
+        timeout_ms: float | None = None,
     ) -> list[Slice]:
         """Run all components in parallel and return their slices.
 
@@ -126,7 +126,7 @@ class ComponentRegistry:
         # pending=[全部]，无法定位真凶。现在每个组件独立计时 + 独立软
         # 超时：慢的单独降级，快的照常返回，并把 duration_ms/status 记进
         # meta，使 round-3 那种 `pending=[workspace,...]` 能精确到组件。
-        per_component_timeout_s: Optional[float] = None
+        per_component_timeout_s: float | None = None
         if timeout_ms is not None:
             per_component_timeout_s = max(0.05, timeout_ms / 1000.0)
 
@@ -175,7 +175,7 @@ class ComponentRegistry:
                     await asyncio.wait_for(_run(), timeout=per_component_timeout_s),
                     status="ok",
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # 单组件超时 —— 只降级它，不影响别的组件（F1 核心修复）。
                 logger.warning(
                     "assembler.component_timed_out",
@@ -218,7 +218,7 @@ class ComponentRegistry:
                     asyncio.gather(*coros, return_exceptions=False),
                     timeout=outer_timeout_s,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # per-component 已兜底，走到这里说明事件循环被同步阻塞
                 # （某组件内有 blocking call）—— 仍降级而非崩。
                 logger.warning(

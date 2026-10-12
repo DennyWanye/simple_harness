@@ -14,12 +14,13 @@ import secrets
 import sqlite3
 import uuid
 import zipfile
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping, Sequence
+from typing import Any
 
 from .contracts import (
     CandidateAttempt,
@@ -33,10 +34,10 @@ from .contracts import (
     CompanionLeaseError,
     CompanionOwnerError,
     CompanionStateError,
-    GrowthDependency,
-    GrowthEvent,
     EvaluationCaseLaunch,
     EvaluationExecutionPermit,
+    GrowthDependency,
+    GrowthEvent,
     LeaseClaim,
     MutationRequest,
     OwnerRef,

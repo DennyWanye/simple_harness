@@ -5,9 +5,8 @@ import sys
 from pathlib import Path
 
 import pytest
-
-from deskpet.permissions.task_grants import canonical_filesystem_path
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
+from deskpet.permissions.task_grants import canonical_filesystem_path
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools.registration import register_os_tools
 from deskpet.tools.registry import ToolRegistry, tool_spec_fingerprint

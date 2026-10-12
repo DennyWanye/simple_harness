@@ -16,13 +16,12 @@ was retired. A new e2e fixture covering the unified path is TODO.
 """
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
+from agent.providers.simple_llm import SimpleLLMAgent
 from fastapi.testclient import TestClient
-
 from providers.openai_compatible import OpenAICompatibleProvider
 from router.hybrid_router import HybridRouter
-from agent.providers.simple_llm import SimpleLLMAgent
 
 pytestmark = pytest.mark.skip(
     reason="P4-S20-LLM-Unified: legacy HybridRouter chat path removed; "
@@ -135,6 +134,7 @@ def app_with_router(monkeypatch):
     """
     _stub_heavy_modules()
     import importlib
+
     import main as main_mod
 
     # Preserve SHARED_SECRET across reload. Other test modules (e.g.

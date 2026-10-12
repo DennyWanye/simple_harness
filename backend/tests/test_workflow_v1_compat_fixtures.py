@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
+from deskpet.tools.agent_reach_port import AgentReachPort
 from deskpet.workflows import WorkflowContext, compile_workflow
 from deskpet.workflows.contracts import validate_json_value
 from deskpet.workflows.definitions import research_core
@@ -22,8 +22,6 @@ from deskpet.workflows.definitions.v1 import (
 )
 from deskpet.workflows.native import InMemoryNativeCheckpointStore
 from deskpet.workflows.runner import manifest_hash
-from deskpet.tools.agent_reach_port import AgentReachPort
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MANIFEST_FIXTURE = FIXTURES / "workflow_manifests" / "deep_research_v1.json"

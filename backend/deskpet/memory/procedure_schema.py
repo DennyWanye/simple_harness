@@ -8,9 +8,11 @@ import time
 from pathlib import Path
 
 import aiosqlite
+
 from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.s5c_terminal_schema import (
-    initialize_s5c_terminal_state_db, validate_s5c_terminal_state_db,
+    initialize_s5c_terminal_state_db,
+    validate_s5c_terminal_state_db,
 )
 
 MIGRATION = "procedure/045_procedure_uses_v53.sql"

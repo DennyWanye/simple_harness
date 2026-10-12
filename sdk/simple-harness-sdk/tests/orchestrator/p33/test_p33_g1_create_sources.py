@@ -20,14 +20,13 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 import pytest
-from p33_world import TENANT, opened
-
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.observability.business_replay import verify_library, verify_mission
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from p33_world import TENANT, opened
 
 
 def command():

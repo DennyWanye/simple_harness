@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.manifest import (
     PackEnvironment,
     PackManifestError,

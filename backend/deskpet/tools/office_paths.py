@@ -142,7 +142,7 @@ class PathError(Exception):
     file-picker tool first."""
 
 
-def resolve_for_read(p: str | os.PathLike[str]) -> Optional[Path]:
+def resolve_for_read(p: str | os.PathLike[str]) -> Path | None:
     """Return the resolved path if it is authorized AND exists, else None.
 
     A ``None`` return means "ask the user to pick the file" — the handler
@@ -190,7 +190,7 @@ def _default_output_path(prefix: str, suffix: str, kind: str) -> Path:
 
 
 def resolve_for_write(
-    p: Optional[str | os.PathLike[str]],
+    p: str | os.PathLike[str] | None,
     *,
     default_prefix: str,
     default_suffix: str,
@@ -304,7 +304,7 @@ def artifact_default_path(
     title: str,
     ext: str,
     artifact_dir: str = "",
-    seed: Optional[str] = None,
+    seed: str | None = None,
 ) -> Path:
     """WI-T1.5 last-mile artifact 默认保存路径（PRD §3 D4）。
 

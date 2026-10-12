@@ -37,11 +37,10 @@ deskpet 的智能上下文系统设计于 32K–200K context 时代，所有阈�
 from __future__ import annotations
 
 import logging
+import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Optional
-
-import tomllib
 
 import paths as _paths
 
@@ -391,7 +390,7 @@ def load_global_overrides() -> dict[str, Any]:
     return _read_toml(_paths.user_data_dir() / "model_overrides.toml")
 
 
-def load_project_overrides(project_root: Optional[Path]) -> dict[str, Any]:
+def load_project_overrides(project_root: Path | None) -> dict[str, Any]:
     """读项目层 ``<project_root>/.deskpet/context.toml``。
 
     ``project_root=None``（非 code mode）→ ``{}``，项目层被跳过。
@@ -427,7 +426,7 @@ def _apply_override(info: ModelContextInfo, section: dict[str, Any]) -> ModelCon
     return replace(info, **patch)
 
 
-def resolve(model: str, project_root: Optional[Path] = None) -> ModelContextInfo:
+def resolve(model: str, project_root: Path | None = None) -> ModelContextInfo:
     """三层解析某个 model 的 ModelContextInfo（纯函数 + 落日志）。
 
     解析链：BUILTIN[model] (缺失 → BUILTIN["_default"])
@@ -472,7 +471,7 @@ def resolve(model: str, project_root: Optional[Path] = None) -> ModelContextInfo
     return info
 
 
-def resolve_reasoning_mode(model: str, project_root: Optional[Path] = None) -> str:
+def resolve_reasoning_mode(model: str, project_root: Path | None = None) -> str:
     """该型号的默认 reasoning 模式(``default`` / ``thinking`` / ``fast``)。
 
     走与 :func:`resolve` 同一条三层链, 所以 ``model_overrides.toml`` 的

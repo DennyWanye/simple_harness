@@ -9,7 +9,6 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-
 from simple_harness import RunId, thaw_json
 from simple_harness.execution.provider_invocations import ProviderInvocationState
 from simple_harness.execution.sqlite import (

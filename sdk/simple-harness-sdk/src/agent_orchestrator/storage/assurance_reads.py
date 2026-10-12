@@ -17,7 +17,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..assurance.certificates import UseIdentity
-from ..assurance.codec import MAX_BYTES, MAX_RECORD_BYTES, AssuranceError, canonical, decode, fingerprint, text
+from ..assurance.codec import (
+    MAX_BYTES,
+    MAX_RECORD_BYTES,
+    AssuranceError,
+    canonical,
+    decode,
+    fingerprint,
+    text,
+)
 from ..assurance.event_kinds import EVENT_REF_KINDS, SOURCE_EVENT_SQL
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef

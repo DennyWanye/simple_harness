@@ -19,7 +19,6 @@ import hashlib
 import json
 
 import pytest
-
 from simple_harness.capabilities import (
     CapabilityBuildCompletion,
     CapabilityBuildError,

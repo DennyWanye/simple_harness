@@ -6,8 +6,6 @@ import asyncio
 import sqlite3
 
 import pytest
-
-from production_fixture import enabled_world
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.api.taskgraph import TaskGraphReadApi, TaskGraphReadError
 from agent_orchestrator.governance.permissions import Principal
@@ -15,6 +13,7 @@ from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 from agent_orchestrator.orchestrator.taskgraph_policy import enable_command_id
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
+from production_fixture import enabled_world
 
 
 def test_historical_structure_is_nonexecutable_and_offline_projection_has_no_work(tmp_path):

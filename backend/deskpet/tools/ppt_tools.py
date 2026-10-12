@@ -54,11 +54,15 @@ import re
 import struct
 import tempfile
 import time
+from collections.abc import Iterable, Sequence
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
-from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterable, Literal, Optional, Sequence
+from typing import Any, Literal, Optional
+
+from deskpet.tools import ppt_outline_store
+from deskpet.tools.image_tools import generate_images, probe_image_reachable
 
 from .capabilities import ToolExecutionContext
 from .context_adapter import (
@@ -66,9 +70,6 @@ from .context_adapter import (
     legacy_execution_context,
     legacy_host_service,
 )
-
-from deskpet.tools import ppt_outline_store
-from deskpet.tools.image_tools import generate_images, probe_image_reachable
 
 log = logging.getLogger(__name__)
 
@@ -238,13 +239,13 @@ def _maybe_render_preview(result: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------
 try:  # pragma: no cover — import probe
     from pptx import Presentation as _Presentation
-    from pptx.util import Inches, Pt, Emu
-    from pptx.dml.color import RGBColor
-    from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
-    from pptx.enum.dml import MSO_FILL_TYPE
     from pptx.chart.data import CategoryChartData
+    from pptx.dml.color import RGBColor
     from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    from pptx.enum.dml import MSO_FILL_TYPE
+    from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
+    from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
+    from pptx.util import Emu, Inches, Pt
     _HAS_PPTX = True
 except ImportError:  # pragma: no cover
     _Presentation = None  # type: ignore
@@ -384,9 +385,9 @@ class SlideOutline:
     left_title: str = ""
     right_title: str = ""
     # image
-    image_path: Optional[str] = None
+    image_path: str | None = None
     # 整页生图：有则 ppt_create 自动生图填 image_path
-    image_prompt: Optional[str] = None
+    image_prompt: str | None = None
     # 整页生图版式变体(版式多样化): cover/split_left/split_right/top/card/
     # quote。空 = 由 _assign_image_layouts 按内容自动分配(相邻不重复)。
     image_variant: str = ""
@@ -401,13 +402,13 @@ class SlideOutline:
     # toc — uses bullets[]
     # chart: {"type": "bar"|"line"|"pie", "categories": [...],
     #         "series": [{"name": "...", "values": [...]}, ...]}
-    chart: Optional[dict] = None
+    chart: dict | None = None
     # table: {"rows": [["header", ...], ["value", ...]], "header": true}
-    table: Optional[dict] = None
+    table: dict | None = None
     # generic
     notes: str = ""  # speaker notes
 
-    def normalize(self) -> "SlideOutline":
+    def normalize(self) -> SlideOutline:
         """Coerce raw LLM output into the strict schema."""
         layout = (self.layout or "bullet").strip().lower()
         if layout not in VALID_LAYOUTS:
@@ -667,7 +668,7 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
 
     try:
         return await asyncio.wait_for(_run(), timeout=timeout_s)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning("ppt_pro research timeout")
         return None
     except Exception as exc:  # noqa: BLE001
@@ -722,7 +723,7 @@ async def _draft_outline_from_research(
     llm_call,
     editable_required: bool = False,
     feedback: str = "",
-    prev_slides: Optional[Sequence[SlideOutline]] = None,
+    prev_slides: Sequence[SlideOutline] | None = None,
 ) -> list[SlideOutline]:
     """基于调研报告拟制 SlideOutline；LLM 输出异常时用本地最小大纲兜底。"""
     _ = theme
@@ -3138,7 +3139,7 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         # 最小)。split 侧栏≈方 → 1024x1024;其余(全幅/上图/封面)→ 横版
         # 1536x1024。prompt 追加版式负空间指令 + 禁字后缀。同尺寸分一组批量。
         from collections import OrderedDict
-        groups: "OrderedDict[str, list[tuple[int, str]]]" = OrderedDict()
+        groups: OrderedDict[str, list[tuple[int, str]]] = OrderedDict()
         for idx, prompt in pending:
             variant = _resolve_image_variant(slides[idx])
             neg = _VARIANT_NEG_SPACE.get(variant, "")
@@ -3158,7 +3159,7 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         log.warning("image prompt autofill failed: %s", exc, exc_info=True)
 
 
-def _default_template() -> Optional[str]:
+def _default_template() -> str | None:
     """无显式 template 时的默认模板(大类名或 .pptx 路径)，来自环境变量
     ``DESKPET_PPT_DEFAULT_TEMPLATE``。不设 → None(走 from-scratch)。
     可设成一个大类名(如「高级色」)让生成默认套模板并按预览图选具体设计。
@@ -3238,7 +3239,7 @@ def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, 
     return True, n_ok
 
 
-def _drive_free_bytes(path: Path) -> Optional[int]:
+def _drive_free_bytes(path: Path) -> int | None:
     """Free bytes on the volume containing ``path``, walking up to the first
     existing parent (the dir may not exist yet on a fresh install). Returns
     None if it can't be determined. Never raises."""
@@ -3255,7 +3256,7 @@ def _drive_free_bytes(path: Path) -> Optional[int]:
     return None
 
 
-def _disk_preflight(*, image_mode: bool, pages: int) -> Optional[str]:
+def _disk_preflight(*, image_mode: bool, pages: int) -> str | None:
     """Return a user-facing error message if the user-data volume is too low
     on free space to safely generate images + write the ``.pptx``, else None.
 
@@ -3293,7 +3294,7 @@ def _render_pro(
     theme: str,
     title: str,
     author: str,
-    output_path: Optional[str],
+    output_path: str | None,
     image_mode: bool,
     probe_timeout_s: float,
     notify,
@@ -3376,7 +3377,7 @@ def _render_pro(
     return result
 
 
-def _fallback_template_path() -> Optional[str]:
+def _fallback_template_path() -> str | None:
     """回退用**确定性 bundled 模板直传路径**（跳过外部大库 + vision 选图，避免
     pick_template_by_preview 在 executor 线程做 90 张大预览图 PIL 拼图阻塞）。
     返回 bundled 通用商务 第一套 .pptx 的绝对路径；无则 None（上层 fromscratch）。从不抛。"""
@@ -3403,7 +3404,7 @@ def _user_template_roots() -> list[Path]:
     return [r for r in roots if r.is_dir()]
 
 
-def _resolve_template_path(template: Optional[str]) -> Optional[str]:
+def _resolve_template_path(template: str | None) -> str | None:
     """解析【直传 .pptx 路径】或【库内模板 stem】→ 绝对路径。从不抛异常。
 
     注意:这里【不】处理大类名 —— 大类名要靠预览图视觉选具体文件,见
@@ -3447,8 +3448,8 @@ def _resolve_template_path(template: Optional[str]) -> Optional[str]:
 
 
 def _resolve_template_for_render(
-    template: Optional[str], *, topic: str = ""
-) -> Optional[str]:
+    template: str | None, *, topic: str = ""
+) -> str | None:
     """把 ``template``(大类名 / .pptx 路径 / 库内 stem)解析成具体 .pptx 路径。
 
     大类名 → 预览图视觉选一套;否则按路径/stem 解析。从不抛异常。
@@ -3868,7 +3869,7 @@ def _clear_design_body_slots(info: dict[str, Any], *, keep: Sequence[Any] = ()) 
 
 def _best_design_content_page(
     pages: Sequence[dict[str, Any]], used: set[int], wanted: int,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     candidates = [page for page in pages if page["index"] not in used]
     if not candidates:
         return None
@@ -3883,7 +3884,7 @@ def _best_design_content_page(
     )
 
 
-def _first_unused_page(pages: Sequence[dict[str, Any]], used: set[int]) -> Optional[dict[str, Any]]:
+def _first_unused_page(pages: Sequence[dict[str, Any]], used: set[int]) -> dict[str, Any] | None:
     for page in pages:
         if page["index"] not in used:
             return page
@@ -3929,7 +3930,7 @@ def _select_design_page(
     section_pages: Sequence[dict[str, Any]],
     content_pages: Sequence[dict[str, Any]],
     used: set[int],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     if so.layout == "title" and 0 not in used:
         return pages[0]
 
@@ -4191,6 +4192,7 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         new_bytes = src.read_bytes()
         try:
             from io import BytesIO
+
             from PIL import Image  # type: ignore
 
             with Image.open(src) as im:
@@ -4436,8 +4438,8 @@ def _drop_slide_id(prs, sld_id) -> None:
 
 def _render_with_design_pages(
     slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
-    banned_pages: Optional[dict[int, set[int]]] = None,
-) -> Optional[dict[str, Any]]:
+    banned_pages: dict[int, set[int]] | None = None,
+) -> dict[str, Any] | None:
     """banned_pages: {outline 页序 i: 禁用的设计页 index 集合} —— 视觉评审
     change_page 动作把上一轮该页用过的设计页 ban 掉,本轮换一张重填。"""
     try:
@@ -4528,7 +4530,7 @@ def _render_with_design_pages(
 
 def _render_with_template(
     slides: list[SlideOutline], template_path: str, *, title: str, author: str, out_path: Path,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     try:
         prs = _Presentation(template_path)
 
@@ -4642,8 +4644,8 @@ def ppt_create(
     theme: str = "minimal",
     title: str = "",
     author: str = "Simple Harness",
-    output_path: Optional[str] = None,
-    template: Optional[str] = None,
+    output_path: str | None = None,
+    template: str | None = None,
     dry_run: bool = False,
     skip_image_gen: bool = False,
     force_fromscratch: bool = False,
@@ -5176,7 +5178,7 @@ def _visual_review_loop_template(
         log.warning("template visual review loop failed: %s", str(exc)[:200])
 
 
-def _resolve_output_path(p: Optional[str]) -> Path:
+def _resolve_output_path(p: str | None) -> Path:
     if p:
         path = Path(p).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)

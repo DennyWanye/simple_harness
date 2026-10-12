@@ -52,8 +52,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, CRITERIA, GOAL, root_duty, root_task, run_until, seeded
-
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.evidence_state import Validity
 from agent_orchestrator.contracts.htn import (
@@ -127,6 +125,7 @@ from agent_orchestrator.verification.acceptance_rules import (
     ExecutionPosture,
     IndependenceFacts,
 )
+from h1i_seed import CONFIG, CRITERIA, GOAL, root_duty, root_task, run_until, seeded
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64

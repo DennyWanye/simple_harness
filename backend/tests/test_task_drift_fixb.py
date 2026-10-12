@@ -4,11 +4,9 @@ import inspect
 import time
 
 import pytest
-
 from agent.agent_loop import _inject_loop_user_request, _tool_declares_user_request
 from deskpet.tools import research_tools as r
 from llm.types import ToolCall
-
 
 ORIGINAL_REQUEST = "Please deeply research Rust Tokio architecture and competitors"
 

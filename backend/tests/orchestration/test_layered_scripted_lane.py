@@ -13,6 +13,8 @@ import asyncio
 import json
 
 import pytest
+from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
+from agent_orchestrator.storage.assurance_store import AssuranceStore
 
 from ._layered_lane import (
     REVIEWER,
@@ -29,8 +31,6 @@ from ._layered_lane import (
     run_until_settled,
     worker_reply,
 )
-from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
-from agent_orchestrator.storage.assurance_store import AssuranceStore
 
 
 @pytest.fixture(autouse=True)

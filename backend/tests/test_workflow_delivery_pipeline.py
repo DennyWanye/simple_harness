@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.workflows.errors import InvalidStatePatch
 from deskpet.workflows.native import NativeWorkflowExecutable
 

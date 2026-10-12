@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.testing import PROTOCOL_VERSION
 
 # Plugin is auto-loaded via entry point - don't load it again

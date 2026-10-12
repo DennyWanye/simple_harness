@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Iterable
 
 
 class CatalogReconcilingError(RuntimeError):
@@ -40,7 +40,7 @@ class CatalogGateKey:
                 _required(getattr(self, field_name), field_name),
             )
 
-    def conflicts(self, other: "CatalogGateKey") -> bool:
+    def conflicts(self, other: CatalogGateKey) -> bool:
         return (
             self.owner_key == other.owner_key
             and self.scope == other.scope

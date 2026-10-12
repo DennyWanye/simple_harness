@@ -30,10 +30,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     ENVELOPE_FIELDS,
+    MAX_LIBRARY_READ_ENTRIES,
+    MAX_METHOD_AT_FAULT_CHARS,
     MAX_PD_ALTERNATIVES,
     MAX_PD_ARGUMENTS,
     MAX_PD_ASSUMPTIONS,
@@ -46,8 +47,6 @@ from agent_orchestrator.contracts.planning_decisions import (
     MAX_PD_REPLAN_TRIGGERS,
     MAX_PD_UNCERTAINTIES,
     MAX_PD_WAIT_REFS,
-    MAX_LIBRARY_READ_ENTRIES,
-    MAX_METHOD_AT_FAULT_CHARS,
     MAX_PLANNING_REF_ID,
     MAX_SUBJECT_KEY_CHARS,
     MIN_PD_EVIDENCE_QUESTIONS,

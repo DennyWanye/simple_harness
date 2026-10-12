@@ -66,7 +66,7 @@ def _evidence(
     invocations: list[dict],
     progress: list[dict] | None = None,
     foreground_runs: list[str] | None = None,
-) -> "a6.Evidence":
+) -> a6.Evidence:
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
     _make_db(
@@ -194,7 +194,7 @@ def _split(pairs) -> tuple[list[dict], list[dict]]:
 # --------------------------------------------------------------- A6-3
 
 
-def _a6_3(ev) -> "a6.Item":
+def _a6_3(ev) -> a6.Item:
     return a6.item_a6_3(ev, ev.budget_profile())
 
 
@@ -377,7 +377,7 @@ def test_a6_3_judges_the_foreground_lane_and_reports_the_others_separately(tmp_p
 # --------------------------------------------------------------- A6-12
 
 
-def _a6_12(ev) -> "a6.Item":
+def _a6_12(ev) -> a6.Item:
     fingerprints = {inv.request_id: inv.request_fingerprint for inv in ev.invocations()}
     return a6.item_a6_12(ev, lambda request_id, _text: fingerprints[request_id])
 

@@ -13,9 +13,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from .effect_plan import (
     BrokeredEffectPlanRecord,

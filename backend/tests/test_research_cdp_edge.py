@@ -8,9 +8,8 @@ import os
 import warnings
 
 import pytest
-from pytest import PytestUnknownMarkWarning
-
 from deskpet.tools import research_cdp_edge as cdp
+from pytest import PytestUnknownMarkWarning
 
 warnings.filterwarnings(
     "ignore",
@@ -62,7 +61,7 @@ async def test_cdp_edge_render_eval_timeout_returns_none(monkeypatch):
     _reset_state(monkeypatch)
 
     async def _slow_render(url, timeout):
-        raise _asyncio.TimeoutError()   # 模拟渲染中超时
+        raise TimeoutError()   # 模拟渲染中超时
 
     monkeypatch.setattr(cdp, "_render_once", _slow_render)
     monkeypatch.setattr(cdp, "_browser_running", lambda: True)   # 浏览器仍活

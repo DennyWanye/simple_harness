@@ -15,15 +15,14 @@ import json
 import pytest
 from arp_fixture import build, standalone_profile, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import PROTOCOL, store
 from simple_harness.agents.arp.creation import MARKER_FILE, read_marker
 from simple_harness.agents.arp.errors import ArpError
-from simple_harness.agents.arp.strict import digest
-from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root
 from simple_harness.agents.arp.runtime import build_arp_runtime
+from simple_harness.agents.arp.strict import digest
+from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.execution.uow import RunState
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")

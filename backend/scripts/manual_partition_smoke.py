@@ -56,7 +56,7 @@ async def main():
         with reg._lock:
             reg._tools[name] = spec
 
-    print(f"\n[1] 注册 4 工具: 2 read (safe) + 2 write (unsafe)")
+    print("\n[1] 注册 4 工具: 2 read (safe) + 2 write (unsafe)")
 
     # 触发 partition_dispatch — 顺序: read1, write1, read2, write2
     from collections import namedtuple
@@ -67,14 +67,14 @@ async def main():
         ToolCall("read_safe_2", {"idx": "2"}, "t"),
         ToolCall("write_2", {"idx": "2"}, "t"),
     ]
-    print(f"\n[2] partition_dispatch 4 calls (order: r1, w1, r2, w2)")
+    print("\n[2] partition_dispatch 4 calls (order: r1, w1, r2, w2)")
     start = time.time()
     results = await reg.partition_dispatch(calls, session_id="smoke")
     elapsed = time.time() - start
     print(f"    elapsed: {elapsed*1000:.0f}ms (理论：纯串行 600ms / 全并发 150ms)")
 
     # 打印全部 timestamps 看真实执行顺序
-    print(f"\n[diag] 全部 timestamps（按真发生顺序）:")
+    print("\n[diag] 全部 timestamps（按真发生顺序）:")
     t0 = timestamps[0][2] if timestamps else 0
     for name, stage, ts in timestamps:
         print(f"      +{int((ts-t0)*1000):>4}ms  {name:20} {stage}")
@@ -92,7 +92,7 @@ async def main():
     read_diff = abs(read_starts[1] - read_starts[0]) * 1000
     print(f"\n[3] read 并行验证: 2 个 read 启动差 = {read_diff:.0f}ms (期望 < 50ms)")
     assert read_diff < 50, f"reads should start nearly simultaneously, got {read_diff}ms"
-    print(f"    [OK] read 真并行")
+    print("    [OK] read 真并行")
 
     # 3. 真写串行：write_2 启动 > write_1 结束
     write1_end = next(ts for (n, s, ts) in timestamps if n == "write_1" and s == "end")
@@ -100,12 +100,12 @@ async def main():
     serial_gap = (write2_start - write1_end) * 1000
     print(f"\n[4] write 串行验证: write_2 启动 - write_1 结束 = {serial_gap:.0f}ms (期望 ≥ -10ms 表示串行)")
     assert write2_start >= write1_end - 0.01, "writes should serialize, but write_2 started before write_1 ended"
-    print(f"    [OK] write 真串行（write_2 在 write_1 后启动）")
+    print("    [OK] write 真串行（write_2 在 write_1 后启动）")
 
     # 4. 总耗时合理：纯串行=600ms, 全并发=150ms, partition 应≈ read 并行(150) + write 串行(300) ≈ 300ms
     print(f"\n[5] 总耗时合理性: {elapsed*1000:.0f}ms 应在 250-500ms 之间")
     assert 200 < elapsed * 1000 < 600, f"elapsed {elapsed*1000}ms outside expected range"
-    print(f"    [OK] 总耗时符合 partition 预期（不是纯串行也不是全并发）")
+    print("    [OK] 总耗时符合 partition 预期（不是纯串行也不是全并发）")
 
     print("\n" + "=" * 70)
     print("MR-V2-5/6/7 BOOT SMOKE PASSED — G3 Partition 真端到端读并行写串行")

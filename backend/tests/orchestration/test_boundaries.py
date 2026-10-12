@@ -11,9 +11,8 @@ local tests are off, however the Planner fills in ``verification_policy``.
 from __future__ import annotations
 
 import pytest
-
-from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
 from deskpet.orchestration.settings import OrchestrationSettings
 
 from ._support import WORKSPACE_TOOLS, notes_provider, notes_request

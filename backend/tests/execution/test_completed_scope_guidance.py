@@ -4,27 +4,30 @@ Deterministic transport only; no all-visible reader, old gate harness migration,
 model-quality claim or source/terminal fabrication.
 """
 import asyncio
-from dataclasses import replace
 import json
-from pathlib import Path
 import sqlite3
+from dataclasses import replace
+from pathlib import Path
 
 import httpx
 import pytest
-from simple_harness.providers import ProviderToolCall
-
 from deskpet.execution.primary_dependencies import check_runtime_dependencies
-from deskpet.memory.human_memory_service import CreateTaskScopeRequest, MutateTaskScopeRequest, QueueTurnRequest
+from deskpet.memory.human_memory_service import (
+    CreateTaskScopeRequest,
+    MutateTaskScopeRequest,
+    QueueTurnRequest,
+)
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.effect_gate import effect_gate_public_message
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+from simple_harness.providers import ProviderToolCall
+from tests.execution.test_closure_request_guard import attempt_rows, world
+from tests.execution.test_closure_resume_sources import mutation, run
 from tests.execution.test_primary_create_new_runtime import fixture
 from tests.execution.test_primary_foreground_runtime import build
 from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
 from tests.sdk_adapters.test_product_host_ports import Registry
-from tests.execution.test_closure_request_guard import world, attempt_rows
-from tests.execution.test_closure_resume_sources import run, mutation
 
 
 def tool_results(body):

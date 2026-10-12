@@ -17,6 +17,7 @@ from ..storage.obligation_store import ObligationStore
 from ..storage.store import Store
 from .failure_classes import charges_attempt
 
+
 def _blank() -> dict[str, int]:
     return {"attempts": 0, "failed_attempts": 0, "settled_tokens": 0, "unknown_usage_attempts": 0}
 

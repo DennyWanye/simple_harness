@@ -12,40 +12,41 @@ PRD/TDD 提到的全部新模块必须可被 import 且接口签名稳定。这�
 from __future__ import annotations
 
 import inspect
+from datetime import UTC
 
 
 def test_t0_1_artifact_module_imports():
     from deskpet.tools.artifact import (  # noqa: F401
-        ToolArtifact,
         ArtifactAction,
-        sha256_file_async,
+        ToolArtifact,
         extract_artifacts_from_result,
         maybe_add_artifacts,
+        sha256_file_async,
     )
 
 
 def test_t0_2_receipt_module_imports():
     from deskpet.tools.receipt import (  # noqa: F401
         ToolReceipt,
-        hmac_sign,
-        hmac_verify,
         args_hash,
         canonical_json,
+        hmac_sign,
+        hmac_verify,
         make_receipt,
     )
 
 
 def test_t0_3_verify_gate_module_imports():
     from deskpet.agent.verify_gate import (  # noqa: F401
-        VerifyGate,
-        ClaimPattern,
+        CascadeExtractor,
         Claim,
+        ClaimPattern,
         RegexExtractor,
         SmallLLMExtractor,
-        CascadeExtractor,
-        VerifyOutcome,
         UnmatchedClaim,
         VerifierFailure,
+        VerifyGate,
+        VerifyOutcome,
     )
 
 
@@ -79,12 +80,13 @@ def test_t0_5_config_tools_dataclass_chain():
 def test_t0_6_receipt_hmac_sign_verify_roundtrip():
     """HMAC sign → verify 闭环（即使是 stub）。"""
     from datetime import datetime, timezone
-    from deskpet.tools.receipt import make_receipt, hmac_verify
+
+    from deskpet.tools.receipt import hmac_verify, make_receipt
     r = make_receipt(
         tool_name="x",
         args={"k": "v"},
-        started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 23, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 23, tzinfo=UTC),
         ok=True,
     )
     assert hmac_verify(r) is True
@@ -94,7 +96,7 @@ def test_t0_6_receipt_hmac_sign_verify_roundtrip():
 
 
 def test_t0_7_verify_gate_off_mode_passes():
-    from deskpet.agent.verify_gate import VerifyGate, RegexExtractor
+    from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
     gate = VerifyGate(extractor=RegexExtractor(patterns=[]), mode="off")
     outcome = gate.check(assistant_text="anything", ledger=None)
     assert outcome.passed is True
@@ -102,6 +104,6 @@ def test_t0_7_verify_gate_off_mode_passes():
 
 def test_t0_8_verify_gate_invalid_mode_rejected():
     import pytest
-    from deskpet.agent.verify_gate import VerifyGate, RegexExtractor
+    from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
     with pytest.raises(ValueError, match="invalid mode"):
         VerifyGate(extractor=RegexExtractor(patterns=[]), mode="bananas")

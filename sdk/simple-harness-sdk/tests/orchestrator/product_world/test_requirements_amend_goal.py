@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.product_world import product_world

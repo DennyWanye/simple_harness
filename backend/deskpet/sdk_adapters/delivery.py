@@ -229,10 +229,9 @@ class ProductDeliveryAdapter:
                 )
 
         try:
-            from simple_harness import thaw_json
-
             from agent.agent_loop import ToolCallEvent
             from llm.types import ToolCall
+            from simple_harness import thaw_json
 
             await self._presenter.present(
                 ToolCallEvent(
@@ -261,9 +260,8 @@ class ProductDeliveryAdapter:
         try:
             import json
 
-            from simple_harness import thaw_json
-
             from agent.agent_loop import ToolResultEvent
+            from simple_harness import thaw_json
 
             envelope = {
                 "outcome": result.outcome.value,

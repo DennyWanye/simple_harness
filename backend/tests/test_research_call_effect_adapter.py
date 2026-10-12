@@ -5,7 +5,6 @@ import json
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.adapters.research_runtime import (
     BoundResearchEffectContext,
     DurableResearchCallEffectAdapter,
@@ -13,8 +12,8 @@ from deskpet.workflows.adapters.research_runtime import (
     DurableResearchReadEffectAdapter,
     DurableResearchReadStagePort,
     MonotonicResearchClock,
-    ResearchEffectCancelled,
     ResearchEffectAdapterError,
+    ResearchEffectCancelled,
     WorkflowControlSignalHub,
 )
 from deskpet.workflows.contracts import NodeExecutionIdentity

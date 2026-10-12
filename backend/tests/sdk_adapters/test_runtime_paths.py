@@ -7,7 +7,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.sdk_adapters.runtime_paths import (
     ProductRuntimePathsAdapter,
     SdkCandidateIdentity,

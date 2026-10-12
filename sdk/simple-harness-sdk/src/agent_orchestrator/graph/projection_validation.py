@@ -38,6 +38,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.htn import (
     GraphStructureBudget,
     MethodInstanceId,
@@ -48,7 +49,6 @@ from ..contracts.htn import (
     resource_conflicts,
     undeclared_set_ports,
 )
-from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.models import ContractError
 from .task_network import (
     GATING_REQUIREDNESS,

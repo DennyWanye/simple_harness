@@ -75,7 +75,7 @@ class NudgeQueue:
         async with self._lock:
             return bool(self._pending.get(sid))
 
-    async def clear(self, sid: Optional[str] = None) -> None:
+    async def clear(self, sid: str | None = None) -> None:
         """Clear one sid's queue (or all sids when sid is None)."""
         async with self._lock:
             if sid is None:

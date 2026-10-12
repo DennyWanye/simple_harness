@@ -22,7 +22,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.sdk_adapters.context_partitions import (
     DEFAULT_CALIBRATION,
     WIRE_TOOL_SPEC_OVERHEAD_TOKENS,

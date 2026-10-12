@@ -33,13 +33,14 @@ for _extra in (_HERE, _HERE / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import enabled_world  # noqa: E402
-from test_nested_compound_composition import _method  # noqa: E402
-
-from agent_orchestrator.orchestrator.completion_status import read_occurrence_completion  # noqa: E402
+from agent_orchestrator.orchestrator.completion_status import (
+    read_occurrence_completion,  # noqa: E402
+)
 from agent_orchestrator.orchestrator.completion_support import current_child_supports  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore  # noqa: E402
+from agent_orchestrator.storage.operation_completion_store import (
+    OperationCompletionStore,  # noqa: E402
+)
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
@@ -47,6 +48,8 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     decision,
     planner_reply,
 )
+from production_fixture import enabled_world  # noqa: E402
+from test_nested_compound_composition import _method  # noqa: E402
 
 CRITERIA = ("file:facts.md", "file:NOTES.md")
 SUB = {"goal": {"op": "constant", "value": "写出 facts.md"}}

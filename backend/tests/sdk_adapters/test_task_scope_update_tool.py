@@ -17,10 +17,6 @@ import json
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId, EffectId
-from simple_harness.tools import ToolContext, ToolResult
-from simple_harness.tools.contracts import CancellationToken
-
 from deskpet.execution.evidence_ingress import ObjectiveEventSpec, ToolInvocationFact
 from deskpet.execution.semantic_closure import dirty_state
 from deskpet.sdk_adapters.task_scope_mutation import (
@@ -28,6 +24,9 @@ from deskpet.sdk_adapters.task_scope_mutation import (
     derive_plan_id,
 )
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+from simple_harness import CallId, EffectId
+from simple_harness.tools import ToolContext, ToolResult
+from simple_harness.tools.contracts import CancellationToken
 from tests.sdk_adapters import s5b_effect_gate_harness as h
 
 

@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 from deskpet.agent.team.team_store import TeamStore

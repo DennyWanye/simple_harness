@@ -15,11 +15,10 @@ HTN 补齐阶段 A′：任务经产品组装（门面建任务，根与执行�
 from __future__ import annotations
 
 import pytest
-from p33_world import opened, request
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.governance.domains import CODE_DOMAIN, DRONE_SIM_DOMAIN
 from agent_orchestrator.orchestrator.commit_service import MissionSpec
+from p33_world import opened, request
 
 # ---------------------------------------------------------------- 冻结
 

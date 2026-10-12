@@ -28,15 +28,18 @@ from contextlib import asynccontextmanager
 from typing import Any, NamedTuple
 
 import pytest
-from h1i_seed import CONFIG, run_until
-
 from agent_orchestrator.contracts import MissionStatus, MissionStopReason
 from agent_orchestrator.contracts.htn import TaskForm
 from agent_orchestrator.orchestrator.planning_repair_requests import REQUESTED, collect_triggers
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, planner_reply
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+)
+from h1i_seed import CONFIG, run_until
 
 
 @pytest.fixture(autouse=True)

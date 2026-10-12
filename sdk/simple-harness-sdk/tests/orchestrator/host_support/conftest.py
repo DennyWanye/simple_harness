@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.orchestrator import event_handler as event_handler_module
 from agent_orchestrator.runtime import tool_gateway
 from agent_orchestrator.verification import deterministic_checks

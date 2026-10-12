@@ -20,11 +20,12 @@ import re
 import shutil
 import sys
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Protocol
 
 from deskpet.companion.build_admission import (
     CapabilityBuildPublishPolicy,
@@ -158,7 +159,7 @@ class CapabilityBuildCandidateAdmissionV1:
         child_run_id: str,
         child_start_hash: str,
         expected_entry_kinds: Sequence[Literal["skill", "workflow"]],
-    ) -> "CapabilityBuildCandidateAdmissionV1":
+    ) -> CapabilityBuildCandidateAdmissionV1:
         if not isinstance(permit, GrowthCandidateBuildPermitV1):
             raise CapabilityBuildError(
                 "growth_build_permit_required",
@@ -179,8 +180,8 @@ class CapabilityBuildOutputPort(Protocol):
 
     async def handoff_candidate(
         self,
-        evidence: "CapabilityBuildEvidence",
-        launch: "CapabilityBuildLaunch",
+        evidence: CapabilityBuildEvidence,
+        launch: CapabilityBuildLaunch,
         context: Any,
         *,
         transaction: Any,
@@ -285,7 +286,7 @@ class CapabilityBuildSearchEvidence:
     @classmethod
     def from_dict(
         cls, value: Mapping[str, object]
-    ) -> "CapabilityBuildSearchEvidence":
+    ) -> CapabilityBuildSearchEvidence:
         stamp = value.get("catalog_stamp")
         if not isinstance(stamp, Mapping):
             raise CapabilityBuildError(
@@ -427,7 +428,7 @@ class CapabilityBuildLineage:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "CapabilityBuildLineage":
+    def from_dict(cls, value: Mapping[str, object]) -> CapabilityBuildLineage:
         args = value.get("original_args")
         if not isinstance(args, Mapping):
             raise CapabilityBuildError(
@@ -627,7 +628,7 @@ class CapabilityBuildLaunch:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "CapabilityBuildLaunch":
+    def from_dict(cls, value: Mapping[str, object]) -> CapabilityBuildLaunch:
         lineage = value.get("lineage")
         search = value.get("search_evidence")
         if not isinstance(lineage, Mapping) or not isinstance(search, Mapping):
@@ -863,7 +864,7 @@ class CapabilityBuildCompletion:
         )
 
     @classmethod
-    def from_value(cls, value: object) -> "CapabilityBuildCompletion":
+    def from_value(cls, value: object) -> CapabilityBuildCompletion:
         payload: object = value
         if isinstance(payload, str):
             try:
@@ -1070,7 +1071,7 @@ class CapabilityBuilderHost:
 
         self.candidate_output_port: CapabilityBuildOutputPort = (
             CandidateDraftReceiptBuildOutput(
-                created_at=lambda: datetime.now(timezone.utc).isoformat()
+                created_at=lambda: datetime.now(UTC).isoformat()
             )
         )
 
@@ -1121,7 +1122,7 @@ class CapabilityBuilderHost:
         launch: CapabilityBuildLaunch,
         *,
         context: Any = None,
-    ) -> "CandidateBuilderTerminalCommitExtension":
+    ) -> CandidateBuilderTerminalCommitExtension:
         if (
             launch.publish_policy
             is not CapabilityBuildPublishPolicy.CANDIDATE_ONLY

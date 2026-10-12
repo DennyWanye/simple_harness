@@ -9,11 +9,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, Iterable, Mapping, TypeAlias
+from typing import Any, ClassVar, TypeAlias
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
-
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -28,7 +28,7 @@ class ResearchSpecValidationError(ValueError):
         super().__init__(f"{code} at {path}: {message}")
 
 
-def _fail(code: str, path: str, message: str) -> "NoReturn":
+def _fail(code: str, path: str, message: str) -> NoReturn:
     raise ResearchSpecValidationError(code, path, message)
 
 
@@ -239,7 +239,7 @@ class RouteDecisionV1:
         return copy.deepcopy(raw)
 
     @classmethod
-    def create(cls, **values: JsonValue) -> "RouteDecisionV1":
+    def create(cls, **values: JsonValue) -> RouteDecisionV1:
         payload = copy.deepcopy(values)
         payload["schema_version"] = 1
         payload.pop("route_id", None)
@@ -258,7 +258,7 @@ class RouteDecisionV1:
         return cls(payload)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, JsonValue]) -> "RouteDecisionV1":
+    def from_json(cls, value: Mapping[str, JsonValue]) -> RouteDecisionV1:
         return cls(value)
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -772,11 +772,11 @@ class ResearchSpecV1:
         object.__setattr__(self, "_value", copy.deepcopy(raw))
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "ResearchSpecV1":
+    def from_json(cls, value: Mapping[str, Any]) -> ResearchSpecV1:
         return cls(copy.deepcopy(dict(value)))
 
     @classmethod
-    def create(cls, **values: JsonValue) -> "ResearchSpecV1":
+    def create(cls, **values: JsonValue) -> ResearchSpecV1:
         payload = copy.deepcopy(values)
         payload["schema_version"] = 1
         payload.pop("spec_id", None)

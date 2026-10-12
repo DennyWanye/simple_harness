@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from simple_harness.contracts import canonical_json
 from simple_harness.agents import AgentConfig
+from simple_harness.contracts import canonical_json
 
 from ..contracts.models import sha256_hex
 from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_TASK

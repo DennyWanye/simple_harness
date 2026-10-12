@@ -42,6 +42,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
+    LayeredScriptedProvider,
+    retry_same_method,
+)
 from code_domain_world import (  # noqa: E402
     c1_method,
     code_worker,
@@ -50,12 +55,6 @@ from code_domain_world import (  # noqa: E402
     proposing_planner,
 )
 from h1i_seed import run_until  # noqa: E402
-
-from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
-from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
-    LayeredScriptedProvider,
-    retry_same_method,
-)
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "htn" / "c3_verify_workspace"
 WINDOW = "stats/window.py"

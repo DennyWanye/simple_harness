@@ -30,18 +30,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
 
-from htn_world import (  # noqa: E402
-    BUDGET,
-    DOMAIN_ROOT,
-    Env,
-    add_domain,
-    ground_draft,
-    ref,
-    root_network,
-    seed_env,
-    task_binding,
-)
-
 from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     MethodRegistryStatus,
@@ -84,6 +72,17 @@ from agent_orchestrator.planning.htn.validation import (  # noqa: E402
     UnsupportedFeature,
     to_hddl,
     unsupported_features,
+)
+from htn_world import (  # noqa: E402
+    BUDGET,
+    DOMAIN_ROOT,
+    Env,
+    add_domain,
+    ground_draft,
+    ref,
+    root_network,
+    seed_env,
+    task_binding,
 )
 
 PILOT_DOMAINS = ("appworld", "code")

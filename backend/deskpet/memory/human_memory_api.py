@@ -201,8 +201,8 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             request_id=request_id, **request
         )
     if operation in {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}:
-        from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
         from deskpet.memory.primary_read_model import PrimaryReadError
+        from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
         fields = ({"primary_ref", "cursor"} if operation == "primary.bindings.pending" else
                   {"primary_ref", "challenge_ref"} if operation == "primary.bindings.status" else IDENTITY_FIELDS | {"decision"})
         required = {"primary_ref"} if operation == "primary.bindings.pending" else fields

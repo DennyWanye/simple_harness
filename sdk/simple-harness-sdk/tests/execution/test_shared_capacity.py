@@ -12,7 +12,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from simple_harness.execution.shared_capacity import (
     CapacityConfigurationError,
     CapacityKeyError,
@@ -224,7 +223,6 @@ def test_reused_pid_does_not_inherit_old_process_capacity(tmp_path, monkeypatch,
 @pytest.mark.parametrize("phase", ["WAITING", "RESERVED", "HANDED_OFF"])
 def test_wall_clock_adjustment_does_not_evict_live_owner(tmp_path, monkeypatch, phase):
     import psutil
-
     from simple_harness.execution import shared_capacity as module
 
     ledger = CapacityLedger(tmp_path / "capacity.db", pool_id="p", max_slots=1, max_tokens=10)

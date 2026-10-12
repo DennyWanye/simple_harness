@@ -11,7 +11,7 @@ nested Host decoder must call.  Source and ACL truth are never simulated here.
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from .errors import ArpError
 from .strict import digest

@@ -14,7 +14,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from agent_orchestrator.runtime.tool_gateway import TOOL_SCHEMAS
 from simple_harness.contracts import RequestId
 from simple_harness.contracts.messages import Message, MessageRole

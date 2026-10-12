@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import (
     AgentLoop,
     AssistantMessageEvent,
@@ -26,10 +25,9 @@ from agent.agent_loop import (
     ToolResultEvent,
     _invalidate_stale_mcp_catalog,
 )
-from deskpet.execution.provider_invocations import ProviderDispatchUnknownError
 from deskpet.execution.contracts import IdempotencyConflict
+from deskpet.execution.provider_invocations import ProviderDispatchUnknownError
 from llm.errors import LLMProviderError
-
 
 # ─────────────────────── stub providers / tools ───────────────────────
 

@@ -8,11 +8,11 @@ from __future__ import annotations
 import copy
 import json
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from ....tools import ppt_outline_store, ppt_tools
-from ...control import workflow_interrupt
 from ...contracts import (
     ChannelSpec,
     JsonType,
@@ -24,6 +24,7 @@ from ...contracts import (
     WorkflowState,
     validate_json_value,
 )
+from ...control import workflow_interrupt
 from ...definition import (
     END_NODE,
     CompiledWorkflow,
@@ -35,7 +36,6 @@ from ...definition import (
 )
 from .. import ppt_pro_nodes as nodes
 from . import deep_research as research_graph
-
 
 WORKFLOW_NAME = "ppt_pro"
 WORKFLOW_VERSION = "v1"

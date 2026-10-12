@@ -6,7 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
+from deskpet.tools.capabilities import (
+    ToolCapabilityScopeStore,
+    ToolEligibilityContext,
+    ToolExecutionContext,
+)
+from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.adapters.code_runtime import (
     DurableToolRuntimeState,
     ProposalPort,
@@ -15,6 +20,7 @@ from deskpet.workflows.adapters.code_runtime import (
     derive_effect_id,
     workflow_session_ref,
 )
+from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.effects import (
     NormalizedToolOutcome,
     PreparedTarget,
@@ -22,7 +28,6 @@ from deskpet.workflows.effects import (
     TargetMode,
 )
 from deskpet.workflows.output_contract import TaskOutputContractV1
-from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.proposal_state import (
     ConvergenceStateV1,
     GateConfigV1,
@@ -30,13 +35,6 @@ from deskpet.workflows.proposal_state import (
     ProposalStateV1,
 )
 from llm.types import ChatResponse, ChatUsage, ToolCall
-from deskpet.tools.capabilities import (
-    ToolCapabilityScopeStore,
-    ToolEligibilityContext,
-    ToolExecutionContext,
-)
-from deskpet.tools.registry import ToolRegistry
-
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 MAIN_PATH = BACKEND_ROOT / "main.py"

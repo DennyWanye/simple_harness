@@ -24,7 +24,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
-
 from agent_orchestrator.testing.scripted_replies import review_input  # noqa: E402
 
 

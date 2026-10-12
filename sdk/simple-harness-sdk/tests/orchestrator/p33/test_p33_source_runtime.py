@@ -14,12 +14,11 @@ HTN 补齐阶段 A′：前三条在产品同形世界里跑（产品部署组�
 import asyncio
 
 import pytest
-from p33_world import opened, request
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.governance.domains import CODE_DOMAIN
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from p33_world import opened, request
 
 PUBLISHING = DeploymentPolicy(enabled_connectors=("file_publish",))
 

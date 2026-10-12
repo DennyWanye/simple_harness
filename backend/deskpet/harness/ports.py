@@ -1,10 +1,12 @@
 """Single tagged Driver event and signal contracts."""
 from __future__ import annotations
+
 import copy
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, AsyncIterator, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import (
@@ -13,9 +15,17 @@ if TYPE_CHECKING:
         RunStartSnapshotRecord,
     )
     from deskpet.harness.contracts import PreparedRunContextV1
-from deskpet.execution.contracts import AttachmentPolicy, thaw_json
-from deskpet.execution.contracts import OutcomeStatus, RecoveryLease, RunContext, RunCreate, RunEvent, RunEventCandidate
-from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
+from deskpet.execution.contracts import (
+    AttachmentPolicy,
+    OutcomeStatus,
+    RecoveryLease,
+    RunContext,
+    RunCreate,
+    RunEvent,
+    RunEventCandidate,
+    thaw_json,
+)
+from deskpet.execution.evidence import UNKNOWN_EVIDENCE, EvidenceSelection
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
 

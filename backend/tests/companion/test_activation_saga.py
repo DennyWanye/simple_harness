@@ -3,10 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from deskpet.companion.activation import (
-    ActivationDispatchError,
     ActivationDispatcher,
+    ActivationDispatchError,
     PreparedCapabilityMutation,
     PreparedMutationInstance,
     RuntimeInstanceStartOutcome,

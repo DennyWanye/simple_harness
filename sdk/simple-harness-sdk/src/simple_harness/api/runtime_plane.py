@@ -18,12 +18,14 @@ tenant or a path.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.codec import check, host_verbs
-from simple_harness.agents.arp.errors import ArpError, entry as error_entry
+from simple_harness.agents.arp.errors import ArpError
+from simple_harness.agents.arp.errors import entry as error_entry
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import TrustedCaller
 from simple_harness.agents.arp.strict import canonical, digest, parse_strict, plain

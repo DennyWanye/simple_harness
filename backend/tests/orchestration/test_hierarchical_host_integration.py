@@ -1,9 +1,9 @@
 """Final Host integration: actual creation/recovery and transport identity."""
 import pytest
-
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
+
 from ._support import notes_provider, notes_request
 
 

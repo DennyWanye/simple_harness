@@ -1,17 +1,24 @@
 """Event-triggered durable reconciliation without a resident supervisor."""
 from __future__ import annotations
+
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+
 from deskpet.execution.contracts import (
-    IdempotencyConflict, RecoveryLease, RunRef, RunStatus,
-    TERMINAL_RUN_STATUSES)
+    TERMINAL_RUN_STATUSES,
+    IdempotencyConflict,
+    RecoveryLease,
+    RunRef,
+    RunStatus,
+)
 from deskpet.execution.uow_ports import ReconciliationUnitOfWork
 from deskpet.harness.child_runs import ChildRunCoordinator
 from deskpet.harness.kernel import RunHandle, RunKernel
 from deskpet.harness.ports import ChildAcceptedSignal, ChildTerminalSignal, DriverSignal
 from deskpet.harness.projector import ExecutionDeliveryDispatcher
 from deskpet.harness.tool_executor import EffectBatchExecutor
+
 logger = logging.getLogger(__name__)
 class HarnessReconciler:
     """Run bounded recovery work only when startup or a durable event asks."""

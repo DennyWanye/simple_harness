@@ -51,16 +51,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from h1i_seed import root_duty, root_task, run_until  # noqa: E402
-from root_review_world import (  # noqa: E402
-    CRITERIA,
-    GOAL,
-    FinalReviewProvider,
-    events,
-    open_repairs,
-    run_for,
-)
-
 from agent_orchestrator.contracts.evidence_state import Validity  # noqa: E402
 from agent_orchestrator.contracts.resolution import (  # noqa: E402
     CriterionVerdict,
@@ -68,7 +58,11 @@ from agent_orchestrator.contracts.resolution import (  # noqa: E402
     ReviewPurpose,
     ReviewVerdict,
 )
-from agent_orchestrator.contracts.semantic_base import Provenance, TypedRef, TypedRefKind  # noqa: E402
+from agent_orchestrator.contracts.semantic_base import (  # noqa: E402
+    Provenance,
+    TypedRef,
+    TypedRefKind,
+)
 from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests  # noqa: E402
 from agent_orchestrator.orchestrator.root_review import (  # noqa: E402
     DEFAULT_MAX_CUTS_PER_REVISION,
@@ -81,6 +75,15 @@ from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import retry_same_method  # noqa: E402
+from h1i_seed import root_duty, root_task, run_until  # noqa: E402
+from root_review_world import (  # noqa: E402
+    CRITERIA,
+    GOAL,
+    FinalReviewProvider,
+    events,
+    open_repairs,
+    run_for,
+)
 
 DONE = {"COMPLETED", "FAILED", "CANCELLED"}
 

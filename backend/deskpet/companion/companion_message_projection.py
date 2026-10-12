@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import aiosqlite
 
@@ -181,7 +182,7 @@ class OwnerMemoryReadScopeV1:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "OwnerMemoryReadScopeV1":
+    def from_mapping(cls, value: Mapping[str, Any]) -> OwnerMemoryReadScopeV1:
         return cls(
             profile_id=str(value["profile_id"]),
             profile_generation=int(value["profile_generation"]),

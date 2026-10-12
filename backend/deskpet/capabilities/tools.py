@@ -12,13 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
-from deskpet.types.task_grants import ResourceSelector
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.types.task_grants import ResourceSelector
 
 from .contracts import CapabilityDescriptor, CapabilityScope, CapabilityScopeKind
 from .hub import CapabilityHub
@@ -76,7 +77,7 @@ def _idempotency_key(
 
 
 def _control_resource_resolver(
-    service: "CapabilityToolService",
+    service: CapabilityToolService,
     action: str,
 ):
     """Resolve lifecycle authority from trusted layout facts and exact args."""
@@ -241,7 +242,7 @@ class CapabilityToolService:
             (
                 f"capability-refresh|{operation_id}|{context.root_run_id}|"
                 f"{context.command_id}|{context.effect_id}"
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()
 
     async def _record_operation_receipt(
@@ -271,7 +272,7 @@ class CapabilityToolService:
         command_id = context.command_id or (
             "command:"
             + hashlib.sha256(
-                f"{context.run_id}|{context.call_id}".encode("utf-8")
+                f"{context.run_id}|{context.call_id}".encode()
             ).hexdigest()
         )
         receipt = CapabilityOperationReceipt(

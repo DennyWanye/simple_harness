@@ -12,7 +12,8 @@ from collections.abc import Mapping
 import aiosqlite
 
 from deskpet.execution.primary_history import transcript_matches
-from deskpet.execution.primary_tool_calls import GROUP_KEY as TOOL_CALLS_KEY, read_assistant_tool_calls_tx
+from deskpet.execution.primary_tool_calls import GROUP_KEY as TOOL_CALLS_KEY
+from deskpet.execution.primary_tool_calls import read_assistant_tool_calls_tx
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -172,8 +173,8 @@ def project_history_group(group, *, run_id):
 
 
 async def _source_group(db, stack, run, evidence_id, envelope_hash):
-    from deskpet.memory.primary_visibility import read_evidence_pair
     from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
+    from deskpet.memory.primary_visibility import read_evidence_pair
 
     envelope, _ = await read_evidence_pair(db=db, subject=run["subject"],
         primary_ref=run["primary_conversation_id"], evidence_id=evidence_id)
@@ -317,10 +318,11 @@ class PrimaryContextPageReader:
         self.path, self.stack_getter, self.policy_factory = db_path, stack_getter, policy_factory
 
     async def __call__(self, arguments):
-        from deskpet.sdk_adapters.tools import active_product_tool_context
-        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
-        from deskpet.execution.primary_dependencies import dependencies
         from simple_harness import thaw_json
+
+        from deskpet.execution.primary_dependencies import dependencies
+        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+        from deskpet.sdk_adapters.tools import active_product_tool_context
 
         context = active_product_tool_context()
         if context is None or context.effect_id is None:
@@ -343,7 +345,8 @@ class PrimaryContextPageReader:
             if len(rows) != 1:
                 raise PrimaryContextPageUnavailable("primary_page_host_run_missing")
             run = rows[0]
-            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX, admitted_current_page
+            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+            from deskpet.execution.current_tool_pages import admitted_current_page
             if arguments["reference_id"].startswith(CURRENT_PREFIX):
                 result = await admitted_current_page(db=db, stack=stack, run=run,
                     sdk_run_id=sdk_run_id, page_effect=effect, arguments=arguments)

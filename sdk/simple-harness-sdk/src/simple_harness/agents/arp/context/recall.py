@@ -27,8 +27,9 @@ between pages resumes from the checkpoint (same key, same query, same cursor).
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from .. import embedding_call, store
 from ..codec import check

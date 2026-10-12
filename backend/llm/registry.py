@@ -27,6 +27,7 @@ from typing import Any, Optional
 
 from agent.context_report import auto_context_attempt_call
 from deskpet.execution.dispatch import current_dispatch_handoff
+
 from llm.anthropic_adapter import AnthropicAdapter
 from llm.base import BaseLLMAdapter
 from llm.budget import DailyBudget
@@ -51,7 +52,7 @@ _ADAPTERS: dict[str, type[BaseLLMAdapter]] = {
 }
 
 
-def _parse_endpoint(endpoint: str) -> tuple[str, Optional[str]]:
+def _parse_endpoint(endpoint: str) -> tuple[str, str | None]:
     """Parse 'provider:model' into (provider, model). Model is optional."""
     if ":" in endpoint:
         provider, model = endpoint.split(":", 1)
@@ -68,10 +69,10 @@ class LLMRegistry:
 
     def __init__(
         self,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         *,
-        adapters: Optional[dict[str, BaseLLMAdapter]] = None,
-        budget: Optional[DailyBudget] = None,
+        adapters: dict[str, BaseLLMAdapter] | None = None,
+        budget: DailyBudget | None = None,
     ) -> None:
         """Construct the registry.
 
@@ -166,11 +167,11 @@ class LLMRegistry:
     async def chat_with_fallback(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
-        max_retries_per_provider: Optional[int] = None,
-        backoff_base: Optional[float] = None,
+        max_retries_per_provider: int | None = None,
+        backoff_base: float | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Call LLMs in fallback order; enforce budget cap.
@@ -212,7 +213,7 @@ class LLMRegistry:
 
             use_model = model or endpoint_model  # explicit `model` overrides endpoint
 
-            last_exc: Optional[Exception] = None
+            last_exc: Exception | None = None
             for attempt in range(1, max_retries + 1):
                 try:
                     response = await auto_context_attempt_call(

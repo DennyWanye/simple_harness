@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-
 from agent.agent_loop import (
     AgentLoop,
     ErrorEvent,
@@ -12,8 +11,13 @@ from agent.agent_loop import (
     _planned_generation_reserve,
 )
 from deskpet.agent.assembler.bundle import PreparedContext
-from llm.types import ChatResponse, ChatUsage, ToolCall
-
+from deskpet.agent.context_budget import prepare_openai_tool_payload
+from deskpet.agent.context_snapshot_store import (
+    ContextSnapshotHandle,
+    SnapshotCommitCancelled,
+    SnapshotConflictError,
+    SnapshotWriteReceipt,
+)
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
     ToolCapabilityBridgeService,
@@ -25,15 +29,9 @@ from deskpet.tools.capabilities import (
     reset_tool_execution_context,
     set_tool_execution_context,
 )
-from deskpet.agent.context_budget import prepare_openai_tool_payload
-from deskpet.agent.context_snapshot_store import (
-    ContextSnapshotHandle,
-    SnapshotCommitCancelled,
-    SnapshotConflictError,
-    SnapshotWriteReceipt,
-)
 from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.tool_search import register_capability_bridge_tools
+from llm.types import ChatResponse, ChatUsage, ToolCall
 
 
 def test_activation_replan_reuses_prepared_generation_reserve() -> None:

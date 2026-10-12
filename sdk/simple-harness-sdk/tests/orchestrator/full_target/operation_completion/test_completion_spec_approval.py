@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.operation_completion import OperationCompletionApi
 from agent_orchestrator.contracts.operation_completion import (
     OccurrenceCompletionScopeV1,

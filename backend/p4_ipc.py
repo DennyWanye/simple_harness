@@ -23,9 +23,10 @@ as ``{"type": "error", "payload": {"message": "..."}}``.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -488,9 +489,10 @@ def _provider_model_ids(service_context: Any) -> list[str]:
     # used by the product hooks so the settings UI can select a model added
     # after boot without changing production registry semantics.
     try:
-        from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
         import json as _json
         import urllib.request as _urlrequest
+
+        from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
 
         hooks = ContextOSE2EHooks.from_env()
         if hooks is not None and hooks.provider_url:
@@ -610,7 +612,7 @@ async def _handle_context_compaction_set(
 # ---------------------------------------------------------------------------
 # Service lookup helpers
 # ---------------------------------------------------------------------------
-def _get_service(sc: Any, name: str) -> Optional[Any]:
+def _get_service(sc: Any, name: str) -> Any | None:
     """Read a registered service via getter method or attribute, tolerantly."""
     if sc is None:
         return None

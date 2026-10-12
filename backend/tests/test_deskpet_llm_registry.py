@@ -5,10 +5,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator, Optional, Union
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
 
 import pytest
-
 from llm.base import BaseLLMAdapter
 from llm.budget import DailyBudget
 from llm.errors import (
@@ -19,7 +19,6 @@ from llm.errors import (
 )
 from llm.registry import LLMRegistry
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
-
 
 # ───────────────────── stub adapter ─────────────────────
 
@@ -32,7 +31,7 @@ class StubAdapter(BaseLLMAdapter):
         name: str,
         *,
         has_key: bool = True,
-        behaviors: Optional[list[Any]] = None,
+        behaviors: list[Any] | None = None,
         default_model: str = "stub-model",
     ) -> None:
         self.name = name
@@ -47,12 +46,12 @@ class StubAdapter(BaseLLMAdapter):
     async def chat(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
         stream: bool = False,
         **kwargs: Any,
-    ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+    ) -> ChatResponse | AsyncIterator[ChatChunk]:
         self.calls.append({"messages": messages, "model": model, "kwargs": kwargs})
         if not self._behaviors:
             raise LLMProviderError(f"{self.name}: no programmed behavior", provider=self.name)

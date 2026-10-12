@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import sqlite3
 
-from test_base_agent_schema_v10 import build_legacy_library
-
 import simple_harness as h
 from simple_harness.execution.sqlite import Database, schema
 from simple_harness.execution.sqlite.audit_schema import AUDIT_SCHEMA_VERSION
 from simple_harness.execution.sqlite.context_use_migration import _DESCRIPTOR_SQL
+from test_base_agent_schema_v10 import build_legacy_library
 
 
 def _preaudit_v7(path):
@@ -91,7 +90,6 @@ def test_partial_audit_schema_is_still_refused(tmp_path):
     connection.commit()
     connection.close()
     import pytest
-
     from simple_harness.execution.sqlite.database import ExecutionSchemaIncompatible
 
     with pytest.raises(ExecutionSchemaIncompatible):

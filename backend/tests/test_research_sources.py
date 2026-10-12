@@ -9,7 +9,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from deskpet.tools import research_sources as rs
 
 _FIXTURES = Path(__file__).parent / "fixtures"

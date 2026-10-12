@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from deskpet.tools import research_tools as r
 from deskpet.tools.research_tools import Citation, ResearchReport
 

@@ -15,10 +15,8 @@ import json
 import re
 from pathlib import Path
 
-import pytest
-from fixtures_provider import RoleScriptedProvider
-
 import agent_orchestrator.orchestrator.event_handler as event_handler
+import pytest
 from agent_orchestrator.__main__ import main
 from agent_orchestrator.api.policies import PolicyApi, PolicyRequestError
 from agent_orchestrator.governance.permissions import Principal
@@ -35,6 +33,7 @@ from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.storage.store import Store
+from fixtures_provider import RoleScriptedProvider
 
 
 def _library(tmp_path, **config):

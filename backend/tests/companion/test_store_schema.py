@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-
 from deskpet.companion.schema import (
     COMPANION_SCHEMA_VERSION,
     CONTROL_PLANE_TABLES,

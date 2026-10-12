@@ -30,8 +30,6 @@ for _extra in (_FULL, _FULL / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
-
 from agent_orchestrator.contracts import TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.models import sha256_hex  # noqa: E402
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore  # noqa: E402
@@ -42,6 +40,7 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     planner_reply,
     review_input,
 )
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

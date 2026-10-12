@@ -21,7 +21,6 @@ never called and a test file whose import writes a marker leaves no marker.
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import STEP2_IMPLEMENTED_LAYERS
 from agent_orchestrator.governance.policies import DeploymentPolicy, deployed_layers
 

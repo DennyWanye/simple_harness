@@ -8,9 +8,12 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, review_input, reviewer_reply
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    review_input,
+    reviewer_reply,
+)
 
 
 @pytest.fixture(autouse=True)

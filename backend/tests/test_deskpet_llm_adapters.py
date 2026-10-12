@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
@@ -26,7 +25,6 @@ from llm.anthropic_adapter import AnthropicAdapter
 from llm.errors import LLMProviderError
 from llm.gemini_adapter import GeminiAdapter
 from llm.openai_adapter import OpenAIAdapter
-
 
 # ───────────────────── Anthropic ─────────────────────
 

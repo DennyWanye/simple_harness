@@ -14,7 +14,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     TruthValue,
@@ -27,9 +26,13 @@ from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.htn_store import HtnStore
-from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.fixtures import package_of
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, decision, planner_reply
+from agent_orchestrator.testing.product_world import product_world
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
+)
 from test_operation import PUBLISH, TARGET, _confirm_completion
 
 

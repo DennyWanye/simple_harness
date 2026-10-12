@@ -42,7 +42,7 @@ class ConvergenceController:
         *,
         principal_resolved: bool,
         unverified_claims: int,
-        gate_summary: Optional[dict] = None,
+        gate_summary: dict | None = None,
     ) -> ConvergenceVerdict:
         """量化收敛判据（胸中有数）：主要矛盾解 + 无未对账声明 + 资源未触顶。"""
         summary = gate_summary or (self._gate.summary() if self._gate is not None else {})

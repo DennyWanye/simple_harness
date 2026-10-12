@@ -9,10 +9,10 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.htn import (
     EvidenceRef,
     MethodRef,
+    PlanProposal,
     ReadItem,
     ReadItemKind,
     RunningWorkPolicy,
@@ -42,7 +42,6 @@ from agent_orchestrator.planning.decision_adapter import (
     adapt_admitted_decision,
 )
 from agent_orchestrator.planning.decision_admission import AdmittedPlanningDecision
-from agent_orchestrator.contracts.htn import PlanProposal
 from simple_harness.contracts import canonical_json
 
 HASH_A = "a" * 64

@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, date, datetime, timedelta, timezone
+from typing import Any
 from urllib.parse import urlsplit
 
 from .deep_research_v4_contracts import (
@@ -15,7 +16,6 @@ from .deep_research_v4_contracts import (
     TechnologyFinding,
     TechnologyTopic,
 )
-
 
 _AI_TERMS = ("ai", "人工智能", "大模型", "llm", "基础模型", "agent", "智能体", "多模态")
 _RECENT_TERMS = (
@@ -503,7 +503,7 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
 
 
 def classify_intent(topic: str, *, as_of_date: date | None = None) -> IntentProfile:
-    as_of = as_of_date or datetime.now(timezone.utc).date()
+    as_of = as_of_date or datetime.now(UTC).date()
     technology = all(
         (_contains(topic, _AI_TERMS), _contains(topic, _RECENT_TERMS), _contains(topic, _TECH_TERMS))
     )

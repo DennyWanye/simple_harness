@@ -570,16 +570,16 @@ async def migrate_memory_v2_v17(conn: aiosqlite.Connection) -> None:
         canonical.close()
 
 # Cache so we don't re-run executescript every call. Keyed by absolute db path.
-_ensured: Set[str] = set()
+_ensured: set[str] = set()
 _lock = asyncio.Lock()
 
 # Separate cache + lock for the goal-mode-gated session_goals table (see
 # _SESSION_GOALS_DDL above — kept out of the shared _DDL on purpose).
-_goals_ensured: Set[str] = set()
+_goals_ensured: set[str] = set()
 _goals_lock = asyncio.Lock()
 
 # Separate cache + lock for goal_tasks (FP-2 WI-1.2, same flag-OFF moat).
-_goal_tasks_ensured: Set[str] = set()
+_goal_tasks_ensured: set[str] = set()
 _goal_tasks_lock = asyncio.Lock()
 
 

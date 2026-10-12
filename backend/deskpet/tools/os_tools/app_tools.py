@@ -9,8 +9,9 @@ import asyncio
 import json
 import os
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import psutil
 

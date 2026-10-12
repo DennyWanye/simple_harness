@@ -6,9 +6,9 @@ import hashlib
 import json
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
-
+from typing import Any
 
 # 事件 AF：主页面引用被拒时公共消息的固定前缀。``primary_dependencies`` 用它
 # 认出"这是主页面的确定性拒绝"，因此它必须是**前缀**而不是全等——升级后同一条
@@ -217,8 +217,8 @@ def build_context_page_in_handler(
         runtime = execution_context_getter()
         if runtime is None:
             return _error("context_scope_missing")
-        from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
         from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+        from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
         reference_id = str(args.get("reference_id", "") or "").strip()
         if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith((PREFIX, CURRENT_PREFIX)):
             kind = "primary_page" if args["reference_id"].startswith(PREFIX) else "current_tool_page"

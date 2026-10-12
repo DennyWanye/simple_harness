@@ -28,11 +28,12 @@ deliberate step.
 from __future__ import annotations
 
 import re
-from typing import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
-from agent.providers.base import AgentProvider
 from observability.metrics import stage_timer
 from tools.registry import ToolRegistry
+
+from agent.providers.base import AgentProvider
 
 _TOOL_TAG = re.compile(r"<tool>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*</tool>")
 

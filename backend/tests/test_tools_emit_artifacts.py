@@ -13,12 +13,11 @@ from pathlib import Path
 
 import pytest
 
-
 # ─── T3-1 ppt_create ────────────────────────────────────────
 
 def test_t3_1_ppt_create_emits_file_artifact(tmp_path):
     """成功生成 .pptx → result 含 artifacts=[{kind:file, mime:pptx}]。"""
-    from deskpet.tools.ppt_tools import ppt_create, _HAS_PPTX
+    from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
     if not _HAS_PPTX:
         pytest.skip("python-pptx not installed")
     out = tmp_path / "demo.pptx"
@@ -104,8 +103,9 @@ def test_t3_4_generate_image_envelope_shape():
     不真跑 LLM（需 API key），仅做结构与 import 验证：handler 模块可加载且
     artifacts 字段在 success 路径里被注入（pattern match on源码）。
     """
-    import deskpet.tools.image_tools as img_mod
     import inspect
+
+    import deskpet.tools.image_tools as img_mod
     src = inspect.getsource(img_mod)
     # 关键断言：源码含 artifacts kind=image 模式（防 regress）
     assert '"kind": "image"' in src
@@ -121,7 +121,8 @@ async def test_e2e_ppt_artifacts_in_envelope(tmp_path):
     from deskpet.tools.ppt_tools import _HAS_PPTX
     if not _HAS_PPTX:
         pytest.skip("python-pptx not installed")
-    from deskpet.tools.registry import ToolRegistry, registry as _global
+    from deskpet.tools.registry import ToolRegistry
+    from deskpet.tools.registry import registry as _global
     # 用全局 registry（ppt_create 已自动注册）
     class _Cfg:
         class last_mile:

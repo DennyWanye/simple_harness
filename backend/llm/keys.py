@@ -36,7 +36,7 @@ PROVIDER_ENV_VARS: dict[str, str] = {
 }
 
 
-def get_api_key(provider: str) -> Optional[str]:
+def get_api_key(provider: str) -> str | None:
     """Resolve an API key for the given provider, env-first.
 
     Normalizes provider name (lowercase) before lookup. Returns None if
@@ -61,7 +61,7 @@ def get_api_key(provider: str) -> Optional[str]:
     return None
 
 
-def mask_key(key: Optional[str]) -> str:
+def mask_key(key: str | None) -> str:
     """Render an API key safe for logs: prefix + '****' + last 4 chars.
 
     Empty / very short keys get a single "****" placeholder — never emit

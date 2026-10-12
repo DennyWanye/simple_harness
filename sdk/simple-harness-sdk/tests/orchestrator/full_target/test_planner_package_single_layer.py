@@ -23,8 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from h1i_seed import reviewed
-
 from agent_orchestrator.planning.htn import planner_package
 from agent_orchestrator.planning.htn.planner_package import (
     MAX_ACCEPTED_RESULTS,
@@ -42,6 +40,7 @@ from agent_orchestrator.runtime.role_templates import (
     PLANNER_HIERARCHICAL,
     PLANNING_DECISION_PACKAGE_VERSION,
 )
+from h1i_seed import reviewed
 from simple_harness.contracts import canonical_json
 
 #: What the package may carry at the top level.  Anything else is a second place for a

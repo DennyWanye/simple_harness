@@ -6,8 +6,9 @@ import copy
 import hashlib
 import inspect
 import json
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import asdict
-from typing import Any, Awaitable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 import aiosqlite
 
@@ -25,12 +26,12 @@ from .deep_research_v6_compiler import COMPILER_POLICY, compile_official_exact_f
 from .deep_research_v6_contracts import ResearchSpecV1, format_blob_ref, parse_blob_ref
 from .deep_research_v6_delivery import persist_q1_terminal_bundle
 from .deep_research_v6_evidence import (
-    AnswerAssessmentV1,
-    EvidenceFactBatchV1,
     GENESIS_EVIDENCE_HEAD,
     Q1_ADMISSION_POLICY,
     Q1_ASSESSMENT_POLICY,
     Q1_ROUTE_POLICY,
+    AnswerAssessmentV1,
+    EvidenceFactBatchV1,
     assess_q1_evidence,
 )
 from .deep_research_v6_evidence_contracts import (
@@ -51,7 +52,6 @@ from .deep_research_v6_integrity import (
     ClaimRecordV1,
     build_q1_exact_scalar_integrity,
 )
-
 
 _DEFINITION_ADAPTER = {
     "year_end_total_population": "year_end_total_population",

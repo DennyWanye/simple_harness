@@ -9,7 +9,6 @@ Mission failed. The hint now names the rule; this pins it to the decoder.
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.assurance.checks import ReviewReply
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.orchestrator.assurance_review_transport import _FORMAT_FEEDBACK

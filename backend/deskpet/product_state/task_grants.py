@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 from deskpet.types.task_grants import TaskGrant
 

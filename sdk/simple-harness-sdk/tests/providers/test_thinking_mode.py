@@ -16,7 +16,6 @@ import json
 
 import httpx
 import pytest
-
 from simple_harness.contracts import Message, MessageRole, RequestId
 from simple_harness.providers import OpenAICompatibleProvider, ProviderRequest, Secret
 from simple_harness.providers.base import PROVIDER_REASONING_KEY, ProviderContinuationMode

@@ -13,11 +13,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from providers.edge_tts_provider import (
-    EdgeTTSProvider,
     PCM_CHUNK_BYTES,
     PCM_CHUNK_SAMPLES,
+    EdgeTTSProvider,
     resolve_ffmpeg_path,
 )
 

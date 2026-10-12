@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.artifacts.store import ArtifactStore
 from agent_orchestrator.contracts import ContractError, TypedRef, VersionedRef
 from agent_orchestrator.contracts.operation_completion import CompletionPinV1

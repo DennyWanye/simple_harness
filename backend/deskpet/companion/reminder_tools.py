@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import inspect
 import json
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from deskpet.tools.build_identity import (
     EffectClass,
@@ -16,7 +17,6 @@ from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.types.task_grants import ResourceSelector
 
 from .reminders import ReminderRunAuthority, ReminderServicePort
-
 
 REMINDER_CREATE_TOOL_NAME = "reminder_create"
 REMINDER_LIST_TOOL_NAME = "reminder_list"

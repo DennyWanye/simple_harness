@@ -18,7 +18,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.planning.htn.planner_package import (
     MAX_KNOWLEDGE,
     VIEW_NAMES,
@@ -188,6 +187,7 @@ def test_the_planner_package_of_a_mission_with_knowledge_lists_it_and_the_checke
             # 夜间 N3-03 候选层：已验证的那条只以 verified 出现一次——它的结论行即使还停在
             # SUPPORTED（候选状态），也不再作为候选列出；另留一条未验证的结论、一条被驳回的结论
             from dataclasses import replace
+
             from agent_orchestrator.contracts.state_machines import ClaimStatus
 
             [claim] = [c for c in store.list_mission_claims(mission_id) if c.id == records[0].id]

@@ -22,7 +22,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.chat_prep import prepare_chat_messages_for_chain
 from agent.context_manager import ContextManager
 

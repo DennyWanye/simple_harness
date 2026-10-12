@@ -4,8 +4,6 @@ from dataclasses import dataclass
 
 import httpx
 import pytest
-from simple_harness import freeze_json, thaw_json
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.sdk_adapters.context_authority import (
     SnapshotContractConflict,
@@ -17,6 +15,7 @@ from deskpet.sdk_adapters.provider_projection_pump import (
     ProviderProjectionContextV1,
     SdkProviderProjectionPump,
 )
+from simple_harness import freeze_json, thaw_json
 
 
 @dataclass(frozen=True)

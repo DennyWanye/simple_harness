@@ -28,9 +28,10 @@ from __future__ import annotations
 import errno
 import os
 import shutil
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from . import embedding_call, store
 from .codec import check
@@ -39,7 +40,7 @@ from .errors import ArpError
 from .indexing import LEASE_MS, VIEW_POLICY_HASH, finish_job_locked
 from .partition import NO_EMBEDDING_FINGERPRINT, FileGuard
 from .pins import Pin
-from .ports import RootIdentity, TRASH_DIR, TrustedCaller
+from .ports import TRASH_DIR, RootIdentity, TrustedCaller
 from .purge_rules import can_rebuild, recovery_action, validate_relative_directory
 from .rules import complete_disposal
 from .strict import digest, parse_strict, plain

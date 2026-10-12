@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_orchestrator.assurance.checks import ReviewReply
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.review_input import REVIEW_INSTRUCTIONS

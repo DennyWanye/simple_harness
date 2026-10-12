@@ -18,24 +18,34 @@ from ..contracts.models import sha256_hex
 from ..contracts.planning_decisions import PlanningRefV1
 from ..contracts.semantic_base import TypedRef, TypedRefKind
 from ..governance.planning_authorization import (
-    PlanningAuthorizationSnapshot, planning_policy_for_mission, StorePlanningAuthorityReader,
+    PlanningAuthorizationSnapshot,
+    StorePlanningAuthorityReader,
     build_planning_authorization,
+    planning_policy_for_mission,
 )
+from ..graph.eligibility import OccurrenceOutcome
 from ..graph.execution_contracts import CompleteRead, GraphSourceRead
 from ..graph.taskgraph_sharing import SharingSources
-from ..graph.eligibility import OccurrenceOutcome
-from .hierarchical_dispatch import shared_goal_index
-from .taskgraph_demands import independently_required_occurrences
 from ..planning.htn.grounding import SharedGoalEntry
 from ..planning.plan_preview import _source_snapshot_payload
-from ..runtime.planning_operations import SourceUnavailable, StoreOperationReader, build_operation_snapshot
+from ..runtime.planning_operations import (
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..runtime.taskgraph_operation_sources import read_operation_producers
 from ..storage.htn_store import HtnStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import Store
+from .hierarchical_dispatch import shared_goal_index
 from .plan_commits import PlanPrincipal
-from .taskgraph_execution_sources import LocalExecutionSources, TaskGraphLocalExecutionReader, _document
+from .taskgraph_demands import independently_required_occurrences
+from .taskgraph_execution_sources import (
+    LocalExecutionSources,
+    TaskGraphLocalExecutionReader,
+    _document,
+)
 from .taskgraph_preview import PlanMutationSources
 from .taskgraph_sharing_inputs import read_shared_inputs
 

@@ -15,24 +15,23 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, NoReturn, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NoReturn
+
+from simple_harness.contracts import canonical_json
 
 from ..contracts.models import sha256_hex
-from simple_harness.contracts import canonical_json
-from ..planning.htn.grounding import derive_id
-from ..storage.htn_store import HtnStore, PlanCommitReceipt
-from ..storage.planning_decision_store import PlanningDecisionStore
-from ..graph.execution_contracts import PreviewBindingV1
 from ..governance.planning_authorization import (
     PlanningAuthorizationSnapshot,
-    planning_policy_for_mission,
     StorePlanningAuthorityReader,
     build_planning_authorization,
     check_planning_authorization,
+    planning_policy_for_mission,
 )
 from ..governance.planning_authorization import (
     SourceUnavailable as AuthoritySourceUnavailable,
 )
+from ..graph.execution_contracts import PreviewBindingV1
+from ..planning.htn.grounding import derive_id
 from ..planning.plan_preview import _source_snapshot_payload
 from ..runtime.planning_operations import (
     OperationSnapshot,
@@ -45,9 +44,10 @@ from ..runtime.planning_operations import (
 from ..runtime.planning_operations import (
     SourceUnavailable as OperationSourceUnavailable,
 )
+from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.planning_admission_store import PlanningAdmissionStore
+from ..storage.planning_decision_store import PlanningDecisionStore
 from .plan_commits import CommitPlanCommand, PlanCommitRejected, PlanPrincipal
-
 
 if TYPE_CHECKING:
     from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
@@ -209,9 +209,9 @@ def _check_planning_commit(
         )
     if operations.read_digest != admission.operations.read_digest:
         _raise("OPERATION_SNAPSHOT_STALE", "operation bindings/links/actions changed since preview")
-    from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
     from ..graph.planning_scope import planning_convergence_scope
     from ..runtime.taskgraph_operation_sources import read_operation_producers
+    from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
     if (not isinstance(taskgraph, TaskGraphPlanCommitParticipant) or taskgraph.store is not store
             or admission.taskgraph_candidate is None
             or taskgraph.document != admission.taskgraph_candidate.document

@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.operation_completion import OccurrenceCompletionScopeV1
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
 from agent_orchestrator.storage.store import StoreConflict

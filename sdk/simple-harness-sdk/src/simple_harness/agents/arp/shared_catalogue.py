@@ -29,7 +29,8 @@ authority is read through the owner's own connection.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from . import catalogue as cat
 from .errors import ArpError

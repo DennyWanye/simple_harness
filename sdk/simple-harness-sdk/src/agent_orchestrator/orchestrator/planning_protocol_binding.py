@@ -23,9 +23,9 @@ from ..contracts.planning_decisions import (
     UnsupportedPlanningPackage,
 )
 from ..runtime.role_templates import (
-    hierarchical_planner_pairing_is_valid,
     PLANNING_DECISION_PACKAGE_VERSION,
     PLANNING_DECISION_PROMPT_VERSION,
+    hierarchical_planner_pairing_is_valid,
 )
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import Store

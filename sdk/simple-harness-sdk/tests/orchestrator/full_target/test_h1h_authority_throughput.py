@@ -13,13 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from h1i_seed import events as _events
-from h1i_seed import plan_reply, reviewed
-
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from h1i_seed import events as _events
+from h1i_seed import plan_reply, reviewed
 
 
 def test_a01_authenticated_grant_binds_request_and_real_refine_commit_principal(

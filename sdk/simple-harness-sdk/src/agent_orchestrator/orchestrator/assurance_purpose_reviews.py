@@ -42,13 +42,15 @@ from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, conten
 from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
+    CurrentAuthority,
+    _permission,
+    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
-from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
 from .assurance_check_use import _merge_reads
 from .assurance_review_pins import ensure_review_blob_pins, release_failed_preparation
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked

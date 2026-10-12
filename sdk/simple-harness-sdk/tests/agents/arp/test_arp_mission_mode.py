@@ -22,7 +22,6 @@ import asyncio
 import pytest
 from arp_fixture import HASH, build, fixture_refs, standalone_profile, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import mission_sources, store
 from simple_harness.agents.arp.errors import ArpError

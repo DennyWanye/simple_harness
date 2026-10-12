@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from simple_harness.contracts import RequestId, RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator

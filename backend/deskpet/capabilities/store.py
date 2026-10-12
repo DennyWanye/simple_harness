@@ -13,44 +13,45 @@ mistaken for product policy authority.
 from __future__ import annotations
 
 import asyncio
-import inspect
 import hashlib
+import inspect
 import json
 import math
 import sqlite3
 import time
 import uuid
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Protocol
 
 import aiosqlite
 
+from deskpet.execution.contracts import root_idempotency_key
 from deskpet.permissions.policy import (
     AuthorizationMode,
     AuthorizationPolicyProvenance,
     AuthorizationPolicyState,
 )
 from deskpet.types.task_grants import TaskGrant
-from deskpet.execution.contracts import root_idempotency_key
 
 from .contracts import (
+    EMPTY_OWNER_BINDING_SET_STAMP,
+    EMPTY_RECEIPT_SET_HASH,
+    LEGACY_LOCAL_OWNER_KEY,
     CapabilityBinding,
     CapabilityCatalogEntry,
     CapabilityScope,
     CapabilityVersionDescriptor,
-    EMPTY_OWNER_BINDING_SET_STAMP,
-    EMPTY_RECEIPT_SET_HASH,
     JsonValue,
-    LEGACY_LOCAL_OWNER_KEY,
     OwnerBindingSetStamp,
     OwnerScopeKey,
     PlatformDetailSnapshot,
     PlatformDetailToken,
     PlatformDetailTokenVector,
-    RunCatalogEntryIdentity,
     RunCatalogContentStamp,
+    RunCatalogEntryIdentity,
     canonical_json,
     fingerprint_json,
 )
@@ -3140,7 +3141,7 @@ async def initialize_capability_database(path: str | Path) -> Path:
 class CapabilityStoreTx:
     """Capability DML bound to one caller-owned SQLite transaction."""
 
-    def __init__(self, store: "CapabilityStore", db: aiosqlite.Connection) -> None:
+    def __init__(self, store: CapabilityStore, db: aiosqlite.Connection) -> None:
         self._store = store
         self._db = db
 
@@ -4492,7 +4493,7 @@ class CapabilityStore:
         owner_key: str, scope: str, scope_key: str, pack_id: str
     ) -> str:
         return hashlib.sha256(
-            f"{owner_key}|{scope}|{scope_key}|{pack_id}".encode("utf-8")
+            f"{owner_key}|{scope}|{scope_key}|{pack_id}".encode()
         ).hexdigest()
 
     async def _set_binding_tx(

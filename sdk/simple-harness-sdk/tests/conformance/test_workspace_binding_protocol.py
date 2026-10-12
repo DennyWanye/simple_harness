@@ -8,7 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 import simple_harness
 import simple_harness.runtime as runtime
 from simple_harness.runtime.workspace_binding_protocol import (

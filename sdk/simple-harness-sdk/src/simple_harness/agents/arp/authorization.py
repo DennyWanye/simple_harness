@@ -14,8 +14,9 @@ legacy runtimes keep their behaviour.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 from .codec import check
 from .errors import ArpError

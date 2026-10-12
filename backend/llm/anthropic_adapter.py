@@ -32,15 +32,17 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
+
 import httpx
-from typing import Any, AsyncIterator, Optional, Union
-
-from deskpet.execution.dispatch import current_dispatch_handoff
-
 from agent.context_messages import (
     current_provider_attempt_options,
     split_wire_messages,
 )
+from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_transport import DispatchAwareAsyncTransport
+
 from llm.base import BaseLLMAdapter
 from llm.errors import (
     LLMAuthError,
@@ -50,7 +52,6 @@ from llm.errors import (
 )
 from llm.keys import get_api_key, mask_key
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
-from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 logger = logging.getLogger("deskpet.llm.anthropic")
 
@@ -64,8 +65,8 @@ class AnthropicAdapter(BaseLLMAdapter):
     def __init__(
         self,
         *,
-        api_key: Optional[str] = None,
-        default_model: Optional[str] = None,
+        api_key: str | None = None,
+        default_model: str | None = None,
         timeout: float = 60.0,
         max_retries: int = 0,  # Retry at the registry/fallback layer, not SDK.
     ) -> None:
@@ -220,7 +221,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         return system_blocks, chat
 
     @staticmethod
-    def _convert_tools(tools: Optional[list[dict[str, Any]]]) -> Optional[list[dict[str, Any]]]:
+    def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
         """OpenAI function-calling schema → Anthropic tools format."""
         if not tools:
             return None
@@ -267,7 +268,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         return LLMProviderError(str(exc), provider=provider, status_code=status)
 
     @staticmethod
-    def _map_stop_reason(anthropic_reason: Optional[str]) -> str:
+    def _map_stop_reason(anthropic_reason: str | None) -> str:
         return {
             "end_turn": "end_turn",
             "stop_sequence": "end_turn",
@@ -281,12 +282,12 @@ class AnthropicAdapter(BaseLLMAdapter):
     async def chat(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         *,
         stream: bool = False,
         **kwargs: Any,
-    ) -> Union[ChatResponse, AsyncIterator[ChatChunk]]:
+    ) -> ChatResponse | AsyncIterator[ChatChunk]:
         client = self._get_client()
         use_model = model or self.default_model
         system_blocks, chat = self._split_system_messages(messages)
@@ -364,7 +365,7 @@ class AnthropicAdapter(BaseLLMAdapter):
         """
         try:
             async with client.messages.stream(**request) as stream_ctx:
-                pending_tool: Optional[dict[str, Any]] = None
+                pending_tool: dict[str, Any] | None = None
                 tool_args_buffer: str = ""
                 final_stop_reason = "end_turn"
                 final_usage = ChatUsage()

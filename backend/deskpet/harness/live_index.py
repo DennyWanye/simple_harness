@@ -8,11 +8,11 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     ActiveRunCapacityExceeded,
     ActorContext,
     RunEvent,
     RunRecord,
-    TERMINAL_RUN_STATUSES,
 )
 
 

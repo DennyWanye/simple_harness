@@ -6,7 +6,6 @@ import json
 
 import httpx
 import pytest
-
 from deskpet import provider_extra_headers as peh
 from providers.openai_compatible import OpenAICompatibleProvider
 

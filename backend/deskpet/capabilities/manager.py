@@ -7,16 +7,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import logging
-import io
 import inspect
+import io
 import json
+import logging
 import os
 import shutil
 import zipfile
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from .contracts import (
     CapabilityBinding,
@@ -36,8 +37,8 @@ from .package_limits import (
     CapabilityPackageValidator,
     ValidatedCapabilityPackageRefV1,
 )
-from .source import CapabilitySourceResolver, PackSourceRequest, StagedPack
 from .skill_source import CanonicalSkillBatch
+from .source import CapabilitySourceResolver, PackSourceRequest, StagedPack
 from .store import (
     CAPABILITY_OPERATION_PHASES,
     CapabilityOperationRecord,
@@ -406,7 +407,7 @@ def _operation_id(idempotency_key: str) -> str:
         raise CapabilityManagerError(
             "missing_idempotency_key", "idempotency key is required"
         )
-    return hashlib.sha256(f"capability:{idempotency_key}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"capability:{idempotency_key}".encode()).hexdigest()
 
 
 def capability_operation_id(idempotency_key: str) -> str:
@@ -416,7 +417,7 @@ def capability_operation_id(idempotency_key: str) -> str:
 
 
 def _intent_id(operation_id: str) -> str:
-    return hashlib.sha256(f"{operation_id}:publish".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{operation_id}:publish".encode()).hexdigest()
 
 
 class CapabilityPackManager:
@@ -2993,7 +2994,7 @@ class CapabilityPackManager:
                 f"{record.descriptor.capability_id}|"
                 f"{record.descriptor.version}|"
                 f"{record.descriptor.manifest_hash}"
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()
         prepare_rehydrate = getattr(
             self.publisher,

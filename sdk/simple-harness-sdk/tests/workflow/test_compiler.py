@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.workflow.compiler import WorkflowCompileError, compile_workflow
 from simple_harness.workflow.contracts import ChannelSpec, ReducerKind, StatePatch
 from simple_harness.workflow.definition import (

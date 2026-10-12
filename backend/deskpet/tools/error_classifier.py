@@ -26,7 +26,6 @@ no config. Keep it that way so every tool handler can rely on
 """
 from __future__ import annotations
 
-
 _NON_RETRIABLE: tuple[type[BaseException], ...] = (
     ValueError,
     TypeError,

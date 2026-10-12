@@ -46,11 +46,11 @@ def run(label: str, model: str, rf, stream: bool, trust_env: bool) -> None:
 
 
 def main() -> int:
-    print(f"trust_env(no-proxy)=False probes:")
+    print("trust_env(no-proxy)=False probes:")
     run("json_schema strict (EXACT app shape)", "gpt-5.5", _PRE_ANALYSIS_SCHEMA, False, False)
     run("json_object", "gpt-5.5", {"type": "json_object"}, False, False)
     run("no response_format", "gpt-5.5", None, False, False)
-    print(f"\ntrust_env=True (would use proxy if set) probe:")
+    print("\ntrust_env=True (would use proxy if set) probe:")
     run("json_schema strict trust_env=True", "gpt-5.5", _PRE_ANALYSIS_SCHEMA, False, True)
     return 0
 

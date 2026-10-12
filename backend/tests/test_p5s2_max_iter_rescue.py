@@ -21,9 +21,7 @@ import asyncio
 import json
 
 import pytest
-
-from agent.supervisor import SupervisorAgent, SupervisorAction
-
+from agent.supervisor import SupervisorAction, SupervisorAgent
 
 # ─── Helpers ─────────────────────────────────────────────────────────
 

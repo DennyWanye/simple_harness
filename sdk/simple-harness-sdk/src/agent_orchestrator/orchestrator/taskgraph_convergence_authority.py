@@ -7,8 +7,11 @@ from typing import Any
 from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import sha256_hex
 from ..governance.planning_authorization import (
-    planning_policy_for_mission, StorePlanningAuthorityReader, build_planning_authorization,
-    PlanningAuthorizationSnapshot, check_planning_authorization,
+    PlanningAuthorizationSnapshot,
+    StorePlanningAuthorityReader,
+    build_planning_authorization,
+    check_planning_authorization,
+    planning_policy_for_mission,
 )
 from ..graph.execution_contracts import PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1, decode
@@ -21,11 +24,11 @@ from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import ConvergenceJob
 from ..storage.taskgraph_store import TaskGraphStore
 from .plan_commits import PlanPrincipal
+from .taskgraph_operator import TaskGraphOperatorGuard
 from .taskgraph_plan_sources import TaskGraphPlanSourceReader
 from .taskgraph_policy import read_installed_graph_policy
-from .taskgraph_runtime_observation import TaskGraphRuntimeObservationReader
 from .taskgraph_reconciliation_proof import TaskGraphReconciliationProof
-from .taskgraph_operator import TaskGraphOperatorGuard
+from .taskgraph_runtime_observation import TaskGraphRuntimeObservationReader
 
 
 class VerifiedConvergenceAuthority:
@@ -67,6 +70,7 @@ class VerifiedConvergenceAuthority:
         if not isinstance(authority, PlanningAuthorizationSnapshot):
             raise StoreError("TASKGRAPH_CONVERGENCE_BEGIN_AUTHORITY_MISSING")
         import json
+
         from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
         from ..planning.decision_admission import _enablement_key
         decoded = PlanningDecisionEnvelopeV1.from_json(json.loads(decision["canonical_json"]))

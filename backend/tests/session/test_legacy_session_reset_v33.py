@@ -6,14 +6,13 @@ import sqlite3
 import uuid
 from pathlib import Path
 
-import pytest
-
 import deskpet.memory.project_session_reset as project_session_reset
+import pytest
+from deskpet.companion.store import CompanionStore
+from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, ensure_v9
 from deskpet.memory.project_session_reset import RESET_MANIFEST, _clear_selected_tables
 from deskpet.memory.schema import InitializeError, initialize_state_db
-from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
-from deskpet.companion.store import CompanionStore
 from deskpet.workflows.store.schema import initialize_workflow_db
 
 

@@ -11,9 +11,10 @@ import shutil
 import stat
 import unicodedata
 import zipfile
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterable, Mapping
+from typing import BinaryIO
 
 BASELINE_HASH = "0159ff2d5e129ce1d4da9a8b219e96193a9018e07f0511b559d5c4c83fc0d0ca"
 PACKAGE_POLICY_VERSION = "capability-package-limits-v1"
@@ -307,7 +308,7 @@ class ValidatedCapabilityPackageRefV1:
         file_set_hash: str,
         entry_count: int,
         total_uncompressed_bytes: int,
-    ) -> "ValidatedCapabilityPackageRefV1":
+    ) -> ValidatedCapabilityPackageRefV1:
         values = {
             "source_kind": source_kind,
             "policy_version": PACKAGE_POLICY_VERSION,

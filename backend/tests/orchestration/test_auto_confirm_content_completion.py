@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from types import SimpleNamespace
-
 from hashlib import sha256
+from types import SimpleNamespace
 
 from agent_orchestrator.deployment.duties import DeploymentDuties
 

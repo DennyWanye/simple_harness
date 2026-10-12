@@ -20,9 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 import p4_ipc
+import pytest
 
 
 # ---------------------------------------------------------------------------

@@ -4,11 +4,9 @@ import hashlib
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.workflows.contracts import canonical_json
 from deskpet.workflows.service import WorkflowService, WorkflowServiceError
 from deskpet.workflows.terminal_projection import VersionedActionMatrix
-
 
 CHILD_ID = "2c2bba0d-c87b-5e70-ba41-1bf66ade02ff"
 PARENT_ID = "11111111-1111-1111-1111-111111111111"

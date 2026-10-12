@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from simple_harness.contracts import CallId, EffectId, RunId
 from simple_harness.execution import EffectState, effect_request_hash
 from simple_harness.execution.effects import TaskExecutionEnvelope

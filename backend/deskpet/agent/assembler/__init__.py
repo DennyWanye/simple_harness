@@ -19,25 +19,28 @@ Spec: ``openspec/changes/p4-poseidon-agent-harness/specs/context-assembler/``.
 """
 
 from deskpet.agent.assembler.assembler import ContextAssembler
+from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.bundle import (
     TASK_TYPES,
     AssemblyDecisions,
     AssemblyPolicy,
     AttachmentRef,
     ComponentTrace,
+    ContextBundle,
     ContextDecision,
     ContextFragment,
-    ContextBundle,
     MemoryPolicy,
     PreparedContext,
     Slice,
     legacy_slice_to_fragment,
 )
-from deskpet.agent.assembler.budget import BudgetAllocator, BudgetResult
 from deskpet.agent.assembler.classifier import ClassifierResult, TaskClassifier
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.assembler.components.memory import MemoryComponent
 from deskpet.agent.assembler.components.persona import PersonaComponent
+from deskpet.agent.assembler.components.preference_profile import (
+    PreferenceProfileComponent,
+)
 from deskpet.agent.assembler.components.project_rules import ProjectRulesComponent
 from deskpet.agent.assembler.components.skill import SkillComponent
 from deskpet.agent.assembler.components.time_component import TimeComponent
@@ -45,9 +48,6 @@ from deskpet.agent.assembler.components.tool import ToolComponent
 from deskpet.agent.assembler.components.workspace import WorkspaceComponent
 from deskpet.agent.assembler.components.workspace_memory import (
     WorkspaceMemoryComponent,
-)
-from deskpet.agent.assembler.components.preference_profile import (
-    PreferenceProfileComponent,
 )
 from deskpet.agent.assembler.policy import load_policies
 from deskpet.agent.assembler.registry import ComponentRegistry

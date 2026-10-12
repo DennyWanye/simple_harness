@@ -34,16 +34,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from deskpet.mcp import manager as mcp_manager_mod
 from deskpet.mcp.manager import (
-    MCPManager,
     _BACKOFF_SCHEDULE,
+    MCPManager,
     _prepare_server_config,
     _resolve_npx_package_artifacts,
 )
 from deskpet.tools.registry import ToolRegistry
-
 
 _ORIGINAL_MCP_BUILD_MATERIAL_RESOLVER = (
     mcp_manager_mod._resolve_mcp_execution_build_material
@@ -179,7 +177,7 @@ class _FakeSession:
       * ``call_text``          — text returned by every call_tool
     """
 
-    instances: list["_FakeSession"] = []
+    instances: list[_FakeSession] = []
 
     def __init__(self, script: dict[str, Any]) -> None:
         self.script = script
@@ -189,7 +187,7 @@ class _FakeSession:
         self.close_calls = 0
         _FakeSession.instances.append(self)
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> _FakeSession:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:

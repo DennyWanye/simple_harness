@@ -6,7 +6,6 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from deskpet.retrieval.query_terms import (
     extract_query_terms,
     query_fingerprint,
@@ -28,7 +27,6 @@ from deskpet.workflows.definitions.deep_research_v5_queries import (
     build_gap_query_plan,
     build_initial_query_plan,
 )
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_education_queries.json"
 AS_OF = date(2026, 7, 16)

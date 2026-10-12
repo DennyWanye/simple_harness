@@ -179,8 +179,8 @@ class PandaPlanningBackend:
         witness = None
         if status is BackendStatus.SOLVED and result.witness is not None:
             steps = tuple(item.signature for item in result.witness.primitives)
-            from dataclasses import asdict
             import json
+            from dataclasses import asdict
 
             witness = CandidatePlanWitness.build(
                 snapshot, steps, "panda", hierarchy=json.loads(json.dumps(asdict(result.witness)))

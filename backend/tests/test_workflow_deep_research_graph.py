@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from deskpet.workflows import WorkflowContext, WorkflowRunStatus, compile_workflow
 from deskpet.workflows.definitions import deep_research_nodes as research_nodes
 from deskpet.workflows.definitions.research_core import (

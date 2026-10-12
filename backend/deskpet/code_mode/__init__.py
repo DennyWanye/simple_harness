@@ -15,9 +15,9 @@ implementations.
 """
 from __future__ import annotations
 
-from .state import CodeModeManager, CodeModeState
-from .project_root import resolve_project_root, sanitize_project_name
 from .intent_detector import maybe_suggest_code_mode
+from .project_root import resolve_project_root, sanitize_project_name
+from .state import CodeModeManager, CodeModeState
 
 __all__ = [
     "CodeModeManager",

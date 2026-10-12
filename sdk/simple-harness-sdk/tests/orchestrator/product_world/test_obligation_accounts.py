@@ -12,7 +12,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.orchestrator.obligation_accounts import obligation_accounts
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world

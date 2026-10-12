@@ -5,7 +5,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from deskpet.companion.evaluation_read_tools import (
     DEFAULT_EVALUATION_READ_ADAPTER_BUILD_FINGERPRINT,
     EvaluationMemoryFixtureStoreV1,

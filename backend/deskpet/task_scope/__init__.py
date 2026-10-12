@@ -1,10 +1,25 @@
 # SPDX-License-Identifier: BUSL-1.1
 
+from .projection_sources import ProjectionSourceReceipt
+from .projections import (
+    CheckpointDriftReport,
+    ProjectionIntegrityError,
+    ReadBlockRef,
+    TaskScopeProjectionStore,
+    TaskScopeReadView,
+)
 from .provisioning import (
     TaskScopeProvisioner,
     TaskScopeProvisionError,
     TaskScopeProvisionReceipt,
     TaskScopeProvisionRequest,
+)
+from .search import (
+    ExactOpenResult,
+    SearchCandidate,
+    SearchResult,
+    TaskScopeSearchError,
+    TaskScopeSearchStore,
 )
 from .store import (
     CanonicalTaskScopeStore,
@@ -14,21 +29,6 @@ from .store import (
     TaskEventReceipt,
     TaskEventRecorder,
     TaskScopeConflict,
-)
-from .projection_sources import ProjectionSourceReceipt
-from .projections import (
-    CheckpointDriftReport,
-    ProjectionIntegrityError,
-    ReadBlockRef,
-    TaskScopeProjectionStore,
-    TaskScopeReadView,
-)
-from .search import (
-    ExactOpenResult,
-    SearchCandidate,
-    SearchResult,
-    TaskScopeSearchError,
-    TaskScopeSearchStore,
 )
 from .workspace_bindings import (
     CurrentRunBindingAuthority,

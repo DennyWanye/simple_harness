@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from .contracts import JsonValue, canonical_json, fingerprint_json
 
@@ -174,7 +175,7 @@ class CapabilityFailureReceipt:
     @classmethod
     def from_dict(
         cls, value: Mapping[str, object]
-    ) -> "CapabilityFailureReceipt":
+    ) -> CapabilityFailureReceipt:
         canonical_args = value.get("canonical_args")
         if not isinstance(canonical_args, Mapping):
             raise ValueError("canonical_args must be an object")

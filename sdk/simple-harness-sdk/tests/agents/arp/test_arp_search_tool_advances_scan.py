@@ -14,11 +14,10 @@ import json
 
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-
+from simple_harness import MessageRole
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp.tools import READ_TOOL_NAME, SEARCH_TOOL_NAME
 from simple_harness.agents.contracts import AgentTurnState
-from simple_harness import MessageRole
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p", tool_names=(SEARCH_TOOL_NAME, READ_TOOL_NAME))
 SECRET = "工程暗号 是 蓝鲸七号，请牢记。"

@@ -6,8 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from deskpet.workflows.control import workflow_interrupt as interrupt
-
 from deskpet.workflows.contracts import (
     ChannelSpec,
     JsonType,
@@ -16,6 +14,7 @@ from deskpet.workflows.contracts import (
     WorkflowContext,
     WorkflowRunStatus,
 )
+from deskpet.workflows.control import workflow_interrupt as interrupt
 from deskpet.workflows.definition import (
     END_NODE,
     Edge,

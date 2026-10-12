@@ -10,14 +10,13 @@ Covers:
 from __future__ import annotations
 
 import pytest
-
 import router.hybrid_router as _hmod
 from router.hybrid_router import (
     HybridRouter,
     LLMUnavailableError,
     RoutingStrategy,
-    _ProviderState,
     _CircuitState,
+    _ProviderState,
 )
 
 

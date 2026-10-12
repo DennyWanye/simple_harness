@@ -5,12 +5,12 @@ import hashlib
 import json
 
 import pytest
-
 from deskpet.workflows.adapters.deep_research_v6_semantic_runtime import (
     DeepResearchV6SemanticRuntime,
     SemanticRuntimeConfigurationError,
 )
 from deskpet.workflows.contracts import NodeExecutionIdentity, canonical_json
+from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 from deskpet.workflows.definitions.deep_research_v6_contracts import (
     build_route_decision_from_spec,
@@ -21,15 +21,14 @@ from deskpet.workflows.definitions.deep_research_v6_evidence import (
 )
 from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import (
     CandidateProducerOutcomeV1,
-    EvidenceRepairRequestV1,
     EvidenceCandidateBundleV1,
     EvidenceCandidateV1,
+    EvidenceRepairRequestV1,
     InferenceProposalBundleV1,
     InferenceProposalV1,
     ResearchLLMEffectOutcomeV1,
     V6FetchedPageRefPayloadV1,
 )
-from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 from deskpet.workflows.store import RegisteredBlobStore
 
 

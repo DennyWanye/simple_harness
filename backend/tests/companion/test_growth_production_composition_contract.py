@@ -9,31 +9,38 @@ flow through production modules and public Store APIs.
 from __future__ import annotations
 
 import pytest
-
 from deskpet.capabilities.package_limits import CapabilityPackageValidator
-from deskpet.companion.build_admission import (
-    CandidateDraftReceiptExpectationV1,
-    CandidateDraftReceiptV1,
-)
-from deskpet.companion.candidate_builder import (
-    CandidateFileInputV1,
-    CandidateSeedInputV1,
-    DeterministicCandidateBuilder,
-)
-from deskpet.companion.candidate_build_coordinator import (
-    CompanionCandidateBuildCoordinator,
-)
-from deskpet.companion.candidate_composition import (
-    CandidateCompositionRequestV1,
-    CandidateCompositionService,
-    CandidateDraftMaterialV1,
-)
 from deskpet.companion.activation import (
     ActivationDecisionCoordinator,
     ActivationDispatcher,
     PreparedCapabilityMutation,
 )
 from deskpet.companion.authority import RevocationBarrier
+from deskpet.companion.build_admission import (
+    CandidateDraftReceiptExpectationV1,
+    CandidateDraftReceiptV1,
+)
+from deskpet.companion.candidate_build_coordinator import (
+    CompanionCandidateBuildCoordinator,
+)
+from deskpet.companion.candidate_builder import (
+    CandidateFileInputV1,
+    CandidateSeedInputV1,
+    DeterministicCandidateBuilder,
+)
+from deskpet.companion.candidate_composition import (
+    CandidateCompositionRequestV1,
+    CandidateCompositionService,
+    CandidateDraftMaterialV1,
+)
+from deskpet.companion.contracts import (
+    CandidateMode,
+    CapabilityMutationReceipt,
+    EvaluationCaseLaunch,
+    GrowthEvent,
+    MutationAction,
+    MutationRequest,
+)
 from deskpet.companion.evaluation import (
     EvaluationIdentityV1,
     EvaluationPermitIssuer,
@@ -49,14 +56,6 @@ from deskpet.companion.risk import EffectTopologyDiffV1
 from deskpet.companion.store import (
     CompanionStore,
     canonical_hash,
-)
-from deskpet.companion.contracts import (
-    CandidateMode,
-    CapabilityMutationReceipt,
-    EvaluationCaseLaunch,
-    GrowthEvent,
-    MutationAction,
-    MutationRequest,
 )
 
 

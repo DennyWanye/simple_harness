@@ -19,8 +19,9 @@ earlier output of the run and shrank the window monotonically (RP-E4 real-model 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from simple_harness.agents.arp.meter import MeterBinding, PriorBasis, model_limits
 from simple_harness.agents.arp.pins import Pin

@@ -9,14 +9,19 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from deskpet.execution.contracts import (
-    DeliveryPolicy, DeliverySpec, ExecutionError,
-    OutcomeStatus, RunEvent, RunEventCandidate, RunRecord,
+    DeliveryPolicy,
+    DeliverySpec,
+    ExecutionError,
+    OutcomeStatus,
+    RunEvent,
+    RunEventCandidate,
+    RunRecord,
 )
-from deskpet.execution.uow_ports import HarnessDeliveryUnitOfWork
 from deskpet.execution.fences import (
     TerminalDeliveryFencePort,
     UnboundTerminalDeliveryFence,
 )
+from deskpet.execution.uow_ports import HarnessDeliveryUnitOfWork
 
 _BOUND_POLICIES = frozenset({DeliveryPolicy.RETRY_WHILE_BOUND, DeliveryPolicy.BEST_EFFORT})
 

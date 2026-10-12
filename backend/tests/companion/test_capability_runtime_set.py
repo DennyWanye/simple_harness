@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.local_runtime import LocalToolRuntime
 from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack
 from deskpet.capabilities.platform import ManagedEnvironmentPreparer

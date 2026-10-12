@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
     PreparedToolSet,
     ResolvedToolDraft,
     ToolCapabilityRef,
-    ToolEligibilityContext,
     ToolCapabilityScopeStore,
+    ToolEligibilityContext,
     canonical_hash,
     selector_matches,
 )

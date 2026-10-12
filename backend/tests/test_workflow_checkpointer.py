@@ -3,19 +3,22 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-
 from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.store import (
     NATIVE_ENGINE_KIND,
     WORKFLOW_SCHEMA_VERSION,
-    LegacyCheckpointStore as FencedAsyncSqliteSaver,
     NativeCheckpointError,
     NativeCheckpointStore,
     RegisteredBlobStore,
     StaleRunFence,
     WorkflowRunStore,
     initialize_workflow_db,
+)
+from deskpet.workflows.store import (
+    LegacyCheckpointStore as FencedAsyncSqliteSaver,
+)
+from deskpet.workflows.store import (
     empty_legacy_checkpoint as empty_checkpoint,
 )
 

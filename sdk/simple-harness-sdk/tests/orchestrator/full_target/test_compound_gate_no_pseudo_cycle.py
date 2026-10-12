@@ -19,7 +19,6 @@ answered all six with one boolean would be telling the caller nothing.
 from __future__ import annotations
 
 import graphlib
-
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -27,21 +26,6 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
-
-from htn_world import (  # noqa: E402
-    BUDGET,
-    Env,
-    atom,
-    ground_draft,
-    ledger_for,
-    method,
-    out,
-    param,
-    ref,
-    root_network,
-    step,
-    task_binding,
-)
 
 from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
@@ -81,6 +65,20 @@ from agent_orchestrator.planning.htn.grounding import ground_method  # noqa: E40
 from agent_orchestrator.planning.htn.validation import (  # noqa: E402
     DeltaProblemKind,
     validate_delta,
+)
+from htn_world import (  # noqa: E402
+    BUDGET,
+    Env,
+    atom,
+    ground_draft,
+    ledger_for,
+    method,
+    out,
+    param,
+    ref,
+    root_network,
+    step,
+    task_binding,
 )
 
 

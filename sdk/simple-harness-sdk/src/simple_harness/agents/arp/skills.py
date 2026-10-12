@@ -27,9 +27,10 @@ import os
 import re
 import stat
 import zipfile
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from . import catalogue as cat
 from .codec import check

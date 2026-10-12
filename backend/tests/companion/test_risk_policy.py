@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from deskpet.companion.risk import (
-    CapabilityRiskPolicy,
     CandidateRiskInputV1,
+    CapabilityRiskPolicy,
     EffectFactV1,
     EffectTopologyDiffV1,
     StaticRiskPreflight,

@@ -9,8 +9,9 @@ always the bound Session of the authenticated subject; a request never names a S
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from . import embedding_call, store
 from .codec import check

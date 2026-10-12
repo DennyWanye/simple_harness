@@ -11,9 +11,9 @@ replacement that covers every explicit information item.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
-
+from typing import Any
 
 _RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "json_schema",

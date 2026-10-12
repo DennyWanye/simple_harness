@@ -24,21 +24,29 @@ from types import SimpleNamespace
 
 import aiosqlite
 import pytest
-
 from deskpet.execution.current_tool_pages import (
-    MAX_LISTED_REFERENCES, PREFIX, REFERENCE_UNAVAILABLE_CODE,
-    PrimaryContextPageUnavailable, admitted_current_page, page_starts,
-    reference, rejection_code_matches,
+    MAX_LISTED_REFERENCES,
+    PREFIX,
+    REFERENCE_UNAVAILABLE_CODE,
+    PrimaryContextPageUnavailable,
+    admitted_current_page,
+    page_starts,
+    reference,
+    rejection_code_matches,
 )
 from deskpet.execution.primary_context_pages import (
-    PREFIX as HISTORY_PREFIX, admitted_page,
+    PREFIX as HISTORY_PREFIX,
+)
+from deskpet.execution.primary_context_pages import (
+    admitted_page,
 )
 from deskpet.task_scope.protocol import canonical_json
 from deskpet.tools.context_page_in_tools import (
-    PRIMARY_PAGE_PUBLIC_MESSAGE, ContextPageInStore, _primary_page_message,
+    PRIMARY_PAGE_PUBLIC_MESSAGE,
+    ContextPageInStore,
+    _primary_page_message,
     build_context_page_in_handler,
 )
-
 from tests.execution.test_control_result_bound import RUN_ID
 from tests.execution.test_page_offset_guidance import _identities, _scenario, mid_codepoint
 

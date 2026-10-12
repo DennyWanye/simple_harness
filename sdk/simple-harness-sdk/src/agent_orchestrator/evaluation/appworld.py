@@ -460,6 +460,7 @@ class AppWorldEpisode:
                                  ) -> tuple[AppWorldStateReceipt, dict[str, Any]]:
         """Read trusted service state; never call the hidden official evaluator."""
         from uuid import uuid4
+
         from .appworld_api_observations import digest
         with self._lock:
             if self._finalized or not isinstance(self._world, _ExternallyScoredWorld):

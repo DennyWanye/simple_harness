@@ -48,7 +48,7 @@ def sanitize_project_name(name: str) -> str:
 
 
 def resolve_project_root(
-    user_choice: Optional[str],
+    user_choice: str | None,
     llm_suggested_name: str = "untitled",
 ) -> Path:
     """Materialise a usable project root directory.

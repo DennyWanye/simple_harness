@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 # ─── GoalChecker 降级矩阵 ─────────────────────────────────────
@@ -48,7 +49,7 @@ def _make_failing_llm(exc: Exception):
 def _make_timeout_llm():
     """LLM that raises asyncio.TimeoutError to simulate timeout."""
     async def _call(prompt: str) -> str:
-        raise asyncio.TimeoutError("LLM timeout")
+        raise TimeoutError("LLM timeout")
     return _call
 
 
@@ -173,8 +174,9 @@ def test_reflection_parse_empty_string_returns_none():
 
 def test_reflection_parse_valid_json_still_works():
     """BC: valid structured reflection JSON still parses correctly."""
-    from deskpet.agent.reflection import parse_reflection
     import json
+
+    from deskpet.agent.reflection import parse_reflection
     raw = json.dumps({
         "error_analysis": "missed tool call",
         "execution_critique": "took shortcut",
@@ -227,7 +229,7 @@ async def test_evaluator_timeout_conservative_mode_returns_revise():
     from deskpet.agent.external_evaluator import ExternalEvaluator
 
     async def _timeout_llm(prompt: str) -> str:
-        raise asyncio.TimeoutError("simulated timeout")
+        raise TimeoutError("simulated timeout")
 
     evaluator = ExternalEvaluator(_timeout_llm, conservative_on_error=True)
     result = await evaluator.evaluate(
@@ -362,7 +364,7 @@ async def test_evaluator_no_crash_on_any_error():
 async def test_goal_checker_never_crashes_on_exception():
     """R-T3: GoalChecker never raises — always returns (bool, str)."""
     from deskpet.agent.goal_checker import GoalChecker
-    for exc in [RuntimeError("boom"), asyncio.TimeoutError(), ValueError("bad"), OSError("io")]:
+    for exc in [RuntimeError("boom"), TimeoutError(), ValueError("bad"), OSError("io")]:
         checker = GoalChecker(_make_failing_llm(exc))
         done, hint = await checker.check("目标", [])
         assert isinstance(done, bool)
@@ -381,7 +383,7 @@ def test_reflection_never_crashes():
 # T-D5: R-T6 — Receipt shadow fields (BC + round-trip)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 
 def _make_basic_receipt(**overrides):
@@ -389,8 +391,8 @@ def _make_basic_receipt(**overrides):
     defaults = dict(
         tool_name="ppt_create",
         args={"title": "test"},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, 1, 0, 0, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, 1, 0, 0, tzinfo=UTC),
         ok=True,
     )
     defaults.update(overrides)
@@ -456,8 +458,8 @@ def test_receipt_from_dict_old_shape_still_valid():
     r = make_receipt(
         tool_name="test",
         args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     d = r.to_dict()
@@ -487,7 +489,7 @@ def test_receipt_hmac_still_valid_with_shadow_fields():
 
 def test_receipt_store_round_trip_with_shadow_fields(tmp_path):
     """R-T6: ReceiptStore append + load_session round-trips shadow fields."""
-    from deskpet.tools.receipt import make_receipt, hmac_sign
+    from deskpet.tools.receipt import hmac_sign, make_receipt
     from deskpet.tools.receipt_store import ReceiptStore
     key = b"\x42" * 32
     store = ReceiptStore(tmp_path, key=key)
@@ -495,8 +497,8 @@ def test_receipt_store_round_trip_with_shadow_fields(tmp_path):
     r = make_receipt(
         tool_name="ppt_create",
         args={"title": "t"},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
         session_id="sess-1",
         secret=key,

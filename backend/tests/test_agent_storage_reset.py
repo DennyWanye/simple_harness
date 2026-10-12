@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 import os
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from scripts.reset_agent_data import AgentDataResetRefused, reset_storage_set
 

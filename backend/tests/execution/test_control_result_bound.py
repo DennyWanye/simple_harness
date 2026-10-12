@@ -17,18 +17,27 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-
 from deskpet.execution.current_tool_pages import (
-    CONTROL_MARKER, CONTROL_TOOLS, STUBBABLE_CONTROL_TOOLS, CurrentToolProjector,
-    MARKER, PrimaryContextPageUnavailable, _control_tool_tokens,
-    control_result_allowance, control_stub, control_stub_content, verify_control_stubs,
+    CONTROL_MARKER,
+    CONTROL_TOOLS,
+    MARKER,
+    STUBBABLE_CONTROL_TOOLS,
+    CurrentToolProjector,
+    PrimaryContextPageUnavailable,
+    _control_tool_tokens,
+    control_result_allowance,
+    control_stub,
+    control_stub_content,
+    verify_control_stubs,
 )
 from deskpet.sdk_adapters.context_partitions import (
-    ProviderTokenCalibration, effective_input_budget, text_tokens,
+    ProviderTokenCalibration,
+    effective_input_budget,
+    text_tokens,
 )
 from deskpet.task_scope.protocol import canonical_json, redact_credential_shapes
+from simple_harness import CallId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
 
 RUN_ID = "product-sdk-" + "3f" * 32
 HOST_RUN_ID = "9cae01fc-0000-4000-8000-000000000001"

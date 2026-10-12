@@ -25,6 +25,8 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from agent_orchestrator.testing.fixtures import role_of
+from agent_orchestrator.testing.product_world import product_world
 from provider_world import (
     QUICK,
     HeldStep,
@@ -37,9 +39,6 @@ from provider_world import (
     status,
     wire_terminal,
 )
-
-from agent_orchestrator.testing.fixtures import role_of
-from agent_orchestrator.testing.product_world import product_world
 from simple_harness import Message, MessageRole
 from simple_harness.providers import ProviderRequestRejectedError, ProviderUsage
 
@@ -114,7 +113,9 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
             # 2026-10-10（docopt 局）：未知用量是记账的事，不是执行还在跑——调用已在线路上结束，
             # 执行图收敛看"物理上安静"时不把它算作没安静（否则收敛作业永远等）；记账完整性照实为假。
             # **Mutation**: ``has_unknown_usage`` → ``physical = False`` in ``_read`` → red.
-            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import TaskGraphRuntimeImports
+            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import (
+                TaskGraphRuntimeImports,
+            )
             facts = TaskGraphRuntimeImports(world.loop).read_subject(store.get_intent_for_subject(first.id))
             # "broken"（连接中断）那一例 SDK 的回合记录停在 running：回合没结束，物理上就还不算安静
             assert facts.physical_settled is (fault != "broken") and facts.accounting_complete is False, (

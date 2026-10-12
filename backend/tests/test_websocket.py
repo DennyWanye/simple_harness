@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 import pytest
-from starlette.websockets import WebSocketDisconnect
 from fastapi.testclient import TestClient
-from main import app, SHARED_SECRET
+from main import SHARED_SECRET, app
+from starlette.websockets import WebSocketDisconnect
 
 
 def _drain_startup_status(ws) -> None:

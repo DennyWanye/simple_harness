@@ -20,12 +20,16 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world, result_envelope  # noqa: E402
-
 from agent_orchestrator.orchestrator.planning_retry import retry_decision_required  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import decision  # noqa: E402
+from production_fixture import (  # noqa: E402
+    CHAIN_CRITERIA,
+    chain_planner,
+    enabled_world,
+    result_envelope,
+)
 
 SECOND_OUTPUT = CHAIN_CRITERIA[1].removeprefix("file:")
 

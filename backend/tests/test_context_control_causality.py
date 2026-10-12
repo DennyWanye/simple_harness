@@ -7,7 +7,6 @@ import copy
 from types import SimpleNamespace
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent
 from agent.context_messages import (
     CONTEXT_MESSAGE_META_KEY,

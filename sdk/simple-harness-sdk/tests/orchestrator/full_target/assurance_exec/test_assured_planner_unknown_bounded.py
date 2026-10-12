@@ -27,7 +27,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.orchestrator import assurance_review_wait
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.agent_worker import Liveness

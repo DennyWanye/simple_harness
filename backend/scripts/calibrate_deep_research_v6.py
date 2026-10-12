@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections import defaultdict
-from datetime import datetime, timezone
 import importlib.util
 import json
 import math
-from pathlib import Path
 import statistics
 import sys
 import tempfile
 import time
+from collections import defaultdict
+from datetime import UTC, datetime, timezone
+from pathlib import Path
 
 import aiosqlite
 import httpx
@@ -27,7 +27,6 @@ from deskpet.workflows import NodeExecutionIdentity
 from deskpet.workflows.store import WorkflowRunStore
 from deskpet.workflows.trace import TraceStore
 from deskpet.workflows.trace.observer import WorkflowExecutionObserver
-
 
 SAMPLE_COUNT = 20
 SLOW_DELAY_S = 0.01
@@ -364,7 +363,7 @@ async def _run(output: Path) -> None:
         official = await _offline_official_samples(repo_root, root)
     payload = {
         "schema_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "automated_gate_status": "pass",
         "fixed_clock_automation": fixed,
         "slow_stage_automation": slow,

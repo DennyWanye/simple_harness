@@ -26,17 +26,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from full_target_world import (
-    HASH_A,
-    HASH_B,
-    HASH_C,
-    goal_signature,
-    method_contract,
-    task_binding,
-    tref,
-    vref,
-)
-
 from agent_orchestrator.contracts import Budget, ContractError, Mission, MissionStatus
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
@@ -106,6 +95,16 @@ from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.store import Store, StoreConflict
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from full_target_world import (
+    HASH_A,
+    HASH_B,
+    HASH_C,
+    goal_signature,
+    method_contract,
+    task_binding,
+    tref,
+    vref,
+)
 from simple_harness.contracts import canonical_json
 
 MISSION = "mission-1"

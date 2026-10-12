@@ -16,7 +16,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from deskpet.permissions.policy import AuthorizationPolicyState
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
 from deskpet.product_state.database import ProductStateDatabase

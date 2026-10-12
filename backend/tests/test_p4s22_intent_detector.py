@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.code_mode import maybe_suggest_code_mode
 
 

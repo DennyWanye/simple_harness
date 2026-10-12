@@ -15,45 +15,6 @@ import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
-from simple_harness import (
-    WorkspaceBindingAuthorizationChannel,
-    WorkspaceBindingAuthorizationDecision,
-    WorkspaceBindingProposal,
-)
-from simple_harness.contracts import CallId, RequestId, RunId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.execution.budget import BudgetSnapshot
-from simple_harness.execution.effects import (
-    EffectRecord,
-    EffectState,
-    effect_request_hash,
-)
-from simple_harness.execution.fences import RunFenceLease
-from simple_harness.execution.uow import ExecutionLease, WorkflowCheckpoint
-from simple_harness.providers import (
-    CancelToken,
-    ProviderResponse,
-    ProviderToolCall,
-    ProviderToolSpec,
-)
-from simple_harness.runtime.context import ContextSnapshot
-from simple_harness.runtime.drivers.react_loop import (
-    AgentLoopCollaborator,
-    EffectBatchExecutor,
-    ReActLoop,
-    ReActRunInput,
-)
-from simple_harness.runtime.kernel import RuntimeServices
-from simple_harness.runtime.termination import TerminationLimits
-from simple_harness.tools import ToolResult
-from simple_harness.tools.executor import EffectExecution, EffectExecutor
-from simple_harness.tools.runtime_catalog import (
-    ToolEffectClass,
-    ToolExecutionPolicy,
-    ToolRouteRequirement,
-    ToolTaskScopeRequirement,
-)
-
 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.memory.human_memory_service import (
     AuthenticatedHostSnapshot,
@@ -96,6 +57,44 @@ from deskpet.task_scope.workspace_bindings import (
     canonical_workspace_root,
 )
 from deskpet.types.task_work_context import TaskWorkContext
+from simple_harness import (
+    WorkspaceBindingAuthorizationChannel,
+    WorkspaceBindingAuthorizationDecision,
+    WorkspaceBindingProposal,
+)
+from simple_harness.contracts import CallId, RequestId, RunId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.execution.budget import BudgetSnapshot
+from simple_harness.execution.effects import (
+    EffectRecord,
+    EffectState,
+    effect_request_hash,
+)
+from simple_harness.execution.fences import RunFenceLease
+from simple_harness.execution.uow import ExecutionLease, WorkflowCheckpoint
+from simple_harness.providers import (
+    CancelToken,
+    ProviderResponse,
+    ProviderToolCall,
+    ProviderToolSpec,
+)
+from simple_harness.runtime.context import ContextSnapshot
+from simple_harness.runtime.drivers.react_loop import (
+    AgentLoopCollaborator,
+    EffectBatchExecutor,
+    ReActLoop,
+    ReActRunInput,
+)
+from simple_harness.runtime.kernel import RuntimeServices
+from simple_harness.runtime.termination import TerminationLimits
+from simple_harness.tools import ToolResult
+from simple_harness.tools.executor import EffectExecution, EffectExecutor
+from simple_harness.tools.runtime_catalog import (
+    ToolEffectClass,
+    ToolExecutionPolicy,
+    ToolRouteRequirement,
+    ToolTaskScopeRequirement,
+)
 
 RUN = RunId("run-s5b-gate-1")
 REQUEST = RequestId("request-1")

@@ -16,18 +16,18 @@ from typing import Any
 
 from ..contracts.evidence_state import EvidenceSnapshot
 from ..contracts.htn import (
-    ReadItem,
-    ScopeEpochRead,
+    CancelBranchOperation,
     GraphStructureBudget,
     MethodInstanceId,
     MethodRef,
     OccurrenceId,
     PlanProposal,
-    RefineOperation,
-    RebindInputOperation,
-    CancelBranchOperation,
     ProposeSuccessorOperation,
+    ReadItem,
+    RebindInputOperation,
+    RefineOperation,
     RetireMethodOperation,
+    ScopeEpochRead,
     TaskForm,
     TaskRef,
 )
@@ -44,7 +44,12 @@ from .htn.compiler import (
     compile_candidate_from_snapshot as compile_refinement_candidate,
 )
 from .htn.grounding import (
-    ParameterBindingsError, ReuseRefused, SharedGoalEntry, ground_method, occurrence_criteria, slot_criteria,
+    ParameterBindingsError,
+    ReuseRefused,
+    SharedGoalEntry,
+    ground_method,
+    occurrence_criteria,
+    slot_criteria,
 )
 from .htn.registry import MethodRegistry, SchemaCatalog, TaskTypeCatalog, iter_predicates
 from .htn.validation import DeltaProblemKind, DeltaReport, validate_delta

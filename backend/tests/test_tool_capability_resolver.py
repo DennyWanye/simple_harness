@@ -4,7 +4,8 @@ import json
 from dataclasses import dataclass, field
 
 import pytest
-
+from deskpet.agent.assembler.policy import load_policies
+from deskpet.agent.goal_store import SessionGoalStore
 from deskpet.tools.capabilities import (
     ToolCapabilityResolver,
     ToolCapabilityScopeStore,
@@ -19,8 +20,6 @@ from deskpet.tools.registry import (
     ToolRegistry,
     tool_spec_fingerprint,
 )
-from deskpet.agent.goal_store import SessionGoalStore
-from deskpet.agent.assembler.policy import load_policies
 
 
 @dataclass

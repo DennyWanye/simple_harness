@@ -12,8 +12,9 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 
 def _stable_revision(value: object) -> str:

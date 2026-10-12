@@ -7,11 +7,10 @@ import types
 from dataclasses import asdict
 from pathlib import Path
 
-import pytest
 import httpx
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
 from deskpet.companion.control_command_canonical import (
     CanonicalCommandError,
     canonical_request_hash,

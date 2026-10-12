@@ -17,11 +17,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-
-from ..deployment.root import current_statements
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ContractError, MissionStatus
+from ..deployment.root import current_statements
 from ..governance.budgets import BudgetError, BudgetExhausted
 from ..governance.permissions import (
     Principal,
@@ -352,7 +351,10 @@ class ActionCommitsMixin:
             live = [v for v in versions if v["state"] != "REFUSED"]
             latest = live[-1] if live else None
             phash = params_hash(cand["params"])
-            from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
+            from ..runtime.operation_reconciliation import (
+                nonapplication_outcome,
+                stored_negative_proof,
+            )
 
             # 阶段 B 裁决第 1 类: a failed version that left our hands is offered again only
             # once it is proven not to have happened; same content is then a new version,
@@ -914,8 +916,8 @@ class ActionCommitsMixin:
                 action, connectors=connectors, deployment=deployment, rehandoff=rehandoff
             )
             if reason is None and action.get("task_id"):
-                from .taskgraph_dispatch import require_taskgraph_unfenced
                 from ..storage.store import StoreConflict
+                from .taskgraph_dispatch import require_taskgraph_unfenced
                 try:
                     require_taskgraph_unfenced(self._store, str(action["mission_id"]), str(action["task_id"]))
                 except StoreConflict:
@@ -960,13 +962,13 @@ class ActionCommitsMixin:
                         reason = "operation_link_mismatch"
                     if reason is None:
                         # Every link is a T0 link: a broken chain cannot reserve or send.
-                        from .operation_materialization_inputs import (
-                            OperationMaterializationInputError,
-                        )
                         from ..runtime.operation_profiles import BuiltinOperationProfiles
                         from ..runtime.operation_ref_resolver import (
                             OperationReferenceResolver,
                             OperationReferenceUnavailable,
+                        )
+                        from .operation_materialization_inputs import (
+                            OperationMaterializationInputError,
                         )
 
                         try:
@@ -1298,8 +1300,8 @@ class ActionCommitsMixin:
             raise ActionCommitError(f"a ruling is succeeded or failed, not {outcome!r}")
         if not basis.strip() or not evidence:
             raise ActionCommitError("a ruling on an UNKNOWN action needs a basis and evidence")
-        from ..storage.planning_admission_store import PlanningAdmissionStore
         from ..runtime.operation_reconciliation import stored_negative_proof
+        from ..storage.planning_admission_store import PlanningAdmissionStore
 
         with self._store.transaction():
             action = self._store.get_action(action_key)

@@ -9,7 +9,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.migration import (
     apply_ddl,

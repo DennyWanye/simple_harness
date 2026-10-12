@@ -7,8 +7,9 @@ import inspect
 import json
 import logging
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 from deskpet.execution.dispatch import (
     DispatchIdentity,

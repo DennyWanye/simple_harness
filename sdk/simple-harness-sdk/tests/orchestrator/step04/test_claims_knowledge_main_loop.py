@@ -36,16 +36,15 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import chain_planner, enabled_world  # noqa: E402
-
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool  # noqa: E402
-from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover  # noqa: E402
 from agent_orchestrator.contracts import ClaimStatus, ResultEnvelope  # noqa: E402
 from agent_orchestrator.memory.code_observations import scoped_test_observations  # noqa: E402
 from agent_orchestrator.observability.lineage import lineage  # noqa: E402
+from agent_orchestrator.orchestrator.assurance_point_use import knowledge_handover  # noqa: E402
 from agent_orchestrator.storage.store import InjectedCrash  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
 from agent_orchestrator.verification.conflicts import mission_disputes  # noqa: E402
+from production_fixture import chain_planner, enabled_world  # noqa: E402
 
 PROBE = "tests/probe/test_impl_a.py"
 NOTES = "NOTES.md"

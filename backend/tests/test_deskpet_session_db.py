@@ -1,7 +1,6 @@
 import sqlite3
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 
 

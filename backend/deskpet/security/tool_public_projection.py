@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
-
 
 _ACTIVITY_KINDS = frozenset(
     {"inspect", "plan", "mutate", "verify", "communicate", "wait"}

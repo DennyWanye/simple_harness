@@ -12,8 +12,9 @@ import json
 import os
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context

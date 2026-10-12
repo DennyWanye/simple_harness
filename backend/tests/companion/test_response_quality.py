@@ -4,7 +4,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
 from agent.agent_loop import AgentLoop, FinalEvent
 from deskpet.agent.turn_preparer import ProductTurnPreparer, TurnInput
 from deskpet.companion.response_quality import (

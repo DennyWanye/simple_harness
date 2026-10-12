@@ -31,8 +31,8 @@ under ``asset/`` inside the bundle and is used for zero-shot cloning.
 from __future__ import annotations
 
 import io
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import structlog
 

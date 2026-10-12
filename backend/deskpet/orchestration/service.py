@@ -30,6 +30,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS, NATIVE_OUTPUT_TOKENS
+from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
+
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
 from .projection import (
@@ -39,15 +42,12 @@ from .projection import (
     ui_state,
 )
 from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
-from .storage_usage import StorageUsage
-from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS, NATIVE_OUTPUT_TOKENS
-from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
-
 from .runtime_profile import (
     ONLY_DEEPSEEK_REASON,
     source_runtime_options,
 )
 from .settings import OrchestrationSettings
+from .storage_usage import StorageUsage
 
 logger = logging.getLogger(__name__)
 
@@ -299,7 +299,9 @@ class OrchestrationService:
     def _taskgraph_acceptance_status() -> str:
         """``VALIDATED`` / ``NOT_RUN`` from the installed SDK's package-owned manifest; a manifest
         that does not verify reads as ``UNVERIFIED`` (refused the same way)."""
-        from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+        from agent_orchestrator.orchestrator.taskgraph_deployment import (
+            InstalledHtnWiringAcceptance,
+        )
         from agent_orchestrator.runtime.planning_operations import SourceUnavailable
         try:
             return InstalledHtnWiringAcceptance().acceptance_status()
@@ -314,8 +316,8 @@ class OrchestrationService:
     async def _open(self) -> None:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
-        from agent_orchestrator.governance.policies import DeploymentPolicy
         from agent_orchestrator.contracts import Budget
+        from agent_orchestrator.governance.policies import DeploymentPolicy
         from agent_orchestrator.orchestrator.event_handler import Orchestrator
         from agent_orchestrator.runtime.assembly import OrchestratorConfig
 
@@ -1000,7 +1002,6 @@ class OrchestrationService:
         cached = getattr(self, "_thinking_provider_instance", None)
         if cached is None:
             from .provider import provider_on_client
-
             from .runtime_profile import THINKING_EFFORT
 
             cached = provider_on_client(
@@ -1028,7 +1029,10 @@ class OrchestrationService:
         """第 2 批 H11 / 车道 P：本月全局总账（所有任务按建立月份合计）的月份、上限、已用、预留中、
         剩余，设置页据此写说明。当月总账在当月第一个任务建立时才打开；没打开时用量为 0。读不到
         账本（服务没起来）也报月份与配置的月配额。月份与账户都由 SDK 算（``global_account_id``）。"""
-        from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_id
+        from agent_orchestrator.orchestrator.commit_service import (
+            GLOBAL_ACCOUNT_PREFIX,
+            global_account_id,
+        )
 
         running = self._orchestrator is not None and self._state in ("available", "degraded")
         now = self._orchestrator.store.now if running else time.time()

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 
 

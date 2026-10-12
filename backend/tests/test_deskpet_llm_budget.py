@@ -7,9 +7,8 @@ from __future__ import annotations
 import datetime as _dt
 import json
 
-import pytest
-
 import llm.budget as budget_mod
+import pytest
 from llm.budget import DailyBudget
 from llm.types import ChatUsage
 
@@ -71,7 +70,7 @@ def test_persists_across_restart(tmp_path):
 def test_utc_rollover_resets(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     # Pre-seed state with yesterday's date.
-    yesterday = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    yesterday = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
     state.write_text(json.dumps({"utc_date": yesterday, "spent_usd": 9.5, "entries": []}))
     b = DailyBudget(cap_usd=10.0, state_path=state)
     # Constructor detects stale date and resets.
@@ -88,7 +87,7 @@ def test_rollover_mid_session(tmp_path, monkeypatch):
 
     # Simulate a UTC date shift without actually sleeping 24h by
     # monkey-patching the helper.
-    tomorrow = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (_dt.datetime.now(_dt.UTC) + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
     monkeypatch.setattr(DailyBudget, "_utc_date_str", staticmethod(lambda: tomorrow))
     assert b.get_spent() == 0.0
 

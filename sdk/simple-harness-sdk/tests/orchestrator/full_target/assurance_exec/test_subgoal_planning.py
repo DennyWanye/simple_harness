@@ -35,7 +35,6 @@ from _subgoal_world import (
     outer,
     scopes,
 )
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.resolution import ReviewPurpose
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider

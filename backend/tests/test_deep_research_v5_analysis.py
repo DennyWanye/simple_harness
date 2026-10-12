@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v3_contracts import (
     AtomicClaim,
     EvidencePassage,
@@ -29,7 +28,6 @@ from deskpet.workflows.definitions.deep_research_v5_evidence import (
     evaluate_evidence,
 )
 from deskpet.workflows.definitions.deep_research_v5_policy import profile_definition
-
 
 FIXTURE = (
     Path(__file__).parent / "fixtures" / "deep_research_v5_education_analysis.json"

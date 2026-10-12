@@ -19,13 +19,20 @@ from typing import Any, Literal
 from .contracts import JsonValue, NodeExecutionIdentity
 from .definitions.deep_research_v5_progress import (
     CAPABILITY as DEEP_RESEARCH_PROGRESS_V5_CAPABILITY,
+)
+from .definitions.deep_research_v5_progress import (
     NODE_IDS as DEEP_RESEARCH_V5_NODE_IDS,
+)
+from .definitions.deep_research_v5_progress import (
     PUBLIC_STAGE_IDS as DEEP_RESEARCH_V5_PUBLIC_STAGE_IDS,
+)
+from .definitions.deep_research_v5_progress import (
     SCHEMA_VERSION as DEEP_RESEARCH_PROGRESS_V5_SCHEMA_VERSION,
+)
+from .definitions.deep_research_v5_progress import (
     V5ProgressProjectionError,
     build_v5_transition_projection,
 )
-
 
 logger = logging.getLogger(__name__)
 

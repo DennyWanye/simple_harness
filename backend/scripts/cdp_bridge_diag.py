@@ -2,8 +2,13 @@
 # SPDX-License-Identifier: BUSL-1.1
 """连 pet 主窗(RelayEdition 所在)，监听 console 看 relayProviderBridge →
 updateCloudConfig 是否失败 + dump bridge 失败 banner。不 reload(保登录)。"""
-import asyncio, json, sys, urllib.request
+import asyncio
+import json
+import sys
+import urllib.request
+
 import websockets
+
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 _mid=[0]; _logs=[]
@@ -40,7 +45,7 @@ async def listen(ws,secs):
                 a=r["params"].get("args",[])
                 txt=" ".join(str(x.get("value",x.get("description",""))) for x in a)
                 _logs.append((r["params"].get("type",""),txt))
-        except asyncio.TimeoutError: pass
+        except TimeoutError: pass
         except Exception: break
         t-=1
 

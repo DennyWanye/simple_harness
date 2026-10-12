@@ -10,19 +10,25 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
-from arp_fixture import ExactWordTokenizer, MODEL, RecordingAuthorization, activation_receipt, standalone_profile, trusted_caller
-from provider_fixture import ScriptedProvider
-
 from agent_orchestrator.runtime.native_plane import RunPriorReserve
+from arp_fixture import (
+    MODEL,
+    ExactWordTokenizer,
+    RecordingAuthorization,
+    activation_receipt,
+    standalone_profile,
+    trusted_caller,
+)
+from provider_fixture import ScriptedProvider
+from simple_harness import Message, MessageRole
 from simple_harness.agents import AgentConfig
+from simple_harness.agents.arp import store
 from simple_harness.agents.arp.meter import MeterBinding, model_limits
 from simple_harness.agents.arp.pins import Pin, digest
 from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root
 from simple_harness.agents.arp.runtime import build_arp_runtime
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.agents.ports import AgentRuntimePorts
-from simple_harness import Message, MessageRole
-from simple_harness.agents.arp import store
 from simple_harness.providers import ProviderResponse
 from simple_harness.providers.base import ProviderUsage
 

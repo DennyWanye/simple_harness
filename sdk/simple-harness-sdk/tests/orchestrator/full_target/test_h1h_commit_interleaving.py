@@ -24,9 +24,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from h1i_seed import plan_reply, reviewed
-from publishing_round import POLICY, publishing_round, run_rounds
-
 from agent_orchestrator.api.approvals import ApprovalApi
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.orchestrator.commit_service import CommitService
@@ -35,6 +32,8 @@ from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import Store
+from h1i_seed import plan_reply, reviewed
+from publishing_round import POLICY, publishing_round, run_rounds
 
 
 @pytest.fixture(autouse=True)
@@ -178,9 +177,6 @@ def test_i06_a_concurrent_publish_approval_makes_the_plan_commit_stale(tmp_path)
 import dataclasses  # noqa: E402
 import hashlib  # noqa: E402
 
-from test_htn_store import envelope  # noqa: E402
-from test_plan_commits import ROOT_TASK  # noqa: E402
-
 from agent_orchestrator.contracts.htn import RunningWorkPolicy  # noqa: E402
 from agent_orchestrator.contracts.models import sha256_hex  # noqa: E402
 from agent_orchestrator.contracts.planning_decisions import (  # noqa: E402
@@ -208,6 +204,8 @@ from agent_orchestrator.runtime.planning_operations import (  # noqa: E402
     read_running_work,
 )
 from simple_harness.contracts import canonical_json  # noqa: E402
+from test_htn_store import envelope  # noqa: E402
+from test_plan_commits import ROOT_TASK  # noqa: E402
 
 
 def _admission_for_active_revision(world, command):

@@ -9,6 +9,10 @@ test_h1h_planning_authorization 的模块说明）；所守保证不变：外来
 from __future__ import annotations
 
 import pytest
+from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
+from agent_orchestrator.governance.permissions import Principal
+from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from agent_orchestrator.storage.store import Store, StoreConflict
 from test_h1h_planning_authorization import (
     TENANT,
     Seeded,
@@ -17,11 +21,6 @@ from test_h1h_planning_authorization import (
     product_db,
     seed_product_missions,
 )
-
-from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
-from agent_orchestrator.governance.permissions import Principal
-from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-from agent_orchestrator.storage.store import Store, StoreConflict
 
 
 @pytest.fixture

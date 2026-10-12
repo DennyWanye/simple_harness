@@ -111,7 +111,7 @@ _now = lambda: time.monotonic()
 _sleep = time.sleep
 _async_sleep = asyncio.sleep
 _search_cdp_count = 0
-_google_reachable_cache: Optional[tuple[float, bool]] = None
+_google_reachable_cache: tuple[float, bool] | None = None
 _engine_failures: dict[str, int] = {}
 _engine_cooldown_until: dict[str, float] = {}
 _result_cache: dict[tuple[str, str, str], tuple[float, list[dict[str, str]]]] = {}
@@ -260,7 +260,7 @@ def _cache_key(engine: str, query: str, region: str) -> tuple[str, str, str]:
     return (engine, query.strip().lower(), region)
 
 
-def _cached_results(engine: str, query: str, region: str) -> Optional[list[dict[str, str]]]:
+def _cached_results(engine: str, query: str, region: str) -> list[dict[str, str]] | None:
     if not _serp_hardening():
         return None
     item = _result_cache.get(_cache_key(engine, query, region))
@@ -628,9 +628,9 @@ def search(
     query: str,
     *,
     max_results: int = 5,
-    region: Optional[str] = None,
+    region: str | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
-    engines: Optional[list[str]] = None,
+    engines: list[str] | None = None,
 ) -> dict[str, Any]:
     """同步搜索(兼容性降级队列)→ ``{query, count, results, region, engine, [error]}``。
 
@@ -644,7 +644,7 @@ def search(
     n = _normalize_max(max_results)
     reg = region or region_for_query(q)
     queue = engines or _engine_queue()
-    last_err: Optional[str] = None
+    last_err: str | None = None
     for engine in queue:
         if engine in {"bing-cdp", "google-cdp", "searxng"}:
             continue
@@ -698,10 +698,10 @@ async def search_async(
     query: str,
     *,
     max_results: int = 5,
-    region: Optional[str] = None,
+    region: str | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
-    client: Optional[httpx.AsyncClient] = None,
-    engines: Optional[list[str]] = None,
+    client: httpx.AsyncClient | None = None,
+    engines: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """异步搜索(兼容性降级队列)→ ``[{url, title, snippet}]``(research 管线形状)。
     按队列依次试,第一个非空就返回;全失败 → ``[]``。"""

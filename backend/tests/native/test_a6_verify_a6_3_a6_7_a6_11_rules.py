@@ -105,7 +105,7 @@ def _request_json(attempt: dict) -> str:
                       ensure_ascii=False)
 
 
-def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = "") -> "a6.Evidence":
+def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = "") -> a6.Evidence:
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
     runs = []
@@ -184,7 +184,7 @@ def _a6_3_evidence(tmp_path: Path, attempts: list[dict], *, native_extra: str = 
     return a6.Evidence(root)
 
 
-def _a6_3(ev) -> "a6.Item":
+def _a6_3(ev) -> a6.Item:
     return a6.item_a6_3(ev, ev.budget_profile())
 
 
@@ -359,7 +359,7 @@ def _hm_db(tmp_path: Path, heads, revisions, relations, *, with_lifecycle_column
     return a6.RoDb(str(path), "human_memory_v7.db")
 
 
-def _a6_7(tmp_path: Path, heads, revisions, relations, **kw) -> "a6.Item":
+def _a6_7(tmp_path: Path, heads, revisions, relations, **kw) -> a6.Item:
     db = _hm_db(tmp_path, heads, revisions, relations, **kw)
     try:
         return a6.item_a6_7(SimpleNamespace(hm=db))
@@ -450,7 +450,7 @@ _MEM_B = "cognitive-memory-" + "9" * 64
 _REL = "cognitive-relation-" + "a" * 64
 
 
-def _a6_11_evidence(tmp_path: Path, requests: list[list[dict]]) -> "a6.Evidence":
+def _a6_11_evidence(tmp_path: Path, requests: list[list[dict]]) -> a6.Evidence:
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
     _make_db(

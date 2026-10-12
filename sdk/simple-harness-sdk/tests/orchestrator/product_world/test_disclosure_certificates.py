@@ -15,7 +15,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.assurance.certificates import POINT_PURPOSES
 from agent_orchestrator.assurance.codec import decode
@@ -29,7 +28,11 @@ from agent_orchestrator.orchestrator.assurance_point_use import (
 )
 from agent_orchestrator.orchestrator.assurance_recheck import live_usable_certificates
 from agent_orchestrator.testing.product_world import DEFAULT_TOOLS, TENANT, product_world
-from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, review_input, review_reply
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    review_input,
+    review_reply,
+)
 
 
 @pytest.fixture(autouse=True)

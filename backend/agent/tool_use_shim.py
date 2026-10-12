@@ -24,14 +24,14 @@ Production wiring:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
-from llm.errors import LLMProviderError
 from deskpet.execution.dispatch import current_dispatch_handoff
-
+from llm.errors import LLMProviderError
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
 

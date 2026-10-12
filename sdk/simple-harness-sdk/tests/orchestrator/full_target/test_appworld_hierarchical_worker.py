@@ -32,8 +32,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from h1i_seed import CONFIG, run_until  # noqa: E402
-
 from agent_orchestrator.governance.domains import APPWORLD_DOMAIN  # noqa: E402
 from agent_orchestrator.runtime.appworld_templates import (  # noqa: E402
     WORKER_APPWORLD_HIERARCHICAL_VERSION,
@@ -43,6 +41,7 @@ from agent_orchestrator.runtime.role_templates import (  # noqa: E402
 )
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
+from h1i_seed import CONFIG, run_until  # noqa: E402
 
 APPWORLD_TOOLS = (
     "workspace_read_file",

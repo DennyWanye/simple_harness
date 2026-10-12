@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-
 from ..contracts import ContractError
 from ..contracts.htn import (
     ObligationId,

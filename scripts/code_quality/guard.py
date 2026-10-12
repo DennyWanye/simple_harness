@@ -9,6 +9,8 @@
    有增减即不通过（工具说明是执行池准入身份）。只改日志或异常措辞的片可加
    --text-report-only 降为只报告，但必须先确认改动里没有工具说明与提示词。
 
+文档字符串、类型注解里的常量，getattr/setattr 的常量属性名，utf-8 编码参数不计
+（这几类会被自动修复改写，都不是数据）。
 纯移动、改名、拆函数不会改变字面量多重集。确需改动的（例如删死代码、改日志措辞），
 在 --allow 文件里逐行写出允许变化的字面量 repr，并在该片实施记录里说明原因。
 
@@ -76,12 +78,49 @@ def docstring_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
+def annotation_ids(tree: ast.AST) -> set[int]:
+    """注解子树里的常量（带引号的类型名）。工具参数结构是字典字面量，不从注解生成。"""
+    ids: set[int] = set()
+    roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
+            roots.append(node.returns)
+        elif isinstance(node, ast.arg) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, ast.AnnAssign):
+            roots.append(node.annotation)
+    for r in roots:
+        ids.update(id(n) for n in ast.walk(r))
+    return ids
+
+
+def attr_name_ids(tree: ast.AST) -> set[int]:
+    """getattr/setattr 的常量属性名、encode/decode 的 utf-8 参数：自动修复会改写成属性访问或默认值。"""
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        f = node.func
+        if isinstance(f, ast.Name) and f.id in ("getattr", "setattr") and len(node.args) >= 2 \
+                and isinstance(node.args[1], ast.Constant):
+            ids.add(id(node.args[1]))
+        if isinstance(f, ast.Attribute) and f.attr in ("encode", "decode"):
+            for a in node.args[:1]:
+                if isinstance(a, ast.Constant) and str(a.value).lower().replace("-", "") == "utf8":
+                    ids.add(id(a))
+        for k in node.keywords:
+            if k.arg == "encoding" and isinstance(k.value, ast.Constant) \
+                    and str(k.value.value).lower().replace("-", "") == "utf8":
+                ids.add(id(k.value))
+    return ids
+
+
 def py_literals(src: bytes) -> list:
     try:
         tree = ast.parse(src)
     except SyntaxError:
         return []
-    skip = docstring_ids(tree)
+    skip = docstring_ids(tree) | annotation_ids(tree) | attr_name_ids(tree)
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and id(node) not in skip:

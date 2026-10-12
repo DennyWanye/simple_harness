@@ -23,7 +23,8 @@ import io
 import logging
 import re
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 from urllib.parse import quote, urljoin
 from xml.etree import ElementTree as ET
 
@@ -150,7 +151,7 @@ _AGENT_REACH_KW = (
 )
 
 
-_RESEARCH_RAW_CACHE: Optional[dict[str, Any]] = None
+_RESEARCH_RAW_CACHE: dict[str, Any] | None = None
 
 
 def _research_raw() -> dict[str, Any]:
@@ -230,7 +231,7 @@ def _clean_text(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
 
 
-def _direct_item(source: str, *, url: str, title: str, text: str) -> Optional[dict[str, Any]]:
+def _direct_item(source: str, *, url: str, title: str, text: str) -> dict[str, Any] | None:
     clean_text = _clean_text(text)[:_DIRECT_TEXT_MAX].strip()
     clean_title = _clean_text(title)[:_DIRECT_TITLE_MAX].strip()
     clean_url = (url or "").strip()
@@ -299,7 +300,7 @@ def _html_main_text(html: str) -> str:
         return _strip_tags(html or "")
 
 
-def _baike_item(source: str, *, url: str, html: str, fallback_title: str) -> Optional[dict[str, Any]]:
+def _baike_item(source: str, *, url: str, html: str, fallback_title: str) -> dict[str, Any] | None:
     title = fallback_title
     try:
         import trafilatura  # type: ignore
@@ -489,7 +490,7 @@ def _rank_cninfo_anns(anns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 async def cninfo_search(
     keyword: str, *, max_results: int = 4,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """巨潮公告直连 → passages(含 PDF 抽取正文)。best-effort,失败返 []。"""
     if not (keyword or "").strip():
@@ -644,7 +645,7 @@ def parse_openstd(html: str, *, max_results: int) -> list[dict[str, Any]]:
 
 async def openstd_search(
     keyword: str, *, max_results: int = 4,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """国标系统搜索 → 标准元数据 passages(标准号+名称)。best-effort,失败返 []。"""
     kw = _openstd_keyword(keyword)   # 长子问题压成核心技术词,否则 std_list 命中 0
@@ -734,7 +735,7 @@ async def _baidu_baike_fetch(
 
 async def baidu_baike_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """Baidu Baike direct source. Best-effort; failures degrade to []."""
     if not (keyword or "").strip():
@@ -794,7 +795,7 @@ async def _sogou_baike_fetch(
 
 async def sogou_baike_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """Sogou Baike direct source. Best-effort; failures degrade to []."""
     if not (keyword or "").strip():
@@ -878,7 +879,7 @@ async def _wikipedia_fetch(
 
 async def wikipedia_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """Wikipedia opensearch + REST summary 直连。best-effort,失败返 []。"""
     if not (keyword or "").strip():
@@ -954,7 +955,7 @@ async def _arxiv_fetch(
 
 async def arxiv_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """arXiv Atom API 直连；Atom XML 用 stdlib ElementTree 解析。"""
     if not (keyword or "").strip():
@@ -1023,7 +1024,7 @@ async def _semantic_scholar_fetch(
 
 async def semantic_scholar_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic Scholar Graph API 匿名搜索。429/超时静默降级为 []。"""
     if not (keyword or "").strip():
@@ -1114,7 +1115,7 @@ async def _wikidata_fetch(
 
 async def wikidata_search(
     keyword: str, *, max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """Wikidata SPARQL 结构化事实直连；best-effort,失败返 []。"""
     if not (keyword or "").strip():
@@ -1169,7 +1170,7 @@ _EDGAR_CONCEPTS = [
     ("EarningsPerShareDiluted", "稀释每股收益"),
 ]
 
-_EDGAR_TICKERS_CACHE: Optional[dict[str, str]] = None   # ticker(大写) → CIK(10位)
+_EDGAR_TICKERS_CACHE: dict[str, str] | None = None   # ticker(大写) → CIK(10位)
 _EDGAR_TITLES_CACHE: list[tuple[str, str]] = []          # (title小写, CIK)
 
 
@@ -1296,7 +1297,7 @@ async def _edgar_fetch(keyword: str, cli: httpx.AsyncClient,
 
 async def edgar_search(
     keyword: str, *, max_results: int = 1,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """SEC EDGAR 美股一手财务直连 → 1 条结构化 passage(营收/净利润/总资产等,
     取自 XBRL companyconcept,逐位官方数据)。best-effort:连不上/解析不到返 []
@@ -1341,7 +1342,7 @@ async def agent_reach_search_with_status(
     keyword: str,
     *,
     max_results: int = 3,
-) -> tuple[list[dict[str, Any]], str, Optional[str], Optional[str], str, dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], str, str | None, str | None, str, dict[str, Any]]:
     """Read an explicit platform URL through Agent-Reach's selected backend."""
 
     del max_results
@@ -1376,7 +1377,7 @@ async def agent_reach_search(
     keyword: str,
     *,
     max_results: int = 3,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     del client
     items, _status, _reason, _backend, _channel, _doctor = (

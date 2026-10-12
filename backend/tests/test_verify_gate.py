@@ -12,12 +12,11 @@ PRD §3 D6 + 二轮 N1/N2/N3。覆盖 TDD T9-1 ~ T9-16 的可单测部分（不�
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import pytest
 import yaml
-
 from deskpet.agent.verify_gate import (
     CascadeExtractor,
     Claim,
@@ -31,15 +30,14 @@ from deskpet.agent.verify_gate import (
 )
 from deskpet.tools.receipt import make_receipt
 
-
 # ─── T9-1/T9-2 shadow vs strict ─────────────────────────────
 
 def test_t9_1_shadow_passes_with_matching_receipt():
     pat = ClaimPattern(id="zh_gen", regex=r"已生成 (?P<title>\S+)", artifact_kind="file")
     gate = VerifyGate(extractor=RegexExtractor([pat]), mode="shadow")
     r = make_receipt(tool_name="ppt_create", args={},
-                     started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                     ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                     started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                     ended_at=datetime(2026, 1, 1, tzinfo=UTC),
                      ok=True)
     o = gate.check(assistant_text="已生成 x.pptx", ledger=[r])
     assert o.passed is True
@@ -166,8 +164,8 @@ async def test_t9_14b_ephemeral_pass_path():
     gate = VerifyGate(extractor=RegexExtractor([]), mode="strict",
                       ephemeral_subagent=_mock_eph)
     r = make_receipt(tool_name="t", args={},
-                     started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                     ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                     started_at=datetime(2026, 1, 1, tzinfo=UTC),
+                     ended_at=datetime(2026, 1, 1, tzinfo=UTC),
                      ok=True)
     verdict = await gate.consult_ephemeral_subagent(
         ledger=[r],

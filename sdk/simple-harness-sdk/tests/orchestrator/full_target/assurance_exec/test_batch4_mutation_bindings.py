@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.orchestrator.assurance_review_consumer import ref_from_event
 from agent_orchestrator.orchestrator.assurance_review_import import read_imported_review_locked

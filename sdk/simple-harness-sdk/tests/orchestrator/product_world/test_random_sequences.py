@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from random_sequences import InvariantBroken, plan_actions, run_actions, shrink
 
 SEEDS = [int(item) for item in os.environ.get("RANDOM_SEQ_SEEDS", "20261004").split(",") if item]

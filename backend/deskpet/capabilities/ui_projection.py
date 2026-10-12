@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from deskpet.permissions.policy import AuthorizationMode
 
@@ -209,7 +210,7 @@ def _timestamp(value: float | None) -> str | None:
     if value is None:
         return None
     return (
-        dt.datetime.fromtimestamp(float(value), tz=dt.timezone.utc)
+        dt.datetime.fromtimestamp(float(value), tz=dt.UTC)
         .isoformat()
         .replace("+00:00", "Z")
     )

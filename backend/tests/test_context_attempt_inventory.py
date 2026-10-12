@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 BACKEND = Path(__file__).resolve().parents[1]
 CALL = re.compile(
     r"await\s+[^\n]*\.(?:chat_with_tools|chat_stream_with_tools|"

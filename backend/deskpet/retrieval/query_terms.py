@@ -8,7 +8,6 @@ import re
 import unicodedata
 from collections.abc import Iterable
 
-
 _ENGLISH_STOPWORDS = frozenset(
     {
         "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",

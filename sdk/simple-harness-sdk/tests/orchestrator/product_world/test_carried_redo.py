@@ -23,12 +23,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.orchestrator.assurance_validity import acceptance_id_for
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
-from agent_orchestrator.testing.scripted_replies import decision, planner_reply, review_input, review_reply
+from agent_orchestrator.testing.scripted_replies import (
+    decision,
+    planner_reply,
+    review_input,
+    review_reply,
+)
 
 
 def _load(name: str, file: str) -> Any:

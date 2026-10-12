@@ -15,7 +15,6 @@ Mirrors local_first coverage:
 from __future__ import annotations
 
 import pytest
-
 from router.hybrid_router import (
     HybridRouter,
     LLMUnavailableError,

@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.planning.htn.world import catalog_digest
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world, user_goal_world
@@ -89,9 +88,9 @@ def test_types_do_not_depend_on_the_mission(tmp_path):
 # --------------------------------------------------------------------------------------
 # 晋级、目录、读原文、照先例写新做法
 # --------------------------------------------------------------------------------------
-from agent_orchestrator.testing.scripted_replies import review_input, review_reply  # noqa: E402
 from agent_orchestrator.orchestrator import method_library as library  # noqa: E402
 from agent_orchestrator.storage.method_library_store import MethodLibraryStore  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import review_input, review_reply  # noqa: E402
 
 PURPOSE = "把一个写文件的目标交给一步完成"
 

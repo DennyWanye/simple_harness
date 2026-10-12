@@ -11,7 +11,6 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-
 from agent_orchestrator.contracts import Budget
 from agent_orchestrator.governance.budgets import BudgetExhausted, BudgetLedger
 from agent_orchestrator.scheduling.backpressure import (

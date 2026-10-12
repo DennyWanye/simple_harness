@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts import planning_decisions as contract
 from agent_orchestrator.contracts.planning_decisions import (

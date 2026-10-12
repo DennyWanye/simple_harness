@@ -6,10 +6,15 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
-from deskpet.workflows.contracts import ChannelSpec, JsonType, ReducerKind, RetryPolicy, StatePatch, WorkflowContext
+from deskpet.workflows.contracts import (
+    ChannelSpec,
+    JsonType,
+    ReducerKind,
+    RetryPolicy,
+    StatePatch,
+    WorkflowContext,
+)
 from deskpet.workflows.control import WorkflowSuspended, workflow_interrupt
-from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
 from deskpet.workflows.definition import (
     END_NODE,
     ConditionalEdge,
@@ -20,7 +25,13 @@ from deskpet.workflows.definition import (
     WorkflowDefinitionError,
     compile_workflow,
 )
-from deskpet.workflows.native import NativeCommitResult, NativeExecution, NativeExecutionPolicy, NativeSnapshotEnvelope
+from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
+from deskpet.workflows.native import (
+    NativeCommitResult,
+    NativeExecution,
+    NativeExecutionPolicy,
+    NativeSnapshotEnvelope,
+)
 
 
 def _lock(tmp_path: Path) -> Path:

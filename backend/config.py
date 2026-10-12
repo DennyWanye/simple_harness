@@ -2,20 +2,22 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 from __future__ import annotations
+
 import json
 import logging
 import os
 import shutil
 import sys
-import tomli
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from dataclasses import fields as dc_fields
 from pathlib import Path
-from dataclasses import dataclass, field, fields as dc_fields
-from typing import Mapping, Optional
-
-import platformdirs
+from typing import Optional
 from urllib.parse import urlsplit
 
 import paths as _paths
+import platformdirs
+import tomli
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +423,7 @@ class BillingConfig:
     tz: str = "Asia/Shanghai"
 
     @classmethod
-    def from_toml(cls, data: dict, db_dir: Path) -> "BillingConfig":
+    def from_toml(cls, data: dict, db_dir: Path) -> BillingConfig:
         b = data.get("billing", {}) or {}
         return cls(
             daily_budget_cny=float(b.get("daily_budget_cny", 10.0)),
@@ -1376,7 +1378,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
         return False
 
 
-def get_subagent_concurrency(cfg: "AppConfig") -> tuple[int, dict[str, int]]:
+def get_subagent_concurrency(cfg: AppConfig) -> tuple[int, dict[str, int]]:
     """子代理并发驱动：从 ``cfg.raw['agent']['concurrency']`` 读全局/各 lane cap。
 
     plan WI-0.3。**必须 getattr 兜底**（cfg 可能是无 ``.raw`` 的测试 stub）——
@@ -1443,7 +1445,7 @@ def resolve_config_path() -> Path:
     return _paths.user_data_dir() / "config.toml"
 
 
-def effective_llm_model(cfg: "AppConfig") -> str:
+def effective_llm_model(cfg: AppConfig) -> str:
     """有效出站 LLM 模型名。优先 dataclass(运行时覆盖已应用) → raw → 种子默认。
     cfg 可能是部分构造/None-字段，全程空安全，绝不抛。
     """
@@ -1565,13 +1567,13 @@ def _resolve_memory_db_path(raw: str) -> Path:
 # 它对同一 tmp config.toml 先写空 model（合法）再写 unknown_model（应报错），
 # 两次写常落同一 tick → 第二次 load_config 命中 cache 返回第一次的合法对象，
 # 校验路径被旁路。size 不同即可强制失效（mtime+size 是标准稳健启发式）。
-_cfg_cache: Optional["AppConfig"] = None
-_cfg_cache_path: Optional[Path] = None
-_cfg_cache_mtime: Optional[float] = None
-_cfg_cache_size: Optional[int] = None
+_cfg_cache: AppConfig | None = None
+_cfg_cache_path: Path | None = None
+_cfg_cache_mtime: float | None = None
+_cfg_cache_size: int | None = None
 
 
-def _load_config_uncached(path: Path) -> "AppConfig":
+def _load_config_uncached(path: Path) -> AppConfig:
     """Real loader — extracted so cache wrapper stays small."""
     return _load_config_impl(path)
 
@@ -1588,8 +1590,8 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
     if path.exists():
         try:
             st = path.stat()
-            cur_mtime: Optional[float] = st.st_mtime
-            cur_size: Optional[int] = st.st_size
+            cur_mtime: float | None = st.st_mtime
+            cur_size: int | None = st.st_size
         except OSError:
             cur_mtime = None
             cur_size = None

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.error_table import (
     PLANNING_ERRORS,
     SHARING_PLANNER_CODE,
@@ -95,8 +94,8 @@ def test_every_sharing_raise_site_uses_the_typed_refusal():
     import re
     from pathlib import Path
 
-    import agent_orchestrator.graph.taskgraph_sharing as sharing
     import agent_orchestrator.graph.convergence as convergence
+    import agent_orchestrator.graph.taskgraph_sharing as sharing
 
     for module in (sharing, convergence):
         text = Path(module.__file__).read_text(encoding="utf-8")

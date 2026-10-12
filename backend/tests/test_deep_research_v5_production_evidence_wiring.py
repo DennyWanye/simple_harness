@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
     EvidenceReadinessV1,
     candidate_from_document,
@@ -18,9 +17,9 @@ from deskpet.workflows.definitions.deep_research_v5_contracts import (
     ResearchBrief,
     ResearchDimension,
 )
+from deskpet.workflows.definitions.deep_research_v5_evidence import _normalized_text, admit_passage
 from deskpet.workflows.definitions.deep_research_v5_policy import build_research_brief
 from deskpet.workflows.definitions.deep_research_v5_queries import build_dimension_queries
-from deskpet.workflows.definitions.deep_research_v5_evidence import _normalized_text, admit_passage
 
 
 def _brief() -> ResearchBrief:

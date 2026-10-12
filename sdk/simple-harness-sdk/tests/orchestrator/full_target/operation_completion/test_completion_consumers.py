@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.orchestrator.operation_completion import OperationCompletionError
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider

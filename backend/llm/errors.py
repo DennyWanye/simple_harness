@@ -22,10 +22,10 @@ class LLMProviderError(Exception):
         self,
         message: str,
         *,
-        provider: Optional[str] = None,
-        status_code: Optional[int] = None,
+        provider: str | None = None,
+        status_code: int | None = None,
         retriable: bool = False,
-        error_class: Optional[str] = None,
+        error_class: str | None = None,
     ) -> None:
         super().__init__(message)
         self.provider = provider
@@ -46,8 +46,8 @@ class LLMRateLimitError(LLMProviderError):
         self,
         message: str,
         *,
-        provider: Optional[str] = None,
-        retry_after: Optional[float] = None,
+        provider: str | None = None,
+        retry_after: float | None = None,
     ) -> None:
         super().__init__(message, provider=provider, status_code=429, retriable=True)
         self.retry_after = retry_after
@@ -56,7 +56,7 @@ class LLMRateLimitError(LLMProviderError):
 class LLMTimeoutError(LLMProviderError):
     """Network / request timeout. Retriable on a *different* provider."""
 
-    def __init__(self, message: str, *, provider: Optional[str] = None) -> None:
+    def __init__(self, message: str, *, provider: str | None = None) -> None:
         super().__init__(message, provider=provider, retriable=True)
 
 
@@ -67,9 +67,9 @@ class LLMAuthError(LLMProviderError):
         self,
         message: str,
         *,
-        provider: Optional[str] = None,
+        provider: str | None = None,
         status_code: int = 401,
-        error_class: Optional[str] = None,
+        error_class: str | None = None,
     ) -> None:
         super().__init__(
             message,

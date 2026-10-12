@@ -683,7 +683,8 @@ class ResolutionCommitsMixin:
             # The command is judged against the frozen completion scope's own
             # projection of the stored result, never against what the command claims.
             from ..verification.scoped_acceptance import (
-                acceptable_scoped_task_content, acceptable_scoped_operation_outcome,
+                acceptable_scoped_operation_outcome,
+                acceptable_scoped_task_content,
             )
             from .scoped_content_review import validate_scoped_command
 

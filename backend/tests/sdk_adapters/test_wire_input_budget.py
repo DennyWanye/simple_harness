@@ -39,9 +39,6 @@ import math
 from pathlib import Path
 
 import pytest
-from simple_harness.contracts import CallId
-from simple_harness.contracts.messages import Message, MessageRole
-
 from deskpet.sdk_adapters.context_partitions import (
     NON_CJK_CHARS_PER_TOKEN,
     WIRE_TOOL_SPEC_OVERHEAD_TOKENS,
@@ -53,6 +50,8 @@ from deskpet.sdk_adapters.wire_input_budget import (
     CARRY_BASIS_NO_REASONING,
     CARRY_BASIS_OUTPUT_FALLBACK,
     CARRY_BASIS_REASONING_TOKENS,
+    WIRE_RATIO_OBSERVED_FLOOR_DEN,
+    WIRE_RATIO_OBSERVED_FLOOR_NUM,
     ObservedInputCarryLedger,
     ObservedProviderTurn,
     WireInputBudgetExceeded,
@@ -60,11 +59,11 @@ from deskpet.sdk_adapters.wire_input_budget import (
     provider_turn_ordinal,
     run_key,
     thinking_disabled,
-    WIRE_RATIO_OBSERVED_FLOOR_DEN,
-    WIRE_RATIO_OBSERVED_FLOOR_NUM,
     wire_message_tokens,
     wire_request_tokens,
 )
+from simple_harness.contracts import CallId
+from simple_harness.contracts.messages import Message, MessageRole
 
 POOL_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "hm_to_a6_flash_pool_samples.json"
 WINDOW = 32000
@@ -1227,6 +1226,7 @@ async def test_the_gate_stops_the_request_before_any_byte_reaches_the_relay(
     """第二轮的实测下界越界 → 抛 ProviderRequestRejectedError, transport 不动。"""
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import (
@@ -1234,8 +1234,6 @@ async def test_the_gate_stops_the_request_before_any_byte_reaches_the_relay(
         ProviderRequest,
         ProviderRequestRejectedError,
     )
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window_to_the_incident(tmp_path, monkeypatch)
     sent: list[httpx.Request] = []
@@ -1303,11 +1301,10 @@ async def test_a_run_with_no_hidden_mass_is_never_blocked(tmp_path, monkeypatch)
     """反面: 上一轮的真实 prompt 与 Host 量到的 wire 一致时, 闸门从不介入。"""
 
     import httpx
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from simple_harness import RequestId
     from simple_harness.contracts.messages import Message, MessageRole
     from simple_harness.providers import CancelToken, ProviderRequest
-
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
     _pin_window_to_the_incident(tmp_path, monkeypatch)
     sent: list[httpx.Request] = []

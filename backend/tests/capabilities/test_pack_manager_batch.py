@@ -5,7 +5,6 @@ import json
 import zipfile
 
 import pytest
-
 from deskpet.capabilities.manager import capability_operation_id
 from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack
 from deskpet.capabilities.skill_source import (
@@ -39,8 +38,8 @@ def _canonical_pack(tmp_path, name: str) -> CanonicalSkillPack:
                 archive.write(path, path.relative_to(root).as_posix())
     payload = raw.getvalue()
     # Use the same validator/policy that Manager will reissue at admission.
-    from deskpet.capabilities.package_limits import CapabilityPackageValidator
     from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack
+    from deskpet.capabilities.package_limits import CapabilityPackageValidator
 
     ref = CapabilityPackageValidator().validate_zip_archive(payload, source_kind="local")
     validation = load_and_validate_pack(root, environment=PackEnvironment(

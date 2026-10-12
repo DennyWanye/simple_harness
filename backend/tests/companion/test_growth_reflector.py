@@ -4,7 +4,6 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from deskpet.companion.contracts import CandidateMode, OwnerRef
 from deskpet.companion.growth import (
     CandidateBindingFenceV1,
@@ -16,7 +15,6 @@ from deskpet.companion.growth import (
     StructuredGrowthProposalV1,
     evidence_set_hash,
 )
-
 
 OWNER = OwnerRef("profile-a", 3)
 OWNER_KEY = "companion:profile-a:3"

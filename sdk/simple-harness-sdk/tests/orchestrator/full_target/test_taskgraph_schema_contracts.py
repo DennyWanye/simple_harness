@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.graph import schemas
 from agent_orchestrator.graph.execution_contracts import PreviewBindingV1

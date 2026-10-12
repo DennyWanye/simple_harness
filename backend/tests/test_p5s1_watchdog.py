@@ -8,7 +8,6 @@ import asyncio
 import time
 
 import pytest
-
 from agent.session_activity import SessionActivityStore
 from agent.watchdog import WatchdogLoop
 

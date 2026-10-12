@@ -3,14 +3,17 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.errors import InvalidStatePatch
 from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeWorkflowExecutable
-from deskpet.workflows.service import DurableResearchControlPort, WorkflowService, WorkflowServiceError
+from deskpet.workflows.service import (
+    DurableResearchControlPort,
+    WorkflowService,
+    WorkflowServiceError,
+)
 from deskpet.workflows.terminal_projection import (
-    AsyncTerminalCommitProjectionRegistry,
     TERMINAL_PUBLIC_CAPABILITY,
+    AsyncTerminalCommitProjectionRegistry,
     TerminalProjectionRegistry,
     VersionedActionMatrix,
     WorkflowActionContext,

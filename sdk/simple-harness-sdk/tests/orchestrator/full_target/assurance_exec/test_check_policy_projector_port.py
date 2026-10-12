@@ -13,13 +13,13 @@ from __future__ import annotations
 import asyncio
 import inspect
 
+from agent_orchestrator.deployment.native_pools import NativePools, pool_options
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.orchestrator import assurance_review_runtime as runtime_module
 from agent_orchestrator.orchestrator.assurance_assembly import (
     AssuranceDeploymentPorts,
     install_assurance,
 )
-from agent_orchestrator.deployment.native_pools import NativePools, pool_options
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider

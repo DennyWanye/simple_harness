@@ -25,8 +25,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -64,7 +65,7 @@ class SessionGoal:
     goal_id: str = ""
     status: str = "active"          # active | done | abandoned（落库权威）
     progress: float = 0.0
-    criteria: Optional[str] = None
+    criteria: str | None = None
     updated_at: float = 0.0
     subgoals: list[str] = field(default_factory=list)
 
@@ -88,7 +89,7 @@ class SessionGoalStore:
         # B-10 双写钩：可选的 (session_id, text) → Awaitable[None] callback。
         # goal_store 不 import facts（防 agent←memory import 环）；
         # callback 由 main.py lifespan 通过 bind_on_goal_set 注入。
-        self._on_goal_set_cb: Optional[Callable[[str, str], Awaitable[None]]] = None
+        self._on_goal_set_cb: Callable[[str, str], Awaitable[None]] | None = None
         # 保留 fire-and-forget fanout task 的强引用，防 asyncio GC 在 await
         # 挂起期间回收未完成 task（经典 footgun → category=goal 表静默为空）。
         self._fanout_tasks: set[asyncio.Future] = set()
@@ -199,14 +200,14 @@ class SessionGoalStore:
         self._logger.info("goal_store.load_persisted restored=%d", n)
         return n
 
-    def get_goal_text(self, session_id: str) -> Optional[str]:
+    def get_goal_text(self, session_id: str) -> str | None:
         """冻结 §1.4：sync, None-safe, 永读内存（最新权威）。"""
         g = self._goals.get(session_id)
         return g.text if g is not None else None
 
     def get_active_goal_context(
-        self, session_id: Optional[str] = None
-    ) -> Optional[tuple[str, str]]:
+        self, session_id: str | None = None
+    ) -> tuple[str, str] | None:
         """Resolve ``(goal_id, session_id)`` for an active goal.
 
         WI-TG-1 方案A: the main-agent global ``goal_task_*`` tools have no
@@ -237,7 +238,7 @@ class SessionGoalStore:
 
     def get_active_goal_context_for_session(
         self, session_id: str
-    ) -> Optional[tuple[str, str]]:
+    ) -> tuple[str, str] | None:
         """Strict session lookup used by Context OS capability eligibility.
 
         Unlike :meth:`get_active_goal_context`, this method never falls back
@@ -287,7 +288,7 @@ class SessionGoalStore:
         self._fire_on_goal_set(session_id, text)
         return goal
 
-    def get(self, session_id: str) -> Optional[SessionGoal]:
+    def get(self, session_id: str) -> SessionGoal | None:
         """Return the active goal for ``session_id`` or ``None``."""
         return self._goals.get(session_id)
 

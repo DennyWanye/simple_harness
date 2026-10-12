@@ -7,8 +7,8 @@ domain, its citation reads and its source-currentness projection were removed.""
 from unittest.mock import Mock
 
 import pytest
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request

@@ -13,9 +13,9 @@ never invents a heartbeat (§12.1).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, Any
+from typing import Any
 
 from simple_harness import Message, MessageRole, RunId
 from simple_harness.agents import AgentConfig, AgentTurnResult, AgentTurnState

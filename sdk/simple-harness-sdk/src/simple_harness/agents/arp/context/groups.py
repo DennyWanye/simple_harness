@@ -23,8 +23,9 @@ are never rendered.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from simple_harness.contracts import thaw_json
 from simple_harness.execution.base_agent import AgentJournalRecord

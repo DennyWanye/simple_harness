@@ -26,11 +26,9 @@ from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent
 from deskpet.agent.assembler.bundle import PageInRef, PreparedContext
 from deskpet.tools.context_page_in_tools import ContextPageInStore
-
 
 # ---------------------------------------------------------------------------
 # Minimal fakes

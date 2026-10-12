@@ -82,12 +82,12 @@ from ..contracts.semantic_base import (
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from .accepted_outputs import CarriedCriterion, carried_criteria_in_revision
-from .method_library import methods_to_judge
 from .hierarchical_dispatch import (
     ROOT_REVIEW_CUT,
     ROOT_REVIEW_SUPERSEDED,
     append_hierarchical_event,
 )
+from .method_library import methods_to_judge
 
 #: The review policy this deployment cuts a root ``MISSION_FINAL`` package under.
 #: One named constant rather than a literal at three call sites, so the package, the
@@ -837,8 +837,8 @@ class RootReviewCoordinator:
         """
 
         semantics = self.semantics
-        from .operation_completion import OperationCompletionError, OperationCompletionReader
         from ..contracts.operation_completion import PlanRevisionPinV1
+        from .operation_completion import OperationCompletionError, OperationCompletionReader
 
         active = semantics.active_plan_revision(mission_id)
         network = self.dispatch.network(mission_id)

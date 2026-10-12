@@ -14,6 +14,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from deskpet.sdk_adapters.tools import ProductEffectExecutor
 from simple_harness import CallId, EffectId, RequestId, RunId
 from simple_harness.execution.effects import EffectState
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
@@ -35,8 +36,6 @@ from simple_harness.tools.reconciliation import (
     ReconciliationState,
 )
 from simple_harness.tools.registry import ToolRegistry
-
-from deskpet.sdk_adapters.tools import ProductEffectExecutor
 
 RUN = RunId("run-replay-1")
 WRITE_SCHEMA = {

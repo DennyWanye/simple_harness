@@ -10,14 +10,12 @@ counter, 1.4 state progression).
 from __future__ import annotations
 
 import pytest
-
 from agent.termination import (
     GateConfig,
     GateState,
     TerminationGate,
     TerminationReason,
 )
-
 
 # ---------------------------------------------------------------------------
 # 1.1 Data structures + skeleton

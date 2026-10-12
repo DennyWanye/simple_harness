@@ -9,7 +9,6 @@ import asyncio
 
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider, message_texts
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.tools.delegate import DELEGATE_TOOL_NAME, child_agent_id_for

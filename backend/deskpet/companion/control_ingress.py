@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-
 from .control_command_canonical import (
     CanonicalCommandError,
     parse_canonical_json,
@@ -844,7 +843,7 @@ class ControlConnectionChallenge:
     @classmethod
     def from_mapping(
         cls, value: Mapping[str, Any]
-    ) -> "ControlConnectionChallenge":
+    ) -> ControlConnectionChallenge:
         return cls(
             connection_id=str(value["connection_id"]),
             control_epoch=int(value["control_epoch"]),
@@ -867,7 +866,7 @@ class ControlConnectionChallenge:
 
     def advance(
         self, *, request_seq: int, binding_epoch: int
-    ) -> "ControlConnectionChallenge":
+    ) -> ControlConnectionChallenge:
         return ControlConnectionChallenge(
             connection_id=self.connection_id,
             control_epoch=self.control_epoch,

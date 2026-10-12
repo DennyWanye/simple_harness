@@ -9,7 +9,6 @@ import asyncio
 
 import pytest
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-
 from simple_harness.agents import (
     AgentConfig,
     AgentLimits,

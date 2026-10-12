@@ -11,8 +11,9 @@ import asyncio
 import os
 import sys
 import time
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
-from typing import Awaitable, Callable, Mapping, Protocol
+from typing import Protocol
 
 
 class ClockPort(Protocol):
@@ -52,7 +53,7 @@ class DevFrozenClock:
         return self
 
     @classmethod
-    def parse(cls, value: str) -> "DevFrozenClock":
+    def parse(cls, value: str) -> DevFrozenClock:
         raw = value.strip()
         if not raw:
             raise ValueError("DESKPET_E2E_CLOCK_UTC must not be empty")

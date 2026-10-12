@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-
 from simple_harness.contracts import CallId, RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork

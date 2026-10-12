@@ -1,23 +1,32 @@
 """Primary Context preparation with real, bounded, settled turn history."""
 from __future__ import annotations
 
-from datetime import datetime
 import math
 import time
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import aiosqlite
+
 from deskpet.execution.foreground_queue import ContextLineage
-from deskpet.execution.preparation_rejection import PreparationDisclosureRejected, PreparationRejection
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
 from deskpet.execution.foreground_runtime_ports import TaskScopeForegroundContextPort, _turn_text
-from deskpet.execution.primary_history import PrimaryHistoryStore
+from deskpet.execution.preparation_rejection import (
+    PreparationDisclosureRejected,
+    PreparationRejection,
+)
 from deskpet.execution.primary_dependencies import dependencies
+from deskpet.execution.primary_history import PrimaryHistoryStore
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
-import aiosqlite
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
-    PARTITION_CAPS, ContextBudgetExceeded, budget_window, calibration_for_model,
-    effective_input_budget, tool_schema_tokens, turn_token_estimator,
+    PARTITION_CAPS,
+    ContextBudgetExceeded,
+    budget_window,
+    calibration_for_model,
+    effective_input_budget,
+    tool_schema_tokens,
+    turn_token_estimator,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -270,6 +279,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
     async def _prepare_scoped(self, *, claimed, expected_context, execution_session_id,
                               request_id, sdk_run_id, provider, tools):
         from dataclasses import replace
+
         from deskpet.task_scope.disclosure import render_scope_disclosure
         candidate = claimed.candidate
         opened = await self._open(candidate.task_scope_id, source_id=expected_context.context_snapshot_id)

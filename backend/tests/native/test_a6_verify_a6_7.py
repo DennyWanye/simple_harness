@@ -37,7 +37,7 @@ def _load():
 a6 = _load()
 
 
-def _hm_db(tmp_path: Path, heads, revisions, relations) -> "a6.RoDb":
+def _hm_db(tmp_path: Path, heads, revisions, relations) -> a6.RoDb:
     path = tmp_path / "human_memory_v7.db"
     conn = sqlite3.connect(path)
     conn.execute("create table cognitive_memory_heads(memory_id text primary key,"

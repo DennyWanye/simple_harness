@@ -16,14 +16,13 @@ chat_v2_final 给除发起窗口（self.control_ws = originator）外的所有 c
 """
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
-
 from pipeline.voice_pipeline import VoicePipeline
 from providers.edge_tts_provider import PCM_CHUNK_BYTES
-from tests.voice_run_fakes import static_run
 
+from tests.voice_run_fakes import static_run
 
 # ---- fakes（与 test_voice_pipeline_tts.py 同款，独立复制保持测试自洽）----
 

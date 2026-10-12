@@ -4,7 +4,6 @@ import hashlib
 import time
 
 import pytest
-
 from deskpet.capabilities.contracts import (
     CapabilityBinding,
     CapabilityCatalogSnapshot,

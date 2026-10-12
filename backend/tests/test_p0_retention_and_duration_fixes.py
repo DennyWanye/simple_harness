@@ -23,7 +23,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ─── WI-T2.2 retention 不截断 ────────────────────────────────────
 
 
@@ -73,8 +72,8 @@ async def test_t2_3_receipt_duration_ms_reflects_real_dispatch():
     last-mile P0-3 修复证据：原 emit_receipt 用两次 now() → duration_ms ~0；
     本测试断言 duration_ms 真正反映 dispatch 时长。
     """
-    from deskpet.tools.registry import ToolRegistry, ToolSpec
     from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
 
     with tempfile.TemporaryDirectory() as td:
         store = ReceiptStore(Path(td), key=b"\x42" * 32)
@@ -118,8 +117,8 @@ async def test_t2_3_receipt_duration_ms_zero_for_instant_handler():
     防御性测试：如果 _started_at 被错位（譬如放到 handler 内），
     duration_ms 可能算成负数。
     """
-    from deskpet.tools.registry import ToolRegistry, ToolSpec
     from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
 
     def _instant(params, task_id):
         return json.dumps({"ok": True}, ensure_ascii=False)
@@ -272,11 +271,12 @@ async def test_receipt_copies_artifact_shas_from_envelope(tmp_path):
     应带产物 sha256(原 registry 从不传 artifact_shas → receipt 恒 [])。
     verify gate 对账「声称产物 vs 真产物」需要这个绑定。
     """
-    import json as _json
-    from deskpet.tools.registry import ToolRegistry, ToolSpec
-    from deskpet.tools.receipt_store import ReceiptStore
-    from types import SimpleNamespace
     import hashlib
+    import json as _json
+    from types import SimpleNamespace
+
+    from deskpet.tools.receipt_store import ReceiptStore
+    from deskpet.tools.registry import ToolRegistry, ToolSpec
 
     art = tmp_path / "out.pptx"
     art.write_bytes(b"fake-pptx-bytes")

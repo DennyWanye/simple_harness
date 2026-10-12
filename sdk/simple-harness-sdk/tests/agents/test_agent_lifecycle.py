@@ -14,7 +14,6 @@ import asyncio
 
 import pytest
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-
 from simple_harness.agents import AgentClosed, AgentConfig, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.execution.uow import RunState

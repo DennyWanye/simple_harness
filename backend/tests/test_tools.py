@@ -7,7 +7,6 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-
 from tools.base import Tool, ToolSpec
 from tools.get_time import GetTimeTool, get_time_tool
 from tools.registry import ToolRegistry

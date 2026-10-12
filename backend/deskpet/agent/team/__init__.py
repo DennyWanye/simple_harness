@@ -24,6 +24,7 @@ Public surface:
 * :func:`spawn_team` — orchestrate N ephemeral teammate subagents
 * :func:`build_teammate_tools` — produce the 5 tool schemas + handlers
 """
+from deskpet.agent.team.spawn_team import spawn_team
 from deskpet.agent.team.team_store import (
     TeamMessage,
     TeamPermissionRequest,
@@ -31,10 +32,9 @@ from deskpet.agent.team.team_store import (
     TeamTask,
 )
 from deskpet.agent.team.teammate_tools import (
-    build_teammate_tools,
     FORBIDDEN_TEAMMATE_TOOLS,
+    build_teammate_tools,
 )
-from deskpet.agent.team.spawn_team import spawn_team
 
 __all__ = [
     "TeamStore",

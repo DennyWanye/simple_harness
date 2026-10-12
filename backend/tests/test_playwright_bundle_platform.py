@@ -1,16 +1,15 @@
 """Platform contract regressions; no network, browser process, or native build."""
 
-from dataclasses import replace
 import hashlib
 import importlib.util
 import io
 import json
-from pathlib import Path
 import struct
 import zipfile
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
-
 from deskpet import playwright_bundle as bundle
 
 

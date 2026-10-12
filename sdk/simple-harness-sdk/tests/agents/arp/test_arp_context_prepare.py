@@ -16,8 +16,6 @@ import asyncio
 import pytest
 from arp_fixture import ExactWordTokenizer, build, meter_binding, trusted_caller
 from provider_fixture import MODEL, ScriptedProvider
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.context import groups as protocol_groups
@@ -29,6 +27,7 @@ from simple_harness.agents.arp.strict import digest
 from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 TOOL_CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p", tool_names=("echo",))
@@ -188,7 +187,6 @@ def test_composer_errors_surface_as_definite_provider_rejections() -> None:
 
 def test_meter_binding_requires_the_runtime_tokenizer(tmp_path) -> None:
     from arp_fixture import RecordingAuthorization, activation_receipt, standalone_profile
-
     from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root
     from simple_harness.agents.arp.runtime import build_arp_runtime
     from simple_harness.agents.ports import AgentRuntimePorts

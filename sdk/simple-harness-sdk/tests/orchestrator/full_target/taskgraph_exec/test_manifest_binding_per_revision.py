@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus
 from agent_orchestrator.storage import schema
 from agent_orchestrator.storage.htn_store import HtnStore
@@ -83,8 +82,8 @@ def test_the_attempt_identity_guard_requires_the_exact_binding_revision(store: S
 
 
 def test_frozen_input_reads_require_the_exact_binding_revision() -> None:
-    import agent_orchestrator.storage.taskgraph_attempt_inputs as module
     import agent_orchestrator.storage.assurance_source_inventory as inventory
+    import agent_orchestrator.storage.taskgraph_attempt_inputs as module
 
     text = Path(module.__file__).read_text(encoding="utf-8")
     queries = re.findall(r"SELECT input_binding_revision FROM input_manifest_bindings WHERE mission_id=\? \"\s*\"AND task_id=\? AND manifest_hash=\?([^\"]*)\"", text)

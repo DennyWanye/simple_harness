@@ -2,7 +2,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.tools.context_page_in_tools import (
     ContextPageInStore,
     build_context_page_in_handler,
@@ -68,7 +67,10 @@ async def test_page_in_rejects_missing_scope_and_forged_hash() -> None:
 async def test_page_in_receipts_are_durable_payload_free_and_never_change_the_result(tmp_path) -> None:
     import sqlite3
 
-    from deskpet.operation_audit.page_in_receipts import ContextPageInReceiptLedger, reference_ref_hash
+    from deskpet.operation_audit.page_in_receipts import (
+        ContextPageInReceiptLedger,
+        reference_ref_hash,
+    )
 
     store = ContextPageInStore()
     store.receipt_ledger = ContextPageInReceiptLedger(tmp_path / "operation-audit.db")

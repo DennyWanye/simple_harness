@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.operation_completion import (
     MAX_COMPLETION_BYTES,

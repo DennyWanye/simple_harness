@@ -18,7 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.memory import migrator, schema
 from deskpet.memory.migrator import (
     CONTEXT_ROUTE_MIGRATION,
@@ -215,7 +214,6 @@ async def test_v46_cutover_precondition_passes_for_terminal_runs(tmp_path: Path)
     """终态（COMPLETED/…）Run 与 BOUND_TERMINAL 观察不阻塞前置判定。"""
 
     import aiosqlite
-
     from tests.sdk_adapters import s5b_closure_harness as ch
 
     env = await ch.bound_run(tmp_path, "sdk-run-done")
@@ -393,12 +391,11 @@ async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch
 
 
 def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) -> None:
-    from simple_harness import RunId
-    from simple_harness.tools import RuntimeToolCatalogError
-
     import main
     from deskpet.sdk_adapters import tool_authority as ta
     from deskpet.sdk_adapters.context_authority import canonical_sha256
+    from simple_harness import RunId
+    from simple_harness.tools import RuntimeToolCatalogError
     from tests.sdk_adapters.test_s5b_acceptance_matrix import _Inventory
 
     specs = [

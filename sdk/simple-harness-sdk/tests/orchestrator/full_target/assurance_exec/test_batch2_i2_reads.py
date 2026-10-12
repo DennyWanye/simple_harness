@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.assurance.certificates import UseIdentity
 from agent_orchestrator.assurance.codec import AssuranceError, canonical, decode, fingerprint
 from agent_orchestrator.assurance.evidence import ReadItem

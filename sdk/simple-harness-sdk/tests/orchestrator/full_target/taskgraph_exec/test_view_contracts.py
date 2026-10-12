@@ -10,13 +10,12 @@ v2（``schema_version=2``，带 ``blocked_notifications``）；已验证修订�
 import asyncio
 
 import pytest
-
-from production_fixture import enabled_world
 from agent_orchestrator.api.taskgraph import TaskGraphReadError
 from agent_orchestrator.graph import schemas
 from agent_orchestrator.graph.view_contracts import TaskGraphViewV1
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 from agent_orchestrator.testing.schema_oracle import violations
+from production_fixture import enabled_world
 
 
 def test_read_views_conform_to_their_published_schemas(tmp_path):

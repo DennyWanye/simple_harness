@@ -8,7 +8,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.workflow.execution_ports import (
     CheckpointExecutionAdapter,

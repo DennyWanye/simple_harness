@@ -32,22 +32,21 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from deskpet.tools import research_tools as r
 from deskpet.tools.research_tools import (
     Citation,
     Passage,
     ResearchReport,
+    _clean_ddg_url,
+    _parse_ddg_results,
+    _parse_ddg_results_regex,
+    _topic_keywords,
     authority_for_url,
     cite_check,
     find_footnote_refs,
     parse_sub_questions,
     research_run,
     score_passage,
-    _clean_ddg_url,
-    _parse_ddg_results,
-    _parse_ddg_results_regex,
-    _topic_keywords,
 )
 
 
@@ -602,8 +601,8 @@ async def test_research_run_direct_sources_run_even_when_search_empty(monkeypatc
     """§6.0 真机 E2E 暴露的严重 bug 回归: 普通搜索 0 结果(SERP 被 IP 封)时,直连源仍须运行,
     **不被 'no search results' 早返跳过** —— 否则封禁场景下 §6.0-A 直连兜底完全失效
     (而封禁正是直连源要兜底的场景)。"""
-    import deskpet.tools.research_tools as _rt
     import deskpet.tools.research_sources as _rs
+    import deskpet.tools.research_tools as _rt
     monkeypatch.setattr(_rt, "_direct_sources_enabled", lambda: True)
     monkeypatch.setattr(_rs, "direct_source_for", lambda q: ["cninfo"])
 
@@ -648,8 +647,8 @@ async def test_research_run_collects_search_side_channel_errors(monkeypatch) -> 
 async def test_research_run_direct_sources_multi_dispatch_and_dedup(monkeypatch) -> None:
     """§6.0 集成: direct_source_for→多源 list → DIRECT_FETCHERS dispatch →
     契约-7 URL 去重(直连与普通搜索同 URL 不重复) → route.direct_sources_hit 记命中源。"""
-    import deskpet.tools.research_tools as _rt
     import deskpet.tools.research_sources as _rs
+    import deskpet.tools.research_tools as _rt
     plan = json.dumps(["公司 X 年报要点?"])
     synth = "# T\n## TL;DR\n\nFrom direct [^1] and web [^2]."
     llm = FakeLLM([plan, synth])
@@ -1582,7 +1581,8 @@ async def test_default_extract_js_render_engine_crawl4ai(monkeypatch):
     monkeypatch.setattr(r, "_js_render_enabled", lambda: True)
     monkeypatch.setattr(r, "_js_render_engine", lambda: "crawl4ai")
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
-    import sys as _sys, types as _types
+    import sys as _sys
+    import types as _types
     fake_mod = _types.ModuleType("deskpet.tools.research_crawl4ai")
 
     async def _fake_c4(url, *, timeout=20.0):

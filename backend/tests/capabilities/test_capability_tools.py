@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.contracts import (
     CapabilityBinding,
     CapabilityCatalogSnapshot,
@@ -14,13 +13,13 @@ from deskpet.capabilities.contracts import (
     CapabilityVersionDescriptor,
     CatalogStamp,
 )
-from deskpet.capabilities.tools import (
-    CapabilityToolService,
-    register_capability_tools,
-)
 from deskpet.capabilities.source import (
     CapabilitySourceResolver,
     PackSourceRequest,
+)
+from deskpet.capabilities.tools import (
+    CapabilityToolService,
+    register_capability_tools,
 )
 from deskpet.permissions.task_grants import canonical_filesystem_path
 from deskpet.tools.capabilities import ToolExecutionContext

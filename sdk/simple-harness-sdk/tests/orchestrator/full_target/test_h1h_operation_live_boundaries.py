@@ -31,8 +31,6 @@ _STEP07 = _HERE.parent / "step07"
 if str(_STEP07) not in sys.path:
     sys.path.insert(0, str(_STEP07))
 
-from helpers_step07 import operation_world, run_until, until_pending  # noqa: E402
-
 from agent_orchestrator.runtime.planning_operations import (  # noqa: E402
     OperationEffect,
     SourceUnavailable,
@@ -42,6 +40,7 @@ from agent_orchestrator.runtime.planning_operations import (  # noqa: E402
 from agent_orchestrator.storage.planning_admission_store import (  # noqa: E402
     PlanningAdmissionStore,
 )
+from helpers_step07 import operation_world, run_until, until_pending  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

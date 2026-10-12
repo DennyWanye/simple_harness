@@ -128,7 +128,11 @@ def test_a_method_review_whose_second_call_cannot_be_paid_ends_the_mission_not_t
     import agent_orchestrator.orchestrator.event_handler as event_handler
     from agent_orchestrator.governance.budgets import BudgetLedger
     from agent_orchestrator.testing.product_world import product_world
-    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, review_input, review_reply
+    from agent_orchestrator.testing.scripted_replies import (
+        LayeredScriptedProvider,
+        review_input,
+        review_reply,
+    )
 
     state = {"malformed": 0, "escaped": []}
 

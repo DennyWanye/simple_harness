@@ -3,14 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-
 from deskpet.execution.contracts import DecisionOpen, DecisionRecord
+from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.evaluation import HumanEvaluationRecord
+from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.outbox import OutboxError, stable_delivery_id, stable_event_id
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
-from deskpet.workflows.contracts import WorkflowContext
-from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.service import START_SNAPSHOT_KEY, WorkflowService, WorkflowServiceError
 from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
 from deskpet.workflows.trace import SpanKind, TraceStore

@@ -4,28 +4,23 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from deskpet.execution.contracts import (
     ActorContext,
     DecisionAuthorization,
     GrantConsume,
+    IdempotencyConflict,
     OutcomeStatus,
     PersistenceLevel,
     RecoveryLease,
     RunRecord,
     StaleRecoveryLease,
-    IdempotencyConflict,
     VersionConflict,
     fingerprint_json,
 )
-from deskpet.execution.ports import (
-    CurrentExecutionScopeLease,
-    CurrentExecutionScopeLeasePort,
-)
-from deskpet.execution.uow_ports import ToolExecutionUnitOfWork
 from deskpet.execution.dispatch import (
     PreparedToolDispatch,
     PreparedToolDispatchNotStarted,
@@ -34,6 +29,11 @@ from deskpet.execution.dispatch import (
     dispatch_with_run_fence,
 )
 from deskpet.execution.fences import validate_run_execution_epoch
+from deskpet.execution.ports import (
+    CurrentExecutionScopeLease,
+    CurrentExecutionScopeLeasePort,
+)
+from deskpet.execution.uow_ports import ToolExecutionUnitOfWork
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall

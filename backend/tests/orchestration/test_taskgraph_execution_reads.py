@@ -16,7 +16,6 @@ from typing import Any
 
 import pytest
 from agent_orchestrator.api.taskgraph import _fail
-
 from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.orchestration.taskgraph import TaskGraphRequestError, read_taskgraph
 

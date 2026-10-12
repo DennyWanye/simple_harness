@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     ContractValidationError,
     DeliveryDecision,
@@ -22,7 +21,6 @@ from deskpet.workflows.definitions.deep_research_v5_contracts import (
     ResearchOperationLineage,
     validate_terminal_projection,
 )
-
 
 NOW = "2026-07-16T10:00:00+08:00"
 LATER = "2026-08-16T10:00:00+08:00"

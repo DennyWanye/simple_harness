@@ -16,12 +16,12 @@ won't even know they exist outside Code mode.
 """
 from __future__ import annotations
 
+from .clarify_tool import build_ask_clarification_tool
 from .glob_tool import glob_tool
 from .grep_tool import grep_tool
+from .registration import register_code_tools
 from .todo_write_tool import build_todo_write_tool
 from .web_search_tool import web_search
-from .clarify_tool import build_ask_clarification_tool
-from .registration import register_code_tools
 
 __all__ = [
     "glob_tool",

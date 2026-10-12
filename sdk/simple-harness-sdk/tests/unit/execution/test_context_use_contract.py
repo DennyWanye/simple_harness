@@ -5,7 +5,6 @@ import hashlib
 import json
 
 import pytest
-
 from simple_harness import ProviderContextUseAttemptV1
 
 

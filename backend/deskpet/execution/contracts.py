@@ -5,14 +5,17 @@ Every object crossing the execution boundary is immutable, versioned, and
 validated before it can be used by a driver or persistence adapter.
 """
 from __future__ import annotations
+
 import copy
 import hashlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence, TypeAlias
+from typing import Any, TypeAlias
+
 JsonPrimitive: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonPrimitive | list['JsonValue'] | dict[str, 'JsonValue']
 CONTRACT_SCHEMA_VERSION = 1
@@ -632,7 +635,7 @@ class AdmissionSpec(_Contract):
         object.__setattr__(self, 'intent_fingerprint', fingerprint_json(intent))
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'AdmissionSpec':
+    def from_dict(cls, value: Mapping[str, Any]) -> AdmissionSpec:
         data = _contract_payload(value, cls, 'AdmissionSpec')
         expected = str(data.pop('intent_fingerprint'))
         result = cls(**data)
@@ -684,7 +687,7 @@ class AdmissionBoundary(_Contract):
             raise ContractValidationError('invalid_admission_consumed', 'consumed must exactly match a terminal admission phase')
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'AdmissionBoundary':
+    def from_dict(cls, value: Mapping[str, Any]) -> AdmissionBoundary:
         data = _contract_payload(value, cls, 'AdmissionBoundary')
         admission = data.pop('admission')
         provider = data.pop('provider_snapshot')
@@ -735,7 +738,7 @@ def workflow_idempotency_key(parent_run_id: str, node_execution_id: str, logical
 def stable_decision_grant_id(decision_id: str) -> str:
     """Return the replay-stable authorization id for one permission decision."""
     value = _required_text(decision_id, 'decision_id')
-    return hashlib.sha256(f'execution-grant:{value}'.encode('utf-8')).hexdigest()
+    return hashlib.sha256(f'execution-grant:{value}'.encode()).hexdigest()
 
 @dataclass(frozen=True, slots=True)
 class RunContext(_Contract):
@@ -773,7 +776,7 @@ class RunContext(_Contract):
         object.__setattr__(self, 'workspace', _json_object(self.workspace, name='RunContext.workspace'))
         object.__setattr__(self, 'provider_plan', _json_object(self.provider_plan, name='RunContext.provider_plan'))
 
-    def actor(self) -> 'ActorContext':
+    def actor(self) -> ActorContext:
         return ActorContext(self.principal_id, self.session_id, self.auth_epoch, self.root_run_id)
 
 @dataclass(frozen=True, slots=True)
@@ -845,7 +848,7 @@ class RunCreate(_Contract):
             raise ContractValidationError('invalid_root', 'a root run must name itself as root_run_id')
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'RunCreate':
+    def from_dict(cls, value: Mapping[str, Any]) -> RunCreate:
         data = _strict_mapping(value, required={'schema_version', 'run_id', 'idempotency_key', 'context', 'payload_fingerprint', 'capability_fingerprint', 'driver_kind', 'profile_key', 'persistence_level', 'status'}, name='RunCreate')
         context = data.pop('context')
         if not isinstance(context, Mapping):
@@ -1118,7 +1121,7 @@ class ChildCommandIntent(_Contract):
         return self.child_spec.run_id
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> 'ChildCommandIntent':
+    def from_dict(cls, value: Mapping[str, Any]) -> ChildCommandIntent:
         data = _strict_mapping(value, required={
             'schema_version', 'operation_id', 'parent_run_id', 'command_id',
             'child_spec', 'child_request', 'capability_subset',
@@ -2091,7 +2094,7 @@ def assert_idempotent_run_intent(existing: RunCreate, requested: RunCreate, *, a
 def stable_event_id(run_id: str, event_key: str) -> str:
     run = _required_text(run_id, 'run_id')
     key = _required_text(event_key, 'event_key')
-    return hashlib.sha256(f'execution-event|{run}|{key}'.encode('utf-8')).hexdigest()
+    return hashlib.sha256(f'execution-event|{run}|{key}'.encode()).hexdigest()
 
 def stable_delivery_id(event_id: str, delivery: DeliverySpec) -> str:
     event = _required_text(event_id, 'event_id')

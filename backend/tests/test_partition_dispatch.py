@@ -22,9 +22,7 @@ from collections import namedtuple
 from typing import Any
 
 import pytest
-
 from deskpet.tools.registry import ToolRegistry, ToolSpec
-
 
 ToolCall = namedtuple("ToolCall", ["name", "args", "task_id"])
 

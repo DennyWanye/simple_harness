@@ -9,6 +9,21 @@ from dataclasses import replace
 
 import aiosqlite
 import pytest
+from deskpet.capabilities.store import CapabilityStore, CapabilityStoreConflict
+from deskpet.product_state.authorization_saga import (
+    AuthorizationSagaIdentity,
+    AuthorizationSagaRepository,
+    AuthorizationSagaState,
+    SagaConflict,
+)
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.product_state.task_grants import (
+    DurableTaskGrantAuthority,
+    TaskGrantConflict,
+)
+from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
+from deskpet.types.task_grants import TaskGrant
 from simple_harness import CallId, EffectId, RunId
 from simple_harness.execution import EffectState, effect_request_hash
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
@@ -26,22 +41,6 @@ from simple_harness.tools import (
     bind_authorization_receipts,
     sdk_authorization_receipt,
 )
-
-from deskpet.capabilities.store import CapabilityStore, CapabilityStoreConflict
-from deskpet.product_state.authorization_saga import (
-    AuthorizationSagaIdentity,
-    AuthorizationSagaRepository,
-    AuthorizationSagaState,
-    SagaConflict,
-)
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.product_state.task_grants import (
-    DurableTaskGrantAuthority,
-    TaskGrantConflict,
-)
-from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
-from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
-from deskpet.types.task_grants import TaskGrant
 
 
 def identity(

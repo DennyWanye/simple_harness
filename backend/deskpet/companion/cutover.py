@@ -20,7 +20,6 @@ from .authority import (
 )
 from .store import canonical_hash
 
-
 DEFAULT_PRE_MARKER_STEPS = (
     "legacy_import",
     "inactive_stage",

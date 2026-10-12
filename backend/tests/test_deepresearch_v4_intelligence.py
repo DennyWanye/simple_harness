@@ -6,25 +6,24 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v4_contracts import SourceSeed, TechnologyFinding
 from deskpet.workflows.definitions.deep_research_v4_intelligence import (
     _entity_name,
     build_ranked_findings,
     classify_intent,
     finding_set_failure_codes,
-    is_primary_source,
     is_navigation_or_product_boilerplate,
-    plan_technology_topics,
+    is_primary_source,
     normalize_entity_key,
+    plan_technology_topics,
     recency_score,
     score_supported_finding,
     source_seeds,
     supported_statement_dates,
 )
 from deskpet.workflows.definitions.deep_research_v4_report import render_technology_report
-from scripts.acceptance.deepresearch_report_quality import evaluate_report
 
+from scripts.acceptance.deepresearch_report_quality import evaluate_report
 
 AS_OF = date(2026, 7, 15)
 

@@ -6,11 +6,10 @@ HTN 补齐阶段 A′：编排服务只接受部署给的原生执行池，这�
 """
 
 import pytest
-from p33_world import native_options
-
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from p33_world import native_options
 
 
 def test_critic_wait_inherits_sdk_deadline_and_rejects_invalid_explicit_windows(tmp_path):

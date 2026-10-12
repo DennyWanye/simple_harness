@@ -26,8 +26,9 @@ import re
 import secrets
 import sqlite3
 import unicodedata
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from simple_harness.contracts import thaw_json
 from simple_harness.execution.sqlite.base_agent import history
@@ -128,7 +129,7 @@ class QueryPlan:
     vector: tuple[float, ...] | None
 
     @classmethod
-    def build(cls, text: str, vector: Sequence[float] | None) -> "QueryPlan":
+    def build(cls, text: str, vector: Sequence[float] | None) -> QueryPlan:
         seqs, ids = exact_targets(text)
         return cls(
             text,
@@ -327,7 +328,7 @@ class SessionSearchService:
     def _first_token(query_id: str, access: SessionAccess, purpose: str) -> str | None:
         if purpose != "CONTEXT_RECALL":
             return None  # model/host-facing cursors stay random and unrecoverable by design
-        return hashlib.sha256(f"first-cursor:{query_id}:{access.owner_scope_hash}:{access.control_generation}".encode("utf-8")).hexdigest()
+        return hashlib.sha256(f"first-cursor:{query_id}:{access.owner_scope_hash}:{access.control_generation}".encode()).hexdigest()
 
     def resume_frozen(self, access: SessionAccess, cursor: str, *, expect: Mapping[str, Any] | None = None) -> tuple[Mapping[str, Any], str | None]:
         """Materialise the page a PENDING cursor points at, or replay a materialised one.

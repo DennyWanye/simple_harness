@@ -23,7 +23,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.artifacts.store import (
     ArtifactStore,
     ArtifactStoreError,

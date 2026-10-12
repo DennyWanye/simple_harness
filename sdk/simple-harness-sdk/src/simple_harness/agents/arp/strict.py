@@ -16,7 +16,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .errors import ArpError
 

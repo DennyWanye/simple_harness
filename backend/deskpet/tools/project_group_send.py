@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from deskpet.types.task_grants import ResourceSelector
-
 
 
 class ProjectGroupTransport(Protocol):

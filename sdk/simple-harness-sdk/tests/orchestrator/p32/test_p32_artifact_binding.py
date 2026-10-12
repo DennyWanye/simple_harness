@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from agent_orchestrator.contracts import Artifact
 from agent_orchestrator.orchestrator.action_commits import (
     CandidateRejected,

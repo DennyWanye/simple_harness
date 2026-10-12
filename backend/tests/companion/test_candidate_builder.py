@@ -6,7 +6,6 @@ import zipfile
 from io import BytesIO
 
 import pytest
-
 from deskpet.capabilities.manifest import parse_pack_manifest
 from deskpet.capabilities.package_limits import CapabilityPackageValidator
 from deskpet.companion.build_admission import (
@@ -40,7 +39,6 @@ from deskpet.companion.growth import (
     evidence_set_hash,
 )
 from deskpet.companion.store import CompanionStore
-
 
 OWNER = OwnerRef("profile-a", 2)
 OWNER_KEY = "companion:profile-a:2"

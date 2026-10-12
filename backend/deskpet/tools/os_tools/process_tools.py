@@ -21,9 +21,10 @@ import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import psutil
 
@@ -270,7 +271,7 @@ class ProcessToolService:
             self._observe_lease(lease)
             try:
                 await asyncio.wait_for(lease.monitor_stop.wait(), timeout=0.05)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     @staticmethod
@@ -308,7 +309,7 @@ class ProcessToolService:
             exit_code = await asyncio.wait_for(
                 asyncio.shield(lease.process.wait()), timeout=timeout_seconds
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {
                 "lease_id": lease_id,
                 "pid": lease.identity.pid,

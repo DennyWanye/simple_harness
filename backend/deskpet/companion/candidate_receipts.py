@@ -8,12 +8,13 @@ commits on the caller's behalf.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import sqlite3
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 from .build_admission import (
     CandidateDraftReceiptExpectationV1,

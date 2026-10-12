@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools.register_artifacts import register_artifacts
 from deskpet.tools.os_tools.registration import register_os_tools

@@ -5,7 +5,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.planning.htn.domain_package import (
     DomainPackageInstaller,

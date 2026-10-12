@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Protocol
 
@@ -40,8 +40,8 @@ def retry_after_seconds(response: httpx.Response, *, maximum: float = 3600.0) ->
         try:
             parsed = parsedate_to_datetime(value)
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            seconds = (parsed - datetime.now(timezone.utc)).total_seconds()
+                parsed = parsed.replace(tzinfo=UTC)
+            seconds = (parsed - datetime.now(UTC)).total_seconds()
         except (TypeError, ValueError, OverflowError):
             return None
     return min(max(0.0, seconds), max(0.0, float(maximum)))
@@ -61,9 +61,10 @@ def raise_for_search_status(response: httpx.Response) -> None:
 
 def candidates_from_rows(provider: str, rows: list[dict[str, str]]) -> list[RetrievalCandidate]:
     from datetime import datetime, timezone
+
     from ..ranking import canonicalize_url, stable_candidate_id
 
-    searched_at = datetime.now(timezone.utc).isoformat()
+    searched_at = datetime.now(UTC).isoformat()
     out: list[RetrievalCandidate] = []
     for rank, row in enumerate(rows, start=1):
         url = str(row.get("url") or "").strip()

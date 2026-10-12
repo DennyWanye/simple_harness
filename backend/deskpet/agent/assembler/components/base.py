@@ -37,8 +37,8 @@ class ComponentContext:
     policy: AssemblyPolicy
     user_message: str
     history: list[dict[str, Any]] = field(default_factory=list)
-    session_id: Optional[str] = None
-    current_message_id: Optional[int] = None
+    session_id: str | None = None
+    current_message_id: int | None = None
     # Injected dependencies — may be None when unit tests swap in fakes.
     memory_manager: Any = None
     tool_registry: Any = None
@@ -48,9 +48,9 @@ class ComponentContext:
     # Wall-clock deadline for slow components; assembler enforces timeout
     # at the registry level but components can pre-cut work if very
     # tight. ``deadline_wall_time`` is ``time.monotonic()`` units.
-    deadline_wall_time: Optional[float] = None
+    deadline_wall_time: float | None = None
 
-    def time_remaining_ms(self) -> Optional[float]:
+    def time_remaining_ms(self) -> float | None:
         """How long until ``deadline_wall_time``. None if no deadline set."""
         if self.deadline_wall_time is None:
             return None

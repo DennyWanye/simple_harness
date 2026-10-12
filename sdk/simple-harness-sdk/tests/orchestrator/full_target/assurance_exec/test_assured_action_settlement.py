@@ -12,7 +12,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.governance.budgets import BudgetError
 from agent_orchestrator.orchestrator import assurance_settlement, taskgraph_action_settlement
 from agent_orchestrator.runtime.planning_operations import SourceUnavailable

@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 from agent_orchestrator.storage.store import Store
-
 from deskpet.orchestration.pump import EVENTS_PER_PUSH, MissionChangePump
 
 

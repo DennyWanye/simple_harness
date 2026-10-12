@@ -10,14 +10,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from deskpet.skills.parser.parse_skill_md import (
     ClaudeSkillMeta,
     SkillParseError,
     parse_skill_md,
     render_body,
 )
-
 
 # ---------------------------------------------------------------------
 # parse_skill_md

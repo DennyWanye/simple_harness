@@ -36,7 +36,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-
 from ..storage.recovery_store import RecoveryStore
 from ..storage.store import InjectedCrash, StoreBusy
 

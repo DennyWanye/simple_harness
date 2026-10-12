@@ -40,6 +40,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
+    UnifiedDiffApplyError,
+    decode_unified_diff_text,
+    files_patched_by_unified_diff,
+)
+from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
+    verification_failure_fingerprint,
+)
 from test_verify_workspace_inputs import (  # noqa: E402
     NOT_RECORDED,
     PATCH_DIFF,
@@ -48,15 +56,6 @@ from test_verify_workspace_inputs import (  # noqa: E402
     REPORT,
     SEED_WINDOW,
     WINDOW,
-)
-
-from agent_orchestrator.artifacts.bound_workspace import (  # noqa: E402
-    UnifiedDiffApplyError,
-    decode_unified_diff_text,
-    files_patched_by_unified_diff,
-)
-from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
-    verification_failure_fingerprint,
 )
 
 # ======================================================================================

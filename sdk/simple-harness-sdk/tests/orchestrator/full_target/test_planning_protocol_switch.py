@@ -23,7 +23,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts import Budget, ContractError, MissionStatus
 from agent_orchestrator.contracts import planning_decisions as decision_contracts
@@ -52,9 +51,9 @@ from agent_orchestrator.runtime.role_templates import (
     PLANNING_DECISION_PROMPT_VERSION,
 )
 from agent_orchestrator.storage.store import Store
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 REMOVED_NAME = "legacy-plan-proposal-v1"
 

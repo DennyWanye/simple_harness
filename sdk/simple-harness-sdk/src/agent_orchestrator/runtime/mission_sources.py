@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.mission_sources import SCHEMA
@@ -109,9 +110,9 @@ class MissionSourceReader:
                 changed = sorted(k for k in set(current) | set(sources) if current.get(k) != sources.get(k))
                 raise ArpError("REQUEST_SOURCE_STALE", "the Mission sources moved since the Agent was created",
                                detail={"changed": changed[:16]})
-        from ..storage.store import StoreError
         from ..assurance.codec import AssuranceError
         from ..orchestrator.assurance_review_transport import require_review_handoff
+        from ..storage.store import StoreError
 
         try:
             with store.read_view():

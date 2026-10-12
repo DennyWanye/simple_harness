@@ -16,9 +16,8 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from h1i_seed import plan_reply, reviewed
-
 from agent_orchestrator.planning.plan_preview import CandidatePreview
+from h1i_seed import plan_reply, reviewed
 
 
 class _PreviewInputsCaptured(BaseException):

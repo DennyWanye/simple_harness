@@ -8,10 +8,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from table_guards import check_table_guards
-
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from table_guards import check_table_guards
 
 
 @pytest.fixture(autouse=True)

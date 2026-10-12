@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
-
+from deskpet.companion.contracts import OwnerRef
 from deskpet.companion.control_ingress import (
     CompanionActivationDecisionService,
     CompanionEvaluationDecisionService,
@@ -13,8 +13,6 @@ from deskpet.companion.control_ingress import (
     CompanionRollbackDecisionService,
     UnavailableCompanionGrowthControlService,
 )
-from deskpet.companion.contracts import OwnerRef
-
 
 OWNER = OwnerRef("profile-1", 1)
 FROZEN = SimpleNamespace(owner=OWNER, binding_epoch=3)

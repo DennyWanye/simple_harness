@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.chat_tool import MissionStartRefused, method_library
 from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL, describe_call_zh

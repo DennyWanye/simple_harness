@@ -10,11 +10,20 @@ import asyncio
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import AcceptingAssurance, acceptance_pin, activation_of, admit_command, admit_skill, import_skill, lifecycle_command, md_bundle, trial_command
-
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ASSURANCE_SUCCESSOR_PENDING
+from skill_fixture import (
+    AcceptingAssurance,
+    acceptance_pin,
+    activation_of,
+    admit_command,
+    admit_skill,
+    import_skill,
+    lifecycle_command,
+    md_bundle,
+    trial_command,
+)
 
 
 def _run(coro):  # type: ignore[no-untyped-def]

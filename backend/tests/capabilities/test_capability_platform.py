@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.brokered_planner import BrokeredEffectPlanner
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.input_views import InputViewResolver
@@ -24,11 +23,11 @@ from deskpet.capabilities.platform import (
     LocalCapabilityToolSpecFactory,
     MCPManagerRevisionSource,
 )
+from deskpet.capabilities.source import PackSourceRequest
 from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,
 )
-from deskpet.capabilities.source import PackSourceRequest
 from deskpet.capabilities.tool_proxy import LocalToolProxy
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import (
@@ -37,7 +36,6 @@ from deskpet.tools.registry import (
     legacy_tool_spec_fingerprint_v1,
     tool_spec_fingerprint,
 )
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 GODOT_PACK = REPOSITORY_ROOT / "capability-packs" / "godot"

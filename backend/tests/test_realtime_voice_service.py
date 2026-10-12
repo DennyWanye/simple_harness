@@ -11,8 +11,8 @@ from deskpet.realtime_voice import (
     LOCAL_REALTIME_PATH,
     LOCAL_REALTIME_VERSION,
     REALTIME_VOICE_ENABLED,
-    _MetadataDiagnosticSink,
     RealtimeVoiceService,
+    _MetadataDiagnosticSink,
     allowed_realtime_origins,
     relay_origin,
 )

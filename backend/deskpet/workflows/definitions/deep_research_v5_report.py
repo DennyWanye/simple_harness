@@ -11,10 +11,11 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Literal, Mapping, Sequence
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from .deep_research_v5_contracts import (
     ContractValidationError,
@@ -23,7 +24,6 @@ from .deep_research_v5_contracts import (
     ReportQualityAudit,
     ResearchBrief,
 )
-
 
 ClaimKind = Literal[
     "key_judgment",

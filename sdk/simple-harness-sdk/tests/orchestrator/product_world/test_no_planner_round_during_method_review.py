@@ -12,10 +12,11 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
 
+import pytest
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+
 
 @pytest.fixture(autouse=True)
 def _quick(monkeypatch):
@@ -42,7 +43,9 @@ def test_no_planner_round_opens_while_a_proposed_method_is_out_for_review(tmp_pa
             assert asked == 1
             # 留下一件"待规划器处理"的事（真机上是改要求带来的修复请求；这里直接记一条取证回执，
             # 它与修复请求走同一个"叫醒规划器"的入口）
-            from agent_orchestrator.orchestrator.hierarchical_dispatch import append_hierarchical_event
+            from agent_orchestrator.orchestrator.hierarchical_dispatch import (
+                append_hierarchical_event,
+            )
 
             with world.store.transaction():
                 append_hierarchical_event(world.store, "PlanningEvidenceRecorded", mission_id, key="gate-test",

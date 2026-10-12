@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 
 from deskpet.execution.contracts import JsonValue
-
 
 FailureSource = Literal[
     "tool_parse",
@@ -117,7 +117,7 @@ class TaskFailureReport:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "TaskFailureReport":
+    def from_dict(cls, value: Mapping[str, object]) -> TaskFailureReport:
         payload = dict(value)
         for name in (
             "evidence_refs",

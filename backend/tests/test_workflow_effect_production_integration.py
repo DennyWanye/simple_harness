@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows import EffectKind, EffectPolicy
 from deskpet.workflows.adapters.code_runtime import ToolDispatchPort, derive_effect_id
 from deskpet.workflows.adapters.ppt_runtime import PptRuntime
@@ -450,9 +449,8 @@ async def test_ppt_uncertain_image_generation_fails_closed(
 async def test_full_page_image_effect_reuses_normalized_asset_and_detects_retention_loss(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from PIL import Image
-
     from deskpet.tools import ppt_tools
+    from PIL import Image
 
     context, _ = await _effect_context(
         tmp_path / "workflow.db",

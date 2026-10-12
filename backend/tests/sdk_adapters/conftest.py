@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.sdk_adapters.tool_call_arguments import default_tool_call_arguments_memo
 
 

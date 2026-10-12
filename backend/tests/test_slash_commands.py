@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ─── dispatch_slash_command 单元测试 ─────────────────────────────
 
 

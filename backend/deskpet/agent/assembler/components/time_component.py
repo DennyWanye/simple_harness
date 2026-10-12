@@ -25,7 +25,7 @@ class TimeComponent:
 
     name: str = "time"
 
-    def __init__(self, *, clock: Optional[object] = None) -> None:
+    def __init__(self, *, clock: object | None = None) -> None:
         # ``clock`` lets tests freeze the clock without monkeypatching
         # the datetime module. Expected interface: ``clock.now()``.
         self._clock = clock

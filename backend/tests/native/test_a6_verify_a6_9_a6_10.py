@@ -26,9 +26,10 @@ import importlib.util
 import json
 import sqlite3
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any
 
 _VERIFY = Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
 
@@ -90,7 +91,7 @@ def _db(
     groups: Sequence[tuple[str, str, int, int]] = (),
     resolutions: Sequence[tuple[str]] = (),
     name: str = "human_memory_v7.db",
-) -> "a6.RoDb":
+) -> a6.RoDb:
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / name
     conn = sqlite3.connect(path)
@@ -162,7 +163,7 @@ _A = "cognitive-memory-same-source-alias"
 _K = "cognitive-memory-keeper"
 
 
-def _run5_shape(tmp_path: Path, *, forget: bool = True) -> "a6.RoDb":
+def _run5_shape(tmp_path: Path, *, forget: bool = True) -> a6.RoDb:
     return _db(
         tmp_path,
         heads=[

@@ -12,7 +12,6 @@ from ..store.run_store import WorkflowRunStore
 from .models import SpanKind, SpanStatus
 from .store import TraceStore
 
-
 logger = structlog.get_logger(__name__)
 
 
@@ -25,7 +24,7 @@ class WorkflowExecutionObserver:
 
     @staticmethod
     def _span_id(execution_id: str, attempt: int) -> str:
-        return hashlib.sha256(f"{execution_id}:{attempt}".encode("utf-8")).hexdigest()
+        return hashlib.sha256(f"{execution_id}:{attempt}".encode()).hexdigest()
 
     async def node_started(self, identity: NodeExecutionIdentity) -> str:
         execution_id = await self.store.record_node_start(

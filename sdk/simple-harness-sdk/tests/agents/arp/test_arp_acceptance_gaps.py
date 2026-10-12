@@ -15,8 +15,6 @@ import shutil
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import import_skill, native_bundle
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.creation import MARKER_FILE
@@ -29,6 +27,7 @@ from simple_harness.agents.arp.tools import SEARCH_TOOL_NAME
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.contracts import CallId, RequestId, RunId
 from simple_harness.tools import CancellationToken, ToolContext
+from skill_fixture import import_skill, native_bundle
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 SECRET = "工程暗号 是 蓝鲸七号，请牢记。"

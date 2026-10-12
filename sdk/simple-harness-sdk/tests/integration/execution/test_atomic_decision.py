@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import AdmissionState, DecisionState
 

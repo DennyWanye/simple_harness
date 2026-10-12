@@ -29,18 +29,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
 
-from htn_world import (  # noqa: E402
-    BUDGET,
-    Env,
-    atom,
-    method,
-    out,
-    param,
-    root_network,
-    step,
-    task_binding,
-)
-
 from agent_orchestrator.contracts.evidence_state import PreconditionPhase, TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     ObligationRelation,
@@ -75,6 +63,17 @@ from agent_orchestrator.planning.htn.grounding import (  # noqa: E402
 from agent_orchestrator.planning.htn.registry import (  # noqa: E402
     RejectionCode,
     implied_orderings,
+)
+from htn_world import (  # noqa: E402
+    BUDGET,
+    Env,
+    atom,
+    method,
+    out,
+    param,
+    root_network,
+    step,
+    task_binding,
 )
 
 

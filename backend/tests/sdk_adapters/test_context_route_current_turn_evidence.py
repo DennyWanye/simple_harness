@@ -28,10 +28,8 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from simple_harness.contracts import RunId
-from simple_harness.execution.context_authority import ContextRouteReceipt
-
 from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.sdk_adapters import task_scope_mutation as tsm
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.sdk_adapters.context_route import (
     CURRENT_TURN_EVIDENCE_REF_KEY,
@@ -42,7 +40,8 @@ from deskpet.sdk_adapters.task_scope_mutation import (
     TaskScopeUpdateService,
     read_current_turn_evidence_ref,
 )
-from deskpet.sdk_adapters import task_scope_mutation as tsm
+from simple_harness.contracts import RunId
+from simple_harness.execution.context_authority import ContextRouteReceipt
 from tests.sdk_adapters import s5b_closure_harness as ch
 
 RUN = "sdk-run-event-al"

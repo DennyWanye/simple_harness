@@ -7,7 +7,6 @@ _sanitize_tool_pairs 兜底。"""
 from __future__ import annotations
 
 import pytest
-
 from deskpet.agent.context_compressor import _partition, _sanitize_tool_pairs
 
 

@@ -7,8 +7,8 @@
 
 import asyncio
 
-from production_fixture import enabled_world
 from agent_orchestrator.orchestrator.taskgraph_plan_sources import TaskGraphPlanSourceReader
+from production_fixture import enabled_world
 
 
 def test_the_currentness_check_reads_no_runtime_history(tmp_path, monkeypatch):

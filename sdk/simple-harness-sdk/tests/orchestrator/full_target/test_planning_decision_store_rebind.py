@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import InjectedCrash, Store, StoreConflict

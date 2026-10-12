@@ -18,10 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from simple_harness import CallId, RequestId
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall
-
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     ObjectiveEventSpec,
@@ -35,6 +31,9 @@ from deskpet.sdk_adapters.post_turn_invoker import (
     RunBoundInvoker,
 )
 from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
+from simple_harness import CallId, RequestId
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall
 from tests.execution import test_foreground_queue as fq
 
 SUBJECT = fq.SUBJECT

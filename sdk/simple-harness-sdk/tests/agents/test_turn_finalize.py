@@ -9,7 +9,6 @@ import asyncio
 
 import pytest
 from kernel_fixture import EchoAgentDriver, build, create_agent, submit
-
 from simple_harness import Message, MessageRole
 from simple_harness.agents.contracts import AgentTurnResult, AgentTurnState
 from simple_harness.contracts import RunId

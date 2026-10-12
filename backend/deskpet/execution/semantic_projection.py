@@ -10,10 +10,10 @@ stable.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, Mapping, Sequence
-
+from typing import Any
 
 PROJECTION_CONTRACT_VERSION = "semantic-run-view/v1"
 
@@ -973,9 +973,7 @@ def _semantic_phases(
             and int(step["step_total"]) > 0
         ]
         phase_id = hashlib.sha256(
-            f"{PROJECTION_CONTRACT_VERSION}\0{root_run_id}\0{taxonomy.value}".encode(
-                "utf-8"
-            )
+            f"{PROJECTION_CONTRACT_VERSION}\0{root_run_id}\0{taxonomy.value}".encode()
         ).hexdigest()
         reasons = tuple(dict.fromkeys(reason for _, reason in members))
         phase: dict[str, Any] = {

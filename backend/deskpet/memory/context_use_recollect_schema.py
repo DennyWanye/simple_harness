@@ -19,9 +19,11 @@ import time
 from pathlib import Path
 
 import aiosqlite
+
 from deskpet.memory import migrator, schema, schema_chain
 from deskpet.memory.primary_tool_call_schema import (
-    initialize_primary_tool_call_state_db, validate_primary_tool_call_state_db,
+    initialize_primary_tool_call_state_db,
+    validate_primary_tool_call_state_db,
 )
 
 MIGRATION = "primary/048_context_use_recollections_v56.sql"

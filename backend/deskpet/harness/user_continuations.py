@@ -9,12 +9,12 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     ActorContext,
     RecoveryLease,
     RunRecord,
     RunRef,
     RunStatus,
-    TERMINAL_RUN_STATUSES,
     VersionConflict,
 )
 from deskpet.execution.uow_ports import UserContinuationUnitOfWork

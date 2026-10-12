@@ -19,7 +19,11 @@ from agent_orchestrator.contracts.error_table import (
     round_fault_handling,
 )
 from agent_orchestrator.orchestrator import failure_classes
-from agent_orchestrator.orchestrator.failure_classes import ROUND_CORRUPT, ROUND_RETRY, classify_round_fault
+from agent_orchestrator.orchestrator.failure_classes import (
+    ROUND_CORRUPT,
+    ROUND_RETRY,
+    classify_round_fault,
+)
 
 SRC = Path(failure_classes.__file__).resolve().parents[1]
 

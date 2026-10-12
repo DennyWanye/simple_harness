@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.builder import CapabilityBuilderHost
 from deskpet.capabilities.contracts import CapabilityVersionDescriptor
 from deskpet.capabilities.store import (
@@ -16,13 +15,12 @@ from deskpet.capabilities.store import (
 )
 from deskpet.capabilities.tools import register_capability_tools
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
-from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.orchestration_controls import (
     CAPABILITY_REPAIR,
     _capability_mutation_schema,
     register_orchestration_controls,
 )
-
+from deskpet.tools.registry import ToolRegistry
 
 MANIFEST_HASH = "a" * 64
 TOOL_FINGERPRINT = "b" * 64

@@ -14,7 +14,13 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from ..backend_port import BackendStatus, CandidatePlanWitness, PlanningBackendResult, PlanningLimits, PlanningProblemSnapshot
+from ..backend_port import (
+    BackendStatus,
+    CandidatePlanWitness,
+    PlanningBackendResult,
+    PlanningLimits,
+    PlanningProblemSnapshot,
+)
 
 
 class UpAriesPlanningBackend:
@@ -78,8 +84,14 @@ def _parameterize_ground_methods(domain: str) -> str:
 
 def _hierarchy(problem: Any, plan: Any) -> dict[str, Any]:
     """Translate the solver's actual decomposition, never reconstruct one from SH."""
-    from unified_planning.plans import HierarchicalPlan, SequentialPlan, ActionInstance  # type: ignore[import-not-found]
-    from unified_planning.plans.hierarchical_plan import MethodInstance  # type: ignore[import-not-found]
+    from unified_planning.plans import (  # type: ignore[import-not-found]
+        ActionInstance,
+        HierarchicalPlan,
+        SequentialPlan,
+    )
+    from unified_planning.plans.hierarchical_plan import (
+        MethodInstance,  # type: ignore[import-not-found]
+    )
     if not isinstance(plan, HierarchicalPlan) or not isinstance(plan.action_plan, SequentialPlan):
         raise ValueError("only sequential hierarchical plans have an SH witness mapping")
     def arg(value: Any, bindings: dict[str, str]) -> str:
@@ -127,9 +139,12 @@ def _hierarchy(problem: Any, plan: Any) -> dict[str, Any]:
 
 
 def _worker(root: Path, timeout: float) -> dict[str, Any]:
+    from unified_planning.exceptions import (  # type: ignore[import-not-found]
+        UPNoSuitableEngineAvailableException,
+        UPUnsupportedProblemTypeError,
+    )
     from unified_planning.io import PDDLReader  # type: ignore[import-not-found]
     from unified_planning.shortcuts import OneshotPlanner  # type: ignore[import-not-found]
-    from unified_planning.exceptions import UPNoSuitableEngineAvailableException, UPUnsupportedProblemTypeError  # type: ignore[import-not-found]
     try:
         problem = PDDLReader().parse_problem(str(root / "domain.hddl"), str(root / "problem.hddl"))
         with OneshotPlanner(name="aries") as engine:

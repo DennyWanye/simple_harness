@@ -7,8 +7,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from agent.nudge_queue import NudgeQueue, Hint, format_hints_for_injection
+from agent.nudge_queue import Hint, NudgeQueue, format_hints_for_injection
 
 
 @pytest.mark.asyncio

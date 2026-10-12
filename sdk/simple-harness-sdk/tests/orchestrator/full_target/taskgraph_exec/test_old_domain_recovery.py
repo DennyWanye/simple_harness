@@ -15,15 +15,14 @@
 """
 import asyncio
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
-from production_fixture import product_loop, root_of
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.storage.store import Store
-from agent_orchestrator.testing.fixtures import RoleScriptedProvider
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from agent_orchestrator.testing.fixtures import RoleScriptedProvider, lift_immutable_guards
+from production_fixture import product_loop, root_of
 
 
 def test_an_old_profile_mission_mid_turn_does_not_stop_startup(tmp_path):

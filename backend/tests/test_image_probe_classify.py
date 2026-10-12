@@ -114,6 +114,7 @@ def test_generate_images_failure_result_includes_error_kind(monkeypatch):
 
 def test_seedream_generation_explicitly_disables_provider_watermark(monkeypatch):
     import base64
+
     import deskpet.tools.image_tools as m
 
     monkeypatch.setattr(m.httpx, "Client", _FakeClient)

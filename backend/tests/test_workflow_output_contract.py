@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.output_contract import TaskOutputContractV1

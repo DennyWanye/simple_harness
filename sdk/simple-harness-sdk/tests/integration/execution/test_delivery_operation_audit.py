@@ -4,7 +4,6 @@ import asyncio
 import json
 
 import pytest
-
 from simple_harness.contracts import RunId
 from simple_harness.execution.delivery import DeliveryDispatcher, DeliverySpec, DeliveryState
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork

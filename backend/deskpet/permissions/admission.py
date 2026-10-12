@@ -9,8 +9,9 @@ import hashlib
 import inspect
 import json
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from deskpet.types.task_grants import ResourceSelector, TaskGrant
 

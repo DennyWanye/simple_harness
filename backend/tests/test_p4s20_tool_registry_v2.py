@@ -14,11 +14,9 @@ import json
 from typing import Any
 
 import pytest
-
-from deskpet.tools.registry import ToolRegistry, ToolSpec
 from deskpet.permissions.gate import PermissionGate, PermissionGateConfig
+from deskpet.tools.registry import ToolRegistry, ToolSpec
 from deskpet.types.skill_platform import PermissionResponse
-
 
 # ---------------------------------------------------------------------
 # Backward compat

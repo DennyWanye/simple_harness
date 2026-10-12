@@ -21,7 +21,6 @@ from .capabilities import (
     canonical_hash,
 )
 
-
 _SKILL_SCOPE_WIDENING_CONTROLS = frozenset(
     {
         "skill_invoke",

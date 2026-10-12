@@ -24,11 +24,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test_aer_contract_codecs import criterion, review_package  # noqa: E402
-
 from agent_orchestrator.contracts.resolution import CriterionExpr  # noqa: E402
 from agent_orchestrator.orchestrator.leaf_acceptance import LeafAcceptanceAssembly  # noqa: E402
 from agent_orchestrator.storage.store import StoreConflict, StoreError  # noqa: E402
+from test_aer_contract_codecs import criterion, review_package  # noqa: E402
 
 
 class Semantics:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 
 import pytest
-
+from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 from deskpet.workflows.definitions.deep_research_v6_contracts import (
     ResearchSpecValidationError,
     RouteDecisionV1,
@@ -12,8 +12,6 @@ from deskpet.workflows.definitions.deep_research_v6_contracts import (
     conditional_fanout_reason,
     format_blob_ref,
 )
-from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
-
 
 POLICY_HASH = "a" * 64
 SPEC_HASH = "b" * 64

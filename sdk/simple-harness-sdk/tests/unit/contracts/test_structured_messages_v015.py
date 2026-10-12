@@ -5,7 +5,6 @@ import json
 
 import httpx
 import pytest
-
 from simple_harness import ContentBlock, Message, MessageRole, RequestId
 from simple_harness.execution.provider_invocations import (
     provider_request_from_json,

@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowRunStatus
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.store import (
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
-    empty_legacy_checkpoint as empty_checkpoint,
+)
+from deskpet.workflows.store import (
     NativeCheckpointStore,
     WorkflowRunStore,
+)
+from deskpet.workflows.store import (
+    empty_legacy_checkpoint as empty_checkpoint,
 )
 
 

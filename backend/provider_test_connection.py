@@ -22,7 +22,6 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-
 from providers.openai_compatible import OpenAICompatibleProvider
 
 logger = structlog.get_logger()

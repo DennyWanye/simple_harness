@@ -15,11 +15,10 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db
-from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
 from deskpet.task_scope.protocol import (
     TaskScopeProtocolError,
     canonical_hash,

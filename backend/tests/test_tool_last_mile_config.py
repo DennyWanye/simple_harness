@@ -12,9 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import config as _config_mod
+import pytest
 from config import (
     AppConfig,
     ConfigError,

@@ -15,14 +15,27 @@ from pathlib import Path
 
 import aiosqlite
 from simple_harness import (
-    DeliveryRecipient, DisclosureContext, DisclosureGeneration, DisclosurePurpose,
-    DisclosureReasonCode, DisclosureSource, DisclosureTrust, EvidenceReasonCode,
-    EvidenceSourceKind, IntendedAudience, SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt,
+    DeliveryRecipient,
+    DisclosureContext,
+    DisclosureGeneration,
+    DisclosurePurpose,
+    DisclosureReasonCode,
+    DisclosureSource,
+    DisclosureTrust,
+    EvidenceReasonCode,
+    EvidenceSourceKind,
+    IntendedAudience,
+    SanitizedEvidenceEnvelope,
+    SanitizedEvidenceReceipt,
 )
+
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
-    canonical_hash, canonical_json, identifier, reject_private_payload,
+    canonical_hash,
+    canonical_json,
+    identifier,
+    reject_private_payload,
 )
 
 POLICY = "host-primary-runtime-v1"
@@ -291,7 +304,9 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             if marker is not None:
                 if marker not in {"primary-message-v1", "primary-message-v2", "primary-message-v3"}:
                     raise RuntimeError("primary_message_contract_unknown")
-                from deskpet.memory.primary_message_evidence import verify_new_primary_message_evidence_tx
+                from deskpet.memory.primary_message_evidence import (
+                    verify_new_primary_message_evidence_tx,
+                )
                 prior_envelope, prior_receipt = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
                 await verify_new_primary_message_evidence_tx(db, host_run_id=host_run_id,
                     terminal_envelope=prior_envelope, terminal_receipt=prior_receipt)
@@ -444,7 +459,10 @@ class PrimaryHistoryStore:
                 # F-K1: join the Host side record of assistant tool calls. The
                 # key is present only when rows exist, so a group without tool
                 # calls (and every pre-v55 archive) keeps its exact prior shape.
-                from deskpet.execution.primary_tool_calls import GROUP_KEY, read_assistant_tool_calls_tx
+                from deskpet.execution.primary_tool_calls import (
+                    GROUP_KEY,
+                    read_assistant_tool_calls_tx,
+                )
                 calls = await read_assistant_tool_calls_tx(db, sdk_run_id=run["sdk_run_id"],
                     evidence_id=row["evidence_id"], envelope_hash=row["envelope_sha256"],
                     messages=payload["messages"])

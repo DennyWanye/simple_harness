@@ -7,7 +7,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     DimensionAnalysis,
     DimensionCoverage,
@@ -24,7 +23,6 @@ from deskpet.workflows.definitions.deep_research_v5_report import (
     lint_rendered_report,
     render_report,
 )
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 AUDITED_AT = "2026-07-16T00:00:00+00:00"

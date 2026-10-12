@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from deskpet.tools import research_tools
 from deskpet.workflows.contracts import NodeExecutionIdentity, WorkflowContext
 from deskpet.workflows.definitions.research_core import (

@@ -6,9 +6,12 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.schema import initialize_state_db
-from deskpet.session.project_binding import ProjectBindingService, ProjectBoundWorkspace, SessionCreationService
+from deskpet.session.project_binding import (
+    ProjectBindingService,
+    ProjectBoundWorkspace,
+    SessionCreationService,
+)
 
 
 def _identity(path: Path) -> str:

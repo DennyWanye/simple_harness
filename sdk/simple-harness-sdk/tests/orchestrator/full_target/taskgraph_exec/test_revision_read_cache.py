@@ -7,8 +7,8 @@
 import asyncio
 import sqlite3
 
-from production_fixture import enabled_world
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
+from production_fixture import enabled_world
 
 
 def test_a_verified_revision_is_reused_only_while_nothing_changed(tmp_path):

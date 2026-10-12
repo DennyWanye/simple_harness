@@ -7,7 +7,6 @@ Fixtures captured verbatim from the real incident that corrupted
 test-research-helper/backend/app/services/llm_service.py.
 """
 import pytest
-
 from providers._response_sanitizer import (
     extract_dsml_tool_calls,
     sanitize_response,

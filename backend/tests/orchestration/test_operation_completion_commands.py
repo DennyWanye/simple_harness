@@ -10,13 +10,11 @@ test; the requirements are the ones the Host persisted at creation (SDK requirem
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.orchestrator.operation_completion import OperationCompletionReader
 from agent_orchestrator.storage.htn_store import HtnStore
-
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request

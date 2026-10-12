@@ -10,7 +10,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-
 from simple_harness.contracts import RunId
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import DecisionState, UnitOfWorkConflict

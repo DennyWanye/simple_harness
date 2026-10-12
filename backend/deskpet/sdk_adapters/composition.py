@@ -742,7 +742,9 @@ class ProductSdkRuntimeStack:
         """Compare physical request with the public durable SDK reservation."""
         from simple_harness import RequestId, thaw_json
         from simple_harness.execution.provider_invocations import (
-            provider_invocation_id, provider_request_fingerprint, provider_request_from_json,
+            provider_invocation_id,
+            provider_request_fingerprint,
+            provider_request_from_json,
         )
         self.require_ready()
         if self._uow is None:
@@ -885,10 +887,12 @@ class ProductSdkRuntimeStack:
         transcript ordinal of the assistant item. Read-only; no new grant.
         """
         import aiosqlite
-        from deskpet.task_scope.protocol import canonical_hash, canonical_json
+
         from deskpet.memory.primary_tool_causality import (
-            PrimaryToolCausalityUnavailable, read_tool_causality,
+            PrimaryToolCausalityUnavailable,
+            read_tool_causality,
         )
+        from deskpet.task_scope.protocol import canonical_hash, canonical_json
         self.require_ready()
         if self._uow is None:
             raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")

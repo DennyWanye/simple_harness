@@ -9,9 +9,7 @@ an operation authorization nor evidence that an effect has happened.
 
 from __future__ import annotations
 
-from dataclasses import replace
-
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import TERMINAL_MISSION, ContractError
@@ -29,8 +27,6 @@ from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreError
-
-
 
 #: The actor recorded when the Host confirms content-only requirements in auto mode.
 HOST_AUTO_COMPLETION_CONFIRMER_ID = "host:auto-permission-completion"

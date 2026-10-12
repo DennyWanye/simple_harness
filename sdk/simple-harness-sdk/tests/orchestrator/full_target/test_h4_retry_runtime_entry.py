@@ -16,9 +16,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from h1i_seed import committed, events, resume, root_task, run_until
-from h1i_seed import planner as seed_planner
-
 from agent_orchestrator.orchestrator.commit_service import CommitRejected, Reservation
 from agent_orchestrator.orchestrator.planning_repair_requests import (
     collect_triggers,
@@ -32,6 +29,8 @@ from agent_orchestrator.testing.scripted_replies import (
     review_reply,
     worker_reply,
 )
+from h1i_seed import committed, events, resume, root_task, run_until
+from h1i_seed import planner as seed_planner
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +116,9 @@ def test_a_failed_attempt_with_an_unknown_charge_can_still_be_retried(tmp_path):
             assert repair["status"] == "COMMITTED"
             assert second.retry_of == first.id
             # 这里的"未知"来自一次还挂在线路上的调用（HANDED_OFF）：执行图收敛仍把它算作没安静
-            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import TaskGraphRuntimeImports
+            from agent_orchestrator.orchestrator.taskgraph_runtime_imports import (
+                TaskGraphRuntimeImports,
+            )
             facts = TaskGraphRuntimeImports(loop).read_subject(loop.store.get_intent_for_subject(first.id))
             assert facts.physical_settled is False and facts.accounting_complete is False
 

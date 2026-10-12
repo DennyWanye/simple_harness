@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.store.research_repository import ResearchWorkflowRepository
 from deskpet.workflows.store.run_store import WorkflowRunStore
 

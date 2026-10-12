@@ -18,11 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness.execution.context_authority import (
-    ContextRouteReceipt,
-    TaskScopeRoute,
-)
-
 from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
@@ -35,6 +30,10 @@ from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.task_scope.store import TaskScopeConflict
+from simple_harness.execution.context_authority import (
+    ContextRouteReceipt,
+    TaskScopeRoute,
+)
 from tests.execution import test_foreground_queue as fq
 
 RUN = "sdk-run-res"

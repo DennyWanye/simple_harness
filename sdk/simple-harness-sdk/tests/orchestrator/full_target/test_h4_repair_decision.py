@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.planning.htn.repair_decision import (
     HumanRequestV1,

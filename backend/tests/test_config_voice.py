@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from config import load_config, VoiceConfig, AppConfig
+from config import AppConfig, VoiceConfig, load_config
 
 
 def test_voice_config_defaults_match_plan() -> None:

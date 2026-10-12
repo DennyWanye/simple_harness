@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.retrieval.contracts import (
     EvidenceDocument,
     FetchRequest,
@@ -30,7 +29,6 @@ from deskpet.workflows.definitions.deep_research_v6_compiler import (
 )
 from deskpet.workflows.definitions.deep_research_v6_contracts import parse_blob_ref
 from deskpet.workflows.store import RegisteredBlobStore
-
 
 NO_SEED_SOURCE_RESOLVER = OfficialSourceResolver(
     OfficialSourceRegistryV1(

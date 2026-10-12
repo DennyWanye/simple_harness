@@ -32,7 +32,7 @@ from ..orchestrator.operation_materialization_inputs import (
     DeploymentOperationPolicyInputs,
     OperationMaterializationInputError,
 )
-from .connectors_publish import FilePublishConnector, PUBLISH_NAME
+from .connectors_publish import PUBLISH_NAME, FilePublishConnector
 from .operation_payloads import ConnectorProfileRegistration, ConnectorProfileRegistry
 
 _PARAMETERS_DOCUMENT = {
@@ -160,7 +160,7 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
 
     def _idempotency_contract(self) -> Mapping[str, Any]:
         scope = hashlib.sha256(
-            f"{self._connector.root}\0{self._connector.ledger_path}".encode("utf-8")
+            f"{self._connector.root}\0{self._connector.ledger_path}".encode()
         ).hexdigest()
         return {
             "kind": "ATOMIC_KEY",

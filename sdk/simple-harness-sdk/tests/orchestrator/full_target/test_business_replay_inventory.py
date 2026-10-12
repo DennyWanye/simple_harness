@@ -9,7 +9,6 @@ import copy
 import json
 
 import pytest
-
 from agent_orchestrator.observability import business_replay
 from agent_orchestrator.observability.business_replay import (
     CLASSES,

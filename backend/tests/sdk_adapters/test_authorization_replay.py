@@ -12,10 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId, EffectId, RunId
-from simple_harness.tools import AuthorizationDecision, PreparedToolEffect, ToolCall, ToolSpec
-from test_tool_authority import _AuthorizationStore, _prepare
-
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
 from deskpet.product_state.authorization_saga import (
     AuthorizationSagaRepository,
@@ -29,6 +25,9 @@ from deskpet.sdk_adapters.tool_authority import (
     SdkPreparedAuthorizationPolicy,
     SdkRunToolAuthorityRegistry,
 )
+from simple_harness import CallId, EffectId, RunId
+from simple_harness.tools import AuthorizationDecision, PreparedToolEffect, ToolCall, ToolSpec
+from test_tool_authority import _AuthorizationStore, _prepare
 
 EIGHT_HOURS = 8 * 60 * 60.0
 

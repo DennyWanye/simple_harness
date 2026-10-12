@@ -8,7 +8,6 @@ import inspect
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.workflow.checkpoint import SqliteNativeCheckpointStore
 from simple_harness.workflow.compiler import compile_workflow

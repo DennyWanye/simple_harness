@@ -12,7 +12,6 @@ from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.evaluation.experiment import (
     ARMS,
     ArmExecutor,
@@ -65,9 +64,9 @@ def test_manifest_deep_freeze_unique_ids_and_paired_seed() -> None:
     tasks.append("changed-after-declaration")
     assert plan.task_ids == ("task-a", "task-b")
     with pytest.raises(FrozenInstanceError):
-        setattr(plan.budget, "calls", 999)
+        plan.budget.calls = 999
     with pytest.raises(FrozenInstanceError):
-        setattr(plan, "seed", 99)
+        plan.seed = 99
     runs = plan.runs()
     assert len(runs) == len({run.run_id for run in runs}) == 16
     assert runs == plan.runs()

@@ -11,11 +11,11 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.error_table import classify
 from ..contracts.htn import GraphStructureBudget, TaskForm
+from ..contracts.models import ContractError
 from ..contracts.semantic_base import TypedRef
 from ..graph.eligibility import ReadinessReason
-from ..graph.notification_contracts import TaskGraphErrorV1, _integer, _text
-from ..contracts.models import ContractError
 from ..graph.network_codec import decode
+from ..graph.notification_contracts import TaskGraphErrorV1, _integer, _text
 from ..graph.structural_diff import diff_documents
 from ..graph.view_contracts import (
     TaskGraphConvergenceViewV2,

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import hashlib
 
-from deskpet.task_scope.protocol import canonical_hash, digest
 from deskpet.memory.writer_fence import require_authenticated_host_snapshot
+from deskpet.task_scope.protocol import canonical_hash, digest
 
 COMMON_POLICY_TEXT = (
     "本人用途按已授权范围使用合格记忆。向同事、群聊、公开受众、招聘方、供应商、合作方等非本人受众提供工作/公共材料时，"
@@ -121,6 +121,7 @@ def validate_input_use(value, *, envelope, receipt, primary_ref, delivery_key, c
 async def read_input_use_tx(db, *, turn, config):
     """Read actual Host S1 + original turn/config in the caller's one snapshot."""
     import json
+
     from deskpet.memory.primary_visibility import read_evidence_pair
 
     body = json.loads(turn["turn_json"])
@@ -155,9 +156,11 @@ async def read_current_input_source(*, db_path, subject, turn_id):
     reader explicitly requires the current head to match the admitted token.
     """
     import json
+
     import aiosqlite
+
     from deskpet.memory.history_source_authority import history_namespace_tx
-    from deskpet.memory.trusted_disclosure import current_record_tx, binding_token
+    from deskpet.memory.trusted_disclosure import binding_token, current_record_tx
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row
@@ -182,6 +185,7 @@ async def read_current_input_source(*, db_path, subject, turn_id):
 def input_context_ref(source_ref, token, request_id):
     """Versioned request correlation for new input turns only, never a grant."""
     from base64 import urlsafe_b64encode
+
     from deskpet.task_scope.protocol import identifier
     identifier(request_id, "request_id", 512)
     encoded = urlsafe_b64encode(request_id.encode()).decode().rstrip("=")

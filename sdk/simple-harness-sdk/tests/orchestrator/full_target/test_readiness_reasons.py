@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.artifacts.input_bindings import (
     InputManifest,
     ManifestNotFrozen,

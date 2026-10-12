@@ -15,6 +15,18 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerError,
+    ContextRouteLedgerStore,
+    ProductRunContextAuthority,
+    ProductRuntimeDecisionSink,
+    SnapshotContractConflict,
+)
+from deskpet.sdk_adapters.task_execution import (
+    ProductTaskExecutionAuthority,
+    TaskExecutionAuthorityError,
+)
 from simple_harness import RequestId
 from simple_harness.contracts import RunId
 from simple_harness.contracts.messages import Message, MessageRole
@@ -35,19 +47,6 @@ from simple_harness.tools.runtime_catalog import (
     ToolExecutionPolicy,
     ToolRouteRequirement,
     ToolTaskScopeRequirement,
-)
-
-from deskpet.memory.schema import initialize_human_memory_program_state_db
-from deskpet.sdk_adapters.context_authority import (
-    ContextRouteLedgerError,
-    ContextRouteLedgerStore,
-    ProductRunContextAuthority,
-    ProductRuntimeDecisionSink,
-    SnapshotContractConflict,
-)
-from deskpet.sdk_adapters.task_execution import (
-    ProductTaskExecutionAuthority,
-    TaskExecutionAuthorityError,
 )
 
 RUN = RunId("run-s5a-1")

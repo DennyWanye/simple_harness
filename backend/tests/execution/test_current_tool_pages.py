@@ -9,17 +9,21 @@ from types import SimpleNamespace
 import aiosqlite
 import httpx
 import pytest
-from simple_harness import CallId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-
 from deskpet.execution.primary_context_pages import (
-    HISTORY_PREFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group, verify_history_projections,
+    HISTORY_PREFIX,
+    PREFIX,
+    PrimaryContextPageReader,
+    _excerpt,
+    project_history_group,
+    verify_history_projections,
 )
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.tools.context_page_in_tools import ContextPageInStore
+from simple_harness import CallId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
 from tests.sdk_adapters.test_product_host_ports import Registry
@@ -29,8 +33,15 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 
 
 from deskpet.execution.current_tool_pages import (
-    CONTROL_TOOLS, CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX,
+    CONTROL_TOOLS,
+    MARKER,
+    CurrentToolProjector,
 )
+from deskpet.execution.current_tool_pages import (
+    PREFIX as CURRENT_PREFIX,
+)
+
+
 @pytest.mark.asyncio
 # 2026-09-10 删记忆 SDK：去掉 "forget_after_page"。
 @pytest.mark.parametrize("mode", ["allow"])
@@ -75,8 +86,8 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     actual_page_reader = PrimaryContextPageReader(state, stack_getter=lambda:holder.stack,
         policy_factory=lambda _:holder.runtime.history_policy)
     async def read_page(arguments):
-        from deskpet.sdk_adapters.tools import active_product_tool_context
         from deskpet.execution.current_tool_pages import source_content
+        from deskpet.sdk_adapters.tools import active_product_tool_context
         context = active_product_tool_context()
         facts = holder.stack.read_primary_effect_page_facts(context.run_id.value, context.effect_id.value)
         assert not facts[0].terminal  # actual SDK-owned in-flight page effect

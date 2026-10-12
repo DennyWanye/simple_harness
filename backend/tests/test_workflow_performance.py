@@ -4,10 +4,8 @@ import os
 import time
 
 import pytest
-
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.store import WorkflowRunStore
-
 
 OPERATION_COUNT = 100
 DEFAULT_WINDOWS_CI_LIMIT_SECONDS = 30.0

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from functools import wraps
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Optional
 
 from .capabilities import ToolExecutionContext, current_tool_execution_context
 
@@ -81,7 +82,7 @@ def reject_reserved_model_fields(args: Mapping[str, Any]) -> None:
 def legacy_execution_context(
     args: Mapping[str, Any],
     task_id: str,
-    explicit: Optional[ToolExecutionContext] = None,
+    explicit: ToolExecutionContext | None = None,
 ) -> ToolExecutionContext:
     if explicit is not None:
         return explicit

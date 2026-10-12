@@ -15,11 +15,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Iterator, Mapping, MutableSequence, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Literal, Mapping, MutableSequence, Sequence
-
+from typing import Any, Literal
 
 CONTEXT_MESSAGE_META_KEY = "__deskpet_context"
 
@@ -82,7 +82,7 @@ class ContextMessageMeta:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "ContextMessageMeta":
+    def from_mapping(cls, value: Mapping[str, Any]) -> ContextMessageMeta:
         if not isinstance(value, Mapping):
             raise TypeError("context message metadata must be a mapping")
         return cls(

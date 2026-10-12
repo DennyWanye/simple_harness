@@ -18,13 +18,11 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent, ToolBatchEvent
 from agent.context_manager import ContextManager
 from agent.termination import TerminationReason
 from agent.token_budget import BudgetCheck, BudgetCheckResult
 from llm.types import ChatResponse, ChatUsage, ToolCall
-
 
 # ─────────────── stubs ───────────────
 

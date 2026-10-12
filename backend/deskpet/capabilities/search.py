@@ -11,8 +11,9 @@ import math
 import re
 import time
 import unicodedata
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol, Sequence
+from typing import Any, Protocol
 
 from .contracts import (
     CapabilityCatalogSnapshot,

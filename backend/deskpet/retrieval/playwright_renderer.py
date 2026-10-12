@@ -11,10 +11,10 @@ import hashlib
 import inspect
 import re
 import time
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Awaitable, Callable, Iterable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
@@ -459,7 +459,7 @@ class PlaywrightRendererPool:
         html = await page.content()
         digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
         page_part_id = hashlib.sha256(
-            f"{page_index}:{page.url}:{digest}".encode("utf-8")
+            f"{page_index}:{page.url}:{digest}".encode()
         ).hexdigest()[:24]
         return html, RenderPagePart(page_part_id, page_index, page.url, digest)
 

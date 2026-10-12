@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.agent.context_task import (
     AuthorityProjection,
     GoalProjectionAdapter,

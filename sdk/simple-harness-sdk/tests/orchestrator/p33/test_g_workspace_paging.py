@@ -17,8 +17,6 @@ from dataclasses import replace
 from hashlib import sha256
 
 import pytest
-from fixtures_provider import MODEL, RoleScriptedProvider
-
 from agent_orchestrator.artifacts.workspace import MAX_FILE_BYTES, WorkspaceManager
 from agent_orchestrator.runtime.tool_gateway import (
     CRITIC_TOOLS,
@@ -27,6 +25,7 @@ from agent_orchestrator.runtime.tool_gateway import (
     WorkspaceBinding,
     WorkspaceToolGateway,
 )
+from fixtures_provider import MODEL, RoleScriptedProvider
 from simple_harness.agents import AgentConfig, AgentTurnState, build_agent_runtime
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import (

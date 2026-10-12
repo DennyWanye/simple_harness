@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.workflows.bootstrap import build_workflow_service
 from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.runtime_adapters import (

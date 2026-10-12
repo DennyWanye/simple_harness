@@ -30,9 +30,7 @@ import types
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import computer_use_tool as cu
-
 
 # ---------------------------------------------------------------------
 # Fakes

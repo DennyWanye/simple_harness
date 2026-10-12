@@ -32,8 +32,8 @@ side calls the orchestrator via the ToolRegistry façade.
 from __future__ import annotations
 
 import asyncio
-import copy
 import contextvars
+import copy
 import hashlib
 import json
 import logging
@@ -42,9 +42,10 @@ import re
 import sys
 import time
 import urllib.parse
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import httpx
 
@@ -64,7 +65,7 @@ _CHILD_PROGRESS_TIMEOUT = 5.0
 # [0,1]) so relevance uses real semantics. Unset → keyword coverage only
 # (graceful degrade, no embedder dependency in tests).
 _SEMANTIC_SCORER = None
-_WORKFLOW_STARTER: Optional[Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]] = None
+_WORKFLOW_STARTER: Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]] | None = None
 
 
 def set_semantic_scorer(fn) -> None:
@@ -74,7 +75,7 @@ def set_semantic_scorer(fn) -> None:
 
 
 def set_deepresearch_workflow_starter(
-    fn: Optional[Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]],
+    fn: Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]] | None,
 ) -> None:
     """Route new deepresearch tool calls to the durable graph when wired."""
 
@@ -88,10 +89,10 @@ def set_deepresearch_workflow_starter(
 # 内存。未注入 → deepresearch 跳过精排(不回退主 llm,省 token)。模式由
 # [research].reranker 配置门控: "llm"(默认) / "local"(本地 bge-reranker,
 # Phase-future) / "off"。
-_RERANK_LLM_CALL: Optional[_LLMCall] = None
+_RERANK_LLM_CALL: _LLMCall | None = None
 
 
-def set_rerank_llm_call(fn: Optional[_LLMCall]) -> None:
+def set_rerank_llm_call(fn: _LLMCall | None) -> None:
     """Wire a cheap-model rerank LLM into deep-research (called from main.py)."""
     global _RERANK_LLM_CALL
     _RERANK_LLM_CALL = fn
@@ -132,7 +133,7 @@ _SITE_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
 )
 
 
-def _site_directive_for(text: str) -> Optional[str]:
+def _site_directive_for(text: str) -> str | None:
     """子问题命中政策/企业/学术意图 → 返回对应 site: 定向(如 site:gov.cn);
     都不命中 → None(只走普通搜索)。"""
     t = (text or "").lower()
@@ -229,7 +230,7 @@ def _source_pack_queries_for(text: str) -> list[tuple[str, str]]:
 # → 每次 AttributeError 被 except 吞掉 → 所有 [research] 开关恒取默认,关不掉
 # (direct_sources=false 被忽略,cninfo 照常直连)。改为正确解析配置文件并缓存:
 # 优先用已发布的单例(若某运行模式设了),否则 load_config(resolve_config_path())。
-_RESEARCH_RAW_CACHE: Optional[dict] = None
+_RESEARCH_RAW_CACHE: dict | None = None
 
 
 def _research_raw() -> dict:
@@ -386,7 +387,7 @@ class _StandaloneJSRenderBudget:
 
 
 _standalone_js_budget: contextvars.ContextVar[
-    Optional[_StandaloneJSRenderBudget]
+    _StandaloneJSRenderBudget | None
 ] = contextvars.ContextVar("deskpet_research_js_budget", default=None)
 
 
@@ -408,7 +409,7 @@ async def _claim_js_render(fetch_port: object | None) -> bool:
     return bool(await claim())
 
 
-async def _js_render_dispatch(url: str) -> Optional[str]:
+async def _js_render_dispatch(url: str) -> str | None:
     """按 ``_js_render_engine()`` 路由渲染 url → 渲染后 HTML 字符串;不可用/失败返 None。
     best-effort,绝不抛(失败回落 jina/原结果)。"""
     engine = _js_render_engine()
@@ -528,7 +529,7 @@ _RERANK_TIMEOUT = 25.0  # 独立超时:rerank 模型卡住不拖垮整个 deepre
 
 async def _llm_rerank(
     topic: str,
-    passages: list["Passage"],
+    passages: list[Passage],
     rerank_call: _LLMCall,
     errors: list[str],
     *,
@@ -555,7 +556,7 @@ async def _llm_rerank(
             rerank_call(_RERANK_PROMPT.format(topic=topic, candidates="\n".join(lines))),
             timeout=_RERANK_TIMEOUT,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         errors.append("rerank_timeout")
         return False
     except Exception as exc:  # noqa: BLE001
@@ -881,7 +882,7 @@ class _LLMCallV2(Protocol):
         max_output_tokens: int,
         stable_call_id: str,
         response_format: Mapping[str, Any] | None = None,
-    ) -> "ResearchLLMResult": ...
+    ) -> ResearchLLMResult: ...
 
 
 class _Searcher(Protocol):
@@ -903,7 +904,7 @@ class _Extractor(Protocol):
 
 async def default_search(
     query: str, *, max_results: int = 5,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
     """DuckDuckGo HTML SERP → ``[{url, title, snippet}]``.
 
@@ -1058,7 +1059,7 @@ def _parse_jina(body: str) -> dict[str, str]:
     return {"title": title, "text": text.strip()}
 
 
-async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> Optional[dict[str, str]]:
+async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> dict[str, str] | None:
     """二级抓取: 调 r.jina.ai 拿 JS 渲染后 Markdown。best-effort,失败/空→None。"""
     try:
         resp = await client.get(
@@ -1076,7 +1077,7 @@ async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> Optional[dict
     return _parse_jina(body)
 
 
-def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> Optional[dict[str, Any]]:
+def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> dict[str, Any] | None:
     """Fetch HTML with Scrapling for real deepresearch runs.
 
     The indirection keeps Scrapling optional at import time and lets tests
@@ -1102,7 +1103,7 @@ def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> Option
 async def default_extract(
     url: str,
     *,
-    client: Optional[httpx.AsyncClient] = None,
+    client: httpx.AsyncClient | None = None,
     fetch_port: object | None = None,
 ) -> dict[str, Any]:
     """Thin DeepResearch adapter over the shared FetchExtractService."""
@@ -2047,15 +2048,15 @@ async def deepresearch(
     topic: str,
     *,
     llm_call: _LLMCall,
-    search: Optional[_Searcher] = None,
-    extract: Optional[_Extractor] = None,
+    search: _Searcher | None = None,
+    extract: _Extractor | None = None,
     max_sub_questions: int = 5,
     max_urls_per_query: int = 4,
     max_total_passages: int = 12,
     min_passage_chars: int = 250,
     max_rounds: int = 1,
     mode: str = "standard",
-    user_request: Optional[str] = None,
+    user_request: str | None = None,
     scheduler=None,
     parent_sid: str = "default",
     _depth: int = 0,
@@ -2125,7 +2126,7 @@ async def _gap_followup_queries(
     llm_call: _LLMCall,
     topic: str,
     sub_questions: list[str],
-    passages: list["Passage"],
+    passages: list[Passage],
     errors: list[str],
     *,
     max_followups: int = 3,
@@ -2268,7 +2269,7 @@ def _insert_row_after_header(existing: str, row: str) -> str:
 async def _update_deepresearch_index(
     report_path: Path,
     topic: str,
-    report: "ResearchReport",
+    report: ResearchReport,
 ) -> None:
     """Best-effort update of ``DeepResearch/index.md``."""
     try:
@@ -2442,7 +2443,7 @@ async def _handle_deepresearch(
     return json.dumps(out, ensure_ascii=False)
 
 
-def _save_report(topic: str, report: "ResearchReport") -> Optional[Path]:
+def _save_report(topic: str, report: ResearchReport) -> Path | None:
     """Write the report markdown to ``DeepResearch/`` with a
     metadata header. Returns the path, or None if the dir is unavailable."""
     try:
@@ -2501,17 +2502,17 @@ def save_workflow_report(
 # keychain-resolved cloud key), so deep-research's plan/synthesize calls go
 # through the live relay instead of a config-rebuilt provider. When unset we
 # fall back to reconstructing from config below.
-_LIVE_LLM_CALL: Optional[_LLMCall] = None
-_LIVE_LLM_CALL_V2: Optional[_LLMCallV2] = None
+_LIVE_LLM_CALL: _LLMCall | None = None
+_LIVE_LLM_CALL_V2: _LLMCallV2 | None = None
 
 
-def set_live_llm_call(fn: Optional[_LLMCall]) -> None:
+def set_live_llm_call(fn: _LLMCall | None) -> None:
     """Wire the running agent's LLM into deep-research (called from main.py)."""
     global _LIVE_LLM_CALL
     _LIVE_LLM_CALL = fn
 
 
-def set_live_llm_call_v2(fn: Optional[_LLMCallV2]) -> None:
+def set_live_llm_call_v2(fn: _LLMCallV2 | None) -> None:
     """Wire the usage-bearing, at-most-once research transport."""
 
     global _LIVE_LLM_CALL_V2
@@ -2528,7 +2529,7 @@ def _research_llm_result_from_provider_response(
     response: object,
     *,
     fallback_model: str,
-) -> "ResearchLLMResult":
+) -> ResearchLLMResult:
     """Normalize OpenAI and relay token fields without inventing usage."""
 
     from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
@@ -2657,7 +2658,7 @@ async def _resolve_default_llm_call_v2() -> _LLMCallV2:
         max_output_tokens: int,
         stable_call_id: str,
         response_format: Mapping[str, Any] | None = None,
-    ) -> "ResearchLLMResult":
+    ) -> ResearchLLMResult:
         if not stable_call_id:
             raise ValueError("stable_call_id is required")
         if (

@@ -21,8 +21,8 @@ from ..assurance.checks import (
     Formula,
     Grade,
     ReviewReply,
-    decode_review_reply,
     decide_review,
+    decode_review_reply,
     evaluate_check_gate,
     global_blocker_targets,
 )
@@ -50,8 +50,11 @@ from ..storage.assurance_blobs import PreparedBlob, read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
+    CurrentAuthority,
     EpochSnapshot,
     ResolvedRef,
+    _permission,
+    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
@@ -59,7 +62,6 @@ from ..storage.assurance_reads import (
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
 from .assurance_check_use import PreparedCheckUse, _merge_reads
 from .assurance_review_transport import read_review_invocation_locked
 

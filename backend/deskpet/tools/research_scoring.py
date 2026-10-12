@@ -227,7 +227,7 @@ _VELOCITY_THRESHOLDS = {
 }
 
 
-def score_recency(date_str: str, *, topic_velocity: str = "medium", now: Optional[float] = None) -> float:
+def score_recency(date_str: str, *, topic_velocity: str = "medium", now: float | None = None) -> float:
     """0-10 recency vs a velocity curve. Unknown/garbage date → 3.0."""
     if not date_str:
         return 3.0

@@ -10,7 +10,6 @@ import math
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.native_plane import BGE_M3_SUBDIR, BgeM3EmbeddingPort, embedding_port
 
 MODELS = Path.home() / "Library/Application Support/com.dennywanye.simpleharness/models"

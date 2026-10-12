@@ -2,9 +2,9 @@
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.execution.foreground_runtime_ports import (
-    ProductForegroundProviderPort, ProductForegroundToolPort,
+    ProductForegroundProviderPort,
+    ProductForegroundToolPort,
 )
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingRegistry
 from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry

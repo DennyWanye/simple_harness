@@ -5,17 +5,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import time
 import uuid
+from pathlib import Path
 
 import aiosqlite
+from simple_harness.runtime import AgentIdentity
+
 from deskpet.companion.control_ingress import (
     LocalAuthSnapshotProvider,
     TrustedAuthSnapshotProvider,
     validate_auth_snapshot,
 )
-from simple_harness.runtime import AgentIdentity
 
 
 class MemoryIdentityUnavailable(RuntimeError):

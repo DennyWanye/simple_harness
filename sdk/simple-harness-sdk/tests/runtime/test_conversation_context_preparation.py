@@ -9,7 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from simple_harness import AgentIdentity, Message, MessageRole, canonical_json, thaw_json
 from simple_harness.execution.context_staging import (
     ContextStageKind,

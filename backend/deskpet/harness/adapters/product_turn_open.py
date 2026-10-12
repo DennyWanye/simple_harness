@@ -8,12 +8,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from deskpet.types.task_work_context import (
-    ConversationBoundary,
-    TaskRunProjection as DurableRunProjection,
-    TaskWorkContext as DurableWorkContext,
-    TaskWorkContextResolver,
-)
 from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
     RoutedTurnIntent,
@@ -26,6 +20,16 @@ from deskpet.execution.run_block_signals import (
 )
 from deskpet.harness.contracts import HostContext
 from deskpet.harness.kernel import root_run_identity
+from deskpet.types.task_work_context import (
+    ConversationBoundary,
+    TaskWorkContextResolver,
+)
+from deskpet.types.task_work_context import (
+    TaskRunProjection as DurableRunProjection,
+)
+from deskpet.types.task_work_context import (
+    TaskWorkContext as DurableWorkContext,
+)
 
 
 def _trace_jsonable(

@@ -1,9 +1,9 @@
 """Independent public SDK observations, including failed and nonterminal attempts."""
-from dataclasses import fields, is_dataclass
-from enum import Enum
-from collections.abc import Mapping
 import hashlib
 import json
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
+from enum import Enum
 
 
 def wire(value):
@@ -34,8 +34,8 @@ def _provider_wire(invocation):
 
 
 def _read_providers(uow, run_id, retained):
-    from simple_harness.execution.audit import audit_hash
     from simple_harness.contracts import thaw_json
+    from simple_harness.execution.audit import audit_hash
 
     providers = {}
     after = 0

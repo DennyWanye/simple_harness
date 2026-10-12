@@ -14,7 +14,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.file_tools import _resolve_within_workspace
 
 

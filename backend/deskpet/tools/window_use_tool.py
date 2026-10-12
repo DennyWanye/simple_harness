@@ -31,7 +31,6 @@ from .computer_use_tool import (
     _workspace_root,
 )
 
-
 _MAX_WINDOWS = 100
 _MAX_HOLD_MS = 10_000
 _MAX_SEQUENCE_STEPS = 12

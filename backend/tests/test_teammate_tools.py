@@ -18,7 +18,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.agent.team.team_store import TeamStore
 from deskpet.agent.team.teammate_tools import (
     FORBIDDEN_TEAMMATE_TOOLS,

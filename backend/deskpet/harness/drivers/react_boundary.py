@@ -1,9 +1,10 @@
 """Durable ReAct command boundary and its JSON codec."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from deskpet.capabilities.effect_plan import BrokeredCommandBoundary
 from deskpet.execution.contracts import (
@@ -13,10 +14,7 @@ from deskpet.execution.contracts import (
     RunCreate,
     thaw_json,
 )
-from deskpet.execution.evidence import EvidenceSelection, UNKNOWN_EVIDENCE
-from deskpet.harness.skill_scope import (
-    skill_tool_intersection_from_snapshot,
-)
+from deskpet.execution.evidence import UNKNOWN_EVIDENCE, EvidenceSelection
 from deskpet.harness.ports import (
     AttachmentPolicy,
     DelegateRun,
@@ -25,11 +23,15 @@ from deskpet.harness.ports import (
     JoinPolicy,
     OpenDecision,
 )
+from deskpet.harness.skill_scope import (
+    skill_tool_intersection_from_snapshot,
+)
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.effects import (
     NormalizedToolOutcome,
     PreparedToolCall,
 )
+
 
 def _call_payload(call: PreparedToolCall) -> dict[str, Any]:
     return call.to_dict()
@@ -292,7 +294,7 @@ class ReactCommandBoundary:
             for command in self.brokered_commands
             if command.status != "terminal"
         )
-    def with_outcomes(self, updates: Mapping[int, NormalizedToolOutcome], statuses: Mapping[int, OutcomeStatus], metadata: Mapping[int, Mapping[str, Any]] | None=None) -> 'ReactCommandBoundary':
+    def with_outcomes(self, updates: Mapping[int, NormalizedToolOutcome], statuses: Mapping[int, OutcomeStatus], metadata: Mapping[int, Mapping[str, Any]] | None=None) -> ReactCommandBoundary:
         outcomes = list(self.outcomes)
         outcome_statuses = list(self.outcome_statuses)
         outcome_metadata = list(self.outcome_metadata)
@@ -413,7 +415,7 @@ class ReactCommandBoundary:
         }
 
     @classmethod
-    def from_record(cls, record: Any) -> 'ReactCommandBoundary':
+    def from_record(cls, record: Any) -> ReactCommandBoundary:
         value = dict(record.payload)
         decision = value.get('decision')
         delegate = value.get('delegate')

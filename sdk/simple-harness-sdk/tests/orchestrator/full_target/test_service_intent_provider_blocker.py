@@ -49,7 +49,6 @@ from _unknown_outcome_world import (  # noqa: E402
     status,
     transport_loss,
 )
-
 from agent_orchestrator.orchestrator.commit_service import SERVICE_INTENT_REHANDED_OFF  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
     MAX_SERVICE_BLOCKER_SECONDS,

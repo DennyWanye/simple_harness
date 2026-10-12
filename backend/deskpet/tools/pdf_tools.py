@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 _SOFFICE_TIMEOUT = 90.0
 
 
-def find_soffice() -> Optional[str]:
+def find_soffice() -> str | None:
     """Locate the LibreOffice ``soffice`` executable, or None."""
     env = os.environ.get("DESKPET_SOFFICE_PATH")
     if env and Path(env).is_file():
@@ -62,7 +62,7 @@ def find_soffice() -> Optional[str]:
 def pdf_export(
     input_path: str,
     *,
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ) -> dict[str, Any]:
     """Convert ``input_path`` to PDF. Returns the .pdf path on success."""
     resolved = office_paths.resolve_for_read(input_path)

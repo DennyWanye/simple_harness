@@ -25,7 +25,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 logger = logging.getLogger("deskpet.agent.watchdog")
 
@@ -88,15 +89,13 @@ class WatchdogLoop:
         self,
         *,
         session_activity: Any,                    # SessionActivityStore
-        hook: Optional[SupervisorHook] = None,
+        hook: SupervisorHook | None = None,
         scan_interval_seconds: float = DEFAULT_SCAN_INTERVAL_SECONDS,
         stuck_threshold_seconds: float = DEFAULT_STUCK_THRESHOLD_SECONDS,
         dedup_seconds: float = DEFAULT_DEDUP_SECONDS,
         startup_grace_seconds: float = DEFAULT_STARTUP_GRACE_SECONDS,
         idle_with_todos_threshold_seconds: float = DEFAULT_IDLE_WITH_TODOS_THRESHOLD_SECONDS,
-        incomplete_todos_probe: Optional[
-            Callable[[str], Awaitable[list[dict[str, Any]]]]
-        ] = None,
+        incomplete_todos_probe: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
         tool_signature_repeat_threshold: int = DEFAULT_TOOL_SIGNATURE_REPEAT_THRESHOLD,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -120,7 +119,7 @@ class WatchdogLoop:
         # Last supervisor scan timestamp per sid for de-duplication.
         self._last_scan_ts: dict[str, float] = {}
         # The task itself; None when not running.
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._stopped = asyncio.Event()
         self._enabled = True
 
@@ -323,10 +322,10 @@ class WatchdogLoop:
 
     # ─── introspection (used by tests + observability) ─────────────────
 
-    def last_scan(self, sid: str) -> Optional[float]:
+    def last_scan(self, sid: str) -> float | None:
         return self._last_scan_ts.get(sid)
 
-    def reset_dedup(self, sid: Optional[str] = None) -> None:
+    def reset_dedup(self, sid: str | None = None) -> None:
         if sid is None:
             self._last_scan_ts.clear()
         else:

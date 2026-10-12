@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-import builtins
 import ast
+import builtins
 import sys
-from types import ModuleType
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 from deskpet.voice_runtime import (
     VOICE_DISABLED_CODE,

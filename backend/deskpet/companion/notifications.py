@@ -8,9 +8,10 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Any
 
 from deskpet.companion.companion_message_projection import (
     COMPANION_REDACTION_TOMBSTONE,
@@ -61,7 +62,7 @@ def _trusted_owner(frozen_identity: Any) -> TrustedCompanionOwner:
 class CompanionProjectionVisibilityPort:
     """Fail-closed owner overlay used immediately before history serialization."""
 
-    def __init__(self, service: "CompanionNotificationService") -> None:
+    def __init__(self, service: CompanionNotificationService) -> None:
         self._service = service
 
     async def project_history(

@@ -29,7 +29,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.assurance.checks import (
     CheckResult,
     CriterionPolicy,

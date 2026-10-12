@@ -10,14 +10,13 @@ import asyncio
 from typing import Any
 
 import pytest
-from h1i_seed import committed, committing_round, grant_for
-from h1i_seed import events as _events
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import StoreConflict
+from h1i_seed import committed, committing_round, grant_for
+from h1i_seed import events as _events
 
 
 def _receipt(loop: Orchestrator, mission_id: str, intent_id: str) -> tuple[Any, int, int, int, int]:

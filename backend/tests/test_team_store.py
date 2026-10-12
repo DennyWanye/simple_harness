@@ -20,12 +20,11 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.agent.team.team_store import (
-    TeamStore,
-    TeamTask,
     TeamMessage,
     TeamPermissionRequest,
+    TeamStore,
+    TeamTask,
 )
 
 

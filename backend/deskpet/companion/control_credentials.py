@@ -8,8 +8,8 @@ import json
 import secrets
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -42,7 +42,7 @@ class WindowControlBootstrap:
     documents_identity: str | None = None
 
     @classmethod
-    def parse_line(cls, line: str) -> "WindowControlBootstrap":
+    def parse_line(cls, line: str) -> WindowControlBootstrap:
         prefix = "WINDOW_CONTROL_BOOTSTRAP="
         if not line.startswith(prefix):
             raise WindowControlCredentialError("window_control_bootstrap_missing")
@@ -96,7 +96,7 @@ class WindowControlCredential:
     signature_hex: str
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, object]) -> "WindowControlCredential":
+    def from_mapping(cls, value: Mapping[str, object]) -> WindowControlCredential:
         aliases = {
             "backend_process_instance_id": "backendProcessInstanceId",
             "connection_id": "connectionId",

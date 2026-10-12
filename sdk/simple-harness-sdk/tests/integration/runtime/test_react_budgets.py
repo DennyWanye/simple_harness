@@ -4,7 +4,6 @@
 import asyncio
 
 import pytest
-
 from simple_harness.contracts import CallId, RequestId, RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetSnapshot

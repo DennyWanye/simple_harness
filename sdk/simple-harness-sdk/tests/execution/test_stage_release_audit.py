@@ -1,7 +1,6 @@
 """Real stage/release authority rejects cross-request settlement before mutation."""
 
 import pytest
-
 from simple_harness.execution.context_staging import ContextStageKind, ContextStagingRepository
 from simple_harness.execution.sqlite import Database
 from simple_harness.execution.sqlite.stage_audit import begin_release, settle_release

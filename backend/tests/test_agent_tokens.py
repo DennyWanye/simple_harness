@@ -4,7 +4,7 @@
 """统一 token 计数(deskpet.agent.tokens)测试 — 优化 #1+#3。"""
 from __future__ import annotations
 
-from deskpet.agent.tokens import count_text_tokens, count_messages_tokens
+from deskpet.agent.tokens import count_messages_tokens, count_text_tokens
 
 
 def test_empty():
@@ -30,9 +30,9 @@ def test_ascii_reasonable():
 
 def test_cross_module_consistency():
     """compressor / budget / token_budget 必须同口径(优化 #3 核心)。"""
+    from agent import token_budget as tb
     from deskpet.agent import context_compressor as cc
     from deskpet.agent.assembler import budget as bg
-    from agent import token_budget as tb
     t = "钠离子电池 GB/T 44265-2024 electric storage station 技术规范"
     a = count_text_tokens(t)
     assert cc._approx_tokens(t) == a

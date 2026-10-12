@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.graph.projection_validation import (
     ProblemKind,

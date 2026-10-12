@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
-
+from pathlib import Path
 
 _CHILD = r'''
 import asyncio, importlib.abc, json, sys

@@ -24,7 +24,6 @@ import sys
 import textwrap
 from pathlib import Path
 
-
 SKILL_TEMPLATE = """\
 ---
 description: Example skill shipped with this plugin

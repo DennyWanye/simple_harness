@@ -2,11 +2,15 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 from __future__ import annotations
+
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from typing import Any, Protocol
+
 import structlog
+
 from deskpet.execution.contracts import thaw_json
+
 logger = structlog.get_logger(__name__)
 
 class ProductDomainSink(Protocol):
@@ -102,7 +106,7 @@ class LegacyProductDomainSink:
             self._set_read_only(sid, True)
         try:
             decision = await asyncio.wait_for(future, timeout=float(payload.get('timeout_seconds', 900.0)))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             decision = 'cancel'
         finally:
             self._waiters.pop(sid, None)

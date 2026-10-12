@@ -7,7 +7,6 @@ snapshot as the request; the original PlanningDecision pipeline chooses and comm
 from __future__ import annotations
 
 from collections.abc import Mapping
-
 from dataclasses import asdict
 from typing import Any
 
@@ -475,7 +474,11 @@ def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
     the plain fact — output ceiling (2026-10-09) or per-turn model-call cap (2026-10-10).
     Whether to redo or split the step is the planner's judgment."""
     from .failure_classes import (
-        classify_failure, output_exhausted, output_exhausted_fact, turn_cap_exceeded, turn_cap_fact,
+        classify_failure,
+        output_exhausted,
+        output_exhausted_fact,
+        turn_cap_exceeded,
+        turn_cap_fact,
     )
 
     if not failure:
@@ -655,9 +658,8 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         if planned_for is None or number <= planned_for:
             continue
         if revision.amendment_credential_ref and source_key not in seen:
-            from .requirements_amendment import compare_revisions
-
             from .requirements_amendment import EVENT as AMENDED
+            from .requirements_amendment import compare_revisions
 
             # what changed is a comparison of the two revisions by id — a fact, not a judgment
             previous = revisions.get(number - 1)
@@ -694,7 +696,11 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
                          and e.payload.get("failed_attempt_id") == latest.id), None)
         if previous is None or pending_retry_permit(store, mission.id, task.id) is not None:
             continue
-        from ..runtime.planning_operations import StoreOperationReader, build_operation_snapshot, SourceUnavailable
+        from ..runtime.planning_operations import (
+            SourceUnavailable,
+            StoreOperationReader,
+            build_operation_snapshot,
+        )
         try:
             operations = build_operation_snapshot(mission.id, reader=StoreOperationReader(store))
             operation_state = operations.read_digest

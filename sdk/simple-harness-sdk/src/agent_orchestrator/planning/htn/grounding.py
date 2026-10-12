@@ -33,7 +33,6 @@ from typing import Any
 
 from ...contracts.evidence_state import PreconditionPhase, PreconditionWitnessRecord, TruthValue
 from ...contracts.htn import (
-    ResourceRef,
     Binding,
     ChildBinding,
     MethodContract,
@@ -50,6 +49,7 @@ from ...contracts.htn import (
     PlanRevision,
     PreconditionRef,
     Requiredness,
+    ResourceRef,
     ReusePolicy,
     SideEffectKind,
     TaskForm,

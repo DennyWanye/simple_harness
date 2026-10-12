@@ -127,8 +127,8 @@ def build_await_subagents_tool(workflow_service_provider):
             raise RuntimeError("workflow service is unavailable")
         uow = workflow_service.execution_uow
         from deskpet.execution.contracts import (
-            RunRef,
             TERMINAL_RUN_STATUSES,
+            RunRef,
         )
         from deskpet.harness.drivers.react_boundary import ReactCommandBoundary
 

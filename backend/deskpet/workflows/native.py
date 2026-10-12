@@ -10,12 +10,21 @@ import copy
 import hashlib
 import inspect
 import time
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, AsyncIterator, Mapping, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import structlog
 
-from .contracts import JsonValue, NodeExecutionIdentity, StatePatch, WorkflowContext, WorkflowState, canonical_json, validate_json_value
+from .contracts import (
+    JsonValue,
+    NodeExecutionIdentity,
+    StatePatch,
+    WorkflowContext,
+    WorkflowState,
+    canonical_json,
+    validate_json_value,
+)
 from .control import ExecutionControl, WorkflowSuspended, bind_execution_control
 from .errors import InvalidStatePatch, StateMergeConflict, WorkflowErrorCode, WorkflowNodeError
 from .terminal_projection import (
@@ -47,7 +56,7 @@ def _hash(*parts: object) -> str:
     return hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
 
 
-def _uses_deep_research_stage_contract(manifest: "WorkflowManifest") -> bool:
+def _uses_deep_research_stage_contract(manifest: WorkflowManifest) -> bool:
     return manifest.workflow_name == "deep_research" and manifest.workflow_version in {"v2", "v3", "v4", "v5"}
 
 
@@ -302,7 +311,7 @@ async def _report(progress: object | None, identity: NodeExecutionIdentity, tran
 class NativeWorkflowExecutable:
     def __init__(
         self,
-        workflow: "CompiledWorkflow",
+        workflow: CompiledWorkflow,
         store: NativeCheckpointStore,
         terminal_projection_registry: TerminalProjectionRegistry | None = None,
         async_terminal_commit_registry: AsyncTerminalCommitProjectionRegistry | None = None,

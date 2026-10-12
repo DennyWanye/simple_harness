@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import httpx
 import pytest
-
 from config import SearchGatewayConfig
 from deskpet.retrieval.cache import FailurePolicy, ProviderHealth
 from deskpet.retrieval.contracts import (

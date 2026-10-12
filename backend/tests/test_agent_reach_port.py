@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 import importlib.metadata
+import json
 from pathlib import Path
 
 import agent_reach.channels
-
 from deskpet.tools.agent_reach_port import AgentReachPort, _safe_message
 from deskpet.tools.agent_reach_tools import _doctor, _read
 

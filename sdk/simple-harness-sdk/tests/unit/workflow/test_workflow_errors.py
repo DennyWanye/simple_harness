@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.workflow.errors import (
     ERROR_DISPOSITIONS,
     AsyncOnlyWorkflowError,

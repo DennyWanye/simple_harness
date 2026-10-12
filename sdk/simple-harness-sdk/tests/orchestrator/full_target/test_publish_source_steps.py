@@ -11,7 +11,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch
 from agent_orchestrator.storage.htn_store import HtnStore
 

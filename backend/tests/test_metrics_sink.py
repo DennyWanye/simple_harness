@@ -19,17 +19,17 @@ import json
 from pathlib import Path
 
 import pytest
-
 from observability.metrics_sink import (
-    MetricsSink,
-    sanitize_detail,
-    record as module_record,
-    get_default_sink,
-    VALID_EVENTS,
-    _MAX_DETAIL_STR,
     _MAX_BYTES,
+    _MAX_DETAIL_STR,
+    VALID_EVENTS,
+    MetricsSink,
+    get_default_sink,
+    sanitize_detail,
 )
-
+from observability.metrics_sink import (
+    record as module_record,
+)
 
 # ----------------------------------------------------------------------
 # sanitize_detail

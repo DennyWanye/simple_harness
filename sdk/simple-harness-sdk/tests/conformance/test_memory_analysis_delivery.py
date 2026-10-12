@@ -7,7 +7,6 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-
 from simple_harness.runtime.disclosure_protocol import (
     DeliveryRecipient,
     DisclosureContext,

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.retention import (
     BLOB_REF_STAGE,
     CHECKPOINT_STAGE,
@@ -21,7 +20,6 @@ from deskpet.workflows.retention import (
     WorkflowRetentionManager,
 )
 from deskpet.workflows.store.schema import initialize_workflow_db
-
 
 DAY = 24 * 60 * 60
 RESEARCH_STAGE_ORDER = (

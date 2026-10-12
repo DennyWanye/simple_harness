@@ -29,11 +29,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
-
 import agent_orchestrator.testing.scripted_replies as scripted  # noqa: E402
-from agent_orchestrator.orchestrator.assurance_review_consumer import AssuranceReviewConsumer  # noqa: E402
-from agent_orchestrator.orchestrator.assurance_tick import AssuranceTick, AssuranceWait  # noqa: E402
+from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
+from agent_orchestrator.orchestrator.assurance_review_consumer import (
+    AssuranceReviewConsumer,  # noqa: E402
+)
+from agent_orchestrator.orchestrator.assurance_tick import (  # noqa: E402
+    AssuranceTick,
+    AssuranceWait,
+)
 from agent_orchestrator.orchestrator.commit_service import CommitService  # noqa: E402
 
 

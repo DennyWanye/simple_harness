@@ -14,9 +14,10 @@ only — never envelope bytes, tool arguments or results).  The stable top-level
 from __future__ import annotations
 
 import json
+
+from deskpet.execution.evidence_ingress import _HostExecutionEvidence
 from deskpet.memory import primary_message_v2 as v2
 from deskpet.task_scope.protocol import canonical_hash, validate_execution_evidence
-from deskpet.execution.evidence_ingress import _HostExecutionEvidence
 
 CONTRACT = "primary-message-v3"
 

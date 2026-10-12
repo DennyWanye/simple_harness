@@ -6,7 +6,14 @@ import copy
 import hashlib
 from collections.abc import Mapping
 
-from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, WorkflowState, canonical_json
+from ...contracts import (
+    ChannelSpec,
+    JsonType,
+    JsonValue,
+    ReducerKind,
+    WorkflowState,
+    canonical_json,
+)
 from ...definition import END_NODE, Edge, NodeDefinition, WorkflowDefinition, compile_workflow
 from ..deep_research_v6_contracts import parse_blob_ref
 from ..deep_research_v6_evidence import GENESIS_EVIDENCE_HEAD
@@ -25,7 +32,6 @@ from ..deep_research_v6_terminal_nodes import (
     persist_manifest_handler,
     render_claims_handler,
 )
-
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v6"

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 
 import httpx
-
 from deskpet.execution.dispatch import current_dispatch_handoff
 
 

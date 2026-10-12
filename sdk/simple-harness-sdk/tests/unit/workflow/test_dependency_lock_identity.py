@@ -12,7 +12,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from simple_harness.workflow import (
     SDK_DEPENDENCY_LOCK_HASH,
     WorkflowRegistry,

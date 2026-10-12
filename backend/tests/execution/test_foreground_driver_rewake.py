@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from deskpet.execution.foreground_runtime import ForegroundRuntimeExecutionAuthority
 
 # 唤醒丢失的症状是「永远等不到下一轮」。用例必须快速失败而不是挂死。

@@ -24,9 +24,10 @@ import hashlib
 import logging
 import shutil
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Literal, Optional
+from typing import Literal, Optional
 
 from deskpet.tools.receipt import ToolReceipt
 
@@ -42,14 +43,14 @@ class VerifierOutcome:
     verifier: str
     status: Literal["pass", "fail", "skipped", "timeout"]
     reason: str = ""
-    log_tail: Optional[str] = None
-    error_class: Optional[str] = None
+    log_tail: str | None = None
+    error_class: str | None = None
     elapsed_ms: int = 0
 
 
 # ─── Helpers ─────────────────────────────────────────────────
 
-def _which(cmd: str) -> Optional[str]:
+def _which(cmd: str) -> str | None:
     return shutil.which(cmd)
 
 
@@ -60,7 +61,7 @@ def _tail_lines(text: str, n: int = LOG_TAIL_LINES) -> str:
     return "\n".join(lines[-n:])
 
 
-def _sha256_file(path: Path) -> Optional[str]:
+def _sha256_file(path: Path) -> str | None:
     try:
         h = hashlib.sha256()
         with open(path, "rb") as f:
@@ -84,7 +85,7 @@ class FileExistsVerifier:
         self,
         *,
         receipts: Iterable[ToolReceipt],
-        expected_paths_and_shas: Iterable[tuple[str, Optional[str]]] = (),
+        expected_paths_and_shas: Iterable[tuple[str, str | None]] = (),
     ) -> VerifierOutcome:
         """expected_paths_and_shas: list of (path, expected_sha256 or None).
         sha=None 表示 receipt 处于 sha256_pending — 仅验存在 + size。
@@ -338,7 +339,7 @@ def run_outcome_verifiers(
     receipts: list[ToolReceipt],
     changed_files: list[str],
     cwd: str,
-    expected_paths_and_shas: Optional[list[tuple[str, Optional[str]]]] = None,
+    expected_paths_and_shas: list[tuple[str, str | None]] | None = None,
     run_build: bool = False,
     run_tests: bool = False,
     build_kind: Literal["frontend", "backend"] = "backend",

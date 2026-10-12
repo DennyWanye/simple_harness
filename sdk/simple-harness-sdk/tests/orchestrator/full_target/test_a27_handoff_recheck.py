@@ -40,7 +40,6 @@ from _unknown_outcome_world import (  # noqa: E402
     status,
     transport_loss,
 )
-
 from agent_orchestrator.orchestrator import assurance_review_wait  # noqa: E402
 from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
 from agent_orchestrator.runtime.agent_worker import Liveness  # noqa: E402

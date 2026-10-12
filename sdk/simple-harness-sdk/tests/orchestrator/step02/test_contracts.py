@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import (
     Attempt,
     AttemptStatus,

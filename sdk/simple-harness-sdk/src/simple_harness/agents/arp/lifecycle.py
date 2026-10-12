@@ -20,8 +20,9 @@ same lock, otherwise a new trial is required; RETIRED is terminal.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from . import catalogue as cat
 from .codec import check

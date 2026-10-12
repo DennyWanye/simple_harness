@@ -15,7 +15,6 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from _assured_loop import method_body, plan_revision  # noqa: F401  (plan_revision re-exported)
-
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.scripted_replies import decision
 

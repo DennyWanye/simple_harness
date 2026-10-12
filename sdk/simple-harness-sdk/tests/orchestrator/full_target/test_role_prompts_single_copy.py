@@ -18,7 +18,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.runtime import role_templates as templates
 
 SRC = Path(templates.__file__).resolve().parents[2]

@@ -36,26 +36,6 @@ if str(_HERE) not in sys.path:
 # one compound root, two primitives, an order edge, a manifest and a witness.
 # Rebuilding it here would give the allocator a *different* world to be judged
 # against, which is the one thing a gate test must not do.
-from test_readiness_reasons import (  # noqa: E402
-    MISSION,
-    NOW_MS,
-    O_A,
-    OCC_A,
-    OCC_B,
-    T_A,
-    T_B,
-    T_ROOT,
-    binding_for,
-    consumer_binding,
-    consumer_view,
-    manifest_of,
-    plan_of,
-    ready_report,
-    report_for,
-    root_view,
-    vref,
-)
-
 from agent_orchestrator.artifacts.input_bindings import InputManifest  # noqa: E402
 from agent_orchestrator.contracts import (  # noqa: E402
     Attempt,
@@ -95,6 +75,25 @@ from agent_orchestrator.scheduling.allocator import (  # noqa: E402
 from agent_orchestrator.scheduling.backpressure import (  # noqa: E402
     RAISED,
     BackpressureState,
+)
+from test_readiness_reasons import (  # noqa: E402
+    MISSION,
+    NOW_MS,
+    O_A,
+    OCC_A,
+    OCC_B,
+    T_A,
+    T_B,
+    T_ROOT,
+    binding_for,
+    consumer_binding,
+    consumer_view,
+    manifest_of,
+    plan_of,
+    ready_report,
+    report_for,
+    root_view,
+    vref,
 )
 
 ALL_STATUSES = tuple(TaskStatus)

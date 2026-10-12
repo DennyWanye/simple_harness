@@ -11,7 +11,6 @@ import hashlib
 import json
 
 import pytest
-
 import simple_harness as h
 from simple_harness.runtime import RunStart
 

@@ -8,9 +8,10 @@ contract used by generic, education, and technology research.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
 from .deep_research_v3_quality import evaluate_support
@@ -22,7 +23,6 @@ from .deep_research_v5_contracts import (
     ResearchDimension,
 )
 from .deep_research_v5_evidence import AdmittedPassage, EvidenceEvaluation
-
 
 AnalysisStatementKind = Literal["fact", "inference", "gap"]
 _STATEMENT_FIELDS = (
@@ -116,7 +116,7 @@ class AnalysisStatement:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "AnalysisStatement":
+    def from_json(cls, value: Mapping[str, Any]) -> AnalysisStatement:
         raw = _strict_object(
             value,
             keys={"schema_version", "claim_id", "text", "kind", "citation_ids"},
@@ -191,7 +191,7 @@ class PerDimensionAnalysisPayload:
         return result
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "PerDimensionAnalysisPayload":
+    def from_json(cls, value: Mapping[str, Any]) -> PerDimensionAnalysisPayload:
         keys = {"schema_version", "dimension_id", "citation_ids", *_STATEMENT_FIELDS}
         raw = _strict_object(value, keys=keys, name=cls.__name__)
         parsed: dict[str, AnalysisStatement | None] = {}

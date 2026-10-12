@@ -12,9 +12,10 @@ receipt an authenticated deployment command produces (resources/DEPENDENCIES.md)
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import resources
-from typing import Any, Mapping
+from typing import Any
 
 from . import PROTOCOL, codec
 from .errors import ArpError

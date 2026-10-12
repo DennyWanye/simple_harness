@@ -20,7 +20,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     TruthValue,

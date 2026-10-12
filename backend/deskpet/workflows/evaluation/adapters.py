@@ -8,7 +8,6 @@ from typing import Any
 
 from .models import EvaluationOutcome, EvaluationVerdict, EvaluatorType
 
-
 _PASS_VALUES = {"pass", "passed", "ok", "success", "succeeded", "approve", "approved", "true"}
 _FAIL_VALUES = {"fail", "failed", "failure", "reject", "rejected", "false"}
 _REVISE_VALUES = {"revise", "retry", "needs_revision", "needs-revision"}

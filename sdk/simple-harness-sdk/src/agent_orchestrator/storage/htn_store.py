@@ -956,9 +956,8 @@ class HtnStore:
         with self._store.transaction() as connection:
             if official:
                 from ..assurance.codec import AssuranceError
-                from .assurance_store import AssuranceStore
-
                 from ..orchestrator.assurance_review_import import PreparedOfficialReview
+                from .assurance_store import AssuranceStore
 
                 AssuranceStore(self._store).require_assured(mission)
                 if not isinstance(assurance_import, PreparedOfficialReview):
@@ -1244,8 +1243,8 @@ class HtnStore:
                 f"validity witness {witness.witness_id} conflicts with one already stored"
                 f" for {witness.consumer_ref.id}/{witness.purpose!s}",
             )
-            from .taskgraph_source_events import record_source_change
             from ..contracts.models import sha256_hex
+            from .taskgraph_source_events import record_source_change
             record_source_change(self._store, mission, kind="validity_witness",
                 source_id=witness.witness_id, revision=1, content_hash=sha256_hex(witness.to_json()))
         return witness
@@ -1326,8 +1325,8 @@ class HtnStore:
             if before in (TruthValue.TRUE, TruthValue.FALSE) and after is not before:
                 self.bump_epoch(mission, identifier(scope_id, "scope_id"),
                                 bumped_by=f"observation:{observation.observation_id}")
-            from .taskgraph_source_events import record_source_change
             from ..contracts.models import sha256_hex
+            from .taskgraph_source_events import record_source_change
             record_source_change(self._store, mission, kind="observation",
                 source_id=observation.observation_id, revision=1, content_hash=sha256_hex(observation.to_json()))
         return observation
@@ -1390,8 +1389,8 @@ class HtnStore:
                 " updated_at = excluded.updated_at",
                 (mission, scope, epoch, actor, self._store.now),
             )
-            from .taskgraph_source_events import record_source_change
             from ..contracts.models import sha256_hex
+            from .taskgraph_source_events import record_source_change
             record_source_change(self._store, mission, kind="validity_epoch", source_id=scope,
                 revision=epoch, content_hash=sha256_hex({"mission_id": mission, "scope_id": scope,
                     "epoch": epoch, "bumped_by": actor}))

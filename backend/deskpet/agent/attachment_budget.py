@@ -6,7 +6,8 @@ from __future__ import annotations
 import base64
 import copy
 import math
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from deskpet.agent.assembler.bundle import AttachmentRef
 

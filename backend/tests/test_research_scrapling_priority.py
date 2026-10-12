@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from deskpet.retrieval import runtime
 from deskpet.retrieval.contracts import EvidenceDocument
 from deskpet.tools import research_tools as r

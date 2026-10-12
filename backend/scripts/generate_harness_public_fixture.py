@@ -14,10 +14,10 @@ import asyncio
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
-
+from typing import Any, Protocol
 
 GENERATOR_VERSION = "harness-public-fixture/2"
 FIXTURE_SCHEMA_VERSION = 1

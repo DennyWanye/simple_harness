@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-
 from deskpet.agent.context_compressor import (
     CompressionResult,
     ContextCompressor,

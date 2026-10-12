@@ -16,12 +16,17 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world, result_envelope, scripted_worker
 from agent_orchestrator.orchestrator.state_machine import next_task
 from agent_orchestrator.runtime.mission_sources import MissionSourceReader
 from agent_orchestrator.runtime.native_plane import intent_caller
 from agent_orchestrator.testing.fixtures import package_of
+from production_fixture import (
+    CHAIN_CRITERIA,
+    chain_planner,
+    enabled_world,
+    result_envelope,
+    scripted_worker,
+)
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import TrustedCaller
@@ -156,9 +161,9 @@ def test_worker_sources_are_exact_current_and_refused_when_they_move(tmp_path):
 
 
 def test_a_review_package_of_another_purpose_is_refused(monkeypatch):
-    from test_htn_store import review_package
     from agent_orchestrator.contracts.resolution import ReviewPurpose
     from agent_orchestrator.storage.htn_store import HtnStore
+    from test_htn_store import review_package
 
     package = review_package(purpose=ReviewPurpose.MISSION_FINAL)
     monkeypatch.setattr(HtnStore, "get_review_package", lambda self, package_id: package)

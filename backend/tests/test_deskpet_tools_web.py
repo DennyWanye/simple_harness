@@ -5,9 +5,8 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
-from deskpet.retrieval.fetch_extract import FetchExtractError
 from deskpet.retrieval import runtime
+from deskpet.retrieval.fetch_extract import FetchExtractError
 from deskpet.tools import web_tools
 from deskpet.tools.registry import registry
 

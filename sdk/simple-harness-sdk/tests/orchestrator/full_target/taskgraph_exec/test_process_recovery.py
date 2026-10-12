@@ -7,18 +7,17 @@ startup assembly and a provider that answers nothing (recovery calls no model)."
 import asyncio
 import hashlib
 import json
-from pathlib import Path
+import sqlite3
 import subprocess
 import sys
-import sqlite3
+from pathlib import Path
 
 import pytest
-
-from production_fixture import product_loop, root_of
 from agent_orchestrator.artifacts.store import read_nofollow
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
+from production_fixture import product_loop, root_of
 
 #: Model calls before any Worker: the Planner proposes, the reviewer reviews the method,
 #: the Planner adopts it.
@@ -150,7 +149,10 @@ def test_process_exit_at_attempt_boundary_preserves_original_accounting(tmp_path
 
 def _assert_usage_imported_once_and_replayable(store, mission_id, root):
     from agent_orchestrator.observability.business_replay import (
-        CONSISTENT, verify_execution_ledgers, verify_mission)
+        CONSISTENT,
+        verify_execution_ledgers,
+        verify_mission,
+    )
 
     writes, last = {}, {}
     for (payload,) in store.connection.execute(

@@ -16,7 +16,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-
 _MISSION_CRITERIA_MISMATCH = "critic mission_criteria must cover the Mission criteria in order"
 
 

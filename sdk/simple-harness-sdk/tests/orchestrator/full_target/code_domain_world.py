@@ -22,13 +22,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent_orchestrator.testing.fixtures import package_of
-from agent_orchestrator.testing.scripted_replies import (
-    LayeredScriptedProvider,
-    decision,
-    planner_reply,
-)
-
 from agent_orchestrator.testing.code_domain_world import (  # noqa: E402
     CODE_NAMES,
     CONFIG,
@@ -37,6 +30,12 @@ from agent_orchestrator.testing.code_domain_world import (  # noqa: E402
     code_root_parameters,
     code_world,
     code_world_factory,
+)
+from agent_orchestrator.testing.fixtures import package_of
+from agent_orchestrator.testing.scripted_replies import (
+    LayeredScriptedProvider,
+    decision,
+    planner_reply,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "htn"

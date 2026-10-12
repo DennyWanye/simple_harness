@@ -11,9 +11,10 @@ import hashlib
 import importlib.resources
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 _DEFAULT_PACKAGE = "deskpet.companion.eval_suites"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")

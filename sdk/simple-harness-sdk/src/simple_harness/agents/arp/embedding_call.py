@@ -10,7 +10,8 @@ the port when it declares them and left null otherwise.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from . import store
 from .codec import check

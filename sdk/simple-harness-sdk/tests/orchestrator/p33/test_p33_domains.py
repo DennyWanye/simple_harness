@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.governance.domains import (
     APPWORLD_DOMAIN,
     CODE_DOMAIN,
@@ -25,7 +24,6 @@ from agent_orchestrator.governance.domains import (
     DomainProfileV1,
     resolve_domain,
 )
-
 
 # ---------------------------------------------------------------- 注册表与冻结
 

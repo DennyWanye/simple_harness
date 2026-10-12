@@ -4,7 +4,6 @@ import asyncio
 import sqlite3
 
 import pytest
-
 from simple_harness import CallId, ExecutionSessionId, Message, MessageRole, RequestId, RunId
 from simple_harness.execution.audit import RunAuditUnavailable
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork

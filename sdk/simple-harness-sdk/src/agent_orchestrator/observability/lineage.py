@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
-
 if TYPE_CHECKING:
     from ..storage.store import Store
 

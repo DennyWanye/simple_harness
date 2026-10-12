@@ -7,18 +7,17 @@ import uuid
 
 import aiosqlite
 import pytest
-
+from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
+from deskpet.workflows.definitions.deep_research_v6_contracts import parse_blob_ref
 from deskpet.workflows.definitions.deep_research_v6_delivery import (
     TerminalDeliveryManifestV1,
     build_intent_specs,
 )
-from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
-from deskpet.workflows.definitions.deep_research_v6_contracts import parse_blob_ref
 from deskpet.workflows.definitions.deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     AnswerAssessmentV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
 )
 from deskpet.workflows.definitions.deep_research_v6_integrity import ClaimBatchV1
 from deskpet.workflows.store.blob_store import BlobStore

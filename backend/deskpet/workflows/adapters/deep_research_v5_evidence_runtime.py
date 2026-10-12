@@ -12,8 +12,9 @@ import hashlib
 import json
 import re
 import unicodedata
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 from urllib.parse import urlsplit
 
 from ...retrieval.query_terms import extract_query_terms, query_term_relevance
@@ -23,7 +24,6 @@ from ..definitions.deep_research_v5_evidence import (
     EvidenceCandidate,
     match_source_family,
 )
-
 
 _WORD = re.compile(r"[a-z0-9][a-z0-9_-]+", re.I)
 _CJK = re.compile(r"[\u3400-\u9fff]")
@@ -343,7 +343,7 @@ def candidate_from_document(
     )
     stable = str(document.get("stable_id") or document.get("content_hash") or canonical_url)
     candidate_id = "passage-" + hashlib.sha256(
-        f"{dimension_id}\0{stable}\0{canonical_url}".encode("utf-8")
+        f"{dimension_id}\0{stable}\0{canonical_url}".encode()
     ).hexdigest()[:24]
     invalid_reason = next((flag for flag in flags if flag in _INVALID_FETCH_FLAGS), None)
     return EvidenceCandidate(

@@ -23,9 +23,6 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "fixtures" / "htn"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from htn_world import method, param, root_network, step, task_binding  # noqa: E402
-from test_plan_commits import ROOT_DUTY, ROOT_TASK, _env  # noqa: E402
-
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.contracts.operation_completion import (  # noqa: E402
     CompletionMode,
@@ -40,6 +37,8 @@ from agent_orchestrator.planning.htn.completion_scopes import (  # noqa: E402
     compile_completion_scopes,
 )
 from agent_orchestrator.planning.htn.grounding import ground_method  # noqa: E402
+from htn_world import method, param, root_network, step, task_binding  # noqa: E402
+from test_plan_commits import ROOT_DUTY, ROOT_TASK, _env  # noqa: E402
 
 MISSION = "mission-oc2-nested"
 

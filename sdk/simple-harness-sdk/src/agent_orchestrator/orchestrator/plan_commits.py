@@ -43,7 +43,6 @@ repairs, and collapsing them would tell the proposer nothing about what to do ne
 from __future__ import annotations
 
 import json
-
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
@@ -70,6 +69,7 @@ from ..contracts.htn import (
 )
 from ..contracts.obligations import ObligationAccountView, ObligationLedger
 from ..contracts.semantic_base import content_hash_of
+from ..governance.budget_limits import inherit_limits
 from ..governance.budgets import BudgetError
 from ..graph.projection_validation import (
     validate_execution_projection,
@@ -82,7 +82,6 @@ from ..planning.htn.compiler import (
     DemandNotAdmissible,
     apply_obligation_openings,
 )
-from ..governance.budget_limits import inherit_limits
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError

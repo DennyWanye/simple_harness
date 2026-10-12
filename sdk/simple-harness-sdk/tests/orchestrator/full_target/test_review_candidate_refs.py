@@ -7,11 +7,10 @@
 """
 from __future__ import annotations
 
-from test_htn_store import _acceptance_of_official_review, reviewed  # noqa: F401  (fixture)
-
 from agent_orchestrator.assurance.codec import decode, fingerprint
 from agent_orchestrator.contracts.semantic_base import Provenance, TypedRefKind, content_hash_of
 from agent_orchestrator.orchestrator.root_review import acceptance_ref
+from test_htn_store import _acceptance_of_official_review, reviewed  # noqa: F401  (fixture)
 
 
 def test_the_candidate_ref_names_the_stored_acceptance_body(reviewed):  # type: ignore[no-untyped-def]

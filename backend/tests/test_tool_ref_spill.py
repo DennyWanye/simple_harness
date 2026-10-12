@@ -7,9 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import agent.tool_result_truncator as trunc
+import pytest
 from agent.tool_result_truncator import ToolResultRefStore
 
 

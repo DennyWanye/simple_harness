@@ -12,17 +12,16 @@ from .contracts import (
     CompanionLeaseError,
     CompanionOwnerError,
     CompanionStateError,
-    GrowthDependency,
-    GrowthEvent,
     EvaluationCaseLaunch,
     EvaluationExecutionPermit,
+    GrowthDependency,
+    GrowthEvent,
     LeaseClaim,
     MutationAction,
     MutationRequest,
     OwnerRef,
     RunGrowthSnapshot,
 )
-from .store import CompanionStore
 from .signals import (
     GrowthDeliveryTarget,
     GrowthIngressDispatcher,
@@ -31,6 +30,7 @@ from .signals import (
     GrowthTerminalDeliveryContributor,
     GrowthTerminalDeliverySink,
 )
+from .store import CompanionStore
 
 __all__ = [
     "CandidateAttempt",

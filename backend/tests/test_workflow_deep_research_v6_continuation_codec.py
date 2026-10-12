@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from deskpet.workflows.contracts import canonical_json
 from deskpet.workflows.definitions.v6.deep_research import (
     build_continuation_start_payload,

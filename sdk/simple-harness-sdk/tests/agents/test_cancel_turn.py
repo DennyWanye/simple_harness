@@ -9,12 +9,11 @@ import asyncio
 import json
 
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.contracts import RunId
 from simple_harness.execution.uow import ContinuationState, RunState
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 TOOL = ("echo", {})
 

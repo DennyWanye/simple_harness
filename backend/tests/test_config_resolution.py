@@ -16,10 +16,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pytest
-
 import config as config_module
 import paths
+import pytest
 
 
 @pytest.fixture

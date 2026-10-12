@@ -35,7 +35,6 @@ import logging
 import httpx
 import pytest
 import structlog
-
 from agent.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
@@ -47,8 +46,8 @@ from providers.openai_compatible import (
     OpenAICompatibleProvider,
     _cache_breakpoint_order,
     _extract_cached_tokens,
-    _stamp_cache_control,
     _stabilize_prefix,
+    _stamp_cache_control,
 )
 
 

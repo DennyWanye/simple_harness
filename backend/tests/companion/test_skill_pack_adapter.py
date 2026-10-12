@@ -7,7 +7,6 @@ from pathlib import Path
 
 import jsonschema
 import pytest
-
 from deskpet.capabilities.manifest import (
     PackEnvironment,
     PackManifestError,

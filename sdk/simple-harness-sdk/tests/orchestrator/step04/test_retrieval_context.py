@@ -12,7 +12,6 @@ HTN 补齐阶段 A′：摘要那条（按分支确定、不改声明状态）�
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     assert_no_secrets,

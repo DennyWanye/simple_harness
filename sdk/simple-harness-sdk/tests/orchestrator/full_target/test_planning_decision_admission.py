@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.evidence_state import TruthValue
 from agent_orchestrator.contracts.htn import MethodRegistryStatus
 from agent_orchestrator.contracts.models import ContractError

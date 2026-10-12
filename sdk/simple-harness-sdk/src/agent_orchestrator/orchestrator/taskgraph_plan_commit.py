@@ -12,13 +12,15 @@ from typing import TYPE_CHECKING
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import Event
 from ..graph.convergence import ConvergenceImpact, compute_convergence_impact
 from ..graph.execution_contracts import PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1
 from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1
-from ..graph.revision_records import PlanAdmissionCertificate, SourceRef
 from ..graph.revision_events import revision_event_payload
+from ..graph.revision_records import PlanAdmissionCertificate, SourceRef
+from ..graph.taskgraph_validation import validate_taskgraph_structure
 from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import PlanCommitReceipt
 from ..storage.store import Store, StoreConflict, StoreError
@@ -26,19 +28,17 @@ from ..storage.taskgraph_followups import TaskGraphFollowupStore
 from ..storage.taskgraph_store import TaskGraphStore
 from .taskgraph_candidate import document_for_commit
 from .taskgraph_policy import read_installed_graph_policy
-from ..contracts.htn import GraphStructureBudget
-from ..graph.taskgraph_validation import validate_taskgraph_structure
 
 if TYPE_CHECKING:
-    from .plan_commits import CommitPlanCommand, PlanPrincipal
     from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
+    from .plan_commits import CommitPlanCommand, PlanPrincipal
 
 
 class TaskGraphPlanCommitParticipant:
     def __init__(self, store: Store, *, history: TaskGraphStore, document: NetworkDocumentV1,
                  preview: PreviewBindingV1,
-                 recheck_sources: Callable[[Store, "CommitPlanCommand", "PlanPrincipal", PreviewBindingV1], None],
-                 convergence: tuple["TaskGraphConvergenceStore", str, int] | None = None) -> None:
+                 recheck_sources: Callable[[Store, CommitPlanCommand, PlanPrincipal, PreviewBindingV1], None],
+                 convergence: tuple[TaskGraphConvergenceStore, str, int] | None = None) -> None:
         if history.store is not store:
             raise ValueError("TaskGraph history participant must share the original Commit Store")
         self.store = store
@@ -46,16 +46,16 @@ class TaskGraphPlanCommitParticipant:
         self.document = document
         self.preview = preview
         self.recheck_sources = recheck_sources
-        self._write_applied_check: Callable[[Store, "CommitPlanCommand", PlanCommitReceipt, PreviewBindingV1], str] | None = None
+        self._write_applied_check: Callable[[Store, CommitPlanCommand, PlanCommitReceipt, PreviewBindingV1], str] | None = None
         self.convergence = convergence
 
-    def bind_h1_commit(self, writer: Callable[[Store, "CommitPlanCommand", PlanCommitReceipt, PreviewBindingV1], str]) -> None:
+    def bind_h1_commit(self, writer: Callable[[Store, CommitPlanCommand, PlanCommitReceipt, PreviewBindingV1], str]) -> None:
         """Bound by the original H1 entry for this transaction, never a deployment port."""
         if self._write_applied_check is not None:
             raise StoreError("TASKGRAPH_H1_COMMIT_ALREADY_BOUND")
         self._write_applied_check = writer
 
-    def prepare(self, command: "CommitPlanCommand", principal: "PlanPrincipal") -> ConvergenceImpact | None:
+    def prepare(self, command: CommitPlanCommand, principal: PlanPrincipal) -> ConvergenceImpact | None:
         if self._write_applied_check is None:
             raise StoreError("TASKGRAPH_H1_COMMIT_ENTRY_REQUIRED")
         if not self.store.connection.in_transaction:
@@ -111,7 +111,7 @@ class TaskGraphPlanCommitParticipant:
             raise StoreConflict("TASKGRAPH_CONVERGENCE_REQUIRED")
         return impact
 
-    def record_applied(self, command: "CommitPlanCommand", receipt: PlanCommitReceipt) -> None:
+    def record_applied(self, command: CommitPlanCommand, receipt: PlanCommitReceipt) -> None:
         if not self.store.connection.in_transaction:
             raise StoreError("TASKGRAPH_RECORD_REQUIRES_COMMIT_TRANSACTION")
         if (receipt.command_id != command.command_id or receipt.mission_id != command.mission_id

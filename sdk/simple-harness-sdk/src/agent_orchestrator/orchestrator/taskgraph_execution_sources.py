@@ -22,13 +22,13 @@ from ..contracts.obligations import Obligation, ObligationAccountView
 from ..governance.budgets import AccountSnapshot
 from ..graph.execution_contracts import CompleteRead
 from ..graph.revision_pins import DemandRef
-from .taskgraph_demands import IndependentDemand, read_independent_demands
 from ..planning.htn.applicability import CapabilitySnapshot
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.taskgraph_local_work import LocalWorkFacts, read_local_work
 from ..storage.htn_store import HtnStore, StoredMethod
 from ..storage.obligation_store import ObligationStore
 from .hierarchical_dispatch import HierarchicalDispatch, NetworkView
+from .taskgraph_demands import IndependentDemand, read_independent_demands
 from .taskgraph_sources import SeedStructuralReadContext, StructuralReadContext, TaskGraphSources
 
 

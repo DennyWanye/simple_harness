@@ -15,25 +15,32 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
+    TYPE_CHECKING,
     Any,
-    AsyncIterator,
-    Awaitable,
-    Callable,
     Literal,
-    Mapping,
     Optional,
     Protocol,
-    TYPE_CHECKING,
     Union,
 )
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
+from deskpet.execution.provider_invocations import (
+    coordinate_provider_call,
+    coordinate_provider_stream,
+)
+from deskpet.workflows.trace import SpanContext, SpanKind, SpanStatus, TraceStore
+from llm.budget import DailyBudget
+from llm.errors import LLMBudgetExceededError, LLMProviderError
+from llm.types import ChatResponse, ToolCall
+
 from agent import errors as agent_errors
+from agent.context_manager import ContextManager
 from agent.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
@@ -43,31 +50,21 @@ from agent.context_messages import (
     context_attempt_scope,
     tag_message,
 )
-from agent.task_id import new_task_id
-from agent.tool_context_persistence import ToolContextPersistenceMixin
-from agent.context_manager import ContextManager
 from agent.skill_remount import (
     frozen_skill_scope,
     prepare_frozen_skill_remounts,
     remount_skills,
     skill_scope_candidates,
 )
+from agent.task_id import new_task_id
 from agent.termination import GateConfig, TerminationGate, TerminationReason
-from llm.budget import DailyBudget
-from llm.errors import LLMBudgetExceededError, LLMProviderError
-from llm.types import ChatResponse, ToolCall
-from deskpet.execution.provider_invocations import (
-    coordinate_provider_call,
-    coordinate_provider_stream,
-)
-
+from agent.tool_context_persistence import ToolContextPersistenceMixin
 from agent.workflow_trace import (
     HarnessTraceSession,
     TraceInstrumentationError,
     traced_call,
     traced_iterate,
 )
-from deskpet.workflows.trace import SpanContext, SpanKind, SpanStatus, TraceStore
 
 logger = logging.getLogger("deskpet.agent.loop")
 
@@ -485,7 +482,7 @@ def _inject_loop_user_request(
     tc: ToolCall,
     schemas: list[dict[str, Any]],
     *,
-    loop_user_request: Optional[str],
+    loop_user_request: str | None,
 ) -> None:
     """Inject this loop's original user request into opted-in tool calls."""
     if not loop_user_request or not isinstance(tc.arguments, dict):
@@ -875,7 +872,7 @@ class AssistantDeltaEvent(AgentEvent):
 
 @dataclass
 class ToolCallEvent(AgentEvent):
-    tool_call: Optional[ToolCall] = None
+    tool_call: ToolCall | None = None
 
     def __post_init__(self) -> None:
         if not self.type:
@@ -904,10 +901,10 @@ class ToolResultEvent(AgentEvent):
     # product presenter.  Legacy AgentLoop callers omit these fields and retain
     # the historical succeeded behavior.
     outcome_status: str = "succeeded"
-    outcome_error: Optional[dict] = None
+    outcome_error: dict | None = None
     # 七步流水线 Step5 标签（plans/2026-06-24-...）：{"step":5,"observation_summary":"..."}。
     # pipeline off → None = BC（前端不读即无影响）。
-    pipeline_label: Optional[dict] = None
+    pipeline_label: dict | None = None
 
     def __post_init__(self) -> None:
         if not self.type:
@@ -1102,14 +1099,14 @@ class _LLMRegistryProto(Protocol):
     async def chat_with_fallback(
         self,
         messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        model: Optional[str] = None,
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> ChatResponse: ...
 
 
 class _ToolRegistryProto(Protocol):
-    def schemas(self, enabled_toolsets: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
+    def schemas(self, enabled_toolsets: list[str] | None = None) -> list[dict[str, Any]]: ...
     def dispatch(self, name: str, args: dict[str, Any], task_id: str) -> Any: ...
 
 
@@ -1247,42 +1244,40 @@ class AgentLoop(ToolContextPersistenceMixin):
         tool_registry: _ToolRegistryProto,
         *,
         max_iterations: int = 20,
-        budget_checker: Optional[DailyBudget] = None,
-        default_model: Optional[str] = None,
-        completion_probe: Optional[
-            Callable[[str], Awaitable[list[dict[str, Any]]]]
-        ] = None,
+        budget_checker: DailyBudget | None = None,
+        default_model: str | None = None,
+        completion_probe: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
         max_completion_nudges: int = 2,
-        activity_store: Optional[Any] = None,
-        signature_repeat_threshold: Optional[int] = None,
-        termination_gate: Optional[TerminationGate] = None,
-        context_manager: Optional[ContextManager] = None,
+        activity_store: Any | None = None,
+        signature_repeat_threshold: int | None = None,
+        termination_gate: TerminationGate | None = None,
+        context_manager: ContextManager | None = None,
         # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门 + ReceiptStore 拿 ledger
-        verify_gate: Optional[Any] = None,        # deskpet.agent.verify_gate.VerifyGate
-        receipt_store: Optional[Any] = None,      # deskpet.tools.receipt_store.ReceiptStore
+        verify_gate: Any | None = None,        # deskpet.agent.verify_gate.VerifyGate
+        receipt_store: Any | None = None,      # deskpet.tools.receipt_store.ReceiptStore
         max_verify_nudges: int = 2,               # PRD D6: 3 次失败强退
         # WI-B3 Companion+Code v1: /goal command 末轮 LLM-judged rebound.
         # 两个都 None (默认) → BC，跳过整段 goal-check 块。
-        session_goal_store: Optional[Any] = None,  # deskpet.agent.goal_store.SessionGoalStore
-        goal_checker: Optional[Any] = None,        # deskpet.agent.goal_checker.GoalChecker
+        session_goal_store: Any | None = None,  # deskpet.agent.goal_store.SessionGoalStore
+        goal_checker: Any | None = None,        # deskpet.agent.goal_checker.GoalChecker
         # WI-2.1 structured reflection: when True, _REFLECTION_INSTRUCTION is
         # appended to verify-gate rebound + selfcheck tier2/tier3 system msgs.
         # Default False = BC (flag off → byte-identical behaviour to pre-WI-2.1).
         structured_reflection: bool = False,
         # WI-2.4 external evaluator: cross-persona quality judge for high-consequence
         # goals. None (default) = BC (0 extra LLM calls, skip entirely).
-        external_evaluator: Optional[Any] = None,  # deskpet.agent.external_evaluator.ExternalEvaluator
+        external_evaluator: Any | None = None,  # deskpet.agent.external_evaluator.ExternalEvaluator
         # WI-4.0 compaction: ContextCompressor to call when prompt tokens near cap.
         # None (default) = BC (compressor not injected → zero new behaviour).
         # When non-None, should_compress() and compress() are called in the loop.
-        compressor: Optional[Any] = None,  # deskpet.agent.context_compressor.ContextCompressor
-        context_projector: Optional[Any] = None,
-        context_snapshot_store: Optional[Any] = None,
-        context_segment_store: Optional[Any] = None,
-        context_attempt_store: Optional[Any] = None,
-        compression_model_resolver: Optional[Any] = None,
+        compressor: Any | None = None,  # deskpet.agent.context_compressor.ContextCompressor
+        context_projector: Any | None = None,
+        context_snapshot_store: Any | None = None,
+        context_segment_store: Any | None = None,
+        context_attempt_store: Any | None = None,
+        compression_model_resolver: Any | None = None,
         compression_model: str = "follow_session",
-        compression_model_provider: Optional[Callable[[], str]] = None,
+        compression_model_provider: Callable[[], str] | None = None,
         # WI-1B-2 压缩可观测 (features.ctx_observability). False (默认) = 字节级 BC:
         # 压缩成功路径不 emit metrics、不 yield ContextCompactedEvent。True 时压缩
         # 命中额外 record 一条 metrics + yield 一条轻量事件供 main.py 转 ws → 前端 toast。
@@ -1291,36 +1286,34 @@ class AgentLoop(ToolContextPersistenceMixin):
         # skill body re-inline.  Both default None → BC (no remount, zero overhead).
         # When non-None and compaction fires, _remount_skills() is called to re-insert
         # the bodies of skills used this run as a single role=system block.
-        skill_loader: Optional[Any] = None,   # deskpet.skills.loader.SkillLoader
-        skill_matcher: Optional[Any] = None,  # deskpet.skills.skill_matcher.SkillMatcher
+        skill_loader: Any | None = None,   # deskpet.skills.loader.SkillLoader
+        skill_matcher: Any | None = None,  # deskpet.skills.skill_matcher.SkillMatcher
         # WI-4b pre-flush: 压缩真正摘掉中段前,把"当前任务态"写进 L1 文件记忆,
         # 跨 session 记住任务(frozen-snapshot → 只对下个 session 生效)。None (默认)
         # → 不 flush(BC)。每个 run 最多 flush 一次(限频,防刷爆 MEMORY.md 50KB cap)。
-        file_memory: Optional[Any] = None,  # FileMemory（记忆 SDK 未集成）
+        file_memory: Any | None = None,  # FileMemory（记忆 SDK 未集成）
         force_finish_via_tool_choice: bool = True,
-        tracer: Optional[Any] = None,
-        trace_store: Optional[TraceStore] = None,
-        workflow_service: Optional[Any] = None,
-        session_todo_getter: Optional[
-            Callable[[str], Awaitable[list[dict[str, Any]]]]
-        ] = None,
+        tracer: Any | None = None,
+        trace_store: TraceStore | None = None,
+        workflow_service: Any | None = None,
+        session_todo_getter: Callable[[str], Awaitable[list[dict[str, Any]]]] | None = None,
         # WI-OH-4 记忆 self-curation nudge: MemoryCurator + 频率门控。
         # curator None (默认) → 不调 nudge（BC，零行为变更）。非 None 时每
         # curation_nudge_every_n_turns 个回合在 FinalEvent 后 fire-and-forget
         # 一次 nudge（异步，不挡主回合，照 vector_worker 模式）。
-        memory_curator: Optional[Any] = None,  # MemoryCurator（记忆 SDK 未集成）
+        memory_curator: Any | None = None,  # MemoryCurator（记忆 SDK 未集成）
         curation_nudge_every_n_turns: int = 8,
-        provider_workload_context_factory: Optional[Callable[[str], Any]] = None,
-        provider_workload_router: Optional[Any] = None,
+        provider_workload_context_factory: Callable[[str], Any] | None = None,
+        provider_workload_router: Any | None = None,
         # ─── 七步问题处理流水线 IN-LOOP 三闸（plans/2026-06-24-problem-pipeline）。
         # 全 None/False → 跳过所有 pipeline 分支（kill-switch 回退到今天的链路，BC）。
-        evidence_gate: Optional[Any] = None,           # deskpet.agent.evidence_gate.EvidenceGate
-        self_check_gate: Optional[Any] = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传）
+        evidence_gate: Any | None = None,           # deskpet.agent.evidence_gate.EvidenceGate
+        self_check_gate: Any | None = None,         # deskpet.agent.self_check_gate.SelfCheckGate（build_agent 内构造后传）
         convergence_report_on_stop: bool = False,      # Step7：True → __init__ 末尾用 self._gate 自建 ConvergenceController
-        pipeline_problem_type: Optional[str] = None,   # Step1 产出的 problem_type（喂 Step6 选档）
+        pipeline_problem_type: str | None = None,   # Step1 产出的 problem_type（喂 Step6 选档）
         pipeline_needs_investigation: bool = False,    # IntentCard.needs_investigation（喂 Step2）
         pipeline_observability: bool = False,          # 发 chat_v2_evidence_gate / _selfcheck / _convergence 事件
-        response_quality_gate: Optional[Any] = None,
+        response_quality_gate: Any | None = None,
     ) -> None:
         self.llm = llm_registry
         self.tools = tool_registry
@@ -1666,22 +1659,22 @@ class AgentLoop(ToolContextPersistenceMixin):
         self,
         messages: list[dict[str, Any]],
         *,
-        task_id: Optional[str] = None,
-        tools_filter: Optional[list[str]] = None,
-        tool_names_filter: Optional[list[str]] = None,
-        model: Optional[str] = None,
+        task_id: str | None = None,
+        tools_filter: list[str] | None = None,
+        tool_names_filter: list[str] | None = None,
+        model: str | None = None,
         session_id: str = "default",
         stream: bool = False,
-        provider_chain: Optional[list[Any]] = None,
-        loop_user_request: Optional[str] = None,
+        provider_chain: list[Any] | None = None,
+        loop_user_request: str | None = None,
         is_sentinel_run: bool = False,
-        trace_context: Optional[SpanContext] = None,
-        trace_request_id: Optional[str] = None,
-        trace_turn_id: Optional[str] = None,
-        prepared_context: Optional[Any] = None,
-        context_request_id: Optional[str] = None,
-        launch_operation_id: Optional[str] = None,
-        provider_launch_snapshot: Optional[ProviderLaunchSnapshot] = None,
+        trace_context: SpanContext | None = None,
+        trace_request_id: str | None = None,
+        trace_turn_id: str | None = None,
+        prepared_context: Any | None = None,
+        context_request_id: str | None = None,
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Run the harness, optionally recording one closed structured trace tree."""
@@ -1806,19 +1799,19 @@ class AgentLoop(ToolContextPersistenceMixin):
         self,
         messages: list[dict[str, Any]],
         *,
-        task_id: Optional[str] = None,
-        tools_filter: Optional[list[str]] = None,
-        tool_names_filter: Optional[list[str]] = None,
-        model: Optional[str] = None,
+        task_id: str | None = None,
+        tools_filter: list[str] | None = None,
+        tool_names_filter: list[str] | None = None,
+        model: str | None = None,
         session_id: str = "default",
         stream: bool = False,
-        provider_chain: Optional[list[Any]] = None,
-        loop_user_request: Optional[str] = None,
+        provider_chain: list[Any] | None = None,
+        loop_user_request: str | None = None,
         is_sentinel_run: bool = False,
-        prepared_context: Optional[Any] = None,
-        context_request_id: Optional[str] = None,
-        launch_operation_id: Optional[str] = None,
-        provider_launch_snapshot: Optional[ProviderLaunchSnapshot] = None,
+        prepared_context: Any | None = None,
+        context_request_id: str | None = None,
+        launch_operation_id: str | None = None,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
         **llm_kwargs: Any,
     ) -> AsyncIterator[AgentEvent]:
         """Drive ReAct; ``stream`` emits deltas when the registry supports
@@ -2938,7 +2931,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                     from agent.tool_use_shim import _raw_to_response
 
                     response = None  # type: ignore[assignment]
-                    last_exc: Optional[Exception] = None
+                    last_exc: Exception | None = None
                     for idx, prov in enumerate(provider_chain):  # type: ignore[arg-type]
                         try:
                             _attempt_tools = (
@@ -3854,7 +3847,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # GoalAlignment is populated when an active goal exists.
                         # BC: goal_text=None (no store / no active goal) → byte-identical
                         # to pre-WI-2.3 (check ignores None goal_text).
-                        _vg_goal_text: Optional[str] = None
+                        _vg_goal_text: str | None = None
                         if self.session_goal_store is not None:
                             _gt_fn = getattr(
                                 self.session_goal_store, "get_goal_text", None
@@ -3900,8 +3893,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _stagnant = False
                         if verify_nudges_used >= 2 and self.structured_reflection:
                             try:
-                                from deskpet.agent.reflection import parse_reflection
                                 import difflib as _difflib
+
+                                from deskpet.agent.reflection import parse_reflection
                                 _refl = parse_reflection(response.content or "")
                                 _cur_replan = str(_refl.task_replanning) if _refl else ""
                                 if (
@@ -4853,7 +4847,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             )
             committed_ranges.add(source_range)
 
-    def _pipeline_event(self, ev_type: str, iteration: int, payload: dict) -> "PipelineEvent":
+    def _pipeline_event(self, ev_type: str, iteration: int, payload: dict) -> PipelineEvent:
         """构造七步流水线 WS 观测事件（plans/2026-06-24-... §M2 改动 2f）。"""
         return PipelineEvent(
             type=ev_type,

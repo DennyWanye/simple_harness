@@ -29,8 +29,6 @@ for _extra in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
-
 from agent_orchestrator.contracts.models import TaskStatus  # noqa: E402
 from agent_orchestrator.orchestrator.planning_repair_requests import pending_requests  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of  # noqa: E402
@@ -42,6 +40,7 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
     review_input,
     review_reply,
 )
+from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
 
 
 def _result(mutate):  # type: ignore[no-untyped-def]

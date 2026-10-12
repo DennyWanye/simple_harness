@@ -5,7 +5,6 @@ import json
 
 import pytest
 from deskpet.workflows.control import WorkflowInterrupt
-
 from deskpet.workflows.ipc import WorkflowIPCDispatcher, start_workflow_ipc_dispatch
 from deskpet.workflows.outbox import OutboxError
 

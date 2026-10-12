@@ -6,6 +6,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from deskpet.capabilities.contracts import fingerprint_json
+from deskpet.companion.skills import ResolvedSkillInstructionV1
+from deskpet.sdk_adapters.skill_resolver import SdkThenLegacyFrozenSkillResolver
 from simple_harness import RunId
 from simple_harness.tools import (
     CatalogRunToolExposure,
@@ -13,10 +16,6 @@ from simple_harness.tools import (
     SkillResourceRecord,
     ToolExposureMode,
 )
-
-from deskpet.capabilities.contracts import fingerprint_json
-from deskpet.companion.skills import ResolvedSkillInstructionV1
-from deskpet.sdk_adapters.skill_resolver import SdkThenLegacyFrozenSkillResolver
 
 
 @pytest.mark.asyncio

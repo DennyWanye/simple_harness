@@ -7,9 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import search_provider as sp
-
 
 # --- region inference (the core Chinese-coverage fix) ---
 

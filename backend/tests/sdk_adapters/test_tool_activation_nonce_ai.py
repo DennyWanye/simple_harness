@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import pytest
+from deskpet.tools.tool_search import _ACTIVATION_NEXT_ACTIONS
 from simple_harness import RunId
 from simple_harness.tools import (
     CatalogRunToolExposure,
@@ -28,8 +29,6 @@ from simple_harness.tools import (
     RuntimeToolCatalogError,
     ToolExposureMode,
 )
-
-from deskpet.tools.tool_search import _ACTIVATION_NEXT_ACTIONS
 
 RUN = RunId("sdk-run-nonce")
 

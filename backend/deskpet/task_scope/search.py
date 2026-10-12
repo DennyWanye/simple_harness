@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import aiosqlite
-from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
+from deskpet.memory.writer_fence import human_memory_connection
 from deskpet.task_scope.projection_sources import load_projection_source_tx
 from deskpet.task_scope.projections import (
     CheckpointDriftReport,

@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.companion.clock import DevFrozenClock
 from deskpet.companion.contracts import CompanionConflictError, OwnerRef
 from deskpet.companion.production_pipeline import GrowthProductionPipeline
@@ -31,7 +30,6 @@ from deskpet.execution.contracts import OutcomeStatus
 from deskpet.harness.contracts import HostContext
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
-
 
 NOW = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
 

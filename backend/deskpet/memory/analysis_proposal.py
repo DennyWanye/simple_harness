@@ -407,8 +407,9 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
         if action not in {"create", "revise_semantic"}:
             raise AnalysisProposalRejected("analysis_action_invalid")
         if action == "revise_semantic":
-            from simple_harness import ExistingMemoryTarget, EvidenceSupportKind
             from dataclasses import replace
+
+            from simple_harness import EvidenceSupportKind, ExistingMemoryTarget
             if memory_type != "semantic" or item.envelope.source_kind.value != "user_message":
                 raise AnalysisProposalRejected("analysis_correction_requires_user_semantic")
             selected = [c for c in candidates if c["candidate_key"] == proposal.get("candidate_key")]

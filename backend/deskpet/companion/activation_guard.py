@@ -8,8 +8,9 @@ the Companion transaction creates a single rollback request.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import AsyncContextManager, Literal, Mapping, Protocol
+from typing import AsyncContextManager, Literal, Protocol
 
 from .authority import RevocationBarrier
 from .contracts import CapabilityGuardIncident, OwnerRef

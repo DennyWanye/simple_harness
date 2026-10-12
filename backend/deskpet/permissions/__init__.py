@@ -11,8 +11,9 @@ from .gate import PermissionGate, PermissionGateConfig
 __all__ = ["PermissionGate", "PermissionGateConfig"]
 """DeskPet authorization policies and task-scoped grants."""
 
-from .policy import AuthorizationPolicy, AuthorizationPolicyState
 from deskpet.types.task_grants import ResourceSelector, TaskGrant
+
+from .policy import AuthorizationPolicy, AuthorizationPolicyState
 
 __all__ = [
     "AuthorizationPolicy",

@@ -84,7 +84,7 @@ async def _ws_send_recv(uri: str, send: dict, expected_type: str, timeout: float
         for _ in range(80):
             try:
                 msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout))
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return None
             if msg.get("type") == expected_type:
                 return msg.get("payload", {})

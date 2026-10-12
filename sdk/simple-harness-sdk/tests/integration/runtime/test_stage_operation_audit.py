@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-
 from simple_harness import AgentIdentity, RunId
 from simple_harness.contracts import Message, MessageRole
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork

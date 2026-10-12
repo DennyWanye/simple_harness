@@ -35,7 +35,6 @@ class _StopsInsideTheWorkerCall(LayeredScriptedProvider):
 
 async def main(root: Path, marker: Path) -> None:
     import agent_orchestrator.orchestrator.event_handler as event_handler
-
     import deskpet.orchestration.native_plane as native_plane
 
     # 与 ``_layered_lane.quick_runtime`` 相同的两处提速（子进程里没有 monkeypatch）。

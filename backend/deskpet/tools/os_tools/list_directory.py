@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 _EXAMPLES = [
     {"path": "."},
     {"path": "src", "max_entries": 50},

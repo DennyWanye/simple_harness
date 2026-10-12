@@ -8,14 +8,13 @@ from typing import Any
 
 import pytest
 import test_projection_integrity as projection
+from agent_orchestrator.contracts.htn import ResourceRef, TaskForm
+from agent_orchestrator.planning.plan_preview import PreviewUnavailable
 from test_h1h_p02_compiler_cycles import _snapshot
 from test_h1h_preview_compiler_refusal import (
     _capture_production_preview_inputs,
     _with_network,
 )
-
-from agent_orchestrator.contracts.htn import ResourceRef, TaskForm
-from agent_orchestrator.planning.plan_preview import PreviewUnavailable
 
 
 def _root(network: Any) -> tuple[Any, Any]:

@@ -15,7 +15,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.context import knowledge_tools
 from agent_orchestrator.memory.knowledge_standing import CURRENT, knowledge_standing
 from agent_orchestrator.storage.htn_store import HtnStore

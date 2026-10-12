@@ -25,17 +25,14 @@ import json
 from typing import Any
 
 import pytest
-from simple_harness import CallId, RequestId, RunId, thaw_json
-from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
-
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
 from deskpet.sdk_adapters.tool_authority import (
     PROJECT_EFFECT_ROUTE_REASON,
     SDK_DIRECT_TOOL_KERNEL,
     SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-    SdkRunToolAuthorityRegistry,
     SdkRuntimeCapabilityBridgeAdapter,
+    SdkRunToolAuthorityRegistry,
 )
 from deskpet.sdk_adapters.tools import (
     ProductToolInventoryEntry,
@@ -49,6 +46,8 @@ from deskpet.tools.tool_search import (
     _SCHEMA,
     register_capability_bridge_tools,
 )
+from simple_harness import CallId, RequestId, RunId, thaw_json
+from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 
 RUN_ID = "product-sdk-a6-standalone"
 WORKSPACE_ROOT = "/tmp/a6/documents/SimpleHarnessProjects/Session-a551104a"
@@ -362,13 +361,12 @@ async def test_standalone_route_deny_semantics_unchanged() -> None:
 
     from types import SimpleNamespace
 
-    from simple_harness.tools.runtime_catalog import ToolEffectClass
-
     from deskpet.sdk_adapters.run_faults import RunFaultMemo
     from deskpet.sdk_adapters.task_execution import (
         ProductTaskExecutionAuthority,
         TaskExecutionAuthorityError,
     )
+    from simple_harness.tools.runtime_catalog import ToolEffectClass
 
     memo = RunFaultMemo()
     authority = ProductTaskExecutionAuthority(

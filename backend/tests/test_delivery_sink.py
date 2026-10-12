@@ -1,7 +1,8 @@
 """Unit tests for _DeliverySink."""
-import pytest
 from unittest.mock import AsyncMock, Mock
-from deskpet.sdk_adapters.desktop_runtime import _DeliverySink, _delivery_adapters
+
+import pytest
+from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters, _DeliverySink
 
 
 @pytest.fixture

@@ -1,10 +1,67 @@
 """Storage-facing protocols for the product-neutral execution control plane."""
 from __future__ import annotations
-from typing import Any, Mapping, Protocol, Sequence, TypeAlias, runtime_checkable
-from deskpet.types.task_work_context import ConversationBoundary, QueuedUserContinuation, TaskRunProjection, TaskWorkContext
+
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol, TypeAlias, runtime_checkable
+
 from deskpet.types.task_grants import PreparedAuthorizationCommit, TaskGrant
-from .contracts import ActorAction, ActorContext, AdmissionBoundary, AdmissionLaunchClaim, AdmissionLaunchUnknownFence, AdmissionResolution, AdmissionSpec, AttemptFailureSet, AttemptRecord, ChildCommandIntent, ChildCommandRecord, ChildSignalRecord, CreateRunResult, DecisionAuthorization, DecisionOpen, DecisionRecord, DecisionSignal, DeliveryRecord, DeliverySpec, ExecutionRunFenceRecord, FinalizeRunResult, GrantConsume, LegacyRunProjection, PlanVersionRecord, ProfileLaunchConsumeResult, ProfileLaunchTicket, ProviderActionBatch, ProviderActionCall, ProviderBatchAdmissionResult, ProviderInvocationOutcome, ProviderInvocationRecord, ProviderTurnFence, RecoveryLease, RunCreate, RunEvent, RunEventCandidate, RunLinkSpec, RunRecord, RunRef, RunStartSnapshotRecord, RunStatus, TaskExternalWait, TaskFailureReport, TaskGoalRecord, WorkflowRunSeed, WorkflowStartResult
+from deskpet.types.task_work_context import (
+    ConversationBoundary,
+    QueuedUserContinuation,
+    TaskRunProjection,
+    TaskWorkContext,
+)
+
+from .contracts import (
+    ActorAction,
+    ActorContext,
+    AdmissionBoundary,
+    AdmissionLaunchClaim,
+    AdmissionLaunchUnknownFence,
+    AdmissionResolution,
+    AdmissionSpec,
+    AttemptFailureSet,
+    AttemptRecord,
+    ChildCommandIntent,
+    ChildCommandRecord,
+    ChildSignalRecord,
+    CreateRunResult,
+    DecisionAuthorization,
+    DecisionOpen,
+    DecisionRecord,
+    DecisionSignal,
+    DeliveryRecord,
+    DeliverySpec,
+    ExecutionRunFenceRecord,
+    FinalizeRunResult,
+    GrantConsume,
+    LegacyRunProjection,
+    PlanVersionRecord,
+    ProfileLaunchConsumeResult,
+    ProfileLaunchTicket,
+    ProviderActionBatch,
+    ProviderActionCall,
+    ProviderBatchAdmissionResult,
+    ProviderInvocationOutcome,
+    ProviderInvocationRecord,
+    ProviderTurnFence,
+    RecoveryLease,
+    RunCreate,
+    RunEvent,
+    RunEventCandidate,
+    RunLinkSpec,
+    RunRecord,
+    RunRef,
+    RunStartSnapshotRecord,
+    RunStatus,
+    TaskExternalWait,
+    TaskFailureReport,
+    TaskGoalRecord,
+    WorkflowRunSeed,
+    WorkflowStartResult,
+)
 from .evidence import EvidenceContext, EvidenceSelection
+
 RunView = RunRecord | LegacyRunProjection
 SinkKey: TypeAlias = tuple[str, str]
 

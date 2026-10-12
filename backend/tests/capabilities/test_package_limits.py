@@ -5,7 +5,6 @@ import stat
 import zipfile
 
 import pytest
-
 from deskpet.capabilities.package_limits import (
     BASELINE_HASH,
     PACKAGE_POLICY_VERSION,

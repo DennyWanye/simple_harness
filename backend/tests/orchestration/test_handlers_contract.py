@@ -11,9 +11,8 @@ Draft written before the implementation (plan H3).  ``handle`` is the pure dispa
 from __future__ import annotations
 
 import pytest
-
-from deskpet.orchestration.handlers import MESSAGE_TYPES, handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import MESSAGE_TYPES, handle
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request

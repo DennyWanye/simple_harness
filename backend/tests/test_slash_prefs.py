@@ -18,9 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from deskpet.commands import dispatch_slash_command, _handle_prefs
 from deskpet.agent.preference_memory import PreferenceMemory
+from deskpet.commands import _handle_prefs, dispatch_slash_command
 
 
 def _fake_embed_factory():

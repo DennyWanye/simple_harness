@@ -13,15 +13,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import numpy as np
 import pytest
-
 from pipeline.voice_pipeline import VoicePipeline
 from providers.edge_tts_provider import PCM_CHUNK_BYTES
-from tests.voice_run_fakes import static_run
 
+from tests.voice_run_fakes import static_run
 
 # ---- fakes ----
 

@@ -23,7 +23,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
@@ -37,6 +36,7 @@ from deskpet.execution.foreground_queue import (
 )
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.task_scope.store import TaskScopeConflict
+
 from tests.execution import test_foreground_queue as fq
 from tests.faults._runner_contract import LANE_SEAMS, emit, new_root_run_id, state_hash
 

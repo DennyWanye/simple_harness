@@ -13,6 +13,25 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.sdk_adapters.capability_host import (
+    ProductCapabilityHostAdapter,
+    ProductCapabilityOperationReceipts,
+)
+from deskpet.sdk_adapters.context import ProductContextAdapter
+from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    ProductProviderInvocationCoordinator,
+    _ProductOpenAICompatibleProvider,
+)
+from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
+from deskpet.sdk_adapters.tools import (
+    PRODUCT_TOOL_NAMES,
+    ProductToolRegistration,
+    active_product_tool_context,
+    build_product_tool_registry,
+)
 from simple_harness import CallId, RequestId, RunId, fingerprint_json
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.dispatch import (
@@ -36,26 +55,6 @@ from simple_harness.providers import (
 )
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
-
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.sdk_adapters.capability_host import (
-    ProductCapabilityHostAdapter,
-    ProductCapabilityOperationReceipts,
-)
-from deskpet.sdk_adapters.context import ProductContextAdapter
-from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
-from deskpet.sdk_adapters.provider import (
-    ProductProviderAdapter,
-    ProductProviderInvocationCoordinator,
-    _ProductOpenAICompatibleProvider,
-)
-from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
-from deskpet.sdk_adapters.tools import (
-    PRODUCT_TOOL_NAMES,
-    ProductToolRegistration,
-    active_product_tool_context,
-    build_product_tool_registry,
-)
 
 
 def test_provider_restores_cooperative_task_cancellation() -> None:

@@ -23,7 +23,6 @@ import aiosqlite
 from .contracts import JsonValue, canonical_json, validate_json_value
 from .store.run_store import WorkflowRunStore
 
-
 MAX_PAGE_SIZE = 100
 CARD_MUTATING_EVENTS = frozenset(
     {
@@ -70,7 +69,7 @@ def stable_event_id(run_id: str, event_key: str) -> str:
     key = str(event_key).strip()
     if not run or not key:
         raise ValueError("run_id and event_key must not be empty")
-    intent_id = hashlib.sha256(f"{run}|{key}".encode("utf-8")).hexdigest()
+    intent_id = hashlib.sha256(f"{run}|{key}".encode()).hexdigest()
     return str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
@@ -85,7 +84,7 @@ def stable_delivery_id(event_id: str, channel: str, target_id: str) -> str:
         raise ValueError("delivery channel must not be empty")
     target = _normalized_target(target_id)
     return hashlib.sha256(
-        f"{event_id}|{normalized_channel}|{target}".encode("utf-8")
+        f"{event_id}|{normalized_channel}|{target}".encode()
     ).hexdigest()
 
 
@@ -577,7 +576,7 @@ class WorkflowOutbox:
                     run=dict(run),
                     intent={
                         "intent_id": hashlib.sha256(
-                            f"{run_id}|{event_key}".encode("utf-8")
+                            f"{run_id}|{event_key}".encode()
                         ).hexdigest(),
                         "event_key": event_key,
                         "event_type": event_type,

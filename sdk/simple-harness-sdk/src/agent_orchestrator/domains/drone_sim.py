@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any
 
 from simple_harness.contracts import canonical_json
+
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
 from ..runtime.domain_tools import DomainTool

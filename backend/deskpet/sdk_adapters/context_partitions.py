@@ -191,7 +191,7 @@ def text_tokens(value: object) -> int:
     escaped_cjk = 0
     if "\\u" in text:
 
-        def _fold(match: "re.Match[str]") -> str:
+        def _fold(match: re.Match[str]) -> str:
             nonlocal escaped_cjk
             code = int(match.group(1), 16)
             if 0x3400 <= code <= 0x9FFF:

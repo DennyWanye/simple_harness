@@ -4,8 +4,8 @@ Host evidence commitments and SDK event commitments are different namespaces.
 This reader only touches Host tables; the caller supplies the actual terminal
 from the SDK public reader to ``verify_sdk_terminal``.
 """
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 
 from deskpet.task_scope.protocol import canonical_hash
 

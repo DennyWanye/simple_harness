@@ -5,12 +5,10 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from pptx import Presentation
-
-from deskpet.tools import ppt_outline_store
-from deskpet.tools import ppt_tools
 from deskpet.memory.session_db import SessionDB
+from deskpet.tools import ppt_outline_store, ppt_tools
 from deskpet.workflows import WorkflowContext
+from deskpet.workflows.definitions import ppt_pro_nodes
 from deskpet.workflows.definitions.research_core import (
     FetchPort,
     ResearchLLMPort,
@@ -22,13 +20,14 @@ from deskpet.workflows.definitions.v1 import (
     ppt_pro_initial_state,
 )
 from deskpet.workflows.definitions.v1 import ppt_pro as ppt_pro_graph
-from deskpet.workflows.definitions import ppt_pro_nodes
 from deskpet.workflows.errors import WorkflowErrorCode, WorkflowNodeError
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from pptx import Presentation
+
 from tests.test_workflow_native_engine import MemoryNativeStore
 
 

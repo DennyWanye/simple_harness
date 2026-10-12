@@ -13,14 +13,13 @@ Orchestrator, the API and the recovery path do.
 
 from __future__ import annotations
 
-import hashlib
 import contextlib
-
+import hashlib
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .taskgraph_dispatch import TaskGraphDispatchBinding
@@ -29,7 +28,6 @@ from simple_harness.agents import AgentTurnState
 
 from ..artifacts.store import ArtifactStore
 from ..artifacts.versioning import next_versions
-from .occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -58,6 +56,7 @@ from ..contracts.models import (
     sha256_hex,
 )
 from ..contracts.planning_decisions import PLANNING_DECISION_V1
+from ..governance.budget_limits import inherit_limits
 from ..governance.budgets import AccountSnapshot, BudgetError, BudgetLedger, UsageFact
 from ..governance.domains import (
     CODE_DOMAIN,
@@ -68,11 +67,14 @@ from ..governance.domains import (
 from ..governance.policies import DeploymentPolicy
 from ..memory.claims import grade_claim
 from ..memory.knowledge_standing import CURRENT as KNOWLEDGE_CURRENT
-from .review_adjudication import accepted_or_adjudicated, adjudication_of
 from ..memory.knowledge_standing import knowledge_standing
-from ..memory.verified_knowledge import KnowledgeIndex, KnowledgeRecord, modified, parse_knowledge_ref
+from ..memory.verified_knowledge import (
+    KnowledgeIndex,
+    KnowledgeRecord,
+    modified,
+    parse_knowledge_ref,
+)
 from ..observability.lineage import lineage
-from ..governance.budget_limits import inherit_limits
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..scheduling.backpressure import (
     BACKLOG_KEY,
@@ -94,6 +96,10 @@ from ..verification.conflicts import (
 from .action_commits import ActionCommitsMixin
 from .human_commits import HumanCommitsMixin
 from .obligation_commits import ObligationCommitsMixin
+from .occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
+from .operation_completion import OperationCompletionCommitsMixin
+from .operation_materialization import OperationMaterializationCommitsMixin
+from .operation_reconciliation import OperationReconciliationCommitsMixin
 from .plan_commits import (
     HIERARCHICAL_SEMANTICS,
     SEMANTICS_KEY,
@@ -109,9 +115,7 @@ from .planning_protocol_binding import (
 from .policy_commits import PolicyCommitsMixin
 from .protected_tail_commits import ProtectedTailCommitsMixin
 from .resolution_commits import ResolutionCommitsMixin
-from .operation_completion import OperationCompletionCommitsMixin
-from .operation_reconciliation import OperationReconciliationCommitsMixin
-from .operation_materialization import OperationMaterializationCommitsMixin
+from .review_adjudication import accepted_or_adjudicated, adjudication_of
 from .source_commits import SourceCommitsMixin
 from .state_machine import next_attempt, next_claim, next_mission, next_task
 
@@ -1859,7 +1863,11 @@ class CommitService(ProtectedTailCommitsMixin,
                     )
             ordinal = len(existing) + 1
             attempt_id = ids.attempt_id(task_id, ordinal)
-            from .assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
+            from .assurance_point_use import (
+                ATTEMPT_CONSUMER,
+                PointUseRefused,
+                require_point_use_locked,
+            )
             try:
                 require_point_use_locked(
                     self, mission_id=task.mission_id, purpose="CONTEXT", consumer_kind=ATTEMPT_CONSUMER,
@@ -2273,7 +2281,7 @@ class CommitService(ProtectedTailCommitsMixin,
         否则等于凭空多给次数。按尝试幂等。
         """
 
-        from .failure_classes import classify_failure, NON_MODEL
+        from .failure_classes import NON_MODEL, classify_failure
 
         category = classify_failure(attempt.failure)
         if category not in NON_MODEL:

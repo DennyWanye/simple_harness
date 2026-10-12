@@ -9,7 +9,6 @@ from dataclasses import fields
 from pathlib import Path
 
 import pytest
-
 from simple_harness import (
     COMMAND_FRAME_MAX_BYTES,
     COMMAND_MESSAGE_MAX_BYTES,

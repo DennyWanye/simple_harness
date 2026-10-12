@@ -49,6 +49,7 @@ from .semantic_base import (
     text,
 )
 
+
 def enum_of(kind: Any, value: object, name: str) -> Any:
     """Planner replies are model-authored (2026-09-26 Host run: ``"high"`` for
     ``HIGH`` cost a whole planning round): a value that names a member in another

@@ -73,7 +73,7 @@ class DailyBudget:
 
     @staticmethod
     def _utc_date_str() -> str:
-        return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+        return _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d")
 
     def _maybe_rollover(self) -> None:
         today = self._utc_date_str()
@@ -126,7 +126,7 @@ class DailyBudget:
         """False once spend ≥ cap. Callers MUST block the LLM call."""
         return self.get_spent() < self.cap_usd
 
-    def warning_threshold_crossed(self) -> Optional[float]:
+    def warning_threshold_crossed(self) -> float | None:
         """Return 0.8 / 1.0 exactly once per threshold per UTC day, else None.
 
         Caller (agent loop / backend IPC) pushes `llm.budget.warning` event

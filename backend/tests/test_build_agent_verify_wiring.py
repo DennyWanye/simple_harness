@@ -26,7 +26,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ─── Minimal cfg fixtures (mimic AppConfig.tools.verifier shape) ─────
 
 
@@ -216,6 +215,7 @@ def test_build_agent_passes_all_optional_kwargs(
 def test_build_agent_has_no_legacy_tool_path_recorder_parameter():
     """Task 13: the removed recorder cannot be re-enabled through the factory."""
     import inspect
+
     from main import build_agent
 
     assert "tool_path_recorder" not in inspect.signature(build_agent).parameters

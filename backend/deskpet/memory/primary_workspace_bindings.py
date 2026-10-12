@@ -10,15 +10,19 @@ import json
 import sqlite3
 from pathlib import Path
 
-from simple_harness import (ManualWorkspaceBindingChallenge,
-    ManualWorkspaceBindingAuthorizationReceipt, WorkspaceBindingProposal,
-    WorkspaceBindingAuthorityGrant, WorkspaceBindingSetReceipt)
+from simple_harness import (
+    ManualWorkspaceBindingAuthorizationReceipt,
+    ManualWorkspaceBindingChallenge,
+    WorkspaceBindingAuthorityGrant,
+    WorkspaceBindingProposal,
+    WorkspaceBindingSetReceipt,
+)
 from simple_harness.runtime import SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt
+
 from deskpet.memory.primary_read_model import PrimaryReadError
 from deskpet.memory.writer_fence import human_memory_request_boundary
 from deskpet.task_scope.protocol import canonical_hash, identifier
 from deskpet.task_scope.workspace_bindings import canonical_workspace_root
-
 
 IDENTITY_FIELDS = frozenset({"primary_ref", "run_ref", "sdk_run_ref", "generation",
     "effect_ref", "challenge_ref", "challenge_hash", "scope_ref", "proposal_hash"})

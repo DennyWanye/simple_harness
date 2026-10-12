@@ -20,15 +20,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from h1i_seed import events, seeded
-from test_h1i_production_entry import _open_planner_round
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import PLANNING_DECISION_V1
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from h1i_seed import events, seeded
+from test_h1i_production_entry import _open_planner_round
 
 # Every round below is the real Orchestrator's on the product's deployment (``h1i_seed``):
 # the Planner intent and its request binding come from ``_create_planner_intent``, the

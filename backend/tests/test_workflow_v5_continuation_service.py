@@ -5,7 +5,6 @@ import time
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.bootstrap import build_workflow_service
 from deskpet.workflows.definitions.deep_research_v5_contracts import (
     DimensionCoverage,

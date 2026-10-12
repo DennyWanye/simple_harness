@@ -102,7 +102,7 @@ class SearchBudget:
         per_provider_timeout_s: float,
         cdp_budget: int,
         hydrate_budget: int,
-    ) -> "SearchBudget":
+    ) -> SearchBudget:
         return cls(
             deadline=time.monotonic() + total_timeout_s,
             provider_concurrency=provider_concurrency,

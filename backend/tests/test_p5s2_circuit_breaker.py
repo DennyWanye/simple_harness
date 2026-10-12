@@ -18,9 +18,7 @@ watchdog from different tasks).
 from __future__ import annotations
 
 import pytest
-
 from agent.circuit_breaker import ToolCircuitBreaker
-
 
 # ─────────────── helpers ───────────────
 

@@ -3,8 +3,12 @@
 """诊断 backend code_models_list：直连 ws/control 发 code_models_list，
 看 provider_registry chain 是否空(决定 code 模型列表为何空)。
 dev 模式 WS auth 开放,纯诊断 backend 逻辑(非 UI 证据)。"""
-import asyncio, json, sys
+import asyncio
+import json
+import sys
+
 import websockets
+
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 
@@ -16,13 +20,13 @@ async def main():
             for _ in range(20):
                 try:
                     raw=await asyncio.wait_for(ws.recv(), timeout=12)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     print("[超时] 12s 未收到 code_models_list_response"); return 1
                 m=json.loads(raw)
                 if m.get("type")=="code_models_list_response":
                     p=m.get("payload",{})
                     models=p.get("models",[])
-                    print(f"[code_models_list_response]")
+                    print("[code_models_list_response]")
                     print(f"  source: {p.get('source')!r}  (none=registry空 / live=拉到 / config=fallback)")
                     print(f"  base_url: {p.get('base_url')!r}")
                     print(f"  模型数: {len(models)}")

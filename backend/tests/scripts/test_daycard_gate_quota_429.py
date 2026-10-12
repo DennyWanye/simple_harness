@@ -88,6 +88,6 @@ def test_busy_429_is_still_retried(monkeypatch) -> None:
 
 def test_quota_markers() -> None:
     gate = _gate()
-    assert gate._exhausted_quota('{"error":{"code":"insufficient_quota"}}'.encode())
+    assert gate._exhausted_quota(b'{"error":{"code":"insufficient_quota"}}')
     assert gate._exhausted_quota("余额不足".encode())
     assert not gate._exhausted_quota("Too Many Requests: 并发限制已达上限".encode())

@@ -61,7 +61,7 @@ def test_input_text_attachment_is_preserved_and_budgeted() -> None:
 
     assert len(refs) == 1
     assert refs[0].media_type == "input_text"
-    assert refs[0].byte_size == len("FIRST LINE\nbody-canary".encode("utf-8"))
+    assert refs[0].byte_size == len(b"FIRST LINE\nbody-canary")
     assert tokens > 0
 
 

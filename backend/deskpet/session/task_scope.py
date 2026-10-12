@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
-from typing import Callable, Optional
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,7 @@ class TaskScopeDecision:
     created: bool
     reason: str
     stripped_text: str
-    force_l2_page_in: Optional[str] = None
+    force_l2_page_in: str | None = None
 
 
 class TaskSessionManager:

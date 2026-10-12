@@ -8,8 +8,9 @@ import copy
 import hashlib
 import json
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from deskpet.execution.contracts import fingerprint_json
 from deskpet.harness.contracts import HostExtensionRefV1
@@ -46,7 +47,7 @@ class _FrozenCaptureDict(dict[str, Any]):
     setdefault = _immutable
     update = _immutable
 
-    def __deepcopy__(self, _memo: dict[int, Any]) -> "_FrozenCaptureDict":
+    def __deepcopy__(self, _memo: dict[int, Any]) -> _FrozenCaptureDict:
         return self
 
 
@@ -70,7 +71,7 @@ class _FrozenCaptureList(list[Any]):
     reverse = _immutable
     sort = _immutable
 
-    def __deepcopy__(self, _memo: dict[int, Any]) -> "_FrozenCaptureList":
+    def __deepcopy__(self, _memo: dict[int, Any]) -> _FrozenCaptureList:
         return self
 
 
@@ -298,7 +299,7 @@ class SnapshotLeaseReadyGate:
         *,
         intent_id: str,
         run_id: str,
-        pin: "PendingProcessPinToken",
+        pin: PendingProcessPinToken,
     ) -> None:
         async with self._lock:
             current = self._pending.get(intent_id)
@@ -473,19 +474,19 @@ class PreparedRunCatalogLease:
         )
 
     @property
-    def start_commit_extension(self) -> "_BindRunCatalogLease":
+    def start_commit_extension(self) -> _BindRunCatalogLease:
         return _BindRunCatalogLease(self)
 
     @property
-    def after_start_handshake(self) -> "_ReadyRunCatalogLease":
+    def after_start_handshake(self) -> _ReadyRunCatalogLease:
         return _ReadyRunCatalogLease(self)
 
     @property
-    def terminal_commit_extension(self) -> "_ReleaseRunCatalogLease":
+    def terminal_commit_extension(self) -> _ReleaseRunCatalogLease:
         return _ReleaseRunCatalogLease(self)
 
     @property
-    def after_terminal_cleanup(self) -> "_UnpinRunCatalogLease":
+    def after_terminal_cleanup(self) -> _UnpinRunCatalogLease:
         return _UnpinRunCatalogLease(self)
 
     async def release_prepared(self) -> None:

@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Optional
 
 log = logging.getLogger(__name__)
 
@@ -291,7 +292,7 @@ async def _handle_prefs_routed(
         return {"type": "prefs_list", "entries": norm, "count": len(norm)}
     if parts[0].lower() != "clear":
         return _handle_prefs(args, pref_memory)
-    kind: Optional[str] = None
+    kind: str | None = None
     if len(parts) >= 2:
         kind = parts[1].lower()
         if kind not in _PREFS_VALID_KINDS:
@@ -340,7 +341,7 @@ def _handle_prefs(args: str, pref_memory: Any) -> dict[str, Any]:
         return {"type": "prefs_list", "entries": norm, "count": len(norm)}
 
     if parts[0].lower() == "clear":
-        kind: Optional[str] = None
+        kind: str | None = None
         if len(parts) >= 2:
             kind_arg = parts[1].lower()
             if kind_arg not in _PREFS_VALID_KINDS:

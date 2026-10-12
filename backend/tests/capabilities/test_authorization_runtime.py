@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
 from deskpet.permissions.policy import AuthorizationPolicyState
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
 from deskpet.permissions.task_grants import ResourceSelector, TaskGrant

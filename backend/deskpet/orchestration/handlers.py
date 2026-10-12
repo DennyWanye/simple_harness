@@ -157,8 +157,8 @@ async def handle(
                 data = project_reply(msg_type, data)
             return _ok(msg_type, request_id, data)
         except Exception as error:
-            from .taskgraph import TaskGraphRequestError
             from .assurance import AssuranceRequestError
+            from .taskgraph import TaskGraphRequestError
             if isinstance(error, (TaskGraphRequestError, AssuranceRequestError)):
                 # 错误回执同样经投影；不合合同就整条按协议错回，不挂原回执
                 key, contract = ERROR_WIRES["taskgraph" if isinstance(error, TaskGraphRequestError) else "assurance"]

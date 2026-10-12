@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.execution import StaleFenceError, require_current_epoch
 
 

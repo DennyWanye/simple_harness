@@ -17,7 +17,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from agent_orchestrator.assurance.checks import CheckResult, CriterionPolicy, Grade, evaluate_check_gate
+from agent_orchestrator.assurance.checks import (
+    CheckResult,
+    CriterionPolicy,
+    Grade,
+    evaluate_check_gate,
+)
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
 
 FORMAT, RULE, CODE = (AssuranceRef("check_spec", Pin(f"event-{n}", 0, n[0] * 64)) for n in ("aformat", "brule", "ccode"))

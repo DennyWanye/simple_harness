@@ -24,7 +24,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.planning.htn.backends.panda import (
     ENV_ENGINE,
     ENV_GROUNDER,

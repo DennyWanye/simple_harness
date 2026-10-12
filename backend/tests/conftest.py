@@ -14,7 +14,6 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 import pytest_asyncio
-
 from deskpet.workflows.store.write_lane import (
     close_execution_write_lanes_for_tests,
 )

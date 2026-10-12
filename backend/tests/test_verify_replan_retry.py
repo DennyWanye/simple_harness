@@ -22,9 +22,8 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent, ToolBatchEvent
-from llm.types import ChatResponse, ChatUsage, ToolCall
+from agent.auto_resume import is_auto_resume_trigger
 from deskpet.agent.verify_gate import (
     Claim,
     ClaimPattern,
@@ -35,8 +34,7 @@ from deskpet.agent.verify_gate import (
     make_ephemeral_verifier,
 )
 from deskpet.tools.receipt import ToolReceipt
-from agent.auto_resume import is_auto_resume_trigger
-
+from llm.types import ChatResponse, ChatUsage, ToolCall
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -86,8 +84,8 @@ class FakeLLMRegistry:
     async def chat_with_fallback(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        model: Optional[str] = None,
+        tools: list[dict] | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         self.calls.append({"messages": list(messages), "tools": tools})
@@ -100,7 +98,7 @@ class FakeLLMRegistry:
 
 
 class FakeToolRegistry:
-    def __init__(self, handlers: Optional[dict] = None) -> None:
+    def __init__(self, handlers: dict | None = None) -> None:
         self._handlers = handlers or {}
         self.calls: list[dict] = []
 

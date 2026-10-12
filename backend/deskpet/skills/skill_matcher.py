@@ -29,7 +29,6 @@ import inspect
 import math
 from typing import Any, Optional
 
-
 # Similarity assigned to an explicit trigger-phrase hit — must clear any
 # reasonable strong_threshold so trigger matches always auto-disclose.
 _TRIGGER_SIM = 0.95
@@ -46,7 +45,7 @@ class SkillMatcher:
         run in degraded mode (always returns empty list).
     """
 
-    def __init__(self, embedder: Optional[Any]) -> None:
+    def __init__(self, embedder: Any | None) -> None:
         self._embedder = embedder
         # name → pre-computed embedding vector
         self._cache: dict[tuple[str, str, str, str, str], list[float]] = {}

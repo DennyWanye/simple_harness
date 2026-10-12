@@ -11,14 +11,15 @@ import hashlib
 import inspect
 import math
 import os
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from concurrent.futures import Executor
 from functools import partial
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from deskpet.execution.dispatch import dispatch_with_run_fence
-from ...tools import ppt_tools
-from ...tools import ppt_visual_review
+
+from ...tools import ppt_tools, ppt_visual_review
 from ..contracts import EffectKind, EffectPolicy, JsonValue, canonical_json, validate_json_value
 from ..effects import (
     EffectAction,
@@ -28,7 +29,6 @@ from ..effects import (
     NormalizedToolOutcome,
     PreparedToolCall,
 )
-
 
 _T = TypeVar("_T")
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from config import AppConfig, ConfigError, load_config
 
 

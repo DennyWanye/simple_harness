@@ -19,11 +19,11 @@ from ..contracts.resolution import (
     ReviewPackage,
 )
 from ..contracts.semantic_base import TypedRefKind
+from ..governance.budgets import BudgetError
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from ..governance.budgets import BudgetError
 from ..storage.store import StoreError
 
 if TYPE_CHECKING:

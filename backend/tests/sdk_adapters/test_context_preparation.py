@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 import pytest
-
 from deskpet.sdk_adapters.context_authority import DefaultDenySnapshotRedactor
 from deskpet.sdk_adapters.context_preparation import (
     SdkAttachmentLimitExceeded,

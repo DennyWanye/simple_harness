@@ -11,7 +11,6 @@ import json
 
 import pytest
 from real_provider_config import build_real_provider, resolve_real_provider
-
 from simple_harness.agents import AgentConfig, build_agent_runtime
 from simple_harness.agents.context import ContextPolicy, TiktokenTokenizer
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization

@@ -13,8 +13,8 @@ IN-LOOP 硬门：当 needs_investigation=True，且模型在「尚未发生任�
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import structlog
 

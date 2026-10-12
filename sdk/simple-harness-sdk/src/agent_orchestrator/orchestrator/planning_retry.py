@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..contracts import ContractError, TERMINAL_ATTEMPT
+from ..contracts import TERMINAL_ATTEMPT, ContractError
 from ..contracts.htn import TaskForm
 from ..contracts.planning_decisions import RepairRetrySameMethodDecision
 from ..contracts.semantic_base import content_hash_of

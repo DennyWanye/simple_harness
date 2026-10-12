@@ -4,39 +4,39 @@ import asyncio
 import hashlib
 import itertools
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows import WorkflowContext
-from deskpet.workflows.adapters.deep_research_v6_semantic_runtime import (
-    DeepResearchV6SemanticRuntime,
-)
 from deskpet.workflows.adapters.deep_research_v6_retrieval_runtime import (
     DurableV6DeadlinePort,
     DurableV6PageReadEffectAdapter,
 )
+from deskpet.workflows.adapters.deep_research_v6_semantic_runtime import (
+    DeepResearchV6SemanticRuntime,
+)
 from deskpet.workflows.adapters.research_runtime import (
+    V6_RESEARCH_RESPONSE_FORMATS,
     BoundResearchEffectContext,
     DurableResearchCallEffectAdapter,
     DurableV6ResearchLLMStagePort,
-    V6_RESEARCH_RESPONSE_FORMATS,
     WorkflowControlSignalHub,
     build_v6_research_llm_profiles,
     research_response_format_hash,
 )
 from deskpet.workflows.contracts import canonical_json
 from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
-from deskpet.workflows.definitions.deep_research_v6_contracts import (
-    ResearchSpecV1,
-    build_route_decision_from_spec,
-)
 from deskpet.workflows.definitions.deep_research_v6_assessment import (
     derive_collection_item_id,
     derive_matrix_cell_id,
 )
+from deskpet.workflows.definitions.deep_research_v6_contracts import (
+    ResearchSpecV1,
+    build_route_decision_from_spec,
+)
+from deskpet.workflows.definitions.deep_research_v6_evidence import EvidenceFactBatchV1
 from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import (
     EvidenceCandidateBundleV1,
     EvidenceCandidateV1,
@@ -51,7 +51,6 @@ from deskpet.workflows.definitions.deep_research_v6_retrieval_contracts import (
     SearchCandidateV1,
     SourceLocatorV1,
 )
-from deskpet.workflows.definitions.deep_research_v6_evidence import EvidenceFactBatchV1
 from deskpet.workflows.definitions.research_core import ResearchLLMPortV2
 from deskpet.workflows.definitions.v6 import register_v6_workflows
 from deskpet.workflows.definitions.v6.deep_research import initial_state
@@ -64,7 +63,6 @@ from deskpet.workflows.store import (
     RunFence,
     WorkflowRunStore,
 )
-
 
 TOPICS = {
     "official_exact_fact": "What were China's year-end total population and annual births in 2024?",

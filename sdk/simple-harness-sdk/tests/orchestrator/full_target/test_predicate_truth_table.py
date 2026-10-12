@@ -15,16 +15,6 @@ import itertools
 from typing import Any
 
 import pytest
-from full_target_world import (
-    World,
-    all_of,
-    any_of,
-    method_contract,
-    not_of,
-    task_binding,
-    tref,
-)
-
 from agent_orchestrator.contracts.evidence_state import (
     EvidenceEntry,
     EvidenceSnapshot,
@@ -68,6 +58,15 @@ from agent_orchestrator.planning.htn.applicability import (
     authorization_gate,
     evaluate_condition,
     not_truth,
+)
+from full_target_world import (
+    World,
+    all_of,
+    any_of,
+    method_contract,
+    not_of,
+    task_binding,
+    tref,
 )
 
 VALUES = (TruthValue.TRUE, TruthValue.FALSE, TruthValue.UNKNOWN, TruthValue.CONFLICT)

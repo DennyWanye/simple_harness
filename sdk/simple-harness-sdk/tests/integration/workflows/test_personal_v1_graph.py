@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from simple_harness.workflows.personal_v1.definition import (
     PERSONAL_WORKFLOW_V1_DEFINITION,
     PROFILE_KEY,

@@ -44,7 +44,6 @@ from ...contracts.htn import (
 )
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef
-
 from .applicability import ApplicabilityReport, CapabilitySnapshot
 from .registry import (
     AdmissionPolicy,

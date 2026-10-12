@@ -1,11 +1,11 @@
 """2026-09-28 真机：几十个"用量未知、按上限预留"的旧调用每轮都被完整重读（约三成 CPU）。
 编排库与各执行池库都没有写入时跳过重读；任何一边有写入，下一次照常重读。"""
 
-import contextlib
 import asyncio
+import contextlib
 
-from production_fixture import enabled_world
 from agent_orchestrator.orchestrator import accounting_recovery
+from production_fixture import enabled_world
 
 
 def test_open_holds_are_reread_only_after_a_write(tmp_path, monkeypatch):
@@ -41,6 +41,7 @@ def test_open_holds_are_reread_only_after_a_write(tmp_path, monkeypatch):
 def test_ended_mission_holds_are_rechecked_every_five_minutes(monkeypatch):
     """2026-09-28 第四轮：运行中每轮都有写入，已结束任务的旧预留仍每轮重核（约三成 CPU）。"""
     from types import SimpleNamespace
+
     from agent_orchestrator.orchestrator import taskgraph_action_settlement
 
     clock = [1000.0]

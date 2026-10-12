@@ -12,7 +12,6 @@ import asyncio
 import json
 
 import pytest
-
 from agent_orchestrator.observability.business_replay import (
     CONSISTENT,
     verify_execution_ledgers,

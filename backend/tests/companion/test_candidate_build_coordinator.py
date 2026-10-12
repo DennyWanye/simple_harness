@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-
 from deskpet.companion.build_admission import (
     CandidateDraftReceiptExpectationV1,
     CandidateDraftReceiptV1,

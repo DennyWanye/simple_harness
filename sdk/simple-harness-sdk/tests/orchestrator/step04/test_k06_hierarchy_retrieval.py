@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.context.retrieval import GoalTree, rank_knowledge
 from agent_orchestrator.contracts import Budget, Task, TaskStatus
 from agent_orchestrator.memory.verified_knowledge import KnowledgeRecord
@@ -105,10 +104,9 @@ for _path in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
 
 
 def test_the_tree_is_read_from_the_product_network(tmp_path: Path) -> None:
-    from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world
-
     import agent_orchestrator.orchestrator.event_handler as event_handler
     from agent_orchestrator.contracts.state_machines import MissionStatus
+    from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world
 
     patch = pytest.MonkeyPatch()
     patch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)

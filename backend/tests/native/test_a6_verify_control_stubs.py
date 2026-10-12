@@ -87,7 +87,7 @@ def _evidence(
     requests: list[dict] | None = None,
     log_lines: list[str] | None = None,
     foreground: list[str] | None = None,
-) -> "a6.Evidence":
+) -> a6.Evidence:
     """搭一份最小证据目录(只含本组用例要读的表), 返回 `Evidence`。"""
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
@@ -352,7 +352,7 @@ def test_budget_exceeded_without_any_run_id_counts_as_unattributed(tmp_path):
 # --------------------------------------------------------------- A6-3 判据
 
 
-def _a6_3(ev) -> "a6.Item":
+def _a6_3(ev) -> a6.Item:
     return a6.item_a6_3(ev, ev.budget_profile())
 
 

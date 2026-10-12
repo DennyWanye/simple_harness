@@ -19,7 +19,6 @@ import sqlite3
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.testing.fixtures import role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider

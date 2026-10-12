@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from simple_harness.contracts import canonical_json
+
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
 from .hierarchical_dispatch import append_hierarchical_event
@@ -167,8 +168,8 @@ def awaits_authority(store: Any, intent: Any) -> bool:
     """
     if intent.kind != "plan":
         return False
-    from ..storage.planning_decision_store import PlanningDecisionStore
     from ..storage.planning_admission_store import PlanningAdmissionStore
+    from ..storage.planning_decision_store import PlanningDecisionStore
     with store.read_view():
         decisions = PlanningDecisionStore(store)
         protocol = decisions.get_mission_protocol(intent.mission_id)

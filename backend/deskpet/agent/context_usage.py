@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping
-
+from typing import Any
 
 CONTEXT_USAGE_SOURCES = frozenset({"measured", "compacted", "binding_only"})
 CONTEXT_USAGE_AVAILABILITIES = frozenset(
@@ -54,7 +54,7 @@ def context_usage_sample_id(session_id: str, source_event_id: str) -> str:
     source_id = str(source_event_id or "").strip()
     if not sid or not source_id:
         raise ValueError("session_id and source_event_id are required")
-    return hashlib.sha256(f"{sid}\0{source_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{sid}\0{source_id}".encode()).hexdigest()
 
 
 def _non_negative_int(value: Any) -> int:

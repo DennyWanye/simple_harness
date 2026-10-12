@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.workflows.evaluation import EvaluationStore, LocalEvaluationRunner
 
 

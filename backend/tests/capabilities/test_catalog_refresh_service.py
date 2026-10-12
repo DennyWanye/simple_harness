@@ -5,7 +5,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from deskpet.capabilities.contracts import (
     CapabilityScope,
     CapabilityVersionDescriptor,

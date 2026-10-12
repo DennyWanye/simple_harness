@@ -256,8 +256,8 @@ def test_async_enabled_false_uses_sync_path(img_mod, monkeypatch):
 
 
 def test_registered_in_registry():
-    from deskpet.tools import registry
     import deskpet.tools.image_tools  # noqa: F401 — triggers registration
+    from deskpet.tools import registry
 
     spec = registry.get("generate_image")
     assert spec is not None

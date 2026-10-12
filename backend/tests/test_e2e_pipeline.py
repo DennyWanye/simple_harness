@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sys
+
 # Windows default stdout is GBK, chokes on emoji in LLM replies
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -21,7 +22,6 @@ from pathlib import Path
 import edge_tts
 import numpy as np
 import websockets
-
 
 BACKEND_URL = "ws://127.0.0.1:8100/ws/audio?secret=&session_id=e2e_test"
 FRAME_SAMPLES = 512  # silero-vad v5 requires exactly 512 samples @ 16kHz
@@ -113,7 +113,7 @@ async def stream_to_backend(pcm_bytes: bytes) -> None:
         print("[->] streaming complete, waiting for TTS end (max 30s)...")
         try:
             await asyncio.wait_for(done.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("[!] timeout waiting for tts_end")
 
         reader_task.cancel()

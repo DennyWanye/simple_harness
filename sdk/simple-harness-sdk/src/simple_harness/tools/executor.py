@@ -426,7 +426,7 @@ class EffectExecutor:
         prepare = getattr(self._authorization, "prepare", None)
         if authorization_receipt_ref is None:
             if prepare is None:
-                prepare = getattr(self._authorization, "authorize")
+                prepare = self._authorization.authorize
             authorization = await prepare(prepared)
         else:
             authorization = None

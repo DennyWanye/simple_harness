@@ -18,8 +18,8 @@ from ..storage.htn_store import HtnStore
 from ..storage.store import _event_from_row
 from .assurance_check_use import prepare_local_check_use
 from .assurance_review_import import (
-    prepare_official_review,
     REPAIRABLE_INTERPRETATION_ERRORS,
+    prepare_official_review,
     read_imported_review_locked,
     read_official_review_binding_locked,
     review_scope_id,
@@ -27,7 +27,6 @@ from .assurance_review_import import (
 )
 from .assurance_review_pins import ensure_review_blob_pins
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
-
 
 #: 一次审阅作废的原因：它开始之后，证据里的一份资料换了版本或被撤销（2026-10-05 真机）。
 REVIEW_SOURCE_REPLACED = "REVIEW_SOURCE_REPLACED"

@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from simple_harness import AgentIdentity, ContentBlock, Message, MessageRole, canonical_json
 from simple_harness.runtime import (
     ConversationContinuationInput,

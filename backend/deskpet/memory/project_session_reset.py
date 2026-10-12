@@ -5,14 +5,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 import shutil
 import sqlite3
 import time
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 
 import aiosqlite
-
 
 RESET_POLICY_VERSION = 1
 _STATE_EMPTY_TABLES = (

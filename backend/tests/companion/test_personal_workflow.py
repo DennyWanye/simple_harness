@@ -5,25 +5,24 @@ import json
 import sqlite3
 
 import pytest
-
 from deskpet.execution.contracts import fingerprint_json
 from deskpet.tools.build_identity import ExecutionBuildIdentity
-from deskpet.tools.registry import ToolRegistry, tool_spec_fingerprint
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.tools.registry import ToolRegistry, tool_spec_fingerprint
 from deskpet.workflows import EffectKind, EffectPolicy
 from deskpet.workflows.adapters.personal_runtime import (
     JournaledPersonalWorkflowEffects,
     PersonalWorkflowEffectReceiptV1,
     PersonalWorkflowRuntime,
 )
+from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.definitions.personal_workflow import (
     PersonalWorkflowSelectionError,
     PersonalWorkflowSelectionV1,
     personal_workflow_query_hash,
 )
-from deskpet.workflows.contracts import NodeExecutionIdentity
-from deskpet.workflows.store import schema as workflow_schema
 from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
+from deskpet.workflows.store import schema as workflow_schema
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.store.schema import initialize_workflow_db

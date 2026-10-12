@@ -33,9 +33,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from simple_harness.contracts import CallId, RequestId
-from simple_harness.contracts.messages import Message, MessageRole
-
 from deskpet.sdk_adapters import provider as provider_module
 from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
 from deskpet.sdk_adapters.tool_call_arguments import (
@@ -52,6 +49,8 @@ from deskpet.sdk_adapters.wire_input_budget import (
     effective_budget_for_window,
     enforce_wire_input_budget,
 )
+from simple_harness.contracts import CallId, RequestId
+from simple_harness.contracts.messages import Message, MessageRole
 
 MODEL = "deepseek-v4-flash"
 WINDOW = 32000

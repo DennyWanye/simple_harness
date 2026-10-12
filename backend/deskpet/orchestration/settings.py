@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from typing import Any
 
 
-
 @dataclass(frozen=True)
 class OrchestrationSettings:
     enabled: bool = True  # CLAUDE.md: capabilities that passed testing ship on

@@ -13,7 +13,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.orchestrator.planning_repair_requests import (
     ADDRESSED,
     REQUESTED,
@@ -232,7 +231,9 @@ def test_a_source_replaced_after_the_final_review_holds_the_closeout_until_the_p
 
     **改坏检验**：收尾不看资料变更（SRC-05）→ 规划器还没被问到任务就完成了 → 变红。"""
     from agent_orchestrator.assurance.codec import decode
-    from agent_orchestrator.orchestrator.resolution_commits import ResolutionCommitsMixin as ResolutionCommits
+    from agent_orchestrator.orchestrator.resolution_commits import (
+        ResolutionCommitsMixin as ResolutionCommits,
+    )
 
     seen: dict[str, Any] = {"asked_while": None, "world": None, "first": None, "mission": None, "replaced": False}
 

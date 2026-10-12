@@ -20,8 +20,6 @@ for _extra in (_TESTS / "orchestrator" / "full_target", _TESTS / "orchestrator" 
 
 import json  # noqa: E402
 
-from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
-
 from agent_orchestrator.contracts.state_machines import TERMINAL_ATTEMPT  # noqa: E402
 from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: E402
     ADDRESSED,
@@ -29,6 +27,7 @@ from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: 
     SOURCE_CHANGE_ASSESSED,
     collect_triggers,
 )
+from production_fixture import OUTPUT, enabled_world, result_envelope, scripted_worker  # noqa: E402
 
 
 def _no_claims(request):  # type: ignore[no-untyped-def]

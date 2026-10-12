@@ -1,10 +1,9 @@
 """New Manual UI public API over the real routed factory, without UI/native claims."""
-import sqlite3
 import json
+import sqlite3
 from contextlib import nullcontext
 
 import pytest
-
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
 from deskpet.sdk_adapters.context_route import local_owner_auth
@@ -212,7 +211,11 @@ asyncio.run(main())
 
 @pytest.mark.asyncio
 async def test_pending_pages_exclude_resolved_history_and_preserve_same_time_cursor(tmp_path):
-    from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest, DecideManualBindingRequest
+    from deskpet.memory.human_memory_service import (
+        AppendBindingRequest,
+        CreateTaskScopeRequest,
+        DecideManualBindingRequest,
+    )
     from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
     # One real executed foreground chain supplies its authentic Run binding.
     # The following extra records are explicit Host-journal projection fixtures,
@@ -274,7 +277,12 @@ def assert_mismatched_ack_base_rejected(state, service, authority, item):
     This was accepted by the former four-field hand comparison.
     """
     from dataclasses import replace
-    from simple_harness import ManualWorkspaceBindingChallenge, WorkspaceBindingProposal, WorkspaceBindingSetReceipt
+
+    from simple_harness import (
+        ManualWorkspaceBindingChallenge,
+        WorkspaceBindingProposal,
+        WorkspaceBindingSetReceipt,
+    )
     with sqlite3.connect(state) as db:
         db.row_factory = sqlite3.Row
         row = db.execute("SELECT * FROM task_workspace_binding_revisions WHERE task_scope_id=?",

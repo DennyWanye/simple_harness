@@ -8,12 +8,11 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-
-from ..capabilities import ToolExecutionContext
-from ..context_adapter import legacy_execution_context
 from collections.abc import Callable
 from typing import Any
 
+from ..capabilities import ToolExecutionContext
+from ..context_adapter import legacy_execution_context
 
 _SCHEMA = {
     "name": "ask_clarification",
@@ -92,7 +91,7 @@ def build_clarification_ask(
                 }
             )
             return await asyncio.wait_for(fut, timeout=timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ""
         finally:
             pending.pop(request_id, None)

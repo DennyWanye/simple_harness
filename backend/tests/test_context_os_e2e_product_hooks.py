@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent.context_messages import ProviderAttemptOptions, context_attempt_scope
 from deskpet.context_os_e2e_hooks import (
     ContextOSE2EHooks,

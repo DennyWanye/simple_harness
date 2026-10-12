@@ -45,14 +45,6 @@ _TASKGRAPH = Path(__file__).resolve().parent / "taskgraph_exec"
 if str(_TASKGRAPH) not in sys.path:
     sys.path.insert(0, str(_TASKGRAPH))
 
-from h1i_seed import run_until  # noqa: E402
-from production_fixture import (  # noqa: E402
-    CHAIN_CRITERIA,
-    ProductionWorld,
-    chain_planner,
-    enabled_world,
-)
-
 from agent_orchestrator.contracts import MissionStatus, TaskStatus  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
 from agent_orchestrator.graph.eligibility import OccurrenceOutcome, ReadinessReason  # noqa: E402
@@ -68,10 +60,20 @@ from agent_orchestrator.orchestrator.hierarchical_dispatch import (  # noqa: E40
 )
 from agent_orchestrator.orchestrator.plan_commits import PLAN_REVISION_COMMITTED  # noqa: E402
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
-from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
+from agent_orchestrator.testing.fixtures import (  # noqa: E402
+    lift_immutable_guards,
+    package_of,
+    role_of,
+)
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from h1i_seed import run_until  # noqa: E402
+from production_fixture import (  # noqa: E402
+    CHAIN_CRITERIA,
+    ProductionWorld,
+    chain_planner,
+    enabled_world,
+)
 
 
 @pytest.fixture(autouse=True)

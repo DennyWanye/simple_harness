@@ -8,6 +8,7 @@ Companion preferences and owner-scoped selections enter only through the typed
 the Task 13 cutover so a caller cannot recreate a second preference writer.
 """
 from __future__ import annotations
+
 import inspect
 import math
 import re
@@ -15,16 +16,19 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal
+
 import structlog
 from agent.nudge_queue import format_hints_for_injection
 from agent.plan import maybe_extract_general_plan, plan_to_system_message
+
 from deskpet.agent.attachment_budget import append_user_attachment_blocks
-from deskpet.tools.capabilities import ToolExposureIntent
 from deskpet.execution.provider_workloads import workload_context
 from deskpet.execution.run_block_signals import (
     PreflightBlocked,
     RootBlockReasonV1,
 )
+from deskpet.tools.capabilities import ToolExposureIntent
+
 logger = structlog.get_logger(__name__)
 Venue = Literal['text', 'voice', 'background']
 
@@ -99,7 +103,7 @@ class RoutedTurnIntent:
     requires_action_plan: bool | None = None
     attack_order: Any | None = None
     contradiction_descs: dict[str, str] | None = None
-    commands: tuple['ProductDomainCommand', ...] = ()
+    commands: tuple[ProductDomainCommand, ...] = ()
     continue_turn: bool = True
 
 @dataclass(slots=True)
@@ -107,7 +111,7 @@ class PlannedTurnDecision:
     routed: RoutedTurnIntent
     plan: Any | None = None
     auto_confirmed: bool = False
-    commands: tuple['ProductDomainCommand', ...] = ()
+    commands: tuple[ProductDomainCommand, ...] = ()
 
 @dataclass(frozen=True, slots=True)
 class ProductDomainCommand:
@@ -549,9 +553,10 @@ class ProductTurnPreparer:
                     RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
                     ('capability-context:tool-runtime-unavailable',),
                 )
+            from llm.model_info import resolve as resolve_model_info
+
             from deskpet.agent.attachment_budget import collect_attachment_budget
             from deskpet.tools.capabilities import ToolEligibilityContext
-            from llm.model_info import resolve as resolve_model_info
             eligibility = ToolEligibilityContext(
                 session_id=turn.session_id,
                 request_id=str(turn.request_id or ''),

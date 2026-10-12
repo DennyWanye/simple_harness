@@ -7,9 +7,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from test_atomic_child_launch import InjectedFault, raise_at
-from test_ticket_generation import claim_child, create_root, issue_ticket
-
 from simple_harness.contracts import RunId
 from simple_harness.execution.contracts.children import ChildSignalState
 from simple_harness.execution.fences import RunFenceLease
@@ -20,6 +17,8 @@ from simple_harness.execution.uow import (
     RunState,
     UnitOfWorkConflict,
 )
+from test_atomic_child_launch import InjectedFault, raise_at
+from test_ticket_generation import claim_child, create_root, issue_ticket
 
 TERMINAL_POINTS = tuple(
     f"child_terminal.{write}.{side}_write"

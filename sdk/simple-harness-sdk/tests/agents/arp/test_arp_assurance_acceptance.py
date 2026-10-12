@@ -18,17 +18,19 @@ from pathlib import Path
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import activation_of, import_skill, md_bundle, trial_command
-
-from simple_harness.agents.arp.assurance_acceptance import ASSURANCE_1_1, AssuranceSkillAcceptance, evaluation_mission_key
+from simple_harness.agents.arp.assurance_acceptance import (
+    ASSURANCE_1_1,
+    AssuranceSkillAcceptance,
+    evaluation_mission_key,
+)
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
+from skill_fixture import activation_of, import_skill, md_bundle, trial_command
 
 SDK_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(SDK_ROOT / "tests/orchestrator/full_target/assurance_exec"))
 
 from _review_world import ReviewScript, quick_waits  # noqa: E402
-
 from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, product_world  # noqa: E402
 
 

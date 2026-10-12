@@ -16,14 +16,6 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from ..assurance.codec import AssuranceError, canonical, decode, fields, fingerprint, integer, text
-from .assurance_recheck import (
-    EVIDENCE_STALE,
-    certificate_expired,
-    changed_items,
-    closeout_authorization,
-    live_usable_certificates,
-    stale_certificates,
-)
 from ..assurance.evidence import ReadItem, canonical_read_set
 from ..assurance.expiry import EXPIRY_EVENT, classify_expiry, validity_work_key
 from ..assurance.refs import AssuranceRef, Pin
@@ -34,7 +26,20 @@ from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import WorkClaim, WorkTarget, atomic
 from ..storage.htn_store import HtnStore
 from ..storage.store import _event_from_row
-from .assurance_final_writer import closeout_document, notification_body, notification_work_target, recorded_judgment
+from .assurance_final_writer import (
+    closeout_document,
+    notification_body,
+    notification_work_target,
+    recorded_judgment,
+)
+from .assurance_recheck import (
+    EVIDENCE_STALE,
+    certificate_expired,
+    changed_items,
+    closeout_authorization,
+    live_usable_certificates,
+    stale_certificates,
+)
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 #: 收尾原因：有资料变更还没问完规划器。

@@ -4,7 +4,6 @@ import hashlib
 import json
 
 import pytest
-
 from deskpet.workflows import WorkflowContext
 from deskpet.workflows.adapters.deep_research_v6_semantic_runtime import (
     DeepResearchV6SemanticRuntime,
@@ -44,7 +43,6 @@ from deskpet.workflows.definitions.v6.deep_research import DEEP_RESEARCH_V6, ini
 from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
 from deskpet.workflows.native import InMemoryNativeCheckpointStore
 from deskpet.workflows.store import RegisteredBlobStore
-
 
 QUESTION = "深入调研：2024年中国总人口和出生人口分别是多少？优先国家统计局。"
 SOURCE_URL = "https://www.stats.gov.cn/runtime.html"

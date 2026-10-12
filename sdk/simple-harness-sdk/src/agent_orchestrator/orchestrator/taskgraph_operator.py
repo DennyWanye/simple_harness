@@ -8,7 +8,13 @@ from typing import Any
 
 from ..contracts.models import Event, sha256_hex
 from ..governance.permissions import Principal
-from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1, _integer, _text
+from ..graph.notification_contracts import (
+    FollowupCauseRef,
+    FollowupKind,
+    FollowupV1,
+    _integer,
+    _text,
+)
 from ..planning.htn.grounding import derive_id
 from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore

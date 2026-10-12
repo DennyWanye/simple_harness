@@ -11,7 +11,6 @@ planning.  Review replies and Worker claims stay strict (not decoded here).
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.planning.unknown_fields import decode_dropping_unknown
 

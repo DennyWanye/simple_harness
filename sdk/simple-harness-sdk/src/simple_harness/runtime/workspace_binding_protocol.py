@@ -292,13 +292,13 @@ def _verify_proposal_fields(record: object, proposal: WorkspaceBindingProposal, 
     if not isinstance(proposal, WorkspaceBindingProposal):
         raise TypeError("proposal must use WorkspaceBindingProposal")
     exact = (
-        (getattr(record, "proposal_id"), proposal.proposal_id),
-        (getattr(record, "proposal_hash"), proposal.proposal_hash),
-        (getattr(record, "run_id"), proposal.run_id),
-        (getattr(record, "subject"), proposal.subject),
-        (getattr(record, "task_scope_id"), proposal.task_scope_id),
-        (getattr(record, "root"), proposal.root),
-        (getattr(record, "base_binding_set_revision"), proposal.base_binding_set_revision),
+        (record.proposal_id, proposal.proposal_id),
+        (record.proposal_hash, proposal.proposal_hash),
+        (record.run_id, proposal.run_id),
+        (record.subject, proposal.subject),
+        (record.task_scope_id, proposal.task_scope_id),
+        (record.root, proposal.root),
+        (record.base_binding_set_revision, proposal.base_binding_set_revision),
     )
     if any(left != right for left, right in exact):
         raise ValueError(f"{name} differs from proposal")

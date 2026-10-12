@@ -25,6 +25,8 @@ _STEP07 = Path(__file__).resolve().parent.parent / "step07"
 if str(_STEP07) not in sys.path:
     sys.path.insert(0, str(_STEP07))
 
+from agent_orchestrator.runtime.actions import ActionExecutor
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from helpers_step07 import (
     ALICE,
     ENABLED,
@@ -34,9 +36,6 @@ from helpers_step07 import (
     run_until,
     until_pending,
 )
-
-from agent_orchestrator.runtime.actions import ActionExecutor
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 
 @pytest.fixture(autouse=True)

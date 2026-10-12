@@ -16,18 +16,24 @@ from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
-from arp_fixture import HASH, ExactWordTokenizer, RecordingAuthorization, activation_receipt, meter_binding, standalone_profile
-from provider_fixture import ScriptedProvider
-
 from agent_orchestrator.runtime.assembly import OrchestratorConfig, assemble_orchestrator_runtime
 from agent_orchestrator.runtime.model_router import RuntimeProfile as PoolProfile
 from agent_orchestrator.runtime.native_plane import NativePlaneAssembly, intent_caller
+from arp_fixture import (
+    HASH,
+    ExactWordTokenizer,
+    RecordingAuthorization,
+    activation_receipt,
+    meter_binding,
+    standalone_profile,
+)
+from provider_fixture import ScriptedProvider
 from simple_harness.agents import AgentConfig
-from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.arp import store
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ArpPorts, bootstrap_root
+from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.ports import AllowAllAuthorization
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")

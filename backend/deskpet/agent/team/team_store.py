@@ -46,9 +46,10 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -86,13 +87,13 @@ class TeamTask:
     description: str
     status: str  # "pending" | "claimed" | "in_progress" | "done" | "failed"
     created_at: float
-    claimed_by: Optional[str] = None
-    result: Optional[str] = None
-    claimed_at: Optional[float] = None
-    done_at: Optional[float] = None
+    claimed_by: str | None = None
+    result: str | None = None
+    claimed_at: float | None = None
+    done_at: float | None = None
     claim_epoch: int = 0
-    claimed_pending_run: Optional[str] = None
-    lease_expires_at: Optional[float] = None
+    claimed_pending_run: str | None = None
+    lease_expires_at: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,8 +145,8 @@ class TeamPermissionRequest:
     teammate_id: str
     action: str
     created_at: float
-    granted: Optional[bool] = None  # None = undecided
-    decided_at: Optional[float] = None
+    granted: bool | None = None  # None = undecided
+    decided_at: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -423,7 +424,7 @@ class TeamStore:
 
     async def claim_task(
         self, team_id: str, teammate_id: str
-    ) -> Optional[TeamTask]:
+    ) -> TeamTask | None:
         """Atomically claim the oldest pending task. None if pool empty.
 
         Concurrency: SQLite's UPDATE...RETURNING is transactional under
@@ -725,7 +726,7 @@ class TeamStore:
         team_id: str,
         task_id: str,
         status: str,
-        result: Optional[str] = None,
+        result: str | None = None,
     ) -> bool:
         """Update a task's status (+ optional result). Returns True on
         success, False if task missing or status invalid."""
@@ -752,7 +753,7 @@ class TeamStore:
         return changed > 0
 
     async def list_tasks(
-        self, team_id: str, status: Optional[str] = None
+        self, team_id: str, status: str | None = None
     ) -> list[TeamTask]:
         """Snapshot of tasks (optionally filtered by status)."""
         await self._ensure_schema(team_id)
@@ -782,7 +783,7 @@ class TeamStore:
             return []
         return [self._row_to_task(r) for r in rows]
 
-    async def get_task(self, team_id: str, task_id: str) -> Optional[TeamTask]:
+    async def get_task(self, team_id: str, task_id: str) -> TeamTask | None:
         """Read one task by id."""
         await self._ensure_schema(team_id)
         try:
@@ -929,7 +930,7 @@ class TeamStore:
 
     async def get_permission(
         self, team_id: str, req_id: int
-    ) -> Optional[TeamPermissionRequest]:
+    ) -> TeamPermissionRequest | None:
         """Read one permission request (any state)."""
         await self._ensure_schema(team_id)
         try:

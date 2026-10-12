@@ -19,9 +19,6 @@ import asyncio
 import json
 
 import pytest
-from h1i_seed import run_until
-from product_assembly import unstarted
-
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.governance.domains import (
     CODE_PROFILE,
@@ -29,9 +26,11 @@ from agent_orchestrator.governance.domains import (
     DomainProfileV1,
 )
 from agent_orchestrator.orchestrator.commit_service import CommitRejected
+from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from h1i_seed import run_until
+from product_assembly import unstarted
 
 
 def _create(world, key: str) -> str:

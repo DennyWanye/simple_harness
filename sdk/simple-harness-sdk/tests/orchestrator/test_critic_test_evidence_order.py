@@ -9,9 +9,8 @@ from __future__ import annotations
 import asyncio
 from hashlib import sha256
 
-import pytest
-
 import agent_orchestrator.verification.verifier_router as router_module
+import pytest
 from agent_orchestrator.artifacts.workspace import Workspace
 from agent_orchestrator.contracts import (
     Artifact,

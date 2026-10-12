@@ -12,9 +12,10 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from .package_limits import (
     CapabilityPackageValidationError,

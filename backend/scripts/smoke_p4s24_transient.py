@@ -22,7 +22,6 @@ import sys
 
 import websockets
 
-
 PROMPTS = [
     "用一句话告诉我现在几点。",
     "今天星期几？",

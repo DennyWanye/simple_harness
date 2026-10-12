@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_compiler import (
     compile_official_exact_fact,
     compile_research_spec,

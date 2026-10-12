@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 
 from deskpet.execution.contracts import JsonValue
 from deskpet.execution.failure_reports import TaskFailureReport
-
 
 AttemptStatus = Literal[
     "running",
@@ -97,7 +97,7 @@ class AttemptFailureSet:
     @classmethod
     def from_reports(
         cls, attempt: AttemptRecord, reports: Sequence[TaskFailureReport]
-    ) -> "AttemptFailureSet":
+    ) -> AttemptFailureSet:
         ordered = tuple(
             sorted(
                 reports,

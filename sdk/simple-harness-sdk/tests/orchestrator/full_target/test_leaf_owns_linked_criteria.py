@@ -16,14 +16,13 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_read_only_leaf_policy import _binding  # noqa: E402
-
 from agent_orchestrator.contracts.htn import SideEffectKind  # noqa: E402
 from agent_orchestrator.orchestrator.accepted_outputs import owned_criteria  # noqa: E402
 from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
     occurrence_criteria,
     scoped_goal,
 )
+from test_read_only_leaf_policy import _binding  # noqa: E402
 
 
 def _leaf(refs):
@@ -120,12 +119,17 @@ def test_a_linked_leaf_goal_names_only_the_files_other_steps_own():
     **Mutation**: drop ``others=`` at the ``scoped_goal`` call in ``occurrence_task`` → red."""
     import dataclasses
 
-    from test_read_only_leaf_policy import DEPLOYED
-
     from agent_orchestrator.contracts import Budget, Mission
-    from agent_orchestrator.contracts.htn import ObligationId, OccurrenceId, OccurrenceSpec, TaskForm, TaskRef
+    from agent_orchestrator.contracts.htn import (
+        ObligationId,
+        OccurrenceId,
+        OccurrenceSpec,
+        TaskForm,
+        TaskRef,
+    )
     from agent_orchestrator.contracts.models import MissionStatus
     from agent_orchestrator.orchestrator.occurrence_tasks import occurrence_task
+    from test_read_only_leaf_policy import DEPLOYED
 
     def item(ref, statement):
         return SimpleNamespace(criterion_id=ref, statement=statement,

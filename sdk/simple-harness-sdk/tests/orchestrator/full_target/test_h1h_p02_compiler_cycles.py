@@ -9,12 +9,6 @@ from typing import Any
 
 import pytest
 import test_projection_integrity as projection
-from test_h1h_preview_compiler_refusal import (
-    _capture_production_preview_inputs,
-    _cycle_network,
-    _with_network,
-)
-
 from agent_orchestrator.contracts.htn import (
     MethodInstanceId,
     Requiredness,
@@ -22,6 +16,11 @@ from agent_orchestrator.contracts.htn import (
     TaskForm,
 )
 from agent_orchestrator.planning.plan_preview import PreviewUnavailable
+from test_h1h_preview_compiler_refusal import (
+    _capture_production_preview_inputs,
+    _cycle_network,
+    _with_network,
+)
 
 
 def _snapshot(root: Path) -> tuple[tuple[str, str], ...]:

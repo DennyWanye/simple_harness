@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import re
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
-
 
 _DEFAULT_KEYS = frozenset(
     {
@@ -40,7 +39,7 @@ class TraceRedactor:
     )
 
     @classmethod
-    def from_file(cls, path: str) -> "TraceRedactor":
+    def from_file(cls, path: str) -> TraceRedactor:
         """Load the shared rules; malformed input deliberately fails closed."""
 
         try:

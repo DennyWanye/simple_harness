@@ -18,10 +18,9 @@ for extra in (HERE, HERE / "fixtures" / "htn"):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
 
-from htn_world import Env, method, param, step  # noqa: E402
-
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.planning.htn.registry import TaskTypeSpec  # noqa: E402
+from htn_world import Env, method, param, step  # noqa: E402
 
 USER = ("c-user-1", "c-user-2")
 

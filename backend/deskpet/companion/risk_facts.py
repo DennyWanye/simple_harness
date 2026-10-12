@@ -6,8 +6,9 @@ import hashlib
 import io
 import json
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import yaml
 

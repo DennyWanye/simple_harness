@@ -4,7 +4,6 @@ import hashlib
 import time
 
 import pytest
-
 from deskpet.execution.dispatch import (
     PreparedToolDispatch,
     PreparedToolDispatchAdapter,

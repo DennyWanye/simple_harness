@@ -23,9 +23,6 @@ from dataclasses import replace
 from hashlib import sha256
 
 import pytest
-from fixtures_provider import MODEL, RoleScriptedProvider
-from test_g_workspace_paging import PATH, _message, _read, _wire
-
 from agent_orchestrator.deployment.native_pools import NativePools
 from agent_orchestrator.runtime.assembly import (
     OrchestratorConfig,
@@ -40,11 +37,13 @@ from agent_orchestrator.runtime.tool_gateway import (
 from agent_orchestrator.testing.product_world import DEFAULT_TOOLS, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, worker_reply
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from fixtures_provider import MODEL, RoleScriptedProvider
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import (
     UpperBoundTokenizer,
     count_message,
 )
+from test_g_workspace_paging import PATH, _message, _read, _wire
 
 TEXT = ("# 完整来源\r\n" + "条件不变😀 abcdefghijklmnop\r\n" * 440
         + "| 结论 | 限制 |\r\n| --- | --- |\r\n| 可用 | 不允许对外发布 |\r\n")
@@ -259,11 +258,10 @@ def test_actual_orchestrator_freezes_context_before_dispatch_and_refuses_substit
     full_target = Path(__file__).resolve().parents[1] / "full_target"
     if str(full_target) not in sys.path:
         sys.path.insert(0, str(full_target))
-    from h1i_seed import CONFIG, seeded
-
     from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
     from agent_orchestrator.contracts import ContractError
     from agent_orchestrator.testing.product_world import product_world
+    from h1i_seed import CONFIG, seeded
 
     async def run():
         async with seeded(tmp_path, key="context-freeze") as (orch, mission, _, _, _, product):

@@ -7,7 +7,6 @@ import asyncio
 from collections.abc import Mapping
 
 import pytest
-
 from simple_harness.contracts import JsonValue, RequestId, RunId
 from simple_harness.providers import CancelToken, ProviderToolSpec
 from simple_harness.runtime.drivers.react_loop import (

@@ -4,7 +4,6 @@ import sqlite3
 from contextlib import contextmanager
 
 import pytest
-
 from deskpet.companion.action_decisions import (
     CompanionActionDecisionRejected,
     CompanionActionDecisionService,

@@ -8,22 +8,21 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.builder import (
-    CapabilityBuildError,
     CapabilityBuilderHost,
+    CapabilityBuildError,
 )
-from deskpet.companion.build_admission import GrowthCandidateBuildPermitV1
 from deskpet.capabilities.contracts import CatalogStamp, fingerprint_json
 from deskpet.capabilities.manifest import PackEnvironment
 from deskpet.capabilities.platform import CapabilityPlatform
 from deskpet.capabilities.store import CapabilityStore
+from deskpet.companion.build_admission import GrowthCandidateBuildPermitV1
+from deskpet.execution.contracts import RunContext
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.contracts import PreparedRunContextV1
-from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
-from deskpet.execution.contracts import RunContext
 
 
 def _environment() -> PackEnvironment:

@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 
 from arp_fixture import build, trusted_caller
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 

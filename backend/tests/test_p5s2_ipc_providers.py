@@ -38,13 +38,11 @@ from typing import Any
 import anyio
 import pytest
 import pytest_asyncio
+from deskpet.memory.session_db import SessionDB
 from fastapi.testclient import TestClient
-
-from main import app, SHARED_SECRET, service_context, _control_connections
 from llm import provider_registry as pr_mod
 from llm.provider_registry import LLMProviderRegistry
-from deskpet.memory.session_db import SessionDB
-
+from main import SHARED_SECRET, _control_connections, app, service_context
 
 # ---------- helpers --------------------------------------------------------
 

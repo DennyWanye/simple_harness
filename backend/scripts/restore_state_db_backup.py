@@ -7,11 +7,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import sqlite3
 import sys
 import time
+from pathlib import Path
 
 
 class RestoreRefused(RuntimeError):

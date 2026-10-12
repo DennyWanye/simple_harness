@@ -8,7 +8,6 @@ import zipfile
 
 import httpx
 import pytest
-
 from deskpet.capabilities.skill_source import (
     BoundedGitHubSkillSource,
     GitHubSkillSourceLimits,

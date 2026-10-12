@@ -319,8 +319,8 @@ class ProviderBudgetCommitAdapter:
         return intent, reservation
 
     def _accepted_operation_review(self, intent, task) -> bool:
-        from ..storage.operation_intent_store import OperationIntentStore
         from ..storage.operation_completion_store import OperationCompletionStore
+        from ..storage.operation_intent_store import OperationIntentStore
 
         if intent.kind != "plan" or task.status is not TaskStatus.COMPLETED:
             return False

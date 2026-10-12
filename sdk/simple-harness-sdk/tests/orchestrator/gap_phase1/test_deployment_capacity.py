@@ -4,11 +4,10 @@ import asyncio
 import os
 
 import pytest
-from test_meter_terminal_admission import ScriptedPhysicalProvider, make_meter, request
-
 from simple_harness.execution.deployment_capacity import CapacityProvider, DeploymentCapacity
 from simple_harness.execution.shared_capacity import CapacityLedger
 from simple_harness.providers import CancelToken, ProviderUsage
+from test_meter_terminal_admission import ScriptedPhysicalProvider, make_meter, request
 
 
 @pytest.mark.anyio

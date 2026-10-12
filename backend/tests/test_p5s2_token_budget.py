@@ -16,17 +16,15 @@ Contract:
 from __future__ import annotations
 
 import pytest
-
 from agent.token_budget import (
+    DEFAULT_BLOCK_PCT,
+    DEFAULT_WARN_PCT,
     BudgetCheck,
     BudgetCheckResult,
+    check_budget,
     estimate_tokens,
     get_context_window,
-    check_budget,
-    DEFAULT_WARN_PCT,
-    DEFAULT_BLOCK_PCT,
 )
-
 
 # ---------- estimate_tokens ----------
 

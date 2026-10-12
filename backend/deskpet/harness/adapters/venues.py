@@ -13,11 +13,6 @@ from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
-from deskpet.execution.contracts import AdmissionSpec, ActorContext, DecisionSignal as DurableDecisionSignal, ProviderLaunchSnapshot, RunEvent, RunNotFound, RunRef, fingerprint_json
-from deskpet.execution.run_block_signals import (
-    PreflightBlocked,
-    RootBlockReasonV1,
-)
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.run_presenter import (
     CanonicalRunEventPresentationAdapter,
@@ -29,13 +24,27 @@ from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
     TurnInput,
 )
-from deskpet.harness.contracts import HostExtensionRefV1, PreparedRunContextV1
-from deskpet.harness.kernel import HostContext, RunKernel, RunRequest, root_run_identity
-from deskpet.harness.ports import DecisionSignal, UserContinuationSignal
+from deskpet.execution.contracts import (
+    ActorContext,
+    AdmissionSpec,
+    ProviderLaunchSnapshot,
+    RunEvent,
+    RunNotFound,
+    RunRef,
+    fingerprint_json,
+)
+from deskpet.execution.contracts import DecisionSignal as DurableDecisionSignal
+from deskpet.execution.run_block_signals import (
+    PreflightBlocked,
+    RootBlockReasonV1,
+)
 from deskpet.harness.adapters.product_turn_open import (
     ProductTurnIdentityResolver,
     ProductTurnPreparationService,
 )
+from deskpet.harness.contracts import HostExtensionRefV1, PreparedRunContextV1
+from deskpet.harness.kernel import HostContext, RunKernel, RunRequest, root_run_identity
+from deskpet.harness.ports import DecisionSignal, UserContinuationSignal
 
 
 def _enrich_companion_selection_exact_tools(
@@ -113,7 +122,7 @@ def _companion_catalog_lease_entries(
 class VenueRunHandle:
     run_id: str
     events: AsyncIterator[RunEvent]
-    _client: "KernelRunClient"
+    _client: KernelRunClient
     _host: HostContext
     _session_id: str
 

@@ -21,7 +21,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.human_memory_service import (

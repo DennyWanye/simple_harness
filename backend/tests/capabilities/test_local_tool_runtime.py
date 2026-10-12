@@ -6,7 +6,6 @@ from pathlib import Path
 
 import psutil
 import pytest
-
 from deskpet.capabilities.local_runtime import LocalRuntimeRequest, LocalToolRuntime
 
 WORKER = Path(__file__).parent / "fixtures" / "json_tool_worker.py"

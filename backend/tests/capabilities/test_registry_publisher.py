@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.hub import CapabilityHub, ToolRegistryCatalogSource
 from deskpet.capabilities.manager import CapabilityPackManager

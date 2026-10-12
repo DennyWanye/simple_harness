@@ -14,7 +14,6 @@ import zipfile
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin

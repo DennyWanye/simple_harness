@@ -28,6 +28,13 @@ import logging
 
 import httpx
 import pytest
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    _parse_failure_diagnostic,
+    _ProductOpenAICompatibleProvider,
+    _repaired_tool_arguments,
+    _ToolArgumentsProtocolError,
+)
 from simple_harness.contracts.identity import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import (
@@ -35,14 +42,6 @@ from simple_harness.providers import (
     ProviderProtocolError,
     ProviderRequest,
     Secret,
-)
-
-from deskpet.sdk_adapters.provider import (
-    ProductProviderAdapter,
-    _ProductOpenAICompatibleProvider,
-    _parse_failure_diagnostic,
-    _repaired_tool_arguments,
-    _ToolArgumentsProtocolError,
 )
 from tests.sdk_adapters.test_product_host_ports import Registry
 

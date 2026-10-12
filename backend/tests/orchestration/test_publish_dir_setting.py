@@ -17,7 +17,6 @@ import tomllib
 from pathlib import Path
 
 import pytest
-
 from deskpet.orchestration.publish_settings import (
     PublishDirRefused,
     set_publish_dir,

@@ -19,7 +19,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from llm.model_info import (
     BUILTIN,
     ModelContextInfo,

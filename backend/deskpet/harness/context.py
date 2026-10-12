@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import time
-from typing import Iterable
+from collections.abc import Iterable
+from pathlib import Path
 
 from deskpet.execution.contracts import (
     ActorContext,

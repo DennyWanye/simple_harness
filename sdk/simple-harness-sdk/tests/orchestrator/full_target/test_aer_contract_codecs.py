@@ -13,16 +13,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from full_target_world import (
-    FIXTURE_ROOT,
-    HASH_A,
-    HASH_B,
-    HASH_C,
-    load_aer_fixture,
-    load_aer_fixture_index,
-    tref,
-)
-
 from agent_orchestrator.contracts.evidence_state import (
     Availability,
     TruthValue,
@@ -73,6 +63,15 @@ from agent_orchestrator.contracts.semantic_base import (
     Provenance,
     TypedRef,
     TypedRefKind,
+)
+from full_target_world import (
+    FIXTURE_ROOT,
+    HASH_A,
+    HASH_B,
+    HASH_C,
+    load_aer_fixture,
+    load_aer_fixture_index,
+    tref,
 )
 
 CODECS: dict[str, Any] = {

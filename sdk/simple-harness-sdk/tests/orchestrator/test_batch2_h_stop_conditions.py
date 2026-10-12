@@ -19,8 +19,6 @@ for _path in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from production_fixture import enabled_world  # noqa: E402
-
 import agent_orchestrator.orchestrator.event_handler as event_handler  # noqa: E402
 from agent_orchestrator.api.missions import MissionRequestError, spec_from_request  # noqa: E402
 from agent_orchestrator.contracts.models import ContractError  # noqa: E402
@@ -38,6 +36,7 @@ from agent_orchestrator.orchestrator.planning_repair_requests import (  # noqa: 
     ADDRESSED,
     REQUESTED,
 )
+from production_fixture import enabled_world  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.contracts import CapabilityBinding
 from deskpet.capabilities.manager import (
     CapabilityManagerError,
@@ -28,6 +27,7 @@ from deskpet.capabilities.runtime_prepare import (
     RuntimeHealthOutcome,
     RuntimeStartedAck,
 )
+from deskpet.capabilities.source import PackSourceRequest
 from deskpet.companion.activation import (
     ActivationDispatchError,
     CapabilityMutationAuthorization,
@@ -37,12 +37,11 @@ from deskpet.companion.activation_platform import (
     CompanionCapabilityMutationPlatform,
     CompanionStoreActivationDecisionProofResolver,
     CompanionStoreLifecycleCandidateSourceResolver,
-    TrustedLifecycleCandidateSourceV1,
     TrustedActivationDecisionProofV1,
+    TrustedLifecycleCandidateSourceV1,
 )
 from deskpet.companion.contracts import CandidateMode, MutationAction
 from deskpet.companion.store import canonical_hash
-from deskpet.capabilities.source import PackSourceRequest
 
 
 def _authorization(

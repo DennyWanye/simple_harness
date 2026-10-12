@@ -28,12 +28,10 @@ import json
 
 import httpx
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent, ToolCall
 from agent.tool_use_shim import _raw_to_response
 from llm.types import ChatResponse, ChatUsage
 from providers.openai_compatible import OpenAICompatibleProvider
-
 
 # ─────────────── connect timeout (Fix A) ───────────────
 

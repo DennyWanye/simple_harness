@@ -8,7 +8,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from agent_orchestrator.storage.store import CodedStoreConflict, CodedStoreError, StoreConflict, StoreError
+from agent_orchestrator.storage.store import (
+    CodedStoreConflict,
+    CodedStoreError,
+    StoreConflict,
+    StoreError,
+)
 
 OPERATOR_REFUSALS = (
     "TASKGRAPH_CONVERGENCE_NOT_QUIESCENT",

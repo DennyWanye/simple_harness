@@ -15,12 +15,10 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.tools.code_tools import register_code_tools
 from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
 from deskpet.tools.registry import ToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # SessionDB v11 — schema migration + replace/get round-trip

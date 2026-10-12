@@ -25,8 +25,9 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("deskpet.agent.supervisor")
 
@@ -221,11 +222,11 @@ class SupervisorAgent:
         *,
         provider: Any,                          # OpenAI-compatible provider
         snapshot_builder: SnapshotBuilder,      # async (sid) -> snapshot dict
-        nudge_queue_push: Optional[NudgeQueuePush] = None,
-        broadcast: Optional[AlertBroadcast] = None,
-        audit: Optional[HintAuditFn] = None,
-        auto_mode_check: Optional[Callable[[], bool]] = None,
-        auto_followup: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        nudge_queue_push: NudgeQueuePush | None = None,
+        broadcast: AlertBroadcast | None = None,
+        audit: HintAuditFn | None = None,
+        auto_mode_check: Callable[[], bool] | None = None,
+        auto_followup: Callable[[str, str], Awaitable[None]] | None = None,
         timeout_seconds: float = 120.0,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -248,7 +249,7 @@ class SupervisorAgent:
         self._timeout = float(timeout_seconds)
         self._clock = clock
 
-    async def diagnose(self, sid: str, snapshot: Optional[dict[str, Any]] = None) -> SupervisorAction:
+    async def diagnose(self, sid: str, snapshot: dict[str, Any] | None = None) -> SupervisorAction:
         """Build snapshot (if not provided), call LLM, dispatch outcome.
 
         Returns the SupervisorAction even when action=wait (caller may
@@ -343,7 +344,7 @@ class SupervisorAgent:
                 ),
                 timeout=self._timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("supervisor_llm_timeout after=%.1fs sid=%s", self._timeout, snapshot.get("session_id"))
             # P5-S1 D fix: do NOT silently fall back to wait. The user
             # sees a stuck session and supervisor also failed; tell the

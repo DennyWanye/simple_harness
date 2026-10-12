@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import inspect
 import copy
+import inspect
 from collections.abc import Mapping
 from dataclasses import is_dataclass, replace
 from typing import Any
 
 from .models import SpanKind, SpanStatus
 from .store import TraceStore
-
 
 _KINDS = {
     "llm": SpanKind.LLM,
@@ -81,14 +80,14 @@ def instrument_ports(
             return call
 
         if is_dataclass(port) and name == "llm" and hasattr(port, "complete"):
-            changes = {"complete": traced_callable("complete", getattr(port, "complete"))}
+            changes = {"complete": traced_callable("complete", port.complete)}
             for field_name in ("rerank", "semantic_score"):
                 value = getattr(port, field_name, None)
                 if callable(value):
                     changes[field_name] = traced_callable(field_name, value)
             instrumented[name] = replace(port, **changes)
         elif is_dataclass(port) and name == "search" and hasattr(port, "search_call"):
-            changes = {"search_call": traced_callable("search", getattr(port, "search_call"))}
+            changes = {"search_call": traced_callable("search", port.search_call)}
             for field_name in ("direct_call", "reset_runtime"):
                 value = getattr(port, field_name, None)
                 if callable(value):

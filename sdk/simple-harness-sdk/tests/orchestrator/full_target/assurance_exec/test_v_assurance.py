@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import NamedTuple
 
 import pytest
-
 from agent_orchestrator.assurance.checks import Grade
 from agent_orchestrator.assurance.codec import AssuranceError, fingerprint
 from agent_orchestrator.assurance.grounding import compute_grounded_support

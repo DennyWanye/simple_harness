@@ -35,12 +35,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.agent_loop import AgentLoop, FinalEvent, ToolCallEvent, ToolResultEvent
-from llm.types import ChatResponse, ChatUsage, ToolCall
-
-from deskpet.tools.registry import ToolRegistry
-from deskpet.tools.os_tools import register_os_tools
 from deskpet.permissions.gate import PermissionGate, PermissionGateConfig
+from deskpet.tools.os_tools import register_os_tools
+from deskpet.tools.registry import ToolRegistry
 from deskpet.types.skill_platform import PermissionResponse
+from llm.types import ChatResponse, ChatUsage, ToolCall
 
 
 class _ScriptedLLM:

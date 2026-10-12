@@ -22,10 +22,9 @@ from typing import Any
 from agent_orchestrator.assurance.codec import decode
 from agent_orchestrator.orchestrator.assurance_consumers import AssuranceValidityConsumer
 from agent_orchestrator.orchestrator.assurance_recheck import changed_items
-from agent_orchestrator.testing.fixtures import package_of, role_of
+from agent_orchestrator.testing.fixtures import lift_immutable_guards, package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
-from agent_orchestrator.testing.fixtures import lift_immutable_guards
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "taskgraph_exec"))
 from production_fixture import CHAIN_CRITERIA, chain_planner  # noqa: E402

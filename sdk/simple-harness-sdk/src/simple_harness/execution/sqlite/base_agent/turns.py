@@ -544,7 +544,7 @@ def finalize_turn(
                 }
             ).encode()
         ).hexdigest()
-        claim_id = getattr(continuation_claim, "continuation_id")
+        claim_id = continuation_claim.continuation_id
         connection.execute(
             "INSERT INTO continuation_progress_receipts("
             "receipt_id,continuation_id,run_id,owner_id,runtime_lease_epoch,"
@@ -553,9 +553,9 @@ def finalize_turn(
                 receipt_id,
                 claim_id,
                 run_id,
-                getattr(execution_lease, "owner_id"),
-                getattr(execution_lease, "epoch"),
-                getattr(continuation_claim, "claim_epoch"),
+                execution_lease.owner_id,
+                execution_lease.epoch,
+                continuation_claim.claim_epoch,
                 outcome_hash,
                 now,
             ),
@@ -569,10 +569,10 @@ def finalize_turn(
                 now,
                 receipt_id,
                 claim_id,
-                getattr(execution_lease, "owner_id"),
-                getattr(execution_lease, "epoch"),
-                getattr(continuation_claim, "claim_epoch"),
-                getattr(continuation_claim, "version"),
+                execution_lease.owner_id,
+                execution_lease.epoch,
+                continuation_claim.claim_epoch,
+                continuation_claim.version,
             ),
         ).rowcount
         if changed != 1:

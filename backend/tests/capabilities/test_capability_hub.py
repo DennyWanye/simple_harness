@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from deskpet.capabilities.contracts import (
     CapabilityBinding,
     CapabilityCatalogEntry,
@@ -27,8 +26,8 @@ from deskpet.capabilities.store import (
     CapabilityVersionRecord,
     initialize_capability_database,
 )
-from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.build_identity import ExecutionBuildIdentity
+from deskpet.tools.registry import ToolRegistry
 
 
 def _hash(value: str) -> str:

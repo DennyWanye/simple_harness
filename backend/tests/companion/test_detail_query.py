@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 
 import pytest
-
 from deskpet.capabilities.catalog_gate import CapabilityCatalogGate
 from deskpet.capabilities.contracts import (
     EMPTY_OWNER_BINDING_SET_STAMP,

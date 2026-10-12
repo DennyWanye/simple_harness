@@ -26,14 +26,13 @@ for _test_dir in (_FULL_TARGET, _STEP07):
     if str(_test_dir) not in sys.path:
         sys.path.insert(0, str(_test_dir))
 
-from h1i_seed import events as _events  # noqa: E402
-from h1i_seed import plan_reply, reviewed  # noqa: E402
-from helpers_step07 import operation_world, until_pending  # noqa: E402
-
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from h1i_seed import events as _events  # noqa: E402
+from h1i_seed import plan_reply, reviewed  # noqa: E402
+from helpers_step07 import operation_world, until_pending  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
 from agent_orchestrator.runtime.planning_operations import SourceUnavailable
 from simple_harness.contracts import canonical_json

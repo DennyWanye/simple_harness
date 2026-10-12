@@ -18,7 +18,6 @@ import asyncio
 import inspect
 
 import pytest
-
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.contracts.error_table import (
     RECOVERY_ERRORS,
@@ -99,9 +98,8 @@ def test_the_stall_request_hands_the_wait_for_facts_to_the_planner_once():
 # 结论、规划器被问到时答"不改"）；等待图用 monkeypatch 换成注入的图（``event_handler`` 在函数里导入
 # ``collect_wait_facts``，替换模块属性即生效）。只加用例，不改产品代码。
 
-from test_stall_asks_planner_first import _stall_requests, stalled  # noqa: E402
-
 import agent_orchestrator.scheduling.wait_for as wait_for_module  # noqa: E402
+from test_stall_asks_planner_first import _stall_requests, stalled  # noqa: E402
 
 
 @pytest.fixture

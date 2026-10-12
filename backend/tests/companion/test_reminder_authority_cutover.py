@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
 import pytest
-
 from deskpet.companion.reminder_tools import (
     build_companion_reminder_specs,
     cutover_companion_reminder_tools,

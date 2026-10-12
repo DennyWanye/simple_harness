@@ -18,8 +18,6 @@ for _path in (_FULL_TARGET, _FULL_TARGET / "taskgraph_exec"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
-
 import agent_orchestrator.orchestrator.event_handler as event_handler  # noqa: E402
 from agent_orchestrator.contracts.state_machines import MissionStatus  # noqa: E402
 from agent_orchestrator.observability.traces import (  # noqa: E402
@@ -29,6 +27,7 @@ from agent_orchestrator.observability.traces import (  # noqa: E402
 )
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import package_of, role_of  # noqa: E402
+from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 
 def _steps(world: Any) -> dict[str, Any]:

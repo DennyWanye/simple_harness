@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from provider_fixture import MODEL, ScriptedProvider
-
 from simple_harness.agents.arp.meter import MeterBinding, model_limits
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ArpPorts, TrustedCaller, bootstrap_root

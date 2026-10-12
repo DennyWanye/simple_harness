@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.brokered_planner import BrokeredEffectPlanner
 from deskpet.capabilities.effect_plan import EffectPlan, EffectPlanValidationError
 from deskpet.capabilities.input_views import (

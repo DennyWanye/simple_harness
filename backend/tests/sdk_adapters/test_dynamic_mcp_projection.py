@@ -6,9 +6,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, RequestId, RunId, thaw_json
-from simple_harness.tools import CancellationToken, ToolCall, ToolContext
-
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.tool_authority import (
     SdkRuntimeCapabilityBridgeAdapter,
@@ -20,6 +17,8 @@ from deskpet.sdk_adapters.tools import (
     extend_product_registry_with_mcp,
     filter_sdk_catalog_for_workspace,
 )
+from simple_harness import CallId, RequestId, RunId, thaw_json
+from simple_harness.tools import CancellationToken, ToolCall, ToolContext
 
 
 class _LegacyMcpRegistry:

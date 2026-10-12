@@ -430,7 +430,7 @@ def _run_browser_job(
             result=final if isinstance(final, str) else str(final),
             finished_at=time.time(),
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _set_job(
             job_id,
             status="error",

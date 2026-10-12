@@ -295,7 +295,7 @@ class OperationParametersV1(_Payload):
         }
 
     @classmethod
-    def from_json(cls, value: object, name: str = "parameters") -> "OperationParametersV1":
+    def from_json(cls, value: object, name: str = "parameters") -> OperationParametersV1:
         data = fields_of(
             decode_payload_json(value, name),
             name,
@@ -430,7 +430,7 @@ class OperationEffectContractV1(_Payload):
         }
 
     @classmethod
-    def from_json(cls, value: object, name: str = "effect_contract") -> "OperationEffectContractV1":
+    def from_json(cls, value: object, name: str = "effect_contract") -> OperationEffectContractV1:
         data = fields_of(
             decode_payload_json(value, name),
             name,
@@ -505,7 +505,7 @@ class OperationEffectContractV2(OperationEffectContractV1):
     @classmethod
     def from_json(
         cls, value: object, name: str = "effect_contract_v2"
-    ) -> "OperationEffectContractV2":
+    ) -> OperationEffectContractV2:
         data = fields_of(
             decode_payload_json(value, name),
             name,
@@ -672,7 +672,7 @@ class FrozenActionProposalV1(_Payload):
         }
 
     @classmethod
-    def from_json(cls, value: object, name: str = "action_proposal") -> "FrozenActionProposalV1":
+    def from_json(cls, value: object, name: str = "action_proposal") -> FrozenActionProposalV1:
         data = fields_of(
             decode_payload_json(value, name),
             name,
@@ -747,7 +747,7 @@ class FrozenActionProposalV2(FrozenActionProposalV1):
         }
 
     @classmethod
-    def from_json(cls, value: object, name: str = "action_proposal_v2") -> "FrozenActionProposalV2":
+    def from_json(cls, value: object, name: str = "action_proposal_v2") -> FrozenActionProposalV2:
         data = fields_of(
             decode_payload_json(value, name),
             name,
@@ -904,7 +904,7 @@ class ConnectorOperationProfileV1(_Payload):
     @classmethod
     def from_json(
         cls, value: object, name: str = "connector_profile"
-    ) -> "ConnectorOperationProfileV1":
+    ) -> ConnectorOperationProfileV1:
         data = fields_of(
             decode_payload_json(value, name),
             name,

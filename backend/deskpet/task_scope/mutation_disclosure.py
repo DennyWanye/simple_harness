@@ -8,11 +8,24 @@ from __future__ import annotations
 import hashlib
 import json
 
-from simple_harness import (EvidenceRef, EvidenceSourceKind, EvidenceReasonCode,
-    SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt, thaw_json)
-from simple_harness.execution.provider_invocations import provider_response_json, provider_response_from_json
+from simple_harness import (
+    EvidenceReasonCode,
+    EvidenceRef,
+    EvidenceSourceKind,
+    SanitizedEvidenceEnvelope,
+    SanitizedEvidenceReceipt,
+    thaw_json,
+)
+from simple_harness.execution.provider_invocations import (
+    provider_response_from_json,
+    provider_response_json,
+)
 
-from deskpet.execution.primary_dependencies import dependencies, read_run_dependencies, parse_dependencies
+from deskpet.execution.primary_dependencies import (
+    dependencies,
+    parse_dependencies,
+    read_run_dependencies,
+)
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -90,9 +103,9 @@ async def record_closure_result_tx(db, *, db_path, attempt_id, plan_id, response
 
 
 async def _producer(db, *, stack, decision, plan, receipt, subject, primary_ref):
-    from deskpet.sdk_adapters.task_scope_mutation import derive_plan_id
-    from deskpet.sdk_adapters.post_turn_invoker import _response_hash
     from deskpet.execution.semantic_closure import _closure_arguments
+    from deskpet.sdk_adapters.post_turn_invoker import _response_hash
+    from deskpet.sdk_adapters.task_scope_mutation import derive_plan_id
     if receipt.attempt_id is not None:
         rows = await _rows(db, "SELECT * FROM post_turn_invocation_attempts WHERE attempt_id=?", (receipt.attempt_id,))
         if len(rows) != 1:

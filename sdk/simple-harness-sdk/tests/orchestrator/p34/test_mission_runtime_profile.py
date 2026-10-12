@@ -20,8 +20,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from product_assembly import started
-
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.api.missions import MissionRequestError
 from agent_orchestrator.contracts import Budget, ContractError
@@ -35,6 +33,7 @@ from agent_orchestrator.orchestrator.commit_service import (
 from agent_orchestrator.storage.store import Store
 from agent_orchestrator.testing.product_world import TENANT
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from product_assembly import started
 
 SMALL = native_profile_id(262_144)
 LARGE = native_profile_id(524_288)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v6_assessment import (
     GenericAdmittedFactV1,
     derive_collection_item_id,
@@ -17,7 +16,6 @@ from deskpet.workflows.definitions.deep_research_v6_report import (
     CitationView,
     render_typed_report,
 )
-
 
 HEAD = "1" * 64
 POLICY = "2" * 64

@@ -8,9 +8,8 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-
-from deskpet.retrieval.contracts import EvidenceDocument, FetchRequest, SearchBudget
 from deskpet.retrieval.content_quality import quality_flags
+from deskpet.retrieval.contracts import EvidenceDocument, FetchRequest, SearchBudget
 from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
 
 

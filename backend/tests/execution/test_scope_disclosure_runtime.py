@@ -3,12 +3,13 @@ import asyncio
 import json
 import sqlite3
 from dataclasses import replace
+
 import pytest
-from simple_harness.providers import ProviderToolCall
-from deskpet.memory.human_memory_service import QueueTurnRequest, CreateTaskScopeRequest
-from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.execution.primary_dependencies import check_runtime_dependencies
-from tests.execution.test_primary_create_new_runtime import fixture, CreateProvider
+from deskpet.memory.human_memory_service import CreateTaskScopeRequest, QueueTurnRequest
+from deskpet.sdk_adapters.context_route import local_owner_auth
+from simple_harness.providers import ProviderToolCall
+from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
 from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
 
@@ -182,8 +183,8 @@ class RecallItemPageInProvider(CreateProvider):
 
 async def _drive_recall_item_page_in(tmp_path, rejections, *, after_run=None):
     """跑一次含"召回项 id 当页引用"失败回合的 Run；after_run 在关闭前拿到真实 stack 复核。"""
-    from deskpet.tools.context_page_in_tools import ContextPageInStore
     from deskpet.execution.primary_dependencies import PrimaryHistoryDisclosureRejected
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
 
     state, _, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "create-source", "Create Fresh project and write output"))

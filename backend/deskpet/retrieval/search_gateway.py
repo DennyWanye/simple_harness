@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Iterable
 from dataclasses import replace
-from typing import Iterable
 
 import httpx
 
-from .cache import AsyncTTLCache, CircuitPermit, FailurePolicy, ProviderHealth
 from .budget import (
     DimensionBatchBudgetAllocator,
     QueryBudgetLease,
@@ -17,6 +16,7 @@ from .budget import (
     SearchBudgetCoverageError,
     SingleQueryBudgetAllocator,
 )
+from .cache import AsyncTTLCache, CircuitPermit, FailurePolicy, ProviderHealth
 from .contracts import (
     AttemptStatus,
     DimensionBatchResponse,
@@ -29,8 +29,8 @@ from .contracts import (
     SearchRequest,
     SearchResponse,
 )
-from .providers.base import ProviderFailure, SearchProvider
 from .limiter import ProviderLimiter
+from .providers.base import ProviderFailure, SearchProvider
 from .query_terms import extract_query_terms
 from .ranking import dedupe_candidates, normalized_host, rank_candidates
 from .routing import stable_batches
@@ -1215,7 +1215,7 @@ class SearchGateway:
                 )
             )
             raise
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if permit.probe_owner:
                 await health.complete_probe(
                     name, permit, "failure", failure_class="timeout",

@@ -11,9 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, Mapping
+from typing import Any
 
 from .deep_research_v5_contracts import (
     ContractValidationError,
@@ -21,7 +22,6 @@ from .deep_research_v5_contracts import (
     ResearchBrief,
     ResearchDimension,
 )
-
 
 EDUCATION_DIMENSION_IDS = (
     "edu_current_state",

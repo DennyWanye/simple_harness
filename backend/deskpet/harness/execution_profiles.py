@@ -7,7 +7,6 @@ from typing import Literal
 
 from deskpet.execution.contracts import JsonValue
 
-
 LaunchPolicy = Literal["model_spawnable", "reserved_control", "legacy_recovery"]
 
 

@@ -28,9 +28,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from simple_harness import RunId
-from simple_harness.tools import ToolOutcome
-
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.tool_authority import (
     SDK_DIRECT_TOOL_KERNEL,
@@ -54,7 +51,8 @@ from deskpet.tools.tool_search import (
     _SCHEMA,
     register_capability_bridge_tools,
 )
-
+from simple_harness import RunId
+from simple_harness.tools import ToolOutcome
 from tests.sdk_adapters.test_tool_activate_unavailable_disclosure import (
     _Capture,
     _spec,

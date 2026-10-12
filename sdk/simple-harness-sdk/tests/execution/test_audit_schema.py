@@ -4,10 +4,12 @@ import hashlib
 import sqlite3
 
 import pytest
-
 from simple_harness.execution.sqlite import Database
 from simple_harness.execution.sqlite.audit_schema import (
-    AUDIT_SCHEMA_VERSION, CHECKSUM, OBJECTS, AuditSchemaIncompatible,
+    AUDIT_SCHEMA_VERSION,
+    CHECKSUM,
+    OBJECTS,
+    AuditSchemaIncompatible,
 )
 from simple_harness.execution.sqlite.schema import SCHEMA_VERSION, fresh_descriptor
 

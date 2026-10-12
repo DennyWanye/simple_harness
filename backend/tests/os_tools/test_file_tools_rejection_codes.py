@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.file_tools import _handle_file_read
 
 

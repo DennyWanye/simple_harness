@@ -22,8 +22,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from simple_harness.execution.sqlite.base_agent import turns
 
@@ -241,13 +242,13 @@ class SkillUseService:
         receipt = await run_async(prepared.run) if run_async is not None else await asyncio.to_thread(runner.run, prepared.run)
         return self._finish_script(prepared, receipt)
 
-    def _finish_script(self, prepared: "_PreparedScript", receipt: Any) -> dict[str, Any]:
+    def _finish_script(self, prepared: _PreparedScript, receipt: Any) -> dict[str, Any]:
         if not isinstance(receipt, ScriptRunReceipt):
             raise ArpError("SOURCE_UNAVAILABLE", "script runner returned no receipt")
         view = self._script_view(prepared.call_ref, prepared.tool_ref, prepared.revision, receipt)
         return self._record(prepared.session, prepared.use, view, runner_receipt=receipt)
 
-    def _begin_execute(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> "dict[str, Any] | _PreparedScript":
+    def _begin_execute(self, session: store.SessionRow, *, call_id: str, request: Mapping[str, Any]) -> dict[str, Any] | _PreparedScript:
         value = check("SkillExecutionRequest", plain(request))
         revision, activation, lock = self.usable_skill(Pin.from_json(value["skill_ref"]), session)
         kind = str(revision.body["implementation"]["kind"])

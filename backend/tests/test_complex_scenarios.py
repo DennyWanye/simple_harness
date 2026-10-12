@@ -3,10 +3,11 @@
 测试 Agent Loop 在各种复杂情况下的行为
 """
 
-import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from agent.agent_loop import FinalEvent, ErrorEvent
+
+import pytest
+from agent.agent_loop import ErrorEvent, FinalEvent
 
 
 class TestComplexErrorScenarios:
@@ -15,7 +16,11 @@ class TestComplexErrorScenarios:
     @pytest.mark.asyncio
     async def test_cascading_failures(self):
         """测试级联失败：_present_final 内部处理失败场景"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         # 创建上下文对象
         context = MagicMock(spec=RunPresentationContext)
@@ -42,7 +47,11 @@ class TestComplexErrorScenarios:
     @pytest.mark.asyncio
     async def test_partial_send_failure(self):
         """测试部分发送失败：SSE 成功但 WebSocket 失败"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -71,7 +80,11 @@ class TestComplexErrorScenarios:
     @pytest.mark.asyncio
     async def test_concurrent_event_delivery(self):
         """测试并发事件传递"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -155,7 +168,7 @@ class TestToolExecutionEdgeCases:
                 timeout=5.0  # 5 秒超时
             )
             assert isinstance(result, str)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Tool execution timed out")
 
 
@@ -165,7 +178,11 @@ class TestStatusFlowIntegrity:
     @pytest.mark.asyncio
     async def test_status_transition_sequence(self):
         """测试完整的状态转换序列"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -193,7 +210,11 @@ class TestStatusFlowIntegrity:
     @pytest.mark.asyncio
     async def test_error_recovery_flow(self):
         """测试错误恢复流程"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -257,7 +278,11 @@ class TestBoundaryConditions:
     @pytest.mark.asyncio
     async def test_empty_context_fields(self):
         """测试上下文字段为空的情况"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = ""  # 空 session_id
@@ -278,7 +303,11 @@ class TestBoundaryConditions:
     @pytest.mark.asyncio
     async def test_very_long_error_message(self):
         """测试超长错误消息"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -301,7 +330,11 @@ class TestBoundaryConditions:
     @pytest.mark.asyncio
     async def test_unicode_and_emoji_in_events(self):
         """测试事件中的 Unicode 和 Emoji"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -328,7 +361,11 @@ class TestRealWorldScenarios:
     @pytest.mark.asyncio
     async def test_quick_successive_requests(self):
         """测试快速连续请求"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -354,7 +391,12 @@ class TestRealWorldScenarios:
     @pytest.mark.asyncio
     async def test_mixed_success_and_failure(self):
         """测试混合成功和失败的场景"""
-        from deskpet.agent.run_presenter import _present_final, _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"

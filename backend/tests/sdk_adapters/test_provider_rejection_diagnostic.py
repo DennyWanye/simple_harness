@@ -6,12 +6,11 @@ import socket
 
 import httpx
 import pytest
+from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
 from simple_harness import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import CancelToken, ProviderRequest, Secret
 from simple_harness.providers.errors import ProviderRequestRejectedError
-
-from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
 
 
 @pytest.mark.asyncio

@@ -31,16 +31,16 @@ from simple_harness.execution.provider_admission import ProviderHandoffFence
 from simple_harness.runtime.consumer_adapter import ConsumerRuntimePolicies
 
 from ..artifacts.workspace import WorkspaceManager
-from ..orchestrator.occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from ..contracts import Budget
 from ..governance.policies import DeploymentPolicy
+from ..orchestrator.occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from ..orchestrator.root_review import DEFAULT_MAX_CUTS_PER_REVISION
+from ..planning.htn.backend_port import PlanningBackend, PlanningLimits
 from ..scheduling.backpressure import BackpressureLimits
 from .agent_worker import AgentBridge
+from .domain_tools import DomainTool
 from .model_router import DEFAULT_PROFILE, RuntimeProfile
 from .tool_gateway import TOOL_NAMES, WorkspaceToolGateway, read_tool_schemas
-from .domain_tools import DomainTool
-from ..planning.htn.backend_port import PlanningBackend, PlanningLimits
 
 OWNER_SCOPE = "agent-orchestrator"  # D3-10': one scope shared by every orchestrator instance
 

@@ -4,8 +4,8 @@
 """Pure host policy for Companion tool visibility and explicit confirmation."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from deskpet.tools.build_identity import (
     EffectClass,
@@ -16,7 +16,6 @@ from deskpet.tools.capabilities import (
     PreparedToolSet,
     ToolEffectClassification,
 )
-
 
 POLICY_VERSION = "companion-irreversible-effect-policy-v1"
 _CONFIRM_ONLY = frozenset(

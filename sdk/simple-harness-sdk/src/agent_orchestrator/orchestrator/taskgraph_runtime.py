@@ -10,9 +10,13 @@ from simple_harness.agents.contracts import _message_from_json
 from simple_harness.contracts import canonical_json
 
 from ..contracts.models import Event, jsonable, sha256_hex
-from ..contracts.state_machines import AttemptStatus, TERMINAL_ATTEMPT
+from ..contracts.state_machines import TERMINAL_ATTEMPT, AttemptStatus
 from ..planning.htn.grounding import derive_id
-from ..runtime.planning_operations import SourceUnavailable, StoreOperationReader, build_operation_snapshot
+from ..runtime.planning_operations import (
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..runtime.taskgraph_local_work import read_local_work
 from ..storage.htn_store import HtnStore
 from ..storage.planning_admission_store import PlanningAdmissionStore

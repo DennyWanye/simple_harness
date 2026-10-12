@@ -130,7 +130,7 @@ class GrowthAuthorityStorePort(Protocol):
 class GrowthAuthorityCutoverSession:
     """Exclusive access to the Router's existing durable pointer."""
 
-    def __init__(self, router: "GrowthAuthorityRouter") -> None:
+    def __init__(self, router: GrowthAuthorityRouter) -> None:
         self._router = router
 
     @property

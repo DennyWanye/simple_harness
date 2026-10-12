@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from agent_orchestrator.orchestrator.plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from agent_orchestrator.storage.assurance_store import AssuranceStore
 from agent_orchestrator.testing.product_world import product_world

@@ -23,7 +23,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 # Ensure ``backend/`` is on sys.path so ``deskpet.*`` imports resolve
 # regardless of where the script is invoked from.
 _BACKEND = Path(__file__).resolve().parent.parent
@@ -45,9 +44,10 @@ def main() -> int:
 
     # Import AFTER env setup so the tools pick up tmp paths.
     import httpx  # noqa: E402
-
-    from deskpet.tools import registry  # noqa: E402
-    from deskpet.tools import web_tools  # noqa: E402
+    from deskpet.tools import (
+        registry,  # noqa: E402
+        web_tools,  # noqa: E402
+    )
 
     # 1) Registry count — MVP spec: >=16 tools (file 4 + web 4 + todo 2
     #    + stubs 7 + tool_search 1 = 18 total; count >= 16 satisfies spec).

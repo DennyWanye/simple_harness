@@ -20,8 +20,9 @@ from __future__ import annotations
 import asyncio
 import posixpath
 import re
-from .domain_tools import DomainTool
+
 from ..contracts.models import SEARCH_TOOL_NAMES
+from .domain_tools import DomainTool
 
 #: 执行者与审阅员共用的一轮作答余量（2026-09-29 第六局审阅员先例；推后第 3 批 R3-3 补裁并入 B 级 #52）：
 #: 交给 SDK 的单回合工具上限 = 网关上限 + 这个余量。网关是权威——到上限就拒绝并告知（审阅员"马上作答"、
@@ -180,7 +181,7 @@ READ_PAGE_BYTES = 2000
 LARGE_READ_PAGE_BYTES = 32768
 
 
-async def _await_physical_call(pending: "asyncio.Task[Any]") -> Any:
+async def _await_physical_call(pending: asyncio.Task[Any]) -> Any:
     """Await a physical call that must outlive our own cancellation.
 
     Cancelling ``to_thread`` does not stop the call, so on cancellation we keep waiting

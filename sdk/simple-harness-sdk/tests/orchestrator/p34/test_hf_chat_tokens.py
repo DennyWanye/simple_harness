@@ -9,9 +9,8 @@ import json
 import sys
 from types import SimpleNamespace
 
-import pytest
-
 import agent_orchestrator.runtime.hf_chat_tokens as counting
+import pytest
 from simple_harness.agents.wire import restore_tool_calls
 from simple_harness.contracts import CallId, ContentBlock, Message, MessageRole, RequestId
 from simple_harness.providers import ProviderRequest, ProviderToolSpec

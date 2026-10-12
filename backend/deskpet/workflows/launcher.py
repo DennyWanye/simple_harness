@@ -20,12 +20,13 @@ from deskpet.execution.contracts import (
     StaleRecoveryLease,
 )
 
-from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext
+from .contracts import TERMINAL_RUN_STATUSES, JsonValue, WorkflowContext
+from .execution_ports import WorkflowExecutionPorts
 from .progress import WorkflowProgressReporter
 from .runner import WorkflowRunResult
 from .runtime_adapters import (
-    ContextFactory,
     DEEP_RESEARCH_EXTENSION,
+    ContextFactory,
     DeepResearchRuntimeExtension,
     StateFactory,
     WorkflowRuntimeAdapter,
@@ -33,7 +34,6 @@ from .runtime_adapters import (
     WorkflowRuntimeAdapterRegistry,
 )
 from .service import WorkflowService
-from .execution_ports import WorkflowExecutionPorts
 
 _DELIVERY_PAGE_SIZE = 100
 _RUN_SCAN_LIMIT = 10_000
@@ -110,7 +110,7 @@ class WorkflowLauncher:
         if not isinstance(runtime_adapters, WorkflowRuntimeAdapterRegistry):
             runtime_adapters = WorkflowRuntimeAdapterRegistry()
             try:
-                setattr(service, "runtime_adapters", runtime_adapters)
+                service.runtime_adapters = runtime_adapters
             except Exception:  # pragma: no cover - very small protocol fakes
                 pass
         self.runtime_adapters = runtime_adapters

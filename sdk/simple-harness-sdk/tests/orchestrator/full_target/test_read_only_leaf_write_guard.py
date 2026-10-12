@@ -31,12 +31,6 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_read_only_rewrite_bound import (  # noqa: E402
-    NEW_COLLECTOR,
-    PATCHED_COLLECTOR,
-    SEED_COLLECTOR,
-)
-
 from agent_orchestrator.artifacts.workspace import WorkspaceManager  # noqa: E402
 from agent_orchestrator.governance.policies import effective_tools  # noqa: E402
 from agent_orchestrator.orchestrator.occurrence_tasks import (  # noqa: E402
@@ -50,6 +44,11 @@ from agent_orchestrator.runtime.tool_gateway import (  # noqa: E402
 )
 from simple_harness.contracts import CallId  # noqa: E402
 from simple_harness.tools import ToolCall  # noqa: E402
+from test_read_only_rewrite_bound import (  # noqa: E402
+    NEW_COLLECTOR,
+    PATCHED_COLLECTOR,
+    SEED_COLLECTOR,
+)
 
 REPORT = "REPORT.md"
 COLLECTOR = "metrics/collector.py"

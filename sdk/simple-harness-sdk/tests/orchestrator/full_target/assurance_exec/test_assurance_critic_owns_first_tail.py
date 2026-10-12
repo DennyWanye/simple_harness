@@ -14,7 +14,6 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.governance.budgets import BudgetError
 from agent_orchestrator.orchestrator.protected_tail_commits import ProtectedTailCommitsMixin
 

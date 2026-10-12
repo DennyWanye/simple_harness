@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.storage.store import Store, StoreError
 
 

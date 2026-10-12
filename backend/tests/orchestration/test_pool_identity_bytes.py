@@ -15,9 +15,9 @@ import json
 from pathlib import Path
 
 import pytest
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 from . import _pool_identity as P
-from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 BASELINE = json.loads((Path(__file__).with_name("pool_identity_baseline.json")).read_text())
 

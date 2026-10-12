@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentTurnResult, AgentTurnState

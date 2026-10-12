@@ -6,17 +6,17 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import astuple, dataclass
-from typing import Any, Iterator, NoReturn
+from typing import Any, NoReturn
 
 from simple_harness.contracts import canonical_json
 
 from ..contracts.error_table import CodedFault, RoundFaultCode
 from ..contracts.htn import GraphStructureBudget
-from ..contracts.state_machines import TERMINAL_MISSION
 from ..contracts.models import ContractError
+from ..contracts.state_machines import TERMINAL_MISSION
 from ..graph.network_codec import NetworkDocumentV1, decode
 from ..graph.revision_events import revision_event_payload
 from ..graph.revision_pins import (

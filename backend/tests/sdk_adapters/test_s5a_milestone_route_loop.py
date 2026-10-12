@@ -26,6 +26,30 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from deskpet.memory.human_memory_service import (
+    AuthenticatedHostSnapshot,
+    CreateTaskScopeRequest,
+    HumanMemoryHostService,
+)
+from deskpet.memory.schema import dispatch_startup_epoch
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore,
+    ProductRunContextAuthority,
+    ProductRuntimeDecisionSink,
+)
+from deskpet.sdk_adapters.context_route import (
+    CONTEXT_ROUTE_SCHEMA,
+    TASK_SCOPE_SEARCH_SCHEMA,
+    ContextRouteToolService,
+)
+from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
+from deskpet.task_scope.workspace_bindings import (
+    ManualWorkspaceChallengeAuthorityCheck,
+    ManualWorkspaceDecisionAuthorityCheck,
+    WorkspaceBindingAuthorityStore,
+    WorkspaceBindingError,
+    canonical_workspace_root,
+)
 from simple_harness import (
     WorkspaceBindingAuthorizationChannel,
     WorkspaceBindingAuthorizationDecision,
@@ -58,31 +82,6 @@ from simple_harness.tools.runtime_catalog import (
     ToolExecutionPolicy,
     ToolRouteRequirement,
     ToolTaskScopeRequirement,
-)
-
-from deskpet.memory.human_memory_service import (
-    AuthenticatedHostSnapshot,
-    CreateTaskScopeRequest,
-    HumanMemoryHostService,
-)
-from deskpet.memory.schema import dispatch_startup_epoch
-from deskpet.sdk_adapters.context_authority import (
-    ContextRouteLedgerStore,
-    ProductRunContextAuthority,
-    ProductRuntimeDecisionSink,
-)
-from deskpet.sdk_adapters.context_route import (
-    CONTEXT_ROUTE_SCHEMA,
-    TASK_SCOPE_SEARCH_SCHEMA,
-    ContextRouteToolService,
-)
-from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
-from deskpet.task_scope.workspace_bindings import (
-    ManualWorkspaceChallengeAuthorityCheck,
-    ManualWorkspaceDecisionAuthorityCheck,
-    WorkspaceBindingAuthorityStore,
-    WorkspaceBindingError,
-    canonical_workspace_root,
 )
 
 RUN = RunId("run-milestone-1")

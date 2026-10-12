@@ -6,9 +6,10 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .deep_research_v5_contracts import (
@@ -17,7 +18,6 @@ from .deep_research_v5_contracts import (
     EvidenceSourceFamily,
     ResearchDimension,
 )
-
 
 FamilyMatchLevel = Literal["exact", "strong", "weak", "none"]
 CoverageStatus = Literal[

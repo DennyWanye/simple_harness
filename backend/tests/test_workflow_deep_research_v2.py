@@ -4,8 +4,8 @@ import asyncio
 import hashlib
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext
+from deskpet.workflows.definitions.deep_research_v2_nodes import rerank_handler
 from deskpet.workflows.definitions.research_core import (
     FetchPort,
     ResearchArtifactPort,
@@ -13,16 +13,18 @@ from deskpet.workflows.definitions.research_core import (
     ResearchSearchPort,
     ResearchSearchResults,
 )
-from deskpet.workflows.definitions.deep_research_v2_nodes import rerank_handler
-from deskpet.workflows.definitions.v2.deep_research import DEEP_RESEARCH_V2, DEEP_RESEARCH_V2_DEFINITION, initial_state
-from deskpet.workflows.definitions.v1.deep_research import DEEP_RESEARCH_V1
 from deskpet.workflows.definitions.v1 import register_v1_workflows
+from deskpet.workflows.definitions.v1.deep_research import DEEP_RESEARCH_V1
 from deskpet.workflows.definitions.v2 import DEFAULT_DEEP_RESEARCH_VERSION, register_v2_workflows
-from deskpet.workflows.native import NativeExecutionPolicy
-from deskpet.workflows.native import InMemoryNativeCheckpointStore
+from deskpet.workflows.definitions.v2.deep_research import (
+    DEEP_RESEARCH_V2,
+    DEEP_RESEARCH_V2_DEFINITION,
+    initial_state,
+)
+from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeExecutionPolicy
 from deskpet.workflows.progress import WorkflowProgressReporter
-from deskpet.workflows.store import RegisteredBlobStore
 from deskpet.workflows.runner import WorkflowRegistry
+from deskpet.workflows.store import RegisteredBlobStore
 
 
 async def _llm(prompt: str) -> str:

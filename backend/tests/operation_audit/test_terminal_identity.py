@@ -9,10 +9,11 @@ from dataclasses import replace
 import aiosqlite
 import pytest
 import simple_harness as sdk
-
 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.human_memory_service import (
-    CreateTaskScopeRequest, HumanMemoryHostServiceFactory, QueueTurnRequest,
+    CreateTaskScopeRequest,
+    HumanMemoryHostServiceFactory,
+    QueueTurnRequest,
 )
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.operation_audit.consumer import PublicAuditReader
@@ -219,7 +220,8 @@ async def test_late_host_source_change_rejects_next_page_preserving_saved_prefix
 
 @pytest.mark.parametrize("old_status", ["pending", "unavailable", "partial", "enumerated"])
 async def test_v2_discovery_preserves_v1_jobs_attempts_and_pages(tmp_path, monkeypatch, old_status):
-    from deskpet.operation_audit import sources as source_module, store as store_module
+    from deskpet.operation_audit import sources as source_module
+    from deskpet.operation_audit import store as store_module
 
     state, _, provider, runtime, stack, _ = await setup(tmp_path)
     consumer = await consumer_at(state, stack, [100.0])

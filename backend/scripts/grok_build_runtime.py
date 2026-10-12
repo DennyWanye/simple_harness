@@ -33,7 +33,7 @@ import subprocess
 import sys
 import time
 import urllib.error
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -95,7 +95,7 @@ def build_runtime(model: str, max_tokens: int) -> dict:
         },
         "_lane": "grok-build",
         "_source": str(AUTH_JSON),
-        "_written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "_written_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
 
 
@@ -266,13 +266,13 @@ def cmd_refresh(args: argparse.Namespace) -> int:
     backup = AUTH_JSON.with_name("auth.json.bak-refresh")
     shutil.copy2(AUTH_JSON, backup)
     os.chmod(backup, 0o600)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ttl = int(tok.get("expires_in") or 6 * 3600)
     entry["key"] = access
     if tok.get("refresh_token"):
         entry["refresh_token"] = str(tok["refresh_token"])
     entry["create_time"] = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    entry["expires_at"] = datetime.fromtimestamp(now.timestamp() + ttl, tz=timezone.utc).strftime(
+    entry["expires_at"] = datetime.fromtimestamp(now.timestamp() + ttl, tz=UTC).strftime(
         "%Y-%m-%dT%H:%M:%S.%fZ"
     )
     tmp = AUTH_JSON.with_name("auth.json.tmp-refresh")

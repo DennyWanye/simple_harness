@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
 import pytest
-
 from providers.openai_compatible import OpenAICompatibleProvider
 
 

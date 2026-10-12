@@ -12,10 +12,11 @@ and refuses codes that are not in the catalogue, so a typo cannot mint a new err
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from functools import lru_cache
 from importlib import resources
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 
 class ArpError(ValueError):

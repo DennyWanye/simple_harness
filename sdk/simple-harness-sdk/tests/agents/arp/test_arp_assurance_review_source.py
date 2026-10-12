@@ -15,15 +15,14 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from arp_fixture import build, trusted_caller
-from provider_fixture import ScriptedProvider
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.runtime.assurance_turn_sources import _exposure
+from arp_fixture import build, trusted_caller
+from provider_fixture import ScriptedProvider
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import store
 from simple_harness.agents.contracts import AgentTurnState
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 CONFIG = AgentConfig(name="w", instructions="你是审阅者。", model_profile_ref="p", tool_names=("echo",))
 

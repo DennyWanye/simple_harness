@@ -38,6 +38,7 @@ except ImportError:
 
 import os
 import re
+
 SECRET = os.environ.get("DESKPET_SECRET", "")
 if not SECRET:
     # auto-pick latest secret from tauri-dev.log
@@ -65,7 +66,7 @@ async def main() -> int:
     print(f"Connecting to {BACKEND_WS}")
     try:
         ws = await asyncio.wait_for(websockets.connect(BACKEND_WS), timeout=5.0)
-    except (asyncio.TimeoutError, Exception) as exc:
+    except (TimeoutError, Exception) as exc:
         print(f"WS connect failed: {exc}")
         return 1
 

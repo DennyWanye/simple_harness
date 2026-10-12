@@ -16,9 +16,8 @@
 """
 from __future__ import annotations
 
-import pytest
-
 import main
+import pytest
 from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,

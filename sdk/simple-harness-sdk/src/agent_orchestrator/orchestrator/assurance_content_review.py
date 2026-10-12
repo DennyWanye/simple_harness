@@ -17,13 +17,15 @@ from ..contracts.resolution import RequirementClass
 from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
+    CurrentAuthority,
+    _permission,
+    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
-from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
 from .assurance_check_use import _merge_reads
 from .assurance_purpose_reviews import next_review_round, output_manifest_hash
 from .assurance_review_pins import ensure_review_blob_pins

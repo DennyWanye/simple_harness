@@ -4,7 +4,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.configured_catalog import (
     ConfiguredCapabilityCatalogSource,
 )
@@ -21,7 +20,6 @@ from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_ROOT = (

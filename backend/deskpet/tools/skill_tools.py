@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
-import inspect
 import hashlib
+import inspect
 import json
 import logging
 import re
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 

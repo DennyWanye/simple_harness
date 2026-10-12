@@ -13,7 +13,6 @@ import asyncio
 from types import SimpleNamespace
 
 import httpx
-
 from agent_orchestrator.deployment.native_pools import calibrated, native_profile_id
 from deskpet.orchestration.provider import ProviderSnapshot, build_provider, provider_on_client
 from deskpet.orchestration.runtime_profile import deepseek_thinking
@@ -105,11 +104,13 @@ def test_the_thinking_provider_is_built_only_for_a_deepseek_deployment_with_a_cl
 
 def test_official_endpoint_is_exact_and_a_relay_gets_the_learned_upper_bound(tmp_path, monkeypatch) -> None:
     import pytest
-
     from deskpet.orchestration import runtime_profile
 
     try:
-        from agent_orchestrator.runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
+        from agent_orchestrator.runtime.deepseek_meter import (
+            CalibratingProvider,
+            RelayDeepSeekCounter,
+        )
     except ImportError:
         pytest.skip("SDK without the relay counter")
     tokenizer = runtime_profile.tokenizer_path()
@@ -135,7 +136,6 @@ def test_declared_relay_echo_aliases_reach_every_pool_provider() -> None:
     """A relay that echoes a vendor-prefixed model name is trusted only when declared."""
 
     import httpx
-
     from deskpet.orchestration.provider import provider_on_client
 
     relay = ProviderSnapshot("relay", "https://relay.example.test/v1", "deepseek-v4.1-flash", "deepseek-v4.1-flash", "fixture",

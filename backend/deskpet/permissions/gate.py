@@ -30,9 +30,10 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, get_args
+from typing import Any, Optional, get_args
 
 from ..types.skill_platform import (
     PermissionCategory,
@@ -79,9 +80,9 @@ class PermissionGateConfig:
 class PermissionGate:
     """Central permission gate. One instance per app process."""
 
-    def __init__(self, config: Optional[PermissionGateConfig] = None) -> None:
+    def __init__(self, config: PermissionGateConfig | None = None) -> None:
         self.config = config or PermissionGateConfig()
-        self._responder: Optional[Responder] = None
+        self._responder: Responder | None = None
         # Session-scoped allow cache.
         # Key = (session_id, category, params_shape_hash)
         self._allow_cache: dict[tuple[str, str, str], bool] = {}
@@ -104,15 +105,15 @@ class PermissionGate:
         # decide whether to also speak the prompt out loud. Voice pipeline
         # sets this to "voice" before running AgentLoop; main chat handler
         # leaves it as None ("text" implicit).
-        self.current_source: Optional[str] = None
+        self.current_source: str | None = None
         # Optional TTS engine for voice prompts. Wired by main.py at
         # startup via `set_tts_engine`.
-        self._tts_engine: Optional[Any] = None
+        self._tts_engine: Any | None = None
 
     # -----------------------------------------------------------------
     # Wiring
     # -----------------------------------------------------------------
-    def set_responder(self, responder: Optional[Responder]) -> None:
+    def set_responder(self, responder: Responder | None) -> None:
         """Install (or remove) the IPC responder callable.
 
         In production this is wired to the control-WS broadcaster:
@@ -237,7 +238,7 @@ class PermissionGate:
 
     def _match_deny_pattern(
         self, category: str, params: dict[str, Any]
-    ) -> Optional[str]:
+    ) -> str | None:
         if category == "shell":
             cmd = params.get("command", "")
             for pat in self.config.shell_deny_patterns:
@@ -283,7 +284,7 @@ class PermissionGate:
                 await asyncio.wait_for(
                     asyncio.Event().wait(), timeout=self.config.timeout_s
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             return PermissionDecision(allow=False, source="timeout")
 
@@ -322,7 +323,7 @@ class PermissionGate:
             response: PermissionResponse = await asyncio.wait_for(
                 self._responder(request), timeout=self.config.timeout_s
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return PermissionDecision(
                 allow=False, source="timeout", request_id=request.request_id
             )
@@ -375,7 +376,7 @@ class PermissionGate:
     # WI-TG-2: read-only pending-request introspection
     # -----------------------------------------------------------------
     def list_pending(
-        self, session_id: Optional[str] = None
+        self, session_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Compatibility surface; product pending decisions are Harness-owned.
 

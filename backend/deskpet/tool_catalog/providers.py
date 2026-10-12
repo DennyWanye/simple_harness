@@ -11,8 +11,9 @@ import inspect
 import json
 import logging
 import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, cast
 
 from simple_harness import FrozenJsonValue, JsonValue, thaw_json
 from simple_harness.tools import ToolContext
@@ -25,7 +26,6 @@ from deskpet.sdk_adapters.tools import (
 from deskpet.tools.capabilities import ToolExecutionContext
 
 from .manifest import MANIFEST_SHA256, load_tool_manifest, migrate_tool_schemas
-
 
 logger = logging.getLogger(__name__)
 
@@ -262,9 +262,9 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         product_delegation_tool_catalog,
     )
     from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
+    from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
     from deskpet.tools.context_page_in_tools import build_context_page_in_handler
     from deskpet.tools.tool_search import register_capability_bridge_tools
-    from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
 
     delegation_provider = deps.delegation_service_provider or (lambda: None)
     delegates = product_delegation_tool_catalog(delegation_provider)

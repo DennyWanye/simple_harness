@@ -24,6 +24,12 @@ import logging
 
 import httpx
 import pytest
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    _ProductOpenAICompatibleProvider,
+    _retain_tool_calls_in_message,
+)
+from deskpet.sdk_adapters.tool_call_arguments import ToolCallArgumentsMemo
 from simple_harness.contracts import CallId, RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.provider_invocations import (
@@ -41,14 +47,6 @@ from simple_harness.providers.base import (
     ProviderContinuationMode,
     Secret,
 )
-
-from deskpet.sdk_adapters.provider import (
-    ProductProviderAdapter,
-    _ProductOpenAICompatibleProvider,
-    _retain_tool_calls_in_message,
-)
-from deskpet.sdk_adapters.tool_call_arguments import ToolCallArgumentsMemo
-
 from tests.sdk_adapters.test_product_host_ports import Registry
 
 SEARCH_ARGUMENTS = {"query": "青海湖 观测报告", "limit": 5}

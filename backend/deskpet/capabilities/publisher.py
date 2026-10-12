@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from deskpet.tools.registry import (
     ToolCatalogMutationError,

@@ -15,7 +15,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.__main__ import EXIT_FAILED, EXIT_OK, EXIT_USAGE, main
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, lift_immutable_guards
 from agent_orchestrator.testing.product_world import product_world

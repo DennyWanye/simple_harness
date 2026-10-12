@@ -15,11 +15,9 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, planner_reply
-
 from test_requirements_amend import amend, until_first_plan  # noqa: E402
 
 

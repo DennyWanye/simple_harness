@@ -4,16 +4,19 @@ import asyncio
 from dataclasses import dataclass
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.errors import WorkflowErrorCode, WorkflowNodeError
-from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner, manifest_hash
 from deskpet.workflows.lease import LeaseManager
+from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner, manifest_hash
 from deskpet.workflows.store import (
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
+)
+from deskpet.workflows.store import (
     StaleRunFence,
     WorkflowRunStore,
+)
+from deskpet.workflows.store import (
     empty_legacy_checkpoint as empty_checkpoint,
 )
 

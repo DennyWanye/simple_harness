@@ -14,9 +14,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
-from deskpet.orchestration.handlers import handle
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.provider import ProviderSnapshot
 from deskpet.orchestration.runtime_profile import ONLY_DEEPSEEK_REASON
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
@@ -221,7 +220,8 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         # MISSION mode (NEXT-TG-1.0 §10): the Planner's Session was created from the exact
         # sources the SDK reader derived from its dispatch intent, and the frozen request
         # was re-checked and carries them.
-        from simple_harness.agents.arp import mission_sources, store as arp_store
+        from simple_harness.agents.arp import mission_sources
+        from simple_harness.agents.arp import store as arp_store
         session = arp_store.read_live_session(connection, sessions[0][0])
         record = mission_sources.read_record(connection, session.session_id)
         assert record["sources"]["source_kind"] == "planner" and record["sources"]["mission_id"] == mission_id

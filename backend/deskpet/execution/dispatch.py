@@ -4,10 +4,16 @@ import asyncio
 import hashlib
 import json
 import time
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterator, Mapping, Protocol, TypeAlias, runtime_checkable
+from typing import (
+    Any,
+    Protocol,
+    TypeAlias,
+    runtime_checkable,
+)
 
 
 def _required(value: str, name: str) -> str:
@@ -87,7 +93,7 @@ class DispatchStartUnknown:
 @dataclass(slots=True)
 class DispatchOperation:
     completion: asyncio.Task[Any]
-    handoff: "DispatchHandoff"
+    handoff: DispatchHandoff
 
 
 @runtime_checkable

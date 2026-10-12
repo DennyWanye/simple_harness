@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.htn import ObligationCoverage, SideEffectKind, TaskForm
 from agent_orchestrator.contracts.operation_completion import (
     CompletionMode,
@@ -513,8 +512,8 @@ def test_effect_only_primitive_requires_real_preparation_output(tmp_path, has_ou
     assert scope.role is CompletionScopeRole.MIXED
     assert scope.content_criterion_ids == (LEAF_LOCAL_CRITERION,)
     assert scope.required_effect_keys == ("deliver-report",)
-    from agent_orchestrator.orchestrator.scoped_content_review import _scoped_local_criteria
     from agent_orchestrator.orchestrator.leaf_acceptance import LayerOutcome
+    from agent_orchestrator.orchestrator.scoped_content_review import _scoped_local_criteria
     local = _scoped_local_criteria(binding, scope, (LayerOutcome("critic_review", "PASS"),), ())
     criterion = local[LEAF_LOCAL_CRITERION]
     assert criterion.required_evidence_policy.required_check_ids == ("critic_review",)

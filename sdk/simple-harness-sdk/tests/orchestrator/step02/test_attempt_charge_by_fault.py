@@ -16,7 +16,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts import MissionStatus, MissionStopReason, TaskStatus
 from agent_orchestrator.orchestrator.commit_service import mission_account, task_account
 from agent_orchestrator.orchestrator.failure_classes import (
@@ -181,7 +180,10 @@ def test_output_exhausted_is_the_models_unfinished_turn_not_a_service_error():
     没完成：按模型做错计次；真正的服务出错（非 length）不变。
 
     **Mutation**: drop the ``output_exhausted`` check in ``classify_failure`` → red."""
-    from agent_orchestrator.orchestrator.failure_classes import output_exhausted, output_exhausted_fact
+    from agent_orchestrator.orchestrator.failure_classes import (
+        output_exhausted,
+        output_exhausted_fact,
+    )
 
     exhausted = {"reason": "turn_failed", "error_kind": "other", "error": {
         "error_code": "provider_empty_response", "source_kind": "tool_parse",

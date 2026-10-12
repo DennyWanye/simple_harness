@@ -5,9 +5,8 @@ from collections import Counter
 
 import httpx
 import pytest
-
-from llm.errors import LLMProviderError
 from deskpet.execution.provider_invocations import ProviderDispatchUnknownError
+from deskpet.memory.session_db import SessionDB
 from deskpet.workflows import WorkflowContext, WorkflowRunStatus, compile_workflow
 from deskpet.workflows.definitions.code_nodes import (
     CapabilitySnapshotV1,
@@ -38,8 +37,9 @@ from deskpet.workflows.proposal_state import (
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from llm.errors import LLMProviderError
+
 from tests.test_workflow_native_engine import MemoryNativeStore
-from deskpet.memory.session_db import SessionDB
 
 
 def test_provider_transport_timeout_is_retryable_but_402_is_not() -> None:

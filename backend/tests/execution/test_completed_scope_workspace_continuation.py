@@ -5,24 +5,26 @@ pass-through disclosure authority. Host SQL below only inspects actual facts.
 """
 import asyncio
 import json
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import httpx
 import pytest
-
 from deskpet.execution.primary_dependencies import check_runtime_dependencies
 from deskpet.memory.human_memory_service import (
-    AppendBindingRequest, CreateTaskScopeRequest, DecideManualBindingRequest,
-    MutateTaskScopeRequest, QueueTurnRequest,
+    AppendBindingRequest,
+    CreateTaskScopeRequest,
+    DecideManualBindingRequest,
+    MutateTaskScopeRequest,
+    QueueTurnRequest,
 )
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError, canonical_workspace_root
+from tests.execution.test_completed_scope_guidance import tool_results
 from tests.execution.test_primary_create_new_runtime import fixture
 from tests.execution.test_primary_foreground_runtime import build
-from tests.execution.test_completed_scope_guidance import tool_results
 from tests.sdk_adapters.test_product_host_ports import Registry
 
 
@@ -225,8 +227,8 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None, manual_decider=No
         price_resolver=lambda *_: (1, 1, "fixture-prices"), pre_invoke_guard=guard)
     try:
         from deskpet.tools.os_tools.registration import register_os_tools
-        from deskpet.tools.registry import ToolRegistry
         from deskpet.tools.os_tools.write_file import write_file
+        from deskpet.tools.registry import ToolRegistry
         actual_tools = ToolRegistry()
         register_os_tools(actual_tools)
         write_spec = actual_tools.get("write_file")

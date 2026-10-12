@@ -16,15 +16,13 @@ Contract:
 from __future__ import annotations
 
 import pytest
-
 from agent.tool_result_truncator import (
-    ToolResultRefStore,
-    maybe_truncate_tool_result,
-    DEFAULT_THRESHOLD,
     DEFAULT_HEAD,
     DEFAULT_TAIL,
+    DEFAULT_THRESHOLD,
+    ToolResultRefStore,
+    maybe_truncate_tool_result,
 )
-
 
 # ---------- pure truncation function ----------
 

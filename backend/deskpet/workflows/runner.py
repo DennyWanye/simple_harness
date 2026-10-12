@@ -8,9 +8,10 @@ import json
 import logging
 import time
 import uuid
-from functools import wraps
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass, replace
-from typing import Any, Mapping
+from functools import wraps
+from typing import Any
 
 
 def _owned_call(method):
@@ -42,10 +43,17 @@ from deskpet.execution.contracts import (
     RunEventCandidate,
 )
 
-from .contracts import JsonValue, TERMINAL_RUN_STATUSES, WorkflowContext, WorkflowRunStatus
+from .contracts import TERMINAL_RUN_STATUSES, JsonValue, WorkflowContext, WorkflowRunStatus
 from .definition import CompiledWorkflow, WorkflowManifest
 from .errors import WorkflowDependencyUnavailable, WorkflowErrorCode, WorkflowNodeError
-from .lease import ActiveLease, HEARTBEAT_INTERVAL_SECONDS, LEASE_TTL_SECONDS, LeaseManager, transition_run
+from .execution_ports import WorkflowExecutionPorts
+from .lease import (
+    HEARTBEAT_INTERVAL_SECONDS,
+    LEASE_TTL_SECONDS,
+    ActiveLease,
+    LeaseManager,
+    transition_run,
+)
 from .recovery import (
     FailureMapping,
     RecoveryRecord,
@@ -60,15 +68,13 @@ from .store.execution_uow import SqliteExecutionUnitOfWork
 from .trace.observer import WorkflowExecutionObserver
 from .trace.ports import instrument_ports
 from .trace.store import TraceStore
-from .execution_ports import WorkflowExecutionPorts
-
 
 logger = logging.getLogger(__name__)
 
 
 def _manifest_payload(manifest: object) -> dict[str, Any]:
     if hasattr(manifest, "to_dict"):
-        return dict(getattr(manifest, "to_dict")())
+        return dict(manifest.to_dict())
     if is_dataclass(manifest):
         return asdict(manifest)
     return {
@@ -124,12 +130,12 @@ class WorkflowRegistry:
             manifest = getattr(executable, "manifest", None)
         if manifest is None:
             raise ValueError("a registered workflow requires a manifest")
-        if str(getattr(manifest, "durability")) != "sync":
+        if str(manifest.durability) != "sync":
             raise ValueError("durable workflow manifests must use sync durability")
         if executable is None and hasattr(workflow, "ainvoke"):
             executable = workflow
-        name = str(getattr(manifest, "workflow_name"))
-        version = str(getattr(manifest, "workflow_version"))
+        name = str(manifest.workflow_name)
+        version = str(manifest.workflow_version)
         key = (name, version)
         existing = self._entries.get(key)
         if existing is not None and not replace:
@@ -160,7 +166,7 @@ class WorkflowRegistry:
                 f"workflow graph version unavailable: {workflow_name}@{workflow_version}"
             )
         actual_manifest_hash = manifest_hash(entry.manifest)
-        actual_implementation_hash = str(getattr(entry.manifest, "implementation_bundle_hash"))
+        actual_implementation_hash = str(entry.manifest.implementation_bundle_hash)
         if expected_manifest_hash is not None and actual_manifest_hash != expected_manifest_hash:
             raise WorkflowDependencyUnavailable(
                 f"workflow manifest hash mismatch: {workflow_name}@{workflow_version}"
@@ -180,7 +186,7 @@ class WorkflowRegistry:
     def implementation_hashes(self) -> tuple[str, ...]:
         return tuple(
             sorted(
-                str(getattr(entry.manifest, "implementation_bundle_hash"))
+                str(entry.manifest.implementation_bundle_hash)
                 for entry in self._entries.values()
             )
         )
@@ -335,10 +341,10 @@ class WorkflowRunner:
             workflow_name=workflow_name,
             workflow_version=workflow_version,
             manifest_hash=manifest_hash(manifest),
-            implementation_hash=str(getattr(manifest, "implementation_bundle_hash")),
+            implementation_hash=str(manifest.implementation_bundle_hash),
             capability_hash=resolved_capability_hash,
             capability_snapshot=snapshot,
-            state_schema_version=int(getattr(manifest, "state_schema_version")),
+            state_schema_version=int(manifest.state_schema_version),
             run_id=run_id,
             trace_id=trace_id,
             thread_id=thread_id,
@@ -736,7 +742,7 @@ class WorkflowRunner:
             configurable = dict(lease.configurable)
             try:
                 if responses is None:
-                    call = getattr(executable, "ainvoke")(
+                    call = executable.ainvoke(
                         state,
                         run_context,
                         thread_id=str(row["thread_id"]),
@@ -745,7 +751,7 @@ class WorkflowRunner:
                         configurable=configurable,
                     )
                 else:
-                    call = getattr(executable, "resume")(
+                    call = executable.resume(
                         responses,
                         run_context,
                         thread_id=str(row["thread_id"]),

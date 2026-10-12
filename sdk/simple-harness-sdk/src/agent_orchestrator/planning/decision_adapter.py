@@ -16,16 +16,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..contracts.htn import (
+    CancelBranchOperation,
     EvidenceRef,
+    MissionRef,
     PlanProposal,
     PlanRevision,
-    MissionRef,
+    ProposeSuccessorOperation,
     ReadItem,
     ReadItemKind,
-    RefineOperation,
     RebindInputOperation,
-    CancelBranchOperation,
-    ProposeSuccessorOperation,
+    RefineOperation,
     RetireMethodOperation,
     RunningWorkPolicy,
 )
@@ -37,10 +37,10 @@ from ..contracts.planning_decisions import (
     PlanningRefKind,
     PlanningRefV1,
     RefineDecision,
-    RepairRefineDeeperDecision,
-    RepairRebindInputDecision,
     RepairCancelBranchDecision,
     RepairProposeSuccessorDecision,
+    RepairRebindInputDecision,
+    RepairRefineDeeperDecision,
     RepairReplaceMethodDecision,
     WaitDecision,
 )

@@ -6,7 +6,6 @@ import json
 from dataclasses import replace
 
 import pytest
-
 from deskpet.execution.contracts import OutcomeStatus
 from deskpet.harness.context import HostContextFactory
 from deskpet.harness.tool_executor import EffectBatchExecutor

@@ -6,7 +6,6 @@ from __future__ import annotations
 import copy
 
 import pytest
-
 from simple_harness.contracts import (
     CallId,
     ContentBlock,

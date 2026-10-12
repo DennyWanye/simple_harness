@@ -17,7 +17,6 @@ import asyncio
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.storage.store import StoreError
 from agent_orchestrator.testing.fixtures import package_of, role_of
 from agent_orchestrator.testing.product_world import TENANT, product_world

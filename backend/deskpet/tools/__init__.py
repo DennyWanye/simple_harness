@@ -17,7 +17,6 @@ from __future__ import annotations
 from threading import RLock
 from typing import Any
 
-
 _LEGACY_STATIC_PROVIDER_MODULES = (
     "agent_reach_tools",
     "browser_use_tool",

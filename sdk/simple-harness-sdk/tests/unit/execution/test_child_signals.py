@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from simple_harness.execution.contracts.children import (
     ChildSignalAckReceipt,
     ChildSignalAckResult,

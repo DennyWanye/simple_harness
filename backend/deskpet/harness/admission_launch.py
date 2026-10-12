@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from deskpet.execution.contracts import (
+    TERMINAL_RUN_STATUSES,
     ActorContext,
     AdmissionBoundary,
     AdmissionLaunchClaim,
@@ -20,7 +21,6 @@ from deskpet.execution.contracts import (
     RunRecord,
     RunRef,
     RunStatus,
-    TERMINAL_RUN_STATUSES,
     TerminalConflict,
     fingerprint_json,
 )

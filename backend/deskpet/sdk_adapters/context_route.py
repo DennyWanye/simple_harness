@@ -29,9 +29,9 @@ import asyncio
 import inspect
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any
 
 from simple_harness.execution.context_authority import ContextRouteReceipt
@@ -41,6 +41,7 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
+
 # 事件 AL: one name for this turn's evidence id, shared with the closure Tool's
 # ``refs_outside_scope`` disclosure — the model must read the same key whether
 # it learns the id from the accepted route or from a rejection.
@@ -165,7 +166,8 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
     import aiosqlite
 
     from deskpet.memory.current_input_visibility import (
-        LIVE_CLAIM_PLACEHOLDERS, LIVE_CLAIM_STATES,
+        LIVE_CLAIM_PLACEHOLDERS,
+        LIVE_CLAIM_STATES,
     )
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
@@ -830,7 +832,9 @@ class ContextRouteToolService:
             )
         service = self._bind_service(binding_append=self._binding_append_getter())
         from deskpet.memory.human_memory_service import (
-            AppendBindingRequest, CreateTaskScopeRequest, DecideManualBindingRequest,
+            AppendBindingRequest,
+            CreateTaskScopeRequest,
+            DecideManualBindingRequest,
         )
 
         continuation = None

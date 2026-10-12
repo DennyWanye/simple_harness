@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.runtime.model_router import RuntimeProfile
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 

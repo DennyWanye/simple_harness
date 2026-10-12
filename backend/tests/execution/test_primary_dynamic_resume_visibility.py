@@ -2,16 +2,22 @@
 import asyncio
 import json
 import sqlite3
+
 import httpx
 import pytest
-from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest, CreateTaskScopeRequest
+from deskpet.execution.primary_dependencies import check_runtime_dependencies
+from deskpet.memory.human_memory_service import (
+    CreateTaskScopeRequest,
+    HumanMemoryHostServiceFactory,
+    QueueTurnRequest,
+)
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
-from deskpet.execution.primary_dependencies import check_runtime_dependencies
-from tests.sdk_adapters.test_product_host_ports import Registry
-from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
 from tests.execution.test_primary_foreground_runtime import build
+from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
+from tests.sdk_adapters.test_product_host_ports import Registry
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fault", ["missing_manifest", "text_bytes", "scope_identity"])
@@ -58,7 +64,7 @@ async def test_dynamic_resume_does_not_send_unproved_scope_carrier(tmp_path, mon
         assert routes == [("resume_existing",)]
         assert len(requests) == 2
         assert len(sends) == 1, "Unproved ResumePackage reached physical transport"
-        from simple_harness import RunId, RequestId, thaw_json
+        from simple_harness import RequestId, RunId, thaw_json
         from simple_harness.execution.provider_invocations import provider_invocation_id
         sdk_run_id, request_id = requests[-1]
         record = stack._uow.read_provider_invocation(provider_invocation_id(RunId(sdk_run_id), RequestId(request_id)))

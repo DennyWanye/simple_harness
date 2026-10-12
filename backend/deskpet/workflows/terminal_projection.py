@@ -24,7 +24,6 @@ from .progress import (
     DEEP_RESEARCH_TERMINAL_METRIC_KEYS,
 )
 
-
 TERMINAL_PUBLIC_CAPABILITY = "terminal_public"
 TERMINAL_COMMIT_CAPABILITY = "terminal_commit"
 TerminalProjector = Callable[[object, str], dict[str, JsonValue] | None]

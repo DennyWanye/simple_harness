@@ -2,24 +2,27 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 import json
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
-
 from simple_harness import RunId
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import DecisionState, UnitOfWorkConflict
 from simple_harness.tools.authorization import AuthorizationDecision
+
 from .test_react_sqlite_runtime import (
-    AuthorizationScenario, PhysicalToolCounter, authorization_runtime, start_authorization_wait,
+    AuthorizationScenario,
+    PhysicalToolCounter,
+    authorization_runtime,
+    start_authorization_wait,
 )
 
 

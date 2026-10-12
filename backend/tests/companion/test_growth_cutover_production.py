@@ -5,7 +5,6 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.contracts import (
     EMPTY_RECEIPT_SET_HASH,
     OwnerScopeKey,

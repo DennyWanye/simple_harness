@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from deskpet.retrieval.contracts import RetrievalCandidate
 from deskpet.retrieval.query_terms import extract_query_terms
-from deskpet.retrieval.ranking import canonicalize_url, dedupe_candidates, normalized_host, rank_candidates
+from deskpet.retrieval.ranking import (
+    canonicalize_url,
+    dedupe_candidates,
+    normalized_host,
+    rank_candidates,
+)
 
 
 def _row(url, title, provider, rank):

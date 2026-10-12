@@ -6,14 +6,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import RunId
-
 from deskpet.sdk_adapters.capability_catalog import (
     ProductCapabilityCatalogSourceAdapter,
     ProductExecutableSourceFact,
     ProductSkillSourceFact,
     ProductWorkflowSourceFact,
 )
+from simple_harness import RunId
 
 _A = "a" * 64
 _B = "b" * 64

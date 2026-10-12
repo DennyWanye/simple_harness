@@ -10,10 +10,9 @@ monkey-patch heavy ML deps (torch, ctranslate2).
 """
 from __future__ import annotations
 
+import main
 import pytest
 from fastapi.testclient import TestClient
-
-import main
 from observability.startup import registry as startup_errors
 
 

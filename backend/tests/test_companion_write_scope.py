@@ -24,11 +24,10 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent.write_scope import (
     resolve_workspace_root,
-    shell_write_scope_check,
     scope_violation_message,
+    shell_write_scope_check,
     write_scope_check,
 )
 

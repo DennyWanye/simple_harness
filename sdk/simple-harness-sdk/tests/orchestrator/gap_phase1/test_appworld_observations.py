@@ -9,7 +9,6 @@ from dataclasses import FrozenInstanceError, replace
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.evaluation.appworld import AppWorldConfig, AppWorldEpisode
 
 

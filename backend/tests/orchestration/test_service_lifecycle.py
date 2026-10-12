@@ -13,9 +13,9 @@ import os
 import time
 
 import pytest
+from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from context import _VALID_SERVICES
 from deskpet.orchestration.paths import OrchestrationPathError, orchestration_root
-from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,

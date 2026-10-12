@@ -12,11 +12,10 @@ look at the screen — best-effort, never blocks the popup flow.
 from __future__ import annotations
 
 import asyncio
-import pytest
 
+import pytest
 from deskpet.permissions.gate import PermissionGate, PermissionGateConfig
 from deskpet.types.skill_platform import PermissionResponse
-
 
 # ---------------------------------------------------------------------------
 # auto_mode = True → ALLOW everywhere

@@ -13,7 +13,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from deskpet.agent.outcome_verifier import (
     BuildVerifier,
     FileExistsVerifier,
@@ -23,7 +22,6 @@ from deskpet.agent.outcome_verifier import (
     VerifierOutcome,
     run_outcome_verifiers,
 )
-
 
 # ─── T10-1/T10-2/T10-3 file_exists ──────────────────────────
 

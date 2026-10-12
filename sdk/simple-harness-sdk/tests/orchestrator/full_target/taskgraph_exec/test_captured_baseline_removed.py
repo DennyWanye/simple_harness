@@ -10,9 +10,8 @@ import asyncio
 import sqlite3
 
 import pytest
-
-from production_fixture import enabled_world
 from agent_orchestrator.storage.store import StoreError
+from production_fixture import enabled_world
 
 
 def _count(store, table, mission_id):

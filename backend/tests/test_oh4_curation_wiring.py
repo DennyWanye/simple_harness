@@ -28,9 +28,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from config import load_config
-
 
 # 仓库根 config.toml（出厂运行配置 = flag 真正点亮处）。
 _REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.toml"

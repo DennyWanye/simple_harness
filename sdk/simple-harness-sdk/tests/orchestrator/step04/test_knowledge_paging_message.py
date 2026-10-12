@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool
 from agent_orchestrator.storage.store import Store
 

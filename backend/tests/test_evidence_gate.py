@@ -12,7 +12,7 @@
 """
 from __future__ import annotations
 
-from deskpet.agent.evidence_gate import EvidenceGate, EvidenceDecision
+from deskpet.agent.evidence_gate import EvidenceDecision, EvidenceGate
 
 
 def test_block_when_no_evidence() -> None:

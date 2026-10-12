@@ -17,9 +17,8 @@
 
 import asyncio
 
-import pytest
-
 import main
+import pytest
 
 
 class _Identity:

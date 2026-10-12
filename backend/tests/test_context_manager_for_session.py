@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent.context_manager import ContextManager
 
 

@@ -14,9 +14,9 @@ import io
 import json
 import re
 import zipfile
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Callable, Mapping, Sequence
 
 from .contracts import (
     CandidateMode,

@@ -9,11 +9,13 @@ bare claim with no receipt is BLOCKED (the fake-completion we want to catch).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 from deskpet.agent.verify_gate import (
-    VerifyGate, RegexExtractor, load_claim_patterns,
+    RegexExtractor,
+    VerifyGate,
+    load_claim_patterns,
 )
 from deskpet.tools.receipt import make_receipt
 
@@ -38,7 +40,7 @@ def test_generated_image_claim_requires_generate_image_receipt():
 
 def test_generated_image_claim_rejects_pending_accepted_receipt():
     gate = VerifyGate(extractor=RegexExtractor(_patterns()), mode="strict")
-    t0 = datetime.now(timezone.utc)
+    t0 = datetime.now(UTC)
     pending = make_receipt(
         tool_name="generate_image",
         args={},
@@ -60,7 +62,7 @@ def test_generated_image_claim_rejects_pending_accepted_receipt():
 
 
 def _receipt(tool_name: str, ok: bool = True):
-    t0 = datetime.now(timezone.utc)
+    t0 = datetime.now(UTC)
     return make_receipt(tool_name=tool_name, args={}, started_at=t0,
                         ended_at=t0 + timedelta(milliseconds=5), ok=ok,
                         session_id="s1", iteration=1)

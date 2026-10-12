@@ -23,21 +23,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures" / "htn"))
 
-from htn_world import (  # noqa: E402
-    BUDGET,
-    Env,
-    acceptance_ref,
-    atom,
-    ground_draft,
-    method,
-    out,
-    param,
-    ref,
-    root_network,
-    step,
-    task_binding,
-)
-
 from agent_orchestrator.contracts.evidence_state import TruthValue  # noqa: E402
 from agent_orchestrator.contracts.htn import (  # noqa: E402
     ReusePolicy,
@@ -64,6 +49,20 @@ from agent_orchestrator.planning.htn.grounding import (  # noqa: E402
     SharingSignature,
     ground_method,
     named_share_refusal,
+)
+from htn_world import (  # noqa: E402
+    BUDGET,
+    Env,
+    acceptance_ref,
+    atom,
+    ground_draft,
+    method,
+    out,
+    param,
+    ref,
+    root_network,
+    step,
+    task_binding,
 )
 
 

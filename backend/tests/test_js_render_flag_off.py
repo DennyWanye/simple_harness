@@ -14,7 +14,6 @@ from __future__ import annotations
 import sys
 
 import pytest
-
 from deskpet.tools import research_tools as r
 
 

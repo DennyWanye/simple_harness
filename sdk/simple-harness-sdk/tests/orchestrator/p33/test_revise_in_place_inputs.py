@@ -5,7 +5,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.orchestrator import event_handler
 from agent_orchestrator.orchestrator.event_handler import Orchestrator

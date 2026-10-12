@@ -13,12 +13,13 @@ import os
 import time
 import unicodedata
 import zipfile
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 import aiosqlite
 
@@ -190,7 +191,7 @@ class PreparedTarget:
         mode: TargetMode | str,
         format: str | None = None,
         platform: str | None = None,
-    ) -> "PreparedTarget":
+    ) -> PreparedTarget:
         final = Path(final_path).expanduser().resolve(strict=False)
         if final.exists() and not final.is_file():
             raise ValueError(f"effect target is not a file: {final}")
@@ -198,7 +199,7 @@ class PreparedTarget:
         stat = final.stat() if pre_exists else None
         reservation_key = target_reservation_key(final, platform=platform)
         suffix = hashlib.sha256(
-            f"{run_id}|{stable_call_id}|{reservation_key}".encode("utf-8")
+            f"{run_id}|{stable_call_id}|{reservation_key}".encode()
         ).hexdigest()[:20]
         staging = final.with_name(f".{final.name}.{suffix}.deskpet-stage")
         return cls(
@@ -227,7 +228,7 @@ class PreparedTarget:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "PreparedTarget":
+    def from_dict(cls, value: Mapping[str, Any]) -> PreparedTarget:
         return cls(**dict(value))
 
 
@@ -261,7 +262,7 @@ class PreparedToolCall:
     runtime_provenance_ref: str = ""
     catalog_snapshot_ref: str = ""
     retry_of_effect_id: str = ""
-    resource_selectors: tuple["ResourceSelector", ...] = ()
+    resource_selectors: tuple[ResourceSelector, ...] = ()
 
     def __post_init__(self) -> None:
         if not all(
@@ -342,8 +343,8 @@ class PreparedToolCall:
         runtime_provenance_ref: str = "",
         catalog_snapshot_ref: str = "",
         retry_of_effect_id: str = "",
-        resource_selectors: Sequence["ResourceSelector"] = (),
-    ) -> "PreparedToolCall":
+        resource_selectors: Sequence[ResourceSelector] = (),
+    ) -> PreparedToolCall:
         return cls(
             tool_name=tool_name,
             stable_call_id=stable_call_id,
@@ -411,7 +412,7 @@ class PreparedToolCall:
         return params
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "PreparedToolCall":
+    def from_dict(cls, value: Mapping[str, Any]) -> PreparedToolCall:
         data = dict(value)
         data["prepared_targets"] = tuple(
             PreparedTarget.from_dict(item) for item in data.get("prepared_targets", ())
@@ -476,17 +477,17 @@ class NormalizedToolOutcome:
         object.__setattr__(self, "error", _freeze_json(error) if error is not None else None)
 
     @classmethod
-    def success(cls, value: JsonValue = None) -> "NormalizedToolOutcome":
+    def success(cls, value: JsonValue = None) -> NormalizedToolOutcome:
         return cls(ToolOutcomeState.SUCCESS, value=value)
 
     @classmethod
     def failure(
         cls, code: str, message: str, *, value: JsonValue = None
-    ) -> "NormalizedToolOutcome":
+    ) -> NormalizedToolOutcome:
         return cls(ToolOutcomeState.FAILURE, value=value, error={"code": code, "message": message})
 
     @classmethod
-    def malformed(cls, message: str) -> "NormalizedToolOutcome":
+    def malformed(cls, message: str) -> NormalizedToolOutcome:
         return cls(
             ToolOutcomeState.MALFORMED,
             error={"code": "malformed_tool_outcome", "message": message},
@@ -504,7 +505,7 @@ class NormalizedToolOutcome:
         return self.state
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "NormalizedToolOutcome":
+    def from_dict(cls, value: Mapping[str, Any]) -> NormalizedToolOutcome:
         return cls(state=value["state"], value=value.get("value"), error=value.get("error"))
 
 
@@ -585,7 +586,7 @@ class BudgetLedgerSnapshot:
 class EffectExecutionContext:
     """Fenced runtime identity required by production effect adapters."""
 
-    journal: "EffectJournal"
+    journal: EffectJournal
     fence: RunFence
     node_execution_id: str
     workflow_name: str
@@ -996,7 +997,7 @@ class EffectJournal:
         def wall(value: object | None) -> str | None:
             if value is None:
                 return None
-            return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+            return datetime.fromtimestamp(float(value), UTC).isoformat()
 
         return DurableDeadlineV1.from_json(
             {
@@ -1169,7 +1170,7 @@ class EffectJournal:
             def wall(value: object | None) -> str | None:
                 if value is None:
                     return None
-                return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+                return datetime.fromtimestamp(float(value), UTC).isoformat()
             return {
                 "schema_version": int(row["schema_version"]),
                 "deadline_id": str(row["deadline_id"]),
@@ -1210,7 +1211,7 @@ class EffectJournal:
                 if limit < 0:
                     raise ValueError("v6 route budget limits must be non-negative")
                 budget_id = hashlib.sha256(
-                    f"{fence.run_id}|{policy_hash}|{kind}".encode("utf-8")
+                    f"{fence.run_id}|{policy_hash}|{kind}".encode()
                 ).hexdigest()
                 row = await (
                     await db.execute(
@@ -1267,10 +1268,10 @@ class EffectJournal:
         if resource_kind not in {"query", "fetch", "browser"}:
             raise ValueError("unsupported v6 read resource kind")
         effect_id = hashlib.sha256(
-            f"{fence.run_id}|{logical_effect_id}|{attempt_no}".encode("utf-8")
+            f"{fence.run_id}|{logical_effect_id}|{attempt_no}".encode()
         ).hexdigest()
         fingerprint = hashlib.sha256(
-            f"{logical_effect_id}|{attempt_no}".encode("utf-8")
+            f"{logical_effect_id}|{attempt_no}".encode()
         ).hexdigest()
         db = await self._connect()
         try:
@@ -1367,7 +1368,7 @@ class EffectJournal:
             ):
                 raise EffectStateConflict("v6 read attempt does not extend its head")
             budget_id = hashlib.sha256(
-                f"{fence.run_id}|{resource_policy_hash}|{resource_kind}".encode("utf-8")
+                f"{fence.run_id}|{resource_policy_hash}|{resource_kind}".encode()
             ).hexdigest()
             budget = await (
                 await db.execute(
@@ -1411,7 +1412,7 @@ class EffectJournal:
             supersedes = None
             if head is not None:
                 supersedes = hashlib.sha256(
-                    f"{fence.run_id}|{logical_effect_id}|{attempt_no - 1}".encode("utf-8")
+                    f"{fence.run_id}|{logical_effect_id}|{attempt_no - 1}".encode()
                 ).hexdigest()
             await db.execute(
                 """INSERT INTO workflow_effects(
@@ -1431,7 +1432,7 @@ class EffectJournal:
                 (node_execution_id, effect_id),
             )
             reservation_id = hashlib.sha256(
-                f"{effect_id}|{budget_id}|{deadline_id}".encode("utf-8")
+                f"{effect_id}|{budget_id}|{deadline_id}".encode()
             ).hexdigest()
             await db.execute(
                 """INSERT INTO workflow_research_resource_reservations(
@@ -1975,7 +1976,7 @@ class EffectJournal:
                 return BeginEffectResult(EffectAction.REUSE, self._record(reusable))
 
             effect_id = hashlib.sha256(
-                f"{fence.run_id}|{fingerprint}".encode("utf-8")
+                f"{fence.run_id}|{fingerprint}".encode()
             ).hexdigest()
             now = self._clock()
             policy_json = canonical_json(

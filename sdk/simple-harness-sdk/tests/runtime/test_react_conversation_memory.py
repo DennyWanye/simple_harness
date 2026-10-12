@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness import ContentBlock, Message, MessageRole
 from simple_harness.execution.uow import RunState
 from simple_harness.runtime import ConversationTurnOutput, DriverResult

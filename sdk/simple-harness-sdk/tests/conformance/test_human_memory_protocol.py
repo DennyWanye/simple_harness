@@ -7,7 +7,6 @@ import hashlib
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
-
 import simple_harness
 import simple_harness.runtime as runtime
 from simple_harness.contracts import canonical_json, fingerprint_json

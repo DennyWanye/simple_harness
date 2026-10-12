@@ -7,17 +7,16 @@
 """
 from __future__ import annotations
 
-import json
-import inspect
 import importlib
+import inspect
+import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.receipt import (
     ToolReceipt,
     canonical_json,
@@ -32,15 +31,14 @@ from deskpet.tools.receipt_store import (
     sanity_echo,
 )
 
-
 # ─── TG-7 HMAC sign/verify roundtrip + key 文件兜底 ────────
 
 def test_t7_1_sign_then_verify_roundtrip():
     r = make_receipt(
         tool_name="t",
         args={"a": 1},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     assert hmac_verify(r) is True
@@ -50,8 +48,8 @@ def test_t7_2_tampered_tool_name_rejected():
     r = make_receipt(
         tool_name="t",
         args={"a": 1},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     r.tool_name = "evil"
@@ -62,8 +60,8 @@ def test_t7_3_tampered_sig_rejected():
     r = make_receipt(
         tool_name="t",
         args={"a": 1},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
     r.sig = "0" * 64
@@ -106,8 +104,8 @@ def test_t7_5_receipt_key_never_accesses_keyring(tmp_path, monkeypatch):
         store1,
         tool_name="keychain_free_roundtrip",
         args={"value": 1},
-        started_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 9, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 9, 1, tzinfo=UTC),
         ok=True,
         session_id="no-keychain",
     )
@@ -145,8 +143,8 @@ def test_t7_5d_old_receipts_remain_raw_but_do_not_enter_verified_ledger(tmp_path
         old_store,
         tool_name="old-receipt",
         args={},
-        started_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+        started_at=datetime(2026, 8, 31, tzinfo=UTC),
+        ended_at=datetime(2026, 8, 31, tzinfo=UTC),
         ok=True,
         session_id="legacy-keychain",
     )
@@ -183,8 +181,8 @@ def test_t8_1_append_creates_jsonl(tmp_path):
         store,
         tool_name="ppt_create",
         args={"x": 1},
-        started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 23, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 23, tzinfo=UTC),
         ok=True,
         session_id="sess1",
     )
@@ -204,8 +202,8 @@ def test_t8_2_load_session_returns_valid_receipts(tmp_path):
             store,
             tool_name=f"t{i}",
             args={},
-            started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-            ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+            started_at=datetime(2026, 5, 23, tzinfo=UTC),
+            ended_at=datetime(2026, 5, 23, tzinfo=UTC),
             ok=True,
             session_id="s",
         )
@@ -221,8 +219,8 @@ def test_t8_3_load_session_filters_sig_invalid(tmp_path, caplog):
     # 写一条正常 receipt
     emit_receipt(
         store, tool_name="t", args={},
-        started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 23, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 23, tzinfo=UTC),
         ok=True, session_id="s",
     )
     # 手动追加一条 sig 错误的
@@ -253,14 +251,14 @@ def test_t8_4_cleanup_expired_deletes_old(tmp_path):
     store = _make_store(tmp_path, retention_days=7)
     emit_receipt(
         store, tool_name="t", args={},
-        started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 23, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 23, tzinfo=UTC),
         ok=True, session_id="s_old",
     )
     # 把文件 mtime 改成 30 天前
     path = tmp_path / "receipts" / "s_old.jsonl"
     import os
-    old_time = (datetime.now(timezone.utc) - timedelta(days=30)).timestamp()
+    old_time = (datetime.now(UTC) - timedelta(days=30)).timestamp()
     os.utime(path, (old_time, old_time))
 
     deleted = store.cleanup_expired()
@@ -273,8 +271,8 @@ def test_t8_5_archive_for_key_rotation(tmp_path):
     store = _make_store(tmp_path)
     emit_receipt(
         store, tool_name="t", args={},
-        started_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 5, 23, tzinfo=timezone.utc),
+        started_at=datetime(2026, 5, 23, tzinfo=UTC),
+        ended_at=datetime(2026, 5, 23, tzinfo=UTC),
         ok=True, session_id="s",
     )
     assert (tmp_path / "receipts" / "s.jsonl").exists()

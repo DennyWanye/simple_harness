@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import pytest
-
-from deskpet.workflows.definitions.deep_research_v2_quality import apply_repair, evaluate_support, parse_claims
+from deskpet.workflows.definitions.deep_research_v2_quality import (
+    apply_repair,
+    evaluate_support,
+    parse_claims,
+)
 from deskpet.workflows.definitions.deep_research_v2_report import render_report
 
 

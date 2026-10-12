@@ -22,8 +22,8 @@ async def main():
     print("=" * 70)
 
     # 1. 用真 SkillLoader 跑
-    from deskpet.skills.loader import SkillLoader
     import deskpet.skills.builtin as _builtin_pkg
+    from deskpet.skills.loader import SkillLoader
     builtin_dir = Path(_builtin_pkg.__file__).parent
     loader = SkillLoader(skill_dirs=[builtin_dir], enable_watch=False)
     loader.reload()  # 触发首次扫描（start() 是 async + 启 watchdog；smoke 用 sync）

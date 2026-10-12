@@ -22,10 +22,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, EffectId, RunId
-from simple_harness.tools import ToolCall, ToolContext
-from simple_harness.tools.contracts import CancellationToken
-
 from deskpet.sdk_adapters.effect_gate import (
     EFFECT_GATE_STICKY_REASON,
     EffectGate,
@@ -33,6 +29,9 @@ from deskpet.sdk_adapters.effect_gate import (
 )
 from deskpet.sdk_adapters.run_faults import RunFaultMemo
 from deskpet.task_scope.store import TaskScopeNotFound
+from simple_harness import CallId, EffectId, RunId
+from simple_harness.tools import ToolCall, ToolContext
+from simple_harness.tools.contracts import CancellationToken
 from tests.sdk_adapters import s5b_effect_gate_harness as h
 from tests.sdk_adapters.test_effect_gate import _code, _context, _routed_write
 
@@ -316,10 +315,9 @@ async def test_gate_rejects_cross_run_envelope(tmp_path: Path) -> None:
 
 
 def test_snapshot_passthrough_when_exposure_lacks_execution_policy() -> None:
+    from deskpet.sdk_adapters.context_authority import _visible_provider_specs
     from simple_harness.execution.context_authority import ContextRouteState
     from simple_harness.providers import ProviderToolSpec
-
-    from deskpet.sdk_adapters.context_authority import _visible_provider_specs
 
     specs = (
         ProviderToolSpec("write_file", "w", {"type": "object"}),
@@ -372,13 +370,12 @@ async def test_rejected_effect_reservation_abandoned_immediately(tmp_path: Path)
     ``abandoned``、tombstone ``status=rejected``（trivial，不脏），不留给 terminal 排空；
     正常成功的 effect 仍 ingested。真实 SDK executor + 真实 ingress。"""
 
+    from deskpet.execution.semantic_closure import dirty_state, is_material_event
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
     from simple_harness.tools.authorization import (
         AuthorizationDecision,
         AuthorizationResult,
     )
-
-    from deskpet.execution.semantic_closure import dirty_state, is_material_event
-    from deskpet.task_scope.store import CanonicalTaskScopeStore
     from tests.sdk_adapters.test_effect_gate_replay import _bound_case
 
     ch, env, case = await _bound_case(tmp_path)

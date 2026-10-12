@@ -19,10 +19,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent
 from agent.context_messages import CONTEXT_MESSAGE_META_KEY
-
 
 # ---------------------------------------------------------------------------
 # Minimal fakes

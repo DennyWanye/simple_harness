@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from deskpet.agent.assembler.bundle import AssemblyPolicy, Slice
 from deskpet.agent.assembler.components.base import ComponentContext
 from deskpet.agent.assembler.registry import ComponentRegistry

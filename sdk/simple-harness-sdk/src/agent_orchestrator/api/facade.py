@@ -27,8 +27,8 @@ envelope or a request field).
 from __future__ import annotations
 
 import hashlib
-from functools import wraps
 from collections.abc import Mapping
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -409,8 +409,10 @@ class MissionControlV1:
         The page lists only supported choices; this is the gate for a caller that went
         around it, or a deployment that changed — never left to fail at materialisation."""
         from ..contracts.operation_completion import OperationCompletionRequirementsV1
+        from ..orchestrator.operation_materialization_inputs import (
+            OperationMaterializationInputError,
+        )
         from ..runtime.operation_profiles import BuiltinOperationProfiles
-        from ..orchestrator.operation_materialization_inputs import OperationMaterializationInputError
 
         proposal = command.get("proposal") if isinstance(command, Mapping) else None
         if not isinstance(proposal, Mapping) or not proposal.get("effects"):
@@ -427,8 +429,8 @@ class MissionControlV1:
     @_native_root
     def approve_operation_completion_spec(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Confirm the exact completion mapping using this facade's fixed caller."""
-        from .operation_completion import OperationCompletionApi
         from ..orchestrator.operation_completion import OperationCompletionError
+        from .operation_completion import OperationCompletionApi
 
         if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
             self._refuse_isolated(command["mission_id"])
@@ -449,7 +451,10 @@ class MissionControlV1:
     def amend_requirements(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Amend a running Mission's requirements (add / rewrite / remove entries) using this
         facade's fixed caller.  One transaction; the same command id replays its receipt."""
-        from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
+        from ..orchestrator.requirements_amendment import (
+            RequirementsAmendmentError,
+            amend_requirements,
+        )
 
         fields = {"mission_id", "command_id", "expected_requirements_ref", "changes", "reason", "source"}
         if not isinstance(command, Mapping) or set(command) != fields:

@@ -10,7 +10,6 @@ import hashlib
 from dataclasses import FrozenInstanceError, replace
 
 import pytest
-
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.contracts.children import AttachmentPolicy
 from simple_harness.runtime.kernel import DriverInvocation, RunClient

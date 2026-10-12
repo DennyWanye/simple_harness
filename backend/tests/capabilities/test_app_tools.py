@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools.app_tools import app_discover, app_launch
 from deskpet.tools.os_tools.process_tools import (

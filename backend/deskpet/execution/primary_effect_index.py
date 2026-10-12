@@ -15,7 +15,9 @@ async def record_effect(binding, context, tool_name):
         raise ValueError("primary_effect_index_identity_mismatch")
     store = binding.store
     from deskpet.execution.foreground_queue import (
-        EffectBoundary, _EFFECT_BOUNDARY_ALLOWED_STATES, _clock_value,
+        _EFFECT_BOUNDARY_ALLOWED_STATES,
+        EffectBoundary,
+        _clock_value,
     )
     body = dict(host_run_id=binding.host_run_id, sdk_run_id=binding.sdk_run_id,
                 effect_id=identifier(context.effect_id.value, "effect_id", 512),

@@ -3,9 +3,9 @@
 
 """Integration tests for _execute_sdk_run function."""
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
 
 import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock, create_autospec, patch
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
 
@@ -361,13 +361,13 @@ async def test_sdk_preparation_rejects_required_content_over_context_window():
 
 @pytest.mark.asyncio
 async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
-    from main import _prepare_sdk_context_snapshot
     from deskpet.capabilities.contracts import fingerprint_json
     from deskpet.companion.skills import (
         PreparedSkillInvocationScopeV1,
         ResolvedSkillInstructionV1,
     )
     from deskpet.sdk_adapters.context import ProductContextAdapter
+    from main import _prepare_sdk_context_snapshot
     from simple_harness import thaw_json
 
     scope_payload = {
@@ -584,8 +584,8 @@ def test_sdk_price_snapshot_never_marks_unknown_model_free():
 
 
 def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
-    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT
     from deskpet.sdk_adapters.tools import ProductToolRegistration, _sdk_tool
+    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT
 
     registration = ProductToolRegistration(
         name="read_file",
@@ -625,14 +625,13 @@ async def test_public_progress_never_required_while_tool_required_still_enforced
     守护（发布 schema 里已没有 required 可断言）。
     """
 
-    from simple_harness import CallId, RequestId, RunId
-    from simple_harness.tools import CancellationToken, ToolContext, ToolOutcome
-
     from deskpet.sdk_adapters.tools import (
         ProductToolRegistration,
         _current_call_id,
         _sdk_tool,
     )
+    from simple_harness import CallId, RequestId, RunId
+    from simple_harness.tools import CancellationToken, ToolContext, ToolOutcome
 
     seen: list[dict] = []
     registration = ProductToolRegistration(
@@ -1822,7 +1821,11 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
 @pytest.mark.asyncio
 async def test_execute_sdk_run_basic_flow(mock_sdk_ingress, mock_websocket, mock_context):
     """Test basic execution flow of _execute_sdk_run."""
-    from deskpet.agent.run_presenter import build_product_run_presenter, CanonicalRunEventPresentationAdapter, PresentationState
+    from deskpet.agent.run_presenter import (
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+        build_product_run_presenter,
+    )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
 
     session_id = "test_session"
@@ -1888,7 +1891,11 @@ async def test_execute_sdk_run_basic_flow(mock_sdk_ingress, mock_websocket, mock
 @pytest.mark.asyncio
 async def test_execute_sdk_run_registry_cleanup(mock_sdk_ingress, mock_websocket, mock_context):
     """Test that adapter is cleaned up from registry even on error."""
-    from deskpet.agent.run_presenter import build_product_run_presenter, CanonicalRunEventPresentationAdapter, PresentationState
+    from deskpet.agent.run_presenter import (
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+        build_product_run_presenter,
+    )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
 
     session_id = "test_session"
@@ -1936,7 +1943,11 @@ async def test_execute_sdk_run_registry_cleanup(mock_sdk_ingress, mock_websocket
 @pytest.mark.asyncio
 async def test_execute_sdk_run_adapter_registration(mock_sdk_ingress, mock_websocket, mock_context):
     """Test that ProductDeliveryAdapter is properly registered."""
-    from deskpet.agent.run_presenter import build_product_run_presenter, CanonicalRunEventPresentationAdapter, PresentationState
+    from deskpet.agent.run_presenter import (
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+        build_product_run_presenter,
+    )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
 
     receipt = await mock_sdk_ingress.start(

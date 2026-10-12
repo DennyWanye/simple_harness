@@ -1403,7 +1403,10 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
     """
 
     from deskpet.execution.current_tool_pages import (
-        CONTROL_MARKER, CONTROL_TOOLS, MARKER, PAGE_WORTH_MIN_BYTES,
+        CONTROL_MARKER,
+        CONTROL_TOOLS,
+        MARKER,
+        PAGE_WORTH_MIN_BYTES,
     )
 
     paged = 0
@@ -1594,8 +1597,6 @@ class ProductRunContextAuthority:
         return len(tuple(getattr(exact, "root_identity_hashes", ()))) >= 2
 
     async def prepare_snapshot(self, request: Any) -> Any:
-        from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
-        from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
         from simple_harness import RequestId
         from simple_harness.execution.context_authority import (
             ContextRouteState,
@@ -1605,6 +1606,9 @@ class ProductRunContextAuthority:
             provider_request_fingerprint,
         )
         from simple_harness.providers import ProviderRequest
+
+        from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
+        from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 
         ports = self._ports_resolver()
         context = ports.context.load(request.run_id)
@@ -1897,6 +1901,9 @@ class ProductRuntimeDecisionSink:
             presented = await self._ledger.presented_occurrence_keys()
             pending = await self._reconcile(presented)
             if pending:
-                from simple_harness import MandatoryContextActionRequired, MandatoryContextRejectionV1
+                from simple_harness import (
+                    MandatoryContextActionRequired,
+                    MandatoryContextRejectionV1,
+                )
                 raise MandatoryContextActionRequired(MandatoryContextRejectionV1(
                     run_id.value, provider_turn_ordinal, request_fingerprint))

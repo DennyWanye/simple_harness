@@ -31,24 +31,46 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId
-from simple_harness.contracts.messages import Message, MessageRole
-
 from deskpet.execution.current_tool_pages import (
-    CONTROL_TOOLS, MARKER, PAGE_SAVING_DIVISOR, PAGE_SIZE, PAGE_WORTH_MIN_BYTES, PREFIX,
-    PrimaryContextPageUnavailable, SUMMARY_EXCERPT_BYTES, SUMMARY_MIN_BYTES,
-    LEGACY_PAGE_SIZE, TITLE_EXCERPT_BYTES,
-    _settled_tool_tokens, current_tool_allowance, legacy_af_summary, page_starts, reference,
-    source_content, summary, verify_request, worth_paging,
+    CONTROL_TOOLS,
+    LEGACY_PAGE_SIZE,
+    MARKER,
+    PAGE_SAVING_DIVISOR,
+    PAGE_SIZE,
+    PAGE_WORTH_MIN_BYTES,
+    PREFIX,
+    SUMMARY_EXCERPT_BYTES,
+    SUMMARY_MIN_BYTES,
+    TITLE_EXCERPT_BYTES,
+    PrimaryContextPageUnavailable,
+    _settled_tool_tokens,
+    current_tool_allowance,
+    legacy_af_summary,
+    page_starts,
+    reference,
+    source_content,
+    summary,
+    verify_request,
+    worth_paging,
 )
 from deskpet.execution.primary_context_pages import PAGE_BYTES, _excerpt
 from deskpet.sdk_adapters.context_partitions import effective_input_budget, text_tokens
 from deskpet.task_scope.protocol import canonical_hash
-
+from simple_harness import CallId
+from simple_harness.contracts.messages import Message, MessageRole
 from tests.execution.test_control_result_bound import (
-    CURRENT_TEXT, FLASH_RATIO, HOST_RUN_ID, RUN_ID, WINDOW,
-    FakeEffect, FakeStack, admission_facts, flash_calibration, make_projector,  # noqa: F401
-    public_body, sized_body,
+    CURRENT_TEXT,
+    FLASH_RATIO,
+    HOST_RUN_ID,
+    RUN_ID,
+    WINDOW,
+    FakeEffect,  # noqa: F401
+    FakeStack,
+    admission_facts,
+    flash_calibration,
+    make_projector,
+    public_body,
+    sized_body,
 )
 
 # The target the E memo set for this followup: ~110 token per descriptor instead

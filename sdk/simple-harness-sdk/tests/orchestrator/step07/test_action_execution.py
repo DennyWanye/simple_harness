@@ -15,9 +15,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from helpers_step07 import ALICE, ENABLED, candidate, ledger_world
-
 from agent_orchestrator.governance.policies import DeploymentPolicy
+from helpers_step07 import ALICE, ENABLED, candidate, ledger_world
 
 HASH_B = "b" * 64
 

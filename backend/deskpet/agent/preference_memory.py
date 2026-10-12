@@ -25,8 +25,9 @@ import json
 import logging
 import math
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class PreferenceMemory:
             log.warning("preference_memory save failed: %s", exc)
 
     # ---- embedding ------------------------------------------------------
-    async def _vec(self, text: str) -> Optional[list[float]]:
+    async def _vec(self, text: str) -> list[float] | None:
         text = (text or "").strip()
         if not text:
             return None
@@ -147,7 +148,7 @@ class PreferenceMemory:
                  kind, label, norm[:60])
         return True
 
-    async def match(self, text: str, kind: str) -> Optional[dict[str, Any]]:
+    async def match(self, text: str, kind: str) -> dict[str, Any] | None:
         """语义匹配同 kind 的最相似条目；≥ 阈值返回 {label, score, text}，否则 None。
 
         WI-3.3 recency decay（仅 pref_decay=True 时生效）：
@@ -159,7 +160,7 @@ class PreferenceMemory:
         vec = await self._vec(text)
         if vec is None:
             return None
-        best: Optional[dict[str, Any]] = None
+        best: dict[str, Any] | None = None
         best_score = -1.0       # raw cosine — for threshold check
         best_effective = -1.0   # effective (decay-adjusted) — for ranking
         now = self._now()
@@ -187,7 +188,7 @@ class PreferenceMemory:
                     "text": best.get("text")}
         return None
 
-    def list_entries(self, kind: Optional[str] = None) -> list[dict[str, Any]]:
+    def list_entries(self, kind: str | None = None) -> list[dict[str, Any]]:
         """查看（不含 embedding，给 /prefs UI）。"""
         return [
             {"text": e.get("text"), "label": e.get("label"),
@@ -196,7 +197,7 @@ class PreferenceMemory:
             if kind is None or e.get("kind") == kind
         ]
 
-    def clear(self, kind: Optional[str] = None) -> int:
+    def clear(self, kind: str | None = None) -> int:
         """清除偏好（kind=None 全清）。返回清除条数。"""
         before = len(self._entries)
         if kind is None:

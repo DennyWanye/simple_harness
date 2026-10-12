@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.delivery import DeliveryAttemptResultV1
 from deskpet.workflows.outbox import OutboxError, WorkflowOutbox

@@ -18,7 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 logger = logging.getLogger("deskpet.agent.external_evaluator")
 
@@ -88,7 +89,7 @@ def is_high_consequence_goal(
     ledger: list[Any],
     changed_files: list[str],
     *,
-    confidence: Optional[float] = None,
+    confidence: float | None = None,
 ) -> bool:
     """判断目标是否为「高后果」，命中任一条件即返回 True。
 
@@ -211,7 +212,7 @@ class ExternalEvaluator:
 
     def __init__(
         self,
-        llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
+        llm_call: Callable[[str], Awaitable[str]] | None = None,
         *,
         pass_threshold: int = _DEFAULT_PASS_THRESHOLD,
         conservative_on_error: bool = False,

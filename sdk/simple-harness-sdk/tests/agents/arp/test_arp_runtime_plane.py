@@ -15,8 +15,6 @@ from pathlib import Path
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import AcceptingAssurance, admit_command, artifact, install_command, lifecycle_command, md_bundle, trial_command
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp import store
@@ -25,6 +23,15 @@ from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.strict import canonical
 from simple_harness.agents.contracts import AgentTurnState
 from simple_harness.api import RuntimePlaneService
+from skill_fixture import (
+    AcceptingAssurance,
+    admit_command,
+    artifact,
+    install_command,
+    lifecycle_command,
+    md_bundle,
+    trial_command,
+)
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 

@@ -22,7 +22,6 @@ import json
 import threading
 
 import pytest
-
 from deskpet.tools import registry as module_registry
 from deskpet.tools.registry import ToolRegistry
 

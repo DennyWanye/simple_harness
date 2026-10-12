@@ -6,8 +6,9 @@ import asyncio
 import hashlib
 import json
 import secrets
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 
 def _required(value: object, name: str) -> str:
@@ -181,7 +182,7 @@ class RuntimeLaunchAuthorization:
         cls,
         prepared_set: PreparedRuntimeSet,
         instance: PreparedRuntimeInstanceSpec,
-    ) -> "RuntimeLaunchAuthorization":
+    ) -> RuntimeLaunchAuthorization:
         if instance not in prepared_set.instances:
             raise ValueError("runtime instance is not in prepared set")
         nonce = secrets.token_hex(16)

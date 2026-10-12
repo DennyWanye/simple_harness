@@ -28,19 +28,31 @@ for _extra in (_TESTS / "agents", _TESTS / "agents" / "arp"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from production_fixture import ProductionWorld, enabled_world, root_task, scripted_worker  # noqa: E402
-from skill_fixture import import_skill, lifecycle_command, md_bundle, trial_command  # noqa: E402
-
 from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id  # noqa: E402
-from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES, DeploymentPolicy, effective_tools  # noqa: E402
+from agent_orchestrator.governance.policies import (  # noqa: E402
+    SKILL_TOOL_NAMES,
+    DeploymentPolicy,
+    effective_tools,
+)
 from agent_orchestrator.runtime import role_templates as roles  # noqa: E402
 from agent_orchestrator.runtime.tool_gateway import TOOL_NAMES  # noqa: E402
 from agent_orchestrator.testing.fixtures import role_of  # noqa: E402
 from agent_orchestrator.testing.product_world import DEFAULT_TOOLS  # noqa: E402
+from production_fixture import (  # noqa: E402
+    ProductionWorld,
+    enabled_world,
+    root_task,
+    scripted_worker,
+)
 from simple_harness.agents.arp import store as arp_store  # noqa: E402
 from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key  # noqa: E402
 from simple_harness.agents.arp.pins import Pin  # noqa: E402
-from simple_harness.agents.arp.skill_tools import SKILL_DISCOVER_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME, SKILL_LOAD_TOOL_NAME  # noqa: E402
+from simple_harness.agents.arp.skill_tools import (  # noqa: E402
+    SKILL_DISCOVER_TOOL_NAME,
+    SKILL_EXECUTE_TOOL_NAME,
+    SKILL_LOAD_TOOL_NAME,
+)
+from skill_fixture import import_skill, lifecycle_command, md_bundle, trial_command  # noqa: E402
 
 SKILLS = (SKILL_DISCOVER_TOOL_NAME, SKILL_LOAD_TOOL_NAME, SKILL_EXECUTE_TOOL_NAME)
 

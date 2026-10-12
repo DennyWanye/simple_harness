@@ -25,7 +25,6 @@ import logging
 import httpx
 import pytest
 import structlog
-
 from providers.openai_compatible import OpenAICompatibleProvider
 
 

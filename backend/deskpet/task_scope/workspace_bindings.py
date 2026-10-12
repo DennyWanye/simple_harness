@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import aiosqlite
-from deskpet.memory.writer_fence import human_memory_connection
 from simple_harness import (
     EMPTY_WORKSPACE_BINDING_ROOT_SET_DIGEST,
     CanonicalWorkspaceRoot,
@@ -39,7 +38,7 @@ from simple_harness import (
 )
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
-from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
 from deskpet.task_scope.store import TaskScopeConflict, TaskScopeNotFound, _uuid
 

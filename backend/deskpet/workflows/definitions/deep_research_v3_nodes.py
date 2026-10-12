@@ -9,8 +9,9 @@ import inspect
 import json
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any, Mapping
+from typing import Any
 
 from ...tools import research_scoring
 from ...tools import research_tools as legacy_research
@@ -24,7 +25,15 @@ from .deep_research_v3_contracts import (
     canonical_url,
     no_op_patch,
 )
-from .deep_research_v3_quality import (evaluate_support, fallback_claims, make_publish_decision, parse_structured_claims, quality_payload, repair_and_prune, select_evidence_passages)
+from .deep_research_v3_quality import (
+    evaluate_support,
+    fallback_claims,
+    make_publish_decision,
+    parse_structured_claims,
+    quality_payload,
+    repair_and_prune,
+    select_evidence_passages,
+)
 from .deep_research_v3_report import render_body, render_report
 from .research_core import (
     FetchPort,
@@ -32,7 +41,6 @@ from .research_core import (
     ResearchLLMPort,
     ResearchSearchPort,
 )
-
 
 _NON_SELF_CONTAINED_CLAIM_RE = re.compile(
     r"^(?:"

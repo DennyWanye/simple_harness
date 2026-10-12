@@ -27,7 +27,6 @@ from .contracts import GrowthEvent, OwnerRef
 from .cutover import GrowthCutoverStepAuthorization
 from .store import canonical_hash
 
-
 _LEGACY_OWNER = OwnerRef("legacy_local_profile", 1)
 
 

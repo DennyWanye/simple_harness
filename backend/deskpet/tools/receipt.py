@@ -17,7 +17,7 @@ import json
 import os
 import uuid
 from dataclasses import asdict, dataclass, field, fields
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -48,31 +48,31 @@ class ToolReceipt:
     ended_at: str
     duration_ms: int
     ok: bool
-    error_class: Optional[str] = None
+    error_class: str | None = None
     artifacts: list[str] = field(default_factory=list)  # sha256 列表
     session_id: str = ""
     iteration: int = 0
     sig: str = ""              # HMAC-SHA256 base64
     # ── R-T6 Shadow 可观测字段（全部可选，BC-safe） ──────────────────────────
-    shadow_verdict: Optional[str] = None          # "would_block" | "would_pass" | None
-    actual_outcome: Optional[str] = None          # 用户行为弱信号占位
-    verify_latency_ms: Optional[int] = None       # verify 耗时（ms），用于 p95 聚合
+    shadow_verdict: str | None = None          # "would_block" | "would_pass" | None
+    actual_outcome: str | None = None          # 用户行为弱信号占位
+    verify_latency_ms: int | None = None       # verify 耗时（ms），用于 p95 聚合
     degradation_flags: list[str] = field(default_factory=list)  # 降级事实列表
     # Durable workflow receipt v2. ``None`` means the field was absent on a
     # legacy v1 record; this distinction is required for v1 HMAC verification.
-    sig_version: Optional[int] = None
-    phase: Optional[str] = None                   # accepted | delivered | executed
-    outcome: Optional[str] = None                 # pending | success | failed
-    run_id: Optional[str] = None
-    node_execution_id: Optional[str] = None
-    effect_id: Optional[str] = None
+    sig_version: int | None = None
+    phase: str | None = None                   # accepted | delivered | executed
+    outcome: str | None = None                 # pending | success | failed
+    run_id: str | None = None
+    node_execution_id: str | None = None
+    effect_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """字段顺序稳定 (按 dataclass 定义)。"""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "ToolReceipt":
+    def from_dict(cls, value: dict[str, Any]) -> ToolReceipt:
         """Load v1/v2 without injecting v2 defaults into legacy HMAC input."""
 
         allowed = {item.name for item in fields(cls)}
@@ -167,15 +167,15 @@ def make_receipt(
     ok: bool,
     session_id: str = "",
     iteration: int = 0,
-    error_class: Optional[str] = None,
-    artifact_shas: Optional[list[str]] = None,
-    receipt_id: Optional[str] = None,
+    error_class: str | None = None,
+    artifact_shas: list[str] | None = None,
+    receipt_id: str | None = None,
     sig_version: int = 2,
     phase: str = "executed",
-    outcome: Optional[str] = None,
-    run_id: Optional[str] = None,
-    node_execution_id: Optional[str] = None,
-    effect_id: Optional[str] = None,
+    outcome: str | None = None,
+    run_id: str | None = None,
+    node_execution_id: str | None = None,
+    effect_id: str | None = None,
     secret: bytes = _TEST_HMAC_KEY,
 ) -> ToolReceipt:
     """Convenience factory — 构造 receipt + 自动签名。"""
@@ -198,8 +198,8 @@ def make_receipt(
         receipt_id=receipt_id or str(uuid.uuid4()),
         tool_name=tool_name,
         args_hash=args_hash(args),
-        started_at=started_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        ended_at=ended_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        started_at=started_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ended_at=ended_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         duration_ms=int((ended_at - started_at).total_seconds() * 1000),
         ok=ok,
         error_class=error_class,

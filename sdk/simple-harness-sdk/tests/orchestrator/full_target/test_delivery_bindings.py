@@ -13,7 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.artifacts.input_bindings import (
     DeliveredFile,
     DeliveryBinding,
@@ -264,7 +263,10 @@ def test_a_retired_frozen_input_version_is_refused_by_name():
     **Mutation**: ``_frozen_binding`` 接受 ``version in (2, 3)`` → red。"""
     from agent_orchestrator.contracts.models import sha256_hex
     from agent_orchestrator.orchestrator.taskgraph_dispatch import (
-        FROZEN_INPUT_VERSION, _intent_inputs, _require_materialization_receipt)
+        FROZEN_INPUT_VERSION,
+        _intent_inputs,
+        _require_materialization_receipt,
+    )
     from agent_orchestrator.storage.store import StoreError
 
     message = {"text": "x"}

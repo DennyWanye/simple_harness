@@ -1,7 +1,8 @@
 """Ordered workflow startup recovery for durable Session deletion fences."""
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 async def activate_and_recover_workflows(

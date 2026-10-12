@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.contracts.operation_completion import PlanRevisionPinV1
 from agent_orchestrator.orchestrator.operation_completion import (
     OperationCompletionError,

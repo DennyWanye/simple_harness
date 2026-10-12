@@ -8,6 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from simple_harness.contracts import RunId
+from simple_harness.execution.contracts.children import ChildSignalState
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.execution.uow import RunState, UnitOfWorkConflict
 from test_atomic_child_terminal_signal import ack
 from test_ticket_generation import (
     claim_child,
@@ -15,11 +19,6 @@ from test_ticket_generation import (
     issue_ticket,
     launch_request,
 )
-
-from simple_harness.contracts import RunId
-from simple_harness.execution.contracts.children import ChildSignalState
-from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-from simple_harness.execution.uow import RunState, UnitOfWorkConflict
 
 
 def _terminalize_child(

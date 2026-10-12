@@ -5,7 +5,6 @@ import json
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.adapters.research_runtime import (
     DurableResearchSnapshotPort,
     DurableV5ControlPort,

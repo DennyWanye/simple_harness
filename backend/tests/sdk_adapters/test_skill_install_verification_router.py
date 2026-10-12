@@ -6,9 +6,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import DriverResult, HostControlAuthorityV1
-from simple_harness.execution.uow import RunState
-
 from deskpet.capabilities.store import CapabilitySkillInstallVerificationAttempt
 from deskpet.sdk_adapters.skill_install_verification import (
     SKILL_INSTALL_VERIFICATION_PURPOSE,
@@ -16,6 +13,8 @@ from deskpet.sdk_adapters.skill_install_verification import (
     SkillInstallVerificationAttemptResolver,
     skill_install_verification_authority_hash,
 )
+from simple_harness import DriverResult, HostControlAuthorityV1
+from simple_harness.execution.uow import RunState
 
 
 def _attempt() -> CapabilitySkillInstallVerificationAttempt:

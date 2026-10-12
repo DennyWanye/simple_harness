@@ -25,16 +25,15 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.execution.evidence_ingress import (
     HOST_HARNESS_FACT_AUTHORITY_REF,
     EvidenceKindRejected,
     ExecutionEvidenceIngress,
     _host_evidence,
 )
+from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.execution.semantic_closure import TRIVIAL_EVENT_KINDS, is_material_event
 from deskpet.memory.evidence_kind_schema import initialize_evidence_kind_state_db
-from deskpet.execution.foreground_queue import ForegroundQueueStore
 from tests.execution import test_foreground_queue as fq
 from tests.execution.test_evidence_reservations import _rows, _tool_fact
 

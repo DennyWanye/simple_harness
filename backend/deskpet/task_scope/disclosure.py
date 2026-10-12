@@ -5,13 +5,15 @@ reader never restamps old text as new evidence and never adds an authority ledge
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+from contextvars import ContextVar
+
 import aiosqlite
 from simple_harness import thaw_json
-from deskpet.task_scope.protocol import canonical_hash, canonical_json
+
 from deskpet.execution.primary_dependencies import dependencies, parse_dependencies
-from contextvars import ContextVar
+from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
 _active_sources = ContextVar("scope_disclosure_sources", default=())
 

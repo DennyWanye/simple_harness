@@ -13,13 +13,12 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from simple_harness.workflow import WorkflowContext
-
 from deskpet.sdk_adapters.conformance import _research_context, _WorkflowSeam
 from deskpet.sdk_adapters.workflows import (
     ACTIVE_PRODUCT_WORKFLOWS,
     build_product_workflow_registrations,
 )
+from simple_harness.workflow import WorkflowContext
 
 FORBIDDEN = (
     "deskpet.workflows.contracts",

@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from simple_harness import Message, MessageRole, RunId
 from simple_harness.agents import (
     AGENT_CONFIG_FIELDS,

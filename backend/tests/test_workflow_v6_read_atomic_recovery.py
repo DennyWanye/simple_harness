@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import aiosqlite
 import pytest
-
-from deskpet.workflows.contracts import canonical_json
-from deskpet.workflows.effects import EffectAction, EffectStateConflict, PreparedToolCall
-from deskpet.workflows.store import RunFence
 from deskpet.workflows.adapters.deep_research_v6_retrieval_runtime import (
     v6_read_logical_effect_id,
 )
+from deskpet.workflows.contracts import canonical_json
+from deskpet.workflows.effects import EffectAction, EffectStateConflict, PreparedToolCall
+from deskpet.workflows.store import RunFence
+
 from tests.test_workflow_v6_read_effects import _runtime
 
 
@@ -76,7 +76,7 @@ async def test_deadline_observation_effect_head_and_budget_share_one_transaction
             attempt_no=1,
             deadline_id=deadline.deadline_id,
             deadline_revision=deadline.revision,
-            deadline_now_wall=datetime.now(timezone.utc),
+            deadline_now_wall=datetime.now(UTC),
             deadline_now_monotonic_ns=10_000_000_000,
             resource_kind="query",
             resource_hard_limit=2,
@@ -199,7 +199,7 @@ async def test_stale_attempt_reconcile_concurrency_attempt_two_and_late_result(t
         canonical_result_ref=result_ref,
         dependency_refs=(result_ref,),
         result_kind="official_search",
-        deadline_now_wall=datetime.now(timezone.utc),
+        deadline_now_wall=datetime.now(UTC),
         deadline_now_monotonic_ns=20_000_000_000,
     )
     with pytest.raises(EffectStateConflict):

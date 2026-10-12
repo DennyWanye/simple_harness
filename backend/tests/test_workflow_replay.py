@@ -5,7 +5,6 @@ import json
 from dataclasses import dataclass
 
 import pytest
-
 from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.ipc import WorkflowIPCDispatcher
@@ -14,9 +13,13 @@ from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import (
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
-    empty_legacy_checkpoint as empty_checkpoint,
+)
+from deskpet.workflows.store import (
     NativeCheckpointStore,
     WorkflowRunStore,
+)
+from deskpet.workflows.store import (
+    empty_legacy_checkpoint as empty_checkpoint,
 )
 
 

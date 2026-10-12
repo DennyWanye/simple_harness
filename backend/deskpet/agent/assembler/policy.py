@@ -44,8 +44,8 @@ _DEFAULT_YAML = Path(__file__).parent / "policies" / "default.yaml"
 # ---------------------------------------------------------------------------
 def load_policies(
     *,
-    default_path: Optional[Path] = None,
-    overrides_path: Optional[Path] = None,
+    default_path: Path | None = None,
+    overrides_path: Path | None = None,
 ) -> dict[str, AssemblyPolicy]:
     """Load default + overrides, merge, return ``{task_type: AssemblyPolicy}``.
 

@@ -23,13 +23,11 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 # Import the module under test
 # ──────────────────────────────────────────────────────────────────────────────
-
 from deskpet.agent.reflection import (
-    StructuredReflection,
     _REFLECTION_INSTRUCTION,
+    StructuredReflection,
     parse_reflection,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. parse_reflection — 3 LLM output forms
@@ -175,9 +173,9 @@ def test_flag_on_verify_fail_injects_reflection_instruction():
     scope (field production + flag gate).  Full-loop integration covered by
     existing test_agent_loop_verify_wiring.py.
     """
-    from deskpet.agent.verify_gate import UnmatchedClaim, VerifyOutcome
-    from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
     from agent.agent_loop import AgentLoop
+    from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
+    from deskpet.agent.verify_gate import UnmatchedClaim, VerifyOutcome
 
     # Build UnmatchedClaim (fields: pattern_id, raw_text, expected_kind,
     # expected_path_or_title, reason)

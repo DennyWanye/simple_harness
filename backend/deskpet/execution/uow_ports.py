@@ -7,23 +7,21 @@ depending on the historical all-methods interface.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, Sequence
 from typing import (
     Any,
-    Callable,
-    Mapping,
     Protocol,
-    Sequence,
     TypeAlias,
     runtime_checkable,
 )
 
+from deskpet.types.task_grants import PreparedAuthorizationCommit, TaskGrant
 from deskpet.types.task_work_context import (
     ConversationBoundary,
     QueuedUserContinuation,
     TaskRunProjection,
     TaskWorkContext,
 )
-from deskpet.types.task_grants import PreparedAuthorizationCommit, TaskGrant
 
 from .contracts import (
     ActorContext,
@@ -67,7 +65,6 @@ from .contracts import (
     TaskGoalRecord,
 )
 from .evidence import EvidenceContext, EvidenceSelection
-
 
 RunView: TypeAlias = RunRecord | LegacyRunProjection
 SinkKey: TypeAlias = tuple[str, str]

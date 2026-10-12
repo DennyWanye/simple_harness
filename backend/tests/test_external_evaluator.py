@@ -29,7 +29,6 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers shared with other test files
 # ──────────────────────────────────────────────────────────────────────────────
-
 from deskpet.tools.receipt import ToolReceipt
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
@@ -80,8 +79,8 @@ class FakeLLMRegistry:
     async def chat_with_fallback(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        model: Optional[str] = None,
+        tools: list[dict] | None = None,
+        model: str | None = None,
         **kwargs,
     ) -> ChatResponse:
         self.calls.append({"messages": messages, "model": model})
@@ -96,7 +95,7 @@ class FakeLLMRegistry:
 class FakeToolRegistry:
     """Minimal fake tool registry (matches agent_loop expected interface)."""
 
-    def __init__(self, results: Optional[dict] = None) -> None:
+    def __init__(self, results: dict | None = None) -> None:
         self._results = results or {}
         self.calls: list[dict] = []
 

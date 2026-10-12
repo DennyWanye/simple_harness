@@ -12,6 +12,7 @@ import httpx
 BASE = "https://chinzy.com/v1"
 sys.path.insert(0, os.path.dirname(__file__))
 from relay_diag import get_key  # noqa: E402
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from deskpet.agent.intent_triage import _PRE_ANALYSIS_SCHEMA  # noqa: E402
 

@@ -11,13 +11,12 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import asyncio
 
 import httpx
 import pytest
-
 from providers.base import LLMProvider
 from providers.openai_compatible import OpenAICompatibleProvider
 

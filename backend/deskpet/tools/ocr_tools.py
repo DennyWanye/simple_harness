@@ -38,7 +38,7 @@ _engine_lock = threading.Lock()
 _engine_failed = False
 
 
-def _get_engine() -> Optional[Any]:
+def _get_engine() -> Any | None:
     global _engine, _engine_failed
     if _engine is not None:
         return _engine

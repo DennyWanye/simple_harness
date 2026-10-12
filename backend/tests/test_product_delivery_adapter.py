@@ -1,6 +1,7 @@
 """Unit tests for ProductDeliveryAdapter."""
-import pytest
 from unittest.mock import AsyncMock, Mock
+
+import pytest
 from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
 
 
@@ -184,9 +185,9 @@ async def test_handle_event_passes_context(delivery_adapter, mock_presenter, moc
 
 @pytest.mark.asyncio
 async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presenter):
+    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
 
     call = ToolCall(CallId("call-visible"), "write_file", {"path": "a.txt"})
     await delivery_adapter.present_tool_call(call)

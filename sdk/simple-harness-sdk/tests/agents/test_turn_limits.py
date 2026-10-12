@@ -8,12 +8,11 @@ from __future__ import annotations
 import asyncio
 
 from provider_fixture import MODEL, ScriptedProvider
-from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
-
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization
 from simple_harness.contracts import thaw_json
 from simple_harness.execution.uow import RunState
+from tool_fixture import ECHO_SCHEMA, EchoToolExecutor
 
 
 def _ports(tmp_path, provider, executor=None, **overrides):

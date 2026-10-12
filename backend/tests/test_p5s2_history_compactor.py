@@ -25,14 +25,13 @@ is delegated to a caller-provided coroutine ``summarize_fn`` and
 from __future__ import annotations
 
 import pytest
-
 from agent.history_compactor import (
-    should_compact,
-    select_compactable_range,
-    inject_summary,
-    DEFAULT_MESSAGE_THRESHOLD,
     DEFAULT_CHAR_THRESHOLD,
     DEFAULT_KEEP_RECENT,
+    DEFAULT_MESSAGE_THRESHOLD,
+    inject_summary,
+    select_compactable_range,
+    should_compact,
 )
 
 

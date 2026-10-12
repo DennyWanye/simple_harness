@@ -10,12 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from test_h1h_planning_authorization import _request, product_db, seed_product_missions
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.storage.store import Store
+from test_h1h_planning_authorization import _request, product_db, seed_product_missions
 
 _CHILD = r"""
 import os

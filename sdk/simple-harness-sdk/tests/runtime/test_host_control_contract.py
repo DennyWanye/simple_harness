@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from simple_harness import HostControlAuthorityV1, HostControlRunStartV1
 from simple_harness.contracts import ExecutionSessionId, RequestId, RunId
 from simple_harness.execution.context_authority import ContextRouteOrigin, ContextRouteReceipt

@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 import logging
 import re
 from pathlib import Path
 
 import pytest
-
 from observability.sdk import (
-    HostCorrelationPolicy,
-    HostSdkObservability,
     SDK_EVENTS_FILENAME,
     SDK_RING_FILENAME,
     SDK_SNAPSHOT_FILENAME,
+    HostCorrelationPolicy,
+    HostSdkObservability,
 )
-
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("simple_harness.observability") is None,

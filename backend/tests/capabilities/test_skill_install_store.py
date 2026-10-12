@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_SQL,
     CAPABILITY_SCHEMA_V1_SQL,

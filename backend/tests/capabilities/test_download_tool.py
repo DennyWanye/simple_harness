@@ -7,11 +7,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from deskpet.tools.os_tools.download_tools import download_file, resolve_download_resources
 
-from deskpet.tools.os_tools.download_tools import download_file
-from deskpet.tools.os_tools.download_tools import resolve_download_resources
-
-PAYLOAD = "下载 内容".encode("utf-8")
+PAYLOAD = "下载 内容".encode()
 
 
 class _Handler(BaseHTTPRequestHandler):

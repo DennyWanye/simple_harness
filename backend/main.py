@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 import time
+
 # Force UTF-8 stdout on Windows (default GBK chokes on emoji in LLM output)
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -49,18 +50,18 @@ if os.environ.get("DESKPET_WINDOW_CONTROL_BOOTSTRAP") in {"stdin-v1", "stdin-v2"
         _WINDOW_CONTROL_BOOTSTRAP = None
 
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path as _Path
 
+import paths as _paths
 import structlog
 import uvicorn
-from logging.handlers import RotatingFileHandler
-import paths as _paths
-from observability.log_redaction import add_safe_exception_summary, redact_log_event
-from observability.sdk import HostSdkObservability
 from deskpet.session.task_scope import (
     TaskScopeDecision,
     task_session_manager,
 )
+from observability.log_redaction import add_safe_exception_summary, redact_log_event
+from observability.sdk import HostSdkObservability
 
 # P2-2 debug (2026-04-20): Rust supervisor drains child stdout/stderr after
 # the SHARED_SECRET handshake, so structlog's console output vanishes once
@@ -127,10 +128,9 @@ structlog.configure(
     wrapper_class=structlog.stdlib.BoundLogger,
     cache_logger_on_first_use=True,
 )
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from pathlib import Path
-from pydantic import BaseModel, field_validator, model_validator
 
+import p4_ipc  # P4-S11 MemoryPanel + ContextTrace IPC handlers
 from config import (
     effective_llm_model,
     load_config,
@@ -148,10 +148,11 @@ from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
     TurnInput,
 )
-import p4_ipc  # P4-S11 MemoryPanel + ContextTrace IPC handlers
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from observability.crash_reports import install_crash_reporter
 from observability.metrics import render as render_metrics
 from observability.startup import registry as startup_errors  # P3-S2
+from pydantic import BaseModel, field_validator, model_validator
 
 # Install the uncaught-exception hook as early as possible so import-time
 # failures later in this file still land in crash_reports/.
@@ -233,27 +234,14 @@ def _persist_supervisor_enabled(enabled: bool) -> bool:
         return False
 
 # --- Register providers ---
-from providers.openai_compatible import OpenAICompatibleProvider
 from agent.providers.simple_llm import SimpleLLMAgent
 from agent.providers.tool_using import ToolUsingAgent
-from memory.sensitive_filter import RedactingMemoryStore
-from tools.registry import ToolRegistry
-from tools.get_time import get_time_tool
-from tools.clipboard import read_clipboard_tool
-from deskpet.tools.public_projection import (
-    project_public_tool_arguments,
-    project_public_tool_calls,
-    project_public_tool_result,
-)
+from billing.ledger import BillingLedger
+from config import resolve_cloud_api_key as _resolve_cloud_api_key  # P2-1-S3
 from deskpet.sdk_adapters.sdk_candidate import (
     SDK_VERSION,
     build_runtime_identity,
 )
-from observability.vram import classify_tier
-from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
-from billing.ledger import BillingLedger
-
-from config import resolve_cloud_api_key as _resolve_cloud_api_key  # P2-1-S3
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_outline_store import (
     expire_dangling_proposed,
@@ -262,6 +250,18 @@ from deskpet.tools.ppt_outline_store import (
     save_outline,
 )
 from deskpet.tools.ppt_tools import _ppt_pro_cfg
+from deskpet.tools.public_projection import (
+    project_public_tool_arguments,
+    project_public_tool_calls,
+    project_public_tool_result,
+)
+from memory.sensitive_filter import RedactingMemoryStore
+from observability.vram import classify_tier
+from providers.openai_compatible import OpenAICompatibleProvider
+from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
+from tools.clipboard import read_clipboard_tool
+from tools.get_time import get_time_tool
+from tools.registry import ToolRegistry
 
 # P4-S20-LLM-Unified: runtime overrides — settings panel 里改的会写到这个文件，
 # 启动时读它覆盖 config.toml [llm] 段（只 base_url / model / temperature；
@@ -376,6 +376,7 @@ def _resolve_llm_api_key(configured: str) -> str:
 
 _resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
 from deskpet.context_os_e2e_hooks import ContextOSE2EHooks as _ContextOSE2EHooks
+
 _context_os_e2e_boot_hooks = _ContextOSE2EHooks.from_env()
 _e2e_provider_base = (
     _context_os_e2e_boot_hooks.provider_url
@@ -487,12 +488,14 @@ _tool_capability_scope_store = None
 _tool_capability_resolver = None
 _automode_path = _Path(_paths.user_data_dir()) / "permissions_auto_mode.json"
 try:
-    from deskpet.tools import registry as deskpet_tool_registry_v2
-    from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
     from deskpet.permissions.gate import (
         PermissionGate as _PermissionGate,
+    )
+    from deskpet.permissions.gate import (
         PermissionGateConfig as _PermissionGateConfig,
     )
+    from deskpet.tools import registry as deskpet_tool_registry_v2
+    from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
     _register_os_tools_v2(deskpet_tool_registry_v2)
     # General-agent tools (glob, grep, web_search) registered now;
     # todo_write + agent need closures over runtime objects (SessionDB,
@@ -519,7 +522,11 @@ try:
     )
     from deskpet.tools.capabilities import (
         ToolCapabilityBridgeService as _ToolCapabilityBridgeService,
+    )
+    from deskpet.tools.capabilities import (
         ToolCapabilityResolver as _ToolCapabilityResolver,
+    )
+    from deskpet.tools.capabilities import (
         ToolCapabilityScopeStore as _ToolCapabilityScopeStore,
     )
     _tool_capability_scope_store = _ToolCapabilityScopeStore()
@@ -569,8 +576,9 @@ try:
             return None
         if _receipt_store_box[0] is None:
             try:
-                from deskpet.tools.receipt_store import ReceiptStore
                 from pathlib import Path as _PathRS
+
+                from deskpet.tools.receipt_store import ReceiptStore
                 # WI-T2.2 v3 P0 修：取消 min(retention, 7) 截断（last-mile
                 # round2 P0-2）。原代码把用户配的 30 天硬压成 7 天，回放窗口
                 # 残缺。按 ToolsLastMileConfig.artifact_dir_retention_days
@@ -604,8 +612,12 @@ try:
     # P4-S20 Stage C — marketplace installer + registry client.
     from deskpet.skills.marketplace import (
         RegistryClient as _RegistryClient,
-        SkillInstaller as _SkillInstaller,
+    )
+    from deskpet.skills.marketplace import (
         SafetyError as _MarketplaceSafetyError,
+    )
+    from deskpet.skills.marketplace import (
+        SkillInstaller as _SkillInstaller,
     )
     _user_skills_dir = _paths.user_data_dir() / "skills"
     _staging_dir = _paths.user_data_dir() / "_skill_staging"
@@ -1064,6 +1076,8 @@ async def _initialize_growth_authority() -> None:
         GrowthAuthorityRouter,
         GrowthIngressKind,
     )
+    from deskpet.companion.clock import select_companion_clock
+    from deskpet.companion.contracts import OwnerRef
     from deskpet.companion.control_credentials import (
         WindowControlCredentialVerifier,
     )
@@ -1071,16 +1085,10 @@ async def _initialize_growth_authority() -> None:
         CompanionControlIngress,
         LocalAuthSnapshotProvider,
     )
-    from deskpet.companion.identity import (
-        ProfileBindingCoordinator,
-        load_or_create_local_identity,
-    )
-    from deskpet.companion.identity_gate import IdentityReadyGate
-    from deskpet.companion.contracts import OwnerRef
     from deskpet.companion.cutover import (
-        CompanionGrowthAuthorityAdapter,
         DEFAULT_POST_MARKER_STEPS,
         DEFAULT_PRE_MARKER_STEPS,
+        CompanionGrowthAuthorityAdapter,
         GrowthAuthorityCutoverCoordinator,
         GrowthCutoverPlan,
     )
@@ -1092,14 +1100,12 @@ async def _initialize_growth_authority() -> None:
         read_legacy_growth_snapshot,
         require_legacy_skill_immutable_migration,
     )
-    from deskpet.companion.preferences import PreferencePolicy, PreferenceResolver
-    from deskpet.companion.clock import select_companion_clock
-    from deskpet.companion.runtime import (
-        CompanionJobResult,
-        CompanionRuntime,
-        CompanionRuntimePolicy,
-        ForegroundActivityGate,
+    from deskpet.companion.identity import (
+        ProfileBindingCoordinator,
+        load_or_create_local_identity,
     )
+    from deskpet.companion.identity_gate import IdentityReadyGate
+    from deskpet.companion.preferences import PreferencePolicy, PreferenceResolver
     from deskpet.companion.reminder_tools import (
         LEGACY_REMINDER_LIST_TOOL_NAME,
         REMINDER_CANCEL_TOOL_NAME,
@@ -1114,6 +1120,12 @@ async def _initialize_growth_authority() -> None:
         ReminderScheduler,
         ReminderSchedulerPolicy,
         ReminderService,
+    )
+    from deskpet.companion.runtime import (
+        CompanionJobResult,
+        CompanionRuntime,
+        CompanionRuntimePolicy,
+        ForegroundActivityGate,
     )
     from deskpet.companion.store import CompanionStore, canonical_hash
 
@@ -2267,6 +2279,7 @@ def build_agent(
             and verifier_cfg.verify_gate_mode != "off"
         ):
             from pathlib import Path as _Path
+
             from deskpet.agent.verify_gate import (
                 RegexExtractor,
                 VerifyGate,
@@ -2383,8 +2396,12 @@ def build_agent(
         """为 SelfCheckGate 自建 strict 对账门（抽自上方 :979 构造逻辑；不绑 verifier_cfg.mode）。"""
         try:
             from pathlib import Path as _Path
+
             from deskpet.agent.verify_gate import (
-                RegexExtractor, VerifyGate, load_claim_patterns, make_ephemeral_verifier,
+                RegexExtractor,
+                VerifyGate,
+                load_claim_patterns,
+                make_ephemeral_verifier,
             )
             _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
             _pf = _Path(getattr(_vc, "claim_patterns_file", "verify/claim_patterns.yaml")
@@ -2573,11 +2590,13 @@ _embedder = None
 _vector_worker = None
 _retriever = None
 try:
-    from deskpet.skills.loader import SkillLoader as _SkillLoader
     from deskpet.companion.skills import (
         ManagedSkillDiscoveryProjection as _ManagedSkillDiscoveryProjection,
+    )
+    from deskpet.companion.skills import (
         inventory_first_party_skill_packs as _inventory_first_party_skill_packs,
     )
+    from deskpet.skills.loader import SkillLoader as _SkillLoader
     _first_party_skill_inventory = _inventory_first_party_skill_packs(
         _paths.first_party_capability_pack_roots()
     )
@@ -2622,6 +2641,8 @@ def _freeze_current_session_owner():
 if _session_db is not None:
     from deskpet.session.project_binding import (
         ProjectBindingService as _ProjectBindingService,
+    )
+    from deskpet.session.project_binding import (
         SessionCreationService as _SessionCreationService,
     )
 
@@ -2659,6 +2680,7 @@ service_context.register(
 # P4-S13: ContextPageInStore 是请求作用域的 page-in 引用权威（Context OS），不依赖
 # 记忆 SDK；product SDK tool catalog 的 context_page_in handler 需要它作为 provider。
 from deskpet.tools.context_page_in_tools import ContextPageInStore as _ContextPageInStore
+
 service_context.register("context_page_in_store", _ContextPageInStore())
 
 base_agent = SimpleLLMAgent(llm, memory=memory_store)
@@ -2682,14 +2704,17 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
     if workflow_service is None:
         raise RuntimeError("workflow execution UoW is unavailable")
 
-    from deskpet.capabilities.contracts import CapabilityScope
     from deskpet.capabilities.builder import CapabilityBuilderHost
+    from deskpet.capabilities.configured_catalog import (
+        parse_configured_pack_sources,
+    )
+    from deskpet.capabilities.contracts import CapabilityScope
+    from deskpet.capabilities.execution_scope_authority import (
+        SqliteCurrentExecutionScopeAuthority,
+    )
     from deskpet.capabilities.platform import (
         BrokeredInvocationAuthority,
         CapabilityPlatform,
-    )
-    from deskpet.capabilities.execution_scope_authority import (
-        SqliteCurrentExecutionScopeAuthority,
     )
     from deskpet.capabilities.refresh import (
         CapabilityRefreshService,
@@ -2697,20 +2722,17 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         RegistryExposureToolSetRebuilder,
         SqliteCapabilityRefreshSnapshotRepository,
     )
-    from deskpet.capabilities.store import CapabilityStore
     from deskpet.capabilities.runtime_ledger import (
         CapabilityStoreRuntimeSetLedger,
     )
+    from deskpet.capabilities.store import CapabilityStore
     from deskpet.capabilities.ui_service import CapabilityCenterService
-    from deskpet.capabilities.configured_catalog import (
-        parse_configured_pack_sources,
-    )
-    from deskpet.tools.capabilities import ToolCapabilityResolver
+    from deskpet.permissions.admission import AdmissionTaskGrantRuntime
     from deskpet.permissions.legacy_auto_mode import (
         import_legacy_auto_mode_once,
     )
     from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-    from deskpet.permissions.admission import AdmissionTaskGrantRuntime
+    from deskpet.tools.capabilities import ToolCapabilityResolver
     from deskpet.types.task_grants import (
         ResourceSelector,
         TaskGrant,
@@ -2862,13 +2884,13 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         store=store,
         inventory=first_party_skill_inventory,
     )
+    from deskpet.capabilities.contracts import canonical_global_owner_key
     from deskpet.capabilities.skill_install import (
         BindableSkillInstallRuntimeVerifier,
         GlobalSkillInstallService,
     )
-    from deskpet.capabilities.contracts import canonical_global_owner_key
-    from deskpet.companion.identity import load_or_create_local_identity
     from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
+    from deskpet.companion.identity import load_or_create_local_identity
 
     skill_install_runtime_verifier = BindableSkillInstallRuntimeVerifier()
     from deskpet.sdk_adapters.skill_install_verification import (
@@ -3157,11 +3179,11 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
         ForegroundRuntimeExecutionAuthority,
         SqliteSdkTerminalObserver,
     )
-    from deskpet.execution.primary_context import PrimaryForegroundContextPort
     from deskpet.execution.foreground_runtime_ports import (
         ProductForegroundProviderPort,
         ProductForegroundToolPort,
     )
+    from deskpet.execution.primary_context import PrimaryForegroundContextPort
 
     class _AuditSink:
         def record(self, event: str, payload: Mapping[str, object]) -> None:
@@ -3214,7 +3236,10 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
 
     _runtime_owner_id = f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}"
     _closure_fence = _RuntimeLeaseFence(_runtime_owner_id)
-    from deskpet.execution.closure_request_guard import ClosureRequestAuthority, ClosurePhysicalRequestGuard
+    from deskpet.execution.closure_request_guard import (
+        ClosurePhysicalRequestGuard,
+        ClosureRequestAuthority,
+    )
     _closure_request_authority = ClosureRequestAuthority(
         _state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
 
@@ -3693,6 +3718,7 @@ async def lifespan(app: FastAPI):
             ),
             activate=False,
         )
+        from deskpet.tools import research_tools as _workflow_research_tools
         from deskpet.workflows.contracts import WorkflowContext
         from deskpet.workflows.definitions.research_core import (
             FetchPort,
@@ -3716,7 +3742,11 @@ async def lifespan(app: FastAPI):
         )
         from deskpet.workflows.definitions.v6 import (
             build_continuation_start_payload as build_deep_research_v6_continuation_payload,
+        )
+        from deskpet.workflows.definitions.v6 import (
             decode_continuation_snapshot as decode_deep_research_v6_continuation_snapshot,
+        )
+        from deskpet.workflows.definitions.v6 import (
             deep_research_initial_state as deep_research_v6_initial_state,
         )
         from deskpet.workflows.definitions.v7 import (
@@ -3730,10 +3760,9 @@ async def lifespan(app: FastAPI):
             DeepResearchRuntimeExtension,
         )
         from deskpet.workflows.terminal_projection import TERMINAL_COMMIT_CAPABILITY
-        from deskpet.tools import research_tools as _workflow_research_tools
 
         _workflow_launcher = WorkflowLauncher(_workflow_service)
-        setattr(_workflow_service, "launcher", _workflow_launcher)
+        _workflow_service.launcher = _workflow_launcher
         # Runtime adapters must all be registered before the production
         # registry is sealed and any durable recovery is allowed to run.
         service_context.register("workflow_service", _workflow_service)
@@ -3745,17 +3774,17 @@ async def lifespan(app: FastAPI):
             workflow_db_path=_paths.user_data_dir() / "data" / "workflow.db",
             state_db_path=_state_db_path,
             cursor_secret=hashlib.sha256(
-                f"harness-inspector-v3:{SHARED_SECRET}".encode("utf-8")
+                f"harness-inspector-v3:{SHARED_SECRET}".encode()
             ).digest(),
         )
         service_context.register(
             "harness_public_read_service", _harness_public_read_service
         )
         from deskpet.execution.fences import UnboundRunExecutionFence
+        from deskpet.execution.provider_fault_script import ProviderFaultScriptV1
         from deskpet.execution.provider_invocations import (
             ProviderInvocationCoordinator,
         )
-        from deskpet.execution.provider_fault_script import ProviderFaultScriptV1
 
         _execution_fence = UnboundRunExecutionFence()
         _provider_fault_script = ProviderFaultScriptV1.from_environment()
@@ -3878,8 +3907,8 @@ async def lifespan(app: FastAPI):
 
         async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
             from deskpet.retrieval.contracts import FetchRequest, SearchRequest
-            from deskpet.retrieval.runtime import get_default_gateway
             from deskpet.retrieval.query_terms import extract_query_terms
+            from deskpet.retrieval.runtime import get_default_gateway
 
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
             legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
@@ -4004,7 +4033,9 @@ async def lifespan(app: FastAPI):
             import hashlib as _hashlib
             import json as _json
             import time as _time
-            from datetime import datetime as _datetime, timezone as _timezone
+            from datetime import datetime as _datetime
+            from datetime import timezone as _timezone
+
             from deskpet.retrieval.contracts import (
                 DimensionSearchRequest,
                 FetchRequest,
@@ -4012,22 +4043,22 @@ async def lifespan(app: FastAPI):
             )
             from deskpet.retrieval.query_terms import extract_query_terms
             from deskpet.retrieval.runtime import get_default_gateway
-            from deskpet.workflows.adapters.research_runtime import (
-                BoundResearchEffectContext,
-                DurableResearchCallEffectAdapter,
-                DurableResearchLLMStagePort,
-                MonotonicResearchClock,
-                DurableResearchReadEffectAdapter,
-                DurableResearchReadStagePort,
-                DurableResearchSnapshotPort,
-                DurableV5ControlPort,
-                WorkflowControlSignalHub,
-            )
             from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
                 candidate_from_document,
                 candidate_from_json,
                 evaluate_runtime_evidence,
                 select_dimension_fair_rows,
+            )
+            from deskpet.workflows.adapters.research_runtime import (
+                BoundResearchEffectContext,
+                DurableResearchCallEffectAdapter,
+                DurableResearchLLMStagePort,
+                DurableResearchReadEffectAdapter,
+                DurableResearchReadStagePort,
+                DurableResearchSnapshotPort,
+                DurableV5ControlPort,
+                MonotonicResearchClock,
+                WorkflowControlSignalHub,
             )
             from deskpet.workflows.contracts import canonical_json
             from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchBrief
@@ -4053,7 +4084,7 @@ async def lifespan(app: FastAPI):
                     raise RuntimeError("v5 research effect run has no lease owner")
                 digest = _hashlib.sha256(
                     f"{identity.run_id}:{identity.checkpoint_ns}:{identity.checkpoint_id}:"
-                    f"{identity.task_id}:{identity.attempt}".encode("utf-8")
+                    f"{identity.task_id}:{identity.attempt}".encode()
                 ).hexdigest()
                 context = EffectExecutionContext(
                     journal=journal,
@@ -4368,7 +4399,7 @@ async def lifespan(app: FastAPI):
                 run_id=run_id,
                 operation_id=f"research:{run_id}",
                 budget_lease_id=_hashlib.sha256(
-                    f"deep-research-v6-root-budget|{run_id}".encode("utf-8")
+                    f"deep-research-v6-root-budget|{run_id}".encode()
                 ).hexdigest(),
             )
 
@@ -4381,7 +4412,7 @@ async def lifespan(app: FastAPI):
                     raise RuntimeError("v6 research effect run has no lease owner")
                 digest = _hashlib.sha256(
                     f"{identity.run_id}:{identity.checkpoint_ns}:{identity.checkpoint_id}:"
-                    f"{identity.task_id}:{identity.attempt}".encode("utf-8")
+                    f"{identity.task_id}:{identity.attempt}".encode()
                 ).hexdigest()
                 context = EffectExecutionContext(
                     journal=journal,
@@ -4602,16 +4633,24 @@ async def lifespan(app: FastAPI):
         from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
         from deskpet.workflows.adapters.code_runtime import (
             DurableToolRuntimeState as _RecoveryDurableToolRuntimeState,
-            ProposalPort as _RecoveryProposalPort,
-            ToolDispatchPort as _RecoveryToolDispatchPort,
         )
-        from deskpet.workflows.output_contract import (
-            TaskOutputContractPort as _TaskOutputContractPort,
-            TaskOutputContractV1 as _TaskOutputContractV1,
+        from deskpet.workflows.adapters.code_runtime import (
+            ProposalPort as _RecoveryProposalPort,
+        )
+        from deskpet.workflows.adapters.code_runtime import (
+            ToolDispatchPort as _RecoveryToolDispatchPort,
         )
         from deskpet.workflows.definitions.v1 import (
             code_complex_initial_state as _code_recovery_initial_state,
+        )
+        from deskpet.workflows.definitions.v1 import (
             durable_task_initial_state as _durable_task_initial_state,
+        )
+        from deskpet.workflows.output_contract import (
+            TaskOutputContractPort as _TaskOutputContractPort,
+        )
+        from deskpet.workflows.output_contract import (
+            TaskOutputContractV1 as _TaskOutputContractV1,
         )
 
         def _code_recovery_state_factory(**values):
@@ -4882,13 +4921,12 @@ async def lifespan(app: FastAPI):
             state_factory=_durable_task_state_factory,
             context_factory=_code_recovery_context_factory,
         )
+        # Import the actual ToolRegistry instance for personal_runtime_adapter
+        from deskpet.tools.registry import registry as _actual_tool_registry
         from deskpet.workflows.adapters.personal_runtime import (
             build_personal_runtime_adapter,
         )
         from deskpet.workflows.effects import EffectJournal as _PersonalEffectJournal
-
-        # Import the actual ToolRegistry instance for personal_runtime_adapter
-        from deskpet.tools.registry import registry as _actual_tool_registry
         _workflow_service.runtime_adapters.register(
             build_personal_runtime_adapter(
                 journal=_PersonalEffectJournal(
@@ -5309,12 +5347,14 @@ async def lifespan(app: FastAPI):
     try:
         _sup_cfg = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
         if bool(_sup_cfg.get("enabled", False)):
-            from agent.watchdog import WatchdogLoop as _WatchdogLoop
+            from agent.snapshot import build_snapshot as _build_snap_func
             from agent.supervisor import (
                 SupervisorAgent as _SupAgent,
+            )
+            from agent.supervisor import (
                 build_supervisor_hook as _build_sup_hook,
             )
-            from agent.snapshot import build_snapshot as _build_snap_func
+            from agent.watchdog import WatchdogLoop as _WatchdogLoop
 
             # Snapshot builder closure — pulls services lazily so each
             # tick reads fresh state.
@@ -6006,6 +6046,7 @@ app = FastAPI(title="Desktop Pet Backend", version="0.2.0", lifespan=lifespan)
 # fetch() to http://127.0.0.1:8100 is cross-origin and blocked without this.
 # WebSocket connections are NOT subject to CORS, only HTTP (POST /config/cloud).
 from fastapi.middleware.cors import CORSMiddleware
+
 # v2 fix: regex 模式支持任意 vite dev port (worktree-aware 隔离场景).
 # 默认 5173；v2 worktree 用 5473；其他 worktree 用 5273/5373/5573 等.
 # allow_origin_regex 覆盖所有 localhost / 127.0.0.1 + 任意端口 + Tauri.
@@ -6134,7 +6175,9 @@ async def _resume_workflow_ppt_outline(service, decision, response: dict, sid: s
 
 async def _resolve_workflow_ppt_outline(oid: str, response: dict) -> str | None:
     from deskpet.workflows.adapters.ppt_runtime import (
-        open_ppt_outline_decision, workflow_outline_run_id, workflow_run_session,
+        open_ppt_outline_decision,
+        workflow_outline_run_id,
+        workflow_run_session,
     )
 
     run_id = workflow_outline_run_id(oid)
@@ -6161,7 +6204,7 @@ def _sql_user_is_confused(text: str) -> bool:
     return bool(_SUMMARY_CONFUSED_RE.search(text or ""))
 
 
-def _sql_latest_task_snapshot(entries: "list[dict]") -> "str | None":
+def _sql_latest_task_snapshot(entries: list[dict]) -> str | None:
     """从 L1 list_entries 结果里取最近一条 pre-flush 任务态快照（无则 None）。
 
     任务态快照由 agent_loop wi4b_preflush 在压缩触发时写入 MEMORY.md，
@@ -6845,6 +6888,7 @@ def _expire_ppt_outline_dangling_for_startup() -> int:
 # 排在 BGE-M3 embedder / vector-worker / summarizer 等大量 run_in_executor 工作后面、
 # 长时间不执行(表现为 deck 永不落盘的"假 hang")。给 render 独立池根治排队饿死。
 import concurrent.futures as _cf  # noqa: E402
+
 _PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(max_workers=2, thread_name_prefix="ppt_pro_render")
 
 
@@ -7754,9 +7798,8 @@ def _freeze_sdk_catalog(
 
     from deskpet.sdk_adapters.context_authority import canonical_sha256
     from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
-    from simple_harness import thaw_json
-
     from deskpet.tools.code_tools.spawn_subagents_tool import UNWIRED_DELEGATION_TOOL_NAMES
+    from simple_harness import thaw_json
 
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
@@ -7833,10 +7876,10 @@ class _ProductSdkProviderBindingResolver:
         self._authorities: dict[str, Any] = {}
 
     def build_authority(self, binding: Any, *, request_guard: Any = ...) -> Any:
+        from deskpet.sdk_adapters.provider import ProductProviderAdapter
+        from simple_harness import thaw_json
         from simple_harness.execution import ProviderBinding
         from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
-        from simple_harness import thaw_json
-        from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
         entry = self._provider_registry.get_entry(binding.provider_id)
         if entry is None:
@@ -8048,34 +8091,33 @@ async def _build_product_sdk_runtime_stack(
     *, clock=time.time, configured_workspace_root=None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
-    from simple_harness import RuntimeProfile
-    from simple_harness.execution.budget import BudgetPolicy
-    from simple_harness.execution.delivery import DeliveryDispatcher
-    from simple_harness.runtime import RuntimePorts, SqliteContextPort
-    from simple_harness.runtime.drivers import build_react_driver
-    from simple_harness.runtime.termination import TerminationLimits
-
+    from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
     from deskpet.sdk_adapters.composition import (
         OwnedResourceCloser,
         ProductionRuntimeBuild,
         ProductSdkRuntimeStack,
         SdkRuntimeBuildInputs,
     )
+    from deskpet.sdk_adapters.context import ProductContextAdapter
+    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+    from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
+    from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
     from deskpet.sdk_adapters.runtime_paths import (
         ProductRuntimePathsAdapter,
     )
-    from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
-    from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
     from deskpet.sdk_adapters.tool_authority import (
-        SdkRuntimeCapabilityBridgeAdapter,
         SdkPreparedAuthorizationPolicy,
+        SdkRuntimeCapabilityBridgeAdapter,
         SdkRunToolAuthorityRegistry,
         SdkToolAuthorityMigrationUnavailable,
     )
     from deskpet.sdk_adapters.tools import ProductToolsAdapter
-    from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
-    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
-    from deskpet.sdk_adapters.context import ProductContextAdapter
+    from simple_harness import RuntimeProfile
+    from simple_harness.execution.budget import BudgetPolicy
+    from simple_harness.execution.delivery import DeliveryDispatcher
+    from simple_harness.runtime import RuntimePorts, SqliteContextPort
+    from simple_harness.runtime.drivers import build_react_driver
+    from simple_harness.runtime.termination import TerminationLimits
 
     # Verify required services
     session_db = service_context.get("session_db")
@@ -8111,12 +8153,12 @@ async def _build_product_sdk_runtime_stack(
     )
 
     # Build tool adapter
-    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
     from deskpet.sdk_adapters.tools import (
         ProductEffectExecutor,
         build_product_tool_registry,
         extend_product_registry_with_mcp,
     )
+    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
 
     # Build tool catalog dependencies
     todo_session_db = service_context.get("session_db")
@@ -8338,9 +8380,9 @@ async def _build_product_sdk_runtime_stack(
     # Authorization state must exist before the Skill install registration is
     # frozen, because its physical handler resolves only durable Product saga
     # receipts and never accepts a model-provided approval token.
-    from deskpet.product_state.database import ProductStateDatabase
-    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
     from deskpet.capabilities.skill_install import AuthorizedPreflightReceiptResolver
+    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
+    from deskpet.product_state.database import ProductStateDatabase
 
     sdk_product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
     sdk_product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -8412,6 +8454,7 @@ async def _build_product_sdk_runtime_stack(
 
     catalog = build_explicit_product_tool_catalog(dependencies)
     from dataclasses import replace as dataclass_replace
+
     from deskpet.sdk_adapters.tools import ProductToolRegistration
 
     projected_registrations = tuple(
@@ -8463,6 +8506,8 @@ async def _build_product_sdk_runtime_stack(
         CONTEXT_ROUTE_SCHEMA,
         TASK_SCOPE_SEARCH_SCHEMA,
         ContextRouteToolService,
+    )
+    from deskpet.sdk_adapters.context_route import (
         read_current_turn_text as _read_current_turn_text,
     )
     from deskpet.sdk_adapters.task_scope_mutation import (
@@ -8908,8 +8953,9 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("SDK catalog is missing product inventory entries")
 
     # Build authorization system
-    from deskpet.product_state.task_grants import DurableTaskGrantAuthority
     import time
+
+    from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 
     authorization_policy = SdkPreparedAuthorizationPolicy(
         authorization_runtime,
@@ -9048,8 +9094,8 @@ async def _build_product_sdk_runtime_stack(
         context = SqliteContextPort(database, clock=clock)
         _sdk_context_port = context
         delegation_uow["uow"] = uow
-        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
         from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
+        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
         recoverable = (
             *uow.list_recoverable_root_runs(),
@@ -9282,8 +9328,8 @@ async def _build_product_sdk_runtime_stack(
 
     def production_runtime_factory(execution_path):
         from simple_harness.runtime import (
-            ResourceOwnership,
             ProductionRuntimeConfig,
+            ResourceOwnership,
             build_production_runtime,
         )
 
@@ -10447,7 +10493,7 @@ async def _commit_product_preflight_block(
 ) -> None:
     """Commit and project a typed failure without provider or Tool execution."""
 
-    from deskpet.execution.contracts import root_idempotency_key, RunRef
+    from deskpet.execution.contracts import RunRef, root_idempotency_key
 
     if _sdk_ingress is None or _sdk_runtime_stack is None:
         raise RuntimeError("SDK Runtime is unavailable")
@@ -10637,8 +10683,8 @@ async def _run_product_harness_chat(
         str(client_turn_id or client_request_id or "").strip()
         or uuid.uuid4().hex
     )
+    from deskpet.execution.contracts import RunRef, root_idempotency_key
     from deskpet.types.task_work_context import TaskWorkContextResolver
-    from deskpet.execution.contracts import root_idempotency_key, RunRef
 
     root_ref = RunRef(
         uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}").hex,
@@ -10988,13 +11034,13 @@ async def _run_product_harness_chat(
             _sdk_runtime_tool_inventory,
             workspace_resolution_kind=str(workspace_resolution["kind"]),
         )
+        from deskpet.agent.assembler.components.persona import _resolve_persona
         from simple_harness.contracts.messages import (
             ContentBlock,
             Message,
             MessageRole,
         )
         from simple_harness.runtime import ConversationTurnInput
-        from deskpet.agent.assembler.components.persona import _resolve_persona
 
         current_content: Any = text
         if user_attachment_blocks:
@@ -11284,7 +11330,7 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
             task_scope_id = ""
             if request_id and turn_id:
                 try:
-                    from deskpet.execution.contracts import root_idempotency_key, RunRef
+                    from deskpet.execution.contracts import RunRef, root_idempotency_key
                     from deskpet.types.task_work_context import TaskWorkContextResolver
 
                     root_ref = RunRef(
@@ -11574,6 +11620,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
 
     async def _background_host(owner, claim):
         from dataclasses import replace
+
         from deskpet.execution.contracts import fingerprint_json
 
         session_id = (
@@ -12673,15 +12720,15 @@ async def _prepare_sdk_context_snapshot(
 ) -> Any:
     """Prepare once; the returned messages are the sole Provider authority."""
 
+    from deskpet.companion.skills import (
+        PreparedSkillInvocationScopeV1,
+        ResolvedSkillInstructionV1,
+    )
     from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
     from deskpet.sdk_adapters.context_preparation import (
         SdkContextPreparationService,
         SdkContextSources,
         trusted_project_task_snapshot,
-    )
-    from deskpet.companion.skills import (
-        PreparedSkillInvocationScopeV1,
-        ResolvedSkillInstructionV1,
     )
 
     skill_items: tuple[dict[str, Any], ...] = ()
@@ -12880,9 +12927,9 @@ async def _execute_sdk_run(
         Exception: Any SDK Runtime execution errors
     """
     from deskpet.agent.run_presenter import (
-        build_product_run_presenter,
         CanonicalRunEventPresentationAdapter,
         PresentationState,
+        build_product_run_presenter,
     )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
@@ -13116,8 +13163,8 @@ async def _execute_sdk_run(
         # 「写 SessionDB + 推 WebSocket」既有展示链路。
         if _sdk_context_port is not None:
             try:
-                from simple_harness import RunId as SdkRunId
                 from agent.agent_loop import FinalEvent
+                from simple_harness import RunId as SdkRunId
                 sdk_context = _sdk_context_port.load(SdkRunId(sdk_run_id))
                 assistant_texts = [
                     message.content
@@ -13190,8 +13237,8 @@ async def _watch_retained_sdk_run(
     """Project a resumed/recovered Run terminal through its retained route."""
 
     from agent.agent_loop import ErrorEvent, FinalEvent
-    from simple_harness import RunId as SdkRunId
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+    from simple_harness import RunId as SdkRunId
 
     retained = _sdk_retained_presentations.get(sdk_run_id)
     if retained is None or _sdk_ingress is None:
@@ -13363,7 +13410,7 @@ async def _broadcast_default_chat_peers(originator_ws: WebSocket | None, msg: di
                 _peer_ws.send_json(msg),
                 timeout=_PEER_BROADCAST_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug(
                 "default_chat_peer_broadcast_timeout sid=%s timeout_s=%.1f",
                 _peer_sid,
@@ -13404,7 +13451,7 @@ async def _send_chat_final(
                 "chat_v2_final_send_completed sid=%s request_id=%s run_id=%s chars=%d",
                 session_id, request_id, run_id, text_len,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "chat_v2_final_send_timeout sid=%s request_id=%s run_id=%s timeout_s=%.1f chars=%d",
                 session_id, request_id, run_id, _PEER_BROADCAST_TIMEOUT_S, text_len,
@@ -13446,7 +13493,7 @@ async def _send_chat_error(
                 session_id,
                 request_id,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "chat_v2_error_send_timeout sid=%s request_id=%s timeout_s=%.1f",
                 session_id,
@@ -14109,7 +14156,7 @@ async def metrics(request: Request):
 # needed for the "delete-my-data" affordance V5 §6 requires.
 
 async def _handle_memory_message(
-    ws: "WebSocket", session_id: str, msg_type: str, payload: dict
+    ws: WebSocket, session_id: str, msg_type: str, payload: dict
 ) -> None:
     # SessionDB is the current production MemoryStore implementation.  The
     # legacy ``memory_store`` service key disappeared during the P4 migration,

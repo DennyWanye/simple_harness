@@ -27,18 +27,6 @@ import time
 from pathlib import PurePosixPath
 
 import pytest
-from helpers_step07 import (
-    ALICE,
-    BOB,
-    ENABLED,
-    TARGET,
-    candidate,
-    ledger_world,
-    operation_world,
-    run_until,
-    until_pending,
-)
-
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy, action_decision
 from agent_orchestrator.orchestrator.action_commits import ActionCommitError, CandidateRejected
@@ -57,6 +45,17 @@ from agent_orchestrator.runtime.planning_operations import (
     StoreOperationReader,
     build_operation_snapshot,
     operation_gate,
+)
+from helpers_step07 import (
+    ALICE,
+    BOB,
+    ENABLED,
+    TARGET,
+    candidate,
+    ledger_world,
+    operation_world,
+    run_until,
+    until_pending,
 )
 
 HASH_A = "a" * 64

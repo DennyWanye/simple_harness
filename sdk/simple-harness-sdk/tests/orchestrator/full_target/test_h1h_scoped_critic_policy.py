@@ -7,10 +7,9 @@ planner's adoption reply goes through the production collector.
 import asyncio
 
 import pytest
-from h1i_seed import plan_reply, reviewed
-
 from agent_orchestrator.contracts.htn import TaskForm
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
+from h1i_seed import plan_reply, reviewed
 
 
 def test_real_new_protocol_commit_schedules_independent_review_for_each_leafs_own_criteria(tmp_path):

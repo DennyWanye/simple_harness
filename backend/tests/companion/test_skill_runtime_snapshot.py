@@ -11,7 +11,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.companion.skills import (
     ManagedSkillDiscoveryProjection,
     inventory_first_party_skill_packs,

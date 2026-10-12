@@ -15,18 +15,18 @@ from ..contracts.htn import TaskSemanticBindingV1
 from ..contracts.models import Event, sha256_hex
 from ..contracts.semantic_base import TypedRef
 from ..graph.convergence import compute_convergence_impact
-from ..runtime.taskgraph_operation_sources import OperationProducer
 from ..graph.execution_contracts import GraphSourceRead, PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1
-from ..graph.taskgraph_validation import validate_taskgraph_structure
 from ..graph.taskgraph_sharing import SharingSources, validate_sharing
+from ..graph.taskgraph_validation import validate_taskgraph_structure
 from ..planning.htn.grounding import derive_id
 from ..planning.plan_preview import CandidatePreview
-from ..storage.store import Store, StoreConflict, StoreError
+from ..runtime.taskgraph_operation_sources import OperationProducer
 from ..storage.htn_store import HtnStore
 from ..storage.planning_decision_store import PlanningDecisionStore
-from ..storage.taskgraph_store import TaskGraphStore
+from ..storage.store import Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
+from ..storage.taskgraph_store import TaskGraphStore
 from .plan_commits import CommitPlanCommand, PlanPrincipal
 from .taskgraph_candidate import document_from_bindings
 from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant

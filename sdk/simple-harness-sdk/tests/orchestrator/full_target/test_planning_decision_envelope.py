@@ -19,7 +19,6 @@ import hashlib
 import json
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     MAX_PD_ALTERNATIVES,

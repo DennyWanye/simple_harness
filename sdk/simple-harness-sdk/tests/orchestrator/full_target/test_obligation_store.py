@@ -14,7 +14,6 @@ call writes nothing at all.
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.contracts import (
     Budget,
     Mission,

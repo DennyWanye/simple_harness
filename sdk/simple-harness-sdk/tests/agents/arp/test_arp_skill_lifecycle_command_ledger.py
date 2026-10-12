@@ -15,13 +15,19 @@ import asyncio
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import AcceptingAssurance, admit_command, install_command, lifecycle_command, md_bundle, trial_command
-from test_arp_runtime_plane import Blobs, _err, _ok, req
-
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.api import RuntimePlaneService
+from skill_fixture import (
+    AcceptingAssurance,
+    admit_command,
+    install_command,
+    lifecycle_command,
+    md_bundle,
+    trial_command,
+)
+from test_arp_runtime_plane import Blobs, _err, _ok, req
 
 
 def test_crash_window_retries_replay_through_the_owner(tmp_path) -> None:

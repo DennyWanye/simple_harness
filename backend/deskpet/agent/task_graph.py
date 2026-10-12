@@ -19,7 +19,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from deskpet.memory.session_db import SessionDB
@@ -34,13 +34,13 @@ class TaskNode:
     title: str
     status: str
     depends_on: list[str]
-    claimed_by: Optional[str]
-    result: Optional[str]
+    claimed_by: str | None
+    result: str | None
     created_at: float
     updated_at: float
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "TaskNode":
+    def from_dict(cls, d: dict[str, Any]) -> TaskNode:
         return cls(
             task_id=d["task_id"],
             goal_id=d["goal_id"],
@@ -103,7 +103,7 @@ class TaskGraphStore:
     (asyncio.Lock — same-process model per T5 spike).
     """
 
-    def __init__(self, db: "SessionDB") -> None:
+    def __init__(self, db: SessionDB) -> None:
         self._db = db
 
     async def create(
@@ -111,8 +111,8 @@ class TaskGraphStore:
         goal_id: str,
         session_id: str,
         title: str,
-        depends_on: Optional[list[str]] = None,
-        task_id: Optional[str] = None,
+        depends_on: list[str] | None = None,
+        task_id: str | None = None,
     ) -> TaskNode:
         """Create a new task in the graph.
 
@@ -153,8 +153,8 @@ class TaskGraphStore:
         self,
         goal_id: str,
         agent_id: str,
-        now: Optional[float] = None,
-    ) -> Optional[TaskNode]:
+        now: float | None = None,
+    ) -> TaskNode | None:
         """Atomically claim the first ready pending task.
 
         Returns the claimed :class:`TaskNode` or None if no task is ready.
@@ -167,7 +167,7 @@ class TaskGraphStore:
         self,
         task_id: str,
         status: str,
-        result: Optional[str] = None,
+        result: str | None = None,
     ) -> TaskNode:
         """Update task status (and optionally result).
 
@@ -190,7 +190,7 @@ class TaskGraphStore:
         rows = await self._db.list_goal_tasks(goal_id)
         return [TaskNode.from_dict(r) for r in rows]
 
-    async def get(self, task_id: str) -> Optional[TaskNode]:
+    async def get(self, task_id: str) -> TaskNode | None:
         """Get a single task by id; None if not found."""
         row = await self._db.get_goal_task(task_id)
         return TaskNode.from_dict(row) if row is not None else None

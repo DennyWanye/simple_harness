@@ -11,8 +11,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from h1i_seed import seeded
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import (
     ENABLED_DECISIONS,
@@ -24,6 +22,7 @@ from agent_orchestrator.contracts.planning_decisions import (
 from agent_orchestrator.runtime import role_templates
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from h1i_seed import seeded
 
 
 def test_exposed_values_are_legal_and_slash_free() -> None:

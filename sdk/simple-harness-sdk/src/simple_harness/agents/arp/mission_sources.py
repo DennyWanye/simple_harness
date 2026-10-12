@@ -27,7 +27,8 @@ the delegation), so a child is never created without the parent's exact sources.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Mapping, Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from . import store
 from .errors import ArpError

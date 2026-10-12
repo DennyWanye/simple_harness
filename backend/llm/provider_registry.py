@@ -47,18 +47,19 @@ Migration: ``_migrate_legacy_provider_config(path)`` is a free function so
 """
 from __future__ import annotations
 
-import logging
-import os
-import re
 import asyncio
 import copy
 import hashlib
 import json
+import logging
+import os
+import re
 import uuid
-import tomli
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+import tomli
 
 logger = logging.getLogger("deskpet.llm.provider_registry")
 

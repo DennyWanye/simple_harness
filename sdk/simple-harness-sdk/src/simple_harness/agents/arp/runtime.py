@@ -19,28 +19,38 @@ from typing import Any
 
 from simple_harness.agents.background_health import BackgroundHealthBook
 from simple_harness.agents.ports import AgentRuntimePorts
-from simple_harness.agents.runtime import AgentRuntime, agent_id_for, build_agent_runtime, start_input_for
+from simple_harness.agents.runtime import (
+    AgentRuntime,
+    agent_id_for,
+    build_agent_runtime,
+    start_input_for,
+)
 from simple_harness.execution.sqlite.database import Database
 
 from . import PROTOCOL, store
 from .authorization import is_allow_all
-from .bootstrap import BootstrapReport, bootstrap_builtin_tools, refresh_builtin_health, runtime_caller
+from .bootstrap import (
+    BootstrapReport,
+    bootstrap_builtin_tools,
+    refresh_builtin_health,
+    runtime_caller,
+)
 from .catalogue import CapabilityResolver, CatalogueScope, CatalogueService, ToolExposureService
 from .context.composer import ArpContextPort, ArpProviderWire
 from .context.recall import ContextRecallCoordinator
 from .creation import NativeCreationService
 from .errors import ArpError
 from .indexing import SessionIndexCoordinator
-from .retriever import SessionRetriever
 from .lifecycle import SkillLifecycleService
-from .session_lifecycle import SessionLifecycleService
-from .skill_tools import ArpModelTools
-from .skill_use import SkillUseService
 from .meter import MeterBinding, NativeMeterAdapter
 from .migration import migrate_execution_to_v11
 from .pins import Pin
 from .ports import ArpPorts, RootIdentity, read_root
+from .retriever import SessionRetriever
 from .search import SessionSearchService
+from .session_lifecycle import SessionLifecycleService
+from .skill_tools import ArpModelTools
+from .skill_use import SkillUseService
 from .skills import SkillImporter
 from .strict import digest
 

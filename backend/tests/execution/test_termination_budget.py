@@ -19,7 +19,6 @@ import tomllib
 from pathlib import Path
 
 import pytest
-
 from deskpet.execution.termination_budget import (
     CASE_MULTI_RUN_ALLOWANCE_SECONDS,
     DEFAULT_MAX_WALL_SECONDS,

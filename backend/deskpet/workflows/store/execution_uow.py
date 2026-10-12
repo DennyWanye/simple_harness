@@ -10,20 +10,17 @@ import json
 import math
 import re
 import time
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Mapping, Sequence
+from typing import Any
 
 import aiosqlite
 
-from deskpet.types.task_work_context import (
-    ConversationBoundary,
-    QueuedUserContinuation,
-    TaskRunProjection,
-    TaskWorkContext,
-)
 from deskpet.execution.contracts import (
+    TERMINAL_ADMISSION_PHASES,
+    TERMINAL_RUN_STATUSES,
     ActorAction,
     ActorContext,
     AdmissionBoundary,
@@ -32,10 +29,10 @@ from deskpet.execution.contracts import (
     AdmissionPhase,
     AdmissionResolution,
     AdmissionSpec,
+    AttachmentPolicy,
     AttemptFailureSet,
     AttemptRecord,
     AttemptStatus,
-    AttachmentPolicy,
     AuthorizationError,
     ChildCommandIntent,
     ChildCommandRecord,
@@ -57,9 +54,11 @@ from deskpet.execution.contracts import (
     DeliverySpec,
     DeliveryStatus,
     EventNotFound,
-    FinalizeRunResult,
+    ExecutionRunFenceRecord,
+    ExecutionRunFenceStatus,
     ExternalWaitState,
     FailureBackfillState,
+    FinalizeRunResult,
     GrantConsume,
     GrantConsumeConflict,
     GrantNotFound,
@@ -97,15 +96,11 @@ from deskpet.execution.contracts import (
     RunRef,
     RunStartSnapshotRecord,
     RunStatus,
-    ExecutionRunFenceRecord,
-    ExecutionRunFenceStatus,
     StaleRecoveryLease,
     TaskExternalWait,
     TaskFailureReport,
     TaskGoalRecord,
     TaskGoalStatus,
-    TERMINAL_ADMISSION_PHASES,
-    TERMINAL_RUN_STATUSES,
     TerminalConflict,
     VersionConflict,
     WorkflowRunSeed,
@@ -113,19 +108,19 @@ from deskpet.execution.contracts import (
     assert_idempotent_run_intent,
     canonical_json,
     fingerprint_json,
-    stable_delivery_id,
     stable_decision_grant_id,
+    stable_delivery_id,
     stable_event_id,
     thaw_json,
     validate_json_value,
 )
-from deskpet.execution.ports import RunView
 from deskpet.execution.evidence import (
+    UNKNOWN_EVIDENCE,
     CompletionEvidence,
     EvidenceContext,
     EvidenceSelection,
-    UNKNOWN_EVIDENCE,
 )
+from deskpet.execution.ports import RunView
 from deskpet.permissions.policy import (
     AuthorizationPolicy,
     AuthorizationPolicyState,
@@ -135,11 +130,16 @@ from deskpet.types.task_grants import (
     PreparedAuthorizationCommit,
     TaskGrant,
 )
+from deskpet.types.task_work_context import (
+    ConversationBoundary,
+    QueuedUserContinuation,
+    TaskRunProjection,
+    TaskWorkContext,
+)
 
-from .schema import initialize_workflow_db
 from .run_store import RunFence
+from .schema import initialize_workflow_db
 from .write_lane import ExecutionWriteLane, get_execution_write_lane
-
 
 _FaultInjector = Callable[[str], None]
 
@@ -220,7 +220,7 @@ class LegacyDrainRef:
 
     @property
     def drain_item_id(self) -> str:
-        payload = f"{self.source_kind}\0{self.source_run_id}".encode("utf-8")
+        payload = f"{self.source_kind}\0{self.source_run_id}".encode()
         return hashlib.sha256(payload).hexdigest()
 
 
@@ -246,21 +246,21 @@ class RuntimeActivationCommand:
     error: str | None = None
 
     @classmethod
-    def advance(cls) -> "RuntimeActivationCommand":
+    def advance(cls) -> RuntimeActivationCommand:
         return cls("advance")
 
     @classmethod
-    def claim(cls, owner: str, *, lease_seconds: float = 30.0) -> "RuntimeActivationCommand":
+    def claim(cls, owner: str, *, lease_seconds: float = 30.0) -> RuntimeActivationCommand:
         return cls("claim_drain", owner=owner, lease_seconds=lease_seconds)
 
     @classmethod
     def settle(
         cls, lease: LegacyDrainLease, *, error: str | None = None
-    ) -> "RuntimeActivationCommand":
+    ) -> RuntimeActivationCommand:
         return cls("settle_drain", lease=lease, error=error)
 
     @classmethod
-    def rollback(cls) -> "RuntimeActivationCommand":
+    def rollback(cls) -> RuntimeActivationCommand:
         return cls("rollback")
 
 
@@ -328,7 +328,7 @@ class ExecutionEffectHandoff:
 class ExecutionTx:
     """Typed execution operations bound to a caller-owned SQLite transaction."""
 
-    _unit_of_work: "SqliteExecutionUnitOfWork"
+    _unit_of_work: SqliteExecutionUnitOfWork
     _db: aiosqlite.Connection
 
     async def freeze_tool_presentation_specs(
@@ -8278,13 +8278,13 @@ class SqliteExecutionUnitOfWork:
     @staticmethod
     def _stable_child_link_id(operation_id: str) -> str:
         return hashlib.sha256(
-            f"execution-child-link|{operation_id}".encode("utf-8")
+            f"execution-child-link|{operation_id}".encode()
         ).hexdigest()
 
     @staticmethod
     def _stable_child_signal_id(operation_id: str, kind: str) -> str:
         return hashlib.sha256(
-            f"execution-child-signal|{operation_id}|{kind}".encode("utf-8")
+            f"execution-child-signal|{operation_id}|{kind}".encode()
         ).hexdigest()
 
     async def _ensure_child_run_link_tx(
@@ -9287,7 +9287,7 @@ class SqliteExecutionUnitOfWork:
                 return EvidenceSelection(status="matched", records=(record,))
 
             expected_effect_id = hashlib.sha256(
-                f"effect|{context.run_id}|{context.call_id}".encode("utf-8")
+                f"effect|{context.run_id}|{context.call_id}".encode()
             ).hexdigest()
             if context.effect_id != expected_effect_id:
                 return UNKNOWN_EVIDENCE

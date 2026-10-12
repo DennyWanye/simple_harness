@@ -19,7 +19,6 @@ from pathlib import Path
 from textwrap import dedent
 
 import tomli
-
 from config import TTSConfig, load_config
 
 

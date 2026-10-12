@@ -12,7 +12,6 @@ from threading import Thread
 from typing import ClassVar
 
 import httpx
-
 from simple_harness.contracts.identity import CallId, RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import (

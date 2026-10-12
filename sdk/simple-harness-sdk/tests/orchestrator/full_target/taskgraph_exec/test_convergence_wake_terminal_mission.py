@@ -30,11 +30,12 @@ _PRODUCT_WORLD = Path(__file__).resolve().parents[2] / "product_world"
 if str(_PRODUCT_WORLD) not in sys.path:
     sys.path.insert(0, str(_PRODUCT_WORLD))
 
-from test_repair_replace_method import CRITERIA, _Provider  # noqa: E402
-
-from agent_orchestrator.orchestrator.taskgraph_wakeups import TaskGraphConvergenceWakeups  # noqa: E402
+from agent_orchestrator.orchestrator.taskgraph_wakeups import (
+    TaskGraphConvergenceWakeups,  # noqa: E402
+)
 from agent_orchestrator.storage.taskgraph_followups import TaskGraphFollowupStore  # noqa: E402
 from agent_orchestrator.testing.product_world import ProductWorld, product_world  # noqa: E402
+from test_repair_replace_method import CRITERIA, _Provider  # noqa: E402
 
 MINUTE_MS = 60_000
 

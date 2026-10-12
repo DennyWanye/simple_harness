@@ -10,12 +10,12 @@ import json
 
 import pytest
 from agent_orchestrator.contracts.models import sha256_hex
-from deskpet.orchestration import diagnostics
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration import diagnostics
 from deskpet.orchestration.diagnostics import (
     DUTY_FIELDS,
-    STEP_FIELDS,
     MAX_SUPPORT_BYTES,
+    STEP_FIELDS,
     build_diagnostics,
     export_support,
 )

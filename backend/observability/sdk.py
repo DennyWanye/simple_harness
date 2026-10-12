@@ -12,9 +12,10 @@ import logging
 import os
 import stat
 import threading
+from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any
 
 SDK_EVENTS_FILENAME = "sdk-observability-events.jsonl"
 SDK_RING_FILENAME = "sdk-observability-ring.json"

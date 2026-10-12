@@ -10,7 +10,6 @@ import sqlite3
 
 import pytest
 from provider_fixture import MODEL, ScriptedProvider
-
 from simple_harness.agents import (
     AgentClosed,
     AgentClosingReceipt,

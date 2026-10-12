@@ -13,11 +13,18 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.types.task_grants import (
+    ExactGrantRequest,
+    PreparedAuthorizationCommit,
+    ResourceSelector,
+    TaskGrant,
+)
 from deskpet.workflows.effects import PreparedToolCall
 
 from .policy import (
@@ -25,12 +32,6 @@ from .policy import (
     AuthorizationPolicyState,
     DecisionContext,
     PolicyDecision,
-)
-from deskpet.types.task_grants import (
-    ExactGrantRequest,
-    PreparedAuthorizationCommit,
-    ResourceSelector,
-    TaskGrant,
 )
 
 

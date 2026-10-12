@@ -156,7 +156,7 @@ async def resolve_session_provider_route(
             config_revision=binding.get("provider_config_revision"),
         )
         pinned = _copy_entry(entry, model=preferred_model)
-        setattr(pinned, "binding_epoch", epoch)
+        pinned.binding_epoch = epoch
         out = [pinned]
         _attach_model_params(out, model_params)
         return ResolvedProviderRoute(
@@ -183,7 +183,7 @@ async def resolve_session_provider_route(
     _attach_model_params(chain, model_params)
     first = chain[0] if chain else None
     for entry in chain:
-        setattr(entry, "binding_epoch", epoch)
+        entry.binding_epoch = epoch
     return ResolvedProviderRoute(
         entries=tuple(chain),
         provenance="global_chain",
@@ -272,7 +272,7 @@ def _route_from_frozen_binding(
         config_revision=binding.get("config_revision"),
     )
     pinned = _copy_entry(entry, model=model)
-    setattr(pinned, "binding_epoch", int(binding.get("binding_epoch") or 0))
+    pinned.binding_epoch = int(binding.get("binding_epoch") or 0)
     return ResolvedProviderRoute(
         entries=(pinned,),
         provenance="root_snapshot",
@@ -386,7 +386,7 @@ class _ChainEntry:
         self.code_params: dict = {}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "_ChainEntry":
+    def from_dict(cls, d: dict) -> _ChainEntry:
         return cls(
             id=str(d.get("id", "")),
             name=str(d.get("name", d.get("id", ""))),

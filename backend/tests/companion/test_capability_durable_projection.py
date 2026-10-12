@@ -4,7 +4,6 @@ import hashlib
 
 import aiosqlite
 import pytest
-
 from deskpet.capabilities.contracts import (
     CapabilityScope,
     CapabilityVersionDescriptor,

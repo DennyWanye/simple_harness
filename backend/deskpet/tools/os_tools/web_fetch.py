@@ -16,7 +16,6 @@ import json
 from typing import Any
 from urllib.parse import urlparse
 
-
 _EXAMPLES = [
     {"url": "https://example.com"},
     {"url": "https://api.github.com/repos/python/cpython", "max_bytes": 50000},

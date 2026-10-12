@@ -4,7 +4,6 @@ import copy
 import hashlib
 
 import pytest
-
 from deskpet.workflows.contracts import canonical_json
 from deskpet.workflows.definitions.deep_research_v6_assessment import (
     assess_requirements,
@@ -12,9 +11,9 @@ from deskpet.workflows.definitions.deep_research_v6_assessment import (
 )
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 from deskpet.workflows.definitions.deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
     RegisteredInferenceV1,
     derive_assessment_input_hash,
 )
@@ -65,7 +64,7 @@ def _scalar_candidate(body: bytes) -> EvidenceCandidateV1:
 
 
 def test_candidate_bundle_verifies_real_utf8_byte_span_and_identity() -> None:
-    body = "公报：总人口140828万人。".encode("utf-8")
+    body = "公报：总人口140828万人。".encode()
     candidate = _scalar_candidate(body)
     bundle = EvidenceCandidateBundleV1.create(
         run_id="run-one",

@@ -9,22 +9,17 @@ BindingRootResolver 与 ProductEffectExecutor 前置门。
 
 from __future__ import annotations
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness import CallId, RequestId, RunId
-from simple_harness.tools import ToolCall, ToolContext
-from simple_harness.tools.contracts import CancellationToken
-from simple_harness.tools.executor import EffectExecution
-
 from deskpet.memory.human_memory_service import MutateTaskScopeRequest
 from deskpet.sdk_adapters.effect_gate import (
     EFFECT_GATE_PUBLIC_MESSAGE,
-    effect_gate_public_message,
     PROJECT_EFFECT_ACTIVE_SCOPE_STATUSES,
+    effect_gate_public_message,
 )
 from deskpet.sdk_adapters.task_execution import (
     BindingRootResolver,
@@ -32,6 +27,10 @@ from deskpet.sdk_adapters.task_execution import (
     TaskExecutionAuthorityError,
 )
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+from simple_harness import CallId, RequestId, RunId
+from simple_harness.tools import ToolCall, ToolContext
+from simple_harness.tools.contracts import CancellationToken
+from simple_harness.tools.executor import EffectExecution
 from tests.sdk_adapters import s5b_effect_gate_harness as h
 
 
@@ -388,6 +387,7 @@ async def test_binding_root_resolver_zero_root_and_stale_receipt(tmp_path) -> No
 
 @pytest.mark.asyncio
 async def test_authority_records_run_fault_code_in_memo(tmp_path) -> None:
+    from deskpet.sdk_adapters.run_faults import RunFaultMemo
     from simple_harness.execution.context_authority import TaskExecutionEnvelopeRequest
     from simple_harness.tools.runtime_catalog import (
         ToolEffectClass,
@@ -395,8 +395,6 @@ async def test_authority_records_run_fault_code_in_memo(tmp_path) -> None:
         ToolRouteRequirement,
         ToolTaskScopeRequirement,
     )
-
-    from deskpet.sdk_adapters.run_faults import RunFaultMemo
 
     memo = RunFaultMemo()
     authority = ProductTaskExecutionAuthority(root_resolver=None, fault_sink=memo)

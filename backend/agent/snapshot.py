@@ -43,7 +43,7 @@ async def build_snapshot(
     sid: str,
     *,
     session_activity: Any,
-    session_db: Optional[Any] = None,
+    session_db: Any | None = None,
     todo_session_id: str | None = None,
     context_window_tokens: int = _DEFAULT_CONTEXT_WINDOW,
 ) -> dict[str, Any]:

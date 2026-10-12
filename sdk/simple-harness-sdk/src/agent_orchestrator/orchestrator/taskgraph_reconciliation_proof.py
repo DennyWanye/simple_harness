@@ -10,7 +10,10 @@ from ..contracts.state_machines import TERMINAL_ATTEMPT
 from ..planning.htn.grounding import derive_id
 from ..runtime.dispatch_history import read_dispatch_history
 from ..runtime.planning_operations import (
-    OperationEffect, SourceUnavailable, StoreOperationReader, build_operation_snapshot,
+    OperationEffect,
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
 )
 from ..runtime.taskgraph_local_work import read_local_work
 from ..runtime.taskgraph_operation_sources import read_operation_producers

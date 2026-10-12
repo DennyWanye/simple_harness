@@ -4,8 +4,8 @@
 """silero-vad v5 — streaming voice activity detection on CPU."""
 from __future__ import annotations
 
-import torch
 import structlog
+import torch
 
 logger = structlog.get_logger()
 

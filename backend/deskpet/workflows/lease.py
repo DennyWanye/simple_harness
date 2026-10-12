@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Iterable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Iterable, TypeVar
+from typing import Any, TypeVar
 
 from .contracts import TERMINAL_RUN_STATUSES, WorkflowRunStatus
 from .errors import LeaseLostError
 from .store import RunFence, StaleRunFence, WorkflowRunStore
-
 
 HEARTBEAT_INTERVAL_SECONDS = 15.0
 LEASE_TTL_SECONDS = 90.0
@@ -213,7 +213,7 @@ async def transition_run(
     if terminal:
         assignments.append("ended_at=COALESCE(ended_at,?)")
         params.append(now)
-    where = [f"run_id=?", f"status IN ({placeholders})"]
+    where = ["run_id=?", f"status IN ({placeholders})"]
     params.extend([run_id, *(status.value for status in statuses)])
     if fence is not None:
         where.extend(["lease_owner=?", "lease_epoch=?", "run_version=?"])

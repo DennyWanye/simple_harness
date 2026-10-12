@@ -17,7 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.context import knowledge_tools
 from agent_orchestrator.context.knowledge_tools import read_knowledge_tool
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus

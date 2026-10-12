@@ -19,14 +19,15 @@ from __future__ import annotations
 import json
 import logging
 import re as _re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Optional, Protocol
+from typing import Any, Literal, Optional, Protocol
 
 import yaml
 
-from deskpet.tools.receipt import ToolReceipt
 from deskpet.execution.evidence import EvidenceContext, EvidenceSelection
+from deskpet.tools.receipt import ToolReceipt
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class UnmatchedClaim:
     pattern_id: str
     raw_text: str
     expected_kind: str
-    expected_path_or_title: Optional[str]
+    expected_path_or_title: str | None
     reason: UnmatchedReason
 
 
@@ -51,8 +52,8 @@ class VerifierFailure:
     verifier: str
     status: str
     reason: str
-    log_tail: Optional[str] = None
-    error_class: Optional[str] = None
+    log_tail: str | None = None
+    error_class: str | None = None
 
 
 @dataclass
@@ -76,7 +77,7 @@ class VerifyOutcome:
     elapsed_ms: int = 0
     extractor_used: str = "regex"
     failure_count: int = 0
-    goal_alignment: Optional[GoalAlignment] = None  # WI-2.3: None when goal_text not provided (BC)
+    goal_alignment: GoalAlignment | None = None  # WI-2.3: None when goal_text not provided (BC)
     evidence_status: Literal["legacy", "matched", "unknown"] = "legacy"
 
 
@@ -92,8 +93,8 @@ class ClaimPattern:
 class Claim:
     pattern_id: str
     raw_text: str
-    title: Optional[str] = None
-    path: Optional[str] = None
+    title: str | None = None
+    path: str | None = None
     kind: str = "file"
 
 
@@ -211,7 +212,7 @@ class RegexExtractor:
 class SmallLLMExtractor:
     """二级 LLM fallback (WI-T2.4b stub — 真 LLM 接入留下轮)。"""
 
-    def __init__(self, llm_call: Optional[Callable[[str], str]] = None) -> None:
+    def __init__(self, llm_call: Callable[[str], str] | None = None) -> None:
         self.llm_call = llm_call
 
     def extract(self, assistant_text: str, hints: dict[str, Any]) -> list[Claim]:
@@ -228,7 +229,7 @@ class CascadeExtractor:
     def __init__(
         self,
         primary: ClaimExtractor,
-        fallback: Optional[ClaimExtractor] = None,
+        fallback: ClaimExtractor | None = None,
         *,
         fallback_threshold_chars: int = 80,
     ) -> None:
@@ -261,7 +262,7 @@ class CascadeExtractor:
 
 
 def _dedup(claims: list[Claim]) -> list[Claim]:
-    seen: set[tuple[Optional[str], Optional[str], Optional[str]]] = set()
+    seen: set[tuple[str | None, str | None, str | None]] = set()
     out: list[Claim] = []
     for c in claims:
         key = (c.pattern_id, c.title, c.path)
@@ -289,7 +290,7 @@ class VerifyGate:
         *,
         extractor: ClaimExtractor,
         mode: str = "off",
-        ephemeral_subagent: Optional[Callable[[Any], Awaitable[bool]]] = None,
+        ephemeral_subagent: Callable[[Any], Awaitable[bool]] | None = None,
     ) -> None:
         if mode not in ("off", "shadow", "strict"):
             raise ValueError(f"invalid mode: {mode}")
@@ -303,7 +304,7 @@ class VerifyGate:
         *,
         assistant_text: str,
         ledger: list[ToolReceipt],
-        goal_text: Optional[str] = None,  # WI-2.3: BC default None → behavior identical to pre-WI-2.3
+        goal_text: str | None = None,  # WI-2.3: BC default None → behavior identical to pre-WI-2.3
         evidence_context: EvidenceContext | None = None,
         scoped_evidence: EvidenceSelection | None = None,
     ) -> VerifyOutcome:
@@ -487,7 +488,7 @@ class VerifyGate:
 
     def _tool_hints_for_pattern(
         self, pattern_id: str
-    ) -> Optional[list[str]]:
+    ) -> list[str] | None:
         """从 extractor 反查 pattern_id 对应的 tool_hint list。"""
         if isinstance(self.extractor, RegexExtractor):
             for p in self.extractor.patterns:

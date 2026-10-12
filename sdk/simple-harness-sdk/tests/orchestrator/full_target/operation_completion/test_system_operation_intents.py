@@ -22,14 +22,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.contracts.operation_intents import (
     CompletionSlotV2,
     OperationIntentSourceKind,
     OperationIntentSourceV2,
     SubmitOperationIntentV2,
 )
-from agent_orchestrator.contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
+from agent_orchestrator.contracts.semantic_base import (
+    Provenance,
+    TypedRef,
+    TypedRefKind,
+    content_hash_of,
+)
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_intent_store import OperationIntentStore

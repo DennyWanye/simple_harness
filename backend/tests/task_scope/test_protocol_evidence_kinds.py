@@ -15,13 +15,12 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.execution.evidence_ingress import RESERVATION_KINDS
 from deskpet.memory import migrator
 from deskpet.memory.evidence_kind_schema import EVIDENCE_KINDS, MIGRATION
 from deskpet.task_scope.protocol import (
-    TaskScopeProtocolError,
     _EXECUTION_KINDS,
+    TaskScopeProtocolError,
     validate_execution_evidence,
 )
 from tests.execution.test_evidence_ingress_kind_ai import host_evidence

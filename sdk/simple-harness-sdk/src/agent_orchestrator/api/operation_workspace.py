@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..runtime.action_schema import is_operation_candidate_path
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..observability.secrets import find_secrets
 from ..orchestrator.action_commits import validate_candidate
 from ..orchestrator.operation_materialization_inputs import _candidate
+from ..runtime.action_schema import is_operation_candidate_path
 from ..runtime.connectors_publish import PUBLISH_NAME, FilePublishConnector
 from ..runtime.operation_profiles import BuiltinOperationProfiles
 from ..storage.htn_store import HtnStore

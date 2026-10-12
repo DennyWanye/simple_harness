@@ -24,7 +24,7 @@ import os
 import secrets as _secrets_mod
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -121,8 +121,8 @@ def load_or_create_hmac_key(secrets_dir: Path) -> tuple[bytes, str]:
 
 def sanity_echo(key: bytes) -> bool:
     """启动期 sanity HMAC echo — 验证 key 可用（PRD D11）。"""
-    import hmac as _hmac
     import hashlib
+    import hmac as _hmac
     expected = _hmac.new(key, b"ping", hashlib.sha256).hexdigest()
     return len(expected) == 64
 
@@ -143,7 +143,7 @@ class ReceiptStore:
         user_data_dir: Path,
         *,
         retention_days: int = 7,
-        key: Optional[bytes] = None,
+        key: bytes | None = None,
     ) -> None:
         self.root = Path(user_data_dir)
         self.receipts_dir = self.root / "receipts"
@@ -258,7 +258,7 @@ class ReceiptStore:
 
     # ─── Maintenance ─────────────────────────────────────
 
-    def cleanup_expired(self, *, now: Optional[datetime] = None) -> int:
+    def cleanup_expired(self, *, now: datetime | None = None) -> int:
         """Delete receipt files older than retention_days. Called at startup.
 
         Returns:
@@ -266,13 +266,13 @@ class ReceiptStore:
         """
         if not self.receipts_dir.exists():
             return 0
-        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=self.retention_days)
+        cutoff = (now or datetime.now(UTC)) - timedelta(days=self.retention_days)
         deleted = 0
         for f in self.receipts_dir.iterdir():
             if not f.is_file() or f.suffix != ".jsonl":
                 continue
             try:
-                mtime = datetime.fromtimestamp(f.stat().st_mtime, timezone.utc)
+                mtime = datetime.fromtimestamp(f.stat().st_mtime, UTC)
             except OSError:
                 continue
             if mtime < cutoff:
@@ -287,7 +287,7 @@ class ReceiptStore:
         """When HMAC key rotates, all old receipts become sig_invalid → archive."""
         if not self.receipts_dir.exists():
             return 0
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         archive_subdir = self.archived_dir / f"{prefix_hint}-{ts}"
         archive_subdir.mkdir(parents=True, exist_ok=True)
         moved = 0
@@ -321,14 +321,14 @@ def emit_receipt(
     ok: bool,
     session_id: str = "",
     iteration: int = 0,
-    error_class: Optional[str] = None,
-    artifact_shas: Optional[list[str]] = None,
-    receipt_id: Optional[str] = None,
+    error_class: str | None = None,
+    artifact_shas: list[str] | None = None,
+    receipt_id: str | None = None,
     phase: str = "executed",
-    outcome: Optional[str] = None,
-    run_id: Optional[str] = None,
-    node_execution_id: Optional[str] = None,
-    effect_id: Optional[str] = None,
+    outcome: str | None = None,
+    run_id: str | None = None,
+    node_execution_id: str | None = None,
+    effect_id: str | None = None,
 ) -> ToolReceipt:
     """End-to-end: build → sign with store.key → append → return."""
     r = make_receipt(

@@ -54,8 +54,8 @@ class SelfCheckGate:
     def __init__(
         self,
         *,
-        verify_gate: Optional[Any] = None,            # deskpet.agent.verify_gate.VerifyGate
-        external_evaluator: Optional[Any] = None,     # deskpet.agent.external_evaluator.ExternalEvaluator
+        verify_gate: Any | None = None,            # deskpet.agent.verify_gate.VerifyGate
+        external_evaluator: Any | None = None,     # deskpet.agent.external_evaluator.ExternalEvaluator
         heterogeneous_enabled: bool = True,
         reflection_enabled: bool = True,
     ) -> None:
@@ -73,10 +73,10 @@ class SelfCheckGate:
         problem_type: str,
         assistant_text: str,
         ledger: list,
-        goal_text: Optional[str] = None,
+        goal_text: str | None = None,
         failure_count: int = 0,
-        produced_artifacts: Optional[list[str]] = None,
-        objective_evidence: Optional[list[str]] = None,
+        produced_artifacts: list[str] | None = None,
+        objective_evidence: list[str] | None = None,
         workload_context: Any = None,
     ) -> SelfCheckOutcome:
         mode = self.mode_for(problem_type)

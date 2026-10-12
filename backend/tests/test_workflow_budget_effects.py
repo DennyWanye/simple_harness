@@ -4,7 +4,6 @@ import asyncio
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows.contracts import EffectKind, EffectPolicy
 from deskpet.workflows.effects import (
     BudgetReservationExceeded,

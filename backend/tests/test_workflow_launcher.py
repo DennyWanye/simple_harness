@@ -5,7 +5,6 @@ import json
 import time
 
 import pytest
-
 from deskpet.execution.contracts import RecoveryLease
 from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
 from deskpet.workflows.launcher import WorkflowLauncher

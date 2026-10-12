@@ -12,13 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.ppt_tools import (
     _HAS_PPTX,
     _resolve_template_path,
     ppt_create,
 )
-
 
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 

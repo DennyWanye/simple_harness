@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from simple_harness.contracts import CallId, EffectId, RunId
 from simple_harness.tools import (
     AuthorizationDecision,

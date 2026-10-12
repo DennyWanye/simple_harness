@@ -34,7 +34,6 @@ from __future__ import annotations
 
 from typing import Type, Union
 
-
 # ─────────────── exception types ───────────────
 
 
@@ -115,7 +114,7 @@ HALLUCINATION_KEYWORDS: frozenset[str] = frozenset({
 # ─────────────── classifier ───────────────
 
 
-def _extract_error_string(raw: Union[dict, str, Exception, None]) -> str:
+def _extract_error_string(raw: dict | str | Exception | None) -> str:
     """Pull a single string suitable for keyword matching out of any
     accepted classify() input."""
     if raw is None:
@@ -140,8 +139,8 @@ def _extract_error_string(raw: Union[dict, str, Exception, None]) -> str:
 
 
 def classify(
-    raw: Union[dict, str, Exception, None],
-) -> Type[Exception]:
+    raw: dict | str | Exception | None,
+) -> type[Exception]:
     """Classify a tool error into one of the three error classes.
 
     :param raw: the tool result dict (envelope or nested), bare error

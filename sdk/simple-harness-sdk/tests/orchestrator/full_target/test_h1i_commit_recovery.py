@@ -8,8 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from h1i_seed import CONFIG, grant_for
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts import ContractError
 from agent_orchestrator.contracts.planning_decisions import PlanningDecisionStatus
@@ -17,6 +15,7 @@ from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider
 from agent_orchestrator.testing.product_world import product_world
+from h1i_seed import CONFIG, grant_for
 from simple_harness.contracts import canonical_json
 
 # The child runs the product's own main loop (proposal, its independent review, adoption)

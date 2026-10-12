@@ -6,8 +6,6 @@ import asyncio
 from dataclasses import dataclass
 
 import pytest
-from simple_harness import ContextRouteOrigin
-
 from deskpet.execution.foreground_queue import (
     AdmissionReceipt,
     ClaimedExecution,
@@ -34,7 +32,7 @@ from deskpet.execution.foreground_runtime import (
 )
 from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
-
+from simple_harness import ContextRouteOrigin
 
 SUBJECT = "actor-1"
 
@@ -770,12 +768,11 @@ async def test_reclaim_between_signal_read_and_send_blocks_sdk_control() -> None
 async def test_reclaim_between_tool_admission_and_dispatch_blocks_effect(
     monkeypatch,
 ) -> None:  # type: ignore[no-untyped-def]
+    from deskpet.sdk_adapters.tools import ProductEffectExecutor
     from simple_harness import RequestId, RunId
     from simple_harness.tools import ToolContext
     from simple_harness.tools.contracts import CancellationToken
     from simple_harness.tools.executor import EffectExecutor
-
-    from deskpet.sdk_adapters.tools import ProductEffectExecutor
 
     store = _Store([])
     gate = ForegroundEffectAdmissionGate()

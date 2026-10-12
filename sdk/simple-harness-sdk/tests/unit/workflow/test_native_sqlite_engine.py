@@ -9,7 +9,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-
 from simple_harness.contracts import (
     CallId,
     EffectId,

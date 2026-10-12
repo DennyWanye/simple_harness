@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from deskpet.product_state.backup import create_verified_migration_backup
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.downgrade import (

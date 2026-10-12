@@ -73,7 +73,11 @@ def resolve_after_decision(handler: Any, intent: Any, *, status: str,
     # checks the pre-commit sources; NO_CHANGE must still match them here.
     if status != "COMMITTED" and not resume_source_current(handler, intent, mission):
         return
-    from ..runtime.planning_operations import SourceUnavailable, StoreOperationReader, build_operation_snapshot
+    from ..runtime.planning_operations import (
+        SourceUnavailable,
+        StoreOperationReader,
+        build_operation_snapshot,
+    )
     try:
         operations = build_operation_snapshot(intent.mission_id, reader=StoreOperationReader(handler.store))
     except SourceUnavailable:

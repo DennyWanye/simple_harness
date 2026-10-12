@@ -7,9 +7,10 @@ import json
 import os
 import stat
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from .authority import RevocationBarrier, get_process_revocation_barrier
 from .contracts import OwnerRef

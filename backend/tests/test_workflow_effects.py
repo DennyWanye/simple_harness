@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import inspect
 import textwrap
 import threading
@@ -9,7 +9,6 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from deskpet.workflows import EffectKind, EffectPolicy
 from deskpet.workflows.adapters import SyncHandlerTimedOut, execute_sync_handler
 from deskpet.workflows.effects import (

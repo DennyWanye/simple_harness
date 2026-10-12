@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from .runtime_prepare import (
     PreparedRuntimeInstanceSpec,

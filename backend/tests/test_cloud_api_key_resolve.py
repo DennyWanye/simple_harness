@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import textwrap
 
-
 # ---- resolve_cloud_api_key ---------------------------------------------------
 # Imported directly from ``config`` so we don't drag in main.py's heavy
 # provider initialisation (faster_whisper, CUDA bindings, ...).

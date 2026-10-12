@@ -110,7 +110,7 @@ def _evidence(
     requests: list[dict],
     sources: dict[str, dict],
     with_receipts: bool = True,
-) -> "a6.Evidence":
+) -> a6.Evidence:
     """requests: [{run, refs, trimmed}]; sources: source_ref -> visibility_dependencies。"""
     root = str(tmp_path)
     data = os.path.join(root, "userdata", "data")
@@ -204,7 +204,7 @@ def _evidence(
     return a6.Evidence(root)
 
 
-def _a6_4(ev) -> "a6.Item":
+def _a6_4(ev) -> a6.Item:
     return a6.item_a6_4(ev, ev.budget_profile())
 
 

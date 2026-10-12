@@ -4,14 +4,14 @@
 """Prepare one immutable Context OS request from fragments and one tool draft."""
 from __future__ import annotations
 
-import re
-
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from agent.context_messages import ContextMessageMeta, tag_message
+
 from deskpet.agent.assembler.bundle import (
     AttachmentRef,
     ContextBundle,
@@ -73,7 +73,7 @@ class ContextRequestPlanner:
             "context_page_in",
         ),
         active_snapshot: Any = None,
-        prebuilt_messages: Optional[list[dict[str, Any]]] = None,
+        prebuilt_messages: list[dict[str, Any]] | None = None,
         attachment_refs: tuple[AttachmentRef, ...] = (),
         attachment_tokens: int = 0,
         current_message_id: int | None = None,
@@ -439,7 +439,7 @@ def _validate_history_plan(plan: Any, *, allow_compaction_jobs: bool) -> None:
 def _fixed_message_parts(
     *,
     prefix: list[dict[str, Any]],
-    prebuilt_messages: Optional[list[dict[str, Any]]],
+    prebuilt_messages: list[dict[str, Any]] | None,
     late_system_nudge: str,
     user_message: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
@@ -573,8 +573,8 @@ def _render_prefix(
     bundle: ContextBundle,
     base_system: str,
     *,
-    page_in_refs: Optional[dict[str, PageInRef]] = None,
-) -> tuple[list[dict[str, Any]], list[ContextDecision], Optional[int], Optional[str]]:
+    page_in_refs: dict[str, PageInRef] | None = None,
+) -> tuple[list[dict[str, Any]], list[ContextDecision], int | None, str | None]:
     if not bundle.fragments:
         messages = bundle.build_messages(base_system)
         fingerprint = _fingerprint(messages) if messages else None
@@ -588,7 +588,7 @@ def _render_prefix(
     if base_system:
         messages.append({"role": "system", "content": base_system})
     decisions: list[ContextDecision] = []
-    stable_boundary: Optional[int] = len(messages) - 1 if messages else None
+    stable_boundary: int | None = len(messages) - 1 if messages else None
     for fragment in fragments:
         ref = (page_in_refs or {}).get(fragment.fragment_id)
         content = fragment.content
@@ -662,7 +662,7 @@ def _bind_page_in_candidate(store: Any, candidate: tuple[Any, str, str, str], *,
     )
 
 
-def _fingerprint(messages: list[dict[str, Any]]) -> Optional[str]:
+def _fingerprint(messages: list[dict[str, Any]]) -> str | None:
     if not messages:
         return None
     raw = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

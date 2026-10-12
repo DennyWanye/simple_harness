@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import pytest
-
 from deskpet.agent.task_kinds import (
+    _DEPTH_ENV,
     HARD_MAX_SPAWN_DEPTH,
     SpawnDepthExceeded,
-    _DEPTH_ENV,
     check_spawn_depth,
     child_depth_env,
     current_spawn_depth,

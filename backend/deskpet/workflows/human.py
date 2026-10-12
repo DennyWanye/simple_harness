@@ -20,7 +20,6 @@ from .errors import InvalidStatePatch, WorkflowContractError
 from .store.run_store import RunFence, StaleRunFence
 from .store.schema import initialize_workflow_db
 
-
 ResponseValidator: TypeAlias = Callable[[JsonValue], JsonValue]
 
 
@@ -68,7 +67,7 @@ class HumanDecision:
     consumed_checkpoint_id: str | None
 
     @classmethod
-    def from_row(cls, row: aiosqlite.Row) -> "HumanDecision":
+    def from_row(cls, row: aiosqlite.Row) -> HumanDecision:
         return cls(
             decision_id=str(row["decision_id"]),
             run_id=str(row["run_id"]),
@@ -129,7 +128,7 @@ class HumanGrant:
     consumed_at: float | None
 
     @classmethod
-    def from_row(cls, row: aiosqlite.Row) -> "HumanGrant":
+    def from_row(cls, row: aiosqlite.Row) -> HumanGrant:
         return cls(
             grant_id=str(row["grant_id"]),
             decision_id=str(row["decision_id"]),

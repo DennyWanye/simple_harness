@@ -14,17 +14,18 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Protocol
+from typing import Any, Literal, Protocol
 
+from deskpet.capabilities.contracts import CapabilityBinding, OwnerScopeKey
 from deskpet.capabilities.manager import (
     CapabilityInstallResult,
     CapabilityManagerError,
     CapabilityPackManager,
     capability_operation_id,
 )
-from deskpet.capabilities.contracts import CapabilityBinding, OwnerScopeKey
 from deskpet.capabilities.manifest import load_and_validate_pack
 from deskpet.capabilities.platform import (
     CapabilityLifecycleStaticPort,
@@ -52,7 +53,6 @@ from .activation import (
 )
 from .contracts import CapabilityMutationReceipt, MutationAction
 from .store import canonical_hash
-
 
 _CONFIRMATION_AUTHORITY = object()
 
@@ -92,7 +92,7 @@ class TrustedActivationDecisionProofV1:
         decision_mode: Literal["safe_auto", "user_confirmed"],
         code_digest: str | None,
         activation_risk_ack: str,
-    ) -> "TrustedActivationDecisionProofV1":
+    ) -> TrustedActivationDecisionProofV1:
         facts = {
             "schema_version": 1,
             "authorization_hash": authorization_hash,

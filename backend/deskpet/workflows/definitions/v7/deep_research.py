@@ -24,7 +24,6 @@ from ...store import BlobStore
 from .. import deep_research_nodes as payload_codec
 from ..research_core import ResearchArtifactPort, ResearchPorts
 
-
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v7"
 STATE_SCHEMA_VERSION = 7

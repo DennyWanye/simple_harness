@@ -12,7 +12,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.orchestrator import resource_requests as rr
 
@@ -301,13 +300,15 @@ def test_after_a_grant_the_refusal_names_the_amount_the_check_will_accept(tmp_pa
 def _refused_then_ask(batch: bool):
     """执行者把工具次数用完（上限 2）：``batch`` 时第二轮一次并发发 3 个调用跨过上限。
     看到拒绝话之后交 blocked 加申请。"""
-    from agent_orchestrator.testing.fixtures import package_of
+    from agent_orchestrator.testing.fixtures import package_of, role_of
+    from agent_orchestrator.testing.scripted_replies import (
+        LayeredScriptedProvider,
+        planner_reply,
+        retry_same_method,
+    )
     from simple_harness import Message, MessageRole
     from simple_harness.contracts import CallId
     from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-
-    from agent_orchestrator.testing.fixtures import role_of
-    from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, planner_reply, retry_same_method
 
     seen: list[str] = []
 

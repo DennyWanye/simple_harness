@@ -6,7 +6,10 @@ from typing import Any
 
 from ..governance.budgets import BudgetError
 from ..runtime.planning_operations import (
-    OperationEffect, SourceUnavailable, StoreOperationReader, build_operation_snapshot,
+    OperationEffect,
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
 )
 from ..runtime.taskgraph_operation_sources import read_operation_producers
 

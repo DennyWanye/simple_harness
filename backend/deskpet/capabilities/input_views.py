@@ -10,11 +10,12 @@ import hashlib
 import json
 import os
 import uuid
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 InputKind = Literal["file", "directory", "artifact", "value"]
 ViewKind = Literal["identity", "metadata", "text", "bytes"]
@@ -68,7 +69,7 @@ class InputBinding:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "InputBinding":
+    def from_mapping(cls, value: Mapping[str, Any]) -> InputBinding:
         expected = {
             "opaque_ref",
             "kind",
@@ -126,7 +127,7 @@ class InputBindingSnapshot:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "InputBindingSnapshot":
+    def from_mapping(cls, value: Mapping[str, Any]) -> InputBindingSnapshot:
         expected = {
             "snapshot_ref",
             "root_run_id",

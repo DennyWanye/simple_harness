@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from deskpet.types.task_reference import (
     TaskReferenceCandidate,
@@ -13,7 +14,6 @@ from deskpet.types.task_reference import (
     TaskReferenceResolution,
     TaskReferenceStatus,
 )
-
 
 _MARKERS: dict[TaskReferenceKind, tuple[str, ...]] = {
     TaskReferenceKind.RECENT: (

@@ -19,7 +19,12 @@ from ..assurance.review_input import read_initial_materials
 from ..storage.assurance_pins import require_live_pin_locked
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.htn_store import HtnStore
-from .assurance_point_use import REVIEW_INTENT_CONSUMER, EvidenceClaim, PointUseRefused, certify_point_use_locked
+from .assurance_point_use import (
+    REVIEW_INTENT_CONSUMER,
+    EvidenceClaim,
+    PointUseRefused,
+    certify_point_use_locked,
+)
 from .assurance_review_import import review_subject_stopped
 from .assurance_review_policies import require_registered_policies_locked
 from .assurance_review_transport import _validate_package

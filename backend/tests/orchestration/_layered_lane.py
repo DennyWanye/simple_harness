@@ -41,7 +41,6 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: F401 - the sh
     worker_reply,
 )
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
-
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 
@@ -56,7 +55,6 @@ def quick_runtime(monkeypatch: Any) -> None:
     只改这两处的耗时，不替换编排、执行图、保证通道里的任何东西。"""
 
     import agent_orchestrator.orchestrator.event_handler as event_handler
-
     import deskpet.orchestration.native_plane as native_plane
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)

@@ -11,7 +11,6 @@ from deskpet.workflows.definitions.deep_research_v6_assessment import (
 )
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 
-
 HEAD = "e" * 64
 
 

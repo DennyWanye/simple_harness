@@ -10,7 +10,6 @@ from types import SimpleNamespace
 from urllib.request import Request, urlopen
 
 import pytest
-
 from agent_orchestrator.evaluation.appworld import AppWorldConfig, AppWorldEpisode
 from agent_orchestrator.evaluation.appworld_api_observations import (
     PUBLIC_READ_APIS,

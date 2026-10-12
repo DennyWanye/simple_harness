@@ -34,8 +34,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover — import only for typing
     from agent.session_activity import SessionActivityStore
@@ -159,15 +160,15 @@ class AutoResumeOrchestrator:
     def __init__(
         self,
         *,
-        supervisor: "SupervisorAgent | DeterministicResumePolicy",
+        supervisor: SupervisorAgent | DeterministicResumePolicy,
         chat_dispatcher: ChatDispatcher,
-        activity_store: "SessionActivityStore",
+        activity_store: SessionActivityStore,
         max_attempts: int = 2,
         enabled: bool = True,
-        ws_emitter: Optional[WsEmitter] = None,
-        audit_writer: Optional[AuditWriter] = None,
+        ws_emitter: WsEmitter | None = None,
+        audit_writer: AuditWriter | None = None,
         clock: Callable[[], float] = time.time,
-        goal_text_getter: Optional[Callable[[str], Optional[str]]] = None,
+        goal_text_getter: Callable[[str], str | None] | None = None,
     ) -> None:
         self._supervisor = supervisor
         self._dispatch = chat_dispatcher

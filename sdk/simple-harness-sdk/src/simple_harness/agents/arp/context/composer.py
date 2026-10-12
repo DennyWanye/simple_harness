@@ -22,8 +22,9 @@ Two moments, both on the original seams:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from simple_harness.contracts import RunId
 from simple_harness.contracts.messages import Message, MessageRole
@@ -37,16 +38,16 @@ from ...context.port import JournalContextPort
 from ...context.tokenizer import count_message, count_tools
 from ...wire import AgentProviderWire, restore_wire_messages, run_id_from_request
 from .. import mission_sources, store
-from ..codec import check
 from ..catalogue import ToolExposureService, read_tool_snapshot
+from ..codec import check
 from ..errors import ArpError
 from ..pins import Pin
 from ..rules import Budget, Group, Recall, Selection, Turn, allocate
 from ..search import SessionAccess, _text_of
 from ..strict import digest, plain
-from .skill_blocks import SkillBlock, replay_skill_blocks, skill_blocks_for, skill_message
 from . import groups as protocol_groups
 from .recall import RecallSources, limits_for
+from .skill_blocks import SkillBlock, replay_skill_blocks, skill_blocks_for, skill_message
 
 MAX_SHRINK_STEPS = 256
 _RECALL_TAG = re.compile(r"<(/?)recalled_history", re.IGNORECASE)

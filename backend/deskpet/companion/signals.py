@@ -211,7 +211,7 @@ class GrowthDeliveryTarget:
         )
 
     @classmethod
-    def parse(cls, value: str) -> "GrowthDeliveryTarget":
+    def parse(cls, value: str) -> GrowthDeliveryTarget:
         prefix = "companion-profile:"
         if not value.startswith(prefix):
             raise ValueError("growth_delivery_target_invalid")

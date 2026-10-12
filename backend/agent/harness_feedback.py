@@ -5,10 +5,10 @@ import base64
 import copy
 import hashlib
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from deskpet.workflows.effects import ToolOutcomeState
-
 
 _VISUAL_CAPTURE_TOOLS = frozenset({"screen_capture", "window_capture"})
 _SUPPORTED_IMAGE_MIME = frozenset(

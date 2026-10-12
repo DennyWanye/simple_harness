@@ -2,7 +2,6 @@
 """Exact-contract outcomes for TaskGraph ORDER and composition reads."""
 from __future__ import annotations
 
-
 from ..contracts.htn import OccurrenceId, TaskForm
 from ..graph.eligibility import OccurrenceOutcome
 from ..graph.task_network import TaskNetworkSnapshot

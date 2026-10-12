@@ -19,10 +19,10 @@ import re
 import tempfile
 import unicodedata
 import zipfile
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import InitVar, dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Callable, Iterable, Mapping, Sequence
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -127,7 +127,7 @@ class ResolvedSkillSourceEvidence:
         archive_hash: str,
         raw_file_set_digest: str,
         selected_subdirectories: Sequence[str],
-    ) -> "ResolvedSkillSourceEvidence":
+    ) -> ResolvedSkillSourceEvidence:
         values = {
             "normalized_url": normalized_url,
             "requested_ref": requested_ref,

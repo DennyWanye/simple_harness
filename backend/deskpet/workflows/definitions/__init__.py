@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from importlib import import_module
 
-
 _RESEARCH_CORE = frozenset(
     {
         "FetchPort", "ResearchCoreConfig", "ResearchCoreState",

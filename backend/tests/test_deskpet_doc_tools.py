@@ -7,9 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from deskpet.tools import office_paths as op
 from deskpet.tools import doc_tools as dt
+from deskpet.tools import office_paths as op
 
 pytestmark = pytest.mark.skipif(not dt._HAS_DOCX, reason="python-docx not installed")
 

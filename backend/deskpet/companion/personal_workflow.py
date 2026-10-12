@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 PERSONAL_WORKFLOW_INTERPRETER_ID = "workflow.personal_v1"
 PERSONAL_WORKFLOW_INTERPRETER_VERSION = "1"
@@ -206,7 +207,7 @@ def plan_personal_workflow_tool_node(
         node_id=node_id,
         logical_effect_id=logical_effect_id,
         stable_call_id=hashlib.sha256(
-            f"{logical_effect_id}\x1fcall".encode("utf-8")
+            f"{logical_effect_id}\x1fcall".encode()
         ).hexdigest(),
         attempt_ordinal=attempt_ordinal,
         tool_binding=node.tool_binding,

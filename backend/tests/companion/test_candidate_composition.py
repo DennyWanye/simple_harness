@@ -6,7 +6,6 @@ import json
 import zipfile
 
 import pytest
-
 from deskpet.companion.build_admission import (
     CandidateDraftReceiptExpectationV1,
     CandidateDraftReceiptV1,

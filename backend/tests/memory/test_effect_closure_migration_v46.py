@@ -14,7 +14,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory import migrator, schema
 from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
@@ -28,6 +27,7 @@ from deskpet.memory.schema import (
     initialize_human_memory_program_state_db,
     inspect_startup_epoch,
 )
+
 
 @pytest.fixture(autouse=True)
 def frozen_v46_migration_lane(tmp_path, monkeypatch):

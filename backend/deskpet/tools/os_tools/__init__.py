@@ -21,7 +21,6 @@ from .download_tools import download_file, resolve_download_resources
 from .edit_file import edit_file
 from .list_directory import list_directory
 from .move_file import move_file, resolve_move_file_resources
-from .register_artifacts import register_artifacts
 from .process_tools import (
     process_list,
     process_start,
@@ -31,6 +30,7 @@ from .process_tools import (
     resolve_process_stop_resources,
 )
 from .read_file import read_file
+from .register_artifacts import register_artifacts
 from .registration import register_os_tools
 from .run_shell import run_shell
 from .web_fetch import web_fetch

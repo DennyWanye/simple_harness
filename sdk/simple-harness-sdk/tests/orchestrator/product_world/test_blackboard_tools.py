@@ -10,7 +10,6 @@ import json
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.testing.product_world import DEFAULT_TOOLS, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, worker_reply
 

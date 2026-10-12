@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
+from typing import Optional
 
 import structlog
 
@@ -104,7 +105,7 @@ class IntentCard:
     # Companion 成长入口的唯一语义信号。这里只决定是否把已提交消息升级为
     # 反思/显式能力构建证据；不选择 Driver，也不授予任何工具或副作用权限。
     growth_signal_kind: str = "none"
-    contradiction: Optional[ContradictionMap] = None   # ← 决策4：复杂问题才填，简单/闲聊=None
+    contradiction: ContradictionMap | None = None   # ← 决策4：复杂问题才填，简单/闲聊=None
     # 编排器出口信号（派生字段，非 LLM 直出）
     short_circuit: bool = False       # chitchat + 低歧义 → 整条流水线短路
     needs_clarification: bool = False  # ambiguity_score ≥ 阈值 → 暂停等用户答
@@ -219,7 +220,7 @@ class IntentTriage:
 
     def __init__(
         self,
-        llm_call: Optional[Callable[[str], Awaitable[str]]] = None,
+        llm_call: Callable[[str], Awaitable[str]] | None = None,
         *,
         clarify_threshold: float = 0.7,
         timeout_s: float = 30.0,   # 真机修正(2026-06-24 E2E)：主 LLM gpt-5.5 是 thinking 模型，
@@ -235,7 +236,7 @@ class IntentTriage:
         self,
         user_message: str,
         *,
-        prior_task_type: Optional[str] = None,
+        prior_task_type: str | None = None,
         workload_context: ProviderWorkloadContext | None = None,
     ) -> IntentCard:
         """决策4：一次调用产出 IntentCard（含可选 contradiction）。
@@ -303,7 +304,7 @@ class IntentTriage:
                 else self._llm_call(prompt)
             )
             raw = await asyncio.wait_for(call, timeout=self._timeout_s)
-        except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001 — safe-fail
+        except (TimeoutError, Exception) as exc:  # noqa: BLE001 — safe-fail
             logger.warning("intent_triage.llm_failed", error=str(exc)[:200])
             return self._safe_card(
                 user_message,
@@ -343,7 +344,7 @@ class IntentTriage:
         return card
 
     # 兼容别名：编排器/旧调用点用 analyze；保留 triage 作向后兼容薄包装（同一次合并调用）。
-    async def triage(self, user_message: str, *, prior_task_type: Optional[str] = None) -> IntentCard:
+    async def triage(self, user_message: str, *, prior_task_type: str | None = None) -> IntentCard:
         return await self.analyze(user_message, prior_task_type=prior_task_type)
 
     def _safe_card(
@@ -371,7 +372,7 @@ class IntentTriage:
             contradiction=None,   # safe-fail 不填矛盾段，编排器跳过 <主要矛盾> 注入
         )
 
-    def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> Optional[IntentCard]:
+    def _parse(self, raw: str, *, fallback_pt: str, user_message: str) -> IntentCard | None:
         """解析成功→真 IntentCard；JSON 提取失败→返回 None（由 analyze 走 safe-fail，
         **不**让坏 classifier 的 fallback_pt 派生出 chitchat 短路 —— 真机 2026-06-25 实测过
         deepseek 偶发畸形 JSON → 原实现 fallback_pt=chitchat 把真 debug 误短路成闲聊）。"""
@@ -463,7 +464,7 @@ def _safe_float(v, default: float = 0.0) -> float:
         return default
 
 
-def _parse_contradiction(obj: dict) -> Optional[ContradictionMap]:
+def _parse_contradiction(obj: dict) -> ContradictionMap | None:
     cons = [
         Contradiction(
             id=_safe_int(c.get("id", i), i),
@@ -506,7 +507,7 @@ def _sanitize_json_text(s: str) -> str:
     return _BAD_CHARS_RX.sub("", s)
 
 
-def _try_loads(candidate: str) -> Optional[dict]:
+def _try_loads(candidate: str) -> dict | None:
     for c in (candidate, _sanitize_json_text(candidate)):
         try:
             obj = json.loads(c)
@@ -517,7 +518,7 @@ def _try_loads(candidate: str) -> Optional[dict]:
     return None
 
 
-def _extract_json(raw: str) -> Optional[dict]:
+def _extract_json(raw: str) -> dict | None:
     s = _THINK_RX.sub("", raw or "").strip()  # 先剥 thinking-model 的 <think>…</think> CoT 前缀
     obj = _try_loads(s)
     if obj is not None:

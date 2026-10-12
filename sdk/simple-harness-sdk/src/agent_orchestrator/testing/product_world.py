@@ -34,13 +34,19 @@ TENANT = "tenant-product-world"
 def user_goal_world(loop: Any, mission: Any) -> Any:
     """A planning world shaped like the product's: a root goal, two levels of sub-goals and a
     workspace step (plus a continuation step that consumes an upstream delivery)."""
-    from ..contracts.htn import GoalSignature, PortCardinality, PortOrdering, PortSpec, SideEffectKind, TaskForm
+    from ..contracts.htn import (
+        GoalSignature,
+        PortCardinality,
+        PortOrdering,
+        PortSpec,
+        SideEffectKind,
+        TaskForm,
+    )
     from ..contracts.semantic_base import VersionedRef, content_hash_of
+    from ..planning.htn.observers.workspace import workspace_observers, workspace_predicates
     from ..planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
     from ..planning.htn.world import build_planning_world, capability_records
     from ..storage.htn_store import HtnStore
-
-    from ..planning.htn.observers.workspace import workspace_observers, workspace_predicates
 
     world = build_planning_world(mission.id, domains=(), semantics=HtnStore(loop.store),
                                  predicates=workspace_predicates(),

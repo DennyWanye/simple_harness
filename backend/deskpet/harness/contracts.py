@@ -8,9 +8,20 @@ from types import MappingProxyType
 from typing import Any, Protocol
 
 from deskpet.execution.contracts import (
-    ActorContext, AdmissionSpec, DeliverySpec, JsonValue, ProviderLaunchSnapshot, RunCreate, RunEvent,
-    RunEventCandidate, RunRecord, RunRef, RunStatus, fingerprint_json,
+    ActorContext,
+    AdmissionSpec,
+    DeliverySpec,
+    JsonValue,
+    ProviderLaunchSnapshot,
+    RunCreate,
+    RunEvent,
+    RunEventCandidate,
+    RunRecord,
+    RunRef,
+    RunStatus,
+    fingerprint_json,
 )
+
 from .ports import Driver
 
 

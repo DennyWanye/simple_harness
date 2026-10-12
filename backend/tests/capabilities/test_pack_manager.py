@@ -7,7 +7,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from deskpet.capabilities.manager import (
     CapabilityCandidate,
     CapabilityManagerError,

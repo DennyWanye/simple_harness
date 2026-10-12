@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 from .contracts import JsonValue, canonical_json, validate_json_value
 from .effects import PreparedToolCall
-
 
 PROPOSAL_STATE_SCHEMA_VERSION = 1
 
@@ -55,7 +55,7 @@ class GateConfigV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "GateConfigV1":
+    def from_dict(cls, value: Mapping[str, object]) -> GateConfigV1:
         return cls(
             max_turns=int(value.get("max_turns", 20)),
             tool_budget_hard=int(value.get("tool_budget_hard", 100)),
@@ -109,7 +109,7 @@ class GateStateV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "GateStateV1":
+    def from_dict(cls, value: Mapping[str, object]) -> GateStateV1:
         return cls(
             started_at=float(value.get("started_at", 0.0)),
             turns_used=int(value.get("turns_used", 0)),
@@ -160,7 +160,7 @@ class ConvergenceStateV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "ConvergenceStateV1":
+    def from_dict(cls, value: Mapping[str, object]) -> ConvergenceStateV1:
         return cls(
             no_progress_turns=int(value.get("no_progress_turns", 0)),
             repeated_signature_turns=int(value.get("repeated_signature_turns", 0)),
@@ -201,7 +201,7 @@ class ProposalErrorV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "ProposalErrorV1":
+    def from_dict(cls, value: Mapping[str, object]) -> ProposalErrorV1:
         return cls(
             code=str(value["code"]),
             message_ref=str(value["message_ref"]),
@@ -323,7 +323,7 @@ class ProposalStateV1:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "ProposalStateV1":
+    def from_dict(cls, value: Mapping[str, object]) -> ProposalStateV1:
         raw_error = value.get("last_error")
         return cls(
             schema_version=int(value.get("schema_version", PROPOSAL_STATE_SCHEMA_VERSION)),
@@ -435,7 +435,7 @@ class ProposalOutcomeV1:
         return payload
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "ProposalOutcomeV1":
+    def from_dict(cls, value: Mapping[str, object]) -> ProposalOutcomeV1:
         raw_error = value.get("error")
         return cls(
             schema_version=int(value.get("schema_version", PROPOSAL_STATE_SCHEMA_VERSION)),

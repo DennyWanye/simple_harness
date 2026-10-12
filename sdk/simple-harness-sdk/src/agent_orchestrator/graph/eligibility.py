@@ -46,7 +46,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, NoReturn, SupportsIndex
-from .settlement import SettledTerminalOccurrence
 
 from ..artifacts.input_bindings import (
     InputManifest,
@@ -96,6 +95,7 @@ from ..contracts.semantic_base import (
     index,
 )
 from .projection_validation import GraphIntegrityError
+from .settlement import SettledTerminalOccurrence
 from .task_network import TaskNetworkSnapshot
 
 # --------------------------------------------------------------------------------------

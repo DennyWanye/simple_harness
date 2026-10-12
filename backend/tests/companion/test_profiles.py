@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import asyncio
 
 import pytest
-
 from config import CompanionGrowthConfig, ConfigError, _load_config_impl
 from context import ServiceContext
+from deskpet.companion.clock import SystemClock
 from deskpet.companion.contracts import OwnerRef
 from deskpet.companion.identity import (
     HumanIdentity,
@@ -19,7 +19,6 @@ from deskpet.companion.identity_gate import (
     FrozenOwnerIdentity,
     IdentityReadyGate,
 )
-from deskpet.companion.clock import SystemClock
 from deskpet.companion.preferences import PreferencePolicy, PreferenceResolver
 from deskpet.companion.runtime import CompanionRuntime, ForegroundActivityGate
 from deskpet.companion.store import CompanionStore

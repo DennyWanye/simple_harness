@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 from ...contracts.evidence_state import EvidenceEntry, EvidenceSnapshot
+from ...contracts.htn import MethodRegistryStatus
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef, content_hash_of
 from ...knowledge.predicates import PredicateRegistry, PredicateSignature
@@ -60,7 +61,6 @@ from .applicability import CapabilityRecord, CapabilitySnapshot
 from .domain_package import DomainPackageInstaller
 from .observation_pipeline import ObserverIndex, build_index
 from .observers import PredicateObserver
-from ...contracts.htn import MethodRegistryStatus
 from .registry import (
     AdmissionPolicy,
     MethodRegistry,

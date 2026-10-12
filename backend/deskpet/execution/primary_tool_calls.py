@@ -18,7 +18,10 @@ import logging
 import sqlite3
 
 from deskpet.task_scope.protocol import (
-    TaskScopeProtocolError, canonical_hash, canonical_json, redact_credential_shapes,
+    TaskScopeProtocolError,
+    canonical_hash,
+    canonical_json,
+    redact_credential_shapes,
     reject_private_payload,
 )
 

@@ -5,7 +5,6 @@ import copy
 from dataclasses import dataclass
 
 import pytest
-
 from deskpet.memory.session_db import SessionDB
 from deskpet.workflows import EffectKind, EffectPolicy
 from deskpet.workflows.contracts import WorkflowContext, WorkflowRunStatus
@@ -22,10 +21,14 @@ from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import (
     LegacyCheckpointStore as FencedAsyncSqliteSaver,
-    empty_legacy_checkpoint as empty_checkpoint,
+)
+from deskpet.workflows.store import (
     NativeCheckpointStore,
     StaleRunFence,
     WorkflowRunStore,
+)
+from deskpet.workflows.store import (
+    empty_legacy_checkpoint as empty_checkpoint,
 )
 
 

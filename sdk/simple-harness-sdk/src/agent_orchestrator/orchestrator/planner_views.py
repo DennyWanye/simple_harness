@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .obligation_accounts import account_of, obligation_accounts
 from ..contracts.htn import TaskForm
 from ..contracts.semantic_base import content_hash_of
 from ..planning.htn.planner_package import (
@@ -20,10 +19,10 @@ from ..planning.htn.planner_package import (
     _network_authorities,
     assemble_planner_package,
     fact_rows,
-    knowledge_rows,
     failure_index,
     failure_outline,
     goal_rows,
+    knowledge_rows,
     method_rows,
     method_signatures,
     plan_row,
@@ -31,6 +30,7 @@ from ..planning.htn.planner_package import (
 )
 from ..storage.obligation_store import ObligationStore
 from .completion_support import read_completion_support
+from .obligation_accounts import account_of, obligation_accounts
 
 #: The Planner's own rejected replies, as the store records them.
 _PLANNING_REJECTIONS = frozenset({"PlanningRejected"})
@@ -114,12 +114,12 @@ def read_planner_package(
     whose numbers only the event handler can compute.
     """
 
+    from ..planning.htn.world import catalog_digest
     from ._read_set import SemanticReadSetChecker
+    from .method_library import directory, library_reads
     from .method_plan_reviews import reviews_by_method
     from .planning_repair_requests import pending_requests, repair_goal_occurrences
     from .planning_selection import candidate_context
-    from ..planning.htn.world import catalog_digest
-    from .method_library import directory, library_reads
 
     htn = dispatch.semantics()
     duties = ObligationStore(store)

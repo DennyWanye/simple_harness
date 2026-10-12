@@ -3,12 +3,15 @@ import asyncio
 
 import httpx
 import pytest
-
 from simple_harness.contracts import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import (
-    CancelToken, OpenAICompatibleProvider, ProviderAuthenticationError,
-    ProviderRequest, ProviderRequestRejectedError, Secret,
+    CancelToken,
+    OpenAICompatibleProvider,
+    ProviderAuthenticationError,
+    ProviderRequest,
+    ProviderRequestRejectedError,
+    Secret,
 )
 
 

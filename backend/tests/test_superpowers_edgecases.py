@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
+from agent.plan import maybe_extract_general_plan
 from deskpet.agent.preference_memory import PreferenceMemory
 from deskpet.agent.verify_gate import (
     Claim,
@@ -31,7 +31,6 @@ from deskpet.agent.verify_gate import (
     VerifyOutcome,
 )
 from deskpet.tools.receipt import ToolReceipt
-from agent.plan import maybe_extract_general_plan
 
 
 def _unit(*xs: float) -> list[float]:

@@ -18,8 +18,9 @@ aggregate estimate.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from simple_harness.contracts.messages import Message
 from simple_harness.execution.provider_invocations import provider_request_fingerprint

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.contracts import RunId
 from simple_harness.execution.budget import BudgetSnapshot
 from simple_harness.execution.context_authority import ContextRouteOrigin, ContextRouteReceipt

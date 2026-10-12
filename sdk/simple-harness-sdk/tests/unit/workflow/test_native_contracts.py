@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from simple_harness.workflow.contracts import NodeExecutionIdentity, StatePatch
 from simple_harness.workflow.errors import InvalidStatePatch
 from simple_harness.workflow.native import (

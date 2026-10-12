@@ -7,7 +7,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
 from simple_harness import (
     AgentIdentity,
     AgentMemoryError,

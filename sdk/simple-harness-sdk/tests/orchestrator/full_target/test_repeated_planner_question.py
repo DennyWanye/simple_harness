@@ -18,15 +18,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, CRITERIA, GOAL, events, run_until
-from h1i_seed import planner as seed_planner
-
 from agent_orchestrator.api.planning_answers import answer_planning_question
 from agent_orchestrator.orchestrator.planner_views import answered_questions_for_planner
 from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
+from h1i_seed import CONFIG, CRITERIA, GOAL, events, run_until
+from h1i_seed import planner as seed_planner
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "request-human.json"
 QUESTION = "公司官网的资料在哪里？"

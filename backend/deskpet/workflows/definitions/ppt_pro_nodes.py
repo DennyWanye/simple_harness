@@ -12,16 +12,16 @@ import json
 import posixpath
 import re
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 from urllib.parse import unquote
 from xml.etree import ElementTree
 
 from ...tools import ppt_tools
 from ..contracts import JsonValue, canonical_json, validate_json_value
-
 
 FULL_PAGE_RENDER_MODE = "full_page_images"
 _FULL_PAGE_REVISION_CODES = frozenset(

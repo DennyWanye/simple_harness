@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.workflows.adapters.ppt_runtime import PptRuntime
 
 

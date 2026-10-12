@@ -23,9 +23,10 @@ way (a session without its C3 row is simply not there).
 from __future__ import annotations
 
 import os
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents.config import AgentConfig, config_hash
 from simple_harness.contracts import ExecutionSessionId, RequestId, RunId

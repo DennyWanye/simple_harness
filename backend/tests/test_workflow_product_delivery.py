@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-
 from deskpet.agent.verify_gate import ClaimPattern, RegexExtractor, VerifyGate
 from deskpet.memory.session_db import SessionDB
 from deskpet.tools.receipt_store import ReceiptStore
@@ -22,7 +21,6 @@ from deskpet.workflows.adapters.product_delivery import (
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.service import WorkflowService
 from deskpet.workflows.store import WorkflowRunStore
-
 
 KEY = b"p" * 32
 

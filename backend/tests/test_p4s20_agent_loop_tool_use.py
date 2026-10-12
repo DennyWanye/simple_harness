@@ -12,9 +12,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import AgentLoop, ToolBatchEvent
-from llm.types import ChatResponse, ChatUsage as Usage, ToolCall
+from llm.types import ChatResponse, ToolCall
+from llm.types import ChatUsage as Usage
 
 
 class _ScriptedLLM:

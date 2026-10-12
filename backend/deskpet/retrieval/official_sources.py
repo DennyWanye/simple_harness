@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, Mapping, Sequence
+from typing import Any, ClassVar
 from urllib.parse import urlsplit
-
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
@@ -228,7 +228,7 @@ class OfficialSourceEntryV1:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "OfficialSourceEntryV1":
+    def from_json(cls, value: Mapping[str, Any]) -> OfficialSourceEntryV1:
         raw = _exact_object(
             value,
             {
@@ -310,7 +310,7 @@ class OfficialSourceRegistryV1:
         return {"policy_hash": self.policy_hash, **self._content()}
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "OfficialSourceRegistryV1":
+    def from_json(cls, value: Mapping[str, Any]) -> OfficialSourceRegistryV1:
         raw = _exact_object(
             value,
             {
@@ -396,7 +396,7 @@ class OfficialSourceRequestV1:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "OfficialSourceRequestV1":
+    def from_json(cls, value: Mapping[str, Any]) -> OfficialSourceRequestV1:
         raw = _exact_object(
             value,
             {
@@ -514,7 +514,7 @@ class OfficialSourceTargetV1:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "OfficialSourceTargetV1":
+    def from_json(cls, value: Mapping[str, Any]) -> OfficialSourceTargetV1:
         raw = _exact_object(value, set(cls._json_keys()), cls.__name__)
         return cls(
             target_id=str(_text(raw["target_id"], "target_id")),

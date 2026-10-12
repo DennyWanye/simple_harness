@@ -10,7 +10,6 @@ from dataclasses import fields, replace
 from typing import cast
 
 import pytest
-
 import simple_harness
 import simple_harness.runtime as runtime
 from simple_harness.contracts import (

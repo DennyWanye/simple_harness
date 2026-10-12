@@ -23,10 +23,9 @@ import dataclasses
 import json
 
 import pytest
+from agent_orchestrator.storage.htn_store import HtnStore
 from h1i_seed import plan_reply, refuse_tampered_first, reviewed
 from publishing_round import publishing_round, refused_final_round, run_rounds
-
-from agent_orchestrator.storage.htn_store import HtnStore
 
 
 @pytest.fixture(autouse=True)
@@ -266,9 +265,8 @@ def test_o03b_a_plan_change_touching_an_unknown_publish_waits_for_reconciliation
     不提交、不出新版本；服务答"确实没发生"后，等着的改动是在旧事实上做的，按
     TASKGRAPH_RESUME_SEMANTIC_SOURCE_CHANGED 退回规划器（收敛作业 ABANDONED）；规划器在新事实上
     重交同样的修复，这次没有未决操作挡着，第 2 版计划提交。"""
-    from safety_facts import safety_facts
-
     from agent_orchestrator.runtime import operation_reconciliation_file_publish as reconciliation
+    from safety_facts import safety_facts
 
     down = {"on": True}
     original = reconciliation.FilePublishReconciliationAdapter.observe

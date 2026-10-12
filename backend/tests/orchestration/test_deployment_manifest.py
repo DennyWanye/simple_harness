@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 import deskpet.orchestration.service as service_module
-from deskpet.orchestration.manifest import MANIFEST_NAME, MANIFEST_SCHEMA
+import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+from deskpet.orchestration.manifest import MANIFEST_NAME, MANIFEST_SCHEMA
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
 

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
-from deskpet.workflows.trace import SpanKind, SpanStatus, TraceRedactor, TraceStore, use_span
 from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.trace import SpanKind, SpanStatus, TraceRedactor, TraceStore, use_span
 
 
 @pytest.mark.asyncio

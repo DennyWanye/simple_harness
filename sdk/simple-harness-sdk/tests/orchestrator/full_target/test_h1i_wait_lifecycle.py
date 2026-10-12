@@ -20,17 +20,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from h1i_seed import (
-    CONFIG,
-    committed,
-    events,
-    resume,
-    root_task,
-    run_until,
-    seeded,
-)
-from h1i_seed import planner as seed_planner
-
 from agent_orchestrator.api.planning_authorization import PlanningAuthorizationApi
 from agent_orchestrator.contracts import TaskStatus
 from agent_orchestrator.contracts.planning_decisions import (
@@ -51,6 +40,16 @@ from agent_orchestrator.testing.scripted_replies import (
     decision,
     worker_reply,
 )
+from h1i_seed import (
+    CONFIG,
+    committed,
+    events,
+    resume,
+    root_task,
+    run_until,
+    seeded,
+)
+from h1i_seed import planner as seed_planner
 
 _WAIT_FIXTURE = Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "wait.json"
 

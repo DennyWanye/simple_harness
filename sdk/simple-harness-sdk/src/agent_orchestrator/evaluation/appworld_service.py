@@ -12,8 +12,7 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
-from .appworld_api_observations import PUBLIC_READ_APIS, project
-from .appworld_api_observations import digest
+from .appworld_api_observations import PUBLIC_READ_APIS, digest, project
 from .appworld_state_observations import AppWorldStatePolicy, load_state_policies
 
 
@@ -82,6 +81,7 @@ def install_public_observation_route(environment: Any, *,
     @environment.app.get("/host_dataset_identity")
     def host_dataset_identity(task_id: str, experiment_name: str) -> dict[str, str]:
         from pathlib import Path
+
         from .appworld_state_observations import task_dataset_hash
         active = environment.world
         if (active is None or active.task_id != task_id or active.experiment_name != experiment_name):

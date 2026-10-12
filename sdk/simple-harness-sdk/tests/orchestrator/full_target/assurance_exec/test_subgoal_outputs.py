@@ -35,8 +35,6 @@ from _subgoal_world import (
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "fixtures" / "htn"))
-from htn_world import Env, method, param, step  # noqa: E402
-
 from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
     AcceptedOutput,
     ResourceIdentity,
@@ -44,6 +42,7 @@ from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.contracts.semantic_base import VersionedRef  # noqa: E402
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider  # noqa: E402
+from htn_world import Env, method, param, step  # noqa: E402
 
 SO_ROOT, SO_PART, SO_WRITE, SO_NEXT = "so.goal", "so.part", "so.write", "so.continue"
 

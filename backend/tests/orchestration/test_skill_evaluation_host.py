@@ -15,7 +15,6 @@ passed evaluation to admission runs on the real model (no certificate is fabrica
 from __future__ import annotations
 
 import pytest
-
 from deskpet.orchestration.handlers import handle
 from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
 from simple_harness.agents.arp.pins import Pin

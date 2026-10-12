@@ -6,8 +6,9 @@ import asyncio
 import secrets
 import time
 from collections import OrderedDict
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, Generic, Literal, Mapping, TypeVar
+from typing import Generic, Literal, TypeVar
 
 T = TypeVar("T")
 CircuitState = Literal["closed", "open", "half_open"]

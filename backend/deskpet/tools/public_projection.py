@@ -7,7 +7,6 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-
 _WEB_FETCH_TOOLS = frozenset({
     "web_fetch",
     "web_extract_article",

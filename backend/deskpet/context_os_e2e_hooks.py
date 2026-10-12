@@ -1,8 +1,13 @@
 """Strictly dev/loopback-only Context OS E2E HTTP hooks."""
 from __future__ import annotations
-import json, os, sys, urllib.request
+
+import json
+import os
+import sys
+import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlparse
+
 
 def _loopback(url: str) -> bool:
     try:
@@ -54,7 +59,7 @@ def consume_context_os_e2e_fault(name:str):
 def trusted_provider_headers(base_url):
     hooks=ContextOSE2EHooks.from_env()
     if hooks is None or not hooks.provider_url or hooks.provider_url.removesuffix("/v1").rstrip("/")!=base_url.removesuffix("/v1").rstrip("/"):return {}
-    from agent.context_messages import current_provider_attempt_options,normalize_provider_purpose
+    from agent.context_messages import current_provider_attempt_options, normalize_provider_purpose
     o=current_provider_attempt_options()
     if o is None:return {}
     return {"X-DeskPet-Purpose":normalize_provider_purpose(o.purpose),"X-DeskPet-Request-Id":str(o.request_id or ""),"X-DeskPet-Attempt-Id":str(o.attempt_id or "")}

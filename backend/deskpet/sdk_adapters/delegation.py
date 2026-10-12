@@ -753,7 +753,7 @@ class ProductDelegationService:
             waits = [asyncio.ensure_future(child.done.wait()) for child in items]
             try:
                 await asyncio.wait_for(asyncio.gather(*waits), timeout=remaining)
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 for pending in waits:
                     pending.cancel()
             finished = all(child.done.is_set() for child in items)

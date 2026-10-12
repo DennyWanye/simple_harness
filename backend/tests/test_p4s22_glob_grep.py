@@ -8,10 +8,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.code_tools.glob_tool import glob_tool
 from deskpet.tools.code_tools.grep_tool import grep_tool
-
 
 # ---------------------------------------------------------------------------
 # Setup helpers
@@ -84,7 +82,8 @@ def test_glob_handles_missing_root():
 def test_glob_mtime_descending(tree):
     """Newest-first ordering — touch tests/test_main.py with a clearly
     later mtime than all the rest, then assert it's first."""
-    import os, time
+    import os
+    import time
     target = tree / "tests" / "test_main.py"
     # Filesystems on Windows can have ~1s mtime resolution; sleep a
     # touch over that to guarantee monotonic ordering.

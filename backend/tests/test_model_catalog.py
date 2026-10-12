@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from llm.model_catalog import (
     build_catalog,
     fetch_models,

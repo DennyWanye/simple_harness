@@ -5,21 +5,20 @@ import json
 from contextlib import asynccontextmanager
 
 import pytest
-
 from deskpet.capabilities.catalog_gate import (
     CapabilityCatalogGate,
     CatalogGateKey,
     CatalogReconcilingError,
 )
+from deskpet.capabilities.contracts import CapabilityScope
+from deskpet.capabilities.execution_scope_authority import (
+    SqliteCurrentExecutionScopeAuthority,
+)
 from deskpet.capabilities.platform import (
     CapabilityPlatform,
     CurrentExecutionScopeFacts,
 )
-from deskpet.capabilities.execution_scope_authority import (
-    SqliteCurrentExecutionScopeAuthority,
-)
 from deskpet.capabilities.runtime_prepare import PreparedRuntimeSet
-from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.companion.authority import RevocationBarrier
 from deskpet.companion.contracts import OwnerRef
 from deskpet.companion.identity_gate import FrozenOwnerIdentity, IdentityReadyGate

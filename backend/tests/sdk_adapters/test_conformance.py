@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 import pytest
-from simple_harness.testing import run_conformance
-
 from deskpet.sdk_adapters.conformance import VENDORED_SDK_SHA256, build_host
+from simple_harness.testing import run_conformance
 
 
 def test_build_host_exists():

@@ -4,11 +4,9 @@ import json
 import time
 from dataclasses import replace
 from pathlib import Path
-from types import MappingProxyType
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
-
 from deskpet.tools import registry as module_registry
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry, _normalize_with_parser, _schema_hash

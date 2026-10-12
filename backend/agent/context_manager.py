@@ -44,9 +44,13 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional, Tuple
+from typing import Any, Optional, Tuple
+
+from llm.model_info import ModelContextInfo
+from llm.model_info import resolve as resolve_model_info
 
 from agent.history_compactor import compact_messages, should_compact
 from agent.token_budget import BudgetCheckResult, check_budget
@@ -55,7 +59,6 @@ from agent.tool_result_truncator import (
     get_global_ref_store,
     maybe_truncate_tool_result,
 )
-from llm.model_info import ModelContextInfo, resolve as resolve_model_info
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +118,7 @@ class ContextConfig:
     """
 
     # 注入的 per-model 画像。None + v2 → 懒解析 _default；v1 下忽略。
-    model_info: Optional[ModelContextInfo] = None
+    model_info: ModelContextInfo | None = None
     v2_enabled: bool = field(default_factory=_v2_default_enabled)
 
     # B1 head/tail：两路共用的稳定切片量（不随 window 变——这是"保留多少
@@ -277,9 +280,9 @@ class ContextManager:
 
     def __init__(
         self,
-        config: Optional[ContextConfig] = None,
-        summarize_fn: Optional[SummarizeFn] = None,
-        ref_store: Optional[ToolResultRefStore] = None,
+        config: ContextConfig | None = None,
+        summarize_fn: SummarizeFn | None = None,
+        ref_store: ToolResultRefStore | None = None,
     ) -> None:
         self.config = config or ContextConfig()
         self.summarize_fn = summarize_fn
@@ -299,12 +302,12 @@ class ContextManager:
         cls,
         *,
         model: str,
-        project_root: Optional[Path] = None,
+        project_root: Path | None = None,
         v2_enabled: bool = True,
-        summarize_fn: Optional[SummarizeFn] = None,
-        ref_store: Optional[ToolResultRefStore] = None,
+        summarize_fn: SummarizeFn | None = None,
+        ref_store: ToolResultRefStore | None = None,
         adaptive_compact_pct: bool = False,
-    ) -> "ContextManager":
+    ) -> ContextManager:
         """按 model + project_root 三层 resolve 注入 ModelContextInfo。
 
         集成点（design.md D1/D2）：
@@ -433,7 +436,7 @@ class ContextManager:
         *,
         tool_name: str,
         result: str,
-    ) -> Tuple[str, Optional[str]]:
+    ) -> tuple[str, str | None]:
         """Return ``(content_for_history, ref_id_or_None)``.
 
         For tools listed in ``skip_truncation_for_tools`` (G1 fix) the
@@ -456,7 +459,7 @@ class ContextManager:
     # ──────────── Phase 1.2 File-read dedup（D3）────────────
 
     @staticmethod
-    def _normalize_read_path(raw: Any) -> Optional[str]:
+    def _normalize_read_path(raw: Any) -> str | None:
         """把工具 args 里的 path 规范化成稳定 key。
 
         - 正反斜杠统一、相对段折叠：``Path(p).resolve()``
@@ -542,7 +545,7 @@ class ContextManager:
         messages: list[dict[str, Any]],
         *,
         model: str,  # noqa: ARG002 — reserved for future per-model strategy
-        llm_for_summarize: Optional[Any] = None,
+        llm_for_summarize: Any | None = None,
     ) -> list[dict[str, Any]]:
         """Chat handler entry point.
 

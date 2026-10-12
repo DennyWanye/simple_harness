@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from agent_orchestrator.contracts import Budget, Mission, MissionStatus
 from agent_orchestrator.contracts.models import ContractError
 from agent_orchestrator.contracts.planning_decisions import PlanningRequestBinding

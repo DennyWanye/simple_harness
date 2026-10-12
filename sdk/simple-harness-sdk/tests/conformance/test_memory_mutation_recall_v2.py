@@ -10,7 +10,6 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-
 import simple_harness
 import simple_harness.runtime as runtime
 from simple_harness.contracts import fingerprint_json

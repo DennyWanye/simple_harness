@@ -13,9 +13,6 @@ import json
 from typing import Any
 
 import pytest
-from h1i_seed import CONFIG, events, run_until
-from taskgraph_exec.production_fixture import CHAIN_CRITERIA, chain_planner
-
 from agent_orchestrator.runtime.role_templates import (
     PLANNER_HIERARCHICAL,
     PLANNING_DECISION_PACKAGE_VERSION,
@@ -28,6 +25,8 @@ from agent_orchestrator.testing.scripted_replies import (
     review_input,
     review_reply,
 )
+from h1i_seed import CONFIG, events, run_until
+from taskgraph_exec.production_fixture import CHAIN_CRITERIA, chain_planner
 
 
 @pytest.fixture(autouse=True)

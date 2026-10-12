@@ -5,7 +5,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from deskpet.workflows.definitions.deep_research_v5_evidence import (
     POLICY_HASH,
     AdmissionDecision,
@@ -20,7 +19,6 @@ from deskpet.workflows.definitions.deep_research_v5_evidence import (
     policy_manifest,
 )
 from deskpet.workflows.definitions.deep_research_v5_policy import profile_definition
-
 
 FIXTURE = Path(__file__).parent / "fixtures" / "deep_research_v5_evidence_policy.json"
 

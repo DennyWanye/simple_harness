@@ -21,6 +21,7 @@ from ..contracts.operation_payloads import (
     ReconciliationPolicy,
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef, identifier
+from ..deployment.root import current_statements
 from ..governance.policies import DeploymentPolicy
 from ..runtime.connectors import params_hash
 from ..runtime.operation_payloads import (
@@ -29,7 +30,6 @@ from ..runtime.operation_payloads import (
     payload_request_hash,
     require_connector_profile,
 )
-from ..deployment.root import current_statements
 from ..storage.store import Store
 from .action_commits import CandidateRejected, bind_artifact_params, check_candidate
 from .operation_intent_sources import PreparedOperationIntentSources

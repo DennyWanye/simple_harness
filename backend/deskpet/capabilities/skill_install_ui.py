@@ -38,7 +38,7 @@ class TrustedProjectInstallContext:
     project_root: str
 
     @classmethod
-    def from_binding(cls, binding: Any) -> "TrustedProjectInstallContext":
+    def from_binding(cls, binding: Any) -> TrustedProjectInstallContext:
         if getattr(binding, "kind", "") != "project":
             raise ProjectSkillInstallUIError(
                 "project_session_required",
@@ -164,11 +164,11 @@ class ProjectSkillInstallUIAdapter:
                 "skill_install_authority_invalid",
                 "Exactly one Project or global Skill owner is required.",
             )
+        from deskpet.capabilities.contracts import canonical_project_identity_scope_key
         from deskpet.capabilities.skill_install import (
             GlobalSkillInstallAuthority,
             SkillInstallProjectAuthority,
         )
-        from deskpet.capabilities.contracts import canonical_project_identity_scope_key
 
         principal = str(principal_id or "").strip()
         if not principal:
@@ -382,7 +382,7 @@ class SettingsSkillInstallAuthorizerFactory:
         if not self._global_owner_key.startswith("user:v2:"):
             raise ValueError("validated global owner key is required")
 
-    async def bind_control_request(self, ws: Any) -> "_BoundSettingsSkillInstallAuthorizer":
+    async def bind_control_request(self, ws: Any) -> _BoundSettingsSkillInstallAuthorizer:
         client = getattr(ws, "client", None)
         client_host = str(getattr(client, "host", "local") or "local")
         window_binding = hashlib.sha256(

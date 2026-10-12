@@ -18,12 +18,11 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from deskpet.agent.verify_gate import (
     ClaimPattern,
     RegexExtractor,
@@ -31,7 +30,6 @@ from deskpet.agent.verify_gate import (
     VerifyOutcome,
 )
 from deskpet.tools.receipt import make_receipt
-
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -52,8 +50,8 @@ def _make_ok_receipt(tool_name="ppt_create"):
     return make_receipt(
         tool_name=tool_name,
         args={},
-        started_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        ended_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, tzinfo=UTC),
         ok=True,
     )
 
@@ -326,7 +324,7 @@ class FakeGoalChecker:
 
 
 class FakeGoalStore:
-    def __init__(self, goal_text: Optional[str] = None, done: bool = False):
+    def __init__(self, goal_text: str | None = None, done: bool = False):
         self._goal_text = goal_text
         self._done = done
         self.marked_done = False
@@ -335,8 +333,9 @@ class FakeGoalStore:
     def get(self, session_id: str):
         if self._goal_text is None:
             return None
-        from deskpet.agent.goal_store import SessionGoal
         import time
+
+        from deskpet.agent.goal_store import SessionGoal
         return SessionGoal(
             session_id=session_id,
             text=self._goal_text,
@@ -349,7 +348,7 @@ class FakeGoalStore:
             updated_at=time.time(),
         )
 
-    def get_goal_text(self, session_id: str) -> Optional[str]:
+    def get_goal_text(self, session_id: str) -> str | None:
         return self._goal_text
 
     def mark_done(self, session_id: str) -> None:

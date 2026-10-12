@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import research_tools as legacy
+from deskpet.workflows import WorkflowContext
 from deskpet.workflows.definitions import deep_research_nodes as nodes
 from deskpet.workflows.definitions.research_core import (
     FetchPort,
@@ -21,7 +21,6 @@ from deskpet.workflows.definitions.research_core import (
     legacy_ports,
     run_research_core,
 )
-from deskpet.workflows import WorkflowContext
 from deskpet.workflows.store import BlobStore
 
 

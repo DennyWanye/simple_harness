@@ -27,12 +27,11 @@ import logging
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import platformdirs
-
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,7 @@ def _err(msg: str, retriable: bool = False) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------------

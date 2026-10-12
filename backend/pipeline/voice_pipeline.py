@@ -12,21 +12,21 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import structlog
-from fastapi import WebSocket
-
 from deskpet.session.task_scope import task_session_manager
 from deskpet.tools.public_projection import (
     project_public_tool_arguments,
     project_public_tool_result,
 )
+from fastapi import WebSocket
 from observability.metrics import stage_timer
+
 from pipeline.barge_in_filter import BargeInFilter
 
 if TYPE_CHECKING:
     from agent.providers.base import AgentProvider
-    from providers.silero_vad import SileroVAD
-    from providers.faster_whisper_asr import FasterWhisperASR
     from providers.edge_tts_provider import EdgeTTSProvider
+    from providers.faster_whisper_asr import FasterWhisperASR
+    from providers.silero_vad import SileroVAD
 
 logger = structlog.get_logger()
 
@@ -151,7 +151,7 @@ class VoicePipeline:
         self,
         vad: SileroVAD,
         asr: FasterWhisperASR,
-        agent: "AgentProvider",
+        agent: AgentProvider,
         tts: EdgeTTSProvider,
         control_ws: WebSocket | None = None,
         session_id: str = "default",

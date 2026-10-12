@@ -6,8 +6,14 @@ from dataclasses import dataclass
 
 from ..contracts.htn import GraphStructureBudget, TaskForm
 from .network_codec import NetworkDocumentV1, decode
+from .projection_validation import (
+    ProblemKind,
+    ProjectionProblem,
+    ProjectionReport,
+    validate_execution_projection,
+    validate_refinement_acyclic,
+)
 from .task_network import TaskNetworkSnapshot
-from .projection_validation import ProblemKind, ProjectionProblem, ProjectionReport, validate_execution_projection, validate_refinement_acyclic
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

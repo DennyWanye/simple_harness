@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
-from typing import Any, ClassVar, Literal, Mapping
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, ClassVar, Literal
 
 from .contracts import JsonValue, canonical_json, validate_json_value
-
 
 DeadlineStatus = Literal["open", "expired", "cancelled", "completed"]
 DeadlineTerminalReason = Literal[
@@ -95,7 +95,7 @@ def _wall(value: datetime | str, path: str) -> datetime:
             "must include a timezone",
             path=path,
         )
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _wall_text(value: datetime | str, path: str) -> str:
@@ -295,7 +295,7 @@ class DurableDeadlineV1:
         parent_deadline_id: str | None = None,
         rollback_tolerance_ms: int = 2_000,
         wall_not_after: datetime | str | None = None,
-    ) -> "DurableDeadlineV1":
+    ) -> DurableDeadlineV1:
         budget = _integer(budget_ms, "$.budget_ms", minimum=1)
         now = _wall(now_wall, "$.now_wall")
         natural_end = now + timedelta(milliseconds=budget)
@@ -356,7 +356,7 @@ class DurableDeadlineV1:
         return payload
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "DurableDeadlineV1":
+    def from_json(cls, value: Mapping[str, Any]) -> DurableDeadlineV1:
         keys = {
             "schema_version",
             "deadline_id",

@@ -27,8 +27,9 @@ evaluation Mission, found in the ledger and verified by the SDK's acceptance rea
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 ACTIONS = ("SUSPEND", "RESUME", "RETIRE")
@@ -157,9 +158,9 @@ def _goal(revision: Any) -> tuple[str, list[str]]:
 
 
 async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
+    from agent_orchestrator.storage.htn_store import HtnStore
     from simple_harness.agents.arp.errors import ArpError
     from simple_harness.agents.arp.pins import Pin
-    from agent_orchestrator.storage.htn_store import HtnStore
 
     command_id = request.get("command_id")
     if not isinstance(command_id, str) or not command_id.strip():
@@ -262,9 +263,9 @@ async def install_file(service: Any, request: Mapping[str, Any]) -> dict[str, An
     if size > MAX_BUNDLE_BYTES:
         raise SkillCatalogueRefused("invalid_request", "技能包超过 32MB")
     data = path.read_bytes()
+    from simple_harness.agents.arp.errors import ArpError
     from simple_harness.agents.arp.pins import Pin
     from simple_harness.agents.arp.skills import inspect_bundle
-    from simple_harness.agents.arp.errors import ArpError
 
     shared = _shared(service)
     try:

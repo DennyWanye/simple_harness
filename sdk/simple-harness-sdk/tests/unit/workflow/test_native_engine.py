@@ -8,7 +8,6 @@ import copy
 from collections.abc import Mapping
 
 import pytest
-
 import simple_harness.workflow.native as native_module
 from simple_harness.workflow.contracts import (
     ChannelSpec,

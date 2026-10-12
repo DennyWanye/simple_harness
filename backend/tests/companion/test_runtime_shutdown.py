@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from deskpet.companion.identity_gate import FrozenOwnerIdentity, IdentityReadyGate
 from deskpet.companion.runtime import (
     CompanionJobResult,
@@ -14,6 +13,7 @@ from deskpet.companion.runtime import (
     ForegroundActivityGate,
 )
 from deskpet.companion.store import CompanionStore
+
 from tests.companion.test_runtime_scheduler import (
     ExecutionState,
     MutableClock,

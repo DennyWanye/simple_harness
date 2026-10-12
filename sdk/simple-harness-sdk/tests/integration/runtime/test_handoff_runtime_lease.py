@@ -7,7 +7,6 @@ import asyncio
 import hashlib
 
 import pytest
-
 from simple_harness.contracts import CallId, EffectId, RequestId, RunId, canonical_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetPolicy

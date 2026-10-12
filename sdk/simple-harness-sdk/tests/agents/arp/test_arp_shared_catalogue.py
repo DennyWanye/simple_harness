@@ -19,8 +19,6 @@ import asyncio
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-from skill_fixture import AcceptingAssurance, admit_skill, artifact, import_skill, install_command, lifecycle_command, md_bundle, native_bundle, trial_command
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp import store
@@ -28,6 +26,17 @@ from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.shared_catalogue import SharedSkillCatalogue, mirror_caller
 from simple_harness.agents.arp.strict import digest
+from skill_fixture import (
+    AcceptingAssurance,
+    admit_skill,
+    artifact,
+    import_skill,
+    install_command,
+    lifecycle_command,
+    md_bundle,
+    native_bundle,
+    trial_command,
+)
 
 CONFIG = AgentConfig(name="w", instructions="你是助手。", model_profile_ref="p")
 

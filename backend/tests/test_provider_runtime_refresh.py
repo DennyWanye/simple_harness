@@ -7,9 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-
 import main
+import pytest
 
 
 class _ProductionProviderRegistry:

@@ -11,9 +11,7 @@ import logging
 import sqlite3
 
 import pytest
-from simple_harness.providers import ProviderReconciliationObservation, ProviderReconciliationState
-from simple_harness.providers.errors import ProviderTimeoutError
-
+from deskpet.execution.primary_history import PrimaryHistoryStore
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.context_route import local_owner_auth
@@ -22,7 +20,8 @@ from deskpet.sdk_adapters.reconciliation import (
     ProductProviderRetryOnceReconciliation,
     ProviderUnknownRetryOncePolicy,
 )
-from deskpet.execution.primary_history import PrimaryHistoryStore
+from simple_harness.providers import ProviderReconciliationObservation, ProviderReconciliationState
+from simple_harness.providers.errors import ProviderTimeoutError
 from tests.execution.test_primary_foreground_runtime import Provider, build, history_disclosure
 
 SUBJECT = local_owner_auth().subject
@@ -277,6 +276,11 @@ def test_production_wiring_no_longer_uses_noop_reconciliation():
 # 契约与 ``simple_harness.execution.dispatch.ProviderInvocationUnitOfWork`` 一致）。
 # ---------------------------------------------------------------------------
 
+from deskpet.sdk_adapters.reconciliation import (  # noqa: E402
+    ProductRuntimeReconciliation,
+    RunScopedProviderReconciliation,
+    provider_invocations_in_flight,
+)
 from simple_harness.contracts import RequestId, RunId  # noqa: E402
 from simple_harness.contracts.messages import Message, MessageRole  # noqa: E402
 from simple_harness.execution.budget import (  # noqa: E402
@@ -305,12 +309,6 @@ from simple_harness.providers import (  # noqa: E402
     ProviderUsage,
 )
 from simple_harness.providers.errors import ProviderTransportError  # noqa: E402
-
-from deskpet.sdk_adapters.reconciliation import (  # noqa: E402
-    ProductRuntimeReconciliation,
-    RunScopedProviderReconciliation,
-    provider_invocations_in_flight,
-)
 
 
 class LedgerUnitOfWork:

@@ -131,11 +131,12 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult

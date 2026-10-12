@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from agent_orchestrator.observability.business_replay import (
     CONSISTENT,
     INCONSISTENT,

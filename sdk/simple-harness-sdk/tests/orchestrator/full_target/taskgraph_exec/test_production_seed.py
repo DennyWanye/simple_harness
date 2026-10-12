@@ -5,9 +5,9 @@
 里已有绑定与启用回执；第一份计划照旧经原派发与收集提交成执行图第 1 版。"""
 import asyncio
 
-from production_fixture import enabled_world
 from agent_orchestrator.orchestrator.taskgraph_policy import enable_command_id
 from agent_orchestrator.storage.taskgraph_store import TaskGraphStore
+from production_fixture import enabled_world
 
 
 def test_the_creation_binds_the_graph_and_the_seed_plan_is_its_first_revision(tmp_path):

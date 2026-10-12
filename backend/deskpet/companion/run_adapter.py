@@ -17,19 +17,23 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any, TypeAlias
 
-from deskpet.execution.contracts import OutcomeStatus, RunEvent, thaw_json
+from deskpet.execution.contracts import (
+    OutcomeStatus,
+    RunEvent,
+    RunRef,
+    root_idempotency_key,
+    thaw_json,
+)
 from deskpet.harness.adapters.venues import KernelRunClient
 from deskpet.harness.contracts import (
     HostContext,
     HostExtensionRefV1,
     PreparedRunContextV1,
 )
-from deskpet.execution.contracts import root_idempotency_key, RunRef
 
 from .clock import ClockPort, SystemClock
 from .contracts import LeaseClaim, OwnerRef
 from .runtime import CompanionJobResult
-
 
 _PURPOSES = frozenset({"reflection", "evaluation", "delegated_task"})
 _DELEGATED_PREPARATION_SCOPES = frozenset(
@@ -112,7 +116,7 @@ class DelegatedPreparationGrant:
     @classmethod
     def from_mapping(
         cls, value: Mapping[str, Any]
-    ) -> "DelegatedPreparationGrant":
+    ) -> DelegatedPreparationGrant:
         if set(value) != {
             "grant_id",
             "scope",
@@ -161,7 +165,7 @@ class ExternalDecisionWait:
         execution_run_id: str,
         execution_session_id: str,
         payload: Mapping[str, Any],
-    ) -> "ExternalDecisionWait":
+    ) -> ExternalDecisionWait:
         kind = _required(payload.get("kind"), "decision_kind")
         if kind != "permission":
             raise ValueError("delegated_external_decision_must_be_permission")

@@ -31,10 +31,9 @@ import random
 import sqlite3
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
-
-from typing import Awaitable, Callable, Optional
+from typing import Any, Optional
 
 import aiosqlite
 
@@ -46,13 +45,6 @@ from deskpet.agent.context_usage import (
     normalize_context_usage_sample,
     reduce_context_usage_state,
 )
-from deskpet.memory.schema import initialize_state_db
-from deskpet.memory.memory_v2_schema import SESSION_TITLES_DDL
-from deskpet.sdk_adapters.context_authority import (
-    SnapshotContractConflict,
-    canonical_json as sdk_canonical_json,
-    canonical_sha256 as sdk_canonical_sha256,
-)
 from deskpet.companion.companion_message_projection import (
     COMPANION_REDACTION_TOMBSTONE,
     COMPANION_REDACTION_TOMBSTONE_HASH,
@@ -60,8 +52,23 @@ from deskpet.companion.companion_message_projection import (
     OwnerMemoryReadScopeV1,
     TrustedCompanionOwner,
     TrustedCompanionProjectionRoute,
+)
+from deskpet.companion.companion_message_projection import (
     canonical_hash as companion_canonical_hash,
+)
+from deskpet.companion.companion_message_projection import (
     canonical_json as companion_canonical_json,
+)
+from deskpet.memory.memory_v2_schema import SESSION_TITLES_DDL
+from deskpet.memory.schema import initialize_state_db
+from deskpet.sdk_adapters.context_authority import (
+    SnapshotContractConflict,
+)
+from deskpet.sdk_adapters.context_authority import (
+    canonical_json as sdk_canonical_json,
+)
+from deskpet.sdk_adapters.context_authority import (
+    canonical_sha256 as sdk_canonical_sha256,
 )
 
 log = logging.getLogger(__name__)
@@ -113,7 +120,7 @@ def _coerce_trusted_owner(value: Any) -> TrustedCompanionOwner:
     frozen_owner = getattr(value, "owner", None)
     if frozen_owner is not None and hasattr(value, "binding_epoch"):
         return TrustedCompanionOwner(
-            profile_id=str(getattr(frozen_owner, "profile_id")),
+            profile_id=str(frozen_owner.profile_id),
             profile_generation=int(
                 getattr(
                     frozen_owner,
@@ -121,7 +128,7 @@ def _coerce_trusted_owner(value: Any) -> TrustedCompanionOwner:
                     getattr(frozen_owner, "generation", 0),
                 )
             ),
-            binding_epoch=int(getattr(value, "binding_epoch")),
+            binding_epoch=int(value.binding_epoch),
             owner_kind="companion_profile",
         )
     if isinstance(value, dict):
@@ -134,11 +141,11 @@ def _coerce_trusted_owner(value: Any) -> TrustedCompanionOwner:
             owner_kind=str(value.get("owner_kind", "companion_profile")),
         )
     return TrustedCompanionOwner(
-        profile_id=str(getattr(value, "profile_id")),
+        profile_id=str(value.profile_id),
         profile_generation=int(
             getattr(value, "profile_generation", getattr(value, "generation", 0))
         ),
-        binding_epoch=int(getattr(value, "binding_epoch")),
+        binding_epoch=int(value.binding_epoch),
         owner_kind=str(getattr(value, "owner_kind", "companion_profile")),
     )
 
@@ -218,7 +225,7 @@ class SessionDB:
         self,
         db_path: str | Path,
         *,
-        on_message_written: Optional[OnMessageWritten] = None,
+        on_message_written: OnMessageWritten | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._initialized = False
@@ -232,7 +239,7 @@ class SessionDB:
         #   * 失败只 log，**不** re-raise 给 append_message 的调用方
         #   * 不得修改 append_message 的返回值（仍是 msg_id）
         #   * None → 老 S1 行为完全不变（零开销）
-        self._on_message_written: Optional[OnMessageWritten] = on_message_written
+        self._on_message_written: OnMessageWritten | None = on_message_written
         # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk）整条移除。SessionDB
         # 回到「纯 Host 会话账本」的本职：只落 state.db，不再有可选记忆后端、
         # product_memory_outbox 投递器，也不再代理 recall/facts/twin。
@@ -3764,7 +3771,7 @@ class SessionDB:
             now=now,
         )
 
-    async def get_message_role(self, msg_id: int) -> Optional[str]:
+    async def get_message_role(self, msg_id: int) -> str | None:
         """返回单条消息的 role（按主键查，O(1)）。msg 不存在 → None。
 
         记忆系统升级 WI-M1.2：`_on_message_written` hook 是 2 参数
@@ -3783,7 +3790,7 @@ class SessionDB:
 
     async def get_message_routing_context(
         self, msg_id: int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Read the immutable workload identity for one persisted message.
 
         The fanout hook intentionally receives only ``(message_id, content)``.
@@ -4096,7 +4103,7 @@ class SessionDB:
 
     async def get_recent(
         self, session_id: str, limit: int = 10
-    ) -> list["ConversationTurn"]:
+    ) -> list[ConversationTurn]:
         """Implement ``MemoryStore.get_recent`` via ``get_messages``."""
         from memory.base import ConversationTurn
 
@@ -4179,7 +4186,7 @@ class SessionDB:
         self,
         session_id: str | None = None,
         limit: int | None = None,
-    ) -> list["StoredTurn"]:
+    ) -> list[StoredTurn]:
         """List messages for one session, or all sessions, as StoredTurn."""
         from memory.base import StoredTurn
 
@@ -4244,7 +4251,7 @@ class SessionDB:
 
         return (await self._with_retry(_do)) > 0
 
-    async def list_sessions(self) -> list["SessionSummary"]:
+    async def list_sessions(self) -> list[SessionSummary]:
         """List all sessions that have messages, newest first."""
         from memory.base import SessionSummary
 
@@ -5003,14 +5010,14 @@ class SessionDB:
 
         await self._with_retry(_do)
 
-    async def get_session_plan(self, session_id: str) -> Optional[dict[str, Any]]:
+    async def get_session_plan(self, session_id: str) -> dict[str, Any] | None:
         """读 awaiting plan；无行返 None。steps 已 json.loads，awaiting 已 bool。"""
         if not self._initialized:
             await self.initialize()
         from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
         await ensure_memory_v2_tables(self._db_path)
 
-        async def _do() -> Optional[dict[str, Any]]:
+        async def _do() -> dict[str, Any] | None:
             async with aiosqlite.connect(self._db_path) as db:
                 cursor = await db.execute(
                     """
@@ -5085,7 +5092,7 @@ class SessionDB:
         text: str,
         status: str,
         progress: float,
-        criteria: Optional[str],
+        criteria: str | None,
         max_iterations: int,
         iterations_used: int,
         set_at: float,

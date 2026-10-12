@@ -19,7 +19,6 @@ import asyncio
 import contextlib
 
 import pytest
-
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -264,7 +263,9 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
                     await runner
 
                 def refuse(intent):  # type: ignore[no-untyped-def]
-                    from agent_orchestrator.orchestrator.event_handler import ServiceTurnIdentityMismatch
+                    from agent_orchestrator.orchestrator.event_handler import (
+                        ServiceTurnIdentityMismatch,
+                    )
 
                     raise ServiceTurnIdentityMismatch("SERVICE_TURN_IDENTITY_MISMATCH: turn differs from frozen intent")
 
@@ -371,7 +372,9 @@ def test_a_fault_in_a_global_scan_is_one_missions_round_fault(tmp_path, monkeypa
         return share
 
     if place == "taskgraph_notifications":
-        from agent_orchestrator.orchestrator.taskgraph_notifications import TaskGraphNotifications as Scan
+        from agent_orchestrator.orchestrator.taskgraph_notifications import (
+            TaskGraphNotifications as Scan,
+        )
 
         monkeypatch.setattr(Scan, "_consume_one", breaking(Scan._consume_one))
     else:
@@ -408,7 +411,10 @@ def test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_roun
 
     from agent_orchestrator.governance.budgets import BudgetLedger
     from agent_orchestrator.observability.business_replay import (
-        CONSISTENT, verify_execution_ledgers, verify_mission)
+        CONSISTENT,
+        verify_execution_ledgers,
+        verify_mission,
+    )
 
     broken: dict[str, Any] = {"subject": None, "hits": 0}
     original = BudgetLedger.import_usage

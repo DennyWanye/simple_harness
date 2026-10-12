@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import _HAS_PPTX, _handle_ppt_create
 

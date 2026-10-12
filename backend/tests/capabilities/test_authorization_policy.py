@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 
 from deskpet.permissions.policy import (
+    DECISION_AUTOMATION_RULES,
     AuthorizationPolicy,
     AuthorizationPolicyState,
-    DECISION_AUTOMATION_RULES,
     DecisionContext,
 )
 from deskpet.permissions.task_grants import (

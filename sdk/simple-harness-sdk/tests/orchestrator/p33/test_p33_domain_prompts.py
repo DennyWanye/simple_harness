@@ -18,12 +18,11 @@ import json
 from dataclasses import replace
 
 import pytest
-from p33_world import opened, request
-
 from agent_orchestrator.governance import domains
 from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.runtime.role_templates import ROLES, template_for_domain
 from agent_orchestrator.testing.fixtures import lift_immutable_guards
+from p33_world import opened, request
 
 
 @pytest.mark.parametrize(

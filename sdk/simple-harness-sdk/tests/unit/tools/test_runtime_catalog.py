@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
-
 from simple_harness.contracts import RunId
 from simple_harness.tools import (
     CatalogRunToolExposure,

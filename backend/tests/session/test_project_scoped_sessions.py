@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import os
 import sqlite3
 import uuid
@@ -11,14 +11,13 @@ from types import SimpleNamespace
 
 import aiosqlite
 import pytest
-
 from deskpet.memory.schema import initialize_state_db
 from deskpet.session.project_binding import (
     ProjectBindingService,
     ProjectBoundWorkspace,
+    ProjectlessWorkspace,
     ProjectMissingWorkspace,
     ProjectSessionError,
-    ProjectlessWorkspace,
     SessionCreationService,
     resolve_registration,
 )

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.contracts import RequestId, RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetCharge, BudgetChargeKind, BudgetPolicy

@@ -4,7 +4,6 @@
 import asyncio
 
 import pytest
-
 from simple_harness.contracts import RequestId, RunId
 from simple_harness.providers import CancelToken
 from simple_harness.runtime.drivers.react_loop import (

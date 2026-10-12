@@ -9,12 +9,13 @@ from types import SimpleNamespace
 import aiosqlite
 import httpx
 import pytest
-from simple_harness import CallId, thaw_json
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-
 from deskpet.execution.primary_context_pages import (
-    HISTORY_PREFIX, HISTORY_SUFFIX, PAGE_BYTES, PREFIX, PrimaryContextPageReader, _excerpt,
+    HISTORY_PREFIX,
+    HISTORY_SUFFIX,
+    PAGE_BYTES,
+    PREFIX,
+    PrimaryContextPageReader,
+    _excerpt,
     project_history_group,
     verify_history_projections,
 )
@@ -22,6 +23,9 @@ from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.tools.context_page_in_tools import ContextPageInStore
+from simple_harness import CallId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
 from tests.sdk_adapters.test_product_host_ports import Registry

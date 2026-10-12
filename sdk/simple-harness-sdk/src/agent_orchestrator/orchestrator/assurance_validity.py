@@ -52,16 +52,18 @@ from ..knowledge.assurance_sources import (
 from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
+    CurrentAuthority,
     EpochSnapshot,
     ResolvedRef,
+    _permission,
+    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
     require_epochs_locked,
 )
 from ..storage.assurance_store import AssuranceStore
-from ..storage.htn_store import HtnStore
 from ..storage.assurance_work import atomic
-from ..storage.assurance_reads import CurrentAuthority, _permission, _require_same_permission
+from ..storage.htn_store import HtnStore
 from .assurance_check_use import PreparedCheckUse, _merge_reads, prepare_local_check_use
 from .assurance_review_import import (
     read_imported_review_locked,

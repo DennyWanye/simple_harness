@@ -6,6 +6,13 @@ target-version = "py311"
 extend-exclude = [
   "**/vendor/**", "**/dist/**", "**/dist-1/**", "**/build/**", "**/userdata/**",
   "**/.venv/**", "**/*.egg-info/**", "**/node_modules/**",
+  # 禁区：表结构与迁移（字节不许变）
+  "**/schema.py", "**/migrator.py", "**/migration.py", "**/*_migration.py", "**/migrations/**",
+  "**/schema_migrations.py",
+  # 发布给用户的能力包模板（已发布模板文字是执行池准入身份）
+  "**/capabilities/templates/**",
+  # 测试数据文件
+  "**/fixtures/**", "**/testdata/**",
 ]
 
 [lint]
@@ -39,3 +46,8 @@ max-statements = 60
 [lint.per-file-ignores]
 # 测试允许长函数、断言风格与宽异常
 "**/tests/**" = ["C90", "PLR0912", "PLR0915", "BLE001", "N802", "N806"]
+
+# 阶段 1 起：格式化与自动修复都不碰禁区与数据文件
+[format]
+quote-style = "double"
+line-ending = "lf"

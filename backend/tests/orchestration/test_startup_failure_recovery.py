@@ -6,13 +6,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
 from agent_orchestrator.artifacts.workspace import WorkspaceCleanupIncomplete
 from agent_orchestrator.orchestrator import event_handler
 from deskpet.orchestration import service as service_module
 from deskpet.orchestration.lock import InstanceLock
 from deskpet.orchestration.service import (
-    OrchestrationRequestError, OrchestrationService, OrchestrationSettings,
+    OrchestrationRequestError,
+    OrchestrationService,
+    OrchestrationSettings,
 )
 
 

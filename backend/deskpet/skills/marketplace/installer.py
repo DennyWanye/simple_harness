@@ -39,9 +39,10 @@ import shutil
 import stat
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -59,8 +60,8 @@ logger = structlog.get_logger(__name__)
 class GithubSpec:
     owner: str
     repo: str
-    branch: Optional[str] = None
-    subpath: Optional[str] = None
+    branch: str | None = None
+    subpath: str | None = None
     git_url: str = ""
 
     def __post_init__(self) -> None:
@@ -203,7 +204,7 @@ class BatchStageResult:
     staged: list[StagedSkill] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
     multi: bool = False
-    repo_dir: Optional[Path] = None
+    repo_dir: Path | None = None
 
 
 # ---------------------------------------------------------------------
@@ -442,7 +443,7 @@ class SkillInstaller:
             shutil.move(str(staging_root), str(target))
         return target
 
-    def finalize_batch(self, result: "BatchStageResult") -> dict[str, Any]:
+    def finalize_batch(self, result: BatchStageResult) -> dict[str, Any]:
         """Finalize every staged sub-skill in a BatchStageResult.
 
         Iterates each StagedSkill, calls finalize(..., cleanup_repo=False),

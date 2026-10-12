@@ -27,7 +27,7 @@ class ProviderBudgetAttempt:
 
 @dataclass(frozen=True, slots=True)
 class QueryBudgetLease:
-    allocator: "SearchBudgetAllocator"
+    allocator: SearchBudgetAllocator
     lease_id: str
     dimension_id: str
     query_key: str

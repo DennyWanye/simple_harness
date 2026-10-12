@@ -129,7 +129,7 @@ class SkillMeta:
 # ---------------------------------------------------------------------------
 # Frontmatter parsing
 # ---------------------------------------------------------------------------
-def _split_frontmatter(text: str) -> tuple[Optional[dict[str, Any]], str]:
+def _split_frontmatter(text: str) -> tuple[dict[str, Any] | None, str]:
     """Return (frontmatter_dict | None, body_text).
 
     Accepts either ``---\\n...\\n---\\n<body>`` or a bare body (no
@@ -232,7 +232,7 @@ class SkillPackSnapshotResolver:
         )
 
     async def execute(
-        self, name: str, args: Optional[list[str]] = None
+        self, name: str, args: list[str] | None = None
     ) -> str:
         """Compatibility command surface backed only by Manager records."""
 
@@ -448,9 +448,9 @@ class SkillLoader:
 
     def __init__(
         self,
-        skill_dirs: Optional[list[Path]] = None,
+        skill_dirs: list[Path] | None = None,
         *,
-        skill_scopes: Optional[list[str]] = None,
+        skill_scopes: list[str] | None = None,
         enable_watch: bool = True,
         script_timeout_s: float = 10.0,
         debounce_s: float = 1.0,
@@ -484,7 +484,7 @@ class SkillLoader:
             tuple[str, str, str, str, str], str
         ] = {}
         self._observer: Any = None
-        self._debounce_timer: Optional[threading.Timer] = None
+        self._debounce_timer: threading.Timer | None = None
         self._started = False
         # Tool registry integration — register once per loader so names
         # re-bound on reload always dispatch to the live body.
@@ -642,7 +642,7 @@ class SkillLoader:
             self._instruction_snapshots.update(new_instructions)
         logger.info("skill.reload_ok", count=len(new_map))
 
-    def _load_single(self, skill_md: Path, *, scope: str) -> Optional[SkillMeta]:
+    def _load_single(self, skill_md: Path, *, scope: str) -> SkillMeta | None:
         try:
             text = skill_md.read_text(encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
@@ -676,7 +676,7 @@ class SkillLoader:
     # -----------------------------------------------------------------
     def _load_single_legacy(
         self, fm: dict[str, Any], skill_md: Path, scope: str
-    ) -> Optional[SkillMeta]:
+    ) -> SkillMeta | None:
         missing = [f for f in _REQUIRED_FIELDS if not fm.get(f)]
         if missing:
             logger.warning(
@@ -719,9 +719,9 @@ class SkillLoader:
     # -----------------------------------------------------------------
     def _load_single_v1(
         self, skill_md: Path, scope: str
-    ) -> Optional[SkillMeta]:
+    ) -> SkillMeta | None:
         try:
-            from .parser import parse_skill_md, SkillParseError
+            from .parser import SkillParseError, parse_skill_md
         except ImportError as exc:
             logger.warning("skill.parser_missing", path=str(skill_md), error=str(exc))
             return None
@@ -779,7 +779,7 @@ class SkillLoader:
         ``.select()``. We provide both; component prefers select()."""
         return self.list_metas()
 
-    def get(self, name: str) -> Optional[SkillMeta]:
+    def get(self, name: str) -> SkillMeta | None:
         with self._lock:
             return self._skills.get(name)
 
@@ -837,7 +837,7 @@ class SkillLoader:
         return ResolvedSkillInstructionV1(scope=scope, instruction=instruction)
 
     def select(
-        self, task_type: str, prefer: Optional[list[str]] = None
+        self, task_type: str, prefer: list[str] | None = None
     ) -> list[SkillMeta]:
         """Duck-type contract expected by SkillComponent.
 
@@ -900,7 +900,7 @@ class SkillLoader:
     # Execution
     # ------------------------------------------------------------------
     async def execute(
-        self, name: str, args: Optional[list[str]] = None
+        self, name: str, args: list[str] | None = None
     ) -> str:
         """Render a skill's body with ``${args[N]}`` substitution.
 

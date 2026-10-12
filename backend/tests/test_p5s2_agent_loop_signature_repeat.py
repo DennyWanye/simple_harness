@@ -25,7 +25,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent.agent_loop import (
     AgentLoop,
     FinalEvent,
@@ -33,7 +32,6 @@ from agent.agent_loop import (
 )
 from agent.session_activity import SessionActivityStore, args_hash
 from llm.types import ChatResponse, ChatUsage, ToolCall
-
 
 # ─────────────── stubs ───────────────
 

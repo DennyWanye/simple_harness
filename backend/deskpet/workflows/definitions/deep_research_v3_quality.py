@@ -16,7 +16,6 @@ from .deep_research_v3_contracts import (
     SupportDecision,
 )
 
-
 _WORD = re.compile(r"[a-zA-Z][a-zA-Z0-9_.+-]*|\d+(?:\.\d+)?|[\u4e00-\u9fff]", re.UNICODE)
 _EXACT = re.compile(
     r"(?:\b(?:v(?:ersion)?\s*)?\d+(?:\.\d+){1,3}\b|"

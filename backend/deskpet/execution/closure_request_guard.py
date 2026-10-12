@@ -1,21 +1,32 @@
 """Source-bound Host closure input and physical preflight; no new SDK authority."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import json
-from pathlib import Path
 import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 import aiosqlite
-from simple_harness import (DisclosureContext, EvidenceRef, EvidenceReasonCode,
-    EvidenceSourceKind, SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt, thaw_json)
+from simple_harness import (
+    DisclosureContext,
+    EvidenceReasonCode,
+    EvidenceRef,
+    EvidenceSourceKind,
+    SanitizedEvidenceEnvelope,
+    SanitizedEvidenceReceipt,
+    thaw_json,
+)
 from simple_harness.execution.provider_invocations import provider_request_json
 from simple_harness.providers import ProviderRequestRejectedError
 
 from deskpet.execution.primary_dependencies import dependencies, read_run_dependencies
 from deskpet.memory.primary_visibility import read_evidence_pair
-from deskpet.memory.trusted_disclosure import current_record_tx, binding_token, resolve_current_disclosure
+from deskpet.memory.trusted_disclosure import (
+    binding_token,
+    current_record_tx,
+    resolve_current_disclosure,
+)
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.protocol import canonical_hash
 
@@ -62,8 +73,11 @@ class ClosureRequestAuthority:
 
     async def host_snapshot_tx(self, db, identity):
         """Only Host reads; usable inside the existing reservation write TX."""
-        from deskpet.execution.foreground_queue import EffectBoundary, _EFFECT_BOUNDARY_ALLOWED_STATES
-        from deskpet.execution.semantic_closure import dirty_state_tx, _scope_observation_tx
+        from deskpet.execution.foreground_queue import (
+            _EFFECT_BOUNDARY_ALLOWED_STATES,
+            EffectBoundary,
+        )
+        from deskpet.execution.semantic_closure import _scope_observation_tx, dirty_state_tx
         found = await rows(db, "SELECT r.subject,r.primary_conversation_id,t.turn_json,t.turn_hash,"
             "h.owner_id,h.generation,h.current_state,h.lease_expires_at,b.binding_json,b.binding_hash "
             "FROM foreground_runs r JOIN foreground_run_heads h ON h.host_run_id=r.host_run_id "
@@ -127,8 +141,8 @@ class ClosureRequestAuthority:
     async def _prepare(self, *, host_run_id, sdk_run_id, subject, owner_id, generation, scope,
                        observation, answer, binding_record, materialize):
         from deskpet.execution.semantic_closure import _MAX_ANSWER_BYTES
-        from deskpet.task_scope.search import TaskScopeSearchStore
         from deskpet.task_scope.disclosure import render_scope_disclosure
+        from deskpet.task_scope.search import TaskScopeSearchStore
         binding = SdkRunBindingV1.from_record(binding_record)
         if binding.run_id != sdk_run_id:
             raise ClosureSourceIncomplete("closure_binding_differs")
@@ -306,7 +320,12 @@ class ClosurePhysicalRequestGuard:
         self.authority, self.binding = authority, binding
 
     async def _carrier(self, actual):
-        from deskpet.execution.semantic_closure import closure_request_hash, closure_plan_id, evidence_set_key, message_hash
+        from deskpet.execution.semantic_closure import (
+            closure_plan_id,
+            closure_request_hash,
+            evidence_set_key,
+            message_hash,
+        )
         a = self.authority
         async with a.reader() as db:
             found = await rows(db, "SELECT a.*,r.subject,r.primary_conversation_id FROM post_turn_invocation_attempts a "

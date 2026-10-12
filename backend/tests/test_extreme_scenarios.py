@@ -3,12 +3,13 @@
 测试系统在极端条件下的健壮性和边界行为
 """
 
-import pytest
 import asyncio
-import sys
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
-from agent.agent_loop import FinalEvent, ErrorEvent
+
+import pytest
+from agent.agent_loop import ErrorEvent, FinalEvent
 
 
 class TestStateMachineStress:
@@ -17,7 +18,11 @@ class TestStateMachineStress:
     @pytest.mark.asyncio
     async def test_repeated_final_events(self):
         """测试重复发送 final 事件（相同 run_id）"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -39,7 +44,12 @@ class TestStateMachineStress:
     @pytest.mark.asyncio
     async def test_rapid_state_flipping(self):
         """测试快速状态翻转（100次）"""
-        from deskpet.agent.run_presenter import _present_final, _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -65,7 +75,11 @@ class TestStateMachineStress:
     @pytest.mark.asyncio
     async def test_concurrent_state_modifications(self):
         """测试并发状态修改"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -90,7 +104,12 @@ class TestStateMachineStress:
     @pytest.mark.asyncio
     async def test_out_of_order_events(self):
         """测试乱序事件（final 在 error 之前）"""
-        from deskpet.agent.run_presenter import _present_final, _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -114,7 +133,11 @@ class TestStateMachineStress:
     @pytest.mark.asyncio
     async def test_empty_run_id_sequence(self):
         """测试空 run_id 的事件序列"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -139,7 +162,11 @@ class TestResourceManagement:
     @pytest.mark.asyncio
     async def test_very_large_payload(self):
         """测试超大 payload（1MB JSON）"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -179,7 +206,11 @@ class TestResourceManagement:
     @pytest.mark.asyncio
     async def test_massive_mock_object_creation(self):
         """测试大量 mock 对象创建"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         # 创建 1000 个不同的 context
         contexts = []
@@ -205,7 +236,11 @@ class TestResourceManagement:
     @pytest.mark.asyncio
     async def test_json_serialization_limits(self):
         """测试 JSON 序列化极限"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -270,7 +305,11 @@ class TestExceptionTypes:
     ])
     async def test_exception_type_handling(self, exception_type, exception_msg):
         """测试各种异常类型的处理"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -314,7 +353,11 @@ class TestExceptionTypes:
     @pytest.mark.asyncio
     async def test_non_serializable_object_handling(self):
         """测试不可序列化对象"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -371,14 +414,18 @@ class TestEdgeCases:
                     timeout=min(timeout_value, 5)  # 限制最大为5秒
                 )
                 assert isinstance(result, str)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # 某些极端值可能超时，这也是可接受的
             pass
 
     @pytest.mark.asyncio
     async def test_special_object_types(self):
         """测试特殊对象类型"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -407,7 +454,11 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_deeply_nested_structure(self):
         """测试超深嵌套结构"""
-        from deskpet.agent.run_presenter import _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -451,7 +502,11 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_zero_length_content(self):
         """测试零长度内容"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -475,7 +530,11 @@ class TestRealWorldBugSimulation:
     @pytest.mark.asyncio
     async def test_stuck_status_original_bug(self):
         """模拟原始的卡住 bug：工具执行完但 final 事件发送失败"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -502,7 +561,12 @@ class TestRealWorldBugSimulation:
     @pytest.mark.asyncio
     async def test_race_condition_final_and_error(self):
         """测试竞态条件：final 和 error 同时到达"""
-        from deskpet.agent.run_presenter import _present_final, _present_error, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_error,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -546,7 +610,11 @@ class TestRealWorldBugSimulation:
     @pytest.mark.asyncio
     async def test_websocket_reconnection_simulation(self):
         """模拟 WebSocket 断开重连"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
 
         context = MagicMock(spec=RunPresentationContext)
         context.session_id = "test-session"
@@ -579,10 +647,14 @@ class TestRealWorldBugSimulation:
     @pytest.mark.asyncio
     async def test_memory_leak_detection(self):
         """测试内存泄漏：长时间运行后的内存增长"""
-        from deskpet.agent.run_presenter import _present_final, RunPresentationContext, PresentationState
-
         # 记录初始状态
         import gc
+
+        from deskpet.agent.run_presenter import (
+            PresentationState,
+            RunPresentationContext,
+            _present_final,
+        )
         gc.collect()
 
         contexts = []

@@ -15,9 +15,6 @@ import dataclasses
 import hashlib
 
 import pytest
-from test_h1h_operation_matrix import in_product_world
-from test_htn_store import envelope
-
 from agent_orchestrator.runtime.planning_operations import (
     SourceUnavailable,
     StoreOperationReader,
@@ -26,6 +23,8 @@ from agent_orchestrator.runtime.planning_operations import (
 from agent_orchestrator.storage.planning_admission_store import PlanningAdmissionStore
 from agent_orchestrator.testing.fixtures import lift_immutable_guards
 from simple_harness.contracts import canonical_json
+from test_h1h_operation_matrix import in_product_world
+from test_htn_store import envelope
 
 
 def _digest(value: str) -> str:

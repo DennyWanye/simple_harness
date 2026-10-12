@@ -2,8 +2,13 @@
 # SPDX-License-Identifier: BUSL-1.1
 """诊断 frozen 安装版：登录成功但 backend cloud_configured=false + 模型列表空。
 CDP 连 9222 → 捕获 console → reload 触发 relayProviderBridge.apply → 看哪环断。"""
-import asyncio, json, sys, urllib.request
+import asyncio
+import json
+import sys
+import urllib.request
+
 import websockets
+
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 _mid=[0]; _logs=[]
@@ -40,7 +45,7 @@ async def recv_bg(ws,secs):
                 txt=" ".join(str(x.get("value",x.get("description",""))) for x in a)
                 _logs.append((r["params"].get("type",""),txt))
             end-=0.1
-    except asyncio.TimeoutError: pass
+    except TimeoutError: pass
     except Exception: pass
 
 async def main():

@@ -10,7 +10,6 @@ import sys
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
-
 from simple_harness.agents import AgentConfig
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp import store

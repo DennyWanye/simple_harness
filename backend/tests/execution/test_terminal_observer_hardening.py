@@ -15,7 +15,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
@@ -151,9 +150,8 @@ async def test_run_fault_memo_released_on_observer_failure(tmp_path: Path) -> No
 
 
 def test_run_fault_memo_is_bounded_and_registry_terminal_releases() -> None:
-    from simple_harness import RunId
-
     from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
+    from simple_harness import RunId
     from tests.sdk_adapters.test_tool_authority import _prepare
 
     memo = RunFaultMemo(capacity=2)

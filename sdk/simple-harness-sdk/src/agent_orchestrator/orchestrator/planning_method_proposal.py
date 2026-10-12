@@ -16,11 +16,10 @@ from __future__ import annotations
 
 from typing import Any
 
-
 from ..contracts.htn import TaskRef
 from ..contracts.models import ContractError
-from ..planning.htn.registry import MethodProposal
 from ..planning.htn.method_proposals import admit_proposal, rejection_problems
+from ..planning.htn.registry import MethodProposal
 from ..planning.unknown_fields import decode_dropping_unknown
 
 #: How many methods the Planner may propose for one goal in one Mission (规划预算之一).

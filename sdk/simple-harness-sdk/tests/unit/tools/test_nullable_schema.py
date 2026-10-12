@@ -2,10 +2,12 @@
 import copy
 
 import pytest
-
 from simple_harness.contracts import freeze_json
 from simple_harness.tools.schema import (
-    ArgumentsValidationError, SchemaDefinitionError, validate_arguments, validate_tool_schema,
+    ArgumentsValidationError,
+    SchemaDefinitionError,
+    validate_arguments,
+    validate_tool_schema,
 )
 
 

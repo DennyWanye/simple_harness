@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from deskpet.skills.loader import SkillLoader, SkillMeta, _split_frontmatter
 
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from ..assurance.codec import fingerprint
 from ..artifacts.paths import normalise_workspace_path
+from ..assurance.codec import fingerprint
 from ..contracts.htn import OccurrenceId, TaskForm, TaskRef
 from ..contracts.models import ContractError
 from ..contracts.operation_completion import (
@@ -115,7 +115,7 @@ def local_check_criterion(criterion: Criterion, verification_policy: tuple[str, 
 
 
 def _scoped_local_criteria(binding, scope, layers, carried):
-    from .leaf_acceptance import criteria_for, local_content_criterion, LEAF_LOCAL_CRITERION
+    from .leaf_acceptance import LEAF_LOCAL_CRITERION, criteria_for, local_content_criterion
     local = {c.criterion_id: c for c in criteria_for(binding, layers, carried=carried)}
     # The frozen compiler may give an effect-only leaf a local preparation
     # criterion. It is grounded in required output ports, never in effect success.

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-
 from deskpet.workflows.deadlines import (
     DeadlineValidationError,
     DurableDeadlineV1,
@@ -15,8 +14,7 @@ from deskpet.workflows.deadlines import (
     resume_deadline,
 )
 
-
-NOW = datetime(2026, 7, 18, 10, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 18, 10, 0, 0, tzinfo=UTC)
 POLICY_HASH = "a" * 64
 
 

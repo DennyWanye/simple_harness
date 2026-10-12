@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from agent_orchestrator.artifacts.workspace import WorkspaceManager
 from agent_orchestrator.runtime.tool_gateway import WorkspaceToolGateway
 from simple_harness.contracts import CallId, RunId

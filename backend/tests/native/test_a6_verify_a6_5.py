@@ -111,7 +111,7 @@ def _evidence(
     self_describing: bool = True,
     with_sources: bool = True,
     with_event_sequence: bool = True,
-) -> "a6.Evidence":
+) -> a6.Evidence:
     """events: scope -> 事件行数; views: [{scope, source, count, watermark}] 按顺序物化。"""
 
     root = str(tmp_path)

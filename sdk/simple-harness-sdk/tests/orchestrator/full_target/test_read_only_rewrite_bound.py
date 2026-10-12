@@ -39,10 +39,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_read_only_leaf_policy import _binding, _File  # noqa: E402
-
 from agent_orchestrator.contracts.htn import SideEffectKind  # noqa: E402
 from agent_orchestrator.orchestrator.occurrence_tasks import read_only_rewrites  # noqa: E402
+from test_read_only_leaf_policy import _binding, _File  # noqa: E402
 
 SEED_COLLECTOR = "def record(self, name, value):\n    self._samples.append(value)\n"
 PATCHED_COLLECTOR = (

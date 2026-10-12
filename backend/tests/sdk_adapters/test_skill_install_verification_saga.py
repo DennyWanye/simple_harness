@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.capabilities.platform import CapabilityPlatform
 from deskpet.capabilities.run_catalog import SqliteRunCatalogLeasePreparer
 from deskpet.capabilities.store import (

@@ -8,9 +8,8 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
-
 import paths
+import pytest
 from deskpet.tools import research_tools as r
 from deskpet.tools.research_tools import Citation, ResearchReport
 
@@ -256,7 +255,7 @@ def test_save_workflow_report_is_idempotent_and_returns_verified_file(monkeypatc
     assert path.read_text(encoding="utf-8") == "# 第二版"
     assert second["kind"] == "file"
     assert second["mime"] == "text/markdown"
-    assert second["size_bytes"] == len("# 第二版".encode("utf-8"))
+    assert second["size_bytes"] == len("# 第二版".encode())
     assert not list(path.parent.glob("*.tmp"))
 
 

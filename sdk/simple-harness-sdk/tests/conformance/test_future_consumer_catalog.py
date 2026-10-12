@@ -8,7 +8,6 @@ import hashlib
 import inspect
 
 from future_consumer_fixture import FutureConsumerCapabilityFixture
-
 from simple_harness.contracts import CallId, EffectId, RequestId, RunId
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.tools import (

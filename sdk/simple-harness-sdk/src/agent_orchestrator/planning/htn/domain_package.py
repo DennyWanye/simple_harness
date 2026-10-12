@@ -121,6 +121,7 @@ class PlanningDomainPackageV1:
             raise ContractError("domain definitions do not match the declared inventory")
         import json
         from types import MappingProxyType
+
         from simple_harness.contracts import canonical_json
         # Detach caller-owned dictionaries; installation checks the digest again.
         object.__setattr__(self, "definitions", MappingProxyType(json.loads(canonical_json({str(k): dict(v) for k, v in self.definitions.items()}))))

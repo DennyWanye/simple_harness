@@ -15,8 +15,9 @@ import json
 import time
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Optional
 
 from agent.context_messages import (
     ProviderAttemptOptions,
@@ -25,7 +26,6 @@ from agent.context_messages import (
     normalize_provider_purpose,
     split_wire_messages,
 )
-
 
 _TERMINAL = {"succeeded", "failed", "cancelled", "cancelled_before_send"}
 
@@ -128,7 +128,7 @@ class ContextAttemptReport:
     selection_reasons: tuple[str, ...] = ()
     fragments: tuple[FragmentAttemptFact, ...] = ()
     coverage_entries: tuple[CoverageAttemptEntry, ...] = ()
-    coverage_valid: Optional[bool] = None
+    coverage_valid: bool | None = None
     coverage_gaps: tuple[int, ...] = ()
     coverage_overlaps: tuple[int, ...] = ()
     coverage_stale_segment_ids: tuple[str, ...] = ()
@@ -144,12 +144,12 @@ class ContextAttemptReport:
     context_window: int = 0
     planned_tokens: int = 0
     estimate_method: str = "canonical_json_conservative_v1"
-    cache_boundary: Optional[int] = None
+    cache_boundary: int | None = None
     cache_fingerprint: str = ""
-    actual_input_tokens: Optional[int] = None
-    actual_output_tokens: Optional[int] = None
-    actual_cache_read_tokens: Optional[int] = None
-    actual_cache_write_tokens: Optional[int] = None
+    actual_input_tokens: int | None = None
+    actual_output_tokens: int | None = None
+    actual_cache_read_tokens: int | None = None
+    actual_cache_write_tokens: int | None = None
     transport_retry_count: int = 0
     requested_compression_model: str = ""
     resolved_compression_model: str = ""
@@ -208,7 +208,7 @@ class ContextAttemptStore:
 
     def get(
         self, session_id: str, request_id: str, attempt_id: str
-    ) -> Optional[ContextAttemptReport]:
+    ) -> ContextAttemptReport | None:
         self._purge()
         return self._reports.get(self._key(session_id, request_id, attempt_id))
 
@@ -218,7 +218,7 @@ class ContextAttemptStore:
         request_id: str,
         attempt_id: str,
         **updates: Any,
-    ) -> Optional[ContextAttemptReport]:
+    ) -> ContextAttemptReport | None:
         """CAS-like prepared fact update; terminal attempts are immutable."""
 
         key = self._key(session_id, request_id, attempt_id)
@@ -242,7 +242,7 @@ class ContextAttemptStore:
         attempt_id: str,
         state: str,
         **updates: Any,
-    ) -> Optional[ContextAttemptReport]:
+    ) -> ContextAttemptReport | None:
         key = self._key(session_id, request_id, attempt_id)
         current = self._reports.get(key)
         if current is None:
@@ -371,7 +371,7 @@ def build_prepared_attempt_report(
         fragments=fragments,
         coverage_entries=coverage_entries,
         coverage_valid=(
-            bool(getattr(coverage, "valid")) if coverage is not None else None
+            bool(coverage.valid) if coverage is not None else None
         ),
         coverage_gaps=tuple(int(item) for item in getattr(coverage, "gaps", ()) or ()),
         coverage_overlaps=tuple(
@@ -415,15 +415,15 @@ def build_prepared_attempt_report(
     )
 
 
-_ATTEMPT_STORE: Optional[ContextAttemptStore] = None
+_ATTEMPT_STORE: ContextAttemptStore | None = None
 
 
-def set_context_attempt_store(store: Optional[ContextAttemptStore]) -> None:
+def set_context_attempt_store(store: ContextAttemptStore | None) -> None:
     global _ATTEMPT_STORE
     _ATTEMPT_STORE = store
 
 
-def get_context_attempt_store() -> Optional[ContextAttemptStore]:
+def get_context_attempt_store() -> ContextAttemptStore | None:
     return _ATTEMPT_STORE
 
 
@@ -743,7 +743,7 @@ def finish_current_attempt(state: str, *, usage: Any = None, reason: str = "") -
     if reason:
         updates["reasons"] = (*current.reasons, reason[:200])
     if usage is not None:
-        def _read(*names: str) -> Optional[int]:
+        def _read(*names: str) -> int | None:
             for name in names:
                 value = usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
                 if value is not None:

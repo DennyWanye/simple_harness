@@ -12,11 +12,14 @@ isolated_missions``）。Host 要让人看得见：任务列表、任务详情�
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from deskpet.orchestration.chat_tool import mission_list, mission_status
 from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.service import RECOVERY_ISOLATED_NOTE, OrchestrationService, OrchestrationSettings
+from deskpet.orchestration.service import (
+    RECOVERY_ISOLATED_NOTE,
+    OrchestrationService,
+    OrchestrationSettings,
+)
 
 from ._support import notes_provider, notes_request
 

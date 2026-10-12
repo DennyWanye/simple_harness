@@ -5,10 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from deskpet.companion.build_admission import GrowthCandidateBuildPermitV1
-from deskpet.companion.contracts import OwnerRef
-from deskpet.companion.contracts import GrowthEvent
+from deskpet.companion.contracts import GrowthEvent, OwnerRef
 from deskpet.companion.growth import (
     CandidateBindingFenceV1,
     GrowthTargetIdentityV1,
@@ -32,7 +30,6 @@ from deskpet.companion.run_adapter import (
 )
 from deskpet.companion.store import CompanionStore
 from deskpet.harness.contracts import PreparedRunContextV1
-
 
 OWNER = OwnerRef("profile-a", 1)
 

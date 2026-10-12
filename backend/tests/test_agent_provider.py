@@ -12,7 +12,6 @@ Covers:
 from __future__ import annotations
 
 import pytest
-
 from agent.providers.base import AgentProvider
 from agent.providers.simple_llm import SimpleLLMAgent
 from context import ServiceContext

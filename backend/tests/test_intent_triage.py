@@ -19,10 +19,13 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-
 from deskpet.agent.intent_triage import (
-    Contradiction, ContradictionMap, IntentCard, IntentTriage,
-    contradiction_to_system_message, intent_to_system_message,
+    Contradiction,
+    ContradictionMap,
+    IntentCard,
+    IntentTriage,
+    contradiction_to_system_message,
+    intent_to_system_message,
 )
 
 
@@ -314,7 +317,6 @@ def test_fenced_json_extraction() -> None:
 # WI-2 / WI-4：闲聊快路径 allowlist（整句锚定，命中 → 0 次 LLM 短路）
 # ───────────────────────────────────────────────────────────────────────────
 from structlog.testing import capture_logs
-
 
 _ALLOWLIST_SHORTCIRCUIT = [
     "你好", "谢谢", "晚安", "😄", "。。。",

@@ -27,25 +27,42 @@ from types import SimpleNamespace
 
 import aiosqlite
 import pytest
-from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness import CallId
-
 from deskpet.execution.current_tool_pages import (
-    DESCRIPTOR_OFFSET_LIMIT, MARKER, MAX_LISTED_OFFSETS, PAGE_SIZE, PREFIX,
+    DESCRIPTOR_OFFSET_LIMIT,
+    LEGACY_PAGE_SIZE,
+    MARKER,
+    MAX_LISTED_OFFSETS,
+    PAGE_SIZE,
+    PREFIX,
     REFERENCE_UNAVAILABLE_CODE,
-    REJECTION_CODE_ALIASES, PrimaryContextPageUnavailable, _listed_offsets,
-    admitted_current_page, legacy_bounded_summary, legacy_summary, page_starts,
-    legacy_af_summary, reference, rejection_code_matches, source_content, summary,
-    verify_request, LEGACY_PAGE_SIZE,
+    REJECTION_CODE_ALIASES,
+    PrimaryContextPageUnavailable,
+    _listed_offsets,
+    admitted_current_page,
+    legacy_af_summary,
+    legacy_bounded_summary,
+    legacy_summary,
+    page_starts,
+    reference,
+    rejection_code_matches,
+    source_content,
+    summary,
+    verify_request,
 )
 from deskpet.execution.primary_context_pages import PAGE_BYTES, _excerpt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from deskpet.tools.context_page_in_tools import (
-    CONTEXT_PAGE_IN_SCHEMA, PRIMARY_PAGE_PUBLIC_MESSAGE, _primary_page_message,
+    CONTEXT_PAGE_IN_SCHEMA,
+    PRIMARY_PAGE_PUBLIC_MESSAGE,
+    _primary_page_message,
 )
-
+from simple_harness import CallId
+from simple_harness.contracts.messages import Message, MessageRole
 from tests.execution.test_control_result_bound import (
-    HOST_RUN_ID, RUN_ID, FakeEffect, public_body,
+    HOST_RUN_ID,
+    RUN_ID,
+    FakeEffect,
+    public_body,
 )
 
 # 事件 AF-2 之前 ``CONTEXT_PAGE_IN_SCHEMA["description"]`` 的 token 数（875 B / 219）。

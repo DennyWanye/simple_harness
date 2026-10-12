@@ -59,7 +59,7 @@ def _has_category_subdir(root: Path) -> bool:
     return False
 
 
-def _external_root() -> Optional[Path]:
+def _external_root() -> Path | None:
     """外部大库根。env ``DESKPET_PPT_TEMPLATE_ROOT`` 优先(无效则忽略),
     否则 ``<repo>/resources/PPT_Template``。不存在 → None。"""
     try:
@@ -75,7 +75,7 @@ def _external_root() -> Optional[Path]:
         return None
 
 
-def _bundled_fallback_root() -> Optional[Path]:
+def _bundled_fallback_root() -> Path | None:
     """随仓库提交的兜底模板根(``<this_dir>/ppt_templates``)。外部大库不可用时
     (打包 app / 新机器 / 未放置大库)用它保证模板功能不彻底失效。"""
     try:
@@ -85,7 +85,7 @@ def _bundled_fallback_root() -> Optional[Path]:
         return None
 
 
-def template_library_root() -> Optional[Path]:
+def template_library_root() -> Path | None:
     """生效的模板库根:外部大库优先,缺失则回退到 bundled 兜底库。
     都没有 → None。从不抛异常。"""
     return _external_root() or _bundled_fallback_root()
@@ -116,7 +116,7 @@ def list_categories() -> list[dict[str, Any]]:
     return out
 
 
-def _resolve_category_dir(category_key: str) -> Optional[Path]:
+def _resolve_category_dir(category_key: str) -> Path | None:
     """按规范化大类名找目录(传原始目录名也认)。找不到 → None。"""
     want = _normalize_category(category_key)
     for cat in list_categories():
@@ -142,7 +142,7 @@ def category_pptx(category_key: str) -> list[Path]:
         return []
 
 
-def preview_for(pptx_path: Path) -> Optional[Path]:
+def preview_for(pptx_path: Path) -> Path | None:
     """按 stem 在同大类 ``预览图/`` 下找预览图(.jpg/.png/...)。无 → None。"""
     try:
         preview_dir = pptx_path.parent / _PREVIEW_DIRNAME
@@ -158,7 +158,7 @@ def preview_for(pptx_path: Path) -> Optional[Path]:
     return None
 
 
-def is_category(name: Optional[str]) -> bool:
+def is_category(name: str | None) -> bool:
     """``name`` 是否是一个已知大类(规范化后命中)。"""
     if not name:
         return False
@@ -245,7 +245,7 @@ def _build_contact_sheets(
         return []
 
 
-def _b64_of(path: Path, *, max_w: int = 1024) -> Optional[str]:
+def _b64_of(path: Path, *, max_w: int = 1024) -> str | None:
     """图 → 缩到 max_w → JPEG base64。失败 None。"""
     try:
         import base64
@@ -263,7 +263,7 @@ def _b64_of(path: Path, *, max_w: int = 1024) -> Optional[str]:
         return None
 
 
-def _parse_pick_id(text: str, valid_ids: set[int]) -> Optional[int]:
+def _parse_pick_id(text: str, valid_ids: set[int]) -> int | None:
     """从模型回复解析 ``{"id": N}``,容忍杂文/围栏;回退抓首个合法整数。"""
     if not text:
         return None
@@ -295,8 +295,8 @@ def pick_template_by_preview(
     max_sheets: int = 3,
     cols: int = 5,
     rows: int = 6,
-    seed: Optional[int] = None,
-) -> Optional[Path]:
+    seed: int | None = None,
+) -> Path | None:
     """按预览图为主题挑该大类里最合适的一套模板 .pptx。
 
     流程: 取 (pptx, preview) 对 → 拼 contact sheet → 一次 vision 调用挑 id →

@@ -105,7 +105,7 @@ _RULE_PATTERNS: tuple[tuple[re.Pattern[str], str, str], ...] = (
 )
 
 
-def _rule_classify(text: str) -> Optional[tuple[str, str]]:
+def _rule_classify(text: str) -> tuple[str, str] | None:
     """Match against ``_RULE_PATTERNS``. Returns ``(task_type, rationale)`` or None."""
     if not text:
         return None
@@ -124,7 +124,7 @@ def _rule_classify(text: str) -> Optional[tuple[str, str]]:
 class _Exemplar:
     text: str
     label: str
-    vector: Optional[list[float]] = None  # lazy-filled
+    vector: list[float] | None = None  # lazy-filled
 
 
 class _ExemplarPool:
@@ -136,7 +136,7 @@ class _ExemplarPool:
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._exemplars: Optional[list[_Exemplar]] = None
+        self._exemplars: list[_Exemplar] | None = None
 
     def load(self) -> list[_Exemplar]:
         if self._exemplars is not None:
@@ -237,7 +237,7 @@ class TaskClassifier:
         *,
         embedder: Any = None,
         llm_registry: Any = None,
-        exemplars_path: Optional[Path] = None,
+        exemplars_path: Path | None = None,
         modes: tuple[str, ...] = ("rule", "embed", "llm"),
         embed_threshold: float = 0.75,
         llm_model: str = "claude-haiku-4-5",
@@ -302,7 +302,7 @@ class TaskClassifier:
 
     async def _embed_tier(
         self, user_message: str, start: float
-    ) -> Optional[ClassifierResult]:
+    ) -> ClassifierResult | None:
         exemplars = await self._exemplars.ensure_vectors(self._embedder)
         exemplars = [e for e in exemplars if e.vector is not None]
         if not exemplars:
@@ -322,7 +322,7 @@ class TaskClassifier:
         query_vec = list(query_vec_list[0])
 
         best_score = -1.0
-        best_label: Optional[str] = None
+        best_label: str | None = None
         for e in exemplars:
             if e.vector is None:
                 continue
@@ -348,7 +348,7 @@ class TaskClassifier:
 
     async def _llm_tier(
         self, user_message: str, start: float
-    ) -> Optional[ClassifierResult]:
+    ) -> ClassifierResult | None:
         prompt = _LLM_CLASSIFY_SYSTEM
         messages = [
             {"role": "system", "content": prompt},
@@ -367,7 +367,7 @@ class TaskClassifier:
                     ),
                     timeout=self._llm_timeout_s,
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "classifier.llm_timeout", timeout_s=self._llm_timeout_s
             )

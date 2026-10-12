@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from simple_harness.providers.chat_stream import RETAINED_LIMIT, ChatStream
 from simple_harness.providers.errors import ProviderProtocolError
 

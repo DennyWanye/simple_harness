@@ -20,7 +20,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy

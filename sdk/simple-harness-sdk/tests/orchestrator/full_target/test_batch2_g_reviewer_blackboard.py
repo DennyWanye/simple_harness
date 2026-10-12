@@ -22,11 +22,19 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
-from agent_orchestrator.assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
+from agent_orchestrator.assurance.review_input import (
+    REVIEW_INSTRUCTIONS,
+    REVIEW_INSTRUCTIONS_VERSION,
+)
 from agent_orchestrator.contracts.models import ContractError
-from agent_orchestrator.runtime.tool_gateway import ASSURANCE_EVIDENCE_TOOLS, ASSURANCE_REVIEWER_TOOLS
-from agent_orchestrator.verification.reviewer_evidence_tools import ASSURANCE_PROTOCOL, ReviewerEvidenceTools
+from agent_orchestrator.runtime.tool_gateway import (
+    ASSURANCE_EVIDENCE_TOOLS,
+    ASSURANCE_REVIEWER_TOOLS,
+)
+from agent_orchestrator.verification.reviewer_evidence_tools import (
+    ASSURANCE_PROTOCOL,
+    ReviewerEvidenceTools,
+)
 
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 

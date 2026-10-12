@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-
 from router.types import (
     BudgetContext,
     BudgetDecision,

@@ -9,8 +9,8 @@ import contextlib
 import contextvars
 import copy
 import hashlib
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Iterator, Mapping
 
 from .contracts import JsonValue, canonical_json, validate_json_value
 from .errors import InvalidStatePatch
@@ -62,7 +62,7 @@ _CONTROL: contextvars.ContextVar[ExecutionControl | None] = contextvars.ContextV
 
 
 def _interrupt_id(task_id: str, ordinal: int) -> str:
-    return hashlib.sha256(f"{task_id}|{ordinal}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{task_id}|{ordinal}".encode()).hexdigest()
 
 
 @contextlib.contextmanager

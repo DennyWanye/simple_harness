@@ -6,7 +6,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from simple_harness.execution.contracts.children import (
     AttachmentPolicy,
     ProfileLaunchTicket,

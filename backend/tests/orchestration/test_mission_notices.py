@@ -17,7 +17,13 @@ import pytest
 from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.notices import NOTICES_FILE
 
-from ._layered_lane import LayeredScriptedProvider, layered_service, notes_mission, quick_runtime, run_until_settled
+from ._layered_lane import (
+    LayeredScriptedProvider,
+    layered_service,
+    notes_mission,
+    quick_runtime,
+    run_until_settled,
+)
 
 
 async def _pending_after_drain(service, mission_id: str, *, rounds: int = 40) -> list[dict]:

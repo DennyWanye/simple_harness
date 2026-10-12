@@ -11,7 +11,6 @@ required verifier that is not deployed blocks instead of passing or retrying."""
 from __future__ import annotations
 
 import pytest
-
 from agent_orchestrator.context.context_builder import assert_no_secrets
 from agent_orchestrator.observability.secrets import find_secrets
 

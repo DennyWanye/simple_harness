@@ -16,7 +16,6 @@ import sys
 import time
 
 from provider_fixture import MODEL, ScriptedProvider, message_texts
-
 from simple_harness import canonical_json
 from simple_harness.agents import AgentConfig, AgentLimits, build_agent_runtime
 from simple_harness.agents.ports import AgentRuntimePorts, AllowAllAuthorization

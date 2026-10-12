@@ -8,7 +8,6 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-
 from config import WorkflowsConfig, resolve_deep_research_workflow_version
 from deskpet.retrieval.contracts import (
     EvidenceDocument,
@@ -25,24 +24,24 @@ from deskpet.workflows.adapters.deep_research_v6_semantic_runtime import (
     DeepResearchV6SemanticRuntime,
 )
 from deskpet.workflows.adapters.research_runtime import (
+    V6_RESEARCH_RESPONSE_FORMATS,
     BoundResearchEffectContext,
     DurableV6ResearchLLMStagePort,
-    V6_RESEARCH_RESPONSE_FORMATS,
     WorkflowControlSignalHub,
     build_v6_research_llm_profiles,
     research_response_format_hash,
 )
-from deskpet.workflows.definitions.v6.deep_research import initial_state
+from deskpet.workflows.definitions import deep_research_v6_production_nodes
 from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 from deskpet.workflows.definitions.deep_research_v6_compiler import compile_research_spec
 from deskpet.workflows.definitions.deep_research_v6_contracts import ResearchSpecV1
-from deskpet.workflows.definitions import deep_research_v6_production_nodes
-from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
-from deskpet.workflows.launcher import WorkflowLauncher
+from deskpet.workflows.definitions.v6.deep_research import initial_state
 from deskpet.workflows.delivery import (
     DeliveryDisposition,
     broadcast_websocket_best_effort,
 )
+from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
+from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.store import NativeCheckpointStore, RegisteredBlobStore, RunFence
 
 
@@ -440,7 +439,7 @@ async def _controlled_v6_runtime(
         run_id=run_id,
         operation_id=f"research:{run_id}",
         budget_lease_id=hashlib.sha256(
-            f"controlled-v6-budget|{run_id}".encode("utf-8")
+            f"controlled-v6-budget|{run_id}".encode()
         ).hexdigest(),
     )
     # Use the production blob root so a fresh service instance can recover the
@@ -598,7 +597,7 @@ async def test_real_launcher_persists_v6_automatic_deadline_before_actionable_br
             run_id=run_id,
             operation_id=f"research:{run_id}",
             budget_lease_id=hashlib.sha256(
-                f"launcher-v6-budget|{run_id}".encode("utf-8")
+                f"launcher-v6-budget|{run_id}".encode()
             ).hexdigest(),
         )
 

@@ -16,8 +16,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
-
-from agent_orchestrator.testing.scripted_replies import planner_reply, retry_same_method  # noqa: E402
+from agent_orchestrator.testing.scripted_replies import (  # noqa: E402
+    planner_reply,
+    retry_same_method,
+)
 from simple_harness.providers.errors import ProviderServerError  # noqa: E402
 
 

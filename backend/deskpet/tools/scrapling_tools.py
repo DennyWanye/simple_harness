@@ -18,7 +18,6 @@ from typing import Any
 
 import httpx
 
-
 log = logging.getLogger(__name__)
 
 _MAX_SCRAPLING_CONTENT_CHARS = 120_000

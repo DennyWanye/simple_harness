@@ -17,13 +17,11 @@ import unicodedata
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools.office_paths import (
     artifact_default_path,
     auto_temp_path,
     title_slug,
 )
-
 
 # ─── T6-1 默认路径模式 ─────────────────────────────────────
 

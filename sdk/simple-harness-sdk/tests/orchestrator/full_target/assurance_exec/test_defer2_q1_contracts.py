@@ -17,9 +17,8 @@ import inspect
 import json
 from pathlib import Path
 
-import pytest
-
 import agent_orchestrator
+import pytest
 from agent_orchestrator.assurance import refs
 from agent_orchestrator.contracts.semantic_base import VersionedRef, content_hash_of
 from agent_orchestrator.knowledge.predicates import (

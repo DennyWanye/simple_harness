@@ -15,7 +15,6 @@ from typing import Any
 
 from .contracts import JsonValue, WorkflowContext
 
-
 RuntimeIdentity = tuple[str, str]
 StateFactory = Callable[..., object]
 ContextFactory = Callable[..., WorkflowContext | Awaitable[WorkflowContext]]
@@ -231,7 +230,7 @@ class WorkflowRuntimeAdapterRegistry:
             )
 
     @property
-    def deep_research(self) -> "DeepResearchRuntimeView":
+    def deep_research(self) -> DeepResearchRuntimeView:
         return DeepResearchRuntimeView(self)
 
 

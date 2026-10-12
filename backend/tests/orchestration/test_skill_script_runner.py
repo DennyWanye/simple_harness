@@ -10,8 +10,11 @@ import asyncio
 import sys
 
 import pytest
-
-from agent_orchestrator.runtime.sandbox import ProcessOnlyExecutor, SandboxUnavailable, SeatbeltExecutor
+from agent_orchestrator.runtime.sandbox import (
+    ProcessOnlyExecutor,
+    SandboxUnavailable,
+    SeatbeltExecutor,
+)
 from deskpet.orchestration.skill_script_runner import SandboxScriptRunner
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ScriptRun
@@ -92,9 +95,8 @@ def test_sync_run_outside_a_loop(tmp_path) -> None:
 
 @pytest.mark.parametrize("with_sandbox", [True, False])
 def test_native_plane_binds_the_runner_only_with_a_proven_sandbox(tmp_path, with_sandbox) -> None:
-    from deskpet.orchestration.native_plane import build_native_pools
-
     from agent_orchestrator.testing.word_counter import FixtureWordCounter
+    from deskpet.orchestration.native_plane import build_native_pools
 
     counter = FixtureWordCounter()
     executor = ProcessOnlyExecutor(sys.executable, exec_root=tmp_path / "exec") if with_sandbox else None

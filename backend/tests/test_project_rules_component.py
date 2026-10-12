@@ -7,7 +7,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
 from deskpet.agent.assembler import build_default_assembler
 from deskpet.agent.assembler.bundle import AssemblyPolicy
 from deskpet.agent.assembler.components.base import ComponentContext

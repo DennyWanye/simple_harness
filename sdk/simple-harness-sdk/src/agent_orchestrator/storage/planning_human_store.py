@@ -6,9 +6,11 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
+
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import RequestHumanDecision
 from ..contracts.semantic_base import content_hash_of
+
 if TYPE_CHECKING:
     from .store import Store
 

@@ -8,10 +8,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Iterator
+from typing import Any
 
 from deskpet.workflows.trace import (
     SpanContext,
@@ -27,12 +28,12 @@ class TraceInstrumentationError(RuntimeError):
     """A core trace write failed and the harness must stop this run."""
 
 
-_ACTIVE_HARNESS_TRACE: ContextVar["HarnessTraceSession | None"] = ContextVar(
+_ACTIVE_HARNESS_TRACE: ContextVar[HarnessTraceSession | None] = ContextVar(
     "deskpet_active_harness_trace", default=None
 )
 
 
-def active_harness_trace() -> "HarnessTraceSession | None":
+def active_harness_trace() -> HarnessTraceSession | None:
     return _ACTIVE_HARNESS_TRACE.get()
 
 
@@ -57,7 +58,7 @@ class HarnessTraceSession:
         request_id: str | None = None,
         turn_id: str | None = None,
         message_count: int = 0,
-    ) -> "HarnessTraceSession":
+    ) -> HarnessTraceSession:
         parent = parent_context or current_span()
         owns_run = parent is None
         trace_id = parent.trace_id if parent is not None else ""
@@ -104,7 +105,7 @@ class HarnessTraceSession:
         )
 
     @contextmanager
-    def activate(self) -> Iterator["HarnessTraceSession"]:
+    def activate(self) -> Iterator[HarnessTraceSession]:
         token = _ACTIVE_HARNESS_TRACE.set(self)
         try:
             with use_span(self.root_context):

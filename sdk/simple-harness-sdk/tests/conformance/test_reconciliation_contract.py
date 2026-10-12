@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-
 from simple_harness.contracts import CallId
 from simple_harness.tools import (
     ReconciliationObservation,

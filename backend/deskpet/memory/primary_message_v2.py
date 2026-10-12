@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import uuid
+
 import simple_harness as h
+
 from deskpet.task_scope.protocol import canonical_hash
 
 CONTRACT = "primary-message-v2"
@@ -150,7 +152,7 @@ def _pairs(terminal, terminal_receipt, user, *, host_run_id, contract, schema_ve
 
 
 async def verify(db, *, primary_ref, host_run_id, terminal, terminal_receipt, user):
-    from deskpet.memory.primary_visibility import read_evidence_pair, PrimaryVisibilityError
+    from deskpet.memory.primary_visibility import PrimaryVisibilityError, read_evidence_pair
     expected = pairs(terminal, terminal_receipt, user, host_run_id=host_run_id)
     for envelope, receipt in expected:
         try:

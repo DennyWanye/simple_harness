@@ -6,13 +6,21 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config import AppConfig
+
     from .search_gateway import SearchGateway
 
-_default_gateway: "SearchGateway | None" = None
+_default_gateway: SearchGateway | None = None
 
 
-def build_search_gateway(config: "AppConfig") -> "SearchGateway":
-    from .providers import BaiduProvider, BingCDPProvider, BingHTTPProvider, DuckDuckGoProvider, GoogleCDPProvider, SearXNGProvider
+def build_search_gateway(config: AppConfig) -> SearchGateway:
+    from .providers import (
+        BaiduProvider,
+        BingCDPProvider,
+        BingHTTPProvider,
+        DuckDuckGoProvider,
+        GoogleCDPProvider,
+        SearXNGProvider,
+    )
     from .search_gateway import SearchGateway
 
     cfg = config.search_gateway
@@ -30,12 +38,12 @@ def build_search_gateway(config: "AppConfig") -> "SearchGateway":
     return SearchGateway(config=cfg, providers=providers, fetch_service=fetch_service)
 
 
-def set_default_gateway(gateway: "SearchGateway | None") -> None:
+def set_default_gateway(gateway: SearchGateway | None) -> None:
     global _default_gateway
     _default_gateway = gateway
 
 
-def get_default_gateway() -> "SearchGateway":
+def get_default_gateway() -> SearchGateway:
     global _default_gateway
     if _default_gateway is None:
         from config import AppConfig

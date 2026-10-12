@@ -7,7 +7,6 @@ import hashlib
 from dataclasses import FrozenInstanceError
 
 import pytest
-
 from simple_harness.contracts import canonical_json
 from simple_harness.runtime.orchestration import (
     StartInputSchema,
