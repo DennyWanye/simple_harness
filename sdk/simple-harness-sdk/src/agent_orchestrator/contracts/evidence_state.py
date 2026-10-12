@@ -389,13 +389,9 @@ class EvidenceEntry:
             source = observation.observer_id or f"\x00anonymous:{position}"
             held = latest.get(source)
             if held is None or (observation.observed_at_ms, observation.observation_id) >= (
-                held.observed_at_ms,
-                held.observation_id,
-            ):
+                    held.observed_at_ms, held.observation_id):
                 latest[source] = observation
-        used = tuple(
-            sorted(latest.values(), key=lambda item: (item.observed_at_ms, item.observation_id))
-        )
+        used = tuple(sorted(latest.values(), key=lambda item: (item.observed_at_ms, item.observation_id)))
         support = NO_SUPPORT
         authoritative_negative = False
         for observation in used:
@@ -469,11 +465,7 @@ def truth_change(
     (:meth:`EvidenceEntry.from_observations`).  The epoch writer and the re-read share it."""
 
     key = new.proposition_key
-    before = (
-        EvidenceEntry.from_observations(key, tuple(existing)).truth()
-        if existing
-        else TruthValue.UNKNOWN
-    )
+    before = EvidenceEntry.from_observations(key, tuple(existing)).truth() if existing else TruthValue.UNKNOWN
     return before, EvidenceEntry.from_observations(key, (*existing, new)).truth()
 
 

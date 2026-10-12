@@ -48,6 +48,15 @@ RELEASE_OWNED = {
 }
 FORBIDDEN_PY = re.compile(
     r"(^|/)(schema|migrator|migration|[a-z_]*_migration|schema_migrations)\.py$|(^|/)migrations/")
+# 编解码器清单写死字节哈希的源文件：字节有变即不通过（与 ruff.toml 的排除清单一致）
+CODEC_PINNED = {
+    "sdk/simple-harness-sdk/src/" + p for p in (
+        "agent_orchestrator/contracts/evidence_state.py", "agent_orchestrator/contracts/htn.py",
+        "agent_orchestrator/contracts/models.py", "agent_orchestrator/contracts/semantic_base.py",
+        "agent_orchestrator/contracts/state_machines.py", "agent_orchestrator/graph/network_codec.py",
+        "agent_orchestrator/graph/task_network.py", "simple_harness/contracts/__init__.py",
+        "simple_harness/contracts/errors.py", "simple_harness/contracts/json.py")
+}
 STRICT = re.compile(r"^[A-Za-z0-9_.:/\-\[\]{}<>=+*#@$%^&|~!?]{2,}$")
 
 
@@ -151,7 +160,8 @@ def snapshot(ref: str | None) -> tuple[dict, Counter, Counter]:
             continue
         suffix = Path(f).suffix
         is_res = suffix in RESOURCE_EXT and f.startswith(RESOURCE_ROOTS) and f not in RELEASE_OWNED
-        is_forbidden_py = suffix == ".py" and f.startswith(PY_ROOTS) and FORBIDDEN_PY.search(f)
+        is_forbidden_py = suffix == ".py" and f.startswith(PY_ROOTS) and (
+            FORBIDDEN_PY.search(f) or f in CODEC_PINNED)
         if is_res or is_forbidden_py:
             hashes[f] = hashlib.sha256(read(ref, f)).hexdigest()
         if suffix == ".py" and f.startswith(PY_ROOTS):

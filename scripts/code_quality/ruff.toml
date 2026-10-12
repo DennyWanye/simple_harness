@@ -11,6 +11,17 @@ extend-exclude = [
   "**/schema_migrations.py",
   # 发布给用户的能力包模板（已发布模板文字是执行池准入身份）
   "**/capabilities/templates/**",
+  # 编解码器清单写死了这些源文件的字节哈希（network_codec_manifest_v5.json），改字节即拒绝解码
+  "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/evidence_state.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/htn.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/models.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/semantic_base.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/state_machines.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/graph/network_codec.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/graph/task_network.py",
+  "sdk/simple-harness-sdk/src/simple_harness/contracts/__init__.py",
+  "sdk/simple-harness-sdk/src/simple_harness/contracts/errors.py",
+  "sdk/simple-harness-sdk/src/simple_harness/contracts/json.py",
   # 测试数据文件
   "**/fixtures/**", "**/testdata/**",
 ]
