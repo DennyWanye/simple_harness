@@ -328,20 +328,19 @@ def _c(text: str) -> str:
 
 
 def test_desktop_composition_shares_physical_capability_scope_store() -> None:
-    source = _c((PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8"))
+    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+    # 只对被格式化拆行、去括号的两处去空白比较；其余按原文比，避免不同位置的代码去空白后撞成同一串
+    compact = _c(source)
 
-    assert (
-        _c('capability_scope_store = service_context.get("tool_capability_scope_store")') in source
-    )
-    assert _c("scope_store=capability_scope_store") in source
+    assert 'capability_scope_store = service_context.get("tool_capability_scope_store")' in source
+    assert "scope_store=capability_scope_store" in source
     assert source.index(
-        _c('capability_scope_store = service_context.get("tool_capability_scope_store")')
-    ) < source.index(_c("scope_store=capability_scope_store"))
-    # 格式化去掉了赋值右边多余的括号，只认赋值本身
-    assert _c('frozen_catalog["policy_fingerprint"] =') in source
-    assert _c("visibility_registry=live_tool_registry") in source
-    assert _c("reason=global_visibility_not_ready") in source
-    assert _c("deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint") in source
+        'capability_scope_store = service_context.get("tool_capability_scope_store")'
+    ) < source.index("scope_store=capability_scope_store")
+    assert _c('frozen_catalog["policy_fingerprint"] =') in compact
+    assert "visibility_registry=live_tool_registry" in source
+    assert "reason=global_visibility_not_ready" in source
+    assert _c("deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint") in compact
 
 
 @pytest.mark.asyncio
