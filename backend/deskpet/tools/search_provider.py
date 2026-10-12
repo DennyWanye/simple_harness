@@ -32,7 +32,7 @@ import re
 import time
 import urllib.parse
 from html import unescape
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 

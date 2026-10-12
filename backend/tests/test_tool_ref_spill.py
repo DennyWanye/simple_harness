@@ -6,7 +6,6 @@ ref 仍可取回(压缩摘要里的 ref_id 不失效)。"""
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import agent.tool_result_truncator as trunc
 import pytest

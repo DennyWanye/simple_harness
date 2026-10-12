@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 
 import paths
-import pytest
 
 
 def _make_fake_install(tmp_path) -> tuple[Path, Path]:

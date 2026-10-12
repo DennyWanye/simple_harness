@@ -23,7 +23,6 @@ from ..contracts.resolution import (
     ReviewPackage,
     ReviewPackageId,
     ReviewPurpose,
-    ReviewVerdict,
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of

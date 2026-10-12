@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-import pytest
 from providers.base import ASRProvider
 from providers.faster_whisper_asr import FasterWhisperASR
 

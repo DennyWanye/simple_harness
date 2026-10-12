@@ -6,12 +6,11 @@ import copy
 import hashlib
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
 from .deep_research_v6_contracts import (
-    ClaimSetRequirement,
     RequirementV1,
     ResearchSpecV1,
     ResearchSpecValidationError,

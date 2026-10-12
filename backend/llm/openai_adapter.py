@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, Optional, Union
+from typing import Any
 
 import httpx
 from deskpet.execution.dispatch import current_dispatch_handoff

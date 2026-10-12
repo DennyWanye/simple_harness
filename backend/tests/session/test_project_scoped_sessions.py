@@ -9,7 +9,6 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
-import aiosqlite
 import pytest
 from deskpet.memory.schema import initialize_state_db
 from deskpet.session.project_binding import (

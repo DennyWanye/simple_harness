@@ -18,7 +18,7 @@ SessionDB's task/message tables.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("deskpet.agent.snapshot")
 

@@ -6,7 +6,7 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 

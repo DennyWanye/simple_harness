@@ -13,7 +13,7 @@ import hashlib
 import inspect
 from collections.abc import Awaitable, Mapping
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
 from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState

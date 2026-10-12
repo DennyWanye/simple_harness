@@ -22,7 +22,7 @@ import sys
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, replace
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Protocol

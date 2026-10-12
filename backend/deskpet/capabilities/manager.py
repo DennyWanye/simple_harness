@@ -40,7 +40,6 @@ from .package_limits import (
 from .skill_source import CanonicalSkillBatch
 from .source import CapabilitySourceResolver, PackSourceRequest, StagedPack
 from .store import (
-    CAPABILITY_OPERATION_PHASES,
     CapabilityOperationRecord,
     CapabilityPublishIntent,
     CapabilityPublishIntentMember,

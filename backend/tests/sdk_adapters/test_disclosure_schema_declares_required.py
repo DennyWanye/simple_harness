@@ -13,7 +13,6 @@ S5b 终验实测：`tool_describe` / `tool_activate` 的 schema 不声明 `requi
 from __future__ import annotations
 
 import inspect
-import json
 
 import pytest
 from deskpet.sdk_adapters.tools import ProductToolsAdapter

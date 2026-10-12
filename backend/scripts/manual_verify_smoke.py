@@ -20,7 +20,6 @@ WI-T2.1 完成" 的最硬可控证据 — 不用启 Tauri UI / 不用 LLM creden
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 from pathlib import Path

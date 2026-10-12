@@ -15,7 +15,6 @@ import ast
 import sys
 from pathlib import Path
 
-import pytest
 
 _BACKEND = Path(__file__).resolve().parents[1]
 _RECEIPT_STORE = _BACKEND / "deskpet" / "tools" / "receipt_store.py"

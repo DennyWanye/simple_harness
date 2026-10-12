@@ -38,7 +38,6 @@ from ...contracts.htn import (
     AnyCondition,
     ArrayValue,
     ConstantValue,
-    DataRequirement,
     GraphStructureBudget,
     MethodContract,
     MethodInstanceDraft,

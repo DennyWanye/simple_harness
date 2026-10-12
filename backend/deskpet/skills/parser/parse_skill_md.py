@@ -31,7 +31,6 @@ Inline shell injection (per spec §"Inline shell injection"):
 from __future__ import annotations
 
 import re
-import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path

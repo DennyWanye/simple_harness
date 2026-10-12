@@ -82,7 +82,7 @@ def test_t0_5_config_tools_dataclass_chain():
 
 def test_t0_6_receipt_hmac_sign_verify_roundtrip():
     """HMAC sign → verify 闭环（即使是 stub）。"""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from deskpet.tools.receipt import hmac_verify, make_receipt
 

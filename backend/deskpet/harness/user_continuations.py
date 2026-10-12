@@ -6,7 +6,6 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
 
 from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,

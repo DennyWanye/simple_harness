@@ -20,7 +20,6 @@ enabled=False（kill-switch）→ run_pre_loop 直接返回空结果，main.py �
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import structlog
 

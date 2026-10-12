@@ -11,7 +11,7 @@ behaviour when ``goal.done is False``, and the ``mark_done`` path.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from agent.agent_loop import AgentLoop, FinalEvent

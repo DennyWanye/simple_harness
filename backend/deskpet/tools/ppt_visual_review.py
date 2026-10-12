@@ -21,7 +21,6 @@ import json
 import logging
 import re
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)

@@ -10,7 +10,6 @@ relative_to(root) 却指向不存在的文件，模型只收到 "file not found"
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest

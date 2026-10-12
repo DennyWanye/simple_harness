@@ -10,11 +10,9 @@ WI-T5.1 子项: load_config _cached 单例 + mtime 失效
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -60,7 +58,7 @@ def test_t2_5_last_mile_smoke_default_runs_vitest():
 
 def test_t4_2_plugin_source_auto_prefix():
     """source=plugin:notion 时，name=search_pages 自动改成 plugin_notion_search_pages."""
-    from deskpet.tools.registry import ToolRegistry, ToolSpec
+    from deskpet.tools.registry import ToolRegistry
 
     reg = ToolRegistry()
     reg.register(

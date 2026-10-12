@@ -13,7 +13,6 @@ from typing import Any
 from .adapters import adapt_exception, adapt_legacy_result
 from .models import (
     EvaluationExample,
-    EvaluationOutcome,
     EvaluationVerdict,
     EvaluatorType,
     ExperimentAggregate,

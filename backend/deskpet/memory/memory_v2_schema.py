@@ -16,7 +16,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Set
+from typing import Any
 
 import aiosqlite
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from types import SimpleNamespace
 
 import pytest
 from deskpet.workflows.contracts import canonical_json

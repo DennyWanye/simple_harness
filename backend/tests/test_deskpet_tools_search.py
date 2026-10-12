@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from deskpet.tools.tool_search import _handle_tool_search
 
 

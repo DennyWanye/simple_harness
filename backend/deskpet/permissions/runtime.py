@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.types.task_grants import (

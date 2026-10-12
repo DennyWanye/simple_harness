@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import copy
 import uuid
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Protocol
+from typing import Any
 
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.run_presenter import (

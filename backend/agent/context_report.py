@@ -18,7 +18,7 @@ import uuid
 from collections import defaultdict, deque
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Optional
+from typing import Any
 
 from agent.context_messages import (
     ProviderAttemptOptions,

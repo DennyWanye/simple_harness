@@ -15,7 +15,6 @@ Red phase: these tests describe the contract the upcoming
 
 from __future__ import annotations
 
-import pytest
 from observability.startup import (  # type: ignore[import-not-found]
     StartupError,
     StartupErrorRegistry,

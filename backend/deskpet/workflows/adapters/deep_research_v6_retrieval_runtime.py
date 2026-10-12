@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 from ..contracts import JsonValue, NodeExecutionIdentity, canonical_json
 from ..deadlines import (

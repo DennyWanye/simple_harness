@@ -13,7 +13,6 @@ from __future__ import annotations
 import copy
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from .contracts import JsonValue, WorkflowContext, validate_json_value
 from .errors import InvalidStatePatch

@@ -7,7 +7,6 @@ permits, activation decisions, and lifecycle calls remain host-owned.
 
 from __future__ import annotations
 
-import hashlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence

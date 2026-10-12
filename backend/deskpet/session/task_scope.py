@@ -7,7 +7,6 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
-from typing import Optional
 
 
 @dataclass(frozen=True)

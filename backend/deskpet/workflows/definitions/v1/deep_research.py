@@ -9,7 +9,6 @@ import copy
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, fields
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 from ....tools import research_tools as legacy

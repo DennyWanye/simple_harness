@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 
 import pytest
 from agent.session_activity import (

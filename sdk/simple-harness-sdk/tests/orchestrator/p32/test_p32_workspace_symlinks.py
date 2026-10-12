@@ -15,7 +15,6 @@ must appear in no file the system produced and in no refusal text.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import hashlib
 import os
 import shutil

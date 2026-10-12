@@ -9,7 +9,6 @@ structured ``action:`` prefix — nothing else (片 D 第 4 项，2026-10-02).
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from hashlib import sha256
 from types import SimpleNamespace

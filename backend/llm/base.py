@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import abc
 from collections.abc import AsyncIterator
-from typing import Any, Optional, Union
+from typing import Any
 
 from llm.types import ChatChunk, ChatResponse
 

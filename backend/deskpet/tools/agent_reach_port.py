@@ -13,7 +13,6 @@ import re
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urlsplit
 
 _MAX_TEXT_CHARS = 120_000

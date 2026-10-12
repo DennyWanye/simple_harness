@@ -12,7 +12,7 @@ import math
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from deskpet.execution.provider_invocations import coordinate_provider_call

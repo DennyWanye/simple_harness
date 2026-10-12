@@ -24,15 +24,13 @@ import logging
 import os
 import secrets as _secrets_mod
 import threading
-import time
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .receipt import (
     ToolReceipt,
     canonical_json,
-    hmac_sign,
     hmac_verify,
     make_receipt,
 )

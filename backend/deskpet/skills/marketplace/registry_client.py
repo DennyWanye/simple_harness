@@ -17,7 +17,7 @@ Failure (5xx, 4xx, network error) is surfaced as ``{"skills": [],
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import structlog

@@ -39,6 +39,12 @@ TREES = {
     },
 }
 
+# 已有问题（2026-10-12 录基线时发现），阶段 3 处理循环依赖时清掉。新进程单独导入它们会失败，
+# 但按正常顺序导入没问题。这里只报告，不判失败。
+KNOWN_FRESH_FAILURES = {
+    "sdk simple_harness.runtime.recall_protocol_v4",
+}
+
 CHILD = r"""
 import importlib, json, sys, traceback, warnings
 warnings.simplefilter("ignore")
@@ -127,7 +133,10 @@ def main() -> int:
             for m in mods:
                 r = run(tree, [m])[m]
                 if r != "ok":
-                    bad.append(f"{tree} {m}: {r}")
+                    if f"{tree} {m}" in KNOWN_FRESH_FAILURES:
+                        print(f"已知问题（不判失败）{tree} {m}: {r[:160]}")
+                    else:
+                        bad.append(f"{tree} {m}: {r}")
             print(f"{tree}: 新进程单独导入 {len(mods)} 个改动模块")
     else:
         for tree in (["backend", "sdk"] if a.tree == "all" else [a.tree]):

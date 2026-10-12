@@ -4,7 +4,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .contracts import RetrievalCandidate

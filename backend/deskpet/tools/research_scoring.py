@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 # === Domain authority tiers (ported + de-duped from V8) ===

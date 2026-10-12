@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 from deskpet.tools.receipt import ToolReceipt, hmac_sign, hmac_verify, make_receipt
 from deskpet.tools.receipt_store import (

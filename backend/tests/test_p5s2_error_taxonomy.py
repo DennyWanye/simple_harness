@@ -14,7 +14,6 @@ waste a retry than to incorrectly kill a turn).
 
 from __future__ import annotations
 
-import pytest
 from agent import errors
 
 # ─────────────── classify(dict) ───────────────

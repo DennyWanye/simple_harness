@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime

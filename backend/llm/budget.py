@@ -24,7 +24,6 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Optional
 
 from llm.pricing import estimate_cost_usd
 from llm.types import ChatUsage

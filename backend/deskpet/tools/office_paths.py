@@ -41,7 +41,6 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Authorization set

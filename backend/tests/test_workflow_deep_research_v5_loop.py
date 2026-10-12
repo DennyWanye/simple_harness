@@ -4,7 +4,7 @@ import asyncio
 import copy
 import json
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest

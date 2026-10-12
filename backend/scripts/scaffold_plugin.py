@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import textwrap
 from pathlib import Path
 
 SKILL_TEMPLATE = """\

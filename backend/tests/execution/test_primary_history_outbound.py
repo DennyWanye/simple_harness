@@ -3,7 +3,6 @@
 import asyncio
 import sqlite3
 
-import aiosqlite
 import httpx
 import pytest
 from deskpet.execution.primary_dependencies import check_runtime_dependencies

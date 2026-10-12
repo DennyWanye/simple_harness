@@ -9,7 +9,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from agent.context_messages import ContextMessageMeta, tag_message
 

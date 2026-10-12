@@ -33,7 +33,6 @@ one place without touching :func:`classify` logic.
 
 from __future__ import annotations
 
-from typing import Type, Union
 
 # ─────────────── exception types ───────────────
 

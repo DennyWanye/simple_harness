@@ -169,6 +169,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ref", default="HEAD")
     ap.add_argument("--detail", type=int, default=3, help="每个不等价文件最多列几处")
+    ap.add_argument("--ignore-imports", action="store_true",
+                    help="比较时去掉全部导入语句（证明删未用导入只删了导入）")
     a = ap.parse_args()
     files = subprocess.run(["git", "diff", "--name-only", "--diff-filter=M", a.ref, "--", "*.py"],
                            cwd=REPO, capture_output=True, text=True).stdout.splitlines()
@@ -178,6 +180,14 @@ def main() -> int:
         old = subprocess.run(["git", "show", f"{a.ref}:{f}"], cwd=REPO, capture_output=True).stdout
         new = (REPO / f).read_bytes()
         n0, n1 = norm(old), norm(new)
+        if a.ignore_imports and n0 is not None and n1 is not None:
+            for t in (n0, n1):
+                for node in ast.walk(t):
+                    for field in ("body", "orelse", "finalbody"):
+                        seq = getattr(node, field, None)
+                        if isinstance(seq, list):
+                            kept = [x for x in seq if not isinstance(x, (ast.Import, ast.ImportFrom))]
+                            setattr(node, field, kept or [ast.Pass()])
         if n0 is None or n1 is None:
             diff_files.append(f)
             print(f"语法错误：{f}")

@@ -21,7 +21,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger("deskpet.agent.nudge_queue")
 

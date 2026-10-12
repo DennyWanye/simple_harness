@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from . import office_paths
 

@@ -646,7 +646,7 @@ class TestWI2MicrocompactEdgeGaps:
     @pytest.mark.asyncio
     async def test_microcompact_only_keep0_no_orphan_after_sanitize(self):
         """microcompact-only 早退(keep_tools=0 全清) → _sanitize 不产孤儿(壳+配对仍齐)。"""
-        from deskpet.agent.context_compressor import _partition, _sanitize_tool_pairs
+        from deskpet.agent.context_compressor import _sanitize_tool_pairs
 
         msgs = [{"role": "system", "content": "s"}]
         for i in range(5):

@@ -23,7 +23,7 @@ import re as _re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional, Protocol
+from typing import Any, Literal, Protocol
 
 import yaml
 

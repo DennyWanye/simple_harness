@@ -10,7 +10,7 @@ bare claim with no receipt is BLOCKED (the fake-completion we want to catch).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from deskpet.agent.verify_gate import (

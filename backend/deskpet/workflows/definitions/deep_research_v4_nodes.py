@@ -9,7 +9,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -27,7 +27,6 @@ from .deep_research_v3_contracts import (
 )
 from .deep_research_v4_contracts import (
     IntentProfile,
-    SourceSeed,
     TechnologyFinding,
     TechnologyTopic,
 )

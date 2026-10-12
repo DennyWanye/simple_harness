@@ -17,7 +17,6 @@ direct callers.
 
 from __future__ import annotations
 
-import pytest
 from agent.token_budget import (
     DEFAULT_CONTEXT_WINDOW,
     BudgetCheck,

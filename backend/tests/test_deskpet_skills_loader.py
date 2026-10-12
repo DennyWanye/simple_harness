@@ -19,10 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import textwrap
-import threading
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 from deskpet.skills.loader import SkillLoader, SkillMeta, _split_frontmatter

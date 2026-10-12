@@ -18,7 +18,7 @@ tenant or a path.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from simple_harness.agents.arp import catalogue as cat

@@ -8,7 +8,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import inspect
-import json
 import posixpath
 import re
 import zipfile

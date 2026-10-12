@@ -25,7 +25,6 @@ on Windows occasionally takes 6-8s on first connect).
 
 from __future__ import annotations
 
-import json
 
 import httpx
 import pytest

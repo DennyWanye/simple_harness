@@ -14,7 +14,7 @@ DailyBudgetHook contract: see docs/superpowers/specs/2026-04-15-p2-1-finale-desi
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 

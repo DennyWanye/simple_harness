@@ -31,7 +31,7 @@ import asyncio
 import enum
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 

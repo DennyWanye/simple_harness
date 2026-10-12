@@ -30,7 +30,7 @@ import re
 import tempfile
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 

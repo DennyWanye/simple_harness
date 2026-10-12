@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 
 _VERIFY = Path(__file__).resolve().parents[3] / "scripts" / "native" / "a6_verify.py"
 

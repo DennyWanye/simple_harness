@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from agent.context_report import auto_context_attempt_call
 from deskpet.execution.dispatch import current_dispatch_handoff

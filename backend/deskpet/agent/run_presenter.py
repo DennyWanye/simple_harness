@@ -9,7 +9,6 @@ later Driver can reuse the same mapping without growing another switch.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 import time

@@ -26,7 +26,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 # spec 原文文案（test 对此精确断言，勿改）。
 _VIOLATION_MSG = "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"

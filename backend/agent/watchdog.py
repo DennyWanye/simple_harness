@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("deskpet.agent.watchdog")
 

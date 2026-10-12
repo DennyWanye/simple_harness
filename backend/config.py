@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from dataclasses import fields as dc_fields
 from pathlib import Path
-from typing import Optional
 from urllib.parse import urlsplit
 
 import paths as _paths

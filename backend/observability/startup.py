@@ -24,7 +24,6 @@ Design choices:
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Tuple
 
 # Error-code constants — callers (tests, /health consumers) depend on
 # these being stable strings. Don't rename without bumping the API.

@@ -7,7 +7,6 @@ pass-through disclosure authority. Host SQL below only inspects actual facts.
 import asyncio
 import json
 import sqlite3
-from pathlib import Path
 
 import httpx
 import pytest

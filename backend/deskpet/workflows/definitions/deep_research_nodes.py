@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
-from typing import Any
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from ..store import BlobRef, BlobStore

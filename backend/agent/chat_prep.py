@@ -24,7 +24,7 @@ P6 behaviour change is testable without spinning up a FastAPI client.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 async def prepare_chat_messages_for_chain(

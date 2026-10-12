@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from agent.write_scope import (
     resolve_workspace_root,
     scope_violation_message,

@@ -41,7 +41,7 @@ import logging
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import paths as _paths
 

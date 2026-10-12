@@ -28,7 +28,7 @@ import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from deskpet.tools.receipt import ToolReceipt
 

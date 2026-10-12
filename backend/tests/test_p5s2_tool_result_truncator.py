@@ -16,7 +16,6 @@ Contract:
 
 from __future__ import annotations
 
-import pytest
 from agent.tool_result_truncator import (
     DEFAULT_HEAD,
     DEFAULT_TAIL,

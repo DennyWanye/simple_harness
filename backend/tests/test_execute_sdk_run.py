@@ -4,7 +4,7 @@
 """Integration tests for _execute_sdk_run function."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock, create_autospec, patch
+from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters

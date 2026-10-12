@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any
 
 from .contracts import CandidateMode, GrowthEvent, JsonValue, OwnerRef
 

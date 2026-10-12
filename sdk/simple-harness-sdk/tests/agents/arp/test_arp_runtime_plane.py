@@ -12,7 +12,6 @@ import asyncio
 import json
 from pathlib import Path
 
-import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
 from simple_harness.agents import AgentConfig

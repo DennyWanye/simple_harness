@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import main as main_module
 import pytest
-import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from main import LLM_RUNTIME_PATH, SHARED_SECRET, app
 

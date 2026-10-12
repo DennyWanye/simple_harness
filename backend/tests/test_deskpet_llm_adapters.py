@@ -12,7 +12,6 @@ Uses monkeypatched SDK clients so:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from agent.context_messages import (

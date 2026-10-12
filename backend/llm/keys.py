@@ -16,7 +16,6 @@ Key lookup order:
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 # keyring is an optional dependency: CI environments don't ship a
 # keyring backend, and import-time failures here would block all LLM

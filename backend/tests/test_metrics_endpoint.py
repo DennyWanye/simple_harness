@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import secrets as _secrets
 
-import pytest
 from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
 from observability.metrics import render as render_metrics

@@ -6,7 +6,6 @@ Read-only. Does NOT print full tokens (only prefix/len/hash).
 from __future__ import annotations
 
 import hashlib
-import sys
 
 import httpx
 

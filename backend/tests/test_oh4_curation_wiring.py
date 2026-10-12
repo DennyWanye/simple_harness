@@ -28,7 +28,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 from config import load_config
 
 # 仓库根 config.toml（出厂运行配置 = flag 真正点亮处）。

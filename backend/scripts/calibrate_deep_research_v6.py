@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 from collections import defaultdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite

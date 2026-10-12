@@ -14,7 +14,6 @@ colliding with the stdlib ``time`` module in local imports.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext

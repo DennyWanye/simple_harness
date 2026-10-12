@@ -39,7 +39,6 @@ import shutil
 import signal
 import sqlite3
 import subprocess
-import sys
 import time
 import uuid
 from pathlib import Path

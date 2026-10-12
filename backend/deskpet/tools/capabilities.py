@@ -19,8 +19,8 @@ import re
 import time
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, replace
-from typing import Any, Optional
+from dataclasses import dataclass, replace
+from typing import Any
 
 
 def canonical_json(value: Any) -> str:

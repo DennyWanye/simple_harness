@@ -52,7 +52,6 @@ from ...contracts.htn import (
     MethodRef,
     MethodRegistration,
     MethodRegistryStatus,
-    MethodStep,
     MissionRef,
     NotCondition,
     ObjectValue,

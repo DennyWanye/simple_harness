@@ -13,8 +13,6 @@ Error classification drives agent loop behavior:
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class LLMProviderError(Exception):
     """Terminal failure from an LLM provider. Does not retry same provider."""

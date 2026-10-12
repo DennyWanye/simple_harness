@@ -13,7 +13,6 @@ Run from backend/:  .venv/Scripts/python.exe scripts/verify_feature_flag_backfil
 from __future__ import annotations
 
 import os
-import re
 import sys
 import tempfile
 from pathlib import Path

@@ -21,7 +21,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from typing import Any, Literal, Protocol
 from urllib.parse import urljoin, urlsplit

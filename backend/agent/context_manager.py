@@ -48,7 +48,7 @@ import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from llm.model_info import ModelContextInfo
 from llm.model_info import resolve as resolve_model_info

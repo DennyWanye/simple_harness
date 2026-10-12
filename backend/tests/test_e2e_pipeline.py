@@ -17,7 +17,6 @@ except AttributeError:
 import asyncio
 import io
 import json
-import wave
 from pathlib import Path
 
 import edge_tts

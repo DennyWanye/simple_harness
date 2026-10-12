@@ -11,7 +11,7 @@ import shutil
 import stat
 import unicodedata
 import zipfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import InitVar, dataclass
 from pathlib import Path
 from typing import BinaryIO

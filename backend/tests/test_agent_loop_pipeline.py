@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from agent.agent_loop import AgentLoop, FinalEvent, PipelineEvent, ToolBatchEvent

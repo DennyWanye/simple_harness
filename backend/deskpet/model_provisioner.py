@@ -30,7 +30,6 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import structlog
 from paths import user_models_dir

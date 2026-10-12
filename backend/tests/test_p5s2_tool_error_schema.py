@@ -19,13 +19,10 @@ fields, no rename of existing error codes).
 from __future__ import annotations
 
 import json
-import os
-import platform
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import pytest
 from deskpet.tools import os_tools
 from deskpet.tools.os_tools import (
     desktop_create_file,

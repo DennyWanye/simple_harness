@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from ..contracts import Artifact

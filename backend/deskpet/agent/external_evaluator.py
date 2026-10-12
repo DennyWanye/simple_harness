@@ -20,7 +20,7 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("deskpet.agent.external_evaluator")
 

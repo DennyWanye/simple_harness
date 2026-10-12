@@ -33,7 +33,6 @@ from deskpet.execution.contracts import (
 )
 
 from .contracts import (
-    CompanionConflictError,
     CompanionOwnerError,
     GrowthEvent,
     JsonValue,

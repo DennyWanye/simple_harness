@@ -7,7 +7,6 @@ Does NOT print the key value. Verifies by relay test only.
 
 from __future__ import annotations
 
-import os
 
 import httpx
 import win32cred  # type: ignore

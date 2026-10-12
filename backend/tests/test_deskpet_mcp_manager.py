@@ -29,7 +29,6 @@ import asyncio
 import inspect
 import json
 import re
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any

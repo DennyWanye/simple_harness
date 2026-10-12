@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import pytest
 from deskpet.retrieval import runtime
 from deskpet.retrieval.fetch_extract import FetchExtractError
 from deskpet.tools import web_tools
