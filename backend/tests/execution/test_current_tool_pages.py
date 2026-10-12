@@ -40,6 +40,7 @@ from deskpet.execution.current_tool_pages import (
 from deskpet.execution.current_tool_pages import (
     PREFIX as CURRENT_PREFIX,
 )
+from host.state import host_state
 
 
 @pytest.mark.asyncio
@@ -195,7 +196,7 @@ async def test_actual_current_effect_page_and_physical_guard(
     registry.entry.id, registry.entry.model, registry.entry.models = "fixture", "model", ("model",)
     registry.entry.incarnation_id, registry.entry.config_revision = "fixture-1", 1
     monkeypatch.setattr(main, "_state_db_path", state)
-    monkeypatch.setattr(main, "_sdk_runtime_stack", stack)
+    monkeypatch.setattr(host_state, "sdk_runtime_stack", stack)
     monkeypatch.setattr(main, "_primary_history_policy", lambda _: holder.runtime.history_policy)
     monkeypatch.setattr(main, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
     get_service = main.service_context.get
@@ -519,7 +520,7 @@ async def test_same_run_settled_results_get_a_per_result_ceiling_and_page_back_e
     registry.entry.id, registry.entry.model, registry.entry.models = "fixture", "model", ("model",)
     registry.entry.incarnation_id, registry.entry.config_revision = "fixture-1", 1
     monkeypatch.setattr(main, "_state_db_path", state)
-    monkeypatch.setattr(main, "_sdk_runtime_stack", stack)
+    monkeypatch.setattr(host_state, "sdk_runtime_stack", stack)
     monkeypatch.setattr(main, "_primary_history_policy", lambda _: holder.runtime.history_policy)
     monkeypatch.setattr(main, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
     get_service = main.service_context.get

@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from host.state import host_state
 
 
 @pytest.mark.asyncio
@@ -32,8 +33,8 @@ async def test_product_preflight_block_projects_public_error_without_client_exte
     async def broadcast(_originator, frame):  # type: ignore[no-untyped-def]
         broadcasts.append(frame)
 
-    monkeypatch.setattr(main, "_sdk_ingress", SimpleNamespace())
-    monkeypatch.setattr(main, "_sdk_runtime_stack", _Stack())
+    monkeypatch.setattr(host_state, "sdk_ingress", SimpleNamespace())
+    monkeypatch.setattr(host_state, "sdk_runtime_stack", _Stack())
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", broadcast)
     websocket = _WebSocket()
 

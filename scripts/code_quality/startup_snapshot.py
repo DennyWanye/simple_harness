@@ -34,6 +34,24 @@ BASELINE = REPO / "scripts/code_quality/startup_baseline.json"
 CHILD = r"""
 import asyncio, json, re, sys, traceback, warnings
 warnings.simplefilter("ignore")
+import os as _os
+_rebase = _os.environ.get("CQ_ORIGIN_REBASE")  # "主检出 backend 目录|本检出 backend 目录"
+if _rebase:
+    # 工作树借用主检出的虚拟环境：已安装包记录的来源是主检出的 wheel。
+    # 只在快照子进程里把来源路径改写到本检出的同名 wheel（字节相同），生产代码不动。
+    import importlib.metadata as _md
+    _src, _dst = _rebase.split("|")
+    _orig_dist = _md.distribution
+    class _Dist:
+        def __init__(self, d): self._d = d
+        def __getattr__(self, k): return getattr(self._d, k)
+        def read_text(self, name):
+            t = self._d.read_text(name)
+            return t.replace(_src, _dst) if (name == "direct_url.json" and t) else t
+    def _distribution(name):
+        d = _orig_dist(name)
+        return _Dist(d) if name in ("simple-harness-sdk", "simple-harness-service-sdk") else d
+    _md.distribution = _distribution
 import context as _ctx
 order = []
 _orig = _ctx.ServiceContext.register
@@ -69,6 +87,8 @@ async def go():
         msg = re.sub(r"<Task .*$", "<Task>", msg, flags=re.S)
         msg = re.sub(r"0x[0-9a-f]+|\b[0-9a-f]{9,}\b", "<addr>", msg)[:800]
         out[f"{phase}_error"] = msg
+        if _os.environ.get("CQ_DEBUG"):
+            sys.stderr.write("".join(traceback.format_exception(e)))
         out.setdefault("lifespan_registrations", list(order))
     return out
 
@@ -89,6 +109,9 @@ def capture() -> dict:
             "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(BACKEND),
             "DESKPET_BACKEND_PORT": "18931",
         })
+        venv_backend = (BACKEND / ".venv").resolve().parent
+        if venv_backend != BACKEND.resolve():
+            env["CQ_ORIGIN_REBASE"] = f"{venv_backend}/vendor|{BACKEND.resolve()}/vendor"
         p = subprocess.run([str(BACKEND / ".venv/bin/python"), "-c", CHILD], cwd=BACKEND,
                            capture_output=True, text=True, env=env, timeout=600)
     if "@@RESULT@@" not in p.stdout:

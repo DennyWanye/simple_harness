@@ -106,7 +106,7 @@ async def test_identity_unready_and_kill_switch_do_not_start_scheduler(
 def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
     source = (Path(__file__).parents[2] / "main.py").read_text(encoding="utf-8")
     runtime_close = source.index("await _companion_runtime_service.close(timeout=5.0)")
-    sdk_close = source.index("await _sdk_runtime_stack.close()")
+    sdk_close = source.index("await host_state.sdk_runtime_stack.close()")
     # Since ab36b6a52 the workflow service owns launcher + execution UoW
     # shutdown (WorkflowService.close joins the launcher, then the runner,
     # then releases its owned UoW); main.py closes that one owner.
@@ -114,7 +114,7 @@ def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
     assert runtime_close < sdk_close < workflow_close
     coordinator_block = source[
         source.index("profile_coordinator = ProfileBindingCoordinator(") : source.index(
-            "_companion_runtime = companion_runtime"
+            "host_state.companion_runtime = companion_runtime"
         )
     ]
     assert "runtime=companion_runtime" in coordinator_block

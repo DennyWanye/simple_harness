@@ -234,6 +234,6 @@ def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None
 
     assert provision < response < send < broadcast
     assert "_trigger_harness_recovery_after_identity_bind()" in bind_branch
-    assert bind_branch.index("_companion_identity_gate.freeze()") < bind_branch.index(
+    assert bind_branch.index("host_state.companion_identity_gate.freeze()") < bind_branch.index(
         "_trigger_harness_recovery_after_identity_bind()"
     )

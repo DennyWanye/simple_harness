@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+from host.state import host_state
 
 
 @pytest.mark.asyncio
@@ -864,11 +865,11 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
         session_db=session_db,
         root_run_id="canonical-root-race",
     )
-    monkeypatch.setattr(main, "_sdk_ingress", FirstTurnInsideStartIngress())
-    monkeypatch.setattr(main, "_sdk_context_port", None)
+    monkeypatch.setattr(host_state, "sdk_ingress", FirstTurnInsideStartIngress())
+    monkeypatch.setattr(host_state, "sdk_context_port", None)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
     lifecycle = _BindingLifecycle()
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
     from deskpet.sdk_adapters.tool_authority import (
         SdkRunToolAuthorityRegistry,
     )
@@ -907,7 +908,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
             )
         ],
     )
-    monkeypatch.setattr(main, "_sdk_tool_authority_registry", tool_authority)
+    monkeypatch.setattr(host_state, "sdk_tool_authority_registry", tool_authority)
 
     await main._execute_sdk_run(
         session_id=session_id,
@@ -991,8 +992,8 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     )
     lifecycle = _BindingLifecycle()
     session_id_value = session_id
-    monkeypatch.setattr(main, "_sdk_ingress", WaitingIngress())
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_ingress", WaitingIngress())
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
 
     await main._execute_sdk_run(
@@ -1068,7 +1069,7 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
     ingress = SimpleNamespace(list_open_authorizations=lambda **_kwargs: (decision,))
     websocket = SimpleNamespace(send_json=AsyncMock())
     main._sdk_run_ids_by_root.clear()
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
 
     projected = await main._project_open_sdk_authorizations(
@@ -1219,9 +1220,9 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
         )
     )
     lifecycle = _BindingLifecycle()
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
-    monkeypatch.setattr(main, "_sdk_context_port", context_port)
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_context_port", context_port)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
     main._sdk_retained_presentations[sdk_run_id] = (delivery, presenter, state, context)
     main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
     _delivery_adapters[sdk_run_id] = delivery
@@ -1251,8 +1252,8 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
         SimpleNamespace(run_id="root-resumed-waiting"),
     )
     monkeypatch.setattr(
-        main,
-        "_sdk_ingress",
+        host_state,
+        "sdk_ingress",
         SimpleNamespace(
             wait_idle=AsyncMock(),
             query=Mock(return_value=SimpleNamespace(state=SimpleNamespace(value="waiting"))),
@@ -1313,16 +1314,16 @@ async def test_recovered_route_projects_final_into_durable_session_history(monke
         session_db,
     )
     monkeypatch.setattr(
-        main,
-        "_sdk_ingress",
+        host_state,
+        "sdk_ingress",
         SimpleNamespace(
             wait_idle=AsyncMock(),
             query=Mock(return_value=SimpleNamespace(state=SimpleNamespace(value="completed"))),
         ),
     )
     monkeypatch.setattr(
-        main,
-        "_sdk_context_port",
+        host_state,
+        "sdk_context_port",
         SimpleNamespace(
             load=Mock(
                 return_value=SimpleNamespace(
@@ -1337,7 +1338,7 @@ async def test_recovered_route_projects_final_into_durable_session_history(monke
         ),
     )
     lifecycle = _BindingLifecycle()
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
     await main._watch_retained_sdk_run(sdk_run_id)
 
@@ -1374,9 +1375,9 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
         session_db=session_db,
         root_run_id="canonical-root-start-failure",
     )
-    monkeypatch.setattr(main, "_sdk_ingress", FailingStartIngress())
+    monkeypatch.setattr(host_state, "sdk_ingress", FailingStartIngress())
     lifecycle = _BindingLifecycle()
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
     with pytest.raises(RuntimeError, match="start failed"):
         await main._execute_sdk_run(
@@ -1409,7 +1410,7 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
     )
     workload_router = SimpleNamespace(cancel_root=AsyncMock())
     session_db = SimpleNamespace(clear_session_plan_awaiting=AsyncMock())
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(
         main,
         "service_context",
@@ -1447,7 +1448,7 @@ def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeyp
             )
         ),
     )
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     main._sdk_run_ids_by_root["root-status"] = "sdk-status"
     main._sdk_retained_presentations["sdk-status"] = (None, None, None, None)
     try:
@@ -1472,8 +1473,8 @@ def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypa
     import main
 
     monkeypatch.setattr(
-        main,
-        "_sdk_ingress",
+        host_state,
+        "sdk_ingress",
         SimpleNamespace(
             accepting=True,
             query=Mock(
@@ -1493,8 +1494,8 @@ def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
     import main
 
     monkeypatch.setattr(
-        main,
-        "_sdk_ingress",
+        host_state,
+        "sdk_ingress",
         SimpleNamespace(
             accepting=True,
             query=Mock(
@@ -1525,7 +1526,7 @@ async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
     )
     ingress._accepting = True  # noqa: SLF001
     watcher = Mock()
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
     main._sdk_run_ids_by_root["canonical-waiting"] = "sdk-waiting"
 
@@ -1569,7 +1570,7 @@ async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch
     )
     ingress._accepting = True  # noqa: SLF001
     watcher = Mock()
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
     main._sdk_run_ids_by_root["canonical-permission"] = "sdk-permission"
 
@@ -1636,7 +1637,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         put_pending=AsyncMock(return_value=("binding-continuation", "sha256:" + "b" * 64)),
         mark_claimed=AsyncMock(),
     )
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(
         main,
         "service_context",
@@ -1695,7 +1696,7 @@ async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
         require_ready=lambda: SimpleNamespace(client=client),
     )
     workload_router = SimpleNamespace(cancel_root=AsyncMock())
-    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(
         main,
         "service_context",
@@ -1750,12 +1751,12 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
         root_run_id="canonical-cancel-root",
     )
     send_error = AsyncMock()
-    monkeypatch.setattr(main, "_sdk_ingress", CancelledDuringWaitIngress())
-    monkeypatch.setattr(main, "_sdk_context_port", None)
+    monkeypatch.setattr(host_state, "sdk_ingress", CancelledDuringWaitIngress())
+    monkeypatch.setattr(host_state, "sdk_context_port", None)
     monkeypatch.setattr(main, "_send_chat_error", send_error)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
     lifecycle = _BindingLifecycle()
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
     await main._execute_sdk_run(
         session_id=session_id,

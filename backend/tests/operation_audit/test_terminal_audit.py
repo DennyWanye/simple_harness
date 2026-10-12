@@ -116,7 +116,7 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
     namespace = {
         "service_context": SimpleNamespace(get=services.get, register=services.__setitem__),
         "_state_db_path": tmp_path / "state.db",
-        "_sdk_runtime_stack": None,
+        "host_state": SimpleNamespace(sdk_runtime_stack=None),
     }
     exec(  # noqa: S102 - execute only the exact checked-in activation function
         compile(ast.Module(body=[node], type_ignores=[]), str(main_path), "exec"),
@@ -126,7 +126,7 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
 
     async def ready(stack):
         nonlocal consumer
-        namespace["_sdk_runtime_stack"] = stack
+        namespace["host_state"].sdk_runtime_stack = stack
         consumer = await namespace["_activate_terminal_operation_audit"]()
         assert consumer._task is not None
         consumer.poll_seconds = 0.01
@@ -184,7 +184,7 @@ async def test_actual_main_storage_failure_does_not_block_foreground(tmp_path):
     namespace = {
         "service_context": SimpleNamespace(get=services.get, register=services.__setitem__),
         "_state_db_path": tmp_path / "state.db",
-        "_sdk_runtime_stack": None,
+        "host_state": SimpleNamespace(sdk_runtime_stack=None),
         "logger": SimpleNamespace(warning=warnings.append),
     }
     exec(  # noqa: S102 - exact production factory failure path
@@ -193,7 +193,7 @@ async def test_actual_main_storage_failure_does_not_block_foreground(tmp_path):
     (tmp_path / "operation-audit.db").mkdir()  # Actual sqlite open failure.
 
     async def ready(stack):
-        namespace["_sdk_runtime_stack"] = stack
+        namespace["host_state"].sdk_runtime_stack = stack
         assert await namespace["_activate_terminal_operation_audit"]() is None
 
     _, _, provider, runtime, stack, _ = await setup(tmp_path, ready=ready)

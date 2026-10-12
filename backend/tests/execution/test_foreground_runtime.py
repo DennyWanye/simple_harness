@@ -32,6 +32,7 @@ from deskpet.execution.foreground_runtime import (
 )
 from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
+from host.state import host_state
 from simple_harness import ContextRouteOrigin
 
 SUBJECT = "actor-1"
@@ -656,17 +657,17 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
 
     monkeypatch.setattr(main, "_state_db_path", tmp_path / "state.db")
     monkeypatch.setattr(main._paths, "user_data_dir", lambda: tmp_path)
-    monkeypatch.setattr(main, "_sdk_ingress", _Ingress())
-    monkeypatch.setattr(main, "_sdk_runtime_stack", object())
-    monkeypatch.setattr(main, "_provider_registry", object())
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", object())
+    monkeypatch.setattr(host_state, "sdk_ingress", _Ingress())
+    monkeypatch.setattr(host_state, "sdk_runtime_stack", object())
+    monkeypatch.setattr(host_state, "provider_registry", object())
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", object())
     monkeypatch.setattr(
-        main,
-        "_sdk_runtime_catalog",
+        host_state,
+        "sdk_runtime_catalog",
         {"generation": 1, "content_fingerprint": "catalog", "tool_names": []},
     )
-    monkeypatch.setattr(main, "_sdk_runtime_tool_inventory", ())
-    monkeypatch.setattr(main, "_sdk_tool_authority_registry", object())
+    monkeypatch.setattr(host_state, "sdk_runtime_tool_inventory", ())
+    monkeypatch.setattr(host_state, "sdk_tool_authority_registry", object())
     monkeypatch.setattr(main.service_context, "capability_store", object())
     epoch = type("Epoch", (), {"composition_mode": StartupCompositionMode.HUMAN})()
 

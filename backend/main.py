@@ -147,6 +147,7 @@ from deskpet.agent.turn_preparer import (
     TurnInput,
 )
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
+from host.state import host_state
 from observability.crash_reports import install_crash_reporter
 from observability.metrics import render as render_metrics
 from observability.startup import registry as startup_errors  # P3-S2
@@ -395,7 +396,7 @@ _e2e_provider_base = (
 _sanitize_cot_dsml = bool((config.raw.get("llm") or {}).get("sanitize_inline_cot_dsml", True))
 logger.info("sanitize_inline_cot_dsml_flag", enabled=_sanitize_cot_dsml)
 
-local_llm = OpenAICompatibleProvider(
+host_state.local_llm = OpenAICompatibleProvider(
     base_url=_e2e_provider_base or config.llm.local.base_url,
     api_key="ctx-e2e-local-key" if _e2e_provider_base else _resolved_api_key,
     model="ctx-primary" if _e2e_provider_base else config.llm.local.model,
@@ -411,14 +412,14 @@ local_llm = OpenAICompatibleProvider(
 # Keep cloud_llm symbol around for legacy code paths but it's None now —
 # config.llm.cloud is no longer set under the unified [llm] schema.
 cloud_llm = None
-_current_cloud_api_key: str | None = (
+host_state.current_cloud_api_key = (
     _resolved_api_key if "localhost" not in config.llm.local.base_url else None
 )
 if config.llm.cloud is not None:
     # 兼容旧 [llm.cloud] schema — 新部署不会走这里。
     _cloud_key = _resolve_cloud_api_key()
     if _cloud_key:
-        _current_cloud_api_key = _cloud_key
+        host_state.current_cloud_api_key = _cloud_key
         cloud_llm = OpenAICompatibleProvider(
             base_url=config.llm.cloud.base_url,
             api_key=_cloud_key,
@@ -451,12 +452,11 @@ from llm.provider_registry import (
 
 # Provider authority is created only after state.db migrations complete in
 # lifespan. Importing main must never make a pre-migration registry usable.
-_provider_registry: LLMProviderRegistry | None = None
 service_context.register("provider_registry", None)
 service_context.register("provider_routing_readiness", None)
 
 llm = HybridRouter(
-    local=local_llm,
+    local=host_state.local_llm,
     cloud=cloud_llm,
     strategy=RoutingStrategy(config.llm.strategy),
     # P2-1-S8: BillingLedger's hook debits cloud spend and denies cloud
@@ -900,9 +900,9 @@ try:
     from deskpet.tools import research_tools as _research_tools
 
     _research_tools.set_live_llm_call(
-        _make_str_llm_call(local_llm, max_tokens=4096, purpose="research")
+        _make_str_llm_call(host_state.local_llm, max_tokens=4096, purpose="research")
     )
-    _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(local_llm))
+    _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(host_state.local_llm))
 
     # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
     # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
@@ -993,7 +993,7 @@ def _refresh_research_live_llm(provider=None) -> None:
     try:
         from deskpet.tools import research_tools as _research_tools
 
-        _provider = provider or _resolve_primary_registry_provider() or local_llm
+        _provider = provider or _resolve_primary_registry_provider() or host_state.local_llm
         _research_tools.set_live_llm_call(
             _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
         )
@@ -1036,25 +1036,11 @@ _refresh_research_live_llm()
 # → 多工具 turn 跑了 ≥5 工具但卡不弹（真机诊断）。抽成模块级 helper，在
 # FinalEvent + ErrorEvent 两处都调，让 turn 任意路径结束都能触发技能自创。
 # safe-fail：任何异常只 debug log，不中断正常 turn。flag OFF → 整段跳过（BC）。
-_companion_store = None
-_growth_authority_router = None
-_companion_identity_gate = None
-_companion_profile_coordinator = None
-_companion_control_ingress = None
-_companion_runtime = None
-_companion_notification_service = None
-_companion_detail_query = None
-_companion_ingress_dispatcher = None
-_companion_growth_pipeline = None
-_companion_activation_dispatcher = None
 _companion_ingress_tasks: set[asyncio.Task] = set()
-_growth_cutover_coordinator = None
-_growth_cutover_plan = None
-_LEGACY_GROWTH_OWNER = ("legacy_local_profile", 1)
 
 
 def _legacy_growth_owner() -> tuple[str, int]:
-    return _LEGACY_GROWTH_OWNER
+    return host_state.legacy_growth_owner
 
 
 async def _initialize_growth_authority() -> None:
@@ -1072,13 +1058,6 @@ async def _initialize_growth_authority() -> None:
         )
         return
 
-    global _companion_store, _growth_authority_router
-    global _companion_identity_gate, _companion_profile_coordinator
-    global _companion_control_ingress
-    global _companion_runtime, _companion_ingress_dispatcher
-    global _companion_growth_pipeline, _companion_activation_dispatcher
-    global _growth_cutover_coordinator, _growth_cutover_plan
-    global _LEGACY_GROWTH_OWNER
     from deskpet.companion.authority import (
         GrowthAuthorityPhase,
         GrowthAuthorityRouter,
@@ -1165,12 +1144,12 @@ async def _initialize_growth_authority() -> None:
     )
     if local_owner is None:
         local_owner = store.create_profile(
-            profile_id=_LEGACY_GROWTH_OWNER[0],
-            generation=store.next_profile_generation(profile_id=_LEGACY_GROWTH_OWNER[0]),
+            profile_id=host_state.legacy_growth_owner[0],
+            generation=store.next_profile_generation(profile_id=host_state.legacy_growth_owner[0]),
             identity_namespace_hash=local_identity.identity_namespace_hash,
             reason_code="task1_legacy_authority_bootstrap",
         )
-    _LEGACY_GROWTH_OWNER = (
+    host_state.legacy_growth_owner = (
         local_owner.profile_id,
         local_owner.profile_generation,
     )
@@ -1222,10 +1201,10 @@ async def _initialize_growth_authority() -> None:
             result_hash=canonical_hash(["reminder_local_projection", dispatch.outbox_id]),
         )
         pending_reminder_dispatches.pop(dispatch.outbox_id, None)
-        if _companion_notification_service is not None:
+        if host_state.companion_notification_service is not None:
             frozen = identity_gate.freeze()
             if frozen.owner == owner:
-                await _companion_notification_service.bind_and_drain(frozen)
+                await host_state.companion_notification_service.bind_and_drain(frozen)
         return True
 
     async def _run_reminder_lane(owner):
@@ -1281,8 +1260,8 @@ async def _initialize_growth_authority() -> None:
         companion=companion,
     )
     await router.start()
-    _companion_store = store
-    _growth_authority_router = router
+    host_state.companion_store = store
+    host_state.growth_authority_router = router
     identity_gate = IdentityReadyGate()
     workflow_service = service_context.get("workflow_service")
     execution_state = None if workflow_service is None else workflow_service.execution_uow
@@ -1356,9 +1335,9 @@ async def _initialize_growth_authority() -> None:
         runtime=companion_runtime,
         runtime_start_enabled=True,
     )
-    _companion_runtime = companion_runtime
-    _companion_identity_gate = identity_gate
-    _companion_profile_coordinator = profile_coordinator
+    host_state.companion_runtime = companion_runtime
+    host_state.companion_identity_gate = identity_gate
+    host_state.companion_profile_coordinator = profile_coordinator
     capability_platform = service_context.get("capability_platform")
     if capability_platform is None:
         raise RuntimeError("capability platform is unavailable for Companion identity binding")
@@ -1396,7 +1375,7 @@ async def _initialize_growth_authority() -> None:
         platform=mutation_platform,
         barrier=capability_platform.revocation_barrier,
     )
-    _companion_activation_dispatcher = activation_dispatcher
+    host_state.companion_activation_dispatcher = activation_dispatcher
     managed_projection = service_context.get("managed_skill_discovery_projection")
     if managed_projection is None or execution_state is None:
         raise RuntimeError("Companion growth pipeline dependencies are unavailable")
@@ -1422,7 +1401,7 @@ async def _initialize_growth_authority() -> None:
             )
         return loaded
 
-    _companion_growth_pipeline = GrowthProductionPipeline(
+    host_state.companion_growth_pipeline = GrowthProductionPipeline(
         store=store,
         target_resolver=target_resolver,
         execution_database_path=execution_state.path,
@@ -1439,26 +1418,28 @@ async def _initialize_growth_authority() -> None:
     service_context.register("companion_runtime", companion_runtime)
     service_context.register(
         "companion_growth_pipeline",
-        _companion_growth_pipeline,
+        host_state.companion_growth_pipeline,
     )
     session_db = companion_session_db
     if session_db is None:
         raise RuntimeError("Companion ingress requires SessionDB")
     from deskpet.companion.signals import CompanionIngressOutboxDispatcher
 
-    _companion_ingress_dispatcher = CompanionIngressOutboxDispatcher(
+    host_state.companion_ingress_dispatcher = CompanionIngressOutboxDispatcher(
         session_db=session_db,
         store=store,
         runtime=companion_runtime,
-        reflection_target_catalog=(_companion_growth_pipeline.target_catalog()),
+        reflection_target_catalog=(host_state.companion_growth_pipeline.target_catalog()),
     )
-    service_context.register("companion_ingress_dispatcher", _companion_ingress_dispatcher)
+    service_context.register(
+        "companion_ingress_dispatcher", host_state.companion_ingress_dispatcher
+    )
     if _WINDOW_CONTROL_BOOTSTRAP is not None:
         verifier = WindowControlCredentialVerifier(
             public_key_hex=_WINDOW_CONTROL_BOOTSTRAP.public_key_hex,
             backend_process_instance_id=(_WINDOW_CONTROL_BOOTSTRAP.backend_process_instance_id),
         )
-        _companion_control_ingress = CompanionControlIngress(
+        host_state.companion_control_ingress = CompanionControlIngress(
             store=store,
             coordinator=profile_coordinator,
             identity_gate=identity_gate,
@@ -1468,7 +1449,7 @@ async def _initialize_growth_authority() -> None:
         )
         service_context.register("window_control_credential_verifier", verifier)
     else:
-        _companion_control_ingress = None
+        host_state.companion_control_ingress = None
         service_context.register("window_control_credential_verifier", None)
     # ServiceContext Task-2 typing is intentionally not pulled forward. The
     # preparer reads this host-only attribute with getattr.
@@ -1579,8 +1560,8 @@ async def _initialize_growth_authority() -> None:
         cutover_operation_id=operation_id,
         migration_version=1,
         migration_hash=migration_hash,
-        legacy_owner_profile_id=_LEGACY_GROWTH_OWNER[0],
-        legacy_owner_generation=_LEGACY_GROWTH_OWNER[1],
+        legacy_owner_profile_id=host_state.legacy_growth_owner[0],
+        legacy_owner_generation=host_state.legacy_growth_owner[1],
         # This cutover does not publish a Capability.  With no legacy Skill
         # mutation to perform, old and new facts are the same real Store
         # snapshot.  A non-empty legacy Skill is rejected before the marker.
@@ -1605,7 +1586,7 @@ async def _initialize_growth_authority() -> None:
         return import_legacy_growth_snapshot(
             store=store,
             preference_resolver=preference_resolver,
-            owner=OwnerRef(*_LEGACY_GROWTH_OWNER),
+            owner=OwnerRef(*host_state.legacy_growth_owner),
             snapshot=legacy_snapshot,
         )
 
@@ -1687,8 +1668,8 @@ async def _initialize_growth_authority() -> None:
         store=store,
         executor=executor,
     )
-    _growth_cutover_coordinator = coordinator
-    _growth_cutover_plan = cutover_plan
+    host_state.growth_cutover_coordinator = coordinator
+    host_state.growth_cutover_plan = cutover_plan
     service_context.register("growth_authority_cutover", coordinator)
     service_context.register(
         "companion_reminder_registry_reconciler",
@@ -1722,10 +1703,10 @@ async def _complete_growth_authority_cutover() -> None:
 
     from deskpet.companion.authority import GrowthAuthorityPhase
 
-    coordinator = _growth_cutover_coordinator
-    cutover_plan = _growth_cutover_plan
-    router = _growth_authority_router
-    store = _companion_store
+    coordinator = host_state.growth_cutover_coordinator
+    cutover_plan = host_state.growth_cutover_plan
+    router = host_state.growth_authority_router
+    store = host_state.companion_store
     if coordinator is None or cutover_plan is None or router is None or store is None:
         # Growth authority was skipped (e.g., P4 services unavailable)
         logger.warning(
@@ -1766,38 +1747,37 @@ async def _complete_growth_authority_cutover() -> None:
 async def _initialize_companion_projection_services() -> None:
     """Compose Task-12 services onto the existing SessionDB/control roots."""
 
-    global _companion_notification_service, _companion_detail_query
     from deskpet.companion.detail_query import CompanionDetailQueryPort
     from deskpet.companion.notifications import CompanionNotificationService
 
     session_db = service_context.get("session_db")
-    if _companion_store is None or session_db is None:
+    if host_state.companion_store is None or session_db is None:
         # Companion store/session_db unavailable (P4 services failed)
         logger.warning(
             "companion_projection_skipped",
             reason="dependencies_unavailable",
-            companion_store_available=_companion_store is not None,
+            companion_store_available=host_state.companion_store is not None,
             session_db_available=session_db is not None,
         )
         return
     detail_query = CompanionDetailQueryPort(
-        store=_companion_store,
+        store=host_state.companion_store,
         platform_store=service_context.get("capability_platform"),
         cursor_secret=secrets.token_bytes(32),
     )
     notifications = CompanionNotificationService(
-        store=_companion_store,
+        store=host_state.companion_store,
         session_db=session_db,
         live_sink=_broadcast_control,
         detail_query=detail_query,
     )
-    _companion_detail_query = detail_query
-    _companion_notification_service = notifications
+    host_state.companion_detail_query = detail_query
+    host_state.companion_notification_service = notifications
     service_context.register("companion_detail_query", detail_query)
     service_context.register("companion_notification_service", notifications)
     service_context.register("companion_projection_visibility", notifications.visibility)
     try:
-        frozen = _companion_identity_gate.freeze()
+        frozen = host_state.companion_identity_gate.freeze()
     except Exception as unready_exc:  # noqa: BLE001
         # 2026-09-09 事件 AK：这条日志在每一次启动（全新与重启）都会出现——
         # 身份门要等主窗口那次签名 bind 才能 freeze，它**不是**故障。此前它
@@ -1806,7 +1786,7 @@ async def _initialize_companion_projection_services() -> None:
         # 一眼能分清「等签名 bind」和「依赖真的缺失」。
         durable_binding = None
         try:
-            durable_binding = _companion_store.get_profile_binding(device_scope="desktop")
+            durable_binding = host_state.companion_store.get_profile_binding(device_scope="desktop")
         except Exception:  # noqa: BLE001 - observability must never fail startup
             durable_binding = None
         logger.info(
@@ -1859,41 +1839,43 @@ def _initialize_companion_action_decision_service() -> None:
             service_key,
             UnavailableCompanionGrowthControlService(error_code),
         )
-    if _companion_store is None or _companion_identity_gate is None:
+    if host_state.companion_store is None or host_state.companion_identity_gate is None:
         return
     service_context.register(
         "companion_growth_evaluation_decision_service",
-        CompanionEvaluationDecisionService(_companion_store),
+        CompanionEvaluationDecisionService(host_state.companion_store),
     )
     service_context.register(
         "companion_growth_activation_decision_service",
         CompanionActivationDecisionService(
-            _companion_store,
-            ActivationDecisionCoordinator(_companion_store),
-            dispatcher=_companion_activation_dispatcher,
+            host_state.companion_store,
+            ActivationDecisionCoordinator(host_state.companion_store),
+            dispatcher=host_state.companion_activation_dispatcher,
         ),
     )
-    if _companion_detail_query is not None:
+    if host_state.companion_detail_query is not None:
         service_context.register(
             "companion_rollback_service",
             CompanionRollbackDecisionService(
-                _companion_store,
-                _companion_detail_query,
-                dispatcher=_companion_activation_dispatcher,
+                host_state.companion_store,
+                host_state.companion_detail_query,
+                dispatcher=host_state.companion_activation_dispatcher,
             ),
         )
         service_context.register(
             "companion_forget_service",
-            CompanionForgetDecisionService(_companion_store, _companion_detail_query),
+            CompanionForgetDecisionService(
+                host_state.companion_store, host_state.companion_detail_query
+            ),
         )
-    if uow is not None and _sdk_ingress is not None:
+    if uow is not None and host_state.sdk_ingress is not None:
         service_context.register(
             "companion_growth_action_decision_service",
             CompanionActionDecisionService(
-                identity_gate=_companion_identity_gate,
-                companion_store=_companion_store,
+                identity_gate=host_state.companion_identity_gate,
+                companion_store=host_state.companion_store,
                 execution=SqliteExecutionDecisionRecovery(uow.path),
-                kernel_client=_sdk_ingress,
+                kernel_client=host_state.sdk_ingress,
             ),
         )
 
@@ -1908,7 +1890,7 @@ async def _dispatch_companion_action_command(
     body = payload.get("body") if isinstance(payload, dict) else None
     if not isinstance(body, dict):
         raise RuntimeError("companion_action_body_invalid")
-    frozen = _companion_identity_gate.freeze()
+    frozen = host_state.companion_identity_gate.freeze()
     if command_kind == "companion_growth_action_decision":
         from deskpet.companion.action_decisions import (
             TrustedCompanionControlIdentity,
@@ -1944,9 +1926,9 @@ async def _dispatch_companion_action_command(
         await result
     if (
         command_kind in {"companion_rollback", "companion_forget"}
-        and _companion_notification_service is not None
+        and host_state.companion_notification_service is not None
     ):
-        await _companion_notification_service.bind_and_drain(frozen)
+        await host_state.companion_notification_service.bind_and_drain(frozen)
 
 
 # ─── WI-T2.1 v3 build_agent 工厂（接电 VerifyGate）─────────────────
@@ -2572,7 +2554,7 @@ if _session_db is not None:
     _project_binding_service = _ProjectBindingService(
         _state_db_path, write_lock=_session_db._write_lock
     )
-    _session_creation_service = _SessionCreationService(
+    host_state.session_creation_service = _SessionCreationService(
         _project_binding_service,
         session_db=_session_db,
         owner_identity_resolver=_freeze_current_session_owner,
@@ -2591,9 +2573,9 @@ if _session_db is not None:
     )
 else:
     _project_binding_service = None
-    _session_creation_service = None
+    host_state.session_creation_service = None
 service_context.register("project_binding_service", _project_binding_service)
-service_context.register("session_creation_service", _session_creation_service)
+service_context.register("session_creation_service", host_state.session_creation_service)
 service_context.register("vector_worker", None)
 service_context.register("embedder", None)
 service_context.register("skill_loader", _skill_loader)
@@ -2986,7 +2968,7 @@ async def _activate_terminal_operation_audit():
         try:
             consumer = await compose_terminal_audit(
                 _state_db_path,
-                stack_getter=lambda: _sdk_runtime_stack,
+                stack_getter=lambda: host_state.sdk_runtime_stack,
                 subject="deskpet-local-owner-v1",
             )
         except (OSError, sqlite3.Error):
@@ -3042,13 +3024,13 @@ async def _activate_human_memory_host_ports(
     if any(
         item is None
         for item in (
-            _sdk_ingress,
-            _sdk_runtime_stack,
-            _provider_registry,
-            _sdk_provider_binding_resolver,
-            _sdk_runtime_catalog,
-            _sdk_runtime_tool_inventory,
-            _sdk_tool_authority_registry,
+            host_state.sdk_ingress,
+            host_state.sdk_runtime_stack,
+            host_state.provider_registry,
+            host_state.sdk_provider_binding_resolver,
+            host_state.sdk_runtime_catalog,
+            host_state.sdk_runtime_tool_inventory,
+            host_state.sdk_tool_authority_registry,
         )
     ):
         # Fresh installs without a configured Provider keep the Host mutation
@@ -3084,7 +3066,7 @@ async def _activate_human_memory_host_ports(
     from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
     _closure_service = _ensure_task_scope_update_service()
-    if _sdk_provider_binding_resolver is None:
+    if host_state.sdk_provider_binding_resolver is None:
         raise RuntimeError(
             "sdk_context_authority_composition_missing:sdk_provider_binding_resolver"
         )
@@ -3144,13 +3126,13 @@ async def _activate_human_memory_host_ports(
 
     _closure_request_authority = ClosureRequestAuthority(
         _state_db_path,
-        stack_getter=lambda: _sdk_runtime_stack,
+        stack_getter=lambda: host_state.sdk_runtime_stack,
         policy_factory=_primary_history_policy,
     )
 
     def _closure_adapter(record):  # type: ignore[no-untyped-def]
         binding = SdkRunBindingV1.from_record(record)
-        return _sdk_provider_binding_resolver.build_authority(
+        return host_state.sdk_provider_binding_resolver.build_authority(
             binding,
             request_guard=ClosurePhysicalRequestGuard(_closure_request_authority, binding=binding),
         ).provider
@@ -3165,7 +3147,7 @@ async def _activate_human_memory_host_ports(
                     _state_db_path, fence=_closure_fence, adapter_factory=_closure_adapter
                 ),
                 service=_closure_service,
-                run_facts_reader=_sdk_runtime_stack,
+                run_facts_reader=host_state.sdk_runtime_stack,
                 request_authority=_closure_request_authority,
             )
 
@@ -3210,7 +3192,7 @@ async def _activate_human_memory_host_ports(
         subject="deskpet-local-owner-v1",
         owner_id=_runtime_owner_id,
         closure_fallback=_BoundClosureFallback(),
-        ingress=_sdk_ingress,
+        ingress=host_state.sdk_ingress,
         context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
@@ -3226,31 +3208,33 @@ async def _activate_human_memory_host_ports(
                 else ""
             ),
             policy=_primary_history_policy("deskpet-local-owner-v1"),
-            stack_getter=lambda: _sdk_runtime_stack,
+            stack_getter=lambda: host_state.sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),
-            settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(
-                run_id, **kwargs
+            settled_run_reader=lambda run_id, **kwargs: (
+                host_state.sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs)
             ),
         ),
         provider=ProductForegroundProviderPort(
-            _provider_registry,
-            _sdk_provider_binding_resolver,
+            host_state.provider_registry,
+            host_state.sdk_provider_binding_resolver,
         ),
         tools=ProductForegroundToolPort(
             _state_db_path,
-            catalog=_sdk_runtime_catalog,
-            inventory=_sdk_runtime_tool_inventory,
-            registry=_sdk_tool_authority_registry,
+            catalog=host_state.sdk_runtime_catalog,
+            inventory=host_state.sdk_runtime_tool_inventory,
+            registry=host_state.sdk_tool_authority_registry,
         ),
         terminal_observer=SqliteSdkTerminalObserver(
             str(_state_db_path),
-            _sdk_ingress,
-            _sdk_runtime_stack,
+            host_state.sdk_ingress,
+            host_state.sdk_runtime_stack,
             run_fault_memo=_ensure_run_fault_memo(),
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
-        run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
+        run_binding_reader=lambda run_id: host_state.sdk_runtime_stack.read_closure_run_facts(
+            run_id
+        ),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
         state_changed=_primary_state_changed,
@@ -3280,8 +3264,6 @@ async def lifespan(app: FastAPI):
     _protected_paths.set_notifier(_broadcast_control)
     from llm.resolution import ProviderRoutingReadiness
 
-    global _provider_registry, _session_creation_service
-    global _realtime_voice_service
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
     # v33 reset preflight must finish before MemoryManager, workflow,
@@ -3312,12 +3294,12 @@ async def lifespan(app: FastAPI):
                 _state_db_path,
                 startup_epoch,
                 settled_run_reader=lambda run_id, **kwargs: (
-                    _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs)
+                    host_state.sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs)
                 ),
                 run_binding_reader=lambda run_id: (
-                    _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record
+                    host_state.sdk_runtime_stack.read_closure_run_facts(run_id).binding_record
                 ),
-                decision_ingress_getter=lambda: _sdk_ingress,
+                decision_ingress_getter=lambda: host_state.sdk_ingress,
                 display_invalidation=memory_display_invalidation,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
@@ -3330,7 +3312,7 @@ async def lifespan(app: FastAPI):
         # in one SQLite transaction before ingress opens.
         await _session_db.initialize()
         _migrate_legacy_provider_config(_CONFIG_PATH)
-        _provider_registry = LLMProviderRegistry(_CONFIG_PATH)
+        host_state.provider_registry = LLMProviderRegistry(_CONFIG_PATH)
         # 2026-08-09：把 llm_runtime.json 的手填配置同步成一条 registry provider。
         #
         # onboarding 与设置页写的是 llm_runtime.json（用户可直接编辑，明文是有意
@@ -3341,7 +3323,7 @@ async def lifespan(app: FastAPI):
         # 重走一遍 onboarding 才能把配置补进 registry。
         # 只在 registry 为空时补，绝不覆盖用户在设置页管理的多 provider 配置。
         try:
-            await _seed_registry_from_runtime_overrides(_provider_registry)
+            await _seed_registry_from_runtime_overrides(host_state.provider_registry)
         except Exception as _seed_exc:  # noqa: BLE001 - 补种失败不阻断启动
             logger.warning("provider_registry_seed_failed error=%s", str(_seed_exc)[:200])
         await _session_db.reconcile_provider_bindings(
@@ -3350,17 +3332,17 @@ async def lifespan(app: FastAPI):
                     str(entry["incarnation_id"]),
                     int(entry["config_revision"]),
                 )
-                for entry in _provider_registry.list_providers()
+                for entry in host_state.provider_registry.list_providers()
             },
-            registry_digest=_provider_registry.snapshot_digest(),
+            registry_digest=host_state.provider_registry.snapshot_digest(),
         )
-        service_context.register("provider_registry", _provider_registry)
+        service_context.register("provider_registry", host_state.provider_registry)
         if _project_binding_service is not None:
 
             def _validate_created_session_provider(
                 provider_id: str, incarnation: str, revision: int
             ) -> None:
-                entry = _provider_registry.get_entry(provider_id)
+                entry = host_state.provider_registry.get_entry(provider_id)
                 if (
                     entry is None
                     or str(entry.incarnation_id) != incarnation
@@ -3368,9 +3350,9 @@ async def lifespan(app: FastAPI):
                 ):
                     raise RuntimeError("provider_binding_stale")
 
-            _session_creation_service = _SessionCreationService(
+            host_state.session_creation_service = _SessionCreationService(
                 _project_binding_service,
-                provider_mutation_lock=_provider_registry.mutation_lock,
+                provider_mutation_lock=host_state.provider_registry.mutation_lock,
                 session_db=_session_db,
                 owner_identity_resolver=_freeze_current_session_owner,
                 provider_binding_validator=_validate_created_session_provider,
@@ -3386,12 +3368,14 @@ async def lifespan(app: FastAPI):
                 ),
                 allow_test_projectless=False,
             )
-            service_context.register("session_creation_service", _session_creation_service)
-            await _session_creation_service.reconcile_automatic_workspaces()
+            service_context.register(
+                "session_creation_service", host_state.session_creation_service
+            )
+            await host_state.session_creation_service.reconcile_automatic_workspaces()
         _provider_readiness.mark_ready()
         logger.info(
             "provider_routing_ready providers=%d",
-            len(_provider_registry.list_providers()),
+            len(host_state.provider_registry.list_providers()),
         )
     except Exception as _provider_start_exc:  # noqa: BLE001
         _provider_readiness.mark_failed(type(_provider_start_exc).__name__)
@@ -4610,7 +4594,7 @@ async def lifespan(app: FastAPI):
                 provider_snapshot=provider_snapshot,
                 model_snapshot=model_snapshot,
                 registry=service_context.get("provider_registry"),
-                fallback=local_llm or cloud_llm,
+                fallback=host_state.local_llm or cloud_llm,
             )
             shim = _RecoveryShim(provider=provider)
             session_id = str(row.get("session_id") or "default")
@@ -5352,11 +5336,11 @@ async def lifespan(app: FastAPI):
                 )
             if _sup_provider is None:
                 # Last-resort fallback: legacy single-provider mode.
-                _sup_provider = local_llm
+                _sup_provider = host_state.local_llm
                 logger.info(
                     "supervisor_provider_resolved id=legacy base_url=%s — "
                     "registry empty/unavailable; consider adding a provider via Settings",
-                    getattr(local_llm, "base_url", "?"),
+                    getattr(host_state.local_llm, "base_url", "?"),
                 )
 
             # P6 bugfix 2026-05-14 (live-test): auto-mode bypass for
@@ -5676,12 +5660,12 @@ async def lifespan(app: FastAPI):
     except ValueError:
         _realtime_vite_port = 5173
     if REALTIME_VOICE_ENABLED:
-        _realtime_voice_service = RealtimeVoiceService(
+        host_state.realtime_voice_service = RealtimeVoiceService(
             shared_secret=SHARED_SECRET,
             relay_endpoint_supplier=lambda: str(
-                getattr(local_llm, "base_url", config.llm.local.base_url)
+                getattr(host_state.local_llm, "base_url", config.llm.local.base_url)
             ),
-            api_key_supplier=lambda: _current_cloud_api_key or _resolve_cloud_api_key(),
+            api_key_supplier=lambda: host_state.current_cloud_api_key or _resolve_cloud_api_key(),
             allowed_origins=allowed_realtime_origins(_realtime_vite_port),
         )
         logger.info(
@@ -5690,7 +5674,7 @@ async def lifespan(app: FastAPI):
             protocol_version="2026-08-27.1",
         )
     else:
-        _realtime_voice_service = None
+        host_state.realtime_voice_service = None
         logger.info(
             "realtime_voice_disabled",
             path="/ws/realtime-voice",
@@ -5698,19 +5682,17 @@ async def lifespan(app: FastAPI):
         )
     logger.info("startup complete")
     yield
-    if _realtime_voice_service is not None:
+    if host_state.realtime_voice_service is not None:
         try:
-            await _realtime_voice_service.close()
+            await host_state.realtime_voice_service.close()
             logger.info("realtime_voice_stopped")
         except Exception:  # noqa: BLE001
             logger.warning("realtime_voice_shutdown_failed")
         finally:
-            _realtime_voice_service = None
+            host_state.realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
 
     await shutdown_default_gateway()
-    global _sdk_runtime_stack, _sdk_ingress
-    global _sdk_desktop_bridge
     _foreground_runtime = service_context.get("human_memory_foreground_runtime_execution_authority")
     if _foreground_runtime is not None:
         try:
@@ -5734,8 +5716,8 @@ async def lifespan(app: FastAPI):
     service_context.register("human_memory_foreground_scheduler_wake", None)
     service_context.register("human_memory_foreground_runtime_execution_authority", None)
     # Close SDK Runtime ingress
-    if _sdk_ingress is not None:
-        _sdk_ingress.close()
+    if host_state.sdk_ingress is not None:
+        host_state.sdk_ingress.close()
     _pending_sdk_recovery = tuple(_sdk_recovery_watch_tasks.values())
     for _task in _pending_sdk_recovery:
         _task.cancel()
@@ -5782,13 +5764,13 @@ async def lifespan(app: FastAPI):
             return_exceptions=True,
         )
     _provider_workload_maintenance_tasks.clear()
-    if _sdk_desktop_bridge is not None:
+    if host_state.sdk_desktop_bridge is not None:
         try:
-            await _sdk_desktop_bridge.close()
+            await host_state.sdk_desktop_bridge.close()
         except Exception as exc:  # noqa: BLE001
             logger.warning("sdk_desktop_test_shutdown_failed", error=str(exc))
         finally:
-            _sdk_desktop_bridge = None
+            host_state.sdk_desktop_bridge = None
             service_context.register("sdk_runtime_ready", None)
     # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration）先于 SDK stack 关闭。
     # 这只是有序关停路径；App 真实退出是 SIGKILL，编排的正确性不依赖这里。
@@ -5799,15 +5781,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         logger.warning("orchestration_shutdown_failed", error=str(exc))
     # Close SDK Runtime Stack (Slice C)
-    if _sdk_runtime_stack is not None:
+    if host_state.sdk_runtime_stack is not None:
         try:
-            await _sdk_runtime_stack.close()
+            await host_state.sdk_runtime_stack.close()
             logger.info("product_sdk_runtime_stopped")
         except Exception as exc:  # noqa: BLE001
             logger.warning("product_sdk_runtime_shutdown_failed", error=str(exc))
         finally:
-            _sdk_runtime_stack = None
-            _sdk_ingress = None
+            host_state.sdk_runtime_stack = None
+            host_state.sdk_ingress = None
             from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
             for _sdk_run_id, _retained in tuple(_sdk_retained_presentations.items()):
@@ -6122,7 +6104,7 @@ async def _project_open_sdk_authorizations(
 ) -> int:
     """Project durable SDK Tool decisions through the existing desktop UI protocol."""
 
-    ingress = _sdk_ingress
+    ingress = host_state.sdk_ingress
     if ingress is None or not hasattr(ingress, "list_open_authorizations"):
         return 0
     try:
@@ -7183,7 +7165,7 @@ async def _build_product_agent_loop(request):
         providers[0]
         if providers
         else _select_code_workflow_provider(
-            local_llm=local_llm,
+            local_llm=host_state.local_llm,
             cloud_llm=cloud_llm,
         )
     )
@@ -7279,13 +7261,9 @@ async def _build_product_agent_loop(request):
 
 
 # SDK Runtime globals (production ingress)
-_sdk_runtime_stack = None
-_sdk_ingress = None
 # F06：单例 retry-once provider reconciliation；SDK 端口与前台运行时共用同一份
 # ``exhausted_runs``（二次未知的 run 由前台 cancel 收尾）。
-_provider_reconciliation = None
 # F06：SDK 栈构建时绑定的 Host RuntimeReconciliationPort（coordinator.reconcile_incomplete）。
-_runtime_reconciliation = None
 
 
 async def _reconcile_incomplete_providers(sdk_run_id: str) -> int:
@@ -7295,54 +7273,49 @@ async def _reconcile_incomplete_providers(sdk_run_id: str) -> int:
     运行期并发 Run 共享同一个 coordinator，全量调和会把别人在飞行中的 ``HANDED_OFF``
     判成 UNKNOWN → 正常响应被丢弃 + 重复发送。
     """
-    if _runtime_reconciliation is None:
+    if host_state.runtime_reconciliation is None:
         return 0
-    return await _runtime_reconciliation.reconcile_for_run(sdk_run_id)
+    return await host_state.runtime_reconciliation.reconcile_for_run(sdk_run_id)
 
 
 def _ensure_provider_reconciliation():
-    global _provider_reconciliation
-    if _provider_reconciliation is None:
+    if host_state.provider_reconciliation is None:
         from deskpet.sdk_adapters.reconciliation import (
             ProductProviderRetryOnceReconciliation,
         )
 
-        _provider_reconciliation = ProductProviderRetryOnceReconciliation()
-    return _provider_reconciliation
+        host_state.provider_reconciliation = ProductProviderRetryOnceReconciliation()
+    return host_state.provider_reconciliation
 
 
 # Shared final Tool-effect admission gate.  The SDK effect executor consults
 # it before every physical dispatch; the foreground runtime registers exact
 # lease identities into it.  Created lazily because the SDK stack starts
 # before the human-memory foreground ports.
-_foreground_effect_gate = None
 
 
 def _ensure_foreground_effect_gate():  # type: ignore[no-untyped-def]
-    global _foreground_effect_gate
-    if _foreground_effect_gate is None:
+    if host_state.foreground_effect_gate is None:
         from deskpet.execution.foreground_runtime import (
             ForegroundEffectAdmissionGate,
         )
 
-        _foreground_effect_gate = ForegroundEffectAdmissionGate()
-    return _foreground_effect_gate
+        host_state.foreground_effect_gate = ForegroundEffectAdmissionGate()
+    return host_state.foreground_effect_gate
 
 
 # S5b Task 1: process-local memo of whole-Run fault codes.  The authorities
 # that raise a Run fault (TaskExecutionEnvelope authority, run Tool exposure)
 # record the stable code; the SDK terminal observer copies it into the
 # ``run_terminal`` evidence ``public_payload.error_code`` on durable FAILED.
-_run_fault_memo = None
 
 
 def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
-    global _run_fault_memo
-    if _run_fault_memo is None:
+    if host_state.run_fault_memo is None:
         from deskpet.sdk_adapters.run_faults import RunFaultMemo
 
-        _run_fault_memo = RunFaultMemo()
-    return _run_fault_memo
+        host_state.run_fault_memo = RunFaultMemo()
+    return host_state.run_fault_memo
 
 
 # HM-TO-A6 incident A: process-local memo of the ContextRouteState each provider
@@ -7350,16 +7323,14 @@ def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
 # capability-discovery bridge reads it so tool_search / tool_describe /
 # tool_activate stop offering PROJECT_EFFECT Tools the Run's route can never
 # execute.  Advisory only; every authority check downstream is unchanged.
-_run_route_state_memo = None
 
 
 def _ensure_run_route_state_memo():  # type: ignore[no-untyped-def]
-    global _run_route_state_memo
-    if _run_route_state_memo is None:
+    if host_state.run_route_state_memo is None:
         from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
 
-        _run_route_state_memo = RunRouteStateMemo()
-    return _run_route_state_memo
+        host_state.run_route_state_memo = RunRouteStateMemo()
+    return host_state.run_route_state_memo
 
 
 # S5b Task 2: single owner of Harness evidence reservations / same-transaction
@@ -7367,44 +7338,34 @@ def _ensure_run_route_state_memo():  # type: ignore[no-untyped-def]
 # executor (tool_invocation + host.file/host.test), the provider coordinator
 # (provider_invocation) and the v45 route ledger (snapshot / route facts); the
 # terminal observer drains it through the SDK runtime stack's fact reader.
-_evidence_ingress = None
 
 
 def _ensure_evidence_ingress():  # type: ignore[no-untyped-def]
-    global _evidence_ingress
-    if _evidence_ingress is None:
+    if host_state.evidence_ingress is None:
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
-        _evidence_ingress = ExecutionEvidenceIngress(_state_db_path)
-    return _evidence_ingress
+        host_state.evidence_ingress = ExecutionEvidenceIngress(_state_db_path)
+    return host_state.evidence_ingress
 
 
-_sdk_context_port = None
-_sdk_runtime_catalog: dict[str, Any] | None = None
-_sdk_run_binding_registry = None
-_sdk_provider_binding_resolver = None
 # S5b Task 3: the `task_scope_update` handler shared by the Tool registration and
 # the terminal closure fallback (process-wide, like the binding resolver above).
-_task_scope_update_service = None
 
 
 def _ensure_task_scope_update_service():  # type: ignore[no-untyped-def]
-    global _task_scope_update_service
-    if _task_scope_update_service is None:
+    if host_state.task_scope_update_service is None:
         from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
         from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
         from deskpet.sdk_adapters.tools import active_product_tool_context
 
-        _task_scope_update_service = TaskScopeUpdateService(
+        host_state.task_scope_update_service = TaskScopeUpdateService(
             _state_db_path,
             tool_context_getter=active_product_tool_context,
             route_ledger=ContextRouteLedgerStore(_state_db_path),
         )
-    return _task_scope_update_service
+    return host_state.task_scope_update_service
 
 
-_sdk_tool_authority_registry = None
-_sdk_runtime_tool_inventory = None
 # Product/UI projections expose the Host canonical root id, while RunClient
 # cancellation is keyed by the SDK's deterministic internal id. Keep the
 # active bridge explicit and bounded to the lifetime of _execute_sdk_run.
@@ -7413,8 +7374,6 @@ _sdk_cancel_requested_run_ids: set[str] = set()
 _sdk_retained_presentations: dict[str, tuple[Any, Any, Any, Any]] = {}
 _sdk_recovery_watch_tasks: dict[str, asyncio.Task] = {}
 _sdk_unavailable_tool_authority_runs: set[str] = set()
-
-_sdk_desktop_bridge = None
 
 
 class _RecoveredSdkWebSocket:
@@ -7680,7 +7639,7 @@ class _ProductSdkProviderBindingResolver:
 
             await check_runtime_dependencies(
                 db_path=_state_db_path,
-                stack=_sdk_runtime_stack,
+                stack=host_state.sdk_runtime_stack,
                 sdk_run_id=binding.run_id,
                 request=request,
                 policy_factory=_primary_history_policy,
@@ -7770,9 +7729,9 @@ class _ProductSdkProviderBindingResolver:
 def _assert_sdk_provider_mutation_allowed(provider_ids: Any) -> None:
     """Fence mutations that would invalidate active or WAITING Run leases."""
 
-    if _sdk_provider_binding_resolver is None:
+    if host_state.sdk_provider_binding_resolver is None:
         return
-    active = _sdk_provider_binding_resolver.active_provider_ids()
+    active = host_state.sdk_provider_binding_resolver.active_provider_ids()
     conflicts = active.intersection(str(item) for item in provider_ids)
     if conflicts:
         raise ProviderMutationConflict(sorted(conflicts)[0])
@@ -7788,7 +7747,6 @@ def _sdk_desktop_test_enabled() -> bool:
 def _initialize_sdk_desktop_test_bridge() -> None:
     """Install the narrow SDK desktop-test ingress without changing normal boots."""
 
-    global _sdk_desktop_bridge
     if not _sdk_desktop_test_enabled():
         return
     provider_registry = service_context.get("provider_registry")
@@ -7796,7 +7754,7 @@ def _initialize_sdk_desktop_test_bridge() -> None:
         raise RuntimeError("SDK desktop test requires the product provider registry")
     from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge
 
-    _sdk_desktop_bridge = DesktopSdkRuntimeBridge(
+    host_state.sdk_desktop_bridge = DesktopSdkRuntimeBridge(
         user_data_root=_paths.user_data_dir(),
         provider_registry=provider_registry,
         ready_publisher=lambda ready: service_context.register("sdk_runtime_ready", ready),
@@ -7812,9 +7770,9 @@ def _initialize_sdk_desktop_test_bridge() -> None:
 def _trigger_harness_recovery_after_identity_bind() -> bool:
     """Retry durable Runs only after the process identity gate is open."""
 
-    if _sdk_ingress is None:
+    if host_state.sdk_ingress is None:
         return False
-    reconciler = getattr(_sdk_ingress, "reconciler", None)
+    reconciler = getattr(host_state.sdk_ingress, "reconciler", None)
     trigger = getattr(reconciler, "trigger", None)
     if not callable(trigger):
         return False
@@ -8126,11 +8084,13 @@ async def _build_product_sdk_runtime_stack(
     delegation_service = ProductDelegationService(
         uow_getter=lambda: delegation_uow.get("uow"),
         runtime_getter=lambda: (
-            _sdk_ingress.require_ready().runtime if _sdk_ingress is not None else None
+            host_state.sdk_ingress.require_ready().runtime
+            if host_state.sdk_ingress is not None
+            else None
         ),
         tool_authorities=tool_authorities,
         binding_resolver=provider_binding_resolver,
-        context_port_getter=lambda: _sdk_context_port,
+        context_port_getter=lambda: host_state.sdk_context_port,
         on_parent_woken=lambda run_id: _ensure_sdk_recovery_watcher(run_id),
         # 同步等待不能拖过父运行自己的墙钟上限。
         wait_seconds=min(900.0, float(_max_wall_seconds) * 0.8),
@@ -8304,7 +8264,7 @@ async def _build_product_sdk_runtime_stack(
 
     context_page_store.primary_reader = PrimaryContextPageReader(
         _state_db_path,
-        stack_getter=lambda: _sdk_runtime_stack,
+        stack_getter=lambda: host_state.sdk_runtime_stack,
         policy_factory=_primary_history_policy,
     )
     # G1: durable payload-free page-in issue/consume receipts in the audit sidecar.
@@ -8337,7 +8297,7 @@ async def _build_product_sdk_runtime_stack(
 
     scope_disclosure = ScopeDisclosureReader(
         _state_db_path,
-        stack_getter=lambda: _sdk_runtime_stack,
+        stack_getter=lambda: host_state.sdk_runtime_stack,
         policy_factory=_primary_history_policy,
     )
     _context_route_service = ContextRouteToolService(
@@ -8801,12 +8761,11 @@ async def _build_product_sdk_runtime_stack(
     # provider coordinator 的 reconcile_incomplete，provider 侧用 retry-once 策略。
     from deskpet.sdk_adapters.reconciliation import ProductRuntimeReconciliation
 
-    global _runtime_reconciliation
     provider_reconciliation = _ensure_provider_reconciliation()
     runtime_reconciliation = ProductRuntimeReconciliation(
         lambda: production_ports.get("ports"), provider_reconciliation
     )
-    _runtime_reconciliation = runtime_reconciliation
+    host_state.runtime_reconciliation = runtime_reconciliation
 
     projection_pump = None
     from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
@@ -8874,9 +8833,8 @@ async def _build_product_sdk_runtime_stack(
 
     def ports_factory(database, uow):
         nonlocal projection_pump
-        global _sdk_context_port
         context = SqliteContextPort(database, clock=clock)
-        _sdk_context_port = context
+        host_state.sdk_context_port = context
         delegation_uow["uow"] = uow
         from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
@@ -9296,7 +9254,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         reconcile=reconcile,
         typed_use_authority=typed_use_authority,
         occurrence_coordinator=occurrence_coordinator,
-        current_tool_projector=CurrentToolProjector(db_path, lambda: _sdk_runtime_stack),
+        current_tool_projector=CurrentToolProjector(db_path, lambda: host_state.sdk_runtime_stack),
         closure_reader=closure_reader,
         # HM-TO-A6 incident A: publish this turn's route state to the
         # capability-discovery surface (same value that shrinks the specs).
@@ -9317,7 +9275,7 @@ def _resolve_sdk_provider_binding_resolver():  # type: ignore[no-untyped-def]
     """
 
     resolver = service_context.get("sdk_provider_binding_resolver")
-    return resolver if resolver is not None else _sdk_provider_binding_resolver
+    return resolver if resolver is not None else host_state.sdk_provider_binding_resolver
 
 
 def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-def]
@@ -9325,7 +9283,7 @@ def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-
 
     from deskpet.sdk_adapters.provider import provider_endpoint_identity
 
-    registry = _provider_registry
+    registry = host_state.provider_registry
     if registry is None:
         return None
     entry = registry.get_entry(str(record.get("provider_id") or ""))
@@ -9372,7 +9330,7 @@ async def _issue_product_harness_host(
             None
             if allow_provider_unavailable
             else _select_code_workflow_provider(
-                local_llm=local_llm,
+                local_llm=host_state.local_llm,
                 cloud_llm=cloud_llm,
             )
         )
@@ -9552,7 +9510,7 @@ async def _snapshot_context_usage_basis_for_run(session_db: Any, session_id: str
 
 
 async def _voice_run_host(session_id: str):
-    if _sdk_ingress is None:
+    if host_state.sdk_ingress is None:
         raise RuntimeError("SDK Runtime is unavailable")
     host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
         session_id=session_id, workspace=None
@@ -9568,7 +9526,7 @@ async def _cancel_product_harness_run(
 ) -> bool:
     """Cancel one authenticated Run without consulting a process-local task map."""
 
-    if _sdk_ingress is None or not _sdk_ingress.accepting or not run_id:
+    if host_state.sdk_ingress is None or not host_state.sdk_ingress.accepting or not run_id:
         return False
     # SDK RunClient.cancel(run_id) resolves the persisted Run and its frozen
     # start snapshot (which carries the session identity), so cancellation is
@@ -9585,7 +9543,9 @@ async def _cancel_product_harness_run(
     )
     _sdk_cancel_requested_run_ids.add(sdk_run_id)
     try:
-        cancelled_record = await _sdk_ingress.require_ready().client.cancel(SdkRunId(sdk_run_id))
+        cancelled_record = await host_state.sdk_ingress.require_ready().client.cancel(
+            SdkRunId(sdk_run_id)
+        )
         cancelled_state = str(
             getattr(
                 getattr(cancelled_record, "state", None),
@@ -9638,7 +9598,11 @@ def _authoritative_sdk_run_projection(root_run_id: str, sdk_run_id: str = "") ->
     resolved_sdk_run_id = str(
         sdk_run_id or _sdk_run_ids_by_root.get(root_run_id, root_run_id)
     ).strip()
-    if _sdk_ingress is None or not _sdk_ingress.accepting or not resolved_sdk_run_id:
+    if (
+        host_state.sdk_ingress is None
+        or not host_state.sdk_ingress.accepting
+        or not resolved_sdk_run_id
+    ):
         return {
             "sdk_run_id": resolved_sdk_run_id,
             "run_version": 0,
@@ -9648,7 +9612,7 @@ def _authoritative_sdk_run_projection(root_run_id: str, sdk_run_id: str = "") ->
             "retryable": True,
             "terminal_event_ref": None,
         }
-    record = _sdk_ingress.query(resolved_sdk_run_id)
+    record = host_state.sdk_ingress.query(resolved_sdk_run_id)
     if record is None:
         return {
             "sdk_run_id": resolved_sdk_run_id,
@@ -9737,7 +9701,7 @@ async def _signal_product_harness_decision(
 ):
     """Apply one fenced UI decision to the durable execution authority."""
 
-    if _sdk_ingress is None or not _sdk_ingress.accepting:
+    if host_state.sdk_ingress is None or not host_state.sdk_ingress.accepting:
         raise RuntimeError("SDK Runtime decision ingress is closed")
     run_id = str(payload.get("run_id") or "").strip()
     decision_id = str(payload.get("decision_id") or payload.get("request_id") or "").strip()
@@ -9751,7 +9715,7 @@ async def _signal_product_harness_decision(
     if is_primary_sdk_target(_state_db_path, sdk_run_id):
         raise ValueError("primary_decision_requires_authenticated_control")
     if authorization:
-        receipt = await _sdk_ingress.decide_authorization(
+        receipt = await host_state.sdk_ingress.decide_authorization(
             run_id=sdk_run_id,
             decision_id=decision_id,
             nonce=nonce,
@@ -9759,7 +9723,7 @@ async def _signal_product_harness_decision(
             decision=str(response.get("decision") or "deny"),
         )
     else:
-        receipt = await _sdk_ingress.signal(
+        receipt = await host_state.sdk_ingress.signal(
             run_id=sdk_run_id,
             signal_id=decision_id,
             payload={
@@ -9911,7 +9875,11 @@ async def _run_product_harness_continuation(
 
     workflow_service = service_context.get("workflow_service")
     execution_uow = getattr(workflow_service, "execution_uow", None)
-    if _sdk_ingress is None or not _sdk_ingress.accepting or execution_uow is None:
+    if (
+        host_state.sdk_ingress is None
+        or not host_state.sdk_ingress.accepting
+        or execution_uow is None
+    ):
         raise RuntimeError("SDK Runtime continuation ingress is closed")
     projection = await execution_uow.get_task_run_projection(root_run_id)
     boundary = await execution_uow.get_conversation_boundary(root_run_id)
@@ -9972,7 +9940,7 @@ async def _run_product_harness_continuation(
         text,
         context_source_snapshot_ref=source_ref,
     )
-    receipt = await _sdk_ingress.signal_conversation(
+    receipt = await host_state.sdk_ingress.signal_conversation(
         run_id=sdk_run_id,
         continuation_id=message_ref,
         value=continuation_value,
@@ -10177,7 +10145,7 @@ async def _commit_product_preflight_block(
 
     from deskpet.execution.contracts import RunRef, root_idempotency_key
 
-    if _sdk_ingress is None or _sdk_runtime_stack is None:
+    if host_state.sdk_ingress is None or host_state.sdk_runtime_stack is None:
         raise RuntimeError("SDK Runtime is unavailable")
     del host
     root_run_id = RunRef(
@@ -10187,7 +10155,7 @@ async def _commit_product_preflight_block(
         ).hex,
         session_id,
     ).run_id
-    await _sdk_runtime_stack.commit_preflight_blocked_root(
+    await host_state.sdk_runtime_stack.commit_preflight_blocked_root(
         execution_session_id=session_id,
         run_id=root_run_id,
         request_id=request_id,
@@ -10247,7 +10215,7 @@ async def _run_sdk_desktop_chat(
 ) -> None:
     """Present one real SDK ReAct Run through the existing desktop protocol."""
 
-    bridge = _sdk_desktop_bridge
+    bridge = host_state.sdk_desktop_bridge
     if bridge is None:
         raise RuntimeError("SDK desktop test bridge is unavailable")
     request_id = str(client_request_id or "").strip() or uuid.uuid4().hex
@@ -10353,7 +10321,7 @@ async def _run_product_harness_chat(
         RootBlockReasonV1,
     )
 
-    if _sdk_ingress is None or not _sdk_ingress.accepting:
+    if host_state.sdk_ingress is None or not host_state.sdk_ingress.accepting:
         raise RuntimeError("SDK Runtime ingress is closed")
     session_db = service_context.get("session_db")
     vector_worker = service_context.get("vector_worker")
@@ -10536,7 +10504,7 @@ async def _run_product_harness_chat(
         else await _snapshot_context_usage_basis_for_run(session_db, session_id)
     )
     if retry_handle is None and session_db is not None and not is_sentinel:
-        frozen_owner = _companion_identity_gate.freeze()
+        frozen_owner = host_state.companion_identity_gate.freeze()
         # New Sessions are bound atomically during creation. This idempotent
         # admission also claims older empty ownerless Sessions created before
         # the dynamic identity resolver fix; messageful or mismatched Sessions
@@ -10568,7 +10536,7 @@ async def _run_product_harness_chat(
             run_id=root_ref.run_id,
             priority=priority,
         )
-        if _companion_ingress_dispatcher is None:
+        if host_state.companion_ingress_dispatcher is None:
             raise RuntimeError("Companion ingress dispatcher is unavailable")
         if vector_worker is not None:
             await vector_worker.enqueue(user_message_id, text)
@@ -10670,10 +10638,10 @@ async def _run_product_harness_chat(
         from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
         if (
-            _sdk_provider_binding_resolver is None
-            or _sdk_runtime_catalog is None
-            or _sdk_tool_authority_registry is None
-            or _sdk_runtime_tool_inventory is None
+            host_state.sdk_provider_binding_resolver is None
+            or host_state.sdk_runtime_catalog is None
+            or host_state.sdk_tool_authority_registry is None
+            or host_state.sdk_runtime_tool_inventory is None
         ):
             raise RuntimeError("SDK per-Run authority is unavailable")
         sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
@@ -10691,8 +10659,8 @@ async def _run_product_harness_chat(
         from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
 
         run_tool_catalog, run_tool_inventory = filter_sdk_catalog_for_workspace(
-            _sdk_runtime_catalog,
-            _sdk_runtime_tool_inventory,
+            host_state.sdk_runtime_catalog,
+            host_state.sdk_runtime_tool_inventory,
             workspace_resolution_kind=str(workspace_resolution["kind"]),
         )
         from deskpet.agent.assembler.components.persona import _resolve_persona
@@ -10754,7 +10722,7 @@ async def _run_product_harness_chat(
         public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
         if session_db is not None:
             await session_db.put_sdk_context_public_snapshot(public_snapshot)
-        run_binding = _sdk_provider_binding_resolver.create_binding(
+        run_binding = host_state.sdk_provider_binding_resolver.create_binding(
             run_id=sdk_run_id,
             session_id=session_id,
             request_id=request_id,
@@ -10809,7 +10777,7 @@ async def _run_product_harness_chat(
             )
 
         try:
-            _sdk_tool_authority_registry.prepare_run(
+            host_state.sdk_tool_authority_registry.prepare_run(
                 run_id=sdk_run_id,
                 session_id=session_id,
                 request_id=request_id,
@@ -10825,7 +10793,7 @@ async def _run_product_harness_chat(
                 resource_records=global_skill_records,
             )
         except BaseException:
-            _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
+            host_state.sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
             raise
         # Execute Agent via SDK Runtime. Concurrent Sessions resolve their own
         # immutable binding; no global stack mutation or full-Run lock occurs.
@@ -10843,7 +10811,7 @@ async def _run_product_harness_chat(
             context_stage=None,
             context_binding_id=context_binding_id,
         )
-        context_run = _sdk_ingress.query(sdk_run_id)
+        context_run = host_state.sdk_ingress.query(sdk_run_id)
         context_run_state = str(
             getattr(
                 getattr(context_run, "state", None),
@@ -10914,12 +10882,12 @@ async def _run_product_harness_chat(
         if (
             user_message_id is not None
             and frozen_owner is not None
-            and _companion_ingress_dispatcher is not None
+            and host_state.companion_ingress_dispatcher is not None
         ):
             try:
                 # Idempotent failure fallback. A prior model promotion is
                 # monotonic and cannot be downgraded by this "none" settle.
-                await _companion_ingress_dispatcher.settle_semantic_intent(
+                await host_state.companion_ingress_dispatcher.settle_semantic_intent(
                     session_id=session_id,
                     message_id=user_message_id,
                     request_id=request_id,
@@ -11057,9 +11025,6 @@ async def _activate_product_sdk_runtime(
     configured_workspace_root=None,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
-    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
-    global _sdk_provider_binding_resolver, _sdk_run_binding_registry
-    global _sdk_tool_authority_registry, _sdk_runtime_tool_inventory
 
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from deskpet.workflows.store import RuntimeActivationCommand
@@ -11203,13 +11168,15 @@ async def _activate_product_sdk_runtime(
         runtime_stack=stack,
     ).reconcile_pending()
 
-    _sdk_runtime_stack = stack
-    _sdk_ingress = ingress
-    _sdk_runtime_catalog = service_context.get("sdk_runtime_catalog")
-    _sdk_provider_binding_resolver = service_context.get("sdk_provider_binding_resolver")
-    _sdk_run_binding_registry = getattr(_sdk_provider_binding_resolver, "registry", None)
-    _sdk_tool_authority_registry = service_context.get("sdk_tool_authority_registry")
-    _sdk_runtime_tool_inventory = service_context.get("sdk_runtime_tool_inventory")
+    host_state.sdk_runtime_stack = stack
+    host_state.sdk_ingress = ingress
+    host_state.sdk_runtime_catalog = service_context.get("sdk_runtime_catalog")
+    host_state.sdk_provider_binding_resolver = service_context.get("sdk_provider_binding_resolver")
+    host_state.sdk_run_binding_registry = getattr(
+        host_state.sdk_provider_binding_resolver, "registry", None
+    )
+    host_state.sdk_tool_authority_registry = service_context.get("sdk_tool_authority_registry")
+    host_state.sdk_runtime_tool_inventory = service_context.get("sdk_runtime_tool_inventory")
     for recovered_run_id in tuple(_sdk_retained_presentations):
         _ensure_sdk_recovery_watcher(recovered_run_id)
 
@@ -11232,8 +11199,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     Skips if SDK Runtime is unavailable (e.g. no provider configured).
     """
 
-    global _sdk_ingress
-    if _sdk_runtime_stack is None or _sdk_ingress is None:
+    if host_state.sdk_runtime_stack is None or host_state.sdk_ingress is None:
         logger.warning(
             "companion_runtime_adapter_skipped",
             reason="SDK Runtime unavailable - configure LLM provider in Settings",
@@ -11242,7 +11208,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
 
     runtime = service_context.get("companion_runtime")
     growth_pipeline = service_context.get("companion_growth_pipeline")
-    store = globals().get("_companion_store")
+    store = host_state.companion_store
     if runtime is None or store is None or growth_pipeline is None:
         raise RuntimeError("Companion runtime composition is unavailable")
 
@@ -11272,7 +11238,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
         )
 
     runtime.handler = BackgroundRunAdapter(
-        client=_sdk_ingress.require_ready().client,
+        client=host_state.sdk_ingress.require_ready().client,
         store=store,
         host_factory=_background_host,
         prepared_context_factory=growth_pipeline.prepared_context,
@@ -11281,7 +11247,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     )
 
     # Open SDK ingress
-    _sdk_ingress.open()
+    host_state.sdk_ingress.open()
     foreground_runtime = service_context.get("human_memory_foreground_runtime_execution_authority")
     if foreground_runtime is not None:
         # Startup recovery enters through the same public wake as enqueue;
@@ -11299,7 +11265,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
 
     logger.info(
         "companion_runtime_adapter_ready product_ingress=open phase=%s sdk_version=%s",
-        _growth_authority_router.current.phase.value,
+        host_state.growth_authority_router.current.phase.value,
         SDK_VERSION,
     )
 
@@ -11404,16 +11370,18 @@ async def _attach_companion_history_events(
 ) -> list[dict[str, Any]]:
     """Apply the current CompanionStore owner overlay before exposing history."""
 
-    if _companion_notification_service is None:
+    if host_state.companion_notification_service is None:
         return []
     try:
-        frozen = _companion_identity_gate.freeze()
+        frozen = host_state.companion_identity_gate.freeze()
     except Exception:
         return []
     try:
-        if not _companion_notification_service.history_ready(frozen):
-            await _companion_notification_service.bind_and_drain(frozen)
-        return await _companion_notification_service.visibility.project_history(frozen, rows)
+        if not host_state.companion_notification_service.history_ready(frozen):
+            await host_state.companion_notification_service.bind_and_drain(frozen)
+        return await host_state.companion_notification_service.visibility.project_history(
+            frozen, rows
+        )
     except Exception as exc:  # noqa: BLE001
         # Companion is fail-closed, while the caller still returns ordinary
         # conversation/workflow messages from SessionDB.
@@ -11462,8 +11430,8 @@ async def _bind_companion_inbox_route(
         }:
             return False
         raise
-    if _companion_notification_service is not None:
-        await _companion_notification_service.bind_and_drain(frozen_identity)
+    if host_state.companion_notification_service is not None:
+        await host_state.companion_notification_service.bind_and_drain(frozen_identity)
     return True
 
 
@@ -12514,11 +12482,11 @@ async def _execute_sdk_run(
     catalog = dict(private["catalog"])
     budget = dict(private["budget"])
     tool_authority = (
-        _sdk_tool_authority_registry.resolve(sdk_run_id)
-        if _sdk_tool_authority_registry is not None
+        host_state.sdk_tool_authority_registry.resolve(sdk_run_id)
+        if host_state.sdk_tool_authority_registry is not None
         else None
     )
-    if _sdk_tool_authority_registry is not None and tool_authority is None:
+    if host_state.sdk_tool_authority_registry is not None and tool_authority is None:
         raise RuntimeError("SDK Run Tool authority is unavailable")
     payload = {
         "input": {"text": str(getattr(context, "text", ""))},
@@ -12586,7 +12554,7 @@ async def _execute_sdk_run(
     )
 
     try:
-        receipt = await _sdk_ingress.start(
+        receipt = await host_state.sdk_ingress.start(
             session_id=session_id,
             request_id=request_id,
             turn_id=str(turn_id),
@@ -12642,10 +12610,10 @@ async def _execute_sdk_run(
 
         # Wait for SDK Runtime to complete
         # Events are pushed via DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
-        await _sdk_ingress.wait_idle(sdk_run_id)
+        await host_state.sdk_ingress.wait_idle(sdk_run_id)
 
         # Query final state
-        final_state = _sdk_ingress.query(sdk_run_id)
+        final_state = host_state.sdk_ingress.query(sdk_run_id)
         sdk_state = getattr(final_state, "state", final_state)
         sdk_state_value = str(getattr(sdk_state, "value", sdk_state))
         if sdk_run_id in _sdk_cancel_requested_run_ids:
@@ -12665,10 +12633,10 @@ async def _execute_sdk_run(
         if sdk_state_value == "waiting":
             terminal_binding_state = None
             _sdk_retained_presentations[sdk_run_id] = (delivery_adapter, presenter, state, context)
-            if _sdk_provider_binding_resolver is not None:
-                _sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
-            if _sdk_tool_authority_registry is not None:
-                _sdk_tool_authority_registry.mark_waiting(sdk_run_id)
+            if host_state.sdk_provider_binding_resolver is not None:
+                host_state.sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
+            if host_state.sdk_tool_authority_registry is not None:
+                host_state.sdk_tool_authority_registry.mark_waiting(sdk_run_id)
             await _project_open_sdk_authorizations(
                 websocket,
                 sdk_run_id=sdk_run_id,
@@ -12715,12 +12683,12 @@ async def _execute_sdk_run(
         # SDK 的 ReAct driver 不产生 delivery 事件，assistant 文本只落在 SDK 的
         # context 里。这里手动把它桥接回 presenter，走 _present_final 的
         # 「写 SessionDB + 推 WebSocket」既有展示链路。
-        if _sdk_context_port is not None:
+        if host_state.sdk_context_port is not None:
             try:
                 from agent.agent_loop import FinalEvent
                 from simple_harness import RunId as SdkRunId
 
-                sdk_context = _sdk_context_port.load(SdkRunId(sdk_run_id))
+                sdk_context = host_state.sdk_context_port.load(SdkRunId(sdk_run_id))
                 assistant_texts = [
                     message.content
                     for message in sdk_context.messages
@@ -12753,14 +12721,24 @@ async def _execute_sdk_run(
 
     finally:
         _sdk_observability.reset_ingress(observability_token)
-        if terminal_binding_state is not None and _sdk_provider_binding_resolver is not None:
+        if (
+            terminal_binding_state is not None
+            and host_state.sdk_provider_binding_resolver is not None
+        ):
             try:
-                _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, terminal_binding_state)
+                host_state.sdk_provider_binding_resolver.mark_terminal(
+                    sdk_run_id, terminal_binding_state
+                )
             except KeyError:
                 pass
-        if terminal_binding_state is not None and _sdk_tool_authority_registry is not None:
+        if (
+            terminal_binding_state is not None
+            and host_state.sdk_tool_authority_registry is not None
+        ):
             try:
-                _sdk_tool_authority_registry.mark_terminal(sdk_run_id, terminal_binding_state)
+                host_state.sdk_tool_authority_registry.mark_terminal(
+                    sdk_run_id, terminal_binding_state
+                )
             except KeyError:
                 pass
         # WAITING is durable and resumable: retain both delivery and identity
@@ -12792,14 +12770,14 @@ async def _watch_retained_sdk_run(
     from simple_harness import RunId as SdkRunId
 
     retained = _sdk_retained_presentations.get(sdk_run_id)
-    if retained is None or _sdk_ingress is None:
+    if retained is None or host_state.sdk_ingress is None:
         return
     delivery, presenter, state, context = retained
     terminal_state: str | None = None
     projection_committed = False
     try:
-        await _sdk_ingress.wait_idle(sdk_run_id)
-        final = _sdk_ingress.query(sdk_run_id)
+        await host_state.sdk_ingress.wait_idle(sdk_run_id)
+        final = host_state.sdk_ingress.query(sdk_run_id)
         raw_state = getattr(final, "state", final)
         state_value = str(getattr(raw_state, "value", raw_state)).lower()
         if state_value == "waiting":
@@ -12816,8 +12794,8 @@ async def _watch_retained_sdk_run(
         terminal_state = (
             state_value if state_value in {"completed", "failed", "cancelled"} else "failed"
         )
-        if terminal_state == "completed" and _sdk_context_port is not None:
-            sdk_context = _sdk_context_port.load(SdkRunId(sdk_run_id))
+        if terminal_state == "completed" and host_state.sdk_context_port is not None:
+            sdk_context = host_state.sdk_context_port.load(SdkRunId(sdk_run_id))
             assistant_texts = [
                 message.content
                 for message in sdk_context.messages
@@ -12860,14 +12838,16 @@ async def _watch_retained_sdk_run(
                         sdk_run_id=sdk_run_id,
                         error=str(exc)[:200],
                     )
-            if _sdk_provider_binding_resolver is not None:
+            if host_state.sdk_provider_binding_resolver is not None:
                 try:
-                    _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, terminal_state)
+                    host_state.sdk_provider_binding_resolver.mark_terminal(
+                        sdk_run_id, terminal_state
+                    )
                 except KeyError:
                     pass
-            if _sdk_tool_authority_registry is not None:
+            if host_state.sdk_tool_authority_registry is not None:
                 try:
-                    _sdk_tool_authority_registry.mark_terminal(sdk_run_id, terminal_state)
+                    host_state.sdk_tool_authority_registry.mark_terminal(sdk_run_id, terminal_state)
                 except KeyError:
                     pass
             _sdk_retained_presentations.pop(sdk_run_id, None)
@@ -13090,7 +13070,6 @@ async def _send_new_session_origin_user_echo(
 # Track active voice pipelines by session so that a control-channel `interrupt`
 # message can reach the audio-channel pipeline (they are separate WebSockets).
 _voice_transports: weakref.WeakValueDictionary[str, object] = weakref.WeakValueDictionary()
-_realtime_voice_service = None
 
 
 # Opt-in dev mode: set DESKPET_DEV_MODE=1 to bypass shared-secret auth.
@@ -13235,7 +13214,6 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
 
     Auth: same shared-secret gate as /metrics. DEV_MODE bypasses.
     """
-    global _current_cloud_api_key, local_llm
 
     if not DEV_MODE:
         secret = request.headers.get("x-shared-secret", "")
@@ -13268,16 +13246,16 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     # config.llm.local.api_key (Ollama default "ollama" is OK).
     resolved_key: str | None = body.api_key
     if not resolved_key:
-        if _current_cloud_api_key:
-            resolved_key = _current_cloud_api_key
-        elif local_llm is not None:
-            resolved_key = getattr(local_llm, "api_key", None) or "ollama"
+        if host_state.current_cloud_api_key:
+            resolved_key = host_state.current_cloud_api_key
+        elif host_state.local_llm is not None:
+            resolved_key = getattr(host_state.local_llm, "api_key", None) or "ollama"
         else:
             resolved_key = "ollama"
 
     current_temperature = 0.7
-    if local_llm is not None:
-        current_temperature = getattr(local_llm, "temperature", 0.7)
+    if host_state.local_llm is not None:
+        current_temperature = getattr(host_state.local_llm, "temperature", 0.7)
 
     new_provider = OpenAICompatibleProvider(
         base_url=body.base_url,
@@ -13290,8 +13268,8 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     # Hot-swap: replace module-level local_llm. The chat handler reads
     # this name fresh each request, so the next chat uses the new
     # provider — no restart needed.
-    local_llm = new_provider
-    _current_cloud_api_key = resolved_key
+    host_state.local_llm = new_provider
+    host_state.current_cloud_api_key = resolved_key
     _refresh_research_live_llm(new_provider)
 
     # Persist so next backend restart picks it up. api_key only stored
@@ -13662,17 +13640,17 @@ async def health():
         # (即便 backend 实际有云端 key)。改为读真实生效的 local_llm: base_url
         # 非本地 + 有真 key(非 ollama 占位) = 已配云端。
         "cloud_configured": bool(
-            local_llm is not None
-            and "localhost" not in str(getattr(local_llm, "base_url", ""))
-            and "127.0.0.1" not in str(getattr(local_llm, "base_url", ""))
-            and getattr(local_llm, "api_key", None)
-            and getattr(local_llm, "api_key", "") != "ollama"
+            host_state.local_llm is not None
+            and "localhost" not in str(getattr(host_state.local_llm, "base_url", ""))
+            and "127.0.0.1" not in str(getattr(host_state.local_llm, "base_url", ""))
+            and getattr(host_state.local_llm, "api_key", None)
+            and getattr(host_state.local_llm, "api_key", "") != "ollama"
         ),
         "startup_errors": errors,
         "voice": _voice_runtime.health_payload(),
         "realtime_voice": (
-            _realtime_voice_service.health_payload()
-            if _realtime_voice_service is not None
+            host_state.realtime_voice_service.health_payload()
+            if host_state.realtime_voice_service is not None
             else {"enabled": False, "path": "/ws/realtime-voice"}
         ),
     }
@@ -14023,9 +14001,9 @@ async def control_channel(ws: WebSocket):
 
     human_memory_control_binding = HumanMemoryControlBinding()
     companion_challenge = None
-    if _companion_control_ingress is not None:
+    if host_state.companion_control_ingress is not None:
         try:
-            companion_challenge = _companion_control_ingress.open_challenge(
+            companion_challenge = host_state.companion_control_ingress.open_challenge(
                 requested_window_label=ws.query_params.get("requested_window_label", ""),
                 requested_scope=ws.query_params.get("requested_scope", ""),
             )
@@ -14037,7 +14015,7 @@ async def control_channel(ws: WebSocket):
             )
             if requested_scope == "companion_action":
                 try:
-                    frozen_identity = _companion_identity_gate.freeze()
+                    frozen_identity = host_state.companion_identity_gate.freeze()
                     await ws.send_json(
                         {
                             "type": "companion_identity_status",
@@ -14085,26 +14063,30 @@ async def control_channel(ws: WebSocket):
                 continue
             msg_type = raw.get("type", "")
 
-            if _companion_control_ingress is not None:
+            if host_state.companion_control_ingress is not None:
                 from deskpet.companion.control_ingress import (
                     CompanionControlIngressError,
                     is_privileged_control_kind,
                 )
 
-            if _companion_control_ingress is not None and is_privileged_control_kind(msg_type):
+            if host_state.companion_control_ingress is not None and is_privileged_control_kind(
+                msg_type
+            ):
                 try:
-                    strict_raw = _companion_control_ingress.parse_privileged_frame(wire_text)
+                    strict_raw = host_state.companion_control_ingress.parse_privileged_frame(
+                        wire_text
+                    )
                     if strict_raw is None:
                         raise CompanionControlIngressError("privileged_control_parse_failed")
                     if companion_challenge is None:
                         raise CompanionControlIngressError("companion_control_challenge_missing")
-                    response = await _companion_control_ingress.execute(
+                    response = await host_state.companion_control_ingress.execute(
                         strict_raw,
                         challenge=companion_challenge,
                     )
                     if msg_type == "companion_profile_bind":
                         human_memory_control_binding.bound(
-                            _companion_control_ingress, companion_challenge
+                            host_state.companion_control_ingress, companion_challenge
                         )
                     elif msg_type == "companion_profile_unbind":
                         human_memory_control_binding.clear()
@@ -14121,7 +14103,7 @@ async def control_channel(ws: WebSocket):
                         # 失败只降级成稳定码，不再让 UI 无限期停在
                         # 「等待主对话就绪」。
                         try:
-                            _bound_identity = _companion_identity_gate.freeze()
+                            _bound_identity = host_state.companion_identity_gate.freeze()
                         except Exception as _freeze_exc:  # noqa: BLE001
                             logger.warning(
                                 "companion_projection_bind_drain_failed",
@@ -14137,7 +14119,7 @@ async def control_channel(ws: WebSocket):
                             ) = await _settle_companion_bind_projection(
                                 _bound_identity,
                                 ensure_route=_ensure_companion_inbox_route,
-                                notification_service=(_companion_notification_service),
+                                notification_service=(host_state.companion_notification_service),
                             )
                             _bind_payload = dict(response.get("payload", {}))
                             if _inbox_session_id is not None:
@@ -14167,8 +14149,8 @@ async def control_channel(ws: WebSocket):
                                 profile_generation=_resp_payload.get("profile_generation"),
                             )
                     elif msg_type == "companion_profile_unbind":
-                        if _companion_notification_service is not None:
-                            _companion_notification_service.close_history()
+                        if host_state.companion_notification_service is not None:
+                            host_state.companion_notification_service.close_history()
                     await ws.send_json(response)
                     payload = response.get("payload", {})
                     companion_challenge = companion_challenge.advance(
@@ -14237,11 +14219,13 @@ async def control_channel(ws: WebSocket):
                     # seq/epoch clients can recover without backend restart.
                     if rechallenge:
                         try:
-                            companion_challenge = _companion_control_ingress.open_challenge(
-                                requested_window_label=ws.query_params.get(
-                                    "requested_window_label", ""
-                                ),
-                                requested_scope=ws.query_params.get("requested_scope", ""),
+                            companion_challenge = (
+                                host_state.companion_control_ingress.open_challenge(
+                                    requested_window_label=ws.query_params.get(
+                                        "requested_window_label", ""
+                                    ),
+                                    requested_scope=ws.query_params.get("requested_scope", ""),
+                                )
                             )
                             await ws.send_json(
                                 {
@@ -14264,12 +14248,12 @@ async def control_channel(ws: WebSocket):
                     )
 
                     if (
-                        _companion_detail_query is None
+                        host_state.companion_detail_query is None
                         or companion_challenge is None
                         or requested_scope != "companion_action"
                     ):
                         raise CompanionDetailQueryError("unavailable")
-                    _detail_identity = _companion_identity_gate.freeze()
+                    _detail_identity = host_state.companion_identity_gate.freeze()
                     if int(companion_challenge.binding_epoch) != int(
                         _detail_identity.binding_epoch
                     ):
@@ -14277,7 +14261,7 @@ async def control_channel(ws: WebSocket):
                     _detail_payload = raw.get("payload")
                     if not isinstance(_detail_payload, dict):
                         raise CompanionDetailQueryError("unavailable")
-                    _detail_response = await _companion_detail_query.query(
+                    _detail_response = await host_state.companion_detail_query.query(
                         frozen_identity=_detail_identity,
                         control_epoch=int(companion_challenge.binding_epoch),
                         request=_detail_payload,
@@ -14324,7 +14308,7 @@ async def control_channel(ws: WebSocket):
                 # 点 "立即总结老对话" 按钮。参数支持 age_days / min_messages
                 # / max_per_run override。
                 payload = raw.get("payload", {}) or {}
-                if _summarizer_state_db_path is None or local_llm is None:
+                if _summarizer_state_db_path is None or host_state.local_llm is None:
                     await ws.send_json(
                         {
                             "type": "memory_summarize_response",
@@ -15297,7 +15281,7 @@ async def control_channel(ws: WebSocket):
 
                 try:
                     _hm_auth = human_memory_control_binding.authenticate(
-                        _companion_control_ingress, companion_challenge
+                        host_state.companion_control_ingress, companion_challenge
                     )
                 except Exception as exc:
                     await ws.send_json(
@@ -15315,7 +15299,7 @@ async def control_channel(ws: WebSocket):
                     continue
 
                 with human_memory_control_binding.request_scope(
-                    _companion_control_ingress, companion_challenge
+                    host_state.companion_control_ingress, companion_challenge
                 ):
                     _hm_response = await handle_human_memory_command(
                         raw,
@@ -15513,7 +15497,7 @@ async def control_channel(ws: WebSocket):
                         if _history_gate is not None:
                             await _history_gate.ensure_current(target_sid)
                         try:
-                            _history_identity = _companion_identity_gate.freeze()
+                            _history_identity = host_state.companion_identity_gate.freeze()
                             await _bind_companion_inbox_route(
                                 target_sid,
                                 _history_identity,
@@ -15817,7 +15801,7 @@ async def control_channel(ws: WebSocket):
                 payload = raw.get("payload", {}) or {}
                 _csid = payload.get("session_id") or session_id
                 _decision = payload.get("decision") or "go"
-                if _sdk_ingress is not None and _sdk_ingress.accepting:
+                if host_state.sdk_ingress is not None and host_state.sdk_ingress.accepting:
                     _run_id = str(payload.get("run_id") or "").strip()
                     _decision_id = str(payload.get("decision_id") or "").strip()
                     _nonce = str(payload.get("nonce") or "").strip()
@@ -15915,9 +15899,9 @@ async def control_channel(ws: WebSocket):
                 # local_llm（登录后经 update_cloud_config 已切到中转站 base_url+key）
                 # 拉中转站 /models。这样登录中转站即可在当前会话换模型，无需手动
                 # 再"添加 Provider"。
-                if not _model_ids and local_llm is not None:
-                    _ll_base = str(getattr(local_llm, "base_url", "") or "")
-                    _ll_key = getattr(local_llm, "api_key", None)
+                if not _model_ids and host_state.local_llm is not None:
+                    _ll_base = str(getattr(host_state.local_llm, "base_url", "") or "")
+                    _ll_key = getattr(host_state.local_llm, "api_key", None)
                     # 跳过本地 ollama（localhost）—— 它的 /models 是本地小模型，
                     # 不是中转站目录，且 key 通常是占位 "ollama"。
                     if _ll_base and "localhost" not in _ll_base and "127.0.0.1" not in _ll_base:
@@ -15933,8 +15917,8 @@ async def control_channel(ws: WebSocket):
                             _base_url = _ll_base
                 # registry chain 为空时,生效默认模型取 local_llm 的运行时 model
                 # (onboarding 登录中转站后已写 gpt-5.5)。
-                if not _default_model and local_llm is not None:
-                    _default_model = str(getattr(local_llm, "model", "") or "")
+                if not _default_model and host_state.local_llm is not None:
+                    _default_model = str(getattr(host_state.local_llm, "model", "") or "")
                 from llm.model_catalog import build_catalog as _bc
 
                 await ws.send_json(
@@ -17179,7 +17163,7 @@ class _StarletteRealtimeSocket:
 @app.websocket("/ws/realtime-voice")
 async def realtime_voice_channel(ws: WebSocket):
     await ws.accept()
-    service = _realtime_voice_service
+    service = host_state.realtime_voice_service
     if service is None:
         await ws.close(code=1013, reason="realtime unavailable")
         return
@@ -17271,12 +17255,14 @@ async def audio_channel(ws: WebSocket):
         service_context=service_context,
         tool_registry_v2=deskpet_tool_registry_v2,
         permission_gate_v2=permission_gate_v2,
-        local_llm=local_llm,
+        local_llm=host_state.local_llm,
         # VOICE-MSGPANEL-SYNC: 注入实时解析 originator 的语音广播器（_voice_broadcast
         # 在上面定义，闭包捕获 session_id，广播时实时取发起窗口 control_ws 作 skip 目标）。
         broadcast=_voice_broadcast,
         run_client=(
-            _sdk_ingress.run_client if _sdk_ingress is not None and _sdk_ingress.accepting else None
+            host_state.sdk_ingress.run_client
+            if host_state.sdk_ingress is not None and host_state.sdk_ingress.accepting
+            else None
         ),
     )
     pipeline.bind_run_host_factory(_voice_run_host)

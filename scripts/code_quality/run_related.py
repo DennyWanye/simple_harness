@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""代码质量整治：按文件跑相关测试，每个文件配卡死看门狗（每片必跑的"相关测试"）。
+
+用法：
+    python3 scripts/code_quality/run_related.py backend tests/a.py tests/b.py ...
+    python3 scripts/code_quality/run_related.py backend @清单文件     （一行一个，相对 backend/）
+    python3 scripts/code_quality/run_related.py sdk tests/x.py ...
+每个文件单独起进程；输出 N 秒不动判卡死并杀整棵进程树。最后打印失败与卡死清单，有则退出码 1。
+"""
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from full_regression import BACKEND, SDK, junit_failures, run_watched  # noqa: E402
+
+
+def main() -> int:
+    tree, *args = sys.argv[1:]
+    files: list[str] = []
+    for a in args:
+        files += Path(a[1:]).read_text().split() if a.startswith("@") else [a]
+    cwd = BACKEND if tree == "backend" else SDK
+    py = str(cwd / ".venv/bin/python")
+    env = dict(os.environ)
+    if tree == "sdk":
+        env["PYTHONPATH"] = str(cwd / "src")  # 虚拟环境的可编辑安装可能指向别的检出
+    stall = int(os.environ.get("CQ_STALL", "300"))
+    bad: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="cq-related-") as tmp:
+        for i, f in enumerate(files, 1):
+            xml = Path(tmp) / f"{i}.xml"
+            log = Path(tmp) / f"{i}.log"
+            status = run_watched([py, "-m", "pytest", f, "-q", "-p", "no:cacheprovider", f"--junitxml={xml}"],
+                                 cwd, log, stall, env=env)
+            counts, failed = junit_failures(xml)
+            mark = "ok" if status in ("exit=0", "exit=5") else status
+            print(f"[{i}/{len(files)}] {f}: {mark} tests={counts['tests']} failed={len(failed)}", flush=True)
+            if status == "STALL":
+                bad.append(f"{f}::<STALL>")
+            bad += failed
+            if status not in ("exit=0", "exit=5", "STALL") and not failed:
+                bad.append(f"{f}::<{status}>  " + log.read_text()[-600:].replace("\n", " | "))
+    for b in bad:
+        print("失败", b)
+    print(f"相关测试：{len(files)} 个文件，失败 {len(bad)}")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

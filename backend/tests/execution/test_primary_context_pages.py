@@ -24,6 +24,7 @@ from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.tools.context_page_in_tools import ContextPageInStore
+from host.state import host_state
 from simple_harness import CallId, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
@@ -213,7 +214,7 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
     registry.entry.id, registry.entry.model, registry.entry.models = "fixture", "model", ("model",)
     registry.entry.incarnation_id, registry.entry.config_revision = "fixture-1", 1
     monkeypatch.setattr(main, "_state_db_path", state)
-    monkeypatch.setattr(main, "_sdk_runtime_stack", stack)
+    monkeypatch.setattr(host_state, "sdk_runtime_stack", stack)
     monkeypatch.setattr(main, "_primary_history_policy", lambda _: holder.runtime.history_policy)
     monkeypatch.setattr(main, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
     get_service = main.service_context.get

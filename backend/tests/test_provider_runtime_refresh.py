@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
+from host.state import host_state
 
 
 class _ProductionProviderRegistry:
@@ -142,13 +143,13 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     assert "DurableToolCatalogResolver" in build
     assert "catalog=frozen_catalog" not in build
     assert "inventory=tool_inventory" not in build
-    assert "_sdk_tool_authority_registry.prepare_run" in foreground
+    assert "host_state.sdk_tool_authority_registry.prepare_run" in foreground
     assert "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY" in foreground
     assert "SDK_DIRECT_TOOL_KERNEL" in foreground
     assert "tool_authority.run_start_record()" in execute
-    assert "_sdk_tool_authority_registry.mark_waiting" in execute
-    assert "_sdk_tool_authority_registry.mark_terminal" in execute
-    assert "_sdk_tool_authority_registry.mark_terminal" in watcher
+    assert "host_state.sdk_tool_authority_registry.mark_waiting" in execute
+    assert "host_state.sdk_tool_authority_registry.mark_terminal" in execute
+    assert "host_state.sdk_tool_authority_registry.mark_terminal" in watcher
 
 
 def test_foreground_sdk_path_has_no_global_refresh_lock_or_legacy_authority():
@@ -200,7 +201,7 @@ def test_per_run_binding_resolver_retains_waiting_and_releases_terminal(monkeypa
 
     resolver.mark_waiting("run-a")
     assert resolver.registry.resolve("run-a").lease_state == "waiting"
-    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", resolver)
+    monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", resolver)
     with pytest.raises(main.ProviderMutationConflict):
         main._assert_sdk_provider_mutation_allowed(("provider-a",))
     resolver.mark_terminal("run-b", "completed")

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
 import pytest
+from host.state import host_state
 from providers.openai_compatible import OpenAICompatibleProvider
 
 
@@ -138,7 +139,7 @@ def capture_ephemeral_provider(monkeypatch):
     import main
 
     base = _base_provider("BASE-MODEL-gpt-5.5")
-    monkeypatch.setattr(main, "local_llm", base, raising=False)
+    monkeypatch.setattr(host_state, "local_llm", base, raising=False)
     monkeypatch.setattr(main, "cloud_llm", None, raising=False)
 
     recorded: list = []
