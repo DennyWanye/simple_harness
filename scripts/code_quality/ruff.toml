@@ -1,0 +1,41 @@
+# 代码质量整治：后端与 SDK 共用的一份 ruff 规则（计划 0.7）。
+# 用法：ruff check --config scripts/code_quality/ruff.toml <路径>
+# 旧代码走棘轮（scripts/code_quality/metrics.py check），新建文件直接阻断（计划 0.12）。
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+  "**/vendor/**", "**/dist/**", "**/dist-1/**", "**/build/**", "**/userdata/**",
+  "**/.venv/**", "**/*.egg-info/**", "**/node_modules/**",
+]
+
+[lint]
+select = [
+  "E", "F", "W",      # 基础错误与风格
+  "I",                # 导入排序
+  "UP",               # 新语法
+  "B",                # 常见陷阱
+  "N",                # 命名
+  "SIM",              # 可简化写法
+  "C4",               # 推导式
+  "PIE", "RET",       # 多余写法、返回值
+  "BLE001",           # 捕获所有异常
+  "C90",              # 圈复杂度
+  "PLR0912",          # 分支过多
+  "PLR0915",          # 语句过多
+]
+
+ignore = [
+  "N818",   # 异常类名不强制 Error 后缀（SDK 公开异常改名会波及调用方）
+  "C408",   # dict()/list() 调用属个人偏好
+]
+
+[lint.mccabe]
+max-complexity = 15
+
+[lint.pylint]
+max-branches = 15
+max-statements = 60
+
+[lint.per-file-ignores]
+# 测试允许长函数、断言风格与宽异常
+"**/tests/**" = ["C90", "PLR0912", "PLR0915", "BLE001", "N802", "N806"]

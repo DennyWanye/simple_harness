@@ -1,0 +1,649 @@
+{
+ "startup_error": null,
+ "shutdown_error": "asyncio.exceptions.CancelledError: Cancelled via cancel scope <addr> by <Task>",
+ "routes": [
+  [
+   "APIWebSocketRoute",
+   "/ws/audio",
+   "audio_channel"
+  ],
+  [
+   "APIWebSocketRoute",
+   "/ws/control",
+   "control_channel"
+  ],
+  [
+   "APIWebSocketRoute",
+   "/ws/realtime-voice",
+   "realtime_voice_channel"
+  ],
+  [
+   "GET",
+   "/api/commands/help",
+   "api_commands_help"
+  ],
+  [
+   "GET",
+   "/api/commands/{name}/schema",
+   "api_command_schema"
+  ],
+  [
+   "GET",
+   "/api/skills/list",
+   "api_skills_list"
+  ],
+  [
+   "GET",
+   "/health",
+   "health"
+  ],
+  [
+   "GET",
+   "/metrics",
+   "metrics"
+  ],
+  [
+   "GET,HEAD",
+   "/docs",
+   "swagger_ui_html"
+  ],
+  [
+   "GET,HEAD",
+   "/docs/oauth2-redirect",
+   "swagger_ui_redirect"
+  ],
+  [
+   "GET,HEAD",
+   "/openapi.json",
+   "openapi"
+  ],
+  [
+   "GET,HEAD",
+   "/redoc",
+   "redoc_html"
+  ],
+  [
+   "POST",
+   "/config/cloud",
+   "update_cloud_config"
+  ],
+  [
+   "POST",
+   "/metrics/event",
+   "post_metrics_event"
+  ]
+ ],
+ "import_time_registrations": [
+  [
+   "workflow_service",
+   null
+  ],
+  [
+   "run_execution_fence_acquirer",
+   null
+  ],
+  [
+   "provider_invocation_coordinator",
+   null
+  ],
+  [
+   "harness_public_read_service",
+   null
+  ],
+  [
+   "sdk_runtime_ready",
+   null
+  ],
+  [
+   "billing_ledger",
+   "BillingLedger"
+  ],
+  [
+   "provider_registry",
+   null
+  ],
+  [
+   "provider_routing_readiness",
+   null
+  ],
+  [
+   "llm_engine",
+   "HybridRouter"
+  ],
+  [
+   "tool_router",
+   "ToolRegistry"
+  ],
+  [
+   "permission_gate",
+   "PermissionGate"
+  ],
+  [
+   "tool_capability_scope_store",
+   "ToolCapabilityScopeStore"
+  ],
+  [
+   "tool_capability_resolver",
+   "ToolCapabilityResolver"
+  ],
+  [
+   "vad_engine",
+   null
+  ],
+  [
+   "asr_engine",
+   null
+  ],
+  [
+   "tts_engine",
+   null
+  ],
+  [
+   "context_assembler",
+   null
+  ],
+  [
+   "session_db",
+   "SessionDB"
+  ],
+  [
+   "project_binding_service",
+   "ProjectBindingService"
+  ],
+  [
+   "session_creation_service",
+   "SessionCreationService"
+  ],
+  [
+   "vector_worker",
+   null
+  ],
+  [
+   "embedder",
+   null
+  ],
+  [
+   "skill_loader",
+   "SkillLoader"
+  ],
+  [
+   "managed_skill_discovery_projection",
+   "ManagedSkillDiscoveryProjection"
+  ],
+  [
+   "context_page_in_store",
+   "ContextPageInStore"
+  ],
+  [
+   "agent_engine",
+   "ToolUsingAgent"
+  ]
+ ],
+ "lifespan_registrations": [
+  [
+   "provider_routing_readiness",
+   "ProviderRoutingReadiness"
+  ],
+  [
+   "memory_display_invalidation",
+   "MemoryDisplayInvalidation"
+  ],
+  [
+   "human_memory_host_service_factory",
+   "HumanMemoryHostServiceFactory"
+  ],
+  [
+   "provider_registry",
+   "LLMProviderRegistry"
+  ],
+  [
+   "session_creation_service",
+   "SessionCreationService"
+  ],
+  [
+   "search_gateway",
+   "SearchGateway"
+  ],
+  [
+   "workflow_service",
+   "WorkflowService"
+  ],
+  [
+   "harness_public_read_service",
+   "HarnessPublicReadService"
+  ],
+  [
+   "run_execution_fence_acquirer",
+   "method"
+  ],
+  [
+   "provider_invocation_coordinator",
+   "ProviderInvocationCoordinator"
+  ],
+  [
+   "provider_workload_audit",
+   "ProviderWorkloadAuditStore"
+  ],
+  [
+   "provider_workload_router",
+   "ProviderWorkloadRouter"
+  ],
+  [
+   "model_provisioner",
+   "ModelProvisioner"
+  ],
+  [
+   "mcp_manager",
+   "MCPManager"
+  ],
+  [
+   "tool_circuit_breaker",
+   "ToolCircuitBreaker"
+  ],
+  [
+   "session_activity",
+   "SessionActivityStore"
+  ],
+  [
+   "auto_resume",
+   "AutoResumeOrchestrator"
+  ],
+  [
+   "project_skill_install_settings_authorizer",
+   "SettingsSkillInstallAuthorizerFactory"
+  ],
+  [
+   "legacy_frozen_skill_instruction_resolver",
+   "FirstPartyFrozenSkillResolver"
+  ],
+  [
+   "frozen_skill_instruction_resolver",
+   "SkillPackSnapshotResolver"
+  ],
+  [
+   "capability_store",
+   "CapabilityStore"
+  ],
+  [
+   "capability_platform",
+   "CapabilityPlatform"
+  ],
+  [
+   "project_skill_discovery_service",
+   "ProjectSkillDiscoveryService"
+  ],
+  [
+   "project_skill_install_service",
+   "GlobalSkillInstallService"
+  ],
+  [
+   "skill_install_runtime_verifier",
+   "BindableSkillInstallRuntimeVerifier"
+  ],
+  [
+   "skill_install_verification_driver_factory",
+   "BindableSkillInstallVerificationDriverFactory"
+  ],
+  [
+   "capability_center",
+   "CapabilityCenterService"
+  ],
+  [
+   "capability_builder_host",
+   "CapabilityBuilderHost"
+  ],
+  [
+   "authorization_runtime",
+   "PreparedAuthorizationRuntime"
+  ],
+  [
+   "admission_task_grant_runtime",
+   "AdmissionTaskGrantRuntime"
+  ],
+  [
+   "capability_refresh_snapshots",
+   "SqliteCapabilityRefreshSnapshotRepository"
+  ],
+  [
+   "capability_refresh_staging",
+   "CapabilityRefreshStagingService"
+  ],
+  [
+   "capability_refresh_service",
+   "CapabilityRefreshService"
+  ],
+  [
+   "companion_preference_resolver_dormant",
+   "PreferenceResolver"
+  ],
+  [
+   "companion_identity_gate",
+   "IdentityReadyGate"
+  ],
+  [
+   "companion_profile_coordinator",
+   "ProfileBindingCoordinator"
+  ],
+  [
+   "companion_clock",
+   "SystemClock"
+  ],
+  [
+   "companion_runtime",
+   "CompanionRuntime"
+  ],
+  [
+   "companion_growth_pipeline",
+   "GrowthProductionPipeline"
+  ],
+  [
+   "companion_ingress_dispatcher",
+   "CompanionIngressOutboxDispatcher"
+  ],
+  [
+   "window_control_credential_verifier",
+   null
+  ],
+  [
+   "companion_reminder_service",
+   "ReminderService"
+  ],
+  [
+   "companion_reminder_authority_selector",
+   "_ReminderAuthoritySelector"
+  ],
+  [
+   "growth_authority_cutover",
+   "GrowthAuthorityCutoverCoordinator"
+  ],
+  [
+   "companion_reminder_registry_reconciler",
+   "function"
+  ],
+  [
+   "memory_identity_authority",
+   "ValidatedLocalMemoryIdentityAuthority"
+  ],
+  [
+   "memory_identity_resolver",
+   "ProductMemoryIdentityResolver"
+  ],
+  [
+   "sdk_typed_context_use_authority",
+   null
+  ],
+  [
+   "prospective_occurrence_coordinator",
+   null
+  ],
+  [
+   "sdk_context_source_repository",
+   "ProductContextSourceRepository"
+  ],
+  [
+   "sdk_effect_gate",
+   "EffectGate"
+  ],
+  [
+   "sdk_workspace_read_gate",
+   "WorkspaceReadGate"
+  ],
+  [
+   "sdk_runtime_catalog",
+   "dict"
+  ],
+  [
+   "sdk_provider_binding_resolver",
+   "_ProductSdkProviderBindingResolver"
+  ],
+  [
+   "sdk_tool_authority_registry",
+   "SdkRunToolAuthorityRegistry"
+  ],
+  [
+   "sdk_runtime_tool_inventory",
+   "tuple"
+  ],
+  [
+   "sdk_prepared_authorization_policy",
+   "SdkPreparedAuthorizationPolicy"
+  ],
+  [
+   "sdk_closure_instruction_reader",
+   "function"
+  ],
+  [
+   "sdk_run_context_authority",
+   "ProductRunContextAuthority"
+  ],
+  [
+   "sdk_runtime_decision_sink",
+   "ProductRuntimeDecisionSink"
+  ],
+  [
+   "sdk_task_execution_authority",
+   "ProductTaskExecutionAuthority"
+  ],
+  [
+   "sdk_context_staging",
+   "ContextStagingRepository"
+  ],
+  [
+   "sdk_runtime_ready",
+   "SdkRuntimeReady"
+  ],
+  [
+   "orchestration",
+   "OrchestrationService"
+  ],
+  [
+   "orchestration_pump",
+   "MissionChangePump"
+  ],
+  [
+   "human_memory_binding_append_authority",
+   "WorkspaceBindingRuntimeAuthority"
+  ],
+  [
+   "human_memory_recovery_lifecycle",
+   "RecoveryLifecyclePort"
+  ],
+  [
+   "terminal_operation_audit",
+   "TerminalAuditConsumer"
+  ],
+  [
+   "terminal_operation_audit_status",
+   "str"
+  ],
+  [
+   "human_memory_foreground_scheduler_wake",
+   "ForegroundRuntimeExecutionAuthority"
+  ],
+  [
+   "human_memory_foreground_runtime_execution_authority",
+   "ForegroundRuntimeExecutionAuthority"
+  ],
+  [
+   "companion_detail_query",
+   "CompanionDetailQueryPort"
+  ],
+  [
+   "companion_notification_service",
+   "CompanionNotificationService"
+  ],
+  [
+   "companion_projection_visibility",
+   "CompanionProjectionVisibilityPort"
+  ],
+  [
+   "companion_growth_action_decision_service",
+   "UnavailableCompanionGrowthControlService"
+  ],
+  [
+   "companion_growth_evaluation_decision_service",
+   "UnavailableCompanionGrowthControlService"
+  ],
+  [
+   "companion_growth_activation_decision_service",
+   "UnavailableCompanionGrowthControlService"
+  ],
+  [
+   "companion_rollback_service",
+   "UnavailableCompanionGrowthControlService"
+  ],
+  [
+   "companion_forget_service",
+   "UnavailableCompanionGrowthControlService"
+  ],
+  [
+   "companion_growth_evaluation_decision_service",
+   "CompanionEvaluationDecisionService"
+  ],
+  [
+   "companion_growth_activation_decision_service",
+   "CompanionActivationDecisionService"
+  ],
+  [
+   "companion_rollback_service",
+   "CompanionRollbackDecisionService"
+  ],
+  [
+   "companion_forget_service",
+   "CompanionForgetDecisionService"
+  ],
+  [
+   "companion_growth_action_decision_service",
+   "CompanionActionDecisionService"
+  ]
+ ],
+ "services_after_startup": {
+  "admission_task_grant_runtime": "AdmissionTaskGrantRuntime",
+  "agent_engine": "ToolUsingAgent",
+  "asr_engine": null,
+  "attach_task_snapshot_to_request": null,
+  "authorization_runtime": "PreparedAuthorizationRuntime",
+  "auto_resume": "AutoResumeOrchestrator",
+  "billing_ledger": "BillingLedger",
+  "capability_builder_host": "CapabilityBuilderHost",
+  "capability_center": "CapabilityCenterService",
+  "capability_platform": "CapabilityPlatform",
+  "capability_refresh_service": "CapabilityRefreshService",
+  "capability_refresh_snapshots": "SqliteCapabilityRefreshSnapshotRepository",
+  "capability_refresh_staging": "CapabilityRefreshStagingService",
+  "capability_store": "CapabilityStore",
+  "code_mode": null,
+  "companion_clock": "SystemClock",
+  "companion_detail_query": "CompanionDetailQueryPort",
+  "companion_forget_service": "CompanionForgetDecisionService",
+  "companion_growth_action_decision_service": "CompanionActionDecisionService",
+  "companion_growth_activation_decision_service": "CompanionActivationDecisionService",
+  "companion_growth_evaluation_decision_service": "CompanionEvaluationDecisionService",
+  "companion_growth_pipeline": "GrowthProductionPipeline",
+  "companion_identity_gate": "IdentityReadyGate",
+  "companion_ingress_dispatcher": "CompanionIngressOutboxDispatcher",
+  "companion_notification_service": "CompanionNotificationService",
+  "companion_preference_resolver_dormant": "PreferenceResolver",
+  "companion_profile_coordinator": "ProfileBindingCoordinator",
+  "companion_projection_visibility": "CompanionProjectionVisibilityPort",
+  "companion_reminder_authority_selector": "_ReminderAuthoritySelector",
+  "companion_reminder_registry_reconciler": "function",
+  "companion_reminder_service": "ReminderService",
+  "companion_rollback_service": "CompanionRollbackDecisionService",
+  "companion_runtime": "CompanionRuntime",
+  "compression_model_resolver": null,
+  "context_assembler": null,
+  "context_attempt_store": null,
+  "context_compressor": null,
+  "context_page_in_store": "ContextPageInStore",
+  "context_request_planner": null,
+  "context_segment_store": null,
+  "context_snapshot_store": null,
+  "conversation_memory": null,
+  "embedder": null,
+  "facts_store": null,
+  "file_memory": null,
+  "frozen_skill_instruction_resolver": "SkillPackSnapshotResolver",
+  "goal_checker": null,
+  "growth_authority_cutover": "GrowthAuthorityCutoverCoordinator",
+  "harness_public_read_service": "HarnessPublicReadService",
+  "human_memory_binding_append_authority": "WorkspaceBindingRuntimeAuthority",
+  "human_memory_foreground_runtime_execution_authority": "ForegroundRuntimeExecutionAuthority",
+  "human_memory_foreground_scheduler_wake": "ForegroundRuntimeExecutionAuthority",
+  "human_memory_host_service_factory": "HumanMemoryHostServiceFactory",
+  "human_memory_recovery_lifecycle": "RecoveryLifecyclePort",
+  "image_worker": null,
+  "legacy_frozen_skill_instruction_resolver": "FirstPartyFrozenSkillResolver",
+  "llm_engine": "HybridRouter",
+  "managed_skill_discovery_projection": "ManagedSkillDiscoveryProjection",
+  "mcp_manager": "MCPManager",
+  "memory_curator": null,
+  "memory_display_invalidation": "MemoryDisplayInvalidation",
+  "memory_identity_authority": "ValidatedLocalMemoryIdentityAuthority",
+  "memory_identity_resolver": "ProductMemoryIdentityResolver",
+  "memory_store": null,
+  "model_provisioner": "ModelProvisioner",
+  "nudge_queue": null,
+  "orchestration": "OrchestrationService",
+  "orchestration_pump": "MissionChangePump",
+  "permission_gate": "PermissionGate",
+  "pipeline_convergence_controller": null,
+  "pipeline_evidence_gate": null,
+  "pipeline_self_check_gate": null,
+  "preference_memory": null,
+  "problem_pipeline": null,
+  "project_binding_service": "ProjectBindingService",
+  "project_initial_context_snapshot": null,
+  "project_skill_discovery_service": "ProjectSkillDiscoveryService",
+  "project_skill_install_service": "GlobalSkillInstallService",
+  "project_skill_install_settings_authorizer": "SettingsSkillInstallAuthorizerFactory",
+  "prospective_occurrence_coordinator": null,
+  "provider_invocation_coordinator": "ProviderInvocationCoordinator",
+  "provider_registry": "LLMProviderRegistry",
+  "provider_routing_readiness": "ProviderRoutingReadiness",
+  "provider_workload_audit": "ProviderWorkloadAuditStore",
+  "provider_workload_router": "ProviderWorkloadRouter",
+  "run_execution_fence_acquirer": "method",
+  "sdk_closure_instruction_reader": "function",
+  "sdk_context_source_repository": "ProductContextSourceRepository",
+  "sdk_context_staging": "ContextStagingRepository",
+  "sdk_effect_gate": "EffectGate",
+  "sdk_prepared_authorization_policy": "SdkPreparedAuthorizationPolicy",
+  "sdk_provider_binding_resolver": "_ProductSdkProviderBindingResolver",
+  "sdk_run_context_authority": "ProductRunContextAuthority",
+  "sdk_runtime_catalog": "dict",
+  "sdk_runtime_decision_sink": "ProductRuntimeDecisionSink",
+  "sdk_runtime_ready": "SdkRuntimeReady",
+  "sdk_runtime_tool_inventory": "tuple",
+  "sdk_task_execution_authority": "ProductTaskExecutionAuthority",
+  "sdk_tool_authority_registry": "SdkRunToolAuthorityRegistry",
+  "sdk_typed_context_use_authority": null,
+  "sdk_workspace_read_gate": "WorkspaceReadGate",
+  "search_gateway": "SearchGateway",
+  "session_activity": "SessionActivityStore",
+  "session_creation_service": "SessionCreationService",
+  "session_db": "SessionDB",
+  "session_goal_store": null,
+  "session_terminal_projection_gate": null,
+  "skill_install_runtime_verifier": "BindableSkillInstallRuntimeVerifier",
+  "skill_install_verification_driver_factory": "BindableSkillInstallVerificationDriverFactory",
+  "skill_loader": "SkillLoader",
+  "skill_matcher": null,
+  "subagent_scheduler": null,
+  "supervisor": null,
+  "task_graph_store": null,
+  "team_store": null,
+  "terminal_operation_audit": "TerminalAuditConsumer",
+  "terminal_operation_audit_status": "str",
+  "tool_capability_resolver": "ToolCapabilityResolver",
+  "tool_capability_scope_store": "ToolCapabilityScopeStore",
+  "tool_circuit_breaker": "ToolCircuitBreaker",
+  "tool_router": "ToolRegistry",
+  "tts_engine": null,
+  "vad_engine": null,
+  "vector_worker": null,
+  "watchdog": null,
+  "window_control_credential_verifier": null,
+  "workflow_service": "WorkflowService"
+ }
+}
