@@ -4,7 +4,6 @@ Selection exposes the actual driver to the kernel. It does not attest that a
 Host driver is instrumented, and does not validate Host-control authorities.
 Those checks remain with the selected Host-control implementation.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass

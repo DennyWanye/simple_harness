@@ -55,7 +55,9 @@ CODEC_PINNED = {
         "agent_orchestrator/contracts/models.py", "agent_orchestrator/contracts/semantic_base.py",
         "agent_orchestrator/contracts/state_machines.py", "agent_orchestrator/graph/network_codec.py",
         "agent_orchestrator/graph/task_network.py", "simple_harness/contracts/__init__.py",
-        "simple_harness/contracts/errors.py", "simple_harness/contracts/json.py")
+        "simple_harness/contracts/errors.py", "simple_harness/contracts/json.py",
+        # 测试按字节冻结（tests/agents/test_api_mode_fence.py）
+        "simple_harness/runtime/start_snapshot.py", "simple_harness/runtime/drivers/start_mode.py")
 }
 STRICT = re.compile(r"^[A-Za-z0-9_.:/\-\[\]{}<>=+*#@$%^&|~!?]{2,}$")
 
@@ -141,13 +143,14 @@ def py_literals(src: bytes) -> list:
     return out
 
 
-TS_STR = re.compile(r"""'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\$]|\\.)*)`""")
-
-
-def ts_literals(src: bytes) -> list:
-    text = src.decode("utf-8", "replace")
-    text = re.sub(r"^\s*//.*$", "", text, flags=re.M)
-    return [a or b or c for a, b, c in TS_STR.findall(text)]
+def ts_literals_all(ref: str | None) -> list:
+    """用 TypeScript 编译器提取前端全部字符串与数字字面量（正则在嵌套引号、换引号时会误报）。"""
+    import json as _json
+    out = subprocess.run(["node", str(REPO / "scripts/code_quality/ts_literals.mjs"), ref or "WORKTREE"],
+                         cwd=REPO, capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"前端字面量提取失败：{out.stderr[-500:]}")
+    return _json.loads(out.stdout)
 
 
 def snapshot(ref: str | None) -> tuple[dict, Counter, Counter]:
@@ -166,8 +169,6 @@ def snapshot(ref: str | None) -> tuple[dict, Counter, Counter]:
             hashes[f] = hashlib.sha256(read(ref, f)).hexdigest()
         if suffix == ".py" and f.startswith(PY_ROOTS):
             lits = py_literals(read(ref, f))
-        elif suffix in (".ts", ".tsx") and f.startswith(TS_ROOT):
-            lits = ts_literals(read(ref, f))
         else:
             continue
         for v in lits:
@@ -176,6 +177,12 @@ def snapshot(ref: str | None) -> tuple[dict, Counter, Counter]:
                 text[key] += 1
             else:
                 strict[key] += 1
+    for v in ts_literals_all(ref):
+        key = repr(v)
+        if isinstance(v, str) and not STRICT.match(v):
+            text[key] += 1
+        else:
+            strict[key] += 1
     return hashes, strict, text
 
 

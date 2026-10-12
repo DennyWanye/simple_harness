@@ -22,6 +22,9 @@ extend-exclude = [
   "sdk/simple-harness-sdk/src/simple_harness/contracts/__init__.py",
   "sdk/simple-harness-sdk/src/simple_harness/contracts/errors.py",
   "sdk/simple-harness-sdk/src/simple_harness/contracts/json.py",
+  # 测试按字节冻结的起始快照文件（tests/agents/test_api_mode_fence.py FROZEN_FILES）
+  "sdk/simple-harness-sdk/src/simple_harness/runtime/start_snapshot.py",
+  "sdk/simple-harness-sdk/src/simple_harness/runtime/drivers/start_mode.py",
   # 测试数据文件
   "**/fixtures/**", "**/testdata/**",
 ]
