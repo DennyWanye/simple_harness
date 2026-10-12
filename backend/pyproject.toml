@@ -31,7 +31,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     # Companion Task 2: Rust signs privileged window credentials with
     # Ed25519; the backend verifies them directly before any mutation.
-    "cryptography==49.0.0",
+    "cryptography==50.0.2",
     # Imported by the production voice providers during backend startup.
     "edge-tts>=7.0",
     "faster-whisper>=1.1",
