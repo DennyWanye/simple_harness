@@ -87,8 +87,8 @@ def run(tree: str, mods: list[str]) -> dict[str, str]:
             "DESKPET_USER_LOG_DIR": f"{tmp}/log", "PYTHONDONTWRITEBYTECODE": "1",
         })
         env.pop("PYTHONPATH", None)
-        if tree == "backend":
-            env["PYTHONPATH"] = str(cfg["cwd"])
+        # 后端用 backend/ 作导入根；SDK 显式指向本检出的 src（虚拟环境里的可编辑安装指向主检出）
+        env["PYTHONPATH"] = str(cfg["cwd"] if tree == "backend" else cfg["root"])
         p = subprocess.run([str(cfg["python"]), "-c", CHILD], input=json.dumps(mods), cwd=cfg["cwd"],
                            capture_output=True, text=True, env=env, timeout=1800)
     if "@@RESULT@@" not in p.stdout:
