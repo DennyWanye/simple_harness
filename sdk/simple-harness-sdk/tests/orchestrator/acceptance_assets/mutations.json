@@ -17,8 +17,8 @@
       "id": "D-02",
       "source": "阶段 D 欠账",
       "file": "src/agent_orchestrator/storage/planning_human_store.py",
-      "original": "        current = {\"plan_revision\": 0 if plan is None else int(plan.revision),",
-      "replacement": "        current = {\"scope_epoch\": htn.epoch(row[\"mission_id\"], \"mission\"), \"plan_revision\": 0 if plan is None else int(plan.revision),",
+      "original": "        current = {\n            \"plan_revision\": 0 if plan is None else int(plan.revision),\n",
+      "replacement": "        current = {\n            \"scope_epoch\": htn.epoch(row[\"mission_id\"], \"mission\"),\n            \"plan_revision\": 0 if plan is None else int(plan.revision),\n",
       "tests": [
         "tests/orchestrator/product_world/test_epoch_and_read_set.py::test_pending_question_survives_epoch_change"
       ],
@@ -50,8 +50,8 @@
       "id": "D-05",
       "source": "阶段 D 欠账",
       "file": "src/agent_orchestrator/testing/product_world.py",
-      "original": "                                 observers=workspace_observers(loop.store, mission.id))",
-      "replacement": "                                 observers=())",
+      "original": "        observers=workspace_observers(loop.store, mission.id),\n",
+      "replacement": "        observers=(),\n",
       "tests": [
         "tests/orchestrator/product_world/test_desktop_preconditions.py::test_precondition_needs_evidence_then_commits"
       ],
@@ -72,8 +72,8 @@
       "id": "F1-01",
       "source": "F1 新用例 1",
       "file": "src/agent_orchestrator/orchestrator/accounting_recovery.py",
-      "original": "            orch.commit._emit(UPPER_BOUND_EVENT, mission_id, key=\"upper-bound:\" + subject_id, payload={",
-      "replacement": "            (lambda *a, **k: None)(UPPER_BOUND_EVENT, mission_id, key=\"upper-bound:\" + subject_id, payload={",
+      "original": "            orch.commit._emit(\n",
+      "replacement": "            (lambda *a, **k: None)(\n",
       "tests": [
         "tests/orchestrator/product_world/test_round_faults.py::test_an_ended_missions_collection_that_keeps_failing_is_closed_and_settled"
       ],
@@ -105,8 +105,8 @@
       "id": "F1-04",
       "source": "F1 新用例 4",
       "file": "src/agent_orchestrator/context/knowledge_tools.py",
-      "original": "                or not any(acceptance_is_current(store, mission_id, acceptance)[0]\n                           for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id)))):",
-      "replacement": "                or False):",
+      "original": "            or not any(\n                acceptance_is_current(store, mission_id, acceptance)[0]\n                for acceptance in result_acceptance_ids(store, mission_id, task.id, str(result_id))\n            )\n",
+      "replacement": "            or False\n",
       "tests": [
         "tests/orchestrator/product_world/test_repair_staleness.py::test_knowledge_and_summaries_follow_a_repair"
       ],
@@ -127,8 +127,8 @@
       "id": "F1-07",
       "source": "F1 新用例 7",
       "file": "src/agent_orchestrator/orchestrator/requirements_amendment.py",
-      "original": "        if (htn.adopted_goal_resolution(mission_id, str(root.obligation_id)) is not None\n                or assured_closeout_pending(store, mission)):",
-      "replacement": "        if (False):",
+      "original": "        if htn.adopted_goal_resolution(\n            mission_id, str(root.obligation_id)\n        ) is not None or assured_closeout_pending(store, mission):\n",
+      "replacement": "        if False:\n",
       "tests": [
         "tests/orchestrator/product_world/test_requirements_amend.py::test_amend_refused_while_closing_out_and_after_the_end"
       ],
@@ -226,8 +226,8 @@
       "id": "F1-16",
       "source": "F1-6 随机序列",
       "file": "src/agent_orchestrator/observability/taskgraph_replay.py",
-      "original": "                mission_id, revision, record.source_kind, record.manifest_hash,",
-      "replacement": "                mission_id, revision, record.source_kind, verified[-1].record.manifest_hash,",
+      "original": "                    record.manifest_hash,\n",
+      "replacement": "                    verified[-1].record.manifest_hash,\n",
       "tests": [
         "tests/orchestrator/product_world/test_random_sequences.py"
       ],
@@ -411,8 +411,8 @@
       "id": "G-11",
       "source": "阶段 G 第 4 批（崩溃切点 K12）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "            if intent.mission_id not in active:\n                if await self._mission_round(intent.mission_id, f\"collect_after_stop:{intent.intent_id}\",\n                                             lambda intent=intent: self._collect_after_stop(intent)):",
-      "replacement": "            if intent.mission_id not in active:\n                if await self._collect_after_stop(intent):",
+      "original": "                if await self._mission_round(\n                    intent.mission_id,\n                    f\"collect_after_stop:{intent.intent_id}\",\n                    lambda intent=intent: self._collect_after_stop(intent),\n                ):\n",
+      "replacement": "                if await self._collect_after_stop(intent):\n",
       "tests": [
         "tests/orchestrator/product_world/test_round_faults.py::test_a_failing_late_usage_import_is_one_round_fault_and_lands_once_next_round"
       ],
@@ -431,8 +431,8 @@
       "id": "G-13",
       "source": "阶段 G 第 6 批",
       "file": "src/agent_orchestrator/storage/method_library_store.py",
-      "original": "            self.store.append_event(Event(",
-      "replacement": "            (lambda event: None)(Event(",
+      "original": "            self.store.append_event(\n",
+      "replacement": "            (lambda event: None)(\n",
       "tests": [
         "tests/orchestrator/product_world/test_method_library.py::test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear"
       ],
@@ -442,8 +442,8 @@
       "id": "G-14",
       "source": "阶段 G 第 6 批",
       "file": "src/agent_orchestrator/storage/source_records.py",
-      "original": "    return tuple(sorted(name for name, entry in _inventory().items() if entry.get(\"rebuild\") == \"fold\"))",
-      "replacement": "    return tuple(sorted(name for name, entry in _inventory().items()\n                        if entry.get(\"rebuild\") == \"fold\" and entry[\"class\"] == \"business\"))",
+      "original": "        sorted(name for name, entry in _inventory().items() if entry.get(\"rebuild\") == \"fold\")\n",
+      "replacement": "        sorted(\n            name\n            for name, entry in _inventory().items()\n            if entry.get(\"rebuild\") == \"fold\" and entry[\"class\"] == \"business\"\n        )\n",
       "tests": [
         "tests/orchestrator/product_world/test_method_library.py::test_global_tables_rebuild_after_promotion_attribution_retirement_and_clear"
       ],
@@ -453,8 +453,8 @@
       "id": "G-15",
       "source": "阶段 G 第 7 批",
       "file": "src/agent_orchestrator/orchestrator/taskgraph_deployment.py",
-      "original": "                    or upstream[\"business_replay\"] != \"CONSISTENT\"",
-      "replacement": "                    or False",
+      "original": "                or upstream[\"business_replay\"] != \"CONSISTENT\"\n",
+      "replacement": "                or False\n",
       "tests": [
         "tests/orchestrator/full_target/test_business_replay_inventory.py::test_deployment_identity_never_takes_an_unproven_replay"
       ],
@@ -475,8 +475,8 @@
       "id": "G-17",
       "source": "阶段 G 第 1 批",
       "file": "src/agent_orchestrator/storage/source_records.py",
-      "original": "                        if entry.get(\"rebuild\") == \"immutable_source\" or entry.get(\"named\") is True))",
-      "replacement": "                        if entry.get(\"rebuild\") == \"immutable_source\"))",
+      "original": "            if entry.get(\"rebuild\") == \"immutable_source\" or entry.get(\"named\") is True\n",
+      "replacement": "            if entry.get(\"rebuild\") == \"immutable_source\"\n",
       "tests": [
         "tests/orchestrator/product_world/test_business_replay.py::test_every_immutable_row_and_receipt_is_named_in_its_own_transaction"
       ],
@@ -506,8 +506,8 @@
       "id": "G-20",
       "source": "阶段 G 第 2 批（偏差裁决 1）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "    \"RowsWritten\",\n})",
-      "replacement": "})",
+      "original": "        \"RowsWritten\",\n",
+      "replacement": "",
       "tests": [
         "tests/orchestrator/product_world/test_business_replay.py::test_bookkeeping_alone_is_not_progress"
       ],
@@ -517,8 +517,8 @@
       "id": "G-21",
       "source": "阶段 G 第 2 批（偏差裁决 1）",
       "file": "src/agent_orchestrator/observability/business_replay.py",
-      "original": "        if touched and not payload[\"with_events\"] and not all(\"silent_ok\" in tables[t] for t in touched):",
-      "replacement": "        if False:",
+      "original": "        if (\n            touched\n            and not payload[\"with_events\"]\n            and not all(\"silent_ok\" in tables[t] for t in touched)\n        ):\n",
+      "replacement": "        if False:\n",
       "tests": [
         "tests/orchestrator/product_world/test_business_replay.py::test_a_silent_change_is_reported"
       ],
@@ -550,8 +550,8 @@
       "id": "G-24",
       "source": "阶段 G 第 4 批（裁决 G-7 两库对照）",
       "file": "src/agent_orchestrator/observability/business_replay.py",
-      "original": "        elif not known or (row[\"input_tokens\"], row[\"output_tokens\"]) != (\n                tokens[\"input_tokens\"], tokens[\"output_tokens\"]):",
-      "replacement": "        elif not known:",
+      "original": "        elif not known or (row[\"input_tokens\"], row[\"output_tokens\"]) != (\n            tokens[\"input_tokens\"],\n            tokens[\"output_tokens\"],\n        ):\n",
+      "replacement": "        elif not known:\n",
       "tests": [
         "tests/orchestrator/product_world/test_business_replay.py::test_a_completed_mission_rebuilds_its_source_tables"
       ],
@@ -606,8 +606,8 @@
       "id": "G-29",
       "source": "阶段 G 收尾大语料",
       "file": "src/agent_orchestrator/orchestrator/operation_reconciliation.py",
-      "original": "            self._emit(\"ActionReconciliationUnavailable\", str(action[\"mission_id\"]),",
-      "replacement": "            (lambda *a, **k: None)(\"ActionReconciliationUnavailable\", str(action[\"mission_id\"]),",
+      "original": "            self._emit(\n",
+      "replacement": "            (lambda *a, **k: None)(\n",
       "tests": [
         "tests/orchestrator/product_world/test_operation.py::test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle"
       ],
@@ -639,8 +639,8 @@
       "id": "M03",
       "source": "TaskGraph 代码级计划 §15",
       "file": "src/agent_orchestrator/observability/taskgraph_replay.py",
-      "original": "                mission_id, revision, record.source_kind, record.manifest_hash,",
-      "replacement": "                mission_id, revision, record.source_kind, verified[-1].record.manifest_hash,",
+      "original": "                    record.manifest_hash,\n",
+      "replacement": "                    verified[-1].record.manifest_hash,\n",
       "tests": [
         "tests/orchestrator/product_world/test_random_sequences.py"
       ],
@@ -673,8 +673,8 @@
       "id": "M06",
       "source": "TaskGraph 代码级计划 §15",
       "file": "src/agent_orchestrator/orchestrator/taskgraph_preview.py",
-      "original": "                or sha256_hex(current.before.to_json()) != preview.network_hash\n                or tuple(sorted(current.source_reads, key=lambda item: item.channel)) != preview.source_reads):",
-      "replacement": "                or sha256_hex(current.before.to_json()) != preview.network_hash):",
+      "original": "            or tuple(sorted(current.source_reads, key=lambda item: item.channel))\n            != preview.source_reads\n",
+      "replacement": "",
       "tests": [
         "tests/orchestrator/full_target/test_h1h_commit_guard.py::test_o08_an_approval_landing_between_preview_and_commit_makes_the_plan_change_stale",
         "tests/orchestrator/full_target/test_h1h_commit_interleaving.py"
@@ -685,7 +685,7 @@
       "id": "M07",
       "source": "TaskGraph 代码级计划 §15",
       "file": "src/agent_orchestrator/planning/htn/compiler.py",
-      "original": "        return (one in retiring_members and other in retiring_members\n                and not any(one in held and other in held for held in surviving_members))\n",
+      "original": "        return (\n            one in retiring_members\n            and other in retiring_members\n            and not any(one in held and other in held for held in surviving_members)\n        )\n",
       "replacement": "        return one in retiring_members or other in retiring_members\n",
       "tests": [
         "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
@@ -707,8 +707,8 @@
       "id": "M09",
       "source": "TaskGraph 代码级计划 §15",
       "file": "src/agent_orchestrator/graph/eligibility.py",
-      "original": "        if (constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL\n                and context.settlements is not None):",
-      "replacement": "        if (constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL\n                and False):",
+      "original": "        if (\n            constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL\n            and context.settlements is not None\n        ):\n",
+      "replacement": "        if constraint.release_condition is ReleaseCondition.SETTLED_TERMINAL and False:\n",
       "tests": [
         "tests/orchestrator/full_target/test_readiness_reasons.py::test_a_cancelled_predecessor_whose_real_work_is_not_settled_does_not_release_clean_up"
       ],
@@ -850,7 +850,7 @@
       "id": "TG3-05",
       "source": "TaskGraph 补全第三批（换做法只删只属于被退休做法的边）",
       "file": "src/agent_orchestrator/planning/htn/compiler.py",
-      "original": "        return (one in retiring_members and other in retiring_members\n                and not any(one in held and other in held for held in surviving_members))\n",
+      "original": "        return (\n            one in retiring_members\n            and other in retiring_members\n            and not any(one in held and other in held for held in surviving_members)\n        )\n",
       "replacement": "        return one in retiring_members or other in retiring_members\n",
       "tests": [
         "tests/orchestrator/full_target/test_htn_and_or_shared_goal.py::test_one_branch_changing_its_method_keeps_the_shared_step_and_the_other_branch_edges"
@@ -916,8 +916,8 @@
       "id": "TG4-04",
       "source": "TaskGraph 补全第四批（审阅记录按要求版本查找）",
       "file": "src/agent_orchestrator/orchestrator/assurance_review_runtime.py",
-      "original": "        revision = (frozen_requirements_revision(self.store, result) if requirements_revision is None\n                    else int(requirements_revision))\n        rows = self.store.connection.execute(\n",
-      "replacement": "        revision = frozen_requirements_revision(self.store, result)\n        rows = self.store.connection.execute(\n",
+      "original": "        revision = (\n            frozen_requirements_revision(self.store, result)\n            if requirements_revision is None\n            else int(requirements_revision)\n        )\n",
+      "replacement": "        revision = frozen_requirements_revision(self.store, result)\n",
       "tests": [
         "tests/orchestrator/product_world/test_requirements_amend.py::test_kept_old_step_is_reviewed_again_not_rerun"
       ],
@@ -927,8 +927,8 @@
       "id": "TG5-01",
       "source": "TaskGraph 补全第五批（下游输入引用现行算数的验收；HTN 补齐 F1 第 6 号空缺）",
       "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-      "original": "            if (state is None or output.acceptance_id not in allowed_acceptances\n                    or output.acceptance_id not in state.preparation_acceptance_ids):\n                continue\n",
-      "replacement": "            if state is None:\n                continue\n",
+      "original": "            if (\n                state is None\n                or output.acceptance_id not in allowed_acceptances\n                or output.acceptance_id not in state.preparation_acceptance_ids\n            ):\n",
+      "replacement": "            if state is None:\n",
       "tests": [
         "tests/orchestrator/product_world/test_carried_redo.py::test_the_replaced_downstream_reads_the_kept_step_under_its_new_acceptance"
       ],
@@ -971,8 +971,8 @@
       "id": "TG4-06",
       "source": "F2 联测（改要求后重审判不下来→人裁决）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "            mission, record, target_id=item.result_id, subject_key=task.id, task_id=task.id,",
-      "replacement": "            mission, record, target_id=task.id, subject_key=task.id, task_id=task.id,",
+      "original": "            target_id=item.result_id,\n",
+      "replacement": "            target_id=task.id,\n",
       "tests": [
         "tests/orchestrator/product_world/test_carried_review.py::test_a_re_review_nobody_can_settle_asks_the_person_and_their_pass_counts"
       ],
@@ -993,8 +993,8 @@
       "id": "TG4-07",
       "source": "F2 联测真机第三局",
       "file": "src/agent_orchestrator/graph/taskgraph_sharing.py",
-      "original": "                    or child.acceptance_ref not in (entry.acceptance_ref, *entry.earlier_acceptance_refs)",
-      "replacement": "                    or child.acceptance_ref != entry.acceptance_ref",
+      "original": "                or child.acceptance_ref\n                not in (entry.acceptance_ref, *entry.earlier_acceptance_refs)\n",
+      "replacement": "                or child.acceptance_ref != entry.acceptance_ref\n",
       "tests": [
         "tests/orchestrator/product_world/test_carried_redo.py::test_a_later_repair_commits_after_the_kept_step_passed_again"
       ],
@@ -1015,8 +1015,8 @@
       "id": "CLK-01",
       "source": "F2 联测裁决（时钟水位落库）",
       "file": "src/agent_orchestrator/orchestrator/assurance_clock.py",
-      "original": "                current.wall_high_ms - stored.wall_high_ms < CLOCK_PERSIST_STEP_MS):",
-      "replacement": "                current.wall_high_ms - stored.wall_high_ms < 1):",
+      "original": "            current.wall_high_ms - stored.wall_high_ms < CLOCK_PERSIST_STEP_MS\n",
+      "replacement": "            current.wall_high_ms - stored.wall_high_ms < 1\n",
       "tests": [
         "tests/orchestrator/product_world/test_clock_writes.py"
       ],
@@ -1026,8 +1026,8 @@
       "id": "CLK-02",
       "source": "F2 联测裁决（时钟水位落库）",
       "file": "src/agent_orchestrator/orchestrator/assurance_clock.py",
-      "original": "        seen_high = seen.wall_high_ms if seen is not None and seen.generation == stored.generation else 0",
-      "replacement": "        seen_high = 0",
+      "original": "        seen_high = (\n            seen.wall_high_ms if seen is not None and seen.generation == stored.generation else 0\n        )\n",
+      "replacement": "        seen_high = 0\n",
       "tests": [
         "tests/orchestrator/product_world/test_clock_writes.py"
       ],
@@ -1037,8 +1037,8 @@
       "id": "PRM-01",
       "source": "F2 联测真机（规划器等待决定缺字段）",
       "file": "src/agent_orchestrator/runtime/role_templates.py",
-      "original": "        \"\\\"reason\\\":\\\"一句话说明在等什么\\\"}，两个字段都必填。\\n\"",
-      "replacement": "        \"}。\\n\"",
+      "original": "        '\"reason\":\"一句话说明在等什么\"}，两个字段都必填。\\n'\n",
+      "replacement": "        \"}。\\n\"\n",
       "tests": [
         "tests/orchestrator/product_world/test_planner_prompt_fields.py"
       ],
@@ -1637,7 +1637,7 @@
       "id": "A11-01",
       "source": "推后第 3 批车道 R2（A11：完成规格引用的产生方）",
       "file": "src/agent_orchestrator/orchestrator/assurance_purpose_reviews.py",
-      "original": "    materials.add(\n        AssuranceRef(\"completion_spec\", Pin(str(scope_row[\"spec_id\"]), 0, str(scope_row[\"spec_hash\"])))\n    )\n",
+      "original": "    materials.add(\n        AssuranceRef(\n            \"completion_spec\", Pin(str(scope_row[\"spec_id\"]), 0, str(scope_row[\"spec_hash\"]))\n        )\n    )\n",
       "replacement": "",
       "tests": [
         "tests/orchestrator/full_target/operation_completion/test_defer3_r2_action_spec_ref.py::test_the_action_proposal_review_carries_the_approved_completion_spec"
@@ -1659,8 +1659,8 @@
       "id": "K07-01",
       "source": "推后第 3 批车道 R2（K07：知识血缘记被谁改过）",
       "file": "src/agent_orchestrator/orchestrator/commit_service.py",
-      "original": "                self._store.upsert_knowledge(modified(\n                    replace(record, disputed_by=(*record.disputed_by, claim.id)),\n                    change=\"DISPUTED\", by=claim.id, task_id=claim.source_task,\n                    attempt_id=claim.source_attempt, proposed_by=claim.proposed_by, at=self._store.now))\n",
-      "replacement": "                self._store.upsert_knowledge(\n                    replace(record, disputed_by=(*record.disputed_by, claim.id)))\n",
+      "original": "                    modified(\n                        replace(record, disputed_by=(*record.disputed_by, claim.id)),\n                        change=\"DISPUTED\",\n                        by=claim.id,\n                        task_id=claim.source_task,\n                        attempt_id=claim.source_attempt,\n                        proposed_by=claim.proposed_by,\n                        at=self._store.now,\n                    )\n",
+      "replacement": "                    replace(record, disputed_by=(*record.disputed_by, claim.id))\n",
       "tests": [
         "tests/orchestrator/step04/test_claims_knowledge_main_loop.py::test_the_knowledge_records_who_modified_it"
       ],
@@ -1670,8 +1670,8 @@
       "id": "A21-01",
       "source": "推后第 3 批车道 R2（A21：被隔离任务的逐项等待来源，偏离 #50）",
       "file": "src/agent_orchestrator/orchestrator/recovery_coordinator.py",
-      "original": "                    \"silent_changes\": list(report.get(\"silent_changes\") or ())[:5],\n                    **_assurance_waiting(orch.store, mission.id)}\n",
-      "replacement": "                    \"silent_changes\": list(report.get(\"silent_changes\") or ())[:5]}\n",
+      "original": "                    **_assurance_waiting(orch.store, mission.id),\n",
+      "replacement": "",
       "tests": [
         "tests/orchestrator/full_target/test_recovery_coordinator.py::test_an_inconsistent_mission_is_isolated_and_the_others_go_on"
       ],
@@ -1681,7 +1681,7 @@
       "id": "U09-01",
       "source": "推后第 3 批车道 R4（U09：执行过程主画面与回合详情的严格合同）",
       "file": "src/agent_orchestrator/graph/view_contracts.py",
-      "original": "        if not isinstance(value, Mapping) or not set(required) <= set(value) or set(value) - set(required) - set(extra):\n",
+      "original": "        if (\n            not isinstance(value, Mapping)\n            or not set(required) <= set(value)\n            or set(value) - set(required) - set(extra)\n        ):\n",
       "replacement": "        if not isinstance(value, Mapping) or not set(required) <= set(value):\n",
       "tests": [
         "tests/orchestrator/full_target/test_taskgraph_schema_contracts.py::test_view_codecs_and_schemas_agree_on_every_mutant",
@@ -1693,8 +1693,8 @@
       "id": "MU-01",
       "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
       "file": "src/agent_orchestrator/testing/product_world.py",
-      "original": "            input_ports = (PortSpec(\"delivery\", outputs, cardinality=PortCardinality.SET,\n                                    ordering=PortOrdering.EXPLICIT),)",
-      "replacement": "            input_ports = (PortSpec(\"delivery\", outputs),)",
+      "original": "            input_ports = (\n                PortSpec(\n                    \"delivery\",\n                    outputs,\n                    cardinality=PortCardinality.SET,\n                    ordering=PortOrdering.EXPLICIT,\n                ),\n            )\n",
+      "replacement": "            input_ports = (PortSpec(\"delivery\", outputs),)\n",
       "tests": [
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_continue_delivery_port_is_a_set_in_the_methods_order",
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order"
@@ -1717,8 +1717,8 @@
       "id": "MU-03",
       "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
       "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
-      "original": "                orders.append(ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later]))))",
-      "replacement": "                orders.append(ExplicitPortOrder(port.port_key, tuple(sorted(dict.fromkeys([*ids, *later])))))",
+      "original": "                    ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later])))\n",
+      "replacement": "                    ExplicitPortOrder(port.port_key, tuple(sorted(dict.fromkeys([*ids, *later]))))\n",
       "tests": [
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_merge_step_receives_both_upstream_deliveries_in_the_methods_order",
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_the_explicit_order_follows_the_array_not_the_slot_names"
@@ -1740,8 +1740,8 @@
       "id": "MU-06",
       "source": "2026-10-09 第 4 条独立核验复核（单链接力回归）；2026-10-11 第三批改锚到交付解析",
       "file": "src/agent_orchestrator/artifacts/input_bindings.py",
-      "original": "            rivals = [item for item in versions.values()\n                      if item.content_hash != port_hash and item.version_key not in known]",
-      "replacement": "            rivals = [item for item in versions.values()\n                      if item.content_hash != port_hash]",
+      "original": "            rivals = [\n                item\n                for item in versions.values()\n                if item.content_hash != port_hash and item.version_key not in known\n            ]\n",
+      "replacement": "            rivals = [item for item in versions.values() if item.content_hash != port_hash]\n",
       "tests": [
         "tests/orchestrator/product_world/test_multi_upstream_delivery.py::test_a_single_chain_relayer_rewriting_the_port_file_is_plain_relay"
       ],
@@ -1773,8 +1773,8 @@
       "id": "CV-03",
       "source": "2026-10-10 docopt 局：收敛作业 5 秒一次空转两小时",
       "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
-      "original": "        return min(self.interval_ms * 2 ** max(0, int(ordinal) - 1), max(self.interval_ms, self.MAX_INTERVAL_MS))",
-      "replacement": "        return self.interval_ms",
+      "original": "        return min(\n            self.interval_ms * 2 ** max(0, int(ordinal) - 1),\n            max(self.interval_ms, self.MAX_INTERVAL_MS),\n        )\n",
+      "replacement": "        return self.interval_ms\n",
       "tests": [
         "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_a_waiting_jobs_wakes_back_off_while_it_keeps_waiting"
       ],
@@ -1784,8 +1784,8 @@
       "id": "CV-04",
       "source": "2026-10-10 docopt 局（独立核验 M1）：拦截集合不看预留是否已按上限结清",
       "file": "src/agent_orchestrator/runtime/taskgraph_local_work.py",
-      "original": "                       or (row[\"state\"] == \"UNKNOWN\" and row[\"subject_id\"] not in settled)))",
-      "replacement": "                       or row[\"state\"] == \"UNKNOWN\"))",
+      "original": "            and (\n                row[\"state\"] in {\"RESERVED\", \"HANDED_OFF\"}\n                or (row[\"state\"] == \"UNKNOWN\" and row[\"subject_id\"] not in settled)\n            )\n",
+      "replacement": "            and (row[\"state\"] in {\"RESERVED\", \"HANDED_OFF\"} or row[\"state\"] == \"UNKNOWN\")\n",
       "tests": [
         "tests/orchestrator/full_target/taskgraph_exec/test_local_work_blocking.py::test_an_unknown_charge_blocks_until_its_reservation_is_counted_at_the_upper_bound",
         "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_the_bound"
@@ -1807,8 +1807,8 @@
       "id": "SM-02",
       "source": "2026-10-10 第三轮复查：服务侧出错后只给一句事实",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "            feedback.append(f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\")",
-      "replacement": "            feedback.append(f\"turn_failed: {failure.get('error', '')}\")",
+      "original": "                feedback.append(\n                    f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\"\n                )\n",
+      "replacement": "                feedback.append(f\"turn_failed: {failure.get('error', '')}\")\n",
       "tests": [
         "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_provider_failure_turn_is_told_as_one_fact_not_a_raw_dict"
       ],
@@ -1818,8 +1818,8 @@
       "id": "SM-03",
       "source": "2026-10-10 第三轮复查：人审标记写上两次各自的原因",
       "file": "src/agent_orchestrator/orchestrator/assurance_review_import.py",
-      "original": "    marker = \"REVIEW_NO_USABLE_REPLY:\" + code + (f\";FIRST_CALL={second_call_reason}\" if second_call_reason else \"\")",
-      "replacement": "    marker = \"REVIEW_NO_USABLE_REPLY:\" + code",
+      "original": "    marker = (\n        \"REVIEW_NO_USABLE_REPLY:\"\n        + code\n        + (f\";FIRST_CALL={second_call_reason}\" if second_call_reason else \"\")\n    )\n",
+      "replacement": "    marker = \"REVIEW_NO_USABLE_REPLY:\" + code\n",
       "tests": [
         "tests/orchestrator/product_world/test_review_no_verdict.py::test_final_review_whose_second_call_failed_by_its_own_doing_asks_person",
         "tests/orchestrator/full_target/assurance_exec/test_review_turn_retry_e2e.py::test_failed_first_turn_is_retried_once_and_imported"
@@ -1830,8 +1830,8 @@
       "id": "SM-04",
       "source": "2026-10-10 parse 重跑：线路上的长调用在 180 秒被当成卡死",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "            if running and not liveness.blocked and attempt.progress_at is not None and not in_flight:",
-      "replacement": "            if running and not liveness.blocked and attempt.progress_at is not None:",
+      "original": "            if (\n                running\n                and not liveness.blocked\n                and attempt.progress_at is not None\n                and not in_flight\n            ):\n",
+      "replacement": "            if running and not liveness.blocked and attempt.progress_at is not None:\n",
       "tests": [
         "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound"
       ],
@@ -1841,8 +1841,8 @@
       "id": "SM-05",
       "source": "2026-10-10 parse 重跑：调用自己的上限",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "                    and now - float(handed_off) < self._config.provider_call_seconds):",
-      "replacement": "                    and handed_off is not None):",
+      "original": "            if (\n                state == \"handed_off\"\n                and handed_off is not None\n                and now - float(handed_off) < self._config.provider_call_seconds\n            ):\n",
+      "replacement": "            if state == \"handed_off\" and handed_off is not None and handed_off is not None:\n",
       "tests": [
         "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_a_model_call_still_on_the_wire_is_not_a_stall_until_its_own_bound",
         "tests/orchestrator/full_target/test_h4_retry_runtime_entry.py::test_timeout_opens_repair_and_committed_retry_is_single_use"
@@ -1886,8 +1886,8 @@
       "id": "SM-09",
       "source": "2026-10-10 独立核验 M2：模型自己的回合失败被说成服务侧错误",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "            if classify_failure(failure) == INFRA:\n                feedback.append(f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\")",
-      "replacement": "            if True:\n                feedback.append(f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\")",
+      "original": "            if classify_failure(failure) == INFRA:\n",
+      "replacement": "            if True:\n",
       "tests": [
         "tests/orchestrator/step05/test_retry_feedback_chain.py::test_a_turn_the_model_itself_failed_is_not_called_a_server_error"
       ],
@@ -1952,8 +1952,8 @@
       "id": "SM-15",
       "source": "2026-10-11 用户决定 A：固定单步额度不再平分",
       "file": "src/agent_orchestrator/orchestrator/occurrence_tasks.py",
-      "original": "                or all((item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks)",
-      "replacement": "                or self.committed_tokens + granted <= self.pool_tokens",
+      "original": "                self.pool_tokens is None\n                or all(\n                    (item.task.budget.max_tokens or 0) <= self.pool_tokens for item in self.tasks\n                )\n",
+      "replacement": "                self.pool_tokens is None or self.committed_tokens + granted <= self.pool_tokens\n",
       "tests": [
         "tests/orchestrator/full_target/test_fixed_leaf_allowance.py::test_fixed_allowance_leaves_may_sum_past_the_pool_but_none_exceeds_it"
       ],
@@ -1963,8 +1963,8 @@
       "id": "SM-16",
       "source": "2026-10-11 parse 重跑：等不到的额度永远等",
       "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
-      "original": "                if (isinstance(error, BudgetExhausted)\n                        and not self._budget_can_still_change(error.account_id, claim.mission_id)):",
-      "replacement": "                if False:",
+      "original": "                if isinstance(error, BudgetExhausted) and not self._budget_can_still_change(\n                    error.account_id, claim.mission_id\n                ):\n",
+      "replacement": "                if False:\n",
       "tests": [
         "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_a_budget_wait_nothing_can_change_ends_the_step_then_waits_as_before"
       ],
@@ -1974,8 +1974,8 @@
       "id": "SM-17",
       "source": "2026-10-11 独立核验 opt.183 M1：做法审阅/终审的归属任务停不了，仍永远等",
       "file": "src/agent_orchestrator/orchestrator/assurance_tick.py",
-      "original": "        except CommitRejected:\n            # the step cannot be stopped where it stands: the Mission ends instead\n            try:\n                self.orchestrator._commit_fail_mission(\n                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail)\n            except CommitRejected:\n                return",
-      "replacement": "        except CommitRejected:\n            return",
+      "original": "            # the step cannot be stopped where it stands: the Mission ends instead\n            try:\n                self.orchestrator._commit_fail_mission(\n                    claim.mission_id, stop_reason=MissionStopReason.BUDGET_EXHAUSTED, detail=detail\n                )\n            except CommitRejected:\n                return\n",
+      "replacement": "            return\n",
       "tests": [
         "tests/orchestrator/full_target/assurance_exec/test_budget_wait_that_cannot_change.py::test_the_refusing_account_decides_what_ends"
       ],
@@ -1996,8 +1996,8 @@
       "id": "SM-19",
       "source": "2026-10-11 第二批：唤醒退避在作业推进后不重数（opt.177 建议 d）",
       "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
-      "original": "                    if _integer(saved[\"job_version\"], \"job_version\", minimum=0) == int(job[\"row_version\"]):\n                        ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1",
-      "replacement": "                    ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1",
+      "original": "                    if _integer(saved[\"job_version\"], \"job_version\", minimum=0) == int(\n                        job[\"row_version\"]\n                    ):\n                        ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1\n",
+      "replacement": "                    ordinal = _integer(saved[\"ordinal\"], \"ordinal\", minimum=1) + 1\n",
       "tests": [
         "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_the_backoff_restarts_once_the_job_moved"
       ],
@@ -2018,8 +2018,8 @@
       "id": "SM-21",
       "source": "2026-10-11 第二批：停止条件在步骤待开工时就问规划器（第三轮复查发现 3）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "        if any(task.status is TaskStatus.READY and not task.paused for task in self.store.list_tasks(mission.id)):\n            return False  # V38：暂停的步骤不会开工，不算\"正要开工\"\n        try:\n            network = new_mode.network(mission.id)",
-      "replacement": "        try:\n            network = new_mode.network(mission.id)",
+      "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n            return False  # V38：暂停的步骤不会开工，不算\"正要开工\"\n",
+      "replacement": "",
       "tests": [
         "tests/orchestrator/test_batch2_h_stop_conditions.py::test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start"
       ],
@@ -2051,8 +2051,8 @@
       "id": "SM-24",
       "source": "2026-10-11 独立核验 opt.184 M1：序号重数后唤醒编号撞旧事件被吞",
       "file": "src/agent_orchestrator/orchestrator/taskgraph_wakeups.py",
-      "original": "                identity = derive_id(\"tg-convergence-wake-event\", key, str(int(job[\"row_version\"])), str(ordinal))",
-      "replacement": "                identity = derive_id(\"tg-convergence-wake-event\", key, str(ordinal))",
+      "original": "                identity = derive_id(\n                    \"tg-convergence-wake-event\", key, str(int(job[\"row_version\"])), str(ordinal)\n                )\n",
+      "replacement": "                identity = derive_id(\"tg-convergence-wake-event\", key, str(ordinal))\n",
       "tests": [
         "tests/orchestrator/full_target/taskgraph_exec/test_convergence_wake_terminal_mission.py::test_the_backoff_restarts_once_the_job_moved"
       ],
@@ -2106,8 +2106,8 @@
       "id": "SM-29",
       "source": "2026-10-11 V30 宽限口径一致",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "                latest_forgiven = _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE",
-      "replacement": "                latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE",
+      "original": "                latest_forgiven = (\n                    _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE\n                )\n",
+      "replacement": "                latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE\n",
       "tests": [
         "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v30_both_grace_counters_treat_an_unknown_outcome_as_unanswered"
       ],
@@ -2139,8 +2139,8 @@
       "id": "SM-32",
       "source": "2026-10-11 V38 暂停步骤不算正要开工",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "        if any(task.status is TaskStatus.READY and not task.paused for task in self.store.list_tasks(mission.id)):",
-      "replacement": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):",
+      "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n",
+      "replacement": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):\n",
       "tests": [
         "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v38_a_paused_ready_step_does_not_postpone_the_stop_condition_question"
       ],
