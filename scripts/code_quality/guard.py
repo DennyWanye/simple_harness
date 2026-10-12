@@ -22,9 +22,15 @@ import ast
 import hashlib
 import re
 import subprocess
+import os
 import sys
 from collections import Counter
 from pathlib import Path
+
+if sys.version_info < (3, 11):  # 系统自带 3.9 解析不了新语法，换用后端虚拟环境的解释器
+    _py = Path(__file__).resolve().parents[2] / "backend/.venv/bin/python"
+    if _py.exists():
+        os.execv(str(_py), [str(_py), *sys.argv])
 
 REPO = Path(__file__).resolve().parents[2]
 PY_ROOTS = ("backend/", "sdk/simple-harness-sdk/src/")

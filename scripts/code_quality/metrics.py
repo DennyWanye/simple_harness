@@ -29,6 +29,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+if sys.version_info < (3, 11):  # 系统自带 3.9 解析不了新语法，换用后端虚拟环境的解释器
+    _py = Path(__file__).resolve().parents[2] / "backend/.venv/bin/python"
+    if _py.exists():
+        os.execv(str(_py), [str(_py), *sys.argv])
+
 REPO = Path(__file__).resolve().parents[2]
 _VENV_BIN = REPO / "sdk/simple-harness-sdk/.venv/bin"
 RUFF = Path(os.environ.get("CQ_RUFF") or (_VENV_BIN / "ruff" if (_VENV_BIN / "ruff").exists() else "ruff"))

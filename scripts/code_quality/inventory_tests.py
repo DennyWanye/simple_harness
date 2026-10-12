@@ -15,7 +15,14 @@ from __future__ import annotations
 import argparse
 import re
 from collections import Counter, defaultdict
+import os
+import sys
 from pathlib import Path
+
+if sys.version_info < (3, 11):  # 系统自带 3.9 解析不了新语法，换用后端虚拟环境的解释器
+    _py = Path(__file__).resolve().parents[2] / "backend/.venv/bin/python"
+    if _py.exists():
+        os.execv(str(_py), [str(_py), *sys.argv])
 
 REPO = Path(__file__).resolve().parents[2]
 ROOTS = {"后端": REPO / "backend/tests", "SDK": REPO / "sdk/simple-harness-sdk/tests"}
